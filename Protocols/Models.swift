@@ -1,0 +1,118 @@
+import Foundation
+
+// MARK: - 枚举类型
+
+/// 优先级
+enum Priority: String, Codable, CaseIterable {
+    case high
+    case normal
+}
+
+/// 待办分类
+enum TodoCategory: String, Codable, CaseIterable {
+    case work     // 工作
+    case study    // 学习
+    case life     // 生活
+    case health   // 健康
+    case finance  // 财务
+    case social   // 社交
+    case other    // 其他
+
+    var emoji: String {
+        switch self {
+        case .work: return "💼"
+        case .study: return "📚"
+        case .life: return "🏠"
+        case .health: return "💪"
+        case .finance: return "💰"
+        case .social: return "👥"
+        case .other: return "📌"
+        }
+    }
+}
+
+// MARK: - AI 提取结果（从 API 返回的结构）
+
+/// 单条提取的待办（AI 返回格式）
+struct ExtractedTodo: Identifiable, Codable {
+    let id: UUID
+    var title: String
+    var detail: String
+    var dueHint: String?
+    var priority: Priority
+    var categoryHint: TodoCategory
+
+    init(id: UUID = UUID(), title: String, detail: String = "", dueHint: String? = nil, priority: Priority = .normal, categoryHint: TodoCategory = .other) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.dueHint = dueHint
+        self.priority = priority
+        self.categoryHint = categoryHint
+    }
+}
+
+/// AI 提取的完整结果
+struct ExtractionResult: Codable {
+    let todos: [ExtractedTodo]
+    let ignored: String
+}
+
+// MARK: - 跨模块传递的通用数据类型（不依赖 SwiftData）
+
+/// 待办数据传输对象，用于跨模块传递
+/// Agent D 的 UI 和 Widget 只依赖这个类型，不需要知道 SwiftData 的存在
+struct TodoItemData: Identifiable, Codable, Hashable {
+    let id: UUID
+    var title: String
+    var detail: String?
+    var dueHint: String?
+    var dueDate: Date?
+    var priority: Priority
+    var category: TodoCategory
+    var isCompleted: Bool
+    var createdAt: Date
+    var rawTranscript: String?
+    var needsAIProcessing: Bool
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        detail: String? = nil,
+        dueHint: String? = nil,
+        dueDate: Date? = nil,
+        priority: Priority = .normal,
+        category: TodoCategory = .other,
+        isCompleted: Bool = false,
+        createdAt: Date = Date(),
+        rawTranscript: String? = nil,
+        needsAIProcessing: Bool = false
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.dueHint = dueHint
+        self.dueDate = dueDate
+        self.priority = priority
+        self.category = category
+        self.isCompleted = isCompleted
+        self.createdAt = createdAt
+        self.rawTranscript = rawTranscript
+        self.needsAIProcessing = needsAIProcessing
+    }
+
+    /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
+    init(from extracted: ExtractedTodo, rawTranscript: String? = nil) {
+        self.id = extracted.id
+        self.title = extracted.title
+        self.detail = extracted.detail.isEmpty ? nil : extracted.detail
+        self.dueHint = extracted.dueHint
+        self.dueDate = nil  // V1 不自动解析时间
+        self.priority = extracted.priority
+        self.category = extracted.categoryHint
+        self.isCompleted = false
+        self.createdAt = Date()
+        self.rawTranscript = rawTranscript
+        self.needsAIProcessing = false
+    }
+}
