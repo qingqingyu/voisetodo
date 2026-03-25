@@ -1,7 +1,7 @@
 import WidgetKit
 import SwiftUI
 
-/// Widget 视图（Agent D 实现）
+/// Widget 视图
 /// 支持桌面和锁屏 Widget，水印风格展示
 struct TodoWidgetView: View {
     var entry: TodoEntry
@@ -34,7 +34,7 @@ struct SmallWidgetView: View {
 
     var body: some View {
         if todos.isEmpty {
-            EmptyStateView.widgetEmpty()
+            emptyState
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(todos.prefix(1)) { todo in
@@ -52,6 +52,18 @@ struct SmallWidgetView: View {
             .padding()
         }
     }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 28, weight: .light))
+                .foregroundColor(.primary.opacity(0.4))
+            Text("暂无待办")
+                .font(.system(size: 14))
+                .foregroundColor(.primary.opacity(0.4))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 // MARK: - Medium Widget
@@ -61,7 +73,7 @@ struct MediumWidgetView: View {
 
     var body: some View {
         if todos.isEmpty {
-            EmptyStateView.widgetEmpty()
+            emptyState
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(todos.prefix(WidgetConfig.mediumItemCount)) { todo in
@@ -73,6 +85,18 @@ struct MediumWidgetView: View {
             .padding()
         }
     }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 32, weight: .light))
+                .foregroundColor(.primary.opacity(0.4))
+            Text("暂无待办")
+                .font(.system(size: 16))
+                .foregroundColor(.primary.opacity(0.4))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 // MARK: - Large Widget
@@ -82,7 +106,7 @@ struct LargeWidgetView: View {
 
     var body: some View {
         if todos.isEmpty {
-            EmptyStateView.widgetEmpty()
+            emptyState
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(todos.prefix(WidgetConfig.largeItemCount)) { todo in
@@ -94,6 +118,18 @@ struct LargeWidgetView: View {
             .padding()
         }
     }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 40, weight: .light))
+                .foregroundColor(.primary.opacity(0.4))
+            Text("暂无待办")
+                .font(.system(size: 18))
+                .foregroundColor(.primary.opacity(0.4))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 // MARK: - Lockscreen Widgets
@@ -103,7 +139,13 @@ struct LockscreenRectangularWidget: View {
 
     var body: some View {
         if todos.isEmpty {
-            EmptyStateView.lockscreenEmpty()
+            VStack(spacing: 4) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 16))
+                Text("VoiceTodo")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundColor(.primary.opacity(0.4))
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(todos.prefix(WidgetConfig.lockscreenItemCount)) { todo in
@@ -175,7 +217,7 @@ struct TodoWidgetItemRow: View {
                 .font(.system(size: 15, weight: todo.priority == .high ? .semibold : .regular))
                 .foregroundColor(.primary.opacity(0.65))
                 .lineLimit(1)
-                .shadow(color: .black.opacity(0.3), radius: 1, y: 1) // [v2] 确保在任何壁纸可读
+                .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
 
             Spacer()
 
@@ -205,7 +247,7 @@ struct TodoWidgetItemRow: View {
         TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work),
         TodoItemData(title: "准备面试", dueHint: "周三前", priority: .high, category: .work),
         TodoItemData(title: "去健身房", dueHint: nil, priority: .normal, category: .health)
-    ], configuration: .init())
+    ])
 }
 
 #Preview(as: .systemSmall) {
@@ -213,7 +255,7 @@ struct TodoWidgetItemRow: View {
 } timeline: {
     TodoEntry(date: .now, todos: [
         TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work)
-    ], configuration: .init())
+    ])
 }
 
 #Preview(as: .accessoryRectangular) {
@@ -221,5 +263,5 @@ struct TodoWidgetItemRow: View {
 } timeline: {
     TodoEntry(date: .now, todos: [
         TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work)
-    ], configuration: .init())
+    ])
 }

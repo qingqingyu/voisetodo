@@ -1,16 +1,18 @@
+import SwiftUI
 import Foundation
 import Combine
 import WidgetKit
 
-/// App 协调器（Agent E 实现）
+/// App 协调器
 /// 负责编排完整的语音录入流程
+/// 使用协议类型保持依赖反转原则 (DIP)
 @MainActor
 final class AppCoordinator: ObservableObject {
     // MARK: - Dependencies
 
-    private let voiceInput: VoiceInputProtocol
-    private let extractor: TodoExtractorProtocol
-    private let store: TodoStoreProtocol
+    private let voiceInput: any VoiceInputProtocol
+    private let extractor: any TodoExtractorProtocol
+    private let store: any TodoStoreProtocol
     private let networkMonitor = NetworkMonitor.shared
 
     // MARK: - Published State
@@ -31,9 +33,9 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Initialization
 
     init(
-        voiceInput: VoiceInputProtocol,
-        extractor: TodoExtractorProtocol,
-        store: TodoStoreProtocol
+        voiceInput: some VoiceInputProtocol,
+        extractor: some TodoExtractorProtocol,
+        store: some TodoStoreProtocol
     ) {
         self.voiceInput = voiceInput
         self.extractor = extractor
@@ -45,13 +47,13 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Setup
 
     private func setupBindings() {
-        // 监听录音状态
-        voiceInput.$isRecording
+        // 监听录音状态（通过协议定义的 Publisher）
+        voiceInput.isRecordingPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRecording)
 
         // 监听转写文本
-        voiceInput.$transcript
+        voiceInput.transcriptPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$transcript)
     }
@@ -99,9 +101,7 @@ final class AppCoordinator: ObservableObject {
         for pending in pendingItems {
             guard let transcript = pending.rawTranscript else { continue }
 
-            // P1 修复: 使用 NetworkMonitor 检查网络
             guard networkMonitor.isConnected else {
-                // 无网络，跳过此项
                 continue
             }
 
@@ -109,7 +109,6 @@ final class AppCoordinator: ObservableObject {
                 let result = try await extractor.extract(from: transcript)
                 allExtractedItems.append(contentsOf: result.todos)
             } catch {
-                // 单条失败不影响其他
                 print("Failed to process pending item: \(error)")
             }
         }
@@ -148,28 +147,21 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        // P1 修复: 使用 NetworkMonitor 检查网络（替代简单的 URL 请求）
         guard networkMonitor.isConnected else {
-            // 无网络，离线降级
             await handleOfflineMode(transcript: text)
             return
         }
 
-        // 有网络，尝试 AI 提取
         do {
             let result = try await extractor.extract(from: text)
 
-            // 检查是否有待办
             if result.todos.isEmpty {
-                // 无待办（纯感受）
                 showToast(message: ErrorMessages.noTodosFound, style: .info)
             } else {
-                // 有待办，弹出确认
                 extractedTodos = result.todos
                 showConfirmSheet = true
             }
         } catch {
-            // AI 提取失败，离线降级
             await handleOfflineMode(transcript: text)
         }
     }
@@ -177,10 +169,7 @@ final class AppCoordinator: ObservableObject {
     /// 离线降级处理
     private func handleOfflineMode(transcript: String) async {
         do {
-            // 保存原始转写
             try store.addRawTranscript(transcript)
-
-            // 显示提示
             showToast(message: ErrorMessages.savedOffline, style: .info)
         } catch {
             handleError(error)
@@ -230,12 +219,10 @@ struct BatchConfirmView: View {
     var body: some View {
         NavigationView {
             List {
-                ForEach(Array(todos.enumerated()), id: \.element.id) { index, _ in
-                    TodoItemRow(
-                        todo: $todos[index],
-                        onDelete: {
-                            todos.remove(at: index)
-                        }
+                ForEach($todos) { $todo in
+                    BatchTodoItemRow(
+                        todo: $todo,
+                        todos: $todos
                     )
                 }
             }
@@ -257,5 +244,22 @@ struct BatchConfirmView: View {
                 }
             }
         }
+    }
+}
+
+/// 辅助视图：批量确认中的待办行（使用 ID 删除，避免索引问题）
+private struct BatchTodoItemRow: View {
+    @Binding var todo: ExtractedTodo
+    @Binding var todos: [ExtractedTodo]
+
+    var body: some View {
+        TodoItemRow(
+            todo: $todo,
+            onDelete: {
+                withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
+                    todos.removeAll { $0.id == todo.id }
+                }
+            }
+        )
     }
 }

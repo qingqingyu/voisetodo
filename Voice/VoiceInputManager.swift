@@ -12,6 +12,16 @@ final class VoiceInputManager: VoiceInputProtocol {
     @Published var transcript: String = ""
     @Published var error: VoiceTodoError?
 
+    // MARK: - Publisher Accessors (协议要求)
+
+    var isRecordingPublisher: AnyPublisher<Bool, Never> {
+        $isRecording.eraseToAnyPublisher()
+    }
+
+    var transcriptPublisher: AnyPublisher<String, Never> {
+        $transcript.eraseToAnyPublisher()
+    }
+
     // MARK: - Private Properties
 
     private var speechRecognizer: SFSpeechRecognizer?

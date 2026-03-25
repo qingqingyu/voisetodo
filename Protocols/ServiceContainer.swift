@@ -137,21 +137,6 @@ struct OptionalInjected<T> {
 }
 
 // MARK: - VoiceTodo Service Registration
-
-extension ServiceContainer {
-    /// 注册 VoiceTodo 的所有服务
-    /// - Parameter modelContext: SwiftData ModelContext
-    func registerVoiceTodoServices(modelContext: ModelContext) {
-        // 注册 VoiceInputProtocol
-        register(VoiceInputProtocol.self, service: VoiceInputManager())
-
-        // 注册 TodoExtractorProtocol
-        register(TodoExtractorProtocol.self, service: TodoExtractorService())
-
-        // 注册 TodoStoreProtocol
-        register(TodoStoreProtocol.self, service: TodoStore(modelContext: modelContext))
-
-        // 注册 NetworkMonitor
-        register(NetworkMonitor.self, service: NetworkMonitor.shared)
-    }
-}
+// 注意：registerVoiceTodoServices 方法已移到主应用代码中
+// 原因：该方法引用了具体实现类，而这些类不在 Protocols 包中
+// 请参考 App/ServiceContainer+VoiceTodo.swift

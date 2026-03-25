@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Toast 样式
+/// Toast 样式 - 温暖主题
 enum ToastStyle {
     case info
     case success
@@ -9,11 +9,11 @@ enum ToastStyle {
     var iconColor: Color {
         switch self {
         case .info:
-            return .blue
+            return Color(hex: "6B8FE8")
         case .success:
-            return Color(red: 0.067, green: 0.725, blue: 0.506) // #10B981
+            return WarmTheme.success
         case .warning:
-            return .orange
+            return WarmTheme.warning
         }
     }
 
@@ -40,10 +40,13 @@ struct ToastModifier: ViewModifier {
             .overlay(alignment: .top) {
                 if isPresented {
                     ToastView(message: message, style: style)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .top).combined(with: .scale(scale: 0.9)),
+                            removal: .move(edge: .top).combined(with: .opacity)
+                        ))
                         .onAppear {
                             DispatchQueue.main.asyncAfter(deadline: .now() + UIConfig.toastDuration) {
-                                withAnimation(.easeInOut(duration: 0.3)) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     isPresented = false
                                 }
                             }
@@ -52,11 +55,11 @@ struct ToastModifier: ViewModifier {
                         .zIndex(1)
                 }
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isPresented)
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isPresented)
     }
 }
 
-/// 轻量级提示组件 [v2 新增]
+/// 轻量级提示组件 - 温暖友好风格
 /// 从顶部滑入，2秒后自动消失
 struct ToastView: View {
     let message: String
@@ -64,24 +67,33 @@ struct ToastView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: style.iconName)
-                .foregroundColor(style.iconColor)
-                .font(.system(size: 20))
+            // 图标
+            ZStack {
+                Circle()
+                    .fill(style.iconColor.opacity(0.15))
+                    .frame(width: 36, height: 36)
 
+                Image(systemName: style.iconName)
+                    .foregroundColor(style.iconColor)
+                    .font(.system(size: 18))
+            }
+
+            // 文字
             Text(message)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.primary)
+                .font(.custom("Avenir Next", size: 15))
+                .fontWeight(.medium)
+                .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white)
+                .shadow(color: WarmTheme.shadowMedium, radius: 16, x: 0, y: 8)
         )
         .padding(.horizontal, 16)
     }
@@ -105,4 +117,5 @@ extension View {
         ToastView(message: ErrorMessages.savedOffline, style: .warning)
     }
     .padding()
+    .background(WarmTheme.background)
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 通用空状态组件 [v2 新增]
+/// 通用空状态组件 - 温暖友好风格
 /// 用于 HomeView 和 Widget 无待办时的展示
 struct EmptyStateView: View {
     let icon: String
@@ -10,13 +10,24 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: iconSize, weight: .light))
-                .foregroundColor(.primary.opacity(opacity))
+            ZStack {
+                Circle()
+                    .fill(WarmTheme.primaryLight.opacity(0.3))
+                    .frame(width: iconSize * 2, height: iconSize * 2)
+
+                Circle()
+                    .fill(WarmTheme.primaryLight.opacity(0.5))
+                    .frame(width: iconSize * 1.4, height: iconSize * 1.4)
+
+                Image(systemName: icon)
+                    .font(.system(size: iconSize, weight: .light))
+                    .foregroundColor(WarmTheme.primary)
+            }
 
             Text(message)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.primary.opacity(opacity))
+                .font(.custom("Avenir Next", size: 17))
+                .fontWeight(.medium)
+                .foregroundColor(WarmTheme.textPrimary.opacity(opacity))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
@@ -30,10 +41,10 @@ extension EmptyStateView {
     /// HomeView 空状态
     static func homeEmpty() -> EmptyStateView {
         EmptyStateView(
-            icon: "checkmark.circle",
-            message: "暂无待办，按下 Action Button 开始录入",
-            iconSize: 60,
-            opacity: 0.65
+            icon: "sparkles",
+            message: "暂无待办\n按下录音按钮开始",
+            iconSize: 44,
+            opacity: 0.7
         )
     }
 
@@ -42,7 +53,7 @@ extension EmptyStateView {
         EmptyStateView(
             icon: "checkmark.circle",
             message: "暂无待办",
-            iconSize: 40,
+            iconSize: 28,
             opacity: 0.4
         )
     }
@@ -52,7 +63,7 @@ extension EmptyStateView {
         EmptyStateView(
             icon: "checkmark.circle",
             message: "VoiceTodo",
-            iconSize: 24,
+            iconSize: 20,
             opacity: 0.4
         )
     }
@@ -65,16 +76,16 @@ extension EmptyStateView {
         // HomeView 空状态
         EmptyStateView.homeEmpty()
             .frame(height: 400)
-            .background(Color(.systemBackground))
+            .background(WarmTheme.background)
 
         // Widget 空状态
         EmptyStateView.widgetEmpty()
             .frame(width: 300, height: 150)
-            .background(Color(.systemBackground))
+            .background(WarmTheme.background)
 
         // 锁屏 Widget 空状态
         EmptyStateView.lockscreenEmpty()
             .frame(width: 150, height: 80)
-            .background(Color(.systemBackground))
+            .background(Color.black)
     }
 }

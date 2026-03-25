@@ -1,8 +1,8 @@
 import SwiftUI
 import WidgetKit
 
-/// 确认弹窗视图（Agent D 实现）
-/// 语音录入后的确认面板，显示 AI 提取的待办列表
+/// 确认弹窗视图 - 温暖友好风格
+/// 语音录入后的确认面板， 显示 AI 提取的待办列表
 struct ConfirmSheetView: View {
     let transcript: String
     @Binding var todos: [ExtractedTodo]
@@ -17,7 +17,7 @@ struct ConfirmSheetView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // 成功动画覆盖层 [v2]
+                // 成功动画覆盖层
                 if showSuccess {
                     successOverlay
                 } else {
@@ -73,12 +73,13 @@ struct ConfirmSheetView: View {
     private var transcriptSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("语音原文")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
+                .font(.custom("Avenir Next", size: 13))
+                .fontWeight(.medium)
+                .foregroundColor(WarmTheme.textSecondary)
 
             Text(transcript)
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
+                .font(.custom("Avenir Next", size: 14))
+                .foregroundColor(WarmTheme.textSecondary)
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
@@ -92,14 +93,10 @@ struct ConfirmSheetView: View {
 
     private var todosSection: some View {
         VStack(spacing: 12) {
-            ForEach(Array(todos.enumerated()), id: \.element.id) { index, _ in
-                TodoItemRow(
-                    todo: $todos[index],
-                    onDelete: {
-                        withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
-                            todos.remove(at: index)
-                        }
-                    }
+            ForEach($todos) { $todo in
+                TodoItemRowWithDelete(
+                    todo: $todo,
+                    todos: $todos
                 )
             }
         }
@@ -109,12 +106,12 @@ struct ConfirmSheetView: View {
 
     private var operationHint: some View {
         Text("点击条目可编辑 · 点 ✕ 可删除")
-            .font(.system(size: 13))
-            .foregroundColor(.secondary)
+            .font(.custom("Avenir Next", size: 13))
+            .foregroundColor(WarmTheme.textSecondary)
             .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    // MARK: - Success Overlay [v2]
+    // MARK: - Success Overlay
 
     private var successOverlay: some View {
         VStack(spacing: 16) {
@@ -123,7 +120,7 @@ struct ConfirmSheetView: View {
             // 成功图标
             ZStack {
                 Circle()
-                    .fill(Color(red: 0.067, green: 0.725, blue: 0.506)) // #10B981
+                    .fill(WarmTheme.success)
                     .frame(width: 80, height: 80)
 
                 Image(systemName: "checkmark")
@@ -135,15 +132,16 @@ struct ConfirmSheetView: View {
 
             // 成功文字
             Text(ErrorMessages.addedSuccess)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(.primary)
+                .font(.custom("Avenir Next", size: 18))
+                .fontWeight(.semibold)
+                .foregroundColor(WarmTheme.textPrimary)
                 .opacity(showSuccess ? 1.0 : 0.0)
                 .animation(.easeIn(duration: 0.2).delay(0.2), value: showSuccess)
 
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        .background(WarmTheme.background)
     }
 
     // MARK: - Actions
@@ -169,25 +167,21 @@ struct ConfirmSheetView: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Helper View
 
-#Preview {
-    struct PreviewWrapper: View {
-        @State var todos = [
-            ExtractedTodo(title: "完成周报", detail: "", dueHint: "今天", priority: .normal, categoryHint: .work),
-            ExtractedTodo(title: "准备面试", detail: "", dueHint: "周三前", priority: .high, categoryHint: .work),
-            ExtractedTodo(title: "去健身房", detail: "", dueHint: nil, priority: .normal, categoryHint: .health)
-        ]
+/// 辅助视图：处理待办删除逻辑
+struct TodoItemRowWithDelete: View {
+    @Binding var todo: ExtractedTodo
+    @Binding var todos: [ExtractedTodo]
 
-        var body: some View {
-            ConfirmSheetView(
-                transcript: "明天去银行办卡，顺便买菜，晚上给老妈打电话",
-                todos: $todos,
-                onConfirm: { _ in print("Confirmed") },
-                onCancel: { print("Cancelled") }
-            )
-        }
+    var body: some View {
+        TodoItemRow(
+            todo: $todo,
+            onDelete: {
+                withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
+                    todos.removeAll { $0.id == todo.id }
+                }
+            }
+        )
     }
-
-    return PreviewWrapper()
 }
