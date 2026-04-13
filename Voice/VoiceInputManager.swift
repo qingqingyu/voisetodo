@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import Speech
 import AVFoundation
+import ActivityKit
 
 /// 语音输入管理器
 /// 实现 VoiceInputProtocol，封装 Apple Speech Framework
@@ -34,6 +35,11 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var silenceStartTime: Date?
     private var isSilenceDetected = false
 
+    // Live Activity 相关
+    private var liveActivity: Activity<RecordingActivityAttributes>?
+    private var recordingStartTime: Date?
+    private var updateTimer: Timer?
+
     // MARK: - Initialization
 
     init() {
@@ -51,6 +57,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         error = nil
         isSilenceDetected = false
         silenceStartTime = nil
+        recordingStartTime = Date()
 
         // 1. 检查权限
         try await checkPermissions()
@@ -76,7 +83,11 @@ final class VoiceInputManager: VoiceInputProtocol {
 
             if let result = result {
                 // 更新转写文本
-                self.transcript = result.bestTranscription.formattedString
+                let newTranscript = result.bestTranscription.formattedString
+                self.transcript = newTranscript
+
+                // 更新 Live Activity
+                self.updateLiveActivity(transcript: newTranscript)
 
                 // 如果是最终结果，停止录音
                 if result.isFinal {
@@ -86,7 +97,9 @@ final class VoiceInputManager: VoiceInputProtocol {
 
             if error != nil {
                 // 识别出错，但不抛出错误，可能是临时的
+                #if DEBUG
                 print("Recognition error: \(error?.localizedDescription ?? "Unknown")")
+                #endif
             }
         }
 
@@ -107,6 +120,9 @@ final class VoiceInputManager: VoiceInputProtocol {
         do {
             try audioEngine.start()
             isRecording = true
+
+            // 8. 启动 Live Activity
+            startLiveActivity()
         } catch {
             throw VoiceTodoError.recordingFailed("无法启动音频引擎")
         }
@@ -135,6 +151,127 @@ final class VoiceInputManager: VoiceInputProtocol {
         isRecording = false
         isSilenceDetected = false
         silenceStartTime = nil
+
+        // 结束 Live Activity
+        endLiveActivity()
+    }
+
+    // MARK: - Live Activity Methods
+
+    /// 启动 Live Activity（Dynamic Island 录音状态）
+    private func startLiveActivity() {
+        guard #available(iOS 16.2, *) else { return }
+
+        // 检查是否已授权 Live Activity
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            #if DEBUG
+            print("Live Activity 未授权")
+            #endif
+            return
+        }
+
+        // 创建初始状态
+        let attributes = RecordingActivityAttributes(name: "VoiceTodo")
+        let initialState = RecordingActivityAttributes.ContentState(
+            isRecording: true,
+            transcript: "",
+            duration: 0
+        )
+
+        do {
+            // 请求启动 Activity
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: initialState, staleDate: nil),
+                pushType: nil
+            )
+            self.liveActivity = activity
+            #if DEBUG
+            print("Live Activity 已启动: \(activity.id)")
+            #endif
+
+            // 启动定时器更新时长
+            startUpdateTimer()
+
+        } catch {
+            #if DEBUG
+            print("启动 Live Activity 失败: \(error)")
+            #endif
+        }
+    }
+
+    /// 更新 Live Activity 状态
+    private func updateLiveActivity(transcript: String) {
+        guard let activity = liveActivity,
+              let startTime = recordingStartTime else { return }
+
+        let duration = Date().timeIntervalSince(startTime)
+        let updatedState = RecordingActivityAttributes.ContentState(
+            isRecording: true,
+            transcript: transcript,
+            duration: duration
+        )
+
+        Task {
+            await activity.update(using: .init(state: updatedState, staleDate: nil))
+        }
+    }
+
+    /// 结束 Live Activity
+    private func endLiveActivity() {
+        // 停止定时器
+        stopUpdateTimer()
+
+        guard let activity = liveActivity else { return }
+
+        Task {
+            // 创建最终状态
+            let finalState = RecordingActivityAttributes.ContentState(
+                isRecording: false,
+                transcript: transcript,
+                duration: recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+            )
+
+            // 结束 Activity
+            await activity.end(
+                using: .init(state: finalState, staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+            #if DEBUG
+            print("Live Activity 已结束")
+            #endif
+        }
+
+        liveActivity = nil
+        recordingStartTime = nil
+    }
+
+    /// 启动定时器更新 Live Activity 时长
+    private func startUpdateTimer() {
+        stopUpdateTimer()
+
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self,
+                  self.isRecording,
+                  let startTime = self.recordingStartTime else { return }
+
+            let duration = Date().timeIntervalSince(startTime)
+            let updatedState = RecordingActivityAttributes.ContentState(
+                isRecording: true,
+                transcript: self.transcript,
+                duration: duration
+            )
+
+            Task { [weak self] in
+                await self?.liveActivity?.update(using: .init(state: updatedState, staleDate: nil))
+            }
+        }
+    }
+
+    /// 停止定时器
+    private func stopUpdateTimer() {
+        updateTimer?.invalidate()
+        updateTimer = nil
     }
 
     // MARK: - Permission Methods [v2]

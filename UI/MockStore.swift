@@ -104,3 +104,40 @@ extension MockStore {
         ])
     }
 }
+
+// MARK: - Mock Services (for Preview)
+
+/// Mock 语音输入（Preview 用）
+final class MockVoiceInput: VoiceInputProtocol {
+    @Published var isRecording: Bool = false
+    @Published var transcript: String = ""
+    @Published var error: VoiceTodoError?
+
+    var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
+    var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
+
+    func startRecording() async throws {}
+    func stopRecording() {}
+}
+
+/// Mock 待办提取器（Preview 用）
+struct MockExtractor: TodoExtractorProtocol {
+    func extract(from transcript: String) async throws -> ExtractionResult {
+        ExtractionResult(todos: [], ignored: "")
+    }
+
+    func fallbackExtract(from transcript: String) -> ExtractionResult {
+        ExtractionResult(todos: [], ignored: "")
+    }
+}
+
+/// 便捷方法：创建用于 Preview 的 Mock AppCoordinator
+extension AppCoordinator {
+    static var preview: AppCoordinator {
+        AppCoordinator(
+            voiceInput: MockVoiceInput(),
+            extractor: MockExtractor(),
+            store: MockStore.preview
+        )
+    }
+}

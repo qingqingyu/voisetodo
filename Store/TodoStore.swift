@@ -196,7 +196,9 @@ final class TodoStore: TodoStoreProtocol {
             todos = items.map { $0.toData() }
         } catch {
             // 查询失败保持原数据
+            #if DEBUG
             print("Failed to refresh todos: \(error)")
+            #endif
         }
     }
 

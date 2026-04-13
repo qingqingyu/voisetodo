@@ -25,7 +25,9 @@ final class AudioSessionHelper {
             isActive = false
         } catch {
             // 停用失败不影响流程，记录即可
+            #if DEBUG
             print("Failed to deactivate audio session: \(error)")
+            #endif
         }
     }
 
@@ -67,9 +69,13 @@ final class AudioSessionHelper {
         // 例如：耳机插入/拔出、蓝牙设备连接/断开等
         switch reason {
         case .newDeviceAvailable:
+            #if DEBUG
             print("New audio device available")
+            #endif
         case .oldDeviceUnavailable:
+            #if DEBUG
             print("Old audio device unavailable")
+            #endif
         default:
             break
         }

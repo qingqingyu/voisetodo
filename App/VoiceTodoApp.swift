@@ -11,6 +11,7 @@ struct VoiceTodoApp: App {
     // MARK: - State
 
     @StateObject private var coordinator: AppCoordinator
+    @StateObject private var todoStore: TodoStore
     @StateObject private var permissionManager = PermissionManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
@@ -25,11 +26,6 @@ struct VoiceTodoApp: App {
     // MARK: - Environment
 
     @Environment(\.scenePhase) private var scenePhase
-
-    // MARK: - Constants
-
-    /// Action Button 触发的 URL Scheme
-    private let actionButtonURLScheme = "voicetodo://record"
 
     // MARK: - Initialization
 
@@ -51,7 +47,9 @@ struct VoiceTodoApp: App {
             )
         } catch {
             // 降级：使用内存容器，数据不会持久化但 App 能正常启动
+            #if DEBUG
             print("Failed to create persistent ModelContainer: \(error). Falling back to in-memory.")
+            #endif
             do {
                 let fallbackConfig = ModelConfiguration(
                     schema: schema,
@@ -71,6 +69,9 @@ struct VoiceTodoApp: App {
         let voiceInput = VoiceInputManager()
         let extractor = TodoExtractorService()
         let store = TodoStore(modelContext: container.mainContext)
+
+        // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
+        _todoStore = StateObject(wrappedValue: store)
 
         // 初始化 Coordinator
         _coordinator = StateObject(wrappedValue: AppCoordinator(
@@ -109,7 +110,7 @@ struct VoiceTodoApp: App {
     private var mainView: some View {
         if hasCompletedOnboarding {
             // 已完成引导，显示主界面
-            HomeView(store: coordinator.store)
+            HomeView(store: todoStore)
                 .environmentObject(coordinator)
                 .toast(
                     message: coordinator.toastMessage,
@@ -175,12 +176,13 @@ struct VoiceTodoApp: App {
 
     /// 处理 URL 打开（Action Button 或其他外部调用）
     private func handleOpenURL(_ url: URL) {
-        print("Received URL: \(url.absoluteString)")
+        guard url.scheme == "voicetodo" else { return }
 
-        // 检查是否是录音 URL
-        if url.absoluteString == actionButtonURLScheme {
-            print("Action Button triggered via URL Scheme")
+        switch url.host {
+        case "record":
             handleActionButtonLaunch()
+        default:
+            break
         }
     }
 
@@ -205,13 +207,17 @@ struct VoiceTodoApp: App {
     private func handleActionButtonLaunch() {
         // 确保已完成引导
         guard hasCompletedOnboarding else {
+            #if DEBUG
             print("Onboarding not completed, skipping auto-record")
+            #endif
             return
         }
 
         // 检查权限
         guard permissionManager.micGranted && permissionManager.speechGranted else {
+            #if DEBUG
             print("Permissions not granted, showing toast")
+            #endif
             coordinator.showToast(
                 message: "请先授予麦克风和语音识别权限",
                 style: .warning

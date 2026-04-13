@@ -510,9 +510,5 @@ struct WarmTodoCard: View {
 
 #Preview {
     HomeView(store: MockStore.preview)
-        .environmentObject(AppCoordinator(
-            voiceInput: VoiceInputManager(),
-            extractor: TodoExtractorService(),
-            store: MockStore.preview
-        ))
+        .environmentObject(AppCoordinator.preview)
 }

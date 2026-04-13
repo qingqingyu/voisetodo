@@ -24,7 +24,8 @@ struct TodoTimelineProvider: TimelineProvider {
     private let appGroupIdentifier = "group.com.voicetodo.shared"
 
     /// 缓存的 ModelContainer，避免每次 getTimeline 都重新创建
-    private static var cachedContainer: ModelContainer?
+    /// Widget Extension 的 TimelineProvider 方法由系统单线程调度，无需额外同步
+    nonisolated(unsafe) private static var cachedContainer: ModelContainer?
 
     private func getModelContainer() throws -> ModelContainer {
         if let cached = Self.cachedContainer {
@@ -96,11 +97,15 @@ struct TodoTimelineProvider: TimelineProvider {
             let items = try context.fetch(descriptor)
             let todos = items.map { $0.toData() }
 
+            #if DEBUG
             print("Widget: 成功读取 \(todos.count) 条待办")
+            #endif
             return todos
 
         } catch {
+            #if DEBUG
             print("Widget: 读取数据失败 - \(error.localizedDescription)")
+            #endif
             return getPlaceholderTodos(limit: limit)
         }
     }

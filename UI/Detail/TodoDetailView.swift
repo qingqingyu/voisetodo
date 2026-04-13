@@ -16,6 +16,8 @@ struct TodoDetailView: View {
     @State private var editedPriority: Priority
     @State private var editedDueHint: String
     @State private var showSaveConfirmation = false
+    @State private var showError = false
+    @State private var errorMessage = ""
     @State private var hasChanges = false
 
     // MARK: - Initialization
@@ -122,6 +124,11 @@ struct TodoDetailView: View {
             } message: {
                 Text("待办已更新")
             }
+            .alert("提示", isPresented: $showError) {
+                Button("好的") {}
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
 
@@ -143,24 +150,36 @@ struct TodoDetailView: View {
                 try store.update(todo.id, title: editedTitle)
             }
 
-            // TODO: 如果需要更新其他字段，需要扩展 TodoStore
-            // 目前只支持更新标题
+            // 检测非标题变更（分类、优先级、时间提示暂不支持持久化）
+            let hasUnsupportedChanges = editedCategory != todo.category
+                || editedPriority != todo.priority
+                || editedDueHint != (todo.dueHint ?? "")
 
             // 刷新 Widget
             WidgetCenter.shared.reloadAllTimelines()
 
-            showSaveConfirmation = true
+            if hasUnsupportedChanges {
+                errorMessage = "仅标题已保存，分类/优先级/时间的编辑将在后续版本支持"
+                showError = true
+            } else {
+                showSaveConfirmation = true
+            }
         } catch {
-            print("Failed to save changes: \(error)")
+            errorMessage = "保存失败：\(error.localizedDescription)"
+            showError = true
         }
     }
 
     /// 格式化日期
-    private func formatDate(_ date: Date) -> String {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_Hans_CN")
         formatter.dateFormat = "yyyy年M月d日 HH:mm"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatDate(_ date: Date) -> String {
+        Self.dateFormatter.string(from: date)
     }
 }
 

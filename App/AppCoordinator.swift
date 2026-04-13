@@ -12,7 +12,7 @@ final class AppCoordinator: ObservableObject {
 
     private let voiceInput: any VoiceInputProtocol
     private let extractor: any TodoExtractorProtocol
-    let store: any TodoStoreProtocol
+    private let store: any TodoStoreProtocol
     private let networkMonitor = NetworkMonitor.shared
 
     // MARK: - Published State
@@ -87,25 +87,22 @@ final class AppCoordinator: ObservableObject {
     private func waitForRecordingToFinish() async {
         guard voiceInput.isRecording else { return }
 
-        await withCheckedContinuation { continuation in
-            var resumed = false
-
-            let cancellable = voiceInput.isRecordingPublisher
-                .filter { !$0 }
-                .first()
-                .sink { _ in
-                    guard !resumed else { return }
-                    resumed = true
-                    continuation.resume()
+        await withTaskGroup(of: Void.self) { group in
+            // 任务 1：轮询等待 isRecording 变为 false
+            group.addTask {
+                while self.voiceInput.isRecording {
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
                 }
-
-            // 超时保护：3 秒后强制继续
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                guard !resumed else { return }
-                resumed = true
-                cancellable.cancel()
-                continuation.resume()
             }
+
+            // 任务 2：超时保护 3 秒
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+
+            // 取最先完成的，取消另一个
+            _ = await group.next()
+            group.cancelAll()
         }
     }
 
@@ -141,7 +138,9 @@ final class AppCoordinator: ObservableObject {
                 let result = try await extractor.extract(from: transcript)
                 allExtractedItems.append(contentsOf: result.todos)
             } catch {
+                #if DEBUG
                 print("Failed to process pending item: \(error)")
+                #endif
             }
         }
 
@@ -161,11 +160,8 @@ final class AppCoordinator: ObservableObject {
     func confirmTodos(_ todos: [ExtractedTodo]) {
         do {
             // 如果有 pending 条目，使用替换逻辑
-            if !pendingItemIds.isEmpty {
+            if let firstPendingId = pendingItemIds.first {
                 // 将所有提取的待办分配到第一个 pending（因为原始 pending 可能拆分成多个待办）
-                // 其他 pending 直接删除（已在上一步处理）
-                let firstPendingId = pendingItemIds.first!
-
                 // 调用替换方法：删除原始 pending，添加提取的待办
                 try store.replacePendingWithExtracted(firstPendingId, todos)
 
