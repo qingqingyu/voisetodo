@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 // MARK: - 温暖配色主题
 
@@ -66,11 +67,15 @@ extension Color {
 // MARK: - HomeView
 
 /// 主页视图 - 温暖友好风格
-/// 显示待办列表，支持勾选完成、左滑删除
+/// 显示待办列表，支持勾选完成、左滑删除、点击编辑
 struct HomeView<Store: TodoStoreProtocol>: View {
     @ObservedObject var store: Store
+    @EnvironmentObject private var coordinator: AppCoordinator
     @State private var showRecordingButton = false
     @State private var isRecording = false
+
+    // 导航状态
+    @State private var selectedTodo: TodoItemData?
 
     // 动画状态
     @State private var headerOffset: CGFloat = -50
@@ -87,32 +92,38 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }()
 
     var body: some View {
-        ZStack {
-            // 背景
-            WarmTheme.background
-                .ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                // 背景
+                WarmTheme.background
+                    .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // 自定义导航栏
-                headerView
+                VStack(spacing: 0) {
+                    // 自定义导航栏
+                    headerView
 
-                // 主内容
-                Group {
-                    if store.todos.isEmpty {
-                        emptyStateView
-                    } else {
-                        todoListView
+                    // 主内容
+                    Group {
+                        if store.todos.isEmpty {
+                            emptyStateView
+                        } else {
+                            todoListView
+                        }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }
-        .onAppear {
-            startEntranceAnimation()
-        }
-        .overlay(alignment: .bottom) {
-            if showRecordingButton {
-                recordingButton
+            .onAppear {
+                startEntranceAnimation()
+            }
+            .overlay(alignment: .bottom) {
+                if showRecordingButton {
+                    recordingButton
+                }
+            }
+            // 导航到详情页
+            .navigationDestination(item: $selectedTodo) { todo in
+                TodoDetailView(store: store, todo: todo)
             }
         }
     }
@@ -202,7 +213,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     WarmTodoCard(
                         todo: todo,
                         onToggle: { toggleTodo(todo.id) },
-                        onDelete: { deleteTodo(todo.id) }
+                        onDelete: { deleteTodo(todo.id) },
+                        onTap: { selectedTodo = todo }
                     )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.9).combined(with: .opacity),
@@ -338,23 +350,28 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             isRecording.toggle()
         }
 
-        if isRecording {
-            // TODO: Agent E 会实现录音触发逻辑
-            print("Start recording")
-        } else {
-            print("Stop recording")
+        Task {
+            if isRecording {
+                await coordinator.startRecording()
+            } else {
+                await coordinator.stopRecordingAndProcess()
+            }
         }
     }
 
     private func toggleTodo(_ id: UUID) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
             try? store.toggleComplete(id)
+            // 刷新 Widget
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
     private func deleteTodo(_ id: UUID) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             try? store.delete(id)
+            // 刷新 Widget
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 }
@@ -365,6 +382,7 @@ struct WarmTodoCard: View {
     let todo: TodoItemData
     let onToggle: () -> Void
     let onDelete: () -> Void
+    var onTap: (() -> Void)? = nil
 
     @State private var offset: CGFloat = 0
     @State private var isSwiping = false
@@ -456,6 +474,14 @@ struct WarmTodoCard: View {
                 .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
         )
         .offset(x: offset)
+        .contentShape(Rectangle())  // 确保整个卡片可点击
+        // 点击手势（进入详情页）
+        .onTapGesture {
+            if !isSwiping {
+                onTap?()
+            }
+        }
+        // 左滑手势（删除）
         .gesture(
             DragGesture()
                 .onChanged { value in
@@ -483,34 +509,10 @@ struct WarmTodoCard: View {
 // MARK: - Preview
 
 #Preview {
-    // Mock Store for Preview
-    class MockStore: TodoStoreProtocol, ObservableObject {
-        @Published var todos: [TodoItemData] = [
-            TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work),
-            TodoItemData(title: "准备面试材料", dueHint: "周三前", priority: .high, category: .work),
-            TodoItemData(title: "去健身房", dueHint: nil, priority: .normal, category: .health, isCompleted: true),
-            TodoItemData(title: "给妈妈打电话", dueHint: "晚上", priority: .normal, category: .social),
-            TodoItemData(title: "学习 SwiftUI", dueHint: nil, priority: .normal, category: .study)
-        ]
-
-        func add(_ item: ExtractedTodo) throws {}
-        func addBatch(_ items: [ExtractedTodo]) throws {}
-        func addRawTranscript(_ transcript: String) throws {}
-        func toggleComplete(_ id: UUID) throws {
-            if let index = todos.firstIndex(where: { $0.id == id }) {
-                todos[index].isCompleted.toggle()
-            }
-        }
-        func delete(_ id: UUID) throws {
-            todos.removeAll { $0.id == id }
-        }
-        func update(_ id: UUID, title: String) throws {}
-        func pendingItems() -> [TodoItemData] { return [] }
-        func recentUncompleted(limit: Int) -> [TodoItemData] {
-            return todos.filter { !$0.isCompleted }.prefix(limit).map { $0 }
-        }
-        func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo]) throws {}
-    }
-
-    return HomeView(store: MockStore())
+    HomeView(store: MockStore.preview)
+        .environmentObject(AppCoordinator(
+            voiceInput: VoiceInputManager(),
+            extractor: TodoExtractorService(),
+            store: MockStore.preview
+        ))
 }

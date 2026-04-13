@@ -135,8 +135,3 @@ struct OptionalInjected<T> {
         self.service = ServiceContainer.shared.resolve(T.self)
     }
 }
-
-// MARK: - VoiceTodo Service Registration
-// 注意：registerVoiceTodoServices 方法已移到主应用代码中
-// 原因：该方法引用了具体实现类，而这些类不在 Protocols 包中
-// 请参考 App/ServiceContainer+VoiceTodo.swift

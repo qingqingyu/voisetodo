@@ -160,19 +160,20 @@ final class TodoStore: TodoStoreProtocol {
     ///   - pendingId: 待处理条目 ID
     ///   - items: AI 提取结果
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo]) throws {
-        // 删除待处理条目
         guard let pendingItem = findTodoItem(by: pendingId) else {
             throw VoiceTodoError.storageReadFailed("未找到待处理 ID: \(pendingId)")
         }
 
         let rawTranscript = pendingItem.rawTranscript
-        modelContext.delete(pendingItem)
 
-        // 插入提取结果
+        // 先插入提取结果，确保新数据就位
         for item in items {
             let todoItem = TodoItem.from(item, rawTranscript: rawTranscript)
             modelContext.insert(todoItem)
         }
+
+        // 再删除待处理条目
+        modelContext.delete(pendingItem)
 
         do {
             try modelContext.save()

@@ -29,6 +29,18 @@ enum TodoCategory: String, Codable, CaseIterable {
         case .other: return "📌"
         }
     }
+
+    var displayName: String {
+        switch self {
+        case .work: return "工作"
+        case .study: return "学习"
+        case .life: return "生活"
+        case .health: return "健康"
+        case .finance: return "财务"
+        case .social: return "社交"
+        case .other: return "其他"
+        }
+    }
 }
 
 // MARK: - AI 提取结果（从 API 返回的结构）

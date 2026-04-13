@@ -1,13 +1,5 @@
 import Foundation
 
-/// 音频配置
-enum AudioConfig {
-    /// 静音检测阈值（dB），低于此值视为静音
-    static let silenceThreshold: Float = -40.0
-    /// 连续静音多久后自动停止（秒）
-    static let silenceDuration: TimeInterval = 2.0
-}
-
 /// 网络配置
 enum NetworkConfig {
     /// API 超时时间（秒）

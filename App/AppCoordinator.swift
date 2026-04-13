@@ -12,7 +12,7 @@ final class AppCoordinator: ObservableObject {
 
     private let voiceInput: any VoiceInputProtocol
     private let extractor: any TodoExtractorProtocol
-    private let store: any TodoStoreProtocol
+    let store: any TodoStoreProtocol
     private let networkMonitor = NetworkMonitor.shared
 
     // MARK: - Published State
@@ -29,6 +29,9 @@ final class AppCoordinator: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var isProcessingPending = false
+
+    /// 离线待处理条目 ID 列表（用于网络恢复后替换）
+    private var pendingItemIds: [UUID] = []
 
     // MARK: - Initialization
 
@@ -73,11 +76,37 @@ final class AppCoordinator: ObservableObject {
     func stopRecordingAndProcess() async {
         voiceInput.stopRecording()
 
-        // 等待转写完成
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        // 等待转写完成（isRecording 变为 false 表示识别结果已就绪）
+        await waitForRecordingToFinish()
 
         // 处理转写结果
         await processTranscript(transcript)
+    }
+
+    /// 等待录音结束，最多等 3 秒
+    private func waitForRecordingToFinish() async {
+        guard voiceInput.isRecording else { return }
+
+        await withCheckedContinuation { continuation in
+            var resumed = false
+
+            let cancellable = voiceInput.isRecordingPublisher
+                .filter { !$0 }
+                .first()
+                .sink { _ in
+                    guard !resumed else { return }
+                    resumed = true
+                    continuation.resume()
+                }
+
+            // 超时保护：3 秒后强制继续
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                guard !resumed else { return }
+                resumed = true
+                cancellable.cancel()
+                continuation.resume()
+            }
+        }
     }
 
     /// 手动触发录音处理（用于 Action Button 启动）
@@ -94,6 +123,9 @@ final class AppCoordinator: ObservableObject {
         guard !pendingItems.isEmpty else { return }
 
         isProcessingPending = true
+
+        // 记录 pending ID（用于后续替换）
+        pendingItemIds = pendingItems.map { $0.id }
 
         // 后台静默处理
         var allExtractedItems: [ExtractedTodo] = []
@@ -119,13 +151,36 @@ final class AppCoordinator: ObservableObject {
         if !allExtractedItems.isEmpty {
             extractedTodos = allExtractedItems
             showConfirmSheet = true
+        } else {
+            // 无结果时清空 pending ID 列表
+            pendingItemIds = []
         }
     }
 
     /// 确认添加待办
     func confirmTodos(_ todos: [ExtractedTodo]) {
         do {
-            try store.addBatch(todos)
+            // 如果有 pending 条目，使用替换逻辑
+            if !pendingItemIds.isEmpty {
+                // 将所有提取的待办分配到第一个 pending（因为原始 pending 可能拆分成多个待办）
+                // 其他 pending 直接删除（已在上一步处理）
+                let firstPendingId = pendingItemIds.first!
+
+                // 调用替换方法：删除原始 pending，添加提取的待办
+                try store.replacePendingWithExtracted(firstPendingId, todos)
+
+                // 删除其他多余的 pending（如果有多个离线条目）
+                for pendingId in pendingItemIds.dropFirst() {
+                    try store.delete(pendingId)
+                }
+
+                // 清空 pending ID 列表
+                pendingItemIds = []
+            } else {
+                // 正常在线流程：直接添加
+                try store.addBatch(todos)
+            }
+
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             handleError(error)
@@ -136,6 +191,7 @@ final class AppCoordinator: ObservableObject {
     func cancelTodos() {
         extractedTodos = []
         showConfirmSheet = false
+        pendingItemIds = []  // 清空 pending ID 列表
     }
 
     // MARK: - Private Methods
