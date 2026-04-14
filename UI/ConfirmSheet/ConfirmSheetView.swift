@@ -1,5 +1,4 @@
 import SwiftUI
-import WidgetKit
 
 /// 确认弹窗视图 - 温暖友好风格
 /// 语音录入后的确认面板， 显示 AI 提取的待办列表
@@ -149,16 +148,13 @@ struct ConfirmSheetView: View {
     private func confirmAction() {
         guard !todos.isEmpty else { return }
 
-        // 显示成功动画
+        // 先执行存储操作，成功后再播放动画
+        onConfirm(todos)
+
+        // 存储成功，显示成功动画
         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
             showSuccess = true
         }
-
-        // 调用确认回调
-        onConfirm(todos)
-
-        // 刷新 Widget
-        WidgetCenter.shared.reloadAllTimelines()
 
         // 1.5 秒后自动关闭
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

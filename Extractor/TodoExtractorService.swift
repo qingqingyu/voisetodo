@@ -55,12 +55,24 @@ final class TodoExtractorService: TodoExtractorProtocol {
         throw lastError ?? VoiceTodoError.apiResponseInvalid("Unknown error")
     }
 
-    /// 离线降级：直接截取前 20 字作为标题
+    /// 离线降级：截取合适的长度作为标题
     /// - Parameter transcript: 用户语音转写文本
     /// - Returns: 提取结果
     func fallbackExtract(from transcript: String) -> ExtractionResult {
-        // 截取前 20 个字符作为标题
-        let title = String(transcript.prefix(20))
+        // 按词/字边界截取，避免截断在单词中间
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title: String
+        if trimmed.count <= 20 {
+            title = trimmed
+        } else {
+            // 在前 20 个字符内找最后一个空格/标点作为截断点
+            let prefix = trimmed.prefix(20)
+            if let lastBreak = prefix.lastIndex(where: { $0.isWhitespace || $0 == "," || $0 == "，" || $0 == "。" || $0 == "、" }) {
+                title = String(trimmed[...lastBreak]).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                title = String(prefix)
+            }
+        }
 
         let todo = ExtractedTodo(
             id: UUID(),
@@ -83,7 +95,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
         return try await networkClient.callClaudeAPI(
             systemPrompt: PromptTemplates.systemPrompt,
             messages: messages,
-            model: "claude-sonnet-4-20250514",
+            model: NetworkConfig.claudeModel,
             temperature: 0.1,
             maxTokens: 500
         )
@@ -91,18 +103,14 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
     /// 解析 API 响应
     private func parseResponse(_ responseText: String) throws -> ExtractionResult {
-        // 清理可能的 markdown 包裹（```json ... ```）
         var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 移除 markdown 代码块标记
-        if cleanedText.hasPrefix("```json") {
-            cleanedText = String(cleanedText.dropFirst(7))
-        } else if cleanedText.hasPrefix("```") {
-            cleanedText = String(cleanedText.dropFirst(3))
+        // 使用正则移除 markdown 代码块标记（兼容大小写、有无语言标注）
+        if let range = cleanedText.range(of: "^```(?:json|JSON)?\\s*\\n", options: .regularExpression) {
+            cleanedText.removeSubrange(range)
         }
-
-        if cleanedText.hasSuffix("```") {
-            cleanedText = String(cleanedText.dropLast(3))
+        if let range = cleanedText.range(of: "\\n\\s*```\\s*$", options: .regularExpression) {
+            cleanedText.removeSubrange(range)
         }
 
         cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)

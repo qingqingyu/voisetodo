@@ -34,7 +34,7 @@ final class NetworkClient {
     func callClaudeAPI(
         systemPrompt: String,
         messages: [[String: String]],
-        model: String = "claude-sonnet-4-20250514",
+        model: String = NetworkConfig.claudeModel,
         temperature: Double = 0.1,
         maxTokens: Int = 500
     ) async throws -> String {

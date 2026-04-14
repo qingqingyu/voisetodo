@@ -207,25 +207,32 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     // MARK: - Todo List View
 
     private var todoListView: some View {
-        ScrollView {
-            LazyVStack(spacing: 14) {
-                ForEach(store.todos) { todo in
-                    WarmTodoCard(
-                        todo: todo,
-                        onToggle: { toggleTodo(todo.id) },
-                        onDelete: { deleteTodo(todo.id) },
-                        onTap: { selectedTodo = todo }
-                    )
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.9).combined(with: .opacity),
-                        removal: .scale(scale: 0.95).combined(with: .opacity)
-                    ))
+        List {
+            ForEach(store.todos) { todo in
+                WarmTodoCard(
+                    todo: todo,
+                    onToggle: { toggleTodo(todo.id) },
+                    onTap: { selectedTodo = todo }
+                )
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 7, leading: 20, bottom: 7, trailing: 20))
+                .listRowBackground(Color.clear)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        deleteTodo(todo.id)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
                 }
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.9).combined(with: .opacity),
+                    removal: .scale(scale: 0.95).combined(with: .opacity)
+                ))
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 100)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(WarmTheme.background)
         .offset(y: listOffset)
         .opacity(listOpacity)
         .refreshable {
@@ -360,18 +367,28 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func toggleTodo(_ id: UUID) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-            try? store.toggleComplete(id)
-            // 刷新 Widget
+        do {
+            try store.toggleComplete(id)
             WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            coordinator.showToast(
+                message: ErrorMessages.storageError,
+                style: .warning
+            )
         }
     }
 
     private func deleteTodo(_ id: UUID) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            try? store.delete(id)
-            // 刷新 Widget
-            WidgetCenter.shared.reloadAllTimelines()
+            do {
+                try store.delete(id)
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                coordinator.showToast(
+                    message: ErrorMessages.storageError,
+                    style: .warning
+                )
+            }
         }
     }
 }
@@ -381,11 +398,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 struct WarmTodoCard: View {
     let todo: TodoItemData
     let onToggle: () -> Void
-    let onDelete: () -> Void
     var onTap: (() -> Void)? = nil
-
-    @State private var offset: CGFloat = 0
-    @State private var isSwiping = false
 
     // 分类颜色
     private var categoryColor: Color {
@@ -473,36 +486,10 @@ struct WarmTodoCard: View {
                 .fill(Color.white)
                 .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
         )
-        .offset(x: offset)
-        .contentShape(Rectangle())  // 确保整个卡片可点击
-        // 点击手势（进入详情页）
+        .contentShape(Rectangle())
         .onTapGesture {
-            if !isSwiping {
-                onTap?()
-            }
+            onTap?()
         }
-        // 左滑手势（删除）
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    if value.translation.width < 0 {
-                        isSwiping = true
-                        offset = value.translation.width
-                    }
-                }
-                .onEnded { value in
-                    if value.translation.width < -100 {
-                        // 删除
-                        onDelete()
-                    } else {
-                        // 弹回
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            offset = 0
-                        }
-                    }
-                    isSwiping = false
-                }
-        )
     }
 }
 

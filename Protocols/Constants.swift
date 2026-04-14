@@ -8,6 +8,8 @@ enum NetworkConfig {
     static let retryCount: Int = 1
     /// 重试间隔（秒）
     static let retryInterval: TimeInterval = 2.0
+    /// Claude 模型名称
+    static let claudeModel = "claude-sonnet-4-20250514"
 }
 
 /// UI 配置

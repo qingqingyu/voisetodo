@@ -126,23 +126,38 @@ final class AppCoordinator: ObservableObject {
 
         // 后台静默处理
         var allExtractedItems: [ExtractedTodo] = []
+        var successfullyProcessedIds: [UUID] = []
 
         for pending in pendingItems {
-            guard let transcript = pending.rawTranscript else { continue }
+            guard let transcript = pending.rawTranscript else {
+                // 无转写文本的条目无法处理，保留
+                continue
+            }
 
             guard networkMonitor.isConnected else {
-                continue
+                // 网络中断，停止处理剩余条目，保留未处理的 pending
+                break
             }
 
             do {
                 let result = try await extractor.extract(from: transcript)
-                allExtractedItems.append(contentsOf: result.todos)
+                if !result.todos.isEmpty {
+                    allExtractedItems.append(contentsOf: result.todos)
+                    successfullyProcessedIds.append(pending.id)
+                } else {
+                    // AI 未提取到待办，也视为处理完成
+                    successfullyProcessedIds.append(pending.id)
+                }
             } catch {
                 #if DEBUG
                 print("Failed to process pending item: \(error)")
                 #endif
+                // 提取失败，保留该 pending 不删除
             }
         }
+
+        // 只记录成功处理的 pending ID
+        pendingItemIds = successfullyProcessedIds
 
         isProcessingPending = false
 
@@ -255,63 +270,5 @@ final class AppCoordinator: ObservableObject {
         } else {
             showToast(message: error.localizedDescription, style: .warning)
         }
-    }
-}
-
-// MARK: - Batch Confirm View
-
-/// 批量确认视图（用于网络恢复后的补处理）
-struct BatchConfirmView: View {
-    @Binding var todos: [ExtractedTodo]
-    let onConfirm: ([ExtractedTodo]) -> Void
-    let onCancel: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationView {
-            List {
-                ForEach($todos) { $todo in
-                    BatchTodoItemRow(
-                        todo: $todo,
-                        todos: $todos
-                    )
-                }
-            }
-            .navigationTitle("已整理的待办")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("跳过") {
-                        onCancel()
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("全部添加") {
-                        onConfirm(todos)
-                        dismiss()
-                    }
-                    .disabled(todos.isEmpty)
-                }
-            }
-        }
-    }
-}
-
-/// 辅助视图：批量确认中的待办行（使用 ID 删除，避免索引问题）
-private struct BatchTodoItemRow: View {
-    @Binding var todo: ExtractedTodo
-    @Binding var todos: [ExtractedTodo]
-
-    var body: some View {
-        TodoItemRow(
-            todo: $todo,
-            onDelete: {
-                withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
-                    todos.removeAll { $0.id == todo.id }
-                }
-            }
-        )
     }
 }

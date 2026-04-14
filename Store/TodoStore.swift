@@ -31,7 +31,8 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：插入到数组头部
+            todos.insert(todoItem.toData(), at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -40,14 +41,17 @@ final class TodoStore: TodoStoreProtocol {
     /// 批量添加（确认界面用）
     /// - Parameter items: AI 提取的待办数组
     func addBatch(_ items: [ExtractedTodo]) throws {
+        var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item)
             modelContext.insert(todoItem)
+            newTodos.append(todoItem.toData())
         }
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：批量插入到数组头部（保持创建时间倒序）
+            todos.insert(contentsOf: newTodos, at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -61,7 +65,8 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：插入到数组头部
+            todos.insert(todoItem.toData(), at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -78,7 +83,10 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：修改对应条目
+            if let index = todos.firstIndex(where: { $0.id == id }) {
+                todos[index] = todoItem.toData()
+            }
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -95,7 +103,8 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：移除对应条目
+            todos.removeAll { $0.id == id }
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -114,7 +123,10 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：修改对应条目
+            if let index = todos.firstIndex(where: { $0.id == id }) {
+                todos[index] = todoItem.toData()
+            }
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -156,6 +168,7 @@ final class TodoStore: TodoStoreProtocol {
     }
 
     /// 替换待处理条目为提取结果（网络恢复后用）[v2]
+    /// SwiftData 在 save() 前只在内存中操作，crash 不会持久化部分数据
     /// - Parameters:
     ///   - pendingId: 待处理条目 ID
     ///   - items: AI 提取结果
@@ -167,9 +180,11 @@ final class TodoStore: TodoStoreProtocol {
         let rawTranscript = pendingItem.rawTranscript
 
         // 先插入提取结果，确保新数据就位
+        var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item, rawTranscript: rawTranscript)
             modelContext.insert(todoItem)
+            newTodos.append(todoItem.toData())
         }
 
         // 再删除待处理条目
@@ -177,7 +192,9 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            refreshTodos()
+            // 增量更新：移除 pending，插入新条目
+            todos.removeAll { $0.id == pendingId }
+            todos.insert(contentsOf: newTodos, at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -185,7 +202,8 @@ final class TodoStore: TodoStoreProtocol {
 
     // MARK: - Private Methods
 
-    /// 刷新 todos 属性（从数据库重新加载）
+    /// 全量刷新 todos 属性（从数据库重新加载）
+    /// 仅在初始化时调用，后续操作使用增量更新
     private func refreshTodos() {
         var descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]

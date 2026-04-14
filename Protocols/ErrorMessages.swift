@@ -22,4 +22,5 @@ enum ErrorMessages {
     static let savedOffline = "已保存原始记录，联网后将自动整理"
     static let pendingProcessed = "有 %d 条待办已整理，点击查看"
     static let addedSuccess = "已添加到待办"
+    static let permissionsRequired = "请先授予麦克风和语音识别权限"
 }

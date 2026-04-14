@@ -72,6 +72,14 @@ final class NetworkMonitor: ObservableObject {
         monitor.cancel()
     }
 
+    /// 重启监测（App 回到前台时调用，确保监测器处于活跃状态）
+    func restartIfNeeded() {
+        // 先停止旧监测器
+        monitor.cancel()
+        // 重新启动
+        startMonitoring()
+    }
+
     /// 检查网络是否可用（异步）
     /// - Returns: 网络是否可用
     func checkNetworkAvailability() async -> Bool {

@@ -58,9 +58,31 @@ struct ExtractedTodo: Identifiable, Codable {
         self.id = id
         self.title = title
         self.detail = detail
-        self.dueHint = dueHint
+        self.dueHint = Self.sanitizeDueHint(dueHint)
         self.priority = priority
         self.categoryHint = categoryHint
+    }
+
+    /// 过滤 AI 可能返回的伪 null 值（如 "null"、"None"、"none"）
+    private static func sanitizeDueHint(_ hint: String?) -> String? {
+        guard let hint = hint?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hint.isEmpty,
+              hint.lowercased() != "null",
+              hint.lowercased() != "none" else {
+            return nil
+        }
+        return hint
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
+        let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)
+        dueHint = Self.sanitizeDueHint(rawDueHint)
+        priority = try container.decode(Priority.self, forKey: .priority)
+        categoryHint = try container.decode(TodoCategory.self, forKey: .categoryHint)
     }
 }
 

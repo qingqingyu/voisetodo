@@ -107,13 +107,19 @@ final class VoiceInputManager: VoiceInputProtocol {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
+        // 防御性移除旧 tap，避免重复安装导致 crash
+        inputNode.removeTap(onBus: 0)
+
         // 安装音频 tap 进行音量监控
         inputNode.installTap(
             onBus: 0,
             bufferSize: VoiceConstants.audioBufferSize,
             format: recordingFormat
         ) { [weak self] buffer, _ in
-            self?.processAudioBuffer(buffer)
+            // 将静音检测派发到主线程，避免与 stopRecording 竞态
+            DispatchQueue.main.async {
+                self?.processAudioBuffer(buffer)
+            }
         }
 
         // 7. 启动音频引擎
@@ -124,6 +130,8 @@ final class VoiceInputManager: VoiceInputProtocol {
             // 8. 启动 Live Activity
             startLiveActivity()
         } catch {
+            // 启动失败时清理已安装的 tap
+            inputNode.removeTap(onBus: 0)
             throw VoiceTodoError.recordingFailed("无法启动音频引擎")
         }
     }
@@ -333,7 +341,11 @@ final class VoiceInputManager: VoiceInputProtocol {
     }
 
     /// 处理音频缓冲区，进行静音检测
+    /// 注意：此方法通过 DispatchQueue.main.async 调用，已在主线程执行
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        // 只在录音状态下处理，避免 stopRecording 后的延迟回调
+        guard isRecording else { return }
+
         guard let channelData = buffer.floatChannelData?[0] else { return }
 
         // 计算 RMS 值
@@ -342,7 +354,8 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         let rms = sqrt(channelDataArray.map { $0 * $0 }.reduce(0, +) / Float(buffer.frameLength))
 
-        // 转换为 dB
+        // 转换为 dB（避免 log10(0)）
+        guard rms > 0 else { return }
         let avgPower = 20 * log10(rms)
 
         // 静音检测
@@ -353,11 +366,9 @@ final class VoiceInputManager: VoiceInputProtocol {
             } else if let startTime = silenceStartTime {
                 let duration = Date().timeIntervalSince(startTime)
                 if duration >= VoiceConstants.silenceTimeoutSeconds && !isSilenceDetected {
-                    // 超时，自动停止
+                    // 超时，自动停止（已在主线程，直接调用）
                     isSilenceDetected = true
-                    DispatchQueue.main.async { [weak self] in
-                        self?.stopRecording()
-                    }
+                    stopRecording()
                 }
             }
         } else {

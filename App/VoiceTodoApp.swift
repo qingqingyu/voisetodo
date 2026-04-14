@@ -151,17 +151,16 @@ struct VoiceTodoApp: App {
 
     /// 处理 App 启动
     private func handleAppLaunch() {
-        // 检查是否从 Action Button 启动（冷启动场景）
-        if isLaunchedFromActionButton() {
-            handleActionButtonLaunch()
-        }
+        // Action Button 冷启动场景通过 .onOpenURL 检测
+        // 此处仅处理需要启动时执行的逻辑
     }
 
     /// 处理场景状态变化
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            // App 进入前台，检查待处理项
+            // App 进入前台，重启网络监测并检查待处理项
+            NetworkMonitor.shared.restartIfNeeded()
             Task {
                 await coordinator.handleAppForeground()
             }
@@ -188,21 +187,6 @@ struct VoiceTodoApp: App {
 
     // MARK: - Action Button Handling
 
-    /// 检查是否从 Action Button 启动
-    /// - Returns: 是否从 Action Button 启动
-    private func isLaunchedFromActionButton() -> Bool {
-        // 方法1: 检查 launch options（通过 AppDelegate）
-        // 方法2: 检查是否通过特定的 User Activity 启动
-        // 方法3: 检查最近的前台切换时间（如果 App 刚从后台恢复，可能是 Action Button）
-
-        // V1 简单实现：检查是否是通过快捷指令触发
-        // 用户设置 Action Button → 快捷指令 → 打开 URL → voicetodo://record
-
-        // 由于 SwiftUI App 没有 AppDelegate，我们依赖 .onOpenURL 来检测
-        // 这里返回 false，实际检测在 handleOpenURL 中完成
-        return false
-    }
-
     /// 处理 Action Button 启动
     private func handleActionButtonLaunch() {
         // 确保已完成引导
@@ -219,7 +203,7 @@ struct VoiceTodoApp: App {
             print("Permissions not granted, showing toast")
             #endif
             coordinator.showToast(
-                message: "请先授予麦克风和语音识别权限",
+                message: ErrorMessages.permissionsRequired,
                 style: .warning
             )
             return
