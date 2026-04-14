@@ -145,25 +145,22 @@ struct TodoDetailView: View {
     /// 保存变更
     private func saveChanges() {
         do {
-            // 更新标题（通过 TodoStore 的 update 方法）
-            if editedTitle != todo.title {
-                try store.update(todo.id, title: editedTitle)
-            }
+            let newCategory = editedCategory != todo.category ? editedCategory : nil
+            let newPriority = editedPriority != todo.priority ? editedPriority : nil
+            let newDueHint: String? = editedDueHint != (todo.dueHint ?? "") ? editedDueHint : nil
 
-            // 检测非标题变更（分类、优先级、时间提示暂不支持持久化）
-            let hasUnsupportedChanges = editedCategory != todo.category
-                || editedPriority != todo.priority
-                || editedDueHint != (todo.dueHint ?? "")
+            try store.update(
+                todo.id,
+                title: editedTitle,
+                category: newCategory,
+                priority: newPriority,
+                dueHint: newDueHint
+            )
 
             // 刷新 Widget
             WidgetCenter.shared.reloadAllTimelines()
 
-            if hasUnsupportedChanges {
-                errorMessage = "仅标题已保存，分类/优先级/时间的编辑将在后续版本支持"
-                showError = true
-            } else {
-                showSaveConfirmation = true
-            }
+            showSaveConfirmation = true
         } catch {
             errorMessage = "保存失败：\(error.localizedDescription)"
             showError = true

@@ -97,7 +97,7 @@ struct VoiceTodoApp: App {
                     handleOpenURL(url)
                 }
                 .sheet(isPresented: $showOnboarding) {
-                    OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
+                    OnboardingView(permissionManager: permissionManager, hasCompletedOnboarding: $hasCompletedOnboarding)
                         .interactiveDismissDisabled()
                 }
         }
@@ -197,7 +197,9 @@ struct VoiceTodoApp: App {
             return
         }
 
-        // 检查权限
+        // 重新检查当前权限状态（用户可能在系统设置中撤销了权限）
+        permissionManager.checkCurrentStatus()
+
         guard permissionManager.micGranted && permissionManager.speechGranted else {
             #if DEBUG
             print("Permissions not granted, showing toast")

@@ -33,6 +33,9 @@ final class AppCoordinator: ObservableObject {
     /// 离线待处理条目 ID 列表（用于网络恢复后替换）
     private var pendingItemIds: [UUID] = []
 
+    /// 合并的原始转写文本（多个 pending 的 rawTranscript 合并，避免丢失）
+    private var combinedRawTranscript: String?
+
     // MARK: - Initialization
 
     init(
@@ -127,6 +130,7 @@ final class AppCoordinator: ObservableObject {
         // 后台静默处理
         var allExtractedItems: [ExtractedTodo] = []
         var successfullyProcessedIds: [UUID] = []
+        var rawTranscripts: [String] = []
 
         for pending in pendingItems {
             guard let transcript = pending.rawTranscript else {
@@ -144,6 +148,7 @@ final class AppCoordinator: ObservableObject {
                 if !result.todos.isEmpty {
                     allExtractedItems.append(contentsOf: result.todos)
                     successfullyProcessedIds.append(pending.id)
+                    rawTranscripts.append(transcript)
                 } else {
                     // AI 未提取到待办，也视为处理完成
                     successfullyProcessedIds.append(pending.id)
@@ -159,6 +164,9 @@ final class AppCoordinator: ObservableObject {
         // 只记录成功处理的 pending ID
         pendingItemIds = successfullyProcessedIds
 
+        // 合并 rawTranscript（多个 pending 条目时拼接，避免丢失）
+        combinedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
+
         isProcessingPending = false
 
         // 有结果则显示一次性确认
@@ -168,17 +176,19 @@ final class AppCoordinator: ObservableObject {
         } else {
             // 无结果时清空 pending ID 列表
             pendingItemIds = []
+            combinedRawTranscript = nil
         }
     }
 
     /// 确认添加待办
-    func confirmTodos(_ todos: [ExtractedTodo]) {
+    /// - Returns: 是否保存成功
+    func confirmTodos(_ todos: [ExtractedTodo]) -> Bool {
         do {
             // 如果有 pending 条目，使用替换逻辑
             if let firstPendingId = pendingItemIds.first {
                 // 将所有提取的待办分配到第一个 pending（因为原始 pending 可能拆分成多个待办）
                 // 调用替换方法：删除原始 pending，添加提取的待办
-                try store.replacePendingWithExtracted(firstPendingId, todos)
+                try store.replacePendingWithExtracted(firstPendingId, todos, rawTranscript: combinedRawTranscript)
 
                 // 删除其他多余的 pending（如果有多个离线条目）
                 for pendingId in pendingItemIds.dropFirst() {
@@ -187,14 +197,17 @@ final class AppCoordinator: ObservableObject {
 
                 // 清空 pending ID 列表
                 pendingItemIds = []
+                combinedRawTranscript = nil
             } else {
                 // 正常在线流程：直接添加
                 try store.addBatch(todos)
             }
 
             WidgetCenter.shared.reloadAllTimelines()
+            return true
         } catch {
             handleError(error)
+            return false
         }
     }
 
@@ -202,7 +215,8 @@ final class AppCoordinator: ObservableObject {
     func cancelTodos() {
         extractedTodos = []
         showConfirmSheet = false
-        pendingItemIds = []  // 清空 pending ID 列表
+        pendingItemIds = []
+        combinedRawTranscript = nil
     }
 
     // MARK: - Private Methods

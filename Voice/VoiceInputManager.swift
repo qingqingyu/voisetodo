@@ -89,16 +89,24 @@ final class VoiceInputManager: VoiceInputProtocol {
                 // 更新 Live Activity
                 self.updateLiveActivity(transcript: newTranscript)
 
-                // 如果是最终结果，停止录音
+                // 如果是最终结果，停止录音（派发到主线程避免与 processAudioBuffer 竞态）
                 if result.isFinal {
-                    self.stopRecording()
+                    DispatchQueue.main.async {
+                        self.stopRecording()
+                    }
                 }
             }
 
-            if error != nil {
-                // 识别出错，但不抛出错误，可能是临时的
+            if let error = error {
+                let isFinal = result?.isFinal ?? true
+                if isFinal {
+                    // 识别终止且伴随错误，设置错误状态让 UI 可感知
+                    DispatchQueue.main.async {
+                        self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
+                    }
+                }
                 #if DEBUG
-                print("Recognition error: \(error?.localizedDescription ?? "Unknown")")
+                print("Recognition error: \(error.localizedDescription)")
                 #endif
             }
         }

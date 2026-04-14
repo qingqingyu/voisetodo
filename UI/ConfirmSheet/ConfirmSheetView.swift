@@ -5,7 +5,7 @@ import SwiftUI
 struct ConfirmSheetView: View {
     let transcript: String
     @Binding var todos: [ExtractedTodo]
-    let onConfirm: ([ExtractedTodo]) -> Void
+    let onConfirm: ([ExtractedTodo]) -> Bool
     let onCancel: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -148,18 +148,21 @@ struct ConfirmSheetView: View {
     private func confirmAction() {
         guard !todos.isEmpty else { return }
 
-        // 先执行存储操作，成功后再播放动画
-        onConfirm(todos)
+        // 执行存储操作，根据结果决定是否显示成功动画
+        let success = onConfirm(todos)
 
-        // 存储成功，显示成功动画
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-            showSuccess = true
-        }
+        if success {
+            // 存储成功，显示成功动画
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                showSuccess = true
+            }
 
-        // 1.5 秒后自动关闭
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            dismiss()
+            // 1.5 秒后自动关闭
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                dismiss()
+            }
         }
+        // 存储失败时 onConfirm 内部已显示 toast，保持 sheet 不关闭让用户可重试
     }
 }
 

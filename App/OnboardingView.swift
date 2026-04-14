@@ -6,7 +6,7 @@ import SwiftUI
 /// 首次启动引导视图 - 温暖手写风格
 /// 分步引导用户完成权限配置和 Action Button 设置
 struct OnboardingView: View {
-    @StateObject private var permissionManager = PermissionManager()
+    @ObservedObject var permissionManager: PermissionManager
     @Binding var hasCompletedOnboarding: Bool
 
     @State private var currentStep = 0

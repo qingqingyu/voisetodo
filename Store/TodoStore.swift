@@ -110,16 +110,28 @@ final class TodoStore: TodoStoreProtocol {
         }
     }
 
-    /// 更新标题
+    /// 更新待办
     /// - Parameters:
     ///   - id: 待办 ID
     ///   - title: 新标题
-    func update(_ id: UUID, title: String) throws {
+    ///   - category: 新分类（nil 表示不修改）
+    ///   - priority: 新优先级（nil 表示不修改）
+    ///   - dueHint: 新时间提示（nil 表示不修改，空字符串清除）
+    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
         guard let todoItem = findTodoItem(by: id) else {
             throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
         }
 
         todoItem.title = title
+        if let category = category {
+            todoItem.category = category
+        }
+        if let priority = priority {
+            todoItem.priority = priority
+        }
+        if let dueHint = dueHint {
+            todoItem.dueHint = dueHint.isEmpty ? nil : dueHint
+        }
 
         do {
             try modelContext.save()
@@ -172,17 +184,18 @@ final class TodoStore: TodoStoreProtocol {
     /// - Parameters:
     ///   - pendingId: 待处理条目 ID
     ///   - items: AI 提取结果
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo]) throws {
+    ///   - rawTranscript: 合并的原始转写文本（多个 pending 合并时覆盖 pending 自身的）
+    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
         guard let pendingItem = findTodoItem(by: pendingId) else {
             throw VoiceTodoError.storageReadFailed("未找到待处理 ID: \(pendingId)")
         }
 
-        let rawTranscript = pendingItem.rawTranscript
+        let effectiveTranscript = rawTranscript ?? pendingItem.rawTranscript
 
         // 先插入提取结果，确保新数据就位
         var newTodos: [TodoItemData] = []
         for item in items {
-            let todoItem = TodoItem.from(item, rawTranscript: rawTranscript)
+            let todoItem = TodoItem.from(item, rawTranscript: effectiveTranscript)
             modelContext.insert(todoItem)
             newTodos.append(todoItem.toData())
         }

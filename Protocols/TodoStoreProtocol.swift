@@ -22,8 +22,8 @@ protocol TodoStoreProtocol: ObservableObject {
     /// 删除待办
     func delete(_ id: UUID) throws
 
-    /// 更新标题
-    func update(_ id: UUID, title: String) throws
+    /// 更新待办（支持标题、分类、优先级、时间提示）
+    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws
 
     /// 获取需要 AI 补处理的条目（needsAIProcessing == true）
     func pendingItems() -> [TodoItemData]
@@ -32,5 +32,5 @@ protocol TodoStoreProtocol: ObservableObject {
     func recentUncompleted(limit: Int) -> [TodoItemData]
 
     /// 替换待处理条目为提取结果（网络恢复后用）[v2]
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo]) throws
+    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws
 }

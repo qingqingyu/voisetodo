@@ -43,9 +43,18 @@ class MockStore: TodoStoreProtocol {
         todos.removeAll { $0.id == id }
     }
 
-    func update(_ id: UUID, title: String) throws {
+    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index].title = title
+            if let category = category {
+                todos[index].category = category
+            }
+            if let priority = priority {
+                todos[index].priority = priority
+            }
+            if let dueHint = dueHint {
+                todos[index].dueHint = dueHint.isEmpty ? nil : dueHint
+            }
         }
     }
 
@@ -60,12 +69,12 @@ class MockStore: TodoStoreProtocol {
             .map { $0 }
     }
 
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo]) throws {
+    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
         // 删除待处理条目
         todos.removeAll { $0.id == pendingId }
 
         // 插入提取结果
-        let newTodos = items.map { TodoItemData(from: $0) }
+        let newTodos = items.map { TodoItemData(from: $0, rawTranscript: rawTranscript) }
         todos.insert(contentsOf: newTodos, at: 0)
     }
 }
