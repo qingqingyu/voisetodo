@@ -171,7 +171,7 @@ class MockTodoStore: TodoStoreProtocol {
         refreshTodos()
     }
 
-    func update(_ id: UUID, title: String) throws {
+    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
         guard var todo = storage[id] else {
             throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
         }
@@ -180,10 +180,10 @@ class MockTodoStore: TodoStoreProtocol {
             id: updated.id,
             title: title,
             detail: updated.detail,
-            dueHint: updated.dueHint,
+            dueHint: dueHint ?? updated.dueHint,
             dueDate: updated.dueDate,
-            priority: updated.priority,
-            category: updated.category,
+            priority: priority ?? updated.priority,
+            category: category ?? updated.category,
             isCompleted: updated.isCompleted,
             createdAt: updated.createdAt,
             rawTranscript: updated.rawTranscript,
@@ -201,7 +201,7 @@ class MockTodoStore: TodoStoreProtocol {
         Array(todos.filter { !$0.isCompleted }.prefix(limit))
     }
 
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo]) throws {
+    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
         storage.removeValue(forKey: pendingId)
         try addBatch(items)
     }
