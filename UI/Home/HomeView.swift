@@ -367,14 +367,16 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func toggleTodo(_ id: UUID) {
-        do {
-            try store.toggleComplete(id)
-            WidgetCenter.shared.reloadAllTimelines()
-        } catch {
-            coordinator.showToast(
-                message: ErrorMessages.storageError,
-                style: .warning
-            )
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            do {
+                try store.toggleComplete(id)
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                coordinator.showToast(
+                    message: ErrorMessages.storageError,
+                    style: .warning
+                )
+            }
         }
     }
 
