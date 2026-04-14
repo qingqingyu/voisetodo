@@ -124,6 +124,7 @@ final class MockVoiceInput: VoiceInputProtocol {
 
     var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
     var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
+    var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { $error.eraseToAnyPublisher() }
 
     func startRecording() async throws {}
     func stopRecording() {}
