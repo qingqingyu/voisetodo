@@ -39,9 +39,14 @@ final class TodoExtractorService: TodoExtractorProtocol {
             } catch {
                 lastError = error
 
-                // 如果是权限或配置错误，不重试
-                if case VoiceTodoError.apiResponseInvalid = error {
-                    throw error
+                // 如果是配置错误或解析错误，不重试（AI 返回格式稳定，重试无意义）
+                if let voiceError = error as? VoiceTodoError {
+                    switch voiceError {
+                    case .apiResponseInvalid, .jsonParsingFailed:
+                        throw error
+                    default:
+                        break
+                    }
                 }
 
                 // 最后一次重试失败，抛出错误

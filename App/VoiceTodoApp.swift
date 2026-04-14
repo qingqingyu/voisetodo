@@ -19,10 +19,6 @@ struct VoiceTodoApp: App {
     /// 标记是否应该自动开始录音（从 Action Button 启动）
     @State private var shouldAutoStartRecording = false
 
-    /// Widget 点击跳转状态
-    @State private var showTodoDetailFromWidget = false
-    @State private var todoFromWidget: TodoItemData?
-
     // MARK: - Environment
 
     @Environment(\.scenePhase) private var scenePhase

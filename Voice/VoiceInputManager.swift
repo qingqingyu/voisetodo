@@ -139,7 +139,10 @@ final class VoiceInputManager: VoiceInputProtocol {
             try audioEngine.start()
             isRecording = true
 
-            // 8. 启动 Live Activity
+            // 8. 监听音频会话中断和路由变更
+            audioSessionHelper.startObserving()
+
+            // 9. 启动 Live Activity
             startLiveActivity()
         } catch {
             // 启动失败时清理已安装的 tap
@@ -164,7 +167,8 @@ final class VoiceInputManager: VoiceInputProtocol {
         recognitionTask?.cancel()
         recognitionTask = nil
 
-        // 停用音频会话
+        // 停用音频会话并停止监听中断通知
+        audioSessionHelper.stopObserving()
         audioSessionHelper.deactivateSession()
 
         // 更新状态

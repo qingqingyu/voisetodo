@@ -135,10 +135,6 @@ struct MockExtractor: TodoExtractorProtocol {
     func extract(from transcript: String) async throws -> ExtractionResult {
         ExtractionResult(todos: [], ignored: "")
     }
-
-    func fallbackExtract(from transcript: String) -> ExtractionResult {
-        ExtractionResult(todos: [], ignored: "")
-    }
 }
 
 /// 便捷方法：创建用于 Preview 的 Mock AppCoordinator

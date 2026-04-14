@@ -6,6 +6,7 @@ import AVFoundation
 final class AudioSessionHelper {
     private let session = AVAudioSession.sharedInstance()
     private var isActive = false
+    private var observers: [NSObjectProtocol] = []
 
     /// 配置音频会话为录音模式
     func configureSession() throws {
@@ -79,5 +80,38 @@ final class AudioSessionHelper {
         default:
             break
         }
+    }
+
+    // MARK: - Notification Observing
+
+    /// 开始监听音频会话中断和路由变更通知
+    func startObserving() {
+        stopObserving()
+
+        let interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleInterruption(notification: notification)
+        }
+
+        let routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleRouteChange(notification: notification)
+        }
+
+        observers = [interruptionObserver, routeChangeObserver]
+    }
+
+    /// 停止监听通知
+    func stopObserving() {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers = []
     }
 }

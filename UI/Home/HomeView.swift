@@ -234,10 +234,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .background(WarmTheme.background)
         .offset(y: listOffset)
         .opacity(listOpacity)
-        .refreshable {
-            // 下拉刷新动画
-            try? await Task.sleep(nanoseconds: 500_000_000)
-        }
     }
 
     // MARK: - Empty State
