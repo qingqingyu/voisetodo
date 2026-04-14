@@ -68,6 +68,8 @@ struct OnboardingView: View {
             }
         }
         .onAppear {
+            // 每次页面显示时重新检查权限状态（用户可能从系统设置返回）
+            permissionManager.checkCurrentStatus()
             animateContentIn()
         }
         .onChange(of: currentStep) {
@@ -941,9 +943,11 @@ struct OnboardingView: View {
     private var canProceed: Bool {
         switch currentStep {
         case 1:
-            return permissionManager.micGranted
+            // 权限已授予或已明确拒绝（含永久拒绝），都允许继续
+            // 只在用户尚未做出选择时阻止前进（避免跳过授权步骤）
+            return permissionManager.micGranted || permissionManager.isMicPermanentlyDenied
         case 2:
-            return permissionManager.speechGranted
+            return permissionManager.speechGranted || permissionManager.isSpeechPermanentlyDenied
         default:
             return true
         }

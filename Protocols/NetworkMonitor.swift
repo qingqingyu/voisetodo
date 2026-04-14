@@ -15,7 +15,7 @@ final class NetworkMonitor: ObservableObject {
 
     // MARK: - Private Properties
 
-    private let monitor = NWPathMonitor()
+    private var monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "NetworkMonitor")
     private var cancellables = Set<AnyCancellable>()
 
@@ -74,9 +74,9 @@ final class NetworkMonitor: ObservableObject {
 
     /// 重启监测（App 回到前台时调用，确保监测器处于活跃状态）
     func restartIfNeeded() {
-        // 先停止旧监测器
+        // Apple 文档：cancel() 后必须创建新实例，不能重用
         monitor.cancel()
-        // 重新启动
+        monitor = NWPathMonitor()
         startMonitoring()
     }
 

@@ -8,6 +8,11 @@ final class KeychainHelper {
 
     private init() {}
 
+    // MARK: - App Group Access
+
+    /// Keychain 访问组（用于 App Group 内共享，如 Widget Extension）
+    private static let accessGroup = "group.com.voicetodo.shared"
+
     // MARK: - Public Methods
 
     /// 保存数据到 Keychain
@@ -29,7 +34,8 @@ final class KeychainHelper {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key.rawValue,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessGroup as String: accessGroup
         ]
 
         // 添加到 Keychain
@@ -45,7 +51,8 @@ final class KeychainHelper {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key.rawValue,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecAttrAccessGroup as String: accessGroup
         ]
 
         var result: AnyObject?
@@ -67,7 +74,8 @@ final class KeychainHelper {
     func delete(for key: Key) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key.rawValue
+            kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup
         ]
 
         let status = SecItemDelete(query as CFDictionary)
