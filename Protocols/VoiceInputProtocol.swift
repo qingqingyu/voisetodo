@@ -15,6 +15,7 @@ protocol VoiceInputProtocol: ObservableObject {
     /// Publisher 访问器（用于外部订阅）
     var isRecordingPublisher: AnyPublisher<Bool, Never> { get }
     var transcriptPublisher: AnyPublisher<String, Never> { get }
+    var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { get }
 
     /// 开始录音
     func startRecording() async throws

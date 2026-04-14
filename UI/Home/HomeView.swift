@@ -72,7 +72,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
     @State private var showRecordingButton = false
-    @State private var isRecording = false
 
     // 导航状态
     @State private var selectedTodo: TodoItemData?
@@ -289,30 +288,30 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             HStack(spacing: 10) {
                 // 麦克风图标
                 ZStack {
-                    if isRecording {
+                    if coordinator.isRecording {
                         // 录音动画
                         Circle()
                             .stroke(WarmTheme.primary.opacity(0.3), lineWidth: 3)
                             .frame(width: 44, height: 44)
-                            .scaleEffect(isRecording ? 1.3 : 1.0)
+                            .scaleEffect(coordinator.isRecording ? 1.3 : 1.0)
                             .animation(
                                 Animation.easeInOut(duration: 0.8)
                                     .repeatForever(autoreverses: true),
-                                value: isRecording
+                                value: coordinator.isRecording
                             )
                     }
 
-                    Image(systemName: isRecording ? "waveform" : "mic.fill")
+                    Image(systemName: coordinator.isRecording ? "waveform" : "mic.fill")
                         .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white)
                         .frame(width: 44, height: 44)
                         .background(
                             Circle()
-                                .fill(isRecording ? WarmTheme.urgent : WarmTheme.primary)
+                                .fill(coordinator.isRecording ? WarmTheme.urgent : WarmTheme.primary)
                         )
                 }
 
-                Text(isRecording ? "正在聆听..." : "开始录音")
+                Text(coordinator.isRecording ? "正在聆听..." : "开始录音")
                     .font(.custom("Avenir Next", size: 17))
                     .fontWeight(.semibold)
                     .foregroundColor(WarmTheme.textPrimary)
@@ -325,6 +324,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     .shadow(color: WarmTheme.shadowMedium, radius: 12, x: 0, y: 6)
             )
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: coordinator.isRecording)
         .padding(.bottom, 24)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -353,15 +353,13 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func toggleRecording() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            isRecording.toggle()
-        }
-
-        Task {
-            if isRecording {
-                await coordinator.startRecording()
-            } else {
+        if coordinator.isRecording {
+            Task {
                 await coordinator.stopRecordingAndProcess()
+            }
+        } else {
+            Task {
+                await coordinator.startRecording()
             }
         }
     }

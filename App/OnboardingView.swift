@@ -1008,9 +1008,10 @@ struct OnboardingView: View {
 #Preview("Onboarding - Step 1") {
     struct PreviewWrapper: View {
         @State var completed = false
+        @StateObject var permissionManager = PermissionManager()
 
         var body: some View {
-            OnboardingView(hasCompletedOnboarding: $completed)
+            OnboardingView(permissionManager: permissionManager, hasCompletedOnboarding: $completed)
         }
     }
 

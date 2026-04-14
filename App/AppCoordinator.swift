@@ -30,6 +30,9 @@ final class AppCoordinator: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var isProcessingPending = false
 
+    /// 标记是否正在自动处理（Action Button 启动的录音流程）
+    private var isAutoProcessing = false
+
     /// 离线待处理条目 ID 列表（用于网络恢复后替换）
     private var pendingItemIds: [UUID] = []
 
@@ -62,12 +65,23 @@ final class AppCoordinator: ObservableObject {
         voiceInput.transcriptPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$transcript)
+
+        // 监听识别错误（识别过程中的错误，非 startRecording 抛出的）
+        voiceInput.errorPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in
+                if let error = error {
+                    self?.handleError(error)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Public Methods
 
     /// 启动录音流程
     func startRecording() async {
+        guard !voiceInput.isRecording else { return }
         do {
             try await voiceInput.startRecording()
         } catch {
@@ -77,6 +91,9 @@ final class AppCoordinator: ObservableObject {
 
     /// 停止录音并处理结果
     func stopRecordingAndProcess() async {
+        // 取消自动处理（用户手动点击停止）
+        isAutoProcessing = false
+
         voiceInput.stopRecording()
 
         // 等待转写完成（isRecording 变为 false 表示识别结果已就绪）
@@ -109,10 +126,50 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// 等待自然停录（静音检测触发），最多等 60 秒
+    private func waitForAutoStop() async {
+        guard voiceInput.isRecording else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            // 任务 1：轮询等待 isRecording 变为 false
+            group.addTask {
+                while self.voiceInput.isRecording {
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                }
+            }
+
+            // 任务 2：超时保护 60 秒（足够长的录音窗口）
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+
+            // 取最先完成的，取消另一个
+            _ = await group.next()
+            group.cancelAll()
+        }
+    }
+
     /// 手动触发录音处理（用于 Action Button 启动）
     func handleActionButtonLaunch() async {
-        // 直接开始录音
+        isAutoProcessing = true
+
         await startRecording()
+
+        // 录音未成功启动（权限错误等），直接返回
+        guard voiceInput.isRecording else {
+            isAutoProcessing = false
+            return
+        }
+
+        // 等待自然停录（静音检测自动停止）
+        await waitForAutoStop()
+
+        // 检查是否被手动停止取消
+        guard isAutoProcessing else { return }
+        isAutoProcessing = false
+
+        // 自动处理转写结果
+        await processTranscript(transcript)
     }
 
     /// App 进入前台时处理待处理项
@@ -217,6 +274,7 @@ final class AppCoordinator: ObservableObject {
         showConfirmSheet = false
         pendingItemIds = []
         combinedRawTranscript = nil
+        isAutoProcessing = false
     }
 
     // MARK: - Private Methods

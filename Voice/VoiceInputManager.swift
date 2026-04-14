@@ -23,6 +23,10 @@ final class VoiceInputManager: VoiceInputProtocol {
         $transcript.eraseToAnyPublisher()
     }
 
+    var errorPublisher: AnyPublisher<VoiceTodoError?, Never> {
+        $error.eraseToAnyPublisher()
+    }
+
     // MARK: - Private Properties
 
     private var speechRecognizer: SFSpeechRecognizer?
