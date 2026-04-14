@@ -151,6 +151,9 @@ final class AppCoordinator: ObservableObject {
 
     /// 手动触发录音处理（用于 Action Button 启动）
     func handleActionButtonLaunch() async {
+        // 确认页打开时不启动新录音，避免覆盖待确认的待办
+        guard !showConfirmSheet else { return }
+
         isAutoProcessing = true
 
         await startRecording()
@@ -191,7 +194,8 @@ final class AppCoordinator: ObservableObject {
 
         for pending in pendingItems {
             guard let transcript = pending.rawTranscript else {
-                // 无转写文本的条目无法处理，保留
+                // 无转写文本的条目无法处理，直接删除（不应出现，防御性处理）
+                try? store.delete(pending.id)
                 continue
             }
 
@@ -231,7 +235,10 @@ final class AppCoordinator: ObservableObject {
             extractedTodos = allExtractedItems
             showConfirmSheet = true
         } else {
-            // 无结果时清空 pending ID 列表
+            // 无结果：删除已处理的 pending 条目（AI 判断无行动项）
+            for pendingId in successfullyProcessedIds {
+                try? store.delete(pendingId)
+            }
             pendingItemIds = []
             combinedRawTranscript = nil
         }

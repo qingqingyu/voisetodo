@@ -35,6 +35,9 @@ struct ToastModifier: ViewModifier {
     let style: ToastStyle
     @Binding var isPresented: Bool
 
+    /// 当前自动隐藏的定时器
+    @State private var dismissTask: DispatchWorkItem?
+
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .top) {
@@ -45,17 +48,28 @@ struct ToastModifier: ViewModifier {
                             removal: .move(edge: .top).combined(with: .opacity)
                         ))
                         .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + UIConfig.toastDuration) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    isPresented = false
-                                }
-                            }
+                            scheduleDismiss()
+                        }
+                        .onChange(of: message) { _, _ in
+                            scheduleDismiss()
                         }
                         .padding(.top, 50)
                         .zIndex(1)
                 }
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isPresented)
+    }
+
+    /// 调度自动隐藏（取消旧定时器，启动新定时器）
+    private func scheduleDismiss() {
+        dismissTask?.cancel()
+        let task = DispatchWorkItem {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                isPresented = false
+            }
+        }
+        dismissTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + UIConfig.toastDuration, execute: task)
     }
 }
 
