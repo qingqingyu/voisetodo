@@ -1,0 +1,5 @@
+# UI 测试文件 (Target: VoiceTodoUITests)
+VoiceTodoUITests/MockSetup.swift
+VoiceTodoUITests/AppLaunchHelper.swift
+VoiceTodoUITests/ScenarioTests.swift
+VoiceTodoUITests/WidgetSnapshotTests.swift

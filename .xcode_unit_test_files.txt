@@ -1,0 +1,6 @@
+# 单元测试文件 (Target: VoiceTodoTests)
+VoiceTodoTests/Protocols/ProtocolsTests.swift
+VoiceTodoTests/Voice/VoiceInputTests.swift
+VoiceTodoTests/Extractor/ExtractorTests.swift
+VoiceTodoTests/Store/StoreTests.swift
+VoiceTodoTests/Integration/IntegrationTests.swift

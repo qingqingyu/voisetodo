@@ -2,11 +2,12 @@ import WidgetKit
 import SwiftUI
 
 /// Widget Bundle
-/// 注册所有 Widget 样式
+/// 注册所有 Widget 样式（包括待办 Widget 和 Live Activity）
 @main
 struct TodoWidgetBundle: WidgetBundle {
     var body: some Widget {
         TodoWidget()
+        RecordingLiveActivity()
     }
 }
 

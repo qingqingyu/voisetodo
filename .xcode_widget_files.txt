@@ -1,0 +1,9 @@
+# Widget 文件 (Target: VoiceTodoWidget)
+UI/Widget/TodoWidgetBundle.swift
+UI/Widget/TodoWidgetProvider.swift
+UI/Widget/TodoWidgetView.swift
+
+Protocols/Models.swift
+Protocols/VoiceTodoError.swift
+Protocols/ErrorMessages.swift
+Protocols/Constants.swift
