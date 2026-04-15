@@ -75,48 +75,10 @@ final class VoiceInputManager: VoiceInputProtocol {
             throw VoiceTodoError.speechRecognitionUnavailable
         }
 
-        // 4. 创建识别请求
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let request = recognitionRequest else {
-            throw VoiceTodoError.recordingFailed("无法创建识别请求")
-        }
-        request.shouldReportPartialResults = true
+        // 4. 创建识别请求并启动识别任务
+        try startRecognition(recognizer: recognizer)
 
-        // 5. 开始识别任务
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self = self else { return }
-
-            if let result = result {
-                // 更新转写文本
-                let newTranscript = result.bestTranscription.formattedString
-                self.transcript = newTranscript
-
-                // 更新 Live Activity
-                self.updateLiveActivity(transcript: newTranscript)
-
-                // 如果是最终结果，停止录音（派发到主线程避免与 processAudioBuffer 竞态）
-                if result.isFinal {
-                    DispatchQueue.main.async {
-                        self.stopRecording()
-                    }
-                }
-            }
-
-            if let error = error {
-                let isFinal = result?.isFinal ?? true
-                if isFinal {
-                    // 识别终止且伴随错误，设置错误状态让 UI 可感知
-                    DispatchQueue.main.async {
-                        self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
-                    }
-                }
-                #if DEBUG
-                print("Recognition error: \(error.localizedDescription)")
-                #endif
-            }
-        }
-
-        // 6. 配置音频输入和静音检测
+        // 5. 配置音频输入和静音检测
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
@@ -135,15 +97,15 @@ final class VoiceInputManager: VoiceInputProtocol {
             }
         }
 
-        // 7. 启动音频引擎
+        // 6. 启动音频引擎
         do {
             try audioEngine.start()
             isRecording = true
 
-            // 8. 监听音频会话中断和路由变更
+            // 7. 监听音频会话中断和路由变更
             audioSessionHelper.startObserving()
 
-            // 8.1 监听中断恢复通知（来电等中断结束后可恢复录音）
+            // 7.1 监听中断恢复通知（来电等中断结束后可恢复录音）
             NotificationCenter.default.addObserver(
                 forName: .audioSessionDidRecoverFromInterruption,
                 object: nil,
@@ -155,16 +117,14 @@ final class VoiceInputManager: VoiceInputProtocol {
                       shouldResume else { return }
 
                 #if DEBUG
-                print("Audio session recovered from interruption, restarting audio engine")
+                print("Audio session recovered from interruption, rebuilding recognition pipeline")
                 #endif
 
-                // 重新启动音频引擎
-                if !self.audioEngine.isRunning {
-                    try? self.audioEngine.start()
-                }
+                // 重建完整识别链路（recognitionRequest + recognitionTask + audioEngine）
+                self.rebuildRecognitionAfterInterruption()
             }
 
-            // 9. 启动 Live Activity
+            // 8. 启动 Live Activity
             startLiveActivity()
         } catch {
             // 启动失败时清理已安装的 tap
@@ -203,6 +163,121 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 结束 Live Activity
         endLiveActivity()
+    }
+
+    /// 通知识别器音频输入结束，等待最终识别结果
+    /// 与 stopRecording() 不同，此方法不取消识别任务，
+    /// 而是让 Apple Speech Framework 自然完成识别，
+    /// 最终结果回调触发 stopRecording() 确保 transcript 是最终版本。
+    func finishRecording() {
+        guard isRecording else { return }
+
+        // 停止音频引擎（不再输入新音频）
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+
+        // 通知识别器音频输入结束（不取消任务，等待最终识别结果）
+        recognitionRequest?.endAudio()
+
+        // 停用音频会话并停止监听中断通知
+        audioSessionHelper.stopObserving()
+        audioSessionHelper.deactivateSession()
+
+        // 移除中断恢复通知监听
+        NotificationCenter.default.removeObserver(self, name: .audioSessionDidRecoverFromInterruption, object: nil)
+
+        // 注意：不设置 isRecording = false，等待 recognitionTask 的 isFinal 回调触发 stopRecording()
+        // 这样可以确保 transcript 是最终识别结果
+    }
+
+    // MARK: - Recognition Pipeline
+
+    /// 创建识别请求并启动识别任务
+    /// 从 startRecording() 提取，便于中断恢复时复用
+    private func startRecognition(recognizer: SFSpeechRecognizer) throws {
+        // 清理旧的识别任务
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        // 创建新的识别请求
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        recognitionRequest = request
+        request.shouldReportPartialResults = true
+
+        // 启动识别任务
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self = self else { return }
+
+            if let result = result {
+                // 更新转写文本（派发到主线程，确保 @Published 属性线程安全）
+                let newTranscript = result.bestTranscription.formattedString
+                DispatchQueue.main.async {
+                    self.transcript = newTranscript
+                    self.updateLiveActivity(transcript: newTranscript)
+                }
+
+                // 如果是最终结果，停止录音（派发到主线程避免与 processAudioBuffer 竞态）
+                if result.isFinal {
+                    DispatchQueue.main.async {
+                        self.stopRecording()
+                    }
+                }
+            }
+
+            if let error = error {
+                let isFinal = result?.isFinal ?? true
+                if isFinal {
+                    // 识别终止且伴随错误，设置错误状态让 UI 可感知
+                    DispatchQueue.main.async {
+                        self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
+                    }
+                }
+                #if DEBUG
+                print("Recognition error: \(error.localizedDescription)")
+                #endif
+            }
+        }
+    }
+
+    /// 中断恢复后重建完整识别链路
+    /// 重建 recognitionRequest + recognitionTask，并重启 audioEngine
+    private func rebuildRecognitionAfterInterruption() {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            #if DEBUG
+            print("Speech recognizer unavailable after interruption, stopping recording")
+            #endif
+            stopRecording()
+            return
+        }
+
+        // 重建识别请求和任务
+        do {
+            try startRecognition(recognizer: recognizer)
+        } catch {
+            #if DEBUG
+            print("Failed to rebuild recognition after interruption: \(error)")
+            #endif
+            stopRecording()
+            return
+        }
+
+        // 重启音频引擎（tap 仍然安装着，只需重启引擎）
+        if !audioEngine.isRunning {
+            do {
+                try audioEngine.start()
+            } catch {
+                #if DEBUG
+                print("Failed to restart audio engine after interruption: \(error)")
+                #endif
+                stopRecording()
+            }
+        }
+
+        #if DEBUG
+        print("Recognition pipeline rebuilt successfully after interruption")
+        #endif
     }
 
     // MARK: - Live Activity Methods

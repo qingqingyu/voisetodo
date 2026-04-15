@@ -92,26 +92,27 @@ final class NetworkMonitor: ObservableObject {
     func waitForConnection(timeout: TimeInterval = 10.0) async -> Bool {
         guard !isConnected else { return true }
 
-        return await withCheckedContinuation { continuation in
-            var hasResumed = false
+        do {
+            return try await withCheckedThrowingContinuation { continuation in
+                let wrapper = AsyncContinuationWrapper(continuation)
 
-            // 监听连接状态变化
-            let cancellable = $isConnected
-                .filter { $0 }
-                .first()
-                .sink { _ in
-                    guard !hasResumed else { return }
-                    hasResumed = true
-                    continuation.resume(returning: true)
+                // 监听连接状态变化
+                let cancellable = $isConnected
+                    .filter { $0 }
+                    .first()
+                    .sink { _ in
+                        wrapper.resume(returning: true)
+                    }
+
+                // 超时处理
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    wrapper.resume(returning: false)
+                    cancellable.cancel()
                 }
-
-            // 超时处理
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
-                guard !hasResumed else { return }
-                hasResumed = true
-                cancellable.cancel()
-                continuation.resume(returning: false)
             }
+        } catch {
+            return false
         }
     }
 }
@@ -136,5 +137,30 @@ extension NetworkMonitor {
         }
 
         return description
+    }
+}
+
+// MARK: - Async Continuation Safety Wrapper
+
+/// 防止 CheckedContinuation 被多次 resume 的包装器
+/// 用于 Combine + async/await 桥接场景，确保 continuation 只 resume 一次
+private final class AsyncContinuationWrapper<T> {
+    private let continuation: CheckedContinuation<T, Error>
+    private var hasResumed = false
+
+    init(_ continuation: CheckedContinuation<T, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: T) {
+        guard !hasResumed else { return }
+        hasResumed = true
+        continuation.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        guard !hasResumed else { return }
+        hasResumed = true
+        continuation.resume(throwing: error)
     }
 }

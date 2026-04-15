@@ -97,7 +97,8 @@ final class AppCoordinator: ObservableObject {
         // 取消自动处理（用户手动点击停止）
         isAutoProcessing = false
 
-        voiceInput.stopRecording()
+        // 使用 finishRecording() 让识别器自然完成，确保获取最终识别结果
+        voiceInput.finishRecording()
 
         // 等待转写完成（isRecording 变为 false 表示识别结果已就绪）
         await waitForRecordingToFinish()

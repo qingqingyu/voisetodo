@@ -35,7 +35,7 @@ struct VoiceTodoApp: App {
                 schema: schema,
                 isStoredInMemoryOnly: false,
                 allowsSave: true,
-                groupContainer: .identifier("group.com.voicetodo.shared")
+                groupContainer: .identifier(AppGroupConfig.identifier)
             )
             container = try ModelContainer(
                 for: schema,

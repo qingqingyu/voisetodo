@@ -20,6 +20,9 @@ protocol VoiceInputProtocol: ObservableObject {
 
     /// 开始录音
     func startRecording() async throws
-    /// 停止录音
+    /// 停止录音（立即终止，用于中断/错误恢复场景）
     func stopRecording()
+    /// 通知识别器音频输入结束，等待最终识别结果后自动停止
+    /// 适用于用户手动停止场景，确保获取最终识别结果
+    func finishRecording()
 }

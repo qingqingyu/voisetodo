@@ -21,7 +21,7 @@ struct TodoTimelineProvider: TimelineProvider {
     // MARK: - App Group Configuration
 
     /// App Group 标识符（与主 App 保持一致）
-    private let appGroupIdentifier = "group.com.voicetodo.shared"
+    private let appGroupIdentifier = AppGroupConfig.identifier
 
     /// 缓存的 ModelContainer，避免每次 getTimeline 都重新创建
     /// Widget Extension 的 TimelineProvider 方法由系统单线程调度，无需额外同步

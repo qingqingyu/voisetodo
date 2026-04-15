@@ -93,6 +93,10 @@ class MockVoiceInputManager: VoiceInputProtocol {
     func stopRecording() {
         isRecording = false
     }
+
+    func finishRecording() {
+        stopRecording()
+    }
 }
 
 /// Mock 待办提取器

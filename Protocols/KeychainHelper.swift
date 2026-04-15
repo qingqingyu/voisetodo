@@ -11,7 +11,7 @@ final class KeychainHelper {
     // MARK: - App Group Access
 
     /// Keychain 访问组（用于 App Group 内共享，如 Widget Extension）
-    private static let accessGroup = "group.com.voicetodo.shared"
+    private static let accessGroup = AppGroupConfig.identifier
 
     // MARK: - Public Methods
 

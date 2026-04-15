@@ -129,6 +129,7 @@ final class MockVoiceInput: VoiceInputProtocol {
 
     func startRecording() async throws {}
     func stopRecording() {}
+    func finishRecording() { stopRecording() }
 }
 
 /// Mock 待办提取器（Preview 用）
