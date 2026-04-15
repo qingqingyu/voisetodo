@@ -83,7 +83,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var listOpacity: Double = 0
 
     // 日期格式化
-    private let dateFormatter: DateFormatter = {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_Hans_CN")
         formatter.dateFormat = "M月d日 EEEE"
@@ -133,7 +133,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
                 // 日期
-                Text(dateFormatter.string(from: Date()))
+                Text(Self.dateFormatter.string(from: Date()))
                     .font(.custom("Avenir Next", size: 14))
                     .fontWeight(.medium)
                     .foregroundColor(WarmTheme.textSecondary)

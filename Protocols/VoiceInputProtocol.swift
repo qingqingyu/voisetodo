@@ -4,6 +4,7 @@ import Combine
 /// 语音输入协议
 /// 只要求读取访问，实现类型自行管理内部状态变更
 /// 提供 Publisher 访问器以支持 Combine 绑定
+@MainActor
 protocol VoiceInputProtocol: ObservableObject {
     /// 是否正在录音
     var isRecording: Bool { get }

@@ -23,7 +23,7 @@ class MockStore: TodoStoreProtocol {
     }
 
     func addRawTranscript(_ transcript: String) throws {
-        let title = String(transcript.prefix(20))
+        let title = truncateTitle(from: transcript)
         let todo = TodoItemData(
             title: title,
             detail: transcript,
@@ -117,6 +117,7 @@ extension MockStore {
 // MARK: - Mock Services (for Preview)
 
 /// Mock 语音输入（Preview 用）
+@MainActor
 final class MockVoiceInput: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""

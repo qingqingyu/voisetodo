@@ -108,10 +108,17 @@ final class AppCoordinator: ObservableObject {
         guard voiceInput.isRecording else { return }
 
         await withTaskGroup(of: Void.self) { group in
-            // 任务 1：轮询等待 isRecording 变为 false
+            // 任务 1：通过 Publisher 等待 isRecording 变为 false
             group.addTask {
-                while self.voiceInput.isRecording {
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                await withCheckedContinuation { continuation in
+                    let cancellable = self.voiceInput.isRecordingPublisher
+                        .filter { !$0 }
+                        .first()
+                        .sink { _ in
+                            continuation.resume()
+                        }
+                    // 保持 cancellable 存活直到 sink 触发
+                    withExtendedLifetime(cancellable) {}
                 }
             }
 
@@ -131,10 +138,16 @@ final class AppCoordinator: ObservableObject {
         guard voiceInput.isRecording else { return }
 
         await withTaskGroup(of: Void.self) { group in
-            // 任务 1：轮询等待 isRecording 变为 false
+            // 任务 1：通过 Publisher 等待 isRecording 变为 false
             group.addTask {
-                while self.voiceInput.isRecording {
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                await withCheckedContinuation { continuation in
+                    let cancellable = self.voiceInput.isRecordingPublisher
+                        .filter { !$0 }
+                        .first()
+                        .sink { _ in
+                            continuation.resume()
+                        }
+                    withExtendedLifetime(cancellable) {}
                 }
             }
 
@@ -277,6 +290,12 @@ final class AppCoordinator: ObservableObject {
 
     /// 取消确认
     func cancelTodos() {
+        // 如果有 pending 条目（来自 handleAppForeground 的离线恢复流程），
+        // 用户取消确认时需要删除已 AI 处理的 pending 条目，避免下次前台恢复时重复弹窗
+        for pendingId in pendingItemIds {
+            try? store.delete(pendingId)
+        }
+
         extractedTodos = []
         showConfirmSheet = false
         pendingItemIds = []

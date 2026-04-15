@@ -6,6 +6,7 @@ import ActivityKit
 
 /// 语音输入管理器
 /// 实现 VoiceInputProtocol，封装 Apple Speech Framework
+@MainActor
 final class VoiceInputManager: VoiceInputProtocol {
     // MARK: - VoiceInputProtocol Properties
 
@@ -364,11 +365,13 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         guard let channelData = buffer.floatChannelData?[0] else { return }
 
-        // 计算 RMS 值
-        let channelDataValue = channelData
-        let channelDataArray = Array(UnsafeBufferPointer(start: channelDataValue, count: Int(buffer.frameLength)))
-
-        let rms = sqrt(channelDataArray.map { $0 * $0 }.reduce(0, +) / Float(buffer.frameLength))
+        // 直接用指针遍历计算 RMS，避免每帧分配临时数组
+        let frameLength = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<frameLength {
+            sum += channelData[i] * channelData[i]
+        }
+        let rms = sqrt(sum / Float(frameLength))
 
         // 转换为 dB（避免 log10(0)）
         guard rms > 0 else { return }

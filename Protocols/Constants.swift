@@ -10,6 +10,10 @@ enum NetworkConfig {
     static let retryInterval: TimeInterval = 2.0
     /// Claude 模型名称
     static let claudeModel = "claude-sonnet-4-20250514"
+    /// Claude API Endpoint
+    static let apiEndpoint = "https://api.anthropic.com/v1/messages"
+    /// Anthropic API Version
+    static let apiVersion = "2023-06-01"
 }
 
 /// UI 配置

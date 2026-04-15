@@ -237,9 +237,10 @@ final class TodoStore: TodoStoreProtocol {
     /// - Parameter id: 待办 ID
     /// - Returns: TodoItem 实例（如果找到）
     private func findTodoItem(by id: UUID) -> TodoItem? {
-        let descriptor = FetchDescriptor<TodoItem>(
+        var descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { $0.id == id }
         )
+        descriptor.fetchLimit = 1
 
         do {
             let items = try modelContext.fetch(descriptor)

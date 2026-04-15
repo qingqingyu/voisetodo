@@ -92,6 +92,25 @@ struct ExtractionResult: Codable {
     let ignored: String
 }
 
+// MARK: - 共享工具方法
+
+/// 智能截断标题：在指定长度内寻找标点/空格作为截断点，避免截断在单词中间
+/// - Parameters:
+///   - text: 原始文本
+///   - maxLength: 最大长度
+/// - Returns: 截断后的标题
+func truncateTitle(from text: String, maxLength: Int = 20) -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.count <= maxLength {
+        return trimmed
+    }
+    let prefix = trimmed.prefix(maxLength)
+    if let lastBreak = prefix.lastIndex(where: { $0.isWhitespace || $0 == "," || $0 == "，" || $0 == "。" || $0 == "、" }) {
+        return String(trimmed[...lastBreak]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return String(prefix)
+}
+
 // MARK: - 跨模块传递的通用数据类型（不依赖 SwiftData）
 
 /// 待办数据传输对象，用于跨模块传递

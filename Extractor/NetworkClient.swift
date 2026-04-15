@@ -1,5 +1,32 @@
 import Foundation
 
+// MARK: - Codable Request/Response Models
+
+/// Claude API 请求体（类型安全）
+private struct ClaudeRequest: Encodable {
+    let model: String
+    let maxTokens: Int
+    let temperature: Double
+    let system: String
+    let messages: [ClaudeMessage]
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case maxTokens = "max_tokens"
+        case temperature
+        case system
+        case messages
+    }
+}
+
+/// Claude API 消息
+private struct ClaudeMessage: Encodable {
+    let role: String
+    let content: String
+}
+
+// MARK: - NetworkClient
+
 /// Claude API 网络客户端
 final class NetworkClient {
     // MARK: - Properties
@@ -12,7 +39,6 @@ final class NetworkClient {
     init(session: URLSession = .shared) {
         self.session = session
 
-        // P0 修复: 使用 Keychain 安全存储 API Key（而非 UserDefaults）
         // 优先从环境变量读取（开发环境），其次从 Keychain 读取（生产环境）
         if let envKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] {
             self.apiKey = envKey
@@ -42,30 +68,32 @@ final class NetworkClient {
             throw VoiceTodoError.apiResponseInvalid("API Key 未配置")
         }
 
-        // 构建请求体
-        let requestBody: [String: Any] = [
-            "model": model,
-            "max_tokens": maxTokens,
-            "temperature": temperature,
-            "system": systemPrompt,
-            "messages": messages
-        ]
+        // 使用 Codable 结构体构建请求体
+        let claudeMessages = messages.map { ClaudeMessage(role: $0["role"] ?? "user", content: $0["content"] ?? "") }
+        let requestBody = ClaudeRequest(
+            model: model,
+            maxTokens: maxTokens,
+            temperature: temperature,
+            system: systemPrompt,
+            messages: claudeMessages
+        )
 
         // 创建请求
-        guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
+        guard let url = URL(string: NetworkConfig.apiEndpoint) else {
             throw VoiceTodoError.apiResponseInvalid("Invalid API URL")
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue(NetworkConfig.apiVersion, forHTTPHeaderField: "anthropic-version")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.timeoutInterval = NetworkConfig.apiTimeout
 
         // 序列化请求体
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            let encoder = JSONEncoder()
+            request.httpBody = try encoder.encode(requestBody)
         } catch {
             throw VoiceTodoError.jsonParsingFailed("请求序列化失败: \(error.localizedDescription)")
         }

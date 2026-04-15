@@ -157,8 +157,9 @@ struct ConfirmSheetView: View {
                 showSuccess = true
             }
 
-            // 1.5 秒后自动关闭
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            // 1.5 秒后自动关闭（使用 Task 支持 Cancel）
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
                 dismiss()
             }
         }

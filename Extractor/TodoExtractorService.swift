@@ -64,20 +64,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
     /// - Parameter transcript: 用户语音转写文本
     /// - Returns: 提取结果
     func fallbackExtract(from transcript: String) -> ExtractionResult {
-        // 按词/字边界截取，避免截断在单词中间
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title: String
-        if trimmed.count <= 20 {
-            title = trimmed
-        } else {
-            // 在前 20 个字符内找最后一个空格/标点作为截断点
-            let prefix = trimmed.prefix(20)
-            if let lastBreak = prefix.lastIndex(where: { $0.isWhitespace || $0 == "," || $0 == "，" || $0 == "。" || $0 == "、" }) {
-                title = String(trimmed[...lastBreak]).trimmingCharacters(in: .whitespacesAndNewlines)
-            } else {
-                title = String(prefix)
-            }
-        }
+        let title = truncateTitle(from: transcript)
 
         let todo = ExtractedTodo(
             id: UUID(),

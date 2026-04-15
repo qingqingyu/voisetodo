@@ -207,32 +207,36 @@ struct TodoWidgetItemRow: View {
     let todo: TodoItemData
 
     var body: some View {
-        HStack(spacing: 8) {
-            // 分类 emoji
-            Text(todo.category.emoji)
-                .font(.system(size: 16))
+        // 使用 Link 实现点击跳转
+        let destination = URL(string: "voicetodo://todo/\(todo.id.uuidString)") ?? URL(string: "voicetodo://")!
+        Link(destination: destination) {
+            HStack(spacing: 8) {
+                // 分类 emoji
+                Text(todo.category.emoji)
+                    .font(.system(size: 16))
 
-            // 标题
-            Text(todo.title)
-                .font(.system(size: 15, weight: todo.priority == .high ? .semibold : .regular))
-                .foregroundColor(.primary.opacity(0.65))
-                .lineLimit(1)
-                .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
+                // 标题
+                Text(todo.title)
+                    .font(.system(size: 15, weight: todo.priority == .high ? .semibold : .regular))
+                    .foregroundColor(.primary.opacity(0.65))
+                    .lineLimit(1)
+                    .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
 
-            Spacer()
+                Spacer()
 
-            // 时间标签
-            if let dueHint = todo.dueHint {
-                Text(dueHint)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary.opacity(0.65))
-            }
+                // 时间标签
+                if let dueHint = todo.dueHint {
+                    Text(dueHint)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary.opacity(0.65))
+                }
 
-            // 优先级标签
-            if todo.priority == .high {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 6, height: 6)
+                // 优先级标签
+                if todo.priority == .high {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 6, height: 6)
+                }
             }
         }
     }
