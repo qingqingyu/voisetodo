@@ -109,7 +109,7 @@ extension TodoItem {
     /// - Parameter transcript: 原始转写文本
     /// - Returns: TodoItem 实例
     static func rawTranscript(_ transcript: String) -> TodoItem {
-        let title = truncateTitle(from: transcript)
+        let title = TextUtils.truncateTitle(from: transcript)
         return TodoItem(
             title: title,
             detail: transcript,

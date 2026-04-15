@@ -36,6 +36,9 @@ final class AppCoordinator: ObservableObject {
     /// 离线待处理条目 ID 列表（用于网络恢复后替换）
     private var pendingItemIds: [UUID] = []
 
+    /// 本次 session 中用户已取消确认的 pending ID（避免重复弹窗）
+    private var dismissedPendingIds: Set<UUID> = []
+
     /// 合并的原始转写文本（多个 pending 的 rawTranscript 合并，避免丢失）
     private var combinedRawTranscript: String?
 
@@ -108,17 +111,11 @@ final class AppCoordinator: ObservableObject {
         guard voiceInput.isRecording else { return }
 
         await withTaskGroup(of: Void.self) { group in
-            // 任务 1：通过 Publisher 等待 isRecording 变为 false
+            // 任务 1：通过 Publisher.values (AsyncSequence) 等待 isRecording 变为 false
+            // Task 被 cancel 时 .values 迭代自动终止，无 continuation 泄漏风险
             group.addTask {
-                await withCheckedContinuation { continuation in
-                    let cancellable = self.voiceInput.isRecordingPublisher
-                        .filter { !$0 }
-                        .first()
-                        .sink { _ in
-                            continuation.resume()
-                        }
-                    // 保持 cancellable 存活直到 sink 触发
-                    withExtendedLifetime(cancellable) {}
+                for await value in self.voiceInput.isRecordingPublisher.values {
+                    if !value { break }
                 }
             }
 
@@ -138,16 +135,11 @@ final class AppCoordinator: ObservableObject {
         guard voiceInput.isRecording else { return }
 
         await withTaskGroup(of: Void.self) { group in
-            // 任务 1：通过 Publisher 等待 isRecording 变为 false
+            // 任务 1：通过 Publisher.values (AsyncSequence) 等待 isRecording 变为 false
+            // Task 被 cancel 时 .values 迭代自动终止，无 continuation 泄漏风险
             group.addTask {
-                await withCheckedContinuation { continuation in
-                    let cancellable = self.voiceInput.isRecordingPublisher
-                        .filter { !$0 }
-                        .first()
-                        .sink { _ in
-                            continuation.resume()
-                        }
-                    withExtendedLifetime(cancellable) {}
+                for await value in self.voiceInput.isRecordingPublisher.values {
+                    if !value { break }
                 }
             }
 
@@ -192,7 +184,7 @@ final class AppCoordinator: ObservableObject {
     func handleAppForeground() async {
         guard !isProcessingPending else { return }
 
-        let pendingItems = store.pendingItems()
+        let pendingItems = store.pendingItems().filter { !dismissedPendingIds.contains($0.id) }
         guard !pendingItems.isEmpty else { return }
 
         isProcessingPending = true
@@ -272,7 +264,8 @@ final class AppCoordinator: ObservableObject {
                     try store.delete(pendingId)
                 }
 
-                // 清空 pending ID 列表
+                // 成功确认后清理 dismissed 记录（先移除再清空列表）
+                dismissedPendingIds.subtract(pendingItemIds)
                 pendingItemIds = []
                 combinedRawTranscript = nil
             } else {
@@ -290,11 +283,9 @@ final class AppCoordinator: ObservableObject {
 
     /// 取消确认
     func cancelTodos() {
-        // 如果有 pending 条目（来自 handleAppForeground 的离线恢复流程），
-        // 用户取消确认时需要删除已 AI 处理的 pending 条目，避免下次前台恢复时重复弹窗
-        for pendingId in pendingItemIds {
-            try? store.delete(pendingId)
-        }
+        // 记录已取消的 pending ID，避免本次 session 重复弹窗
+        // 不删除 pending 条目，保留离线转写数据
+        dismissedPendingIds.formUnion(pendingItemIds)
 
         extractedTodos = []
         showConfirmSheet = false

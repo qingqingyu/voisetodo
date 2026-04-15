@@ -64,7 +64,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
     /// - Parameter transcript: 用户语音转写文本
     /// - Returns: 提取结果
     func fallbackExtract(from transcript: String) -> ExtractionResult {
-        let title = truncateTitle(from: transcript)
+        let title = TextUtils.truncateTitle(from: transcript)
 
         let todo = ExtractedTodo(
             id: UUID(),

@@ -23,7 +23,7 @@ class MockStore: TodoStoreProtocol {
     }
 
     func addRawTranscript(_ transcript: String) throws {
-        let title = truncateTitle(from: transcript)
+        let title = TextUtils.truncateTitle(from: transcript)
         let todo = TodoItemData(
             title: title,
             detail: transcript,

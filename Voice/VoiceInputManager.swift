@@ -367,6 +367,8 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 直接用指针遍历计算 RMS，避免每帧分配临时数组
         let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+
         var sum: Float = 0
         for i in 0..<frameLength {
             sum += channelData[i] * channelData[i]
