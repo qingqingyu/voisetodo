@@ -105,14 +105,15 @@ struct TodoItemRow: View {
     }
 
     private func performDelete() {
-        // 向右滑出动画 [v2]
+        // 向右滑出动画
         withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
             offset = 300
             opacity = 0
         }
 
-        // 延迟执行删除
-        DispatchQueue.main.asyncAfter(deadline: .now() + UIConfig.deleteAnimationDuration) {
+        // 动画完成后执行删除
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(UIConfig.deleteAnimationDuration * 1_000_000_000))
             onDelete()
         }
     }

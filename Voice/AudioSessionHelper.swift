@@ -1,6 +1,12 @@
 import Foundation
 import AVFoundation
 
+/// 音频会话中断恢复通知
+/// 当音频中断结束且可以恢复时发出，userInfo 包含 AVAudioSession.InterruptionOptions
+extension Notification.Name {
+    static let audioSessionDidRecoverFromInterruption = Notification.Name("AudioSessionDidRecoverFromInterruption")
+}
+
 /// 音频会话辅助类
 /// 负责配置 AVAudioSession，处理音频会话中断、恢复、路由变更
 final class AudioSessionHelper {
@@ -51,6 +57,13 @@ final class AudioSessionHelper {
                 if options.contains(.shouldResume) && isActive {
                     // 可以恢复音频会话
                     try? configureSession()
+
+                    // 通知上层可以恢复录音
+                    NotificationCenter.default.post(
+                        name: .audioSessionDidRecoverFromInterruption,
+                        object: self,
+                        userInfo: ["shouldResume": true]
+                    )
                 }
             }
         @unknown default:

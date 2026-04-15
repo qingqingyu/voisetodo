@@ -143,6 +143,27 @@ final class VoiceInputManager: VoiceInputProtocol {
             // 8. 监听音频会话中断和路由变更
             audioSessionHelper.startObserving()
 
+            // 8.1 监听中断恢复通知（来电等中断结束后可恢复录音）
+            NotificationCenter.default.addObserver(
+                forName: .audioSessionDidRecoverFromInterruption,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self = self,
+                      self.isRecording,
+                      let shouldResume = notification.userInfo?["shouldResume"] as? Bool,
+                      shouldResume else { return }
+
+                #if DEBUG
+                print("Audio session recovered from interruption, restarting audio engine")
+                #endif
+
+                // 重新启动音频引擎
+                if !self.audioEngine.isRunning {
+                    try? self.audioEngine.start()
+                }
+            }
+
             // 9. 启动 Live Activity
             startLiveActivity()
         } catch {
@@ -171,6 +192,9 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 停用音频会话并停止监听中断通知
         audioSessionHelper.stopObserving()
         audioSessionHelper.deactivateSession()
+
+        // 移除中断恢复通知监听
+        NotificationCenter.default.removeObserver(self, name: .audioSessionDidRecoverFromInterruption, object: nil)
 
         // 更新状态
         isRecording = false

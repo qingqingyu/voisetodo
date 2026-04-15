@@ -68,10 +68,16 @@ extension Color {
 
 /// 主页视图 - 温暖友好风格
 /// 显示待办列表，支持勾选完成、左滑删除、点击编辑
-struct HomeView<Store: TodoStoreProtocol>: View {
-    @ObservedObject var store: Store
+struct HomeView: View {
+    @ObservedObject var store: any TodoStoreProtocol
     @EnvironmentObject private var coordinator: AppCoordinator
     @State private var showRecordingButton = false
+
+    // MARK: - Initialization
+
+    init(store: some TodoStoreProtocol) {
+        self.store = store
+    }
 
     // 导航状态
     @State private var selectedTodo: TodoItemData?
