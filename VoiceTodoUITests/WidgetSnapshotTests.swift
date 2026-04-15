@@ -31,13 +31,9 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "任务3", category: .study)
         ]
 
-        // Mock 数据源
-        MockWidgetDataProvider.shared.todos = todos
-
-        // When: 获取 medium 尺寸的 timeline
-        let entry = SimpleEntry(
+        // When: 构建 medium 尺寸的 entry
+        let entry = TodoEntry(
             date: Date(),
-            configuration: ConfigurationIntent(),
             todos: Array(todos.prefix(3))
         )
 
@@ -55,12 +51,9 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "单个任务", category: .work)
         ]
 
-        MockWidgetDataProvider.shared.todos = todos
-
-        // When: 获取 small 尺寸的 timeline
-        let entry = SimpleEntry(
+        // When: 构建 small 尺寸的 entry
+        let entry = TodoEntry(
             date: Date(),
-            configuration: ConfigurationIntent(),
             todos: Array(todos.prefix(1))
         )
 
@@ -76,12 +69,9 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "任务\($0)", category: .work)
         }
 
-        MockWidgetDataProvider.shared.todos = todos
-
-        // When: 获取 large 尺寸的 timeline
-        let entry = SimpleEntry(
+        // When: 构建 large 尺寸的 entry
+        let entry = TodoEntry(
             date: Date(),
-            configuration: ConfigurationIntent(),
             todos: Array(todos.prefix(6))
         )
 
@@ -92,12 +82,10 @@ final class WidgetSnapshotTests: XCTestCase {
     /// 测试 Widget 空状态显示
     func test_widget_emptyState() async throws {
         // Given: 没有待办数据
-        MockWidgetDataProvider.shared.todos = []
 
-        // When: 获取 timeline
-        let entry = SimpleEntry(
+        // When: 构建 entry
+        let entry = TodoEntry(
             date: Date(),
-            configuration: ConfigurationIntent(),
             todos: []
         )
 
@@ -114,8 +102,6 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "已完成任务2", isCompleted: true),
             TodoItemData(title: "未完成任务2", isCompleted: false)
         ]
-
-        MockWidgetDataProvider.shared.todos = todos
 
         // When: 获取未完成的待办
         let uncompleted = todos.filter { !$0.isCompleted }
@@ -134,8 +120,6 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "中任务", createdAt: Date().addingTimeInterval(-1800))
         ]
 
-        MockWidgetDataProvider.shared.todos = todos
-
         // When: 排序
         let sorted = todos.sorted { $0.createdAt > $1.createdAt }
 
@@ -153,12 +137,9 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "普通任务", priority: .normal)
         ]
 
-        MockWidgetDataProvider.shared.todos = todos
-
-        // When: 获取 timeline
-        let entry = SimpleEntry(
+        // When: 构建 entry
+        let entry = TodoEntry(
             date: Date(),
-            configuration: ConfigurationIntent(),
             todos: todos
         )
 
@@ -180,22 +161,13 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "社交", category: .social)
         ]
 
-        MockWidgetDataProvider.shared.todos = todos
-
-        // When: 获取 timeline
-        let entry = SimpleEntry(
-            date: Date(),
-            configuration: ConfigurationIntent(),
-            todos: todos
-        )
-
         // Then: 验证分类 emoji
-        XCTAssertEqual(entry.todos[0].category.emoji, "💼")
-        XCTAssertEqual(entry.todos[1].category.emoji, "📚")
-        XCTAssertEqual(entry.todos[2].category.emoji, "🏠")
-        XCTAssertEqual(entry.todos[3].category.emoji, "💪")
-        XCTAssertEqual(entry.todos[4].category.emoji, "💰")
-        XCTAssertEqual(entry.todos[5].category.emoji, "👥")
+        XCTAssertEqual(todos[0].category.emoji, "💼")
+        XCTAssertEqual(todos[1].category.emoji, "📚")
+        XCTAssertEqual(todos[2].category.emoji, "🏠")
+        XCTAssertEqual(todos[3].category.emoji, "💪")
+        XCTAssertEqual(todos[4].category.emoji, "💰")
+        XCTAssertEqual(todos[5].category.emoji, "👥")
     }
 
     /// 测试锁屏 Widget 显示
@@ -206,34 +178,10 @@ final class WidgetSnapshotTests: XCTestCase {
             TodoItemData(title: "任务2", category: .life)
         ]
 
-        MockWidgetDataProvider.shared.todos = todos
-
         // When: 获取锁屏 Widget 数据（2 条）
         let lockscreenTodos = Array(todos.prefix(2))
 
         // Then: 验证显示 2 条
         XCTAssertEqual(lockscreenTodos.count, 2)
     }
-}
-
-// MARK: - Mock Data Provider
-
-/// Mock Widget 数据提供者
-class MockWidgetDataProvider {
-    static let shared = MockWidgetDataProvider()
-    var todos: [TodoItemData] = []
-}
-
-// MARK: - Test Helper Types
-
-/// 简化的 Entry 类型（用于测试）
-struct SimpleEntry: TimelineEntry {
-    let date: Date
-    let configuration: ConfigurationIntent
-    let todos: [TodoItemData]
-}
-
-/// 配置意图（占位）
-class ConfigurationIntent: NSObject, Intent {
-    // Widget configuration intent
 }

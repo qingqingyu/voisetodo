@@ -63,6 +63,7 @@ enum MockScenarios {
 }
 
 /// Mock 语音输入管理器
+@MainActor
 class MockVoiceInputManager: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""
@@ -142,7 +143,7 @@ class MockTodoStore: TodoStoreProtocol {
     }
 
     func addRawTranscript(_ transcript: String) throws {
-        let title = String(transcript.prefix(20))
+        let title = TextUtils.truncateTitle(from: transcript)
         let data = TodoItemData(
             title: title,
             detail: transcript,

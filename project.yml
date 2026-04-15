@@ -95,6 +95,7 @@ targets:
       - path: UI/Widget
         excludes:
           - "**/.DS_Store"
+      - path: Store/SwiftDataModels.swift
       - path: Protocols/Models.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift
