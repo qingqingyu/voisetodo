@@ -64,18 +64,25 @@ extension Color {
     }
 }
 
+private let homeDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_Hans_CN")
+    formatter.dateFormat = "M月d日 EEEE"
+    return formatter
+}()
+
 // MARK: - HomeView
 
 /// 主页视图 - 温暖友好风格
 /// 显示待办列表，支持勾选完成、左滑删除、点击编辑
-struct HomeView: View {
-    @ObservedObject var store: any TodoStoreProtocol
+struct HomeView<Store: TodoStoreProtocol>: View {
+    @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
     @State private var showRecordingButton = false
 
     // MARK: - Initialization
 
-    init(store: some TodoStoreProtocol) {
+    init(store: Store) {
         self.store = store
     }
 
@@ -87,14 +94,6 @@ struct HomeView: View {
     @State private var headerOpacity: Double = 0
     @State private var listOffset: CGFloat = 30
     @State private var listOpacity: Double = 0
-
-    // 日期格式化
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_Hans_CN")
-        formatter.dateFormat = "M月d日 EEEE"
-        return formatter
-    }()
 
     var body: some View {
         NavigationStack {
@@ -121,6 +120,13 @@ struct HomeView: View {
             .onAppear {
                 startEntranceAnimation()
             }
+            .overlay {
+                if coordinator.isRecording {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityIdentifier("RecordingIndicator")
+                }
+            }
             .overlay(alignment: .bottom) {
                 if showRecordingButton {
                     recordingButton
@@ -131,6 +137,7 @@ struct HomeView: View {
                 TodoDetailView(store: store, todo: todo)
             }
         }
+        .accessibilityIdentifier("HomeView")
     }
 
     // MARK: - Header View
@@ -139,7 +146,7 @@ struct HomeView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
                 // 日期
-                Text(Self.dateFormatter.string(from: Date()))
+                Text(homeDateFormatter.string(from: Date()))
                     .font(.custom("Avenir Next", size: 14))
                     .fontWeight(.medium)
                     .foregroundColor(WarmTheme.textSecondary)
@@ -213,8 +220,9 @@ struct HomeView: View {
 
     private var todoListView: some View {
         List {
-            ForEach(store.todos) { todo in
+            ForEach(Array(store.todos.enumerated()), id: \.element.id) { index, todo in
                 WarmTodoCard(
+                    index: index,
                     todo: todo,
                     onToggle: { toggleTodo(todo.id) },
                     onTap: { selectedTodo = todo }
@@ -240,6 +248,7 @@ struct HomeView: View {
         .background(WarmTheme.background)
         .offset(y: listOffset)
         .opacity(listOpacity)
+        .accessibilityIdentifier("TodoList")
     }
 
     // MARK: - Empty State
@@ -261,6 +270,7 @@ struct HomeView: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 44, weight: .light))
                     .foregroundColor(WarmTheme.primary)
+                    .accessibilityIdentifier("CheckmarkIcon")
             }
             .scaleEffect(listOpacity == 0 ? 0.8 : 1.0)
 
@@ -281,6 +291,7 @@ struct HomeView: View {
 
             Spacer()
         }
+        .accessibilityIdentifier("EmptyState")
     }
 
     // MARK: - Recording Button
@@ -329,6 +340,7 @@ struct HomeView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: coordinator.isRecording)
         .padding(.bottom, 24)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+        .accessibilityIdentifier("RecordButton")
     }
 
     // MARK: - Actions
@@ -398,6 +410,7 @@ struct HomeView: View {
 // MARK: - Warm Todo Card
 
 struct WarmTodoCard: View {
+    let index: Int
     let todo: TodoItemData
     let onToggle: () -> Void
     var onTap: (() -> Void)? = nil
@@ -439,6 +452,7 @@ struct WarmTodoCard: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("TodoCheckbox_\(index)")
 
             // 内容
             VStack(alignment: .leading, spacing: 6) {
@@ -464,6 +478,12 @@ struct WarmTodoCard: View {
                     }
                     .foregroundColor(WarmTheme.textSecondary)
                 }
+
+                if todo.isCompleted {
+                    Text("completed")
+                        .font(.system(size: 1))
+                        .foregroundColor(.clear)
+                }
             }
 
             Spacer()
@@ -479,6 +499,7 @@ struct WarmTodoCard: View {
                         Circle()
                             .fill(WarmTheme.urgent)
                     )
+                    .accessibilityIdentifier("PriorityLabel")
             }
         }
         .padding(.horizontal, 18)
@@ -492,12 +513,9 @@ struct WarmTodoCard: View {
         .onTapGesture {
             onTap?()
         }
+        .accessibilityIdentifier("TodoCell_\(index)")
     }
 }
 
 // MARK: - Preview
 
-#Preview {
-    HomeView(store: MockStore.preview)
-        .environmentObject(AppCoordinator.preview)
-}

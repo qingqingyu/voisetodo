@@ -45,9 +45,9 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Initialization
 
     init(
-        voiceInput: some VoiceInputProtocol,
-        extractor: some TodoExtractorProtocol,
-        store: some TodoStoreProtocol
+        voiceInput: any VoiceInputProtocol,
+        extractor: any TodoExtractorProtocol,
+        store: any TodoStoreProtocol
     ) {
         self.voiceInput = voiceInput
         self.extractor = extractor
@@ -110,12 +110,13 @@ final class AppCoordinator: ObservableObject {
     /// 等待录音结束，最多等 3 秒
     private func waitForRecordingToFinish() async {
         guard voiceInput.isRecording else { return }
+        let recordingValues = voiceInput.isRecordingPublisher.values
 
         await withTaskGroup(of: Void.self) { group in
             // 任务 1：通过 Publisher.values (AsyncSequence) 等待 isRecording 变为 false
             // Task 被 cancel 时 .values 迭代自动终止，无 continuation 泄漏风险
             group.addTask {
-                for await value in self.voiceInput.isRecordingPublisher.values {
+                for await value in recordingValues {
                     if !value { break }
                 }
             }
@@ -134,12 +135,13 @@ final class AppCoordinator: ObservableObject {
     /// 等待自然停录（静音检测触发），最多等 60 秒
     private func waitForAutoStop() async {
         guard voiceInput.isRecording else { return }
+        let recordingValues = voiceInput.isRecordingPublisher.values
 
         await withTaskGroup(of: Void.self) { group in
             // 任务 1：通过 Publisher.values (AsyncSequence) 等待 isRecording 变为 false
             // Task 被 cancel 时 .values 迭代自动终止，无 continuation 泄漏风险
             group.addTask {
-                for await value in self.voiceInput.isRecordingPublisher.values {
+                for await value in recordingValues {
                     if !value { break }
                 }
             }
@@ -255,15 +257,8 @@ final class AppCoordinator: ObservableObject {
     func confirmTodos(_ todos: [ExtractedTodo]) -> Bool {
         do {
             // 如果有 pending 条目，使用替换逻辑
-            if let firstPendingId = pendingItemIds.first {
-                // 将所有提取的待办分配到第一个 pending（因为原始 pending 可能拆分成多个待办）
-                // 调用替换方法：删除原始 pending，添加提取的待办
-                try store.replacePendingWithExtracted(firstPendingId, todos, rawTranscript: combinedRawTranscript)
-
-                // 删除其他多余的 pending（如果有多个离线条目）
-                for pendingId in pendingItemIds.dropFirst() {
-                    try store.delete(pendingId)
-                }
+            if !pendingItemIds.isEmpty {
+                try store.replacePendingBatchWithExtracted(pendingItemIds, todos, rawTranscript: combinedRawTranscript)
 
                 // 成功确认后清理 dismissed 记录（先移除再清空列表）
                 dismissedPendingIds.subtract(pendingItemIds)
@@ -319,7 +314,11 @@ final class AppCoordinator: ObservableObject {
                 showConfirmSheet = true
             }
         } catch {
-            await handleOfflineMode(transcript: text)
+            if let voiceError = error as? VoiceTodoError, voiceError == .networkUnavailable {
+                await handleOfflineMode(transcript: text)
+            } else {
+                handleError(error)
+            }
         }
     }
 
@@ -334,7 +333,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// 显示 Toast
-    private func showToast(message: String, style: ToastStyle) {
+    func showToast(message: String, style: ToastStyle) {
         toastMessage = message
         toastStyle = style
         showToast = true

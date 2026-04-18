@@ -2,6 +2,7 @@ import XCTest
 import SwiftData
 @testable import VoiceTodo
 
+@MainActor
 final class StoreTests: XCTestCase {
     // MARK: - Properties
 
@@ -245,8 +246,8 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(sut.todos.count, 1)
         XCTAssertTrue(sut.todos[0].needsAIProcessing)
         XCTAssertEqual(sut.todos[0].rawTranscript, transcript)
-        // 标题是前 20 字
-        XCTAssertEqual(sut.todos[0].title, String(transcript.prefix(20)))
+        // 标题使用当前的智能截断策略
+        XCTAssertEqual(sut.todos[0].title, TextUtils.truncateTitle(from: transcript))
         XCTAssertEqual(sut.todos[0].detail, transcript)
     }
 

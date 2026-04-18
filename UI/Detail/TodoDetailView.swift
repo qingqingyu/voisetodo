@@ -1,13 +1,20 @@
 import SwiftUI
 import WidgetKit
 
+private let todoDetailDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_Hans_CN")
+    formatter.dateFormat = "yyyy年M月d日 HH:mm"
+    return formatter
+}()
+
 /// 待办详情页
 /// 支持查看和编辑待办标题
-struct TodoDetailView: View {
+struct TodoDetailView<Store: TodoStoreProtocol>: View {
     // MARK: - Properties
 
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var store: any TodoStoreProtocol
+    @ObservedObject var store: Store
     let todo: TodoItemData
 
     // 编辑状态
@@ -22,7 +29,7 @@ struct TodoDetailView: View {
 
     // MARK: - Initialization
 
-    init(store: some TodoStoreProtocol, todo: TodoItemData) {
+    init(store: Store, todo: TodoItemData) {
         self.store = store
         self.todo = todo
         _editedTitle = State(initialValue: todo.title)
@@ -34,101 +41,99 @@ struct TodoDetailView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // 标题编辑
-                Section(header: Text("标题")) {
-                    TextField("待办标题", text: $editedTitle)
-                        .font(.custom("Avenir Next", size: 17))
-                        .onChange(of: editedTitle) { _, newValue in
-                            checkForChanges()
-                        }
-                }
-
-                // 分类选择
-                Section(header: Text("分类")) {
-                    Picker("分类", selection: $editedCategory) {
-                        ForEach(TodoCategory.allCases, id: \.self) { category in
-                            HStack {
-                                Text(category.emoji)
-                                Text(category.displayName)
-                            }
-                            .tag(category)
-                        }
-                    }
-                    .onChange(of: editedCategory) { _, _ in
+        Form {
+            // 标题编辑
+            Section(header: Text("标题")) {
+                TextField("待办标题", text: $editedTitle)
+                    .font(.custom("Avenir Next", size: 17))
+                    .onChange(of: editedTitle) { _, _ in
                         checkForChanges()
                     }
-                }
+            }
 
-                // 优先级选择
-                Section(header: Text("优先级")) {
-                    Picker("优先级", selection: $editedPriority) {
-                        Text("普通").tag(Priority.normal)
-                        Text("高优先级").tag(Priority.high)
-                    }
-                    .onChange(of: editedPriority) { _, _ in
-                        checkForChanges()
-                    }
-                }
-
-                // 时间提示
-                Section(header: Text("时间提示")) {
-                    TextField("例如：明天、周三前", text: $editedDueHint)
-                        .font(.custom("Avenir Next", size: 17))
-                        .onChange(of: editedDueHint) { _, _ in
-                            checkForChanges()
-                        }
-                }
-
-                // 元信息
-                Section(header: Text("信息")) {
-                    HStack {
-                        Text("创建时间")
-                        Spacer()
-                        Text(formatDate(todo.createdAt))
-                            .foregroundColor(WarmTheme.textSecondary)
-                    }
-
-                    if todo.needsAIProcessing {
+            // 分类选择
+            Section(header: Text("分类")) {
+                Picker("分类", selection: $editedCategory) {
+                    ForEach(TodoCategory.allCases, id: \.self) { category in
                         HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text("待 AI 整理")
-                                .foregroundColor(.orange)
+                            Text(category.emoji)
+                            Text(category.displayName)
                         }
+                        .tag(category)
                     }
                 }
+                .onChange(of: editedCategory) { _, _ in
+                    checkForChanges()
+                }
             }
-            .navigationTitle("待办详情")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("取消") {
-                        dismiss()
+
+            // 优先级选择
+            Section(header: Text("优先级")) {
+                Picker("优先级", selection: $editedPriority) {
+                    Text("普通").tag(Priority.normal)
+                    Text("高优先级").tag(Priority.high)
+                }
+                .onChange(of: editedPriority) { _, _ in
+                    checkForChanges()
+                }
+            }
+
+            // 时间提示
+            Section(header: Text("时间提示")) {
+                TextField("例如：明天、周三前", text: $editedDueHint)
+                    .font(.custom("Avenir Next", size: 17))
+                    .onChange(of: editedDueHint) { _, _ in
+                        checkForChanges()
                     }
+            }
+
+            // 元信息
+            Section(header: Text("信息")) {
+                HStack {
+                    Text("创建时间")
+                    Spacer()
+                    Text(formatDate(todo.createdAt))
+                        .foregroundColor(WarmTheme.textSecondary)
                 }
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("保存") {
-                        saveChanges()
+                if todo.needsAIProcessing {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("待 AI 整理")
+                            .foregroundColor(.orange)
                     }
-                    .disabled(!hasChanges || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .fontWeight(.semibold)
                 }
             }
-            .alert("已保存", isPresented: $showSaveConfirmation) {
-                Button("好的") {
+        }
+        .navigationTitle("待办详情")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("取消") {
                     dismiss()
                 }
-            } message: {
-                Text("待办已更新")
             }
-            .alert("提示", isPresented: $showError) {
-                Button("好的") {}
-            } message: {
-                Text(errorMessage)
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("保存") {
+                    saveChanges()
+                }
+                .disabled(!hasChanges || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .fontWeight(.semibold)
             }
+        }
+        .alert("已保存", isPresented: $showSaveConfirmation) {
+            Button("好的") {
+                dismiss()
+            }
+        } message: {
+            Text("待办已更新")
+        }
+        .alert("提示", isPresented: $showError) {
+            Button("好的") {}
+        } message: {
+            Text(errorMessage)
         }
     }
 
@@ -167,29 +172,8 @@ struct TodoDetailView: View {
         }
     }
 
-    /// 格式化日期
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_Hans_CN")
-        formatter.dateFormat = "yyyy年M月d日 HH:mm"
-        return formatter
-    }()
-
     private func formatDate(_ date: Date) -> String {
-        Self.dateFormatter.string(from: date)
+        todoDetailDateFormatter.string(from: date)
     }
 }
 
-// MARK: - Preview
-
-#Preview {
-    struct PreviewWrapper: View {
-        @StateObject var store = MockStore.preview
-
-        var body: some View {
-            TodoDetailView(store: store, todo: store.todos[0])
-        }
-    }
-
-    return PreviewWrapper()
-}

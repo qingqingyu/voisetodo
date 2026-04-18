@@ -5,17 +5,20 @@ final class ExtractorTests: XCTestCase {
     // MARK: - Properties
 
     var sut: TodoExtractorService!
-    var mockNetworkClient: MockNetworkClient!
+    private var mockNetworkClient: MockNetworkClient!
 
     // MARK: - Setup & Teardown
 
     override func setUp() {
         super.setUp()
+        setenv("ANTHROPIC_API_KEY", "test-key", 1)
         mockNetworkClient = MockNetworkClient()
-        sut = TodoExtractorService(networkClient: mockNetworkClient)
+        sut = TodoExtractorService(networkClient: mockNetworkClient.networkClient)
     }
 
     override func tearDown() {
+        URLProtocolStub.reset()
+        unsetenv("ANTHROPIC_API_KEY")
         sut = nil
         mockNetworkClient = nil
         super.tearDown()
@@ -41,7 +44,7 @@ final class ExtractorTests: XCTestCase {
         }
         """
 
-        mockNetworkClient.mockResponse = jsonResponse
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
         let result = try await sut.extract(from: "明天去银行办卡")
@@ -52,6 +55,31 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(result.todos[0].categoryHint, .finance)
         XCTAssertEqual(result.todos[0].priority, .normal)
         XCTAssertEqual(result.todos[0].dueHint, "明天")
+    }
+
+    func testParsingWithoutIdGeneratesUUID() async throws {
+        let jsonResponse = """
+        {
+          "todos": [
+            {
+              "title": "去银行办卡",
+              "detail": "明天去银行办卡",
+              "due_hint": "明天",
+              "priority": "normal",
+              "category_hint": "finance"
+            }
+          ],
+          "ignored": ""
+        }
+        """
+
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
+
+        let result = try await sut.extract(from: "明天去银行办卡")
+
+        XCTAssertEqual(result.todos.count, 1)
+        XCTAssertEqual(result.todos[0].title, "去银行办卡")
+        XCTAssertEqual(result.todos[0].categoryHint, .finance)
     }
 
     // MARK: - Test Malformed JSON (Markdown Wrapped)
@@ -76,7 +104,7 @@ final class ExtractorTests: XCTestCase {
         ```
         """
 
-        mockNetworkClient.mockResponse = jsonResponse
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
         let result = try await sut.extract(from: "准备下周的面试")
@@ -107,7 +135,7 @@ final class ExtractorTests: XCTestCase {
         ```
         """
 
-        mockNetworkClient.mockResponse = jsonResponse
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
         let result = try await sut.extract(from: "晚上买菜")
@@ -128,7 +156,7 @@ final class ExtractorTests: XCTestCase {
 
         // Then: 标题被截取为前 20 字
         XCTAssertEqual(result.todos.count, 1)
-        XCTAssertEqual(result.todos[0].title, String(longText.prefix(20)))
+        XCTAssertEqual(result.todos[0].title, TextUtils.truncateTitle(from: longText))
         XCTAssertEqual(result.todos[0].detail, longText)
         XCTAssertEqual(result.todos[0].categoryHint, .other)
         XCTAssertEqual(result.todos[0].priority, .normal)
@@ -168,9 +196,8 @@ final class ExtractorTests: XCTestCase {
         }
         """
 
-        mockNetworkClient.mockError = VoiceTodoError.networkUnavailable
-        mockNetworkClient.mockResponse = successResponse
-        mockNetworkClient.failFirstAttempt = true
+        mockNetworkClient.enqueueFailure(VoiceTodoError.networkUnavailable)
+        mockNetworkClient.enqueueSuccess(text: successResponse)
 
         // When: 调用 extract（会重试）
         let result = try await sut.extract(from: "完成今天的工作")
@@ -178,13 +205,13 @@ final class ExtractorTests: XCTestCase {
         // Then: 第二次成功
         XCTAssertEqual(result.todos.count, 1)
         XCTAssertEqual(result.todos[0].title, "完成任务")
-        XCTAssertEqual(mockNetworkClient.callCount, 2)
+        XCTAssertEqual(URLProtocolStub.callCount, 2)
     }
 
     func testRetryLogicAllAttemptsFailed() async {
         // Given: 所有尝试都失败
-        mockNetworkClient.mockError = VoiceTodoError.networkUnavailable
-        mockNetworkClient.alwaysFail = true
+        mockNetworkClient.enqueueFailure(VoiceTodoError.networkUnavailable)
+        mockNetworkClient.enqueueFailure(VoiceTodoError.networkUnavailable)
 
         // When & Then: 抛出正确错误
         do {
@@ -197,26 +224,25 @@ final class ExtractorTests: XCTestCase {
         }
 
         // 验证重试次数（1次初始 + 1次重试 = 2次）
-        XCTAssertEqual(mockNetworkClient.callCount, 2)
+        XCTAssertEqual(URLProtocolStub.callCount, 2)
     }
 
     func testRetryLogicSkipsOnConfigurationError() async {
         // Given: 配置错误（不应该重试）
-        mockNetworkClient.mockError = VoiceTodoError.apiResponseInvalid("API Key 未配置")
-        mockNetworkClient.alwaysFail = true
+        mockNetworkClient.enqueueHTTPFailure(statusCode: 401, body: "API Key 未配置")
 
         // When & Then: 立即抛出错误，不重试
         do {
             _ = try await sut.extract(from: "测试文本")
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
-            XCTAssertEqual(error, .apiResponseInvalid("API Key 未配置"))
+            XCTAssertEqual(error, .apiResponseInvalid("HTTP 401: API Key 未配置"))
         } catch {
             XCTFail("错误的错误类型: \(error)")
         }
 
         // 验证只调用 1 次（不重试）
-        XCTAssertEqual(mockNetworkClient.callCount, 1)
+        XCTAssertEqual(URLProtocolStub.callCount, 1)
     }
 
     // MARK: - Test Empty Results
@@ -230,7 +256,7 @@ final class ExtractorTests: XCTestCase {
         }
         """
 
-        mockNetworkClient.mockResponse = jsonResponse
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
         let result = try await sut.extract(from: "最近好累，什么都不想干")
@@ -276,7 +302,7 @@ final class ExtractorTests: XCTestCase {
         }
         """
 
-        mockNetworkClient.mockResponse = jsonResponse
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
         let result = try await sut.extract(from: "明天去银行办卡，顺便买菜，晚上给老妈打电话")
@@ -291,38 +317,92 @@ final class ExtractorTests: XCTestCase {
 
 // MARK: - Mock Network Client
 
-/// Mock 网络客户端，用于测试
-class MockNetworkClient: NetworkClient {
-    var mockResponse: String = ""
-    var mockError: Error?
-    var alwaysFail = false
-    var failFirstAttempt = false
-    var callCount = 0
+private final class MockNetworkClient {
+    let networkClient: NetworkClient
 
-    override func callClaudeAPI(
-        systemPrompt: String,
-        messages: [[String: String]],
-        model: String,
-        temperature: Double,
-        maxTokens: Int
-    ) async throws -> String {
-        callCount += 1
+    init() {
+        URLProtocolStub.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        networkClient = NetworkClient(session: session)
+    }
 
-        // 如果设置了总是失败
-        if alwaysFail {
-            throw mockError ?? VoiceTodoError.networkUnavailable
+    func enqueueSuccess(text: String) {
+        let body = """
+        {
+          "content": [
+            {
+              "text": \(text.jsonEscaped)
+            }
+          ]
+        }
+        """
+        URLProtocolStub.responses.append(.success(statusCode: 200, body: body))
+    }
+
+    func enqueueFailure(_ error: Error) {
+        URLProtocolStub.responses.append(.failure(error))
+    }
+
+    func enqueueHTTPFailure(statusCode: Int, body: String) {
+        URLProtocolStub.responses.append(.success(statusCode: statusCode, body: body))
+    }
+}
+
+private final class URLProtocolStub: URLProtocol {
+    enum StubResponse {
+        case success(statusCode: Int, body: String)
+        case failure(Error)
+    }
+
+    static var responses: [StubResponse] = []
+    static var callCount = 0
+
+    static func reset() {
+        responses = []
+        callCount = 0
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.callCount += 1
+        guard !Self.responses.isEmpty else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
         }
 
-        // 如果设置了第一次失败
-        if failFirstAttempt && callCount == 1 {
-            throw mockError ?? VoiceTodoError.networkUnavailable
-        }
+        let response = Self.responses.removeFirst()
 
-        // 返回 mock 响应
-        if let error = mockError {
-            throw error
+        switch response {
+        case .success(let statusCode, let body):
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
         }
+    }
 
-        return mockResponse
+    override func stopLoading() {}
+}
+
+private extension String {
+    var jsonEscaped: String {
+        let data = try! JSONEncoder().encode(self)
+        return String(data: data, encoding: .utf8)!
     }
 }

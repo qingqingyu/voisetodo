@@ -28,6 +28,8 @@ enum UIConfig {
 
 /// Widget 配置
 enum WidgetConfig {
+    /// App Group 标识符（供 Widget 读取共享容器）
+    static let appGroupIdentifier = "group.com.voicetodo.shared"
     /// 刷新间隔（秒）
     static let refreshInterval: TimeInterval = 1800  // 30 分钟
     /// 小尺寸显示条数

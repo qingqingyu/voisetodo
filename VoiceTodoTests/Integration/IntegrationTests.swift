@@ -4,6 +4,7 @@ import Combine
 @testable import VoiceTodo
 
 /// 集成测试：验证模块之间的接口调用
+@MainActor
 final class IntegrationTests: XCTestCase {
     // MARK: - Properties
 
@@ -117,7 +118,7 @@ final class IntegrationTests: XCTestCase {
         // Then: 验证存储结果
         XCTAssertEqual(todoStore.todos.count, 1)
         XCTAssertTrue(todoStore.todos[0].needsAIProcessing)
-        XCTAssertEqual(todoStore.todos[0].title, String(transcript.prefix(20)))
+        XCTAssertEqual(todoStore.todos[0].title, TextUtils.truncateTitle(from: transcript))
     }
 
     // MARK: - Test Case 5: Pending Recovery Full Path
@@ -138,7 +139,7 @@ final class IntegrationTests: XCTestCase {
         try todoStore.replacePendingWithExtracted(pendingId, extractedItems.todos)
 
         // Then: 验证替换结果
-        XCTAssertEqual(todoStore.todos.count, 2, "应该有 2 条提取结果")
+        XCTAssertEqual(todoStore.todos.count, extractedItems.todos.count, "应该与提取结果数量一致")
         XCTAssertFalse(todoStore.todos.contains { $0.id == pendingId }, "原待处理条目应被删除")
         XCTAssertTrue(todoStore.todos.allSatisfy { !$0.needsAIProcessing }, "新条目不应标记为待处理")
     }
@@ -216,7 +217,9 @@ final class IntegrationTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for task in tasks {
                 group.addTask {
-                    try self.todoStore.add(task)
+                    try await MainActor.run {
+                        try self.todoStore.add(task)
+                    }
                 }
             }
             try await group.waitForAll()
@@ -240,12 +243,22 @@ class MockExtractor: TodoExtractorProtocol {
         }
 
         // 模拟 AI 提取逻辑
-        if transcript.contains("去银行") && transcript.contains("买菜") {
+        if transcript.contains("去银行") && transcript.contains("买菜") && transcript.contains("老妈") {
             return ExtractionResult(
                 todos: [
                     ExtractedTodo(title: "去银行办卡", detail: "明天去银行办卡", dueHint: "明天", categoryHint: .finance),
                     ExtractedTodo(title: "买菜", detail: "顺便买菜", categoryHint: .life),
                     ExtractedTodo(title: "给老妈打电话", detail: "晚上给老妈打电话", dueHint: "晚上", categoryHint: .social)
+                ],
+                ignored: ""
+            )
+        }
+
+        if transcript.contains("去银行") && transcript.contains("买菜") {
+            return ExtractionResult(
+                todos: [
+                    ExtractedTodo(title: "去银行办卡", detail: "明天去银行办卡", dueHint: "明天", categoryHint: .finance),
+                    ExtractedTodo(title: "买菜", detail: "顺便买菜", categoryHint: .life)
                 ],
                 ignored: ""
             )

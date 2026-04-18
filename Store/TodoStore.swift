@@ -3,6 +3,7 @@ import Combine
 import SwiftData
 
 /// 待办存储服务
+@MainActor
 final class TodoStore: TodoStoreProtocol {
     // MARK: - Properties
 
@@ -50,8 +51,8 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             try modelContext.save()
-            // 增量更新：批量插入到数组头部（保持创建时间倒序）
-            todos.insert(contentsOf: newTodos, at: 0)
+            // insert(contentsOf:at:) 会保持数组顺序，因此这里需要反转后再插到头部。
+            todos.insert(contentsOf: newTodos.reversed(), at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -75,9 +76,7 @@ final class TodoStore: TodoStoreProtocol {
     /// 切换完成状态
     /// - Parameter id: 待办 ID
     func toggleComplete(_ id: UUID) throws {
-        guard let todoItem = findTodoItem(by: id) else {
-            throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
-        }
+        let todoItem = try findTodoItem(by: id)
 
         todoItem.isCompleted.toggle()
 
@@ -95,9 +94,7 @@ final class TodoStore: TodoStoreProtocol {
     /// 删除待办
     /// - Parameter id: 待办 ID
     func delete(_ id: UUID) throws {
-        guard let todoItem = findTodoItem(by: id) else {
-            throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
-        }
+        let todoItem = try findTodoItem(by: id)
 
         modelContext.delete(todoItem)
 
@@ -118,9 +115,7 @@ final class TodoStore: TodoStoreProtocol {
     ///   - priority: 新优先级（nil 表示不修改）
     ///   - dueHint: 新时间提示（nil 表示不修改，空字符串清除）
     func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
-        guard let todoItem = findTodoItem(by: id) else {
-            throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
-        }
+        let todoItem = try findTodoItem(by: id)
 
         todoItem.title = title
         if let category = category {
@@ -155,8 +150,10 @@ final class TodoStore: TodoStoreProtocol {
             let items = try modelContext.fetch(descriptor)
             return items.map { $0.toData() }
         } catch {
-            // 查询失败返回空数组
-            return []
+            #if DEBUG
+            print("Failed to fetch pending items: \(error)")
+            #endif
+            return todos.filter { $0.needsAIProcessing }
         }
     }
 
@@ -174,8 +171,10 @@ final class TodoStore: TodoStoreProtocol {
             let items = try modelContext.fetch(descriptor)
             return items.map { $0.toData() }
         } catch {
-            // 查询失败返回空数组
-            return []
+            #if DEBUG
+            print("Failed to fetch recent uncompleted todos: \(error)")
+            #endif
+            return Array(todos.filter { !$0.isCompleted }.prefix(limit))
         }
     }
 
@@ -186,13 +185,17 @@ final class TodoStore: TodoStoreProtocol {
     ///   - items: AI 提取结果
     ///   - rawTranscript: 合并的原始转写文本（多个 pending 合并时覆盖 pending 自身的）
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
-        guard let pendingItem = findTodoItem(by: pendingId) else {
-            throw VoiceTodoError.storageReadFailed("未找到待处理 ID: \(pendingId)")
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript)
+    }
+
+    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
+        guard !pendingIds.isEmpty else {
+            throw VoiceTodoError.storageReadFailed("未提供待处理 ID")
         }
 
-        let effectiveTranscript = rawTranscript ?? pendingItem.rawTranscript
+        let pendingItems = try pendingIds.map { try findTodoItem(by: $0) }
+        let effectiveTranscript = rawTranscript ?? pendingItems.compactMap(\.rawTranscript).joined(separator: "\n---\n")
 
-        // 先插入提取结果，确保新数据就位
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item, rawTranscript: effectiveTranscript)
@@ -200,14 +203,54 @@ final class TodoStore: TodoStoreProtocol {
             newTodos.append(todoItem.toData())
         }
 
-        // 再删除待处理条目
-        modelContext.delete(pendingItem)
+        for pendingItem in pendingItems {
+            modelContext.delete(pendingItem)
+        }
 
         do {
             try modelContext.save()
-            // 增量更新：移除 pending，插入新条目
-            todos.removeAll { $0.id == pendingId }
-            todos.insert(contentsOf: newTodos, at: 0)
+            let pendingSet = Set(pendingIds)
+            todos.removeAll { pendingSet.contains($0.id) }
+            todos.insert(contentsOf: newTodos.reversed(), at: 0)
+        } catch {
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    func resetForUITests() throws {
+        do {
+            let items = try modelContext.fetch(FetchDescriptor<TodoItem>())
+            for item in items {
+                modelContext.delete(item)
+            }
+            try modelContext.save()
+            todos = []
+        } catch {
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    func seedForUITests(_ items: [TodoItemData]) throws {
+        for item in items {
+            let todoItem = TodoItem(
+                id: item.id,
+                title: item.title,
+                detail: item.detail,
+                dueHint: item.dueHint,
+                dueDate: item.dueDate,
+                priority: item.priority,
+                category: item.category,
+                isCompleted: item.isCompleted,
+                createdAt: item.createdAt,
+                rawTranscript: item.rawTranscript,
+                needsAIProcessing: item.needsAIProcessing
+            )
+            modelContext.insert(todoItem)
+        }
+
+        do {
+            try modelContext.save()
+            refreshTodos()
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -236,7 +279,7 @@ final class TodoStore: TodoStoreProtocol {
     /// 根据 ID 查找 TodoItem
     /// - Parameter id: 待办 ID
     /// - Returns: TodoItem 实例（如果找到）
-    private func findTodoItem(by id: UUID) -> TodoItem? {
+    private func findTodoItem(by id: UUID) throws -> TodoItem {
         var descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { $0.id == id }
         )
@@ -244,9 +287,15 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             let items = try modelContext.fetch(descriptor)
-            return items.first
+            guard let item = items.first else {
+                throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+            }
+            return item
         } catch {
-            return nil
+            if let storageError = error as? VoiceTodoError {
+                throw storageError
+            }
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
         }
     }
 }

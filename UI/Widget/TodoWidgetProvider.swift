@@ -21,7 +21,7 @@ struct TodoTimelineProvider: TimelineProvider {
     // MARK: - App Group Configuration
 
     /// App Group 标识符（与主 App 保持一致）
-    private let appGroupIdentifier = AppGroupConfig.identifier
+    private let appGroupIdentifier = WidgetConfig.appGroupIdentifier
 
     /// 缓存的 ModelContainer，避免每次 getTimeline 都重新创建
     /// Widget Extension 的 TimelineProvider 方法由系统单线程调度，无需额外同步
@@ -86,7 +86,7 @@ struct TodoTimelineProvider: TimelineProvider {
     private func getRecentTodos(limit: Int) -> [TodoItemData] {
         do {
             let container = try getModelContainer()
-            let context = container.mainContext
+            let context = ModelContext(container)
 
             var descriptor = FetchDescriptor<TodoItem>(
                 predicate: #Predicate { !$0.isCompleted },
@@ -106,20 +106,8 @@ struct TodoTimelineProvider: TimelineProvider {
             #if DEBUG
             print("Widget: 读取数据失败 - \(error.localizedDescription)")
             #endif
-            return getPlaceholderTodos(limit: limit)
+            return []
         }
-    }
-
-    /// 获取占位数据（当无法读取真实数据时使用）
-    /// - Parameter limit: 返回数量限制
-    /// - Returns: 占位待办数组
-    private func getPlaceholderTodos(limit: Int) -> [TodoItemData] {
-        let placeholderTodos = [
-            TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work),
-            TodoItemData(title: "准备面试", dueHint: "周三前", priority: .high, category: .work),
-            TodoItemData(title: "去健身房", dueHint: nil, priority: .normal, category: .health)
-        ]
-        return Array(placeholderTodos.prefix(limit))
     }
 }
 

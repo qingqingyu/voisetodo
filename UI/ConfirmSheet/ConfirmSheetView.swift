@@ -31,6 +31,7 @@ struct ConfirmSheetView: View {
                         onCancel()
                         dismiss()
                     }
+                    .accessibilityIdentifier("CancelButton")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: confirmAction) {
@@ -38,11 +39,13 @@ struct ConfirmSheetView: View {
                             .bold()
                     }
                     .disabled(todos.isEmpty)
+                    .accessibilityIdentifier("ConfirmAddButton")
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .accessibilityIdentifier("ConfirmSheet")
     }
 
     // MARK: - Main Content
@@ -85,6 +88,7 @@ struct ConfirmSheetView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(.secondarySystemGroupedBackground))
                 )
+                .accessibilityIdentifier("TranscriptArea")
         }
     }
 
@@ -92,13 +96,15 @@ struct ConfirmSheetView: View {
 
     private var todosSection: some View {
         VStack(spacing: 12) {
-            ForEach($todos) { $todo in
+            ForEach(Array($todos.enumerated()), id: \.element.id) { index, $todo in
                 TodoItemRowWithDelete(
+                    index: index,
                     todo: $todo,
                     todos: $todos
                 )
             }
         }
+        .accessibilityIdentifier("ExtractedTodoList")
     }
 
     // MARK: - Operation Hint
@@ -141,6 +147,7 @@ struct ConfirmSheetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WarmTheme.background)
+        .accessibilityIdentifier("SuccessAnimation")
     }
 
     // MARK: - Actions
@@ -171,11 +178,13 @@ struct ConfirmSheetView: View {
 
 /// 辅助视图：处理待办删除逻辑
 struct TodoItemRowWithDelete: View {
+    let index: Int
     @Binding var todo: ExtractedTodo
     @Binding var todos: [ExtractedTodo]
 
     var body: some View {
         TodoItemRow(
+            index: index,
             todo: $todo,
             onDelete: {
                 withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {

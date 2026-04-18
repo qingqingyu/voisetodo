@@ -1,38 +1,21 @@
 import XCTest
-import WidgetKit
 
 /// Widget 快照测试
 /// 用于验证 Widget 在不同状态下的渲染结果
 final class WidgetSnapshotTests: XCTestCase {
-    // MARK: - Properties
-
-    var sut: TodoWidgetProvider!
-
-    // MARK: - Setup & Teardown
-
-    override func setUp() {
-        super.setUp()
-        sut = TodoWidgetProvider()
-    }
-
-    override func tearDown() {
-        sut = nil
-        super.tearDown()
-    }
-
     // MARK: - Test Cases
 
     /// 测试中号 Widget 显示 3 条待办
     func test_mediumWidget_displaysThreeTodos() async throws {
         // Given: 3 条待办数据
         let todos = [
-            TodoItemData(title: "任务1", category: .work),
-            TodoItemData(title: "任务2", category: .life),
-            TodoItemData(title: "任务3", category: .study)
+            UITestTodoPayload(title: "任务1", category: .work),
+            UITestTodoPayload(title: "任务2", category: .life),
+            UITestTodoPayload(title: "任务3", category: .study)
         ]
 
         // When: 构建 medium 尺寸的 entry
-        let entry = TodoEntry(
+        let entry = WidgetTestEntry(
             date: Date(),
             todos: Array(todos.prefix(3))
         )
@@ -48,11 +31,11 @@ final class WidgetSnapshotTests: XCTestCase {
     func test_smallWidget_displaysOneTodo() async throws {
         // Given: 1 条待办数据
         let todos = [
-            TodoItemData(title: "单个任务", category: .work)
+            UITestTodoPayload(title: "单个任务", category: .work)
         ]
 
         // When: 构建 small 尺寸的 entry
-        let entry = TodoEntry(
+        let entry = WidgetTestEntry(
             date: Date(),
             todos: Array(todos.prefix(1))
         )
@@ -66,11 +49,11 @@ final class WidgetSnapshotTests: XCTestCase {
     func test_largeWidget_displaysSixTodos() async throws {
         // Given: 6 条待办数据
         let todos = (1...6).map { i in
-            TodoItemData(title: "任务\($0)", category: .work)
+            UITestTodoPayload(title: "任务\(i)", category: .work)
         }
 
         // When: 构建 large 尺寸的 entry
-        let entry = TodoEntry(
+        let entry = WidgetTestEntry(
             date: Date(),
             todos: Array(todos.prefix(6))
         )
@@ -84,7 +67,7 @@ final class WidgetSnapshotTests: XCTestCase {
         // Given: 没有待办数据
 
         // When: 构建 entry
-        let entry = TodoEntry(
+        let entry = WidgetTestEntry(
             date: Date(),
             todos: []
         )
@@ -97,10 +80,10 @@ final class WidgetSnapshotTests: XCTestCase {
     func test_widget_onlyShowsUncompleted() async throws {
         // Given: 混合已完成和未完成的待办
         let todos = [
-            TodoItemData(title: "已完成任务1", isCompleted: true),
-            TodoItemData(title: "未完成任务1", isCompleted: false),
-            TodoItemData(title: "已完成任务2", isCompleted: true),
-            TodoItemData(title: "未完成任务2", isCompleted: false)
+            UITestTodoPayload(title: "已完成任务1", isCompleted: true),
+            UITestTodoPayload(title: "未完成任务1", isCompleted: false),
+            UITestTodoPayload(title: "已完成任务2", isCompleted: true),
+            UITestTodoPayload(title: "未完成任务2", isCompleted: false)
         ]
 
         // When: 获取未完成的待办
@@ -115,9 +98,9 @@ final class WidgetSnapshotTests: XCTestCase {
     func test_widget_sortedByCreatedAt() async throws {
         // Given: 不同创建时间的待办
         let todos = [
-            TodoItemData(title: "旧任务", createdAt: Date().addingTimeInterval(-3600)),
-            TodoItemData(title: "新任务", createdAt: Date()),
-            TodoItemData(title: "中任务", createdAt: Date().addingTimeInterval(-1800))
+            UITestTodoPayload(title: "旧任务", createdAt: Date().addingTimeInterval(-3600)),
+            UITestTodoPayload(title: "新任务", createdAt: Date()),
+            UITestTodoPayload(title: "中任务", createdAt: Date().addingTimeInterval(-1800))
         ]
 
         // When: 排序
@@ -133,49 +116,49 @@ final class WidgetSnapshotTests: XCTestCase {
     func test_widget_highPriorityDisplay() async throws {
         // Given: 混合优先级的待办
         let todos = [
-            TodoItemData(title: "紧急任务", priority: .high),
-            TodoItemData(title: "普通任务", priority: .normal)
+            UITestTodoPayload(title: "紧急任务", priority: .high),
+            UITestTodoPayload(title: "普通任务", priority: .normal)
         ]
 
         // When: 构建 entry
-        let entry = TodoEntry(
+        let entry = WidgetTestEntry(
             date: Date(),
             todos: todos
         )
 
         // Then: 验证高优先级待办存在
         XCTAssertEqual(entry.todos.count, 2)
-        XCTAssertEqual(entry.todos[0].priority, .high)
-        XCTAssertEqual(entry.todos[1].priority, .normal)
+        XCTAssertEqual(entry.todos[0].priority, UITestPriority.high.rawValue)
+        XCTAssertEqual(entry.todos[1].priority, UITestPriority.normal.rawValue)
     }
 
     /// 测试 Widget 分类 emoji 显示
     func test_widget_categoryEmoji() async throws {
         // Given: 不同分类的待办
         let todos = [
-            TodoItemData(title: "工作", category: .work),
-            TodoItemData(title: "学习", category: .study),
-            TodoItemData(title: "生活", category: .life),
-            TodoItemData(title: "健康", category: .health),
-            TodoItemData(title: "财务", category: .finance),
-            TodoItemData(title: "社交", category: .social)
+            UITestTodoPayload(title: "工作", category: .work),
+            UITestTodoPayload(title: "学习", category: .study),
+            UITestTodoPayload(title: "生活", category: .life),
+            UITestTodoPayload(title: "健康", category: .health),
+            UITestTodoPayload(title: "财务", category: .finance),
+            UITestTodoPayload(title: "社交", category: .social)
         ]
 
         // Then: 验证分类 emoji
-        XCTAssertEqual(todos[0].category.emoji, "💼")
-        XCTAssertEqual(todos[1].category.emoji, "📚")
-        XCTAssertEqual(todos[2].category.emoji, "🏠")
-        XCTAssertEqual(todos[3].category.emoji, "💪")
-        XCTAssertEqual(todos[4].category.emoji, "💰")
-        XCTAssertEqual(todos[5].category.emoji, "👥")
+        XCTAssertEqual(UITestCategory(rawValue: todos[0].category)?.emoji, "💼")
+        XCTAssertEqual(UITestCategory(rawValue: todos[1].category)?.emoji, "📚")
+        XCTAssertEqual(UITestCategory(rawValue: todos[2].category)?.emoji, "🏠")
+        XCTAssertEqual(UITestCategory(rawValue: todos[3].category)?.emoji, "💪")
+        XCTAssertEqual(UITestCategory(rawValue: todos[4].category)?.emoji, "💰")
+        XCTAssertEqual(UITestCategory(rawValue: todos[5].category)?.emoji, "👥")
     }
 
     /// 测试锁屏 Widget 显示
     func test_lockscreenWidget_displaysTwoTodos() async throws {
         // Given: 锁屏 Widget 数据
         let todos = [
-            TodoItemData(title: "任务1", category: .work),
-            TodoItemData(title: "任务2", category: .life)
+            UITestTodoPayload(title: "任务1", category: .work),
+            UITestTodoPayload(title: "任务2", category: .life)
         ]
 
         // When: 获取锁屏 Widget 数据（2 条）
@@ -184,4 +167,9 @@ final class WidgetSnapshotTests: XCTestCase {
         // Then: 验证显示 2 条
         XCTAssertEqual(lockscreenTodos.count, 2)
     }
+}
+
+private struct WidgetTestEntry {
+    let date: Date
+    let todos: [UITestTodoPayload]
 }

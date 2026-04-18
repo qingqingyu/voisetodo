@@ -54,6 +54,15 @@ struct ExtractedTodo: Identifiable, Codable {
     var priority: Priority
     var categoryHint: TodoCategory
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case detail
+        case dueHint
+        case priority
+        case categoryHint
+    }
+
     init(id: UUID = UUID(), title: String, detail: String = "", dueHint: String? = nil, priority: Priority = .normal, categoryHint: TodoCategory = .other) {
         self.id = id
         self.title = title
@@ -76,7 +85,7 @@ struct ExtractedTodo: Identifiable, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         title = try container.decode(String.self, forKey: .title)
         detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
         let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)

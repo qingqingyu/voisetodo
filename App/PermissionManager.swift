@@ -7,6 +7,8 @@ import Speech
 /// 权限管理器 [v2 新增]
 /// 负责管理和请求麦克风、语音识别权限
 final class PermissionManager: ObservableObject {
+    private let uiTestOptions = UITestLaunchOptions.current
+
     // MARK: - Published Properties
 
     @Published var micGranted: Bool = false
@@ -22,6 +24,12 @@ final class PermissionManager: ObservableObject {
 
     /// 检查当前权限状态
     func checkCurrentStatus() {
+        if uiTestOptions.isUITesting {
+            micGranted = !uiTestOptions.micPermissionDenied
+            speechGranted = true
+            return
+        }
+
         // 检查麦克风权限
         let micStatus = AVAudioSession.sharedInstance().recordPermission
         micGranted = (micStatus == .granted)
@@ -36,6 +44,12 @@ final class PermissionManager: ObservableObject {
     /// 请求麦克风权限
     @MainActor
     func requestMicPermission() async -> Bool {
+        if uiTestOptions.isUITesting {
+            let granted = !uiTestOptions.micPermissionDenied
+            micGranted = granted
+            return granted
+        }
+
         let granted = await VoiceInputManager.requestMicrophonePermission()
         micGranted = granted
         return granted
@@ -44,6 +58,11 @@ final class PermissionManager: ObservableObject {
     /// 请求语音识别权限
     @MainActor
     func requestSpeechPermission() async -> Bool {
+        if uiTestOptions.isUITesting {
+            speechGranted = true
+            return true
+        }
+
         let granted = await VoiceInputManager.requestSpeechPermission()
         speechGranted = granted
         return granted
@@ -71,12 +90,20 @@ final class PermissionManager: ObservableObject {
 
     /// 检查麦克风权限是否被永久拒绝
     var isMicPermanentlyDenied: Bool {
+        if uiTestOptions.isUITesting {
+            return uiTestOptions.micPermissionDenied
+        }
+
         let status = AVAudioSession.sharedInstance().recordPermission
         return status == .denied
     }
 
     /// 检查语音识别权限是否被永久拒绝
     var isSpeechPermanentlyDenied: Bool {
+        if uiTestOptions.isUITesting {
+            return false
+        }
+
         let status = SFSpeechRecognizer.authorizationStatus()
         return status == .denied
     }

@@ -33,4 +33,7 @@ protocol TodoStoreProtocol: ObservableObject {
 
     /// 替换待处理条目为提取结果（网络恢复后用）[v2]
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws
+
+    /// 批量替换多个待处理条目为提取结果（确保同一批次原子提交）
+    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws
 }

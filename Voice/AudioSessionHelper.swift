@@ -12,6 +12,7 @@ extension Notification.Name {
 final class AudioSessionHelper {
     private let session = AVAudioSession.sharedInstance()
     private var isActive = false
+    private var wasActiveBeforeInterruption = false
     private var observers: [NSObjectProtocol] = []
 
     /// 配置音频会话为录音模式
@@ -49,12 +50,13 @@ final class AudioSessionHelper {
         switch type {
         case .began:
             // 中断开始（如来电、闹钟等）
+            wasActiveBeforeInterruption = isActive
             isActive = false
         case .ended:
             // 中断结束
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-                if options.contains(.shouldResume) && isActive {
+                if options.contains(.shouldResume) && wasActiveBeforeInterruption {
                     // 可以恢复音频会话
                     try? configureSession()
 
@@ -66,6 +68,7 @@ final class AudioSessionHelper {
                     )
                 }
             }
+            wasActiveBeforeInterruption = false
         @unknown default:
             break
         }

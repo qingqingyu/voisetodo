@@ -114,6 +114,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
         do {
             let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
             let result = try decoder.decode(ExtractionResult.self, from: jsonData)
             return result
         } catch {

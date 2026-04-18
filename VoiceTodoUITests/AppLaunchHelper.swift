@@ -27,30 +27,40 @@ class AppLaunchHelper {
     /// - Parameter scenario: 场景名称
     func launch(withScenario scenario: String) {
         app.launchArguments.append("--ui-testing")
+        app.launchArguments.append("--enable-accessibility-identifiers")
         app.launchArguments.append("--scenario=\(scenario)")
         app.launchArguments.append("--reset-user-data")
         app.launch()
     }
 
     /// 启动 App 并跳过引导（已授权状态）
-    func launchWithCompletedOnboarding() {
+    func launchWithCompletedOnboarding(scenario: String? = nil) {
         app.launchArguments.append("--ui-testing")
+        app.launchArguments.append("--enable-accessibility-identifiers")
         app.launchArguments.append("--skip-onboarding")
         app.launchArguments.append("--reset-user-data")
+        if let scenario {
+            app.launchArguments.append("--scenario=\(scenario)")
+        }
         app.launch()
     }
 
     /// 启动 App 并模拟网络断开
-    func launchWithNetworkOff() {
+    func launchWithNetworkOff(scenario: String? = nil) {
         app.launchArguments.append("--ui-testing")
+        app.launchArguments.append("--enable-accessibility-identifiers")
         app.launchArguments.append("--network-off")
         app.launchArguments.append("--reset-user-data")
+        if let scenario {
+            app.launchArguments.append("--scenario=\(scenario)")
+        }
         app.launch()
     }
 
     /// 启动 App 并模拟麦克风权限被拒绝
     func launchWithMicPermissionDenied() {
         app.launchArguments.append("--ui-testing")
+        app.launchArguments.append("--enable-accessibility-identifiers")
         app.launchArguments.append("--mic-permission-denied")
         app.launchArguments.append("--reset-user-data")
         app.launch()
@@ -58,14 +68,17 @@ class AppLaunchHelper {
 
     /// 启动 App 并预置待办数据
     /// - Parameter todos: 预置的待办数据
-    func launchWithPresetTodos(_ todos: [TodoItemData]) {
+    func launchWithPresetTodos(_ todos: [UITestTodoPayload]) {
         app.launchArguments.append("--ui-testing")
+        app.launchArguments.append("--enable-accessibility-identifiers")
         app.launchArguments.append("--preset-todos")
         // 将数据编码为 JSON 传递（实际实现需要编码）
         if let data = try? JSONEncoder().encode(todos),
            let jsonString = String(data: data, encoding: .utf8) {
             app.launchArguments.append("--todos-data=\(jsonString)")
         }
+        app.launchArguments.append("--skip-onboarding")
+        app.launchArguments.append("--reset-user-data")
         app.launch()
     }
 
@@ -94,7 +107,7 @@ extension AppLaunchHelper {
 
     /// 确认弹窗
     var confirmSheet: XCUIElement {
-        app.sheets["ConfirmSheet"]
+        app.otherElements["ConfirmSheet"]
     }
 
     /// 语音原文区域
@@ -110,6 +123,10 @@ extension AppLaunchHelper {
     /// 确认添加按钮
     var confirmButton: XCUIElement {
         app.buttons["ConfirmAddButton"]
+    }
+
+    var extractedTodoList: XCUIElement {
+        confirmSheet.otherElements["ExtractedTodoList"]
     }
 
     /// 取消按钮
@@ -183,6 +200,10 @@ extension AppLaunchHelper {
         confirmButton.tap()
     }
 
+    func extractedTodoCount() -> Int {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'DeleteTodo_'")).count
+    }
+
     /// 点击取消按钮
     func tapCancelButton() {
         cancelButton.tap()
@@ -191,7 +212,7 @@ extension AppLaunchHelper {
     /// 删除确认弹窗中的指定待办
     /// - Parameter index: 待办索引
     func deleteTodoInSheet(at index: Int) {
-        let deleteButton = confirmSheet.buttons["DeleteTodo_\(index)"]
+        let deleteButton = app.buttons["DeleteTodo_\(index)"]
         XCTAssertTrue(deleteButton.exists, "删除按钮应该存在")
         deleteButton.tap()
 
@@ -200,7 +221,7 @@ extension AppLaunchHelper {
             predicate: NSPredicate(format: "exists == false"),
             object: deleteButton
         )
-        wait(for: [expectation], timeout: 1.0)
+        XCTWaiter().wait(for: [expectation], timeout: 1.0)
     }
 
     /// 编辑确认弹窗中的指定待办
@@ -208,7 +229,11 @@ extension AppLaunchHelper {
     ///   - index: 待办索引
     ///   - newTitle: 新标题
     func editTodoInSheet(at index: Int, newTitle: String) {
-        let todoField = confirmSheet.textFields["TodoTitle_\(index)"]
+        let titleText = app.staticTexts["TodoTitleText_\(index)"]
+        XCTAssertTrue(titleText.exists, "待办标题应该存在")
+        titleText.tap()
+
+        let todoField = app.textFields["TodoTitle_\(index)"]
         XCTAssertTrue(todoField.exists, "待办文本框应该存在")
 
         todoField.tap()

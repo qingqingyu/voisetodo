@@ -93,6 +93,7 @@ struct UIDemoView: View {
                         VStack(spacing: 12) {
                             ForEach(extractedTodos.indices, id: \.self) { index in
                                 TodoItemRow(
+                                    index: index,
                                     todo: $extractedTodos[index],
                                     onDelete: {
                                         extractedTodos.remove(at: index)

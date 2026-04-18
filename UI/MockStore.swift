@@ -19,7 +19,7 @@ class MockStore: TodoStoreProtocol {
 
     func addBatch(_ items: [ExtractedTodo]) throws {
         let newTodos = items.map { TodoItemData(from: $0) }
-        todos.insert(contentsOf: newTodos, at: 0)
+        todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
 
     func addRawTranscript(_ transcript: String) throws {
@@ -70,12 +70,15 @@ class MockStore: TodoStoreProtocol {
     }
 
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
-        // 删除待处理条目
-        todos.removeAll { $0.id == pendingId }
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript)
+    }
 
-        // 插入提取结果
+    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
+        let pendingSet = Set(pendingIds)
+        todos.removeAll { pendingSet.contains($0.id) }
+
         let newTodos = items.map { TodoItemData(from: $0, rawTranscript: rawTranscript) }
-        todos.insert(contentsOf: newTodos, at: 0)
+        todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
 }
 

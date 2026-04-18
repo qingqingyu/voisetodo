@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoiceTodoProtocols
+@testable import VoiceTodo
 
 final class ProtocolsTests: XCTestCase {
 

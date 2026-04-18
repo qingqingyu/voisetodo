@@ -9,10 +9,10 @@ enum ErrorMessages {
     static let audioSessionInterrupted = "录音被中断，请重试"
 
     // 网络/AI 相关
-    static let networkError = "网络连接失败，已保存原始记录，联网后自动整理"
-    static let apiTimeout = "请求超时，已保存原始记录"
-    static let apiError = "理解失败，已保存原始文本"
-    static let jsonParsingFailed = "解析失败，已保存原始文本"
+    static let networkError = "网络连接失败，请检查网络后重试"
+    static let apiTimeout = "请求超时，请稍后重试"
+    static let apiError = "理解失败，请稍后重试"
+    static let jsonParsingFailed = "解析失败，请稍后重试"
 
     // 存储相关
     static let storageError = "保存失败，请重试"

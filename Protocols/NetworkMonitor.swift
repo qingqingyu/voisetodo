@@ -18,6 +18,7 @@ final class NetworkMonitor: ObservableObject {
     private var monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "NetworkMonitor")
     private var cancellables = Set<AnyCancellable>()
+    private let uiTestOptions = UITestLaunchOptions.current
 
     // MARK: - Types
 
@@ -41,26 +42,19 @@ final class NetworkMonitor: ObservableObject {
 
     /// 开始监测网络状态
     func startMonitoring() {
+        if uiTestOptions.isUITesting {
+            isConnected = !uiTestOptions.forceOffline
+            isExpensive = false
+            isConstrained = false
+            connectionType = uiTestOptions.forceOffline ? .unknown : .wifi
+            return
+        }
+
+        updateState(from: monitor.currentPath)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 guard let self = self else { return }
-
-                self.isConnected = path.status == .satisfied
-                self.isExpensive = path.isExpensive
-                self.isConstrained = path.isConstrained
-
-                // 判断连接类型
-                if path.usesInterfaceType(.wifi) {
-                    self.connectionType = .wifi
-                } else if path.usesInterfaceType(.cellular) {
-                    self.connectionType = .cellular
-                } else if path.usesInterfaceType(.wiredEthernet) {
-                    self.connectionType = .wired
-                } else if path.usesInterfaceType(.loopback) {
-                    self.connectionType = .loopback
-                } else {
-                    self.connectionType = .unknown
-                }
+                self.updateState(from: path)
             }
         }
 
@@ -74,6 +68,11 @@ final class NetworkMonitor: ObservableObject {
 
     /// 重启监测（App 回到前台时调用，确保监测器处于活跃状态）
     func restartIfNeeded() {
+        if uiTestOptions.isUITesting {
+            startMonitoring()
+            return
+        }
+
         // Apple 文档：cancel() 后必须创建新实例，不能重用
         monitor.cancel()
         monitor = NWPathMonitor()
@@ -113,6 +112,26 @@ final class NetworkMonitor: ObservableObject {
             }
         } catch {
             return false
+        }
+    }
+}
+
+extension NetworkMonitor {
+    private func updateState(from path: NWPath) {
+        isConnected = path.status == .satisfied
+        isExpensive = path.isExpensive
+        isConstrained = path.isConstrained
+
+        if path.usesInterfaceType(.wifi) {
+            connectionType = .wifi
+        } else if path.usesInterfaceType(.cellular) {
+            connectionType = .cellular
+        } else if path.usesInterfaceType(.wiredEthernet) {
+            connectionType = .wired
+        } else if path.usesInterfaceType(.loopback) {
+            connectionType = .loopback
+        } else {
+            connectionType = .unknown
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 /// 待办条目行视图（Agent D 实现）
 /// 用于 ConfirmSheetView 中显示单个待办
 struct TodoItemRow: View {
+    let index: Int
     @Binding var todo: ExtractedTodo
     let onDelete: () -> Void
 
@@ -27,6 +28,7 @@ struct TodoItemRow: View {
                     TextField("待办标题", text: $editedTitle)
                         .font(.system(size: 17, weight: .semibold))
                         .focused($isTextFieldFocused)
+                        .accessibilityIdentifier("TodoTitle_\(index)")
                         .onSubmit {
                             finishEditing()
                         }
@@ -38,6 +40,7 @@ struct TodoItemRow: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(2)
+                        .accessibilityIdentifier("TodoTitleText_\(index)")
                 }
 
                 // 时间标签
@@ -63,6 +66,7 @@ struct TodoItemRow: View {
                     .padding(.vertical, 4)
                     .background(Color.red)
                     .cornerRadius(6)
+                    .accessibilityIdentifier("PriorityLabel")
             }
 
             // 删除按钮
@@ -72,6 +76,7 @@ struct TodoItemRow: View {
                     .foregroundColor(.secondary.opacity(0.6))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("DeleteTodo_\(index)")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -82,6 +87,7 @@ struct TodoItemRow: View {
         .offset(x: offset)
         .opacity(opacity)
         .contentShape(Rectangle())
+        .accessibilityIdentifier("TodoRow_\(index)")
         .onTapGesture {
             if !isEditing {
                 startEditing()
@@ -147,9 +153,9 @@ struct TodoItemRow: View {
 
         var body: some View {
             VStack(spacing: 12) {
-                TodoItemRow(todo: $todo1, onDelete: {})
-                TodoItemRow(todo: $todo2, onDelete: {})
-                TodoItemRow(todo: $todo3, onDelete: {})
+                TodoItemRow(index: 0, todo: $todo1, onDelete: {})
+                TodoItemRow(index: 1, todo: $todo2, onDelete: {})
+                TodoItemRow(index: 2, todo: $todo3, onDelete: {})
             }
             .padding()
             .background(Color(.systemGroupedBackground))

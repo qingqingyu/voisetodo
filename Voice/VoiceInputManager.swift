@@ -44,6 +44,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var liveActivity: Activity<RecordingActivityAttributes>?
     private var recordingStartTime: Date?
     private var updateTimer: Timer?
+    private var interruptionRecoveryObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
@@ -106,7 +107,8 @@ final class VoiceInputManager: VoiceInputProtocol {
             audioSessionHelper.startObserving()
 
             // 7.1 监听中断恢复通知（来电等中断结束后可恢复录音）
-            NotificationCenter.default.addObserver(
+            removeInterruptionRecoveryObserver()
+            interruptionRecoveryObserver = NotificationCenter.default.addObserver(
                 forName: .audioSessionDidRecoverFromInterruption,
                 object: nil,
                 queue: .main
@@ -154,7 +156,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         audioSessionHelper.deactivateSession()
 
         // 移除中断恢复通知监听
-        NotificationCenter.default.removeObserver(self, name: .audioSessionDidRecoverFromInterruption, object: nil)
+        removeInterruptionRecoveryObserver()
 
         // 更新状态
         isRecording = false
@@ -184,7 +186,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         audioSessionHelper.deactivateSession()
 
         // 移除中断恢复通知监听
-        NotificationCenter.default.removeObserver(self, name: .audioSessionDidRecoverFromInterruption, object: nil)
+        removeInterruptionRecoveryObserver()
 
         // 注意：不设置 isRecording = false，等待 recognitionTask 的 isFinal 回调触发 stopRecording()
         // 这样可以确保 transcript 是最终识别结果
@@ -337,7 +339,8 @@ final class VoiceInputManager: VoiceInputProtocol {
         )
 
         Task {
-            await activity.update(using: .init(state: updatedState, staleDate: nil))
+            let content = ActivityContent(state: updatedState, staleDate: nil)
+            await activity.update(content)
         }
     }
 
@@ -357,10 +360,8 @@ final class VoiceInputManager: VoiceInputProtocol {
             )
 
             // 结束 Activity
-            await activity.end(
-                using: .init(state: finalState, staleDate: nil),
-                dismissalPolicy: .immediate
-            )
+            let content = ActivityContent(state: finalState, staleDate: nil)
+            await activity.end(content, dismissalPolicy: .immediate)
             #if DEBUG
             print("Live Activity 已结束")
             #endif
@@ -387,7 +388,8 @@ final class VoiceInputManager: VoiceInputProtocol {
             )
 
             Task { [weak self] in
-                await self?.liveActivity?.update(using: .init(state: updatedState, staleDate: nil))
+                let content = ActivityContent(state: updatedState, staleDate: nil)
+                await self?.liveActivity?.update(content)
             }
         }
     }
@@ -396,6 +398,13 @@ final class VoiceInputManager: VoiceInputProtocol {
     private func stopUpdateTimer() {
         updateTimer?.invalidate()
         updateTimer = nil
+    }
+
+    private func removeInterruptionRecoveryObserver() {
+        if let observer = interruptionRecoveryObserver {
+            NotificationCenter.default.removeObserver(observer)
+            interruptionRecoveryObserver = nil
+        }
     }
 
     // MARK: - Permission Methods [v2]

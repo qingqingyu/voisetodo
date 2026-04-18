@@ -75,6 +75,7 @@ struct OnboardingView: View {
         .onChange(of: currentStep) {
             animateContentIn()
         }
+        .accessibilityIdentifier("OnboardingView")
     }
 
     // MARK: - Paper Background
@@ -577,6 +578,7 @@ struct OnboardingView: View {
                                 .fill(inkColor)
                         )
                     }
+                    .accessibilityIdentifier("OpenSettingsButton")
                 }
                 .padding(24)
                 .background(
@@ -609,6 +611,7 @@ struct OnboardingView: View {
                     )
                 }
                 .disabled(isRequestingPermission)
+                .accessibilityIdentifier(currentStep == 1 ? "AuthorizeMicButton" : "AuthorizeSpeechButton")
             }
         }
     }
@@ -680,6 +683,7 @@ struct OnboardingView: View {
                     .font(.custom("Avenir Next", size: 15)).fontWeight(.medium)
                     .foregroundColor(highlightColor)
             }
+            .accessibilityIdentifier("OpenSettingsButton")
             .padding(.top, 8)
 
             Spacer()
@@ -919,6 +923,7 @@ struct OnboardingView: View {
                 )
             }
             .disabled(!canProceed)
+            .accessibilityIdentifier("NextButton")
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)

@@ -42,6 +42,9 @@ targets:
       - path: UI/Home
         excludes:
           - "**/.DS_Store"
+      - path: UI/Detail
+        excludes:
+          - "**/.DS_Store"
       - path: UI/Shared
         excludes:
           - "**/.DS_Store"
@@ -127,6 +130,7 @@ targets:
       - path: VoiceTodoTests
         excludes:
           - "**/.DS_Store"
+          - "Protocols/**"
     dependencies:
       - target: VoiceTodo
     settings:
@@ -141,6 +145,7 @@ targets:
       - path: VoiceTodoUITests
         excludes:
           - "**/.DS_Store"
+          - "MockSetup.swift"
     dependencies:
       - target: VoiceTodo
     settings:

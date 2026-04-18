@@ -141,26 +141,3 @@ struct LockScreenLiveActivityView: View {
     }
 }
 
-// MARK: - Preview
-
-#Preview("Recording Activity", as: .content, using: RecordingActivityAttributes.previewContext) {
-    RecordingLiveActivity()
-} contentStates: {
-    RecordingActivityAttributes.ContentState(
-        isRecording: true,
-        transcript: "明天去银行办卡，顺便买菜",
-        duration: 15
-    )
-
-    RecordingActivityAttributes.ContentState(
-        isRecording: true,
-        transcript: "",
-        duration: 3
-    )
-
-    RecordingActivityAttributes.ContentState(
-        isRecording: false,
-        transcript: "完成周报",
-        duration: 45
-    )
-}

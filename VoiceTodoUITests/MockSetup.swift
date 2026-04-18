@@ -1,4 +1,6 @@
 import Foundation
+import Combine
+@testable import VoiceTodo
 
 /// Mock 场景定义
 /// 用于 E2E 测试时注入不同的 Mock 数据
@@ -207,8 +209,19 @@ class MockTodoStore: TodoStoreProtocol {
     }
 
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
-        storage.removeValue(forKey: pendingId)
-        try addBatch(items)
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript)
+    }
+
+    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
+        for pendingId in pendingIds {
+            storage.removeValue(forKey: pendingId)
+        }
+
+        for item in items {
+            let data = TodoItemData(from: item, rawTranscript: rawTranscript)
+            storage[data.id] = data
+        }
+        refreshTodos()
     }
 
     /// 重置存储（用于测试之间隔离）

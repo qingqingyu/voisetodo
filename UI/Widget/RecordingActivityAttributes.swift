@@ -30,15 +30,6 @@ struct RecordingActivityAttributes: ActivityAttributes {
     /// 活动名称（静态属性）
     var name: String = "VoiceTodo Recording"
 
-    // MARK: - Preview Context
-
-    /// 预览上下文
-    static var previewContext: ActivityPreviewContext<RecordingActivityAttributes> {
-        ActivityPreviewContext(
-            attributes: RecordingActivityAttributes(name: "VoiceTodo"),
-            contentState: ContentState(isRecording: true, transcript: "明天去银行办卡", duration: 15)
-        )
-    }
 }
 
 // MARK: - Helper Extensions

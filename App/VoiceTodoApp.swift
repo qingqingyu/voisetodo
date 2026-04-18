@@ -18,7 +18,6 @@ struct VoiceTodoApp: App {
 
     /// 标记是否应该自动开始录音（从 Action Button 启动）
     @State private var shouldAutoStartRecording = false
-
     // MARK: - Environment
 
     @Environment(\.scenePhase) private var scenePhase
@@ -26,30 +25,51 @@ struct VoiceTodoApp: App {
     // MARK: - Initialization
 
     init() {
+        let uiTestOptions = UITestLaunchOptions.current
+
+        if uiTestOptions.resetUserData {
+            UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        }
+
+        if uiTestOptions.skipOnboarding {
+            UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        }
+
         let schema = Schema([TodoItem.self])
 
-        // 配置 SwiftData ModelContainer（使用 App Group）
+        let shouldUseSharedContainer = !uiTestOptions.isUITesting && AppGroupConfig.sharedContainerURL != nil
+
+        // 配置 SwiftData ModelContainer。UI 测试和无 entitlement 环境避免直接触发 App Group fatal error。
         let container: ModelContainer
         do {
-            let configuration = ModelConfiguration(
-                schema: schema,
-                isStoredInMemoryOnly: false,
-                allowsSave: true,
-                groupContainer: .identifier(AppGroupConfig.identifier)
-            )
+            let configuration: ModelConfiguration
+            if shouldUseSharedContainer {
+                configuration = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: false,
+                    allowsSave: true,
+                    groupContainer: .identifier(AppGroupConfig.identifier)
+                )
+            } else {
+                configuration = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: uiTestOptions.isUITesting,
+                    allowsSave: true
+                )
+            }
             container = try ModelContainer(
                 for: schema,
                 configurations: configuration
             )
         } catch {
-            // 降级：使用内存容器，数据不会持久化但 App 能正常启动
+            // 降级：使用本地持久化容器，至少保证主 App 数据不会在进程退出后丢失。
             #if DEBUG
-            print("Failed to create persistent ModelContainer: \(error). Falling back to in-memory.")
+            print("Failed to create primary ModelContainer: \(error). Falling back to local persistent store.")
             #endif
             do {
                 let fallbackConfig = ModelConfiguration(
                     schema: schema,
-                    isStoredInMemoryOnly: true
+                    isStoredInMemoryOnly: uiTestOptions.isUITesting
                 )
                 container = try ModelContainer(
                     for: schema,
@@ -61,10 +81,18 @@ struct VoiceTodoApp: App {
         }
         modelContainer = container
 
-        // 初始化依赖
-        let voiceInput = VoiceInputManager()
-        let extractor = TodoExtractorService()
         let store = TodoStore(modelContext: container.mainContext)
+
+        if uiTestOptions.resetUserData {
+            try? store.resetForUITests()
+        }
+        if !uiTestOptions.presetTodos.isEmpty {
+            try? store.seedForUITests(uiTestOptions.presetTodos)
+        }
+
+        // 初始化依赖
+        let voiceInput: any VoiceInputProtocol = uiTestOptions.isUITesting ? UITestVoiceInputManager(options: uiTestOptions) : VoiceInputManager()
+        let extractor: any TodoExtractorProtocol = uiTestOptions.isUITesting ? UITestTodoExtractor() : TodoExtractorService()
 
         // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
         _todoStore = StateObject(wrappedValue: store)
@@ -125,6 +153,7 @@ struct VoiceTodoApp: App {
                         }
                     )
                 }
+                .accessibilityIdentifier("HomeView")
                 // ✅ 当 shouldAutoStartRecording 为 true 时自动开始录音
                 .onChange(of: shouldAutoStartRecording) { _, newValue in
                     if newValue {
@@ -137,6 +166,7 @@ struct VoiceTodoApp: App {
         } else {
             // 未完成引导，显示占位（引导会通过 sheet 显示）
             Color.clear
+                .accessibilityIdentifier("HomeView")
                 .onAppear {
                     showOnboarding = true
                 }
@@ -215,13 +245,3 @@ struct VoiceTodoApp: App {
     }
 }
 
-// MARK: - AppCoordinator Toast Extension
-
-extension AppCoordinator {
-    /// 显示 Toast 提示（供外部调用）
-    func showToast(message: String, style: ToastStyle) {
-        toastMessage = message
-        toastStyle = style
-        showToast = true
-    }
-}
