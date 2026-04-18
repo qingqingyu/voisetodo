@@ -1,10 +1,8 @@
 import XCTest
 import SwiftData
-import Combine
 @testable import VoiceTodo
 
 /// 集成测试：验证模块之间的接口调用
-@MainActor
 final class IntegrationTests: XCTestCase {
     // MARK: - Properties
 
@@ -12,8 +10,6 @@ final class IntegrationTests: XCTestCase {
     var modelContext: ModelContext!
     var todoStore: TodoStore!
     var mockExtractor: MockExtractor!
-    var cancellables: Set<AnyCancellable>!
-
     // MARK: - Setup & Teardown
 
     override func setUp() async throws {
@@ -22,12 +18,11 @@ final class IntegrationTests: XCTestCase {
         // 创建内存数据库
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         modelContainer = try ModelContainer(for: TodoItem.self, configurations: config)
-        modelContext = modelContainer.mainContext
+        modelContext = await MainActor.run { modelContainer.mainContext }
 
         // 初始化依赖
-        todoStore = TodoStore(modelContext: modelContext)
+        todoStore = await MainActor.run { TodoStore(modelContext: modelContext) }
         mockExtractor = MockExtractor()
-        cancellables = []
     }
 
     override func tearDown() {
@@ -35,7 +30,6 @@ final class IntegrationTests: XCTestCase {
         mockExtractor = nil
         modelContext = nil
         modelContainer = nil
-        cancellables = nil
         super.tearDown()
     }
 
@@ -60,7 +54,7 @@ final class IntegrationTests: XCTestCase {
     // MARK: - Test Case 2: Extractor → Store Pipeline
 
     /// 测试将 ExtractionResult 传入 store.addBatch，验证 todos 数量
-    func test_extractorToStore_pipeline() throws {
+    func test_extractorToStore_pipeline() async throws {
         // Given: 一个提取结果
         let extractedItems = [
             ExtractedTodo(title: "任务1", categoryHint: .work),
@@ -68,16 +62,20 @@ final class IntegrationTests: XCTestCase {
             ExtractedTodo(title: "任务3", categoryHint: .study)
         ]
 
-        XCTAssertEqual(todoStore.todos.count, 0, "初始应该没有待办")
+        let initialCount = await MainActor.run { todoStore.todos.count }
+        XCTAssertEqual(initialCount, 0, "初始应该没有待办")
 
         // When: 批量添加到 store
-        try todoStore.addBatch(extractedItems)
+        try await MainActor.run {
+            try todoStore.addBatch(extractedItems)
+        }
 
         // Then: 验证 todos 数量
-        XCTAssertEqual(todoStore.todos.count, 3, "应该有 3 条待办")
+        let todos = await MainActor.run { todoStore.todos }
+        XCTAssertEqual(todos.count, 3, "应该有 3 条待办")
 
         // 验证数据内容
-        let titles = todoStore.todos.map { $0.title }
+        let titles = todos.map(\.title)
         XCTAssertTrue(titles.contains("任务1"))
         XCTAssertTrue(titles.contains("任务2"))
         XCTAssertTrue(titles.contains("任务3"))
@@ -86,16 +84,20 @@ final class IntegrationTests: XCTestCase {
     // MARK: - Test Case 3: Store → Widget Data Access
 
     /// 测试写入数据后通过 App Group 读取，验证一致性
-    func test_storeToWidget_dataAccess() throws {
+    func test_storeToWidget_dataAccess() async throws {
         // Given: 添加一些待办
         let items = [
             ExtractedTodo(title: "Widget 任务1", priority: .high, categoryHint: .work),
             ExtractedTodo(title: "Widget 任务2", priority: .normal, categoryHint: .life)
         ]
-        try todoStore.addBatch(items)
+        try await MainActor.run {
+            try todoStore.addBatch(items)
+        }
 
         // When: 获取用于 Widget 的数据
-        let widgetData = todoStore.recentUncompleted(limit: 10)
+        let widgetData = await MainActor.run {
+            todoStore.recentUncompleted(limit: 10)
+        }
 
         // Then: 验证一致性
         XCTAssertEqual(widgetData.count, 2)
@@ -108,17 +110,20 @@ final class IntegrationTests: XCTestCase {
     // MARK: - Test Case 4: Offline Raw Transcript Full Path
 
     /// 测试原始转写文本存入 store，验证 needsAIProcessing==true
-    func test_offlineRawTranscript_fullPath() throws {
+    func test_offlineRawTranscript_fullPath() async throws {
         // Given: 一个原始转写文本
         let transcript = "这是一段很长很长的原始语音转写文本，需要进行后续 AI 处理"
 
         // When: 使用 addRawTranscript 保存原始文本
-        try todoStore.addRawTranscript(transcript)
+        try await MainActor.run {
+            try todoStore.addRawTranscript(transcript)
+        }
 
         // Then: 验证存储结果
-        XCTAssertEqual(todoStore.todos.count, 1)
-        XCTAssertTrue(todoStore.todos[0].needsAIProcessing)
-        XCTAssertEqual(todoStore.todos[0].title, TextUtils.truncateTitle(from: transcript))
+        let todos = await MainActor.run { todoStore.todos }
+        XCTAssertEqual(todos.count, 1)
+        XCTAssertTrue(todos[0].needsAIProcessing)
+        XCTAssertEqual(todos[0].title, TextUtils.truncateTitle(from: transcript))
     }
 
     // MARK: - Test Case 5: Pending Recovery Full Path
@@ -127,21 +132,27 @@ final class IntegrationTests: XCTestCase {
     func test_pendingRecovery_fullPath() async throws {
         // Given: 预置一个待处理条目
         let rawTranscript = "明天去银行办卡，顺便买菜"
-        try todoStore.addRawTranscript(rawTranscript)
+        try await MainActor.run {
+            try todoStore.addRawTranscript(rawTranscript)
+        }
 
-        XCTAssertEqual(todoStore.todos.count, 1)
-        XCTAssertTrue(todoStore.todos[0].needsAIProcessing)
+        let initialTodos = await MainActor.run { todoStore.todos }
+        XCTAssertEqual(initialTodos.count, 1)
+        XCTAssertTrue(initialTodos[0].needsAIProcessing)
 
-        let pendingId = todoStore.todos[0].id
+        let pendingId = initialTodos[0].id
 
         // When: AI 提取并替换
         let extractedItems = try await mockExtractor.extract(from: rawTranscript)
-        try todoStore.replacePendingWithExtracted(pendingId, extractedItems.todos)
+        try await MainActor.run {
+            try todoStore.replacePendingWithExtracted(pendingId, extractedItems.todos)
+        }
 
         // Then: 验证替换结果
-        XCTAssertEqual(todoStore.todos.count, extractedItems.todos.count, "应该与提取结果数量一致")
-        XCTAssertFalse(todoStore.todos.contains { $0.id == pendingId }, "原待处理条目应被删除")
-        XCTAssertTrue(todoStore.todos.allSatisfy { !$0.needsAIProcessing }, "新条目不应标记为待处理")
+        let replacedTodos = await MainActor.run { todoStore.todos }
+        XCTAssertEqual(replacedTodos.count, extractedItems.todos.count, "应该与提取结果数量一致")
+        XCTAssertFalse(replacedTodos.contains { $0.id == pendingId }, "原待处理条目应被删除")
+        XCTAssertTrue(replacedTodos.allSatisfy { !$0.needsAIProcessing }, "新条目不应标记为待处理")
     }
 
     // MARK: - Test Case 6: Error Propagation
@@ -162,7 +173,9 @@ final class IntegrationTests: XCTestCase {
         // Test 2: Storage Error
         let invalidId = UUID()
         do {
-            try todoStore.delete(invalidId)
+            try await MainActor.run {
+                try todoStore.delete(invalidId)
+            }
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
             XCTAssertTrue(error is VoiceTodoError)
@@ -185,23 +198,30 @@ final class IntegrationTests: XCTestCase {
     // MARK: - Additional Integration Tests
 
     /// 测试完整的工作流：添加 → 标记完成 → 验证未完成列表不包含已完成项
-    func test_fullWorkflow_addCompleteFilter() throws {
+    func test_fullWorkflow_addCompleteFilter() async throws {
         // Given: 添加 3 条待办
         let items = [
             ExtractedTodo(title: "任务A", categoryHint: .work),
             ExtractedTodo(title: "任务B", categoryHint: .life),
             ExtractedTodo(title: "任务C", categoryHint: .study)
         ]
-        try todoStore.addBatch(items)
+        try await MainActor.run {
+            try todoStore.addBatch(items)
+        }
 
-        XCTAssertEqual(todoStore.todos.count, 3)
+        let addedTodos = await MainActor.run { todoStore.todos }
+        XCTAssertEqual(addedTodos.count, 3)
 
         // When: 标记第一条为完成
-        let firstTodoId = todoStore.todos[0].id
-        try todoStore.toggleComplete(firstTodoId)
+        let firstTodoId = addedTodos[0].id
+        try await MainActor.run {
+            try todoStore.toggleComplete(firstTodoId)
+        }
 
         // Then: 验证未完成列表
-        let uncompleted = todoStore.recentUncompleted(limit: 10)
+        let uncompleted = await MainActor.run {
+            todoStore.recentUncompleted(limit: 10)
+        }
         XCTAssertEqual(uncompleted.count, 2, "未完成列表应该有 2 条")
         XCTAssertTrue(uncompleted.allSatisfy { !$0.isCompleted }, "未完成列表不应包含已完成项")
     }
@@ -226,7 +246,8 @@ final class IntegrationTests: XCTestCase {
         }
 
         // Then: 验证所有任务都被添加
-        XCTAssertEqual(todoStore.todos.count, 10, "应该有 10 条待办")
+        let count = await MainActor.run { todoStore.todos.count }
+        XCTAssertEqual(count, 10, "应该有 10 条待办")
     }
 }
 
