@@ -10,11 +10,11 @@ struct ConfirmSheetView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    // 成功状态
     @State private var showSuccess = false
+    @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // 成功动画覆盖层
                 if showSuccess {
@@ -53,17 +53,12 @@ struct ConfirmSheetView: View {
     private var mainContent: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // 语音原文区
                 transcriptSection
 
-                // 提取结果列表
-                if !todos.isEmpty {
-                    todosSection
-                }
-
-                // 操作提示
                 if !todos.isEmpty {
                     operationHint
+
+                    todosSection
                 }
             }
             .padding()
@@ -80,13 +75,13 @@ struct ConfirmSheetView: View {
                 .foregroundColor(WarmTheme.textSecondary)
 
             Text(transcript)
-                .font(.custom("Avenir Next", size: 14))
+                .font(WarmFont.body(14))
                 .foregroundColor(WarmTheme.textSecondary)
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.secondarySystemGroupedBackground))
+                        .fill(WarmTheme.secondaryBackground)
                 )
                 .accessibilityIdentifier("TranscriptArea")
         }
@@ -110,10 +105,20 @@ struct ConfirmSheetView: View {
     // MARK: - Operation Hint
 
     private var operationHint: some View {
-        Text("点击条目可编辑 · 点 ✕ 可删除")
-            .font(.custom("Avenir Next", size: 13))
-            .foregroundColor(WarmTheme.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .center)
+        HStack(spacing: 6) {
+            Image(systemName: "hand.tap")
+                .font(.system(size: 12))
+            Text("点击条目可编辑标题 · 点 ✕ 可删除")
+                .font(WarmFont.caption(13))
+        }
+        .foregroundColor(WarmTheme.textSecondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(WarmTheme.secondaryBackground)
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     // MARK: - Success Overlay
@@ -155,22 +160,20 @@ struct ConfirmSheetView: View {
     private func confirmAction() {
         guard !todos.isEmpty else { return }
 
-        // 执行存储操作，根据结果决定是否显示成功动画
         let success = onConfirm(todos)
 
         if success {
-            // 存储成功，显示成功动画
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 showSuccess = true
             }
 
-            // 1.5 秒后自动关闭（使用 Task 支持 Cancel）
-            Task {
+            dismissTask?.cancel()
+            dismissTask = Task {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
                 dismiss()
             }
         }
-        // 存储失败时 onConfirm 内部已显示 toast，保持 sheet 不关闭让用户可重试
     }
 }
 

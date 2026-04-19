@@ -24,6 +24,7 @@ final class AppCoordinator: ObservableObject {
     @Published var showToast = false
     @Published var toastMessage = ""
     @Published var toastStyle: ToastStyle = .info
+    @Published var deepLinkTodoId: UUID?
 
     // MARK: - Private Properties
 

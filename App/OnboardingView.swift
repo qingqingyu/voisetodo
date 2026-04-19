@@ -216,6 +216,8 @@ struct OnboardingView: View {
                 .scaleEffect(illustrationScale)
                 .rotationEffect(.degrees(illustrationRotation))
                 .animation(.spring(response: 0.6, dampingFraction: 0.7), value: illustrationScale)
+                .accessibilityLabel("麦克风插画")
+                .accessibilityHidden(true)
 
             VStack(spacing: 16) {
                 // 手写风格标题
@@ -677,14 +679,11 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 跳过提示
-            Button(action: { permissionManager.openAppSettings() }) {
-                Text("去设置 →")
-                    .font(.custom("Avenir Next", size: 15)).fontWeight(.medium)
-                    .foregroundColor(highlightColor)
-            }
-            .accessibilityIdentifier("OpenSettingsButton")
-            .padding(.top, 8)
+            Text("设置完成后回到这里点「知道了」即可")
+                .font(WarmFont.caption(14))
+                .foregroundColor(sketchColor.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
 
             Spacer()
         }
@@ -934,10 +933,10 @@ struct OnboardingView: View {
     private var buttonTitle: String {
         if currentStep == totalSteps - 1 {
             return "开始使用"
-        } else if currentStep == 1 && !permissionManager.micGranted {
-            return "稍后设置"
-        } else if currentStep == 2 && !permissionManager.speechGranted {
-            return "稍后设置"
+        } else if currentStep == 1 && !permissionManager.micGranted && !permissionManager.isMicPermanentlyDenied {
+            return "先跳过"
+        } else if currentStep == 2 && !permissionManager.speechGranted && !permissionManager.isSpeechPermanentlyDenied {
+            return "先跳过"
         } else if currentStep == 3 {
             return "知道了"
         } else {
@@ -946,16 +945,8 @@ struct OnboardingView: View {
     }
 
     private var canProceed: Bool {
-        switch currentStep {
-        case 1:
-            // 权限已授予或已明确拒绝（含永久拒绝），都允许继续
-            // 只在用户尚未做出选择时阻止前进（避免跳过授权步骤）
-            return permissionManager.micGranted || permissionManager.isMicPermanentlyDenied
-        case 2:
-            return permissionManager.speechGranted || permissionManager.isSpeechPermanentlyDenied
-        default:
-            return true
-        }
+        // 所有步骤均可前进——权限步骤中按钮文字为「稍后设置」时允许跳过
+        return true
     }
 
     // MARK: - Actions
@@ -989,21 +980,19 @@ struct OnboardingView: View {
     }
 
     private func animateContentIn() {
-        // 重置动画状态
         contentOffset = 30
         contentOpacity = 0
         illustrationScale = 0.8
         illustrationRotation = -5
 
-        // 延迟执行动画
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task {
+            try? await Task.sleep(nanoseconds: 100_000_000)
             withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) {
                 illustrationScale = 1.0
                 illustrationRotation = 0
             }
-        }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            try? await Task.sleep(nanoseconds: 100_000_000)
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                 contentOffset = 0
                 contentOpacity = 1

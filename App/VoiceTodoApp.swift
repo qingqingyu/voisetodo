@@ -199,13 +199,18 @@ struct VoiceTodoApp: App {
 
     // MARK: - URL Scheme Handling
 
-    /// 处理 URL 打开（Action Button 或其他外部调用）
+    /// 处理 URL 打开（Action Button、Widget 深链等）
     private func handleOpenURL(_ url: URL) {
         guard url.scheme == "voicetodo" else { return }
 
         switch url.host {
         case "record":
             handleActionButtonLaunch()
+        case "todo":
+            if let idString = url.pathComponents.dropFirst().first,
+               let todoId = UUID(uuidString: idString) {
+                coordinator.deepLinkTodoId = todoId
+            }
         default:
             break
         }

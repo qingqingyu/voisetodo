@@ -8,24 +8,22 @@ private let todoDetailDateFormatter: DateFormatter = {
     return formatter
 }()
 
-/// 待办详情页
-/// 支持查看和编辑待办标题
+/// 待办详情页 - 温暖主题风格
+/// 支持编辑标题、分类、优先级、时间提示，以及删除
 struct TodoDetailView<Store: TodoStoreProtocol>: View {
     // MARK: - Properties
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var coordinator: AppCoordinator
     @ObservedObject var store: Store
     let todo: TodoItemData
 
-    // 编辑状态
     @State private var editedTitle: String
     @State private var editedCategory: TodoCategory
     @State private var editedPriority: Priority
     @State private var editedDueHint: String
-    @State private var showSaveConfirmation = false
-    @State private var showError = false
-    @State private var errorMessage = ""
     @State private var hasChanges = false
+    @State private var showDeleteConfirmation = false
 
     // MARK: - Initialization
 
@@ -41,105 +39,226 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
     // MARK: - Body
 
     var body: some View {
-        Form {
-            // 标题编辑
-            Section(header: Text("标题")) {
-                TextField("待办标题", text: $editedTitle)
-                    .font(.custom("Avenir Next", size: 17))
-                    .onChange(of: editedTitle) { _, _ in
-                        checkForChanges()
-                    }
-            }
+        ZStack {
+            WarmTheme.background
+                .ignoresSafeArea()
 
-            // 分类选择
-            Section(header: Text("分类")) {
-                Picker("分类", selection: $editedCategory) {
-                    ForEach(TodoCategory.allCases, id: \.self) { category in
-                        HStack {
-                            Text(category.emoji)
-                            Text(category.displayName)
+            ScrollView {
+                VStack(spacing: 20) {
+                    // 标题编辑
+                    detailCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("标题")
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
+
+                            TextField("待办标题", text: $editedTitle, axis: .vertical)
+                                .font(WarmFont.body(17))
+                                .foregroundColor(WarmTheme.textPrimary)
+                                .lineLimit(1...3)
+                                .onChange(of: editedTitle) { _, _ in checkForChanges() }
                         }
-                        .tag(category)
                     }
-                }
-                .onChange(of: editedCategory) { _, _ in
-                    checkForChanges()
-                }
-            }
 
-            // 优先级选择
-            Section(header: Text("优先级")) {
-                Picker("优先级", selection: $editedPriority) {
-                    Text("普通").tag(Priority.normal)
-                    Text("高优先级").tag(Priority.high)
-                }
-                .onChange(of: editedPriority) { _, _ in
-                    checkForChanges()
-                }
-            }
+                    // 分类选择
+                    detailCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("分类")
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
 
-            // 时间提示
-            Section(header: Text("时间提示")) {
-                TextField("例如：明天、周三前", text: $editedDueHint)
-                    .font(.custom("Avenir Next", size: 17))
-                    .onChange(of: editedDueHint) { _, _ in
-                        checkForChanges()
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(TodoCategory.allCases, id: \.self) { category in
+                                        categoryChip(category)
+                                    }
+                                }
+                            }
+                        }
                     }
-            }
 
-            // 元信息
-            Section(header: Text("信息")) {
-                HStack {
-                    Text("创建时间")
-                    Spacer()
-                    Text(formatDate(todo.createdAt))
-                        .foregroundColor(WarmTheme.textSecondary)
-                }
+                    // 优先级选择
+                    detailCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("优先级")
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
 
-                if todo.needsAIProcessing {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text("待 AI 整理")
-                            .foregroundColor(.orange)
+                            HStack(spacing: 12) {
+                                priorityButton(.normal, label: "普通", icon: "minus")
+                                priorityButton(.high, label: "高优先级", icon: "exclamationmark")
+                            }
+                        }
                     }
+
+                    // 时间提示
+                    detailCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("时间提示")
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
+
+                            TextField("例如：明天、周三前", text: $editedDueHint)
+                                .font(WarmFont.body(17))
+                                .foregroundColor(WarmTheme.textPrimary)
+                                .onChange(of: editedDueHint) { _, _ in checkForChanges() }
+                        }
+                    }
+
+                    // 元信息
+                    detailCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("创建时间")
+                                    .font(WarmFont.body(15))
+                                    .foregroundColor(WarmTheme.textPrimary)
+                                Spacer()
+                                Text(todoDetailDateFormatter.string(from: todo.createdAt))
+                                    .font(WarmFont.caption(14))
+                                    .foregroundColor(WarmTheme.textSecondary)
+                            }
+
+                            if todo.needsAIProcessing {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(WarmTheme.warning)
+                                    Text("待 AI 整理")
+                                        .font(WarmFont.body(14))
+                                        .foregroundColor(WarmTheme.warning)
+                                }
+                            }
+                        }
+                    }
+
+                    // 删除按钮
+                    Button(action: { showDeleteConfirmation = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "trash")
+                            Text("删除此待办")
+                        }
+                        .font(WarmFont.body(15))
+                        .foregroundColor(WarmTheme.urgent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(WarmTheme.urgent.opacity(0.08))
+                        )
+                    }
+                    .padding(.top, 8)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 40)
             }
         }
         .navigationTitle("待办详情")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasChanges)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("取消") {
-                    dismiss()
+            if hasChanges {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("放弃") { dismiss() }
+                        .font(WarmFont.body(16))
+                        .foregroundColor(WarmTheme.textSecondary)
                 }
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("保存") {
-                    saveChanges()
-                }
-                .disabled(!hasChanges || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .fontWeight(.semibold)
+                Button("保存") { saveChanges() }
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(hasChanges && !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? WarmTheme.primary : WarmTheme.textMuted)
+                    .disabled(!hasChanges || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .alert("已保存", isPresented: $showSaveConfirmation) {
-            Button("好的") {
-                dismiss()
-            }
+        .alert("确认删除", isPresented: $showDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) { deleteTodo() }
         } message: {
-            Text("待办已更新")
-        }
-        .alert("提示", isPresented: $showError) {
-            Button("好的") {}
-        } message: {
-            Text(errorMessage)
+            Text("删除后无法恢复")
         }
     }
 
-    // MARK: - Private Methods
+    // MARK: - Card Wrapper
 
-    /// 检查是否有变更
+    private func detailCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading) {
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white)
+                .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
+        )
+    }
+
+    // MARK: - Category Chip
+
+    private func categoryChip(_ category: TodoCategory) -> some View {
+        let isSelected = editedCategory == category
+        return Button {
+            withAnimation(.spring(response: 0.3)) {
+                editedCategory = category
+                checkForChanges()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(category.emoji)
+                    .font(.system(size: 14))
+                Text(category.displayName)
+                    .font(WarmFont.caption(13))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? WarmTheme.primary.opacity(0.15) : WarmTheme.secondaryBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? WarmTheme.primary : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundColor(isSelected ? WarmTheme.primaryDark : WarmTheme.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Priority Button
+
+    private func priorityButton(_ priority: Priority, label: String, icon: String) -> some View {
+        let isSelected = editedPriority == priority
+        let color = priority == .high ? WarmTheme.urgent : WarmTheme.success
+        return Button {
+            withAnimation(.spring(response: 0.3)) {
+                editedPriority = priority
+                checkForChanges()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(label)
+                    .font(WarmFont.body(15))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? color.opacity(0.12) : WarmTheme.secondaryBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundColor(isSelected ? color : WarmTheme.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Actions
+
     private func checkForChanges() {
         hasChanges = editedTitle != todo.title ||
                      editedCategory != todo.category ||
@@ -147,7 +266,6 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                      editedDueHint != (todo.dueHint ?? "")
     }
 
-    /// 保存变更
     private func saveChanges() {
         do {
             let newCategory = editedCategory != todo.category ? editedCategory : nil
@@ -162,18 +280,23 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 dueHint: newDueHint
             )
 
-            // 刷新 Widget
             WidgetCenter.shared.reloadAllTimelines()
 
-            showSaveConfirmation = true
+            coordinator.showToast(message: "已保存", style: .success)
+            dismiss()
         } catch {
-            errorMessage = "保存失败：\(error.localizedDescription)"
-            showError = true
+            coordinator.showToast(message: "保存失败：\(error.localizedDescription)", style: .warning)
         }
     }
 
-    private func formatDate(_ date: Date) -> String {
-        todoDetailDateFormatter.string(from: date)
+    private func deleteTodo() {
+        do {
+            try store.delete(todo.id)
+            WidgetCenter.shared.reloadAllTimelines()
+            coordinator.showToast(message: "已删除", style: .info)
+            dismiss()
+        } catch {
+            coordinator.showToast(message: "删除失败", style: .warning)
+        }
     }
 }
-
