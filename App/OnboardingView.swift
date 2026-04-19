@@ -913,15 +913,14 @@ struct OnboardingView: View {
                 .padding(.vertical, 16)
                 .background(
                     Capsule()
-                        .fill(canProceed ? highlightColor : sketchColor.opacity(0.3))
+                        .fill(highlightColor)
                         .shadow(
-                            color: canProceed ? highlightColor.opacity(0.3) : Color.clear,
+                            color: highlightColor.opacity(0.3),
                             radius: 8,
                             y: 4
                         )
                 )
             }
-            .disabled(!canProceed)
             .accessibilityIdentifier("NextButton")
         }
         .padding(.horizontal, 24)
@@ -942,11 +941,6 @@ struct OnboardingView: View {
         } else {
             return "下一步"
         }
-    }
-
-    private var canProceed: Bool {
-        // 所有步骤均可前进——权限步骤中按钮文字为「稍后设置」时允许跳过
-        return true
     }
 
     // MARK: - Actions

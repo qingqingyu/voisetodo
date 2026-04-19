@@ -11,7 +11,6 @@ struct ConfirmSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showSuccess = false
-    @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -46,6 +45,11 @@ struct ConfirmSheetView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .accessibilityIdentifier("ConfirmSheet")
+        .task(id: showSuccess) {
+            guard showSuccess else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            dismiss()
+        }
     }
 
     // MARK: - Main Content
@@ -70,8 +74,7 @@ struct ConfirmSheetView: View {
     private var transcriptSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("语音原文")
-                .font(.custom("Avenir Next", size: 13))
-                .fontWeight(.medium)
+                .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
 
             Text(transcript)
@@ -165,13 +168,6 @@ struct ConfirmSheetView: View {
         if success {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 showSuccess = true
-            }
-
-            dismissTask?.cancel()
-            dismissTask = Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                guard !Task.isCancelled else { return }
-                dismiss()
             }
         }
     }

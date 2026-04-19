@@ -282,10 +282,10 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
             WidgetCenter.shared.reloadAllTimelines()
 
-            coordinator.showToast(message: "已保存", style: .success)
+            coordinator.showToast(message: ErrorMessages.todoSaved, style: .success)
             dismiss()
         } catch {
-            coordinator.showToast(message: "保存失败：\(error.localizedDescription)", style: .warning)
+            coordinator.showToast(message: String(format: ErrorMessages.todoSaveFailed, error.localizedDescription), style: .warning)
         }
     }
 
@@ -293,10 +293,10 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
         do {
             try store.delete(todo.id)
             WidgetCenter.shared.reloadAllTimelines()
-            coordinator.showToast(message: "已删除", style: .info)
+            coordinator.showToast(message: ErrorMessages.todoDeleted, style: .info)
             dismiss()
         } catch {
-            coordinator.showToast(message: "删除失败", style: .warning)
+            coordinator.showToast(message: ErrorMessages.todoDeleteFailed, style: .warning)
         }
     }
 }

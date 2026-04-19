@@ -17,6 +17,12 @@ enum ErrorMessages {
     // 存储相关
     static let storageError = "保存失败，请重试"
 
+    // 详情页
+    static let todoSaved = "已保存"
+    static let todoSaveFailed = "保存失败：%@"
+    static let todoDeleted = "已删除"
+    static let todoDeleteFailed = "删除失败，请重试"
+
     // UI 提示
     static let noTodosFound = "未识别到待办事项"
     static let savedOffline = "已保存原始记录，联网后将自动整理"

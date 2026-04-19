@@ -18,6 +18,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var showRecordingButton = false
     @State private var isProcessing = false
 
+    private let waveformHeights: [CGFloat] = [14, 24, 18, 28, 16]
+
     // MARK: - Initialization
 
     init(store: Store) {
@@ -83,10 +85,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             // Widget 深链导航
             .onChange(of: coordinator.deepLinkTodoId) { _, todoId in
                 guard let todoId else { return }
-                if let todo = store.todos.first(where: { $0.id == todoId }) {
-                    selectedTodo = todo
-                }
-                coordinator.deepLinkTodoId = nil
+                navigateToDeepLinkedTodo(id: todoId)
             }
         }
         .accessibilityIdentifier("HomeView")
@@ -185,10 +184,10 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             } else {
                 // 录音波形指示
                 HStack(spacing: 4) {
-                    ForEach(0..<5, id: \.self) { i in
+                    ForEach(Array(waveformHeights.enumerated()), id: \.offset) { i, h in
                         RoundedRectangle(cornerRadius: 2)
                             .fill(WarmTheme.primary)
-                            .frame(width: 4, height: CGFloat.random(in: 12...28))
+                            .frame(width: 4, height: h)
                             .animation(
                                 .easeInOut(duration: 0.4)
                                     .repeatForever(autoreverses: true)
@@ -385,6 +384,22 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     // MARK: - Actions
+
+    private func navigateToDeepLinkedTodo(id: UUID) {
+        if let todo = store.todos.first(where: { $0.id == id }) {
+            selectedTodo = todo
+            coordinator.deepLinkTodoId = nil
+            return
+        }
+        // 冷启动时 store 可能还未加载完成，延迟重试一次
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if let todo = store.todos.first(where: { $0.id == id }) {
+                selectedTodo = todo
+            }
+            coordinator.deepLinkTodoId = nil
+        }
+    }
 
     private func startEntranceAnimation() {
         withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
