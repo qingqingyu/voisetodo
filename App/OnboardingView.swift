@@ -158,12 +158,11 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 // 手写风格标题
                 Text("嗨，欢迎来到")
-                    .font(.custom("Avenir Next", size: 18))
+                    .font(WarmFont.body(18))
                     .foregroundColor(sketchColor)
 
                 Text("VoiceTodo")
-                    .font(.custom("Avenir Next", size: 36, relativeTo: .largeTitle))
-                    .fontWeight(.bold)
+                    .font(WarmFont.title(36))
                     .foregroundColor(inkColor)
 
                 // 手绘下划线
@@ -323,11 +322,11 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.custom("Avenir Next", size: 18)).fontWeight(.semibold)
+                    .font(WarmFont.headline(18))
                     .foregroundColor(inkColor)
 
                 Text(description)
-                    .font(.custom("Avenir Next", size: 15))
+                    .font(WarmFont.caption(15))
                     .foregroundColor(sketchColor)
             }
 
@@ -362,11 +361,11 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 Text("需要你的麦克风")
-                    .font(.custom("Avenir Next", size: 28)).fontWeight(.bold)
+                    .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
 
                 Text("这样才能「听」到你说的话呀")
-                    .font(.custom("Avenir Next", size: 17))
+                    .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -409,11 +408,11 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 Text("还需要语音识别")
-                    .font(.custom("Avenir Next", size: 28)).fontWeight(.bold)
+                    .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
 
                 Text("这样才能把你的话变成文字")
-                    .font(.custom("Avenir Next", size: 17))
+                    .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -480,7 +479,7 @@ struct OnboardingView: View {
                         .foregroundColor(WarmTheme.success)
 
                     Text("太好了，已经授权了！")
-                        .font(.custom("Avenir Next", size: 17)).fontWeight(.medium)
+                        .font(WarmFont.body(17))
                         .foregroundColor(WarmTheme.success)
                 }
                 .padding(20)
@@ -498,7 +497,7 @@ struct OnboardingView: View {
                         .foregroundColor(WarmTheme.warning)
 
                     Text(deniedMessage)
-                        .font(.custom("Avenir Next", size: 15))
+                        .font(WarmFont.caption(15))
                         .foregroundColor(sketchColor)
                         .multilineTextAlignment(.center)
 
@@ -507,7 +506,7 @@ struct OnboardingView: View {
                             Image(systemName: "gear")
                             Text("去设置里开启")
                         }
-                        .font(.custom("Avenir Next", size: 16)).fontWeight(.medium)
+                        .font(WarmFont.body(16))
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 14)
@@ -536,7 +535,7 @@ struct OnboardingView: View {
                             Image(systemName: "hand.raised.fill")
                                 .font(.system(size: 20))
                             Text("好的，授权给 VoiceTodo")
-                                .font(.custom("Avenir Next", size: 17)).fontWeight(.semibold)
+                                .font(WarmFont.headline(17))
                         }
                     }
                     .foregroundColor(.white)
@@ -563,7 +562,7 @@ struct OnboardingView: View {
                 .foregroundColor(sketchColor.opacity(0.6))
 
             Text(text)
-                .font(.custom("Avenir Next", size: 13))
+                .font(WarmFont.caption(13))
                 .foregroundColor(sketchColor.opacity(0.8))
         }
         .padding(.horizontal, 16)
@@ -586,11 +585,11 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 Text("设置一键录音")
-                    .font(.custom("Avenir Next", size: 28)).fontWeight(.bold)
+                    .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
 
                 Text("把 VoiceTodo 设为 Action Button 的动作\n按一下就能开始录音")
-                    .font(.custom("Avenir Next", size: 17))
+                    .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -647,7 +646,7 @@ struct OnboardingView: View {
             .offset(x: 55, y: -85)
 
             Text("按这里")
-                .font(.custom("Avenir Next", size: 12)).fontWeight(.medium)
+                .font(WarmFont.body(12))
                 .foregroundColor(highlightColor)
                 .offset(x: 65, y: -95)
 
@@ -691,12 +690,12 @@ struct OnboardingView: View {
                     .frame(width: 32, height: 32)
 
                 Text("\(number)")
-                    .font(.custom("Avenir Next", size: 16)).fontWeight(.bold)
+                    .font(WarmFont.title(16))
                     .foregroundColor(highlightColor)
             }
 
             Text(text)
-                .font(.custom("Avenir Next", size: 16))
+                .font(WarmFont.body(16))
                 .foregroundColor(inkColor)
 
             Spacer()
@@ -719,11 +718,11 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 Text("搞定啦！")
-                    .font(.custom("Avenir Next", size: 32)).fontWeight(.bold)
+                    .font(WarmFont.title(32))
                     .foregroundColor(inkColor)
 
                 Text("现在你可以按下 Action Button\n开始用语音记录待办了")
-                    .font(.custom("Avenir Next", size: 18))
+                    .font(WarmFont.body(18))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -797,7 +796,7 @@ struct OnboardingView: View {
                 .font(.system(size: 22))
 
             Text(text)
-                .font(.custom("Avenir Next", size: 16))
+                .font(WarmFont.body(16))
                 .foregroundColor(inkColor)
 
             Spacer()
@@ -819,7 +818,7 @@ struct OnboardingView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
                         Text("返回")
-                            .font(.custom("Avenir Next", size: 16))
+                            .font(WarmFont.body(16))
                     }
                     .foregroundColor(sketchColor)
                     .padding(.horizontal, 20)
@@ -837,7 +836,7 @@ struct OnboardingView: View {
             Button(action: nextStep) {
                 HStack(spacing: 8) {
                     Text(buttonTitle)
-                        .font(.custom("Avenir Next", size: 17)).fontWeight(.semibold)
+                        .font(WarmFont.headline(17))
 
                     if currentStep < totalSteps - 1 {
                         Image(systemName: "chevron.right")

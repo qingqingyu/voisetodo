@@ -34,7 +34,7 @@ enum WarmTheme {
     static let categoryWork = Color(hex: "6B8FE8")
     static let categoryStudy = Color(hex: "9B7FE8")
     static let categoryLife = Color(hex: "E8A87C")
-    static let categoryHealth = Color(hex: "7BC47F")
+    static let categoryHealth = Color(hex: "6EC99E")
     static let categoryFinance = Color(hex: "E8C86B")
     static let categorySocial = Color(hex: "E87C9B")
     static let categoryOther = Color(hex: "9BA8B8")
@@ -118,17 +118,15 @@ struct PaperTextureBackground: View {
             baseColor
                 .ignoresSafeArea()
 
-            GeometryReader { geometry in
-                Canvas { context, size in
-                    for point in Self.texturePoints {
-                        let x = point.x * size.width
-                        let y = point.y * size.height
-                        let rect = CGRect(x: x, y: y, width: 1.2, height: 1.2)
-                        context.fill(
-                            Path(ellipseIn: rect),
-                            with: .color(Color.black.opacity(point.opacity))
-                        )
-                    }
+            Canvas { context, size in
+                for point in Self.texturePoints {
+                    let x = point.x * size.width
+                    let y = point.y * size.height
+                    let rect = CGRect(x: x, y: y, width: 1.2, height: 1.2)
+                    context.fill(
+                        Path(ellipseIn: rect),
+                        with: .color(Color.black.opacity(point.opacity))
+                    )
                 }
             }
             .ignoresSafeArea()

@@ -579,12 +579,12 @@ struct WarmTodoCard: View {
             .padding(.trailing, 16)
             .padding(.vertical, 14)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.white)
                 .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
         .contentShape(Rectangle())
         .onTapGesture {
             onTap?()
