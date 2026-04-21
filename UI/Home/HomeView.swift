@@ -80,6 +80,10 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 guard let todoId else { return }
                 navigateToDeepLinkedTodo(id: todoId)
             }
+            .onChange(of: store.todos.count) { _, _ in
+                let currentIds = Set(store.todos.map(\.id))
+                cardAppeared.formIntersection(currentIds)
+            }
         }
         .accessibilityIdentifier("HomeView")
     }

@@ -93,7 +93,8 @@ enum WarmFont {
 struct PaperTextureBackground: View {
     var baseColor: Color = WarmTheme.background
     var showCornerDoodles: Bool = false
-    var grainOpacity: Double = 0.015
+
+    private static let grainOpacity: Double = 0.015
 
     private static let texturePoints: [(x: CGFloat, y: CGFloat, opacity: Double)] = {
         var points: [(x: CGFloat, y: CGFloat, opacity: Double)] = []
@@ -111,8 +112,6 @@ struct PaperTextureBackground: View {
         }
         return points
     }()
-
-    private static let grainOpacityValue: Double = 0.015
 
     var body: some View {
         ZStack {
@@ -167,7 +166,7 @@ struct CornerDoodle: View {
                 control2: CGPoint(x: 15, y: 0)
             )
         }
-        .stroke(WarmTheme.sketch.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+        .stroke(WarmTheme.sketch.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
         .frame(width: 30, height: 30)
         .rotationEffect(.degrees(rotation))
     }
