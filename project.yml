@@ -136,6 +136,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicetodo.app.tests
+        GENERATE_INFOPLIST_FILE: YES
 
   # UI 测试
   VoiceTodoUITests:
@@ -151,3 +152,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicetodo.app.uitests
+        GENERATE_INFOPLIST_FILE: YES

@@ -81,8 +81,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 navigateToDeepLinkedTodo(id: todoId)
             }
             .onChange(of: store.todos.count) { _, _ in
-                let currentIds = Set(store.todos.map(\.id))
-                cardAppeared.formIntersection(currentIds)
+                let currentIds: Set<UUID> = Set(store.todos.map(\.id))
+                cardAppeared = cardAppeared.intersection(currentIds)
             }
         }
         .accessibilityIdentifier("HomeView")
@@ -292,7 +292,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
         .onAppear {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(index) * 0.06)) {
-                cardAppeared.insert(todo.id)
+                _ = cardAppeared.insert(todo.id)
             }
         }
         .transition(.asymmetric(
