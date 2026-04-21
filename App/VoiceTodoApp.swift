@@ -143,7 +143,7 @@ struct VoiceTodoApp: App {
                 )
                 .sheet(isPresented: $coordinator.showConfirmSheet) {
                     ConfirmSheetView(
-                        transcript: coordinator.transcript,
+                        transcript: coordinator.confirmSheetTranscript,
                         todos: $coordinator.extractedTodos,
                         onConfirm: { todos in
                             coordinator.confirmTodos(todos)

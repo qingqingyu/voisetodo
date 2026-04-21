@@ -145,8 +145,7 @@ struct ConfirmSheetView: View {
 
             // 成功文字
             Text(ErrorMessages.addedSuccess)
-                .font(.custom("Avenir Next", size: 18))
-                .fontWeight(.semibold)
+                .font(WarmFont.headline(18))
                 .foregroundColor(WarmTheme.textPrimary)
                 .opacity(showSuccess ? 1.0 : 0.0)
                 .animation(.easeIn(duration: 0.2).delay(0.2), value: showSuccess)
@@ -169,6 +168,8 @@ struct ConfirmSheetView: View {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 showSuccess = true
             }
+        } else {
+            dismiss()
         }
     }
 }

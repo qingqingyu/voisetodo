@@ -419,6 +419,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         }
         Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
+            guard coordinator.deepLinkTodoId == id else { return }
             if let todo = store.todos.first(where: { $0.id == id }) {
                 selectedTodo = todo
             }

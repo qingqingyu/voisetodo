@@ -87,6 +87,11 @@ struct TodoItemRow: View {
         .onTapGesture {
             if !isEditing { startEditing() }
         }
+        .onChange(of: isTextFieldFocused) { _, focused in
+            if !focused && isEditing {
+                finishEditing()
+            }
+        }
     }
 
     // MARK: - Actions

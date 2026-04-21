@@ -26,6 +26,11 @@ final class AppCoordinator: ObservableObject {
     @Published var toastStyle: ToastStyle = .info
     @Published var deepLinkTodoId: UUID?
 
+    /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
+    var confirmSheetTranscript: String {
+        combinedRawTranscript ?? transcript
+    }
+
     // MARK: - Private Properties
 
     private var cancellables = Set<AnyCancellable>()
