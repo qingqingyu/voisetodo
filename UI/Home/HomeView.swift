@@ -10,8 +10,8 @@ private let homeDateFormatter: DateFormatter = {
 
 // MARK: - HomeView
 
-/// 主页视图 - 温暖友好风格
-/// 显示待办列表，支持勾选完成、左滑删除、点击编辑
+/// 主页视图 - 温暖手账风格
+/// 纸张纹理背景 + 手写展示字体 + 分类色带卡片
 struct HomeView<Store: TodoStoreProtocol>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
@@ -26,7 +26,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         self.store = store
     }
 
-    // 导航状态
     @State private var selectedTodo: TodoItemData?
 
     // 动画状态
@@ -34,24 +33,20 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var headerOpacity: Double = 0
     @State private var listOffset: CGFloat = 30
     @State private var listOpacity: Double = 0
+    @State private var cardAppeared: Set<UUID> = []
 
     var body: some View {
         NavigationStack {
             ZStack {
-                // 背景
-                WarmTheme.background
-                    .ignoresSafeArea()
+                PaperTextureBackground()
 
                 VStack(spacing: 0) {
-                    // 自定义导航栏
                     headerView
 
-                    // 录音实时预览
                     if coordinator.isRecording || isProcessing {
                         recordingOverlay
                     }
 
-                    // 主内容
                     Group {
                         if store.todos.isEmpty && !coordinator.isRecording && !isProcessing {
                             emptyStateView
@@ -77,12 +72,10 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     recordingButton
                 }
             }
-            // 导航到详情页
             .navigationDestination(item: $selectedTodo) { todo in
                 TodoDetailView(store: store, todo: todo)
                     .environmentObject(coordinator)
             }
-            // Widget 深链导航
             .onChange(of: coordinator.deepLinkTodoId) { _, todoId in
                 guard let todoId else { return }
                 navigateToDeepLinkedTodo(id: todoId)
@@ -95,23 +88,18 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
     private var headerView: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                // 日期
+            VStack(alignment: .leading, spacing: 4) {
                 Text(homeDateFormatter.string(from: Date()))
-                    .font(.custom("Avenir Next", size: 14))
-                    .fontWeight(.medium)
+                    .font(WarmFont.caption(14))
                     .foregroundColor(WarmTheme.textSecondary)
 
-                // 问候语
                 Text(greetingText)
-                    .font(.custom("Avenir Next", size: 28))
-                    .fontWeight(.bold)
+                    .font(WarmFont.display(30))
                     .foregroundColor(WarmTheme.textPrimary)
             }
 
             Spacer()
 
-            // 统计信息
             if !store.todos.isEmpty {
                 statsBadge
             }
@@ -120,7 +108,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .padding(.top, 16)
         .padding(.bottom, 20)
         .background(
-            WarmTheme.background
+            WarmTheme.background.opacity(0.9)
                 .shadow(color: WarmTheme.shadowLight, radius: 1, y: 1)
         )
         .offset(y: headerOffset)
@@ -151,12 +139,11 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 .frame(width: 8, height: 8)
 
             Text("\(uncompleted)")
-                .font(.custom("Avenir Next", size: 18))
-                .fontWeight(.bold)
+                .font(WarmFont.title(18))
                 .foregroundColor(WarmTheme.textPrimary)
 
             Text("项待办")
-                .font(.custom("Avenir Next", size: 14))
+                .font(WarmFont.caption(14))
                 .foregroundColor(WarmTheme.textSecondary)
         }
         .padding(.horizontal, 14)
@@ -170,60 +157,72 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     // MARK: - Recording Overlay
 
     private var recordingOverlay: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        ZStack {
+            WarmTheme.background.opacity(0.85)
+                .ignoresSafeArea()
 
-            if isProcessing {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
-                    .scaleEffect(1.2)
+            VStack(spacing: 24) {
+                Spacer()
 
-                Text("正在整理中...")
-                    .font(WarmFont.body(17))
-                    .foregroundColor(WarmTheme.textSecondary)
-            } else {
-                // 录音波形指示
-                HStack(spacing: 4) {
-                    ForEach(Array(waveformHeights.enumerated()), id: \.offset) { i, h in
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(WarmTheme.primary)
-                            .frame(width: 4, height: h)
-                            .animation(
-                                .easeInOut(duration: 0.4)
-                                    .repeatForever(autoreverses: true)
-                                    .delay(Double(i) * 0.1),
-                                value: coordinator.isRecording
-                            )
+                if isProcessing {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
+                        .scaleEffect(1.5)
+
+                    Text("正在整理中...")
+                        .font(WarmFont.displayLight(20))
+                        .foregroundColor(WarmTheme.textSecondary)
+                } else {
+                    ZStack {
+                        Circle()
+                            .fill(WarmTheme.primary.opacity(0.08))
+                            .frame(width: 120, height: 120)
+
+                        Circle()
+                            .fill(WarmTheme.primary.opacity(0.15))
+                            .frame(width: 80, height: 80)
+
+                        HStack(spacing: 5) {
+                            ForEach(Array(waveformHeights.enumerated()), id: \.offset) { i, h in
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(WarmTheme.primary)
+                                    .frame(width: 5, height: h)
+                                    .animation(
+                                        .easeInOut(duration: 0.5)
+                                            .repeatForever(autoreverses: true)
+                                            .delay(Double(i) * 0.12),
+                                        value: coordinator.isRecording
+                                    )
+                            }
+                        }
                     }
+
+                    Text("正在聆听...")
+                        .font(WarmFont.display(22))
+                        .foregroundColor(WarmTheme.textPrimary)
                 }
-                .frame(height: 32)
 
-                Text("正在聆听...")
-                    .font(WarmFont.headline(18))
-                    .foregroundColor(WarmTheme.textPrimary)
+                if !coordinator.transcript.isEmpty {
+                    Text(coordinator.transcript)
+                        .font(WarmFont.body(15))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(4)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.white.opacity(0.8))
+                                .shadow(color: WarmTheme.shadowLight, radius: 4, y: 2)
+                        )
+                        .padding(.horizontal, 24)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .animation(.easeOut(duration: 0.2), value: coordinator.transcript)
+                }
+
+                Spacer()
             }
-
-            // 实时转写预览
-            if !coordinator.transcript.isEmpty {
-                Text(coordinator.transcript)
-                    .font(WarmFont.body(15))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(4)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(WarmTheme.secondaryBackground)
-                    )
-                    .padding(.horizontal, 24)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    .animation(.easeOut(duration: 0.2), value: coordinator.transcript)
-            }
-
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
     }
 
@@ -239,12 +238,10 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
     private var todoListView: some View {
         List {
-            // 未完成区域
             ForEach(Array(uncompletedTodos.enumerated()), id: \.element.id) { index, todo in
                 todoRow(todo, index: index)
             }
 
-            // 已完成区域
             if !completedTodos.isEmpty {
                 Section {
                     ForEach(Array(completedTodos.enumerated()), id: \.element.id) { index, todo in
@@ -265,7 +262,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(WarmTheme.background)
         .offset(y: listOffset)
         .opacity(listOpacity)
         .accessibilityIdentifier("TodoList")
@@ -288,6 +284,13 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 Label("删除", systemImage: "trash")
             }
         }
+        .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
+        .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(index) * 0.06)) {
+                cardAppeared.insert(todo.id)
+            }
+        }
         .transition(.asymmetric(
             insertion: .scale(scale: 0.9).combined(with: .opacity),
             removal: .scale(scale: 0.95).combined(with: .opacity)
@@ -297,28 +300,47 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     // MARK: - Empty State
 
     private var emptyStateView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             Spacer()
 
             ZStack {
                 Circle()
-                    .fill(WarmTheme.primaryLight.opacity(0.3))
-                    .frame(width: 140, height: 140)
+                    .fill(WarmTheme.primaryLight.opacity(0.2))
+                    .frame(width: 160, height: 160)
 
                 Circle()
-                    .fill(WarmTheme.primaryLight.opacity(0.5))
-                    .frame(width: 100, height: 100)
+                    .fill(WarmTheme.primaryLight.opacity(0.35))
+                    .frame(width: 110, height: 110)
 
-                Image(systemName: "sparkles")
-                    .font(.system(size: 44, weight: .light))
-                    .foregroundColor(WarmTheme.primary)
+                VStack(spacing: 0) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(WarmTheme.primary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .frame(width: 36, height: 52)
+                        .overlay(
+                            VStack(spacing: 5) {
+                                ForEach(0..<3, id: \.self) { _ in
+                                    Capsule()
+                                        .fill(WarmTheme.primary.opacity(0.3))
+                                        .frame(width: 22, height: 2.5)
+                                }
+                            }
+                        )
+
+                    Rectangle()
+                        .fill(WarmTheme.primary)
+                        .frame(width: 2.5, height: 12)
+
+                    Capsule()
+                        .fill(WarmTheme.primary)
+                        .frame(width: 24, height: 6)
+                }
             }
             .scaleEffect(listOpacity == 0 ? 0.8 : 1.0)
             .accessibilityHidden(true)
 
             VStack(spacing: 12) {
                 Text("今天还没有待办")
-                    .font(WarmFont.headline(22))
+                    .font(WarmFont.display(24))
                     .foregroundColor(WarmTheme.textPrimary)
 
                 Text("按下 Action Button 或下方录音按钮\n说出你想做的事情")
@@ -391,7 +413,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             coordinator.deepLinkTodoId = nil
             return
         }
-        // 冷启动时 store 可能还未加载完成，延迟重试一次
         Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
             if let todo = store.todos.first(where: { $0.id == id }) {
@@ -475,95 +496,91 @@ struct WarmTodoCard: View {
     let onToggle: () -> Void
     var onTap: (() -> Void)? = nil
 
-    // 分类颜色
     private var categoryColor: Color {
-        switch todo.category {
-        case .work: return Color(hex: "6B8FE8")
-        case .study: return Color(hex: "9B7FE8")
-        case .life: return Color(hex: "E8A87C")
-        case .health: return Color(hex: "7BC47F")
-        case .finance: return Color(hex: "E8C86B")
-        case .social: return Color(hex: "E87C9B")
-        case .other: return Color(hex: "9BA8B8")
-        }
+        WarmTheme.color(for: todo.category)
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            Button(action: onToggle) {
-                ZStack {
-                    Circle()
-                        .stroke(
-                            todo.isCompleted ? WarmTheme.success : categoryColor,
-                            lineWidth: 2.5
+        HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(todo.isCompleted ? WarmTheme.textMuted.opacity(0.3) : categoryColor)
+                .frame(width: 4)
+                .padding(.vertical, 10)
+
+            HStack(spacing: 14) {
+                Button(action: onToggle) {
+                    ZStack {
+                        Circle()
+                            .stroke(
+                                todo.isCompleted ? WarmTheme.success : categoryColor,
+                                lineWidth: 2.5
+                            )
+                            .frame(width: 26, height: 26)
+
+                        if todo.isCompleted {
+                            Circle()
+                                .fill(WarmTheme.success)
+                                .frame(width: 26, height: 26)
+
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TodoCheckbox_\(index)")
+                .accessibilityLabel(todo.isCompleted ? "已完成" : "未完成")
+                .accessibilityHint("点击\(todo.isCompleted ? "取消完成" : "标记为已完成")")
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(todo.category.emoji)
+                            .font(.system(size: 15))
+
+                        Text(todo.title)
+                            .font(todo.priority == .high ? WarmFont.headline(16) : WarmFont.body(16))
+                            .foregroundColor(todo.isCompleted ? WarmTheme.textMuted : WarmTheme.textPrimary)
+                            .strikethrough(todo.isCompleted, color: WarmTheme.textMuted)
+                            .lineLimit(2)
+                    }
+
+                    if let dueHint = todo.dueHint, !todo.isCompleted {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 10))
+                            Text(dueHint)
+                                .font(WarmFont.caption(12))
+                        }
+                        .foregroundColor(WarmTheme.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                if todo.priority == .high && !todo.isCompleted {
+                    Text("!")
+                        .font(WarmFont.body(13))
+                        .foregroundColor(.white)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            Circle()
+                                .fill(WarmTheme.urgent)
                         )
-                        .frame(width: 28, height: 28)
-
-                    if todo.isCompleted {
-                        Circle()
-                            .fill(WarmTheme.success)
-                            .frame(width: 28, height: 28)
-
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                    }
+                        .accessibilityIdentifier("PriorityLabel")
+                        .accessibilityLabel("高优先级")
                 }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("TodoCheckbox_\(index)")
-            .accessibilityLabel(todo.isCompleted ? "已完成" : "未完成")
-            .accessibilityHint("点击\(todo.isCompleted ? "取消完成" : "标记为已完成")")
-
-            // 内容
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(todo.category.emoji)
-                        .font(.system(size: 16))
-
-                    Text(todo.title)
-                        .font(.custom("Avenir Next", size: 17))
-                        .fontWeight(todo.priority == .high ? .semibold : .medium)
-                        .foregroundColor(todo.isCompleted ? WarmTheme.textMuted : WarmTheme.textPrimary)
-                        .strikethrough(todo.isCompleted, color: WarmTheme.textMuted)
-                        .lineLimit(2)
-                }
-
-                // 时间标签
-                if let dueHint = todo.dueHint, !todo.isCompleted {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 11))
-                        Text(dueHint)
-                            .font(.custom("Avenir Next", size: 13))
-                    }
-                    .foregroundColor(WarmTheme.textSecondary)
-                }
-
-            }
-
-            Spacer()
-
-            if todo.priority == .high && !todo.isCompleted {
-                Text("!")
-                    .font(WarmFont.body(14))
-                    .foregroundColor(.white)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Circle()
-                            .fill(WarmTheme.urgent)
-                    )
-                    .accessibilityIdentifier("PriorityLabel")
-                    .accessibilityLabel("高优先级")
-            }
+            .padding(.leading, 14)
+            .padding(.trailing, 16)
+            .padding(.vertical, 14)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Color.white)
-                .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
+                .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .contentShape(Rectangle())
         .onTapGesture {
             onTap?()

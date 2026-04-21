@@ -38,27 +38,41 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
     // MARK: - Body
 
+    private var categoryColor: Color {
+        WarmTheme.color(for: editedCategory)
+    }
+
     var body: some View {
         ZStack {
-            WarmTheme.background
-                .ignoresSafeArea()
+            PaperTextureBackground()
 
             ScrollView {
                 VStack(spacing: 20) {
-                    // 标题编辑
-                    detailCard {
-                        VStack(alignment: .leading, spacing: 8) {
+                    // 标题编辑 — 视觉焦点，更大的 padding 和装饰
+                    VStack(alignment: .leading) {
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(categoryColor)
+                                .frame(width: 4, height: 28)
+
                             Text("标题")
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
-
-                            TextField("待办标题", text: $editedTitle, axis: .vertical)
-                                .font(WarmFont.body(17))
-                                .foregroundColor(WarmTheme.textPrimary)
-                                .lineLimit(1...3)
-                                .onChange(of: editedTitle) { _, _ in checkForChanges() }
                         }
+
+                        TextField("待办标题", text: $editedTitle, axis: .vertical)
+                            .font(WarmFont.display(22))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(1...3)
+                            .onChange(of: editedTitle) { _, _ in checkForChanges() }
                     }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(Color.white)
+                            .shadow(color: WarmTheme.shadowMedium, radius: 10, x: 0, y: 5)
+                    )
 
                     // 分类选择
                     detailCard {

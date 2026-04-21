@@ -80,75 +80,11 @@ struct OnboardingView: View {
 
     // MARK: - Paper Background
 
-    // 预计算的纸张纹理点位置（避免每次重绘时随机）
-    private static let texturePoints: [(x: CGFloat, y: CGFloat, opacity: Double)] = {
-        var points: [(x: CGFloat, y: CGFloat, opacity: Double)] = []
-        // 使用固定种子的伪随机模式
-        var seed: UInt64 = 12345
-        func seededRandom() -> Double {
-            seed = seed &* 6364136223846793005 &+ 1442695040888963407
-            return Double(seed & 0xFFFF) / Double(0xFFFF)
-        }
-        for _ in 0..<100 {
-            points.append((
-                x: seededRandom(),
-                y: seededRandom(),
-                opacity: 0.01 + seededRandom() * 0.02
-            ))
-        }
-        return points
-    }()
-
     private var paperBackground: some View {
-        ZStack {
-            // 基础纸张色
-            paperColor
-                .ignoresSafeArea()
-
-            // 细微纹理层（使用预计算位置，避免重绘闪烁）
-            GeometryReader { geometry in
-                Canvas { context, size in
-                    for point in Self.texturePoints {
-                        let x = point.x * size.width
-                        let y = point.y * size.height
-                        let rect = CGRect(x: x, y: y, width: 1, height: 1)
-                        context.fill(Path(rect), with: .color(Color.black.opacity(point.opacity)))
-                    }
-                }
-            }
-            .ignoresSafeArea()
-
-            // 角落装饰 - 手绘线条
-            VStack {
-                HStack {
-                    cornerDoodle(rotation: 0)
-                    Spacer()
-                    cornerDoodle(rotation: 90)
-                }
-                Spacer()
-                HStack {
-                    cornerDoodle(rotation: -90)
-                    Spacer()
-                    cornerDoodle(rotation: 180)
-                }
-            }
-            .padding(16)
-        }
-    }
-
-    private func cornerDoodle(rotation: Double) -> some View {
-        // 手绘角落装饰
-        Path { path in
-            path.move(to: CGPoint(x: 0, y: 30))
-            path.addCurve(
-                to: CGPoint(x: 30, y: 0),
-                control1: CGPoint(x: 0, y: 15),
-                control2: CGPoint(x: 15, y: 0)
-            )
-        }
-        .stroke(sketchColor.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-        .frame(width: 30, height: 30)
-        .rotationEffect(.degrees(rotation))
+        PaperTextureBackground(
+            baseColor: paperColor,
+            showCornerDoodles: true
+        )
     }
 
     // MARK: - Top Decoration
