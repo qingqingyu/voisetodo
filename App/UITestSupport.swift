@@ -6,6 +6,7 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""
     @Published var error: VoiceTodoError?
+    let currentLocale: Locale = Locale(identifier: "zh-Hans")
 
     private let options: UITestLaunchOptions
 
@@ -37,7 +38,7 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
 }
 
 struct UITestTodoExtractor: TodoExtractorProtocol {
-    func extract(from transcript: String) async throws -> ExtractionResult {
+    func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
         let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if normalized.contains("好累") {

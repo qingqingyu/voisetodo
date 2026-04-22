@@ -12,6 +12,8 @@ protocol VoiceInputProtocol: ObservableObject {
     var transcript: String { get }
     /// 错误状态
     var error: VoiceTodoError? { get }
+    /// 当前语音识别使用的 locale（用于选择匹配的 AI prompt）
+    var currentLocale: Locale { get }
 
     /// Publisher 访问器（用于外部订阅）
     var isRecordingPublisher: AnyPublisher<Bool, Never> { get }

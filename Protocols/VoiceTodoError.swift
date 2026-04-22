@@ -30,19 +30,19 @@ enum VoiceTodoError: LocalizedError, Equatable {
         case .audioSessionInterrupted:
             return ErrorMessages.audioSessionInterrupted
         case .recordingFailed(let detail):
-            return "录音失败: \(detail)"
+            return String(localized: "error.recording_failed \(detail)")
         case .networkUnavailable:
             return ErrorMessages.networkError
         case .apiTimeout:
             return ErrorMessages.apiTimeout
         case .apiResponseInvalid(let detail):
-            return ErrorMessages.apiError + " (\(detail))"
+            return String(localized: "error.api_response_invalid \(detail)")
         case .jsonParsingFailed(let detail):
-            return ErrorMessages.jsonParsingFailed + " (\(detail))"
+            return String(localized: "error.json_parsing_detail \(detail)")
         case .storageReadFailed(let detail):
-            return ErrorMessages.storageError + " (读取: \(detail))"
+            return String(localized: "error.storage_read_failed \(detail)")
         case .storageWriteFailed(let detail):
-            return ErrorMessages.storageError + " (写入: \(detail))"
+            return String(localized: "error.storage_write_failed \(detail)")
         }
     }
 }

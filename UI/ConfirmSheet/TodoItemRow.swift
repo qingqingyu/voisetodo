@@ -21,7 +21,7 @@ struct TodoItemRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 if isEditing {
-                    TextField("待办标题", text: $editedTitle)
+                    TextField(String(localized: "confirm.todo_title_placeholder"), text: $editedTitle)
                         .font(WarmFont.headline(17))
                         .foregroundColor(WarmTheme.textPrimary)
                         .focused($isTextFieldFocused)
@@ -50,7 +50,7 @@ struct TodoItemRow: View {
             Spacer()
 
             if todo.priority == .high {
-                Text("紧急")
+                Text(String(localized: "confirm.urgent"))
                     .font(WarmFont.caption(12))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
@@ -60,7 +60,7 @@ struct TodoItemRow: View {
                             .fill(WarmTheme.urgent)
                     )
                     .accessibilityIdentifier("PriorityLabel")
-                    .accessibilityLabel("高优先级")
+                    .accessibilityLabel(String(localized: "a11y.high_priority"))
             }
 
             Button(action: performDelete) {
@@ -70,8 +70,8 @@ struct TodoItemRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("DeleteTodo_\(index)")
-            .accessibilityLabel("删除")
-            .accessibilityHint("删除此待办")
+            .accessibilityLabel(String(localized: "a11y.delete"))
+            .accessibilityHint(String(localized: "a11y.delete_todo"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -83,7 +83,7 @@ struct TodoItemRow: View {
         .opacity(opacity)
         .contentShape(Rectangle())
         .accessibilityIdentifier("TodoRow_\(index)")
-        .accessibilityHint("点击编辑待办标题")
+        .accessibilityHint(String(localized: "a11y.edit_todo_title"))
         .onTapGesture {
             if !isEditing { startEditing() }
         }

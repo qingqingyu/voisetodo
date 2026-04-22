@@ -28,6 +28,10 @@ final class VoiceInputManager: VoiceInputProtocol {
         $error.eraseToAnyPublisher()
     }
 
+    // MARK: - Public Properties
+
+    let currentLocale: Locale
+
     // MARK: - Private Properties
 
     private var speechRecognizer: SFSpeechRecognizer?
@@ -49,8 +53,8 @@ final class VoiceInputManager: VoiceInputProtocol {
     // MARK: - Initialization
 
     init() {
-        // 根据系统语言选择 locale
-        let locale = selectLocale()
+        let locale = VoiceInputManager.selectLocale()
+        self.currentLocale = locale
         speechRecognizer = SFSpeechRecognizer(locale: locale)
     }
 
@@ -430,7 +434,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     // MARK: - Private Methods
 
     /// 根据系统语言选择 locale
-    private func selectLocale() -> Locale {
+    private static func selectLocale() -> Locale {
         let preferredLanguage = Locale.preferredLanguages.first ?? "zh-Hans"
 
         // 检查是否支持

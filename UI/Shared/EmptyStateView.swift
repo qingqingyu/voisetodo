@@ -42,7 +42,7 @@ extension EmptyStateView {
     static func homeEmpty() -> EmptyStateView {
         EmptyStateView(
             icon: "sparkles",
-            message: "暂无待办\n按下录音按钮开始",
+            message: String(localized: "empty.home"),
             iconSize: 44,
             opacity: 0.7
         )
@@ -52,7 +52,7 @@ extension EmptyStateView {
     static func widgetEmpty() -> EmptyStateView {
         EmptyStateView(
             icon: "checkmark.circle",
-            message: "暂无待办",
+            message: String(localized: "empty.widget"),
             iconSize: 28,
             opacity: 0.4
         )

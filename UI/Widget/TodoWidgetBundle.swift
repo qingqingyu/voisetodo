@@ -19,8 +19,8 @@ struct TodoWidget: Widget {
         StaticConfiguration(kind: kind, provider: TodoTimelineProvider()) { entry in
             TodoWidgetView(entry: entry)
         }
-        .configurationDisplayName("待办事项")
-        .description("查看最近的待办")
+        .configurationDisplayName(String(localized: "widget.display_name"))
+        .description(String(localized: "widget.description"))
         .supportedFamilies([
             .systemSmall,
             .systemMedium,

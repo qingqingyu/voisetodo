@@ -152,12 +152,12 @@ struct OnboardingView: View {
                 .scaleEffect(illustrationScale)
                 .rotationEffect(.degrees(illustrationRotation))
                 .animation(.spring(response: 0.6, dampingFraction: 0.7), value: illustrationScale)
-                .accessibilityLabel("麦克风插画")
+                .accessibilityLabel(String(localized: "a11y.mic_illustration"))
                 .accessibilityHidden(true)
 
             VStack(spacing: 16) {
                 // 手写风格标题
-                Text("嗨，欢迎来到")
+                Text(String(localized: "onboarding.welcome"))
                     .font(WarmFont.body(18))
                     .foregroundColor(sketchColor)
 
@@ -175,20 +175,20 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 featureStickyNote(
                     emoji: "🎙️",
-                    title: "说出来",
-                    description: "按下按钮，说出你的待办"
+                    title: String(localized: "onboarding.feature1.title"),
+                    description: String(localized: "onboarding.feature1.desc")
                 )
 
                 featureStickyNote(
                     emoji: "✨",
-                    title: "变整齐",
-                    description: "AI 帮你整理成清晰的列表"
+                    title: String(localized: "onboarding.feature2.title"),
+                    description: String(localized: "onboarding.feature2.desc")
                 )
 
                 featureStickyNote(
                     emoji: "📱",
-                    title: "看得见",
-                    description: "锁屏桌面上随时提醒你"
+                    title: String(localized: "onboarding.feature3.title"),
+                    description: String(localized: "onboarding.feature3.desc")
                 )
             }
             .padding(.top, 24)
@@ -360,11 +360,11 @@ struct OnboardingView: View {
             )
 
             VStack(spacing: 12) {
-                Text("需要你的麦克风")
+                Text(String(localized: "onboarding.mic.title"))
                     .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
 
-                Text("这样才能「听」到你说的话呀")
+                Text(String(localized: "onboarding.mic.desc"))
                     .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
@@ -385,7 +385,7 @@ struct OnboardingView: View {
             .opacity(contentOpacity)
 
             // 隐私提示
-            privacyNote("录音只用于识别你的语音，不会保存或上传")
+            privacyNote(String(localized: "onboarding.mic.privacy"))
                 .padding(.top, 16)
 
             Spacer()
@@ -407,11 +407,11 @@ struct OnboardingView: View {
             )
 
             VStack(spacing: 12) {
-                Text("还需要语音识别")
+                Text(String(localized: "onboarding.speech.title"))
                     .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
 
-                Text("这样才能把你的话变成文字")
+                Text(String(localized: "onboarding.speech.desc"))
                     .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
@@ -432,7 +432,7 @@ struct OnboardingView: View {
             .opacity(contentOpacity)
 
             // 隐私提示
-            privacyNote("语音识别在设备本地进行，数据不会离开你的手机")
+            privacyNote(String(localized: "onboarding.speech.privacy"))
                 .padding(.top, 16)
 
             Spacer()
@@ -478,7 +478,7 @@ struct OnboardingView: View {
                         .font(.system(size: 24))
                         .foregroundColor(WarmTheme.success)
 
-                    Text("太好了，已经授权了！")
+                    Text(String(localized: "onboarding.granted"))
                         .font(WarmFont.body(17))
                         .foregroundColor(WarmTheme.success)
                 }
@@ -504,7 +504,7 @@ struct OnboardingView: View {
                     Button(action: { permissionManager.openAppSettings() }) {
                         HStack(spacing: 8) {
                             Image(systemName: "gear")
-                            Text("去设置里开启")
+                            Text(String(localized: "onboarding.open_settings"))
                         }
                         .font(WarmFont.body(16))
                         .foregroundColor(.white)
@@ -534,7 +534,7 @@ struct OnboardingView: View {
                         } else {
                             Image(systemName: "hand.raised.fill")
                                 .font(.system(size: 20))
-                            Text("好的，授权给 VoiceTodo")
+                            Text(String(localized: "onboarding.authorize"))
                                 .font(WarmFont.headline(17))
                         }
                     }
@@ -584,11 +584,11 @@ struct OnboardingView: View {
             actionButtonIllustration
 
             VStack(spacing: 12) {
-                Text("设置一键录音")
+                Text(String(localized: "onboarding.action_button.title"))
                     .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
 
-                Text("把 VoiceTodo 设为 Action Button 的动作\n按一下就能开始录音")
+                Text(String(localized: "onboarding.action_button.desc"))
                     .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
@@ -599,10 +599,10 @@ struct OnboardingView: View {
 
             // 设置步骤卡片
             VStack(spacing: 12) {
-                instructionStep(number: 1, text: "打开「设置」", icon: "gear")
-                instructionStep(number: 2, text: "找到「Action Button」", icon: "button.programmable")
-                instructionStep(number: 3, text: "选择「快捷方式」", icon: "bolt")
-                instructionStep(number: 4, text: "选「VoiceTodo」", icon: "checkmark")
+                instructionStep(number: 1, text: String(localized: "onboarding.action_button.step1"), icon: "gear")
+                instructionStep(number: 2, text: String(localized: "onboarding.action_button.step2"), icon: "button.programmable")
+                instructionStep(number: 3, text: String(localized: "onboarding.action_button.step3"), icon: "bolt")
+                instructionStep(number: 4, text: String(localized: "onboarding.action_button.step4"), icon: "checkmark")
             }
             .padding(20)
             .background(
@@ -614,7 +614,7 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            Text("设置完成后回到这里点「知道了」即可")
+            Text(String(localized: "onboarding.action_button.hint"))
                 .font(WarmFont.caption(14))
                 .foregroundColor(sketchColor.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -645,7 +645,7 @@ struct OnboardingView: View {
             .stroke(highlightColor.opacity(0.6), style: StrokeStyle(lineWidth: 2, lineCap: .round))
             .offset(x: 55, y: -85)
 
-            Text("按这里")
+            Text(String(localized: "onboarding.action_button.press_here"))
                 .font(WarmFont.body(12))
                 .foregroundColor(highlightColor)
                 .offset(x: 65, y: -95)
@@ -717,11 +717,11 @@ struct OnboardingView: View {
             celebrationIllustration
 
             VStack(spacing: 12) {
-                Text("搞定啦！")
+                Text(String(localized: "onboarding.done.title"))
                     .font(WarmFont.title(32))
                     .foregroundColor(inkColor)
 
-                Text("现在你可以按下 Action Button\n开始用语音记录待办了")
+                Text(String(localized: "onboarding.done.desc"))
                     .font(WarmFont.body(18))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
@@ -732,9 +732,9 @@ struct OnboardingView: View {
 
             // 使用提示卡片
             VStack(spacing: 16) {
-                tipRow(icon: "🎤", text: "也可以在 App 里点录音按钮")
-                tipRow(icon: "✏️", text: "点待办可以编辑或删除")
-                tipRow(icon: "📋", text: "待办会自动显示在 Widget")
+                tipRow(icon: "🎤", text: String(localized: "onboarding.tip1"))
+                tipRow(icon: "✏️", text: String(localized: "onboarding.tip2"))
+                tipRow(icon: "📋", text: String(localized: "onboarding.tip3"))
             }
             .padding(20)
             .background(
@@ -817,7 +817,7 @@ struct OnboardingView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
-                        Text("返回")
+                        Text(String(localized: "onboarding.back"))
                             .font(WarmFont.body(16))
                     }
                     .foregroundColor(sketchColor)
@@ -866,15 +866,15 @@ struct OnboardingView: View {
 
     private var buttonTitle: String {
         if currentStep == totalSteps - 1 {
-            return "开始使用"
+            return String(localized: "onboarding.button.start")
         } else if currentStep == 1 && !permissionManager.micGranted && !permissionManager.isMicPermanentlyDenied {
-            return "先跳过"
+            return String(localized: "onboarding.button.skip")
         } else if currentStep == 2 && !permissionManager.speechGranted && !permissionManager.isSpeechPermanentlyDenied {
-            return "先跳过"
+            return String(localized: "onboarding.button.skip")
         } else if currentStep == 3 {
-            return "知道了"
+            return String(localized: "onboarding.button.got_it")
         } else {
-            return "下一步"
+            return String(localized: "onboarding.button.next")
         }
     }
 

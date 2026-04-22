@@ -25,7 +25,7 @@ struct RecordingLiveActivity: Widget {
                                 value: context.state.isRecording
                             )
 
-                        Text(context.state.isRecording ? "录音中" : "已停止")
+                        Text(context.state.isRecording ? String(localized: "live_activity.recording") : String(localized: "live_activity.stopped"))
                             .font(.caption)
                             .fontWeight(.medium)
                     }
@@ -48,7 +48,7 @@ struct RecordingLiveActivity: Widget {
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        Text("正在聆听...")
+                        Text(String(localized: "live_activity.listening"))
                             .font(.caption)
                             .foregroundColor(.secondary.opacity(0.6))
                     }
@@ -113,7 +113,7 @@ struct LockScreenLiveActivityView: View {
             // 文本内容
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(context.state.isRecording ? "VoiceTodo 录音中" : "VoiceTodo")
+                    Text(context.state.isRecording ? String(localized: "live_activity.recording_title") : "VoiceTodo")
                         .font(.headline)
                         .foregroundColor(.primary)
 
@@ -130,7 +130,7 @@ struct LockScreenLiveActivityView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 } else {
-                    Text("正在聆听你的声音...")
+                    Text(String(localized: "live_activity.listening_subtitle"))
                         .font(.caption)
                         .foregroundColor(.secondary.opacity(0.6))
                 }

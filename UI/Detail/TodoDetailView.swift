@@ -1,12 +1,9 @@
 import SwiftUI
 import WidgetKit
 
-private let todoDetailDateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_Hans_CN")
-    formatter.dateFormat = "yyyy年M月d日 HH:mm"
-    return formatter
-}()
+private func formattedDetailDate(_ date: Date) -> String {
+    date.formatted(.dateTime.year().month().day().hour().minute())
+}
 
 /// 待办详情页 - 温暖主题风格
 /// 支持编辑标题、分类、优先级、时间提示，以及删除
@@ -55,12 +52,12 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                                 .fill(categoryColor)
                                 .frame(width: 4, height: 28)
 
-                            Text("标题")
+                            Text(String(localized: "detail.section.title"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
                         }
 
-                        TextField("待办标题", text: $editedTitle, axis: .vertical)
+                        TextField(String(localized: "confirm.todo_title_placeholder"), text: $editedTitle, axis: .vertical)
                             .font(WarmFont.display(22))
                             .foregroundColor(WarmTheme.textPrimary)
                             .lineLimit(1...3)
@@ -77,7 +74,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                     // 分类选择
                     detailCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("分类")
+                            Text(String(localized: "detail.section.category"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
@@ -94,13 +91,13 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                     // 优先级选择
                     detailCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("优先级")
+                            Text(String(localized: "detail.section.priority"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
                             HStack(spacing: 12) {
-                                priorityButton(.normal, label: "普通", icon: "minus")
-                                priorityButton(.high, label: "高优先级", icon: "exclamationmark")
+                                priorityButton(.normal, label: String(localized: "detail.priority.normal"), icon: "minus")
+                                priorityButton(.high, label: String(localized: "detail.priority.high"), icon: "exclamationmark")
                             }
                         }
                     }
@@ -108,11 +105,11 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                     // 时间提示
                     detailCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("时间提示")
+                            Text(String(localized: "detail.section.due_hint"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
-                            TextField("例如：明天、周三前", text: $editedDueHint)
+                            TextField(String(localized: "detail.due_hint_placeholder"), text: $editedDueHint)
                                 .font(WarmFont.body(17))
                                 .foregroundColor(WarmTheme.textPrimary)
                                 .onChange(of: editedDueHint) { _, _ in checkForChanges() }
@@ -123,11 +120,11 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                     detailCard {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("创建时间")
+                                Text(String(localized: "detail.created_at"))
                                     .font(WarmFont.body(15))
                                     .foregroundColor(WarmTheme.textPrimary)
                                 Spacer()
-                                Text(todoDetailDateFormatter.string(from: todo.createdAt))
+                                Text(formattedDetailDate(todo.createdAt))
                                     .font(WarmFont.caption(14))
                                     .foregroundColor(WarmTheme.textSecondary)
                             }
@@ -136,7 +133,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                                 HStack(spacing: 6) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .foregroundColor(WarmTheme.warning)
-                                    Text("待 AI 整理")
+                                    Text(String(localized: "detail.needs_ai"))
                                         .font(WarmFont.body(14))
                                         .foregroundColor(WarmTheme.warning)
                                 }
@@ -148,7 +145,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                     Button(action: { showDeleteConfirmation = true }) {
                         HStack(spacing: 8) {
                             Image(systemName: "trash")
-                            Text("删除此待办")
+                            Text(String(localized: "detail.delete_button"))
                         }
                         .font(WarmFont.body(15))
                         .foregroundColor(WarmTheme.urgent)
@@ -166,30 +163,30 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 .padding(.bottom, 40)
             }
         }
-        .navigationTitle("待办详情")
+        .navigationTitle(String(localized: "detail.title"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(hasChanges)
         .toolbar {
             if hasChanges {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("放弃") { dismiss() }
+                    Button(String(localized: "detail.discard")) { dismiss() }
                         .font(WarmFont.body(16))
                         .foregroundColor(WarmTheme.textSecondary)
                 }
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("保存") { saveChanges() }
+                Button(String(localized: "detail.save")) { saveChanges() }
                     .font(WarmFont.headline(16))
                     .foregroundColor(hasChanges && !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? WarmTheme.primary : WarmTheme.textMuted)
                     .disabled(!hasChanges || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .alert("确认删除", isPresented: $showDeleteConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("删除", role: .destructive) { deleteTodo() }
+        .alert(String(localized: "detail.confirm_delete"), isPresented: $showDeleteConfirmation) {
+            Button(String(localized: "detail.cancel"), role: .cancel) {}
+            Button(String(localized: "detail.delete"), role: .destructive) { deleteTodo() }
         } message: {
-            Text("删除后无法恢复")
+            Text(String(localized: "detail.delete_warning"))
         }
     }
 
@@ -299,7 +296,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
             coordinator.showToast(message: ErrorMessages.todoSaved, style: .success)
             dismiss()
         } catch {
-            coordinator.showToast(message: String(format: ErrorMessages.todoSaveFailed, error.localizedDescription), style: .warning)
+            coordinator.showToast(message: ErrorMessages.todoSaveFailedMessage(error.localizedDescription), style: .warning)
         }
     }
 

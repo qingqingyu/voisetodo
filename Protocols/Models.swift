@@ -32,13 +32,13 @@ enum TodoCategory: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .work: return "工作"
-        case .study: return "学习"
-        case .life: return "生活"
-        case .health: return "健康"
-        case .finance: return "财务"
-        case .social: return "社交"
-        case .other: return "其他"
+        case .work: return String(localized: "category.work")
+        case .study: return String(localized: "category.study")
+        case .life: return String(localized: "category.life")
+        case .health: return String(localized: "category.health")
+        case .finance: return String(localized: "category.finance")
+        case .social: return String(localized: "category.social")
+        case .other: return String(localized: "category.other")
         }
     }
 }

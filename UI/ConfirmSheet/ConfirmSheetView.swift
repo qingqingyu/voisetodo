@@ -22,11 +22,11 @@ struct ConfirmSheetView: View {
                     mainContent
                 }
             }
-            .navigationTitle("确认待办")
+            .navigationTitle(String(localized: "confirm.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("取消") {
+                    Button(String(localized: "confirm.cancel")) {
                         onCancel()
                         dismiss()
                     }
@@ -34,7 +34,7 @@ struct ConfirmSheetView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: confirmAction) {
-                        Text("确认添加 (\(todos.count))")
+                        Text(String(localized: "confirm.add \(todos.count)"))
                             .bold()
                     }
                     .disabled(todos.isEmpty)
@@ -73,7 +73,7 @@ struct ConfirmSheetView: View {
 
     private var transcriptSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("语音原文")
+            Text(String(localized: "confirm.transcript"))
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
 
@@ -111,7 +111,7 @@ struct ConfirmSheetView: View {
         HStack(spacing: 6) {
             Image(systemName: "hand.tap")
                 .font(.system(size: 12))
-            Text("点击条目可编辑标题 · 点 ✕ 可删除")
+            Text(String(localized: "confirm.hint"))
                 .font(WarmFont.caption(13))
         }
         .foregroundColor(WarmTheme.textSecondary)

@@ -12,7 +12,8 @@ settings:
     SWIFT_VERSION: "5"
     PRODUCT_NAME: "$(TARGET_NAME)"
     ENABLE_TESTABILITY: YES
-    DEVELOPMENT_LANGUAGE: en
+    DEVELOPMENT_LANGUAGE: zh-Hans
+    SWIFT_EMIT_LOC_STRINGS: YES
   debug:
     SWIFT_OPTIMIZATION_LEVEL: -Onone
   release:
@@ -53,6 +54,7 @@ targets:
           - "**/.DS_Store"
           - "CodingConventions.md"
       - path: VoiceTodo/Assets.xcassets
+      - path: Resources/Localizable.xcstrings
     settings:
       base:
         INFOPLIST_FILE: VoiceTodo/Info.plist
@@ -103,6 +105,7 @@ targets:
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift
       - path: Protocols/Constants.swift
+      - path: Resources/Localizable.xcstrings
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicetodo.app.widget

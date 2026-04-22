@@ -258,7 +258,7 @@ class MockExtractor: TodoExtractorProtocol {
     var shouldThrowError = false
     var errorToThrow: Error?
 
-    func extract(from transcript: String) async throws -> ExtractionResult {
+    func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
         if shouldThrowError {
             throw errorToThrow ?? VoiceTodoError.networkUnavailable
         }

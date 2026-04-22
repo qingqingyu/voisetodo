@@ -219,7 +219,7 @@ final class AppCoordinator: ObservableObject {
             }
 
             do {
-                let result = try await extractor.extract(from: transcript)
+                let result = try await extractor.extract(from: transcript, locale: voiceInput.currentLocale)
                 if !result.todos.isEmpty {
                     allExtractedItems.append(contentsOf: result.todos)
                     successfullyProcessedIds.append(pending.id)
@@ -311,7 +311,7 @@ final class AppCoordinator: ObservableObject {
         }
 
         do {
-            let result = try await extractor.extract(from: text)
+            let result = try await extractor.extract(from: text, locale: voiceInput.currentLocale)
 
             if result.todos.isEmpty {
                 showToast(message: ErrorMessages.noTodosFound, style: .info)

@@ -1,12 +1,9 @@
 import SwiftUI
 import WidgetKit
 
-private let homeDateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_Hans_CN")
-    formatter.dateFormat = "M月d日 EEEE"
-    return formatter
-}()
+private func formattedHomeDate(_ date: Date) -> String {
+    date.formatted(.dateTime.month().day().weekday(.wide))
+}
 
 // MARK: - HomeView
 
@@ -93,7 +90,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     private var headerView: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(homeDateFormatter.string(from: Date()))
+                Text(formattedHomeDate(Date()))
                     .font(WarmFont.caption(14))
                     .foregroundColor(WarmTheme.textSecondary)
 
@@ -123,15 +120,15 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
         case 5..<12:
-            return "早安 ☀️"
+            return String(localized: "home.greeting.morning")
         case 12..<14:
-            return "中午好 🌤"
+            return String(localized: "home.greeting.noon")
         case 14..<18:
-            return "下午好 🌈"
+            return String(localized: "home.greeting.afternoon")
         case 18..<22:
-            return "晚上好 🌙"
+            return String(localized: "home.greeting.evening")
         default:
-            return "夜深了 💫"
+            return String(localized: "home.greeting.night")
         }
     }
 
@@ -146,7 +143,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 .font(WarmFont.title(18))
                 .foregroundColor(WarmTheme.textPrimary)
 
-            Text("项待办")
+            Text(String(localized: "home.todos_count"))
                 .font(WarmFont.caption(14))
                 .foregroundColor(WarmTheme.textSecondary)
         }
@@ -173,7 +170,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
                         .scaleEffect(1.5)
 
-                    Text("正在整理中...")
+                    Text(String(localized: "home.processing"))
                         .font(WarmFont.displayLight(20))
                         .foregroundColor(WarmTheme.textSecondary)
                 } else {
@@ -201,7 +198,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         }
                     }
 
-                    Text("正在聆听...")
+                    Text(String(localized: "home.listening"))
                         .font(WarmFont.display(22))
                         .foregroundColor(WarmTheme.textPrimary)
                 }
@@ -255,7 +252,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle")
                             .font(.system(size: 13))
-                        Text("已完成 (\(completedTodos.count))")
+                        Text(String(localized: "home.completed_section \(completedTodos.count)"))
                             .font(WarmFont.caption(13))
                     }
                     .foregroundColor(WarmTheme.textMuted)
@@ -285,7 +282,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             Button(role: .destructive) {
                 deleteTodo(todo.id)
             } label: {
-                Label("删除", systemImage: "trash")
+                Label(String(localized: "home.delete"), systemImage: "trash")
             }
         }
         .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
@@ -343,11 +340,11 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             .accessibilityHidden(true)
 
             VStack(spacing: 12) {
-                Text("今天还没有待办")
+                Text(String(localized: "home.empty_title"))
                     .font(WarmFont.display(24))
                     .foregroundColor(WarmTheme.textPrimary)
 
-                Text("按下 Action Button 或下方录音按钮\n说出你想做的事情")
+                Text(String(localized: "home.empty_hint"))
                     .font(WarmFont.body(16))
                     .foregroundColor(WarmTheme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -389,7 +386,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         )
                 }
 
-                Text(coordinator.isRecording ? "正在聆听..." : "开始录音")
+                Text(coordinator.isRecording ? String(localized: "home.listening") : String(localized: "home.start_recording"))
                     .font(WarmFont.headline(17))
                     .foregroundColor(WarmTheme.textPrimary)
             }
@@ -405,8 +402,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .padding(.bottom, 24)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .accessibilityIdentifier("RecordButton")
-        .accessibilityLabel(coordinator.isRecording ? "停止录音" : "开始语音录入")
-        .accessibilityHint(coordinator.isRecording ? "点击停止录音并开始整理待办" : "点击开始录音，说出你的待办事项")
+        .accessibilityLabel(coordinator.isRecording ? String(localized: "a11y.stop_recording") : String(localized: "a11y.start_voice_input"))
+        .accessibilityHint(coordinator.isRecording ? String(localized: "a11y.stop_hint") : String(localized: "a11y.start_hint"))
     }
 
     // MARK: - Actions
@@ -535,8 +532,8 @@ struct WarmTodoCard: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("TodoCheckbox_\(index)")
-                .accessibilityLabel(todo.isCompleted ? "已完成" : "未完成")
-                .accessibilityHint("点击\(todo.isCompleted ? "取消完成" : "标记为已完成")")
+                .accessibilityLabel(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
+                .accessibilityHint(String(localized: "a11y.toggle_complete \(todo.isCompleted ? String(localized: "a11y.mark_incomplete") : String(localized: "a11y.mark_complete"))"))
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
@@ -573,7 +570,7 @@ struct WarmTodoCard: View {
                                 .fill(WarmTheme.urgent)
                         )
                         .accessibilityIdentifier("PriorityLabel")
-                        .accessibilityLabel("高优先级")
+                        .accessibilityLabel(String(localized: "a11y.high_priority"))
                 }
             }
             .padding(.leading, 14)
@@ -591,8 +588,8 @@ struct WarmTodoCard: View {
             onTap?()
         }
         .accessibilityIdentifier("TodoCell_\(index)")
-        .accessibilityValue(todo.isCompleted ? "已完成" : "未完成")
-        .accessibilityHint("点击查看详情")
+        .accessibilityValue(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
+        .accessibilityHint(String(localized: "a11y.view_detail"))
     }
 }
 

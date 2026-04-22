@@ -15,9 +15,11 @@ final class TodoExtractorService: TodoExtractorProtocol {
     // MARK: - TodoExtractorProtocol Implementation
 
     /// 从转写文本中提取待办（带重试）
-    /// - Parameter transcript: 用户语音转写文本
+    /// - Parameters:
+    ///   - transcript: 用户语音转写文本
+    ///   - locale: 语音识别语言环境
     /// - Returns: 提取结果
-    func extract(from transcript: String) async throws -> ExtractionResult {
+    func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
         var lastError: Error?
 
         // 重试策略：重试 1 次
@@ -29,7 +31,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 }
 
                 // 调用 API
-                let responseText = try await callAPI(transcript: transcript)
+                let responseText = try await callAPI(transcript: transcript, locale: locale)
 
                 // 解析 JSON
                 let result = try parseResponse(responseText)
@@ -81,11 +83,11 @@ final class TodoExtractorService: TodoExtractorProtocol {
     // MARK: - Private Methods
 
     /// 调用 Claude API
-    private func callAPI(transcript: String) async throws -> String {
+    private func callAPI(transcript: String, locale: Locale) async throws -> String {
         let messages = PromptTemplates.buildMessages(for: transcript)
 
         return try await networkClient.callClaudeAPI(
-            systemPrompt: PromptTemplates.systemPrompt,
+            systemPrompt: PromptTemplates.systemPrompt(for: locale),
             messages: messages,
             model: NetworkConfig.claudeModel,
             temperature: 0.1,

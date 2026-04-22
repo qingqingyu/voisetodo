@@ -58,7 +58,7 @@ struct SmallWidgetView: View {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 28, weight: .light))
                 .foregroundColor(.primary.opacity(0.4))
-            Text("暂无待办")
+            Text(String(localized: "widget.no_todos"))
                 .font(.system(size: 14))
                 .foregroundColor(.primary.opacity(0.4))
         }
@@ -91,7 +91,7 @@ struct MediumWidgetView: View {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 32, weight: .light))
                 .foregroundColor(.primary.opacity(0.4))
-            Text("暂无待办")
+            Text(String(localized: "widget.no_todos"))
                 .font(.system(size: 16))
                 .foregroundColor(.primary.opacity(0.4))
         }
@@ -124,7 +124,7 @@ struct LargeWidgetView: View {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(.primary.opacity(0.4))
-            Text("暂无待办")
+            Text(String(localized: "widget.no_todos"))
                 .font(.system(size: 18))
                 .foregroundColor(.primary.opacity(0.4))
         }
@@ -181,7 +181,7 @@ struct LockscreenCircularWidget: View {
                     Text("\(todos.count)")
                         .font(.system(size: 24, weight: .bold))
                         .minimumScaleFactor(0.6)
-                    Text("待办")
+                    Text(String(localized: "widget.todo_count"))
                         .font(.system(size: 10, weight: .medium))
                 }
             }
@@ -196,7 +196,7 @@ struct LockscreenInlineWidget: View {
         if let firstTodo = todos.first {
             Text("\(firstTodo.category.emoji) \(firstTodo.title)")
         } else {
-            Text("暂无待办")
+            Text(String(localized: "widget.no_todos"))
         }
     }
 }
