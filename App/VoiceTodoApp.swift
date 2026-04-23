@@ -185,7 +185,8 @@ struct VoiceTodoApp: App {
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            // App 进入前台，重启网络监测并检查待处理项
+            // App 进入前台，同步 Widget Extension 可能做的修改（如打勾完成）
+            todoStore.refreshTodos()
             NetworkMonitor.shared.restartIfNeeded()
             Task {
                 await coordinator.handleAppForeground()

@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
 
 /// Widget 视图
 /// 支持桌面和锁屏 Widget，水印风格展示
@@ -150,8 +151,13 @@ struct LockscreenRectangularWidget: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(todos.prefix(WidgetConfig.lockscreenItemCount)) { todo in
                     HStack(spacing: 6) {
-                        Text(todo.category.emoji)
-                            .font(.system(size: 12))
+                        Button(intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
+                            Image(systemName: "circle")
+                                .font(.system(size: 13))
+                                .foregroundColor(.primary.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+
                         Text(todo.title)
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
@@ -207,35 +213,39 @@ struct TodoWidgetItemRow: View {
     let todo: TodoItemData
 
     var body: some View {
-        // 使用 Link 实现点击跳转
-        let destination = URL(string: "voicetodo://todo/\(todo.id.uuidString)") ?? URL(string: "voicetodo://")!
-        Link(destination: destination) {
-            HStack(spacing: 8) {
-                // 分类 emoji
-                Text(todo.category.emoji)
-                    .font(.system(size: 16))
+        HStack(spacing: 8) {
+            Button(intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
+                Circle()
+                    .stroke(Color.primary.opacity(0.4), lineWidth: 1.5)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
 
-                // 标题
-                Text(todo.title)
-                    .font(.system(size: 15, weight: todo.priority == .high ? .semibold : .regular))
-                    .foregroundColor(.primary.opacity(0.65))
-                    .lineLimit(1)
-                    .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
+            let destination = URL(string: "voicetodo://todo/\(todo.id.uuidString)") ?? URL(string: "voicetodo://")!
+            Link(destination: destination) {
+                HStack(spacing: 6) {
+                    Text(todo.category.emoji)
+                        .font(.system(size: 16))
 
-                Spacer()
+                    Text(todo.title)
+                        .font(.system(size: 15, weight: todo.priority == .high ? .semibold : .regular))
+                        .foregroundColor(.primary.opacity(0.65))
+                        .lineLimit(1)
+                        .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
 
-                // 时间标签
-                if let dueHint = todo.dueHint {
-                    Text(dueHint)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary.opacity(0.65))
-                }
+                    Spacer()
 
-                // 优先级标签
-                if todo.priority == .high {
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 6, height: 6)
+                    if let dueHint = todo.dueHint {
+                        Text(dueHint)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary.opacity(0.65))
+                    }
+
+                    if todo.priority == .high {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                    }
                 }
             }
         }

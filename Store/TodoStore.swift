@@ -259,8 +259,8 @@ final class TodoStore: TodoStoreProtocol {
     // MARK: - Private Methods
 
     /// 全量刷新 todos 属性（从数据库重新加载）
-    /// 仅在初始化时调用，后续操作使用增量更新
-    private func refreshTodos() {
+    /// 初始化时及 app 回前台时调用（同步 Widget 在 Extension 进程中的修改）
+    func refreshTodos() {
         var descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )

@@ -435,7 +435,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     /// 根据系统语言选择 locale
     private static func selectLocale() -> Locale {
-        let preferredLanguage = Locale.preferredLanguages.first ?? "zh-Hans"
+        let preferredLanguage = Locale.preferredLanguages.first ?? "en-US"
 
         // 检查是否支持
         for locale in VoiceConstants.supportedLocales {
@@ -444,8 +444,8 @@ final class VoiceInputManager: VoiceInputProtocol {
             }
         }
 
-        // 默认使用中文
-        return Locale(identifier: "zh-Hans")
+        // 非中文/英文系统回退到英文（国际通用）
+        return Locale(identifier: "en-US")
     }
 
     /// 检查权限
