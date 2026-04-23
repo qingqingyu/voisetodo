@@ -41,7 +41,7 @@ final class IntegrationTests: XCTestCase {
         let transcript = "明天去银行办卡，顺便买菜，晚上给老妈打电话"
 
         // When: 调用 extractor
-        let result = try await mockExtractor.extract(from: transcript)
+        let result = try await mockExtractor.extract(from: transcript, locale: Locale(identifier: "zh-Hans"))
 
         // Then: 验证返回的 ExtractionResult
         XCTAssertEqual(result.todos.count, 3, "应该提取出 3 条待办")
@@ -143,7 +143,7 @@ final class IntegrationTests: XCTestCase {
         let pendingId = initialTodos[0].id
 
         // When: AI 提取并替换
-        let extractedItems = try await mockExtractor.extract(from: rawTranscript)
+        let extractedItems = try await mockExtractor.extract(from: rawTranscript, locale: Locale(identifier: "zh-Hans"))
         try await MainActor.run {
             try todoStore.replacePendingWithExtracted(pendingId, extractedItems.todos)
         }
@@ -164,7 +164,7 @@ final class IntegrationTests: XCTestCase {
         mockExtractor.errorToThrow = VoiceTodoError.networkUnavailable
 
         do {
-            _ = try await mockExtractor.extract(from: "测试")
+            _ = try await mockExtractor.extract(from: "测试", locale: Locale(identifier: "zh-Hans"))
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
             XCTAssertEqual(error, .networkUnavailable)
@@ -184,7 +184,7 @@ final class IntegrationTests: XCTestCase {
         // Test 3: API Error
         mockExtractor.errorToThrow = VoiceTodoError.apiResponseInvalid("测试错误")
         do {
-            _ = try await mockExtractor.extract(from: "测试")
+            _ = try await mockExtractor.extract(from: "测试", locale: Locale(identifier: "zh-Hans"))
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
             if case .apiResponseInvalid = error {

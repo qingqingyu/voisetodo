@@ -203,7 +203,7 @@ Output:
 {
   "todos": [
     {
-      "title": "Open bank account",
+      "title": "Go to the bank",
       "detail": "Go to the bank tomorrow",
       "due_hint": "tomorrow",
       "priority": "normal",

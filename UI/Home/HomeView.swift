@@ -533,7 +533,12 @@ struct WarmTodoCard: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("TodoCheckbox_\(index)")
                 .accessibilityLabel(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
-                .accessibilityHint(String(localized: "a11y.toggle_complete \(todo.isCompleted ? String(localized: "a11y.mark_incomplete") : String(localized: "a11y.mark_complete"))"))
+                .accessibilityHint({
+                    let action = todo.isCompleted
+                        ? String(localized: "a11y.mark_incomplete")
+                        : String(localized: "a11y.mark_complete")
+                    return String(localized: "a11y.toggle_complete \(action)")
+                }())
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {

@@ -19,7 +19,6 @@ enum ErrorMessages {
 
     // 详情页
     static let todoSaved = String(localized: "detail.saved")
-    static let todoSaveFailed = String(localized: "detail.save_failed %@")
     static let todoDeleted = String(localized: "detail.deleted")
     static let todoDeleteFailed = String(localized: "detail.delete_failed")
 

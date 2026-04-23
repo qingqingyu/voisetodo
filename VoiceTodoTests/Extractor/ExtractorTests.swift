@@ -47,7 +47,7 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
-        let result = try await sut.extract(from: "明天去银行办卡")
+        let result = try await sut.extract(from: "明天去银行办卡", locale: Locale(identifier: "zh-Hans"))
 
         // Then: 正确解析
         XCTAssertEqual(result.todos.count, 1)
@@ -75,7 +75,7 @@ final class ExtractorTests: XCTestCase {
 
         mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
-        let result = try await sut.extract(from: "明天去银行办卡")
+        let result = try await sut.extract(from: "明天去银行办卡", locale: Locale(identifier: "zh-Hans"))
 
         XCTAssertEqual(result.todos.count, 1)
         XCTAssertEqual(result.todos[0].title, "去银行办卡")
@@ -107,7 +107,7 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
-        let result = try await sut.extract(from: "准备下周的面试")
+        let result = try await sut.extract(from: "准备下周的面试", locale: Locale(identifier: "zh-Hans"))
 
         // Then: 仍能正确解析
         XCTAssertEqual(result.todos.count, 1)
@@ -138,7 +138,7 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
-        let result = try await sut.extract(from: "晚上买菜")
+        let result = try await sut.extract(from: "晚上买菜", locale: Locale(identifier: "zh-Hans"))
 
         // Then: 仍能正确解析
         XCTAssertEqual(result.todos.count, 1)
@@ -200,7 +200,7 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient.enqueueSuccess(text: successResponse)
 
         // When: 调用 extract（会重试）
-        let result = try await sut.extract(from: "完成今天的工作")
+        let result = try await sut.extract(from: "完成今天的工作", locale: Locale(identifier: "zh-Hans"))
 
         // Then: 第二次成功
         XCTAssertEqual(result.todos.count, 1)
@@ -215,7 +215,7 @@ final class ExtractorTests: XCTestCase {
 
         // When & Then: 抛出正确错误
         do {
-            _ = try await sut.extract(from: "测试文本")
+            _ = try await sut.extract(from: "测试文本", locale: Locale(identifier: "zh-Hans"))
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
             XCTAssertEqual(error, .networkUnavailable)
@@ -233,7 +233,7 @@ final class ExtractorTests: XCTestCase {
 
         // When & Then: 立即抛出错误，不重试
         do {
-            _ = try await sut.extract(from: "测试文本")
+            _ = try await sut.extract(from: "测试文本", locale: Locale(identifier: "zh-Hans"))
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
             XCTAssertEqual(error, .apiResponseInvalid("HTTP 401: API Key 未配置"))
@@ -259,7 +259,7 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
-        let result = try await sut.extract(from: "最近好累，什么都不想干")
+        let result = try await sut.extract(from: "最近好累，什么都不想干", locale: Locale(identifier: "zh-Hans"))
 
         // Then: 返回空数组
         XCTAssertTrue(result.todos.isEmpty)
@@ -305,7 +305,7 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient.enqueueSuccess(text: jsonResponse)
 
         // When: 调用 extract
-        let result = try await sut.extract(from: "明天去银行办卡，顺便买菜，晚上给老妈打电话")
+        let result = try await sut.extract(from: "明天去银行办卡，顺便买菜，晚上给老妈打电话", locale: Locale(identifier: "zh-Hans"))
 
         // Then: 正确提取 3 条待办
         XCTAssertEqual(result.todos.count, 3)
