@@ -256,7 +256,7 @@ final class TodoStore: TodoStoreProtocol {
         }
     }
 
-    // MARK: - Private Methods
+    // MARK: - Internal Methods
 
     /// 全量刷新 todos 属性（从数据库重新加载）
     /// 初始化时及 app 回前台时调用（同步 Widget 在 Extension 进程中的修改）
@@ -275,6 +275,8 @@ final class TodoStore: TodoStoreProtocol {
             #endif
         }
     }
+
+    // MARK: - Private Methods
 
     /// 根据 ID 查找 TodoItem
     /// - Parameter id: 待办 ID

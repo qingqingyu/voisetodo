@@ -37,9 +37,9 @@ struct ToggleTodoIntent: AppIntent {
         if let item = try context.fetch(descriptor).first {
             item.isCompleted.toggle()
             try context.save()
+            WidgetCenter.shared.reloadAllTimelines()
         }
 
-        WidgetCenter.shared.reloadAllTimelines()
         return .result()
     }
 }

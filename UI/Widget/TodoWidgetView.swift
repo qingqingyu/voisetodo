@@ -155,6 +155,8 @@ struct LockscreenRectangularWidget: View {
                             Image(systemName: "circle")
                                 .font(.system(size: 13))
                                 .foregroundColor(.primary.opacity(0.6))
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
 
@@ -218,6 +220,8 @@ struct TodoWidgetItemRow: View {
                 Circle()
                     .stroke(Color.primary.opacity(0.4), lineWidth: 1.5)
                     .frame(width: 20, height: 20)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 

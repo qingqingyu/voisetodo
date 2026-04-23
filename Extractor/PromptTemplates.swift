@@ -6,8 +6,8 @@ enum PromptTemplates {
     static func systemPrompt(for locale: Locale) -> String {
         let lang = locale.language.languageCode?.identifier ?? "en"
         switch lang {
-        case "en": return englishSystemPrompt
-        default: return chineseSystemPrompt
+        case "zh": return chineseSystemPrompt
+        default: return englishSystemPrompt
         }
     }
 
