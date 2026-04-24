@@ -40,4 +40,7 @@ protocol TodoStoreProtocol: ObservableObject {
     /// 重新排序未完成待办（拖拽排序后调用）
     /// - Parameter ids: 按新顺序排列的待办 ID 数组
     func reorder(ids: [UUID]) throws
+
+    /// 从数据库重新加载 todos（用于 UI 状态与数据层不一致时回滚）
+    func refreshTodos()
 }

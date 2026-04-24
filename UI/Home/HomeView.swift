@@ -235,17 +235,20 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private var todoListView: some View {
-        List {
-            ForEach(uncompletedTodos) { todo in
-                todoRow(todo, index: uncompletedTodos.firstIndex(where: { $0.id == todo.id }) ?? 0)
+        let uncompleted = uncompletedTodos
+        let completed = completedTodos
+        let uncompletedCount = uncompleted.count
+
+        return List {
+            ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, todo in
+                todoRow(todo, index: index)
             }
             .onMove(perform: moveUncompleted)
 
-            if !completedTodos.isEmpty {
+            if !completed.isEmpty {
                 Section {
-                    ForEach(completedTodos) { todo in
-                        let idx = completedTodos.firstIndex(where: { $0.id == todo.id }) ?? 0
-                        todoRow(todo, index: uncompletedTodos.count + idx)
+                    ForEach(Array(zip(completed.indices, completed)), id: \.1.id) { idx, todo in
+                        todoRow(todo, index: uncompletedCount + idx)
                     }
                 } header: {
                     HStack(spacing: 6) {
@@ -481,6 +484,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             try store.reorder(ids: ids)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
+            store.refreshTodos()
             coordinator.showToast(
                 message: ErrorMessages.storageError,
                 style: .warning

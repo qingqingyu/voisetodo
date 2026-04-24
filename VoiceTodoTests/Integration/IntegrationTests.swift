@@ -101,7 +101,7 @@ final class IntegrationTests: XCTestCase {
 
         // Then: 验证一致性
         XCTAssertEqual(widgetData.count, 2)
-        XCTAssertEqual(widgetData[0].title, "Widget 任务2")  // 按时间倒序
+        XCTAssertEqual(widgetData[0].title, "Widget 任务2")  // 按 sortOrder 升序
         XCTAssertEqual(widgetData[1].title, "Widget 任务1")
         XCTAssertEqual(widgetData[1].priority, .high)
         XCTAssertFalse(widgetData[0].isCompleted)

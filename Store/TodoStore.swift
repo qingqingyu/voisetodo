@@ -266,8 +266,16 @@ final class TodoStore: TodoStoreProtocol {
     /// 重新排序未完成待办（拖拽排序后调用）
     /// - Parameter ids: 按新顺序排列的待办 ID 数组
     func reorder(ids: [UUID]) throws {
+        let descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { !$0.isCompleted }
+        )
+        let allUncompleted = try modelContext.fetch(descriptor)
+        let itemMap = Dictionary(uniqueKeysWithValues: allUncompleted.map { ($0.id, $0) })
+
         for (index, id) in ids.enumerated() {
-            let item = try findTodoItem(by: id)
+            guard let item = itemMap[id] else {
+                throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+            }
             item.sortOrder = index
         }
 
