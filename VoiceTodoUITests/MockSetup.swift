@@ -224,13 +224,24 @@ class MockTodoStore: TodoStoreProtocol {
         refreshTodos()
     }
 
+    func reorder(ids: [UUID]) throws {
+        var newOrder = [TodoItemData]()
+        for id in ids {
+            if let item = storage[id] {
+                newOrder.append(item)
+            }
+        }
+        let rest = todos.filter { !Set(ids).contains($0.id) }
+        todos = newOrder + rest
+    }
+
     /// 重置存储（用于测试之间隔离）
     func reset() {
         storage.removeAll()
         refreshTodos()
     }
 
-    private func refreshTodos() {
+    func refreshTodos() {
         todos = Array(storage.values)
             .sorted { $0.createdAt > $1.createdAt }
     }

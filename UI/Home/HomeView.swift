@@ -254,7 +254,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle")
                             .font(.system(size: 13))
-                        Text(String(localized: "home.completed_section \(completedTodos.count)"))
+                        Text(String(localized: "home.completed_section \(completed.count)"))
                             .font(WarmFont.caption(13))
                     }
                     .foregroundColor(WarmTheme.textMuted)

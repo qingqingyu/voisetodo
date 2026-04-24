@@ -272,11 +272,16 @@ final class TodoStore: TodoStoreProtocol {
         let allUncompleted = try modelContext.fetch(descriptor)
         let itemMap = Dictionary(uniqueKeysWithValues: allUncompleted.map { ($0.id, $0) })
 
+        var itemsToUpdate = [(TodoItem, Int)]()
         for (index, id) in ids.enumerated() {
             guard let item = itemMap[id] else {
-                throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+                throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
             }
-            item.sortOrder = index
+            itemsToUpdate.append((item, index))
+        }
+
+        for (item, order) in itemsToUpdate {
+            item.sortOrder = order
         }
 
         do {
@@ -359,7 +364,7 @@ final class TodoStore: TodoStoreProtocol {
         do {
             let items = try modelContext.fetch(descriptor)
             guard let item = items.first else {
-                throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+                throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
             }
             return item
         } catch {

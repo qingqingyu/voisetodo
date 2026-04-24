@@ -80,6 +80,21 @@ class MockStore: TodoStoreProtocol {
         let newTodos = items.map { TodoItemData(from: $0, rawTranscript: rawTranscript) }
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
+
+    func reorder(ids: [UUID]) throws {
+        let idSet = Set(ids)
+        var reordered = [TodoItemData]()
+        let lookup = Dictionary(uniqueKeysWithValues: todos.map { ($0.id, $0) })
+        for id in ids {
+            if let item = lookup[id] {
+                reordered.append(item)
+            }
+        }
+        let rest = todos.filter { !idSet.contains($0.id) }
+        todos = reordered + rest
+    }
+
+    func refreshTodos() {}
 }
 
 // MARK: - Preview Helpers
