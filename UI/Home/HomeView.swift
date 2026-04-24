@@ -133,17 +133,14 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private var statsBadge: some View {
-        let uncompleted = store.todos.filter { !$0.isCompleted }.count
+        let total = store.todos.count
+        let completed = store.todos.filter { $0.isCompleted }.count
         return HStack(spacing: 6) {
-            Circle()
-                .fill(WarmTheme.primary)
-                .frame(width: 8, height: 8)
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 14))
+                .foregroundColor(WarmTheme.primary)
 
-            Text("\(uncompleted)")
-                .font(WarmFont.title(18))
-                .foregroundColor(WarmTheme.textPrimary)
-
-            Text(String(localized: "home.todos_count"))
+            Text(String(localized: "home.stats \(completed) \(total)"))
                 .font(WarmFont.caption(14))
                 .foregroundColor(WarmTheme.textSecondary)
         }
@@ -239,14 +236,16 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
     private var todoListView: some View {
         List {
-            ForEach(Array(uncompletedTodos.enumerated()), id: \.element.id) { index, todo in
-                todoRow(todo, index: index)
+            ForEach(uncompletedTodos) { todo in
+                todoRow(todo, index: uncompletedTodos.firstIndex(where: { $0.id == todo.id }) ?? 0)
             }
+            .onMove(perform: moveUncompleted)
 
             if !completedTodos.isEmpty {
                 Section {
-                    ForEach(Array(completedTodos.enumerated()), id: \.element.id) { index, todo in
-                        todoRow(todo, index: uncompletedTodos.count + index)
+                    ForEach(completedTodos) { todo in
+                        let idx = completedTodos.firstIndex(where: { $0.id == todo.id }) ?? 0
+                        todoRow(todo, index: uncompletedTodos.count + idx)
                     }
                 } header: {
                     HStack(spacing: 6) {
@@ -472,6 +471,20 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     style: .warning
                 )
             }
+        }
+    }
+
+    private func moveUncompleted(from source: IndexSet, to destination: Int) {
+        var ids = uncompletedTodos.map(\.id)
+        ids.move(fromOffsets: source, toOffset: destination)
+        do {
+            try store.reorder(ids: ids)
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            coordinator.showToast(
+                message: ErrorMessages.storageError,
+                style: .warning
+            )
         }
     }
 

@@ -34,24 +34,27 @@ struct SmallWidgetView: View {
     let todos: [TodoItemData]
 
     var body: some View {
-        if todos.isEmpty {
-            emptyState
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(todos.prefix(1)) { todo in
-                    TodoWidgetItemRow(todo: todo)
-                }
+        Group {
+            if todos.isEmpty {
+                emptyState
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(todos.prefix(1)) { todo in
+                        TodoWidgetItemRow(todo: todo)
+                    }
 
-                if todos.count > 1 {
-                    Text("+\(todos.count - 1)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary.opacity(0.5))
-                }
+                    if todos.count > 1 {
+                        Text("+\(todos.count - 1)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary.opacity(0.5))
+                    }
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                .padding()
             }
-            .padding()
         }
+        .containerBackground(.clear, for: .widget)
     }
 
     private var emptyState: some View {
@@ -73,18 +76,21 @@ struct MediumWidgetView: View {
     let todos: [TodoItemData]
 
     var body: some View {
-        if todos.isEmpty {
-            emptyState
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(todos.prefix(WidgetConfig.mediumItemCount)) { todo in
-                    TodoWidgetItemRow(todo: todo)
-                }
+        Group {
+            if todos.isEmpty {
+                emptyState
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(todos.prefix(WidgetConfig.mediumItemCount)) { todo in
+                        TodoWidgetItemRow(todo: todo)
+                    }
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                .padding()
             }
-            .padding()
         }
+        .containerBackground(.clear, for: .widget)
     }
 
     private var emptyState: some View {
@@ -106,18 +112,21 @@ struct LargeWidgetView: View {
     let todos: [TodoItemData]
 
     var body: some View {
-        if todos.isEmpty {
-            emptyState
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(todos.prefix(WidgetConfig.largeItemCount)) { todo in
-                    TodoWidgetItemRow(todo: todo)
-                }
+        Group {
+            if todos.isEmpty {
+                emptyState
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(todos.prefix(WidgetConfig.largeItemCount)) { todo in
+                        TodoWidgetItemRow(todo: todo)
+                    }
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                .padding()
             }
-            .padding()
         }
+        .containerBackground(.clear, for: .widget)
     }
 
     private var emptyState: some View {

@@ -139,6 +139,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
     var createdAt: Date
     var rawTranscript: String?
     var needsAIProcessing: Bool
+    var sortOrder: Int
 
     init(
         id: UUID = UUID(),
@@ -151,7 +152,8 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         isCompleted: Bool = false,
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
-        needsAIProcessing: Bool = false
+        needsAIProcessing: Bool = false,
+        sortOrder: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -164,6 +166,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.createdAt = createdAt
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
+        self.sortOrder = sortOrder
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -172,12 +175,13 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.title = extracted.title
         self.detail = extracted.detail.isEmpty ? nil : extracted.detail
         self.dueHint = extracted.dueHint
-        self.dueDate = nil  // V1 不自动解析时间
+        self.dueDate = nil
         self.priority = extracted.priority
         self.category = extracted.categoryHint
         self.isCompleted = false
         self.createdAt = Date()
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = false
+        self.sortOrder = 0
     }
 }

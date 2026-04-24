@@ -115,6 +115,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos detected" } }
       }
     },
+    "toast.open_settings" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "去设置" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } }
+      }
+    },
     "ui.saved_offline" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存原始记录，联网后将自动整理" } },
@@ -215,6 +221,12 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项待办" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "todos" } }
+      }
+    },
+    "home.stats %lld %lld" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld/%lld 已完成" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld/%lld done" } }
       }
     },
     "home.processing" : {

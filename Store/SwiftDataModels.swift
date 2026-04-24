@@ -17,6 +17,7 @@ final class TodoItem {
     var createdAt: Date
     var rawTranscript: String?
     var needsAIProcessing: Bool
+    var sortOrder: Int
 
     // MARK: - Computed Properties
 
@@ -45,7 +46,8 @@ final class TodoItem {
         isCompleted: Bool = false,
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
-        needsAIProcessing: Bool = false
+        needsAIProcessing: Bool = false,
+        sortOrder: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -58,6 +60,7 @@ final class TodoItem {
         self.createdAt = createdAt
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
+        self.sortOrder = sortOrder
     }
 
     // MARK: - Conversion
@@ -76,7 +79,8 @@ final class TodoItem {
             isCompleted: isCompleted,
             createdAt: createdAt,
             rawTranscript: rawTranscript,
-            needsAIProcessing: needsAIProcessing
+            needsAIProcessing: needsAIProcessing,
+            sortOrder: sortOrder
         )
     }
 }

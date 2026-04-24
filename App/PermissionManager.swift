@@ -72,6 +72,11 @@ final class PermissionManager: ObservableObject {
 
     /// 打开系统设置
     func openAppSettings() {
+        Self.openAppSettings()
+    }
+
+    /// 打开系统设置（静态方法，供无实例的场景调用）
+    static func openAppSettings() {
         guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else {
             return
         }

@@ -24,6 +24,8 @@ final class AppCoordinator: ObservableObject {
     @Published var showToast = false
     @Published var toastMessage = ""
     @Published var toastStyle: ToastStyle = .info
+    @Published var toastActionTitle: String?
+    @Published var toastAction: (() -> Void)?
     @Published var deepLinkTodoId: UUID?
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
@@ -339,22 +341,27 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// 显示 Toast
-    func showToast(message: String, style: ToastStyle) {
+    func showToast(message: String, style: ToastStyle, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         toastMessage = message
         toastStyle = style
+        toastActionTitle = actionTitle
+        toastAction = action
         showToast = true
     }
 
     /// 统一错误处理
     private func handleError(_ error: Error) {
         if let voiceError = error as? VoiceTodoError {
+            let settingsAction: () -> Void = { PermissionManager.openAppSettings() }
+            let settingsTitle = String(localized: "toast.open_settings")
+
             switch voiceError {
             case .microphonePermissionDenied:
-                showToast(message: ErrorMessages.micDenied, style: .warning)
+                showToast(message: ErrorMessages.micDenied, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .speechRecognitionPermissionDenied:
-                showToast(message: ErrorMessages.speechDenied, style: .warning)
+                showToast(message: ErrorMessages.speechDenied, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .speechRecognitionUnavailable:
-                showToast(message: ErrorMessages.speechUnavailable, style: .warning)
+                showToast(message: ErrorMessages.speechUnavailable, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
             case .storageReadFailed, .storageWriteFailed:

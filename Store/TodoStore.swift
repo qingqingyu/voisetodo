@@ -10,7 +10,7 @@ final class TodoStore: TodoStoreProtocol {
     /// SwiftData 模型上下文
     private let modelContext: ModelContext
 
-    /// 所有待办（按创建时间倒序）
+    /// 所有待办（按 sortOrder 升序排列）
     @Published var todos: [TodoItemData] = []
 
     // MARK: - Initialization
@@ -19,6 +19,7 @@ final class TodoStore: TodoStoreProtocol {
     /// - Parameter modelContext: SwiftData 模型上下文
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        migrateOldSortOrder()
         refreshTodos()
     }
 
@@ -28,11 +29,11 @@ final class TodoStore: TodoStoreProtocol {
     /// - Parameter item: AI 提取的待办
     func add(_ item: ExtractedTodo) throws {
         let todoItem = TodoItem.from(item)
+        todoItem.sortOrder = nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
         do {
             try modelContext.save()
-            // 增量更新：插入到数组头部
             todos.insert(todoItem.toData(), at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
@@ -42,16 +43,18 @@ final class TodoStore: TodoStoreProtocol {
     /// 批量添加（确认界面用）
     /// - Parameter items: AI 提取的待办数组
     func addBatch(_ items: [ExtractedTodo]) throws {
+        var baseSortOrder = nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item)
+            todoItem.sortOrder = baseSortOrder
+            baseSortOrder -= 1
             modelContext.insert(todoItem)
             newTodos.append(todoItem.toData())
         }
 
         do {
             try modelContext.save()
-            // insert(contentsOf:at:) 会保持数组顺序，因此这里需要反转后再插到头部。
             todos.insert(contentsOf: newTodos.reversed(), at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
@@ -62,11 +65,11 @@ final class TodoStore: TodoStoreProtocol {
     /// - Parameter transcript: 原始语音转写文本
     func addRawTranscript(_ transcript: String) throws {
         let todoItem = TodoItem.rawTranscript(transcript)
+        todoItem.sortOrder = nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
         do {
             try modelContext.save()
-            // 增量更新：插入到数组头部
             todos.insert(todoItem.toData(), at: 0)
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
@@ -163,7 +166,7 @@ final class TodoStore: TodoStoreProtocol {
     func recentUncompleted(limit: Int) -> [TodoItemData] {
         var descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { !$0.isCompleted },
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
         descriptor.fetchLimit = limit
 
@@ -196,9 +199,12 @@ final class TodoStore: TodoStoreProtocol {
         let pendingItems = try pendingIds.map { try findTodoItem(by: $0) }
         let effectiveTranscript = rawTranscript ?? pendingItems.compactMap(\.rawTranscript).joined(separator: "\n---\n")
 
+        var baseSortOrder = nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item, rawTranscript: effectiveTranscript)
+            todoItem.sortOrder = baseSortOrder
+            baseSortOrder -= 1
             modelContext.insert(todoItem)
             newTodos.append(todoItem.toData())
         }
@@ -243,9 +249,26 @@ final class TodoStore: TodoStoreProtocol {
                 isCompleted: item.isCompleted,
                 createdAt: item.createdAt,
                 rawTranscript: item.rawTranscript,
-                needsAIProcessing: item.needsAIProcessing
+                needsAIProcessing: item.needsAIProcessing,
+                sortOrder: item.sortOrder
             )
             modelContext.insert(todoItem)
+        }
+
+        do {
+            try modelContext.save()
+            refreshTodos()
+        } catch {
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    /// 重新排序未完成待办（拖拽排序后调用）
+    /// - Parameter ids: 按新顺序排列的待办 ID 数组
+    func reorder(ids: [UUID]) throws {
+        for (index, id) in ids.enumerated() {
+            let item = try findTodoItem(by: id)
+            item.sortOrder = index
         }
 
         do {
@@ -261,15 +284,14 @@ final class TodoStore: TodoStoreProtocol {
     /// 全量刷新 todos 属性（从数据库重新加载）
     /// 初始化时及 app 回前台时调用（同步 Widget 在 Extension 进程中的修改）
     func refreshTodos() {
-        var descriptor = FetchDescriptor<TodoItem>(
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        let descriptor = FetchDescriptor<TodoItem>(
+            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
 
         do {
             let items = try modelContext.fetch(descriptor)
             todos = items.map { $0.toData() }
         } catch {
-            // 查询失败保持原数据
             #if DEBUG
             print("Failed to refresh todos: \(error)")
             #endif
@@ -277,6 +299,45 @@ final class TodoStore: TodoStoreProtocol {
     }
 
     // MARK: - Private Methods
+
+    /// 计算新条目的 sortOrder（比当前最小值再小 1，确保排在最前面）
+    private func nextSortOrderForNewItem() -> Int {
+        let descriptor = FetchDescriptor<TodoItem>(
+            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
+        )
+
+        do {
+            let items = try modelContext.fetch(descriptor)
+            let minOrder = items.first?.sortOrder ?? 0
+            return minOrder - 1
+        } catch {
+            return -1
+        }
+    }
+
+    /// 一次性迁移：为旧数据（sortOrder 全部为 0）按 createdAt 倒序分配 sortOrder
+    private func migrateOldSortOrder() {
+        let descriptor = FetchDescriptor<TodoItem>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+
+        do {
+            let items = try modelContext.fetch(descriptor)
+            guard items.count > 1 else { return }
+
+            let allZero = items.allSatisfy { $0.sortOrder == 0 }
+            guard allZero else { return }
+
+            for (index, item) in items.enumerated() {
+                item.sortOrder = index
+            }
+            try modelContext.save()
+        } catch {
+            #if DEBUG
+            print("Failed to migrate sortOrder: \(error)")
+            #endif
+        }
+    }
 
     /// 根据 ID 查找 TodoItem
     /// - Parameter id: 待办 ID

@@ -34,6 +34,8 @@ struct ToastModifier: ViewModifier {
     let message: String
     let style: ToastStyle
     @Binding var isPresented: Bool
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     /// 当前自动隐藏的定时器
     @State private var dismissTask: DispatchWorkItem?
@@ -42,7 +44,7 @@ struct ToastModifier: ViewModifier {
         content
             .overlay(alignment: .top) {
                 if isPresented {
-                    ToastView(message: message, style: style)
+                    ToastView(message: message, style: style, actionTitle: actionTitle, action: action)
                         .transition(.asymmetric(
                             insertion: .move(edge: .top).combined(with: .scale(scale: 0.9)),
                             removal: .move(edge: .top).combined(with: .opacity)
@@ -63,25 +65,27 @@ struct ToastModifier: ViewModifier {
     /// 调度自动隐藏（取消旧定时器，启动新定时器）
     private func scheduleDismiss() {
         dismissTask?.cancel()
+        let duration = action != nil ? UIConfig.toastDuration * 2 : UIConfig.toastDuration
         let task = DispatchWorkItem {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 isPresented = false
             }
         }
         dismissTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + UIConfig.toastDuration, execute: task)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: task)
     }
 }
 
 /// 轻量级提示组件 - 温暖友好风格
-/// 从顶部滑入，2秒后自动消失
+/// 从顶部滑入，自动消失（有按钮时展示更久）
 struct ToastView: View {
     let message: String
     let style: ToastStyle
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
-            // 图标
             ZStack {
                 Circle()
                     .fill(style.iconColor.opacity(0.15))
@@ -92,7 +96,6 @@ struct ToastView: View {
                     .font(.system(size: 18))
             }
 
-            // 文字
             Text(message)
                 .font(.custom("Avenir Next", size: 15))
                 .fontWeight(.medium)
@@ -101,6 +104,21 @@ struct ToastView: View {
                 .multilineTextAlignment(.leading)
 
             Spacer(minLength: 0)
+
+            if let actionTitle, let action {
+                Button(action: action) {
+                    Text(actionTitle)
+                        .font(.custom("Avenir Next", size: 13))
+                        .fontWeight(.semibold)
+                        .foregroundColor(style.iconColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(style.iconColor.opacity(0.12))
+                        )
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -117,8 +135,8 @@ struct ToastView: View {
 
 extension View {
     /// 显示 Toast 提示
-    func toast(message: String, style: ToastStyle = .info, isPresented: Binding<Bool>) -> some View {
-        modifier(ToastModifier(message: message, style: style, isPresented: isPresented))
+    func toast(message: String, style: ToastStyle = .info, isPresented: Binding<Bool>, actionTitle: String? = nil, action: (() -> Void)? = nil) -> some View {
+        modifier(ToastModifier(message: message, style: style, isPresented: isPresented, actionTitle: actionTitle, action: action))
     }
 }
 

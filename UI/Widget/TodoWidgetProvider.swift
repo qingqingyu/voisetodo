@@ -13,7 +13,7 @@ struct TodoEntry: TimelineEntry {
 ///
 /// **实现说明：**
 /// - 使用 SwiftData 从 App Group 共享容器读取待办数据
-/// - 只读取未完成的待办，按创建时间倒序排列
+/// - 只读取未完成的待办，按 sortOrder 升序排列
 /// - 每 30 分钟自动刷新
 struct TodoTimelineProvider: TimelineProvider {
     typealias Entry = TodoEntry
@@ -90,7 +90,7 @@ struct TodoTimelineProvider: TimelineProvider {
 
             var descriptor = FetchDescriptor<TodoItem>(
                 predicate: #Predicate { !$0.isCompleted },
-                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+                sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
             )
             descriptor.fetchLimit = limit
 

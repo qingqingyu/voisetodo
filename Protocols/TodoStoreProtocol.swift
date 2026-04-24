@@ -4,7 +4,7 @@ import Combine
 /// 待办存储协议
 /// 注意：返回类型使用 TodoItemData 而非 SwiftData 的 TodoItem
 protocol TodoStoreProtocol: ObservableObject {
-    /// 所有待办（按创建时间倒序）
+    /// 所有待办（按 sortOrder 升序排列）
     var todos: [TodoItemData] { get }
 
     /// 添加单条待办
@@ -36,4 +36,8 @@ protocol TodoStoreProtocol: ObservableObject {
 
     /// 批量替换多个待处理条目为提取结果（确保同一批次原子提交）
     func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws
+
+    /// 重新排序未完成待办（拖拽排序后调用）
+    /// - Parameter ids: 按新顺序排列的待办 ID 数组
+    func reorder(ids: [UUID]) throws
 }

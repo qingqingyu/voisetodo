@@ -139,7 +139,9 @@ struct VoiceTodoApp: App {
                 .toast(
                     message: coordinator.toastMessage,
                     style: coordinator.toastStyle,
-                    isPresented: $coordinator.showToast
+                    isPresented: $coordinator.showToast,
+                    actionTitle: coordinator.toastActionTitle,
+                    action: coordinator.toastAction
                 )
                 .sheet(isPresented: $coordinator.showConfirmSheet) {
                     ConfirmSheetView(
