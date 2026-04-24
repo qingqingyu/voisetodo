@@ -834,6 +834,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还有 %lld 条..." } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld more..." } }
       }
+    },
+    "siri.result.save_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存失败，请稍后在 App 中重试" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save failed. Please try again in the app." } }
+      }
     }
   },
   "version" : "1.0"

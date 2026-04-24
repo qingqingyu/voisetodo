@@ -16,15 +16,23 @@ struct AddTodoIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .result(
+                dialog: "siri.result.empty",
+                view: AddTodoIntentView(todos: [], isOffline: false)
+            )
+        }
+
         let extractor = TodoExtractorService()
         var extractedTodos: [ExtractedTodo]
         var isOffline = false
 
         do {
-            let result = try await extractor.extract(from: transcript, locale: .current)
+            let result = try await extractor.extract(from: trimmed, locale: .current)
             extractedTodos = result.todos
         } catch {
-            let fallback = extractor.fallbackExtract(from: transcript)
+            let fallback = extractor.fallbackExtract(from: trimmed)
             extractedTodos = fallback.todos
             isOffline = true
         }
@@ -36,29 +44,44 @@ struct AddTodoIntent: AppIntent {
             )
         }
 
-        let schema = Schema([TodoItem.self])
-        let configuration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            allowsSave: true,
-            groupContainer: .identifier(AppGroupConfig.identifier)
-        )
-        let container = try ModelContainer(for: schema, configurations: configuration)
-        let context = ModelContext(container)
+        let context: ModelContext
+        do {
+            let schema = Schema([TodoItem.self])
+            let configuration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                allowsSave: true,
+                groupContainer: .identifier(AppGroupConfig.identifier)
+            )
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            context = ModelContext(container)
+        } catch {
+            return .result(
+                dialog: "siri.result.save_failed",
+                view: AddTodoIntentView(todos: extractedTodos, isOffline: true)
+            )
+        }
 
         let minSortOrder = fetchMinSortOrder(context: context)
         var baseSortOrder = minSortOrder - 1
 
         for extracted in extractedTodos {
-            let item = TodoItem.from(extracted, rawTranscript: transcript)
+            let item = TodoItem.from(extracted, rawTranscript: trimmed)
             item.needsAIProcessing = isOffline
             item.sortOrder = baseSortOrder
             baseSortOrder -= 1
             context.insert(item)
         }
 
-        try context.save()
-        WidgetCenter.shared.reloadAllTimelines()
+        do {
+            try context.save()
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            return .result(
+                dialog: "siri.result.save_failed",
+                view: AddTodoIntentView(todos: extractedTodos, isOffline: true)
+            )
+        }
 
         let count = extractedTodos.count
         let dialog: IntentDialog = isOffline
@@ -72,9 +95,10 @@ struct AddTodoIntent: AppIntent {
     }
 
     private func fetchMinSortOrder(context: ModelContext) -> Int {
-        let descriptor = FetchDescriptor<TodoItem>(
+        var descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
+        descriptor.fetchLimit = 1
         do {
             let items = try context.fetch(descriptor)
             return items.first?.sortOrder ?? 0
