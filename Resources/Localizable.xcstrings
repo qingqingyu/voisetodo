@@ -774,6 +774,66 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无待办" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos" } }
       }
+    },
+    "siri.intent.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Todo" } }
+      }
+    },
+    "siri.intent.description" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通过语音快速记录待办事项" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Quickly add todos by voice" } }
+      }
+    },
+    "siri.param.transcript" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内容" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Content" } }
+      }
+    },
+    "siri.summary %@" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录待办：%@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add todo: %@" } }
+      }
+    },
+    "siri.shortcut.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Todo" } }
+      }
+    },
+    "siri.result.added %lld" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已添加 %lld 条待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added %lld todo(s)" } }
+      }
+    },
+    "siri.result.empty" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未识别到待办事项" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos recognized" } }
+      }
+    },
+    "siri.result.offline" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已离线保存，联网后自动提取" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved offline, will extract when online" } }
+      }
+    },
+    "siri.result.view_in_app" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 App 中查看" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View in App" } }
+      }
+    },
+    "siri.result.more %lld" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还有 %lld 条..." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld more..." } }
+      }
     }
   },
   "version" : "1.0"

@@ -214,6 +214,9 @@ struct VoiceTodoApp: App {
                let todoId = UUID(uuidString: idString) {
                 coordinator.deepLinkTodoId = todoId
             }
+        case "home":
+            // Siri 结果卡片跳转回 App 主页，数据同步由 scenePhase .active 处理
+            break
         default:
             break
         }
