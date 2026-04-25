@@ -112,6 +112,11 @@ final class AppCoordinator: ObservableObject {
         // 等待转写完成（isRecording 变为 false 表示识别结果已就绪）
         await waitForRecordingToFinish()
 
+        // 兜底：若识别回调未及时结束，强制收敛录音状态，避免后续无法再次启动录音
+        if voiceInput.isRecording {
+            voiceInput.stopRecording()
+        }
+
         // 处理转写结果
         await processTranscript(transcript)
     }
@@ -184,6 +189,16 @@ final class AppCoordinator: ObservableObject {
         // 等待自然停录（静音检测自动停止）
         await waitForAutoStop()
 
+        // 60 秒超时后若仍在录音，主动结束输入并等待最终识别结果
+        if voiceInput.isRecording {
+            voiceInput.finishRecording()
+            await waitForRecordingToFinish()
+        }
+        // 兜底收敛
+        if voiceInput.isRecording {
+            voiceInput.stopRecording()
+        }
+
         // 检查是否被手动停止取消
         guard isAutoProcessing else { return }
         isAutoProcessing = false
@@ -205,7 +220,8 @@ final class AppCoordinator: ObservableObject {
 
         // 后台静默处理
         var allExtractedItems: [ExtractedTodo] = []
-        var successfullyProcessedIds: [UUID] = []
+        var processedWithTodosIds: [UUID] = []
+        var processedWithoutTodosIds: [UUID] = []
         var rawTranscripts: [String] = []
 
         for pending in pendingItems {
@@ -224,11 +240,11 @@ final class AppCoordinator: ObservableObject {
                 let result = try await extractor.extract(from: transcript, locale: voiceInput.currentLocale)
                 if !result.todos.isEmpty {
                     allExtractedItems.append(contentsOf: result.todos)
-                    successfullyProcessedIds.append(pending.id)
+                    processedWithTodosIds.append(pending.id)
                     rawTranscripts.append(transcript)
                 } else {
                     // AI 未提取到待办，也视为处理完成
-                    successfullyProcessedIds.append(pending.id)
+                    processedWithoutTodosIds.append(pending.id)
                 }
             } catch {
                 #if DEBUG
@@ -248,14 +264,22 @@ final class AppCoordinator: ObservableObject {
             // 若用户此时已经进入录音/确认流程，延后到下次前台再处理，避免覆盖当前确认内容
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
 
+            // 对已确认无行动项的 pending 立即清理，避免用户取消后残留
+            for pendingId in processedWithoutTodosIds {
+                try? store.delete(pendingId)
+            }
+
             // 仅在真正展示 pending 确认页时才设置替换上下文，避免污染普通录音确认流程
-            pendingItemIds = successfullyProcessedIds
+            pendingItemIds = processedWithTodosIds
             combinedRawTranscript = mergedRawTranscript
             extractedTodos = allExtractedItems
             showConfirmSheet = true
         } else {
             // 无结果：删除已处理的 pending 条目（AI 判断无行动项）
-            for pendingId in successfullyProcessedIds {
+            for pendingId in processedWithTodosIds {
+                try? store.delete(pendingId)
+            }
+            for pendingId in processedWithoutTodosIds {
                 try? store.delete(pendingId)
             }
             pendingItemIds = []
