@@ -817,6 +817,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos recognized" } }
       }
     },
+    "siri.result.extract_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败，请稍后重试" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed to extract todos. Please try again later." } }
+      }
+    },
     "siri.result.offline" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已离线保存，联网后自动提取" } },

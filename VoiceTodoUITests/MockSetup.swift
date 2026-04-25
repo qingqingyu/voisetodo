@@ -163,7 +163,7 @@ class MockTodoStore: TodoStoreProtocol {
 
     func toggleComplete(_ id: UUID) throws {
         guard var todo = storage[id] else {
-            throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }
         todo.isCompleted.toggle()
         storage[id] = todo
@@ -172,7 +172,7 @@ class MockTodoStore: TodoStoreProtocol {
 
     func delete(_ id: UUID) throws {
         guard storage[id] != nil else {
-            throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }
         storage.removeValue(forKey: id)
         refreshTodos()
@@ -180,7 +180,7 @@ class MockTodoStore: TodoStoreProtocol {
 
     func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
         guard var todo = storage[id] else {
-            throw VoiceTodoError.storageReadFailed("未找到 ID: \(id)")
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }
         var updated = todo
         updated = TodoItemData(

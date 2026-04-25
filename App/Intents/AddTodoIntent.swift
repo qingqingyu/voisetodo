@@ -31,10 +31,23 @@ struct AddTodoIntent: AppIntent {
         do {
             let result = try await extractor.extract(from: trimmed, locale: .current)
             extractedTodos = result.todos
+        } catch let error as VoiceTodoError {
+            switch error {
+            case .networkUnavailable, .apiTimeout:
+                let fallback = extractor.fallbackExtract(from: trimmed)
+                extractedTodos = fallback.todos
+                isOffline = true
+            default:
+                return .result(
+                    dialog: "siri.result.extract_failed",
+                    view: AddTodoIntentView(todos: [], isOffline: false)
+                )
+            }
         } catch {
-            let fallback = extractor.fallbackExtract(from: trimmed)
-            extractedTodos = fallback.todos
-            isOffline = true
+            return .result(
+                dialog: "siri.result.extract_failed",
+                view: AddTodoIntentView(todos: [], isOffline: false)
+            )
         }
 
         guard !extractedTodos.isEmpty else {
@@ -58,7 +71,7 @@ struct AddTodoIntent: AppIntent {
         } catch {
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, isOffline: true)
+                view: AddTodoIntentView(todos: extractedTodos, isOffline: false)
             )
         }
 
@@ -79,7 +92,7 @@ struct AddTodoIntent: AppIntent {
         } catch {
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, isOffline: true)
+                view: AddTodoIntentView(todos: extractedTodos, isOffline: false)
             )
         }
 

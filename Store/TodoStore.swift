@@ -315,9 +315,10 @@ final class TodoStore: TodoStoreProtocol {
 
     /// 计算新条目的 sortOrder（比当前最小值再小 1，确保排在最前面）
     private func nextSortOrderForNewItem() -> Int {
-        let descriptor = FetchDescriptor<TodoItem>(
+        var descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
+        descriptor.fetchLimit = 1
 
         do {
             let items = try modelContext.fetch(descriptor)

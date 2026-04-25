@@ -37,6 +37,7 @@ final class AppCoordinator: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var isProcessingPending = false
+    private var isProcessingTranscript = false
 
     /// 标记是否正在自动处理（Action Button 启动的录音流程）
     private var isAutoProcessing = false
@@ -194,14 +195,13 @@ final class AppCoordinator: ObservableObject {
     /// App 进入前台时处理待处理项
     func handleAppForeground() async {
         guard !isProcessingPending else { return }
+        // 避免与当前录音/确认流程并行，导致 extractedTodos 被覆盖
+        guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
 
         let pendingItems = store.pendingItems().filter { !dismissedPendingIds.contains($0.id) }
         guard !pendingItems.isEmpty else { return }
 
         isProcessingPending = true
-
-        // 记录 pending ID（用于后续替换）
-        pendingItemIds = pendingItems.map { $0.id }
 
         // 后台静默处理
         var allExtractedItems: [ExtractedTodo] = []
@@ -238,16 +238,19 @@ final class AppCoordinator: ObservableObject {
             }
         }
 
-        // 只记录成功处理的 pending ID
-        pendingItemIds = successfullyProcessedIds
-
         // 合并 rawTranscript（多个 pending 条目时拼接，避免丢失）
-        combinedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
+        let mergedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
 
         isProcessingPending = false
 
         // 有结果则显示一次性确认
         if !allExtractedItems.isEmpty {
+            // 若用户此时已经进入录音/确认流程，延后到下次前台再处理，避免覆盖当前确认内容
+            guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
+
+            // 仅在真正展示 pending 确认页时才设置替换上下文，避免污染普通录音确认流程
+            pendingItemIds = successfullyProcessedIds
+            combinedRawTranscript = mergedRawTranscript
             extractedTodos = allExtractedItems
             showConfirmSheet = true
         } else {
@@ -302,6 +305,10 @@ final class AppCoordinator: ObservableObject {
 
     /// 处理转写文本
     private func processTranscript(_ text: String) async {
+        guard !isProcessingTranscript else { return }
+        isProcessingTranscript = true
+        defer { isProcessingTranscript = false }
+
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             showToast(message: ErrorMessages.noTodosFound, style: .info)
             return
