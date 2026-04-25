@@ -140,6 +140,7 @@ final class MockVoiceInput: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""
     @Published var error: VoiceTodoError?
+    let currentLocale: Locale = .current
 
     var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
     var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
@@ -152,7 +153,7 @@ final class MockVoiceInput: VoiceInputProtocol {
 
 /// Mock 待办提取器（Preview 用）
 struct MockExtractor: TodoExtractorProtocol {
-    func extract(from transcript: String) async throws -> ExtractionResult {
+    func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
         ExtractionResult(todos: [], ignored: "")
     }
 }

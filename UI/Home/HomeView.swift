@@ -40,14 +40,14 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 VStack(spacing: 0) {
                     headerView
 
-                    if coordinator.isRecording || isProcessing {
+                    if coordinator.isRecording || isProcessing || coordinator.isExtracting {
                         recordingOverlay
                     }
 
                     Group {
-                        if store.todos.isEmpty && !coordinator.isRecording && !isProcessing {
+                        if store.todos.isEmpty && !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
                             emptyStateView
-                        } else if !coordinator.isRecording && !isProcessing {
+                        } else if !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
                             todoListView
                         }
                     }
@@ -162,7 +162,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             VStack(spacing: 24) {
                 Spacer()
 
-                if isProcessing {
+                if isProcessing || coordinator.isExtracting {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
                         .scaleEffect(1.5)
@@ -170,6 +170,26 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     Text(String(localized: "home.processing"))
                         .font(WarmFont.displayLight(20))
                         .foregroundColor(WarmTheme.textSecondary)
+
+                    if coordinator.isExtracting {
+                        Button(action: {
+                            coordinator.cancelExtraction()
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                isProcessing = false
+                            }
+                        }) {
+                            Text(String(localized: "home.cancel_extraction"))
+                                .font(WarmFont.body(15))
+                                .foregroundColor(WarmTheme.textSecondary)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(
+                                    Capsule()
+                                        .stroke(WarmTheme.textMuted, lineWidth: 1)
+                                )
+                        }
+                        .accessibilityIdentifier("CancelExtractionButton")
+                    }
                 } else {
                     ZStack {
                         Circle()

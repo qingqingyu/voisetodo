@@ -27,6 +27,7 @@ final class AppCoordinator: ObservableObject {
     @Published var toastActionTitle: String?
     @Published var toastAction: (() -> Void)?
     @Published var deepLinkTodoId: UUID?
+    @Published var isExtracting = false
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -38,6 +39,7 @@ final class AppCoordinator: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var isProcessingPending = false
     private var isProcessingTranscript = false
+    private var extractionTask: Task<Void, Never>?
 
     /// 标记是否正在自动处理（Action Button 启动的录音流程）
     private var isAutoProcessing = false
@@ -207,10 +209,9 @@ final class AppCoordinator: ObservableObject {
         await processTranscript(transcript)
     }
 
-    /// App 进入前台时处理待处理项
+    /// App 进入前台时处理待处理项（并发）
     func handleAppForeground() async {
         guard !isProcessingPending else { return }
-        // 避免与当前录音/确认流程并行，导致 extractedTodos 被覆盖
         guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
 
         let pendingItems = store.pendingItems().filter { !dismissedPendingIds.contains($0.id) }
@@ -218,64 +219,80 @@ final class AppCoordinator: ObservableObject {
 
         isProcessingPending = true
 
-        // 后台静默处理
         var allExtractedItems: [ExtractedTodo] = []
         var processedWithTodosIds: [UUID] = []
         var processedWithoutTodosIds: [UUID] = []
         var rawTranscripts: [String] = []
 
-        for pending in pendingItems {
-            guard let transcript = pending.rawTranscript else {
-                // 无转写文本的条目无法处理，直接删除（不应出现，防御性处理）
-                try? store.delete(pending.id)
-                continue
+        // 先移除无 rawTranscript 的条目
+        let validPending = pendingItems.filter { item in
+            if item.rawTranscript == nil {
+                try? store.delete(item.id)
+                return false
             }
+            return true
+        }
 
-            guard networkMonitor.isConnected else {
-                // 网络中断，停止处理剩余条目，保留未处理的 pending
-                break
-            }
+        let concurrency = NetworkConfig.pendingBatchConcurrency
 
-            do {
-                let result = try await extractor.extract(from: transcript, locale: voiceInput.currentLocale)
-                if !result.todos.isEmpty {
-                    allExtractedItems.append(contentsOf: result.todos)
-                    processedWithTodosIds.append(pending.id)
-                    rawTranscripts.append(transcript)
-                } else {
-                    // AI 未提取到待办，也视为处理完成
-                    processedWithoutTodosIds.append(pending.id)
+        // 并发处理，滑动窗口模式
+        await withTaskGroup(of: PendingProcessResult.self) { group in
+            var iterator = validPending.makeIterator()
+            var activeCount = 0
+
+            while activeCount < concurrency, let pending = iterator.next() {
+                let transcript = pending.rawTranscript!
+                let pendingId = pending.id
+                let ext = self.extractor
+                let loc = self.voiceInput.currentLocale
+                group.addTask {
+                    await Self.processSinglePending(id: pendingId, transcript: transcript, extractor: ext, locale: loc)
                 }
-            } catch {
-                #if DEBUG
-                print("Failed to process pending item: \(error)")
-                #endif
-                // 提取失败，保留该 pending 不删除
+                activeCount += 1
+            }
+
+            for await result in group {
+                if result.succeeded {
+                    if !result.todos.isEmpty {
+                        allExtractedItems.append(contentsOf: result.todos)
+                        processedWithTodosIds.append(result.id)
+                        if let t = result.rawTranscript {
+                            rawTranscripts.append(t)
+                        }
+                    } else {
+                        processedWithoutTodosIds.append(result.id)
+                    }
+                }
+                // 失败的保留 pending 不处理
+
+                if let next = iterator.next() {
+                    guard networkMonitor.isConnected else { break }
+                    let transcript = next.rawTranscript!
+                    let nextId = next.id
+                    let ext = self.extractor
+                    let loc = self.voiceInput.currentLocale
+                    group.addTask {
+                        await Self.processSinglePending(id: nextId, transcript: transcript, extractor: ext, locale: loc)
+                    }
+                }
             }
         }
 
-        // 合并 rawTranscript（多个 pending 条目时拼接，避免丢失）
         let mergedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
-
         isProcessingPending = false
 
-        // 有结果则显示一次性确认
         if !allExtractedItems.isEmpty {
-            // 若用户此时已经进入录音/确认流程，延后到下次前台再处理，避免覆盖当前确认内容
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
 
-            // 对已确认无行动项的 pending 立即清理，避免用户取消后残留
             for pendingId in processedWithoutTodosIds {
                 try? store.delete(pendingId)
             }
 
-            // 仅在真正展示 pending 确认页时才设置替换上下文，避免污染普通录音确认流程
             pendingItemIds = processedWithTodosIds
             combinedRawTranscript = mergedRawTranscript
             extractedTodos = allExtractedItems
             showConfirmSheet = true
         } else {
-            // 无结果：删除已处理的 pending 条目（AI 判断无行动项）
             for pendingId in processedWithTodosIds {
                 try? store.delete(pendingId)
             }
@@ -284,6 +301,32 @@ final class AppCoordinator: ObservableObject {
             }
             pendingItemIds = []
             combinedRawTranscript = nil
+        }
+    }
+
+    // MARK: - Pending Processing
+
+    private struct PendingProcessResult: Sendable {
+        let id: UUID
+        let todos: [ExtractedTodo]
+        let rawTranscript: String?
+        let succeeded: Bool
+    }
+
+    private static func processSinglePending(
+        id: UUID,
+        transcript: String,
+        extractor: any TodoExtractorProtocol,
+        locale: Locale
+    ) async -> PendingProcessResult {
+        do {
+            let result = try await extractor.extract(from: transcript, locale: locale)
+            return PendingProcessResult(id: id, todos: result.todos, rawTranscript: transcript, succeeded: true)
+        } catch {
+            #if DEBUG
+            print("Failed to process pending item \(id): \(error)")
+            #endif
+            return PendingProcessResult(id: id, todos: [], rawTranscript: transcript, succeeded: false)
         }
     }
 
@@ -327,38 +370,69 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: - Private Methods
 
-    /// 处理转写文本
+    /// 取消正在进行的 AI 提取
+    func cancelExtraction() {
+        extractionTask?.cancel()
+        extractionTask = nil
+        isExtracting = false
+        isProcessingTranscript = false
+        extractedTodos = []
+        showConfirmSheet = false
+    }
+
+    /// 处理转写文本（流式）
     private func processTranscript(_ text: String) async {
         guard !isProcessingTranscript else { return }
         isProcessingTranscript = true
-        defer { isProcessingTranscript = false }
+        isExtracting = true
 
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            isExtracting = false
+            isProcessingTranscript = false
             showToast(message: ErrorMessages.noTodosFound, style: .info)
             return
         }
 
         guard networkMonitor.isConnected else {
+            isExtracting = false
+            isProcessingTranscript = false
             await handleOfflineMode(transcript: text)
             return
         }
 
-        do {
-            let result = try await extractor.extract(from: text, locale: voiceInput.currentLocale)
+        extractionTask = Task {
+            do {
+                var receivedAny = false
+                for try await partialResult in extractor.extractStreaming(from: trimmed, locale: voiceInput.currentLocale) {
+                    guard !Task.isCancelled else { return }
+                    extractedTodos = partialResult.todos
+                    if !showConfirmSheet && !partialResult.todos.isEmpty {
+                        showConfirmSheet = true
+                    }
+                    receivedAny = !partialResult.todos.isEmpty
+                }
 
-            if result.todos.isEmpty {
-                showToast(message: ErrorMessages.noTodosFound, style: .info)
-            } else {
-                extractedTodos = result.todos
-                showConfirmSheet = true
+                guard !Task.isCancelled else { return }
+
+                if !receivedAny {
+                    showToast(message: ErrorMessages.noTodosFound, style: .info)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                if let ve = error as? VoiceTodoError,
+                   ve == .networkUnavailable || ve == .apiTimeout {
+                    await handleOfflineMode(transcript: text)
+                } else {
+                    handleError(error)
+                }
             }
-        } catch {
-            if let voiceError = error as? VoiceTodoError, voiceError == .networkUnavailable {
-                await handleOfflineMode(transcript: text)
-            } else {
-                handleError(error)
-            }
+
+            isExtracting = false
+            isProcessingTranscript = false
         }
+
+        await extractionTask?.value
     }
 
     /// 离线降级处理

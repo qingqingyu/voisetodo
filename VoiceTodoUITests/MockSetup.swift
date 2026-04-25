@@ -70,6 +70,11 @@ class MockVoiceInputManager: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""
     @Published var error: VoiceTodoError?
+    let currentLocale: Locale = Locale(identifier: "zh-Hans")
+
+    var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
+    var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
+    var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { $error.eraseToAnyPublisher() }
 
     private var mockTranscript: String = ""
     private var shouldFail: Bool = false
@@ -119,7 +124,7 @@ class MockTodoExtractor: TodoExtractorProtocol {
         self.mockError = error
     }
 
-    func extract(from transcript: String) async throws -> ExtractionResult {
+    func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
         if shouldFail {
             throw mockError ?? .networkUnavailable
         }

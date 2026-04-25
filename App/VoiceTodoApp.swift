@@ -147,6 +147,7 @@ struct VoiceTodoApp: App {
                     ConfirmSheetView(
                         transcript: coordinator.confirmSheetTranscript,
                         todos: $coordinator.extractedTodos,
+                        isStreaming: coordinator.isExtracting,
                         onConfirm: { todos in
                             coordinator.confirmTodos(todos)
                         },

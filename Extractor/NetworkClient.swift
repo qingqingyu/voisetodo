@@ -9,6 +9,7 @@ private struct ClaudeRequest: Encodable {
     let temperature: Double
     let system: String
     let messages: [ClaudeMessage]
+    var stream: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -16,6 +17,7 @@ private struct ClaudeRequest: Encodable {
         case temperature
         case system
         case messages
+        case stream
     }
 }
 
@@ -23,6 +25,19 @@ private struct ClaudeRequest: Encodable {
 private struct ClaudeMessage: Encodable {
     let role: String
     let content: String
+}
+
+// MARK: - SSE Parsing Models
+
+/// SSE content_block_delta 事件
+private struct SSEEvent: Decodable {
+    let type: String
+    let delta: SSEDelta?
+
+    struct SSEDelta: Decodable {
+        let type: String?
+        let text: String?
+    }
 }
 
 // MARK: - NetworkClient
@@ -114,6 +129,9 @@ final class NetworkClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 429 {
+                throw VoiceTodoError.apiRateLimited
+            }
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw VoiceTodoError.apiResponseInvalid("HTTP \(httpResponse.statusCode): \(errorMessage)")
         }
@@ -131,6 +149,88 @@ final class NetworkClient {
             throw error
         } catch {
             throw VoiceTodoError.jsonParsingFailed("响应解析失败: \(error.localizedDescription)")
+        }
+    }
+
+    /// 调用 Claude API（流式 SSE）
+    /// - Returns: 逐块返回文本 delta 的 AsyncThrowingStream
+    func callClaudeAPIStreaming(
+        systemPrompt: String,
+        messages: [[String: String]],
+        model: String = NetworkConfig.claudeModel,
+        temperature: Double = 0.1,
+        maxTokens: Int = 500
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    guard let apiKey = apiKey, !apiKey.isEmpty else {
+                        throw VoiceTodoError.apiResponseInvalid("API Key not configured")
+                    }
+
+                    let claudeMessages = messages.map {
+                        ClaudeMessage(role: $0["role"] ?? "user", content: $0["content"] ?? "")
+                    }
+                    var requestBody = ClaudeRequest(
+                        model: model,
+                        maxTokens: maxTokens,
+                        temperature: temperature,
+                        system: systemPrompt,
+                        messages: claudeMessages
+                    )
+                    requestBody.stream = true
+
+                    guard let url = URL(string: NetworkConfig.apiEndpoint) else {
+                        throw VoiceTodoError.apiResponseInvalid("Invalid API URL")
+                    }
+
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue(NetworkConfig.apiVersion, forHTTPHeaderField: "anthropic-version")
+                    request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+                    request.timeoutInterval = NetworkConfig.apiTimeout
+
+                    let encoder = JSONEncoder()
+                    request.httpBody = try encoder.encode(requestBody)
+
+                    let (bytes, response) = try await session.bytes(for: request)
+
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw VoiceTodoError.apiResponseInvalid("Invalid HTTP response")
+                    }
+                    guard (200...299).contains(httpResponse.statusCode) else {
+                        if httpResponse.statusCode == 429 {
+                            throw VoiceTodoError.apiRateLimited
+                        }
+                        throw VoiceTodoError.apiResponseInvalid("HTTP \(httpResponse.statusCode)")
+                    }
+
+                    for try await line in bytes.lines {
+                        guard !Task.isCancelled else { break }
+
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonStr = String(line.dropFirst(6))
+                        guard jsonStr != "[DONE]" else { break }
+
+                        guard let jsonData = jsonStr.data(using: .utf8),
+                              let event = try? JSONDecoder().decode(SSEEvent.self, from: jsonData)
+                        else { continue }
+
+                        if event.type == "content_block_delta",
+                           let text = event.delta?.text, !text.isEmpty {
+                            continuation.yield(text)
+                        } else if event.type == "message_stop" {
+                            break
+                        }
+                    }
+                    continuation.finish()
+                } catch let urlError as URLError {
+                    continuation.finish(throwing: mapURLError(urlError))
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
         }
     }
 

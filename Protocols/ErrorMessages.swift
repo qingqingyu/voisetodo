@@ -11,6 +11,7 @@ enum ErrorMessages {
     // 网络/AI 相关
     static let networkError = String(localized: "error.network")
     static let apiTimeout = String(localized: "error.api_timeout")
+    static let apiRateLimited = String(localized: "error.api_rate_limited")
     static let apiError = String(localized: "error.api_error")
     static let jsonParsingFailed = String(localized: "error.json_parsing_failed")
 

@@ -12,6 +12,7 @@ enum VoiceTodoError: LocalizedError, Equatable {
     // Network / AI 模块
     case networkUnavailable
     case apiTimeout
+    case apiRateLimited
     case apiResponseInvalid(String)
     case jsonParsingFailed(String)
 
@@ -35,6 +36,8 @@ enum VoiceTodoError: LocalizedError, Equatable {
             return ErrorMessages.networkError
         case .apiTimeout:
             return ErrorMessages.apiTimeout
+        case .apiRateLimited:
+            return ErrorMessages.apiRateLimited
         case .apiResponseInvalid(let detail):
             return String(localized: "error.api_response_invalid \(detail)")
         case .jsonParsingFailed(let detail):

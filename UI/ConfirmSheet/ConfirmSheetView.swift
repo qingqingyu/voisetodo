@@ -5,6 +5,7 @@ import SwiftUI
 struct ConfirmSheetView: View {
     let transcript: String
     @Binding var todos: [ExtractedTodo]
+    let isStreaming: Bool
     let onConfirm: ([ExtractedTodo]) -> Bool
     let onCancel: () -> Void
 
@@ -37,7 +38,7 @@ struct ConfirmSheetView: View {
                         Text(String(localized: "confirm.add \(todos.count)"))
                             .bold()
                     }
-                    .disabled(todos.isEmpty)
+                    .disabled(todos.isEmpty || isStreaming)
                     .accessibilityIdentifier("ConfirmAddButton")
                 }
             }
@@ -100,8 +101,23 @@ struct ConfirmSheetView: View {
                     todo: $todo,
                     todos: $todos
                 )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            if isStreaming {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
+                        .scaleEffect(0.8)
+                    Text(String(localized: "confirm.streaming"))
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(WarmTheme.textSecondary)
+                }
+                .padding(.vertical, 8)
+                .transition(.opacity)
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: todos.count)
         .accessibilityIdentifier("ExtractedTodoList")
     }
 

@@ -14,6 +14,10 @@ enum NetworkConfig {
     static let apiEndpoint = "https://api.anthropic.com/v1/messages"
     /// Anthropic API Version
     static let apiVersion = "2023-06-01"
+    /// 是否启用流式响应（Streaming SSE）
+    static let streamingEnabled = true
+    /// 离线 pending 批量处理最大并发数
+    static let pendingBatchConcurrency = 3
 }
 
 /// UI 配置
