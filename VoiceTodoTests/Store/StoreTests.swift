@@ -233,6 +233,24 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(pending.allSatisfy { $0.needsAIProcessing })
     }
 
+    func testPendingItemsReturnsStableSortOrder() throws {
+        // Given: 多个待处理条目
+        try sut.addRawTranscript("第一段原始转写")
+        try sut.addRawTranscript("第二段原始转写")
+        try sut.addRawTranscript("第三段原始转写")
+
+        // When: 获取待处理条目
+        let pending = sut.pendingItems()
+
+        // Then: 与主列表排序语义一致，按 sortOrder 升序稳定返回
+        XCTAssertEqual(pending.map(\.rawTranscript), [
+            "第三段原始转写",
+            "第二段原始转写",
+            "第一段原始转写"
+        ])
+        XCTAssertEqual(pending.map(\.sortOrder), pending.map(\.sortOrder).sorted())
+    }
+
     // MARK: - Test AddRawTranscript [v2]
 
     func testAddRawTranscriptSetsNeedsAIProcessing() throws {

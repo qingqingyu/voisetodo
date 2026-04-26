@@ -146,7 +146,8 @@ final class TodoStore: TodoStoreProtocol {
     /// - Returns: 待处理条目数组
     func pendingItems() -> [TodoItemData] {
         let descriptor = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { $0.needsAIProcessing }
+            predicate: #Predicate { $0.needsAIProcessing },
+            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
 
         do {
@@ -156,7 +157,9 @@ final class TodoStore: TodoStoreProtocol {
             #if DEBUG
             print("Failed to fetch pending items: \(error)")
             #endif
-            return todos.filter { $0.needsAIProcessing }
+            return todos
+                .filter { $0.needsAIProcessing }
+                .sorted { $0.sortOrder < $1.sortOrder }
         }
     }
 
