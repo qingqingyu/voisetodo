@@ -218,11 +218,9 @@ final class AppCoordinator: ObservableObject {
         guard !pendingItems.isEmpty else { return }
 
         isProcessingPending = true
+        defer { isProcessingPending = false }
 
-        var allExtractedItems: [ExtractedTodo] = []
-        var processedWithTodosIds: [UUID] = []
-        var processedWithoutTodosIds: [UUID] = []
-        var rawTranscripts: [String] = []
+        var processResults: [PendingProcessResult] = []
 
         // 先移除无 rawTranscript 的条目
         let validPending = pendingItems.filter { item in
@@ -237,49 +235,47 @@ final class AppCoordinator: ObservableObject {
 
         // 并发处理，滑动窗口模式
         await withTaskGroup(of: PendingProcessResult.self) { group in
-            var iterator = validPending.makeIterator()
+            var iterator = validPending.enumerated().makeIterator()
             var activeCount = 0
 
-            while activeCount < concurrency, let pending = iterator.next() {
+            while activeCount < concurrency, let (index, pending) = iterator.next() {
                 let transcript = pending.rawTranscript!
                 let pendingId = pending.id
                 let ext = self.extractor
                 let loc = self.voiceInput.currentLocale
                 group.addTask {
-                    await Self.processSinglePending(id: pendingId, transcript: transcript, extractor: ext, locale: loc)
+                    await Self.processSinglePending(index: index, id: pendingId, transcript: transcript, extractor: ext, locale: loc)
                 }
                 activeCount += 1
             }
 
             for await result in group {
-                if result.succeeded {
-                    if !result.todos.isEmpty {
-                        allExtractedItems.append(contentsOf: result.todos)
-                        processedWithTodosIds.append(result.id)
-                        if let t = result.rawTranscript {
-                            rawTranscripts.append(t)
-                        }
-                    } else {
-                        processedWithoutTodosIds.append(result.id)
-                    }
-                }
+                processResults.append(result)
                 // 失败的保留 pending 不处理
 
-                if let next = iterator.next() {
+                if let (index, next) = iterator.next() {
                     guard networkMonitor.isConnected else { break }
                     let transcript = next.rawTranscript!
                     let nextId = next.id
                     let ext = self.extractor
                     let loc = self.voiceInput.currentLocale
                     group.addTask {
-                        await Self.processSinglePending(id: nextId, transcript: transcript, extractor: ext, locale: loc)
+                        await Self.processSinglePending(index: index, id: nextId, transcript: transcript, extractor: ext, locale: loc)
                     }
                 }
             }
         }
 
+        let successfulResults = processResults
+            .filter(\.succeeded)
+            .sorted { $0.index < $1.index }
+        let resultsWithTodos = successfulResults.filter { !$0.todos.isEmpty }
+        let resultsWithoutTodos = successfulResults.filter { $0.todos.isEmpty }
+        let allExtractedItems = resultsWithTodos.flatMap(\.todos)
+        let processedWithTodosIds = resultsWithTodos.map(\.id)
+        let processedWithoutTodosIds = resultsWithoutTodos.map(\.id)
+        let rawTranscripts = resultsWithTodos.compactMap(\.rawTranscript)
         let mergedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
-        isProcessingPending = false
 
         if !allExtractedItems.isEmpty {
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
@@ -307,6 +303,7 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Pending Processing
 
     private struct PendingProcessResult: Sendable {
+        let index: Int
         let id: UUID
         let todos: [ExtractedTodo]
         let rawTranscript: String?
@@ -314,6 +311,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     private static func processSinglePending(
+        index: Int,
         id: UUID,
         transcript: String,
         extractor: any TodoExtractorProtocol,
@@ -321,12 +319,12 @@ final class AppCoordinator: ObservableObject {
     ) async -> PendingProcessResult {
         do {
             let result = try await extractor.extract(from: transcript, locale: locale)
-            return PendingProcessResult(id: id, todos: result.todos, rawTranscript: transcript, succeeded: true)
+            return PendingProcessResult(index: index, id: id, todos: result.todos, rawTranscript: transcript, succeeded: true)
         } catch {
             #if DEBUG
             print("Failed to process pending item \(id): \(error)")
             #endif
-            return PendingProcessResult(id: id, todos: [], rawTranscript: transcript, succeeded: false)
+            return PendingProcessResult(index: index, id: id, todos: [], rawTranscript: transcript, succeeded: false)
         }
     }
 
