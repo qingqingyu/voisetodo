@@ -28,6 +28,7 @@ enum ErrorMessages {
     static let savedOffline = String(localized: "ui.saved_offline")
     static let addedSuccess = String(localized: "ui.added_success")
     static let permissionsRequired = String(localized: "ui.permissions_required")
+    static let finishOnboardingFirst = String(localized: "ui.finish_onboarding_first")
 
     /// 带参数的格式化方法
     static func todoSaveFailedMessage(_ detail: String) -> String {

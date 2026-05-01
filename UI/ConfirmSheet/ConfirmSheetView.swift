@@ -184,9 +184,8 @@ struct ConfirmSheetView: View {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 showSuccess = true
             }
-        } else {
-            dismiss()
         }
+        // 失败时不 dismiss：保留编辑上下文；Coordinator 已通过 Toast 等方式反馈错误。
     }
 }
 

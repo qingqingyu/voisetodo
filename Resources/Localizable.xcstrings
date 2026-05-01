@@ -145,6 +145,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Please grant microphone and speech recognition permissions first" } }
       }
     },
+    "ui.finish_onboarding_first" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请先完成引导后再使用快捷录音" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Finish onboarding before using quick recording" } }
+      }
+    },
     "category.work" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工作" } },

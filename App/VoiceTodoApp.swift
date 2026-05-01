@@ -110,6 +110,14 @@ struct VoiceTodoApp: App {
     var body: some Scene {
         WindowGroup {
             mainView
+                .environmentObject(coordinator)
+                .toast(
+                    message: coordinator.toastMessage,
+                    style: coordinator.toastStyle,
+                    isPresented: $coordinator.showToast,
+                    actionTitle: coordinator.toastActionTitle,
+                    action: coordinator.toastAction
+                )
                 .onAppear {
                     handleAppLaunch()
                 }
@@ -135,14 +143,6 @@ struct VoiceTodoApp: App {
         if hasCompletedOnboarding {
             // 已完成引导，显示主界面
             HomeView(store: todoStore)
-                .environmentObject(coordinator)
-                .toast(
-                    message: coordinator.toastMessage,
-                    style: coordinator.toastStyle,
-                    isPresented: $coordinator.showToast,
-                    actionTitle: coordinator.toastActionTitle,
-                    action: coordinator.toastAction
-                )
                 .sheet(isPresented: $coordinator.showConfirmSheet) {
                     ConfirmSheetView(
                         transcript: coordinator.confirmSheetTranscript,
@@ -205,14 +205,13 @@ struct VoiceTodoApp: App {
 
     /// 处理 URL 打开（Action Button、Widget 深链等）
     private func handleOpenURL(_ url: URL) {
-        guard url.scheme == "voicetodo" else { return }
+        guard url.scheme?.caseInsensitiveCompare("voicetodo") == .orderedSame else { return }
 
-        switch url.host {
+        switch url.host?.lowercased() {
         case "record":
             handleActionButtonLaunch()
         case "todo":
-            if let idString = url.pathComponents.dropFirst().first,
-               let todoId = UUID(uuidString: idString) {
+            if let todoId = VoiceTodoDeepLink.parseTodoUUID(from: url) {
                 coordinator.deepLinkTodoId = todoId
             }
         case "home":
@@ -229,9 +228,7 @@ struct VoiceTodoApp: App {
     private func handleActionButtonLaunch() {
         // 确保已完成引导
         guard hasCompletedOnboarding else {
-            #if DEBUG
-            print("Onboarding not completed, skipping auto-record")
-            #endif
+            coordinator.showToast(message: ErrorMessages.finishOnboardingFirst, style: .info)
             return
         }
 
@@ -254,6 +251,30 @@ struct VoiceTodoApp: App {
         DispatchQueue.main.async {
             shouldAutoStartRecording = true
         }
+    }
+}
+
+// MARK: - Deep Link Parsing
+
+private enum VoiceTodoDeepLink {
+    /// Resolves UUID from `voicetodo://todo/<uuid>` and tolerant variants (slashes, query `id=`).
+    static func parseTodoUUID(from url: URL) -> UUID? {
+        let trimmedPath = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if !trimmedPath.isEmpty {
+            if let id = UUID(uuidString: trimmedPath) { return id }
+            for segment in trimmedPath.split(separator: "/") {
+                if let id = UUID(uuidString: String(segment)) { return id }
+            }
+        }
+        for component in url.pathComponents where component != "/" {
+            if let id = UUID(uuidString: component) { return id }
+        }
+        if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+            for item in items where item.name.caseInsensitiveCompare("id") == .orderedSame {
+                if let value = item.value, let id = UUID(uuidString: value) { return id }
+            }
+        }
+        return nil
     }
 }
 
