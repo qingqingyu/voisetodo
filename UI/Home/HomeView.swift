@@ -14,6 +14,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @State private var showRecordingButton = false
     @State private var isProcessing = false
+    @State private var showManualInputSheet = false
 
     private let waveformHeights: [CGFloat] = [14, 24, 18, 28, 16]
 
@@ -64,9 +65,14 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .accessibilityIdentifier("RecordingIndicator")
                 }
             }
-            .overlay(alignment: .bottom) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if showRecordingButton {
-                    recordingButton
+                    bottomActionBar
+                }
+            }
+            .sheet(isPresented: $showManualInputSheet) {
+                ManualInputSheetView { text in
+                    submitManualInput(text)
                 }
             }
             .navigationDestination(item: $selectedTodo) { todo in
@@ -380,7 +386,56 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .accessibilityIdentifier("EmptyState")
     }
 
-    // MARK: - Recording Button
+    // MARK: - Bottom Actions
+
+    private var bottomActionBar: some View {
+        VStack(spacing: 10) {
+            manualInputButton
+            recordingButton
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(WarmTheme.background.opacity(0.92))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private var manualInputButton: some View {
+        Button(action: { showManualInputSheet = true }) {
+            HStack(spacing: 10) {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(WarmTheme.primary)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        Circle()
+                            .fill(WarmTheme.primary.opacity(0.12))
+                    )
+
+                Text(String(localized: "manual_input.home_button"))
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.95))
+                    .overlay(
+                        Capsule()
+                            .stroke(WarmTheme.primary.opacity(0.22), lineWidth: 1)
+                    )
+                    .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 3)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(coordinator.isRecording || coordinator.isExtracting || isProcessing)
+        .opacity(coordinator.isRecording || coordinator.isExtracting || isProcessing ? 0.55 : 1)
+        .accessibilityIdentifier("ManualInputButton")
+        .accessibilityLabel(String(localized: "a11y.manual_input"))
+        .accessibilityHint(String(localized: "a11y.manual_input_hint"))
+    }
 
     private var recordingButton: some View {
         Button(action: toggleRecording) {
@@ -412,6 +467,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     .font(WarmFont.headline(17))
                     .foregroundColor(WarmTheme.textPrimary)
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
             .background(
@@ -421,8 +477,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             )
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: coordinator.isRecording)
-        .padding(.bottom, 24)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
         .accessibilityIdentifier("RecordButton")
         .accessibilityLabel(coordinator.isRecording ? String(localized: "a11y.stop_recording") : String(localized: "a11y.start_voice_input"))
         .accessibilityHint(coordinator.isRecording ? String(localized: "a11y.stop_hint") : String(localized: "a11y.start_hint"))
@@ -479,6 +533,20 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         } else {
             Task {
                 await coordinator.startRecording()
+            }
+        }
+    }
+
+    private func submitManualInput(_ text: String) {
+        showManualInputSheet = false
+        Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isProcessing = true
+            }
+            await coordinator.processManualInput(text)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isProcessing = false
             }
         }
     }
@@ -636,4 +704,3 @@ struct WarmTodoCard: View {
 }
 
 // MARK: - Preview
-

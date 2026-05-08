@@ -31,7 +31,7 @@ final class AppCoordinator: ObservableObject {
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
-        combinedRawTranscript ?? transcript
+        combinedRawTranscript ?? activeInputTranscript ?? transcript
     }
 
     // MARK: - Private Properties
@@ -52,6 +52,9 @@ final class AppCoordinator: ObservableObject {
 
     /// 合并的原始转写文本（多个 pending 的 rawTranscript 合并，避免丢失）
     private var combinedRawTranscript: String?
+
+    /// 当前待确认流程的输入原文（支持语音转写和手动输入共用确认页）
+    private var activeInputTranscript: String?
 
     // MARK: - Initialization
 
@@ -209,6 +212,15 @@ final class AppCoordinator: ObservableObject {
         await processTranscript(transcript)
     }
 
+    /// 处理手动输入文本并提取待办
+    func processManualInput(_ text: String) async {
+        guard !isRecording, !isAutoProcessing, !showConfirmSheet, !isProcessingTranscript else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeInputTranscript = trimmed
+        await processTranscript(trimmed, locale: .current)
+    }
+
     /// App 进入前台时处理待处理项（并发）
     func handleAppForeground() async {
         guard !isProcessingPending else { return }
@@ -340,9 +352,11 @@ final class AppCoordinator: ObservableObject {
                 dismissedPendingIds.subtract(pendingItemIds)
                 pendingItemIds = []
                 combinedRawTranscript = nil
+                activeInputTranscript = nil
             } else {
                 // 正常在线流程：直接添加
                 try store.addBatch(todos)
+                activeInputTranscript = nil
             }
 
             WidgetCenter.shared.reloadAllTimelines()
@@ -363,6 +377,7 @@ final class AppCoordinator: ObservableObject {
         showConfirmSheet = false
         pendingItemIds = []
         combinedRawTranscript = nil
+        activeInputTranscript = nil
         isAutoProcessing = false
     }
 
@@ -376,18 +391,21 @@ final class AppCoordinator: ObservableObject {
         isProcessingTranscript = false
         extractedTodos = []
         showConfirmSheet = false
+        activeInputTranscript = nil
     }
 
     /// 处理转写文本（流式）
-    private func processTranscript(_ text: String) async {
+    private func processTranscript(_ text: String, locale: Locale? = nil) async {
         guard !isProcessingTranscript else { return }
         isProcessingTranscript = true
         isExtracting = true
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeInputTranscript = trimmed
         guard !trimmed.isEmpty else {
             isExtracting = false
             isProcessingTranscript = false
+            activeInputTranscript = nil
             showToast(message: ErrorMessages.noTodosFound, style: .info)
             return
         }
@@ -402,7 +420,7 @@ final class AppCoordinator: ObservableObject {
         extractionTask = Task {
             do {
                 var receivedAny = false
-                for try await partialResult in extractor.extractStreaming(from: trimmed, locale: voiceInput.currentLocale) {
+                for try await partialResult in extractor.extractStreaming(from: trimmed, locale: locale ?? voiceInput.currentLocale) {
                     guard !Task.isCancelled else { return }
                     extractedTodos = partialResult.todos
                     if !showConfirmSheet && !partialResult.todos.isEmpty {
@@ -414,6 +432,7 @@ final class AppCoordinator: ObservableObject {
                 guard !Task.isCancelled else { return }
 
                 if !receivedAny {
+                    activeInputTranscript = nil
                     showToast(message: ErrorMessages.noTodosFound, style: .info)
                 }
             } catch {
@@ -422,6 +441,7 @@ final class AppCoordinator: ObservableObject {
                    ve == .networkUnavailable || ve == .apiTimeout {
                     await handleOfflineMode(transcript: text)
                 } else {
+                    activeInputTranscript = nil
                     handleError(error)
                 }
             }
@@ -437,8 +457,10 @@ final class AppCoordinator: ObservableObject {
     private func handleOfflineMode(transcript: String) async {
         do {
             try store.addRawTranscript(transcript)
+            activeInputTranscript = nil
             showToast(message: ErrorMessages.savedOffline, style: .info)
         } catch {
+            activeInputTranscript = nil
             handleError(error)
         }
     }

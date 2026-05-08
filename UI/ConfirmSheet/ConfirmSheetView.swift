@@ -12,6 +12,7 @@ struct ConfirmSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showSuccess = false
+    @State private var didFinish = false
 
     var body: some View {
         NavigationStack {
@@ -28,8 +29,7 @@ struct ConfirmSheetView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(String(localized: "confirm.cancel")) {
-                        onCancel()
-                        dismiss()
+                        cancelAction()
                     }
                     .accessibilityIdentifier("CancelButton")
                 }
@@ -46,6 +46,11 @@ struct ConfirmSheetView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .accessibilityIdentifier("ConfirmSheet")
+        .onDisappear {
+            guard !didFinish else { return }
+            didFinish = true
+            onCancel()
+        }
         .task(id: showSuccess) {
             guard showSuccess else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -181,11 +186,19 @@ struct ConfirmSheetView: View {
         let success = onConfirm(todos)
 
         if success {
+            didFinish = true
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 showSuccess = true
             }
         }
         // 失败时不 dismiss：保留编辑上下文；Coordinator 已通过 Toast 等方式反馈错误。
+    }
+
+    private func cancelAction() {
+        guard !didFinish else { return }
+        didFinish = true
+        onCancel()
+        dismiss()
     }
 }
 

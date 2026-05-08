@@ -277,6 +277,42 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Recording" } }
       }
     },
+    "manual_input.home_button" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文字输入" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type Todos" } }
+      }
+    },
+    "manual_input.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输入待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type Todos" } }
+      }
+    },
+    "manual_input.cancel" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
+      }
+    },
+    "manual_input.generate" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Generate" } }
+      }
+    },
+    "manual_input.placeholder" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "例如：明天上午买牛奶，周五前交周报，晚上提醒我运动" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "For example: buy milk tomorrow morning, submit the weekly report by Friday, and exercise tonight" } }
+      }
+    },
+    "manual_input.hint" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 会把这段文字拆成可确认的待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI will split this text into todos you can confirm." } }
+      }
+    },
     "a11y.stop_recording" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "停止录音" } },
@@ -299,6 +335,18 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击开始录音，说出你的待办事项" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to start recording your todos" } }
+      }
+    },
+    "a11y.manual_input" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "手动输入" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual input" } }
+      }
+    },
+    "a11y.manual_input_hint" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击输入文字，并用 AI 整理成待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to type todos and organize them with AI" } }
       }
     },
     "a11y.completed" : {
