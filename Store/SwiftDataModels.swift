@@ -99,7 +99,11 @@ extension TodoItem {
             title: extracted.title,
             detail: extracted.detail.isEmpty ? nil : extracted.detail,
             dueHint: extracted.dueHint,
-            dueDate: nil,  // V1 不自动解析时间
+            dueDate: TodoDueDateResolver.resolve(
+                dueHint: extracted.dueHint,
+                title: extracted.title,
+                detail: extracted.detail
+            ),
             priority: extracted.priority,
             category: extracted.categoryHint,
             isCompleted: false,

@@ -15,8 +15,12 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var showRecordingButton = false
     @State private var isProcessing = false
     @State private var showManualInputSheet = false
+    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var visibleWeekAnchor = Calendar.current.startOfDay(for: Date())
+    @State private var hasStartedEntranceAnimation = false
 
     private let waveformHeights: [CGFloat] = [14, 24, 18, 28, 16]
+    private let calendar = Calendar.current
 
     // MARK: - Initialization
 
@@ -46,10 +50,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     }
 
                     Group {
-                        if store.todos.isEmpty && !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
-                            emptyStateView
-                        } else if !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
-                            todoListView
+                        if !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
+                            weekHomeView
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -250,50 +252,245 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .transition(.opacity)
     }
 
-    // MARK: - Todo List View
+    // MARK: - Week Home View
 
-    private var uncompletedTodos: [TodoItemData] {
-        store.todos.filter { !$0.isCompleted }
+    private var visibleWeekDays: [Date] {
+        let weekStart = startOfWeek(for: visibleWeekAnchor)
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: weekStart) }
     }
 
-    private var completedTodos: [TodoItemData] {
-        store.todos.filter { $0.isCompleted }
+    private var selectedDayTodos: [TodoItemData] {
+        store.todos.filter { todo in
+            guard let dueDate = todo.dueDate else { return false }
+            return calendar.isDate(dueDate, inSameDayAs: selectedDate)
+        }
     }
 
-    private var todoListView: some View {
-        let uncompleted = uncompletedTodos
-        let completed = completedTodos
-        let uncompletedCount = uncompleted.count
+    private var selectedDayUncompletedTodos: [TodoItemData] {
+        selectedDayTodos.filter { !$0.isCompleted }
+    }
+
+    private var selectedDayCompletedTodos: [TodoItemData] {
+        selectedDayTodos.filter { $0.isCompleted }
+    }
+
+    private var unscheduledTodos: [TodoItemData] {
+        store.todos.filter { $0.dueDate == nil }
+    }
+
+    private var selectedDateTitle: String {
+        if calendar.isDateInToday(selectedDate) {
+            return String(localized: "home.week.today")
+        }
+        if calendar.isDateInTomorrow(selectedDate) {
+            return String(localized: "home.week.tomorrow")
+        }
+        return selectedDate.formatted(.dateTime.month().day().weekday(.wide))
+    }
+
+    private var weekHomeView: some View {
+        VStack(spacing: 0) {
+            weekHeaderView
+            selectedDayListView
+        }
+        .offset(y: listOffset)
+        .opacity(listOpacity)
+        .accessibilityIdentifier("WeekHomeView")
+    }
+
+    private var weekHeaderView: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Button(action: { shiftWeek(by: -1) }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("PreviousWeekButton")
+                .accessibilityLabel(String(localized: "a11y.previous_week"))
+
+                Text(weekRangeTitle)
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .frame(maxWidth: .infinity)
+
+                Button(action: { shiftWeek(by: 1) }) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("NextWeekButton")
+                .accessibilityLabel(String(localized: "a11y.next_week"))
+
+                Button(action: jumpToToday) {
+                    Text(String(localized: "home.week.today_button"))
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(WarmTheme.primaryDark)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TodayWeekButton")
+                .accessibilityLabel(String(localized: "a11y.today_week"))
+            }
+
+            HStack(spacing: 6) {
+                ForEach(visibleWeekDays, id: \.self) { day in
+                    weekDayButton(for: day)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
+        .background(WarmTheme.background.opacity(0.94))
+    }
+
+    private var weekRangeTitle: String {
+        guard let first = visibleWeekDays.first,
+              let last = visibleWeekDays.last else {
+            return String(localized: "home.week.this_week")
+        }
+        let range = "\(first.formatted(.dateTime.month().day())) - \(last.formatted(.dateTime.month().day()))"
+        if visibleWeekDays.contains(where: calendar.isDateInToday) {
+            return String(localized: "home.week.this_week_range \(range)")
+        }
+        return range
+    }
+
+    private func weekDayButton(for day: Date) -> some View {
+        let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
+        let isToday = calendar.isDateInToday(day)
+        let dayTodos = todos(on: day)
+        let hasHighPriority = dayTodos.contains { $0.priority == .high && !$0.isCompleted }
+
+        return Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                selectedDate = calendar.startOfDay(for: day)
+            }
+        } label: {
+            VStack(spacing: 6) {
+                Text(shortWeekday(for: day))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+
+                Text(day.formatted(.dateTime.day(.twoDigits)))
+                    .font(WarmFont.headline(15))
+                    .foregroundColor(isSelected ? .white : WarmTheme.textPrimary)
+
+                HStack(spacing: 2) {
+                    ForEach(0..<min(dayTodos.count, 3), id: \.self) { index in
+                        Circle()
+                            .fill(hasHighPriority && index == 0 ? WarmTheme.urgent : (isSelected ? Color.white : WarmTheme.primary))
+                            .frame(width: 4, height: 4)
+                    }
+                }
+                .frame(height: 5)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 76)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(isSelected ? WarmTheme.primary : Color.white.opacity(0.9))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(isToday && !isSelected ? WarmTheme.primary.opacity(0.55) : Color.clear, lineWidth: 1.5)
+                    )
+                    .shadow(color: isSelected ? WarmTheme.shadowMedium : WarmTheme.shadowLight, radius: isSelected ? 8 : 4, x: 0, y: 3)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("WeekDay_\(day.formatted(.dateTime.year().month().day()))")
+    }
+
+    private var selectedDayListView: some View {
+        let uncompleted = selectedDayUncompletedTodos
+        let completed = selectedDayCompletedTodos
 
         return List {
-            ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, todo in
-                todoRow(todo, index: index)
+            Section {
+                if uncompleted.isEmpty {
+                    emptySelectedDayRow
+                } else {
+                    ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, todo in
+                        todoRow(todo, index: index)
+                    }
+                }
+            } header: {
+                daySectionHeader(title: selectedDateTitle, count: uncompleted.count)
             }
-            .onMove(perform: moveUncompleted)
 
             if !completed.isEmpty {
                 Section {
                     ForEach(Array(zip(completed.indices, completed)), id: \.1.id) { idx, todo in
-                        todoRow(todo, index: uncompletedCount + idx)
+                        todoRow(todo, index: uncompleted.count + idx)
                     }
                 } header: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle")
-                            .font(.system(size: 13))
-                        Text(String(localized: "home.completed_section \(completed.count)"))
-                            .font(WarmFont.caption(13))
+                    daySectionHeader(title: String(localized: "home.completed_section \(completed.count)"), count: completed.count)
+                }
+            }
+
+            if !unscheduledTodos.isEmpty {
+                Section {
+                    ForEach(Array(zip(unscheduledTodos.indices, unscheduledTodos)), id: \.1.id) { idx, todo in
+                        todoRow(todo, index: selectedDayTodos.count + idx)
                     }
-                    .foregroundColor(WarmTheme.textMuted)
-                    .textCase(nil)
-                    .listRowInsets(EdgeInsets(top: 16, leading: 24, bottom: 4, trailing: 20))
+                } header: {
+                    daySectionHeader(title: String(localized: "home.week.unscheduled"), count: unscheduledTodos.count)
                 }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .offset(y: listOffset)
-        .opacity(listOpacity)
         .accessibilityIdentifier("TodoList")
+    }
+
+    private var emptySelectedDayRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar.badge.checkmark")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(WarmTheme.primary)
+
+            Text(String(localized: "home.week.empty_day"))
+                .font(WarmFont.body(15))
+                .foregroundColor(WarmTheme.textSecondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.86))
+                .shadow(color: WarmTheme.shadowLight, radius: 5, x: 0, y: 2)
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+        .listRowBackground(Color.clear)
+        .accessibilityIdentifier("EmptyState")
+    }
+
+    private func daySectionHeader(title: String, count: Int) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(WarmFont.headline(15))
+            Text("\(count)")
+                .font(WarmFont.caption(13))
+                .foregroundColor(WarmTheme.primaryDark)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+        }
+        .foregroundColor(WarmTheme.textSecondary)
+        .textCase(nil)
+        .listRowInsets(EdgeInsets(top: 16, leading: 24, bottom: 4, trailing: 20))
     }
 
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
@@ -324,66 +521,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             insertion: .scale(scale: 0.9).combined(with: .opacity),
             removal: .scale(scale: 0.95).combined(with: .opacity)
         ))
-    }
-
-    // MARK: - Empty State
-
-    private var emptyStateView: some View {
-        VStack(spacing: 28) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(WarmTheme.primaryLight.opacity(0.2))
-                    .frame(width: 160, height: 160)
-
-                Circle()
-                    .fill(WarmTheme.primaryLight.opacity(0.35))
-                    .frame(width: 110, height: 110)
-
-                VStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(WarmTheme.primary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .frame(width: 36, height: 52)
-                        .overlay(
-                            VStack(spacing: 5) {
-                                ForEach(0..<3, id: \.self) { _ in
-                                    Capsule()
-                                        .fill(WarmTheme.primary.opacity(0.3))
-                                        .frame(width: 22, height: 2.5)
-                                }
-                            }
-                        )
-
-                    Rectangle()
-                        .fill(WarmTheme.primary)
-                        .frame(width: 2.5, height: 12)
-
-                    Capsule()
-                        .fill(WarmTheme.primary)
-                        .frame(width: 24, height: 6)
-                }
-            }
-            .scaleEffect(listOpacity == 0 ? 0.8 : 1.0)
-            .accessibilityHidden(true)
-
-            VStack(spacing: 12) {
-                Text(String(localized: "home.empty_title"))
-                    .font(WarmFont.display(24))
-                    .foregroundColor(WarmTheme.textPrimary)
-
-                Text(String(localized: "home.empty_hint"))
-                    .font(WarmFont.body(16))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-            }
-            .offset(y: listOffset)
-            .opacity(listOpacity)
-
-            Spacer()
-        }
-        .accessibilityIdentifier("EmptyState")
     }
 
     // MARK: - Bottom Actions
@@ -501,6 +638,13 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func startEntranceAnimation() {
+        if !hasStartedEntranceAnimation {
+            let today = calendar.startOfDay(for: Date())
+            selectedDate = today
+            visibleWeekAnchor = today
+            hasStartedEntranceAnimation = true
+        }
+
         withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
             headerOffset = 0
             headerOpacity = 1
@@ -516,6 +660,51 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
                 showRecordingButton = true
             }
+        }
+    }
+
+    private func startOfWeek(for date: Date) -> Date {
+        let startOfDay = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: startOfDay)
+        let daysFromMonday = (weekday + 5) % 7
+        return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
+    }
+
+    private func todos(on day: Date) -> [TodoItemData] {
+        store.todos.filter { todo in
+            guard let dueDate = todo.dueDate else { return false }
+            return calendar.isDate(dueDate, inSameDayAs: day)
+        }
+    }
+
+    private func shortWeekday(for date: Date) -> String {
+        switch calendar.component(.weekday, from: date) {
+        case 1: return String(localized: "home.week.sun")
+        case 2: return String(localized: "home.week.mon")
+        case 3: return String(localized: "home.week.tue")
+        case 4: return String(localized: "home.week.wed")
+        case 5: return String(localized: "home.week.thu")
+        case 6: return String(localized: "home.week.fri")
+        default: return String(localized: "home.week.sat")
+        }
+    }
+
+    private func shiftWeek(by value: Int) {
+        guard let newAnchor = calendar.date(byAdding: .weekOfYear, value: value, to: visibleWeekAnchor),
+              let newSelectedDate = calendar.date(byAdding: .weekOfYear, value: value, to: selectedDate) else {
+            return
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            visibleWeekAnchor = calendar.startOfDay(for: newAnchor)
+            selectedDate = calendar.startOfDay(for: newSelectedDate)
+        }
+    }
+
+    private func jumpToToday() {
+        let today = calendar.startOfDay(for: Date())
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            selectedDate = today
+            visibleWeekAnchor = today
         }
     }
 
@@ -562,21 +751,6 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     style: .warning
                 )
             }
-        }
-    }
-
-    private func moveUncompleted(from source: IndexSet, to destination: Int) {
-        var ids = uncompletedTodos.map(\.id)
-        ids.move(fromOffsets: source, toOffset: destination)
-        do {
-            try store.reorder(ids: ids)
-            WidgetCenter.shared.reloadAllTimelines()
-        } catch {
-            store.refreshTodos()
-            coordinator.showToast(
-                message: ErrorMessages.storageError,
-                style: .warning
-            )
         }
     }
 

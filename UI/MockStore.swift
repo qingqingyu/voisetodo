@@ -53,7 +53,13 @@ class MockStore: TodoStoreProtocol {
                 todos[index].priority = priority
             }
             if let dueHint = dueHint {
-                todos[index].dueHint = dueHint.isEmpty ? nil : dueHint
+                let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
+                todos[index].dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
+                todos[index].dueDate = TodoDueDateResolver.resolve(
+                    dueHint: todos[index].dueHint,
+                    title: todos[index].title,
+                    detail: todos[index].detail ?? ""
+                )
             }
         }
     }

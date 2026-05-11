@@ -103,6 +103,77 @@ struct ExtractionResult: Codable {
 
 // MARK: - 共享工具方法
 
+/// 待办日期解析工具：把 AI 返回的自然语言时间提示转换成自然日
+enum TodoDueDateResolver {
+    static func resolve(
+        dueHint: String?,
+        title: String = "",
+        detail: String = "",
+        referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date? {
+        let text = [dueHint, title, detail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        guard !text.isEmpty else { return nil }
+
+        let today = calendar.startOfDay(for: referenceDate)
+        if text.contains("今天") || text.contains("今晚") {
+            return today
+        }
+        if text.contains("明天") || text.contains("明晚") {
+            return calendar.date(byAdding: .day, value: 1, to: today)
+        }
+        if text.contains("后天") {
+            return calendar.date(byAdding: .day, value: 2, to: today)
+        }
+
+        if let weekday = weekdayNumber(in: text) {
+            if text.contains("下周") || text.contains("下星期") || text.contains("下礼拜") {
+                return dateInWeek(offset: 1, matchingWeekday: weekday, from: today, calendar: calendar)
+            }
+            return nextDate(matchingWeekday: weekday, from: today, calendar: calendar)
+        }
+
+        return nil
+    }
+
+    private static func weekdayNumber(in text: String) -> Int? {
+        let weekdays: [(tokens: [String], value: Int)] = [
+            (["周日", "星期日", "礼拜日", "周天", "星期天", "礼拜天"], 1),
+            (["周一", "星期一", "礼拜一"], 2),
+            (["周二", "星期二", "礼拜二"], 3),
+            (["周三", "星期三", "礼拜三"], 4),
+            (["周四", "星期四", "礼拜四"], 5),
+            (["周五", "星期五", "礼拜五"], 6),
+            (["周六", "星期六", "礼拜六"], 7)
+        ]
+
+        return weekdays.first { entry in
+            entry.tokens.contains { text.contains($0) }
+        }?.value
+    }
+
+    private static func nextDate(matchingWeekday weekday: Int, from today: Date, calendar: Calendar) -> Date? {
+        let currentWeekday = calendar.component(.weekday, from: today)
+        let daysAhead = (weekday - currentWeekday + 7) % 7
+        let offset = daysAhead == 0 ? 7 : daysAhead
+        return calendar.date(byAdding: .day, value: offset, to: today)
+    }
+
+    private static func dateInWeek(offset: Int, matchingWeekday weekday: Int, from today: Date, calendar: Calendar) -> Date? {
+        let currentWeekday = calendar.component(.weekday, from: today)
+        let daysFromMonday = (currentWeekday + 5) % 7
+        guard let weekStart = calendar.date(byAdding: .day, value: -daysFromMonday + offset * 7, to: today) else {
+            return nil
+        }
+        let mondayBasedOffset = (weekday + 5) % 7
+        return calendar.date(byAdding: .day, value: mondayBasedOffset, to: weekStart)
+    }
+}
+
 /// 文本工具（enum namespace）
 enum TextUtils {
     /// 智能截断标题：在指定长度内寻找标点/空格作为截断点，避免截断在单词中间
@@ -175,7 +246,11 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.title = extracted.title
         self.detail = extracted.detail.isEmpty ? nil : extracted.detail
         self.dueHint = extracted.dueHint
-        self.dueDate = nil
+        self.dueDate = TodoDueDateResolver.resolve(
+            dueHint: extracted.dueHint,
+            title: extracted.title,
+            detail: extracted.detail
+        )
         self.priority = extracted.priority
         self.category = extracted.categoryHint
         self.isCompleted = false

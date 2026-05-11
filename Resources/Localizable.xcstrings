@@ -277,6 +277,90 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Recording" } }
       }
     },
+    "home.week.today" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } }
+      }
+    },
+    "home.week.tomorrow" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "明天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tomorrow" } }
+      }
+    },
+    "home.week.today_button" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } }
+      }
+    },
+    "home.week.this_week" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本周" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Week" } }
+      }
+    },
+    "home.week.this_week_range %@" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本周 %@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Week %@" } }
+      }
+    },
+    "home.week.unscheduled" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未安排" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unscheduled" } }
+      }
+    },
+    "home.week.empty_day" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这一天还没有待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos for this day" } }
+      }
+    },
+    "home.week.mon" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "一" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Mon" } }
+      }
+    },
+    "home.week.tue" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "二" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tue" } }
+      }
+    },
+    "home.week.wed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "三" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Wed" } }
+      }
+    },
+    "home.week.thu" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "四" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Thu" } }
+      }
+    },
+    "home.week.fri" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "五" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fri" } }
+      }
+    },
+    "home.week.sat" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "六" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sat" } }
+      }
+    },
+    "home.week.sun" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sun" } }
+      }
+    },
     "manual_input.home_button" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文字输入" } },
@@ -347,6 +431,24 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击输入文字，并用 AI 整理成待办" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to type todos and organize them with AI" } }
+      }
+    },
+    "a11y.previous_week" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上一周" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Previous week" } }
+      }
+    },
+    "a11y.next_week" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下一周" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Next week" } }
+      }
+    },
+    "a11y.today_week" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回到今天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to today" } }
       }
     },
     "a11y.completed" : {

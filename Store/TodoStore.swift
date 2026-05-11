@@ -128,7 +128,13 @@ final class TodoStore: TodoStoreProtocol {
             todoItem.priority = priority
         }
         if let dueHint = dueHint {
-            todoItem.dueHint = dueHint.isEmpty ? nil : dueHint
+            let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            todoItem.dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
+            todoItem.dueDate = TodoDueDateResolver.resolve(
+                dueHint: todoItem.dueHint,
+                title: todoItem.title,
+                detail: todoItem.detail ?? ""
+            )
         }
 
         do {

@@ -341,8 +341,8 @@ final class ScenarioTests: XCTestCase {
 
     // MARK: - S11: HomeView 空状态
 
-    /// 场景 S11: HomeView 空状态
-    /// 验证无待办时显示空状态视图
+    /// 场景 S11: HomeView 周视图空状态
+    /// 验证无待办时显示周视图和当天空状态
     func test_S11_homeView_emptyState() {
         // Step 1: 数据库无待办条目
         appHelper.launchWithCompletedOnboarding()
@@ -351,10 +351,10 @@ final class ScenarioTests: XCTestCase {
         // Step 2: 打开 HomeView
         XCTAssertEqual(appHelper.todoList.cells.count, 0)
 
-        // Step 3: 验证空状态视图
+        // Step 3: 验证周视图空状态
+        XCTAssertTrue(appHelper.app.otherElements["WeekHomeView"].exists, "应该显示周视图")
         XCTAssertTrue(appHelper.emptyState.exists, "应该显示 EmptyStateView")
-        XCTAssertTrue(appHelper.emptyState.images["CheckmarkIcon"].exists, "应该包含勾选图标")
-        XCTAssertTrue(appHelper.emptyState.staticTexts["今天还没有待办"].exists, "应该显示提示文字")
+        XCTAssertTrue(appHelper.emptyState.staticTexts["这一天还没有待办"].exists, "应该显示当天无待办提示")
     }
 
     // MARK: - S12: 首次启动引导流程

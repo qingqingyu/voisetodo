@@ -55,6 +55,74 @@ final class StoreTests: XCTestCase {
         XCTAssertFalse(sut.todos[0].needsAIProcessing)
     }
 
+    func testAddTodoResolvesDueDateFromDueHint() throws {
+        // Given: 一个带自然语言时间的待办
+        let extractedTodo = ExtractedTodo(
+            title: "买牛奶",
+            detail: "明天上午买牛奶",
+            dueHint: "明天",
+            categoryHint: .life
+        )
+
+        // When: 添加到 store
+        try sut.add(extractedTodo)
+
+        // Then: dueHint 保留，同时解析出真实日期供周视图分组
+        let dueDate = try XCTUnwrap(sut.todos[0].dueDate)
+        let expected = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+        XCTAssertTrue(Calendar.current.isDate(dueDate, inSameDayAs: try XCTUnwrap(expected)))
+        XCTAssertEqual(sut.todos[0].dueHint, "明天")
+    }
+
+    func testAddTodoWithoutDueHintKeepsDueDateNil() throws {
+        // Given: 一个没有时间信息的待办
+        let extractedTodo = ExtractedTodo(
+            title: "买牙膏",
+            detail: "买牙膏",
+            categoryHint: .life
+        )
+
+        // When: 添加到 store
+        try sut.add(extractedTodo)
+
+        // Then: 保持未安排，周视图不强行放到今天
+        XCTAssertNil(sut.todos[0].dueDate)
+    }
+
+    func testAddBatchResolvesWeekdayDueDate() throws {
+        // Given: 一个带周几时间的待办
+        let item = ExtractedTodo(
+            title: "交周报",
+            detail: "周五前交周报",
+            dueHint: "周五前",
+            categoryHint: .work
+        )
+
+        // When: 批量添加
+        try sut.addBatch([item])
+
+        // Then: 解析到接下来一个周五
+        let dueDate = try XCTUnwrap(sut.todos[0].dueDate)
+        XCTAssertEqual(Calendar.current.component(.weekday, from: dueDate), 6)
+    }
+
+    func testDueDateResolverRespectsNextWeekPrefix() throws {
+        // Given: 下周五明确指向下一周，不是本周最近的周五
+        let calendar = Calendar(identifier: .gregorian)
+        let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+
+        // When: 解析下周五
+        let resolved = TodoDueDateResolver.resolve(
+            dueHint: "下周五前",
+            referenceDate: reference,
+            calendar: calendar
+        )
+
+        // Then: 落到下一周周五
+        let expected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 15)))
+        XCTAssertTrue(calendar.isDate(try XCTUnwrap(resolved), inSameDayAs: expected))
+    }
+
     // MARK: - Test AddBatch
 
     func testAddBatchTodos() throws {
@@ -148,6 +216,40 @@ final class StoreTests: XCTestCase {
 
         // Then: 标题已更新
         XCTAssertEqual(sut.todos[0].title, "新标题")
+    }
+
+    func testUpdateDueHintRecalculatesDueDate() throws {
+        // Given: 一个原本没有日期的待办
+        let todo = ExtractedTodo(title: "买牙膏", categoryHint: .life)
+        try sut.add(todo)
+
+        let todoId = sut.todos[0].id
+        XCTAssertNil(sut.todos[0].dueDate)
+
+        // When: 在详情页补充时间提示
+        try sut.update(todoId, title: "买牙膏", dueHint: "明天")
+
+        // Then: dueHint 和周视图分组用的 dueDate 同步更新
+        let dueDate = try XCTUnwrap(sut.todos[0].dueDate)
+        let expected = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+        XCTAssertTrue(Calendar.current.isDate(dueDate, inSameDayAs: try XCTUnwrap(expected)))
+        XCTAssertEqual(sut.todos[0].dueHint, "明天")
+    }
+
+    func testUpdateDueHintClearsDueDate() throws {
+        // Given: 一个带日期的待办
+        let todo = ExtractedTodo(title: "买牛奶", dueHint: "明天", categoryHint: .life)
+        try sut.add(todo)
+
+        let todoId = sut.todos[0].id
+        XCTAssertNotNil(sut.todos[0].dueDate)
+
+        // When: 在详情页清空时间提示
+        try sut.update(todoId, title: "买牛奶", dueHint: "")
+
+        // Then: 进入未安排，不继续留在旧日期
+        XCTAssertNil(sut.todos[0].dueHint)
+        XCTAssertNil(sut.todos[0].dueDate)
     }
 
     func testUpdateInvalidId() {
