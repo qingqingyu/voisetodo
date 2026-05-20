@@ -4,6 +4,11 @@ options:
   deploymentTarget:
     iOS: "17.0"
   xcodeVersion: "16.2"
+  developmentLanguage: zh-Hans
+  knownRegions:
+    - Base
+    - zh-Hans
+    - en
   generateEmptyDirectories: true
   groupSortPosition: top
 
@@ -12,7 +17,7 @@ settings:
     SWIFT_VERSION: "5"
     PRODUCT_NAME: "$(TARGET_NAME)"
     ENABLE_TESTABILITY: YES
-    DEVELOPMENT_LANGUAGE: en
+    DEVELOPMENT_LANGUAGE: zh-Hans
     SWIFT_EMIT_LOC_STRINGS: YES
   debug:
     SWIFT_OPTIMIZATION_LEVEL: -Onone
@@ -54,6 +59,7 @@ targets:
           - "**/.DS_Store"
           - "CodingConventions.md"
       - path: VoiceTodo/Assets.xcassets
+      - path: VoiceTodo/InfoPlist.xcstrings
       - path: Resources/Localizable.xcstrings
     settings:
       base:
@@ -107,6 +113,7 @@ targets:
       - path: Protocols/Constants.swift
       - path: App/Intents/ToggleTodoIntent.swift
       - path: Resources/Localizable.xcstrings
+      - path: VoiceTodoWidget/InfoPlist.xcstrings
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicetodo.app.widget

@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import VoiceTodoProtocols
 
 final class ProtocolsTests: XCTestCase {
@@ -50,5 +51,55 @@ final class ProtocolsTests: XCTestCase {
     func testVoiceTodoErrorEquality() {
         XCTAssertEqual(VoiceTodoError.networkUnavailable, .networkUnavailable)
         XCTAssertEqual(VoiceTodoError.apiTimeout, .apiTimeout)
+    }
+
+    func testDueDateResolverParsesEnglishRelativeDays() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+
+        let tomorrow = TodoDueDateResolver.resolve(
+            dueHint: "tomorrow",
+            referenceDate: reference,
+            calendar: calendar
+        )
+        XCTAssertTrue(calendar.isDate(
+            try XCTUnwrap(tomorrow),
+            inSameDayAs: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 5)))
+        ))
+
+        let dayAfterTomorrow = TodoDueDateResolver.resolve(
+            dueHint: "day after tomorrow",
+            referenceDate: reference,
+            calendar: calendar
+        )
+        XCTAssertTrue(calendar.isDate(
+            try XCTUnwrap(dayAfterTomorrow),
+            inSameDayAs: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 6)))
+        ))
+    }
+
+    func testDueDateResolverParsesEnglishWeekdays() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+
+        let thisFriday = TodoDueDateResolver.resolve(
+            dueHint: "by Friday",
+            referenceDate: reference,
+            calendar: calendar
+        )
+        XCTAssertTrue(calendar.isDate(
+            try XCTUnwrap(thisFriday),
+            inSameDayAs: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+        ))
+
+        let nextFriday = TodoDueDateResolver.resolve(
+            dueHint: "by next Friday",
+            referenceDate: reference,
+            calendar: calendar
+        )
+        XCTAssertTrue(calendar.isDate(
+            try XCTUnwrap(nextFriday),
+            inSameDayAs: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 15)))
+        ))
     }
 }

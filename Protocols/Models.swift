@@ -120,18 +120,27 @@ enum TodoDueDateResolver {
         guard !text.isEmpty else { return nil }
 
         let today = calendar.startOfDay(for: referenceDate)
-        if text.contains("今天") || text.contains("今晚") {
+        let lowercasedText = text.lowercased()
+
+        if text.contains("今天") || text.contains("今晚") ||
+            lowercasedText.containsEnglishPhrase("today") ||
+            lowercasedText.containsEnglishPhrase("tonight") {
             return today
         }
-        if text.contains("明天") || text.contains("明晚") {
-            return calendar.date(byAdding: .day, value: 1, to: today)
-        }
-        if text.contains("后天") {
+        if text.contains("后天") ||
+            lowercasedText.containsEnglishPhrase("day after tomorrow") {
             return calendar.date(byAdding: .day, value: 2, to: today)
+        }
+        if text.contains("明天") || text.contains("明晚") ||
+            lowercasedText.containsEnglishPhrase("tomorrow") ||
+            lowercasedText.containsEnglishPhrase("tmr") {
+            return calendar.date(byAdding: .day, value: 1, to: today)
         }
 
         if let weekday = weekdayNumber(in: text) {
-            if text.contains("下周") || text.contains("下星期") || text.contains("下礼拜") {
+            if text.contains("下周") || text.contains("下星期") || text.contains("下礼拜") ||
+                lowercasedText.containsEnglishPhrase("next week") ||
+                lowercasedText.containsNextEnglishWeekday(weekday) {
                 return dateInWeek(offset: 1, matchingWeekday: weekday, from: today, calendar: calendar)
             }
             return nextDate(matchingWeekday: weekday, from: today, calendar: calendar)
@@ -151,10 +160,27 @@ enum TodoDueDateResolver {
             (["周六", "星期六", "礼拜六"], 7)
         ]
 
-        return weekdays.first { entry in
+        if let chineseWeekday = weekdays.first(where: { entry in
             entry.tokens.contains { text.contains($0) }
+        })?.value {
+            return chineseWeekday
+        }
+
+        let lowercasedText = text.lowercased()
+        return englishWeekdays.first { entry in
+            entry.tokens.contains { lowercasedText.containsEnglishPhrase($0) }
         }?.value
     }
+
+    fileprivate static let englishWeekdays: [(tokens: [String], value: Int)] = [
+        (["sunday", "sun"], 1),
+        (["monday", "mon"], 2),
+        (["tuesday", "tue", "tues"], 3),
+        (["wednesday", "wed"], 4),
+        (["thursday", "thu", "thur", "thurs"], 5),
+        (["friday", "fri"], 6),
+        (["saturday", "sat"], 7)
+    ]
 
     private static func nextDate(matchingWeekday weekday: Int, from today: Date, calendar: Calendar) -> Date? {
         let currentWeekday = calendar.component(.weekday, from: today)
@@ -171,6 +197,24 @@ enum TodoDueDateResolver {
         }
         let mondayBasedOffset = (weekday + 5) % 7
         return calendar.date(byAdding: .day, value: mondayBasedOffset, to: weekStart)
+    }
+}
+
+private extension String {
+    func containsEnglishPhrase(_ phrase: String) -> Bool {
+        let escaped = NSRegularExpression.escapedPattern(for: phrase)
+            .replacingOccurrences(of: "\\ ", with: "\\s+")
+        return range(
+            of: "(?<![A-Za-z])\(escaped)(?![A-Za-z])",
+            options: .regularExpression
+        ) != nil
+    }
+
+    func containsNextEnglishWeekday(_ weekday: Int) -> Bool {
+        guard let tokens = TodoDueDateResolver.englishWeekdays.first(where: { $0.value == weekday })?.tokens else {
+            return false
+        }
+        return tokens.contains { containsEnglishPhrase("next \($0)") }
     }
 }
 
