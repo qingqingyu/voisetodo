@@ -369,10 +369,15 @@ final class AppCoordinator: ObservableObject {
 
     /// 取消确认
     func cancelTodos() {
+        extractionTask?.cancel()
+        extractionTask = nil
+
         // 记录已取消的 pending ID，避免本次 session 重复弹窗
         // 不删除 pending 条目，保留离线转写数据
         dismissedPendingIds.formUnion(pendingItemIds)
 
+        isExtracting = false
+        isProcessingTranscript = false
         extractedTodos = []
         showConfirmSheet = false
         pendingItemIds = []

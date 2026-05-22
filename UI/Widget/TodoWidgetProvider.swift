@@ -32,7 +32,7 @@ struct TodoTimelineProvider: TimelineProvider {
             return cached
         }
 
-        let schema = Schema([TodoItem.self])
+        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -87,15 +87,7 @@ struct TodoTimelineProvider: TimelineProvider {
         do {
             let container = try getModelContainer()
             let context = ModelContext(container)
-
-            var descriptor = FetchDescriptor<TodoItem>(
-                predicate: #Predicate { !$0.isCompleted },
-                sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
-            )
-            descriptor.fetchLimit = limit
-
-            let items = try context.fetch(descriptor)
-            let todos = items.map { $0.toData() }
+            let todos = try WidgetTodoFetch.recentTodos(context: context, limit: limit)
 
             #if DEBUG
             print("Widget: 成功读取 \(todos.count) 条待办")

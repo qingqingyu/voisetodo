@@ -5,6 +5,7 @@ import Combine
 /// 用于 UI 开发和预览，不依赖 SwiftData
 class MockStore: TodoStoreProtocol {
     @Published var todos: [TodoItemData]
+    private var completedOccurrences = Set<String>()
 
     init(todos: [TodoItemData] = []) {
         self.todos = todos
@@ -64,15 +65,88 @@ class MockStore: TodoStoreProtocol {
         }
     }
 
+    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil, recurrenceRule: RecurrenceRule?) throws {
+        try update(id, title: title, category: category, priority: priority, dueHint: dueHint)
+        try updateRecurrence(id, recurrenceRule: recurrenceRule)
+    }
+
+    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index].recurrenceRule = recurrenceRule
+            if recurrenceRule == nil {
+                completedOccurrences = completedOccurrences.filter { !$0.hasPrefix(id.uuidString) }
+            } else {
+                todos[index].isCompleted = false
+            }
+        }
+    }
+
+    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] {
+        let calendar = Calendar.current
+        var days: [Date] = []
+        var current = calendar.startOfDay(for: min(startDate, endDate))
+        let end = calendar.startOfDay(for: max(startDate, endDate))
+        while current <= end {
+            days.append(current)
+            current = calendar.date(byAdding: .day, value: 1, to: current) ?? end.addingTimeInterval(1)
+        }
+
+        return todos.flatMap { todo -> [TodoOccurrenceData] in
+            if let rule = todo.recurrenceRule {
+                return days.compactMap { day in
+                    guard rule.occurs(on: day, startDate: todo.dueDate ?? todo.createdAt, calendar: calendar) else {
+                        return nil
+                    }
+                    let key = TodoOccurrenceCompletion.key(todoId: todo.id, occurrenceDate: day, calendar: calendar)
+                    var occurrenceTodo = todo
+                    occurrenceTodo.isCompleted = completedOccurrences.contains(key)
+                    return TodoOccurrenceData(todo: occurrenceTodo, occurrenceDate: day, isCompleted: completedOccurrences.contains(key))
+                }
+            }
+            guard let dueDate = todo.dueDate,
+                  days.contains(where: { calendar.isDate($0, inSameDayAs: dueDate) }) else {
+                return []
+            }
+            return [TodoOccurrenceData(todo: todo, occurrenceDate: calendar.startOfDay(for: dueDate), isCompleted: todo.isCompleted)]
+        }
+        .sorted { lhs, rhs in
+            if lhs.occurrenceDate != rhs.occurrenceDate {
+                return lhs.occurrenceDate < rhs.occurrenceDate
+            }
+            return lhs.todo.sortOrder < rhs.todo.sortOrder
+        }
+    }
+
+    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {
+        guard let todo = todos.first(where: { $0.id == id }), let recurrenceRule = todo.recurrenceRule else {
+            try toggleComplete(id)
+            return
+        }
+        let day = Calendar.current.startOfDay(for: date)
+        guard recurrenceRule.occurs(on: day, startDate: todo.dueDate ?? todo.createdAt) else {
+            return
+        }
+
+        let key = TodoOccurrenceCompletion.key(todoId: id, occurrenceDate: day)
+        if completedOccurrences.contains(key) {
+            completedOccurrences.remove(key)
+        } else {
+            completedOccurrences.insert(key)
+        }
+    }
+
     func pendingItems() -> [TodoItemData] {
         return todos.filter { $0.needsAIProcessing }
     }
 
     func recentUncompleted(limit: Int) -> [TodoItemData] {
-        return todos
-            .filter { !$0.isCompleted }
-            .prefix(limit)
-            .map { $0 }
+        let today = Calendar.current.startOfDay(for: Date())
+        return WidgetTodoFilter.visibleTodos(
+            from: todos,
+            completionKeys: completedOccurrences,
+            today: today,
+            limit: limit
+        )
     }
 
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {

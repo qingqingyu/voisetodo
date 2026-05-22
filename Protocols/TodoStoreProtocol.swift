@@ -25,6 +25,18 @@ protocol TodoStoreProtocol: ObservableObject {
     /// 更新待办（支持标题、分类、优先级、时间提示）
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws
 
+    /// 原子更新待办详情（基础字段 + 重复规则）
+    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
+
+    /// 更新重复规则（nil 表示关闭重复）
+    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws
+
+    /// 获取日期区间内实际出现的待办
+    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData]
+
+    /// 切换某一天的完成状态；重复任务只影响当天 occurrence
+    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws
+
     /// 获取需要 AI 补处理的条目（needsAIProcessing == true）
     func pendingItems() -> [TodoItemData]
 

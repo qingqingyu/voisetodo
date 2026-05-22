@@ -35,7 +35,7 @@ struct VoiceTodoApp: App {
             UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         }
 
-        let schema = Schema([TodoItem.self])
+        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
 
         let shouldUseSharedContainer = !uiTestOptions.isUITesting && AppGroupConfig.sharedContainerURL != nil
 
@@ -277,4 +277,3 @@ private enum VoiceTodoDeepLink {
         return nil
     }
 }
-

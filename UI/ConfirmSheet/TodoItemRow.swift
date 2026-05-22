@@ -45,6 +45,16 @@ struct TodoItemRow: View {
                     }
                     .foregroundColor(WarmTheme.textSecondary)
                 }
+
+                if let recurrenceRule = todo.recurrenceRule {
+                    HStack(spacing: 4) {
+                        Image(systemName: "repeat")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(recurrenceRule.displayText)
+                            .font(WarmFont.caption(13))
+                    }
+                    .foregroundColor(WarmTheme.primaryDark)
+                }
             }
 
             Spacer()

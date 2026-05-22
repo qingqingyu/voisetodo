@@ -21,7 +21,7 @@ struct ToggleTodoIntent: AppIntent {
             return .result()
         }
 
-        let schema = Schema([TodoItem.self])
+        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
         let config = ModelConfiguration(
             schema: schema,
             groupContainer: .identifier("group.com.voicetodo.shared")
@@ -35,7 +35,26 @@ struct ToggleTodoIntent: AppIntent {
         descriptor.fetchLimit = 1
 
         if let item = try context.fetch(descriptor).first {
-            item.isCompleted.toggle()
+            if let recurrenceRule = item.recurrenceRule {
+                let today = Calendar.current.startOfDay(for: Date())
+                guard recurrenceRule.occurs(on: today, startDate: item.dueDate ?? item.createdAt) else {
+                    return .result()
+                }
+
+                let key = TodoOccurrenceCompletion.key(todoId: item.id, occurrenceDate: today)
+                var completionDescriptor = FetchDescriptor<TodoOccurrenceCompletion>(
+                    predicate: #Predicate { $0.occurrenceKey == key }
+                )
+                completionDescriptor.fetchLimit = 1
+
+                if let completion = try context.fetch(completionDescriptor).first {
+                    context.delete(completion)
+                } else {
+                    context.insert(TodoOccurrenceCompletion(todoId: item.id, occurrenceDate: today))
+                }
+            } else {
+                item.isCompleted.toggle()
+            }
             try context.save()
             WidgetCenter.shared.reloadAllTimelines()
         }

@@ -28,9 +28,10 @@ enum PromptTemplates {
 2. 过滤口语噪音：忽略「嗯」「那个」「就是」「我想想」等填充词
 3. 保留用户原意：不要擅自扩展或拆解。用户说「准备面试」就是「准备面试」，不要拆成子步骤
 4. 提取时间线索：如果提到时间（明天、下周三、月底前），提取为 due_hint 字段。没提到就留 null
-5. 识别优先级线索：语气中有紧急感（赶紧、必须、来不及了）标记为 high，否则 normal
-6. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条
-7. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」
+5. 提取重复规则：只有明确出现「每天/每日/每周X/每月X号」时才设置 recurrence_rule；否则为 null
+6. 识别优先级线索：语气中有紧急感（赶紧、必须、来不及了）标记为 high，否则 normal
+7. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条
+8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」
 
 输出格式：
 返回 JSON，格式如下：
@@ -40,6 +41,12 @@ enum PromptTemplates {
       "title": "10字以内行动描述",
       "detail": "原话语境",
       "due_hint": "时间线索原文或null",
+      "recurrence_rule": {
+        "frequency": "daily/weekly/monthly",
+        "weekdays": [2],
+        "day_of_month": null,
+        "end_date": null
+      } 或 null,
       "priority": "high或normal",
       "category_hint": "work/study/life/health/finance/social/other"
     }
@@ -58,6 +65,7 @@ enum PromptTemplates {
       "title": "去银行办卡",
       "detail": "明天去银行办卡",
       "due_hint": "明天",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "finance"
     }
@@ -74,6 +82,7 @@ enum PromptTemplates {
       "title": "去银行办卡",
       "detail": "明天去银行办卡",
       "due_hint": "明天",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "finance"
     },
@@ -81,6 +90,7 @@ enum PromptTemplates {
       "title": "买菜",
       "detail": "顺便买菜",
       "due_hint": null,
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "life"
     },
@@ -88,6 +98,7 @@ enum PromptTemplates {
       "title": "给老妈打电话",
       "detail": "晚上给老妈打电话",
       "due_hint": "晚上",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "social"
     }
@@ -104,6 +115,7 @@ enum PromptTemplates {
       "title": "交报告",
       "detail": "下周三之前必须交报告",
       "due_hint": "下周三之前",
+      "recurrence_rule": null,
       "priority": "high",
       "category_hint": "work"
     },
@@ -111,6 +123,7 @@ enum PromptTemplates {
       "title": "去健身房",
       "detail": "周末想去健身房",
       "due_hint": "周末",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "health"
     }
@@ -135,6 +148,7 @@ enum PromptTemplates {
       "title": "review PR",
       "detail": "review那个PR",
       "due_hint": null,
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "work"
     },
@@ -142,6 +156,7 @@ enum PromptTemplates {
       "title": "fix staging bug",
       "detail": "fix staging的bug，周五demo前搞定",
       "due_hint": "周五demo前",
+      "recurrence_rule": null,
       "priority": "high",
       "category_hint": "work"
     }
@@ -160,9 +175,10 @@ Core rules:
 2. Filter filler words: ignore "um", "like", "you know", "let me think" etc.
 3. Preserve user intent: don't expand or split. If the user says "prepare for interview", keep it as is
 4. Extract time cues: if a time is mentioned (tomorrow, next Wednesday, by end of month), capture it in due_hint. Otherwise null
-5. Detect urgency: if tone has urgency (ASAP, must, running out of time) mark as high, otherwise normal
-6. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc.
-7. Ambiguous intent: pure state descriptions ("I'm so tired") → don't extract; implied action ("so tired, need to see a doctor") → extract "see a doctor"
+5. Extract recurrence only for explicit phrases like "every day", "daily", "every Monday", "weekly", or "monthly on the 1st"; otherwise recurrence_rule must be null
+6. Detect urgency: if tone has urgency (ASAP, must, running out of time) mark as high, otherwise normal
+7. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc.
+8. Ambiguous intent: pure state descriptions ("I'm so tired") → don't extract; implied action ("so tired, need to see a doctor") → extract "see a doctor"
 
 Output format:
 Return JSON as follows:
@@ -172,6 +188,12 @@ Return JSON as follows:
       "title": "Brief action description (under 10 words)",
       "detail": "Original context",
       "due_hint": "Time cue text or null",
+      "recurrence_rule": {
+        "frequency": "daily/weekly/monthly",
+        "weekdays": [6],
+        "day_of_month": null,
+        "end_date": null
+      } or null,
       "priority": "high or normal",
       "category_hint": "work/study/life/health/finance/social/other"
     }
@@ -190,6 +212,7 @@ Output:
       "title": "Open bank account",
       "detail": "Go to the bank tomorrow to open an account",
       "due_hint": "tomorrow",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "finance"
     }
@@ -206,6 +229,7 @@ Output:
       "title": "Go to the bank",
       "detail": "Go to the bank tomorrow",
       "due_hint": "tomorrow",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "finance"
     },
@@ -213,6 +237,7 @@ Output:
       "title": "Pick up groceries",
       "detail": "pick up groceries",
       "due_hint": null,
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "life"
     },
@@ -220,6 +245,7 @@ Output:
       "title": "Call mom",
       "detail": "call mom tonight",
       "due_hint": "tonight",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "social"
     }
@@ -236,6 +262,7 @@ Output:
       "title": "Submit report",
       "detail": "must submit the report by next Wednesday",
       "due_hint": "by next Wednesday",
+      "recurrence_rule": null,
       "priority": "high",
       "category_hint": "work"
     },
@@ -243,6 +270,7 @@ Output:
       "title": "Go to gym",
       "detail": "want to hit the gym this weekend",
       "due_hint": "this weekend",
+      "recurrence_rule": null,
       "priority": "normal",
       "category_hint": "health"
     }

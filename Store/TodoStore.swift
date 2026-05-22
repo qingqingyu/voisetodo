@@ -20,6 +20,7 @@ final class TodoStore: TodoStoreProtocol {
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         migrateOldSortOrder()
+        migrateDueDatesFromHints()
         refreshTodos()
     }
 
@@ -99,6 +100,7 @@ final class TodoStore: TodoStoreProtocol {
     func delete(_ id: UUID) throws {
         let todoItem = try findTodoItem(by: id)
 
+        try deleteCompletions(for: id)
         modelContext.delete(todoItem)
 
         do {
@@ -118,6 +120,30 @@ final class TodoStore: TodoStoreProtocol {
     ///   - priority: 新优先级（nil 表示不修改）
     ///   - dueHint: 新时间提示（nil 表示不修改，空字符串清除）
     func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
+        try update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: nil, shouldUpdateRecurrence: false)
+    }
+
+    /// 原子更新待办详情（基础字段 + 重复规则）
+    /// - Parameters:
+    ///   - id: 待办 ID
+    ///   - title: 新标题
+    ///   - category: 新分类（nil 表示不修改）
+    ///   - priority: 新优先级（nil 表示不修改）
+    ///   - dueHint: 新时间提示（nil 表示不修改，空字符串清除）
+    ///   - recurrenceRule: 新重复规则（nil 表示关闭重复）
+    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil, recurrenceRule: RecurrenceRule?) throws {
+        try update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule, shouldUpdateRecurrence: true)
+    }
+
+    private func update(
+        _ id: UUID,
+        title: String,
+        category: TodoCategory?,
+        priority: Priority?,
+        dueHint: String?,
+        recurrenceRule: RecurrenceRule?,
+        shouldUpdateRecurrence: Bool
+    ) throws {
         let todoItem = try findTodoItem(by: id)
 
         todoItem.title = title
@@ -136,6 +162,15 @@ final class TodoStore: TodoStoreProtocol {
                 detail: todoItem.detail ?? ""
             )
         }
+        if shouldUpdateRecurrence {
+            todoItem.recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
+
+            if todoItem.recurrenceRule == nil {
+                try deleteCompletions(for: id)
+            } else {
+                todoItem.isCompleted = false
+            }
+        }
 
         do {
             try modelContext.save()
@@ -143,6 +178,105 @@ final class TodoStore: TodoStoreProtocol {
             if let index = todos.firstIndex(where: { $0.id == id }) {
                 todos[index] = todoItem.toData()
             }
+        } catch {
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    /// 更新重复规则（nil 表示关闭重复）
+    /// - Parameters:
+    ///   - id: 待办 ID
+    ///   - recurrenceRule: 新重复规则
+    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {
+        let todoItem = try findTodoItem(by: id)
+        todoItem.recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
+
+        if todoItem.recurrenceRule == nil {
+            try deleteCompletions(for: id)
+        } else {
+            todoItem.isCompleted = false
+        }
+
+        do {
+            try modelContext.save()
+            if let index = todos.firstIndex(where: { $0.id == id }) {
+                todos[index] = todoItem.toData()
+            }
+        } catch {
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    /// 获取日期区间内实际出现的待办。
+    /// - Parameters:
+    ///   - startDate: 区间开始
+    ///   - endDate: 区间结束
+    /// - Returns: 展开的日历 occurrence
+    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] {
+        let days = daysBetween(startDate, endDate)
+        guard !days.isEmpty else { return [] }
+
+        let completionMap = completionMap(from: days[0], to: days[days.count - 1])
+        var occurrences: [TodoOccurrenceData] = []
+
+        for todo in todos {
+            if let recurrenceRule = todo.recurrenceRule {
+                let start = todo.dueDate ?? todo.createdAt
+                for day in days where recurrenceRule.occurs(on: day, startDate: start) {
+                    let key = TodoOccurrenceCompletion.key(todoId: todo.id, occurrenceDate: day)
+                    var occurrenceTodo = todo
+                    occurrenceTodo.isCompleted = completionMap[key] != nil
+                    occurrences.append(TodoOccurrenceData(
+                        todo: occurrenceTodo,
+                        occurrenceDate: day,
+                        isCompleted: completionMap[key] != nil
+                    ))
+                }
+            } else if let dueDate = todo.dueDate,
+                      days.contains(where: { Calendar.current.isDate($0, inSameDayAs: dueDate) }) {
+                let day = Calendar.current.startOfDay(for: dueDate)
+                occurrences.append(TodoOccurrenceData(
+                    todo: todo,
+                    occurrenceDate: day,
+                    isCompleted: todo.isCompleted
+                ))
+            }
+        }
+
+        return occurrences.sorted { lhs, rhs in
+            if lhs.occurrenceDate != rhs.occurrenceDate {
+                return lhs.occurrenceDate < rhs.occurrenceDate
+            }
+            return lhs.todo.sortOrder < rhs.todo.sortOrder
+        }
+    }
+
+    /// 切换某一天的完成状态；重复任务只影响当天 occurrence。
+    /// - Parameters:
+    ///   - id: 待办 ID
+    ///   - date: occurrence 日期
+    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {
+        let todoItem = try findTodoItem(by: id)
+        guard let recurrenceRule = todoItem.recurrenceRule else {
+            try toggleComplete(id)
+            return
+        }
+
+        let day = Calendar.current.startOfDay(for: date)
+        guard recurrenceRule.occurs(on: day, startDate: todoItem.dueDate ?? todoItem.createdAt) else {
+            return
+        }
+
+        let key = TodoOccurrenceCompletion.key(todoId: id, occurrenceDate: day)
+
+        do {
+            if let existing = try findCompletion(by: key) {
+                modelContext.delete(existing)
+            } else {
+                modelContext.insert(TodoOccurrenceCompletion(todoId: id, occurrenceDate: day))
+            }
+            try modelContext.save()
+            refreshTodos()
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
@@ -173,20 +307,34 @@ final class TodoStore: TodoStoreProtocol {
     /// - Parameter limit: 返回数量限制
     /// - Returns: 未完成待办数组
     func recentUncompleted(limit: Int) -> [TodoItemData] {
-        var descriptor = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { !$0.isCompleted },
+        guard limit > 0 else { return [] }
+
+        let descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
-        descriptor.fetchLimit = limit
 
         do {
+            let today = Calendar.current.startOfDay(for: Date())
+            let completedToday = completionMap(from: today, to: today)
             let items = try modelContext.fetch(descriptor)
-            return items.map { $0.toData() }
+            return WidgetTodoFilter.visibleTodos(
+                from: items.map { $0.toData() },
+                completionKeys: Set(completedToday.keys),
+                today: today,
+                limit: limit
+            )
         } catch {
             #if DEBUG
             print("Failed to fetch recent uncompleted todos: \(error)")
             #endif
-            return Array(todos.filter { !$0.isCompleted }.prefix(limit))
+            let today = Calendar.current.startOfDay(for: Date())
+            let completedToday = completionMap(from: today, to: today)
+            return WidgetTodoFilter.visibleTodos(
+                from: todos,
+                completionKeys: Set(completedToday.keys),
+                today: today,
+                limit: limit
+            )
         }
     }
 
@@ -238,6 +386,10 @@ final class TodoStore: TodoStoreProtocol {
             for item in items {
                 modelContext.delete(item)
             }
+            let completions = try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>())
+            for completion in completions {
+                modelContext.delete(completion)
+            }
             try modelContext.save()
             todos = []
         } catch {
@@ -253,6 +405,7 @@ final class TodoStore: TodoStoreProtocol {
                 detail: item.detail,
                 dueHint: item.dueHint,
                 dueDate: item.dueDate,
+                recurrenceRule: item.recurrenceRule,
                 priority: item.priority,
                 category: item.category,
                 isCompleted: item.isCompleted,
@@ -362,6 +515,39 @@ final class TodoStore: TodoStoreProtocol {
         }
     }
 
+    /// 一次性迁移：旧数据只有 dueHint 时，补齐周/月历视图使用的 dueDate。
+    private func migrateDueDatesFromHints() {
+        let descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { item in
+                item.dueDate == nil && item.dueHint != nil
+            }
+        )
+
+        do {
+            let items = try modelContext.fetch(descriptor)
+            var changed = false
+            for item in items {
+                guard let dueDate = TodoDueDateResolver.resolve(
+                    dueHint: item.dueHint,
+                    title: item.title,
+                    detail: item.detail ?? "",
+                    referenceDate: item.createdAt
+                ) else {
+                    continue
+                }
+                item.dueDate = dueDate
+                changed = true
+            }
+            if changed {
+                try modelContext.save()
+            }
+        } catch {
+            #if DEBUG
+            print("Failed to migrate dueDate from dueHint: \(error)")
+            #endif
+        }
+    }
+
     /// 根据 ID 查找 TodoItem
     /// - Parameter id: 待办 ID
     /// - Returns: TodoItem 实例（如果找到）
@@ -382,6 +568,58 @@ final class TodoStore: TodoStoreProtocol {
                 throw storageError
             }
             throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
+    }
+
+    private func daysBetween(_ startDate: Date, _ endDate: Date) -> [Date] {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: min(startDate, endDate))
+        let end = calendar.startOfDay(for: max(startDate, endDate))
+        var days: [Date] = []
+        var current = start
+        while current <= end {
+            days.append(current)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+        return days
+    }
+
+    private func completionMap(from startDate: Date, to endDate: Date) -> [String: TodoOccurrenceCompletion] {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: startDate)
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)) ?? endDate
+        let descriptor = FetchDescriptor<TodoOccurrenceCompletion>(
+            predicate: #Predicate { completion in
+                completion.occurrenceDate >= start && completion.occurrenceDate < end
+            }
+        )
+
+        do {
+            let completions = try modelContext.fetch(descriptor)
+            return Dictionary(uniqueKeysWithValues: completions.map { ($0.occurrenceKey, $0) })
+        } catch {
+            #if DEBUG
+            print("Failed to fetch occurrence completions: \(error)")
+            #endif
+            return [:]
+        }
+    }
+
+    private func findCompletion(by key: String) throws -> TodoOccurrenceCompletion? {
+        var descriptor = FetchDescriptor<TodoOccurrenceCompletion>(
+            predicate: #Predicate { $0.occurrenceKey == key }
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    private func deleteCompletions(for todoId: UUID) throws {
+        let descriptor = FetchDescriptor<TodoOccurrenceCompletion>(
+            predicate: #Predicate { $0.todoId == todoId }
+        )
+        for completion in try modelContext.fetch(descriptor) {
+            modelContext.delete(completion)
         }
     }
 }

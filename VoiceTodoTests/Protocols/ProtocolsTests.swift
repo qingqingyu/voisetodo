@@ -1,6 +1,10 @@
 import XCTest
 import Foundation
+#if canImport(VoiceTodoProtocols)
 @testable import VoiceTodoProtocols
+#else
+@testable import VoiceTodo
+#endif
 
 final class ProtocolsTests: XCTestCase {
 
@@ -48,9 +52,98 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos[0].title, "任务")
     }
 
+    func testExtractionResultDecodesRecurrenceRule() throws {
+        let json = """
+        {
+            "todos": [{
+                "id": "00000000-0000-0000-0000-000000000001",
+                "title": "每周复盘",
+                "detail": "每周五复盘",
+                "due_hint": "每周五",
+                "recurrence_rule": {
+                    "frequency": "weekly",
+                    "weekdays": [6],
+                    "day_of_month": null,
+                    "end_date": null
+                },
+                "priority": "normal",
+                "category_hint": "work"
+            }],
+            "ignored": ""
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let result = try decoder.decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+
+        XCTAssertEqual(result.todos[0].recurrenceRule, RecurrenceRule(frequency: .weekly, weekdays: [6]))
+    }
+
+    func testExtractionResultHonorsExplicitNullRecurrenceRule() throws {
+        let json = """
+        {
+            "todos": [{
+                "id": "00000000-0000-0000-0000-000000000002",
+                "title": "review",
+                "detail": "every Friday review",
+                "due_hint": "every Friday",
+                "recurrence_rule": null,
+                "priority": "normal",
+                "category_hint": "work"
+            }],
+            "ignored": ""
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let result = try decoder.decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+
+        XCTAssertNil(result.todos[0].recurrenceRule)
+    }
+
+    func testExtractionResultInfersRecurrenceOnlyWhenFieldIsMissing() throws {
+        let json = """
+        {
+            "todos": [{
+                "id": "00000000-0000-0000-0000-000000000003",
+                "title": "review",
+                "detail": "every Friday review",
+                "due_hint": "every Friday",
+                "priority": "normal",
+                "category_hint": "work"
+            }],
+            "ignored": ""
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let result = try decoder.decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+
+        XCTAssertEqual(result.todos[0].recurrenceRule, RecurrenceRule(frequency: .weekly, weekdays: [6]))
+    }
+
     func testVoiceTodoErrorEquality() {
         XCTAssertEqual(VoiceTodoError.networkUnavailable, .networkUnavailable)
         XCTAssertEqual(VoiceTodoError.apiTimeout, .apiTimeout)
+    }
+
+    func testRecurrenceRuleResolverParsesChineseAndEnglishRules() throws {
+        XCTAssertEqual(
+            ExtractedTodo(title: "喝水", detail: "每天喝水").recurrenceRule,
+            RecurrenceRule(frequency: .daily)
+        )
+        XCTAssertEqual(
+            ExtractedTodo(title: "开会", detail: "每周一开会").recurrenceRule,
+            RecurrenceRule(frequency: .weekly, weekdays: [2])
+        )
+        XCTAssertEqual(
+            ExtractedTodo(title: "review", detail: "every Friday review").recurrenceRule,
+            RecurrenceRule(frequency: .weekly, weekdays: [6])
+        )
+        XCTAssertEqual(
+            ExtractedTodo(title: "交房租", detail: "每月1号交房租").recurrenceRule,
+            RecurrenceRule(frequency: .monthly, dayOfMonth: 1)
+        )
     }
 
     func testDueDateResolverParsesEnglishRelativeDays() throws {

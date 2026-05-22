@@ -16,7 +16,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var isProcessing = false
     @State private var showManualInputSheet = false
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
-    @State private var visibleWeekAnchor = Calendar.current.startOfDay(for: Date())
+    @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
 
     private let waveformHeights: [CGFloat] = [14, 24, 18, 28, 16]
@@ -51,7 +51,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
                     Group {
                         if !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
-                            weekHomeView
+                            monthHomeView
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -252,30 +252,18 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .transition(.opacity)
     }
 
-    // MARK: - Week Home View
+    // MARK: - Month Home View
 
-    private var visibleWeekDays: [Date] {
-        let weekStart = startOfWeek(for: visibleWeekAnchor)
-        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: weekStart) }
-    }
-
-    private var selectedDayTodos: [TodoItemData] {
-        store.todos.filter { todo in
-            guard let dueDate = todo.dueDate else { return false }
-            return calendar.isDate(dueDate, inSameDayAs: selectedDate)
-        }
-    }
-
-    private var selectedDayUncompletedTodos: [TodoItemData] {
-        selectedDayTodos.filter { !$0.isCompleted }
-    }
-
-    private var selectedDayCompletedTodos: [TodoItemData] {
-        selectedDayTodos.filter { $0.isCompleted }
+    private var visibleMonthDays: [Date] {
+        let monthStart = startOfMonth(for: visibleMonthAnchor)
+        let weekday = calendar.component(.weekday, from: monthStart)
+        let leadingDays = (weekday + 5) % 7
+        let gridStart = calendar.date(byAdding: .day, value: -leadingDays, to: monthStart) ?? monthStart
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
     }
 
     private var unscheduledTodos: [TodoItemData] {
-        store.todos.filter { $0.dueDate == nil }
+        store.todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
     }
 
     private var selectedDateTitle: String {
@@ -288,20 +276,26 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         return selectedDate.formatted(.dateTime.month().day().weekday(.wide))
     }
 
-    private var weekHomeView: some View {
-        VStack(spacing: 0) {
-            weekHeaderView
-            selectedDayListView
+    private var monthHomeView: some View {
+        let monthDays = visibleMonthDays
+        let occurrencesByDay = monthOccurrencesByDay(for: monthDays)
+
+        return VStack(spacing: 0) {
+            monthHeaderView(monthDays: monthDays, occurrencesByDay: occurrencesByDay)
+            selectedDayListView(occurrencesByDay: occurrencesByDay)
         }
         .offset(y: listOffset)
         .opacity(listOpacity)
-        .accessibilityIdentifier("WeekHomeView")
+        .accessibilityIdentifier("MonthHomeView")
     }
 
-    private var weekHeaderView: some View {
-        VStack(spacing: 14) {
+    private func monthHeaderView(
+        monthDays: [Date],
+        occurrencesByDay: [String: [TodoOccurrenceData]]
+    ) -> some View {
+        VStack(spacing: 12) {
             HStack {
-                Button(action: { shiftWeek(by: -1) }) {
+                Button(action: { shiftMonth(by: -1) }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(WarmTheme.textSecondary)
@@ -309,15 +303,15 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .background(Circle().fill(WarmTheme.secondaryBackground))
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("PreviousWeekButton")
-                .accessibilityLabel(String(localized: "a11y.previous_week"))
+                .accessibilityIdentifier("PreviousMonthButton")
+                .accessibilityLabel(String(localized: "a11y.previous_month"))
 
-                Text(weekRangeTitle)
+                Text(monthTitle)
                     .font(WarmFont.headline(16))
                     .foregroundColor(WarmTheme.textPrimary)
                     .frame(maxWidth: .infinity)
 
-                Button(action: { shiftWeek(by: 1) }) {
+                Button(action: { shiftMonth(by: 1) }) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(WarmTheme.textSecondary)
@@ -325,8 +319,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .background(Circle().fill(WarmTheme.secondaryBackground))
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("NextWeekButton")
-                .accessibilityLabel(String(localized: "a11y.next_week"))
+                .accessibilityIdentifier("NextMonthButton")
+                .accessibilityLabel(String(localized: "a11y.next_month"))
 
                 Button(action: jumpToToday) {
                     Text(String(localized: "home.week.today_button"))
@@ -337,13 +331,22 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("TodayWeekButton")
-                .accessibilityLabel(String(localized: "a11y.today_week"))
+                .accessibilityIdentifier("TodayMonthButton")
+                .accessibilityLabel(String(localized: "a11y.today_month"))
             }
 
             HStack(spacing: 6) {
-                ForEach(visibleWeekDays, id: \.self) { day in
-                    weekDayButton(for: day)
+                ForEach(visibleWeekDaysForHeader, id: \.self) { day in
+                    Text(shortWeekday(for: day))
+                        .font(WarmFont.caption(11))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
+                ForEach(monthDays, id: \.self) { day in
+                    monthDayButton(for: day, occurrencesByDay: occurrencesByDay)
                 }
             }
         }
@@ -353,40 +356,38 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .background(WarmTheme.background.opacity(0.94))
     }
 
-    private var weekRangeTitle: String {
-        guard let first = visibleWeekDays.first,
-              let last = visibleWeekDays.last else {
-            return String(localized: "home.week.this_week")
-        }
-        let range = "\(first.formatted(.dateTime.month().day())) - \(last.formatted(.dateTime.month().day()))"
-        if visibleWeekDays.contains(where: calendar.isDateInToday) {
-            return String(localized: "home.week.this_week_range \(range)")
-        }
-        return range
+    private var visibleWeekDaysForHeader: [Date] {
+        let monday = startOfWeek(for: Date())
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: monday) }
     }
 
-    private func weekDayButton(for day: Date) -> some View {
+    private var monthTitle: String {
+        visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+    }
+
+    private func monthDayButton(
+        for day: Date,
+        occurrencesByDay: [String: [TodoOccurrenceData]]
+    ) -> some View {
         let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
         let isToday = calendar.isDateInToday(day)
-        let dayTodos = todos(on: day)
-        let hasHighPriority = dayTodos.contains { $0.priority == .high && !$0.isCompleted }
+        let isCurrentMonth = calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month)
+        let dayOccurrences = occurrences(on: day, in: occurrencesByDay)
+        let hasHighPriority = dayOccurrences.contains { $0.todo.priority == .high && !$0.isCompleted }
 
         return Button {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 selectedDate = calendar.startOfDay(for: day)
+                visibleMonthAnchor = calendar.startOfDay(for: day)
             }
         } label: {
-            VStack(spacing: 6) {
-                Text(shortWeekday(for: day))
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
-
+            VStack(spacing: 5) {
                 Text(day.formatted(.dateTime.day(.twoDigits)))
-                    .font(WarmFont.headline(15))
-                    .foregroundColor(isSelected ? .white : WarmTheme.textPrimary)
+                    .font(WarmFont.headline(14))
+                    .foregroundColor(isSelected ? .white : (isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
 
                 HStack(spacing: 2) {
-                    ForEach(0..<min(dayTodos.count, 3), id: \.self) { index in
+                    ForEach(0..<min(dayOccurrences.count, 3), id: \.self) { index in
                         Circle()
                             .fill(hasHighPriority && index == 0 ? WarmTheme.urgent : (isSelected ? Color.white : WarmTheme.primary))
                             .frame(width: 4, height: 4)
@@ -395,32 +396,33 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 .frame(height: 5)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 76)
+            .frame(height: 48)
             .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(isSelected ? WarmTheme.primary : Color.white.opacity(0.9))
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? WarmTheme.primary : Color.white.opacity(isCurrentMonth ? 0.9 : 0.45))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: 10)
                             .stroke(isToday && !isSelected ? WarmTheme.primary.opacity(0.55) : Color.clear, lineWidth: 1.5)
                     )
                     .shadow(color: isSelected ? WarmTheme.shadowMedium : WarmTheme.shadowLight, radius: isSelected ? 8 : 4, x: 0, y: 3)
             )
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("WeekDay_\(day.formatted(.dateTime.year().month().day()))")
+        .accessibilityIdentifier("MonthDay_\(day.formatted(.dateTime.year().month().day()))")
     }
 
-    private var selectedDayListView: some View {
-        let uncompleted = selectedDayUncompletedTodos
-        let completed = selectedDayCompletedTodos
+    private func selectedDayListView(occurrencesByDay: [String: [TodoOccurrenceData]]) -> some View {
+        let selectedOccurrences = occurrences(on: selectedDate, in: occurrencesByDay)
+        let uncompleted = selectedOccurrences.filter { !$0.isCompleted }
+        let completed = selectedOccurrences.filter { $0.isCompleted }
 
         return List {
             Section {
                 if uncompleted.isEmpty {
                     emptySelectedDayRow
                 } else {
-                    ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, todo in
-                        todoRow(todo, index: index)
+                    ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, occurrence in
+                        occurrenceRow(occurrence, index: index)
                     }
                 }
             } header: {
@@ -429,8 +431,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
             if !completed.isEmpty {
                 Section {
-                    ForEach(Array(zip(completed.indices, completed)), id: \.1.id) { idx, todo in
-                        todoRow(todo, index: uncompleted.count + idx)
+                    ForEach(Array(zip(completed.indices, completed)), id: \.1.id) { idx, occurrence in
+                        occurrenceRow(occurrence, index: uncompleted.count + idx)
                     }
                 } header: {
                     daySectionHeader(title: String(localized: "home.completed_section \(completed.count)"), count: completed.count)
@@ -440,7 +442,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             if !unscheduledTodos.isEmpty {
                 Section {
                     ForEach(Array(zip(unscheduledTodos.indices, unscheduledTodos)), id: \.1.id) { idx, todo in
-                        todoRow(todo, index: selectedDayTodos.count + idx)
+                        todoRow(todo, index: selectedOccurrences.count + idx)
                     }
                 } header: {
                     daySectionHeader(title: String(localized: "home.week.unscheduled"), count: unscheduledTodos.count)
@@ -515,6 +517,36 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .onAppear {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(todo.id)
+            }
+        }
+        .transition(.asymmetric(
+            insertion: .scale(scale: 0.9).combined(with: .opacity),
+            removal: .scale(scale: 0.95).combined(with: .opacity)
+        ))
+    }
+
+    private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
+        WarmTodoCard(
+            index: index,
+            todo: occurrence.todo,
+            onToggle: { toggleOccurrence(occurrence) },
+            onTap: { selectedTodo = occurrence.todo }
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 7, leading: 20, bottom: 7, trailing: 20))
+        .listRowBackground(Color.clear)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                deleteTodo(occurrence.todo.id)
+            } label: {
+                Label(String(localized: "home.delete"), systemImage: "trash")
+            }
+        }
+        .opacity(cardAppeared.contains(occurrence.todo.id) ? 1 : 0)
+        .offset(y: cardAppeared.contains(occurrence.todo.id) ? 0 : 20)
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(index) * 0.06)) {
+                _ = cardAppeared.insert(occurrence.todo.id)
             }
         }
         .transition(.asymmetric(
@@ -641,7 +673,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         if !hasStartedEntranceAnimation {
             let today = calendar.startOfDay(for: Date())
             selectedDate = today
-            visibleWeekAnchor = today
+            visibleMonthAnchor = today
             hasStartedEntranceAnimation = true
         }
 
@@ -670,11 +702,21 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
     }
 
-    private func todos(on day: Date) -> [TodoItemData] {
-        store.todos.filter { todo in
-            guard let dueDate = todo.dueDate else { return false }
-            return calendar.isDate(dueDate, inSameDayAs: day)
+    private func monthOccurrencesByDay(for monthDays: [Date]) -> [String: [TodoOccurrenceData]] {
+        guard let firstDay = monthDays.first,
+              let lastDay = monthDays.last else {
+            return [:]
         }
+        return Dictionary(grouping: store.calendarOccurrences(from: firstDay, to: lastDay)) { occurrence in
+            TodoOccurrenceData.dayKey(for: occurrence.occurrenceDate, calendar: calendar)
+        }
+    }
+
+    private func occurrences(
+        on day: Date,
+        in occurrencesByDay: [String: [TodoOccurrenceData]]
+    ) -> [TodoOccurrenceData] {
+        occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
     private func shortWeekday(for date: Date) -> String {
@@ -689,14 +731,19 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         }
     }
 
-    private func shiftWeek(by value: Int) {
-        guard let newAnchor = calendar.date(byAdding: .weekOfYear, value: value, to: visibleWeekAnchor),
-              let newSelectedDate = calendar.date(byAdding: .weekOfYear, value: value, to: selectedDate) else {
+    private func startOfMonth(for date: Date) -> Date {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: components) ?? calendar.startOfDay(for: date)
+    }
+
+    private func shiftMonth(by value: Int) {
+        guard let newAnchor = calendar.date(byAdding: .month, value: value, to: visibleMonthAnchor) else {
             return
         }
+        let normalizedAnchor = startOfMonth(for: newAnchor)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            visibleWeekAnchor = calendar.startOfDay(for: newAnchor)
-            selectedDate = calendar.startOfDay(for: newSelectedDate)
+            visibleMonthAnchor = normalizedAnchor
+            selectedDate = normalizedAnchor
         }
     }
 
@@ -704,7 +751,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         let today = calendar.startOfDay(for: Date())
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             selectedDate = today
-            visibleWeekAnchor = today
+            visibleMonthAnchor = today
         }
     }
 
@@ -744,6 +791,20 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
             do {
                 try store.toggleComplete(id)
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                coordinator.showToast(
+                    message: ErrorMessages.storageError,
+                    style: .warning
+                )
+            }
+        }
+    }
+
+    private func toggleOccurrence(_ occurrence: TodoOccurrenceData) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            do {
+                try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 coordinator.showToast(
@@ -839,6 +900,16 @@ struct WarmTodoCard: View {
                                 .font(WarmFont.caption(12))
                         }
                         .foregroundColor(WarmTheme.textSecondary)
+                    }
+
+                    if let recurrenceRule = todo.recurrenceRule, !todo.isCompleted {
+                        HStack(spacing: 4) {
+                            Image(systemName: "repeat")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(recurrenceRule.displayText)
+                                .font(WarmFont.caption(12))
+                        }
+                        .foregroundColor(WarmTheme.primaryDark)
                     }
                 }
 

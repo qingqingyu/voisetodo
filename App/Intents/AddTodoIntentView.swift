@@ -32,6 +32,11 @@ struct AddTodoIntentView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
+                    if let recurrenceRule = todo.recurrenceRule {
+                        Label(recurrenceRule.displayText, systemImage: "repeat")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.vertical, 4)
             }

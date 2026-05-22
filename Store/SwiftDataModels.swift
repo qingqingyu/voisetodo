@@ -11,6 +11,10 @@ final class TodoItem {
     var detail: String?
     var dueHint: String?
     var dueDate: Date?
+    var recurrenceFrequencyRaw: String?
+    var recurrenceWeekdaysRaw: String?
+    var recurrenceDayOfMonth: Int?
+    var recurrenceEndDate: Date?
     var priorityRaw: String
     var categoryRaw: String
     var isCompleted: Bool
@@ -41,6 +45,7 @@ final class TodoItem {
         detail: String? = nil,
         dueHint: String? = nil,
         dueDate: Date? = nil,
+        recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
         isCompleted: Bool = false,
@@ -54,6 +59,10 @@ final class TodoItem {
         self.detail = detail
         self.dueHint = dueHint
         self.dueDate = dueDate
+        self.recurrenceFrequencyRaw = recurrenceRule?.frequency.rawValue
+        self.recurrenceWeekdaysRaw = Self.encodeWeekdays(recurrenceRule?.weekdays ?? [])
+        self.recurrenceDayOfMonth = recurrenceRule?.dayOfMonth
+        self.recurrenceEndDate = recurrenceRule?.endDate
         self.priorityRaw = priority.rawValue
         self.categoryRaw = category.rawValue
         self.isCompleted = isCompleted
@@ -74,6 +83,7 @@ final class TodoItem {
             detail: detail,
             dueHint: dueHint,
             dueDate: dueDate,
+            recurrenceRule: recurrenceRule,
             priority: Priority(rawValue: priorityRaw) ?? .normal,
             category: TodoCategory(rawValue: categoryRaw) ?? .other,
             isCompleted: isCompleted,
@@ -82,6 +92,47 @@ final class TodoItem {
             needsAIProcessing: needsAIProcessing,
             sortOrder: sortOrder
         )
+    }
+
+    var recurrenceRule: RecurrenceRule? {
+        get {
+            guard let raw = recurrenceFrequencyRaw,
+                  let frequency = RecurrenceFrequency(rawValue: raw) else {
+                return nil
+            }
+            let rule = RecurrenceRule(
+                frequency: frequency,
+                weekdays: Self.decodeWeekdays(recurrenceWeekdaysRaw),
+                dayOfMonth: recurrenceDayOfMonth,
+                endDate: recurrenceEndDate
+            )
+            return rule.isValid ? rule : nil
+        }
+        set {
+            recurrenceFrequencyRaw = newValue?.frequency.rawValue
+            recurrenceWeekdaysRaw = Self.encodeWeekdays(newValue?.weekdays ?? [])
+            recurrenceDayOfMonth = newValue?.dayOfMonth
+            recurrenceEndDate = newValue?.endDate
+        }
+    }
+
+    private static func encodeWeekdays(_ weekdays: [Int]) -> String? {
+        let encoded = weekdays
+            .filter { (1...7).contains($0) }
+            .uniqued()
+            .sorted()
+            .map(String.init)
+            .joined(separator: ",")
+        return encoded.isEmpty ? nil : encoded
+    }
+
+    private static func decodeWeekdays(_ raw: String?) -> [Int] {
+        raw?
+            .split(separator: ",")
+            .compactMap { Int($0) }
+            .filter { (1...7).contains($0) }
+            .uniqued()
+            .sorted() ?? []
     }
 }
 
@@ -104,6 +155,7 @@ extension TodoItem {
                 title: extracted.title,
                 detail: extracted.detail
             ),
+            recurrenceRule: extracted.recurrenceRule,
             priority: extracted.priority,
             category: extracted.categoryHint,
             isCompleted: false,
@@ -127,5 +179,74 @@ extension TodoItem {
             rawTranscript: transcript,
             needsAIProcessing: true
         )
+    }
+}
+
+/// 重复任务某一天的完成记录。
+@Model
+final class TodoOccurrenceCompletion {
+    @Attribute(.unique) var occurrenceKey: String
+    var id: UUID
+    var todoId: UUID
+    var occurrenceDate: Date
+    var completedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        todoId: UUID,
+        occurrenceDate: Date,
+        completedAt: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        let normalizedDate = calendar.startOfDay(for: occurrenceDate)
+        self.id = id
+        self.todoId = todoId
+        self.occurrenceDate = normalizedDate
+        self.completedAt = completedAt
+        self.occurrenceKey = TodoOccurrenceCompletion.key(todoId: todoId, occurrenceDate: normalizedDate, calendar: calendar)
+    }
+
+    static func key(todoId: UUID, occurrenceDate: Date, calendar: Calendar = .current) -> String {
+        "\(todoId.uuidString)-\(TodoOccurrenceData.dayKey(for: occurrenceDate, calendar: calendar))"
+    }
+}
+
+enum WidgetTodoFetch {
+    static func recentTodos(
+        context: ModelContext,
+        today: Date = Date(),
+        limit: Int,
+        calendar: Calendar = .current
+    ) throws -> [TodoItemData] {
+        guard limit > 0 else { return [] }
+
+        let descriptor = FetchDescriptor<TodoItem>(
+            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
+        )
+        let items = try context.fetch(descriptor)
+
+        let day = calendar.startOfDay(for: today)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+        let completionDescriptor = FetchDescriptor<TodoOccurrenceCompletion>(
+            predicate: #Predicate { completion in
+                completion.occurrenceDate >= day && completion.occurrenceDate < tomorrow
+            }
+        )
+        let completionKeys = Set(try context.fetch(completionDescriptor).map(\.occurrenceKey))
+
+        return WidgetTodoFilter.visibleTodos(
+            from: items.map { $0.toData() },
+            completionKeys: completionKeys,
+            today: day,
+            limit: limit,
+            calendar: calendar
+        )
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

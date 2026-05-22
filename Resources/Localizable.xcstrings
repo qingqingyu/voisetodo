@@ -981,8 +981,8 @@
     },
     "siri.result.offline" : {
       "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已离线保存，联网后自动提取" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved offline, will extract when online" } }
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络不可用，已用本地规则保存" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No network. Saved using local rules." } }
       }
     },
     "siri.result.view_in_app" : {
@@ -1019,6 +1019,90 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在识别更多待办..." } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Recognizing more todos..." } }
+      }
+    },
+    "detail.section.recurrence" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重复" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repeat" } }
+      }
+    },
+    "recurrence.none" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不重复" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "None" } }
+      }
+    },
+    "recurrence.daily" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily" } }
+      }
+    },
+    "recurrence.weekly %@" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周 %@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly %@" } }
+      }
+    },
+    "recurrence.weekly_short" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly" } }
+      }
+    },
+    "recurrence.monthly %lld" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月 %lld 号" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Monthly on day %lld" } }
+      }
+    },
+    "recurrence.monthly_short" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Monthly" } }
+      }
+    },
+    "recurrence.monthly_day_prefix" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月第" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Day" } }
+      }
+    },
+    "recurrence.monthly_day_suffix" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "号" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "of each month" } }
+      }
+    },
+    "recurrence.validation.weekly_required" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请选择至少一天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose at least one day" } }
+      }
+    },
+    "recurrence.validation.monthly_day" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入 1 到 31 之间的日期" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a day from 1 to 31" } }
+      }
+    },
+    "a11y.previous_month" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上个月" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Previous month" } }
+      }
+    },
+    "a11y.next_month" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下个月" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Next month" } }
+      }
+    },
+    "a11y.today_month" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回到今天所在月份" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to this month" } }
       }
     }
   },

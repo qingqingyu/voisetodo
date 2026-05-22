@@ -43,6 +43,148 @@ enum TodoCategory: String, Codable, CaseIterable {
     }
 }
 
+// MARK: - 重复规则
+
+/// 待办重复频率
+enum RecurrenceFrequency: String, Codable, CaseIterable {
+    case daily
+    case weekly
+    case monthly
+}
+
+/// 待办重复规则。weekday 使用 Calendar 的 weekday 语义：1=周日，2=周一 ... 7=周六。
+struct RecurrenceRule: Codable, Hashable {
+    var frequency: RecurrenceFrequency
+    var weekdays: [Int]
+    var dayOfMonth: Int?
+    var endDate: Date?
+
+    init(
+        frequency: RecurrenceFrequency,
+        weekdays: [Int] = [],
+        dayOfMonth: Int? = nil,
+        endDate: Date? = nil
+    ) {
+        self.frequency = frequency
+        self.weekdays = weekdays
+            .filter { (1...7).contains($0) }
+            .uniqued()
+            .sorted()
+        self.dayOfMonth = dayOfMonth.flatMap { (1...31).contains($0) ? $0 : nil }
+        self.endDate = endDate
+    }
+
+    var isValid: Bool {
+        switch frequency {
+        case .daily:
+            return true
+        case .weekly:
+            return !weekdays.isEmpty
+        case .monthly:
+            return dayOfMonth != nil
+        }
+    }
+
+    func occurs(on date: Date, startDate: Date, calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        let start = calendar.startOfDay(for: startDate)
+        guard day >= start else { return false }
+        if let endDate, day > calendar.startOfDay(for: endDate) {
+            return false
+        }
+
+        switch frequency {
+        case .daily:
+            return true
+        case .weekly:
+            return weekdays.contains(calendar.component(.weekday, from: day))
+        case .monthly:
+            guard let dayOfMonth else { return false }
+            return calendar.component(.day, from: day) == dayOfMonth
+        }
+    }
+
+    var displayText: String {
+        switch frequency {
+        case .daily:
+            return String(localized: "recurrence.daily")
+        case .weekly:
+            let names = weekdays.map { RecurrenceRule.shortWeekdayName($0) }.joined(separator: " ")
+            return String(localized: "recurrence.weekly \(names)")
+        case .monthly:
+            return String(localized: "recurrence.monthly \(dayOfMonth ?? 1)")
+        }
+    }
+
+    private static func shortWeekdayName(_ weekday: Int) -> String {
+        switch weekday {
+        case 1: return String(localized: "home.week.sun")
+        case 2: return String(localized: "home.week.mon")
+        case 3: return String(localized: "home.week.tue")
+        case 4: return String(localized: "home.week.wed")
+        case 5: return String(localized: "home.week.thu")
+        case 6: return String(localized: "home.week.fri")
+        default: return String(localized: "home.week.sat")
+        }
+    }
+}
+
+/// 日历中某一天实际出现的一条待办。
+struct TodoOccurrenceData: Identifiable, Codable, Hashable {
+    let todo: TodoItemData
+    let occurrenceDate: Date
+    var isCompleted: Bool
+
+    var id: String {
+        "\(todo.id.uuidString)-\(Self.dayKey(for: occurrenceDate))"
+    }
+
+    static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
+        let comps = calendar.dateComponents([.year, .month, .day], from: calendar.startOfDay(for: date))
+        return String(format: "%04d-%02d-%02d", comps.year ?? 0, comps.month ?? 0, comps.day ?? 0)
+    }
+}
+
+enum WidgetTodoFilter {
+    static func visibleTodos(
+        from items: [TodoItemData],
+        completionKeys: Set<String>,
+        today: Date,
+        limit: Int,
+        calendar: Calendar = .current
+    ) -> [TodoItemData] {
+        guard limit > 0 else { return [] }
+
+        let day = calendar.startOfDay(for: today)
+        var scheduled: [TodoItemData] = []
+        var unscheduled: [TodoItemData] = []
+
+        for item in items {
+            var data = item
+            if let rule = data.recurrenceRule {
+                guard rule.occurs(on: day, startDate: data.dueDate ?? data.createdAt, calendar: calendar) else {
+                    continue
+                }
+                let key = "\(data.id.uuidString)-\(TodoOccurrenceData.dayKey(for: day, calendar: calendar))"
+                guard !completionKeys.contains(key) else { continue }
+                data.isCompleted = false
+                scheduled.append(data)
+                continue
+            }
+            guard !data.isCompleted else { continue }
+            if data.dueDate == nil {
+                unscheduled.append(data)
+                continue
+            }
+            if calendar.isDate(data.dueDate ?? day, inSameDayAs: day) {
+                scheduled.append(data)
+            }
+        }
+
+        return Array((scheduled + unscheduled).prefix(limit))
+    }
+}
+
 // MARK: - AI 提取结果（从 API 返回的结构）
 
 /// 单条提取的待办（AI 返回格式）
@@ -51,6 +193,7 @@ struct ExtractedTodo: Identifiable, Codable {
     var title: String
     var detail: String
     var dueHint: String?
+    var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var categoryHint: TodoCategory
 
@@ -59,15 +202,29 @@ struct ExtractedTodo: Identifiable, Codable {
         case title
         case detail
         case dueHint
+        case recurrenceRule
         case priority
         case categoryHint
     }
 
-    init(id: UUID = UUID(), title: String, detail: String = "", dueHint: String? = nil, priority: Priority = .normal, categoryHint: TodoCategory = .other) {
+    init(
+        id: UUID = UUID(),
+        title: String,
+        detail: String = "",
+        dueHint: String? = nil,
+        recurrenceRule: RecurrenceRule? = nil,
+        priority: Priority = .normal,
+        categoryHint: TodoCategory = .other
+    ) {
         self.id = id
         self.title = title
         self.detail = detail
         self.dueHint = Self.sanitizeDueHint(dueHint)
+        self.recurrenceRule = recurrenceRule ?? RecurrenceRuleResolver.resolve(
+            dueHint: dueHint,
+            title: title,
+            detail: detail
+        )
         self.priority = priority
         self.categoryHint = categoryHint
     }
@@ -90,6 +247,20 @@ struct ExtractedTodo: Identifiable, Codable {
         detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
         let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)
         dueHint = Self.sanitizeDueHint(rawDueHint)
+        if container.contains(.recurrenceRule) {
+            let decodedRule = try? container.decodeIfPresent(RecurrenceRule.self, forKey: .recurrenceRule)
+            if let rule = decodedRule ?? nil, rule.isValid {
+                recurrenceRule = rule
+            } else {
+                recurrenceRule = nil
+            }
+        } else {
+            recurrenceRule = RecurrenceRuleResolver.resolve(
+                dueHint: dueHint,
+                title: title,
+                detail: detail
+            )
+        }
         priority = try container.decode(Priority.self, forKey: .priority)
         categoryHint = try container.decode(TodoCategory.self, forKey: .categoryHint)
     }
@@ -200,6 +371,103 @@ enum TodoDueDateResolver {
     }
 }
 
+/// 轻量重复规则解析器：只处理 v1 明确表达，模糊表达继续交给 dueHint。
+enum RecurrenceRuleResolver {
+    static func resolve(dueHint: String?, title: String = "", detail: String = "") -> RecurrenceRule? {
+        let text = [dueHint, title, detail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !text.isEmpty else { return nil }
+
+        let lower = text.lowercased()
+        if text.contains("每天") || text.contains("每日") ||
+            lower.containsEnglishPhrase("every day") ||
+            lower.containsEnglishPhrase("daily") {
+            return RecurrenceRule(frequency: .daily)
+        }
+
+        if let monthlyDay = monthlyDay(in: text) {
+            return RecurrenceRule(frequency: .monthly, dayOfMonth: monthlyDay)
+        }
+
+        if isWeeklyExpression(text) {
+            let weekdays = weekdayNumbers(in: text)
+            if !weekdays.isEmpty {
+                return RecurrenceRule(frequency: .weekly, weekdays: weekdays)
+            }
+        }
+
+        return nil
+    }
+
+    private static func isWeeklyExpression(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return text.contains("每周") ||
+            text.contains("每星期") ||
+            text.contains("每礼拜") ||
+            lower.containsEnglishPhrase("every week") ||
+            lower.containsEnglishPhrase("weekly") ||
+            TodoDueDateResolver.englishWeekdays.contains { entry in
+                entry.tokens.contains { lower.containsEnglishPhrase("every \($0)") }
+            }
+    }
+
+    private static func weekdayNumbers(in text: String) -> [Int] {
+        let chineseWeekdays: [(tokens: [String], value: Int)] = [
+            (["周日", "星期日", "礼拜日", "周天", "星期天", "礼拜天", "每周日", "每星期日"], 1),
+            (["周一", "星期一", "礼拜一", "每周一", "每星期一"], 2),
+            (["周二", "星期二", "礼拜二", "每周二", "每星期二"], 3),
+            (["周三", "星期三", "礼拜三", "每周三", "每星期三"], 4),
+            (["周四", "星期四", "礼拜四", "每周四", "每星期四"], 5),
+            (["周五", "星期五", "礼拜五", "每周五", "每星期五"], 6),
+            (["周六", "星期六", "礼拜六", "每周六", "每星期六"], 7)
+        ]
+
+        var values: [Int] = chineseWeekdays.compactMap { entry in
+            entry.tokens.contains { text.contains($0) } ? entry.value : nil
+        }
+
+        let lower = text.lowercased()
+        for entry in TodoDueDateResolver.englishWeekdays {
+            if entry.tokens.contains(where: { lower.containsEnglishPhrase("every \($0)") || lower.containsEnglishPhrase($0) }) {
+                values.append(entry.value)
+            }
+        }
+
+        return values.uniqued().sorted()
+    }
+
+    private static func monthlyDay(in text: String) -> Int? {
+        let lower = text.lowercased()
+        let hasMonthlyCue = text.contains("每月") ||
+            text.contains("每个月") ||
+            lower.containsEnglishPhrase("every month") ||
+            lower.containsEnglishPhrase("monthly")
+        guard hasMonthlyCue else { return nil }
+
+        let patterns = [
+            #"每(?:个)?月\s*(\d{1,2})\s*[号日]"#,
+            #"monthly\s+on\s+the\s+(\d{1,2})"#,
+            #"every\s+month\s+on\s+the\s+(\d{1,2})"#
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            guard let match = regex.firstMatch(in: text, range: range),
+                  let dayRange = Range(match.range(at: 1), in: text),
+                  let day = Int(text[dayRange]),
+                  (1...31).contains(day) else {
+                continue
+            }
+            return day
+        }
+
+        return nil
+    }
+}
+
 private extension String {
     func containsEnglishPhrase(_ phrase: String) -> Bool {
         let escaped = NSRegularExpression.escapedPattern(for: phrase)
@@ -215,6 +483,13 @@ private extension String {
             return false
         }
         return tokens.contains { containsEnglishPhrase("next \($0)") }
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }
 
@@ -248,6 +523,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
     var detail: String?
     var dueHint: String?
     var dueDate: Date?
+    var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var category: TodoCategory
     var isCompleted: Bool
@@ -262,6 +538,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         detail: String? = nil,
         dueHint: String? = nil,
         dueDate: Date? = nil,
+        recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
         isCompleted: Bool = false,
@@ -275,6 +552,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.detail = detail
         self.dueHint = dueHint
         self.dueDate = dueDate
+        self.recurrenceRule = recurrenceRule
         self.priority = priority
         self.category = category
         self.isCompleted = isCompleted
@@ -295,6 +573,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
             title: extracted.title,
             detail: extracted.detail
         )
+        self.recurrenceRule = extracted.recurrenceRule
         self.priority = extracted.priority
         self.category = extracted.categoryHint
         self.isCompleted = false

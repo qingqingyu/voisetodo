@@ -150,6 +150,14 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
 
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {}
 
+    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {}
+
+    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
+
+    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] { [] }
+
+    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {}
+
     func pendingItems() -> [TodoItemData] {
         todos.filter(\.needsAIProcessing)
     }

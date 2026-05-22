@@ -59,7 +59,7 @@ struct AddTodoIntent: AppIntent {
 
         let context: ModelContext
         do {
-            let schema = Schema([TodoItem.self])
+            let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
             let configuration = ModelConfiguration(
                 schema: schema,
                 isStoredInMemoryOnly: false,
@@ -80,7 +80,6 @@ struct AddTodoIntent: AppIntent {
 
         for extracted in extractedTodos {
             let item = TodoItem.from(extracted, rawTranscript: trimmed)
-            item.needsAIProcessing = isOffline
             item.sortOrder = baseSortOrder
             baseSortOrder -= 1
             context.insert(item)

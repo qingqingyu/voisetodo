@@ -19,6 +19,9 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
     @State private var editedCategory: TodoCategory
     @State private var editedPriority: Priority
     @State private var editedDueHint: String
+    @State private var editedRecurrenceFrequency: RecurrenceFrequency?
+    @State private var editedWeekdays: Set<Int>
+    @State private var editedDayOfMonth: String
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
 
@@ -31,12 +34,21 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
         _editedCategory = State(initialValue: todo.category)
         _editedPriority = State(initialValue: todo.priority)
         _editedDueHint = State(initialValue: todo.dueHint ?? "")
+        _editedRecurrenceFrequency = State(initialValue: todo.recurrenceRule?.frequency)
+        _editedWeekdays = State(initialValue: Set(todo.recurrenceRule?.weekdays ?? []))
+        _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
     }
 
     // MARK: - Body
 
     private var categoryColor: Color {
         WarmTheme.color(for: editedCategory)
+    }
+
+    private var canSave: Bool {
+        hasChanges &&
+            !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            recurrenceValidationMessage == nil
     }
 
     var body: some View {
@@ -116,6 +128,8 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                         }
                     }
 
+                    recurrenceEditorCard
+
                     // 元信息
                     detailCard {
                         VStack(alignment: .leading, spacing: 8) {
@@ -175,13 +189,13 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 }
             }
 
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(String(localized: "detail.save")) { saveChanges() }
-                    .font(WarmFont.headline(16))
-                    .foregroundColor(hasChanges && !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? WarmTheme.primary : WarmTheme.textMuted)
-                    .disabled(!hasChanges || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(String(localized: "detail.save")) { saveChanges() }
+                        .font(WarmFont.headline(16))
+                        .foregroundColor(canSave ? WarmTheme.primary : WarmTheme.textMuted)
+                        .disabled(!canSave)
+                }
             }
-        }
         .alert(String(localized: "detail.confirm_delete"), isPresented: $showDeleteConfirmation) {
             Button(String(localized: "detail.cancel"), role: .cancel) {}
             Button(String(localized: "detail.delete"), role: .destructive) { deleteTodo() }
@@ -268,16 +282,186 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Recurrence Editor
+
+    private var recurrenceEditorCard: some View {
+        detailCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(String(localized: "detail.section.recurrence"))
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.textSecondary)
+
+                HStack(spacing: 8) {
+                    recurrenceModeButton(nil, title: String(localized: "recurrence.none"))
+                    recurrenceModeButton(.daily, title: String(localized: "recurrence.daily"))
+                    recurrenceModeButton(.weekly, title: String(localized: "recurrence.weekly_short"))
+                    recurrenceModeButton(.monthly, title: String(localized: "recurrence.monthly_short"))
+                }
+
+                if editedRecurrenceFrequency == .weekly {
+                    HStack(spacing: 6) {
+                        ForEach(1...7, id: \.self) { weekday in
+                            weekdayButton(weekday)
+                        }
+                    }
+                }
+
+                if editedRecurrenceFrequency == .monthly {
+                    HStack(spacing: 8) {
+                        Text(String(localized: "recurrence.monthly_day_prefix"))
+                            .font(WarmFont.body(15))
+                            .foregroundColor(WarmTheme.textSecondary)
+                        TextField("1", text: $editedDayOfMonth)
+                            .keyboardType(.numberPad)
+                            .font(WarmFont.body(15))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .frame(width: 52)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(WarmTheme.secondaryBackground)
+                            )
+                            .onChange(of: editedDayOfMonth) { _, _ in checkForChanges() }
+                        Text(String(localized: "recurrence.monthly_day_suffix"))
+                            .font(WarmFont.body(15))
+                            .foregroundColor(WarmTheme.textSecondary)
+                    }
+                }
+
+                if let recurrenceValidationMessage {
+                    Text(recurrenceValidationMessage)
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.warning)
+                }
+            }
+        }
+    }
+
+    private func recurrenceModeButton(_ frequency: RecurrenceFrequency?, title: String) -> some View {
+        let isSelected = editedRecurrenceFrequency == frequency
+        return Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                editedRecurrenceFrequency = frequency
+                if frequency == .weekly && editedWeekdays.isEmpty {
+                    editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
+                }
+                if frequency == .monthly && editedDayOfMonth.isEmpty {
+                    editedDayOfMonth = String(Calendar.current.component(.day, from: Date()))
+                }
+                checkForChanges()
+            }
+        } label: {
+            Text(title)
+                .font(WarmFont.caption(12))
+                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func weekdayButton(_ weekday: Int) -> some View {
+        let isSelected = editedWeekdays.contains(weekday)
+        return Button {
+            if isSelected {
+                editedWeekdays.remove(weekday)
+            } else {
+                editedWeekdays.insert(weekday)
+            }
+            checkForChanges()
+        } label: {
+            Text(shortWeekdayName(weekday))
+                .font(WarmFont.caption(12))
+                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func shortWeekdayName(_ weekday: Int) -> String {
+        switch weekday {
+        case 1: return String(localized: "home.week.sun")
+        case 2: return String(localized: "home.week.mon")
+        case 3: return String(localized: "home.week.tue")
+        case 4: return String(localized: "home.week.wed")
+        case 5: return String(localized: "home.week.thu")
+        case 6: return String(localized: "home.week.fri")
+        default: return String(localized: "home.week.sat")
+        }
+    }
+
+    private var editedRecurrenceRule: RecurrenceRule? {
+        switch editedRecurrenceFrequency {
+        case .daily:
+            return RecurrenceRule(frequency: .daily)
+        case .weekly:
+            return editedWeekdays.isEmpty ? nil : RecurrenceRule(frequency: .weekly, weekdays: Array(editedWeekdays))
+        case .monthly:
+            guard let day = Int(editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  (1...31).contains(day) else {
+                return nil
+            }
+            return RecurrenceRule(frequency: .monthly, dayOfMonth: day)
+        case nil:
+            return nil
+        }
+    }
+
+    private var recurrenceValidationMessage: String? {
+        switch editedRecurrenceFrequency {
+        case .weekly:
+            return editedWeekdays.isEmpty ? String(localized: "recurrence.validation.weekly_required") : nil
+        case .monthly:
+            let trimmed = editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let day = Int(trimmed), (1...31).contains(day) else {
+                return String(localized: "recurrence.validation.monthly_day")
+            }
+            return nil
+        case .daily, nil:
+            return nil
+        }
+    }
+
+    private var recurrenceStateChanged: Bool {
+        if editedRecurrenceFrequency != todo.recurrenceRule?.frequency {
+            return true
+        }
+        switch editedRecurrenceFrequency {
+        case .weekly:
+            return editedWeekdays != Set(todo.recurrenceRule?.weekdays ?? [])
+        case .monthly:
+            return editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines) != (todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
+        case .daily, nil:
+            return false
+        }
+    }
+
     // MARK: - Actions
 
     private func checkForChanges() {
         hasChanges = editedTitle != todo.title ||
                      editedCategory != todo.category ||
                      editedPriority != todo.priority ||
-                     editedDueHint != (todo.dueHint ?? "")
+                     editedDueHint != (todo.dueHint ?? "") ||
+                     recurrenceStateChanged
     }
 
     private func saveChanges() {
+        guard recurrenceValidationMessage == nil else {
+            coordinator.showToast(message: recurrenceValidationMessage ?? ErrorMessages.storageError, style: .warning)
+            return
+        }
+
         do {
             let newCategory = editedCategory != todo.category ? editedCategory : nil
             let newPriority = editedPriority != todo.priority ? editedPriority : nil
@@ -288,7 +472,8 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 title: editedTitle,
                 category: newCategory,
                 priority: newPriority,
-                dueHint: newDueHint
+                dueHint: newDueHint,
+                recurrenceRule: editedRecurrenceRule
             )
 
             WidgetCenter.shared.reloadAllTimelines()

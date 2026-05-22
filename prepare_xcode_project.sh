@@ -176,8 +176,8 @@ echo -e "  ${GREEN}✓${NC} 创建 .xcode_unit_test_files.txt"
 # UI 测试文件
 UI_TEST_FILES=$(cat <<EOF
 # UI 测试文件 (Target: VoiceTodoUITests)
-VoiceTodoUITests/MockSetup.swift
 VoiceTodoUITests/AppLaunchHelper.swift
+VoiceTodoUITests/CalendarHomeUITests.swift
 VoiceTodoUITests/ScenarioTests.swift
 VoiceTodoUITests/WidgetSnapshotTests.swift
 EOF

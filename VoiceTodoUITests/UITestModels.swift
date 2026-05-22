@@ -12,6 +12,7 @@ struct UITestTodoPayload: Codable, Equatable {
     let createdAt: Date
     let rawTranscript: String?
     let needsAIProcessing: Bool
+    let sortOrder: Int
 
     init(
         id: UUID = UUID(),
@@ -24,7 +25,8 @@ struct UITestTodoPayload: Codable, Equatable {
         isCompleted: Bool = false,
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
-        needsAIProcessing: Bool = false
+        needsAIProcessing: Bool = false,
+        sortOrder: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -37,6 +39,7 @@ struct UITestTodoPayload: Codable, Equatable {
         self.createdAt = createdAt
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
+        self.sortOrder = sortOrder
     }
 }
 
