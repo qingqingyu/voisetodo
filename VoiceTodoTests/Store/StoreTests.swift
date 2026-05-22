@@ -521,6 +521,55 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(occurrences.allSatisfy { !$0.isCompleted })
     }
 
+    func testCalendarOccurrencesStopsAtRecurrenceEndDate() throws {
+        // Given: 一个只持续 7 天的每天重复待办
+        let calendar = Calendar(identifier: .gregorian)
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 10)))
+        let rangeEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
+        let item = TodoItemData(
+            title: "小单元测试",
+            recurrenceRule: RecurrenceRule(frequency: .daily, endDate: end),
+            createdAt: start,
+            sortOrder: -1
+        )
+        try sut.seedForUITests([item])
+
+        // When: 查询包含第 8 天的区间
+        let occurrences = sut.calendarOccurrences(from: start, to: rangeEnd)
+
+        // Then: 只展开 7 次，第 8 天不再出现
+        XCTAssertEqual(occurrences.count, 7)
+        XCTAssertEqual(occurrences.map { calendar.component(.day, from: $0.occurrenceDate) }, [4, 5, 6, 7, 8, 9, 10])
+    }
+
+    func testCalendarOccurrencesExpandsBoundedDailyAcrossMonthBoundary() throws {
+        // Given: 一个从 5 月 28 日开始、持续 7 天的每天重复待办
+        let calendar = Calendar(identifier: .gregorian)
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 28)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 3)))
+        let rangeEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 4)))
+        let item = TodoItemData(
+            title: "小单元测试",
+            recurrenceRule: RecurrenceRule(frequency: .daily, endDate: end),
+            createdAt: start,
+            sortOrder: -1
+        )
+        try sut.seedForUITests([item])
+
+        // When: 查询跨月且包含第 8 天的区间
+        let occurrences = sut.calendarOccurrences(from: start, to: rangeEnd)
+
+        // Then: 5 月 28 日到 6 月 3 日出现，第 8 天 6 月 4 日不出现
+        XCTAssertEqual(occurrences.count, 7)
+        XCTAssertEqual(
+            occurrences.map {
+                "\(calendar.component(.month, from: $0.occurrenceDate))-\(calendar.component(.day, from: $0.occurrenceDate))"
+            },
+            ["5-28", "5-29", "5-30", "5-31", "6-1", "6-2", "6-3"]
+        )
+    }
+
     func testToggleRecurringOccurrenceOnlyCompletesSelectedDay() throws {
         // Given: 一个每天重复的待办
         let today = Calendar.current.startOfDay(for: Date())

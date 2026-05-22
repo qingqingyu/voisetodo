@@ -1,5 +1,10 @@
 import Foundation
 
+extension CodingUserInfoKey {
+    static let recurrenceReferenceDate = CodingUserInfoKey(rawValue: "VoiceTodo.recurrenceReferenceDate")!
+    static let recurrenceCalendar = CodingUserInfoKey(rawValue: "VoiceTodo.recurrenceCalendar")!
+}
+
 // MARK: - 枚举类型
 
 /// 优先级
@@ -59,6 +64,13 @@ struct RecurrenceRule: Codable, Hashable {
     var dayOfMonth: Int?
     var endDate: Date?
 
+    private enum CodingKeys: String, CodingKey {
+        case frequency
+        case weekdays
+        case dayOfMonth
+        case endDate
+    }
+
     init(
         frequency: RecurrenceFrequency,
         weekdays: [Int] = [],
@@ -71,7 +83,61 @@ struct RecurrenceRule: Codable, Hashable {
             .uniqued()
             .sorted()
         self.dayOfMonth = dayOfMonth.flatMap { (1...31).contains($0) ? $0 : nil }
-        self.endDate = endDate
+        self.endDate = endDate.map { Calendar.current.startOfDay(for: $0) }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let frequency = try container.decode(RecurrenceFrequency.self, forKey: .frequency)
+        let weekdays = try container.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
+        let dayOfMonth = try container.decodeIfPresent(Int.self, forKey: .dayOfMonth)
+        let endDate = try Self.decodeEndDate(from: container)
+
+        self.init(
+            frequency: frequency,
+            weekdays: weekdays,
+            dayOfMonth: dayOfMonth,
+            endDate: endDate
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(frequency, forKey: .frequency)
+        try container.encode(weekdays, forKey: .weekdays)
+        try container.encodeIfPresent(dayOfMonth, forKey: .dayOfMonth)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
+    }
+
+    private static func decodeEndDate(from container: KeyedDecodingContainer<CodingKeys>) throws -> Date? {
+        if let date = try? container.decodeIfPresent(Date.self, forKey: .endDate) {
+            return date
+        }
+        guard let raw = try? container.decodeIfPresent(String.self, forKey: .endDate),
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return parseEndDateString(raw)
+    }
+
+    private static func parseEndDateString(_ raw: String) -> Date? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let fullDateFormatter = DateFormatter()
+        fullDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        fullDateFormatter.calendar = Calendar(identifier: .gregorian)
+        fullDateFormatter.dateFormat = "yyyy-MM-dd"
+        if let date = fullDateFormatter.date(from: text) {
+            return date
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: text) {
+            return date
+        }
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        return isoFormatter.date(from: text)
     }
 
     var isValid: Bool {
@@ -220,7 +286,8 @@ struct ExtractedTodo: Identifiable, Codable {
         self.title = title
         self.detail = detail
         self.dueHint = Self.sanitizeDueHint(dueHint)
-        self.recurrenceRule = recurrenceRule ?? RecurrenceRuleResolver.resolve(
+        self.recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
+            recurrenceRule,
             dueHint: dueHint,
             title: title,
             detail: detail
@@ -242,6 +309,8 @@ struct ExtractedTodo: Identifiable, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let referenceDate = decoder.userInfo[.recurrenceReferenceDate] as? Date ?? Date()
+        let calendar = decoder.userInfo[.recurrenceCalendar] as? Calendar ?? .current
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         title = try container.decode(String.self, forKey: .title)
         detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
@@ -250,7 +319,14 @@ struct ExtractedTodo: Identifiable, Codable {
         if container.contains(.recurrenceRule) {
             let decodedRule = try? container.decodeIfPresent(RecurrenceRule.self, forKey: .recurrenceRule)
             if let rule = decodedRule ?? nil, rule.isValid {
-                recurrenceRule = rule
+                recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
+                    rule,
+                    dueHint: dueHint,
+                    title: title,
+                    detail: detail,
+                    referenceDate: referenceDate,
+                    calendar: calendar
+                )
             } else {
                 recurrenceRule = nil
             }
@@ -258,7 +334,9 @@ struct ExtractedTodo: Identifiable, Codable {
             recurrenceRule = RecurrenceRuleResolver.resolve(
                 dueHint: dueHint,
                 title: title,
-                detail: detail
+                detail: detail,
+                referenceDate: referenceDate,
+                calendar: calendar
             )
         }
         priority = try container.decode(Priority.self, forKey: .priority)
@@ -373,32 +451,162 @@ enum TodoDueDateResolver {
 
 /// 轻量重复规则解析器：只处理 v1 明确表达，模糊表达继续交给 dueHint。
 enum RecurrenceRuleResolver {
-    static func resolve(dueHint: String?, title: String = "", detail: String = "") -> RecurrenceRule? {
-        let text = [dueHint, title, detail]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+    static func resolve(
+        dueHint: String?,
+        title: String = "",
+        detail: String = "",
+        referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) -> RecurrenceRule? {
+        let text = normalizedText(dueHint: dueHint, title: title, detail: detail)
         guard !text.isEmpty else { return nil }
+
+        let endDate = inferredEndDate(
+            in: text,
+            dueHint: dueHint,
+            title: title,
+            detail: detail,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
 
         let lower = text.lowercased()
         if text.contains("每天") || text.contains("每日") ||
             lower.containsEnglishPhrase("every day") ||
             lower.containsEnglishPhrase("daily") {
-            return RecurrenceRule(frequency: .daily)
+            return RecurrenceRule(frequency: .daily, endDate: endDate)
         }
 
         if let monthlyDay = monthlyDay(in: text) {
-            return RecurrenceRule(frequency: .monthly, dayOfMonth: monthlyDay)
+            return RecurrenceRule(frequency: .monthly, dayOfMonth: monthlyDay, endDate: endDate)
         }
 
         if isWeeklyExpression(text) {
             let weekdays = weekdayNumbers(in: text)
             if !weekdays.isEmpty {
-                return RecurrenceRule(frequency: .weekly, weekdays: weekdays)
+                return RecurrenceRule(frequency: .weekly, weekdays: weekdays, endDate: endDate)
             }
         }
 
         return nil
+    }
+
+    static func ruleWithInferredEndDate(
+        _ rule: RecurrenceRule?,
+        dueHint: String?,
+        title: String = "",
+        detail: String = "",
+        referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) -> RecurrenceRule? {
+        guard var rule else {
+            return resolve(
+                dueHint: dueHint,
+                title: title,
+                detail: detail,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+        }
+        guard rule.endDate == nil else { return rule }
+
+        let text = normalizedText(dueHint: dueHint, title: title, detail: detail)
+        rule.endDate = inferredEndDate(
+            in: text,
+            dueHint: dueHint,
+            title: title,
+            detail: detail,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+        return rule
+    }
+
+    private static func normalizedText(dueHint: String?, title: String, detail: String) -> String {
+        let text = [dueHint, title, detail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return text
+    }
+
+    private static func inferredEndDate(
+        in text: String,
+        dueHint: String?,
+        title: String,
+        detail: String,
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> Date? {
+        guard let dayCount = durationDays(in: text), dayCount > 0 else { return nil }
+        let start = TodoDueDateResolver.resolve(
+            dueHint: dueHint,
+            title: title,
+            detail: detail,
+            referenceDate: referenceDate,
+            calendar: calendar
+        ) ?? calendar.startOfDay(for: referenceDate)
+        return calendar.date(byAdding: .day, value: dayCount - 1, to: calendar.startOfDay(for: start))
+    }
+
+    private static func durationDays(in text: String) -> Int? {
+        let compactText = text.replacingOccurrences(of: " ", with: "")
+        let chinesePatterns = [
+            #"(?:(?:未来|接下来|接下来的|连续|连着|往后|之后的|未来的))([0-9]{1,3}|[一二两三四五六七八九十]{1,3})天"#,
+            #"([0-9]{1,3}|[一二两三四五六七八九十]{1,3})天(?:内|里|之内)"#
+        ]
+        for pattern in chinesePatterns {
+            if let value = firstRegexCapture(pattern, in: compactText),
+               let days = parseDayCount(value),
+               (1...366).contains(days) {
+                return days
+            }
+        }
+
+        let lower = text.lowercased()
+        let englishPatterns = [
+            #"over\s+the\s+next\s+([0-9]{1,3})\s+days"#,
+            #"for\s+(?:the\s+)?next\s+([0-9]{1,3})\s+days"#,
+            #"next\s+([0-9]{1,3})\s+days"#,
+            #"for\s+([0-9]{1,3})\s+days"#
+        ]
+        for pattern in englishPatterns {
+            if let value = firstRegexCapture(pattern, in: lower),
+               let days = Int(value),
+               (1...366).contains(days) {
+                return days
+            }
+        }
+
+        return nil
+    }
+
+    private static func firstRegexCapture(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              match.numberOfRanges > 1,
+              let captureRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[captureRange])
+    }
+
+    private static func parseDayCount(_ raw: String) -> Int? {
+        if let value = Int(raw) { return value }
+
+        let values: [Character: Int] = [
+            "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+            "六": 6, "七": 7, "八": 8, "九": 9
+        ]
+        if raw == "十" { return 10 }
+        if raw.contains("十") {
+            let parts = raw.split(separator: "十", omittingEmptySubsequences: false)
+            let tens = parts.first?.first.flatMap { values[$0] } ?? 1
+            let ones = parts.dropFirst().first?.first.flatMap { values[$0] } ?? 0
+            return tens * 10 + ones
+        }
+        return raw.first.flatMap { values[$0] }
     }
 
     private static func isWeeklyExpression(_ text: String) -> Bool {

@@ -28,7 +28,7 @@ enum PromptTemplates {
 2. 过滤口语噪音：忽略「嗯」「那个」「就是」「我想想」等填充词
 3. 保留用户原意：不要擅自扩展或拆解。用户说「准备面试」就是「准备面试」，不要拆成子步骤
 4. 提取时间线索：如果提到时间（明天、下周三、月底前），提取为 due_hint 字段。没提到就留 null
-5. 提取重复规则：只有明确出现「每天/每日/每周X/每月X号」时才设置 recurrence_rule；否则为 null
+5. 提取重复规则：只有明确出现「每天/每日/每周X/每月X号」时才设置 recurrence_rule；否则为 null。若出现「未来7天/接下来7天/连续7天」这类有限周期，end_date 用 YYYY-MM-DD 表示最后一次发生日期；无法确定具体日期时设为 null
 6. 识别优先级线索：语气中有紧急感（赶紧、必须、来不及了）标记为 high，否则 normal
 7. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条
 8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」
@@ -175,7 +175,7 @@ Core rules:
 2. Filter filler words: ignore "um", "like", "you know", "let me think" etc.
 3. Preserve user intent: don't expand or split. If the user says "prepare for interview", keep it as is
 4. Extract time cues: if a time is mentioned (tomorrow, next Wednesday, by end of month), capture it in due_hint. Otherwise null
-5. Extract recurrence only for explicit phrases like "every day", "daily", "every Monday", "weekly", or "monthly on the 1st"; otherwise recurrence_rule must be null
+5. Extract recurrence only for explicit phrases like "every day", "daily", "every Monday", "weekly", or "monthly on the 1st"; otherwise recurrence_rule must be null. For bounded phrases like "for the next 7 days", set end_date to the final occurrence date in YYYY-MM-DD when the date can be determined; otherwise use null
 6. Detect urgency: if tone has urgency (ASAP, must, running out of time) mark as high, otherwise normal
 7. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc.
 8. Ambiguous intent: pure state descriptions ("I'm so tired") → don't extract; implied action ("so tired, need to see a doctor") → extract "see a doctor"
