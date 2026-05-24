@@ -49,6 +49,9 @@ protocol TodoStoreProtocol: ObservableObject {
     /// 批量替换多个待处理条目为提取结果（确保同一批次原子提交）
     func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws
 
+    /// 记录系统日历事件 ID（用于避免后续重复写入和未来同步）
+    func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws
+
     /// 重新排序未完成待办（拖拽排序后调用）
     /// - Parameter ids: 按新顺序排列的待办 ID 数组
     func reorder(ids: [UUID]) throws

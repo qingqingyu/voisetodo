@@ -139,6 +139,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Added to todos" } }
       }
     },
+    "ui.system_calendar_sync_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存到 App，但未能写入系统日历" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved in the app, but could not write to Calendar." } }
+      }
+    },
     "ui.permissions_required" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请先授予麦克风和语音识别权限" } },
@@ -545,6 +551,18 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击条目可编辑标题 · 点 ✕ 可删除" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to edit title · Tap ✕ to delete" } }
+      }
+    },
+    "confirm.calendar_target.app_only" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存到 App 日历" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save to app calendar" } }
+      }
+    },
+    "confirm.calendar_target.app_and_system" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存到 App，并写入系统日历" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save to app and system Calendar" } }
       }
     },
     "confirm.todo_title_placeholder" : {
@@ -1103,6 +1121,36 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回到今天所在月份" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to this month" } }
+      }
+    },
+    "settings.calendar_write.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "写入位置" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save destination" } }
+      }
+    },
+    "settings.calendar_write.app_only" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅 App 日历" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "App calendar only" } }
+      }
+    },
+    "settings.calendar_write.app_and_system" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "App + 系统日历" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "App + system Calendar" } }
+      }
+    },
+    "system_calendar.notes_due_hint %@" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间线索：%@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Date hint: %@" } }
+      }
+    },
+    "system_calendar.notes_source" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来自 VoiceTodo" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "From VoiceTodo" } }
       }
     }
   },

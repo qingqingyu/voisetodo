@@ -87,6 +87,7 @@ targets:
           UISceneConfigurations: {}
         NSSpeechRecognitionUsageDescription: "VoiceTodo 需要语音识别权限来理解你的语音指令"
         NSMicrophoneUsageDescription: "VoiceTodo 需要麦克风来录制你的语音"
+        NSCalendarsWriteOnlyAccessUsageDescription: "VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历"
         UIBackgroundModes:
           - audio
     dependencies:

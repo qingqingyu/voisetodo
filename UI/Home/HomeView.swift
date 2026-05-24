@@ -18,6 +18,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
+    @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     private let waveformHeights: [CGFloat] = [14, 24, 18, 28, 16]
     private let calendar = Calendar.current
@@ -112,6 +113,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             if !store.todos.isEmpty {
                 statsBadge
             }
+
+            calendarSettingsMenu
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
@@ -158,6 +161,38 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             Capsule()
                 .fill(WarmTheme.secondaryBackground)
         )
+    }
+
+    private var calendarWriteMode: CalendarWriteMode {
+        CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
+    }
+
+    private var calendarSettingsMenu: some View {
+        Menu {
+            Section(String(localized: "settings.calendar_write.title")) {
+                ForEach(CalendarWriteMode.allCases) { mode in
+                    Button {
+                        calendarWriteModeRaw = mode.rawValue
+                    } label: {
+                        Label(
+                            mode.displayText,
+                            systemImage: calendarWriteMode == mode ? "checkmark.circle.fill" : "circle"
+                        )
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(WarmTheme.textSecondary)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(WarmTheme.secondaryBackground)
+                )
+        }
+        .accessibilityIdentifier("CalendarWriteModeMenu")
+        .accessibilityLabel(String(localized: "settings.calendar_write.title"))
     }
 
     // MARK: - Recording Overlay
@@ -818,8 +853,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     private func deleteTodo(_ id: UUID) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             do {
-                try store.delete(id)
-                WidgetCenter.shared.reloadAllTimelines()
+                try coordinator.deleteTodo(id)
             } catch {
                 coordinator.showToast(
                     message: ErrorMessages.storageError,

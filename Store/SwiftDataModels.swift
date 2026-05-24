@@ -22,6 +22,7 @@ final class TodoItem {
     var rawTranscript: String?
     var needsAIProcessing: Bool
     var sortOrder: Int
+    var systemCalendarEventIdentifier: String?
 
     // MARK: - Computed Properties
 
@@ -52,7 +53,8 @@ final class TodoItem {
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
-        sortOrder: Int = 0
+        sortOrder: Int = 0,
+        systemCalendarEventIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -70,6 +72,7 @@ final class TodoItem {
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
         self.sortOrder = sortOrder
+        self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
     }
 
     // MARK: - Conversion
@@ -90,7 +93,8 @@ final class TodoItem {
             createdAt: createdAt,
             rawTranscript: rawTranscript,
             needsAIProcessing: needsAIProcessing,
-            sortOrder: sortOrder
+            sortOrder: sortOrder,
+            systemCalendarEventIdentifier: systemCalendarEventIdentifier
         )
     }
 
@@ -161,7 +165,8 @@ extension TodoItem {
             isCompleted: false,
             createdAt: Date(),
             rawTranscript: rawTranscript,
-            needsAIProcessing: false
+            needsAIProcessing: false,
+            systemCalendarEventIdentifier: nil
         )
     }
 

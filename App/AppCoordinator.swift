@@ -13,6 +13,8 @@ final class AppCoordinator: ObservableObject {
     private let voiceInput: any VoiceInputProtocol
     private let extractor: any TodoExtractorProtocol
     private let store: any TodoStoreProtocol
+    private let systemCalendarWriter: any SystemCalendarWritingProtocol
+    private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let networkMonitor = NetworkMonitor.shared
 
     // MARK: - Published State
@@ -56,16 +58,23 @@ final class AppCoordinator: ObservableObject {
     /// 当前待确认流程的输入原文（支持语音转写和手动输入共用确认页）
     private var activeInputTranscript: String?
 
+    /// 正在执行的日历同步任务（用于串行化，防止快速连续确认产生重复日历事件）
+    private var calendarSyncTask: Task<Void, Never>?
+
     // MARK: - Initialization
 
     init(
         voiceInput: any VoiceInputProtocol,
         extractor: any TodoExtractorProtocol,
-        store: any TodoStoreProtocol
+        store: any TodoStoreProtocol,
+        systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
+        calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current }
     ) {
         self.voiceInput = voiceInput
         self.extractor = extractor
         self.store = store
+        self.systemCalendarWriter = systemCalendarWriter
+        self.calendarWriteModeProvider = calendarWriteModeProvider
 
         setupBindings()
     }
@@ -344,6 +353,7 @@ final class AppCoordinator: ObservableObject {
     /// - Returns: 是否保存成功
     func confirmTodos(_ todos: [ExtractedTodo]) -> Bool {
         do {
+            let confirmedIds = Set(todos.map(\.id))
             // 如果有 pending 条目，使用替换逻辑
             if !pendingItemIds.isEmpty {
                 try store.replacePendingBatchWithExtracted(pendingItemIds, todos, rawTranscript: combinedRawTranscript)
@@ -357,6 +367,17 @@ final class AppCoordinator: ObservableObject {
                 // 正常在线流程：直接添加
                 try store.addBatch(todos)
                 activeInputTranscript = nil
+            }
+
+            if calendarWriteModeProvider() == .appAndSystemCalendar {
+                let previousTask = calendarSyncTask
+                calendarSyncTask = Task { [weak self] in
+                    await previousTask?.value
+                    guard let self else { return }
+                    let current = store.todos.filter { confirmedIds.contains($0.id) }
+                    guard !current.isEmpty else { return }
+                    await syncSystemCalendarIfNeeded(for: current)
+                }
             }
 
             WidgetCenter.shared.reloadAllTimelines()
@@ -386,6 +407,70 @@ final class AppCoordinator: ObservableObject {
         isAutoProcessing = false
     }
 
+    /// 删除待办（含系统日历清理）。
+    /// 无论当前 calendarWriteMode 设置如何，只要待办存在系统日历事件标识就会尝试删除，
+    /// 确保切换回"仅 App"模式后历史孤立事件也能被清理。
+    /// - Parameter id: 待办 ID
+    func deleteTodo(_ id: UUID) throws {
+        let todo = store.todos.first { $0.id == id }
+        try store.delete(id)
+
+        if let eventIdentifier = todo?.systemCalendarEventIdentifier {
+            let previousTask = calendarSyncTask
+            let writer = systemCalendarWriter
+            calendarSyncTask = Task {
+                await previousTask?.value
+                await writer.removeEvents(identifiers: [eventIdentifier])
+            }
+        }
+
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// 更新待办（含系统日历同步：删旧建新）
+    /// - Parameters:
+    ///   - id: 待办 ID
+    ///   - title: 新标题
+    ///   - category: 新分类（nil 表示不修改）
+    ///   - priority: 新优先级（nil 表示不修改）
+    ///   - dueHint: 新时间提示（nil 表示不修改，空字符串清除）
+    ///   - recurrenceRule: 新重复规则（nil 表示关闭重复）
+    func updateTodo(
+        _ id: UUID,
+        title: String,
+        category: TodoCategory? = nil,
+        priority: Priority? = nil,
+        dueHint: String? = nil,
+        recurrenceRule: RecurrenceRule? = nil
+    ) throws {
+        let oldTodo = store.todos.first { $0.id == id }
+
+        try store.update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
+
+        if calendarWriteModeProvider() == .appAndSystemCalendar {
+            let previousTask = calendarSyncTask
+            let writer = systemCalendarWriter
+            calendarSyncTask = Task { [weak self] in
+                await previousTask?.value
+                guard let self else { return }
+                if let oldId = oldTodo?.systemCalendarEventIdentifier {
+                    await writer.removeEvents(identifiers: [oldId])
+                    do {
+                        try store.updateSystemCalendarEventIdentifier(nil, for: id)
+                    } catch {
+                        #if DEBUG
+                        print("Failed to clear stale calendar identifier for \(id): \(error)")
+                        #endif
+                    }
+                }
+                guard let updated = store.todos.first(where: { $0.id == id }) else { return }
+                await syncSystemCalendarIfNeeded(for: [updated])
+            }
+        }
+
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     // MARK: - Private Methods
 
     /// 取消正在进行的 AI 提取
@@ -397,6 +482,30 @@ final class AppCoordinator: ObservableObject {
         extractedTodos = []
         showConfirmSheet = false
         activeInputTranscript = nil
+    }
+
+    private func syncSystemCalendarIfNeeded(for todos: [TodoItemData]) async {
+        guard calendarWriteModeProvider() == .appAndSystemCalendar else { return }
+
+        do {
+            let results = try await systemCalendarWriter.writeEvents(for: todos)
+            persistSystemCalendarResults(results)
+        } catch let partialError as SystemCalendarWriteError {
+            persistSystemCalendarResults(partialError.results)
+            showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
+        } catch {
+            showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
+        }
+    }
+
+    private func persistSystemCalendarResults(_ results: [SystemCalendarWriteResult]) {
+        for result in results {
+            do {
+                try store.updateSystemCalendarEventIdentifier(result.eventIdentifier, for: result.todoId)
+            } catch {
+                print("[VoiceTodo] Failed to persist calendar event identifier for \(result.todoId): \(error)")
+            }
+        }
     }
 
     /// 处理转写文本（流式）

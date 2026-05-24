@@ -467,7 +467,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
             let newPriority = editedPriority != todo.priority ? editedPriority : nil
             let newDueHint: String? = editedDueHint != (todo.dueHint ?? "") ? editedDueHint : nil
 
-            try store.update(
+            try coordinator.updateTodo(
                 todo.id,
                 title: editedTitle,
                 category: newCategory,
@@ -475,8 +475,6 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 dueHint: newDueHint,
                 recurrenceRule: editedRecurrenceRule
             )
-
-            WidgetCenter.shared.reloadAllTimelines()
 
             coordinator.showToast(message: ErrorMessages.todoSaved, style: .success)
             dismiss()
@@ -487,8 +485,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
     private func deleteTodo() {
         do {
-            try store.delete(todo.id)
-            WidgetCenter.shared.reloadAllTimelines()
+            try coordinator.deleteTodo(todo.id)
             coordinator.showToast(message: ErrorMessages.todoDeleted, style: .info)
             dismiss()
         } catch {

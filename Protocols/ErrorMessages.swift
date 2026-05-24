@@ -27,6 +27,7 @@ enum ErrorMessages {
     static let noTodosFound = String(localized: "ui.no_todos_found")
     static let savedOffline = String(localized: "ui.saved_offline")
     static let addedSuccess = String(localized: "ui.added_success")
+    static let systemCalendarSyncFailed = String(localized: "ui.system_calendar_sync_failed")
     static let permissionsRequired = String(localized: "ui.permissions_required")
     static let finishOnboardingFirst = String(localized: "ui.finish_onboarding_first")
 

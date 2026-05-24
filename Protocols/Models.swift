@@ -739,6 +739,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
     var rawTranscript: String?
     var needsAIProcessing: Bool
     var sortOrder: Int
+    var systemCalendarEventIdentifier: String?
 
     init(
         id: UUID = UUID(),
@@ -753,7 +754,8 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
-        sortOrder: Int = 0
+        sortOrder: Int = 0,
+        systemCalendarEventIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -768,6 +770,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
         self.sortOrder = sortOrder
+        self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -789,5 +792,6 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = false
         self.sortOrder = 0
+        self.systemCalendarEventIdentifier = nil
     }
 }

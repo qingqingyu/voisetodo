@@ -89,6 +89,22 @@ final class StoreTests: XCTestCase {
         XCTAssertNil(sut.todos[0].dueDate)
     }
 
+    func testUpdateSystemCalendarEventIdentifierPersistsOnTodo() throws {
+        let extractedTodo = ExtractedTodo(
+            title: "完成英语背诵",
+            detail: "今天完成英语背诵",
+            dueHint: "今天",
+            categoryHint: .study
+        )
+        try sut.add(extractedTodo)
+
+        try sut.updateSystemCalendarEventIdentifier("event-123", for: extractedTodo.id)
+
+        XCTAssertEqual(sut.todos[0].systemCalendarEventIdentifier, "event-123")
+        sut.refreshTodos()
+        XCTAssertEqual(sut.todos[0].systemCalendarEventIdentifier, "event-123")
+    }
+
     func testAddBatchResolvesWeekdayDueDate() throws {
         // Given: 一个带周几时间的待办
         let item = ExtractedTodo(

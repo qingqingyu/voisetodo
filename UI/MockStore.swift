@@ -161,6 +161,11 @@ class MockStore: TodoStoreProtocol {
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
 
+    func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else { return }
+        todos[index].systemCalendarEventIdentifier = eventIdentifier
+    }
+
     func reorder(ids: [UUID]) throws {
         let idSet = Set(ids)
         var reordered = [TodoItemData]()

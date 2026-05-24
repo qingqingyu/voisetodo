@@ -22,6 +22,8 @@
 	<string>1</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VoiceTodo 需要麦克风来录制你的语音</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>VoiceTodo 需要语音识别权限来理解你的语音指令</string>
 	<key>UIApplicationSceneManifest</key>

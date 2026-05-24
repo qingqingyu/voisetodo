@@ -412,7 +412,8 @@ final class TodoStore: TodoStoreProtocol {
                 createdAt: item.createdAt,
                 rawTranscript: item.rawTranscript,
                 needsAIProcessing: item.needsAIProcessing,
-                sortOrder: item.sortOrder
+                sortOrder: item.sortOrder,
+                systemCalendarEventIdentifier: item.systemCalendarEventIdentifier
             )
             modelContext.insert(todoItem)
         }
@@ -420,6 +421,24 @@ final class TodoStore: TodoStoreProtocol {
         do {
             try modelContext.save()
             refreshTodos()
+        } catch {
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    /// 记录系统日历事件 ID。
+    /// - Parameters:
+    ///   - eventIdentifier: 系统日历事件 ID
+    ///   - id: 待办 ID
+    func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {
+        let todoItem = try findTodoItem(by: id)
+        todoItem.systemCalendarEventIdentifier = eventIdentifier
+
+        do {
+            try modelContext.save()
+            if let index = todos.firstIndex(where: { $0.id == id }) {
+                todos[index] = todoItem.toData()
+            }
         } catch {
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }

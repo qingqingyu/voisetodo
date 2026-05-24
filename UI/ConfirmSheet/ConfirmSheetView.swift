@@ -13,6 +13,7 @@ struct ConfirmSheetView: View {
 
     @State private var showSuccess = false
     @State private var didFinish = false
+    @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     var body: some View {
         NavigationStack {
@@ -67,6 +68,7 @@ struct ConfirmSheetView: View {
 
                 if !todos.isEmpty {
                     operationHint
+                    calendarTargetHint
 
                     todosSection
                 }
@@ -133,6 +135,26 @@ struct ConfirmSheetView: View {
             Image(systemName: "hand.tap")
                 .font(.system(size: 12))
             Text(String(localized: "confirm.hint"))
+                .font(WarmFont.caption(13))
+        }
+        .foregroundColor(WarmTheme.textSecondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(WarmTheme.secondaryBackground)
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var calendarTargetHint: some View {
+        let mode = CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
+        return HStack(spacing: 6) {
+            Image(systemName: mode == .appAndSystemCalendar ? "calendar.badge.plus" : "calendar")
+                .font(.system(size: 12))
+            Text(mode == .appAndSystemCalendar
+                 ? String(localized: "confirm.calendar_target.app_and_system")
+                 : String(localized: "confirm.calendar_target.app_only"))
                 .font(WarmFont.caption(13))
         }
         .foregroundColor(WarmTheme.textSecondary)
