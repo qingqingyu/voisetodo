@@ -17,6 +17,7 @@ enum ErrorMessages {
 
     // 存储相关
     static let storageError = String(localized: "error.storage")
+    static let sharedStorageUnavailable = String(localized: "error.shared_storage_unavailable")
 
     // 详情页
     static let todoSaved = String(localized: "detail.saved")

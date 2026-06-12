@@ -98,22 +98,18 @@ final class TodoExtractorService: TodoExtractorProtocol {
             }
         }
 
-        let messages = PromptTemplates.buildMessages(for: transcript)
-        let systemPrompt = PromptTemplates.systemPrompt(for: locale)
         let client = self.networkClient
+        let localeIdentifier = locale.identifier
 
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 var accumulatedText = ""
                 var lastYieldedCount = 0
 
                 do {
-                    let stream = client.callClaudeAPIStreaming(
-                        systemPrompt: systemPrompt,
-                        messages: messages,
-                        model: NetworkConfig.claudeModel,
-                        temperature: 0.1,
-                        maxTokens: 500
+                    let stream = client.callTodoExtractionProxyStreaming(
+                        transcript: transcript,
+                        localeIdentifier: localeIdentifier
                     )
 
                     for try await delta in stream {
@@ -142,6 +138,9 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     }
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }
@@ -197,16 +196,11 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
     // MARK: - Private Methods
 
-    /// 调用 Claude API
+    /// 调用 VoiceTodo AI 代理
     private func callAPI(transcript: String, locale: Locale) async throws -> String {
-        let messages = PromptTemplates.buildMessages(for: transcript)
-
-        return try await networkClient.callClaudeAPI(
-            systemPrompt: PromptTemplates.systemPrompt(for: locale),
-            messages: messages,
-            model: NetworkConfig.claudeModel,
-            temperature: 0.1,
-            maxTokens: 500
+        try await networkClient.callTodoExtractionProxy(
+            transcript: transcript,
+            localeIdentifier: locale.identifier
         )
     }
 

@@ -4,6 +4,17 @@ import SwiftData
 
 @MainActor
 final class StoreTests: XCTestCase {
+    private final class SaveFailureGate {
+        var shouldFail = false
+
+        func save(_ context: ModelContext) throws {
+            if shouldFail {
+                throw VoiceTodoError.storageWriteFailed("forced failure")
+            }
+            try context.save()
+        }
+    }
+
     // MARK: - Properties
 
     var sut: TodoStore!
@@ -87,6 +98,57 @@ final class StoreTests: XCTestCase {
 
         // Then: 保持未安排，周视图不强行放到今天
         XCTAssertNil(sut.todos[0].dueDate)
+    }
+
+    func testAddRollbackDoesNotPersistFailedInsertOnLaterSave() throws {
+        let gate = SaveFailureGate()
+        sut = TodoStore(modelContext: modelContext, saveAction: gate.save)
+
+        gate.shouldFail = true
+        XCTAssertThrowsError(try sut.add(ExtractedTodo(title: "失败新增", categoryHint: .work)))
+        XCTAssertTrue(sut.todos.isEmpty)
+
+        gate.shouldFail = false
+        try sut.add(ExtractedTodo(title: "成功新增", categoryHint: .life))
+        sut.refreshTodos()
+
+        XCTAssertEqual(sut.todos.map(\.title), ["成功新增"])
+    }
+
+    func testUpdateRollbackKeepsOriginalValueOnLaterSave() throws {
+        let gate = SaveFailureGate()
+        sut = TodoStore(modelContext: modelContext, saveAction: gate.save)
+        try sut.add(ExtractedTodo(title: "原始标题", categoryHint: .work))
+        let id = try XCTUnwrap(sut.todos.first?.id)
+
+        gate.shouldFail = true
+        XCTAssertThrowsError(try sut.update(id, title: "失败标题"))
+        XCTAssertEqual(sut.todos.first?.title, "原始标题")
+
+        gate.shouldFail = false
+        try sut.add(ExtractedTodo(title: "触发后续保存", categoryHint: .life))
+        sut.refreshTodos()
+
+        let original = try XCTUnwrap(sut.todos.first(where: { $0.id == id }))
+        XCTAssertEqual(original.title, "原始标题")
+    }
+
+    func testDeleteRollbackKeepsOriginalTodoOnLaterSave() throws {
+        let gate = SaveFailureGate()
+        sut = TodoStore(modelContext: modelContext, saveAction: gate.save)
+        try sut.add(ExtractedTodo(title: "不要丢失", categoryHint: .work))
+        let id = try XCTUnwrap(sut.todos.first?.id)
+
+        gate.shouldFail = true
+        XCTAssertThrowsError(try sut.delete(id))
+        XCTAssertTrue(sut.todos.contains { $0.id == id })
+
+        gate.shouldFail = false
+        try sut.add(ExtractedTodo(title: "后续保存", categoryHint: .life))
+        sut.refreshTodos()
+
+        XCTAssertTrue(sut.todos.contains { $0.id == id })
+        XCTAssertTrue(sut.todos.contains { $0.title == "后续保存" })
     }
 
     func testUpdateSystemCalendarEventIdentifierPersistsOnTodo() throws {

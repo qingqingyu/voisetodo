@@ -12,6 +12,7 @@ private func formattedHomeDate(_ date: Date) -> String {
 struct HomeView<Store: TodoStoreProtocol>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
+    @EnvironmentObject private var permissionManager: PermissionManager
     @State private var showRecordingButton = false
     @State private var isProcessing = false
     @State private var showManualInputSheet = false
@@ -453,7 +454,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
         return List {
             Section {
-                if uncompleted.isEmpty {
+                if store.todos.isEmpty {
+                    homeGlobalEmptyRow
+                } else if selectedOccurrences.isEmpty {
                     emptySelectedDayRow
                 } else {
                     ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, occurrence in
@@ -489,13 +492,35 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .accessibilityIdentifier("TodoList")
     }
 
+    private var homeGlobalEmptyRow: some View {
+        ProductEmptyStateView(
+            icon: "sparkles",
+            title: String(localized: "empty.home.title"),
+            message: String(localized: "empty.home.message"),
+            primaryAction: ProductEmptyStateAction(
+                title: String(localized: "empty.home.primary"),
+                systemImage: "mic.fill",
+                action: toggleRecording
+            ),
+            secondaryAction: ProductEmptyStateAction(
+                title: String(localized: "empty.home.secondary"),
+                systemImage: "keyboard",
+                action: { showManualInputSheet = true }
+            )
+        )
+        .accessibilityIdentifier("EmptyState")
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
+        .listRowBackground(Color.clear)
+    }
+
     private var emptySelectedDayRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "calendar.badge.checkmark")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(WarmTheme.primary)
 
-            Text(String(localized: "home.week.empty_day"))
+            Text(String(localized: "empty.day.title"))
                 .font(WarmFont.body(15))
                 .foregroundColor(WarmTheme.textSecondary)
 
@@ -803,7 +828,12 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             }
         } else {
             Task {
-                await coordinator.startRecording()
+                let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
+                if readiness == .granted {
+                    await coordinator.startRecording()
+                } else {
+                    coordinator.showVoicePermissionRequiredToast()
+                }
             }
         }
     }

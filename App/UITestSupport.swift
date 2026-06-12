@@ -22,6 +22,9 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
         if options.micPermissionDenied {
             throw VoiceTodoError.microphonePermissionDenied
         }
+        if options.speechPermissionDenied {
+            throw VoiceTodoError.speechRecognitionPermissionDenied
+        }
 
         error = nil
         transcript = options.mockTranscript
@@ -30,6 +33,11 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
 
     func stopRecording() {
         isRecording = false
+    }
+
+    func cancelRecordingDueToInterruption() {
+        isRecording = false
+        error = .audioSessionInterrupted
     }
 
     func finishRecording() {

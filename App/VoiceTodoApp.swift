@@ -7,6 +7,7 @@ struct VoiceTodoApp: App {
 
     /// SwiftData ModelContainer
     let modelContainer: ModelContainer
+    let startupStorageError: String?
 
     // MARK: - State
 
@@ -18,6 +19,7 @@ struct VoiceTodoApp: App {
 
     /// 标记是否应该自动开始录音（从 Action Button 启动）
     @State private var shouldAutoStartRecording = false
+    @State private var lastObservedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
     // MARK: - Environment
 
     @Environment(\.scenePhase) private var scenePhase
@@ -37,49 +39,79 @@ struct VoiceTodoApp: App {
 
         let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
 
-        let shouldUseSharedContainer = !uiTestOptions.isUITesting && AppGroupConfig.sharedContainerURL != nil
+        let sharedContainerAvailable = AppGroupConfig.sharedContainerURL != nil
+        let shouldUseSharedContainer = !uiTestOptions.isUITesting && sharedContainerAvailable
+        let shouldBlockForMissingSharedContainer = ModelContainerStartupPolicy.shouldBlockForMissingSharedContainer(
+            isUITesting: uiTestOptions.isUITesting,
+            sharedContainerAvailable: sharedContainerAvailable
+        )
 
-        // 配置 SwiftData ModelContainer。UI 测试和无 entitlement 环境避免直接触发 App Group fatal error。
+        // 配置 SwiftData ModelContainer。UI 测试和 DEBUG 无 entitlement 环境允许本地 fallback。
         let container: ModelContainer
-        do {
-            let configuration: ModelConfiguration
-            if shouldUseSharedContainer {
-                configuration = ModelConfiguration(
-                    schema: schema,
-                    isStoredInMemoryOnly: false,
-                    allowsSave: true,
-                    groupContainer: .identifier(AppGroupConfig.identifier)
-                )
-            } else {
-                configuration = ModelConfiguration(
-                    schema: schema,
-                    isStoredInMemoryOnly: uiTestOptions.isUITesting,
-                    allowsSave: true
-                )
-            }
-            container = try ModelContainer(
-                for: schema,
-                configurations: configuration
-            )
-        } catch {
-            // 降级：使用本地持久化容器，至少保证主 App 数据不会在进程退出后丢失。
-            #if DEBUG
-            print("Failed to create primary ModelContainer: \(error). Falling back to local persistent store.")
-            #endif
+        let storageError: String?
+        if shouldBlockForMissingSharedContainer {
             do {
-                let fallbackConfig = ModelConfiguration(
+                let configuration = ModelConfiguration(
                     schema: schema,
-                    isStoredInMemoryOnly: uiTestOptions.isUITesting
+                    isStoredInMemoryOnly: true,
+                    allowsSave: true
                 )
                 container = try ModelContainer(
                     for: schema,
-                    configurations: fallbackConfig
+                    configurations: configuration
                 )
+                storageError = ErrorMessages.sharedStorageUnavailable
             } catch {
-                fatalError("Failed to create even in-memory ModelContainer: \(error)")
+                fatalError("Failed to create startup error ModelContainer: \(error)")
+            }
+        } else {
+            do {
+                let configuration: ModelConfiguration
+                if shouldUseSharedContainer {
+                    configuration = ModelConfiguration(
+                        schema: schema,
+                        isStoredInMemoryOnly: false,
+                        allowsSave: true,
+                        groupContainer: .identifier(AppGroupConfig.identifier)
+                    )
+                } else {
+                    configuration = ModelConfiguration(
+                        schema: schema,
+                        isStoredInMemoryOnly: uiTestOptions.isUITesting,
+                        allowsSave: true
+                    )
+                }
+                container = try ModelContainer(
+                    for: schema,
+                    configurations: configuration
+                )
+                storageError = nil
+            } catch {
+                let allowsFallback = ModelContainerStartupPolicy.allowsLocalFallback(
+                    isUITesting: uiTestOptions.isUITesting,
+                    attemptedSharedContainer: shouldUseSharedContainer,
+                    sharedContainerAvailable: sharedContainerAvailable
+                )
+                #if DEBUG
+                print("Failed to create primary ModelContainer: \(error). allowsFallback=\(allowsFallback)")
+                #endif
+                do {
+                    let fallbackConfig = ModelConfiguration(
+                        schema: schema,
+                        isStoredInMemoryOnly: uiTestOptions.isUITesting || !allowsFallback
+                    )
+                    container = try ModelContainer(
+                        for: schema,
+                        configurations: fallbackConfig
+                    )
+                    storageError = allowsFallback ? nil : ErrorMessages.sharedStorageUnavailable
+                } catch {
+                    fatalError("Failed to create even in-memory ModelContainer: \(error)")
+                }
             }
         }
         modelContainer = container
+        startupStorageError = storageError
 
         let store = TodoStore(modelContext: container.mainContext)
 
@@ -111,6 +143,7 @@ struct VoiceTodoApp: App {
         WindowGroup {
             mainView
                 .environmentObject(coordinator)
+                .environmentObject(permissionManager)
                 .toast(
                     message: coordinator.toastMessage,
                     style: coordinator.toastStyle,
@@ -140,7 +173,10 @@ struct VoiceTodoApp: App {
 
     @ViewBuilder
     private var mainView: some View {
-        if hasCompletedOnboarding {
+        if let startupStorageError {
+            StartupStorageErrorView(message: startupStorageError)
+                .accessibilityIdentifier("StartupStorageErrorView")
+        } else if hasCompletedOnboarding {
             // 已完成引导，显示主界面
             HomeView(store: todoStore)
                 .sheet(isPresented: $coordinator.showConfirmSheet) {
@@ -188,16 +224,25 @@ struct VoiceTodoApp: App {
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            guard startupStorageError == nil else { return }
             // App 进入前台，同步 Widget Extension 可能做的修改（如打勾完成）
-            todoStore.refreshTodos()
+            refreshStoreIfNeededFromExternalChanges(force: true)
             NetworkMonitor.shared.restartIfNeeded()
             Task {
                 await coordinator.handleAppForeground()
             }
         case .inactive, .background:
-            break
+            coordinator.cancelRecordingDueToInterruption()
         @unknown default:
             break
+        }
+    }
+
+    private func refreshStoreIfNeededFromExternalChanges(force: Bool = false) {
+        let version = AppGroupConfig.currentExternalChangeVersion()
+        if force || version != lastObservedExternalChangeVersion {
+            todoStore.refreshTodos()
+            lastObservedExternalChangeVersion = version
         }
     }
 
@@ -205,6 +250,7 @@ struct VoiceTodoApp: App {
 
     /// 处理 URL 打开（Action Button、Widget 深链等）
     private func handleOpenURL(_ url: URL) {
+        guard startupStorageError == nil else { return }
         guard url.scheme?.caseInsensitiveCompare("voicetodo") == .orderedSame else { return }
 
         switch url.host?.lowercased() {
@@ -226,31 +272,86 @@ struct VoiceTodoApp: App {
 
     /// 处理 Action Button 启动
     private func handleActionButtonLaunch() {
+        guard startupStorageError == nil else { return }
+
         // 确保已完成引导
         guard hasCompletedOnboarding else {
             coordinator.showToast(message: ErrorMessages.finishOnboardingFirst, style: .info)
             return
         }
 
-        // 重新检查当前权限状态（用户可能在系统设置中撤销了权限）
-        permissionManager.checkCurrentStatus()
+        Task {
+            let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
+            guard readiness == .granted else {
+                #if DEBUG
+                print("Permissions not granted, showing toast")
+                #endif
+                coordinator.showVoicePermissionRequiredToast()
+                return
+            }
 
-        guard permissionManager.micGranted && permissionManager.speechGranted else {
-            #if DEBUG
-            print("Permissions not granted, showing toast")
-            #endif
-            coordinator.showToast(
-                message: ErrorMessages.permissionsRequired,
-                style: .warning
-            )
-            return
+            // 设置标记，触发自动录音
+            // 使用 DispatchQueue 延迟一帧，确保 UI 已准备就绪
+            DispatchQueue.main.async {
+                shouldAutoStartRecording = true
+            }
         }
+    }
+}
 
-        // 设置标记，触发自动录音
-        // 使用 DispatchQueue 延迟一帧，确保 UI 已准备就绪
-        DispatchQueue.main.async {
-            shouldAutoStartRecording = true
+enum ModelContainerStartupPolicy {
+    static func allowsLocalFallback(
+        isUITesting: Bool,
+        attemptedSharedContainer: Bool,
+        sharedContainerAvailable: Bool,
+        isDebugBuild: Bool = defaultIsDebugBuild
+    ) -> Bool {
+        isUITesting || (!attemptedSharedContainer && !sharedContainerAvailable && isDebugBuild)
+    }
+
+    static func shouldBlockForMissingSharedContainer(
+        isUITesting: Bool,
+        sharedContainerAvailable: Bool,
+        isDebugBuild: Bool = defaultIsDebugBuild
+    ) -> Bool {
+        !isUITesting && !sharedContainerAvailable && !isDebugBuild
+    }
+
+    static var defaultIsDebugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+}
+
+private struct StartupStorageErrorView: View {
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundColor(WarmTheme.warning)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 8) {
+                Text(String(localized: "startup.storage_error.title"))
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text(message)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(WarmTheme.background.ignoresSafeArea())
     }
 }
 

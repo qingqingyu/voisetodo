@@ -69,7 +69,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                                 .foregroundColor(WarmTheme.textSecondary)
                         }
 
-                        TextField(String(localized: "confirm.todo_title_placeholder"), text: $editedTitle, axis: .vertical)
+                        TextField(String(localized: "detail.title_placeholder"), text: $editedTitle, axis: .vertical)
                             .font(WarmFont.display(22))
                             .foregroundColor(WarmTheme.textPrimary)
                             .lineLimit(1...3)
@@ -311,7 +311,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                         Text(String(localized: "recurrence.monthly_day_prefix"))
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textSecondary)
-                        TextField("1", text: $editedDayOfMonth)
+                        TextField(String(localized: "recurrence.monthly_day_placeholder"), text: $editedDayOfMonth)
                             .keyboardType(.numberPad)
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textPrimary)

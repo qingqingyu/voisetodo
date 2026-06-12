@@ -22,8 +22,8 @@ VoiceTodo/
 │   └── AudioSessionHelper.swift
 ├── Extractor/              ← Agent B 负责
 │   ├── TodoExtractorService.swift
-│   ├── PromptTemplates.swift
 │   └── NetworkClient.swift
+├── AIProxy/                ← Cloudflare Worker AI 代理模板
 ├── Store/                  ← Agent C 负责
 │   ├── SwiftDataModels.swift
 │   ├── TodoStore.swift
@@ -115,7 +115,7 @@ VoiceTodo/
 | Agent | 负责模块 | 主要文件 |
 |-------|---------|---------|
 | A | Voice | VoiceInputManager, AudioSessionHelper |
-| B | Extractor | TodoExtractorService, PromptTemplates, NetworkClient |
+| B | Extractor | TodoExtractorService, NetworkClient |
 | C | Store | SwiftDataModels, TodoStore, AppGroupConfig |
 | D | UI | ConfirmSheet, HomeView, Widget |
 | E | App | VoiceTodoApp, AppCoordinator, OnboardingView, PermissionManager |

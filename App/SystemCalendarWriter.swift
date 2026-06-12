@@ -23,7 +23,7 @@ struct SystemCalendarEventDraft: Equatable {
 
 protocol SystemCalendarWritingProtocol {
     func writeEvents(for todos: [TodoItemData]) async throws -> [SystemCalendarWriteResult]
-    func removeEvents(identifiers: [String]) async
+    func removeEvents(identifiers: [String]) async throws
 }
 
 enum SystemCalendarEventMapper {
@@ -95,13 +95,11 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             do {
                 try eventStore.save(event, span: .futureEvents)
             } catch {
-                rollbackSavedEvents(results)
-                throw SystemCalendarWriteError(results: [], underlyingError: error)
+                throw SystemCalendarWriteError(results: results, underlyingError: error)
             }
             guard let eventIdentifier = event.eventIdentifier else {
-                rollbackSavedEvents(results)
                 throw SystemCalendarWriteError(
-                    results: [],
+                    results: results,
                     underlyingError: VoiceTodoError.storageWriteFailed("System calendar event identifier missing")
                 )
             }
@@ -110,19 +108,21 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
         return results
     }
 
-    func removeEvents(identifiers: [String]) async {
+    func removeEvents(identifiers: [String]) async throws {
+        var firstError: Error?
+
         for identifier in identifiers {
             if let event = eventStore.event(withIdentifier: identifier) {
-                try? eventStore.remove(event, span: .futureEvents)
+                do {
+                    try eventStore.remove(event, span: .futureEvents)
+                } catch {
+                    firstError = firstError ?? error
+                }
             }
         }
-    }
 
-    private func rollbackSavedEvents(_ results: [SystemCalendarWriteResult]) {
-        for result in results {
-            if let event = eventStore.event(withIdentifier: result.eventIdentifier) {
-                try? eventStore.remove(event, span: .futureEvents)
-            }
+        if let firstError {
+            throw firstError
         }
     }
 

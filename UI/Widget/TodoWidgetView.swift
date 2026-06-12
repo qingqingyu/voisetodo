@@ -58,15 +58,7 @@ struct SmallWidgetView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 28, weight: .light))
-                .foregroundColor(.primary.opacity(0.4))
-            Text(String(localized: "widget.no_todos"))
-                .font(.system(size: 14))
-                .foregroundColor(.primary.opacity(0.4))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        WidgetEmptyState(iconSize: 28, titleSize: 14)
     }
 }
 
@@ -94,15 +86,7 @@ struct MediumWidgetView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 32, weight: .light))
-                .foregroundColor(.primary.opacity(0.4))
-            Text(String(localized: "widget.no_todos"))
-                .font(.system(size: 16))
-                .foregroundColor(.primary.opacity(0.4))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        WidgetEmptyState(iconSize: 32, titleSize: 16)
     }
 }
 
@@ -130,15 +114,41 @@ struct LargeWidgetView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 40, weight: .light))
-                .foregroundColor(.primary.opacity(0.4))
-            Text(String(localized: "widget.no_todos"))
-                .font(.system(size: 18))
-                .foregroundColor(.primary.opacity(0.4))
+        WidgetEmptyState(iconSize: 40, titleSize: 18, spacing: 12)
+    }
+}
+
+private struct WidgetEmptyState: View {
+    let iconSize: CGFloat
+    let titleSize: CGFloat
+    var spacing: CGFloat = 8
+
+    var body: some View {
+        VStack(spacing: spacing) {
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(0.05))
+                    .frame(width: iconSize * 1.9, height: iconSize * 1.9)
+
+                Circle()
+                    .fill(Color.primary.opacity(0.07))
+                    .frame(width: iconSize * 1.35, height: iconSize * 1.35)
+
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: iconSize, weight: .light))
+                    .foregroundColor(.primary.opacity(0.42))
+            }
+
+            Text(String(localized: "empty.widget.today"))
+                .font(.system(size: titleSize, weight: .medium))
+                .foregroundColor(.primary.opacity(0.48))
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("WidgetEmptyState")
     }
 }
 

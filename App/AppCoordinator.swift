@@ -115,6 +115,15 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// 真机音频中断或 App 退到非活跃态时，明确取消本次录音
+    func cancelRecordingDueToInterruption() {
+        guard voiceInput.isRecording else { return }
+        voiceInput.cancelRecordingDueToInterruption()
+        isAutoProcessing = false
+        isProcessingTranscript = false
+        isExtracting = false
+    }
+
     /// 停止录音并处理结果
     func stopRecordingAndProcess() async {
         // 取消自动处理（用户手动点击停止）
@@ -246,7 +255,7 @@ final class AppCoordinator: ObservableObject {
         // 先移除无 rawTranscript 的条目
         let validPending = pendingItems.filter { item in
             if item.rawTranscript == nil {
-                try? store.delete(item.id)
+                deleteProcessedPending(id: item.id)
                 return false
             }
             return true
@@ -302,7 +311,7 @@ final class AppCoordinator: ObservableObject {
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else { return }
 
             for pendingId in processedWithoutTodosIds {
-                try? store.delete(pendingId)
+                deleteProcessedPending(id: pendingId)
             }
 
             pendingItemIds = processedWithTodosIds
@@ -311,10 +320,10 @@ final class AppCoordinator: ObservableObject {
             showConfirmSheet = true
         } else {
             for pendingId in processedWithTodosIds {
-                try? store.delete(pendingId)
+                deleteProcessedPending(id: pendingId)
             }
             for pendingId in processedWithoutTodosIds {
-                try? store.delete(pendingId)
+                deleteProcessedPending(id: pendingId)
             }
             pendingItemIds = []
             combinedRawTranscript = nil
@@ -369,14 +378,15 @@ final class AppCoordinator: ObservableObject {
                 activeInputTranscript = nil
             }
 
-            if calendarWriteModeProvider() == .appAndSystemCalendar {
+            let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
+            if shouldSyncSystemCalendar {
                 let previousTask = calendarSyncTask
                 calendarSyncTask = Task { [weak self] in
                     await previousTask?.value
                     guard let self else { return }
                     let current = store.todos.filter { confirmedIds.contains($0.id) }
                     guard !current.isEmpty else { return }
-                    await syncSystemCalendarIfNeeded(for: current)
+                    await syncSystemCalendar(for: current)
                 }
             }
 
@@ -418,9 +428,13 @@ final class AppCoordinator: ObservableObject {
         if let eventIdentifier = todo?.systemCalendarEventIdentifier {
             let previousTask = calendarSyncTask
             let writer = systemCalendarWriter
-            calendarSyncTask = Task {
+            calendarSyncTask = Task { [weak self] in
                 await previousTask?.value
-                await writer.removeEvents(identifiers: [eventIdentifier])
+                do {
+                    try await writer.removeEvents(identifiers: [eventIdentifier])
+                } catch {
+                    self?.showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
+                }
             }
         }
 
@@ -447,24 +461,26 @@ final class AppCoordinator: ObservableObject {
 
         try store.update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
 
-        if calendarWriteModeProvider() == .appAndSystemCalendar {
+        let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
+        if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {
             let previousTask = calendarSyncTask
             let writer = systemCalendarWriter
             calendarSyncTask = Task { [weak self] in
                 await previousTask?.value
                 guard let self else { return }
                 if let oldId = oldTodo?.systemCalendarEventIdentifier {
-                    await writer.removeEvents(identifiers: [oldId])
                     do {
+                        try await writer.removeEvents(identifiers: [oldId])
                         try store.updateSystemCalendarEventIdentifier(nil, for: id)
                     } catch {
-                        #if DEBUG
-                        print("Failed to clear stale calendar identifier for \(id): \(error)")
-                        #endif
+                        showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
+                        return
                     }
                 }
                 guard let updated = store.todos.first(where: { $0.id == id }) else { return }
-                await syncSystemCalendarIfNeeded(for: [updated])
+                if shouldSyncSystemCalendar {
+                    await syncSystemCalendar(for: [updated])
+                }
             }
         }
 
@@ -484,28 +500,47 @@ final class AppCoordinator: ObservableObject {
         activeInputTranscript = nil
     }
 
-    private func syncSystemCalendarIfNeeded(for todos: [TodoItemData]) async {
-        guard calendarWriteModeProvider() == .appAndSystemCalendar else { return }
-
+    private func syncSystemCalendar(for todos: [TodoItemData]) async {
         do {
             let results = try await systemCalendarWriter.writeEvents(for: todos)
-            persistSystemCalendarResults(results)
+            try await persistSystemCalendarResults(results)
         } catch let partialError as SystemCalendarWriteError {
-            persistSystemCalendarResults(partialError.results)
+            do {
+                try await persistSystemCalendarResults(partialError.results)
+            } catch {
+                #if DEBUG
+                print("[VoiceTodo] Failed to persist partial calendar results: \(error)")
+                #endif
+            }
             showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
         } catch {
             showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
         }
     }
 
-    private func persistSystemCalendarResults(_ results: [SystemCalendarWriteResult]) {
+    private func persistSystemCalendarResults(_ results: [SystemCalendarWriteResult]) async throws {
+        var failedResults: [SystemCalendarWriteResult] = []
+
         for result in results {
             do {
                 try store.updateSystemCalendarEventIdentifier(result.eventIdentifier, for: result.todoId)
             } catch {
+                failedResults.append(result)
                 print("[VoiceTodo] Failed to persist calendar event identifier for \(result.todoId): \(error)")
             }
         }
+
+        guard !failedResults.isEmpty else { return }
+
+        do {
+            try await systemCalendarWriter.removeEvents(identifiers: failedResults.map(\.eventIdentifier))
+        } catch {
+            #if DEBUG
+            print("[VoiceTodo] Failed to remove calendar events after identifier persistence failed: \(error)")
+            #endif
+        }
+
+        throw VoiceTodoError.storageWriteFailed("Failed to persist system calendar event identifier")
     }
 
     /// 处理转写文本（流式）
@@ -586,6 +621,24 @@ final class AppCoordinator: ObservableObject {
         toastActionTitle = actionTitle
         toastAction = action
         showToast = true
+    }
+
+    /// 显示语音权限缺失提示
+    func showVoicePermissionRequiredToast() {
+        showToast(
+            message: ErrorMessages.permissionsRequired,
+            style: .warning,
+            actionTitle: String(localized: "toast.open_settings"),
+            action: { PermissionManager.openAppSettings() }
+        )
+    }
+
+    private func deleteProcessedPending(id: UUID) {
+        do {
+            try store.delete(id)
+        } catch {
+            handleError(error)
+        }
     }
 
     /// 统一错误处理

@@ -20,6 +20,10 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>VoiceTodoProxyEndpoint</key>
+	<string>$(VOICETODO_AI_PROXY_ENDPOINT)</string>
+	<key>VoiceTodoProxyAppToken</key>
+	<string>$(VOICETODO_AI_PROXY_APP_TOKEN)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VoiceTodo 需要麦克风来录制你的语音</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>

@@ -71,6 +71,10 @@ struct ConfirmSheetView: View {
                     calendarTargetHint
 
                     todosSection
+                } else if isStreaming {
+                    todosSection
+                } else {
+                    noResultEmptyState
                 }
             }
             .padding()
@@ -126,6 +130,20 @@ struct ConfirmSheetView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: todos.count)
         .accessibilityIdentifier("ExtractedTodoList")
+    }
+
+    private var noResultEmptyState: some View {
+        ProductEmptyStateView(
+            icon: "sparkles",
+            title: String(localized: "empty.confirm.title"),
+            message: String(localized: "empty.confirm.message"),
+            primaryAction: ProductEmptyStateAction(
+                title: String(localized: "empty.confirm.primary"),
+                systemImage: "arrow.counterclockwise",
+                action: cancelAction
+            )
+        )
+        .accessibilityIdentifier("ConfirmEmptyState")
     }
 
     // MARK: - Operation Hint

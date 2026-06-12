@@ -49,6 +49,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var recordingStartTime: Date?
     private var updateTimer: Timer?
     private var interruptionRecoveryObserver: NSObjectProtocol?
+    private var interruptionBeganObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
@@ -110,24 +111,14 @@ final class VoiceInputManager: VoiceInputProtocol {
             // 7. 监听音频会话中断和路由变更
             audioSessionHelper.startObserving()
 
-            // 7.1 监听中断恢复通知（来电等中断结束后可恢复录音）
-            removeInterruptionRecoveryObserver()
-            interruptionRecoveryObserver = NotificationCenter.default.addObserver(
-                forName: .audioSessionDidRecoverFromInterruption,
+            // 7.1 监听音频中断；v1 策略是明确取消本次录音，不自动恢复。
+            removeInterruptionObservers()
+            interruptionBeganObserver = NotificationCenter.default.addObserver(
+                forName: .audioSessionInterruptionBegan,
                 object: nil,
                 queue: .main
-            ) { [weak self] notification in
-                guard let self = self,
-                      self.isRecording,
-                      let shouldResume = notification.userInfo?["shouldResume"] as? Bool,
-                      shouldResume else { return }
-
-                #if DEBUG
-                print("Audio session recovered from interruption, rebuilding recognition pipeline")
-                #endif
-
-                // 重建完整识别链路（recognitionRequest + recognitionTask + audioEngine）
-                self.rebuildRecognitionAfterInterruption()
+            ) { [weak self] _ in
+                self?.cancelRecordingDueToInterruption()
             }
 
             // 8. 启动 Live Activity
@@ -143,32 +134,13 @@ final class VoiceInputManager: VoiceInputProtocol {
     func stopRecording() {
         guard isRecording else { return }
 
-        // 停止音频引擎
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        cleanupRecordingPipeline(markNotRecording: true)
+    }
 
-        // 结束识别请求
-        recognitionRequest?.endAudio()
-        recognitionRequest = nil
-
-        // 取消识别任务
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        // 停用音频会话并停止监听中断通知
-        audioSessionHelper.stopObserving()
-        audioSessionHelper.deactivateSession()
-
-        // 移除中断恢复通知监听
-        removeInterruptionRecoveryObserver()
-
-        // 更新状态
-        isRecording = false
-        isSilenceDetected = false
-        silenceStartTime = nil
-
-        // 结束 Live Activity
-        endLiveActivity()
+    func cancelRecordingDueToInterruption() {
+        guard isRecording else { return }
+        cleanupRecordingPipeline(markNotRecording: true)
+        error = .audioSessionInterrupted
     }
 
     /// 通知识别器音频输入结束，等待最终识别结果
@@ -189,8 +161,8 @@ final class VoiceInputManager: VoiceInputProtocol {
         audioSessionHelper.stopObserving()
         audioSessionHelper.deactivateSession()
 
-        // 移除中断恢复通知监听
-        removeInterruptionRecoveryObserver()
+        // 移除中断通知监听
+        removeInterruptionObservers()
 
         // 注意：不设置 isRecording = false，等待 recognitionTask 的 isFinal 回调触发 stopRecording()
         // 这样可以确保 transcript 是最终识别结果
@@ -245,45 +217,6 @@ final class VoiceInputManager: VoiceInputProtocol {
                 #endif
             }
         }
-    }
-
-    /// 中断恢复后重建完整识别链路
-    /// 重建 recognitionRequest + recognitionTask，并重启 audioEngine
-    private func rebuildRecognitionAfterInterruption() {
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
-            #if DEBUG
-            print("Speech recognizer unavailable after interruption, stopping recording")
-            #endif
-            stopRecording()
-            return
-        }
-
-        // 重建识别请求和任务
-        do {
-            try startRecognition(recognizer: recognizer)
-        } catch {
-            #if DEBUG
-            print("Failed to rebuild recognition after interruption: \(error)")
-            #endif
-            stopRecording()
-            return
-        }
-
-        // 重启音频引擎（tap 仍然安装着，只需重启引擎）
-        if !audioEngine.isRunning {
-            do {
-                try audioEngine.start()
-            } catch {
-                #if DEBUG
-                print("Failed to restart audio engine after interruption: \(error)")
-                #endif
-                stopRecording()
-            }
-        }
-
-        #if DEBUG
-        print("Recognition pipeline rebuilt successfully after interruption")
-        #endif
     }
 
     // MARK: - Live Activity Methods
@@ -404,11 +337,37 @@ final class VoiceInputManager: VoiceInputProtocol {
         updateTimer = nil
     }
 
-    private func removeInterruptionRecoveryObserver() {
+    private func removeInterruptionObservers() {
+        if let observer = interruptionBeganObserver {
+            NotificationCenter.default.removeObserver(observer)
+            interruptionBeganObserver = nil
+        }
         if let observer = interruptionRecoveryObserver {
             NotificationCenter.default.removeObserver(observer)
             interruptionRecoveryObserver = nil
         }
+    }
+
+    private func cleanupRecordingPipeline(markNotRecording: Bool) {
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        audioSessionHelper.stopObserving()
+        audioSessionHelper.deactivateSession()
+        removeInterruptionObservers()
+
+        if markNotRecording {
+            isRecording = false
+        }
+        isSilenceDetected = false
+        silenceStartTime = nil
+        endLiveActivity()
     }
 
     // MARK: - Permission Methods [v2]

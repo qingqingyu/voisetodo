@@ -9,6 +9,7 @@ final class TodoStore: TodoStoreProtocol {
 
     /// SwiftData 模型上下文
     private let modelContext: ModelContext
+    private let saveAction: (ModelContext) throws -> Void
 
     /// 所有待办（按 sortOrder 升序排列）
     @Published var todos: [TodoItemData] = []
@@ -17,8 +18,12 @@ final class TodoStore: TodoStoreProtocol {
 
     /// 初始化 TodoStore
     /// - Parameter modelContext: SwiftData 模型上下文
-    init(modelContext: ModelContext) {
+    init(
+        modelContext: ModelContext,
+        saveAction: @escaping (ModelContext) throws -> Void = { try $0.save() }
+    ) {
         self.modelContext = modelContext
+        self.saveAction = saveAction
         migrateOldSortOrder()
         migrateDueDatesFromHints()
         refreshTodos()
@@ -33,12 +38,8 @@ final class TodoStore: TodoStoreProtocol {
         todoItem.sortOrder = nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
-        do {
-            try modelContext.save()
-            todos.insert(todoItem.toData(), at: 0)
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        todos.insert(todoItem.toData(), at: 0)
     }
 
     /// 批量添加（确认界面用）
@@ -54,12 +55,8 @@ final class TodoStore: TodoStoreProtocol {
             newTodos.append(todoItem.toData())
         }
 
-        do {
-            try modelContext.save()
-            todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
 
     /// 添加原始转写文本（离线降级用）[v2]
@@ -69,12 +66,8 @@ final class TodoStore: TodoStoreProtocol {
         todoItem.sortOrder = nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
-        do {
-            try modelContext.save()
-            todos.insert(todoItem.toData(), at: 0)
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        todos.insert(todoItem.toData(), at: 0)
     }
 
     /// 切换完成状态
@@ -84,14 +77,10 @@ final class TodoStore: TodoStoreProtocol {
 
         todoItem.isCompleted.toggle()
 
-        do {
-            try modelContext.save()
-            // 增量更新：修改对应条目
-            if let index = todos.firstIndex(where: { $0.id == id }) {
-                todos[index] = todoItem.toData()
-            }
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        try saveOrRollback()
+        // 增量更新：修改对应条目
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
         }
     }
 
@@ -103,13 +92,9 @@ final class TodoStore: TodoStoreProtocol {
         try deleteCompletions(for: id)
         modelContext.delete(todoItem)
 
-        do {
-            try modelContext.save()
-            // 增量更新：移除对应条目
-            todos.removeAll { $0.id == id }
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        // 增量更新：移除对应条目
+        todos.removeAll { $0.id == id }
     }
 
     /// 更新待办
@@ -172,14 +157,10 @@ final class TodoStore: TodoStoreProtocol {
             }
         }
 
-        do {
-            try modelContext.save()
-            // 增量更新：修改对应条目
-            if let index = todos.firstIndex(where: { $0.id == id }) {
-                todos[index] = todoItem.toData()
-            }
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        try saveOrRollback()
+        // 增量更新：修改对应条目
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
         }
     }
 
@@ -197,13 +178,9 @@ final class TodoStore: TodoStoreProtocol {
             todoItem.isCompleted = false
         }
 
-        do {
-            try modelContext.save()
-            if let index = todos.firstIndex(where: { $0.id == id }) {
-                todos[index] = todoItem.toData()
-            }
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        try saveOrRollback()
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
         }
     }
 
@@ -275,9 +252,12 @@ final class TodoStore: TodoStoreProtocol {
             } else {
                 modelContext.insert(TodoOccurrenceCompletion(todoId: id, occurrenceDate: day))
             }
-            try modelContext.save()
+            try saveOrRollback()
             refreshTodos()
         } catch {
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
     }
@@ -370,14 +350,10 @@ final class TodoStore: TodoStoreProtocol {
             modelContext.delete(pendingItem)
         }
 
-        do {
-            try modelContext.save()
-            let pendingSet = Set(pendingIds)
-            todos.removeAll { pendingSet.contains($0.id) }
-            todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        let pendingSet = Set(pendingIds)
+        todos.removeAll { pendingSet.contains($0.id) }
+        todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
 
     func resetForUITests() throws {
@@ -390,9 +366,12 @@ final class TodoStore: TodoStoreProtocol {
             for completion in completions {
                 modelContext.delete(completion)
             }
-            try modelContext.save()
+            try saveOrRollback()
             todos = []
         } catch {
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
             throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
         }
     }
@@ -418,12 +397,8 @@ final class TodoStore: TodoStoreProtocol {
             modelContext.insert(todoItem)
         }
 
-        do {
-            try modelContext.save()
-            refreshTodos()
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        refreshTodos()
     }
 
     /// 记录系统日历事件 ID。
@@ -434,13 +409,9 @@ final class TodoStore: TodoStoreProtocol {
         let todoItem = try findTodoItem(by: id)
         todoItem.systemCalendarEventIdentifier = eventIdentifier
 
-        do {
-            try modelContext.save()
-            if let index = todos.firstIndex(where: { $0.id == id }) {
-                todos[index] = todoItem.toData()
-            }
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        try saveOrRollback()
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
         }
     }
 
@@ -465,12 +436,8 @@ final class TodoStore: TodoStoreProtocol {
             item.sortOrder = order
         }
 
-        do {
-            try modelContext.save()
-            refreshTodos()
-        } catch {
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
-        }
+        try saveOrRollback()
+        refreshTodos()
     }
 
     // MARK: - Internal Methods
@@ -510,6 +477,19 @@ final class TodoStore: TodoStoreProtocol {
         }
     }
 
+    private func saveOrRollback() throws {
+        do {
+            try saveAction(modelContext)
+        } catch {
+            modelContext.rollback()
+            refreshTodos()
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
     /// 一次性迁移：为旧数据（sortOrder 全部为 0）按 createdAt 倒序分配 sortOrder
     private func migrateOldSortOrder() {
         let descriptor = FetchDescriptor<TodoItem>(
@@ -526,7 +506,7 @@ final class TodoStore: TodoStoreProtocol {
             for (index, item) in items.enumerated() {
                 item.sortOrder = index
             }
-            try modelContext.save()
+            try saveOrRollback()
         } catch {
             #if DEBUG
             print("Failed to migrate sortOrder: \(error)")
@@ -558,7 +538,7 @@ final class TodoStore: TodoStoreProtocol {
                 changed = true
             }
             if changed {
-                try modelContext.save()
+                try saveOrRollback()
             }
         } catch {
             #if DEBUG

@@ -81,8 +81,8 @@ final class AppCoordinatorTests: XCTestCase {
     func testConfirmTodosWithSystemCalendarModeWritesSavedTodos() async {
         let store = CoordinatorTestStore()
         let writer = CoordinatorTestSystemCalendarWriter()
-        let expectation = expectation(description: "system calendar write")
-        writer.onWrite = { expectation.fulfill() }
+        let identifierPersisted = expectation(description: "system calendar identifier persisted")
+        store.onUpdateIdentifier = { identifierPersisted.fulfill() }
         let coordinator = AppCoordinator(
             voiceInput: CoordinatorTestVoiceInput(),
             extractor: DelayedExtractor(),
@@ -91,11 +91,16 @@ final class AppCoordinatorTests: XCTestCase {
             calendarWriteModeProvider: { .appAndSystemCalendar }
         )
 
-        let item = ExtractedTodo(title: "听写100个单词", detail: "未来 7 天每天听写 100 个单词", dueHint: "未来 7 天")
+        let item = ExtractedTodo(
+            title: "听写100个单词",
+            detail: "未来 7 天每天听写 100 个单词",
+            dueHint: "未来 7 天",
+            recurrenceRule: RecurrenceRule(frequency: .daily)
+        )
         let success = coordinator.confirmTodos([item])
 
         XCTAssertTrue(success)
-        await fulfillment(of: [expectation], timeout: 1)
+        await fulfillment(of: [identifierPersisted], timeout: 1)
         XCTAssertEqual(writer.receivedTodos.map(\.id), [item.id])
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)")
     }
@@ -119,17 +124,27 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(success)
         await fulfillment(of: [expectation], timeout: 1)
+        await Task.yield()
         XCTAssertEqual(store.todos.map(\.title), ["完成英语背诵"])
         XCTAssertTrue(coordinator.showToast)
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
     }
 
-    func testRapidConsecutiveConfirmsSerializeCalendarWrites() async {
+    func testConfirmTodosPersistsPartialSystemCalendarResultsWhenWriteFails() async {
+        let item1 = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "今天")
+        let item2 = ExtractedTodo(title: "完成数学作业", detail: "明天完成数学作业", dueHint: "明天")
+        let partialResult = SystemCalendarWriteResult(todoId: item1.id, eventIdentifier: "event-partial")
         let store = CoordinatorTestStore()
-        let writer = CoordinatorTestSystemCalendarWriter()
-        let allWritesDone = expectation(description: "both calendar writes complete")
-        allWritesDone.expectedFulfillmentCount = 2
-        writer.onWrite = { allWritesDone.fulfill() }
+        let writer = CoordinatorTestSystemCalendarWriter(
+            error: SystemCalendarWriteError(
+                results: [partialResult],
+                underlyingError: VoiceTodoError.storageWriteFailed("calendar partial failure")
+            )
+        )
+        let writeFailed = expectation(description: "system calendar partial write failed")
+        writer.onWrite = { writeFailed.fulfill() }
+        let identifierPersisted = expectation(description: "partial calendar identifier persisted")
+        store.onUpdateIdentifier = { identifierPersisted.fulfill() }
         let coordinator = AppCoordinator(
             voiceInput: CoordinatorTestVoiceInput(),
             extractor: DelayedExtractor(),
@@ -138,15 +153,95 @@ final class AppCoordinatorTests: XCTestCase {
             calendarWriteModeProvider: { .appAndSystemCalendar }
         )
 
-        let item1 = ExtractedTodo(title: "任务一")
-        let item2 = ExtractedTodo(title: "任务二")
+        let success = coordinator.confirmTodos([item1, item2])
+
+        XCTAssertTrue(success)
+        await fulfillment(of: [writeFailed, identifierPersisted], timeout: 1)
+        await Task.yield()
+        XCTAssertEqual(store.todos.map(\.title), ["完成英语背诵", "完成数学作业"])
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item1.id], "event-partial")
+        XCTAssertNil(store.systemCalendarEventIdentifiers[item2.id])
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+    }
+
+    func testConfirmTodosRemovesSystemCalendarEventWhenIdentifierPersistenceFails() async {
+        let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "今天")
+        let store = CoordinatorTestStore()
+        store.identifierUpdateError = VoiceTodoError.storageWriteFailed("identifier persistence failed")
+        let writer = CoordinatorTestSystemCalendarWriter()
+        let rollbackDone = expectation(description: "system calendar event rolled back")
+        writer.onRemove = { rollbackDone.fulfill() }
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            systemCalendarWriter: writer,
+            calendarWriteModeProvider: { .appAndSystemCalendar }
+        )
+
+        let success = coordinator.confirmTodos([item])
+
+        XCTAssertTrue(success)
+        await fulfillment(of: [rollbackDone], timeout: 1)
+        await Task.yield()
+        XCTAssertEqual(writer.removedIdentifiers, ["event-\(item.id.uuidString)"])
+        XCTAssertNil(store.systemCalendarEventIdentifiers[item.id])
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+    }
+
+    func testRapidConsecutiveConfirmsSerializeCalendarWrites() async {
+        let store = CoordinatorTestStore()
+        let writer = CoordinatorTestSystemCalendarWriter()
+        let allIdentifiersPersisted = expectation(description: "both calendar identifiers persist")
+        allIdentifiersPersisted.expectedFulfillmentCount = 2
+        store.onUpdateIdentifier = { allIdentifiersPersisted.fulfill() }
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            systemCalendarWriter: writer,
+            calendarWriteModeProvider: { .appAndSystemCalendar }
+        )
+
+        let item1 = ExtractedTodo(title: "任务一", detail: "今天", dueHint: "今天")
+        let item2 = ExtractedTodo(title: "任务二", detail: "明天", dueHint: "明天")
 
         _ = coordinator.confirmTodos([item1])
         _ = coordinator.confirmTodos([item2])
 
-        await fulfillment(of: [allWritesDone], timeout: 2)
+        await fulfillment(of: [allIdentifiersPersisted], timeout: 2)
 
         // 两次写入都被执行，且 eventIdentifier 都被持久化
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item1.id], "event-\(item1.id.uuidString)")
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item2.id], "event-\(item2.id.uuidString)")
+    }
+
+    func testQueuedCalendarSyncUsesModeFromConfirmTime() async {
+        var mode = CalendarWriteMode.appAndSystemCalendar
+        let store = CoordinatorTestStore()
+        let writer = CoordinatorTestSystemCalendarWriter()
+        writer.writeDelayNanoseconds = 50_000_000
+        let allIdentifiersPersisted = expectation(description: "both queued calendar identifiers persist")
+        allIdentifiersPersisted.expectedFulfillmentCount = 2
+        store.onUpdateIdentifier = { allIdentifiersPersisted.fulfill() }
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            systemCalendarWriter: writer,
+            calendarWriteModeProvider: { mode }
+        )
+
+        let item1 = ExtractedTodo(title: "任务一", detail: "今天", dueHint: "今天")
+        let item2 = ExtractedTodo(title: "任务二", detail: "明天", dueHint: "明天")
+
+        _ = coordinator.confirmTodos([item1])
+        _ = coordinator.confirmTodos([item2])
+        mode = .appOnly
+
+        await fulfillment(of: [allIdentifiersPersisted], timeout: 2)
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item1.id], "event-\(item1.id.uuidString)")
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item2.id], "event-\(item2.id.uuidString)")
     }
@@ -197,12 +292,16 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(writer.removedIdentifiers.isEmpty)
     }
 
-    func testUpdateTodoWithAppOnlyModeDoesNotTouchSystemCalendar() throws {
+    func testUpdateTodoWithAppOnlyModeRemovesStaleSystemCalendarEvent() async throws {
         let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "明天")
         var savedTodo = TodoItemData(from: item)
         savedTodo.systemCalendarEventIdentifier = "event-old"
         let store = CoordinatorTestStore(todos: [savedTodo])
         let writer = CoordinatorTestSystemCalendarWriter()
+        let removeDone = expectation(description: "stale event removed")
+        writer.onRemove = { removeDone.fulfill() }
+        let identifierCleared = expectation(description: "stale identifier cleared")
+        store.onUpdateIdentifier = { identifierCleared.fulfill() }
         let coordinator = AppCoordinator(
             voiceInput: CoordinatorTestVoiceInput(),
             extractor: DelayedExtractor(),
@@ -219,10 +318,11 @@ final class AppCoordinatorTests: XCTestCase {
         )
 
         XCTAssertEqual(store.todos[0].title, "完成数学作业")
+        await fulfillment(of: [removeDone, identifierCleared], timeout: 1)
         XCTAssertTrue(writer.receivedTodos.isEmpty)
-        XCTAssertTrue(writer.removedIdentifiers.isEmpty)
-        // identifier 未被清除（appOnly 模式不触发日历同步逻辑）
-        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old")
+        XCTAssertEqual(writer.removedIdentifiers, ["event-old"])
+        // appOnly 模式不再创建新系统事件，但会清理旧镜像，避免系统日历留下过期内容
+        XCTAssertNil(store.systemCalendarEventIdentifiers[item.id])
     }
 
     func testUpdateTodoReplacesSystemCalendarEvent() async throws {
@@ -236,6 +336,9 @@ final class AppCoordinatorTests: XCTestCase {
         writer.onRemove = { removeDone.fulfill() }
         let writeDone = expectation(description: "new event written")
         writer.onWrite = { writeDone.fulfill() }
+        let identifiersUpdated = expectation(description: "stale and new identifiers updated")
+        identifiersUpdated.expectedFulfillmentCount = 2
+        store.onUpdateIdentifier = { identifiersUpdated.fulfill() }
 
         let coordinator = AppCoordinator(
             voiceInput: CoordinatorTestVoiceInput(),
@@ -253,11 +356,84 @@ final class AppCoordinatorTests: XCTestCase {
         )
 
         XCTAssertEqual(store.todos[0].title, "完成数学作业")
-        await fulfillment(of: [removeDone, writeDone], timeout: 1)
+        await fulfillment(of: [removeDone, writeDone, identifiersUpdated], timeout: 1)
         XCTAssertEqual(writer.removedIdentifiers, ["event-old"])
         XCTAssertEqual(writer.receivedTodos.count, 1)
         XCTAssertNil(writer.receivedTodos.first?.systemCalendarEventIdentifier)
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)")
+    }
+
+    func testUpdateTodoKeepsCalendarIdentifierWhenRemovingOldEventFails() async throws {
+        let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "明天")
+        var savedTodo = TodoItemData(from: item)
+        savedTodo.systemCalendarEventIdentifier = "event-old"
+        let store = CoordinatorTestStore(todos: [savedTodo])
+        let writer = CoordinatorTestSystemCalendarWriter(removeError: VoiceTodoError.storageWriteFailed("remove failed"))
+        let removeAttempted = expectation(description: "old event remove attempted")
+        writer.onRemove = { removeAttempted.fulfill() }
+
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            systemCalendarWriter: writer,
+            calendarWriteModeProvider: { .appAndSystemCalendar }
+        )
+
+        try coordinator.updateTodo(
+            item.id,
+            title: "完成数学作业",
+            dueHint: "后天",
+            recurrenceRule: nil
+        )
+
+        await fulfillment(of: [removeAttempted], timeout: 1)
+        await Task.yield()
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old")
+        XCTAssertTrue(writer.receivedTodos.isEmpty)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+    }
+
+    func testCancelRecordingDueToInterruptionStopsRecordingAndShowsToast() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.isRecording = true
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore()
+        )
+
+        coordinator.cancelRecordingDueToInterruption()
+        await Task.yield()
+
+        XCTAssertFalse(voiceInput.isRecording)
+        XCTAssertFalse(coordinator.isRecording)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.audioSessionInterrupted)
+    }
+
+    func testHandleAppForegroundKeepsInvalidPendingWhenDeleteFails() async {
+        let pendingId = UUID()
+        let invalidPending = TodoItemData(
+            id: pendingId,
+            title: "orphan pending",
+            needsAIProcessing: true
+        )
+        let store = CoordinatorTestStore(todos: [invalidPending])
+        store.deleteErrorIds.insert(pendingId)
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store
+        )
+
+        await coordinator.handleAppForeground()
+
+        XCTAssertEqual(store.pendingItems().map(\.id), [pendingId])
+        XCTAssertEqual(store.deletedIds, [pendingId])
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
     }
 
     private func pendingTodo(id: UUID, transcript: String) -> TodoItemData {
@@ -290,6 +466,11 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
         isRecording = false
     }
 
+    func cancelRecordingDueToInterruption() {
+        isRecording = false
+        error = .audioSessionInterrupted
+    }
+
     func finishRecording() {
         isRecording = false
     }
@@ -318,10 +499,18 @@ private final class DelayedExtractor: TodoExtractorProtocol {
 private final class CoordinatorTestStore: TodoStoreProtocol {
     @Published var todos: [TodoItemData]
     var deletedIds: [UUID] = []
+    var deleteErrorIds: Set<UUID> = []
     var systemCalendarEventIdentifiers: [UUID: String] = [:]
+    var onUpdateIdentifier: (() -> Void)?
+    var identifierUpdateError: Error?
 
     init(todos: [TodoItemData] = []) {
         self.todos = todos
+        self.systemCalendarEventIdentifiers = Dictionary(
+            uniqueKeysWithValues: todos.compactMap { todo in
+                todo.systemCalendarEventIdentifier.map { (todo.id, $0) }
+            }
+        )
     }
 
     func add(_ item: ExtractedTodo) throws {
@@ -348,12 +537,45 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
 
     func delete(_ id: UUID) throws {
         deletedIds.append(id)
+        if deleteErrorIds.contains(id) {
+            throw VoiceTodoError.storageWriteFailed("delete failed")
+        }
         todos.removeAll { $0.id == id }
     }
 
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {}
+    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {
+        try updateFields(id, title: title, category: category, priority: priority, dueHint: dueHint)
+    }
 
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {}
+    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+        try updateFields(id, title: title, category: category, priority: priority, dueHint: dueHint)
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+        }
+        todos[index].recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
+    }
+
+    private func updateFields(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+        }
+        todos[index].title = title
+        if let category {
+            todos[index].category = category
+        }
+        if let priority {
+            todos[index].priority = priority
+        }
+        if let dueHint {
+            let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            todos[index].dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
+            todos[index].dueDate = TodoDueDateResolver.resolve(
+                dueHint: todos[index].dueHint,
+                title: todos[index].title,
+                detail: todos[index].detail ?? ""
+            )
+        }
+    }
 
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
 
@@ -380,10 +602,14 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
     }
 
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {
+        if let identifierUpdateError {
+            throw identifierUpdateError
+        }
         systemCalendarEventIdentifiers[id] = eventIdentifier
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index].systemCalendarEventIdentifier = eventIdentifier
         }
+        onUpdateIdentifier?()
     }
 
     func reorder(ids: [UUID]) throws {}
@@ -396,16 +622,25 @@ private final class CoordinatorTestSystemCalendarWriter: SystemCalendarWritingPr
     var removedIdentifiers: [String] = []
     var onWrite: (() -> Void)?
     var onRemove: (() -> Void)?
+    var writeDelayNanoseconds: UInt64 = 0
     let error: Error?
+    let removeError: Error?
 
-    init(error: Error? = nil) {
+    init(error: Error? = nil, removeError: Error? = nil) {
         self.error = error
+        self.removeError = removeError
     }
 
     func writeEvents(for todos: [TodoItemData]) async throws -> [SystemCalendarWriteResult] {
-        let writableTodos = todos.filter { $0.systemCalendarEventIdentifier == nil }
+        let writableTodos = todos.filter {
+            $0.systemCalendarEventIdentifier == nil
+                && SystemCalendarEventMapper.draft(from: $0) != nil
+        }
         receivedTodos = writableTodos
         onWrite?()
+        if writeDelayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: writeDelayNanoseconds)
+        }
         if let error {
             throw error
         }
@@ -414,8 +649,11 @@ private final class CoordinatorTestSystemCalendarWriter: SystemCalendarWritingPr
         }
     }
 
-    func removeEvents(identifiers: [String]) async {
+    func removeEvents(identifiers: [String]) async throws {
         removedIdentifiers.append(contentsOf: identifiers)
         onRemove?()
+        if let removeError {
+            throw removeError
+        }
     }
 }

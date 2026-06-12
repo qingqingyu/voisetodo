@@ -61,7 +61,6 @@ VoiceTodo/
 
 ✅ Extractor/
    ✅ TodoExtractorService.swift
-   ✅ PromptTemplates.swift
    ✅ NetworkClient.swift
 
 ✅ Store/
@@ -89,7 +88,6 @@ VoiceTodo/
    ✅ ErrorMessages.swift
    ✅ Constants.swift
    ✅ ServiceContainer.swift
-   ✅ KeychainHelper.swift
    ✅ NetworkMonitor.swift
 ```
 

@@ -221,13 +221,16 @@ enum WidgetTodoFetch {
         context: ModelContext,
         today: Date = Date(),
         limit: Int,
+        maxCandidateScan: Int? = nil,
         calendar: Calendar = .current
     ) throws -> [TodoItemData] {
         guard limit > 0 else { return [] }
 
-        let descriptor = FetchDescriptor<TodoItem>(
+        let candidateLimit = max(limit, maxCandidateScan ?? max(limit * 20, 100))
+        var descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
+        descriptor.fetchLimit = candidateLimit
         let items = try context.fetch(descriptor)
 
         let day = calendar.startOfDay(for: today)

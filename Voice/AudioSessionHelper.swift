@@ -4,6 +4,7 @@ import AVFoundation
 /// 音频会话中断恢复通知
 /// 当音频中断结束且可以恢复时发出，userInfo 包含 AVAudioSession.InterruptionOptions
 extension Notification.Name {
+    static let audioSessionInterruptionBegan = Notification.Name("AudioSessionInterruptionBegan")
     static let audioSessionDidRecoverFromInterruption = Notification.Name("AudioSessionDidRecoverFromInterruption")
 }
 
@@ -52,6 +53,10 @@ final class AudioSessionHelper {
             // 中断开始（如来电、闹钟等）
             wasActiveBeforeInterruption = isActive
             isActive = false
+            NotificationCenter.default.post(
+                name: .audioSessionInterruptionBegan,
+                object: self
+            )
         case .ended:
             // 中断结束
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {

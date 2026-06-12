@@ -11,14 +11,12 @@ final class ExtractorTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        setenv("ANTHROPIC_API_KEY", "test-key", 1)
         mockNetworkClient = MockNetworkClient()
         sut = TodoExtractorService(networkClient: mockNetworkClient.networkClient)
     }
 
     override func tearDown() {
         URLProtocolStub.reset()
-        unsetenv("ANTHROPIC_API_KEY")
         sut = nil
         mockNetworkClient = nil
         super.tearDown()
@@ -55,6 +53,68 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(result.todos[0].categoryHint, .finance)
         XCTAssertEqual(result.todos[0].priority, .normal)
         XCTAssertEqual(result.todos[0].dueHint, "明天")
+    }
+
+    func testNetworkClientRequestsProxyWithoutVendorAPIKey() async throws {
+        setenv("ANTHROPIC_API_KEY", "must-not-be-used", 1)
+        defer { unsetenv("ANTHROPIC_API_KEY") }
+
+        let jsonResponse = """
+        {
+          "todos": [
+            {
+              "title": "去银行办卡",
+              "detail": "明天去银行办卡",
+              "due_hint": "明天",
+              "priority": "normal",
+              "category_hint": "finance"
+            }
+          ],
+          "ignored": ""
+        }
+        """
+
+        mockNetworkClient.enqueueSuccess(text: jsonResponse)
+
+        _ = try await sut.extract(from: "明天去银行办卡", locale: Locale(identifier: "zh-Hans"))
+
+        let request = try XCTUnwrap(URLProtocolStub.requests.last)
+        XCTAssertEqual(request.url?.absoluteString, "https://proxy.test/v1/todo-extractions")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-App-Token"), "test-app-token")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Device-ID"), "test-device-id")
+        XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "anthropic-version"))
+
+        let body = try XCTUnwrap(URLProtocolStub.requestBodies.last)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["transcript"] as? String, "明天去银行办卡")
+        XCTAssertEqual(json["locale"] as? String, "zh-Hans")
+        XCTAssertEqual(json["stream"] as? Bool, false)
+    }
+
+    func testNetworkClientRejectsNonLocalHTTPProxyEndpoint() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let client = NetworkClient(
+            session: session,
+            proxyEndpoint: "http://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id"
+        )
+
+        do {
+            _ = try await client.callTodoExtractionProxy(
+                transcript: "明天去银行办卡",
+                localeIdentifier: "zh-Hans"
+            )
+            XCTFail("应该拒绝非本机 HTTP 代理地址")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .apiResponseInvalid("AI proxy URL 未配置"))
+            XCTAssertEqual(URLProtocolStub.callCount, 0)
+        } catch {
+            XCTFail("错误的错误类型: \(error)")
+        }
     }
 
     func testParsingWithoutIdGeneratesUUID() async throws {
@@ -325,20 +385,16 @@ private final class MockNetworkClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
         let session = URLSession(configuration: configuration)
-        networkClient = NetworkClient(session: session)
+        networkClient = NetworkClient(
+            session: session,
+            proxyEndpoint: "https://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id"
+        )
     }
 
     func enqueueSuccess(text: String) {
-        let body = """
-        {
-          "content": [
-            {
-              "text": \(text.jsonEscaped)
-            }
-          ]
-        }
-        """
-        URLProtocolStub.responses.append(.success(statusCode: 200, body: body))
+        URLProtocolStub.responses.append(.success(statusCode: 200, body: text))
     }
 
     func enqueueFailure(_ error: Error) {
@@ -357,10 +413,14 @@ private final class URLProtocolStub: URLProtocol {
     }
 
     static var responses: [StubResponse] = []
+    static var requests: [URLRequest] = []
+    static var requestBodies: [Data] = []
     static var callCount = 0
 
     static func reset() {
         responses = []
+        requests = []
+        requestBodies = []
         callCount = 0
     }
 
@@ -374,6 +434,8 @@ private final class URLProtocolStub: URLProtocol {
 
     override func startLoading() {
         Self.callCount += 1
+        Self.requests.append(request)
+        Self.requestBodies.append(Self.bodyData(from: request))
         guard !Self.responses.isEmpty else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
@@ -398,11 +460,27 @@ private final class URLProtocolStub: URLProtocol {
     }
 
     override func stopLoading() {}
-}
 
-private extension String {
-    var jsonEscaped: String {
-        let data = try! JSONEncoder().encode(self)
-        return String(data: data, encoding: .utf8)!
+    private static func bodyData(from request: URLRequest) -> Data {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else {
+            return Data()
+        }
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        let bufferSize = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        while stream.hasBytesAvailable {
+            let count = stream.read(buffer, maxLength: bufferSize)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 }

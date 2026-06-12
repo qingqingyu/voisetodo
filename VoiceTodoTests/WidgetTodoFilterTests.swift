@@ -4,6 +4,21 @@ import SwiftData
 
 @MainActor
 final class WidgetTodoFilterTests: XCTestCase {
+    func testAppGroupIdentifierMatchesWidgetConfig() {
+        XCTAssertEqual(AppGroupConfig.identifier, WidgetConfig.appGroupIdentifier)
+    }
+
+    func testExternalChangeVersionCanBeMarkedWhenSharedDefaultsIsAvailable() throws {
+        guard AppGroupConfig.sharedDefaults() != nil else {
+            throw XCTSkip("App Group defaults are unavailable without the test host entitlement.")
+        }
+
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        AppGroupConfig.markExternalDataChanged(date: date)
+
+        XCTAssertEqual(AppGroupConfig.currentExternalChangeVersion(), date.timeIntervalSince1970)
+    }
+
     func testVisibleTodosShowsTodayRecurringAndFiltersFutureAndCompletedOccurrences() throws {
         let calendar = Calendar(identifier: .gregorian)
         let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21)))
@@ -134,5 +149,41 @@ final class WidgetTodoFilterTests: XCTestCase {
         )
 
         XCTAssertEqual(result.map(\.title), ["今天规律任务", "无日期补充任务"])
+    }
+
+    func testWidgetTodoFetchHonorsCandidateScanLimit() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21)))
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: today))
+
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        let context = container.mainContext
+
+        for index in 0..<5 {
+            context.insert(TodoItem(
+                title: "未来任务 \(index)",
+                dueDate: tomorrow,
+                createdAt: today,
+                sortOrder: index
+            ))
+        }
+        context.insert(TodoItem(
+            title: "候选范围外的今天任务",
+            dueDate: today,
+            createdAt: today,
+            sortOrder: 6
+        ))
+        try context.save()
+
+        let result = try WidgetTodoFetch.recentTodos(
+            context: context,
+            today: today,
+            limit: 1,
+            maxCandidateScan: 5,
+            calendar: calendar
+        )
+
+        XCTAssertTrue(result.isEmpty)
     }
 }

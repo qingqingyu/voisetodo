@@ -24,7 +24,7 @@ struct ToggleTodoIntent: AppIntent {
         let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
         let config = ModelConfiguration(
             schema: schema,
-            groupContainer: .identifier("group.com.voicetodo.shared")
+            groupContainer: .identifier(AppGroupConfig.identifier)
         )
         let container = try ModelContainer(for: schema, configurations: config)
         let context = ModelContext(container)
@@ -56,6 +56,7 @@ struct ToggleTodoIntent: AppIntent {
                 item.isCompleted.toggle()
             }
             try context.save()
+            AppGroupConfig.markExternalDataChanged()
             WidgetCenter.shared.reloadAllTimelines()
         }
 

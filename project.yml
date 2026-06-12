@@ -80,6 +80,8 @@ targets:
         CFBundleDisplayName: VoiceTodo
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
+        VoiceTodoProxyEndpoint: "$(VOICETODO_AI_PROXY_ENDPOINT)"
+        VoiceTodoProxyAppToken: "$(VOICETODO_AI_PROXY_APP_TOKEN)"
         UILaunchScreen:
           UIColorName: AccentColor
         UIApplicationSceneManifest:
@@ -108,6 +110,7 @@ targets:
         excludes:
           - "**/.DS_Store"
       - path: Store/SwiftDataModels.swift
+      - path: Store/AppGroupConfig.swift
       - path: Protocols/Models.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift

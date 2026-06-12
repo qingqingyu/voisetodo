@@ -5,11 +5,29 @@ enum AppGroupConfig {
     /// App Group 标识符
     static let identifier = "group.com.voicetodo.shared"
 
+    /// Widget/AppIntent 写入后用于提示主 App 刷新的共享版本号
+    static let externalChangeVersionKey = "VoiceTodoExternalChangeVersion"
+
     /// 共享容器 URL
     /// - Returns: App Group 共享容器路径
     /// P1 修复: 返回 Optional 而不是 fatalError
     static var sharedContainerURL: URL? {
         return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
+    }
+
+    /// App Group 共享 UserDefaults
+    static func sharedDefaults() -> UserDefaults? {
+        UserDefaults(suiteName: identifier)
+    }
+
+    /// 当前外部写入版本号
+    static func currentExternalChangeVersion() -> Double {
+        sharedDefaults()?.double(forKey: externalChangeVersionKey) ?? 0
+    }
+
+    /// 标记 Widget/AppIntent 已修改共享数据
+    static func markExternalDataChanged(date: Date = Date()) {
+        sharedDefaults()?.set(date.timeIntervalSince1970, forKey: externalChangeVersionKey)
     }
 
     /// SwiftData 数据库文件路径

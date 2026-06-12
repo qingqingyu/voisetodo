@@ -113,7 +113,6 @@ Voice/AudioSessionHelper.swift
 Voice/VoiceConstants.swift
 
 Extractor/TodoExtractorService.swift
-Extractor/PromptTemplates.swift
 Extractor/NetworkClient.swift
 
 Store/SwiftDataModels.swift
@@ -134,7 +133,6 @@ Protocols/VoiceTodoError.swift
 Protocols/ErrorMessages.swift
 Protocols/Constants.swift
 Protocols/ServiceContainer.swift
-Protocols/KeychainHelper.swift
 Protocols/NetworkMonitor.swift
 EOF
 )

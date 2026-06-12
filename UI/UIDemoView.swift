@@ -39,11 +39,15 @@ struct UIDemoView: View {
                     NavigationLink("HomeView - 空状态") {
                         HomeView(store: MockStore.empty)
                             .navigationTitle("空状态示例")
+                            .environmentObject(AppCoordinator.preview)
+                            .environmentObject(PermissionManager())
                     }
 
                     NavigationLink("HomeView - 有数据") {
                         HomeView(store: MockStore.preview)
                             .navigationTitle("有数据示例")
+                            .environmentObject(AppCoordinator.preview)
+                            .environmentObject(PermissionManager())
                     }
                 }
 

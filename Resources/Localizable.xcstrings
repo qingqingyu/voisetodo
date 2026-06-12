@@ -55,6 +55,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Save failed. Please try again." } }
       }
     },
+    "error.shared_storage_unavailable" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "共享数据初始化失败，请重启 App；如果仍然失败，请重新安装。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shared data could not be initialized. Please restart the app; if it still fails, reinstall it." } }
+      }
+    },
     "error.recording_failed %@" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音失败: %@" } },
@@ -83,6 +89,12 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败 (%@)" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Parsing failed (%@)" } }
+      }
+    },
+    "startup.storage_error.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法打开待办数据" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to open todo data" } }
       }
     },
     "detail.saved" : {
@@ -323,6 +335,12 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这一天还没有待办" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos for this day" } }
+      }
+    },
+    "empty.day.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这一天还没有安排" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing scheduled for this day" } }
       }
     },
     "home.week.mon" : {
@@ -581,6 +599,12 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办详情" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Todo Details" } }
+      }
+    },
+    "detail.title_placeholder" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办标题" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todo title" } }
       }
     },
     "detail.section.title" : {
@@ -943,6 +967,54 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos yet\nTap the record button to start" } }
       }
     },
+    "empty.home.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先把今天想做的事说出来" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Say what you want to do today" } }
+      }
+    },
+    "empty.home.message" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以录音，也可以直接输入一句话。VoiceTodo 会帮你整理成可确认的待办。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record your voice or type a sentence. VoiceTodo will turn it into todos you can confirm." } }
+      }
+    },
+    "empty.home.primary" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始录音" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Recording" } }
+      }
+    },
+    "empty.home.secondary" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文字输入" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type Instead" } }
+      }
+    },
+    "empty.confirm.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有识别到待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos found" } }
+      }
+    },
+    "empty.confirm.message" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以换一种更明确的说法，例如“明天上午买牛奶”或“未来 7 天每天背单词”。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try a clearer phrase, like “buy milk tomorrow morning” or “study vocabulary every day for the next 7 days.”" } }
+      }
+    },
+    "empty.confirm.primary" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新输入" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try Again" } }
+      }
+    },
+    "empty.widget.today" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天没有待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos today" } }
+      }
+    },
     "empty.widget" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无待办" } },
@@ -1084,6 +1156,12 @@
     "recurrence.monthly_day_prefix" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月第" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Day" } }
+      }
+    },
+    "recurrence.monthly_day_placeholder" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日期" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Day" } }
       }
     },

@@ -12,7 +12,9 @@ final class ScenarioTests: XCTestCase {
         continueAfterFailure = false
         appHelper = AppLaunchHelper()
 
-        guard ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1" else {
+        let isDefaultEnabledScenario = name.contains("test_S11_homeView_emptyState")
+        let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
+        guard isDefaultEnabledScenario || isLegacyScenarioEnabled else {
             throw XCTSkip("Legacy ScenarioTests 依赖旧的 SwiftUI 可访问性层级；默认跳过，待重写后再恢复。")
         }
     }
@@ -341,8 +343,8 @@ final class ScenarioTests: XCTestCase {
 
     // MARK: - S11: HomeView 空状态
 
-    /// 场景 S11: HomeView 周视图空状态
-    /// 验证无待办时显示周视图和当天空状态
+    /// 场景 S11: HomeView 全局空状态
+    /// 验证无待办时保留月历，并显示录音/文字输入引导
     func test_S11_homeView_emptyState() {
         // Step 1: 数据库无待办条目
         appHelper.launchWithCompletedOnboarding()
@@ -351,10 +353,12 @@ final class ScenarioTests: XCTestCase {
         // Step 2: 打开 HomeView
         XCTAssertEqual(appHelper.todoList.cells.count, 0)
 
-        // Step 3: 验证周视图空状态
-        XCTAssertTrue(appHelper.app.otherElements["WeekHomeView"].exists, "应该显示周视图")
+        // Step 3: 验证月历和产品化空状态
+        XCTAssertTrue(appHelper.app.otherElements["MonthHomeView"].exists, "应该显示月历视图")
         XCTAssertTrue(appHelper.emptyState.exists, "应该显示 EmptyStateView")
-        XCTAssertTrue(appHelper.emptyState.staticTexts["这一天还没有待办"].exists, "应该显示当天无待办提示")
+        XCTAssertTrue(appHelper.emptyState.staticTexts["先把今天想做的事说出来"].exists, "应该显示首页空状态标题")
+        XCTAssertTrue(appHelper.app.buttons["ProductEmptyPrimaryButton"].exists, "应该显示开始录音按钮")
+        XCTAssertTrue(appHelper.app.buttons["ProductEmptySecondaryButton"].exists, "应该显示文字输入按钮")
     }
 
     // MARK: - S12: 首次启动引导流程

@@ -1,0 +1,12 @@
+name = "voicetodo-ai-proxy"
+main = "worker.js"
+compatibility_date = "2026-05-26"
+
+[vars]
+AI_PROVIDER = "anthropic"
+DAILY_REQUEST_LIMIT = "100"
+
+# Bind this after creating a KV namespace if you want per-device quotas.
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "your-kv-namespace-id"

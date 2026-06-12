@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import VoiceTodo
 
 final class VoiceInputTests: XCTestCase {
@@ -53,5 +54,28 @@ final class VoiceInputTests: XCTestCase {
 
     func testSpeechPermissionRequestMethod() throws {
         throw XCTSkip("系统语音识别权限弹窗在自动化环境中不稳定，改由 UI 测试覆盖权限流。")
+    }
+
+    func testAudioSessionInterruptionBeganPostsCancellationNotification() {
+        let helper = AudioSessionHelper()
+        let expectation = expectation(description: "interruption began notification")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .audioSessionInterruptionBegan,
+            object: helper,
+            queue: .main
+        ) { _ in
+            expectation.fulfill()
+        }
+
+        helper.handleInterruption(notification: Notification(
+            name: AVAudioSession.interruptionNotification,
+            object: nil,
+            userInfo: [
+                AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue
+            ]
+        ))
+
+        wait(for: [expectation], timeout: 1)
+        NotificationCenter.default.removeObserver(observer)
     }
 }

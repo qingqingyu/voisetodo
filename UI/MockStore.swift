@@ -233,6 +233,9 @@ final class MockVoiceInput: VoiceInputProtocol {
 
     func startRecording() async throws {}
     func stopRecording() {}
+    func cancelRecordingDueToInterruption() {
+        error = .audioSessionInterrupted
+    }
     func finishRecording() { stopRecording() }
 }
 
