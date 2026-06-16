@@ -1,5 +1,7 @@
 # ServiceContainer 编译错误修复摘要
 
+> **历史记录（2026-03-18 时点）**：本文档记录当时 ServiceContainer 编译错误的修复过程。**ServiceContainer / @Injected 此后已被整体移除**（改为纯构造注入），故文中提到的 `Protocols/ServiceContainer.swift`、`App/ServiceContainer+VoiceTodo.swift` 均已不存在。本文保留作历史档案。
+
 ## 问题描述
 
 `ServiceContainer.swift` 位于 `Protocols` SPM 包中，但其 `registerVoiceTodoServices` 方法引用了不在该包中的具体实现类，导致编译错误。

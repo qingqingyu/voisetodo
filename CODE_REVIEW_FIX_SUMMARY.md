@@ -1,5 +1,7 @@
 # 代码审查修复总结
 
+> **历史记录**：本文档记录当时引入 ServiceContainer / @Injected 的修复。该 DI 容器方案**此后已被移除**，改为纯构造注入；故文中关于 `ServiceContainer`、`@Injected` 的内容仅作历史档案，不再适用。
+
 ## 修复的问题
 
 ### P0 - Critical（安全漏洞）

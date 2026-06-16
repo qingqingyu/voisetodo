@@ -52,7 +52,9 @@ VoiceTodo/
    ✅ AppCoordinator.swift
    ✅ OnboardingView.swift
    ✅ PermissionManager.swift
-   ✅ ServiceContainer+VoiceTodo.swift
+   ✅ SystemCalendarWriter.swift
+   ✅ Intents/ (整个文件夹)
+   （ServiceContainer+VoiceTodo.swift 已移除）
 
 ✅ Voice/
    ✅ VoiceInputManager.swift
@@ -87,8 +89,10 @@ VoiceTodo/
    ✅ VoiceTodoError.swift
    ✅ ErrorMessages.swift
    ✅ Constants.swift
-   ✅ ServiceContainer.swift
    ✅ NetworkMonitor.swift
+   ✅ CalendarWriteMode.swift
+   ✅ UITestLaunchOptions.swift
+   （ServiceContainer.swift 已移除）
 ```
 
 **重要设置**:
@@ -272,9 +276,9 @@ struct VoiceTodoApp: App {
 @testable import VoiceTodo
 ```
 
-### 7.2 更新 ServiceContainer
+### 7.2 ~~更新 ServiceContainer~~（已移除）
 
-确保 `ServiceContainer+VoiceTodo.swift` 只被主应用和测试 targets 包含，不包含在 Widget target 中。
+ServiceContainer 方案已废弃（改为构造注入），本节不再适用。
 
 ### 7.3 处理条件编译
 

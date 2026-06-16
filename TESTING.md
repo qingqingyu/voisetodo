@@ -248,7 +248,7 @@ jobs:
 ## 常见问题
 
 ### Q: 为什么无法运行测试？
-A: 检查是否有编译错误。当前存在 ServiceContainer.swift 的编译错误需要先修复。
+A: 检查是否有编译错误。（历史提示中的 ServiceContainer.swift 编译错误已不存在——ServiceContainer 已整体移除，改为构造注入。）
 
 ### Q: 如何在真机上运行 UI 测试？
 A:

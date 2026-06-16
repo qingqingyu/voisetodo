@@ -1,5 +1,7 @@
 # VoiceTodo 项目最终报告
 
+> **历史记录（2026-03-18 时点，v1.0）**：下文目录树与状态为当时快照。此后 ServiceContainer / PromptTemplates 已移除，并新增重复任务、系统日历、Live Activity、Siri Intents、AI 代理等能力；最新架构与字段以根目录 `agent-0-architect-prompt-v3-merged.md` 为准。
+
 ## 📊 项目状态总结
 
 **日期**: 2026年3月18日

@@ -181,7 +181,7 @@ private func getRecentTodos(limit: Int) -> [TodoItemData] {
 配置完成后，Widget 将能够：
 - ✅ 显示用户添加的真实待办
 - ✅ 只显示未完成的待办
-- ✅ 按创建时间倒序排列
+- ✅ 按 sortOrder 升序排列（手动拖拽排序）
 - ✅ 主 App 添加/删除/完成后自动更新
 
 ---
