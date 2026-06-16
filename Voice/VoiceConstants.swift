@@ -11,6 +11,9 @@ enum VoiceConstants {
     /// 静音超时时间（秒）
     static let silenceTimeoutSeconds: TimeInterval = 2.0
 
+    /// 停止输入后等待最终语音识别回调的最长时间
+    static let finishRecordingWatchdogTimeoutSeconds: TimeInterval = 5.0
+
     /// 音量采样缓冲区大小
     static let audioBufferSize: AVAudioFrameCount = 1024
 

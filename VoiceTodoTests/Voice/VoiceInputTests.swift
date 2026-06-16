@@ -36,6 +36,11 @@ final class VoiceInputTests: XCTestCase {
         XCTAssertLessThanOrEqual(VoiceConstants.silenceTimeoutSeconds, 3.0)
     }
 
+    func testVoiceConstantsFinishRecordingWatchdogTimeout() {
+        XCTAssertGreaterThanOrEqual(VoiceConstants.finishRecordingWatchdogTimeoutSeconds, 3.0)
+        XCTAssertLessThanOrEqual(VoiceConstants.finishRecordingWatchdogTimeoutSeconds, 10.0)
+    }
+
     func testVoiceConstantsAudioBufferSize() {
         XCTAssertGreaterThan(VoiceConstants.audioBufferSize, 0)
     }

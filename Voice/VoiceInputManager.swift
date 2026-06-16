@@ -48,6 +48,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var liveActivity: Activity<RecordingActivityAttributes>?
     private var recordingStartTime: Date?
     private var updateTimer: Timer?
+    private var finishRecordingWatchdogTask: Task<Void, Never>?
     private var interruptionRecoveryObserver: NSObjectProtocol?
     private var interruptionBeganObserver: NSObjectProtocol?
 
@@ -63,7 +64,15 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     /// 开始录音
     func startRecording() async throws {
+        guard !isRecording else {
+            #if DEBUG
+            print("startRecording called while already recording — ignoring")
+            #endif
+            return
+        }
+
         // 清空之前的状态
+        cancelFinishRecordingWatchdog()
         transcript = ""
         error = nil
         isSilenceDetected = false
@@ -164,6 +173,8 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 移除中断通知监听
         removeInterruptionObservers()
 
+        startFinishRecordingWatchdog()
+
         // 注意：不设置 isRecording = false，等待 recognitionTask 的 isFinal 回调触发 stopRecording()
         // 这样可以确保 transcript 是最终识别结果
     }
@@ -209,7 +220,10 @@ final class VoiceInputManager: VoiceInputProtocol {
                 if isFinal {
                     // 识别终止且伴随错误，设置错误状态让 UI 可感知
                     DispatchQueue.main.async {
+                        // 已被看门狗/正常停止收敛时，忽略陈旧的取消回调，避免覆盖既有错误
+                        guard self.isRecording else { return }
                         self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
+                        self.stopRecording()
                     }
                 }
                 #if DEBUG
@@ -337,6 +351,31 @@ final class VoiceInputManager: VoiceInputProtocol {
         updateTimer = nil
     }
 
+    private func startFinishRecordingWatchdog() {
+        cancelFinishRecordingWatchdog()
+        finishRecordingWatchdogTask = Task { [weak self] in
+            do {
+                try await Task.sleep(
+                    nanoseconds: UInt64(VoiceConstants.finishRecordingWatchdogTimeoutSeconds * 1_000_000_000)
+                )
+            } catch {
+                return
+            }
+            await self?.handleFinishRecordingWatchdogExpired()
+        }
+    }
+
+    private func cancelFinishRecordingWatchdog() {
+        finishRecordingWatchdogTask?.cancel()
+        finishRecordingWatchdogTask = nil
+    }
+
+    private func handleFinishRecordingWatchdogExpired() {
+        guard isRecording else { return }
+        cleanupRecordingPipeline(markNotRecording: true)
+        error = .recordingFailed("识别超时")
+    }
+
     private func removeInterruptionObservers() {
         if let observer = interruptionBeganObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -349,6 +388,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     }
 
     private func cleanupRecordingPipeline(markNotRecording: Bool) {
+        cancelFinishRecordingWatchdog()
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
 
@@ -375,7 +415,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 请求麦克风权限
     static func requestMicrophonePermission() async -> Bool {
         return await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { granted in
                 continuation.resume(returning: granted)
             }
         }
@@ -410,7 +450,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 检查权限
     private func checkPermissions() async throws {
         // 检查麦克风权限
-        let micStatus = AVAudioSession.sharedInstance().recordPermission
+        let micStatus = AVAudioApplication.shared.recordPermission
         if micStatus != .granted {
             let granted = await Self.requestMicrophonePermission()
             if !granted {
