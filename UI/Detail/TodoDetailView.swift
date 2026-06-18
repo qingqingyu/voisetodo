@@ -56,13 +56,13 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
             PaperTextureBackground()
 
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: WarmSpacing.lg) {
                     // 标题编辑 — 视觉焦点，更大的 padding 和装饰
                     VStack(alignment: .leading) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: WarmSpacing.xs) {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(categoryColor)
-                                .frame(width: 4, height: 28)
+                                .frame(width: 4, height: WarmSpacing.xl)
 
                             Text(String(localized: "detail.section.title"))
                                 .font(WarmFont.caption(13))
@@ -75,23 +75,23 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                             .lineLimit(1...3)
                             .onChange(of: editedTitle) { _, _ in checkForChanges() }
                     }
-                    .padding(20)
+                    .padding(WarmSpacing.lg)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 20)
+                        RoundedRectangle(cornerRadius: WarmRadius.sheet)
                             .fill(Color.white)
                             .shadow(color: WarmTheme.shadowMedium, radius: 10, x: 0, y: 5)
                     )
 
                     // 分类选择
                     detailCard {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             Text(String(localized: "detail.section.category"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 10) {
+                                HStack(spacing: WarmSpacing.xs) {
                                     ForEach(TodoCategory.allCases, id: \.self) { category in
                                         categoryChip(category)
                                     }
@@ -102,12 +102,12 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
                     // 优先级选择
                     detailCard {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             Text(String(localized: "detail.section.priority"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
-                            HStack(spacing: 12) {
+                            HStack(spacing: WarmSpacing.sm) {
                                 priorityButton(.normal, label: String(localized: "detail.priority.normal"), icon: "minus")
                                 priorityButton(.high, label: String(localized: "detail.priority.high"), icon: "exclamationmark")
                             }
@@ -116,7 +116,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
                     // 时间提示
                     detailCard {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             Text(String(localized: "detail.section.due_hint"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
@@ -132,7 +132,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
                     // 元信息
                     detailCard {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             HStack {
                                 Text(String(localized: "detail.created_at"))
                                     .font(WarmFont.body(15))
@@ -144,7 +144,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                             }
 
                             if todo.needsAIProcessing {
-                                HStack(spacing: 6) {
+                                HStack(spacing: WarmSpacing.xs) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .foregroundColor(WarmTheme.warning)
                                     Text(String(localized: "detail.needs_ai"))
@@ -157,23 +157,23 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
                     // 删除按钮
                     Button(action: { showDeleteConfirmation = true }) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: WarmSpacing.xs) {
                             Image(systemName: "trash")
                             Text(String(localized: "detail.delete_button"))
                         }
                         .font(WarmFont.body(15))
                         .foregroundColor(WarmTheme.urgent)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, WarmSpacing.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: WarmRadius.section)
                                 .fill(WarmTheme.urgent.opacity(0.08))
                         )
                     }
-                    .padding(.top, 8)
+                    .padding(.top, WarmSpacing.xs)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
+                .padding(.horizontal, WarmSpacing.xl)
+                .padding(.top, WarmSpacing.md)
                 .padding(.bottom, 40)
             }
         }
@@ -210,10 +210,10 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
         VStack(alignment: .leading) {
             content()
         }
-        .padding(16)
+        .padding(WarmSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: WarmRadius.section)
                 .fill(Color.white)
                 .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
         )
@@ -224,25 +224,25 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
     private func categoryChip(_ category: TodoCategory) -> some View {
         let isSelected = editedCategory == category
         return Button {
-            withAnimation(.spring(response: 0.3)) {
+            withAnimation(WarmAnimation.springStandard) {
                 editedCategory = category
                 checkForChanges()
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: WarmSpacing.xxs) {
                 Text(category.emoji)
                     .font(.system(size: 14))
                 Text(category.displayName)
                     .font(WarmFont.caption(13))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, WarmSpacing.xs)
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: WarmRadius.card)
                     .fill(isSelected ? WarmTheme.primary.opacity(0.15) : WarmTheme.secondaryBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: WarmRadius.card)
                     .stroke(isSelected ? WarmTheme.primary : Color.clear, lineWidth: 1.5)
             )
             .foregroundColor(isSelected ? WarmTheme.primaryDark : WarmTheme.textSecondary)
@@ -256,25 +256,25 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
         let isSelected = editedPriority == priority
         let color = priority == .high ? WarmTheme.urgent : WarmTheme.success
         return Button {
-            withAnimation(.spring(response: 0.3)) {
+            withAnimation(WarmAnimation.springStandard) {
                 editedPriority = priority
                 checkForChanges()
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
                 Text(label)
                     .font(WarmFont.body(15))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, WarmSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: WarmRadius.card)
                     .fill(isSelected ? color.opacity(0.12) : WarmTheme.secondaryBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: WarmRadius.card)
                     .stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
             )
             .foregroundColor(isSelected ? color : WarmTheme.textSecondary)
@@ -286,12 +286,12 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
 
     private var recurrenceEditorCard: some View {
         detailCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: WarmSpacing.sm) {
                 Text(String(localized: "detail.section.recurrence"))
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.textSecondary)
 
-                HStack(spacing: 8) {
+                HStack(spacing: WarmSpacing.xs) {
                     recurrenceModeButton(nil, title: String(localized: "recurrence.none"))
                     recurrenceModeButton(.daily, title: String(localized: "recurrence.daily"))
                     recurrenceModeButton(.weekly, title: String(localized: "recurrence.weekly_short"))
@@ -299,7 +299,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 }
 
                 if editedRecurrenceFrequency == .weekly {
-                    HStack(spacing: 6) {
+                    HStack(spacing: WarmSpacing.xs) {
                         ForEach(1...7, id: \.self) { weekday in
                             weekdayButton(weekday)
                         }
@@ -307,7 +307,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 }
 
                 if editedRecurrenceFrequency == .monthly {
-                    HStack(spacing: 8) {
+                    HStack(spacing: WarmSpacing.xs) {
                         Text(String(localized: "recurrence.monthly_day_prefix"))
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textSecondary)
@@ -315,11 +315,11 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                             .keyboardType(.numberPad)
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textPrimary)
-                            .frame(width: 52)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
+                            .frame(width: 48)
+                            .padding(.horizontal, WarmSpacing.xs)
+                            .padding(.vertical, WarmSpacing.xs)
                             .background(
-                                RoundedRectangle(cornerRadius: 10)
+                                RoundedRectangle(cornerRadius: WarmRadius.card)
                                     .fill(WarmTheme.secondaryBackground)
                             )
                             .onChange(of: editedDayOfMonth) { _, _ in checkForChanges() }
@@ -341,7 +341,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
     private func recurrenceModeButton(_ frequency: RecurrenceFrequency?, title: String) -> some View {
         let isSelected = editedRecurrenceFrequency == frequency
         return Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            withAnimation(WarmAnimation.springFast) {
                 editedRecurrenceFrequency = frequency
                 if frequency == .weekly && editedWeekdays.isEmpty {
                     editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
@@ -356,9 +356,9 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 .font(WarmFont.caption(12))
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
+                .padding(.vertical, WarmSpacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: WarmRadius.card)
                         .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
                 )
         }
@@ -379,9 +379,9 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
                 .font(WarmFont.caption(12))
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 34)
+                .frame(height: WarmSpacing.xxl)
                 .background(
-                    RoundedRectangle(cornerRadius: 9)
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
                         .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
                 )
         }

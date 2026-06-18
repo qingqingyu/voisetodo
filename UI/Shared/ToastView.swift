@@ -55,11 +55,11 @@ struct ToastModifier: ViewModifier {
                         .onChange(of: message) { _, _ in
                             scheduleDismiss()
                         }
-                        .padding(.top, 50)
+                        .padding(.top, WarmSpacing.xxxl)
                         .zIndex(1)
                 }
             }
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isPresented)
+            .animation(WarmAnimation.springSlow, value: isPresented)
     }
 
     /// 调度自动隐藏（取消旧定时器，启动新定时器）
@@ -67,7 +67,7 @@ struct ToastModifier: ViewModifier {
         dismissTask?.cancel()
         let duration = action != nil ? UIConfig.toastDuration * 2 : UIConfig.toastDuration
         let task = DispatchWorkItem {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(WarmAnimation.springStandard) {
                 isPresented = false
             }
         }
@@ -85,11 +85,11 @@ struct ToastView: View {
     var action: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WarmSpacing.sm) {
             ZStack {
                 Circle()
                     .fill(style.iconColor.opacity(0.15))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 32)
 
                 Image(systemName: style.iconName)
                     .foregroundColor(style.iconColor)
@@ -111,8 +111,8 @@ struct ToastView: View {
                         .font(.custom("Avenir Next", size: 13))
                         .fontWeight(.semibold)
                         .foregroundColor(style.iconColor)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, WarmSpacing.sm)
+                        .padding(.vertical, WarmSpacing.xs)
                         .background(
                             Capsule()
                                 .fill(style.iconColor.opacity(0.12))
@@ -120,14 +120,14 @@ struct ToastView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: WarmRadius.sheet)
                 .fill(Color.white)
                 .shadow(color: WarmTheme.shadowMedium, radius: 16, x: 0, y: 8)
         )
-        .padding(.horizontal, 16)
+        .padding(.horizontal, WarmSpacing.md)
     }
 }
 

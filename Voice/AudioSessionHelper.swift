@@ -19,7 +19,7 @@ final class AudioSessionHelper {
     /// 配置音频会话为录音模式
     func configureSession() throws {
         do {
-            try session.setCategory(.record, mode: .measurement, options: [.defaultToSpeaker])
+            try session.setCategory(.record, mode: .default, options: [])
             try session.setActive(true)
             isActive = true
         } catch {

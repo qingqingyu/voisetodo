@@ -22,13 +22,13 @@ struct ManualInputSheetView: View {
             ZStack {
                 PaperTextureBackground()
 
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: WarmSpacing.md) {
                     inputCard
                     hintRow
                     Spacer()
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
+                .padding(.horizontal, WarmSpacing.lg)
+                .padding(.top, WarmSpacing.md)
             }
             .navigationTitle(String(localized: "manual_input.title"))
             .navigationBarTitleDisplayMode(.inline)
@@ -72,7 +72,7 @@ struct ManualInputSheetView: View {
                 .foregroundColor(WarmTheme.textPrimary)
                 .scrollContentBackground(.hidden)
                 .focused($isInputFocused)
-                .padding(10)
+                .padding(WarmSpacing.xs)
                 .frame(minHeight: 180)
                 .background(Color.clear)
                 .disabled(isSubmitting)
@@ -82,24 +82,24 @@ struct ManualInputSheetView: View {
                 Text(String(localized: "manual_input.placeholder"))
                     .font(WarmFont.body(16))
                     .foregroundColor(WarmTheme.textMuted)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 18)
+                    .padding(.horizontal, WarmSpacing.sm)
+                    .padding(.vertical, WarmSpacing.sm)
                     .allowsHitTesting(false)
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: WarmRadius.section)
                 .fill(Color.white)
                 .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: WarmRadius.section)
                 .stroke(WarmTheme.primary.opacity(isInputFocused ? 0.35 : 0.12), lineWidth: 1.5)
         )
     }
 
     private var hintRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "sparkles")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(WarmTheme.primary)
@@ -108,8 +108,8 @@ struct ManualInputSheetView: View {
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, WarmSpacing.sm)
+        .padding(.vertical, WarmSpacing.xs)
         .background(
             Capsule()
                 .fill(WarmTheme.secondaryBackground)

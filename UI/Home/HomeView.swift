@@ -21,7 +21,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var hasStartedEntranceAnimation = false
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
-    private let waveformHeights: [CGFloat] = [14, 24, 18, 28, 16]
+    private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
 
     // MARK: - Initialization
@@ -99,7 +99,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
     private var headerView: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 Text(formattedHomeDate(Date()))
                     .font(WarmFont.caption(14))
                     .foregroundColor(WarmTheme.textSecondary)
@@ -117,9 +117,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
             calendarSettingsMenu
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
+        .padding(.horizontal, WarmSpacing.xl)
+        .padding(.top, WarmSpacing.md)
+        .padding(.bottom, WarmSpacing.lg)
         .background(
             WarmTheme.background.opacity(0.9)
                 .shadow(color: WarmTheme.shadowLight, radius: 1, y: 1)
@@ -147,7 +147,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     private var statsBadge: some View {
         let total = store.todos.count
         let completed = store.todos.filter { $0.isCompleted }.count
-        return HStack(spacing: 6) {
+        return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 14))
                 .foregroundColor(WarmTheme.primary)
@@ -156,8 +156,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 .font(WarmFont.caption(14))
                 .foregroundColor(WarmTheme.textSecondary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, WarmSpacing.sm)
+        .padding(.vertical, WarmSpacing.xs)
         .background(
             Capsule()
                 .fill(WarmTheme.secondaryBackground)
@@ -186,7 +186,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             Image(systemName: "gearshape")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(WarmTheme.textSecondary)
-                .frame(width: 36, height: 36)
+                .frame(width: WarmSize.touch, height: WarmSize.touch)
                 .background(
                     Circle()
                         .fill(WarmTheme.secondaryBackground)
@@ -203,7 +203,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             WarmTheme.background.opacity(0.85)
                 .ignoresSafeArea()
 
-            VStack(spacing: 24) {
+            VStack(spacing: WarmSpacing.xl) {
                 Spacer()
 
                 if isProcessing || coordinator.isExtracting {
@@ -225,8 +225,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                             Text(String(localized: "home.cancel_extraction"))
                                 .font(WarmFont.body(15))
                                 .foregroundColor(WarmTheme.textSecondary)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
+                                .padding(.horizontal, WarmSpacing.lg)
+                                .padding(.vertical, WarmSpacing.xs)
                                 .background(
                                     Capsule()
                                         .stroke(WarmTheme.textMuted, lineWidth: 1)
@@ -238,17 +238,17 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     ZStack {
                         Circle()
                             .fill(WarmTheme.primary.opacity(0.08))
-                            .frame(width: 120, height: 120)
+                            .frame(width: WarmSize.mega, height: WarmSize.mega)
 
                         Circle()
                             .fill(WarmTheme.primary.opacity(0.15))
-                            .frame(width: 80, height: 80)
+                            .frame(width: WarmSize.hero, height: WarmSize.hero)
 
-                        HStack(spacing: 5) {
+                        HStack(spacing: WarmSpacing.xxs) {
                             ForEach(Array(waveformHeights.enumerated()), id: \.offset) { i, h in
                                 RoundedRectangle(cornerRadius: 3)
                                     .fill(WarmTheme.primary)
-                                    .frame(width: 5, height: h)
+                                    .frame(width: 4, height: h)
                                     .animation(
                                         .easeInOut(duration: 0.5)
                                             .repeatForever(autoreverses: true)
@@ -270,14 +270,14 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .foregroundColor(WarmTheme.textSecondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(4)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, WarmSpacing.xxl)
+                        .padding(.vertical, WarmSpacing.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: WarmRadius.section)
                                 .fill(Color.white.opacity(0.8))
                                 .shadow(color: WarmTheme.shadowLight, radius: 4, y: 2)
                         )
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, WarmSpacing.xl)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         .animation(.easeOut(duration: 0.2), value: coordinator.transcript)
                 }
@@ -329,13 +329,13 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         monthDays: [Date],
         occurrencesByDay: [String: [TodoOccurrenceData]]
     ) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: WarmSpacing.sm) {
             HStack {
                 Button(action: { shiftMonth(by: -1) }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(WarmTheme.textSecondary)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 32, height: 32)
                         .background(Circle().fill(WarmTheme.secondaryBackground))
                 }
                 .buttonStyle(.plain)
@@ -351,7 +351,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(WarmTheme.textSecondary)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 32, height: 32)
                         .background(Circle().fill(WarmTheme.secondaryBackground))
                 }
                 .buttonStyle(.plain)
@@ -362,8 +362,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     Text(String(localized: "home.week.today_button"))
                         .font(WarmFont.caption(13))
                         .foregroundColor(WarmTheme.primaryDark)
-                        .padding(.horizontal, 12)
-                        .frame(height: 34)
+                        .padding(.horizontal, WarmSpacing.sm)
+                        .frame(height: 32)
                         .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
@@ -371,7 +371,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 .accessibilityLabel(String(localized: "a11y.today_month"))
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: WarmSpacing.xs) {
                 ForEach(visibleWeekDaysForHeader, id: \.self) { day in
                     Text(shortWeekday(for: day))
                         .font(WarmFont.caption(11))
@@ -380,15 +380,15 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 }
             }
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
                 ForEach(monthDays, id: \.self) { day in
                     monthDayButton(for: day, occurrencesByDay: occurrencesByDay)
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 4)
-        .padding(.bottom, 12)
+        .padding(.horizontal, WarmSpacing.lg)
+        .padding(.top, WarmSpacing.xxs)
+        .padding(.bottom, WarmSpacing.sm)
         .background(WarmTheme.background.opacity(0.94))
     }
 
@@ -412,12 +412,12 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         let hasHighPriority = dayOccurrences.contains { $0.todo.priority == .high && !$0.isCompleted }
 
         return Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(WarmAnimation.springStandard) {
                 selectedDate = calendar.startOfDay(for: day)
                 visibleMonthAnchor = calendar.startOfDay(for: day)
             }
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: WarmSpacing.xxs) {
                 Text(day.formatted(.dateTime.day(.twoDigits)))
                     .font(WarmFont.headline(14))
                     .foregroundColor(isSelected ? .white : (isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
@@ -429,15 +429,15 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                             .frame(width: 4, height: 4)
                     }
                 }
-                .frame(height: 5)
+                .frame(height: 4)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
+            .frame(height: WarmSpacing.xxxl)
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: WarmRadius.card)
                     .fill(isSelected ? WarmTheme.primary : Color.white.opacity(isCurrentMonth ? 0.9 : 0.45))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: WarmRadius.card)
                             .stroke(isToday && !isSelected ? WarmTheme.primary.opacity(0.55) : Color.clear, lineWidth: 1.5)
                     )
                     .shadow(color: isSelected ? WarmTheme.shadowMedium : WarmTheme.shadowLight, radius: isSelected ? 8 : 4, x: 0, y: 3)
@@ -510,12 +510,12 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         )
         .accessibilityIdentifier("EmptyState")
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.sm, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
     }
 
     private var emptySelectedDayRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "calendar.badge.checkmark")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(WarmTheme.primary)
@@ -526,33 +526,33 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
             Spacer()
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 18)
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: WarmRadius.section)
                 .fill(Color.white.opacity(0.86))
                 .shadow(color: WarmTheme.shadowLight, radius: 5, x: 0, y: 2)
         )
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
         .accessibilityIdentifier("EmptyState")
     }
 
     private func daySectionHeader(title: String, count: Int) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: WarmSpacing.xs) {
             Text(title)
                 .font(WarmFont.headline(15))
             Text("\(count)")
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.primaryDark)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
+                .padding(.horizontal, WarmSpacing.xs)
+                .padding(.vertical, WarmSpacing.xxs)
                 .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
         }
         .foregroundColor(WarmTheme.textSecondary)
         .textCase(nil)
-        .listRowInsets(EdgeInsets(top: 16, leading: 24, bottom: 4, trailing: 20))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.md, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
     }
 
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
@@ -563,7 +563,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             onTap: { selectedTodo = todo }
         )
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 7, leading: 20, bottom: 7, trailing: 20))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
@@ -575,7 +575,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
         .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
         .onAppear {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(index) * 0.06)) {
+            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(todo.id)
             }
         }
@@ -593,7 +593,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             onTap: { selectedTodo = occurrence.todo }
         )
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 7, leading: 20, bottom: 7, trailing: 20))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
@@ -605,7 +605,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         .opacity(cardAppeared.contains(occurrence.todo.id) ? 1 : 0)
         .offset(y: cardAppeared.contains(occurrence.todo.id) ? 0 : 20)
         .onAppear {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(index) * 0.06)) {
+            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(occurrence.todo.id)
             }
         }
@@ -618,24 +618,24 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     // MARK: - Bottom Actions
 
     private var bottomActionBar: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: WarmSpacing.xs) {
             manualInputButton
             recordingButton
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.horizontal, WarmSpacing.xl)
+        .padding(.top, WarmSpacing.xs)
+        .padding(.bottom, WarmSpacing.sm)
         .background(WarmTheme.background.opacity(0.92))
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     private var manualInputButton: some View {
         Button(action: { showManualInputSheet = true }) {
-            HStack(spacing: 10) {
+            HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: "keyboard")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(WarmTheme.primary)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 32, height: 32)
                     .background(
                         Circle()
                             .fill(WarmTheme.primary.opacity(0.12))
@@ -646,8 +646,8 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     .foregroundColor(WarmTheme.textPrimary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.horizontal, WarmSpacing.md)
+            .padding(.vertical, WarmSpacing.sm)
             .background(
                 Capsule()
                     .fill(Color.white.opacity(0.95))
@@ -668,12 +668,12 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
     private var recordingButton: some View {
         Button(action: toggleRecording) {
-            HStack(spacing: 10) {
+            HStack(spacing: WarmSpacing.xs) {
                 ZStack {
                     if coordinator.isRecording {
                         Circle()
                             .stroke(WarmTheme.primary.opacity(0.3), lineWidth: 3)
-                            .frame(width: 44, height: 44)
+                            .frame(width: WarmSize.touch, height: WarmSize.touch)
                             .scaleEffect(coordinator.isRecording ? 1.3 : 1.0)
                             .animation(
                                 Animation.easeInOut(duration: 0.8)
@@ -685,7 +685,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     Image(systemName: coordinator.isRecording ? "waveform" : "mic.fill")
                         .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
+                        .frame(width: WarmSize.touch, height: WarmSize.touch)
                         .background(
                             Circle()
                                 .fill(coordinator.isRecording ? WarmTheme.urgent : WarmTheme.primary)
@@ -697,15 +697,15 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     .foregroundColor(WarmTheme.textPrimary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.horizontal, WarmSpacing.xl)
+            .padding(.vertical, WarmSpacing.md)
             .background(
                 Capsule()
                     .fill(Color.white)
                     .shadow(color: WarmTheme.shadowMedium, radius: 12, x: 0, y: 6)
             )
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: coordinator.isRecording)
+        .animation(WarmAnimation.springSmooth, value: coordinator.isRecording)
         .accessibilityIdentifier("RecordButton")
         .accessibilityLabel(coordinator.isRecording ? String(localized: "a11y.stop_recording") : String(localized: "a11y.start_voice_input"))
         .accessibilityHint(coordinator.isRecording ? String(localized: "a11y.stop_hint") : String(localized: "a11y.start_hint"))
@@ -737,19 +737,19 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             hasStartedEntranceAnimation = true
         }
 
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
+        withAnimation(WarmAnimation.springEntrance.delay(0.1)) {
             headerOffset = 0
             headerOpacity = 1
         }
 
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.25)) {
+        withAnimation(WarmAnimation.springEntrance.delay(0.25)) {
             listOffset = 0
             listOpacity = 1
         }
 
         Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
+            withAnimation(WarmAnimation.springButton) {
                 showRecordingButton = true
             }
         }
@@ -801,7 +801,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             return
         }
         let normalizedAnchor = startOfMonth(for: newAnchor)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
         }
@@ -809,7 +809,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
 
     private func jumpToToday() {
         let today = calendar.startOfDay(for: Date())
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today
         }
@@ -853,7 +853,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func toggleTodo(_ id: UUID) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(WarmAnimation.springSmooth) {
             do {
                 try store.toggleComplete(id)
                 WidgetCenter.shared.reloadAllTimelines()
@@ -867,7 +867,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func toggleOccurrence(_ occurrence: TodoOccurrenceData) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(WarmAnimation.springSmooth) {
             do {
                 try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
                 WidgetCenter.shared.reloadAllTimelines()
@@ -881,7 +881,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     }
 
     private func deleteTodo(_ id: UUID) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+        withAnimation(WarmAnimation.springSmooth) {
             do {
                 try coordinator.deleteTodo(id)
             } catch {
@@ -911,9 +911,9 @@ struct WarmTodoCard: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(todo.isCompleted ? WarmTheme.textMuted.opacity(0.3) : categoryColor)
                 .frame(width: 4)
-                .padding(.vertical, 10)
+                .padding(.vertical, WarmSpacing.xs)
 
-            HStack(spacing: 14) {
+            HStack(spacing: WarmSpacing.sm) {
                 Button(action: onToggle) {
                     ZStack {
                         Circle()
@@ -921,12 +921,12 @@ struct WarmTodoCard: View {
                                 todo.isCompleted ? WarmTheme.success : categoryColor,
                                 lineWidth: 2.5
                             )
-                            .frame(width: 26, height: 26)
+                            .frame(width: WarmSize.icon, height: WarmSize.icon)
 
                         if todo.isCompleted {
                             Circle()
                                 .fill(WarmTheme.success)
-                                .frame(width: 26, height: 26)
+                                .frame(width: WarmSize.icon, height: WarmSize.icon)
 
                             Image(systemName: "checkmark")
                                 .font(.system(size: 12, weight: .bold))
@@ -944,8 +944,8 @@ struct WarmTodoCard: View {
                     return String(localized: "a11y.toggle_complete \(action)")
                 }())
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    HStack(spacing: WarmSpacing.xs) {
                         Text(todo.category.emoji)
                             .font(.system(size: 15))
 
@@ -957,7 +957,7 @@ struct WarmTodoCard: View {
                     }
 
                     if let dueHint = todo.dueHint, !todo.isCompleted {
-                        HStack(spacing: 4) {
+                        HStack(spacing: WarmSpacing.xxs) {
                             Image(systemName: "clock")
                                 .font(.system(size: 10))
                             Text(dueHint)
@@ -967,7 +967,7 @@ struct WarmTodoCard: View {
                     }
 
                     if let recurrenceRule = todo.recurrenceRule, !todo.isCompleted {
-                        HStack(spacing: 4) {
+                        HStack(spacing: WarmSpacing.xxs) {
                             Image(systemName: "repeat")
                                 .font(.system(size: 10, weight: .semibold))
                             Text(recurrenceRule.displayText)
@@ -980,10 +980,10 @@ struct WarmTodoCard: View {
                 Spacer()
 
                 if todo.priority == .high && !todo.isCompleted {
-                    Text("!")
-                        .font(WarmFont.body(13))
+                    Image(systemName: "exclamationmark")
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 24, height: 24)
                         .background(
                             Circle()
                                 .fill(WarmTheme.urgent)
@@ -992,13 +992,13 @@ struct WarmTodoCard: View {
                         .accessibilityLabel(String(localized: "a11y.high_priority"))
                 }
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 16)
-            .padding(.vertical, 14)
+            .padding(.leading, WarmSpacing.sm)
+            .padding(.trailing, WarmSpacing.md)
+            .padding(.vertical, WarmSpacing.md)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.section))
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: WarmRadius.section)
                 .fill(Color.white)
                 .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
         )

@@ -57,33 +57,95 @@ enum WarmTheme {
     }
 }
 
+// MARK: - 间距（严格 4 借数系统）
+
+enum WarmSpacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+    static let xl: CGFloat = 24
+    static let xxl: CGFloat = 32
+    static let xxxl: CGFloat = 48
+}
+
+// MARK: - 圆角
+
+enum WarmRadius {
+    static let chip: CGFloat = 8       // 小标签、徽标
+    static let card: CGFloat = 12      // 卡片
+    static let section: CGFloat = 16   // 区块容器
+    static let sheet: CGFloat = 20     // 弹窗、大装饰
+}
+
+// MARK: - 尺寸
+
+enum WarmSize {
+    static let icon: CGFloat = 28      // 内嵌图标 badge
+    static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
+    static let hero: CGFloat = 80      // 大圆圈装饰
+    static let mega: CGFloat = 120     // 最大装饰元素
+}
+
+// MARK: - 动画
+
+enum WarmAnimation {
+    static let springFast = Animation.spring(response: 0.25, dampingFraction: 0.8)
+    static let springStandard = Animation.spring(response: 0.3, dampingFraction: 0.8)
+    static let springSmooth = Animation.spring(response: 0.35, dampingFraction: 0.7)
+    static let springBouncy = Animation.spring(response: 0.4, dampingFraction: 0.6)
+    static let springSlow = Animation.spring(response: 0.4, dampingFraction: 0.8)
+    static let springCard = Animation.spring(response: 0.45, dampingFraction: 0.8)
+    static let springButton = Animation.spring(response: 0.5, dampingFraction: 0.75)
+    static let springEntrance = Animation.spring(response: 0.6, dampingFraction: 0.8)
+}
+
 // MARK: - 统一字体工具
 
 enum WarmFont {
+    /// 根据 pt 大小推断对应的语义 textStyle，作为 Dynamic Type 缩放基准。
+    /// 让 `.custom(size:)` 跟随系统「设置 → 显示 → 文字大小」缩放，符合 iOS HIG 无障碍要求。
+    /// 推断依据：iOS HIG 默认字号表（caption2=11 / caption=12 / footnote=13 /
+    /// subheadline=15 / callout=16 / body=17 / title3=20 / title2=22 / title=28 / largeTitle=34）。
+    private static func relativeTextStyle(for size: CGFloat) -> Font.TextStyle {
+        switch size {
+        case ...12:        return .caption2      // 11-12pt
+        case 13...14:      return .footnote      // 13-14pt
+        case 15:           return .subheadline   // 15pt
+        case 16:           return .callout       // 16pt
+        case 17...19:      return .body          // 17-19pt
+        case 20...21:      return .title3        // 20-21pt
+        case 22...25:      return .title2        // 22-25pt
+        case 26...32:      return .title         // 26-32pt
+        default:           return .largeTitle    // 33pt+
+        }
+    }
+
     /// 手写风格展示字体 — 用于问候语、大标题等情感化文字
     static func display(_ size: CGFloat) -> Font {
-        .custom("Noteworthy", size: size).weight(.bold)
+        .custom("Noteworthy", size: size, relativeTo: relativeTextStyle(for: size)).weight(.bold)
     }
 
     /// 展示字体轻量版 — 用于副标题、装饰性文字
     static func displayLight(_ size: CGFloat) -> Font {
-        .custom("Noteworthy", size: size).weight(.light)
+        .custom("Noteworthy", size: size, relativeTo: relativeTextStyle(for: size)).weight(.light)
     }
 
     static func title(_ size: CGFloat) -> Font {
-        .custom("Avenir Next", size: size).weight(.bold)
+        .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.bold)
     }
 
     static func headline(_ size: CGFloat) -> Font {
-        .custom("Avenir Next", size: size).weight(.semibold)
+        .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.semibold)
     }
 
     static func body(_ size: CGFloat) -> Font {
-        .custom("Avenir Next", size: size).weight(.medium)
+        .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.medium)
     }
 
     static func caption(_ size: CGFloat) -> Font {
-        .custom("Avenir Next", size: size).weight(.regular)
+        .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.regular)
     }
 }
 

@@ -38,7 +38,7 @@ struct SmallWidgetView: View {
             if todos.isEmpty {
                 emptyState
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                     ForEach(todos.prefix(1)) { todo in
                         TodoWidgetItemRow(todo: todo)
                     }
@@ -72,7 +72,7 @@ struct MediumWidgetView: View {
             if todos.isEmpty {
                 emptyState
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                     ForEach(todos.prefix(WidgetConfig.mediumItemCount)) { todo in
                         TodoWidgetItemRow(todo: todo)
                     }
@@ -100,7 +100,7 @@ struct LargeWidgetView: View {
             if todos.isEmpty {
                 emptyState
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                     ForEach(todos.prefix(WidgetConfig.largeItemCount)) { todo in
                         TodoWidgetItemRow(todo: todo)
                     }
@@ -114,14 +114,14 @@ struct LargeWidgetView: View {
     }
 
     private var emptyState: some View {
-        WidgetEmptyState(iconSize: 40, titleSize: 18, spacing: 12)
+        WidgetEmptyState(iconSize: 40, titleSize: 18, spacing: WarmSpacing.sm)
     }
 }
 
 private struct WidgetEmptyState: View {
     let iconSize: CGFloat
     let titleSize: CGFloat
-    var spacing: CGFloat = 8
+    var spacing: CGFloat = WarmSpacing.xs
 
     var body: some View {
         VStack(spacing: spacing) {
@@ -146,7 +146,7 @@ private struct WidgetEmptyState: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(12)
+        .padding(WarmSpacing.sm)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("WidgetEmptyState")
     }
@@ -159,7 +159,7 @@ struct LockscreenRectangularWidget: View {
 
     var body: some View {
         if todos.isEmpty {
-            VStack(spacing: 4) {
+            VStack(spacing: WarmSpacing.xxs) {
                 Image(systemName: "checkmark.circle")
                     .font(.system(size: 16))
                 Text("VoiceTodo")
@@ -167,14 +167,14 @@ struct LockscreenRectangularWidget: View {
             }
             .foregroundColor(.primary.opacity(0.4))
         } else {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 ForEach(todos.prefix(WidgetConfig.lockscreenItemCount)) { todo in
-                    HStack(spacing: 6) {
+                    HStack(spacing: WarmSpacing.xs) {
                         Button(intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
                             Image(systemName: "circle")
                                 .font(.system(size: 13))
                                 .foregroundColor(.primary.opacity(0.6))
-                                .frame(minWidth: 44, minHeight: 44)
+                                .frame(minWidth: WarmSize.touch, minHeight: WarmSize.touch)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -234,19 +234,19 @@ struct TodoWidgetItemRow: View {
     let todo: TodoItemData
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: WarmSpacing.xs) {
             Button(intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
                 Circle()
                     .stroke(Color.primary.opacity(0.4), lineWidth: 1.5)
                     .frame(width: 20, height: 20)
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(minWidth: WarmSize.touch, minHeight: WarmSize.touch)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             let destination = URL(string: "voicetodo://todo/\(todo.id.uuidString)") ?? URL(string: "voicetodo://")!
             Link(destination: destination) {
-                HStack(spacing: 6) {
+                HStack(spacing: WarmSpacing.xs) {
                     Text(todo.category.emoji)
                         .font(.system(size: 16))
 
@@ -267,7 +267,7 @@ struct TodoWidgetItemRow: View {
                     if todo.priority == .high {
                         Circle()
                             .fill(Color.red)
-                            .frame(width: 6, height: 6)
+                            .frame(width: WarmSpacing.xs, height: WarmSpacing.xs)
                     }
                 }
             }

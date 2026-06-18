@@ -66,7 +66,7 @@ struct UIDemoView: View {
                 // MARK: - 组件预览
                 Section("组件独立预览") {
                     NavigationLink("ToastView 预览") {
-                        VStack(spacing: 20) {
+                        VStack(spacing: WarmSpacing.lg) {
                             ToastView(message: "信息提示", style: .info)
                             ToastView(message: "成功提示", style: .success)
                             ToastView(message: "警告提示", style: .warning)
@@ -94,7 +94,7 @@ struct UIDemoView: View {
                     }
 
                     NavigationLink("TodoItemRow 预览") {
-                        VStack(spacing: 12) {
+                        VStack(spacing: WarmSpacing.sm) {
                             ForEach(extractedTodos.indices, id: \.self) { index in
                                 TodoItemRow(
                                     index: index,

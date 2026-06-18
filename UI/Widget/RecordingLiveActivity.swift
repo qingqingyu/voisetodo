@@ -13,11 +13,11 @@ struct RecordingLiveActivity: Widget {
             DynamicIsland {
                 // 展开状态的内容
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: WarmSpacing.xs) {
                         // 红色闪烁圆点
                         Circle()
                             .fill(.red)
-                            .frame(width: 12, height: 12)
+                            .frame(width: WarmSpacing.sm, height: WarmSpacing.sm)
                             .opacity(context.state.isRecording ? 1.0 : 0.3)
                             .animation(
                                 Animation.easeInOut(duration: 0.5)
@@ -57,7 +57,7 @@ struct RecordingLiveActivity: Widget {
                 // 紧凑模式左侧 - 红色圆点
                 Circle()
                     .fill(.red)
-                    .frame(width: 8, height: 8)
+                    .frame(width: WarmSpacing.xs, height: WarmSpacing.xs)
                     .opacity(context.state.isRecording ? 1.0 : 0.4)
                     .animation(
                         Animation.easeInOut(duration: 0.5)
@@ -73,7 +73,7 @@ struct RecordingLiveActivity: Widget {
                 // 最小化状态 - 红点
                 Circle()
                     .fill(.red)
-                    .frame(width: 6, height: 6)
+                    .frame(width: WarmSpacing.xs, height: WarmSpacing.xs)
                     .opacity(context.state.isRecording ? 1.0 : 0.5)
                     .animation(
                         Animation.easeInOut(duration: 0.5)
@@ -92,16 +92,16 @@ struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<RecordingActivityAttributes>
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WarmSpacing.sm) {
             // 录音状态指示器
             ZStack {
                 Circle()
                     .stroke(.red.opacity(0.3), lineWidth: 2)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 32)
 
                 Circle()
                     .fill(.red)
-                    .frame(width: 12, height: 12)
+                    .frame(width: WarmSpacing.sm, height: WarmSpacing.sm)
                     .opacity(context.state.isRecording ? 1.0 : 0.3)
                     .animation(
                         Animation.easeInOut(duration: 0.5)
@@ -111,7 +111,7 @@ struct LockScreenLiveActivityView: View {
             }
 
             // 文本内容
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 HStack {
                     Text(context.state.isRecording ? String(localized: "live_activity.recording_title") : "VoiceTodo")
                         .font(.headline)
@@ -136,8 +136,8 @@ struct LockScreenLiveActivityView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.sm)
     }
 }
 

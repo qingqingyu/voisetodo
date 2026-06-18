@@ -231,7 +231,9 @@ struct VoiceTodoApp: App {
             Task {
                 await coordinator.handleAppForeground()
             }
-        case .inactive, .background:
+        case .inactive:
+            break
+        case .background:
             coordinator.cancelRecordingDueToInterruption()
         @unknown default:
             break

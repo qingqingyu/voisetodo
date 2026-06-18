@@ -15,11 +15,11 @@ struct TodoItemRow: View {
     @State private var opacity: Double = 1.0
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WarmSpacing.sm) {
             Text(todo.categoryHint.emoji)
                 .font(.system(size: 24))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 if isEditing {
                     TextField(String(localized: "confirm.todo_title_placeholder"), text: $editedTitle)
                         .font(WarmFont.headline(17))
@@ -37,7 +37,7 @@ struct TodoItemRow: View {
                 }
 
                 if let dueHint = todo.dueHint, !dueHint.isEmpty {
-                    HStack(spacing: 4) {
+                    HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: "clock")
                             .font(.system(size: 11))
                         Text(dueHint)
@@ -47,7 +47,7 @@ struct TodoItemRow: View {
                 }
 
                 if let recurrenceRule = todo.recurrenceRule {
-                    HStack(spacing: 4) {
+                    HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: "repeat")
                             .font(.system(size: 11, weight: .semibold))
                         Text(recurrenceRule.displayText)
@@ -63,10 +63,10 @@ struct TodoItemRow: View {
                 Text(String(localized: "confirm.urgent"))
                     .font(WarmFont.caption(12))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, WarmSpacing.xs)
+                    .padding(.vertical, WarmSpacing.xxs)
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: WarmRadius.chip)
                             .fill(WarmTheme.urgent)
                     )
                     .accessibilityIdentifier("PriorityLabel")
@@ -83,10 +83,10 @@ struct TodoItemRow: View {
             .accessibilityLabel(String(localized: "a11y.delete"))
             .accessibilityHint(String(localized: "a11y.delete_todo"))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: WarmRadius.card)
                 .fill(WarmTheme.secondaryBackground)
         )
         .offset(x: offset)

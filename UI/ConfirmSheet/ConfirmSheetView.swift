@@ -63,7 +63,7 @@ struct ConfirmSheetView: View {
 
     private var mainContent: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: WarmSpacing.md) {
                 transcriptSection
 
                 if !todos.isEmpty {
@@ -84,7 +84,7 @@ struct ConfirmSheetView: View {
     // MARK: - Transcript Section
 
     private var transcriptSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
             Text(String(localized: "confirm.transcript"))
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
@@ -92,10 +92,10 @@ struct ConfirmSheetView: View {
             Text(transcript)
                 .font(WarmFont.body(14))
                 .foregroundColor(WarmTheme.textSecondary)
-                .padding(12)
+                .padding(WarmSpacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
                         .fill(WarmTheme.secondaryBackground)
                 )
                 .accessibilityIdentifier("TranscriptArea")
@@ -105,7 +105,7 @@ struct ConfirmSheetView: View {
     // MARK: - Todos Section
 
     private var todosSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: WarmSpacing.sm) {
             ForEach(Array($todos.enumerated()), id: \.element.id) { index, $todo in
                 TodoItemRowWithDelete(
                     index: index,
@@ -116,7 +116,7 @@ struct ConfirmSheetView: View {
             }
 
             if isStreaming {
-                HStack(spacing: 8) {
+                HStack(spacing: WarmSpacing.xs) {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
                         .scaleEffect(0.8)
@@ -124,11 +124,11 @@ struct ConfirmSheetView: View {
                         .font(WarmFont.caption(13))
                         .foregroundColor(WarmTheme.textSecondary)
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, WarmSpacing.xs)
                 .transition(.opacity)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: todos.count)
+        .animation(WarmAnimation.springSlow, value: todos.count)
         .accessibilityIdentifier("ExtractedTodoList")
     }
 
@@ -149,15 +149,15 @@ struct ConfirmSheetView: View {
     // MARK: - Operation Hint
 
     private var operationHint: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "hand.tap")
                 .font(.system(size: 12))
             Text(String(localized: "confirm.hint"))
                 .font(WarmFont.caption(13))
         }
         .foregroundColor(WarmTheme.textSecondary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, WarmSpacing.sm)
+        .padding(.vertical, WarmSpacing.xs)
         .background(
             Capsule()
                 .fill(WarmTheme.secondaryBackground)
@@ -167,7 +167,7 @@ struct ConfirmSheetView: View {
 
     private var calendarTargetHint: some View {
         let mode = CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
-        return HStack(spacing: 6) {
+        return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: mode == .appAndSystemCalendar ? "calendar.badge.plus" : "calendar")
                 .font(.system(size: 12))
             Text(mode == .appAndSystemCalendar
@@ -176,8 +176,8 @@ struct ConfirmSheetView: View {
                 .font(WarmFont.caption(13))
         }
         .foregroundColor(WarmTheme.textSecondary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, WarmSpacing.sm)
+        .padding(.vertical, WarmSpacing.xs)
         .background(
             Capsule()
                 .fill(WarmTheme.secondaryBackground)
@@ -188,21 +188,21 @@ struct ConfirmSheetView: View {
     // MARK: - Success Overlay
 
     private var successOverlay: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: WarmSpacing.md) {
             Spacer()
 
             // 成功图标
             ZStack {
                 Circle()
                     .fill(WarmTheme.success)
-                    .frame(width: 80, height: 80)
+                    .frame(width: WarmSize.hero, height: WarmSize.hero)
 
                 Image(systemName: "checkmark")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundColor(.white)
             }
             .scaleEffect(showSuccess ? 1.0 : 0.5)
-            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: showSuccess)
+            .animation(WarmAnimation.springBouncy, value: showSuccess)
 
             // 成功文字
             Text(ErrorMessages.addedSuccess)
@@ -227,7 +227,7 @@ struct ConfirmSheetView: View {
 
         if success {
             didFinish = true
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            withAnimation(WarmAnimation.springBouncy) {
                 showSuccess = true
             }
         }

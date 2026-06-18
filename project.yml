@@ -80,6 +80,12 @@ targets:
         CFBundleDisplayName: VoiceTodo
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.voicetodo
+            CFBundleURLSchemes:
+              - voicetodo
+        ITSAppUsesNonExemptEncryption: false
+        UIUserInterfaceStyle: Light
         VoiceTodoProxyEndpoint: "$(VOICETODO_AI_PROXY_ENDPOINT)"
         VoiceTodoProxyAppToken: "$(VOICETODO_AI_PROXY_APP_TOKEN)"
         UILaunchScreen:
@@ -109,6 +115,7 @@ targets:
       - path: UI/Widget
         excludes:
           - "**/.DS_Store"
+      - path: UI/Shared/DesignSystem.swift
       - path: Store/SwiftDataModels.swift
       - path: Store/AppGroupConfig.swift
       - path: Store/AppGroupModelContainerProvider.swift

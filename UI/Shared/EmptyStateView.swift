@@ -26,7 +26,7 @@ struct ProductEmptyStateView: View {
 
     var body: some View {
         content
-            .padding(22)
+            .padding(WarmSpacing.lg)
             .frame(maxWidth: .infinity)
             .background(background)
             .accessibilityElement(children: .contain)
@@ -34,10 +34,10 @@ struct ProductEmptyStateView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: WarmSpacing.md) {
             iconBadge
 
-            VStack(spacing: 8) {
+            VStack(spacing: WarmSpacing.xs) {
                 Text(title)
                     .font(WarmFont.headline(18))
                     .foregroundColor(WarmTheme.textPrimary)
@@ -62,11 +62,11 @@ struct ProductEmptyStateView: View {
         ZStack {
             Circle()
                 .fill(WarmTheme.primary.opacity(0.12))
-                .frame(width: 74, height: 74)
+                .frame(width: 72, height: 72)
 
             Circle()
                 .fill(WarmTheme.primaryLight.opacity(0.22))
-                .frame(width: 52, height: 52)
+                .frame(width: 48, height: 48)
 
             Image(systemName: icon)
                 .font(.system(size: 26, weight: .semibold))
@@ -78,13 +78,13 @@ struct ProductEmptyStateView: View {
     @ViewBuilder
     private var actionButtons: some View {
         if primaryAction != nil || secondaryAction != nil {
-            HStack(spacing: 10) {
+            HStack(spacing: WarmSpacing.xs) {
                 if let secondaryAction {
                     Button(action: secondaryAction.action) {
                         actionLabel(secondaryAction)
                             .foregroundColor(WarmTheme.textPrimary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 44)
+                            .frame(height: WarmSize.touch)
                             .background(
                                 Capsule()
                                     .fill(Color.white.opacity(0.9))
@@ -103,7 +103,7 @@ struct ProductEmptyStateView: View {
                         actionLabel(primaryAction)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 44)
+                            .frame(height: WarmSize.touch)
                             .background(
                                 Capsule()
                                     .fill(WarmTheme.primary)
@@ -119,17 +119,17 @@ struct ProductEmptyStateView: View {
     }
 
     private var background: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
+        RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
             .fill(Color.white.opacity(0.93))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
                     .stroke(WarmTheme.primary.opacity(0.12), lineWidth: 1)
             )
             .shadow(color: WarmTheme.shadowLight, radius: 10, x: 0, y: 5)
     }
 
     private func actionLabel(_ action: ProductEmptyStateAction) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: WarmSpacing.xs) {
             if let systemImage = action.systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 14, weight: .semibold))
@@ -140,7 +140,7 @@ struct ProductEmptyStateView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, WarmSpacing.sm)
     }
 }
 
@@ -153,7 +153,7 @@ struct EmptyStateView: View {
     var opacity: Double = 0.65
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: WarmSpacing.md) {
             ZStack {
                 Circle()
                     .fill(WarmTheme.primaryLight.opacity(0.3))
