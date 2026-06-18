@@ -111,6 +111,7 @@ targets:
           - "**/.DS_Store"
       - path: Store/SwiftDataModels.swift
       - path: Store/AppGroupConfig.swift
+      - path: Store/AppGroupModelContainerProvider.swift
       - path: Protocols/Models.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift

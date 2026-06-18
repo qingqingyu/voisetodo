@@ -21,12 +21,7 @@ struct ToggleTodoIntent: AppIntent {
             return .result()
         }
 
-        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
-        let config = ModelConfiguration(
-            schema: schema,
-            groupContainer: .identifier(AppGroupConfig.identifier)
-        )
-        let container = try ModelContainer(for: schema, configurations: config)
+        let container = try AppGroupModelContainerProvider.writable()
         let context = ModelContext(container)
 
         var descriptor = FetchDescriptor<TodoItem>(

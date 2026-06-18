@@ -31,7 +31,7 @@ struct VoicePermissionClient {
 
     static let live = VoicePermissionClient(
         microphoneStatus: {
-            switch AVAudioSession.sharedInstance().recordPermission {
+            switch AVAudioApplication.shared.recordPermission {
             case .undetermined:
                 return .undetermined
             case .denied:

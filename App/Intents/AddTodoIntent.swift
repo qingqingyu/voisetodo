@@ -59,14 +59,7 @@ struct AddTodoIntent: AppIntent {
 
         let context: ModelContext
         do {
-            let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
-            let configuration = ModelConfiguration(
-                schema: schema,
-                isStoredInMemoryOnly: false,
-                allowsSave: true,
-                groupContainer: .identifier(AppGroupConfig.identifier)
-            )
-            let container = try ModelContainer(for: schema, configurations: configuration)
+            let container = try AppGroupModelContainerProvider.writable()
             context = ModelContext(container)
         } catch {
             return .result(
@@ -87,6 +80,7 @@ struct AddTodoIntent: AppIntent {
 
         do {
             try context.save()
+            AppGroupConfig.markExternalDataChanged()
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             return .result(

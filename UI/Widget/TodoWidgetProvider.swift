@@ -18,30 +18,8 @@ struct TodoEntry: TimelineEntry {
 struct TodoTimelineProvider: TimelineProvider {
     typealias Entry = TodoEntry
 
-    // MARK: - App Group Configuration
-
-    /// App Group 标识符（与主 App 保持一致）
-    private let appGroupIdentifier = WidgetConfig.appGroupIdentifier
-
-    /// 缓存的 ModelContainer，避免每次 getTimeline 都重新创建
-    /// Widget Extension 的 TimelineProvider 方法由系统单线程调度，无需额外同步
-    nonisolated(unsafe) private static var cachedContainer: ModelContainer?
-
     private func getModelContainer() throws -> ModelContainer {
-        if let cached = Self.cachedContainer {
-            return cached
-        }
-
-        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
-        let configuration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            allowsSave: false,
-            groupContainer: .identifier(appGroupIdentifier)
-        )
-        let container = try ModelContainer(for: schema, configurations: configuration)
-        Self.cachedContainer = container
-        return container
+        try AppGroupModelContainerProvider.readOnly()
     }
 
     // MARK: - TimelineProvider Methods

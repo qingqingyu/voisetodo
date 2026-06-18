@@ -373,6 +373,40 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(result.todos[1].title, "买菜")
         XCTAssertEqual(result.todos[2].title, "给老妈打电话")
     }
+
+    func testStreamingPartialParserIgnoresClosingBraceInsideString() async throws {
+        let jsonResponse = """
+        {
+          "todos": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440020",
+              "title": "整理符号说明",
+              "detail": "记录右花括号 } 的含义",
+              "due_hint": null,
+              "priority": "normal",
+              "category_hint": "study"
+            }
+          ],
+          "ignored": ""
+        }
+        """
+        let eventData = try JSONSerialization.data(withJSONObject: ["delta": jsonResponse])
+        let eventText = try XCTUnwrap(String(data: eventData, encoding: .utf8))
+        mockNetworkClient.enqueueSuccess(text: "data: \(eventText)\n\ndata: [DONE]\n\n")
+
+        var results: [ExtractionResult] = []
+        for try await result in sut.extractStreaming(from: "记录右花括号", locale: Locale(identifier: "zh-Hans")) {
+            results.append(result)
+        }
+
+        XCTAssertEqual(results.count, 2, "应该先产出流式中间态，再产出最终完整解析结果")
+        XCTAssertEqual(results.first?.todos.first?.detail, "记录右花括号 } 的含义")
+        XCTAssertEqual(results.last?.todos.first?.categoryHint, .study)
+
+        let body = try XCTUnwrap(URLProtocolStub.requestBodies.last)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["stream"] as? Bool, true)
+    }
 }
 
 // MARK: - Mock Network Client

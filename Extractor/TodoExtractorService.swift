@@ -167,11 +167,24 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
             var depth = 0
             var objEnd: String.Index?
+            var isInsideString = false
+            var isEscaped = false
             var idx = objStart
             while idx < arrayContent.endIndex {
                 let ch = arrayContent[idx]
-                if ch == "{" { depth += 1 }
-                else if ch == "}" {
+                if isInsideString {
+                    if isEscaped {
+                        isEscaped = false
+                    } else if ch == "\\" {
+                        isEscaped = true
+                    } else if ch == "\"" {
+                        isInsideString = false
+                    }
+                } else if ch == "\"" {
+                    isInsideString = true
+                } else if ch == "{" {
+                    depth += 1
+                } else if ch == "}" {
                     depth -= 1
                     if depth == 0 {
                         objEnd = idx
@@ -184,9 +197,14 @@ final class TodoExtractorService: TodoExtractorProtocol {
             guard let end = objEnd else { break }
 
             let objStr = String(arrayContent[objStart...end])
-            if let data = objStr.data(using: .utf8),
-               let todo = try? decoder.decode(ExtractedTodo.self, from: data) {
-                todos.append(todo)
+            if let data = objStr.data(using: .utf8) {
+                if let todo = try? decoder.decode(ExtractedTodo.self, from: data) {
+                    todos.append(todo)
+                } else {
+                    #if DEBUG
+                    print("[StreamingParser] Failed to decode partial todo object")
+                    #endif
+                }
             }
             searchStart = arrayContent.index(after: end)
         }
