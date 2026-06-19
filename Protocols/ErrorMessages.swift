@@ -13,6 +13,7 @@ enum ErrorMessages {
     static let apiTimeout = String(localized: "error.api_timeout")
     static let apiRateLimited = String(localized: "error.api_rate_limited")
     static let apiError = String(localized: "error.api_error")
+    static let apiResponseInvalidDetail = String(localized: "error.api_response_invalid_detail")
     static let jsonParsingFailed = String(localized: "error.json_parsing_failed")
 
     // 存储相关

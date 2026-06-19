@@ -12,10 +12,13 @@ enum AppGroupModelContainerProvider {
         defer { lock.unlock() }
 
         if let readOnlyContainer {
+            VoiceTodoLog.store.debug("app_group_container.read_only.cache_hit")
             return readOnlyContainer
         }
+        VoiceTodoLog.store.info("app_group_container.read_only.create_start")
         let container = try makeContainer(allowsSave: false)
         readOnlyContainer = container
+        VoiceTodoLog.store.info("app_group_container.read_only.create_success")
         return container
     }
 
@@ -24,10 +27,13 @@ enum AppGroupModelContainerProvider {
         defer { lock.unlock() }
 
         if let writableContainer {
+            VoiceTodoLog.store.debug("app_group_container.writable.cache_hit")
             return writableContainer
         }
+        VoiceTodoLog.store.info("app_group_container.writable.create_start")
         let container = try makeContainer(allowsSave: true)
         writableContainer = container
+        VoiceTodoLog.store.info("app_group_container.writable.create_success")
         return container
     }
 

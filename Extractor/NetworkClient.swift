@@ -53,34 +53,51 @@ final class NetworkClient {
         transcript: String,
         localeIdentifier: String
     ) async throws -> String {
-        let request = try buildProxyRequest(transcript: transcript, localeIdentifier: localeIdentifier, stream: false)
+        let requestID = VoiceTodoLog.makeID("proxy")
+        let extractID = VoiceTodoLog.extractID ?? "none"
+        let startedAt = Date()
+        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
+
+        let request: URLRequest
+        do {
+            request = try buildProxyRequest(transcript: transcript, localeIdentifier: localeIdentifier, stream: false)
+        } catch {
+            VoiceTodoLog.network.error("proxy.request.build_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw error
+        }
 
         // 发送请求
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await session.data(for: request)
         } catch let urlError as URLError {
+            VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
             throw mapURLError(urlError)
         } catch {
+            VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.networkUnavailable
         }
 
         // 检查 HTTP 响应
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw VoiceTodoError.apiResponseInvalid("无效的 HTTP 响应")
+            VoiceTodoLog.network.error("proxy.request.invalid_response id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) response=\(String(describing: response), privacy: .public)")
+            throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            VoiceTodoLog.network.error("proxy.request.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) bodyChars=\(errorMessage.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             if httpResponse.statusCode == 429 {
                 throw VoiceTodoError.apiRateLimited
             }
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw VoiceTodoError.apiResponseInvalid("HTTP \(httpResponse.statusCode): \(errorMessage)")
+            throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
 
         guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
-            throw VoiceTodoError.apiResponseInvalid("代理返回空响应")
+            VoiceTodoLog.network.error("proxy.request.empty_response id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
+        VoiceTodoLog.network.info("proxy.request.success id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) responseChars=\(text.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         return text
     }
 
@@ -90,8 +107,16 @@ final class NetworkClient {
         transcript: String,
         localeIdentifier: String
     ) -> AsyncThrowingStream<String, Error> {
+        let requestID = VoiceTodoLog.makeID("stream")
+        let extractID = VoiceTodoLog.extractID ?? "none"
+        let startedAt = Date()
+        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
+
         AsyncThrowingStream { continuation in
             let task = Task {
+                var deltaCount = 0
+                var totalChars = 0
+                var receivedDone = false
                 do {
                     let request = try buildProxyRequest(
                         transcript: transcript,
@@ -102,38 +127,65 @@ final class NetworkClient {
                     let (bytes, response) = try await session.bytes(for: request)
 
                     guard let httpResponse = response as? HTTPURLResponse else {
-                        throw VoiceTodoError.apiResponseInvalid("Invalid HTTP response")
+                        VoiceTodoLog.network.error("proxy.stream.invalid_response id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) response=\(String(describing: response), privacy: .public)")
+                        throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
                     guard (200...299).contains(httpResponse.statusCode) else {
+                        VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         if httpResponse.statusCode == 429 {
                             throw VoiceTodoError.apiRateLimited
                         }
-                        throw VoiceTodoError.apiResponseInvalid("HTTP \(httpResponse.statusCode)")
+                        throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
+                    VoiceTodoLog.network.info("proxy.stream.connected id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
                     for try await line in bytes.lines {
                         guard !Task.isCancelled else { break }
 
                         guard line.hasPrefix("data: ") else { continue }
                         let jsonStr = String(line.dropFirst(6))
-                        guard jsonStr != "[DONE]" else { break }
+                        if jsonStr == "[DONE]" {
+                            receivedDone = true
+                            break
+                        }
 
-                        guard let jsonData = jsonStr.data(using: .utf8),
-                              let event = try? JSONDecoder().decode(ProxyStreamEvent.self, from: jsonData)
-                        else { continue }
+                        guard let jsonData = jsonStr.data(using: .utf8) else {
+                            VoiceTodoLog.network.error("proxy.stream.invalid_event_encoding id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) eventChars=\(jsonStr.count)")
+                            throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
+                        }
+
+                        let event: ProxyStreamEvent
+                        do {
+                            event = try JSONDecoder().decode(ProxyStreamEvent.self, from: jsonData)
+                        } catch {
+                            VoiceTodoLog.network.error("proxy.stream.invalid_event_json id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) eventChars=\(jsonStr.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
+                        }
 
                         if let text = event.text ?? event.delta, !text.isEmpty {
+                            deltaCount += 1
+                            totalChars += text.count
+                            VoiceTodoLog.network.debug("proxy.stream.delta id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(deltaCount) chars=\(text.count)")
                             continuation.yield(text)
                         }
                     }
+
+                    guard receivedDone else {
+                        VoiceTodoLog.network.error("proxy.stream.missing_done id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                        throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
+                    }
+                    VoiceTodoLog.network.info("proxy.stream.finished id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                     continuation.finish()
                 } catch let urlError as URLError {
+                    VoiceTodoLog.network.error("proxy.stream.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
                     continuation.finish(throwing: mapURLError(urlError))
                 } catch {
+                    VoiceTodoLog.network.error("proxy.stream.failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable _ in
+            continuation.onTermination = { @Sendable termination in
+                VoiceTodoLog.network.debug("proxy.stream.terminated id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) reason=\(String(describing: termination), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 task.cancel()
             }
         }
@@ -176,6 +228,7 @@ final class NetworkClient {
             )
             return request
         } catch {
+            VoiceTodoLog.network.error("proxy.request.encode_failed stream=\(stream) locale=\(localeIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.jsonParsingFailed("请求序列化失败: \(error.localizedDescription)")
         }
     }
@@ -204,5 +257,13 @@ final class NetworkClient {
             return false
         }
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    private func endpointSummary() -> String {
+        let trimmedEndpoint = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmedEndpoint) else {
+            return "invalid"
+        }
+        return "\(url.scheme ?? "unknown")://\(url.host ?? "missing-host")\(url.path)"
     }
 }

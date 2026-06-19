@@ -24,9 +24,11 @@ final class TodoStore: TodoStoreProtocol {
     ) {
         self.modelContext = modelContext
         self.saveAction = saveAction
+        VoiceTodoLog.store.info("store.init.start")
         migrateOldSortOrder()
         migrateDueDatesFromHints()
         refreshTodos()
+        VoiceTodoLog.store.info("store.init.finished todoCount=\(todos.count)")
     }
 
     // MARK: - TodoStoreProtocol Implementation
@@ -34,18 +36,23 @@ final class TodoStore: TodoStoreProtocol {
     /// 添加单条待办
     /// - Parameter item: AI 提取的待办
     func add(_ item: ExtractedTodo) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) titleChars=\(item.title.count)")
         let todoItem = TodoItem.from(item)
-        todoItem.sortOrder = nextSortOrderForNewItem()
+        todoItem.sortOrder = try nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
         try saveOrRollback()
         todos.insert(todoItem.toData(), at: 0)
+        VoiceTodoLog.store.info("store.add.success id=\(item.id.uuidString, privacy: .public) sortOrder=\(todoItem.sortOrder) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 批量添加（确认界面用）
     /// - Parameter items: AI 提取的待办数组
     func addBatch(_ items: [ExtractedTodo]) throws {
-        var baseSortOrder = nextSortOrderForNewItem()
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item)
@@ -57,36 +64,46 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
+        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 添加原始转写文本（离线降级用）[v2]
     /// - Parameter transcript: 原始语音转写文本
     func addRawTranscript(_ transcript: String) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.add_raw.start \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
         let todoItem = TodoItem.rawTranscript(transcript)
-        todoItem.sortOrder = nextSortOrderForNewItem()
+        todoItem.sortOrder = try nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
         try saveOrRollback()
         todos.insert(todoItem.toData(), at: 0)
+        VoiceTodoLog.store.info("store.add_raw.success id=\(todoItem.id.uuidString, privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 切换完成状态
     /// - Parameter id: 待办 ID
     func toggleComplete(_ id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.toggle.start id=\(id.uuidString, privacy: .public)")
         let todoItem = try findTodoItem(by: id)
 
         todoItem.isCompleted.toggle()
+        todoItem.completedAt = todoItem.isCompleted ? Date() : nil
 
         try saveOrRollback()
         // 增量更新：修改对应条目
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
+        VoiceTodoLog.store.info("store.toggle.success id=\(id.uuidString, privacy: .public) isCompleted=\(todoItem.isCompleted) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 删除待办
     /// - Parameter id: 待办 ID
     func delete(_ id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.delete.start id=\(id.uuidString, privacy: .public)")
         let todoItem = try findTodoItem(by: id)
 
         try deleteCompletions(for: id)
@@ -95,6 +112,7 @@ final class TodoStore: TodoStoreProtocol {
         try saveOrRollback()
         // 增量更新：移除对应条目
         todos.removeAll { $0.id == id }
+        VoiceTodoLog.store.info("store.delete.success id=\(id.uuidString, privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 更新待办
@@ -129,6 +147,8 @@ final class TodoStore: TodoStoreProtocol {
         recurrenceRule: RecurrenceRule?,
         shouldUpdateRecurrence: Bool
     ) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.update.start id=\(id.uuidString, privacy: .public) titleChars=\(title.count) category=\(category?.rawValue ?? "nil", privacy: .public) priority=\(priority?.rawValue ?? "nil", privacy: .public) dueHintChars=\(dueHint?.count ?? -1) shouldUpdateRecurrence=\(shouldUpdateRecurrence)")
         let todoItem = try findTodoItem(by: id)
 
         todoItem.title = title
@@ -154,6 +174,7 @@ final class TodoStore: TodoStoreProtocol {
                 try deleteCompletions(for: id)
             } else {
                 todoItem.isCompleted = false
+                todoItem.completedAt = nil
             }
         }
 
@@ -162,6 +183,7 @@ final class TodoStore: TodoStoreProtocol {
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
+        VoiceTodoLog.store.info("store.update.success id=\(id.uuidString, privacy: .public) recurrenceSet=\(todoItem.recurrenceRule != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 更新重复规则（nil 表示关闭重复）
@@ -169,6 +191,8 @@ final class TodoStore: TodoStoreProtocol {
     ///   - id: 待办 ID
     ///   - recurrenceRule: 新重复规则
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.update_recurrence.start id=\(id.uuidString, privacy: .public) recurrenceSet=\(recurrenceRule != nil)")
         let todoItem = try findTodoItem(by: id)
         todoItem.recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
 
@@ -176,12 +200,14 @@ final class TodoStore: TodoStoreProtocol {
             try deleteCompletions(for: id)
         } else {
             todoItem.isCompleted = false
+            todoItem.completedAt = nil
         }
 
         try saveOrRollback()
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
+        VoiceTodoLog.store.info("store.update_recurrence.success id=\(id.uuidString, privacy: .public) recurrenceSet=\(todoItem.recurrenceRule != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 获取日期区间内实际出现的待办。
@@ -233,6 +259,8 @@ final class TodoStore: TodoStoreProtocol {
     ///   - id: 待办 ID
     ///   - date: occurrence 日期
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.toggle_occurrence.start id=\(id.uuidString, privacy: .public) date=\(date.ISO8601Format(), privacy: .public)")
         let todoItem = try findTodoItem(by: id)
         guard let recurrenceRule = todoItem.recurrenceRule else {
             try toggleComplete(id)
@@ -241,6 +269,7 @@ final class TodoStore: TodoStoreProtocol {
 
         let day = Calendar.current.startOfDay(for: date)
         guard recurrenceRule.occurs(on: day, startDate: todoItem.dueDate ?? todoItem.createdAt) else {
+            VoiceTodoLog.store.warning("store.toggle_occurrence.ignored id=\(id.uuidString, privacy: .public) reason=non_occurring_date date=\(day.ISO8601Format(), privacy: .public)")
             return
         }
 
@@ -254,7 +283,9 @@ final class TodoStore: TodoStoreProtocol {
             }
             try saveOrRollback()
             refreshTodos()
+            VoiceTodoLog.store.info("store.toggle_occurrence.success id=\(id.uuidString, privacy: .public) key=\(key, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
+            VoiceTodoLog.store.error("store.toggle_occurrence.failed id=\(id.uuidString, privacy: .public) key=\(key, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             if let voiceError = error as? VoiceTodoError {
                 throw voiceError
             }
@@ -272,11 +303,10 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             let items = try modelContext.fetch(descriptor)
+            VoiceTodoLog.store.debug("store.pending.fetch_success count=\(items.count)")
             return items.map { $0.toData() }
         } catch {
-            #if DEBUG
-            print("Failed to fetch pending items: \(error)")
-            #endif
+            VoiceTodoLog.store.error("store.pending.fetch_failed fallbackCount=\(todos.filter { $0.needsAIProcessing }.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return todos
                 .filter { $0.needsAIProcessing }
                 .sorted { $0.sortOrder < $1.sortOrder }
@@ -297,16 +327,16 @@ final class TodoStore: TodoStoreProtocol {
             let today = Calendar.current.startOfDay(for: Date())
             let completedToday = completionMap(from: today, to: today)
             let items = try modelContext.fetch(descriptor)
-            return WidgetTodoFilter.visibleTodos(
+            let visible = WidgetTodoFilter.visibleTodos(
                 from: items.map { $0.toData() },
                 completionKeys: Set(completedToday.keys),
                 today: today,
                 limit: limit
             )
+            VoiceTodoLog.store.debug("store.recent_uncompleted.fetch_success fetched=\(items.count) visible=\(visible.count) limit=\(limit)")
+            return visible
         } catch {
-            #if DEBUG
-            print("Failed to fetch recent uncompleted todos: \(error)")
-            #endif
+            VoiceTodoLog.store.error("store.recent_uncompleted.fetch_failed fallbackTotal=\(todos.count) limit=\(limit) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             let today = Calendar.current.startOfDay(for: Date())
             let completedToday = completionMap(from: today, to: today)
             return WidgetTodoFilter.visibleTodos(
@@ -329,14 +359,17 @@ final class TodoStore: TodoStoreProtocol {
     }
 
     func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) newCount=\(items.count) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
         guard !pendingIds.isEmpty else {
+            VoiceTodoLog.store.error("store.replace_pending_batch.failed reason=empty_pending_ids")
             throw VoiceTodoError.storageReadFailed("未提供待处理 ID")
         }
 
         let pendingItems = try pendingIds.map { try findTodoItem(by: $0) }
         let effectiveTranscript = rawTranscript ?? pendingItems.compactMap(\.rawTranscript).joined(separator: "\n---\n")
 
-        var baseSortOrder = nextSortOrderForNewItem()
+        var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item, rawTranscript: effectiveTranscript)
@@ -354,9 +387,11 @@ final class TodoStore: TodoStoreProtocol {
         let pendingSet = Set(pendingIds)
         todos.removeAll { pendingSet.contains($0.id) }
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
+        VoiceTodoLog.store.info("store.replace_pending_batch.success pendingCount=\(pendingIds.count) newCount=\(items.count) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     func resetForUITests() throws {
+        VoiceTodoLog.store.warning("store.reset_for_ui_tests.start")
         do {
             let items = try modelContext.fetch(FetchDescriptor<TodoItem>())
             for item in items {
@@ -368,7 +403,9 @@ final class TodoStore: TodoStoreProtocol {
             }
             try saveOrRollback()
             todos = []
+            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count)")
         } catch {
+            VoiceTodoLog.store.error("store.reset_for_ui_tests.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             if let voiceError = error as? VoiceTodoError {
                 throw voiceError
             }
@@ -377,6 +414,7 @@ final class TodoStore: TodoStoreProtocol {
     }
 
     func seedForUITests(_ items: [TodoItemData]) throws {
+        VoiceTodoLog.store.warning("store.seed_for_ui_tests.start count=\(items.count)")
         for item in items {
             let todoItem = TodoItem(
                 id: item.id,
@@ -399,6 +437,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         refreshTodos()
+        VoiceTodoLog.store.warning("store.seed_for_ui_tests.success count=\(items.count) total=\(todos.count)")
     }
 
     /// 记录系统日历事件 ID。
@@ -406,6 +445,8 @@ final class TodoStore: TodoStoreProtocol {
     ///   - eventIdentifier: 系统日历事件 ID
     ///   - id: 待办 ID
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.calendar_identifier.update_start todoID=\(id.uuidString, privacy: .public) eventID=\(eventIdentifier ?? "nil", privacy: .public)")
         let todoItem = try findTodoItem(by: id)
         todoItem.systemCalendarEventIdentifier = eventIdentifier
 
@@ -413,20 +454,33 @@ final class TodoStore: TodoStoreProtocol {
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
+        VoiceTodoLog.store.info("store.calendar_identifier.update_success todoID=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 重新排序未完成待办（拖拽排序后调用）
     /// - Parameter ids: 按新顺序排列的待办 ID 数组
     func reorder(ids: [UUID]) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.reorder.start ids=\(VoiceTodoLog.idsSummary(ids), privacy: .public)")
         let descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { !$0.isCompleted }
         )
-        let allUncompleted = try modelContext.fetch(descriptor)
+        let allUncompleted: [TodoItem]
+        do {
+            allUncompleted = try modelContext.fetch(descriptor)
+        } catch {
+            VoiceTodoLog.store.error("store.reorder.fetch_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
         let itemMap = Dictionary(uniqueKeysWithValues: allUncompleted.map { ($0.id, $0) })
 
         var itemsToUpdate = [(TodoItem, Int)]()
         for (index, id) in ids.enumerated() {
             guard let item = itemMap[id] else {
+                VoiceTodoLog.store.error("store.reorder.missing_id id=\(id.uuidString, privacy: .public)")
                 throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
             }
             itemsToUpdate.append((item, index))
@@ -438,6 +492,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         refreshTodos()
+        VoiceTodoLog.store.info("store.reorder.success count=\(ids.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     // MARK: - Internal Methods
@@ -445,6 +500,7 @@ final class TodoStore: TodoStoreProtocol {
     /// 全量刷新 todos 属性（从数据库重新加载）
     /// 初始化时及 app 回前台时调用（同步 Widget 在 Extension 进程中的修改）
     func refreshTodos() {
+        let startedAt = Date()
         let descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
@@ -452,17 +508,16 @@ final class TodoStore: TodoStoreProtocol {
         do {
             let items = try modelContext.fetch(descriptor)
             todos = items.map { $0.toData() }
+            VoiceTodoLog.store.debug("store.refresh.success count=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
-            #if DEBUG
-            print("Failed to refresh todos: \(error)")
-            #endif
+            VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 
     // MARK: - Private Methods
 
     /// 计算新条目的 sortOrder（比当前最小值再小 1，确保排在最前面）
-    private func nextSortOrderForNewItem() -> Int {
+    private func nextSortOrderForNewItem() throws -> Int {
         var descriptor = FetchDescriptor<TodoItem>(
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
@@ -473,14 +528,20 @@ final class TodoStore: TodoStoreProtocol {
             let minOrder = items.first?.sortOrder ?? 0
             return minOrder - 1
         } catch {
-            return -1
+            VoiceTodoLog.store.error("store.next_sort_order.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
         }
     }
 
     private func saveOrRollback() throws {
         do {
             try saveAction(modelContext)
+            VoiceTodoLog.store.debug("store.save.success")
         } catch {
+            VoiceTodoLog.store.error("store.save.failed_rollback error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             modelContext.rollback()
             refreshTodos()
             if let voiceError = error as? VoiceTodoError {
@@ -503,14 +564,14 @@ final class TodoStore: TodoStoreProtocol {
             let allZero = items.allSatisfy { $0.sortOrder == 0 }
             guard allZero else { return }
 
+            VoiceTodoLog.store.info("store.migration.sort_order.start count=\(items.count)")
             for (index, item) in items.enumerated() {
                 item.sortOrder = index
             }
             try saveOrRollback()
+            VoiceTodoLog.store.info("store.migration.sort_order.success count=\(items.count)")
         } catch {
-            #if DEBUG
-            print("Failed to migrate sortOrder: \(error)")
-            #endif
+            VoiceTodoLog.store.error("store.migration.sort_order.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 
@@ -525,6 +586,7 @@ final class TodoStore: TodoStoreProtocol {
         do {
             let items = try modelContext.fetch(descriptor)
             var changed = false
+            var changedCount = 0
             for item in items {
                 guard let dueDate = TodoDueDateResolver.resolve(
                     dueHint: item.dueHint,
@@ -536,14 +598,15 @@ final class TodoStore: TodoStoreProtocol {
                 }
                 item.dueDate = dueDate
                 changed = true
+                changedCount += 1
             }
             if changed {
+                VoiceTodoLog.store.info("store.migration.due_dates.start candidates=\(items.count) changed=\(changedCount)")
                 try saveOrRollback()
+                VoiceTodoLog.store.info("store.migration.due_dates.success changed=\(changedCount)")
             }
         } catch {
-            #if DEBUG
-            print("Failed to migrate dueDate from dueHint: \(error)")
-            #endif
+            VoiceTodoLog.store.error("store.migration.due_dates.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 
@@ -559,10 +622,12 @@ final class TodoStore: TodoStoreProtocol {
         do {
             let items = try modelContext.fetch(descriptor)
             guard let item = items.first else {
+                VoiceTodoLog.store.error("store.find.failed reason=not_found id=\(id.uuidString, privacy: .public)")
                 throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
             }
             return item
         } catch {
+            VoiceTodoLog.store.error("store.find.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             if let storageError = error as? VoiceTodoError {
                 throw storageError
             }
@@ -596,11 +661,10 @@ final class TodoStore: TodoStoreProtocol {
 
         do {
             let completions = try modelContext.fetch(descriptor)
+            VoiceTodoLog.store.debug("store.completion_map.success start=\(start.ISO8601Format(), privacy: .public) end=\(end.ISO8601Format(), privacy: .public) count=\(completions.count)")
             return Dictionary(uniqueKeysWithValues: completions.map { ($0.occurrenceKey, $0) })
         } catch {
-            #if DEBUG
-            print("Failed to fetch occurrence completions: \(error)")
-            #endif
+            VoiceTodoLog.store.error("store.completion_map.failed start=\(start.ISO8601Format(), privacy: .public) end=\(end.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return [:]
         }
     }
@@ -610,15 +674,35 @@ final class TodoStore: TodoStoreProtocol {
             predicate: #Predicate { $0.occurrenceKey == key }
         )
         descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first
+        do {
+            let completion = try modelContext.fetch(descriptor).first
+            VoiceTodoLog.store.debug("store.find_completion.success key=\(key, privacy: .public) found=\(completion != nil)")
+            return completion
+        } catch {
+            VoiceTodoLog.store.error("store.find_completion.failed key=\(key, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
     }
 
     private func deleteCompletions(for todoId: UUID) throws {
         let descriptor = FetchDescriptor<TodoOccurrenceCompletion>(
             predicate: #Predicate { $0.todoId == todoId }
         )
-        for completion in try modelContext.fetch(descriptor) {
-            modelContext.delete(completion)
+        do {
+            let completions = try modelContext.fetch(descriptor)
+            for completion in completions {
+                modelContext.delete(completion)
+            }
+            VoiceTodoLog.store.debug("store.delete_completions.success todoID=\(todoId.uuidString, privacy: .public) count=\(completions.count)")
+        } catch {
+            VoiceTodoLog.store.error("store.delete_completions.failed todoID=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            if let voiceError = error as? VoiceTodoError {
+                throw voiceError
+            }
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
         }
     }
 }

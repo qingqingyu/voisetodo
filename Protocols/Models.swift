@@ -217,7 +217,9 @@ enum WidgetTodoFilter {
         completionKeys: Set<String>,
         today: Date,
         limit: Int,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        recentCompletionCutoff: Date? = nil,
+        completionDatesByKey: [String: Date] = [:]
     ) -> [TodoItemData] {
         guard limit > 0 else { return [] }
 
@@ -232,12 +234,27 @@ enum WidgetTodoFilter {
                     continue
                 }
                 let key = "\(data.id.uuidString)-\(TodoOccurrenceData.dayKey(for: day, calendar: calendar))"
-                guard !completionKeys.contains(key) else { continue }
+                if completionKeys.contains(key) {
+                    guard let cutoff = recentCompletionCutoff,
+                          let completedAt = completionDatesByKey[key],
+                          completedAt >= cutoff else {
+                        continue
+                    }
+                    data.isCompleted = true
+                    scheduled.append(data)
+                    continue
+                }
                 data.isCompleted = false
                 scheduled.append(data)
                 continue
             }
-            guard !data.isCompleted else { continue }
+            if data.isCompleted {
+                guard let cutoff = recentCompletionCutoff,
+                      let completedAt = data.completedAt,
+                      completedAt >= cutoff else {
+                    continue
+                }
+            }
             if data.dueDate == nil {
                 unscheduled.append(data)
                 continue
@@ -735,6 +752,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
     var priority: Priority
     var category: TodoCategory
     var isCompleted: Bool
+    var completedAt: Date?
     var createdAt: Date
     var rawTranscript: String?
     var needsAIProcessing: Bool
@@ -751,6 +769,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         priority: Priority = .normal,
         category: TodoCategory = .other,
         isCompleted: Bool = false,
+        completedAt: Date? = nil,
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
@@ -766,6 +785,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.priority = priority
         self.category = category
         self.isCompleted = isCompleted
+        self.completedAt = completedAt
         self.createdAt = createdAt
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
@@ -788,6 +808,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.priority = extracted.priority
         self.category = extracted.categoryHint
         self.isCompleted = false
+        self.completedAt = nil
         self.createdAt = Date()
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = false

@@ -85,6 +85,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing failed (%@)" } }
       }
     },
+    "error.api_response_invalid_detail" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务返回格式异常" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid service response" } }
+      }
+    },
     "error.json_parsing_detail %@" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败 (%@)" } },
@@ -913,6 +919,18 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos" } }
       }
     },
+    "widget.loading" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载中" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading" } }
+      }
+    },
+    "widget.load_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load failed" } }
+      }
+    },
     "widget.todo_count" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办" } },
@@ -1229,6 +1247,12 @@
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来自 VoiceTodo" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "From VoiceTodo" } }
+      }
+    },
+    "widget.update_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更新失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Update failed" } }
       }
     }
   },

@@ -19,6 +19,7 @@ final class NetworkMonitor: ObservableObject {
     private let queue = DispatchQueue(label: "NetworkMonitor")
     private var cancellables = Set<AnyCancellable>()
     private let uiTestOptions = UITestLaunchOptions.current
+    private var lastLoggedState: String?
 
     // MARK: - Types
 
@@ -47,9 +48,11 @@ final class NetworkMonitor: ObservableObject {
             isExpensive = false
             isConstrained = false
             connectionType = uiTestOptions.forceOffline ? .unknown : .wifi
+            logStateIfChanged(source: "ui_test")
             return
         }
 
+        VoiceTodoLog.network.info("network_monitor.start")
         updateState(from: monitor.currentPath)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
@@ -64,16 +67,19 @@ final class NetworkMonitor: ObservableObject {
     /// 停止监测网络状态
     func stopMonitoring() {
         monitor.cancel()
+        VoiceTodoLog.network.info("network_monitor.stop")
     }
 
     /// 重启监测（App 回到前台时调用，确保监测器处于活跃状态）
     func restartIfNeeded() {
         if uiTestOptions.isUITesting {
+            VoiceTodoLog.network.info("network_monitor.restart.ui_test")
             startMonitoring()
             return
         }
 
         // Apple 文档：cancel() 后必须创建新实例，不能重用
+        VoiceTodoLog.network.info("network_monitor.restart")
         monitor.cancel()
         monitor = NWPathMonitor()
         startMonitoring()
@@ -89,10 +95,15 @@ final class NetworkMonitor: ObservableObject {
     /// - Parameter timeout: 超时时间（秒）
     /// - Returns: 是否连接成功
     func waitForConnection(timeout: TimeInterval = 10.0) async -> Bool {
-        guard !isConnected else { return true }
+        guard !isConnected else {
+            VoiceTodoLog.network.debug("network_monitor.wait.skipped reason=already_connected")
+            return true
+        }
 
+        let startedAt = Date()
+        VoiceTodoLog.network.info("network_monitor.wait.start timeoutSeconds=\(timeout)")
         do {
-            return try await withCheckedThrowingContinuation { continuation in
+            let connected: Bool = try await withCheckedThrowingContinuation { continuation in
                 let wrapper = AsyncContinuationWrapper(continuation)
 
                 // 监听连接状态变化
@@ -110,7 +121,13 @@ final class NetworkMonitor: ObservableObject {
                     cancellable.cancel()
                 }
             }
+            if !connected {
+                VoiceTodoLog.network.warning("network_monitor.wait.timeout timeoutSeconds=\(timeout) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            }
+            VoiceTodoLog.network.info("network_monitor.wait.finished connected=\(connected) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return connected
         } catch {
+            VoiceTodoLog.network.error("network_monitor.wait.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return false
         }
     }
@@ -133,6 +150,14 @@ extension NetworkMonitor {
         } else {
             connectionType = .unknown
         }
+        logStateIfChanged(source: "path_update")
+    }
+
+    private func logStateIfChanged(source: String) {
+        let state = "connected=\(isConnected) expensive=\(isExpensive) constrained=\(isConstrained) type=\(connectionType.rawValue)"
+        guard state != lastLoggedState else { return }
+        lastLoggedState = state
+        VoiceTodoLog.network.info("network_monitor.state source=\(source, privacy: .public) \(state, privacy: .public)")
     }
 }
 
@@ -165,6 +190,7 @@ extension NetworkMonitor {
 /// 用于 Combine + async/await 桥接场景，确保 continuation 只 resume 一次
 private final class AsyncContinuationWrapper<T> {
     private let continuation: CheckedContinuation<T, Error>
+    private let lock = NSLock()
     private var hasResumed = false
 
     init(_ continuation: CheckedContinuation<T, Error>) {
@@ -172,12 +198,16 @@ private final class AsyncContinuationWrapper<T> {
     }
 
     func resume(returning value: T) {
+        lock.lock()
+        defer { lock.unlock() }
         guard !hasResumed else { return }
         hasResumed = true
         continuation.resume(returning: value)
     }
 
     func resume(throwing error: Error) {
+        lock.lock()
+        defer { lock.unlock() }
         guard !hasResumed else { return }
         hasResumed = true
         continuation.resume(throwing: error)

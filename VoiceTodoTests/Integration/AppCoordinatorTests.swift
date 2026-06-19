@@ -413,6 +413,33 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.audioSessionInterrupted)
     }
 
+    func testStreamingFailureAfterPartialResultsClearsConfirmSheet() async {
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(
+                todos: [ExtractedTodo(title: "部分结果", detail: "部分结果")],
+                ignored: ""
+            )
+        ]
+        extractor.streamingError = VoiceTodoError.apiResponseInvalid("broken stream")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: CoordinatorTestStore(),
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.processManualInput("记录一个会在流式结束时报错的待办")
+
+        XCTAssertFalse(coordinator.showConfirmSheet)
+        XCTAssertTrue(coordinator.extractedTodos.isEmpty)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(
+            coordinator.toastMessage,
+            VoiceTodoError.apiResponseInvalid("broken stream").localizedDescription
+        )
+    }
+
     func testHandleAppForegroundKeepsInvalidPendingWhenDeleteFails() async {
         let pendingId = UUID()
         let invalidPending = TodoItemData(
@@ -479,6 +506,8 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
 private final class DelayedExtractor: TodoExtractorProtocol {
     var delays: [String: UInt64]
     var onExtract: (() async -> Void)?
+    var streamingResults: [ExtractionResult]?
+    var streamingError: Error?
 
     init(delays: [String: UInt64] = [:]) {
         self.delays = delays
@@ -493,6 +522,37 @@ private final class DelayedExtractor: TodoExtractorProtocol {
             todos: [ExtractedTodo(title: "extracted \(transcript)", detail: transcript)],
             ignored: ""
         )
+    }
+
+    func extractStreaming(from transcript: String, locale: Locale) -> AsyncThrowingStream<ExtractionResult, Error> {
+        if streamingResults == nil && streamingError == nil {
+            return AsyncThrowingStream { continuation in
+                Task {
+                    do {
+                        let result = try await self.extract(from: transcript, locale: locale)
+                        continuation.yield(result)
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+        }
+
+        let results = streamingResults ?? []
+        let error = streamingError
+        return AsyncThrowingStream { continuation in
+            Task {
+                for result in results {
+                    continuation.yield(result)
+                }
+                if let error {
+                    continuation.finish(throwing: error)
+                } else {
+                    continuation.finish()
+                }
+            }
+        }
     }
 }
 

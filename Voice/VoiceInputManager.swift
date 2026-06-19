@@ -49,8 +49,8 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var recordingStartTime: Date?
     private var updateTimer: Timer?
     private var finishRecordingWatchdogTask: Task<Void, Never>?
-    private var interruptionRecoveryObserver: NSObjectProtocol?
     private var interruptionBeganObserver: NSObjectProtocol?
+    private var recordingSessionID: String?
 
     // MARK: - Initialization
 
@@ -65,11 +65,14 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 开始录音
     func startRecording() async throws {
         guard !isRecording else {
-            #if DEBUG
-            print("startRecording called while already recording — ignoring")
-            #endif
+            VoiceTodoLog.voice.warning("recording.start.ignored reason=already_recording activeID=\(recordingSessionID ?? "none", privacy: .public)")
             return
         }
+
+        let sessionID = VoiceTodoLog.makeID("recording")
+        recordingSessionID = sessionID
+        let startedAt = Date()
+        VoiceTodoLog.voice.info("recording.start id=\(sessionID, privacy: .public) locale=\(currentLocale.identifier, privacy: .public)")
 
         // 清空之前的状态
         cancelFinishRecordingWatchdog()
@@ -77,21 +80,45 @@ final class VoiceInputManager: VoiceInputProtocol {
         error = nil
         isSilenceDetected = false
         silenceStartTime = nil
-        recordingStartTime = Date()
+        recordingStartTime = startedAt
 
         // 1. 检查权限
-        try await checkPermissions()
+        do {
+            try await checkPermissions()
+            VoiceTodoLog.voice.info("recording.permissions.ready id=\(sessionID, privacy: .public)")
+        } catch {
+            VoiceTodoLog.voice.error("recording.permissions.failed id=\(sessionID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            recordingSessionID = nil
+            recordingStartTime = nil
+            throw error
+        }
 
         // 2. 配置音频会话
-        try audioSessionHelper.configureSession()
+        do {
+            try audioSessionHelper.configureSession()
+            VoiceTodoLog.voice.info("recording.audio_session.configured id=\(sessionID, privacy: .public)")
+        } catch {
+            VoiceTodoLog.voice.error("recording.audio_session.failed id=\(sessionID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            cleanupRecordingPipeline(markNotRecording: true, reason: "audioSessionStartFailure")
+            throw error
+        }
 
         // 3. 检查语音识别器可用性
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            VoiceTodoLog.voice.error("recording.recognizer.unavailable id=\(sessionID, privacy: .public) recognizerExists=\(speechRecognizer != nil)")
+            cleanupRecordingPipeline(markNotRecording: true, reason: "recognizerUnavailable")
             throw VoiceTodoError.speechRecognitionUnavailable
         }
 
         // 4. 创建识别请求并启动识别任务
-        try startRecognition(recognizer: recognizer)
+        do {
+            try startRecognition(recognizer: recognizer)
+            VoiceTodoLog.voice.info("recording.recognition.started id=\(sessionID, privacy: .public)")
+        } catch {
+            VoiceTodoLog.voice.error("recording.recognition.start_failed id=\(sessionID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            cleanupRecordingPipeline(markNotRecording: true, reason: "recognitionStartFailure")
+            throw error
+        }
 
         // 5. 配置音频输入和静音检测
         let inputNode = audioEngine.inputNode
@@ -116,6 +143,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         do {
             try audioEngine.start()
             isRecording = true
+            VoiceTodoLog.voice.info("recording.engine.started id=\(sessionID, privacy: .public) sampleRate=\(recordingFormat.sampleRate) channels=\(recordingFormat.channelCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
             // 7. 监听音频会话中断和路由变更
             audioSessionHelper.startObserving()
@@ -134,21 +162,29 @@ final class VoiceInputManager: VoiceInputProtocol {
             startLiveActivity()
         } catch {
             // 启动失败时清理已安装的 tap
-            inputNode.removeTap(onBus: 0)
+            VoiceTodoLog.voice.error("recording.engine.start_failed id=\(sessionID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            cleanupRecordingPipeline(markNotRecording: true, reason: "engineStartFailure")
             throw VoiceTodoError.recordingFailed("无法启动音频引擎")
         }
     }
 
     /// 停止录音
     func stopRecording() {
-        guard isRecording else { return }
+        guard isRecording else {
+            VoiceTodoLog.voice.debug("recording.stop.ignored activeID=\(recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            return
+        }
 
-        cleanupRecordingPipeline(markNotRecording: true)
+        cleanupRecordingPipeline(markNotRecording: true, reason: "stopRecording")
     }
 
     func cancelRecordingDueToInterruption() {
-        guard isRecording else { return }
-        cleanupRecordingPipeline(markNotRecording: true)
+        guard isRecording else {
+            VoiceTodoLog.voice.debug("recording.interruption.ignored activeID=\(recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            return
+        }
+        VoiceTodoLog.voice.warning("recording.interrupted id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        cleanupRecordingPipeline(markNotRecording: true, reason: "interruption")
         error = .audioSessionInterrupted
     }
 
@@ -157,7 +193,12 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 而是让 Apple Speech Framework 自然完成识别，
     /// 最终结果回调触发 stopRecording() 确保 transcript 是最终版本。
     func finishRecording() {
-        guard isRecording else { return }
+        guard isRecording else {
+            VoiceTodoLog.voice.debug("recording.finish.ignored activeID=\(recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            return
+        }
+
+        VoiceTodoLog.voice.info("recording.finish.requested id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
 
         // 停止音频引擎（不再输入新音频）
         audioEngine.stop()
@@ -210,6 +251,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                 // 如果是最终结果，停止录音（派发到主线程避免与 processAudioBuffer 竞态）
                 if result.isFinal {
                     DispatchQueue.main.async {
+                        VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count)")
                         self.stopRecording()
                     }
                 }
@@ -223,12 +265,13 @@ final class VoiceInputManager: VoiceInputProtocol {
                         // 已被看门狗/正常停止收敛时，忽略陈旧的取消回调，避免覆盖既有错误
                         guard self.isRecording else { return }
                         self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
-                        self.stopRecording()
+                        VoiceTodoLog.voice.error("recording.recognition.final_error id=\(self.recordingSessionID ?? "none", privacy: .public) isFinal=\(isFinal) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        self.cleanupRecordingPipeline(markNotRecording: true, reason: "recognitionError")
                     }
                 }
-                #if DEBUG
-                print("Recognition error: \(error.localizedDescription)")
-                #endif
+                DispatchQueue.main.async {
+                    VoiceTodoLog.voice.error("recording.recognition.error id=\(self.recordingSessionID ?? "none", privacy: .public) isFinal=\(isFinal) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                }
             }
         }
     }
@@ -241,9 +284,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 检查是否已授权 Live Activity
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            #if DEBUG
-            print("Live Activity 未授权")
-            #endif
+            VoiceTodoLog.voice.info("live_activity.disabled recordingID=\(recordingSessionID ?? "none", privacy: .public)")
             return
         }
 
@@ -263,17 +304,13 @@ final class VoiceInputManager: VoiceInputProtocol {
                 pushType: nil
             )
             self.liveActivity = activity
-            #if DEBUG
-            print("Live Activity 已启动: \(activity.id)")
-            #endif
+            VoiceTodoLog.voice.info("live_activity.started recordingID=\(recordingSessionID ?? "none", privacy: .public) activityID=\(activity.id, privacy: .public)")
 
             // 启动定时器更新时长
             startUpdateTimer()
 
         } catch {
-            #if DEBUG
-            print("启动 Live Activity 失败: \(error)")
-            #endif
+            VoiceTodoLog.voice.error("live_activity.start_failed recordingID=\(recordingSessionID ?? "none", privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 
@@ -300,26 +337,30 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 停止定时器
         stopUpdateTimer()
 
+        let finalTranscript = transcript
+        let finalTranscriptChars = transcript.count
+        let finalDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+
+        defer {
+            liveActivity = nil
+            recordingStartTime = nil
+        }
+
         guard let activity = liveActivity else { return }
 
         Task {
             // 创建最终状态
             let finalState = RecordingActivityAttributes.ContentState(
                 isRecording: false,
-                transcript: transcript,
-                duration: recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+                transcript: finalTranscript,
+                duration: finalDuration
             )
 
             // 结束 Activity
             let content = ActivityContent(state: finalState, staleDate: nil)
             await activity.end(content, dismissalPolicy: .immediate)
-            #if DEBUG
-            print("Live Activity 已结束")
-            #endif
+            VoiceTodoLog.voice.info("live_activity.ended activityID=\(activity.id, privacy: .public) transcriptChars=\(finalTranscriptChars) duration=\(finalState.duration)")
         }
-
-        liveActivity = nil
-        recordingStartTime = nil
     }
 
     /// 启动定时器更新 Live Activity 时长
@@ -353,6 +394,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     private func startFinishRecordingWatchdog() {
         cancelFinishRecordingWatchdog()
+        VoiceTodoLog.voice.debug("recording.watchdog.started id=\(recordingSessionID ?? "none", privacy: .public) timeoutSeconds=\(VoiceConstants.finishRecordingWatchdogTimeoutSeconds)")
         finishRecordingWatchdogTask = Task { [weak self] in
             do {
                 try await Task.sleep(
@@ -372,7 +414,8 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     private func handleFinishRecordingWatchdogExpired() {
         guard isRecording else { return }
-        cleanupRecordingPipeline(markNotRecording: true)
+        VoiceTodoLog.voice.error("recording.watchdog.expired id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        cleanupRecordingPipeline(markNotRecording: true, reason: "finishWatchdog")
         error = .recordingFailed("识别超时")
     }
 
@@ -381,13 +424,13 @@ final class VoiceInputManager: VoiceInputProtocol {
             NotificationCenter.default.removeObserver(observer)
             interruptionBeganObserver = nil
         }
-        if let observer = interruptionRecoveryObserver {
-            NotificationCenter.default.removeObserver(observer)
-            interruptionRecoveryObserver = nil
-        }
     }
 
-    private func cleanupRecordingPipeline(markNotRecording: Bool) {
+    private func cleanupRecordingPipeline(markNotRecording: Bool, reason: String) {
+        let sessionID = recordingSessionID ?? "none"
+        let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        VoiceTodoLog.voice.info("recording.cleanup id=\(sessionID, privacy: .public) reason=\(reason, privacy: .public) markNotRecording=\(markNotRecording) transcriptChars=\(transcript.count) duration=\(duration)")
+
         cancelFinishRecordingWatchdog()
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
@@ -408,6 +451,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         isSilenceDetected = false
         silenceStartTime = nil
         endLiveActivity()
+        recordingSessionID = nil
     }
 
     // MARK: - Permission Methods [v2]
@@ -416,6 +460,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     static func requestMicrophonePermission() async -> Bool {
         return await withCheckedContinuation { continuation in
             AVAudioApplication.requestRecordPermission { granted in
+                VoiceTodoLog.voice.info("permission.microphone.request_result granted=\(granted)")
                 continuation.resume(returning: granted)
             }
         }
@@ -425,6 +470,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     static func requestSpeechPermission() async -> Bool {
         return await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
+                VoiceTodoLog.voice.info("permission.speech.request_result status=\(String(describing: status), privacy: .public)")
                 continuation.resume(returning: status == .authorized)
             }
         }
@@ -439,11 +485,13 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 检查是否支持
         for locale in VoiceConstants.supportedLocales {
             if preferredLanguage.hasPrefix(locale.languageCode ?? "") {
+                VoiceTodoLog.voice.info("locale.selected preferred=\(preferredLanguage, privacy: .public) selected=\(locale.identifier, privacy: .public)")
                 return locale
             }
         }
 
         // 非中文/英文系统回退到英文（国际通用）
+        VoiceTodoLog.voice.info("locale.fallback preferred=\(preferredLanguage, privacy: .public) selected=en-US")
         return Locale(identifier: "en-US")
     }
 
@@ -451,6 +499,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     private func checkPermissions() async throws {
         // 检查麦克风权限
         let micStatus = AVAudioApplication.shared.recordPermission
+        VoiceTodoLog.voice.debug("permission.microphone.status status=\(String(describing: micStatus), privacy: .public)")
         if micStatus != .granted {
             let granted = await Self.requestMicrophonePermission()
             if !granted {
@@ -460,6 +509,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 检查语音识别权限
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        VoiceTodoLog.voice.debug("permission.speech.status status=\(String(describing: speechStatus), privacy: .public)")
         if speechStatus != .authorized {
             let granted = await Self.requestSpeechPermission()
             if !granted {
@@ -500,6 +550,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                 if duration >= VoiceConstants.silenceTimeoutSeconds && !isSilenceDetected {
                     // 超时，自动停止（已在主线程，直接调用）
                     isSilenceDetected = true
+                    VoiceTodoLog.voice.info("recording.silence_detected id=\(recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) thresholdDB=\(VoiceConstants.silenceThresholdDB)")
                     stopRecording()
                 }
             }

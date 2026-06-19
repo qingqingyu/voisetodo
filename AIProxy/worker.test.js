@@ -22,7 +22,7 @@ test("rejects proxy deployment without APP_TOKEN unless explicitly allowed", asy
   );
 
   assert.equal(response.status, 500);
-  assert.equal(await response.text(), "APP_TOKEN not configured");
+  assert.equal(await response.text(), "AI proxy failed");
 });
 
 test("routes Anthropic provider and returns plain extraction JSON", async () => {
@@ -181,7 +181,7 @@ test("rejects provider streaming response without body", async () => {
   );
 
   assert.equal(response.status, 502);
-  assert.equal(await response.text(), "AI provider streaming response missing body");
+  assert.equal(await response.text(), "AI proxy failed");
 });
 
 test("propagates provider streaming read errors instead of sending done", async () => {
@@ -198,6 +198,40 @@ test("propagates provider streaming read errors instead of sending done", async 
 
   assert.equal(response.status, 200);
   await assert.rejects(() => response.text(), /provider stream failed/);
+});
+
+test("propagates invalid provider streaming JSON instead of skipping it", async () => {
+  const response = await handleRequest(
+    request({ transcript: "今天完成英语背诵", locale: "zh-Hans", stream: true }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async () => sseResponse(["data: {not-json"])
+  );
+
+  assert.equal(response.status, 200);
+  await assert.rejects(() => response.text(), /AI provider stream returned invalid JSON/);
+});
+
+test("propagates provider stream ending without done instead of sending done", async () => {
+  const response = await handleRequest(
+    request({ transcript: "今天完成英语背诵", locale: "zh-Hans", stream: true }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async () => sseResponse([
+      `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: "{\"todos\":" } })}`
+    ])
+  );
+
+  assert.equal(response.status, 200);
+  await assert.rejects(() => response.text(), /AI provider stream ended before done/);
 });
 
 test("rejects oversized transcript before calling provider", async () => {
@@ -264,6 +298,31 @@ test("enforces optional daily quota by device id", async () => {
   }
 });
 
+test("redacts device identifiers in logs", async () => {
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "今天完成英语背诵" },
+        { "X-App-Token": "token", "X-Device-ID": "device-1" }
+      ),
+      {
+        APP_TOKEN: "token",
+        LOG_HASH_SALT: "test-salt",
+        ANTHROPIC_API_KEY: "anthropic-key"
+      },
+      {},
+      async () => jsonResponse({
+        content: [{ type: "text", text: extractionJSON("完成英语背诵") }]
+      })
+    );
+    assert.equal(response.status, 200);
+  });
+
+  assert.ok(logs.length > 0);
+  assert.equal(logs.some((line) => line.includes("device-1")), false);
+  assert.equal(logs.some((line) => line.includes("sha256:")), true);
+});
+
 function request(body, headers = {}) {
   return new Request("https://proxy.test/v1/todo-extractions", {
     method: "POST",
@@ -326,6 +385,28 @@ function extractionJSON(title) {
 
 async function failingFetch() {
   throw new Error("provider should not be called");
+}
+
+async function captureConsole(operation) {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const lines = [];
+  const capture = (line) => {
+    lines.push(String(line));
+  };
+
+  console.log = capture;
+  console.warn = capture;
+  console.error = capture;
+  try {
+    await operation();
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+    console.error = originalError;
+  }
+  return lines;
 }
 
 class MemoryKV {

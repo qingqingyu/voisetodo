@@ -18,6 +18,7 @@ final class TodoItem {
     var priorityRaw: String
     var categoryRaw: String
     var isCompleted: Bool
+    var completedAt: Date?
     var createdAt: Date
     var rawTranscript: String?
     var needsAIProcessing: Bool
@@ -50,6 +51,7 @@ final class TodoItem {
         priority: Priority = .normal,
         category: TodoCategory = .other,
         isCompleted: Bool = false,
+        completedAt: Date? = nil,
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
@@ -68,6 +70,7 @@ final class TodoItem {
         self.priorityRaw = priority.rawValue
         self.categoryRaw = category.rawValue
         self.isCompleted = isCompleted
+        self.completedAt = completedAt
         self.createdAt = createdAt
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
@@ -90,6 +93,7 @@ final class TodoItem {
             priority: Priority(rawValue: priorityRaw) ?? .normal,
             category: TodoCategory(rawValue: categoryRaw) ?? .other,
             isCompleted: isCompleted,
+            completedAt: completedAt,
             createdAt: createdAt,
             rawTranscript: rawTranscript,
             needsAIProcessing: needsAIProcessing,
@@ -222,7 +226,8 @@ enum WidgetTodoFetch {
         today: Date = Date(),
         limit: Int,
         maxCandidateScan: Int? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        recentCompletionCutoff: Date? = nil
     ) throws -> [TodoItemData] {
         guard limit > 0 else { return [] }
 
@@ -240,14 +245,20 @@ enum WidgetTodoFetch {
                 completion.occurrenceDate >= day && completion.occurrenceDate < tomorrow
             }
         )
-        let completionKeys = Set(try context.fetch(completionDescriptor).map(\.occurrenceKey))
+        let completions = try context.fetch(completionDescriptor)
+        let completionKeys = Set(completions.map(\.occurrenceKey))
+        let completionDatesByKey = Dictionary(
+            uniqueKeysWithValues: completions.map { ($0.occurrenceKey, $0.completedAt) }
+        )
 
         return WidgetTodoFilter.visibleTodos(
             from: items.map { $0.toData() },
             completionKeys: completionKeys,
             today: day,
             limit: limit,
-            calendar: calendar
+            calendar: calendar,
+            recentCompletionCutoff: recentCompletionCutoff,
+            completionDatesByKey: completionDatesByKey
         )
     }
 }

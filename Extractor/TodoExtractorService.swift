@@ -20,31 +20,42 @@ final class TodoExtractorService: TodoExtractorProtocol {
     ///   - locale: 语音识别语言环境
     /// - Returns: 提取结果
     func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
+        let extractionID = VoiceTodoLog.currentExtractID(fallbackPrefix: "extract")
+        let startedAt = Date()
+        VoiceTodoLog.extractor.info("extract.start id=\(extractionID, privacy: .public) locale=\(locale.identifier, privacy: .public) retryCount=\(NetworkConfig.retryCount) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+
         var lastError: Error?
 
         // 重试策略：重试 1 次
         for attempt in 0...NetworkConfig.retryCount {
+            let attemptStart = Date()
             do {
                 // 第一次不等待，重试时等待指定间隔
                 if attempt > 0 {
+                    VoiceTodoLog.extractor.info("extract.retry_wait id=\(extractionID, privacy: .public) attempt=\(attempt) waitIntervalSeconds=\(NetworkConfig.retryInterval)")
                     try await Task.sleep(nanoseconds: UInt64(NetworkConfig.retryInterval * 1_000_000_000))
                 }
+                VoiceTodoLog.extractor.info("extract.attempt.start id=\(extractionID, privacy: .public) attempt=\(attempt)")
 
                 // 调用 API
                 let responseText = try await callAPI(transcript: transcript, locale: locale)
+                VoiceTodoLog.extractor.debug("extract.attempt.response id=\(extractionID, privacy: .public) attempt=\(attempt) responseChars=\(responseText.count) durationMS=\(VoiceTodoLog.durationMS(since: attemptStart))")
 
                 // 解析 JSON
                 let result = try parseResponse(responseText)
 
+                VoiceTodoLog.extractor.info("extract.success id=\(extractionID, privacy: .public) attempt=\(attempt) todos=\(result.todos.count) ignoredChars=\(result.ignored.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 return result
 
             } catch {
                 lastError = error
+                VoiceTodoLog.extractor.error("extract.attempt.failed id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: attemptStart)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
 
                 // 如果是配置错误或解析错误，不重试（AI 返回格式稳定，重试无意义）
                 if let voiceError = error as? VoiceTodoError {
                     switch voiceError {
                     case .apiResponseInvalid, .jsonParsingFailed:
+                        VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
                     default:
                         break
@@ -59,6 +70,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
         }
 
         // 所有重试都失败
+        VoiceTodoLog.extractor.error("extract.failed id=\(extractionID, privacy: .public) attempts=\(NetworkConfig.retryCount + 1) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) lastError=\(lastError.map(VoiceTodoLog.errorSummary) ?? "none", privacy: .public)")
         throw lastError ?? VoiceTodoError.apiResponseInvalid("Unknown error")
     }
 
@@ -67,6 +79,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
     /// - Returns: 提取结果
     func fallbackExtract(from transcript: String) -> ExtractionResult {
         let title = TextUtils.truncateTitle(from: transcript)
+        VoiceTodoLog.extractor.info("extract.fallback id=\(VoiceTodoLog.makeID("fallback"), privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) titleChars=\(title.count)")
 
         let todo = ExtractedTodo(
             id: UUID(),
@@ -87,11 +100,16 @@ final class TodoExtractorService: TodoExtractorProtocol {
         guard NetworkConfig.streamingEnabled else {
             return AsyncThrowingStream { continuation in
                 Task {
+                    let streamID = VoiceTodoLog.currentExtractID(fallbackPrefix: "stream-off")
+                    let startedAt = Date()
+                    VoiceTodoLog.extractor.info("extract.stream.disabled id=\(streamID, privacy: .public) locale=\(locale.identifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
                     do {
                         let result = try await self.extract(from: transcript, locale: locale)
                         continuation.yield(result)
+                        VoiceTodoLog.extractor.info("extract.stream.disabled_success id=\(streamID, privacy: .public) todos=\(result.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         continuation.finish()
                     } catch {
+                        VoiceTodoLog.extractor.error("extract.stream.disabled_failed id=\(streamID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         continuation.finish(throwing: error)
                     }
                 }
@@ -100,6 +118,9 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
         let client = self.networkClient
         let localeIdentifier = locale.identifier
+        let streamID = VoiceTodoLog.currentExtractID(fallbackPrefix: "extract-stream")
+        let startedAt = Date()
+        VoiceTodoLog.extractor.info("extract.stream.start id=\(streamID, privacy: .public) locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -123,6 +144,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                         if let partialTodos = self.tryParsePartialTodos(accumulatedText),
                            partialTodos.count > lastYieldedCount {
                             lastYieldedCount = partialTodos.count
+                            VoiceTodoLog.extractor.debug("extract.stream.partial id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count)")
                             continuation.yield(ExtractionResult(todos: partialTodos, ignored: ""))
                         }
                     }
@@ -130,16 +152,20 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     // 流结束后做最终完整解析
                     let finalResult = try self.parseResponse(accumulatedText)
                     continuation.yield(finalResult)
+                    VoiceTodoLog.extractor.info("extract.stream.success id=\(streamID, privacy: .public) todos=\(finalResult.todos.count) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                     continuation.finish()
                 } catch {
                     // 如果积累了部分文本但最终解析失败，尝试用已解析的部分结果
                     if let partialTodos = self.tryParsePartialTodos(accumulatedText), !partialTodos.isEmpty {
+                        VoiceTodoLog.extractor.warning("extract.stream.partial_before_error id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         continuation.yield(ExtractionResult(todos: partialTodos, ignored: ""))
                     }
+                    VoiceTodoLog.extractor.error("extract.stream.failed id=\(streamID, privacy: .public) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable _ in
+            continuation.onTermination = { @Sendable termination in
+                VoiceTodoLog.extractor.debug("extract.stream.terminated id=\(streamID, privacy: .public) reason=\(String(describing: termination), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 task.cancel()
             }
         }
@@ -201,9 +227,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 if let todo = try? decoder.decode(ExtractedTodo.self, from: data) {
                     todos.append(todo)
                 } else {
-                    #if DEBUG
-                    print("[StreamingParser] Failed to decode partial todo object")
-                    #endif
+                    VoiceTodoLog.extractor.warning("extract.stream.partial_decode_failed objectChars=\(objStr.count)")
                 }
             }
             searchStart = arrayContent.index(after: end)
@@ -247,6 +271,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
             let result = try decoder.decode(ExtractionResult.self, from: jsonData)
             return result
         } catch {
+            VoiceTodoLog.extractor.error("extract.parse.failed responseChars=\(responseText.count) cleanedChars=\(cleanedText.count) summary=\(VoiceTodoLog.textSummary(cleanedText, previewLimit: 160), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.jsonParsingFailed("JSON 解析失败: \(error.localizedDescription)")
         }
     }

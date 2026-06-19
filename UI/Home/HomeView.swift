@@ -857,7 +857,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             do {
                 try store.toggleComplete(id)
                 WidgetCenter.shared.reloadAllTimelines()
+                VoiceTodoLog.store.info("ui.home.toggle.success id=\(id.uuidString, privacy: .public)")
             } catch {
+                VoiceTodoLog.store.error("ui.home.toggle.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 coordinator.showToast(
                     message: ErrorMessages.storageError,
                     style: .warning
@@ -871,7 +873,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
             do {
                 try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
                 WidgetCenter.shared.reloadAllTimelines()
+                VoiceTodoLog.store.info("ui.home.toggle_occurrence.success id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public)")
             } catch {
+                VoiceTodoLog.store.error("ui.home.toggle_occurrence.failed id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 coordinator.showToast(
                     message: ErrorMessages.storageError,
                     style: .warning
@@ -884,7 +888,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         withAnimation(WarmAnimation.springSmooth) {
             do {
                 try coordinator.deleteTodo(id)
+                VoiceTodoLog.store.info("ui.home.delete.success id=\(id.uuidString, privacy: .public)")
             } catch {
+                VoiceTodoLog.store.error("ui.home.delete.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 coordinator.showToast(
                     message: ErrorMessages.storageError,
                     style: .warning

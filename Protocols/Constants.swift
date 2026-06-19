@@ -68,6 +68,10 @@ enum WidgetConfig {
     static let appGroupIdentifier = "group.com.voicetodo.shared"
     /// 刷新间隔（秒）
     static let refreshInterval: TimeInterval = 1800  // 30 分钟
+    /// Widget 勾选后保留完成态的时间，用于 timeline 中间态动画
+    static let completionAnimationRetention: TimeInterval = 0.5
+    /// Widget 交互失败提示保留时长
+    static let interactionErrorRetention: TimeInterval = 60
     /// 小尺寸显示条数
     static let smallItemCount = 1
     /// 中尺寸显示条数

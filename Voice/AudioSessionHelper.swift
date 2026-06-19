@@ -22,7 +22,9 @@ final class AudioSessionHelper {
             try session.setCategory(.record, mode: .default, options: [])
             try session.setActive(true)
             isActive = true
+            VoiceTodoLog.voice.info("audio_session.configured category=record mode=default")
         } catch {
+            VoiceTodoLog.voice.error("audio_session.configure_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.audioSessionInterrupted
         }
     }
@@ -32,11 +34,10 @@ final class AudioSessionHelper {
         do {
             try session.setActive(false, options: .notifyOthersOnDeactivation)
             isActive = false
+            VoiceTodoLog.voice.info("audio_session.deactivated")
         } catch {
             // 停用失败不影响流程，记录即可
-            #if DEBUG
-            print("Failed to deactivate audio session: \(error)")
-            #endif
+            VoiceTodoLog.voice.error("audio_session.deactivate_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 
@@ -51,6 +52,7 @@ final class AudioSessionHelper {
         switch type {
         case .began:
             // 中断开始（如来电、闹钟等）
+            VoiceTodoLog.voice.warning("audio_session.interruption.began wasActive=\(isActive)")
             wasActiveBeforeInterruption = isActive
             isActive = false
             NotificationCenter.default.post(
@@ -61,9 +63,16 @@ final class AudioSessionHelper {
             // 中断结束
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                VoiceTodoLog.voice.info("audio_session.interruption.ended shouldResume=\(options.contains(.shouldResume)) wasActiveBeforeInterruption=\(wasActiveBeforeInterruption)")
                 if options.contains(.shouldResume) && wasActiveBeforeInterruption {
                     // 可以恢复音频会话
-                    try? configureSession()
+                    do {
+                        try configureSession()
+                    } catch {
+                        VoiceTodoLog.voice.error("audio_session.interruption.resume_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        wasActiveBeforeInterruption = false
+                        return
+                    }
 
                     // 通知上层可以恢复录音
                     NotificationCenter.default.post(
@@ -91,14 +100,11 @@ final class AudioSessionHelper {
         // 例如：耳机插入/拔出、蓝牙设备连接/断开等
         switch reason {
         case .newDeviceAvailable:
-            #if DEBUG
-            print("New audio device available")
-            #endif
+            VoiceTodoLog.voice.info("audio_session.route_changed reason=newDeviceAvailable")
         case .oldDeviceUnavailable:
-            #if DEBUG
-            print("Old audio device unavailable")
-            #endif
+            VoiceTodoLog.voice.warning("audio_session.route_changed reason=oldDeviceUnavailable")
         default:
+            VoiceTodoLog.voice.debug("audio_session.route_changed reason=\(reason.rawValue)")
             break
         }
     }
@@ -108,6 +114,7 @@ final class AudioSessionHelper {
     /// 开始监听音频会话中断和路由变更通知
     func startObserving() {
         stopObserving()
+        VoiceTodoLog.voice.debug("audio_session.observing.start")
 
         let interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
@@ -130,9 +137,11 @@ final class AudioSessionHelper {
 
     /// 停止监听通知
     func stopObserving() {
+        guard !observers.isEmpty else { return }
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
         observers = []
+        VoiceTodoLog.voice.debug("audio_session.observing.stop")
     }
 }

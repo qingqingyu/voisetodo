@@ -9,71 +9,121 @@ export default {
 };
 
 export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fetch) {
+  const requestContext = await makeRequestContext(request, env);
+  logInfo("proxy.request.received", requestContext);
   try {
     const url = new URL(request.url);
     if (url.pathname !== "/v1/todo-extractions") {
-      return new Response("Not Found", { status: 404 });
+      return finishRequest(new Response("Not Found", { status: 404 }), requestContext, { reason: "not_found" });
     }
     if (request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
+      return finishRequest(new Response("Method Not Allowed", { status: 405 }), requestContext, { reason: "method_not_allowed" });
     }
 
     const authError = validateAppToken(request, env);
     if (authError) {
-      return authError;
+      logWarn("proxy.auth.failed", {
+        ...requestContext,
+        status: authError.response.status,
+        reason: authError.reason
+      });
+      return finishRequest(authError.response, requestContext, { reason: authError.reason });
     }
+    logInfo("proxy.auth.ok", requestContext);
 
     const declaredLength = Number(request.headers.get("content-length") || "0");
     if (declaredLength > MAX_BODY_BYTES) {
-      return new Response("Request too large", { status: 413 });
+      return finishRequest(new Response("Request too large", { status: 413 }), requestContext, {
+        reason: "declared_body_too_large",
+        declaredLength
+      });
     }
 
     const payload = await readPayload(request);
     const transcript = String(payload.transcript || "").trim();
     if (!transcript) {
-      return new Response("Missing transcript", { status: 400 });
+      return finishRequest(new Response("Missing transcript", { status: 400 }), requestContext, { reason: "missing_transcript" });
     }
     if (transcript.length > MAX_TRANSCRIPT_CHARS) {
-      return new Response("Transcript too large", { status: 413 });
+      return finishRequest(new Response("Transcript too large", { status: 413 }), requestContext, {
+        reason: "transcript_too_large",
+        transcriptChars: transcript.length
+      });
     }
 
     const locale = normalizeLocale(payload.locale);
-    await enforceDailyLimit(request, env);
+    requestContext.locale = locale;
+    requestContext.stream = payload.stream === true;
+    requestContext.transcriptChars = transcript.length;
+    requestContext.provider = normalizeProvider(env.AI_PROVIDER);
+    logInfo("proxy.payload.accepted", requestContext);
 
-    const provider = normalizeProvider(env.AI_PROVIDER);
+    await enforceDailyLimit(request, env, requestContext);
+
+    const provider = requestContext.provider;
     if (payload.stream === true) {
-      return await streamProviderResponse(provider, transcript, locale, env, fetchImpl);
+      const response = await streamProviderResponse(provider, transcript, locale, env, fetchImpl, requestContext);
+      return finishRequest(response, requestContext, { streamingBodyContinues: true });
     }
 
-    const text = await callProviderText(provider, transcript, locale, env, fetchImpl);
-    return new Response(text, {
+    const text = await callProviderText(provider, transcript, locale, env, fetchImpl, requestContext);
+    return finishRequest(new Response(text, {
       status: 200,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store"
       }
-    });
+    }), requestContext, { responseChars: text.length });
   } catch (error) {
     if (error instanceof ProxyHTTPError) {
-      return new Response(error.message, { status: error.status });
+      const clientMessage = error.status >= 500 ? "AI proxy failed" : error.message;
+      logWarn("proxy.request.http_error", { ...requestContext, status: error.status, ...errorFields(error) });
+      return finishRequest(new Response(clientMessage, { status: error.status }), requestContext, { error: clientMessage });
     }
-    return new Response("AI proxy failed", { status: 502 });
+    logError("proxy.request.failed", { ...requestContext, ...errorFields(error) });
+    return finishRequest(new Response("AI proxy failed", { status: 502 }), requestContext, { error: "AI proxy failed" });
   }
 }
 
 async function readPayload(request) {
   try {
-    const text = await request.text();
-    const byteLength = new TextEncoder().encode(text).length;
-    if (byteLength > MAX_BODY_BYTES) {
-      throw new ProxyHTTPError(413, "Request too large");
-    }
+    const text = await readRequestTextWithLimit(request, MAX_BODY_BYTES);
     return JSON.parse(text);
   } catch (error) {
     if (error instanceof ProxyHTTPError) {
       throw error;
     }
-    throw new ProxyHTTPError(400, "Invalid JSON");
+    throw new ProxyHTTPError(400, "Invalid JSON", { cause: error });
+  }
+}
+
+async function readRequestTextWithLimit(request, maxBytes) {
+  if (!request.body) {
+    return "";
+  }
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel("Request too large");
+        throw new ProxyHTTPError(413, "Request too large");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -82,22 +132,30 @@ function validateAppToken(request, env) {
     if (env.ALLOW_UNAUTHENTICATED_PROXY === "true") {
       return null;
     }
-    return new Response("APP_TOKEN not configured", { status: 500 });
+    return {
+      response: new Response("AI proxy failed", { status: 500 }),
+      reason: "app_token_not_configured"
+    };
   }
   const provided = request.headers.get("X-App-Token") || "";
   const expected = String(env.APP_TOKEN);
   if (provided === expected || provided === `Bearer ${expected}`) {
     return null;
   }
-  return new Response("Unauthorized", { status: 401 });
+  return {
+    response: new Response("Unauthorized", { status: 401 }),
+    reason: "unauthorized"
+  };
 }
 
-async function enforceDailyLimit(request, env) {
+async function enforceDailyLimit(request, env, requestContext) {
   if (!env.RATE_LIMIT_KV || !env.DAILY_REQUEST_LIMIT) {
+    logInfo("proxy.quota.skipped", { ...requestContext, reason: "not_configured" });
     return;
   }
   const limit = Number(env.DAILY_REQUEST_LIMIT);
   if (!Number.isFinite(limit) || limit <= 0) {
+    logWarn("proxy.quota.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.DAILY_REQUEST_LIMIT });
     return;
   }
 
@@ -108,9 +166,11 @@ async function enforceDailyLimit(request, env) {
   const key = `quota:${today}:${deviceId}`;
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= limit) {
+    logWarn("proxy.quota.exceeded", { ...requestContext, current, limit });
     throw new ProxyHTTPError(429, "Daily quota exceeded");
   }
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
+  logInfo("proxy.quota.incremented", { ...requestContext, current: current + 1, limit });
 }
 
 function normalizeLocale(locale) {
@@ -126,33 +186,40 @@ function normalizeProvider(provider) {
   return "anthropic";
 }
 
-async function callProviderText(provider, transcript, locale, env, fetchImpl) {
-  const response = await callProvider(provider, transcript, locale, env, fetchImpl, false);
-  const data = await readProviderJSON(response);
+async function callProviderText(provider, transcript, locale, env, fetchImpl, requestContext) {
+  const response = await callProvider(provider, transcript, locale, env, fetchImpl, false, requestContext);
+  const data = await readProviderJSON(response, provider, requestContext);
 
   if (provider === "openai") {
     const text = data?.choices?.[0]?.message?.content;
     if (!text) {
+      logError("proxy.provider.missing_text", { ...requestContext, provider });
       throw new ProxyHTTPError(502, "OpenAI response missing text");
     }
-    return stripMarkdownFence(text);
+    const stripped = stripMarkdownFence(text);
+    logInfo("proxy.provider.text_success", { ...requestContext, provider, responseChars: stripped.length });
+    return stripped;
   }
 
   const text = data?.content?.find((part) => part.type === "text")?.text
     || data?.content?.[0]?.text;
   if (!text) {
+    logError("proxy.provider.missing_text", { ...requestContext, provider });
     throw new ProxyHTTPError(502, "Anthropic response missing text");
   }
-  return stripMarkdownFence(text);
+  const stripped = stripMarkdownFence(text);
+  logInfo("proxy.provider.text_success", { ...requestContext, provider, responseChars: stripped.length });
+  return stripped;
 }
 
-async function streamProviderResponse(provider, transcript, locale, env, fetchImpl) {
-  const response = await callProvider(provider, transcript, locale, env, fetchImpl, true);
+async function streamProviderResponse(provider, transcript, locale, env, fetchImpl, requestContext) {
+  const response = await callProvider(provider, transcript, locale, env, fetchImpl, true, requestContext);
   if (!response.body) {
+    logError("proxy.provider.stream_missing_body", { ...requestContext, provider });
     throw new ProxyHTTPError(502, "AI provider streaming response missing body");
   }
 
-  return new Response(normalizeProviderStream(response.body, provider), {
+  return new Response(normalizeProviderStream(response.body, provider, requestContext), {
     status: 200,
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -162,15 +229,31 @@ async function streamProviderResponse(provider, transcript, locale, env, fetchIm
   });
 }
 
-async function callProvider(provider, transcript, locale, env, fetchImpl, stream) {
+async function callProvider(provider, transcript, locale, env, fetchImpl, stream, requestContext) {
+  const startedAt = Date.now();
+  logInfo("proxy.provider.call_start", { ...requestContext, provider, stream });
   const response = provider === "openai"
     ? await callOpenAI(transcript, locale, env, fetchImpl, stream)
     : await callAnthropic(transcript, locale, env, fetchImpl, stream);
 
   if (!response.ok) {
     const status = response.status === 429 ? 429 : 502;
+    logWarn("proxy.provider.call_failed", {
+      ...requestContext,
+      provider,
+      stream,
+      providerStatus: response.status,
+      durationMs: Date.now() - startedAt
+    });
     throw new ProxyHTTPError(status, "AI provider error");
   }
+  logInfo("proxy.provider.call_success", {
+    ...requestContext,
+    provider,
+    stream,
+    providerStatus: response.status,
+    durationMs: Date.now() - startedAt
+  });
   return response;
 }
 
@@ -234,19 +317,24 @@ function providerTimeoutSignal(env) {
   return AbortSignal.timeout(timeoutMs);
 }
 
-async function readProviderJSON(response) {
+async function readProviderJSON(response, provider, requestContext) {
   try {
     return await response.json();
-  } catch {
-    throw new ProxyHTTPError(502, "AI provider returned invalid JSON");
+  } catch (error) {
+    logError("proxy.provider.invalid_json", { ...requestContext, provider, ...errorFields(error) });
+    throw new ProxyHTTPError(502, "AI provider returned invalid JSON", { cause: error });
   }
 }
 
-function normalizeProviderStream(body, provider) {
+function normalizeProviderStream(body, provider, requestContext) {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   let buffer = "";
   let finished = false;
+  let chunkCount = 0;
+  let emittedCount = 0;
+  let emittedChars = 0;
+  const startedAt = Date.now();
 
   return new ReadableStream({
     async start(controller) {
@@ -258,6 +346,7 @@ function normalizeProviderStream(body, provider) {
           if (done) {
             break;
           }
+          chunkCount += 1;
           buffer += decoder.decode(value, { stream: true });
           let newlineIndex;
           while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
@@ -269,15 +358,30 @@ function normalizeProviderStream(body, provider) {
             const normalized = normalizeSSEData(line.slice(5).trim(), provider);
             if (normalized.done) {
               finished = true;
+              logInfo("proxy.provider.stream_done", { ...requestContext, provider, chunkCount, emittedCount, emittedChars });
               break;
             }
             if (normalized.text) {
+              emittedCount += 1;
+              emittedChars += normalized.text.length;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: normalized.text })}\n\n`));
             }
           }
         }
+        if (!finished) {
+          throw new ProxyHTTPError(502, "AI provider stream ended before done");
+        }
         sendDone = true;
       } catch (error) {
+        logError("proxy.provider.stream_failed", {
+          ...requestContext,
+          provider,
+          chunkCount,
+          emittedCount,
+          emittedChars,
+          durationMs: Date.now() - startedAt,
+          ...errorFields(error)
+        });
         controller.error(error);
         return;
       } finally {
@@ -287,9 +391,107 @@ function normalizeProviderStream(body, provider) {
       if (sendDone) {
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
+        logInfo("proxy.provider.stream_success", {
+          ...requestContext,
+          provider,
+          chunkCount,
+          emittedCount,
+          emittedChars,
+          durationMs: Date.now() - startedAt
+        });
       }
     }
   });
+}
+
+async function makeRequestContext(request, env) {
+  const url = new URL(request.url);
+  const rawDeviceId = request.headers.get("X-Device-ID")
+    || request.headers.get("CF-Connecting-IP")
+    || "anonymous";
+  return {
+    requestId: makeRequestId(),
+    startedAt: Date.now(),
+    method: request.method,
+    path: url.pathname,
+    contentLength: request.headers.get("content-length") || "unknown",
+    deviceId: await safeDeviceId(rawDeviceId, env)
+  };
+}
+
+function makeRequestId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function finishRequest(response, requestContext, extra = {}) {
+  logInfo("proxy.request.finished", {
+    ...requestContext,
+    ...extra,
+    status: response.status,
+    durationMs: Date.now() - requestContext.startedAt
+  });
+  return response;
+}
+
+async function safeDeviceId(deviceId, env = {}) {
+  const value = String(deviceId || "missing");
+  const salt = String(env.LOG_HASH_SALT || env.APP_TOKEN || "voicetodo");
+  return `sha256:${await shortHash(`${salt}:${value}`)}`;
+}
+
+async function shortHash(value) {
+  const data = new TextEncoder().encode(String(value));
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .slice(0, 8)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function errorFields(error) {
+  const fields = {
+    errorName: error?.name || "Error",
+    errorMessage: error?.message || String(error),
+    errorStack: error?.stack || ""
+  };
+  if (error?.cause) {
+    fields.causeName = error.cause?.name || "Error";
+    fields.causeMessage = error.cause?.message || String(error.cause);
+    fields.causeStack = error.cause?.stack || "";
+  }
+  return fields;
+}
+
+function logInfo(event, fields = {}) {
+  log("info", event, fields);
+}
+
+function logWarn(event, fields = {}) {
+  log("warn", event, fields);
+}
+
+function logError(event, fields = {}) {
+  log("error", event, fields);
+}
+
+function log(level, event, fields = {}) {
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    event,
+    ...fields
+  };
+  const line = JSON.stringify(payload);
+  if (level === "error") {
+    console.error(line);
+  } else if (level === "warn") {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
 }
 
 function normalizeSSEData(data, provider) {
@@ -300,8 +502,8 @@ function normalizeSSEData(data, provider) {
   let event;
   try {
     event = JSON.parse(data);
-  } catch {
-    return {};
+  } catch (error) {
+    throw new ProxyHTTPError(502, "AI provider stream returned invalid JSON", { cause: error });
   }
 
   if (provider === "openai") {
@@ -334,8 +536,8 @@ function systemPrompt(locale) {
 }
 
 class ProxyHTTPError extends Error {
-  constructor(status, message) {
-    super(message);
+  constructor(status, message, options = {}) {
+    super(message, options);
     this.status = status;
   }
 }

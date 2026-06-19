@@ -123,6 +123,7 @@ targets:
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift
       - path: Protocols/Constants.swift
+      - path: Protocols/VoiceTodoLog.swift
       - path: App/Intents/ToggleTodoIntent.swift
       - path: Resources/Localizable.xcstrings
       - path: VoiceTodoWidget/InfoPlist.xcstrings

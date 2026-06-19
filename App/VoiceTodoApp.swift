@@ -27,10 +27,13 @@ struct VoiceTodoApp: App {
     // MARK: - Initialization
 
     init() {
+        let appStart = Date()
         let uiTestOptions = UITestLaunchOptions.current
+        VoiceTodoLog.app.info("app.init.start isUITesting=\(uiTestOptions.isUITesting) resetUserData=\(uiTestOptions.resetUserData) skipOnboarding=\(uiTestOptions.skipOnboarding)")
 
         if uiTestOptions.resetUserData {
             UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+            VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 
         if uiTestOptions.skipOnboarding {
@@ -50,6 +53,7 @@ struct VoiceTodoApp: App {
         let container: ModelContainer
         let storageError: String?
         if shouldBlockForMissingSharedContainer {
+            VoiceTodoLog.app.error("app.storage.shared_container_missing blocking=true isUITesting=\(uiTestOptions.isUITesting)")
             do {
                 let configuration = ModelConfiguration(
                     schema: schema,
@@ -62,6 +66,7 @@ struct VoiceTodoApp: App {
                 )
                 storageError = ErrorMessages.sharedStorageUnavailable
             } catch {
+                VoiceTodoLog.app.critical("app.storage.startup_error_container_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 fatalError("Failed to create startup error ModelContainer: \(error)")
             }
         } else {
@@ -86,15 +91,14 @@ struct VoiceTodoApp: App {
                     configurations: configuration
                 )
                 storageError = nil
+                VoiceTodoLog.app.info("app.storage.container_created shared=\(shouldUseSharedContainer) inMemory=\(uiTestOptions.isUITesting)")
             } catch {
                 let allowsFallback = ModelContainerStartupPolicy.allowsLocalFallback(
                     isUITesting: uiTestOptions.isUITesting,
                     attemptedSharedContainer: shouldUseSharedContainer,
                     sharedContainerAvailable: sharedContainerAvailable
                 )
-                #if DEBUG
-                print("Failed to create primary ModelContainer: \(error). allowsFallback=\(allowsFallback)")
-                #endif
+                VoiceTodoLog.app.error("app.storage.primary_container_failed shared=\(shouldUseSharedContainer) allowsFallback=\(allowsFallback) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 do {
                     let fallbackConfig = ModelConfiguration(
                         schema: schema,
@@ -105,7 +109,9 @@ struct VoiceTodoApp: App {
                         configurations: fallbackConfig
                     )
                     storageError = allowsFallback ? nil : ErrorMessages.sharedStorageUnavailable
+                    VoiceTodoLog.app.info("app.storage.fallback_container_created allowsFallback=\(allowsFallback) inMemory=\(uiTestOptions.isUITesting || !allowsFallback)")
                 } catch {
+                    VoiceTodoLog.app.critical("app.storage.fallback_container_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     fatalError("Failed to create even in-memory ModelContainer: \(error)")
                 }
             }
@@ -116,10 +122,18 @@ struct VoiceTodoApp: App {
         let store = TodoStore(modelContext: container.mainContext)
 
         if uiTestOptions.resetUserData {
-            try? store.resetForUITests()
+            do {
+                try store.resetForUITests()
+            } catch {
+                VoiceTodoLog.app.error("app.ui_test.reset_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
         }
         if !uiTestOptions.presetTodos.isEmpty {
-            try? store.seedForUITests(uiTestOptions.presetTodos)
+            do {
+                try store.seedForUITests(uiTestOptions.presetTodos)
+            } catch {
+                VoiceTodoLog.app.error("app.ui_test.seed_failed count=\(uiTestOptions.presetTodos.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
         }
 
         // 初始化依赖
@@ -135,6 +149,7 @@ struct VoiceTodoApp: App {
             extractor: extractor,
             store: store
         ))
+        VoiceTodoLog.app.info("app.init.finished durationMS=\(VoiceTodoLog.durationMS(since: appStart)) storageError=\(storageError != nil)")
     }
 
     // MARK: - Body
@@ -218,10 +233,12 @@ struct VoiceTodoApp: App {
     private func handleAppLaunch() {
         // Action Button 冷启动场景通过 .onOpenURL 检测
         // 此处仅处理需要启动时执行的逻辑
+        VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
     }
 
     /// 处理场景状态变化
     private func handleScenePhaseChange(_ phase: ScenePhase) {
+        VoiceTodoLog.app.info("app.scene_phase.changed phase=\(String(describing: phase), privacy: .public) startupStorageError=\(startupStorageError != nil)")
         switch phase {
         case .active:
             guard startupStorageError == nil else { return }
@@ -243,8 +260,11 @@ struct VoiceTodoApp: App {
     private func refreshStoreIfNeededFromExternalChanges(force: Bool = false) {
         let version = AppGroupConfig.currentExternalChangeVersion()
         if force || version != lastObservedExternalChangeVersion {
+            VoiceTodoLog.app.info("app.external_changes.refresh force=\(force) oldVersion=\(lastObservedExternalChangeVersion) newVersion=\(version)")
             todoStore.refreshTodos()
             lastObservedExternalChangeVersion = version
+        } else {
+            VoiceTodoLog.app.debug("app.external_changes.skip oldVersion=\(lastObservedExternalChangeVersion) newVersion=\(version)")
         }
     }
 
@@ -252,20 +272,33 @@ struct VoiceTodoApp: App {
 
     /// 处理 URL 打开（Action Button、Widget 深链等）
     private func handleOpenURL(_ url: URL) {
-        guard startupStorageError == nil else { return }
-        guard url.scheme?.caseInsensitiveCompare("voicetodo") == .orderedSame else { return }
+        VoiceTodoLog.app.info("app.open_url received scheme=\(url.scheme ?? "nil", privacy: .public) host=\(url.host ?? "nil", privacy: .public) path=\(url.path, privacy: .public)")
+        guard startupStorageError == nil else {
+            VoiceTodoLog.app.warning("app.open_url.ignored reason=startup_storage_error")
+            return
+        }
+        guard url.scheme?.caseInsensitiveCompare("voicetodo") == .orderedSame else {
+            VoiceTodoLog.app.warning("app.open_url.ignored reason=unsupported_scheme scheme=\(url.scheme ?? "nil", privacy: .public)")
+            return
+        }
 
         switch url.host?.lowercased() {
         case "record":
+            VoiceTodoLog.app.info("app.open_url.record")
             handleActionButtonLaunch()
         case "todo":
             if let todoId = VoiceTodoDeepLink.parseTodoUUID(from: url) {
                 coordinator.deepLinkTodoId = todoId
+                VoiceTodoLog.app.info("app.open_url.todo todoID=\(todoId.uuidString, privacy: .public)")
+            } else {
+                VoiceTodoLog.app.warning("app.open_url.todo_invalid path=\(url.path, privacy: .public)")
             }
         case "home":
             // Siri 结果卡片跳转回 App 主页，数据同步由 scenePhase .active 处理
+            VoiceTodoLog.app.info("app.open_url.home")
             break
         default:
+            VoiceTodoLog.app.warning("app.open_url.ignored reason=unknown_host host=\(url.host ?? "nil", privacy: .public)")
             break
         }
     }
@@ -274,10 +307,14 @@ struct VoiceTodoApp: App {
 
     /// 处理 Action Button 启动
     private func handleActionButtonLaunch() {
-        guard startupStorageError == nil else { return }
+        guard startupStorageError == nil else {
+            VoiceTodoLog.app.warning("app.action_button.ignored reason=startup_storage_error")
+            return
+        }
 
         // 确保已完成引导
         guard hasCompletedOnboarding else {
+            VoiceTodoLog.app.warning("app.action_button.ignored reason=onboarding_incomplete")
             coordinator.showToast(message: ErrorMessages.finishOnboardingFirst, style: .info)
             return
         }
@@ -285,9 +322,7 @@ struct VoiceTodoApp: App {
         Task {
             let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
             guard readiness == .granted else {
-                #if DEBUG
-                print("Permissions not granted, showing toast")
-                #endif
+                VoiceTodoLog.app.warning("app.action_button.permission_blocked readiness=\(String(describing: readiness), privacy: .public)")
                 coordinator.showVoicePermissionRequiredToast()
                 return
             }
@@ -295,6 +330,7 @@ struct VoiceTodoApp: App {
             // 设置标记，触发自动录音
             // 使用 DispatchQueue 延迟一帧，确保 UI 已准备就绪
             DispatchQueue.main.async {
+                VoiceTodoLog.app.info("app.action_button.ready_to_start")
                 shouldAutoStartRecording = true
             }
         }

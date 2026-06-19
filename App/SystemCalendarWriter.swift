@@ -63,17 +63,25 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
     }
 
     func writeEvents(for todos: [TodoItemData]) async throws -> [SystemCalendarWriteResult] {
+        let writeID = VoiceTodoLog.makeID("syscal-write")
+        let startedAt = Date()
         let writableTodos = todos.filter {
             $0.systemCalendarEventIdentifier == nil
                 && SystemCalendarEventMapper.draft(from: $0, calendar: calendar) != nil
         }
-        guard !writableTodos.isEmpty else { return [] }
+        VoiceTodoLog.calendar.info("system_calendar.write.start id=\(writeID, privacy: .public) inputCount=\(todos.count) writableCount=\(writableTodos.count) ids=\(VoiceTodoLog.idsSummary(writableTodos.map(\.id)), privacy: .public)")
+        guard !writableTodos.isEmpty else {
+            VoiceTodoLog.calendar.info("system_calendar.write.skipped id=\(writeID, privacy: .public) reason=no_writable_todos durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return []
+        }
 
         guard try await requestWriteAccess() else {
+            VoiceTodoLog.calendar.warning("system_calendar.write.denied id=\(writeID, privacy: .public)")
             throw VoiceTodoError.storageWriteFailed("System calendar access denied")
         }
 
         guard let destinationCalendar = eventStore.defaultCalendarForNewEvents else {
+            VoiceTodoLog.calendar.error("system_calendar.write.no_default_calendar id=\(writeID, privacy: .public)")
             throw VoiceTodoError.storageWriteFailed("No writable system calendar")
         }
 
@@ -94,10 +102,13 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
 
             do {
                 try eventStore.save(event, span: .futureEvents)
+                VoiceTodoLog.calendar.info("system_calendar.event.save_success id=\(writeID, privacy: .public) todoID=\(draft.todoId.uuidString, privacy: .public) hasRecurrence=\(draft.recurrenceRule != nil)")
             } catch {
-                throw SystemCalendarWriteError(results: results, underlyingError: error)
+                VoiceTodoLog.calendar.error("system_calendar.event.save_failed id=\(writeID, privacy: .public) todoID=\(draft.todoId.uuidString, privacy: .public) partialResults=\(results.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                throw SystemCalendarWriteError(results: results, underlyingError: storageWriteFailure(error))
             }
             guard let eventIdentifier = event.eventIdentifier else {
+                VoiceTodoLog.calendar.error("system_calendar.event.missing_identifier id=\(writeID, privacy: .public) todoID=\(draft.todoId.uuidString, privacy: .public) partialResults=\(results.count)")
                 throw SystemCalendarWriteError(
                     results: results,
                     underlyingError: VoiceTodoError.storageWriteFailed("System calendar event identifier missing")
@@ -105,33 +116,49 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             }
             results.append(SystemCalendarWriteResult(todoId: draft.todoId, eventIdentifier: eventIdentifier))
         }
+        VoiceTodoLog.calendar.info("system_calendar.write.success id=\(writeID, privacy: .public) resultCount=\(results.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         return results
     }
 
     func removeEvents(identifiers: [String]) async throws {
+        let removeID = VoiceTodoLog.makeID("syscal-remove")
+        let startedAt = Date()
+        VoiceTodoLog.calendar.info("system_calendar.remove.start id=\(removeID, privacy: .public) count=\(identifiers.count)")
         var firstError: Error?
+        var removedCount = 0
+        var missingCount = 0
 
         for identifier in identifiers {
             if let event = eventStore.event(withIdentifier: identifier) {
                 do {
                     try eventStore.remove(event, span: .futureEvents)
+                    removedCount += 1
+                    VoiceTodoLog.calendar.info("system_calendar.remove.event_success id=\(removeID, privacy: .public) eventID=\(identifier, privacy: .public)")
                 } catch {
+                    VoiceTodoLog.calendar.error("system_calendar.remove.event_failed id=\(removeID, privacy: .public) eventID=\(identifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     firstError = firstError ?? error
                 }
+            } else {
+                missingCount += 1
+                VoiceTodoLog.calendar.warning("system_calendar.remove.event_missing id=\(removeID, privacy: .public) eventID=\(identifier, privacy: .public)")
             }
         }
 
         if let firstError {
-            throw firstError
+            VoiceTodoLog.calendar.error("system_calendar.remove.failed id=\(removeID, privacy: .public) removed=\(removedCount) missing=\(missingCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(firstError), privacy: .public)")
+            throw storageWriteFailure(firstError)
         }
+        VoiceTodoLog.calendar.info("system_calendar.remove.success id=\(removeID, privacy: .public) removed=\(removedCount) missing=\(missingCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     private func requestWriteAccess() async throws -> Bool {
         try await withCheckedThrowingContinuation { continuation in
             eventStore.requestWriteOnlyAccessToEvents { granted, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    VoiceTodoLog.calendar.error("system_calendar.permission.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    continuation.resume(throwing: storageWriteFailure(error))
                 } else {
+                    VoiceTodoLog.calendar.info("system_calendar.permission.result granted=\(granted)")
                     continuation.resume(returning: granted)
                 }
             }
@@ -178,5 +205,12 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
                 end: recurrenceEnd
             )
         }
+    }
+
+    private func storageWriteFailure(_ error: Error) -> VoiceTodoError {
+        if let voiceError = error as? VoiceTodoError {
+            return voiceError
+        }
+        return VoiceTodoError.storageWriteFailed(error.localizedDescription)
     }
 }

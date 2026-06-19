@@ -287,8 +287,8 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(URLProtocolStub.callCount, 2)
     }
 
-    func testRetryLogicSkipsOnConfigurationError() async {
-        // Given: 配置错误（不应该重试）
+    func testRetryLogicSkipsOnInvalidProxyResponse() async {
+        // Given: 代理返回不可用响应（不应该重试，也不把内部响应体暴露给用户）
         mockNetworkClient.enqueueHTTPFailure(statusCode: 401, body: "API Key 未配置")
 
         // When & Then: 立即抛出错误，不重试
@@ -296,7 +296,7 @@ final class ExtractorTests: XCTestCase {
             _ = try await sut.extract(from: "测试文本", locale: Locale(identifier: "zh-Hans"))
             XCTFail("应该抛出错误")
         } catch let error as VoiceTodoError {
-            XCTAssertEqual(error, .apiResponseInvalid("HTTP 401: API Key 未配置"))
+            XCTAssertEqual(error, .apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail))
         } catch {
             XCTFail("错误的错误类型: \(error)")
         }
@@ -406,6 +406,39 @@ final class ExtractorTests: XCTestCase {
         let body = try XCTUnwrap(URLProtocolStub.requestBodies.last)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["stream"] as? Bool, true)
+    }
+
+    func testStreamingRequiresDoneSentinelEvenWhenJSONIsComplete() async throws {
+        let jsonResponse = """
+        {
+          "todos": [
+            {
+              "title": "整理资料",
+              "detail": "今天整理资料",
+              "due_hint": "今天",
+              "priority": "normal",
+              "category_hint": "work"
+            }
+          ],
+          "ignored": ""
+        }
+        """
+        let eventData = try JSONSerialization.data(withJSONObject: ["delta": jsonResponse])
+        let eventText = try XCTUnwrap(String(data: eventData, encoding: .utf8))
+        mockNetworkClient.enqueueSuccess(text: "data: \(eventText)\n\n")
+
+        var results: [ExtractionResult] = []
+        do {
+            for try await result in sut.extractStreaming(from: "今天整理资料", locale: Locale(identifier: "zh-Hans")) {
+                results.append(result)
+            }
+            XCTFail("缺少 [DONE] 的流不应被当作成功")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail))
+            XCTAssertFalse(results.isEmpty, "允许 UI 收到中间态，但最终必须收到失败")
+        } catch {
+            XCTFail("错误的错误类型: \(error)")
+        }
     }
 }
 

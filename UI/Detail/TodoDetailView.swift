@@ -479,6 +479,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
             coordinator.showToast(message: ErrorMessages.todoSaved, style: .success)
             dismiss()
         } catch {
+            VoiceTodoLog.store.error("ui.detail.save_failed id=\(todo.id.uuidString, privacy: .public) titleChars=\(editedTitle.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             coordinator.showToast(message: ErrorMessages.todoSaveFailedMessage(error.localizedDescription), style: .warning)
         }
     }
@@ -489,6 +490,7 @@ struct TodoDetailView<Store: TodoStoreProtocol>: View {
             coordinator.showToast(message: ErrorMessages.todoDeleted, style: .info)
             dismiss()
         } catch {
+            VoiceTodoLog.store.error("ui.detail.delete_failed id=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             coordinator.showToast(message: ErrorMessages.todoDeleteFailed, style: .warning)
         }
     }

@@ -3,9 +3,30 @@ import SwiftUI
 import SwiftData
 
 /// Widget Timeline Entry
+enum TodoWidgetLoadState: Equatable {
+    case loading
+    case empty
+    case error
+    case success
+}
+
 struct TodoEntry: TimelineEntry {
     let date: Date
     let todos: [TodoItemData]
+    let loadState: TodoWidgetLoadState
+    let interactionError: WidgetInteractionError?
+
+    init(
+        date: Date,
+        todos: [TodoItemData],
+        loadState: TodoWidgetLoadState,
+        interactionError: WidgetInteractionError? = nil
+    ) {
+        self.date = date
+        self.todos = todos
+        self.loadState = loadState
+        self.interactionError = interactionError
+    }
 }
 
 /// Widget Timeline Provider
@@ -30,29 +51,40 @@ struct TodoTimelineProvider: TimelineProvider {
             todos: [
                 TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work),
                 TodoItemData(title: "准备面试", dueHint: "周三前", priority: .high, category: .work)
-            ]
+            ],
+            loadState: .loading
         )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TodoEntry) -> Void) {
-        let entry = TodoEntry(
-            date: Date(),
-            todos: getRecentTodos(limit: context.family.itemCount)
-        )
-        completion(entry)
+        completion(loadRecentTodos(limit: context.family.itemCount, date: Date()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodoEntry>) -> Void) {
         let currentDate = Date()
-        let entry = TodoEntry(
+        let completionRetention = WidgetConfig.completionAnimationRetention
+        let currentEntry = loadRecentTodos(
+            limit: context.family.itemCount,
             date: currentDate,
-            todos: getRecentTodos(limit: context.family.itemCount)
+            recentCompletionCutoff: currentDate.addingTimeInterval(-completionRetention)
         )
 
         // 每 30 分钟刷新一次
         let nextUpdate = Calendar.current.date(byAdding: .second, value: Int(WidgetConfig.refreshInterval), to: currentDate)!
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        var entries = [currentEntry]
+        if currentEntry.todos.contains(where: \.isCompleted),
+           let filteredDate = Calendar.current.date(byAdding: .nanosecond, value: Int(completionRetention * 1_000_000_000), to: currentDate) {
+            let filteredEntry = loadRecentTodos(limit: context.family.itemCount, date: filteredDate)
+            entries.append(filteredEntry)
+        }
+        if let interactionError = currentEntry.interactionError {
+            let clearDate = interactionError.expiresAt.addingTimeInterval(0.001)
+            if !entries.contains(where: { abs($0.date.timeIntervalSince(clearDate)) < 0.001 }) {
+                entries.append(loadRecentTodos(limit: context.family.itemCount, date: clearDate))
+            }
+        }
 
+        let timeline = Timeline(entries: entries.sorted { $0.date < $1.date }, policy: .after(nextUpdate))
         completion(timeline)
     }
 
@@ -61,22 +93,28 @@ struct TodoTimelineProvider: TimelineProvider {
     /// 从 App Group SwiftData 读取最近的未完成待办
     /// - Parameter limit: 返回数量限制
     /// - Returns: 未完成待办数组
-    private func getRecentTodos(limit: Int) -> [TodoItemData] {
+    private func loadRecentTodos(limit: Int, date: Date, recentCompletionCutoff: Date? = nil) -> TodoEntry {
+        let startedAt = Date()
         do {
             let container = try getModelContainer()
             let context = ModelContext(container)
-            let todos = try WidgetTodoFetch.recentTodos(context: context, limit: limit)
+            let todos = try WidgetTodoFetch.recentTodos(
+                context: context,
+                limit: limit,
+                recentCompletionCutoff: recentCompletionCutoff
+            )
 
-            #if DEBUG
-            print("Widget: 成功读取 \(todos.count) 条待办")
-            #endif
-            return todos
+            VoiceTodoLog.widget.info("widget.todos.fetch_success limit=\(limit) count=\(todos.count) recentCutoffSet=\(recentCompletionCutoff != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return TodoEntry(
+                date: date,
+                todos: todos,
+                loadState: todos.isEmpty ? .empty : .success,
+                interactionError: AppGroupConfig.currentWidgetInteractionError(now: date)
+            )
 
         } catch {
-            #if DEBUG
-            print("Widget: 读取数据失败 - \(error.localizedDescription)")
-            #endif
-            return []
+            VoiceTodoLog.widget.error("widget.todos.fetch_failed limit=\(limit) recentCutoffSet=\(recentCompletionCutoff != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return TodoEntry(date: date, todos: [], loadState: .error)
         }
     }
 }
