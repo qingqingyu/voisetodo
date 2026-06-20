@@ -51,6 +51,35 @@ final class VoiceInputTests: XCTestCase {
         XCTAssertTrue(localeIdentifiers.contains("en-US"))
     }
 
+    func testRecognitionRequestUsesContextualStringsFromVocabularyProvider() async {
+        let hints = (1...120).map { "Term\($0)" }
+        let provider = StaticVocabularyProvider(hints: hints)
+
+        let request = await MainActor.run {
+            VoiceInputManager.makeRecognitionRequest(
+                localeIdentifier: "en-US",
+                vocabularyProvider: provider
+            )
+        }
+
+        XCTAssertTrue(request.shouldReportPartialResults)
+        XCTAssertEqual(request.contextualStrings.count, UserVocabularyConfig.speechContextualStringsLimit)
+        XCTAssertEqual(request.contextualStrings.first, "Term1")
+    }
+
+    func testRecognitionRequestAllowsEmptyContextualStrings() async {
+        let provider = StaticVocabularyProvider(hints: [])
+
+        let request = await MainActor.run {
+            VoiceInputManager.makeRecognitionRequest(
+                localeIdentifier: "en-US",
+                vocabularyProvider: provider
+            )
+        }
+
+        XCTAssertTrue(request.contextualStrings.isEmpty)
+    }
+
     // MARK: - 权限测试
 
     func testMicrophonePermissionRequestMethod() throws {
@@ -82,5 +111,13 @@ final class VoiceInputTests: XCTestCase {
 
         wait(for: [expectation], timeout: 1)
         NotificationCenter.default.removeObserver(observer)
+    }
+}
+
+private struct StaticVocabularyProvider: UserVocabularyProviding {
+    let hints: [String]
+
+    func vocabularyHints(localeIdentifier: String, limit: Int, now: Date) -> [String] {
+        Array(hints.prefix(limit))
     }
 }

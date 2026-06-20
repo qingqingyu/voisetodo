@@ -5,11 +5,16 @@ final class TodoExtractorService: TodoExtractorProtocol {
     // MARK: - Properties
 
     private let networkClient: NetworkClient
+    private let vocabularyProvider: any UserVocabularyProviding
 
     // MARK: - Initialization
 
-    init(networkClient: NetworkClient = NetworkClient()) {
+    init(
+        networkClient: NetworkClient = NetworkClient(),
+        vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared
+    ) {
         self.networkClient = networkClient
+        self.vocabularyProvider = vocabularyProvider
     }
 
     // MARK: - TodoExtractorProtocol Implementation
@@ -136,7 +141,11 @@ final class TodoExtractorService: TodoExtractorProtocol {
         let localeIdentifier = locale.identifier
         let streamID = VoiceTodoLog.currentExtractID(fallbackPrefix: "extract-stream")
         let startedAt = Date()
-        VoiceTodoLog.extractor.info("extract.stream.start id=\(streamID, privacy: .public) locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        let vocabularyHints = vocabularyProvider.vocabularyHints(
+            localeIdentifier: localeIdentifier,
+            limit: UserVocabularyConfig.aiHintsLimit
+        )
+        VoiceTodoLog.extractor.info("extract.stream.start id=\(streamID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -146,7 +155,8 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 do {
                     let stream = client.callTodoExtractionProxyStreaming(
                         transcript: transcript,
-                        localeIdentifier: localeIdentifier
+                        localeIdentifier: localeIdentifier,
+                        vocabularyHints: vocabularyHints
                     )
 
                     for try await delta in stream {
@@ -256,9 +266,15 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
     /// 调用 VoiceTodo AI 代理
     private func callAPI(transcript: String, locale: Locale) async throws -> String {
+        let vocabularyHints = vocabularyProvider.vocabularyHints(
+            localeIdentifier: locale.identifier,
+            limit: UserVocabularyConfig.aiHintsLimit
+        )
+        VoiceTodoLog.extractor.info("extract.context.ready id=\(VoiceTodoLog.currentExtractID(fallbackPrefix: "extract"), privacy: .public) vocabularyHints=\(vocabularyHints.count)")
         try await networkClient.callTodoExtractionProxy(
             transcript: transcript,
-            localeIdentifier: locale.identifier
+            localeIdentifier: locale.identifier,
+            vocabularyHints: vocabularyHints
         )
     }
 

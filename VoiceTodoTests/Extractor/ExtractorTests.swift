@@ -12,7 +12,10 @@ final class ExtractorTests: XCTestCase {
     override func setUp() {
         super.setUp()
         mockNetworkClient = MockNetworkClient()
-        sut = TodoExtractorService(networkClient: mockNetworkClient.networkClient)
+        sut = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: [])
+        )
     }
 
     override func tearDown() {
@@ -90,6 +93,27 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(json["transcript"] as? String, "明天去银行办卡")
         XCTAssertEqual(json["locale"] as? String, "zh-Hans")
         XCTAssertEqual(json["stream"] as? Bool, false)
+        XCTAssertNil(json["vocabularyHints"])
+    }
+
+    func testNetworkClientSendsVocabularyHintsToProxy() async throws {
+        sut = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: ["Anki", "IELTS", "雅思"])
+        )
+        mockNetworkClient.enqueueSuccess(text: """
+        {
+          "todos": [],
+          "ignored": ""
+        }
+        """)
+
+        _ = try await sut.extract(from: "今天复习", locale: Locale(identifier: "zh-Hans"))
+
+        let body = try XCTUnwrap(URLProtocolStub.requestBodies.last)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["vocabularyHints"] as? [String], ["Anki", "IELTS", "雅思"])
+        XCTAssertNil(URLProtocolStub.requests.last?.value(forHTTPHeaderField: "x-api-key"))
     }
 
     func testNetworkClientRejectsNonLocalHTTPProxyEndpoint() async throws {
@@ -408,6 +432,21 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(json["stream"] as? Bool, true)
     }
 
+    func testStreamingSendsVocabularyHintsToProxy() async throws {
+        sut = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: ["Anki", "IELTS"])
+        )
+        mockNetworkClient.enqueueSuccess(text: "data: {\"delta\":\"{\\\"todos\\\":[],\\\"ignored\\\":\\\"\\\"}\"}\n\ndata: [DONE]\n\n")
+
+        for try await _ in sut.extractStreaming(from: "今天复习", locale: Locale(identifier: "zh-Hans")) {}
+
+        let body = try XCTUnwrap(URLProtocolStub.requestBodies.last)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["stream"] as? Bool, true)
+        XCTAssertEqual(json["vocabularyHints"] as? [String], ["Anki", "IELTS"])
+    }
+
     func testStreamingRequiresDoneSentinelEvenWhenJSONIsComplete() async throws {
         let jsonResponse = """
         {
@@ -443,6 +482,14 @@ final class ExtractorTests: XCTestCase {
 }
 
 // MARK: - Mock Network Client
+
+private struct StaticExtractorVocabularyProvider: UserVocabularyProviding {
+    let hints: [String]
+
+    func vocabularyHints(localeIdentifier: String, limit: Int, now: Date) -> [String] {
+        Array(hints.prefix(limit))
+    }
+}
 
 private final class MockNetworkClient {
     let networkClient: NetworkClient

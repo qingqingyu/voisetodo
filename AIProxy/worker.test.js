@@ -105,6 +105,123 @@ test("routes OpenAI provider when configured", async () => {
   assert.equal(data.todos[0].title, "Buy milk");
 });
 
+test("adds vocabulary hints to Anthropic system prompt as soft context", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request(
+      { transcript: "今天复习", locale: "zh-Hans", vocabularyHints: ["Anki", "IELTS", "雅思"] },
+      { "X-App-Token": "token" }
+    ),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({
+        content: [{ type: "text", text: extractionJSON("复习") }]
+      });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamRequest.body.messages[0].content, "今天复习");
+  assert.ok(upstreamRequest.body.system.includes("Anki、IELTS、雅思"));
+  assert.ok(upstreamRequest.body.system.includes("不要因为这些词本身创建待办"));
+});
+
+test("adds vocabulary hints to OpenAI system prompt as soft context", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request(
+      { transcript: "review flashcards", locale: "en-US", vocabularyHints: ["Anki", "IELTS"] },
+      { "X-App-Token": "token" }
+    ),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_MODEL: "test-model"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({
+        choices: [{ message: { content: extractionJSON("Review flashcards") } }]
+      });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  const systemMessage = upstreamRequest.body.messages[0].content;
+  assert.ok(systemMessage.includes("Anki, IELTS"));
+  assert.ok(systemMessage.includes("do not create todos just because these terms appear here"));
+});
+
+test("filters and caps vocabulary hints before calling provider", async () => {
+  let upstreamRequest;
+  const hints = ["A", "Anki", "Anki", "x".repeat(40), ...Array.from({ length: 35 }, (_, i) => `Term${i + 1}`)];
+  const response = await handleRequest(
+    request(
+      { transcript: "review", locale: "en-US", vocabularyHints: hints },
+      { "X-App-Token": "token" }
+    ),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_MODEL: "test-model"
+    },
+    {},
+    async (_url, init) => {
+      upstreamRequest = { body: JSON.parse(init.body) };
+      return jsonResponse({
+        choices: [{ message: { content: extractionJSON("Review") } }]
+      });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  const systemMessage = upstreamRequest.body.messages[0].content;
+  assert.ok(systemMessage.includes("Anki"));
+  assert.ok(systemMessage.includes("Term29"));
+  assert.equal(systemMessage.includes("Term30"), false);
+  assert.equal(systemMessage.includes("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), false);
+});
+
+test("does not log concrete vocabulary hints", async () => {
+  let upstreamRequest;
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "今天复习", locale: "zh-Hans", vocabularyHints: ["Anki", "IELTS"] },
+        { "X-App-Token": "token" }
+      ),
+      {
+        APP_TOKEN: "token",
+        LOG_HASH_SALT: "test-salt",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key"
+      },
+      {},
+      async (_url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({
+          content: [{ type: "text", text: extractionJSON("复习") }]
+        });
+      }
+    );
+    assert.equal(response.status, 200);
+  });
+
+  assert.ok(upstreamRequest.body.system.includes("Anki"));
+  assert.ok(logs.some((line) => line.includes("\"vocabularyHintCount\":2")));
+  assert.equal(logs.some((line) => line.includes("Anki")), false);
+  assert.equal(logs.some((line) => line.includes("IELTS")), false);
+});
+
 test("normalizes Anthropic streaming events for iOS client", async () => {
   let upstreamRequest;
   const response = await handleRequest(

@@ -39,6 +39,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private let audioSessionHelper = AudioSessionHelper()
+    private let vocabularyProvider: any UserVocabularyProviding
 
     // 静音检测相关
     private var silenceStartTime: Date?
@@ -54,9 +55,10 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     // MARK: - Initialization
 
-    init() {
+    init(vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared) {
         let locale = VoiceInputManager.selectLocale()
         self.currentLocale = locale
+        self.vocabularyProvider = vocabularyProvider
         speechRecognizer = SFSpeechRecognizer(locale: locale)
     }
 
@@ -234,9 +236,8 @@ final class VoiceInputManager: VoiceInputProtocol {
         recognitionRequest = nil
 
         // 创建新的识别请求
-        let request = SFSpeechAudioBufferRecognitionRequest()
+        let request = makeRecognitionRequest()
         recognitionRequest = request
-        request.shouldReportPartialResults = true
 
         // 启动识别任务
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -279,6 +280,28 @@ final class VoiceInputManager: VoiceInputProtocol {
                 }
             }
         }
+    }
+
+    func makeRecognitionRequest() -> SFSpeechAudioBufferRecognitionRequest {
+        Self.makeRecognitionRequest(
+            localeIdentifier: currentLocale.identifier,
+            vocabularyProvider: vocabularyProvider
+        )
+    }
+
+    static func makeRecognitionRequest(
+        localeIdentifier: String,
+        vocabularyProvider: any UserVocabularyProviding
+    ) -> SFSpeechAudioBufferRecognitionRequest {
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        let hints = vocabularyProvider.vocabularyHints(
+            localeIdentifier: localeIdentifier,
+            limit: UserVocabularyConfig.speechContextualStringsLimit
+        )
+        request.contextualStrings = hints
+        VoiceTodoLog.voice.info("recording.recognition.request_configured locale=\(localeIdentifier, privacy: .public) contextualStrings=\(hints.count)")
+        return request
     }
 
     // MARK: - Live Activity Methods

@@ -1,5 +1,7 @@
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TRANSCRIPT_CHARS = 4000;
+const MAX_VOCABULARY_HINTS = 30;
+const MAX_VOCABULARY_HINT_CHARS = 32;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
 const MAX_TELEMETRY_BODY_BYTES = 256 * 1024;
 const MAX_TELEMETRY_EVENTS_PER_BATCH = 100;
@@ -68,17 +70,19 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     requestContext.stream = payload.stream === true;
     requestContext.transcriptChars = transcript.length;
     requestContext.provider = normalizeProvider(env.AI_PROVIDER);
+    const vocabularyHints = normalizeVocabularyHints(payload.vocabularyHints);
+    requestContext.vocabularyHintCount = vocabularyHints.length;
     logInfo("proxy.payload.accepted", requestContext);
 
     await enforceDailyLimit(request, env, requestContext);
 
     const provider = requestContext.provider;
     if (payload.stream === true) {
-      const response = await streamProviderResponse(provider, transcript, locale, env, fetchImpl, requestContext);
+      const response = await streamProviderResponse(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext);
       return finishRequest(response, requestContext, { streamingBodyContinues: true });
     }
 
-    const text = await callProviderText(provider, transcript, locale, env, fetchImpl, requestContext);
+    const text = await callProviderText(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext);
     return finishRequest(new Response(text, {
       status: 200,
       headers: {
@@ -352,8 +356,35 @@ function normalizeProvider(provider) {
   return "anthropic";
 }
 
-async function callProviderText(provider, transcript, locale, env, fetchImpl, requestContext) {
-  const response = await callProvider(provider, transcript, locale, env, fetchImpl, false, requestContext);
+function normalizeVocabularyHints(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const hints = [];
+  const seen = new Set();
+  for (const item of value) {
+    if (typeof item !== "string") {
+      continue;
+    }
+    const term = item.trim().replace(/\s+/g, " ");
+    if (term.length < 2 || term.length > MAX_VOCABULARY_HINT_CHARS || /[\r\n]/.test(term)) {
+      continue;
+    }
+    const key = term.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    hints.push(term);
+    if (hints.length >= MAX_VOCABULARY_HINTS) {
+      break;
+    }
+  }
+  return hints;
+}
+
+async function callProviderText(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext) {
+  const response = await callProvider(provider, transcript, locale, vocabularyHints, env, fetchImpl, false, requestContext);
   const data = await readProviderJSON(response, provider, requestContext);
 
   if (provider === "openai") {
@@ -378,8 +409,8 @@ async function callProviderText(provider, transcript, locale, env, fetchImpl, re
   return stripped;
 }
 
-async function streamProviderResponse(provider, transcript, locale, env, fetchImpl, requestContext) {
-  const response = await callProvider(provider, transcript, locale, env, fetchImpl, true, requestContext);
+async function streamProviderResponse(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext) {
+  const response = await callProvider(provider, transcript, locale, vocabularyHints, env, fetchImpl, true, requestContext);
   if (!response.body) {
     logError("proxy.provider.stream_missing_body", { ...requestContext, provider });
     throw new ProxyHTTPError(502, "AI provider streaming response missing body");
@@ -395,12 +426,12 @@ async function streamProviderResponse(provider, transcript, locale, env, fetchIm
   });
 }
 
-async function callProvider(provider, transcript, locale, env, fetchImpl, stream, requestContext) {
+async function callProvider(provider, transcript, locale, vocabularyHints, env, fetchImpl, stream, requestContext) {
   const startedAt = Date.now();
   logInfo("proxy.provider.call_start", { ...requestContext, provider, stream });
   const response = provider === "openai"
-    ? await callOpenAI(transcript, locale, env, fetchImpl, stream)
-    : await callAnthropic(transcript, locale, env, fetchImpl, stream);
+    ? await callOpenAI(transcript, locale, vocabularyHints, env, fetchImpl, stream)
+    : await callAnthropic(transcript, locale, vocabularyHints, env, fetchImpl, stream);
 
   if (!response.ok) {
     const status = response.status === 429 ? 429 : 502;
@@ -423,7 +454,7 @@ async function callProvider(provider, transcript, locale, env, fetchImpl, stream
   return response;
 }
 
-async function callAnthropic(transcript, locale, env, fetchImpl, stream) {
+async function callAnthropic(transcript, locale, vocabularyHints, env, fetchImpl, stream) {
   if (!env.ANTHROPIC_API_KEY) {
     throw new ProxyHTTPError(500, "Anthropic key not configured");
   }
@@ -441,13 +472,13 @@ async function callAnthropic(transcript, locale, env, fetchImpl, stream) {
       max_tokens: 500,
       temperature: 0.1,
       stream,
-      system: systemPrompt(locale),
+      system: systemPrompt(locale, vocabularyHints),
       messages: [{ role: "user", content: transcript }]
     })
   });
 }
 
-async function callOpenAI(transcript, locale, env, fetchImpl, stream) {
+async function callOpenAI(transcript, locale, vocabularyHints, env, fetchImpl, stream) {
   if (!env.OPENAI_API_KEY) {
     throw new ProxyHTTPError(500, "OpenAI key not configured");
   }
@@ -468,7 +499,7 @@ async function callOpenAI(transcript, locale, env, fetchImpl, stream) {
       stream,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: systemPrompt(locale) },
+        { role: "system", content: systemPrompt(locale, vocabularyHints) },
         { role: "user", content: transcript }
       ]
     })
@@ -697,8 +728,19 @@ function stripMarkdownFence(text) {
     .trim();
 }
 
-function systemPrompt(locale) {
-  return locale === "zh" ? CHINESE_SYSTEM_PROMPT : ENGLISH_SYSTEM_PROMPT;
+function systemPrompt(locale, vocabularyHints = []) {
+  const basePrompt = locale === "zh" ? CHINESE_SYSTEM_PROMPT : ENGLISH_SYSTEM_PROMPT;
+  if (!vocabularyHints.length) {
+    return basePrompt;
+  }
+  return `${basePrompt}\n\n${vocabularyHintPrompt(locale, vocabularyHints)}`;
+}
+
+function vocabularyHintPrompt(locale, vocabularyHints) {
+  if (locale === "zh") {
+    return `用户近期常用词（仅作为识别和保留原词的上下文，不要因为这些词本身创建待办）：${vocabularyHints.join("、")}`;
+  }
+  return `Recent user vocabulary hints (context only for recognition and preserving exact terms; do not create todos just because these terms appear here): ${vocabularyHints.join(", ")}`;
 }
 
 class ProxyHTTPError extends Error {

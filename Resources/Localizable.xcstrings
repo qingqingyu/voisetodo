@@ -1237,6 +1237,72 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "App + system Calendar" } }
       }
     },
+    "settings.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } }
+      }
+    },
+    "settings.done" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完成" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } }
+      }
+    },
+    "settings.cancel" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
+      }
+    },
+    "settings.personalization.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个性化识别" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Personalized recognition" } }
+      }
+    },
+    "settings.personalization.toggle" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个性化识别" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Personalized recognition" } }
+      }
+    },
+    "settings.personalization.description" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "根据你确认过的待办，在本机学习常用词，提高语音识别和整理准确度。处理待办时可能发送少量关键词，不发送完整历史记录。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Learns common words from confirmed todos on this device to improve speech recognition and organization. A few keywords may be sent when processing todos; full history is not sent." } }
+      }
+    },
+    "settings.personalization.clear" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除本地学习数据" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear local learning data" } }
+      }
+    },
+    "settings.personalization.cleared" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已清除" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cleared" } }
+      }
+    },
+    "settings.personalization.clear_confirm.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除本地学习数据？" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear local learning data?" } }
+      }
+    },
+    "settings.personalization.clear_confirm.message" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这会删除本机保存的常用词，不会删除待办。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This deletes saved common words on this device. Todos are not deleted." } }
+      }
+    },
+    "settings.personalization.clear_confirm.action" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } }
+      }
+    },
     "system_calendar.notes_due_hint %@" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间线索：%@" } },

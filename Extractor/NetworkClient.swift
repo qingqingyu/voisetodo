@@ -7,6 +7,7 @@ private struct ProxyExtractionRequest: Encodable {
     let transcript: String
     let locale: String
     let stream: Bool
+    let vocabularyHints: [String]?
 }
 
 // MARK: - SSE Parsing Models
@@ -51,16 +52,22 @@ final class NetworkClient {
     /// - Returns: 代理返回的 ExtractionResult JSON 文本
     func callTodoExtractionProxy(
         transcript: String,
-        localeIdentifier: String
+        localeIdentifier: String,
+        vocabularyHints: [String] = []
     ) async throws -> String {
         let requestID = VoiceTodoLog.makeID("proxy")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
 
         let request: URLRequest
         do {
-            request = try buildProxyRequest(transcript: transcript, localeIdentifier: localeIdentifier, stream: false)
+            request = try buildProxyRequest(
+                transcript: transcript,
+                localeIdentifier: localeIdentifier,
+                stream: false,
+                vocabularyHints: vocabularyHints
+            )
         } catch {
             VoiceTodoLog.network.error("proxy.request.build_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw error
@@ -105,12 +112,13 @@ final class NetworkClient {
     /// - Returns: 逐块返回文本 delta 的 AsyncThrowingStream
     func callTodoExtractionProxyStreaming(
         transcript: String,
-        localeIdentifier: String
+        localeIdentifier: String,
+        vocabularyHints: [String] = []
     ) -> AsyncThrowingStream<String, Error> {
         let requestID = VoiceTodoLog.makeID("stream")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
 
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -121,7 +129,8 @@ final class NetworkClient {
                     let request = try buildProxyRequest(
                         transcript: transcript,
                         localeIdentifier: localeIdentifier,
-                        stream: true
+                        stream: true,
+                        vocabularyHints: vocabularyHints
                     )
 
                     let (bytes, response) = try await session.bytes(for: request)
@@ -196,7 +205,8 @@ final class NetworkClient {
     private func buildProxyRequest(
         transcript: String,
         localeIdentifier: String,
-        stream: Bool
+        stream: Bool,
+        vocabularyHints: [String]
     ) throws -> URLRequest {
         let trimmedEndpoint = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEndpoint.isEmpty,
@@ -223,7 +233,8 @@ final class NetworkClient {
                 ProxyExtractionRequest(
                     transcript: transcript,
                     locale: localeIdentifier,
-                    stream: stream
+                    stream: stream,
+                    vocabularyHints: vocabularyHints.isEmpty ? nil : vocabularyHints
                 )
             )
             return request

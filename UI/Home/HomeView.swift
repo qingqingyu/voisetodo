@@ -16,6 +16,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
     @State private var showRecordingButton = false
     @State private var isProcessing = false
     @State private var showManualInputSheet = false
+    @State private var showSettingsSheet = false
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
@@ -79,6 +80,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                     submitManualInput(text)
                 }
             }
+            .sheet(isPresented: $showSettingsSheet) {
+                HomeSettingsSheet(calendarWriteModeRaw: $calendarWriteModeRaw)
+            }
             .navigationDestination(item: $selectedTodo) { todo in
                 TodoDetailView(store: store, todo: todo)
                     .environmentObject(coordinator)
@@ -115,7 +119,7 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                 statsBadge
             }
 
-            calendarSettingsMenu
+            settingsButton
         }
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.md)
@@ -164,24 +168,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
         )
     }
 
-    private var calendarWriteMode: CalendarWriteMode {
-        CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
-    }
-
-    private var calendarSettingsMenu: some View {
-        Menu {
-            Section(String(localized: "settings.calendar_write.title")) {
-                ForEach(CalendarWriteMode.allCases) { mode in
-                    Button {
-                        calendarWriteModeRaw = mode.rawValue
-                    } label: {
-                        Label(
-                            mode.displayText,
-                            systemImage: calendarWriteMode == mode ? "checkmark.circle.fill" : "circle"
-                        )
-                    }
-                }
-            }
+    private var settingsButton: some View {
+        Button {
+            showSettingsSheet = true
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 18, weight: .semibold))
@@ -192,8 +181,9 @@ struct HomeView<Store: TodoStoreProtocol>: View {
                         .fill(WarmTheme.secondaryBackground)
                 )
         }
-        .accessibilityIdentifier("CalendarWriteModeMenu")
-        .accessibilityLabel(String(localized: "settings.calendar_write.title"))
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("HomeSettingsButton")
+        .accessibilityLabel(String(localized: "settings.title"))
     }
 
     // MARK: - Recording Overlay

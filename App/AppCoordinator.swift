@@ -16,6 +16,7 @@ final class AppCoordinator: ObservableObject {
     private let systemCalendarWriter: any SystemCalendarWritingProtocol
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let networkIsConnectedProvider: @MainActor () -> Bool
+    private let vocabularyStore: UserVocabularyStore
 
     // MARK: - Published State
 
@@ -57,6 +58,7 @@ final class AppCoordinator: ObservableObject {
 
     /// 当前待确认流程的输入原文（支持语音转写和手动输入共用确认页）
     private var activeInputTranscript: String?
+    private var activeInputLocaleIdentifier: String?
 
     /// 正在执行的日历同步任务（用于串行化，防止快速连续确认产生重复日历事件）
     private var calendarSyncTask: Task<Void, Never>?
@@ -69,7 +71,8 @@ final class AppCoordinator: ObservableObject {
         store: any TodoStoreProtocol,
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
-        networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected }
+        networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
+        vocabularyStore: UserVocabularyStore = .shared
     ) {
         self.voiceInput = voiceInput
         self.extractor = extractor
@@ -77,6 +80,7 @@ final class AppCoordinator: ObservableObject {
         self.systemCalendarWriter = systemCalendarWriter
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.networkIsConnectedProvider = networkIsConnectedProvider
+        self.vocabularyStore = vocabularyStore
 
         setupBindings()
     }
@@ -456,6 +460,17 @@ final class AppCoordinator: ObservableObject {
                 activeInputTranscript = nil
             }
 
+            let learningLocaleIdentifier = activeInputLocaleIdentifier ?? voiceInput.currentLocale.identifier
+            let learningTodos = todos
+            Task.detached(priority: .utility) { [vocabularyStore] in
+                vocabularyStore.learn(
+                    from: learningTodos,
+                    localeIdentifier: learningLocaleIdentifier,
+                    source: .confirmedTodo
+                )
+            }
+            activeInputLocaleIdentifier = nil
+
             let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
             if shouldSyncSystemCalendar {
                 let previousTask = calendarSyncTask
@@ -498,6 +513,7 @@ final class AppCoordinator: ObservableObject {
         pendingItemIds = []
         combinedRawTranscript = nil
         activeInputTranscript = nil
+        activeInputLocaleIdentifier = nil
         isAutoProcessing = false
     }
 
@@ -553,6 +569,21 @@ final class AppCoordinator: ObservableObject {
         try store.update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
         VoiceTodoLog.coordinator.info("coordinator.todo.update.saved id=\(id.uuidString, privacy: .public) hadOldCalendarEvent=\(oldTodo?.systemCalendarEventIdentifier != nil) shouldSyncCalendar=\(calendarWriteModeProvider() == .appAndSystemCalendar) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
+        if let updated = store.todos.first(where: { $0.id == id }) {
+            let learningTitle = title
+            let learningDetail = updated.detail
+            let learningDueHint = updated.dueHint
+            // 优先用 todo 创建时记录的 locale；旧数据无 localeIdentifier 时回退到当前输入 locale
+            let learningLocaleIdentifier = updated.localeIdentifier ?? voiceInput.currentLocale.identifier
+            Task.detached(priority: .utility) { [vocabularyStore] in
+                vocabularyStore.learn(
+                    fromTexts: [learningTitle, learningDetail, learningDueHint].compactMap { $0 },
+                    localeIdentifier: learningLocaleIdentifier,
+                    source: .editedTodo
+                )
+            }
+        }
+
         let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
         if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {
             let previousTask = calendarSyncTask
@@ -593,6 +624,7 @@ final class AppCoordinator: ObservableObject {
         extractedTodos = []
         showConfirmSheet = false
         activeInputTranscript = nil
+        activeInputLocaleIdentifier = nil
     }
 
     private func syncSystemCalendar(for todos: [TodoItemData]) async {
@@ -655,12 +687,14 @@ final class AppCoordinator: ObservableObject {
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         activeInputTranscript = trimmed
+        activeInputLocaleIdentifier = (locale ?? voiceInput.currentLocale).identifier
         let isConnected = networkIsConnectedProvider()
         VoiceTodoLog.coordinator.info("coordinator.process_transcript.start id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\((locale ?? voiceInput.currentLocale).identifier, privacy: .public) isConnected=\(isConnected) \(VoiceTodoLog.textSummary(trimmed), privacy: .public)")
         guard !trimmed.isEmpty else {
             isExtracting = false
             isProcessingTranscript = false
             activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
             showToast(message: ErrorMessages.noTodosFound, style: .info)
             VoiceTodoLog.coordinator.info("coordinator.process_transcript.empty id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return
@@ -695,6 +729,7 @@ final class AppCoordinator: ObservableObject {
 
                 if !receivedAny {
                     activeInputTranscript = nil
+                    activeInputLocaleIdentifier = nil
                     showToast(message: ErrorMessages.noTodosFound, style: .info)
                     VoiceTodoLog.coordinator.info("coordinator.process_transcript.no_todos id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 } else {
@@ -709,6 +744,7 @@ final class AppCoordinator: ObservableObject {
                     await handleOfflineMode(transcript: text)
                 } else {
                     activeInputTranscript = nil
+                    activeInputLocaleIdentifier = nil
                     clearExtractionPresentation()
                     VoiceTodoLog.coordinator.error("coordinator.process_transcript.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     handleError(error)
@@ -738,10 +774,12 @@ final class AppCoordinator: ObservableObject {
         do {
             try store.addRawTranscript(transcript)
             activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
             showToast(message: ErrorMessages.savedOffline, style: .info)
             VoiceTodoLog.coordinator.info("coordinator.offline_save.success id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
             activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
             VoiceTodoLog.coordinator.error("coordinator.offline_save.failed id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             handleError(error)
         }
