@@ -60,6 +60,7 @@ targets:
           - "CodingConventions.md"
       - path: VoiceTodo/Assets.xcassets
       - path: VoiceTodo/InfoPlist.xcstrings
+      - path: VoiceTodo/PrivacyInfo.xcprivacy
       - path: Resources/Localizable.xcstrings
     settings:
       base:

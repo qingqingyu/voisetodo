@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        VoiceTodo 不追踪用户跨 App / 跨网站的行为，也不与第三方共享
+        可识别数据。遥测事件全部脱敏：匿名 session ID（每次启动 UUID，
+        不持久化）+ sha256 哈希后的设备标识 + 文本字符数摘要。详见
+        TELEMETRY.md 的「PII 红线」章节。
+    -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <!--
+        VoiceTodo 不收集任何可识别用户的个人数据。所有遥测事件都是
+        匿名诊断数据（事件名 + 时间戳 + 计数 + 时长 + 脱敏文本摘要），
+        用于 App 改进。
+    -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <!--
+        Required Reason APIs（iOS 17+）。VoiceTodo 用了：
+        - UserDefaults（CA92.1）：仅用于读写本 App 自己的数据
+          （设置、待办缓存、遥测队列），不做追踪
+    -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- CA92.1: Access info from same app, per documentation -->
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- C617.1: 文件时间戳用于内部处理（SwiftData 文件、日志文件等） -->
+                <string>C617.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
