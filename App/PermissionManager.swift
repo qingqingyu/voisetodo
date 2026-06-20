@@ -95,13 +95,13 @@ final class PermissionManager: ObservableObject {
         if uiTestOptions.isUITesting {
             micGranted = !uiTestOptions.micPermissionDenied
             speechGranted = !uiTestOptions.speechPermissionDenied
-            VoiceTodoLog.app.info("permissions.status.ui_test micGranted=\(micGranted) speechGranted=\(speechGranted)")
+            VoiceTodoLog.app.info("permissions.status.ui_test micGranted=\(self.micGranted) speechGranted=\(self.speechGranted)")
             return
         }
 
         micGranted = (permissionClient.microphoneStatus() == .granted)
         speechGranted = (permissionClient.speechStatus() == .authorized)
-        VoiceTodoLog.app.info("permissions.status micGranted=\(micGranted) speechGranted=\(speechGranted)")
+        VoiceTodoLog.app.info("permissions.status micGranted=\(self.micGranted) speechGranted=\(self.speechGranted)")
     }
 
     /// 开始录音前统一确认权限。notDetermined 会拉起系统授权；已拒绝或受限则要求去设置。
@@ -110,7 +110,7 @@ final class PermissionManager: ObservableObject {
         if uiTestOptions.isUITesting {
             micGranted = !uiTestOptions.micPermissionDenied
             speechGranted = !uiTestOptions.speechPermissionDenied
-            VoiceTodoLog.app.info("permissions.ensure.ui_test micGranted=\(micGranted) speechGranted=\(speechGranted)")
+            VoiceTodoLog.app.info("permissions.ensure.ui_test micGranted=\(self.micGranted) speechGranted=\(self.speechGranted)")
             return allPermissionsGranted ? .granted : .settingsRequired
         }
 

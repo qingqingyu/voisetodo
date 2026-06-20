@@ -58,7 +58,7 @@ final class NetworkClient {
         let requestID = VoiceTodoLog.makeID("proxy")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
 
         let request: URLRequest
         do {
@@ -118,9 +118,9 @@ final class NetworkClient {
         let requestID = VoiceTodoLog.makeID("stream")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
 
-        AsyncThrowingStream { continuation in
+        return AsyncThrowingStream { continuation in
             let task = Task {
                 var deltaCount = 0
                 var totalChars = 0

@@ -67,14 +67,14 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 开始录音
     func startRecording() async throws {
         guard !isRecording else {
-            VoiceTodoLog.voice.warning("recording.start.ignored reason=already_recording activeID=\(recordingSessionID ?? "none", privacy: .public)")
+            VoiceTodoLog.voice.warning("recording.start.ignored reason=already_recording activeID=\(self.recordingSessionID ?? "none", privacy: .public)")
             return
         }
 
         let sessionID = VoiceTodoLog.makeID("recording")
         recordingSessionID = sessionID
         let startedAt = Date()
-        VoiceTodoLog.voice.info("recording.start id=\(sessionID, privacy: .public) locale=\(currentLocale.identifier, privacy: .public)")
+        VoiceTodoLog.voice.info("recording.start id=\(sessionID, privacy: .public) locale=\(self.currentLocale.identifier, privacy: .public)")
 
         // 清空之前的状态
         cancelFinishRecordingWatchdog()
@@ -107,7 +107,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 3. 检查语音识别器可用性
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
-            VoiceTodoLog.voice.error("recording.recognizer.unavailable id=\(sessionID, privacy: .public) recognizerExists=\(speechRecognizer != nil)")
+            VoiceTodoLog.voice.error("recording.recognizer.unavailable id=\(sessionID, privacy: .public) recognizerExists=\(self.speechRecognizer != nil)")
             cleanupRecordingPipeline(markNotRecording: true, reason: "recognizerUnavailable")
             throw VoiceTodoError.speechRecognitionUnavailable
         }
@@ -173,7 +173,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 停止录音
     func stopRecording() {
         guard isRecording else {
-            VoiceTodoLog.voice.debug("recording.stop.ignored activeID=\(recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            VoiceTodoLog.voice.debug("recording.stop.ignored activeID=\(self.recordingSessionID ?? "none", privacy: .public) reason=not_recording")
             return
         }
 
@@ -182,10 +182,10 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     func cancelRecordingDueToInterruption() {
         guard isRecording else {
-            VoiceTodoLog.voice.debug("recording.interruption.ignored activeID=\(recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            VoiceTodoLog.voice.debug("recording.interruption.ignored activeID=\(self.recordingSessionID ?? "none", privacy: .public) reason=not_recording")
             return
         }
-        VoiceTodoLog.voice.warning("recording.interrupted id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        VoiceTodoLog.voice.warning("recording.interrupted id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
         let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
         Telemetry.record(.recordingOutcome(outcome: .interrupted, durationMS: durationMS, transcript: transcript))
         cleanupRecordingPipeline(markNotRecording: true, reason: "interruption")
@@ -198,11 +198,11 @@ final class VoiceInputManager: VoiceInputProtocol {
     /// 最终结果回调触发 stopRecording() 确保 transcript 是最终版本。
     func finishRecording() {
         guard isRecording else {
-            VoiceTodoLog.voice.debug("recording.finish.ignored activeID=\(recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            VoiceTodoLog.voice.debug("recording.finish.ignored activeID=\(self.recordingSessionID ?? "none", privacy: .public) reason=not_recording")
             return
         }
 
-        VoiceTodoLog.voice.info("recording.finish.requested id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        VoiceTodoLog.voice.info("recording.finish.requested id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
 
         // 停止音频引擎（不再输入新音频）
         audioEngine.stop()
@@ -312,7 +312,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 检查是否已授权 Live Activity
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            VoiceTodoLog.voice.info("live_activity.disabled recordingID=\(recordingSessionID ?? "none", privacy: .public)")
+            VoiceTodoLog.voice.info("live_activity.disabled recordingID=\(self.recordingSessionID ?? "none", privacy: .public)")
             return
         }
 
@@ -332,13 +332,13 @@ final class VoiceInputManager: VoiceInputProtocol {
                 pushType: nil
             )
             self.liveActivity = activity
-            VoiceTodoLog.voice.info("live_activity.started recordingID=\(recordingSessionID ?? "none", privacy: .public) activityID=\(activity.id, privacy: .public)")
+            VoiceTodoLog.voice.info("live_activity.started recordingID=\(self.recordingSessionID ?? "none", privacy: .public) activityID=\(activity.id, privacy: .public)")
 
             // 启动定时器更新时长
             startUpdateTimer()
 
         } catch {
-            VoiceTodoLog.voice.error("live_activity.start_failed recordingID=\(recordingSessionID ?? "none", privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            VoiceTodoLog.voice.error("live_activity.start_failed recordingID=\(self.recordingSessionID ?? "none", privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 
@@ -422,7 +422,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     private func startFinishRecordingWatchdog() {
         cancelFinishRecordingWatchdog()
-        VoiceTodoLog.voice.debug("recording.watchdog.started id=\(recordingSessionID ?? "none", privacy: .public) timeoutSeconds=\(VoiceConstants.finishRecordingWatchdogTimeoutSeconds)")
+        VoiceTodoLog.voice.debug("recording.watchdog.started id=\(self.recordingSessionID ?? "none", privacy: .public) timeoutSeconds=\(VoiceConstants.finishRecordingWatchdogTimeoutSeconds)")
         finishRecordingWatchdogTask = Task { [weak self] in
             do {
                 try await Task.sleep(
@@ -442,7 +442,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     private func handleFinishRecordingWatchdogExpired() {
         guard isRecording else { return }
-        VoiceTodoLog.voice.error("recording.watchdog.expired id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        VoiceTodoLog.voice.error("recording.watchdog.expired id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
         let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
         Telemetry.record(.recordingOutcome(outcome: .watchdogExpired, durationMS: durationMS, transcript: transcript))
         cleanupRecordingPipeline(markNotRecording: true, reason: "finishWatchdog")
@@ -459,7 +459,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     private func cleanupRecordingPipeline(markNotRecording: Bool, reason: String) {
         let sessionID = recordingSessionID ?? "none"
         let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
-        VoiceTodoLog.voice.info("recording.cleanup id=\(sessionID, privacy: .public) reason=\(reason, privacy: .public) markNotRecording=\(markNotRecording) transcriptChars=\(transcript.count) duration=\(duration)")
+        VoiceTodoLog.voice.info("recording.cleanup id=\(sessionID, privacy: .public) reason=\(reason, privacy: .public) markNotRecording=\(markNotRecording) transcriptChars=\(self.transcript.count) duration=\(duration)")
 
         cancelFinishRecordingWatchdog()
         audioEngine.stop()
@@ -580,7 +580,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                 if duration >= VoiceConstants.silenceTimeoutSeconds && !isSilenceDetected {
                     // 超时，自动停止（已在主线程，直接调用）
                     isSilenceDetected = true
-                    VoiceTodoLog.voice.info("recording.silence_detected id=\(recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) thresholdDB=\(VoiceConstants.silenceThresholdDB)")
+                    VoiceTodoLog.voice.info("recording.silence_detected id=\(self.recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) thresholdDB=\(VoiceConstants.silenceThresholdDB)")
                     let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
                     Telemetry.record(.recordingOutcome(outcome: .silenceTimeout, durationMS: durationMS, transcript: transcript))
                     stopRecording()

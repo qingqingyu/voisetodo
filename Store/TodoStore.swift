@@ -28,7 +28,7 @@ final class TodoStore: TodoStoreProtocol {
         migrateOldSortOrder()
         migrateDueDatesFromHints()
         refreshTodos()
-        VoiceTodoLog.store.info("store.init.finished todoCount=\(todos.count)")
+        VoiceTodoLog.store.info("store.init.finished todoCount=\(self.todos.count)")
     }
 
     // MARK: - TodoStoreProtocol Implementation
@@ -45,7 +45,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         todos.insert(todoItem.toData(), at: 0)
-        VoiceTodoLog.store.info("store.add.success id=\(item.id.uuidString, privacy: .public) sortOrder=\(todoItem.sortOrder) locale=\(todoItem.localeIdentifier ?? "nil", privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add.success id=\(item.id.uuidString, privacy: .public) sortOrder=\(todoItem.sortOrder) locale=\(todoItem.localeIdentifier ?? "nil", privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 批量添加（确认界面用）
@@ -67,7 +67,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) locale=\(localeIdentifier, privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) locale=\(localeIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 添加原始转写文本（离线降级用）[v2]
@@ -81,7 +81,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         todos.insert(todoItem.toData(), at: 0)
-        VoiceTodoLog.store.info("store.add_raw.success id=\(todoItem.id.uuidString, privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add_raw.success id=\(todoItem.id.uuidString, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 切换完成状态
@@ -115,7 +115,7 @@ final class TodoStore: TodoStoreProtocol {
         try saveOrRollback()
         // 增量更新：移除对应条目
         todos.removeAll { $0.id == id }
-        VoiceTodoLog.store.info("store.delete.success id=\(id.uuidString, privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.delete.success id=\(id.uuidString, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 更新待办
@@ -309,7 +309,7 @@ final class TodoStore: TodoStoreProtocol {
             VoiceTodoLog.store.debug("store.pending.fetch_success count=\(items.count)")
             return items.map { $0.toData() }
         } catch {
-            VoiceTodoLog.store.error("store.pending.fetch_failed fallbackCount=\(todos.filter { $0.needsAIProcessing }.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            VoiceTodoLog.store.error("store.pending.fetch_failed fallbackCount=\(self.todos.filter { $0.needsAIProcessing }.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return todos
                 .filter { $0.needsAIProcessing }
                 .sorted { $0.sortOrder < $1.sortOrder }
@@ -339,7 +339,7 @@ final class TodoStore: TodoStoreProtocol {
             VoiceTodoLog.store.debug("store.recent_uncompleted.fetch_success fetched=\(items.count) visible=\(visible.count) limit=\(limit)")
             return visible
         } catch {
-            VoiceTodoLog.store.error("store.recent_uncompleted.fetch_failed fallbackTotal=\(todos.count) limit=\(limit) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            VoiceTodoLog.store.error("store.recent_uncompleted.fetch_failed fallbackTotal=\(self.todos.count) limit=\(limit) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             let today = Calendar.current.startOfDay(for: Date())
             let completedToday = completionMap(from: today, to: today)
             return WidgetTodoFilter.visibleTodos(
@@ -390,7 +390,7 @@ final class TodoStore: TodoStoreProtocol {
         let pendingSet = Set(pendingIds)
         todos.removeAll { pendingSet.contains($0.id) }
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        VoiceTodoLog.store.info("store.replace_pending_batch.success pendingCount=\(pendingIds.count) newCount=\(items.count) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.replace_pending_batch.success pendingCount=\(pendingIds.count) newCount=\(items.count) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     func resetForUITests() throws {
@@ -440,7 +440,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         refreshTodos()
-        VoiceTodoLog.store.warning("store.seed_for_ui_tests.success count=\(items.count) total=\(todos.count)")
+        VoiceTodoLog.store.warning("store.seed_for_ui_tests.success count=\(items.count) total=\(self.todos.count)")
     }
 
     /// 记录系统日历事件 ID。
@@ -511,7 +511,7 @@ final class TodoStore: TodoStoreProtocol {
         do {
             let items = try modelContext.fetch(descriptor)
             todos = items.map { $0.toData() }
-            VoiceTodoLog.store.debug("store.refresh.success count=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            VoiceTodoLog.store.debug("store.refresh.success count=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
             VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }

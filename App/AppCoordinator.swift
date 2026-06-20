@@ -11,12 +11,12 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Dependencies
 
     private let voiceInput: any VoiceInputProtocol
-    private let extractor: any TodoExtractorProtocol
     private let store: any TodoStoreProtocol
-    private let systemCalendarWriter: any SystemCalendarWritingProtocol
     private let calendarWriteModeProvider: () -> CalendarWriteMode
-    private let networkIsConnectedProvider: @MainActor () -> Bool
     private let vocabularyStore: UserVocabularyStore
+    private let calendarSyncService: CalendarSyncService
+    private let pendingRecoveryFlow: PendingRecoveryFlow
+    private let transcriptProcessingFlow: TranscriptProcessingFlow
 
     // MARK: - Published State
 
@@ -60,9 +60,6 @@ final class AppCoordinator: ObservableObject {
     private var activeInputTranscript: String?
     private var activeInputLocaleIdentifier: String?
 
-    /// 正在执行的日历同步任务（用于串行化，防止快速连续确认产生重复日历事件）
-    private var calendarSyncTask: Task<Void, Never>?
-
     // MARK: - Initialization
 
     init(
@@ -75,12 +72,20 @@ final class AppCoordinator: ObservableObject {
         vocabularyStore: UserVocabularyStore = .shared
     ) {
         self.voiceInput = voiceInput
-        self.extractor = extractor
         self.store = store
-        self.systemCalendarWriter = systemCalendarWriter
         self.calendarWriteModeProvider = calendarWriteModeProvider
-        self.networkIsConnectedProvider = networkIsConnectedProvider
         self.vocabularyStore = vocabularyStore
+        self.calendarSyncService = CalendarSyncService(store: store, writer: systemCalendarWriter)
+        self.pendingRecoveryFlow = PendingRecoveryFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: networkIsConnectedProvider
+        )
+        self.transcriptProcessingFlow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: networkIsConnectedProvider
+        )
 
         setupBindings()
     }
@@ -139,7 +144,7 @@ final class AppCoordinator: ObservableObject {
             VoiceTodoLog.coordinator.debug("coordinator.recording.interruption_ignored reason=not_recording")
             return
         }
-        VoiceTodoLog.coordinator.warning("coordinator.recording.interrupted transcriptChars=\(transcript.count)")
+        VoiceTodoLog.coordinator.warning("coordinator.recording.interrupted transcriptChars=\(self.transcript.count)")
         voiceInput.cancelRecordingDueToInterruption()
         isAutoProcessing = false
         isProcessingTranscript = false
@@ -150,7 +155,7 @@ final class AppCoordinator: ObservableObject {
     func stopRecordingAndProcess() async {
         let flowID = VoiceTodoLog.makeID("stop-process")
         let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.stop_and_process.start id=\(flowID, privacy: .public) transcriptChars=\(transcript.count)")
+        VoiceTodoLog.coordinator.info("coordinator.stop_and_process.start id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count)")
 
         // 取消自动处理（用户手动点击停止）
         isAutoProcessing = false
@@ -169,7 +174,7 @@ final class AppCoordinator: ObservableObject {
 
         // 处理转写结果
         await processTranscript(transcript)
-        VoiceTodoLog.coordinator.info("coordinator.stop_and_process.finished id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) finalTranscriptChars=\(transcript.count)")
+        VoiceTodoLog.coordinator.info("coordinator.stop_and_process.finished id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) finalTranscriptChars=\(self.transcript.count)")
     }
 
     /// 等待录音结束，最多等 3 秒
@@ -198,7 +203,7 @@ final class AppCoordinator: ObservableObject {
             _ = await group.next()
             group.cancelAll()
         }
-        VoiceTodoLog.coordinator.debug("coordinator.wait_recording.finished id=\(waitID, privacy: .public) stillRecording=\(voiceInput.isRecording) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.coordinator.debug("coordinator.wait_recording.finished id=\(waitID, privacy: .public) stillRecording=\(self.voiceInput.isRecording) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 等待自然停录（静音检测触发），最多等 60 秒
@@ -227,7 +232,7 @@ final class AppCoordinator: ObservableObject {
             _ = await group.next()
             group.cancelAll()
         }
-        VoiceTodoLog.coordinator.debug("coordinator.wait_auto_stop.finished id=\(waitID, privacy: .public) stillRecording=\(voiceInput.isRecording) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.coordinator.debug("coordinator.wait_auto_stop.finished id=\(waitID, privacy: .public) stillRecording=\(self.voiceInput.isRecording) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 手动触发录音处理（用于 Action Button 启动）
@@ -276,13 +281,13 @@ final class AppCoordinator: ObservableObject {
 
         // 自动处理转写结果
         await processTranscript(transcript)
-        VoiceTodoLog.coordinator.info("coordinator.action_button.finished id=\(flowID, privacy: .public) transcriptChars=\(transcript.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.coordinator.info("coordinator.action_button.finished id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 处理手动输入文本并提取待办
     func processManualInput(_ text: String) async {
         guard !isRecording, !isAutoProcessing, !showConfirmSheet, !isProcessingTranscript else {
-            VoiceTodoLog.coordinator.warning("coordinator.manual_input.ignored isRecording=\(isRecording) isAutoProcessing=\(isAutoProcessing) showConfirmSheet=\(showConfirmSheet) isProcessingTranscript=\(isProcessingTranscript)")
+            VoiceTodoLog.coordinator.warning("coordinator.manual_input.ignored isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) showConfirmSheet=\(self.showConfirmSheet) isProcessingTranscript=\(self.isProcessingTranscript)")
             return
         }
 
@@ -299,13 +304,7 @@ final class AppCoordinator: ObservableObject {
             return
         }
         guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else {
-            VoiceTodoLog.coordinator.debug("coordinator.foreground.ignored isRecording=\(isRecording) isAutoProcessing=\(isAutoProcessing) isProcessingTranscript=\(isProcessingTranscript) showConfirmSheet=\(showConfirmSheet)")
-            return
-        }
-
-        let pendingItems = store.pendingItems().filter { !dismissedPendingIds.contains($0.id) }
-        guard !pendingItems.isEmpty else {
-            VoiceTodoLog.coordinator.debug("coordinator.foreground.no_pending dismissedCount=\(dismissedPendingIds.count)")
+            VoiceTodoLog.coordinator.debug("coordinator.foreground.ignored isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) isProcessingTranscript=\(self.isProcessingTranscript) showConfirmSheet=\(self.showConfirmSheet)")
             return
         }
 
@@ -313,125 +312,40 @@ final class AppCoordinator: ObservableObject {
         let startedAt = Date()
         isProcessingPending = true
         defer { isProcessingPending = false }
-        VoiceTodoLog.coordinator.info("coordinator.foreground.pending_start id=\(flowID, privacy: .public) pending=\(VoiceTodoLog.idsSummary(pendingItems.map(\.id)), privacy: .public) dismissedCount=\(dismissedPendingIds.count)")
 
-        var processResults: [PendingProcessResult] = []
+        let result = await pendingRecoveryFlow.recover(
+            dismissedPendingIds: dismissedPendingIds,
+            locale: voiceInput.currentLocale,
+            flowID: flowID
+        )
+        result.deletionErrors.forEach(handleError)
+        guard result.hasPending else { return }
 
-        // 先移除无 rawTranscript 的条目
-        let validPending = pendingItems.filter { item in
-            if item.rawTranscript == nil {
-                VoiceTodoLog.coordinator.warning("coordinator.foreground.pending_missing_raw id=\(flowID, privacy: .public) pendingID=\(item.id.uuidString, privacy: .public)")
-                deleteProcessedPending(id: item.id)
-                return false
-            }
-            return true
-        }
-
-        let concurrency = NetworkConfig.pendingBatchConcurrency
-        VoiceTodoLog.coordinator.info("coordinator.foreground.pending_window id=\(flowID, privacy: .public) validCount=\(validPending.count) concurrency=\(concurrency)")
-
-        // 并发处理，滑动窗口模式
-        await withTaskGroup(of: PendingProcessResult.self) { group in
-            var iterator = validPending.enumerated().makeIterator()
-            var activeCount = 0
-
-            while activeCount < concurrency, let (index, pending) = iterator.next() {
-                let transcript = pending.rawTranscript!
-                let pendingId = pending.id
-                let ext = self.extractor
-                let loc = self.voiceInput.currentLocale
-                group.addTask {
-                    await Self.processSinglePending(index: index, id: pendingId, transcript: transcript, extractor: ext, locale: loc, flowID: flowID)
-                }
-                activeCount += 1
-            }
-
-            for await result in group {
-                processResults.append(result)
-                // 失败的保留 pending 不处理
-
-                if let (index, next) = iterator.next() {
-                    guard networkIsConnectedProvider() else { break }
-                    let transcript = next.rawTranscript!
-                    let nextId = next.id
-                    let ext = self.extractor
-                    let loc = self.voiceInput.currentLocale
-                    group.addTask {
-                        await Self.processSinglePending(index: index, id: nextId, transcript: transcript, extractor: ext, locale: loc, flowID: flowID)
-                    }
-                }
-            }
-        }
-
-        let successfulResults = processResults
-            .filter(\.succeeded)
-            .sorted { $0.index < $1.index }
-        let resultsWithTodos = successfulResults.filter { !$0.todos.isEmpty }
-        let resultsWithoutTodos = successfulResults.filter { $0.todos.isEmpty }
-        let allExtractedItems = resultsWithTodos.flatMap(\.todos)
-        let processedWithTodosIds = resultsWithTodos.map(\.id)
-        let processedWithoutTodosIds = resultsWithoutTodos.map(\.id)
-        let rawTranscripts = resultsWithTodos.compactMap(\.rawTranscript)
-        let mergedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
-
-        if !allExtractedItems.isEmpty {
+        if !result.extractedTodos.isEmpty {
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else {
-                VoiceTodoLog.coordinator.warning("coordinator.foreground.results_deferred id=\(flowID, privacy: .public) extractedCount=\(allExtractedItems.count) isRecording=\(isRecording) isAutoProcessing=\(isAutoProcessing) isProcessingTranscript=\(isProcessingTranscript) showConfirmSheet=\(showConfirmSheet)")
+                VoiceTodoLog.coordinator.warning("coordinator.foreground.results_deferred id=\(flowID, privacy: .public) extractedCount=\(result.extractedTodos.count) isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) isProcessingTranscript=\(self.isProcessingTranscript) showConfirmSheet=\(self.showConfirmSheet)")
                 return
             }
 
-            for pendingId in processedWithoutTodosIds {
+            for pendingId in result.processedWithoutTodosIds {
                 deleteProcessedPending(id: pendingId)
             }
 
-            pendingItemIds = processedWithTodosIds
-            combinedRawTranscript = mergedRawTranscript
-            extractedTodos = allExtractedItems
+            pendingItemIds = result.processedWithTodosIds
+            combinedRawTranscript = result.mergedRawTranscript
+            extractedTodos = result.extractedTodos
             showConfirmSheet = true
-            VoiceTodoLog.coordinator.info("coordinator.foreground.pending_success id=\(flowID, privacy: .public) extractedCount=\(allExtractedItems.count) processedWithTodos=\(processedWithTodosIds.count) processedWithoutTodos=\(processedWithoutTodosIds.count) failed=\(processResults.filter { !$0.succeeded }.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            VoiceTodoLog.coordinator.info("coordinator.foreground.pending_success id=\(flowID, privacy: .public) extractedCount=\(result.extractedTodos.count) processedWithTodos=\(result.processedWithTodosIds.count) processedWithoutTodos=\(result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } else {
-            for pendingId in processedWithTodosIds {
+            for pendingId in result.processedWithTodosIds {
                 deleteProcessedPending(id: pendingId)
             }
-            for pendingId in processedWithoutTodosIds {
+            for pendingId in result.processedWithoutTodosIds {
                 deleteProcessedPending(id: pendingId)
             }
             pendingItemIds = []
             combinedRawTranscript = nil
-            VoiceTodoLog.coordinator.info("coordinator.foreground.pending_finished_empty id=\(flowID, privacy: .public) processed=\(processResults.count) failed=\(processResults.filter { !$0.succeeded }.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-        }
-    }
-
-    // MARK: - Pending Processing
-
-    private struct PendingProcessResult: Sendable {
-        let index: Int
-        let id: UUID
-        let todos: [ExtractedTodo]
-        let rawTranscript: String?
-        let succeeded: Bool
-    }
-
-    private static func processSinglePending(
-        index: Int,
-        id: UUID,
-        transcript: String,
-        extractor: any TodoExtractorProtocol,
-        locale: Locale,
-        flowID: String
-    ) async -> PendingProcessResult {
-        let startedAt = Date()
-        let extractID = VoiceTodoLog.makeID("extract")
-        VoiceTodoLog.coordinator.info("coordinator.pending_item.start id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) locale=\(locale.identifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
-        do {
-            let result = try await VoiceTodoLog.$extractID.withValue(extractID) {
-                try await extractor.extract(from: transcript, locale: locale)
-            }
-            VoiceTodoLog.coordinator.info("coordinator.pending_item.success id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) todos=\(result.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-            return PendingProcessResult(index: index, id: id, todos: result.todos, rawTranscript: transcript, succeeded: true)
-        } catch {
-            VoiceTodoLog.coordinator.error("coordinator.pending_item.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            return PendingProcessResult(index: index, id: id, todos: [], rawTranscript: transcript, succeeded: false)
+            VoiceTodoLog.coordinator.info("coordinator.foreground.pending_finished_empty id=\(flowID, privacy: .public) processed=\(result.processedWithTodosIds.count + result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         }
     }
 
@@ -440,13 +354,13 @@ final class AppCoordinator: ObservableObject {
     func confirmTodos(_ todos: [ExtractedTodo]) -> Bool {
         let confirmID = VoiceTodoLog.makeID("confirm")
         let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.confirm.start id=\(confirmID, privacy: .public) todoCount=\(todos.count) pendingCount=\(pendingItemIds.count) calendarMode=\(calendarWriteModeProvider().rawValue, privacy: .public)")
+        VoiceTodoLog.coordinator.info("coordinator.confirm.start id=\(confirmID, privacy: .public) todoCount=\(todos.count) pendingCount=\(self.pendingItemIds.count) calendarMode=\(self.calendarWriteModeProvider().rawValue, privacy: .public)")
         do {
             let confirmedIds = Set(todos.map(\.id))
             // 如果有 pending 条目，使用替换逻辑
             if !pendingItemIds.isEmpty {
                 try store.replacePendingBatchWithExtracted(pendingItemIds, todos, rawTranscript: combinedRawTranscript)
-                VoiceTodoLog.coordinator.info("coordinator.confirm.replaced_pending id=\(confirmID, privacy: .public) pending=\(VoiceTodoLog.idsSummary(pendingItemIds), privacy: .public) todoCount=\(todos.count)")
+                VoiceTodoLog.coordinator.info("coordinator.confirm.replaced_pending id=\(confirmID, privacy: .public) pending=\(VoiceTodoLog.idsSummary(self.pendingItemIds), privacy: .public) todoCount=\(todos.count)")
 
                 // 成功确认后清理 dismissed 记录（先移除再清空列表）
                 dismissedPendingIds.subtract(pendingItemIds)
@@ -473,16 +387,13 @@ final class AppCoordinator: ObservableObject {
 
             let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
             if shouldSyncSystemCalendar {
-                let previousTask = calendarSyncTask
-                calendarSyncTask = Task { [weak self] in
-                    await previousTask?.value
-                    guard let self else { return }
-                    let current = store.todos.filter { confirmedIds.contains($0.id) }
-                    guard !current.isEmpty else {
-                        VoiceTodoLog.coordinator.warning("coordinator.confirm.calendar_skipped id=\(confirmID, privacy: .public) reason=confirmed_items_missing")
-                        return
-                    }
-                    await syncSystemCalendar(for: current)
+                let current = store.todos.filter { confirmedIds.contains($0.id) }
+                if current.isEmpty {
+                    VoiceTodoLog.coordinator.warning("coordinator.confirm.calendar_skipped id=\(confirmID, privacy: .public) reason=confirmed_items_missing")
+                } else {
+                    observeCalendarSync(
+                        calendarSyncService.enqueueWrite(todos: current, sourceID: confirmID)
+                    )
                 }
             }
 
@@ -498,7 +409,7 @@ final class AppCoordinator: ObservableObject {
 
     /// 取消确认
     func cancelTodos() {
-        VoiceTodoLog.coordinator.info("coordinator.confirm.cancel pendingCount=\(pendingItemIds.count) extractedCount=\(extractedTodos.count) isExtracting=\(isExtracting)")
+        VoiceTodoLog.coordinator.info("coordinator.confirm.cancel pendingCount=\(self.pendingItemIds.count) extractedCount=\(self.extractedTodos.count) isExtracting=\(self.isExtracting)")
         extractionTask?.cancel()
         extractionTask = nil
 
@@ -528,18 +439,9 @@ final class AppCoordinator: ObservableObject {
         try store.delete(id)
 
         if let eventIdentifier = todo?.systemCalendarEventIdentifier {
-            let previousTask = calendarSyncTask
-            let writer = systemCalendarWriter
-            calendarSyncTask = Task { [weak self] in
-                await previousTask?.value
-                do {
-                    try await writer.removeEvents(identifiers: [eventIdentifier])
-                    VoiceTodoLog.calendar.info("calendar.delete.success todoID=\(id.uuidString, privacy: .public) eventID=\(eventIdentifier, privacy: .public)")
-                } catch {
-                    VoiceTodoLog.calendar.error("calendar.delete.failed todoID=\(id.uuidString, privacy: .public) eventID=\(eventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                    self?.showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
-                }
-            }
+            observeCalendarSync(
+                calendarSyncService.enqueueDelete(todoID: id, eventIdentifier: eventIdentifier)
+            )
         }
 
         WidgetCenter.shared.reloadAllTimelines()
@@ -567,7 +469,7 @@ final class AppCoordinator: ObservableObject {
         let oldTodo = store.todos.first { $0.id == id }
 
         try store.update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
-        VoiceTodoLog.coordinator.info("coordinator.todo.update.saved id=\(id.uuidString, privacy: .public) hadOldCalendarEvent=\(oldTodo?.systemCalendarEventIdentifier != nil) shouldSyncCalendar=\(calendarWriteModeProvider() == .appAndSystemCalendar) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.coordinator.info("coordinator.todo.update.saved id=\(id.uuidString, privacy: .public) hadOldCalendarEvent=\(oldTodo?.systemCalendarEventIdentifier != nil) shouldSyncCalendar=\(self.calendarWriteModeProvider() == .appAndSystemCalendar) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
         if let updated = store.todos.first(where: { $0.id == id }) {
             let learningTitle = title
@@ -586,27 +488,14 @@ final class AppCoordinator: ObservableObject {
 
         let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
         if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {
-            let previousTask = calendarSyncTask
-            let writer = systemCalendarWriter
-            calendarSyncTask = Task { [weak self] in
-                await previousTask?.value
-                guard let self else { return }
-                if let oldId = oldTodo?.systemCalendarEventIdentifier {
-                    do {
-                        try await writer.removeEvents(identifiers: [oldId])
-                        try store.updateSystemCalendarEventIdentifier(nil, for: id)
-                        VoiceTodoLog.calendar.info("calendar.update.removed_old todoID=\(id.uuidString, privacy: .public) eventID=\(oldId, privacy: .public)")
-                    } catch {
-                        VoiceTodoLog.calendar.error("calendar.update.remove_old_failed todoID=\(id.uuidString, privacy: .public) eventID=\(oldId, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                        showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
-                        return
-                    }
-                }
-                guard let updated = store.todos.first(where: { $0.id == id }) else { return }
-                if shouldSyncSystemCalendar {
-                    await syncSystemCalendar(for: [updated])
-                }
-            }
+            observeCalendarSync(
+                calendarSyncService.enqueueReplace(
+                    todoID: id,
+                    oldEventIdentifier: oldTodo?.systemCalendarEventIdentifier,
+                    shouldWriteNewEvent: shouldSyncSystemCalendar,
+                    sourceID: id.uuidString
+                )
+            )
         }
 
         WidgetCenter.shared.reloadAllTimelines()
@@ -616,7 +505,7 @@ final class AppCoordinator: ObservableObject {
 
     /// 取消正在进行的 AI 提取
     func cancelExtraction() {
-        VoiceTodoLog.coordinator.info("coordinator.extraction.cancel isExtracting=\(isExtracting) extractedCount=\(extractedTodos.count)")
+        VoiceTodoLog.coordinator.info("coordinator.extraction.cancel isExtracting=\(self.isExtracting) extractedCount=\(self.extractedTodos.count)")
         extractionTask?.cancel()
         extractionTask = nil
         isExtracting = false
@@ -627,50 +516,23 @@ final class AppCoordinator: ObservableObject {
         activeInputLocaleIdentifier = nil
     }
 
-    private func syncSystemCalendar(for todos: [TodoItemData]) async {
-        let syncID = VoiceTodoLog.makeID("calendar")
-        let startedAt = Date()
-        VoiceTodoLog.calendar.info("calendar.sync.start id=\(syncID, privacy: .public) todoCount=\(todos.count) todoIDs=\(VoiceTodoLog.idsSummary(todos.map(\.id)), privacy: .public)")
-        do {
-            let results = try await systemCalendarWriter.writeEvents(for: todos)
-            try await persistSystemCalendarResults(results)
-            VoiceTodoLog.calendar.info("calendar.sync.success id=\(syncID, privacy: .public) resultCount=\(results.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-        } catch let partialError as SystemCalendarWriteError {
-            VoiceTodoLog.calendar.error("calendar.sync.partial_failed id=\(syncID, privacy: .public) partialResults=\(partialError.results.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(partialError), privacy: .public)")
-            do {
-                try await persistSystemCalendarResults(partialError.results)
-            } catch {
-                VoiceTodoLog.calendar.error("calendar.sync.persist_partial_failed id=\(syncID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+    private func observeCalendarSync(_ task: Task<CalendarSyncResult, Never>) {
+        Task { [weak self] in
+            let result = await task.value
+            guard let self else {
+                if result.shouldShowFailureToast {
+                    VoiceTodoLog.calendar.error("calendar.sync.result_dropped reason=coordinator_deallocated operation=\(String(describing: result.operation), privacy: .public) status=\(String(describing: result.status), privacy: .public)")
+                }
+                return
             }
-            showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
-        } catch {
-            VoiceTodoLog.calendar.error("calendar.sync.failed id=\(syncID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
+            await self.handleCalendarSyncResult(result)
         }
     }
 
-    private func persistSystemCalendarResults(_ results: [SystemCalendarWriteResult]) async throws {
-        var failedResults: [SystemCalendarWriteResult] = []
-
-        for result in results {
-            do {
-                try store.updateSystemCalendarEventIdentifier(result.eventIdentifier, for: result.todoId)
-                VoiceTodoLog.calendar.info("calendar.persist_identifier.success todoID=\(result.todoId.uuidString, privacy: .public) eventID=\(result.eventIdentifier, privacy: .public)")
-            } catch {
-                failedResults.append(result)
-                VoiceTodoLog.calendar.error("calendar.persist_identifier.failed todoID=\(result.todoId.uuidString, privacy: .public) eventID=\(result.eventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            }
+    private func handleCalendarSyncResult(_ result: CalendarSyncResult) {
+        if result.shouldShowFailureToast {
+            showToast(message: ErrorMessages.systemCalendarSyncFailed, style: .warning)
         }
-
-        guard !failedResults.isEmpty else { return }
-
-        do {
-            try await systemCalendarWriter.removeEvents(identifiers: failedResults.map(\.eventIdentifier))
-        } catch {
-            VoiceTodoLog.calendar.error("calendar.cleanup_after_persist_failed failedCount=\(failedResults.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-        }
-
-        throw VoiceTodoError.storageWriteFailed("Failed to persist system calendar event identifier")
     }
 
     /// 处理转写文本（流式）
@@ -681,74 +543,24 @@ final class AppCoordinator: ObservableObject {
         }
         let flowID = VoiceTodoLog.makeID("process")
         let extractID = VoiceTodoLog.makeID("extract")
-        let startedAt = Date()
         isProcessingTranscript = true
         isExtracting = true
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveLocale = locale ?? voiceInput.currentLocale
         activeInputTranscript = trimmed
-        activeInputLocaleIdentifier = (locale ?? voiceInput.currentLocale).identifier
-        let isConnected = networkIsConnectedProvider()
-        VoiceTodoLog.coordinator.info("coordinator.process_transcript.start id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\((locale ?? voiceInput.currentLocale).identifier, privacy: .public) isConnected=\(isConnected) \(VoiceTodoLog.textSummary(trimmed), privacy: .public)")
-        guard !trimmed.isEmpty else {
-            isExtracting = false
-            isProcessingTranscript = false
-            activeInputTranscript = nil
-            activeInputLocaleIdentifier = nil
-            showToast(message: ErrorMessages.noTodosFound, style: .info)
-            VoiceTodoLog.coordinator.info("coordinator.process_transcript.empty id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-            return
-        }
-
-        guard isConnected else {
-            isExtracting = false
-            isProcessingTranscript = false
-            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.offline id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
-            await handleOfflineMode(transcript: text)
-            return
-        }
+        activeInputLocaleIdentifier = effectiveLocale.identifier
 
         extractionTask = Task {
-            do {
-                var receivedAny = false
-                let stream = VoiceTodoLog.$extractID.withValue(extractID) {
-                    extractor.extractStreaming(from: trimmed, locale: locale ?? voiceInput.currentLocale)
-                }
-                for try await partialResult in stream {
-                    guard !Task.isCancelled else { return }
-                    extractedTodos = partialResult.todos
-                    if !showConfirmSheet && !partialResult.todos.isEmpty {
-                        showConfirmSheet = true
-                        VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_shown id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(partialResult.todos.count)")
-                    }
-                    receivedAny = !partialResult.todos.isEmpty
-                    VoiceTodoLog.coordinator.debug("coordinator.process_transcript.partial id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(partialResult.todos.count)")
-                }
-
+            let events = transcriptProcessingFlow.process(
+                text: text,
+                locale: effectiveLocale,
+                flowID: flowID,
+                extractID: extractID
+            )
+            for await event in events {
                 guard !Task.isCancelled else { return }
-
-                if !receivedAny {
-                    activeInputTranscript = nil
-                    activeInputLocaleIdentifier = nil
-                    showToast(message: ErrorMessages.noTodosFound, style: .info)
-                    VoiceTodoLog.coordinator.info("coordinator.process_transcript.no_todos id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-                } else {
-                    VoiceTodoLog.coordinator.info("coordinator.process_transcript.success id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) finalTodos=\(extractedTodos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                if let ve = error as? VoiceTodoError,
-                   ve == .networkUnavailable || ve == .apiTimeout {
-                    VoiceTodoLog.coordinator.warning("coordinator.process_transcript.network_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                    clearExtractionPresentation()
-                    await handleOfflineMode(transcript: text)
-                } else {
-                    activeInputTranscript = nil
-                    activeInputLocaleIdentifier = nil
-                    clearExtractionPresentation()
-                    VoiceTodoLog.coordinator.error("coordinator.process_transcript.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                    handleError(error)
-                }
+                handleTranscriptFlowEvent(event, flowID: flowID, extractID: extractID)
             }
 
             isExtracting = false
@@ -758,31 +570,60 @@ final class AppCoordinator: ObservableObject {
         await extractionTask?.value
     }
 
-    private func clearExtractionPresentation() {
-        if showConfirmSheet || !extractedTodos.isEmpty {
-            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.clear_partial_results shown=\(showConfirmSheet) partialCount=\(extractedTodos.count)")
-        }
-        extractedTodos = []
-        showConfirmSheet = false
-    }
-
-    /// 离线降级处理
-    private func handleOfflineMode(transcript: String) async {
-        let offlineID = VoiceTodoLog.makeID("offline")
-        let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.offline_save.start id=\(offlineID, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
-        do {
-            try store.addRawTranscript(transcript)
+    private func handleTranscriptFlowEvent(
+        _ event: TranscriptFlowEvent,
+        flowID: String,
+        extractID: String
+    ) {
+        switch event {
+        case .empty:
+            activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
+            showToast(message: ErrorMessages.noTodosFound, style: .info)
+        case .partial(let result):
+            extractedTodos = result.todos
+            if !showConfirmSheet && !result.todos.isEmpty {
+                showConfirmSheet = true
+                VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_shown id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(result.todos.count)")
+            }
+        case .success:
+            break
+        case .noTodos:
+            activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
+            showToast(message: ErrorMessages.noTodosFound, style: .info)
+        case .offlineSaved:
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             showToast(message: ErrorMessages.savedOffline, style: .info)
-            VoiceTodoLog.coordinator.info("coordinator.offline_save.success id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-        } catch {
+        case .offlineSaveFailed(let error):
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
-            VoiceTodoLog.coordinator.error("coordinator.offline_save.failed id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            handleError(error)
+        case .networkFallbackSaved:
+            clearExtractionPresentation()
+            activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
+            showToast(message: ErrorMessages.savedOffline, style: .info)
+        case .networkFallbackSaveFailed(let error):
+            clearExtractionPresentation()
+            activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
+            handleError(error)
+        case .failed(let error):
+            activeInputTranscript = nil
+            activeInputLocaleIdentifier = nil
+            clearExtractionPresentation()
             handleError(error)
         }
+    }
+
+    private func clearExtractionPresentation() {
+        if showConfirmSheet || !extractedTodos.isEmpty {
+            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.clear_partial_results shown=\(self.showConfirmSheet) partialCount=\(self.extractedTodos.count)")
+        }
+        extractedTodos = []
+        showConfirmSheet = false
     }
 
     /// 显示 Toast

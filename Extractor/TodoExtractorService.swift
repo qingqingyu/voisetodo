@@ -271,7 +271,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
             limit: UserVocabularyConfig.aiHintsLimit
         )
         VoiceTodoLog.extractor.info("extract.context.ready id=\(VoiceTodoLog.currentExtractID(fallbackPrefix: "extract"), privacy: .public) vocabularyHints=\(vocabularyHints.count)")
-        try await networkClient.callTodoExtractionProxy(
+        return try await networkClient.callTodoExtractionProxy(
             transcript: transcript,
             localeIdentifier: locale.identifier,
             vocabularyHints: vocabularyHints

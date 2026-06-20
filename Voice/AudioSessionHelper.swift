@@ -52,7 +52,7 @@ final class AudioSessionHelper {
         switch type {
         case .began:
             // 中断开始（如来电、闹钟等）
-            VoiceTodoLog.voice.warning("audio_session.interruption.began wasActive=\(isActive)")
+            VoiceTodoLog.voice.warning("audio_session.interruption.began wasActive=\(self.isActive)")
             wasActiveBeforeInterruption = isActive
             isActive = false
             NotificationCenter.default.post(
@@ -63,7 +63,7 @@ final class AudioSessionHelper {
             // 中断结束
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-                VoiceTodoLog.voice.info("audio_session.interruption.ended shouldResume=\(options.contains(.shouldResume)) wasActiveBeforeInterruption=\(wasActiveBeforeInterruption)")
+                VoiceTodoLog.voice.info("audio_session.interruption.ended shouldResume=\(options.contains(.shouldResume)) wasActiveBeforeInterruption=\(self.wasActiveBeforeInterruption)")
                 if options.contains(.shouldResume) && wasActiveBeforeInterruption {
                     // 可以恢复音频会话
                     do {

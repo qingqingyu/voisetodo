@@ -156,7 +156,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             eventStore.requestWriteOnlyAccessToEvents { granted, error in
                 if let error {
                     VoiceTodoLog.calendar.error("system_calendar.permission.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                    continuation.resume(throwing: storageWriteFailure(error))
+                    continuation.resume(throwing: self.storageWriteFailure(error))
                 } else {
                     VoiceTodoLog.calendar.info("system_calendar.permission.result granted=\(granted)")
                     continuation.resume(returning: granted)
