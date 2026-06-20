@@ -123,6 +123,11 @@ targets:
       - path: Store/AppGroupConfig.swift
       - path: Store/AppGroupModelContainerProvider.swift
       - path: Protocols/Models.swift
+      - path: Protocols/Domain/CodingUserInfoKey+Recurrence.swift
+      - path: Protocols/Domain/RecurrenceRule.swift
+      - path: Protocols/Domain/TodoDueDateResolver.swift
+      - path: Protocols/Domain/RecurrenceRuleResolver.swift
+      - path: Protocols/Domain/WidgetTodoFilter.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift
       - path: Protocols/Constants.swift

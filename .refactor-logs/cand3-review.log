@@ -1,0 +1,61 @@
+Round 2 收敛 — 两个 skill 同轮零发现。输出最终报告。
+
+---
+
+# 双 review 循环 — 最终报告
+
+## 总览
+
+| 维度 | 数据 |
+|------|------|
+| **总轮数** | 2 轮(在第 2 轮收敛) |
+| **退出方式** | ✅ 正常收敛 — Round 2 的 Three Check 与 code-review-expert 同时零发现 |
+| **冲突** | 无 — 两个 skill 的建议未出现"反复横跳" |
+
+## 累计发现与修复(按 skill 分类)
+
+| Skill | 发现总数 | 已修复 | 未修复(剩余) |
+|-------|---------|--------|--------------|
+| Three Check | 3 | 2 | 1(经判定为拆分必然副作用,接受) |
+| code-review-expert | 1(P3) | 1(P3) | 0 |
+
+## 每轮明细
+
+### Round 1
+
+- **Three Check 发现 3 项**:
+  1. `Protocols/Domain/RecurrenceDecodingContext.swift` 文件名违反 "File name matches primary type name" 约定(文件内只有 `extension CodingUserInfoKey`,无对应类型)→ **已修复**(改名为 `CodingUserInfoKey+Recurrence.swift`,符合 Swift `TypeName+Feature.swift` 扩展惯例)
+  2. 同一 `Domain/` 目录下两种去重风格并存:`RecurrenceRule.swift:33` 用 `.uniqued().sorted()`、`RecurrenceRuleResolver.swift:197` 用 `Array(Set(...)).sorted()` → **已修复**(统一为 `Array(Set(...)).sorted()`,并删除 `RecurrenceRule.swift` 底部不再使用的 `private extension Array { uniqued() }`)
+  3. `String.containsEnglishPhrase / containsNextEnglishWeekday` 与 `TodoDueDateResolver.englishWeekdays` 从 `private`/`fileprivate` 隐式扩为 `internal` → **经判定不应用**(Swift 跨文件拆分后 `internal` 是模块内共享 helper 的标准做法,改回 `private` 会编译不过,改用命名空间 enum 则超出本次重构范围)
+
+- **Three Check 修复数:2 / 发现数:3**
+- **code-review-expert 发现 1 项**:
+  - P3(自己引入):`VoiceTodoTests/Protocols/DomainModuleTests.swift:11` 的 `testRecurrenceRuleNormalizesInputsAndChecksOccurrences` 用 `Calendar.current`,而同文件其它 3 个测试用 `Calendar(identifier: .gregorian)`,在非 Gregorian locale 的 CI 上可能 flake → **已修复**(改为 `Calendar(identifier: .gregorian)`)
+- **code-review-expert 修复数:1 / 发现数:1**
+- **状态**:两个 skill 都给出过非空清单 → 未满足"两个 skill 均无问题"的退出条件 → 进入 Round 2
+
+### Round 2(完全重新审视,忽略 Round 1 结论)
+
+- **Three Check 发现 0 项** — 文件名约定、去重风格、测试 locale 一致性、`project.yml` 注册、`Package.swift` 拾取、消费者代码全部干净
+- **code-review-expert 发现 0 项** — 重新审计 force-unwrap / `try?` / SOLID / 边界条件 / 测试覆盖 / target 配置(含 Widget target),无新问题
+- **状态**:两个 skill 同轮零发现 → **满足退出条件,正常收敛**
+
+## 最终状态
+
+✅ **收敛**(第 2 轮达成"两个 skill 均无任何新发现")
+
+## 已落地的代码变更(Round 1 修复)
+
+1. `Protocols/Domain/RecurrenceDecodingContext.swift` → `Protocols/Domain/CodingUserInfoKey+Recurrence.swift`(rename,符合 Swift 扩展文件惯例)
+2. `project.yml:126` — 文件路径同步更新为 `Protocols/Domain/CodingUserInfoKey+Recurrence.swift`
+3. `Protocols/Domain/RecurrenceRule.swift:31` — 去重风格改为 `Array(Set(weekdays.filter { (1...7).contains($0) })).sorted()`
+4. `Protocols/Domain/RecurrenceRule.swift:145-150` — 删除不再使用的 `private extension Array where Element: Hashable { uniqued() }`
+5. `VoiceTodoTests/Protocols/DomainModuleTests.swift:11` — 测试用 `Calendar` 改为 `Calendar(identifier: .gregorian)`,与同文件其它 3 个测试一致
+
+## 未解决问题清单(供你裁决)
+
+均为非阻塞,且均非本次重构的核心目标:
+
+1. **[设计权衡 — 接受]** `String.containsEnglishPhrase` / `containsNextEnglishWeekday` 和 `TodoDueDateResolver.englishWeekdays` 当前为 `internal`,模块内任何 String/调用方都能访问。若要恢复原 `private`/`fileprivate` 的封装,可把这两个 helper 抽到独立的 `Protocols/Domain/LocaleTextHelpers.swift` 并包装在 `private enum LocaleTextHelpers` 命名空间内 —— 但属于额外重构,本次未做。
+2. **[预先存在 — 非本次引入]** `RecurrenceRule.init` 用 `Calendar.current.startOfDay(for:)` 归一化 `endDate`,不接受 `calendar` 参数。若需 locale 无关的 init,需调整 init 签名,影响所有调用点。
+3. **[预先存在 — 非本次引入]** `RecurrenceRule.parseEndDateString` 每次调用都新建 `DateFormatter` / `ISO8601DateFormatter` 实例,可改为 static 单例。微优化。
