@@ -72,6 +72,7 @@ struct AddTodoIntent: AppIntent {
             context = ModelContext(container)
         } catch {
             VoiceTodoLog.intent.error("intent.add.container_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            Telemetry.record(.intentFailed(operation: "add", stage: "container"))
             return .result(
                 dialog: "siri.result.save_failed",
                 view: AddTodoIntentView(todos: extractedTodos, isOffline: isOffline)
@@ -102,8 +103,10 @@ struct AddTodoIntent: AppIntent {
             AppGroupConfig.markExternalDataChanged()
             WidgetCenter.shared.reloadAllTimelines()
             VoiceTodoLog.intent.info("intent.add.save_success id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            Telemetry.record(.todoSaved(source: .siriAdd, count: extractedTodos.count))
         } catch {
             VoiceTodoLog.intent.error("intent.add.save_failed id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            Telemetry.record(.intentFailed(operation: "add", stage: "save"))
             return .result(
                 dialog: "siri.result.save_failed",
                 view: AddTodoIntentView(todos: extractedTodos, isOffline: isOffline)

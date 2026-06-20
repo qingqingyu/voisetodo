@@ -184,6 +184,8 @@ final class VoiceInputManager: VoiceInputProtocol {
             return
         }
         VoiceTodoLog.voice.warning("recording.interrupted id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+        Telemetry.record(.recordingOutcome(outcome: .interrupted, durationMS: durationMS, transcript: transcript))
         cleanupRecordingPipeline(markNotRecording: true, reason: "interruption")
         error = .audioSessionInterrupted
     }
@@ -252,6 +254,8 @@ final class VoiceInputManager: VoiceInputProtocol {
                 if result.isFinal {
                     DispatchQueue.main.async {
                         VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count)")
+                        let durationMS = self.recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+                        Telemetry.record(.recordingOutcome(outcome: .success, durationMS: durationMS, transcript: self.transcript))
                         self.stopRecording()
                     }
                 }
@@ -266,6 +270,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                         guard self.isRecording else { return }
                         self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
                         VoiceTodoLog.voice.error("recording.recognition.final_error id=\(self.recordingSessionID ?? "none", privacy: .public) isFinal=\(isFinal) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        Telemetry.record(.recordingFailed(reason: "recognition_error", errorCode: nil))
                         self.cleanupRecordingPipeline(markNotRecording: true, reason: "recognitionError")
                     }
                 }
@@ -415,6 +420,8 @@ final class VoiceInputManager: VoiceInputProtocol {
     private func handleFinishRecordingWatchdogExpired() {
         guard isRecording else { return }
         VoiceTodoLog.voice.error("recording.watchdog.expired id=\(recordingSessionID ?? "none", privacy: .public) transcriptChars=\(transcript.count)")
+        let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+        Telemetry.record(.recordingOutcome(outcome: .watchdogExpired, durationMS: durationMS, transcript: transcript))
         cleanupRecordingPipeline(markNotRecording: true, reason: "finishWatchdog")
         error = .recordingFailed("识别超时")
     }
@@ -551,6 +558,8 @@ final class VoiceInputManager: VoiceInputProtocol {
                     // 超时，自动停止（已在主线程，直接调用）
                     isSilenceDetected = true
                     VoiceTodoLog.voice.info("recording.silence_detected id=\(recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) thresholdDB=\(VoiceConstants.silenceThresholdDB)")
+                    let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+                    Telemetry.record(.recordingOutcome(outcome: .silenceTimeout, durationMS: durationMS, transcript: transcript))
                     stopRecording()
                 }
             }

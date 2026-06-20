@@ -114,6 +114,7 @@ struct TodoTimelineProvider: TimelineProvider {
 
         } catch {
             VoiceTodoLog.widget.error("widget.todos.fetch_failed limit=\(limit) recentCutoffSet=\(recentCompletionCutoff != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            Telemetry.record(.widgetLoadFailed(reason: Telemetry.reason(for: error)))
             return TodoEntry(date: date, todos: [], loadState: .error)
         }
     }

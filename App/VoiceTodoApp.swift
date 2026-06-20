@@ -153,6 +153,8 @@ struct VoiceTodoApp: App {
         TelemetryUploader.shared.registerBackgroundTask()
         TelemetryUploader.shared.scheduleNextRun()
         VoiceTodoLog.app.info("app.init.finished durationMS=\(VoiceTodoLog.durationMS(since: appStart)) storageError=\(storageError != nil)")
+        // app_launch 遥测：coldLaunch 区分靠 scenePhase（此处视为冷启动，热启动不重新 init）
+        Telemetry.record(.appLaunch(coldLaunch: true, hasCompletedOnboarding: hasCompletedOnboarding))
     }
 
     // MARK: - Body

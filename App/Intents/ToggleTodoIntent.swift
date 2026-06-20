@@ -30,6 +30,7 @@ struct ToggleTodoIntent: AppIntent {
             container = try AppGroupModelContainerProvider.writable()
         } catch {
             VoiceTodoLog.intent.error("intent.toggle.container_failed id=\(intentID, privacy: .public) todoID=\(uuid.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            Telemetry.record(.intentFailed(operation: "toggle", stage: "container"))
             recordInteractionFailure(todoID: uuid)
             return .result()
         }
@@ -50,9 +51,11 @@ struct ToggleTodoIntent: AppIntent {
             }
         } catch let error as ToggleTodoMutationError {
             VoiceTodoLog.intent.error("intent.toggle.\(error.stage.rawValue, privacy: .public)_failed id=\(intentID, privacy: .public) todoID=\(uuid.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error.underlying), privacy: .public)")
+            Telemetry.record(.intentFailed(operation: "toggle", stage: error.stage.rawValue))
             recordInteractionFailure(todoID: uuid)
         } catch {
             VoiceTodoLog.intent.error("intent.toggle.failed id=\(intentID, privacy: .public) todoID=\(uuid.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            Telemetry.record(.intentFailed(operation: "toggle", stage: "unknown"))
             recordInteractionFailure(todoID: uuid)
         }
 

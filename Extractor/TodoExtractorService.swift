@@ -45,6 +45,12 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 let result = try parseResponse(responseText)
 
                 VoiceTodoLog.extractor.info("extract.success id=\(extractionID, privacy: .public) attempt=\(attempt) todos=\(result.todos.count) ignoredChars=\(result.ignored.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                Telemetry.record(.extractOutcome(
+                    outcome: .success,
+                    todosCount: result.todos.count,
+                    durationMS: VoiceTodoLog.durationMS(since: startedAt),
+                    attempts: attempt + 1
+                ))
                 return result
 
             } catch {
@@ -71,6 +77,10 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
         // 所有重试都失败
         VoiceTodoLog.extractor.error("extract.failed id=\(extractionID, privacy: .public) attempts=\(NetworkConfig.retryCount + 1) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) lastError=\(lastError.map(VoiceTodoLog.errorSummary) ?? "none", privacy: .public)")
+        Telemetry.record(.extractFailed(
+            reason: lastError.map { Telemetry.reason(for: $0) } ?? "unknown",
+            attempt: NetworkConfig.retryCount + 1
+        ))
         throw lastError ?? VoiceTodoError.apiResponseInvalid("Unknown error")
     }
 
@@ -80,6 +90,12 @@ final class TodoExtractorService: TodoExtractorProtocol {
     func fallbackExtract(from transcript: String) -> ExtractionResult {
         let title = TextUtils.truncateTitle(from: transcript)
         VoiceTodoLog.extractor.info("extract.fallback id=\(VoiceTodoLog.makeID("fallback"), privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) titleChars=\(title.count)")
+        Telemetry.record(.extractOutcome(
+            outcome: .offlineFallback,
+            todosCount: 1,
+            durationMS: 0,
+            attempts: 0
+        ))
 
         let todo = ExtractedTodo(
             id: UUID(),

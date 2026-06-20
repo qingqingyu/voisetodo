@@ -226,6 +226,7 @@ struct ConfirmSheetView: View {
         let success = onConfirm(todos)
 
         if success {
+            Telemetry.record(.todoSaved(source: .confirm, count: todos.count))
             didFinish = true
             withAnimation(WarmAnimation.springBouncy) {
                 showSuccess = true

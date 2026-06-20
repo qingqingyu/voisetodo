@@ -40,6 +40,15 @@ enum Telemetry {
         TelemetryQueue.enqueue(payload, now: now)
         VoiceTodoLog.app.debug("telemetry.enqueue name=\(event.name, privacy: .public) queueSize=\(TelemetryQueue.count())")
     }
+
+    /// 提取错误的稳定 reason 字符串（用 case 名，去掉关联值）。
+    /// 例：`VoiceTodoError.microphonePermissionDenied` → "microphonePermissionDenied"
+    /// 例：`URLError(_NSURLErrorDomain: ...) → "URLError"
+    /// 用于遥测参数，避免暴露具体错误内容（可能含 PII）。
+    static func reason(for error: Error) -> String {
+        let desc = String(describing: error)
+        return desc.split(separator: "(").first.map(String.init) ?? desc
+    }
 }
 
 /// 遥测事件清单。所有 case 必须给出 `name` 和脱敏后的 `params`。

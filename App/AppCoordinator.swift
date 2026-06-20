@@ -115,12 +115,16 @@ final class AppCoordinator: ObservableObject {
         }
         let flowID = VoiceTodoLog.makeID("coord-record")
         let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.recording.start id=\(flowID, privacy: .public)")
+        // source 推断：actionButton 路径在 handleActionButtonLaunch 里 isAutoProcessing=true 后才调 startRecording
+        let source: RecordingSource = isAutoProcessing ? .actionButton : .button
+        VoiceTodoLog.coordinator.info("coordinator.recording.start id=\(flowID, privacy: .public) source=\(source.rawValue, privacy: .public)")
         do {
             try await voiceInput.startRecording()
             VoiceTodoLog.coordinator.info("coordinator.recording.started id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            Telemetry.record(.recordingStarted(source: source))
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.recording.start_failed id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            Telemetry.record(.recordingFailed(reason: Telemetry.reason(for: error), errorCode: nil))
             handleError(error)
         }
     }
