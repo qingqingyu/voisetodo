@@ -149,6 +149,9 @@ struct VoiceTodoApp: App {
             extractor: extractor,
             store: store
         ))
+        // BGTask 必须在 App 启动早期同步注册（before scene starts）
+        TelemetryUploader.shared.registerBackgroundTask()
+        TelemetryUploader.shared.scheduleNextRun()
         VoiceTodoLog.app.info("app.init.finished durationMS=\(VoiceTodoLog.durationMS(since: appStart)) storageError=\(storageError != nil)")
     }
 
@@ -252,6 +255,8 @@ struct VoiceTodoApp: App {
             break
         case .background:
             coordinator.cancelRecordingDueToInterruption()
+            // 调度遥测批量上报（系统会在「充电 + 网络」满足时触发）
+            TelemetryUploader.shared.scheduleNextRun()
         @unknown default:
             break
         }

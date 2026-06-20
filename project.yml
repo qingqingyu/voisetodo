@@ -98,6 +98,8 @@ targets:
         NSCalendarsWriteOnlyAccessUsageDescription: "VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历"
         UIBackgroundModes:
           - audio
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.voicetodo.app.telemetry-upload
     dependencies:
       - target: VoiceTodoWidget
         embed: true
