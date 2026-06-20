@@ -40,23 +40,26 @@ final class TodoStore: TodoStoreProtocol {
         VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) titleChars=\(item.title.count)")
         let todoItem = TodoItem.from(item)
         todoItem.sortOrder = try nextSortOrderForNewItem()
+        todoItem.localeIdentifier = Locale.current.identifier
         modelContext.insert(todoItem)
 
         try saveOrRollback()
         todos.insert(todoItem.toData(), at: 0)
-        VoiceTodoLog.store.info("store.add.success id=\(item.id.uuidString, privacy: .public) sortOrder=\(todoItem.sortOrder) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add.success id=\(item.id.uuidString, privacy: .public) sortOrder=\(todoItem.sortOrder) locale=\(todoItem.localeIdentifier ?? "nil", privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 批量添加（确认界面用）
     /// - Parameter items: AI 提取的待办数组
     func addBatch(_ items: [ExtractedTodo]) throws {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        let localeIdentifier = Locale.current.identifier
+        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) locale=\(localeIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
         var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item)
             todoItem.sortOrder = baseSortOrder
+            todoItem.localeIdentifier = localeIdentifier
             baseSortOrder -= 1
             modelContext.insert(todoItem)
             newTodos.append(todoItem.toData())
@@ -64,7 +67,7 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) locale=\(localeIdentifier, privacy: .public) total=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 添加原始转写文本（离线降级用）[v2]

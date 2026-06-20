@@ -24,6 +24,9 @@ final class TodoItem {
     var needsAIProcessing: Bool
     var sortOrder: Int
     var systemCalendarEventIdentifier: String?
+    /// 创建时的语言标识（如 "zh-Hans" / "en-US"），用于词汇学习按正确 locale 归档。
+    /// Optional 字段：旧数据为 nil，回退到 voiceInput.currentLocale。
+    var localeIdentifier: String?
 
     // MARK: - Computed Properties
 
@@ -56,7 +59,8 @@ final class TodoItem {
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
         sortOrder: Int = 0,
-        systemCalendarEventIdentifier: String? = nil
+        systemCalendarEventIdentifier: String? = nil,
+        localeIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -76,6 +80,7 @@ final class TodoItem {
         self.needsAIProcessing = needsAIProcessing
         self.sortOrder = sortOrder
         self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
+        self.localeIdentifier = localeIdentifier
     }
 
     // MARK: - Conversion
@@ -98,7 +103,8 @@ final class TodoItem {
             rawTranscript: rawTranscript,
             needsAIProcessing: needsAIProcessing,
             sortOrder: sortOrder,
-            systemCalendarEventIdentifier: systemCalendarEventIdentifier
+            systemCalendarEventIdentifier: systemCalendarEventIdentifier,
+            localeIdentifier: localeIdentifier
         )
     }
 

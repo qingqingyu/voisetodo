@@ -758,6 +758,9 @@ struct TodoItemData: Identifiable, Codable, Hashable {
     var needsAIProcessing: Bool
     var sortOrder: Int
     var systemCalendarEventIdentifier: String?
+    /// 创建时的语言标识（如 "zh-Hans" / "en-US"），用于词汇学习按正确 locale 归档。
+    /// Optional：旧数据为 nil，回退到 voiceInput.currentLocale。
+    var localeIdentifier: String?
 
     init(
         id: UUID = UUID(),
@@ -774,7 +777,8 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
         sortOrder: Int = 0,
-        systemCalendarEventIdentifier: String? = nil
+        systemCalendarEventIdentifier: String? = nil,
+        localeIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -791,6 +795,7 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.needsAIProcessing = needsAIProcessing
         self.sortOrder = sortOrder
         self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
+        self.localeIdentifier = localeIdentifier
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -814,5 +819,6 @@ struct TodoItemData: Identifiable, Codable, Hashable {
         self.needsAIProcessing = false
         self.sortOrder = 0
         self.systemCalendarEventIdentifier = nil
+        self.localeIdentifier = nil
     }
 }
