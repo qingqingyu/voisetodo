@@ -5,8 +5,26 @@ compatibility_date = "2026-05-26"
 [vars]
 AI_PROVIDER = "anthropic"
 DAILY_REQUEST_LIMIT = "100"
+# 每设备每天遥测事件上限（默认 500）
+TELEMETRY_DAILY_LIMIT = "500"
+# 设备 ID 哈希 salt。生产环境强烈建议配置独立值（不复用 APP_TOKEN）。
+# 不配置时 fallback 到 APP_TOKEN，仍未配置则用 "voicetodo"（仅 dev 可接受）。
+# LOG_HASH_SALT = "please-generate-a-unique-salt"
 
 # Bind this after creating a KV namespace if you want per-device quotas.
 # [[kv_namespaces]]
 # binding = "RATE_LIMIT_KV"
 # id = "your-kv-namespace-id"
+
+# D1 数据库用于遥测事件存储。
+# 创建：`wrangler d1 create voicetodo-telemetry`，把返回的 database_id 填入。
+# 初始化 schema：`wrangler d1 execute voicetodo-telemetry --file=./schema.sql`
+# [[d1_databases]]
+# binding = "TELEMETRY_DB"
+# database_name = "voicetodo-telemetry"
+# database_id = "your-d1-database-id"
+
+# 每天 03:00 UTC 执行遥测事件 GC（删除 90 天前的数据）。
+# 必须配置 D1 binding 才生效；未配置时 cron 仍触发但 handler 直接跳过。
+# [triggers]
+# crons = ["0 3 * * *"]

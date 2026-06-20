@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleRequest } from "./worker.js";
+import { handleRequest, handleTelemetryBatch, handleScheduled } from "./worker.js";
 
 test("rejects missing app token when APP_TOKEN is configured", async () => {
   const response = await handleRequest(
@@ -386,6 +386,326 @@ function extractionJSON(title) {
 async function failingFetch() {
   throw new Error("provider should not be called");
 }
+
+// MARK: - Telemetry helpers
+
+function telemetryRequest(events, headers = {}) {
+  return new Request("https://proxy.test/v1/telemetry/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify({ events })
+  });
+}
+
+function makeTelemetryEvent(overrides = {}) {
+  return {
+    name: "test_event",
+    timestamp: Date.now(),
+    sessionID: "session-1",
+    deviceID: "sha256:client-should-be-ignored",
+    appVersion: "1.0.0",
+    iosVersion: "17.0",
+    params: { foo: "bar" },
+    ...overrides
+  };
+}
+
+function makeFakeD1() {
+  const insertedRows = [];
+  let lastSql = "";
+  return {
+    insertedRows,
+    prepare(sql) {
+      lastSql = sql;
+      return {
+        bind(...args) {
+          insertedRows.push({ sql: lastSql, args });
+          return this;
+        },
+        async run() {
+          return { meta: { changes: 1 } };
+        }
+      };
+    },
+    async batch(statements) {
+      const results = [];
+      for (const stmt of statements) {
+        results.push(await stmt.run());
+      }
+      return results;
+    }
+  };
+}
+
+function makeFakeKV(initial = {}) {
+  const store = { ...initial };
+  return {
+    store,
+    async get(key) {
+      return store[key] ?? null;
+    },
+    async put(key, value) {
+      store[key] = String(value);
+    }
+  };
+}
+
+function withMockedToday(dateString, fn) {
+  const original = Date.prototype.toISOString;
+  Date.prototype.toISOString = () => dateString;
+  return Promise.resolve(fn()).finally(() => {
+    Date.prototype.toISOString = original;
+  });
+}
+
+const baseTelemetryContext = { requestId: "r1", startedAt: Date.now(), deviceId: "sha256:dev1" };
+
+// MARK: - Telemetry tests
+
+test("telemetry rejects missing app token", async () => {
+  const db = makeFakeD1();
+  const response = await handleTelemetryBatch(
+    telemetryRequest([makeTelemetryEvent()]),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+  assert.equal(response.status, 401);
+  assert.equal(db.insertedRows.length, 0);
+});
+
+test("telemetry rejects when DB not configured", async () => {
+  const response = await handleTelemetryBatch(
+    telemetryRequest([makeTelemetryEvent()], { "X-App-Token": "token" }),
+    { APP_TOKEN: "token" },
+    baseTelemetryContext
+  );
+  assert.equal(response.status, 503);
+});
+
+test("telemetry 405 on GET", async () => {
+  const db = makeFakeD1();
+  const response = await handleTelemetryBatch(
+    new Request("https://proxy.test/v1/telemetry/events", { method: "GET" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+  assert.equal(response.status, 405);
+});
+
+test("telemetry rejects empty events array", async () => {
+  const db = makeFakeD1();
+  const response = await handleTelemetryBatch(
+    telemetryRequest([], { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+  assert.equal(response.status, 400);
+  assert.equal(db.insertedRows.length, 0);
+});
+
+test("telemetry rejects payload without events field", async () => {
+  const db = makeFakeD1();
+  const noFieldRequest = new Request("https://proxy.test/v1/telemetry/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-App-Token": "token" },
+    body: JSON.stringify({ foo: "bar" })
+  });
+  const response = await handleTelemetryBatch(
+    noFieldRequest,
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+  assert.equal(response.status, 400);
+});
+
+test("telemetry rejects all-invalid events", async () => {
+  const db = makeFakeD1();
+  const response = await handleTelemetryBatch(
+    telemetryRequest([
+      { name: "", timestamp: Date.now() },                              // name 空
+      { name: "ok", timestamp: "not-a-number" },                        // timestamp 非 number
+      { name: "ok", timestamp: Date.now(), params: "not-object" },      // params 非 object
+      { name: "ok", timestamp: Date.now(), params: { [`${"k".repeat(65)}`]: "v" } }  // param key 过长
+    ], { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+  assert.equal(response.status, 400);
+  assert.equal(db.insertedRows.length, 0);
+});
+
+test("telemetry accepts valid events and writes to D1", async () => {
+  const db = makeFakeD1();
+  const events = [
+    makeTelemetryEvent({ name: "recording_started" }),
+    makeTelemetryEvent({ name: "todo_saved" })
+  ];
+  const response = await handleTelemetryBatch(
+    telemetryRequest(events, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.accepted, 2);
+  assert.equal(data.dropped, 0);
+
+  assert.equal(db.insertedRows.length, 2);
+  // args 顺序：received_at, event_name, event_timestamp, session_id, device_id, app_version, ios_version, params
+  assert.equal(db.insertedRows[0].args[1], "recording_started");
+  assert.equal(db.insertedRows[1].args[1], "todo_saved");
+});
+
+test("telemetry uses requestContext device ID, not client-submitted", async () => {
+  const db = makeFakeD1();
+  const response = await handleTelemetryBatch(
+    telemetryRequest(
+      [makeTelemetryEvent({ deviceID: "sha256:client-should-be-ignored" })],
+      { "X-App-Token": "token" }
+    ),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    { requestId: "r1", startedAt: Date.now(), deviceId: "sha256:from-proxy" }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(db.insertedRows[0].args[4], "sha256:from-proxy");
+});
+
+test("telemetry caps batch at 100 events", async () => {
+  const db = makeFakeD1();
+  const events = Array.from({ length: 150 }, (_, i) => makeTelemetryEvent({ name: `e${i}` }));
+  const response = await handleTelemetryBatch(
+    telemetryRequest(events, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.accepted, 100);
+  assert.equal(data.dropped, 50);
+  assert.equal(db.insertedRows.length, 100);
+});
+
+test("telemetry partial accept when quota partially exhausted", async () => {
+  const db = makeFakeD1();
+  const kv = makeFakeKV();  // 空，配额全可用
+  const ctx = { requestId: "r1", startedAt: Date.now(), deviceId: "sha256:dev1" };
+  // 先塞入已用 498
+  kv.store["telemetry-quota:2026-06-20:sha256:dev1"] = "498";
+
+  await withMockedToday("2026-06-20T00:00:00.000Z", async () => {
+    const response = await handleTelemetryBatch(
+      telemetryRequest(
+        Array.from({ length: 4 }, (_, i) => makeTelemetryEvent({ name: `e${i}` })),
+        { "X-App-Token": "token" }
+      ),
+      {
+        APP_TOKEN: "token",
+        TELEMETRY_DB: db,
+        RATE_LIMIT_KV: kv,
+        TELEMETRY_DAILY_LIMIT: "500"
+      },
+      ctx
+    );
+
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.accepted, 2);   // 500 - 498 = 2
+    assert.equal(data.dropped, 2);
+    assert.equal(db.insertedRows.length, 2);
+    // KV 应该累加到 500
+    assert.equal(kv.store["telemetry-quota:2026-06-20:sha256:dev1"], "500");
+  });
+});
+
+test("telemetry rejects when quota fully exhausted", async () => {
+  const db = makeFakeD1();
+  const kv = makeFakeKV();
+  kv.store["telemetry-quota:2026-06-20:sha256:dev1"] = "500";
+  const ctx = { requestId: "r1", startedAt: Date.now(), deviceId: "sha256:dev1" };
+
+  await withMockedToday("2026-06-20T00:00:00.000Z", async () => {
+    await assert.rejects(
+      handleTelemetryBatch(
+        telemetryRequest([makeTelemetryEvent()], { "X-App-Token": "token" }),
+        {
+          APP_TOKEN: "token",
+          TELEMETRY_DB: db,
+          RATE_LIMIT_KV: kv,
+          TELEMETRY_DAILY_LIMIT: "500"
+        },
+        ctx
+      ),
+      /quota exceeded/i
+    );
+    assert.equal(db.insertedRows.length, 0);
+  });
+});
+
+test("telemetry skips quota when KV not configured", async () => {
+  const db = makeFakeD1();
+  const events = Array.from({ length: 10 }, (_, i) => makeTelemetryEvent({ name: `e${i}` }));
+  const response = await handleTelemetryBatch(
+    telemetryRequest(events, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },  // 无 RATE_LIMIT_KV
+    baseTelemetryContext
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.accepted, 10);  // 全部接受，无配额限制
+});
+
+test("telemetry routes via handleRequest", async () => {
+  const db = makeFakeD1();
+  const response = await handleRequest(
+    telemetryRequest([makeTelemetryEvent()], { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    {},
+    failingFetch
+  );
+  assert.equal(response.status, 200);
+  assert.equal(db.insertedRows.length, 1);
+});
+
+test("scheduled handler skips when DB not configured", async () => {
+  await handleScheduled({});  // 不抛错即可
+});
+
+test("scheduled handler deletes events older than retention", async () => {
+  let deletedCutoff = null;
+  const db = {
+    prepare() {
+      return {
+        bind(cutoff) {
+          deletedCutoff = cutoff;
+          return this;
+        },
+        async run() {
+          return { meta: { changes: 42 } };
+        }
+      };
+    }
+  };
+  await handleScheduled({ TELEMETRY_DB: db });
+  assert.ok(deletedCutoff !== null);
+  const expectedCutoff = Date.now() - 90 * 24 * 3600 * 1000;
+  assert.ok(Math.abs(deletedCutoff - expectedCutoff) < 5000);  // 5s 容差
+});
+
+test("scheduled handler swallows DB errors", async () => {
+  const db = {
+    prepare() {
+      return {
+        bind() { return this; },
+        async run() { throw new Error("D1 unavailable"); }
+      };
+    }
+  };
+  await handleScheduled({ TELEMETRY_DB: db });  // 不抛错即可
+});
 
 async function captureConsole(operation) {
   const originalLog = console.log;

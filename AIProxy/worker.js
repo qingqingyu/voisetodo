@@ -1,10 +1,16 @@
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TRANSCRIPT_CHARS = 4000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+const MAX_TELEMETRY_BODY_BYTES = 256 * 1024;
+const MAX_TELEMETRY_EVENTS_PER_BATCH = 100;
+const TELEMETRY_RETENTION_DAYS = 90;
 
 export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, env, ctx, fetch);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(handleScheduled(env));
   }
 };
 
@@ -13,6 +19,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
   logInfo("proxy.request.received", requestContext);
   try {
     const url = new URL(request.url);
+
+    // Telemetry 路由：批量上报匿名事件到 D1
+    if (url.pathname === "/v1/telemetry/events") {
+      return await handleTelemetryBatch(request, env, requestContext);
+    }
+
     if (url.pathname !== "/v1/todo-extractions") {
       return finishRequest(new Response("Not Found", { status: 404 }), requestContext, { reason: "not_found" });
     }
@@ -82,6 +94,160 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     logError("proxy.request.failed", { ...requestContext, ...errorFields(error) });
     return finishRequest(new Response("AI proxy failed", { status: 502 }), requestContext, { error: "AI proxy failed" });
+  }
+}
+
+// MARK: - Telemetry batch handler
+
+export async function handleTelemetryBatch(request, env, requestContext) {
+  if (request.method !== "POST") {
+    return finishRequest(new Response("Method Not Allowed", { status: 405 }), requestContext, { reason: "method_not_allowed" });
+  }
+
+  const authError = validateAppToken(request, env);
+  if (authError) {
+    logWarn("telemetry.auth.failed", { ...requestContext, status: authError.response.status, reason: authError.reason });
+    return finishRequest(authError.response, requestContext, { reason: authError.reason });
+  }
+
+  if (!env.TELEMETRY_DB) {
+    logWarn("telemetry.db_not_configured", requestContext);
+    return finishRequest(new Response("Telemetry DB not configured", { status: 503 }), requestContext, { reason: "db_not_configured" });
+  }
+
+  const declaredLength = Number(request.headers.get("content-length") || "0");
+  if (declaredLength > MAX_TELEMETRY_BODY_BYTES) {
+    return finishRequest(new Response("Request too large", { status: 413 }), requestContext, {
+      reason: "telemetry_body_too_large",
+      declaredLength
+    });
+  }
+
+  const payload = await readPayloadWithLimit(request, MAX_TELEMETRY_BODY_BYTES);
+  const originalCount = Array.isArray(payload.events) ? payload.events.length : 0;
+  const rawEvents = Array.isArray(payload.events) ? payload.events.slice(0, MAX_TELEMETRY_EVENTS_PER_BATCH) : [];
+  if (rawEvents.length === 0) {
+    return finishRequest(new Response("No events", { status: 400 }), requestContext, { reason: "no_events" });
+  }
+
+  const validEvents = rawEvents.filter(isValidTelemetryEvent);
+  if (validEvents.length === 0) {
+    logWarn("telemetry.no_valid_events", { ...requestContext, rawCount: rawEvents.length });
+    return finishRequest(new Response("No valid events", { status: 400 }), requestContext, { reason: "no_valid_events" });
+  }
+
+  // 设备级配额（默认 500/天，可通过 TELEMETRY_DAILY_LIMIT 配置）
+  const quotaResult = await enforceTelemetryQuota(env, requestContext.deviceId, validEvents.length, requestContext);
+  const acceptedEvents = validEvents.slice(0, quotaResult.acceptable);
+  const dropped = originalCount - acceptedEvents.length;
+
+  const receivedAt = Date.now();
+  const stmt = env.TELEMETRY_DB.prepare(
+    `INSERT INTO telemetry_events
+       (received_at, event_name, event_timestamp, session_id, device_id, app_version, ios_version, params)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const statements = acceptedEvents.map((event) => stmt.bind(
+    receivedAt,
+    String(event.name),
+    Number(event.timestamp) || receivedAt,
+    String(event.sessionID || "missing"),
+    requestContext.deviceId,  // 用 requestContext 的 sha256 hash，不信任 client 提交的 deviceID
+    String(event.appVersion || "unknown"),
+    String(event.iosVersion || "unknown"),
+    JSON.stringify(event.params || {})
+  ));
+  await env.TELEMETRY_DB.batch(statements);
+
+  logInfo("telemetry.events.accepted", {
+    ...requestContext,
+    accepted: acceptedEvents.length,
+    dropped,
+    quotaRemaining: quotaResult.remainingAfter
+  });
+
+  return finishRequest(new Response(JSON.stringify({
+    accepted: acceptedEvents.length,
+    dropped
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+  }), requestContext, {
+    accepted: acceptedEvents.length,
+    dropped
+  });
+}
+
+function isValidTelemetryEvent(event) {
+  if (!event || typeof event !== "object") return false;
+  if (typeof event.name !== "string" || event.name.length === 0 || event.name.length > 64) return false;
+  if (typeof event.timestamp !== "number" || !Number.isFinite(event.timestamp)) return false;
+  // params 上限保护
+  const params = event.params;
+  if (params !== undefined && params !== null) {
+    if (typeof params !== "object" || Array.isArray(params)) return false;
+    const entries = Object.entries(params);
+    if (entries.length > 32) return false;
+    for (const [key, value] of entries) {
+      if (typeof key !== "string" || key.length > 64) return false;
+      if (typeof value !== "string" || value.length > 256) return false;
+    }
+  }
+  return true;
+}
+
+async function enforceTelemetryQuota(env, hashedDeviceId, requested, requestContext) {
+  const limit = Number(env.TELEMETRY_DAILY_LIMIT || 500);
+  if (!env.RATE_LIMIT_KV) {
+    logInfo("telemetry.quota.skipped", { ...requestContext, reason: "kv_not_configured" });
+    return { acceptable: requested, remainingAfter: Infinity };
+  }
+  if (!Number.isFinite(limit) || limit <= 0) {
+    logWarn("telemetry.quota.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.TELEMETRY_DAILY_LIMIT });
+    return { acceptable: requested, remainingAfter: Infinity };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `telemetry-quota:${today}:${hashedDeviceId}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  const remaining = Math.max(0, limit - current);
+  if (remaining === 0) {
+    logWarn("telemetry.quota.exceeded", { ...requestContext, current, limit });
+    throw new ProxyHTTPError(429, "Telemetry daily quota exceeded");
+  }
+  const acceptable = Math.min(requested, remaining);
+  await env.RATE_LIMIT_KV.put(key, String(current + acceptable), { expirationTtl: 36 * 60 * 60 });
+  logInfo("telemetry.quota.incremented", { ...requestContext, current: current + acceptable, limit });
+  return { acceptable, remainingAfter: limit - current - acceptable };
+}
+
+async function readPayloadWithLimit(request, maxBytes) {
+  try {
+    const text = await readRequestTextWithLimit(request, maxBytes);
+    return JSON.parse(text);
+  } catch (error) {
+    if (error instanceof ProxyHTTPError) {
+      throw error;
+    }
+    throw new ProxyHTTPError(400, "Invalid JSON", { cause: error });
+  }
+}
+
+// MARK: - Scheduled handler (90 天 GC)
+
+export async function handleScheduled(env) {
+  if (!env.TELEMETRY_DB) {
+    logInfo("telemetry.cron.skipped", { reason: "db_not_configured" });
+    return;
+  }
+  const cutoff = Date.now() - TELEMETRY_RETENTION_DAYS * 24 * 3600 * 1000;
+  try {
+    const result = await env.TELEMETRY_DB.prepare("DELETE FROM telemetry_events WHERE received_at < ?")
+      .bind(cutoff)
+      .run();
+    logInfo("telemetry.cron.gc_done", { cutoff, deleted: result.meta?.changes ?? "unknown" });
+  } catch (error) {
+    logError("telemetry.cron.gc_failed", errorFields(error));
   }
 }
 
