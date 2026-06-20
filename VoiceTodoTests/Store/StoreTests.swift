@@ -28,7 +28,7 @@ final class StoreTests: XCTestCase {
 
         // 创建内存数据库用于测试
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        modelContainer = try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        modelContainer = try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
         modelContext = modelContainer.mainContext
         sut = TodoStore(modelContext: modelContext)
     }
@@ -219,6 +219,17 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(sut.todos[0].title, "任务3")  // 按时间倒序
         XCTAssertEqual(sut.todos[1].title, "任务2")
         XCTAssertEqual(sut.todos[2].title, "任务1")
+    }
+
+    func testAddBatchPreservesInputLocale() throws {
+        let items = [
+            ExtractedTodo(title: "Review notes", categoryHint: .work),
+            ExtractedTodo(title: "Email Alex", categoryHint: .work)
+        ]
+
+        try sut.addBatch(items, localeIdentifier: "en-US")
+
+        XCTAssertEqual(sut.todos.map(\.localeIdentifier), ["en-US", "en-US"])
     }
 
     // MARK: - Test ToggleComplete
@@ -473,15 +484,177 @@ final class StoreTests: XCTestCase {
         let transcript = "这是一段需要后续 AI 处理的原始语音转写文本，很长很长"
 
         // When: 添加原始转写
-        try sut.addRawTranscript(transcript)
+        let created = try sut.addRawTranscript(transcript)
 
         // Then: needsAIProcessing == true
         XCTAssertEqual(sut.todos.count, 1)
+        XCTAssertEqual(created.id, sut.todos[0].id)
         XCTAssertTrue(sut.todos[0].needsAIProcessing)
         XCTAssertEqual(sut.todos[0].rawTranscript, transcript)
         // 标题使用当前的智能截断策略
         XCTAssertEqual(sut.todos[0].title, TextUtils.truncateTitle(from: transcript))
         XCTAssertEqual(sut.todos[0].detail, transcript)
+    }
+
+    // MARK: - VoiceCaptureHistoryStore
+
+    func testVoiceHistoryCreateRecord() throws {
+        let historyStore = VoiceCaptureHistoryStore(modelContext: modelContext)
+
+        let record = try historyStore.createRecord(
+            transcript: "明天提醒我带伞",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date(timeIntervalSince1970: 100)
+        )
+
+        XCTAssertEqual(historyStore.loadState, .success)
+        XCTAssertEqual(historyStore.records.map(\.id), [record.id])
+        XCTAssertEqual(record.transcript, "明天提醒我带伞")
+        XCTAssertEqual(record.status, .processing)
+        XCTAssertEqual(record.source, .recordButton)
+        XCTAssertEqual(record.localeIdentifier, "zh-Hans")
+    }
+
+    func testVoiceHistoryCreateRecordKeepsCreatedAtDescendingOrder() throws {
+        let historyStore = VoiceCaptureHistoryStore(modelContext: modelContext)
+        let newer = try historyStore.createRecord(
+            transcript: "新的历史",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let older = try historyStore.createRecord(
+            transcript: "旧的历史",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date(timeIntervalSince1970: 100)
+        )
+
+        XCTAssertEqual(historyStore.records.map(\.id), [newer.id, older.id])
+    }
+
+    func testVoiceHistoryUpdateRecord() throws {
+        let historyStore = VoiceCaptureHistoryStore(modelContext: modelContext)
+        let todoID = UUID()
+        let pendingID = UUID()
+        let record = try historyStore.createRecord(
+            transcript: "更新一下历史状态",
+            source: .actionButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+
+        let updated = try historyStore.updateRecord(
+            id: record.id,
+            status: .saved,
+            generatedTodoIDs: [todoID],
+            generatedTodoCount: 99,
+            pendingTodoLink: .clear,
+            errorMessage: nil
+        )
+
+        XCTAssertEqual(updated.status, .saved)
+        XCTAssertEqual(updated.generatedTodoIDs, [todoID])
+        // generatedTodoIDs 是来源事实，存储层会防御调用方传入不一致的 count。
+        XCTAssertEqual(updated.generatedTodoCount, 1)
+        XCTAssertNil(updated.pendingTodoID)
+        XCTAssertNil(try historyStore.recordLinkedToPendingTodo(id: pendingID))
+        XCTAssertEqual(historyStore.records.first?.status, .saved)
+    }
+
+    func testVoiceHistoryDeleteRecord() throws {
+        let historyStore = VoiceCaptureHistoryStore(modelContext: modelContext)
+        let record = try historyStore.createRecord(
+            transcript: "删掉这条历史",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+
+        try historyStore.deleteRecord(id: record.id)
+
+        XCTAssertTrue(historyStore.records.isEmpty)
+        XCTAssertEqual(historyStore.loadState, .empty)
+    }
+
+    func testVoiceHistoryCleanupExpiredRecords() throws {
+        let historyStore = VoiceCaptureHistoryStore(modelContext: modelContext)
+        let now = Date(timeIntervalSince1970: 31 * 24 * 60 * 60)
+        _ = try historyStore.createRecord(
+            transcript: "31 天前的历史",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date(timeIntervalSince1970: 0)
+        )
+        let fresh = try historyStore.createRecord(
+            transcript: "今天的历史",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: now
+        )
+
+        try historyStore.cleanupExpiredRecords(now: now)
+
+        XCTAssertEqual(historyStore.records.map(\.id), [fresh.id])
+    }
+
+    func testVoiceHistoryRefreshFailureSetsErrorLoadState() throws {
+        let historyStore = VoiceCaptureHistoryStore(
+            modelContext: modelContext,
+            fetchRecordsAction: { _, _ in
+                throw VoiceTodoError.storageReadFailed("forced")
+            }
+        )
+
+        historyStore.refreshRecords()
+
+        XCTAssertEqual(historyStore.loadState, .error)
+        XCTAssertTrue(historyStore.records.isEmpty)
+    }
+
+    // MARK: - VoiceCaptureHistoryStore pending reset
+
+    func testVoiceHistoryUpdateToNoTodosClearsPendingTodoID() throws {
+        let historyStore = VoiceCaptureHistoryStore(modelContext: modelContext)
+        let pendingID = UUID()
+        let record = try historyStore.createRecord(
+            transcript: "先离线保存再 reprocess",
+            source: .actionButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+
+        // When: pending 已处理且没有生成待办
+        let reprocessed = try historyStore.updateRecord(
+            id: record.id,
+            status: .noTodos,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .clear,
+            errorMessage: nil
+        )
+
+        // Then: 终态会清空 pendingTodoID，避免后续误关联已删除的 pending
+        XCTAssertNil(reprocessed.pendingTodoID)
+        XCTAssertNil(historyStore.records.first?.pendingTodoID)
     }
 
     // MARK: - Test ReplacePendingWithExtracted [v2]
@@ -526,6 +699,40 @@ final class StoreTests: XCTestCase {
         // Then: rawTranscript 被保留
         XCTAssertEqual(sut.todos.count, 1)
         XCTAssertEqual(sut.todos[0].rawTranscript, transcript)
+    }
+
+    func testReplacePendingWithExtractedPreservesPendingLocale() throws {
+        let transcript = "review the English notes"
+        let pending = try sut.addRawTranscript(transcript, localeIdentifier: "en-US")
+
+        let extractedItems = [
+            ExtractedTodo(title: "Review English notes", categoryHint: .study)
+        ]
+        try sut.replacePendingWithExtracted(pending.id, extractedItems)
+
+        XCTAssertEqual(sut.todos.count, 1)
+        XCTAssertEqual(sut.todos[0].localeIdentifier, "en-US")
+    }
+
+    func testReplacePendingBatchPreservesPerExtractedTodoLocale() throws {
+        let englishPending = try sut.addRawTranscript("english pending", localeIdentifier: "en-US")
+        let chinesePending = try sut.addRawTranscript("中文 pending", localeIdentifier: "zh-Hans")
+        let englishTodoID = UUID()
+        let chineseTodoID = UUID()
+        let extractedItems = [
+            ExtractedTodo(id: englishTodoID, title: "Review English notes", localeIdentifier: "en-US"),
+            ExtractedTodo(id: chineseTodoID, title: "整理中文笔记", localeIdentifier: "zh-Hans")
+        ]
+
+        try sut.replacePendingBatchWithExtracted(
+            [englishPending.id, chinesePending.id],
+            extractedItems,
+            rawTranscript: nil
+        )
+
+        let savedLocales = Dictionary(uniqueKeysWithValues: sut.todos.map { ($0.id, $0.localeIdentifier) })
+        XCTAssertEqual(savedLocales[englishTodoID] ?? nil, "en-US")
+        XCTAssertEqual(savedLocales[chineseTodoID] ?? nil, "zh-Hans")
     }
 
     // MARK: - Test toData() Conversion [v2]

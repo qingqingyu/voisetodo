@@ -440,6 +440,28 @@ final class AppCoordinatorTests: XCTestCase {
         )
     }
 
+    func testManualInputKeepsPartialTodosWhenLaterPartialIsEmpty() async {
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(
+                todos: [ExtractedTodo(title: "先识别到的待办", detail: "先识别到的待办")],
+                ignored: ""
+            ),
+            ExtractionResult(todos: [], ignored: "empty final")
+        ]
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: CoordinatorTestStore(),
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.processManualInput("先识别到待办，最后一个 partial 为空")
+
+        XCTAssertTrue(coordinator.showConfirmSheet)
+        XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["先识别到的待办"])
+    }
+
     func testHandleAppForegroundKeepsInvalidPendingWhenDeleteFails() async {
         let pendingId = UUID()
         let invalidPending = TodoItemData(
@@ -463,14 +485,700 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
     }
 
-    private func pendingTodo(id: UUID, transcript: String) -> TodoItemData {
+    func testHandleAppForegroundClearsHistoryLinkWhenInvalidPendingDeleted() async {
+        let pendingId = UUID()
+        let invalidPending = TodoItemData(
+            id: pendingId,
+            title: "orphan pending",
+            needsAIProcessing: true
+        )
+        let store = CoordinatorTestStore(todos: [invalidPending])
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "orphan pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingId),
+            errorMessage: nil
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore
+        )
+
+        await coordinator.handleAppForeground()
+
+        XCTAssertTrue(store.pendingItems().isEmpty)
+        XCTAssertEqual(historyStore.records.first?.status, .failed)
+        XCTAssertNil(historyStore.records.first?.pendingTodoID)
+        do {
+            XCTAssertNil(try historyStore.recordLinkedToPendingTodo(id: pendingId))
+        } catch {
+            XCTFail("Expected no linked history record, got error: \(error)")
+        }
+    }
+
+    func testHandleAppForegroundSurfacesPendingExtractionFailure() async {
+        let pendingID = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: pendingID, transcript: "恢复时失败")
+        ])
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "恢复时失败",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        let extractor = DelayedExtractor()
+        extractor.extractionErrors["恢复时失败"] = VoiceTodoError.apiResponseInvalid("broken pending")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.handleAppForeground()
+
+        XCTAssertEqual(store.pendingItems().map(\.id), [pendingID])
+        XCTAssertFalse(coordinator.showConfirmSheet)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, VoiceTodoError.apiResponseInvalid("broken pending").localizedDescription)
+        XCTAssertEqual(historyStore.records.first?.status, .failed)
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+        assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
+    }
+
+    func testVoiceCaptureHistorySavedAfterConfirm() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "明天提醒我买牛奶"
+        let historyStore = CoordinatorTestHistoryStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore(),
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.stopRecordingAndProcess()
+        XCTAssertEqual(historyStore.records.first?.status, .reviewing)
+
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        XCTAssertEqual(historyStore.records.first?.status, .saved)
+        XCTAssertEqual(historyStore.records.first?.generatedTodoCount, 1)
+        XCTAssertEqual(historyStore.records.first?.generatedTodoIDs, coordinator.extractedTodos.map(\.id))
+    }
+
+    func testVoiceCaptureHistoryUpdateFailureShowsWarning() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "明天提醒我买牛奶"
+        let historyStore = CoordinatorTestHistoryStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore(),
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+        historyStore.updateError = VoiceTodoError.storageWriteFailed("history unavailable")
+
+        await coordinator.stopRecordingAndProcess()
+
+        XCTAssertTrue(coordinator.showConfirmSheet)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.historyUpdateFailed)
+    }
+
+    func testVoiceCaptureHistoryNoTodosStatus() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "只是随便说一句"
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [ExtractionResult(todos: [], ignored: "nothing")]
+        let historyStore = CoordinatorTestHistoryStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: extractor,
+            store: CoordinatorTestStore(),
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.stopRecordingAndProcess()
+
+        XCTAssertEqual(historyStore.records.first?.status, .noTodos)
+    }
+
+    func testVoiceCaptureHistorySkipsEmptyVoiceTranscript() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "   "
+        let historyStore = CoordinatorTestHistoryStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore(),
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.stopRecordingAndProcess()
+
+        XCTAssertTrue(historyStore.records.isEmpty)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.noTodosFound)
+    }
+
+    func testCleanupExpiredVoiceHistoryFailureShowsWarningByDefault() {
+        let historyStore = CoordinatorTestHistoryStore()
+        historyStore.cleanupError = VoiceTodoError.storageWriteFailed("cleanup failed")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore(),
+            historyStore: historyStore
+        )
+
+        coordinator.cleanupExpiredVoiceHistory()
+
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.historyCleanupFailed)
+    }
+
+    func testVoiceCaptureHistoryCancelledWhenConfirmCancelled() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "明天提醒我买牛奶"
+        let historyStore = CoordinatorTestHistoryStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore(),
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.stopRecordingAndProcess()
+        coordinator.cancelTodos()
+
+        XCTAssertEqual(historyStore.records.first?.status, .cancelled)
+    }
+
+    func testVoiceCaptureHistoryPendingWhenOffline() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "离线时保存这句话"
+        let store = CoordinatorTestStore()
+        let historyStore = CoordinatorTestHistoryStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { false }
+        )
+
+        await coordinator.stopRecordingAndProcess()
+
+        XCTAssertEqual(historyStore.records.first?.status, .pending)
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, store.todos.first?.id)
+    }
+
+    func testReprocessHistoryFailureMarksFailedAndShowsToast() async {
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "重新提取会失败",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let extractor = DelayedExtractor()
+        extractor.streamingError = VoiceTodoError.apiResponseInvalid("broken")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: CoordinatorTestStore(),
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(record)
+
+        XCTAssertEqual(historyStore.records.first?.status, .failed)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, VoiceTodoError.apiResponseInvalid("broken").localizedDescription)
+    }
+
+    func testReprocessHistoryNoTodosKeepsPendingDeleteErrorToast() async {
+        let pendingID = UUID()
+        let store = CoordinatorTestStore(todos: [pendingTodo(id: pendingID, transcript: "旧 pending")])
+        store.deleteErrorIds.insert(pendingID)
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "这次没有待办",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let linkedRecord = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [ExtractionResult(todos: [], ignored: "nothing")]
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(linkedRecord)
+
+        XCTAssertEqual(store.pendingItems().map(\.id), [pendingID])
+        XCTAssertEqual(historyStore.records.first?.status, .failed)
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+        assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
+    }
+
+    func testReprocessHistoryConfirmFailsAtomicallyWhenPendingReplacementFails() async {
+        let pendingID = UUID()
+        let store = CoordinatorTestStore(todos: [pendingTodo(id: pendingID, transcript: "旧 pending")])
+        store.replaceError = VoiceTodoError.storageWriteFailed("replace failed")
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "重新提取这条 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let linkedRecord = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(linkedRecord)
+        let success = coordinator.confirmTodos(coordinator.extractedTodos)
+
+        XCTAssertFalse(success)
+        XCTAssertEqual(store.todos.map(\.id), [pendingID])
+        XCTAssertEqual(historyStore.records.first?.status, .failed)
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+        assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
+    }
+
+    func testReprocessHistoryRetryAfterReplacementFailureReplacesOriginalPending() async {
+        let pendingID = UUID()
+        let store = CoordinatorTestStore(todos: [pendingTodo(id: pendingID, transcript: "旧 pending")])
+        store.replaceError = VoiceTodoError.storageWriteFailed("replace failed")
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "重新提取这条 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let linkedRecord = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(linkedRecord)
+        XCTAssertFalse(coordinator.confirmTodos(coordinator.extractedTodos))
+        coordinator.cancelTodos()
+
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+
+        store.replaceError = nil
+        let retryRecord = historyStore.records[0]
+        await coordinator.reprocessHistoryRecord(retryRecord)
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        XCTAssertFalse(store.todos.contains { $0.id == pendingID })
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertEqual(historyStore.records.first?.status, .saved)
+        XCTAssertNil(historyStore.records.first?.pendingTodoID)
+    }
+
+    func testForegroundPendingCancelKeepsHistoryLinkedToPending() async {
+        let pendingID = UUID()
+        let store = CoordinatorTestStore(todos: [pendingTodo(id: pendingID, transcript: "前台恢复 pending")])
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "前台恢复 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.handleAppForeground()
+        XCTAssertTrue(coordinator.showConfirmSheet)
+        XCTAssertEqual(historyStore.records.first?.status, .reviewing)
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+
+        coordinator.cancelTodos()
+
+        XCTAssertEqual(historyStore.records.first?.status, .cancelled)
+        XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
+        assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
+    }
+
+    func testForegroundPendingConfirmWritesPerPendingGeneratedHistory() async {
+        let firstPendingID = UUID()
+        let secondPendingID = UUID()
+        let firstTodoID = UUID()
+        let secondTodoID = UUID()
+        let thirdTodoID = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: firstPendingID, transcript: "第一段 pending"),
+            pendingTodo(id: secondPendingID, transcript: "第二段 pending")
+        ])
+        let historyStore = CoordinatorTestHistoryStore()
+        let firstRecord = try! historyStore.createRecord(
+            transcript: "第一段 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let secondRecord = try! historyStore.createRecord(
+            transcript: "第二段 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try! historyStore.updateRecord(
+            id: firstRecord.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(firstPendingID),
+            errorMessage: nil
+        )
+        _ = try! historyStore.updateRecord(
+            id: secondRecord.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(secondPendingID),
+            errorMessage: nil
+        )
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["第一段 pending"] = ExtractionResult(
+            todos: [
+                ExtractedTodo(id: firstTodoID, title: "第一段任务一"),
+                ExtractedTodo(id: secondTodoID, title: "第一段任务二")
+            ],
+            ignored: ""
+        )
+        extractor.extractionResults["第二段 pending"] = ExtractionResult(
+            todos: [
+                ExtractedTodo(id: thirdTodoID, title: "第二段任务")
+            ],
+            ignored: ""
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.handleAppForeground()
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        let updatedFirst = historyStore.records.first { $0.id == firstRecord.id }
+        let updatedSecond = historyStore.records.first { $0.id == secondRecord.id }
+        XCTAssertEqual(updatedFirst?.status, .saved)
+        XCTAssertEqual(updatedFirst?.generatedTodoIDs, [firstTodoID, secondTodoID])
+        XCTAssertEqual(updatedFirst?.generatedTodoCount, 2)
+        XCTAssertNil(updatedFirst?.pendingTodoID)
+        XCTAssertEqual(updatedSecond?.status, .saved)
+        XCTAssertEqual(updatedSecond?.generatedTodoIDs, [thirdTodoID])
+        XCTAssertEqual(updatedSecond?.generatedTodoCount, 1)
+        XCTAssertNil(updatedSecond?.pendingTodoID)
+    }
+
+    func testForegroundPendingConfirmPreservesEachPendingLocaleOnSavedTodos() async {
+        let englishPendingID = UUID()
+        let chinesePendingID = UUID()
+        let englishTodoID = UUID()
+        let chineseTodoID = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: englishPendingID, transcript: "english pending", localeIdentifier: "en-US"),
+            pendingTodo(id: chinesePendingID, transcript: "中文 pending", localeIdentifier: "zh-Hans")
+        ])
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["english pending"] = ExtractionResult(
+            todos: [ExtractedTodo(id: englishTodoID, title: "Review English notes")],
+            ignored: ""
+        )
+        extractor.extractionResults["中文 pending"] = ExtractionResult(
+            todos: [ExtractedTodo(id: chineseTodoID, title: "整理中文笔记")],
+            ignored: ""
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.handleAppForeground()
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        let savedLocales = Dictionary(uniqueKeysWithValues: store.todos.map { ($0.id, $0.localeIdentifier) })
+        XCTAssertEqual(savedLocales[englishTodoID] ?? nil, "en-US")
+        XCTAssertEqual(savedLocales[chineseTodoID] ?? nil, "zh-Hans")
+    }
+
+    func testForegroundPendingConfirmLearnsVocabularyByEachPendingLocale() async {
+        let englishPendingID = UUID()
+        let chinesePendingID = UUID()
+        let vocabularyStore = makeVocabularyStore()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: englishPendingID, transcript: "english pending", localeIdentifier: "en-US"),
+            pendingTodo(id: chinesePendingID, transcript: "中文 pending", localeIdentifier: "zh-Hans")
+        ])
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["english pending"] = ExtractionResult(
+            todos: [ExtractedTodo(title: "Review Anki notes", detail: "Review Anki notes")],
+            ignored: ""
+        )
+        extractor.extractionResults["中文 pending"] = ExtractionResult(
+            todos: [ExtractedTodo(title: "复习 雅思 口语", detail: "复习 雅思 口语")],
+            ignored: ""
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true },
+            vocabularyStore: vocabularyStore
+        )
+
+        await coordinator.handleAppForeground()
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+        await waitForVocabulary(
+            store: vocabularyStore,
+            englishHint: "Anki",
+            chineseHint: "雅思"
+        )
+
+        XCTAssertTrue(vocabularyStore.vocabularyHints(localeIdentifier: "en-US", limit: 10).contains("Anki"))
+        XCTAssertTrue(vocabularyStore.vocabularyHints(localeIdentifier: "zh-Hans", limit: 10).contains("雅思"))
+    }
+
+    func testReprocessHistorySuccessDeletesLinkedPendingTodo() async {
+        let pendingID = UUID()
+        let store = CoordinatorTestStore(todos: [pendingTodo(id: pendingID, transcript: "旧 pending")])
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "重新提取这条 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let linkedRecord = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(pendingID),
+            errorMessage: nil
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(linkedRecord)
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        XCTAssertFalse(store.todos.contains { $0.id == pendingID })
+        XCTAssertEqual(historyStore.records.first?.status, .saved)
+        XCTAssertNil(historyStore.records.first?.pendingTodoID)
+        XCTAssertNil(try? historyStore.recordLinkedToPendingTodo(id: pendingID))
+    }
+
+    func testReprocessHistoryIgnoresLinkedTodoThatIsNoLongerPending() async {
+        let stalePendingID = UUID()
+        let existingSavedTodo = TodoItemData(
+            id: stalePendingID,
+            title: "已经保存的旧任务",
+            needsAIProcessing: false
+        )
+        let store = CoordinatorTestStore(todos: [existingSavedTodo])
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "重新提取但旧链接已不是 pending",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let linkedRecord = try! historyStore.updateRecord(
+            id: record.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(stalePendingID),
+            errorMessage: nil
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(linkedRecord)
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        XCTAssertTrue(store.todos.contains { $0.id == stalePendingID })
+        XCTAssertEqual(store.todos.count, 2)
+        XCTAssertEqual(historyStore.records.first?.status, .saved)
+        XCTAssertNil(historyStore.records.first?.pendingTodoID)
+    }
+
+    func testReprocessHistoryConfirmPreservesHistoryLocaleOnSavedTodo() async {
+        let store = CoordinatorTestStore()
+        let historyStore = CoordinatorTestHistoryStore()
+        let record = try! historyStore.createRecord(
+            transcript: "review English notes tomorrow",
+            source: .recordButton,
+            localeIdentifier: "en-US",
+            now: Date()
+        )
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.reprocessHistoryRecord(record)
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        XCTAssertEqual(store.todos.first?.localeIdentifier, "en-US")
+    }
+
+    private func pendingTodo(id: UUID, transcript: String, localeIdentifier: String? = nil) -> TodoItemData {
         TodoItemData(
             id: id,
             title: transcript,
             detail: transcript,
             rawTranscript: transcript,
-            needsAIProcessing: true
+            needsAIProcessing: true,
+            localeIdentifier: localeIdentifier
         )
+    }
+
+    private func makeVocabularyStore() -> UserVocabularyStore {
+        let suiteName = "VoiceTodoTests.AppCoordinator.Vocabulary.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        return UserVocabularyStore(defaults: defaults)
+    }
+
+    private func waitForVocabulary(
+        store: UserVocabularyStore,
+        englishHint: String,
+        chineseHint: String
+    ) async {
+        for _ in 0..<10 {
+            let englishHints = store.vocabularyHints(localeIdentifier: "en-US", limit: 10)
+            let chineseHints = store.vocabularyHints(localeIdentifier: "zh-Hans", limit: 10)
+            if englishHints.contains(englishHint), chineseHints.contains(chineseHint) {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    private func assertHistoryRecord(
+        _ historyStore: CoordinatorTestHistoryStore,
+        pendingID: UUID,
+        isLinkedTo recordID: UUID,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        do {
+            let record = try historyStore.recordLinkedToPendingTodo(id: pendingID)
+            XCTAssertEqual(record?.id, recordID, file: file, line: line)
+        } catch {
+            XCTFail("Expected linked history record, got error: \(error)", file: file, line: line)
+        }
     }
 }
 
@@ -506,6 +1214,8 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
 private final class DelayedExtractor: TodoExtractorProtocol {
     var delays: [String: UInt64]
     var onExtract: (() async -> Void)?
+    var extractionResults: [String: ExtractionResult] = [:]
+    var extractionErrors: [String: Error] = [:]
     var streamingResults: [ExtractionResult]?
     var streamingError: Error?
 
@@ -518,6 +1228,12 @@ private final class DelayedExtractor: TodoExtractorProtocol {
             try await Task.sleep(nanoseconds: delay)
         }
         await onExtract?()
+        if let error = extractionErrors[transcript] {
+            throw error
+        }
+        if let result = extractionResults[transcript] {
+            return result
+        }
         return ExtractionResult(
             todos: [ExtractedTodo(title: "extracted \(transcript)", detail: transcript)],
             ignored: ""
@@ -556,13 +1272,14 @@ private final class DelayedExtractor: TodoExtractorProtocol {
     }
 }
 
-private final class CoordinatorTestStore: TodoStoreProtocol {
+private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecoveryTodoStore, PendingTranscriptCreating, CalendarSyncTodoStore {
     @Published var todos: [TodoItemData]
     var deletedIds: [UUID] = []
     var deleteErrorIds: Set<UUID> = []
     var systemCalendarEventIdentifiers: [UUID: String] = [:]
     var onUpdateIdentifier: (() -> Void)?
     var identifierUpdateError: Error?
+    var replaceError: Error?
 
     init(todos: [TodoItemData] = []) {
         self.todos = todos
@@ -573,27 +1290,33 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
         )
     }
 
-    func add(_ item: ExtractedTodo) throws {
-        todos.insert(TodoItemData(from: item), at: 0)
-    }
-
     func addBatch(_ items: [ExtractedTodo]) throws {
-        todos.insert(contentsOf: items.map { TodoItemData(from: $0) }, at: 0)
+        try addBatch(items, localeIdentifier: nil)
     }
 
-    func addRawTranscript(_ transcript: String) throws {
+    func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
+        let fallbackLocaleIdentifier = localeIdentifier ?? Locale.current.identifier
         todos.insert(
-            TodoItemData(
-                title: transcript,
-                detail: transcript,
-                rawTranscript: transcript,
-                needsAIProcessing: true
-            ),
+            contentsOf: items.map { item in
+                var todo = TodoItemData(from: item)
+                todo.localeIdentifier = localeIdentifier ?? item.localeIdentifier ?? fallbackLocaleIdentifier
+                return todo
+            },
             at: 0
         )
     }
 
-    func toggleComplete(_ id: UUID) throws {}
+    func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
+        let todo = TodoItemData(
+            title: transcript,
+            detail: transcript,
+            rawTranscript: transcript,
+            needsAIProcessing: true,
+            localeIdentifier: localeIdentifier
+        )
+        todos.insert(todo, at: 0)
+        return todo
+    }
 
     func delete(_ id: UUID) throws {
         deletedIds.append(id)
@@ -603,19 +1326,7 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
         todos.removeAll { $0.id == id }
     }
 
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {
-        try updateFields(id, title: title, category: category, priority: priority, dueHint: dueHint)
-    }
-
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
-        try updateFields(id, title: title, category: category, priority: priority, dueHint: dueHint)
-        guard let index = todos.firstIndex(where: { $0.id == id }) else {
-            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
-        }
-        todos[index].recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
-    }
-
-    private func updateFields(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }
@@ -635,30 +1346,52 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
                 detail: todos[index].detail ?? ""
             )
         }
+        todos[index].recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
     }
-
-    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
-
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] { [] }
-
-    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {}
 
     func pendingItems() -> [TodoItemData] {
         todos.filter(\.needsAIProcessing)
     }
 
-    func recentUncompleted(limit: Int) -> [TodoItemData] {
-        Array(todos.filter { !$0.isCompleted }.prefix(limit))
+    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws {
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript, localeIdentifier: nil)
     }
 
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws {
-        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript)
+    func replacePendingWithExtracted(
+        _ pendingId: UUID,
+        _ items: [ExtractedTodo],
+        rawTranscript: String?,
+        localeIdentifier: String?
+    ) throws {
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript, localeIdentifier: localeIdentifier)
     }
 
     func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws {
+        try replacePendingBatchWithExtracted(pendingIds, items, rawTranscript: rawTranscript, localeIdentifier: nil)
+    }
+
+    func replacePendingBatchWithExtracted(
+        _ pendingIds: [UUID],
+        _ items: [ExtractedTodo],
+        rawTranscript: String?,
+        localeIdentifier: String?
+    ) throws {
+        if let replaceError {
+            throw replaceError
+        }
         let pendingSet = Set(pendingIds)
+        let fallbackLocaleIdentifier = localeIdentifier
+            ?? todos.first(where: { pendingSet.contains($0.id) && $0.localeIdentifier != nil })?.localeIdentifier
+            ?? Locale.current.identifier
         todos.removeAll { pendingSet.contains($0.id) }
-        todos.insert(contentsOf: items.map { TodoItemData(from: $0, rawTranscript: rawTranscript) }, at: 0)
+        todos.insert(
+            contentsOf: items.map { item in
+                var todo = TodoItemData(from: item, rawTranscript: rawTranscript)
+                todo.localeIdentifier = localeIdentifier ?? item.localeIdentifier ?? fallbackLocaleIdentifier
+                return todo
+            },
+            at: 0
+        )
     }
 
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {
@@ -671,10 +1404,100 @@ private final class CoordinatorTestStore: TodoStoreProtocol {
         }
         onUpdateIdentifier?()
     }
+}
 
-    func reorder(ids: [UUID]) throws {}
+@MainActor
+private final class CoordinatorTestHistoryStore: VoiceCaptureHistoryStoreProtocol {
+    @Published var records: [VoiceCaptureRecordData] = []
+    @Published var loadState: VoiceCaptureHistoryLoadState = .empty
+    var updateError: Error?
+    var lookupError: Error?
+    var cleanupError: Error?
 
-    func refreshTodos() {}
+    func refreshRecords() {
+        loadState = records.isEmpty ? .empty : .success
+    }
+
+    @discardableResult
+    func createRecord(
+        transcript: String,
+        source: VoiceCaptureSource,
+        localeIdentifier: String,
+        now: Date
+    ) throws -> VoiceCaptureRecordData {
+        let record = VoiceCaptureRecordData(
+            transcript: transcript.trimmingCharacters(in: .whitespacesAndNewlines),
+            createdAt: now,
+            status: .processing,
+            source: source,
+            localeIdentifier: localeIdentifier
+        )
+        records.insert(record, at: 0)
+        loadState = .success
+        return record
+    }
+
+    @discardableResult
+    func updateRecord(
+        id: UUID,
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        pendingTodoLink: VoiceCapturePendingTodoLinkUpdate,
+        errorMessage: String?
+    ) throws -> VoiceCaptureRecordData {
+        if let updateError {
+            throw updateError
+        }
+        guard let index = records.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("record not found")
+        }
+        records[index].status = status
+        if let generatedTodoIDs {
+            records[index].generatedTodoIDs = generatedTodoIDs
+            records[index].generatedTodoCount = generatedTodoIDs.count
+        } else {
+            if status.resetsGeneratedArtifacts {
+                records[index].generatedTodoIDs = []
+            }
+            if let generatedTodoCount {
+                records[index].generatedTodoCount = generatedTodoCount
+            } else if status.resetsGeneratedArtifacts {
+                records[index].generatedTodoCount = 0
+            }
+        }
+        switch pendingTodoLink {
+        case .keepCurrent:
+            break
+        case .set(let pendingTodoID):
+            records[index].pendingTodoID = pendingTodoID
+        case .clear:
+            records[index].pendingTodoID = nil
+        }
+        records[index].errorMessage = errorMessage
+        return records[index]
+    }
+
+    func deleteRecord(id: UUID) throws {
+        records.removeAll { $0.id == id }
+        loadState = records.isEmpty ? .empty : .success
+    }
+
+    func cleanupExpiredRecords(now: Date) throws {
+        if let cleanupError {
+            throw cleanupError
+        }
+        let cutoff = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        records.removeAll { $0.createdAt < cutoff }
+        loadState = records.isEmpty ? .empty : .success
+    }
+
+    func recordLinkedToPendingTodo(id: UUID) throws -> VoiceCaptureRecordData? {
+        if let lookupError {
+            throw lookupError
+        }
+        records.first { $0.pendingTodoID == id }
+    }
 }
 
 private final class CoordinatorTestSystemCalendarWriter: SystemCalendarWritingProtocol {

@@ -188,7 +188,7 @@ final class WidgetTodoFilterTests: XCTestCase {
         let cutoff = today.addingTimeInterval(-WidgetConfig.completionAnimationRetention)
 
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        let container = try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
         let context = container.mainContext
 
         let recentlyCompleted = TodoItem(
@@ -344,7 +344,7 @@ final class WidgetTodoFilterTests: XCTestCase {
         let tomorrowWeekday = calendar.component(.weekday, from: tomorrow)
 
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        let container = try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
         let context = container.mainContext
 
         let unscheduled = TodoItem(title: "无日期补充任务", createdAt: today, sortOrder: -4)
@@ -391,7 +391,7 @@ final class WidgetTodoFilterTests: XCTestCase {
         let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: today))
 
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        let container = try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
         let context = container.mainContext
 
         for index in 0..<5 {
@@ -423,7 +423,7 @@ final class WidgetTodoFilterTests: XCTestCase {
 
     private func makeInMemoryContainer() throws -> ModelContainer {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        return try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
     }
 
     private func makeTemporaryDefaults() throws -> UserDefaults {

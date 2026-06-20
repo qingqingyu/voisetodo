@@ -11,7 +11,8 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Dependencies
 
     private let voiceInput: any VoiceInputProtocol
-    private let store: any TodoStoreProtocol
+    private let store: any AppCoordinatorTodoStore
+    private let historyStore: (any VoiceCaptureHistoryStoreProtocol)?
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
     private let calendarSyncService: CalendarSyncService
@@ -49,6 +50,7 @@ final class AppCoordinator: ObservableObject {
 
     /// 离线待处理条目 ID 列表（用于网络恢复后替换）
     private var pendingItemIds: [UUID] = []
+    private var pendingGeneratedTodoIdsByPendingId: [UUID: [UUID]] = [:]
 
     /// 本次 session 中用户已取消确认的 pending ID（避免重复弹窗）
     private var dismissedPendingIds: Set<UUID> = []
@@ -59,13 +61,33 @@ final class AppCoordinator: ObservableObject {
     /// 当前待确认流程的输入原文（支持语音转写和手动输入共用确认页）
     private var activeInputTranscript: String?
     private var activeInputLocaleIdentifier: String?
+    private var activeHistoryRecordId: UUID?
+    private var activeHistoryPendingTodoId: UUID?
+
+    private enum TranscriptInputSource {
+        case manual
+        case voice(VoiceCaptureSource)
+        case history(UUID)
+    }
+
+    private struct PendingDeletionResult {
+        let succeeded: Bool
+        let pendingId: UUID?
+        let error: Error?
+    }
+
+    /// 过期清理节流时间戳。每次 cleanup 成功后更新，1 小时内不重复触发。
+    private var lastHistoryCleanupAt: Date = .distantPast
+    /// 清理节流阈值：1 小时。覆盖「长时间热启动」场景下 PII 超 30 天的风险。
+    private static let historyCleanupThrottle: TimeInterval = 60 * 60
 
     // MARK: - Initialization
 
     init(
         voiceInput: any VoiceInputProtocol,
         extractor: any TodoExtractorProtocol,
-        store: any TodoStoreProtocol,
+        store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & CalendarSyncTodoStore,
+        historyStore: (any VoiceCaptureHistoryStoreProtocol)? = nil,
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
@@ -73,6 +95,7 @@ final class AppCoordinator: ObservableObject {
     ) {
         self.voiceInput = voiceInput
         self.store = store
+        self.historyStore = historyStore
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.calendarSyncService = CalendarSyncService(store: store, writer: systemCalendarWriter)
@@ -173,7 +196,7 @@ final class AppCoordinator: ObservableObject {
         }
 
         // 处理转写结果
-        await processTranscript(transcript)
+        await processTranscript(voiceInput.transcript, source: .voice(.recordButton))
         VoiceTodoLog.coordinator.info("coordinator.stop_and_process.finished id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) finalTranscriptChars=\(self.transcript.count)")
     }
 
@@ -280,7 +303,7 @@ final class AppCoordinator: ObservableObject {
         isAutoProcessing = false
 
         // 自动处理转写结果
-        await processTranscript(transcript)
+        await processTranscript(voiceInput.transcript, source: .voice(.actionButton))
         VoiceTodoLog.coordinator.info("coordinator.action_button.finished id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
@@ -294,7 +317,87 @@ final class AppCoordinator: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         VoiceTodoLog.coordinator.info("coordinator.manual_input.start \(VoiceTodoLog.textSummary(trimmed), privacy: .public)")
         activeInputTranscript = trimmed
-        await processTranscript(trimmed, locale: .current)
+        await processTranscript(trimmed, locale: .current, source: .manual)
+    }
+
+    /// 从历史记录重新提取待办。
+    func reprocessHistoryRecord(_ record: VoiceCaptureRecordData) async {
+        let trimmedTranscript = record.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTranscript.isEmpty else {
+            VoiceTodoLog.coordinator.warning("coordinator.history.reprocess.ignored reason=empty_transcript recordID=\(record.id.uuidString, privacy: .public)")
+            showToast(message: ErrorMessages.historyReprocessBlocked, style: .warning)
+            return
+        }
+        guard !isRecording, !isAutoProcessing, !showConfirmSheet, !isProcessingTranscript else {
+            VoiceTodoLog.coordinator.warning("coordinator.history.reprocess.ignored recordID=\(record.id.uuidString, privacy: .public) isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) showConfirmSheet=\(self.showConfirmSheet) isProcessingTranscript=\(self.isProcessingTranscript)")
+            showToast(message: ErrorMessages.historyReprocessBlocked, style: .warning)
+            return
+        }
+
+        let startedAt = Date()
+        VoiceTodoLog.coordinator.info("coordinator.history.reprocess.start recordID=\(record.id.uuidString, privacy: .public) status=\(record.status.rawValue, privacy: .public) locale=\(record.localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(record.transcript), privacy: .public)")
+        let reusablePendingTodoId = reusablePendingTodoId(for: record)
+        // 防御：上一次 reprocess 流程若在事件分支到达之前被 cancel（如用户快速返回），
+        // activeHistoryPendingTodoId 可能残留为孤儿 pending。此处兜底删除避免堆积。
+        // guard 只拦 isProcessingTranscript，无法保证 pendingTodoId 已清理。
+        if activeHistoryPendingTodoId != nil, activeHistoryPendingTodoId != reusablePendingTodoId {
+            deleteActiveHistoryPendingIfNeeded(reason: "history_reprocess_takeover")
+        }
+        activeHistoryPendingTodoId = reusablePendingTodoId
+        updateHistoryRecord(
+            id: record.id,
+            status: .processing,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .replacing(with: reusablePendingTodoId),
+            errorMessage: nil
+        )
+        await processTranscript(
+            record.transcript,
+            locale: record.localeIdentifier.isEmpty ? nil : Locale(identifier: record.localeIdentifier),
+            source: .history(record.id)
+        )
+        VoiceTodoLog.coordinator.info("coordinator.history.reprocess.finished recordID=\(record.id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
+    private func reusablePendingTodoId(for record: VoiceCaptureRecordData) -> UUID? {
+        guard let pendingTodoID = record.pendingTodoID else { return nil }
+        guard let linkedTodo = store.todos.first(where: { $0.id == pendingTodoID }) else {
+            VoiceTodoLog.coordinator.warning("coordinator.history.reprocess.stale_pending_missing recordID=\(record.id.uuidString, privacy: .public) pendingID=\(pendingTodoID.uuidString, privacy: .public)")
+            return nil
+        }
+        guard linkedTodo.needsAIProcessing else {
+            VoiceTodoLog.coordinator.warning("coordinator.history.reprocess.stale_pending_not_pending recordID=\(record.id.uuidString, privacy: .public) pendingID=\(pendingTodoID.uuidString, privacy: .public)")
+            return nil
+        }
+        return pendingTodoID
+    }
+
+    /// 清理过期语音历史。
+    func cleanupExpiredVoiceHistory(now: Date = Date(), showWarning: Bool = true) {
+        guard let historyStore else { return }
+        let startedAt = Date()
+        VoiceTodoLog.coordinator.info("coordinator.history.cleanup.start")
+        do {
+            try historyStore.cleanupExpiredRecords(now: now)
+            lastHistoryCleanupAt = Date()
+            VoiceTodoLog.coordinator.info("coordinator.history.cleanup.success durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.history.cleanup.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            if showWarning {
+                showToast(message: ErrorMessages.historyCleanupFailed, style: .warning)
+            }
+        }
+    }
+
+    /// 节流版清理：仅当距上次清理超过 `historyCleanupThrottle` 时才触发。
+    /// 用于 scenePhase .active 路径，避免每次切回前台都重复 fetch。
+    func cleanupExpiredVoiceHistoryIfNeeded(now: Date = Date()) {
+        guard now.timeIntervalSince(lastHistoryCleanupAt) >= Self.historyCleanupThrottle else {
+            VoiceTodoLog.coordinator.debug("coordinator.history.cleanup.skipped reason=throttled secondsSinceLast=\(Int(now.timeIntervalSince(lastHistoryCleanupAt)))")
+            return
+        }
+        cleanupExpiredVoiceHistory(now: now, showWarning: false)
     }
 
     /// App 进入前台时处理待处理项（并发）
@@ -318,6 +421,27 @@ final class AppCoordinator: ObservableObject {
             locale: voiceInput.currentLocale,
             flowID: flowID
         )
+        for pendingId in result.deletedInvalidPendingIds {
+            updateHistoryForPendingRecord(
+                pendingId: pendingId,
+                status: .failed,
+                generatedTodoIDs: [],
+                generatedTodoCount: 0,
+                errorMessage: ErrorMessages.historyReprocessFailed,
+                keepPendingLink: false
+            )
+        }
+        for failure in result.failedPendingRecoveries {
+            updateHistoryForPendingRecord(
+                pendingId: failure.pendingId,
+                status: .failed,
+                generatedTodoIDs: [],
+                generatedTodoCount: 0,
+                errorMessage: failure.error.localizedDescription,
+                keepPendingLink: true
+            )
+            handleError(failure.error)
+        }
         result.deletionErrors.forEach(handleError)
         guard result.hasPending else { return }
 
@@ -328,9 +452,36 @@ final class AppCoordinator: ObservableObject {
             }
 
             for pendingId in result.processedWithoutTodosIds {
-                deleteProcessedPending(id: pendingId)
+                if deleteProcessedPending(id: pendingId) {
+                    updateHistoryForPendingRecord(
+                        pendingId: pendingId,
+                        status: .noTodos,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        errorMessage: nil
+                    )
+                } else {
+                    updateHistoryForPendingRecord(
+                        pendingId: pendingId,
+                        status: .failed,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        errorMessage: ErrorMessages.storageError
+                    )
+                }
             }
 
+            pendingGeneratedTodoIdsByPendingId = result.extractedTodoIdsByPendingId
+            for pendingId in result.processedWithTodosIds {
+                let generatedIds = result.extractedTodoIdsByPendingId[pendingId] ?? []
+                updateHistoryForPendingRecord(
+                    pendingId: pendingId,
+                    status: .reviewing,
+                    generatedTodoIDs: generatedIds,
+                    generatedTodoCount: generatedIds.count,
+                    errorMessage: nil
+                )
+            }
             pendingItemIds = result.processedWithTodosIds
             combinedRawTranscript = result.mergedRawTranscript
             extractedTodos = result.extractedTodos
@@ -341,9 +492,26 @@ final class AppCoordinator: ObservableObject {
                 deleteProcessedPending(id: pendingId)
             }
             for pendingId in result.processedWithoutTodosIds {
-                deleteProcessedPending(id: pendingId)
+                if deleteProcessedPending(id: pendingId) {
+                    updateHistoryForPendingRecord(
+                        pendingId: pendingId,
+                        status: .noTodos,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        errorMessage: nil
+                    )
+                } else {
+                    updateHistoryForPendingRecord(
+                        pendingId: pendingId,
+                        status: .failed,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        errorMessage: ErrorMessages.storageError
+                    )
+                }
             }
             pendingItemIds = []
+            pendingGeneratedTodoIdsByPendingId = [:]
             combinedRawTranscript = nil
             VoiceTodoLog.coordinator.info("coordinator.foreground.pending_finished_empty id=\(flowID, privacy: .public) processed=\(result.processedWithTodosIds.count + result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         }
@@ -355,33 +523,83 @@ final class AppCoordinator: ObservableObject {
         let confirmID = VoiceTodoLog.makeID("confirm")
         let startedAt = Date()
         VoiceTodoLog.coordinator.info("coordinator.confirm.start id=\(confirmID, privacy: .public) todoCount=\(todos.count) pendingCount=\(self.pendingItemIds.count) calendarMode=\(self.calendarWriteModeProvider().rawValue, privacy: .public)")
+        let pendingIdsAtConfirm = pendingItemIds
+        let pendingGeneratedTodoIdsAtConfirm = pendingGeneratedTodoIdsByPendingId
+        let activeHistoryRecordIdAtConfirm = activeHistoryRecordId
+        let activeHistoryPendingTodoIdAtConfirm = activeHistoryPendingTodoId
         do {
             let confirmedIds = Set(todos.map(\.id))
             // 如果有 pending 条目，使用替换逻辑
             if !pendingItemIds.isEmpty {
                 try store.replacePendingBatchWithExtracted(pendingItemIds, todos, rawTranscript: combinedRawTranscript)
                 VoiceTodoLog.coordinator.info("coordinator.confirm.replaced_pending id=\(confirmID, privacy: .public) pending=\(VoiceTodoLog.idsSummary(self.pendingItemIds), privacy: .public) todoCount=\(todos.count)")
+                for pendingId in pendingItemIds {
+                    let generatedIds = pendingGeneratedTodoIdsAtConfirm[pendingId]
+                    let savedIds = generatedIds?.filter { confirmedIds.contains($0) }
+                        ?? (pendingItemIds.count == 1 ? todos.map(\.id) : [])
+                    updateHistoryForPendingRecord(
+                        pendingId: pendingId,
+                        status: .saved,
+                        generatedTodoIDs: savedIds,
+                        generatedTodoCount: savedIds.count,
+                        errorMessage: nil
+                    )
+                }
 
                 // 成功确认后清理 dismissed 记录（先移除再清空列表）
                 dismissedPendingIds.subtract(pendingItemIds)
                 pendingItemIds = []
+                pendingGeneratedTodoIdsByPendingId = [:]
                 combinedRawTranscript = nil
+                activeInputTranscript = nil
+            } else if let activeHistoryPendingTodoIdAtConfirm {
+                try store.replacePendingBatchWithExtracted(
+                    [activeHistoryPendingTodoIdAtConfirm],
+                    todos,
+                    rawTranscript: activeInputTranscript,
+                    localeIdentifier: activeInputLocaleIdentifier
+                )
+                VoiceTodoLog.coordinator.info("coordinator.confirm.replaced_history_pending id=\(confirmID, privacy: .public) pendingID=\(activeHistoryPendingTodoIdAtConfirm.uuidString, privacy: .public) todoCount=\(todos.count)")
+                if let activeHistoryRecordIdAtConfirm {
+                    updateHistoryRecord(
+                        id: activeHistoryRecordIdAtConfirm,
+                        status: .saved,
+                        generatedTodoIDs: todos.map(\.id),
+                        generatedTodoCount: todos.count,
+                        pendingTodoLink: .clear,
+                        errorMessage: nil
+                    )
+                }
                 activeInputTranscript = nil
             } else {
                 // 正常在线流程：直接添加
-                try store.addBatch(todos)
+                try store.addBatch(todos, localeIdentifier: activeInputLocaleIdentifier)
                 VoiceTodoLog.coordinator.info("coordinator.confirm.added_batch id=\(confirmID, privacy: .public) todoCount=\(todos.count)")
+                if let activeHistoryRecordIdAtConfirm {
+                    updateHistoryRecord(
+                        id: activeHistoryRecordIdAtConfirm,
+                        status: .saved,
+                        generatedTodoIDs: todos.map(\.id),
+                        generatedTodoCount: todos.count,
+                        pendingTodoLink: .clear,
+                        errorMessage: nil
+                    )
+                }
                 activeInputTranscript = nil
             }
 
-            let learningLocaleIdentifier = activeInputLocaleIdentifier ?? voiceInput.currentLocale.identifier
-            let learningTodos = todos
-            Task.detached(priority: .utility) { [vocabularyStore] in
-                vocabularyStore.learn(
-                    from: learningTodos,
-                    localeIdentifier: learningLocaleIdentifier,
-                    source: .confirmedTodo
-                )
+            let fallbackLearningLocaleIdentifier = activeInputLocaleIdentifier ?? voiceInput.currentLocale.identifier
+            let learningTodosByLocale = Dictionary(grouping: todos) { todo in
+                todo.localeIdentifier ?? fallbackLearningLocaleIdentifier
+            }
+            Task.detached(priority: .utility) { [vocabularyStore, learningTodosByLocale] in
+                for (localeIdentifier, localizedTodos) in learningTodosByLocale {
+                    vocabularyStore.learn(
+                        from: localizedTodos,
+                        localeIdentifier: localeIdentifier,
+                        source: .confirmedTodo
+                    )
+                }
             }
             activeInputLocaleIdentifier = nil
 
@@ -399,8 +617,28 @@ final class AppCoordinator: ObservableObject {
 
             WidgetCenter.shared.reloadAllTimelines()
             VoiceTodoLog.coordinator.info("coordinator.confirm.success id=\(confirmID, privacy: .public) todoCount=\(todos.count) shouldSyncCalendar=\(shouldSyncSystemCalendar) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
             return true
         } catch {
+            if !pendingIdsAtConfirm.isEmpty {
+                updateHistoryForPendingRecords(
+                    pendingIds: pendingIdsAtConfirm,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    errorMessage: error.localizedDescription
+                )
+            } else if let activeHistoryRecordIdAtConfirm {
+                updateHistoryRecord(
+                    id: activeHistoryRecordIdAtConfirm,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: .replacing(with: activeHistoryPendingTodoIdAtConfirm),
+                    errorMessage: error.localizedDescription
+                )
+            }
             VoiceTodoLog.coordinator.error("coordinator.confirm.failed id=\(confirmID, privacy: .public) todoCount=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             handleError(error)
             return false
@@ -412,6 +650,7 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.confirm.cancel pendingCount=\(self.pendingItemIds.count) extractedCount=\(self.extractedTodos.count) isExtracting=\(self.isExtracting)")
         extractionTask?.cancel()
         extractionTask = nil
+        markCurrentHistoryCancelled(reason: "confirm_cancelled")
 
         // 记录已取消的 pending ID，避免本次 session 重复弹窗
         // 不删除 pending 条目，保留离线转写数据
@@ -422,9 +661,12 @@ final class AppCoordinator: ObservableObject {
         extractedTodos = []
         showConfirmSheet = false
         pendingItemIds = []
+        pendingGeneratedTodoIdsByPendingId = [:]
         combinedRawTranscript = nil
         activeInputTranscript = nil
         activeInputLocaleIdentifier = nil
+        activeHistoryRecordId = nil
+        activeHistoryPendingTodoId = nil
         isAutoProcessing = false
     }
 
@@ -508,12 +750,16 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.extraction.cancel isExtracting=\(self.isExtracting) extractedCount=\(self.extractedTodos.count)")
         extractionTask?.cancel()
         extractionTask = nil
+        markCurrentHistoryCancelled(reason: "extraction_cancelled")
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
         showConfirmSheet = false
+        pendingGeneratedTodoIdsByPendingId = [:]
         activeInputTranscript = nil
         activeInputLocaleIdentifier = nil
+        activeHistoryRecordId = nil
+        activeHistoryPendingTodoId = nil
     }
 
     private func observeCalendarSync(_ task: Task<CalendarSyncResult, Never>) {
@@ -536,7 +782,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// 处理转写文本（流式）
-    private func processTranscript(_ text: String, locale: Locale? = nil) async {
+    private func processTranscript(_ text: String, locale: Locale? = nil, source: TranscriptInputSource) async {
         guard !isProcessingTranscript else {
             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.ignored reason=already_processing \(VoiceTodoLog.textSummary(text), privacy: .public)")
             return
@@ -550,6 +796,12 @@ final class AppCoordinator: ObservableObject {
         let effectiveLocale = locale ?? voiceInput.currentLocale
         activeInputTranscript = trimmed
         activeInputLocaleIdentifier = effectiveLocale.identifier
+        activeHistoryRecordId = trimmed.isEmpty ? nil : prepareHistoryRecord(
+            for: source,
+            transcript: trimmed,
+            localeIdentifier: effectiveLocale.identifier,
+            flowID: flowID
+        )
 
         extractionTask = Task {
             let events = transcriptProcessingFlow.process(
@@ -579,42 +831,335 @@ final class AppCoordinator: ObservableObject {
         case .empty:
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
             showToast(message: ErrorMessages.noTodosFound, style: .info)
         case .partial(let result):
+            guard !result.todos.isEmpty else {
+                VoiceTodoLog.coordinator.debug("coordinator.process_transcript.empty_partial_ignored id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
+                break
+            }
             extractedTodos = result.todos
-            if !showConfirmSheet && !result.todos.isEmpty {
+            if let activeHistoryRecordId {
+                updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: .reviewing,
+                    generatedTodoIDs: result.todos.map(\.id),
+                    generatedTodoCount: result.todos.count,
+                    pendingTodoLink: .replacing(with: activeHistoryPendingTodoId),
+                    errorMessage: nil
+                )
+            }
+            if !showConfirmSheet {
                 showConfirmSheet = true
                 VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_shown id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(result.todos.count)")
             }
         case .success:
             break
         case .noTodos:
+            let pendingDeletion = deleteActiveHistoryPendingIfNeeded(reason: "history_reprocess_no_todos")
+            var historySucceeded = true
+            if let activeHistoryRecordId {
+                historySucceeded = updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: pendingDeletion.succeeded ? .noTodos : .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: pendingDeletion.succeeded ? .clear : .replacing(with: pendingDeletion.pendingId),
+                    errorMessage: pendingDeletion.succeeded ? nil : (pendingDeletion.error?.localizedDescription ?? ErrorMessages.storageError)
+                )
+            }
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
-            showToast(message: ErrorMessages.noTodosFound, style: .info)
-        case .offlineSaved:
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
+            if historySucceeded && pendingDeletion.succeeded {
+                showToast(message: ErrorMessages.noTodosFound, style: .info)
+            }
+        case .offlineSaved(let pendingTodo):
+            let pendingDeletion = deleteActiveHistoryPendingIfNeeded(replacementPendingId: pendingTodo.id, reason: "history_reprocess_offline_saved")
+            var historySucceeded = true
+            if let activeHistoryRecordId {
+                if pendingDeletion.succeeded {
+                    historySucceeded = updateHistoryRecord(
+                        id: activeHistoryRecordId,
+                        status: .pending,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        pendingTodoLink: .set(pendingTodo.id),
+                        errorMessage: nil
+                    )
+                } else {
+                    _ = deleteProcessedPending(id: pendingTodo.id)
+                    historySucceeded = updateHistoryRecord(
+                        id: activeHistoryRecordId,
+                        status: .failed,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        pendingTodoLink: .replacing(with: pendingDeletion.pendingId),
+                        errorMessage: pendingDeletion.error?.localizedDescription ?? ErrorMessages.storageError
+                    )
+                }
+            }
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
-            showToast(message: ErrorMessages.savedOffline, style: .info)
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
+            if historySucceeded && pendingDeletion.succeeded {
+                showToast(message: ErrorMessages.savedOffline, style: .info)
+            }
         case .offlineSaveFailed(let error):
+            if let activeHistoryRecordId {
+                updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: .replacing(with: activeHistoryPendingTodoId),
+                    errorMessage: error.localizedDescription
+                )
+            }
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
             handleError(error)
-        case .networkFallbackSaved:
+        case .networkFallbackSaved(let pendingTodo):
+            let pendingDeletion = deleteActiveHistoryPendingIfNeeded(replacementPendingId: pendingTodo.id, reason: "history_reprocess_network_fallback_saved")
+            var historySucceeded = true
+            if let activeHistoryRecordId {
+                if pendingDeletion.succeeded {
+                    historySucceeded = updateHistoryRecord(
+                        id: activeHistoryRecordId,
+                        status: .pending,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        pendingTodoLink: .set(pendingTodo.id),
+                        errorMessage: nil
+                    )
+                } else {
+                    _ = deleteProcessedPending(id: pendingTodo.id)
+                    historySucceeded = updateHistoryRecord(
+                        id: activeHistoryRecordId,
+                        status: .failed,
+                        generatedTodoIDs: [],
+                        generatedTodoCount: 0,
+                        pendingTodoLink: .replacing(with: pendingDeletion.pendingId),
+                        errorMessage: pendingDeletion.error?.localizedDescription ?? ErrorMessages.storageError
+                    )
+                }
+            }
             clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
-            showToast(message: ErrorMessages.savedOffline, style: .info)
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
+            if historySucceeded && pendingDeletion.succeeded {
+                showToast(message: ErrorMessages.savedOffline, style: .info)
+            }
         case .networkFallbackSaveFailed(let error):
+            if let activeHistoryRecordId {
+                updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: .replacing(with: activeHistoryPendingTodoId),
+                    errorMessage: error.localizedDescription
+                )
+            }
             clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
             handleError(error)
         case .failed(let error):
+            if let activeHistoryRecordId {
+                updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: .replacing(with: activeHistoryPendingTodoId),
+                    errorMessage: error.localizedDescription
+                )
+            }
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
+            activeHistoryRecordId = nil
+            activeHistoryPendingTodoId = nil
             clearExtractionPresentation()
             handleError(error)
+        }
+    }
+
+    private func prepareHistoryRecord(
+        for source: TranscriptInputSource,
+        transcript: String,
+        localeIdentifier: String,
+        flowID: String
+    ) -> UUID? {
+        // 上游 processTranscript 已跳过空串历史创建，此处不再重复守卫。
+        switch source {
+        case .manual:
+            return nil
+        case .history(let recordId):
+            VoiceTodoLog.coordinator.info("coordinator.history.reuse_record flowID=\(flowID, privacy: .public) recordID=\(recordId.uuidString, privacy: .public)")
+            return recordId
+        case .voice(let captureSource):
+            guard let historyStore else { return nil }
+            do {
+                let record = try historyStore.createRecord(
+                    transcript: transcript,
+                    source: captureSource,
+                    localeIdentifier: localeIdentifier,
+                    now: Date()
+                )
+                VoiceTodoLog.coordinator.info("coordinator.history.create_record.success flowID=\(flowID, privacy: .public) recordID=\(record.id.uuidString, privacy: .public) source=\(captureSource.rawValue, privacy: .public)")
+                return record.id
+            } catch {
+                VoiceTodoLog.coordinator.error("coordinator.history.create_record.failed flowID=\(flowID, privacy: .public) source=\(captureSource.rawValue, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                showToast(message: ErrorMessages.historyCreateFailed, style: .warning)
+                return nil
+            }
+        }
+    }
+
+    @discardableResult
+    private func updateHistoryRecord(
+        id: UUID,
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        pendingTodoLink: VoiceCapturePendingTodoLinkUpdate,
+        errorMessage: String?
+    ) -> Bool {
+        // History 写入是 best-effort：historyStore 与 todoStore 共享同一 ModelContext，
+        // 但两者 save 各自独立、无跨 store 事务。history 失败不应打断主流程（todo 已落地），
+        // 但仍需提示用户历史记录可能未同步。
+        guard let historyStore else { return true }
+        do {
+            try historyStore.updateRecord(
+                id: id,
+                status: status,
+                generatedTodoIDs: generatedTodoIDs,
+                generatedTodoCount: generatedTodoCount,
+                pendingTodoLink: pendingTodoLink,
+                errorMessage: errorMessage
+            )
+            return true
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.history.update.failed recordID=\(id.uuidString, privacy: .public) status=\(status.rawValue, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            showToast(message: ErrorMessages.historyUpdateFailed, style: .warning)
+            return false
+        }
+    }
+
+    @discardableResult
+    private func updateHistoryForPendingRecord(
+        pendingId: UUID,
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        errorMessage: String?,
+        keepPendingLink: Bool? = nil
+    ) -> Bool {
+        guard let historyStore else { return true }
+        do {
+            guard let record = try historyStore.recordLinkedToPendingTodo(id: pendingId) else {
+                return true
+            }
+            let shouldKeepPendingLink = keepPendingLink ?? shouldKeepPendingLink(for: status)
+            return updateHistoryRecord(
+                id: record.id,
+                status: status,
+                generatedTodoIDs: generatedTodoIDs,
+                generatedTodoCount: generatedTodoCount,
+                pendingTodoLink: shouldKeepPendingLink ? .set(pendingId) : .clear,
+                errorMessage: errorMessage
+            )
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.history.pending_link.lookup_failed pendingID=\(pendingId.uuidString, privacy: .public) status=\(status.rawValue, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            showToast(message: ErrorMessages.historyUpdateFailed, style: .warning)
+            return false
+        }
+    }
+
+    private func shouldKeepPendingLink(for status: VoiceCaptureStatus) -> Bool {
+        switch status {
+        case .processing, .reviewing, .pending, .failed, .cancelled:
+            return true
+        case .saved, .noTodos:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func updateHistoryForPendingRecords(
+        pendingIds: [UUID],
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        errorMessage: String?,
+        keepPendingLink: Bool? = nil
+    ) -> Bool {
+        var allSucceeded = true
+        for pendingId in pendingIds {
+            let succeeded = updateHistoryForPendingRecord(
+                pendingId: pendingId,
+                status: status,
+                generatedTodoIDs: generatedTodoIDs,
+                generatedTodoCount: generatedTodoCount,
+                errorMessage: errorMessage,
+                keepPendingLink: keepPendingLink
+            )
+            allSucceeded = allSucceeded && succeeded
+        }
+        return allSucceeded
+    }
+
+    private func markCurrentHistoryCancelled(reason: String) {
+        if !pendingItemIds.isEmpty {
+            updateHistoryForPendingRecords(
+                pendingIds: pendingItemIds,
+                status: .cancelled,
+                generatedTodoIDs: [],
+                generatedTodoCount: 0,
+                errorMessage: nil
+            )
+        } else if let activeHistoryRecordId {
+            updateHistoryRecord(
+                id: activeHistoryRecordId,
+                status: .cancelled,
+                generatedTodoIDs: [],
+                generatedTodoCount: 0,
+                pendingTodoLink: .replacing(with: activeHistoryPendingTodoId),
+                errorMessage: nil
+            )
+        }
+        VoiceTodoLog.coordinator.info("coordinator.history.cancelled reason=\(reason, privacy: .public) activeRecordID=\(self.activeHistoryRecordId?.uuidString ?? "nil", privacy: .public) pendingCount=\(self.pendingItemIds.count)")
+    }
+
+    @discardableResult
+    private func deleteActiveHistoryPendingIfNeeded(replacementPendingId: UUID? = nil, reason: String) -> PendingDeletionResult {
+        guard let pendingId = activeHistoryPendingTodoId else {
+            return PendingDeletionResult(succeeded: true, pendingId: nil, error: nil)
+        }
+        guard pendingId != replacementPendingId else {
+            activeHistoryPendingTodoId = nil
+            return PendingDeletionResult(succeeded: true, pendingId: pendingId, error: nil)
+        }
+
+        do {
+            try store.delete(pendingId)
+            VoiceTodoLog.coordinator.info("coordinator.history.pending.delete_success reason=\(reason, privacy: .public) pendingID=\(pendingId.uuidString, privacy: .public)")
+            activeHistoryPendingTodoId = nil
+            return PendingDeletionResult(succeeded: true, pendingId: pendingId, error: nil)
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.history.pending.delete_failed reason=\(reason, privacy: .public) pendingID=\(pendingId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            handleError(error)
+            return PendingDeletionResult(succeeded: false, pendingId: pendingId, error: error)
         }
     }
 
@@ -645,13 +1190,16 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
-    private func deleteProcessedPending(id: UUID) {
+    @discardableResult
+    private func deleteProcessedPending(id: UUID) -> Bool {
         do {
             try store.delete(id)
             VoiceTodoLog.coordinator.info("coordinator.pending.delete_processed id=\(id.uuidString, privacy: .public)")
+            return true
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.pending.delete_processed_failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             handleError(error)
+            return false
         }
     }
 

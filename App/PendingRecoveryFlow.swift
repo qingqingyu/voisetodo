@@ -4,24 +4,35 @@ struct PendingRecoveryResult {
     let pendingCount: Int
     let processedWithTodosIds: [UUID]
     let processedWithoutTodosIds: [UUID]
+    let deletedInvalidPendingIds: [UUID]
+    let failedPendingRecoveries: [PendingRecoveryFailure]
     let extractedTodos: [ExtractedTodo]
+    let extractedTodoIdsByPendingId: [UUID: [UUID]]
     let mergedRawTranscript: String?
-    let failedCount: Int
     let deletionErrors: [Error]
 
     var hasPending: Bool {
         pendingCount > 0
     }
+
+    var failedCount: Int {
+        failedPendingRecoveries.count
+    }
+}
+
+struct PendingRecoveryFailure: Sendable {
+    let pendingId: UUID
+    let error: VoiceTodoError
 }
 
 @MainActor
 final class PendingRecoveryFlow {
-    private let store: any TodoStoreProtocol
+    private let store: any PendingRecoveryTodoStore
     private let extractor: any TodoExtractorProtocol
     private let networkIsConnectedProvider: @MainActor () -> Bool
 
     init(
-        store: any TodoStoreProtocol,
+        store: any PendingRecoveryTodoStore,
         extractor: any TodoExtractorProtocol,
         networkIsConnectedProvider: @escaping @MainActor () -> Bool
     ) {
@@ -45,11 +56,13 @@ final class PendingRecoveryFlow {
         VoiceTodoLog.coordinator.info("coordinator.foreground.pending_start id=\(flowID, privacy: .public) pending=\(VoiceTodoLog.idsSummary(pendingItems.map(\.id)), privacy: .public) dismissedCount=\(dismissedPendingIds.count)")
 
         var deletionErrors: [Error] = []
+        var deletedInvalidPendingIds: [UUID] = []
         let validPending = pendingItems.filter { item in
             if item.rawTranscript == nil {
                 VoiceTodoLog.coordinator.warning("coordinator.foreground.pending_missing_raw id=\(flowID, privacy: .public) pendingID=\(item.id.uuidString, privacy: .public)")
                 do {
                     try store.delete(item.id)
+                    deletedInvalidPendingIds.append(item.id)
                     VoiceTodoLog.coordinator.info("coordinator.pending.delete_processed id=\(item.id.uuidString, privacy: .public)")
                 } catch {
                     deletionErrors.append(error)
@@ -73,7 +86,7 @@ final class PendingRecoveryFlow {
                     group: &group,
                     index: index,
                     pending: pending,
-                    locale: locale,
+                    fallbackLocale: locale,
                     flowID: flowID
                 )
                 activeCount += 1
@@ -88,7 +101,7 @@ final class PendingRecoveryFlow {
                         group: &group,
                         index: index,
                         pending: next,
-                        locale: locale,
+                        fallbackLocale: locale,
                         flowID: flowID
                     )
                 }
@@ -100,20 +113,31 @@ final class PendingRecoveryFlow {
             .sorted { $0.index < $1.index }
         let resultsWithTodos = successfulResults.filter { !$0.todos.isEmpty }
         let resultsWithoutTodos = successfulResults.filter { $0.todos.isEmpty }
+        let failedResults = processResults
+            .filter { !$0.succeeded }
+            .sorted { $0.index < $1.index }
+        let failedPendingRecoveries = failedResults.compactMap { result in
+            result.error.map { PendingRecoveryFailure(pendingId: result.id, error: $0) }
+        }
         let extractedTodos = resultsWithTodos.flatMap(\.todos)
+        let extractedTodoIdsByPendingId = Dictionary(
+            uniqueKeysWithValues: resultsWithTodos.map { result in
+                (result.id, result.todos.map(\.id))
+            }
+        )
         let rawTranscripts = resultsWithTodos.compactMap(\.rawTranscript)
         let mergedRawTranscript = rawTranscripts.isEmpty ? nil : rawTranscripts.joined(separator: "\n---\n")
-        let failedCount = processResults.filter { !$0.succeeded }.count
-
-        VoiceTodoLog.coordinator.info("coordinator.foreground.pending_recovered id=\(flowID, privacy: .public) extractedCount=\(extractedTodos.count) processedWithTodos=\(resultsWithTodos.count) processedWithoutTodos=\(resultsWithoutTodos.count) failed=\(failedCount) deleteErrors=\(deletionErrors.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.coordinator.info("coordinator.foreground.pending_recovered id=\(flowID, privacy: .public) extractedCount=\(extractedTodos.count) processedWithTodos=\(resultsWithTodos.count) processedWithoutTodos=\(resultsWithoutTodos.count) failed=\(failedPendingRecoveries.count) deleteErrors=\(deletionErrors.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
         return PendingRecoveryResult(
             pendingCount: pendingItems.count,
             processedWithTodosIds: resultsWithTodos.map(\.id),
             processedWithoutTodosIds: resultsWithoutTodos.map(\.id),
+            deletedInvalidPendingIds: deletedInvalidPendingIds,
+            failedPendingRecoveries: failedPendingRecoveries,
             extractedTodos: extractedTodos,
+            extractedTodoIdsByPendingId: extractedTodoIdsByPendingId,
             mergedRawTranscript: mergedRawTranscript,
-            failedCount: failedCount,
             deletionErrors: deletionErrors
         )
     }
@@ -122,11 +146,13 @@ final class PendingRecoveryFlow {
         group: inout TaskGroup<PendingProcessResult>,
         index: Int,
         pending: TodoItemData,
-        locale: Locale,
+        fallbackLocale: Locale,
         flowID: String
     ) {
         let transcript = pending.rawTranscript ?? ""
         let pendingId = pending.id
+        // 防御空串：旧数据可能写入空字符串而非 nil，Locale(identifier: "") 会退化成根 locale。
+        let locale = (pending.localeIdentifier.flatMap { $0.isEmpty ? nil : Locale(identifier: $0) }) ?? fallbackLocale
         let ext = extractor
         group.addTask {
             await Self.processSinglePending(
@@ -146,6 +172,7 @@ final class PendingRecoveryFlow {
         let todos: [ExtractedTodo]
         let rawTranscript: String?
         let succeeded: Bool
+        let error: VoiceTodoError?
     }
 
     private static func processSinglePending(
@@ -163,12 +190,31 @@ final class PendingRecoveryFlow {
             let result = try await VoiceTodoLog.$extractID.withValue(extractID) {
                 try await extractor.extract(from: transcript, locale: locale)
             }
+            let localizedTodos = result.todos.map { todo in
+                var localized = todo
+                localized.localeIdentifier = locale.identifier
+                return localized
+            }
             VoiceTodoLog.coordinator.info("coordinator.pending_item.success id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) todos=\(result.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-            return PendingProcessResult(index: index, id: id, todos: result.todos, rawTranscript: transcript, succeeded: true)
+            return PendingProcessResult(index: index, id: id, todos: localizedTodos, rawTranscript: transcript, succeeded: true, error: nil)
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.pending_item.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            return PendingProcessResult(index: index, id: id, todos: [], rawTranscript: transcript, succeeded: false)
+            return PendingProcessResult(
+                index: index,
+                id: id,
+                todos: [],
+                rawTranscript: transcript,
+                succeeded: false,
+                error: Self.normalizedVoiceTodoError(error)
+            )
         }
+    }
+
+    private static func normalizedVoiceTodoError(_ error: Error) -> VoiceTodoError {
+        if let voiceError = error as? VoiceTodoError {
+            return voiceError
+        }
+        return .apiResponseInvalid(error.localizedDescription)
     }
 }
 
@@ -178,9 +224,11 @@ private extension PendingRecoveryResult {
             pendingCount: 0,
             processedWithTodosIds: [],
             processedWithoutTodosIds: [],
+            deletedInvalidPendingIds: [],
+            failedPendingRecoveries: [],
             extractedTodos: [],
+            extractedTodoIdsByPendingId: [:],
             mergedRawTranscript: nil,
-            failedCount: 0,
             deletionErrors: []
         )
     }

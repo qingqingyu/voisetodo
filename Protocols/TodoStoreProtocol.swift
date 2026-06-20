@@ -1,61 +1,188 @@
 import Foundation
 import Combine
 
-/// 待办存储协议
-/// 注意：返回类型使用 TodoItemData 而非 SwiftData 的 TodoItem
-protocol TodoStoreProtocol: ObservableObject {
+/// 待办列表读取能力。
+/// 注意：返回类型使用 TodoItemData 而非 SwiftData 的 TodoItem。
+protocol TodoListReadable: ObservableObject {
     /// 所有待办（按 sortOrder 升序排列）
     var todos: [TodoItemData] { get }
+}
 
+/// 单条待办创建能力。
+protocol TodoAdding {
     /// 添加单条待办
     func add(_ item: ExtractedTodo) throws
+}
 
+/// 批量待办创建能力。
+protocol TodoBatchAdding {
     /// 批量添加（确认界面用）
     func addBatch(_ items: [ExtractedTodo]) throws
 
-    /// 添加原始转写文本（离线降级用）[v2]
-    func addRawTranscript(_ transcript: String) throws
+    /// 批量添加（确认界面用），保留输入时的语言标识。
+    func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws
+}
 
+/// 待办创建能力。
+protocol TodoCreating: TodoAdding, TodoBatchAdding {}
+
+/// 完成状态写入能力。
+protocol TodoCompletionWriting {
     /// 切换完成状态
     func toggleComplete(_ id: UUID) throws
+}
 
+/// 待办删除能力。
+protocol TodoDeletionWriting {
     /// 删除待办
     func delete(_ id: UUID) throws
+}
 
+/// 基础待办详情写入能力。
+protocol TodoBasicUpdating {
     /// 更新待办（支持标题、分类、优先级、时间提示）
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws
+}
 
+/// 待办详情与重复规则原子写入能力。
+protocol TodoDetailUpdating {
     /// 原子更新待办详情（基础字段 + 重复规则）
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
+}
 
+/// 重复规则写入能力。
+protocol TodoRecurrenceWriting {
     /// 更新重复规则（nil 表示关闭重复）
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws
+}
 
+/// 待办排序写入能力。
+protocol TodoOrderingWriting {
+    /// 重新排序未完成待办（拖拽排序后调用）
+    /// - Parameter ids: 按新顺序排列的待办 ID 数组
+    func reorder(ids: [UUID]) throws
+}
+
+/// 完整待办写入能力集合。
+protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoBasicUpdating, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting {}
+
+/// 日历 occurrence 读取与写入能力。
+protocol CalendarOccurrenceStore {
     /// 获取日期区间内实际出现的待办
     func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData]
 
     /// 切换某一天的完成状态；重复任务只影响当天 occurrence
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws
+}
 
+/// Pending 转写读取能力。
+protocol PendingTranscriptReadable {
     /// 获取需要 AI 补处理的条目（needsAIProcessing == true）
     func pendingItems() -> [TodoItemData]
+}
 
+/// Pending 转写创建能力。
+protocol PendingTranscriptCreating {
+    /// 添加原始转写文本（离线降级用）[v2]
+    /// - Returns: 创建出的待处理待办，用于外部记录 pending 关联。
+    func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData
+}
+
+/// Widget 待办读取能力。
+protocol WidgetTodoReadable {
     /// 获取最近 N 条未完成待办（Widget 用）
     func recentUncompleted(limit: Int) -> [TodoItemData]
+}
 
+/// Pending 转写替换能力。
+protocol PendingTranscriptReplacing {
     /// 替换待处理条目为提取结果（网络恢复后用）[v2]
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws
+
+    /// 替换待处理条目为提取结果（网络恢复后用），保留输入时的语言标识。
+    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws
 
     /// 批量替换多个待处理条目为提取结果（确保同一批次原子提交）
     func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws
 
+    /// 批量替换多个待处理条目为提取结果，保留输入时的语言标识。
+    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws
+}
+
+/// Pending 转写完整能力集合。
+protocol PendingTranscriptStore: PendingTranscriptReadable, PendingTranscriptCreating, PendingTranscriptReplacing {}
+
+/// 系统日历事件标识写入能力。
+protocol SystemCalendarEventIdentifierWriting {
     /// 记录系统日历事件 ID（用于避免后续重复写入和未来同步）
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws
+}
 
-    /// 重新排序未完成待办（拖拽排序后调用）
-    /// - Parameter ids: 按新顺序排列的待办 ID 数组
-    func reorder(ids: [UUID]) throws
-
+/// 待办刷新能力。
+protocol TodoRefreshing {
     /// 从数据库重新加载 todos（用于 UI 状态与数据层不一致时回滚）
     func refreshTodos()
+}
+
+/// Home 页只需要列表、完成切换和日历 occurrence。
+protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore {}
+
+/// AppCoordinator 直接编排待办批量保存、删除、详情更新和 pending 替换。
+protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing {}
+
+/// Pending 恢复流程只需要读取 pending 与删除无效 pending。
+protocol PendingRecoveryTodoStore: PendingTranscriptReadable, TodoDeletionWriting {}
+
+/// 系统日历同步只需要读取当前待办并持久化系统日历事件 ID。
+protocol CalendarSyncTodoStore: TodoListReadable, SystemCalendarEventIdentifierWriting {}
+
+extension PendingTranscriptCreating {
+    /// 添加原始转写文本（离线降级用），使用当前系统 locale。
+    func addRawTranscript(_ transcript: String) throws -> TodoItemData {
+        try addRawTranscript(transcript, localeIdentifier: nil)
+    }
+}
+
+/// 语音捕捉历史存储协议。
+@MainActor
+protocol VoiceCaptureHistoryStoreProtocol: ObservableObject {
+    /// 按创建时间倒序排列的语音历史记录。
+    var records: [VoiceCaptureRecordData] { get }
+
+    /// 历史记录加载状态。
+    var loadState: VoiceCaptureHistoryLoadState { get }
+
+    /// 重新读取历史记录。
+    func refreshRecords()
+
+    /// 创建语音历史记录。
+    /// - Returns: 创建出的历史记录 DTO。
+    @discardableResult
+    func createRecord(
+        transcript: String,
+        source: VoiceCaptureSource,
+        localeIdentifier: String,
+        now: Date
+    ) throws -> VoiceCaptureRecordData
+
+    /// 更新语音历史记录。
+    /// - Returns: 更新后的历史记录 DTO。
+    @discardableResult
+    func updateRecord(
+        id: UUID,
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        pendingTodoLink: VoiceCapturePendingTodoLinkUpdate,
+        errorMessage: String?
+    ) throws -> VoiceCaptureRecordData
+
+    /// 删除语音历史记录。
+    func deleteRecord(id: UUID) throws
+
+    /// 删除 30 天前的语音历史记录。
+    func cleanupExpiredRecords(now: Date) throws
+
+    /// 查找关联某个离线 pending 待办的历史记录。
+    func recordLinkedToPendingTodo(id: UUID) throws -> VoiceCaptureRecordData?
 }

@@ -32,6 +32,13 @@ enum ErrorMessages {
     static let systemCalendarSyncFailed = String(localized: "ui.system_calendar_sync_failed")
     static let permissionsRequired = String(localized: "ui.permissions_required")
     static let finishOnboardingFirst = String(localized: "ui.finish_onboarding_first")
+    static let historyCopied = String(localized: "history.copy_success")
+    static let historyCreateFailed = String(localized: "history.create_failed")
+    static let historyUpdateFailed = String(localized: "history.update_failed")
+    static let historyDeleteFailed = String(localized: "history.delete_failed")
+    static let historyCleanupFailed = String(localized: "history.cleanup_failed")
+    static let historyReprocessBlocked = String(localized: "history.reprocess_blocked")
+    static let historyReprocessFailed = String(localized: "history.reprocess_failed")
 
     /// 带参数的格式化方法
     static func todoSaveFailedMessage(_ detail: String) -> String {

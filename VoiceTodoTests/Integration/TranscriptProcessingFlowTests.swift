@@ -1,4 +1,3 @@
-import Combine
 import XCTest
 @testable import VoiceTodo
 
@@ -58,6 +57,27 @@ final class TranscriptProcessingFlowTests: XCTestCase {
         XCTAssertEqual(events.first?.todoTitles, ["partial todo"])
     }
 
+    func testProcessKeepsReceivedAnyWhenLaterPartialIsEmpty() async {
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(todos: [ExtractedTodo(title: "first todo")], ignored: ""),
+            ExtractionResult(todos: [], ignored: "empty final")
+        ]
+        let flow = TranscriptProcessingFlow(
+            store: TranscriptFlowTestStore(),
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "todo then empty final", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["partial", "partial", "success"])
+        XCTAssertEqual(events.first?.todoTitles, ["first todo"])
+        XCTAssertEqual(events.last?.todoTitles, ["first todo"])
+    }
+
     func testProcessNetworkFailureSavesTranscriptForFallback() async {
         let store = TranscriptFlowTestStore()
         let extractor = TranscriptFlowTestExtractor()
@@ -74,6 +94,7 @@ final class TranscriptProcessingFlowTests: XCTestCase {
 
         XCTAssertEqual(events.map(\.name), ["networkFallbackSaved"])
         XCTAssertEqual(store.rawTranscripts, ["save this later"])
+        XCTAssertEqual(store.rawTranscriptLocales, ["en-US"])
     }
 
     func testProcessOfflineSaveFailureEmitsOfflineSaveFailed() async {
@@ -170,33 +191,23 @@ private final class TranscriptFlowTestExtractor: TodoExtractorProtocol {
 }
 
 @MainActor
-private final class TranscriptFlowTestStore: TodoStoreProtocol {
-    @Published var todos: [TodoItemData] = []
+private final class TranscriptFlowTestStore: PendingTranscriptCreating {
     var rawTranscripts: [String] = []
+    var rawTranscriptLocales: [String?] = []
     var addRawError: Error?
 
-    func add(_ item: ExtractedTodo) throws {}
-    func addBatch(_ items: [ExtractedTodo]) throws {}
-
-    func addRawTranscript(_ transcript: String) throws {
+    func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         rawTranscripts.append(transcript)
+        rawTranscriptLocales.append(localeIdentifier)
         if let addRawError {
             throw addRawError
         }
+        return TodoItemData(
+            title: transcript,
+            detail: transcript,
+            rawTranscript: transcript,
+            needsAIProcessing: true,
+            localeIdentifier: localeIdentifier
+        )
     }
-
-    func toggleComplete(_ id: UUID) throws {}
-    func delete(_ id: UUID) throws {}
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {}
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {}
-    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] { [] }
-    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {}
-    func pendingItems() -> [TodoItemData] { [] }
-    func recentUncompleted(limit: Int) -> [TodoItemData] { [] }
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws {}
-    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws {}
-    func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {}
-    func reorder(ids: [UUID]) throws {}
-    func refreshTodos() {}
 }

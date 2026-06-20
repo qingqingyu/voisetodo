@@ -4,7 +4,7 @@ import SwiftData
 
 /// 待办存储服务
 @MainActor
-final class TodoStore: TodoStoreProtocol {
+final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStore, PendingTranscriptCreating, CalendarSyncTodoStore, TodoMutationWriting, WidgetTodoReadable, TodoRefreshing {
     // MARK: - Properties
 
     /// SwiftData 模型上下文
@@ -31,7 +31,7 @@ final class TodoStore: TodoStoreProtocol {
         VoiceTodoLog.store.info("store.init.finished todoCount=\(self.todos.count)")
     }
 
-    // MARK: - TodoStoreProtocol Implementation
+    // MARK: - Store Facade Implementations
 
     /// 添加单条待办
     /// - Parameter item: AI 提取的待办
@@ -40,7 +40,7 @@ final class TodoStore: TodoStoreProtocol {
         VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) titleChars=\(item.title.count)")
         let todoItem = TodoItem.from(item)
         todoItem.sortOrder = try nextSortOrderForNewItem()
-        todoItem.localeIdentifier = Locale.current.identifier
+        todoItem.localeIdentifier = resolveLocaleIdentifier(item.localeIdentifier, fallback: Locale.current.identifier)
         modelContext.insert(todoItem)
 
         try saveOrRollback()
@@ -51,15 +51,19 @@ final class TodoStore: TodoStoreProtocol {
     /// 批量添加（确认界面用）
     /// - Parameter items: AI 提取的待办数组
     func addBatch(_ items: [ExtractedTodo]) throws {
+        try addBatch(items, localeIdentifier: nil)
+    }
+
+    func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
         let startedAt = Date()
-        let localeIdentifier = Locale.current.identifier
-        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) locale=\(localeIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        let fallbackLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
+        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
         var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item)
             todoItem.sortOrder = baseSortOrder
-            todoItem.localeIdentifier = localeIdentifier
+            todoItem.localeIdentifier = resolveLocaleIdentifier(localeIdentifier ?? item.localeIdentifier, fallback: fallbackLocaleIdentifier)
             baseSortOrder -= 1
             modelContext.insert(todoItem)
             newTodos.append(todoItem.toData())
@@ -67,21 +71,27 @@ final class TodoStore: TodoStoreProtocol {
 
         try saveOrRollback()
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) locale=\(localeIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 添加原始转写文本（离线降级用）[v2]
-    /// - Parameter transcript: 原始语音转写文本
-    func addRawTranscript(_ transcript: String) throws {
+    /// - Parameters:
+    ///   - transcript: 原始语音转写文本
+    ///   - localeIdentifier: 录音/输入时的语言标识，nil 时回退到当前系统 locale。
+    func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.add_raw.start \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        let effectiveLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
+        VoiceTodoLog.store.info("store.add_raw.start locale=\(effectiveLocaleIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
         let todoItem = TodoItem.rawTranscript(transcript)
+        todoItem.localeIdentifier = effectiveLocaleIdentifier
         todoItem.sortOrder = try nextSortOrderForNewItem()
         modelContext.insert(todoItem)
 
         try saveOrRollback()
-        todos.insert(todoItem.toData(), at: 0)
-        VoiceTodoLog.store.info("store.add_raw.success id=\(todoItem.id.uuidString, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        let data = todoItem.toData()
+        todos.insert(data, at: 0)
+        VoiceTodoLog.store.info("store.add_raw.success id=\(todoItem.id.uuidString, privacy: .public) locale=\(effectiveLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        return data
     }
 
     /// 切换完成状态
@@ -357,13 +367,49 @@ final class TodoStore: TodoStoreProtocol {
     ///   - pendingId: 待处理条目 ID
     ///   - items: AI 提取结果
     ///   - rawTranscript: 合并的原始转写文本（多个 pending 合并时覆盖 pending 自身的）
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
-        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript)
+    func replacePendingWithExtracted(
+        _ pendingId: UUID,
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil
+    ) throws {
+        try replacePendingWithExtracted(
+            pendingId,
+            items,
+            rawTranscript: rawTranscript,
+            localeIdentifier: nil
+        )
     }
 
-    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
+    func replacePendingWithExtracted(
+        _ pendingId: UUID,
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil,
+        localeIdentifier: String? = nil
+    ) throws {
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript, localeIdentifier: localeIdentifier)
+    }
+
+    func replacePendingBatchWithExtracted(
+        _ pendingIds: [UUID],
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil
+    ) throws {
+        try replacePendingBatchWithExtracted(
+            pendingIds,
+            items,
+            rawTranscript: rawTranscript,
+            localeIdentifier: nil
+        )
+    }
+
+    func replacePendingBatchWithExtracted(
+        _ pendingIds: [UUID],
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil,
+        localeIdentifier: String? = nil
+    ) throws {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) newCount=\(items.count) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
+        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) newCount=\(items.count) locale=\(localeIdentifier ?? "auto", privacy: .public) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
         guard !pendingIds.isEmpty else {
             VoiceTodoLog.store.error("store.replace_pending_batch.failed reason=empty_pending_ids")
             throw VoiceTodoError.storageReadFailed("未提供待处理 ID")
@@ -371,12 +417,18 @@ final class TodoStore: TodoStoreProtocol {
 
         let pendingItems = try pendingIds.map { try findTodoItem(by: $0) }
         let effectiveTranscript = rawTranscript ?? pendingItems.compactMap(\.rawTranscript).joined(separator: "\n---\n")
+        let fallbackLocaleIdentifier = resolveLocaleIdentifier(
+            localeIdentifier
+                ?? pendingItems.first(where: { ($0.localeIdentifier ?? "").isEmpty == false })?.localeIdentifier,
+            fallback: Locale.current.identifier
+        )
 
         var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
             let todoItem = TodoItem.from(item, rawTranscript: effectiveTranscript)
             todoItem.sortOrder = baseSortOrder
+            todoItem.localeIdentifier = resolveLocaleIdentifier(localeIdentifier ?? item.localeIdentifier, fallback: fallbackLocaleIdentifier)
             baseSortOrder -= 1
             modelContext.insert(todoItem)
             newTodos.append(todoItem.toData())
@@ -390,7 +442,7 @@ final class TodoStore: TodoStoreProtocol {
         let pendingSet = Set(pendingIds)
         todos.removeAll { pendingSet.contains($0.id) }
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        VoiceTodoLog.store.info("store.replace_pending_batch.success pendingCount=\(pendingIds.count) newCount=\(items.count) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.replace_pending_batch.success pendingCount=\(pendingIds.count) newCount=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     func resetForUITests() throws {
@@ -404,9 +456,13 @@ final class TodoStore: TodoStoreProtocol {
             for completion in completions {
                 modelContext.delete(completion)
             }
+            let historyRecords = try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>())
+            for record in historyRecords {
+                modelContext.delete(record)
+            }
             try saveOrRollback()
             todos = []
-            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count)")
+            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count) deletedHistory=\(historyRecords.count)")
         } catch {
             VoiceTodoLog.store.error("store.reset_for_ui_tests.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             if let voiceError = error as? VoiceTodoError {
@@ -433,7 +489,8 @@ final class TodoStore: TodoStoreProtocol {
                 rawTranscript: item.rawTranscript,
                 needsAIProcessing: item.needsAIProcessing,
                 sortOrder: item.sortOrder,
-                systemCalendarEventIdentifier: item.systemCalendarEventIdentifier
+                systemCalendarEventIdentifier: item.systemCalendarEventIdentifier,
+                localeIdentifier: item.localeIdentifier
             )
             modelContext.insert(todoItem)
         }
@@ -706,6 +763,261 @@ final class TodoStore: TodoStoreProtocol {
                 throw voiceError
             }
             throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
+    }
+}
+
+private extension TodoStore {
+    /// 解析有效的 locale identifier：空串视为无效，回退到 fallback。
+    /// 防御旧数据写入 "" 而非 nil 导致 Locale(identifier: "") 退化成根 locale。
+    func resolveLocaleIdentifier(_ identifier: String?, fallback: String) -> String {
+        if let identifier, !identifier.isEmpty {
+            return identifier
+        }
+        return fallback
+    }
+}
+
+/// SwiftData-backed store for voice capture history.
+@MainActor
+final class VoiceCaptureHistoryStore: VoiceCaptureHistoryStoreProtocol {
+    private let modelContext: ModelContext
+    private let saveAction: (ModelContext) throws -> Void
+    private let fetchRecordsAction: (ModelContext, FetchDescriptor<VoiceCaptureRecord>) throws -> [VoiceCaptureRecord]
+
+    @Published private(set) var records: [VoiceCaptureRecordData] = []
+    @Published private(set) var loadState: VoiceCaptureHistoryLoadState = .loading
+
+    init(
+        modelContext: ModelContext,
+        saveAction: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        fetchRecordsAction: @escaping (ModelContext, FetchDescriptor<VoiceCaptureRecord>) throws -> [VoiceCaptureRecord] = { context, descriptor in
+            try context.fetch(descriptor)
+        }
+    ) {
+        self.modelContext = modelContext
+        self.saveAction = saveAction
+        self.fetchRecordsAction = fetchRecordsAction
+        // 不在 init 同步 fetch：ModelContext 此时未必就绪，UI 通过 onAppear 主动 refreshRecords。
+    }
+
+    func refreshRecords() {
+        let startedAt = Date()
+        loadState = .loading
+        let descriptor = FetchDescriptor<VoiceCaptureRecord>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+
+        do {
+            let fetched = try fetchRecordsAction(modelContext, descriptor)
+            records = fetched.map { $0.toData() }
+            loadState = records.isEmpty ? .empty : .success
+            VoiceTodoLog.store.info("history.refresh.success count=\(self.records.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        } catch {
+            records = []
+            loadState = .error
+            VoiceTodoLog.store.error("history.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+        }
+    }
+
+    @discardableResult
+    func createRecord(
+        transcript: String,
+        source: VoiceCaptureSource,
+        localeIdentifier: String,
+        now: Date
+    ) throws -> VoiceCaptureRecordData {
+        let startedAt = Date()
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        VoiceTodoLog.store.info("history.create.start source=\(source.rawValue, privacy: .public) locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(trimmed), privacy: .public)")
+        guard !trimmed.isEmpty else {
+            VoiceTodoLog.store.warning("history.create.ignored reason=empty_transcript")
+            throw VoiceTodoError.storageWriteFailed("empty transcript")
+        }
+
+        let record = VoiceCaptureRecord(
+            transcript: trimmed,
+            createdAt: now,
+            status: .processing,
+            source: source,
+            localeIdentifier: localeIdentifier
+        )
+        modelContext.insert(record)
+
+        do {
+            try saveAction(modelContext)
+            let data = record.toData()
+            records.insert(data, at: 0)
+            records.sort { $0.createdAt > $1.createdAt }
+            loadState = .success
+            VoiceTodoLog.store.info("history.create.success id=\(record.id.uuidString, privacy: .public) source=\(source.rawValue, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return data
+        } catch {
+            modelContext.rollback()
+            refreshRecords()
+            VoiceTodoLog.store.error("history.create.failed source=\(source.rawValue, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    @discardableResult
+    func updateRecord(
+        id: UUID,
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        pendingTodoLink: VoiceCapturePendingTodoLinkUpdate,
+        errorMessage: String?
+    ) throws -> VoiceCaptureRecordData {
+        let startedAt = Date()
+        let pendingLinkDescription = Self.pendingLinkDescription(pendingTodoLink)
+        let effectiveGeneratedCount = generatedTodoIDs?.count ?? generatedTodoCount ?? (status.resetsGeneratedArtifacts ? 0 : -1)
+        VoiceTodoLog.store.info("history.update.start id=\(id.uuidString, privacy: .public) status=\(status.rawValue, privacy: .public) generatedCount=\(effectiveGeneratedCount) pendingLink=\(pendingLinkDescription, privacy: .public) errorChars=\(errorMessage?.count ?? -1)")
+        let record = try findRecord(by: id)
+
+        record.status = status
+        if let generatedTodoIDs {
+            record.generatedTodoIDsRaw = VoiceCaptureRecord.encodeIDs(generatedTodoIDs)
+            record.generatedTodoCount = generatedTodoIDs.count
+        } else {
+            if status.resetsGeneratedArtifacts {
+                record.generatedTodoIDsRaw = ""
+            }
+            if let generatedTodoCount {
+                record.generatedTodoCount = generatedTodoCount
+            } else if status.resetsGeneratedArtifacts {
+                record.generatedTodoCount = 0
+            }
+        }
+        switch pendingTodoLink {
+        case .keepCurrent:
+            break
+        case .set(let pendingTodoID):
+            record.pendingTodoID = pendingTodoID
+        case .clear:
+            record.pendingTodoID = nil
+        }
+        record.errorMessage = errorMessage
+
+        do {
+            try saveAction(modelContext)
+            let data = record.toData()
+            if let index = records.firstIndex(where: { $0.id == id }) {
+                records[index] = data
+                records.sort { $0.createdAt > $1.createdAt }
+            } else {
+                records.insert(data, at: 0)
+            }
+            loadState = records.isEmpty ? .empty : .success
+            VoiceTodoLog.store.info("history.update.success id=\(id.uuidString, privacy: .public) status=\(status.rawValue, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return data
+        } catch {
+            modelContext.rollback()
+            refreshRecords()
+            VoiceTodoLog.store.error("history.update.failed id=\(id.uuidString, privacy: .public) status=\(status.rawValue, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    func deleteRecord(id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("history.delete.start id=\(id.uuidString, privacy: .public)")
+        let record = try findRecord(by: id)
+        modelContext.delete(record)
+
+        do {
+            try saveAction(modelContext)
+            records.removeAll { $0.id == id }
+            loadState = records.isEmpty ? .empty : .success
+            VoiceTodoLog.store.info("history.delete.success id=\(id.uuidString, privacy: .public) remaining=\(self.records.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        } catch {
+            modelContext.rollback()
+            refreshRecords()
+            VoiceTodoLog.store.error("history.delete.failed id=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    func cleanupExpiredRecords(now: Date) throws {
+        let startedAt = Date()
+        // 统一使用绝对秒数，避免与 fallback 计算方式不一致导致 30 天边界跨夏令时漂移。
+        let cutoff = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        VoiceTodoLog.store.info("history.cleanup.start cutoff=\(cutoff.ISO8601Format(), privacy: .public)")
+        let descriptor = FetchDescriptor<VoiceCaptureRecord>(
+            predicate: #Predicate { record in
+                record.createdAt < cutoff
+            }
+        )
+
+        do {
+            let expired = try fetchRecordsAction(modelContext, descriptor)
+            guard !expired.isEmpty else {
+                VoiceTodoLog.store.info("history.cleanup.skipped reason=no_expired durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                return
+            }
+            for record in expired {
+                modelContext.delete(record)
+            }
+            try saveAction(modelContext)
+            refreshRecords()
+            VoiceTodoLog.store.info("history.cleanup.success deleted=\(expired.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        } catch {
+            modelContext.rollback()
+            refreshRecords()
+            VoiceTodoLog.store.error("history.cleanup.failed cutoff=\(cutoff.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    func recordLinkedToPendingTodo(id: UUID) throws -> VoiceCaptureRecordData? {
+        var descriptor = FetchDescriptor<VoiceCaptureRecord>(
+            predicate: #Predicate { record in
+                record.pendingTodoID == id
+            },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+
+        do {
+            let record = try fetchRecordsAction(modelContext, descriptor).first
+            VoiceTodoLog.store.debug("history.pending_link.lookup pendingID=\(id.uuidString, privacy: .public) found=\(record != nil)")
+            return record?.toData()
+        } catch {
+            VoiceTodoLog.store.error("history.pending_link.lookup_failed pendingID=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
+    }
+
+    private func findRecord(by id: UUID) throws -> VoiceCaptureRecord {
+        var descriptor = FetchDescriptor<VoiceCaptureRecord>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+
+        let fetched: [VoiceCaptureRecord]
+        do {
+            fetched = try fetchRecordsAction(modelContext, descriptor)
+        } catch {
+            VoiceTodoLog.store.error("history.find.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
+
+        guard let record = fetched.first else {
+            // not_found 是合法的并发情况（如已被其他流程删除），用 warning 而非 error。
+            VoiceTodoLog.store.warning("history.find.not_found id=\(id.uuidString, privacy: .public)")
+            throw VoiceTodoError.storageReadFailed("voice capture record not found: \(id)")
+        }
+        return record
+    }
+
+    private static func pendingLinkDescription(_ update: VoiceCapturePendingTodoLinkUpdate) -> String {
+        switch update {
+        case .keepCurrent:
+            return "keep"
+        case .set(let id):
+            return id.uuidString
+        case .clear:
+            return "clear"
         }
     }
 }

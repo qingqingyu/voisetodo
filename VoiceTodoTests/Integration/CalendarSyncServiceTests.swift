@@ -109,7 +109,7 @@ final class CalendarSyncServiceTests: XCTestCase {
 }
 
 @MainActor
-private final class CalendarSyncTestStore: TodoStoreProtocol {
+private final class CalendarSyncTestStore: CalendarSyncTodoStore {
     @Published var todos: [TodoItemData]
     var systemCalendarEventIdentifiers: [UUID: String] = [:]
     var identifierUpdateError: Error?
@@ -123,33 +123,12 @@ private final class CalendarSyncTestStore: TodoStoreProtocol {
         )
     }
 
-    func add(_ item: ExtractedTodo) throws {}
-    func addBatch(_ items: [ExtractedTodo]) throws {}
-    func addRawTranscript(_ transcript: String) throws {}
-    func toggleComplete(_ id: UUID) throws {}
-    func delete(_ id: UUID) throws {}
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {}
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {}
-    func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] { [] }
-    func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {}
-    func pendingItems() -> [TodoItemData] { [] }
-    func recentUncompleted(limit: Int) -> [TodoItemData] { [] }
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws {}
-    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws {}
-
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {
         if let identifierUpdateError {
             throw identifierUpdateError
         }
         systemCalendarEventIdentifiers[id] = eventIdentifier
-        if let index = todos.firstIndex(where: { $0.id == id }) {
-            todos[index].systemCalendarEventIdentifier = eventIdentifier
-        }
     }
-
-    func reorder(ids: [UUID]) throws {}
-    func refreshTodos() {}
 }
 
 private final class CalendarSyncTestWriter: SystemCalendarWritingProtocol {

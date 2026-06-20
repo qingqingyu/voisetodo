@@ -1,15 +1,408 @@
 import SwiftUI
+import UIKit
 import WidgetKit
 
 private func formattedHomeDate(_ date: Date) -> String {
     date.formatted(.dateTime.month().day().weekday(.wide))
 }
 
+// MARK: - Root Tabs
+
+private enum RootTab: Hashable {
+    case home
+    case history
+}
+
+struct RootTabView<Store: HomeTodoStore, HistoryStore: VoiceCaptureHistoryStoreProtocol>: View {
+    @ObservedObject var todoStore: Store
+    @ObservedObject var historyStore: HistoryStore
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @State private var selectedTab: RootTab = .home
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            HomeView(store: todoStore)
+                .tag(RootTab.home)
+                .tabItem {
+                    Label(String(localized: "tab.home"), systemImage: "house")
+                }
+                .accessibilityIdentifier("HomeTab")
+
+            VoiceHistoryView(historyStore: historyStore)
+                .tag(RootTab.history)
+                .tabItem {
+                    Label(String(localized: "tab.history"), systemImage: "clock.arrow.circlepath")
+                }
+                .accessibilityIdentifier("HistoryTab")
+        }
+        .tint(WarmTheme.primary)
+        .accessibilityIdentifier("RootTabView")
+        // Deep link 进来时强制切回 Home Tab，保证 HomeView 的 onChange(of: deepLinkTodoId) 可见
+        .onChange(of: coordinator.deepLinkTodoId) { _, newValue in
+            if newValue != nil && selectedTab != .home {
+                selectedTab = .home
+            }
+        }
+    }
+}
+
+// MARK: - Voice History
+
+struct VoiceHistoryView<HistoryStore: VoiceCaptureHistoryStoreProtocol>: View {
+    @ObservedObject var historyStore: HistoryStore
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @State private var hasPerformedInitialCleanup = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                PaperTextureBackground()
+
+                VStack(spacing: 0) {
+                    headerView
+
+                    Group {
+                        switch historyStore.loadState {
+                        case .loading:
+                            loadingState
+                        case .empty:
+                            emptyState
+                        case .error:
+                            errorState
+                        case .success:
+                            successState
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .onAppear {
+            historyStore.refreshRecords()
+            // 仅首次进入 Tab 时做一次过期清理（启动时 handleAppLaunch 已清一次，
+            // 此处兜底用户从背景恢复后未触发 launch 的场景；避免每次切 Tab 重复 fetch）。
+            if !hasPerformedInitialCleanup {
+                hasPerformedInitialCleanup = true
+                coordinator.cleanupExpiredVoiceHistory()
+            }
+        }
+        .accessibilityIdentifier("VoiceHistoryView")
+    }
+
+    private var headerView: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                Text(String(localized: "history.subtitle"))
+                    .font(WarmFont.caption(14))
+                    .foregroundColor(WarmTheme.textSecondary)
+
+                Text(String(localized: "history.title"))
+                    .font(WarmFont.display(30))
+                    .foregroundColor(WarmTheme.textPrimary)
+            }
+
+            Spacer()
+
+            Button {
+                historyStore.refreshRecords()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .frame(width: WarmSize.touch, height: WarmSize.touch)
+                    .background(Circle().fill(WarmTheme.secondaryBackground))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("VoiceHistoryRefreshButton")
+            .accessibilityLabel(String(localized: "history.retry"))
+        }
+        .padding(.horizontal, WarmSpacing.xl)
+        .padding(.top, WarmSpacing.md)
+        .padding(.bottom, WarmSpacing.lg)
+        .background(
+            WarmTheme.background.opacity(0.9)
+                .shadow(color: WarmTheme.shadowLight, radius: 1, y: 1)
+        )
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: WarmSpacing.md) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
+                .scaleEffect(1.25)
+
+            Text(String(localized: "history.loading"))
+                .font(WarmFont.body(15))
+                .foregroundColor(WarmTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("VoiceHistoryLoadingState")
+    }
+
+    private var emptyState: some View {
+        VStack {
+            Spacer()
+            ProductEmptyStateView(
+                icon: "waveform",
+                title: String(localized: "history.empty.title"),
+                message: String(localized: "history.empty.message")
+            )
+            .padding(.horizontal, WarmSpacing.xl)
+            .accessibilityIdentifier("VoiceHistoryEmptyState")
+            Spacer()
+        }
+    }
+
+    private var errorState: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: WarmSpacing.md) {
+                ProductEmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    title: String(localized: "history.error.title"),
+                    message: String(localized: "history.error.message")
+                )
+
+                Button {
+                    historyStore.refreshRecords()
+                } label: {
+                    Label(String(localized: "history.retry"), systemImage: "arrow.clockwise")
+                        .font(WarmFont.headline(15))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: WarmSize.touch)
+                        .background(
+                            Capsule()
+                                .fill(WarmTheme.primary)
+                                .shadow(color: WarmTheme.shadowMedium, radius: 8, x: 0, y: 4)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("VoiceHistoryRetryButton")
+            }
+            .padding(.horizontal, WarmSpacing.xl)
+            .accessibilityIdentifier("VoiceHistoryErrorState")
+            Spacer()
+        }
+    }
+
+    private var successState: some View {
+        ScrollView {
+            LazyVStack(spacing: WarmSpacing.sm) {
+                ForEach(Array(historyStore.records.enumerated()), id: \.element.id) { index, record in
+                    VoiceHistoryRow(
+                        record: record,
+                        index: index,
+                        onReprocess: {
+                            Task {
+                                await coordinator.reprocessHistoryRecord(record)
+                            }
+                        },
+                        onCopy: {
+                            UIPasteboard.general.string = record.transcript
+                            coordinator.showToast(message: ErrorMessages.historyCopied, style: .info)
+                        },
+                        onDelete: {
+                            delete(record)
+                        }
+                    )
+                    .accessibilityIdentifier("VoiceHistoryRow_\(index)")
+                }
+            }
+            .padding(.horizontal, WarmSpacing.lg)
+            .padding(.vertical, WarmSpacing.lg)
+        }
+        .accessibilityIdentifier("VoiceHistoryList")
+    }
+
+    private func delete(_ record: VoiceCaptureRecordData) {
+        do {
+            try historyStore.deleteRecord(id: record.id)
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.history.delete.failed recordID=\(record.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.historyDeleteFailed, style: .warning)
+        }
+    }
+}
+
+private struct VoiceHistoryRow: View {
+    let record: VoiceCaptureRecordData
+    let index: Int
+    let onReprocess: () -> Void
+    let onCopy: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+            HStack(alignment: .top, spacing: WarmSpacing.sm) {
+                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                    Text(record.transcript)
+                        .font(WarmFont.body(15))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(3)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: WarmSpacing.xs) {
+                        Text(formattedDate)
+                            .font(WarmFont.caption(12))
+                            .foregroundColor(WarmTheme.textSecondary)
+
+                        Text(sourceText)
+                            .font(WarmFont.caption(12))
+                            .foregroundColor(WarmTheme.textMuted)
+                    }
+                }
+
+                Spacer(minLength: WarmSpacing.sm)
+
+                statusChip
+            }
+
+            HStack(spacing: WarmSpacing.xs) {
+                generatedCountChip
+
+                Spacer()
+
+                actionButton(
+                    systemImage: "arrow.triangle.2.circlepath",
+                    label: String(localized: "history.reprocess"),
+                    identifier: "VoiceHistoryReprocessButton_\(index)",
+                    action: onReprocess
+                )
+
+                actionButton(
+                    systemImage: "doc.on.doc",
+                    label: String(localized: "history.copy"),
+                    identifier: "VoiceHistoryCopyButton_\(index)",
+                    action: onCopy
+                )
+
+                actionButton(
+                    systemImage: "trash",
+                    label: String(localized: "history.delete"),
+                    identifier: "VoiceHistoryDeleteButton_\(index)",
+                    action: onDelete
+                )
+            }
+        }
+        .padding(WarmSpacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
+                .fill(Color.white.opacity(0.94))
+                .overlay(
+                    RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
+                        .stroke(WarmTheme.primary.opacity(0.10), lineWidth: 1)
+                )
+                .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
+        )
+    }
+
+    private var formattedDate: String {
+        record.createdAt.formatted(.dateTime.month().day().hour().minute())
+    }
+
+    private var sourceText: String {
+        switch record.source {
+        case .recordButton:
+            return String(localized: "history.source.record_button")
+        case .actionButton:
+            return String(localized: "history.source.action_button")
+        }
+    }
+
+    private var statusChip: some View {
+        Text(statusText)
+            .font(WarmFont.caption(12))
+            .foregroundColor(statusColor)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, WarmSpacing.xs)
+            .padding(.vertical, WarmSpacing.xxs)
+            .background(
+                Capsule()
+                    .fill(statusColor.opacity(0.12))
+            )
+    }
+
+    private var generatedCountChip: some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "checklist")
+                .font(.system(size: 12, weight: .semibold))
+            Text(String(localized: "history.generated_count \(record.generatedTodoCount)"))
+                .font(WarmFont.caption(12))
+        }
+        .foregroundColor(WarmTheme.textSecondary)
+        .padding(.horizontal, WarmSpacing.xs)
+        .padding(.vertical, WarmSpacing.xxs)
+        .background(
+            Capsule()
+                .fill(WarmTheme.secondaryBackground)
+        )
+    }
+
+    private var statusText: String {
+        switch record.status {
+        case .processing:
+            return String(localized: "history.status.processing")
+        case .reviewing:
+            return String(localized: "history.status.reviewing")
+        case .saved:
+            return String(localized: "history.status.saved")
+        case .noTodos:
+            return String(localized: "history.status.no_todos")
+        case .pending:
+            return String(localized: "history.status.pending")
+        case .failed:
+            return String(localized: "history.status.failed")
+        case .cancelled:
+            return String(localized: "history.status.cancelled")
+        }
+    }
+
+    private var statusColor: Color {
+        switch record.status {
+        case .processing, .reviewing:
+            return WarmTheme.categoryWork
+        case .saved:
+            return WarmTheme.success
+        case .noTodos, .cancelled:
+            return WarmTheme.textSecondary
+        case .pending:
+            return WarmTheme.warning
+        case .failed:
+            return WarmTheme.urgent
+        }
+    }
+
+    private func actionButton(
+        systemImage: String,
+        label: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(WarmTheme.textSecondary)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(WarmTheme.secondaryBackground)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(label)
+    }
+}
+
 // MARK: - HomeView
 
 /// 主页视图 - 温暖手账风格
 /// 纸张纹理背景 + 手写展示字体 + 分类色带卡片
-struct HomeView<Store: TodoStoreProtocol>: View {
+struct HomeView<Store: HomeTodoStore>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
     @EnvironmentObject private var permissionManager: PermissionManager
@@ -919,15 +1312,20 @@ struct WarmTodoCard: View {
                             )
                             .frame(width: WarmSize.icon, height: WarmSize.icon)
 
-                        if todo.isCompleted {
-                            Circle()
-                                .fill(WarmTheme.success)
-                                .frame(width: WarmSize.icon, height: WarmSize.icon)
+                        Circle()
+                            .fill(WarmTheme.success)
+                            .frame(width: WarmSize.icon, height: WarmSize.icon)
+                            .opacity(todo.isCompleted ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.2), value: todo.isCompleted)
 
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                        }
+                        WarmCheckmarkShape()
+                            .trim(from: 0, to: todo.isCompleted ? 1 : 0)
+                            .stroke(
+                                .white,
+                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                            )
+                            .frame(width: WarmSize.icon - 6, height: WarmSize.icon - 6)
+                            .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
                     }
                 }
                 .buttonStyle(.plain)
@@ -1008,4 +1406,31 @@ struct WarmTodoCard: View {
     }
 }
 
+// MARK: - Checkmark Shape
+
+/// 勾号路径 — 借鉴 M13Checkbox 的 `M13CheckboxCheckPathGenerator`：
+/// 用三点折线（短臂起点 → 中点 → 长臂顶点），配合 `.trim(from:to:)` 做"沿路径一笔绘制"的 stroke 动画。
+/// 不直接用 SF Symbols 的 `checkmark`，是因为后者无法控制 stroke 的渐变绘制时机，
+/// 而 `trim` 让"短臂→中点→长臂"按顺序出现，视觉上就是"被一笔勾出"。
+private struct WarmCheckmarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let p1 = CGPoint(x: rect.minX + rect.width * 0.15, y: rect.minY + rect.height * 0.55)
+        let p2 = CGPoint(x: rect.minX + rect.width * 0.42, y: rect.minY + rect.height * 0.75)
+        let p3 = CGPoint(x: rect.minX + rect.width * 0.85, y: rect.minY + rect.height * 0.25)
+        path.move(to: p1)
+        path.addLine(to: p2)
+        path.addLine(to: p3)
+        return path
+    }
+}
+
 // MARK: - Preview
+
+#Preview {
+    RootTabView(
+        todoStore: MockStore.preview,
+        historyStore: MockVoiceCaptureHistoryStore.preview
+    )
+    .environmentObject(AppCoordinator.preview)
+}

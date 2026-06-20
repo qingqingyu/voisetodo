@@ -1,7 +1,7 @@
 import Foundation
 
 /// VoiceTodo 统一错误类型
-enum VoiceTodoError: LocalizedError, Equatable {
+enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     // Voice 模块
     case microphonePermissionDenied
     case speechRecognitionPermissionDenied    // [v2] 新增

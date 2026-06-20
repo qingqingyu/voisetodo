@@ -3,7 +3,7 @@ import SwiftData
 
 /// Caches SwiftData containers used by Widget and AppIntent App Group access.
 enum AppGroupModelContainerProvider {
-    nonisolated(unsafe) private static let lock = NSLock()
+    private static let lock = NSLock()
     nonisolated(unsafe) private static var readOnlyContainer: ModelContainer?
     nonisolated(unsafe) private static var writableContainer: ModelContainer?
 
@@ -38,7 +38,7 @@ enum AppGroupModelContainerProvider {
     }
 
     private static func makeContainer(allowsSave: Bool) throws -> ModelContainer {
-        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
+        let schema = VoiceTodoSchema.schema
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,

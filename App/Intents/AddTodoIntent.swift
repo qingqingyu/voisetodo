@@ -31,17 +31,18 @@ struct AddTodoIntent: AppIntent {
         let extractor = TodoExtractorService()
         var extractedTodos: [ExtractedTodo]
         var isOffline = false
+        let inputLocale = Locale.current
 
         do {
-            let result = try await extractor.extract(from: trimmed, locale: .current)
-            extractedTodos = result.todos
-            VoiceTodoLog.intent.info("intent.add.extract_success id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count)")
+            let result = try await extractor.extract(from: trimmed, locale: inputLocale)
+            extractedTodos = Self.todosWithInputLocale(result.todos, localeIdentifier: inputLocale.identifier)
+            VoiceTodoLog.intent.info("intent.add.extract_success id=\(intentID, privacy: .public) locale=\(inputLocale.identifier, privacy: .public) todoCount=\(extractedTodos.count)")
         } catch let error as VoiceTodoError {
             VoiceTodoLog.intent.error("intent.add.extract_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             switch error {
             case .networkUnavailable, .apiTimeout:
                 let fallback = extractor.fallbackExtract(from: trimmed)
-                extractedTodos = fallback.todos
+                extractedTodos = Self.todosWithInputLocale(fallback.todos, localeIdentifier: inputLocale.identifier)
                 isOffline = true
                 VoiceTodoLog.intent.warning("intent.add.fallback id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count)")
             default:
@@ -139,6 +140,14 @@ struct AddTodoIntent: AppIntent {
                 throw voiceError
             }
             throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+        }
+    }
+
+    private static func todosWithInputLocale(_ todos: [ExtractedTodo], localeIdentifier: String) -> [ExtractedTodo] {
+        todos.map { todo in
+            var localized = todo
+            localized.localeIdentifier = localeIdentifier
+            return localized
         }
     }
 }

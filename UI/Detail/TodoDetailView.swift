@@ -7,7 +7,7 @@ private func formattedDetailDate(_ date: Date) -> String {
 
 /// 待办详情页 - 温暖主题风格
 /// 支持编辑标题、分类、优先级、时间提示，以及删除
-struct TodoDetailView<Store: TodoStoreProtocol>: View {
+struct TodoDetailView<Store: TodoListReadable>: View {
     // MARK: - Properties
 
     @Environment(\.dismiss) private var dismiss

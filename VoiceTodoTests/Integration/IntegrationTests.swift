@@ -17,7 +17,7 @@ final class IntegrationTests: XCTestCase {
 
         // 创建内存数据库
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        modelContainer = try ModelContainer(for: TodoItem.self, TodoOccurrenceCompletion.self, configurations: config)
+        modelContainer = try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
         modelContext = await MainActor.run { modelContainer.mainContext }
 
         // 初始化依赖

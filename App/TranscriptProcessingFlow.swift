@@ -5,21 +5,21 @@ enum TranscriptFlowEvent {
     case partial(ExtractionResult)
     case success(finalTodos: [ExtractedTodo])
     case noTodos
-    case offlineSaved
+    case offlineSaved(TodoItemData)
     case offlineSaveFailed(Error)
-    case networkFallbackSaved
+    case networkFallbackSaved(TodoItemData)
     case networkFallbackSaveFailed(Error)
     case failed(Error)
 }
 
 @MainActor
 final class TranscriptProcessingFlow {
-    private let store: any TodoStoreProtocol
+    private let store: any PendingTranscriptCreating
     private let extractor: any TodoExtractorProtocol
     private let networkIsConnectedProvider: @MainActor () -> Bool
 
     init(
-        store: any TodoStoreProtocol,
+        store: any PendingTranscriptCreating,
         extractor: any TodoExtractorProtocol,
         networkIsConnectedProvider: @escaping @MainActor () -> Bool
     ) {
@@ -53,7 +53,8 @@ final class TranscriptProcessingFlow {
                     VoiceTodoLog.coordinator.warning("coordinator.process_transcript.offline id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
                     await saveOffline(
                         transcript: text,
-                        fallbackEvent: .offlineSaved,
+                        localeIdentifier: locale.identifier,
+                        success: TranscriptFlowEvent.offlineSaved,
                         failure: TranscriptFlowEvent.offlineSaveFailed,
                         continuation: continuation
                     )
@@ -71,8 +72,10 @@ final class TranscriptProcessingFlow {
                             continuation.finish()
                             return
                         }
-                        finalTodos = partialResult.todos
-                        receivedAny = !partialResult.todos.isEmpty
+                        if !partialResult.todos.isEmpty {
+                            finalTodos = partialResult.todos
+                            receivedAny = true
+                        }
                         VoiceTodoLog.coordinator.debug("coordinator.process_transcript.partial id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(partialResult.todos.count)")
                         continuation.yield(.partial(partialResult))
                     }
@@ -99,7 +102,8 @@ final class TranscriptProcessingFlow {
                         VoiceTodoLog.coordinator.warning("coordinator.process_transcript.network_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         await saveOffline(
                             transcript: text,
-                            fallbackEvent: .networkFallbackSaved,
+                            localeIdentifier: locale.identifier,
+                            success: TranscriptFlowEvent.networkFallbackSaved,
                             failure: TranscriptFlowEvent.networkFallbackSaveFailed,
                             continuation: continuation
                         )
@@ -118,17 +122,18 @@ final class TranscriptProcessingFlow {
 
     private func saveOffline(
         transcript: String,
-        fallbackEvent: TranscriptFlowEvent,
+        localeIdentifier: String,
+        success: (TodoItemData) -> TranscriptFlowEvent,
         failure: (Error) -> TranscriptFlowEvent,
         continuation: AsyncStream<TranscriptFlowEvent>.Continuation
     ) async {
         let offlineID = VoiceTodoLog.makeID("offline")
         let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.offline_save.start id=\(offlineID, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        VoiceTodoLog.coordinator.info("coordinator.offline_save.start id=\(offlineID, privacy: .public) locale=\(localeIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
         do {
-            try store.addRawTranscript(transcript)
-            VoiceTodoLog.coordinator.info("coordinator.offline_save.success id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-            continuation.yield(fallbackEvent)
+            let pendingTodo = try store.addRawTranscript(transcript, localeIdentifier: localeIdentifier)
+            VoiceTodoLog.coordinator.info("coordinator.offline_save.success id=\(offlineID, privacy: .public) pendingID=\(pendingTodo.id.uuidString, privacy: .public) locale=\(localeIdentifier, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            continuation.yield(success(pendingTodo))
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.offline_save.failed id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             continuation.yield(failure(error))

@@ -1315,6 +1315,186 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "From VoiceTodo" } }
       }
     },
+    "tab.home" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "首页" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Home" } }
+      }
+    },
+    "tab.history" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "历史" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "History" } }
+      }
+    },
+    "history.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音记录" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Voice History" } }
+      }
+    },
+    "history.subtitle" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近 30 天" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 30 days" } }
+      }
+    },
+    "history.loading" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取语音记录" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading voice records" } }
+      }
+    },
+    "history.empty.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还没有语音记录" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No voice records yet" } }
+      }
+    },
+    "history.empty.message" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用录音按钮或 Action Button 记录待办后，会在这里保留转写文本。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcripts from the record button or Action Button will appear here." } }
+      }
+    },
+    "history.error.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "历史读取失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not load history" } }
+      }
+    },
+    "history.error.message" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地语音记录暂时无法打开，请重试。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local voice records could not be opened. Please try again." } }
+      }
+    },
+    "history.retry" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } }
+      }
+    },
+    "history.status.processing" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "处理中" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing" } }
+      }
+    },
+    "history.status.reviewing" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待确认" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reviewing" } }
+      }
+    },
+    "history.status.saved" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已生成" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved" } }
+      }
+    },
+    "history.status.no_todos" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos" } }
+      }
+    },
+    "history.status.pending" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待处理" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } }
+      }
+    },
+    "history.status.failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } }
+      }
+    },
+    "history.status.cancelled" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已取消" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancelled" } }
+      }
+    },
+    "history.generated_count %lld" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成 %lld 条" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld generated" } }
+      }
+    },
+    "history.source.record_button" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音按钮" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record button" } }
+      }
+    },
+    "history.source.action_button" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Action Button" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Action Button" } }
+      }
+    },
+    "history.reprocess" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新提取" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reprocess" } }
+      }
+    },
+    "history.copy" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy" } }
+      }
+    },
+    "history.delete" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } }
+      }
+    },
+    "history.copy_success" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已复制原文" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcript copied" } }
+      }
+    },
+    "history.create_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音记录保存失败，但待办处理会继续" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Voice history could not be saved, but todo processing will continue." } }
+      }
+    },
+    "history.update_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音记录更新失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update voice history" } }
+      }
+    },
+    "history.delete_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除历史记录失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not delete history record" } }
+      }
+    },
+    "history.cleanup_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过期历史清理失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not clean expired history" } }
+      }
+    },
+    "history.reprocess_blocked" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前有任务正在处理，请稍后再试" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Another task is still running. Try again shortly." } }
+      }
+    },
+    "history.reprocess_failed" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新提取失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reprocess failed" } }
+      }
+    },
     "widget.update_failed" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更新失败" } },

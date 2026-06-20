@@ -3,7 +3,7 @@ import Combine
 
 /// Mock Store（Agent D 使用）
 /// 用于 UI 开发和预览，不依赖 SwiftData
-class MockStore: TodoStoreProtocol {
+class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStore, PendingTranscriptCreating, CalendarSyncTodoStore, TodoMutationWriting, WidgetTodoReadable, TodoRefreshing {
     @Published var todos: [TodoItemData]
     private var completedOccurrences = Set<String>()
 
@@ -11,27 +11,43 @@ class MockStore: TodoStoreProtocol {
         self.todos = todos
     }
 
-    // MARK: - TodoStoreProtocol
+    // MARK: - Store Facade Implementations
 
     func add(_ item: ExtractedTodo) throws {
-        let todo = TodoItemData(from: item)
+        var todo = TodoItemData(from: item)
+        todo.localeIdentifier = Self.resolveLocaleIdentifier(item.localeIdentifier, fallback: Locale.current.identifier)
         todos.insert(todo, at: 0)
     }
 
     func addBatch(_ items: [ExtractedTodo]) throws {
-        let newTodos = items.map { TodoItemData(from: $0) }
-        todos.insert(contentsOf: newTodos.reversed(), at: 0)
+        try addBatch(items, localeIdentifier: nil)
     }
 
-    func addRawTranscript(_ transcript: String) throws {
+    func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
+        let fallbackLocaleIdentifier = Self.resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
+        let newTodos = items.map { item in
+            var todo = TodoItemData(from: item)
+            todo.localeIdentifier = Self.resolveLocaleIdentifier(localeIdentifier ?? item.localeIdentifier, fallback: fallbackLocaleIdentifier)
+            return todo
+        }
+        todos.insert(
+            contentsOf: newTodos.reversed(),
+            at: 0
+        )
+    }
+
+    func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let title = TextUtils.truncateTitle(from: transcript)
+        let effectiveLocaleIdentifier = Self.resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
         let todo = TodoItemData(
             title: title,
             detail: transcript,
             rawTranscript: transcript,
-            needsAIProcessing: true
+            needsAIProcessing: true,
+            localeIdentifier: effectiveLocaleIdentifier
         )
         todos.insert(todo, at: 0)
+        return todo
     }
 
     func toggleComplete(_ id: UUID) throws {
@@ -149,15 +165,60 @@ class MockStore: TodoStoreProtocol {
         )
     }
 
-    func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
-        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript)
+    func replacePendingWithExtracted(
+        _ pendingId: UUID,
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil
+    ) throws {
+        try replacePendingWithExtracted(
+            pendingId,
+            items,
+            rawTranscript: rawTranscript,
+            localeIdentifier: nil
+        )
     }
 
-    func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String? = nil) throws {
+    func replacePendingWithExtracted(
+        _ pendingId: UUID,
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil,
+        localeIdentifier: String? = nil
+    ) throws {
+        try replacePendingBatchWithExtracted([pendingId], items, rawTranscript: rawTranscript, localeIdentifier: localeIdentifier)
+    }
+
+    func replacePendingBatchWithExtracted(
+        _ pendingIds: [UUID],
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil
+    ) throws {
+        try replacePendingBatchWithExtracted(
+            pendingIds,
+            items,
+            rawTranscript: rawTranscript,
+            localeIdentifier: nil
+        )
+    }
+
+    func replacePendingBatchWithExtracted(
+        _ pendingIds: [UUID],
+        _ items: [ExtractedTodo],
+        rawTranscript: String? = nil,
+        localeIdentifier: String? = nil
+    ) throws {
         let pendingSet = Set(pendingIds)
+        let fallbackLocaleIdentifier = Self.resolveLocaleIdentifier(
+            localeIdentifier
+                ?? todos.first(where: { pendingSet.contains($0.id) && ($0.localeIdentifier ?? "").isEmpty == false })?.localeIdentifier,
+            fallback: Locale.current.identifier
+        )
         todos.removeAll { pendingSet.contains($0.id) }
 
-        let newTodos = items.map { TodoItemData(from: $0, rawTranscript: rawTranscript) }
+        let newTodos = items.map { item in
+            var todo = TodoItemData(from: item, rawTranscript: rawTranscript)
+            todo.localeIdentifier = Self.resolveLocaleIdentifier(localeIdentifier ?? item.localeIdentifier, fallback: fallbackLocaleIdentifier)
+            return todo
+        }
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
     }
 
@@ -180,6 +241,17 @@ class MockStore: TodoStoreProtocol {
     }
 
     func refreshTodos() {}
+}
+
+private extension MockStore {
+    /// 解析有效的 locale identifier：空串视为无效，回退到 fallback。
+    /// 与 TodoStore.resolveLocaleIdentifier 行为一致，防御旧数据写入 "" 而非 nil。
+    static func resolveLocaleIdentifier(_ identifier: String?, fallback: String) -> String {
+        if let identifier, !identifier.isEmpty {
+            return identifier
+        }
+        return fallback
+    }
 }
 
 // MARK: - Preview Helpers
@@ -246,13 +318,144 @@ struct MockExtractor: TodoExtractorProtocol {
     }
 }
 
+/// Mock 语音历史 store（Preview / 测试用，不依赖 SwiftData）。
+/// 与 `MockStore` 同样遵守协议但完全 in-memory，便于 RootTabView 在 SwiftUI Preview 中实例化。
+@MainActor
+final class MockVoiceCaptureHistoryStore: VoiceCaptureHistoryStoreProtocol {
+    @Published var records: [VoiceCaptureRecordData] = []
+    @Published var loadState: VoiceCaptureHistoryLoadState = .empty
+
+    init(records: [VoiceCaptureRecordData] = []) {
+        self.records = records.sorted { $0.createdAt > $1.createdAt }
+        self.loadState = records.isEmpty ? .empty : .success
+    }
+
+    func refreshRecords() {
+        loadState = records.isEmpty ? .empty : .success
+    }
+
+    @discardableResult
+    func createRecord(
+        transcript: String,
+        source: VoiceCaptureSource,
+        localeIdentifier: String,
+        now: Date
+    ) throws -> VoiceCaptureRecordData {
+        let record = VoiceCaptureRecordData(
+            transcript: transcript.trimmingCharacters(in: .whitespacesAndNewlines),
+            createdAt: now,
+            status: .processing,
+            source: source,
+            localeIdentifier: localeIdentifier
+        )
+        records.insert(record, at: 0)
+        records.sort { $0.createdAt > $1.createdAt }
+        loadState = .success
+        return record
+    }
+
+    @discardableResult
+    func updateRecord(
+        id: UUID,
+        status: VoiceCaptureStatus,
+        generatedTodoIDs: [UUID]?,
+        generatedTodoCount: Int?,
+        pendingTodoLink: VoiceCapturePendingTodoLinkUpdate,
+        errorMessage: String?
+    ) throws -> VoiceCaptureRecordData {
+        guard let index = records.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("record not found")
+        }
+        records[index].status = status
+        if let generatedTodoIDs {
+            records[index].generatedTodoIDs = generatedTodoIDs
+            records[index].generatedTodoCount = generatedTodoIDs.count
+        } else {
+            if status.resetsGeneratedArtifacts {
+                records[index].generatedTodoIDs = []
+            }
+            if let generatedTodoCount {
+                records[index].generatedTodoCount = generatedTodoCount
+            } else if status.resetsGeneratedArtifacts {
+                records[index].generatedTodoCount = 0
+            }
+        }
+        switch pendingTodoLink {
+        case .keepCurrent:
+            break
+        case .set(let pendingTodoID):
+            records[index].pendingTodoID = pendingTodoID
+        case .clear:
+            records[index].pendingTodoID = nil
+        }
+        records[index].errorMessage = errorMessage
+        return records[index]
+    }
+
+    func deleteRecord(id: UUID) throws {
+        records.removeAll { $0.id == id }
+        loadState = records.isEmpty ? .empty : .success
+    }
+
+    func cleanupExpiredRecords(now: Date) throws {
+        let cutoff = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        records.removeAll { $0.createdAt < cutoff }
+        loadState = records.isEmpty ? .empty : .success
+    }
+
+    func recordLinkedToPendingTodo(id: UUID) throws -> VoiceCaptureRecordData? {
+        records.first { $0.pendingTodoID == id }
+    }
+}
+
+// MARK: - MockVoiceCaptureHistoryStore Preview Helpers
+
+extension MockVoiceCaptureHistoryStore {
+    /// 包含示例历史记录，用于 RootTabView / VoiceHistoryView 的 Preview。
+    static var preview: MockVoiceCaptureHistoryStore {
+        let now = Date()
+        return MockVoiceCaptureHistoryStore(records: [
+            VoiceCaptureRecordData(
+                transcript: "明天上午十点开会，记得带笔记本",
+                createdAt: now.addingTimeInterval(-3600),
+                status: .saved,
+                source: .record_button,
+                localeIdentifier: "zh-Hans-CN",
+                generatedTodoCount: 1,
+                generatedTodoIDs: [UUID()]
+            ),
+            VoiceCaptureRecordData(
+                transcript: "买牛奶和鸡蛋",
+                createdAt: now.addingTimeInterval(-86400),
+                status: .reviewing,
+                source: .actionButton,
+                localeIdentifier: "zh-Hans-CN",
+                generatedTodoCount: 2,
+                generatedTodoIDs: [UUID(), UUID()]
+            ),
+            VoiceCaptureRecordData(
+                transcript: "呃...",
+                createdAt: now.addingTimeInterval(-172800),
+                status: .noTodos,
+                source: .record_button,
+                localeIdentifier: "zh-Hans-CN"
+            )
+        ])
+    }
+
+    static var empty: MockVoiceCaptureHistoryStore {
+        MockVoiceCaptureHistoryStore(records: [])
+    }
+}
+
 /// 便捷方法：创建用于 Preview 的 Mock AppCoordinator
 extension AppCoordinator {
     static var preview: AppCoordinator {
         AppCoordinator(
             voiceInput: MockVoiceInput(),
             extractor: MockExtractor(),
-            store: MockStore.preview
+            store: MockStore.preview,
+            historyStore: MockVoiceCaptureHistoryStore.preview
         )
     }
 }

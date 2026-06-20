@@ -176,7 +176,8 @@ extension TodoItem {
             createdAt: Date(),
             rawTranscript: rawTranscript,
             needsAIProcessing: false,
-            systemCalendarEventIdentifier: nil
+            systemCalendarEventIdentifier: nil,
+            localeIdentifier: extracted.localeIdentifier
         )
     }
 
@@ -223,6 +224,80 @@ final class TodoOccurrenceCompletion {
 
     static func key(todoId: UUID, occurrenceDate: Date, calendar: Calendar = .current) -> String {
         "\(todoId.uuidString)-\(TodoOccurrenceData.dayKey(for: occurrenceDate, calendar: calendar))"
+    }
+}
+
+/// 语音捕捉历史 SwiftData 模型。
+@Model
+final class VoiceCaptureRecord {
+    @Attribute(.unique) var id: UUID
+    var transcript: String
+    var createdAt: Date
+    var statusRaw: String
+    var sourceRaw: String
+    var localeIdentifier: String
+    var generatedTodoCount: Int
+    var generatedTodoIDsRaw: String
+    var pendingTodoID: UUID?
+    var errorMessage: String?
+
+    var status: VoiceCaptureStatus {
+        get { VoiceCaptureStatus(rawValue: statusRaw) ?? .processing }
+        set { statusRaw = newValue.rawValue }
+    }
+
+    var source: VoiceCaptureSource {
+        get { VoiceCaptureSource(rawValue: sourceRaw) ?? .recordButton }
+        set { sourceRaw = newValue.rawValue }
+    }
+
+    init(
+        id: UUID = UUID(),
+        transcript: String,
+        createdAt: Date = Date(),
+        status: VoiceCaptureStatus = .processing,
+        source: VoiceCaptureSource,
+        localeIdentifier: String,
+        generatedTodoCount: Int = 0,
+        generatedTodoIDs: [UUID] = [],
+        pendingTodoID: UUID? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.transcript = transcript
+        self.createdAt = createdAt
+        self.statusRaw = status.rawValue
+        self.sourceRaw = source.rawValue
+        self.localeIdentifier = localeIdentifier
+        self.generatedTodoCount = generatedTodoCount
+        self.generatedTodoIDsRaw = Self.encodeIDs(generatedTodoIDs)
+        self.pendingTodoID = pendingTodoID
+        self.errorMessage = errorMessage
+    }
+
+    func toData() -> VoiceCaptureRecordData {
+        VoiceCaptureRecordData(
+            id: id,
+            transcript: transcript,
+            createdAt: createdAt,
+            status: status,
+            source: source,
+            localeIdentifier: localeIdentifier,
+            generatedTodoCount: generatedTodoCount,
+            generatedTodoIDs: Self.decodeIDs(generatedTodoIDsRaw),
+            pendingTodoID: pendingTodoID,
+            errorMessage: errorMessage
+        )
+    }
+
+    static func encodeIDs(_ ids: [UUID]) -> String {
+        ids.map(\.uuidString).joined(separator: ",")
+    }
+
+    static func decodeIDs(_ raw: String) -> [UUID] {
+        raw
+            .split(separator: ",")
+            .compactMap { UUID(uuidString: String($0)) }
     }
 }
 
@@ -274,4 +349,16 @@ private extension Array where Element: Hashable {
         var seen = Set<Element>()
         return filter { seen.insert($0).inserted }
     }
+}
+
+/// App 与 Widget / AppIntent 共享的 SwiftData schema。
+/// 任何 @Model 类型变更都必须在此处同步注册，避免双处字面量不同步导致
+/// `ModelContainer` 初始化时抛 schema mismatch。
+enum VoiceTodoSchema {
+    /// 当前 App 注册的所有 SwiftData @Model 类型。
+    static let schema = Schema([
+        TodoItem.self,
+        TodoOccurrenceCompletion.self,
+        VoiceCaptureRecord.self
+    ])
 }

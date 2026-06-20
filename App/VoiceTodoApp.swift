@@ -13,6 +13,7 @@ struct VoiceTodoApp: App {
 
     @StateObject private var coordinator: AppCoordinator
     @StateObject private var todoStore: TodoStore
+    @StateObject private var historyStore: VoiceCaptureHistoryStore
     @StateObject private var permissionManager = PermissionManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
@@ -40,7 +41,7 @@ struct VoiceTodoApp: App {
             UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         }
 
-        let schema = Schema([TodoItem.self, TodoOccurrenceCompletion.self])
+        let schema = VoiceTodoSchema.schema
 
         let sharedContainerAvailable = AppGroupConfig.sharedContainerURL != nil
         let shouldUseSharedContainer = !uiTestOptions.isUITesting && sharedContainerAvailable
@@ -120,6 +121,7 @@ struct VoiceTodoApp: App {
         startupStorageError = storageError
 
         let store = TodoStore(modelContext: container.mainContext)
+        let voiceHistoryStore = VoiceCaptureHistoryStore(modelContext: container.mainContext)
 
         if uiTestOptions.resetUserData {
             do {
@@ -142,12 +144,14 @@ struct VoiceTodoApp: App {
 
         // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
         _todoStore = StateObject(wrappedValue: store)
+        _historyStore = StateObject(wrappedValue: voiceHistoryStore)
 
         // 初始化 Coordinator
         _coordinator = StateObject(wrappedValue: AppCoordinator(
             voiceInput: voiceInput,
             extractor: extractor,
-            store: store
+            store: store,
+            historyStore: voiceHistoryStore
         ))
         // BGTask 必须在 App 启动早期同步注册（before scene starts）
         TelemetryUploader.shared.registerBackgroundTask()
@@ -198,7 +202,7 @@ struct VoiceTodoApp: App {
                 .accessibilityIdentifier("StartupStorageErrorView")
         } else if hasCompletedOnboarding {
             // 已完成引导，显示主界面
-            HomeView(store: todoStore)
+            RootTabView(todoStore: todoStore, historyStore: historyStore)
                 .sheet(isPresented: $coordinator.showConfirmSheet) {
                     ConfirmSheetView(
                         transcript: coordinator.confirmSheetTranscript,
@@ -212,7 +216,7 @@ struct VoiceTodoApp: App {
                         }
                     )
                 }
-                .accessibilityIdentifier("HomeView")
+                .accessibilityIdentifier("RootTabView")
                 // ✅ 当 shouldAutoStartRecording 为 true 时自动开始录音
                 .onChange(of: shouldAutoStartRecording) { _, newValue in
                     if newValue {
@@ -239,6 +243,8 @@ struct VoiceTodoApp: App {
         // Action Button 冷启动场景通过 .onOpenURL 检测
         // 此处仅处理需要启动时执行的逻辑
         VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
+        guard startupStorageError == nil else { return }
+        coordinator.cleanupExpiredVoiceHistory()
     }
 
     /// 处理场景状态变化
@@ -250,6 +256,11 @@ struct VoiceTodoApp: App {
             // App 进入前台，同步 Widget Extension 可能做的修改（如打勾完成）
             refreshStoreIfNeededFromExternalChanges(force: true)
             NetworkMonitor.shared.restartIfNeeded()
+            // 节流清理过期语音历史：launch 时已清一次，此处兜底长时间热启动场景。
+            // 异步执行避免阻塞 UI 主线程（fetch + delete 可能涉及大量记录）。
+            Task { @MainActor in
+                coordinator.cleanupExpiredVoiceHistoryIfNeeded()
+            }
             Task {
                 await coordinator.handleAppForeground()
             }

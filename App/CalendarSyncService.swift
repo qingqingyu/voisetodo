@@ -48,12 +48,12 @@ struct CalendarSyncResult {
 
 @MainActor
 final class CalendarSyncService {
-    private let store: any TodoStoreProtocol
+    private let store: any CalendarSyncTodoStore
     private let writer: any SystemCalendarWritingProtocol
     private var previousTask: Task<CalendarSyncResult, Never>?
 
     init(
-        store: any TodoStoreProtocol,
+        store: any CalendarSyncTodoStore,
         writer: any SystemCalendarWritingProtocol
     ) {
         self.store = store
