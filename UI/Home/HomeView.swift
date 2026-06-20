@@ -400,6 +400,560 @@ private struct VoiceHistoryRow: View {
 
 // MARK: - HomeView
 
+private struct HomeCalendarDayState {
+    let date: Date
+    let occurrences: [TodoOccurrenceData]
+    let isSelected: Bool
+    let isToday: Bool
+    let isCurrentMonth: Bool
+    let hasHighPriority: Bool
+}
+
+private struct HomeCalendarState {
+    let selectedDate: Date
+    let visibleMonthAnchor: Date
+    let monthDays: [Date]
+    let weekHeaderDays: [Date]
+    let occurrencesByDay: [String: [TodoOccurrenceData]]
+    let unscheduledTodos: [TodoItemData]
+    let selectedOccurrences: [TodoOccurrenceData]
+    let uncompletedOccurrences: [TodoOccurrenceData]
+    let completedOccurrences: [TodoOccurrenceData]
+    let hasTodos: Bool
+
+    private let calendar: Calendar
+
+    var monthTitle: String {
+        visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+    }
+
+    var selectedDateTitle: String {
+        if calendar.isDateInToday(selectedDate) {
+            return String(localized: "home.week.today")
+        }
+        if calendar.isDateInTomorrow(selectedDate) {
+            return String(localized: "home.week.tomorrow")
+        }
+        return selectedDate.formatted(.dateTime.month().day().weekday(.wide))
+    }
+
+    static func make<Store: HomeTodoStore>(
+        store: Store,
+        selectedDate: Date,
+        visibleMonthAnchor: Date,
+        calendar: Calendar,
+        now: Date = Date()
+    ) -> HomeCalendarState {
+        let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
+        let normalizedAnchor = calendar.startOfDay(for: visibleMonthAnchor)
+        let monthDays = monthDays(for: normalizedAnchor, calendar: calendar)
+        let occurrencesByDay: [String: [TodoOccurrenceData]]
+        if let firstDay = monthDays.first, let lastDay = monthDays.last {
+            occurrencesByDay = store.groupedCalendarOccurrences(from: firstDay, to: lastDay, calendar: calendar)
+        } else {
+            occurrencesByDay = [:]
+        }
+
+        return HomeCalendarState(
+            todos: store.todos,
+            selectedDate: normalizedSelectedDate,
+            visibleMonthAnchor: normalizedAnchor,
+            monthDays: monthDays,
+            weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
+            occurrencesByDay: occurrencesByDay,
+            calendar: calendar
+        )
+    }
+
+    static func startOfMonth(for date: Date, calendar: Calendar) -> Date {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: components) ?? calendar.startOfDay(for: date)
+    }
+
+    func dayState(for day: Date) -> HomeCalendarDayState {
+        let dayOccurrences = occurrences(on: day)
+        return HomeCalendarDayState(
+            date: day,
+            occurrences: dayOccurrences,
+            isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
+            isToday: calendar.isDateInToday(day),
+            isCurrentMonth: calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month),
+            hasHighPriority: dayOccurrences.contains { $0.todo.priority == .high && !$0.isCompleted }
+        )
+    }
+
+    func weekdayTitle(for date: Date) -> String {
+        switch calendar.component(.weekday, from: date) {
+        case 1: return String(localized: "home.week.sun")
+        case 2: return String(localized: "home.week.mon")
+        case 3: return String(localized: "home.week.tue")
+        case 4: return String(localized: "home.week.wed")
+        case 5: return String(localized: "home.week.thu")
+        case 6: return String(localized: "home.week.fri")
+        default: return String(localized: "home.week.sat")
+        }
+    }
+
+    private init(
+        todos: [TodoItemData],
+        selectedDate: Date,
+        visibleMonthAnchor: Date,
+        monthDays: [Date],
+        weekHeaderDays: [Date],
+        occurrencesByDay: [String: [TodoOccurrenceData]],
+        calendar: Calendar
+    ) {
+        self.selectedDate = selectedDate
+        self.visibleMonthAnchor = visibleMonthAnchor
+        self.monthDays = monthDays
+        self.weekHeaderDays = weekHeaderDays
+        self.occurrencesByDay = occurrencesByDay
+        self.unscheduledTodos = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
+        self.hasTodos = !todos.isEmpty
+        self.calendar = calendar
+
+        let selectedOccurrences = Self.occurrences(on: selectedDate, in: occurrencesByDay, calendar: calendar)
+        self.selectedOccurrences = selectedOccurrences
+        self.uncompletedOccurrences = selectedOccurrences.filter { !$0.isCompleted }
+        self.completedOccurrences = selectedOccurrences.filter { $0.isCompleted }
+    }
+
+    private func occurrences(on day: Date) -> [TodoOccurrenceData] {
+        Self.occurrences(on: day, in: occurrencesByDay, calendar: calendar)
+    }
+
+    private static func occurrences(
+        on day: Date,
+        in occurrencesByDay: [String: [TodoOccurrenceData]],
+        calendar: Calendar
+    ) -> [TodoOccurrenceData] {
+        occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
+    }
+
+    private static func monthDays(for visibleMonthAnchor: Date, calendar: Calendar) -> [Date] {
+        let monthStart = startOfMonth(for: visibleMonthAnchor, calendar: calendar)
+        let weekday = calendar.component(.weekday, from: monthStart)
+        let leadingDays = (weekday + 5) % 7
+        let gridStart = calendar.date(byAdding: .day, value: -leadingDays, to: monthStart) ?? monthStart
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+    }
+
+    private static func weekHeaderDays(referenceDate: Date, calendar: Calendar) -> [Date] {
+        let monday = startOfWeek(for: referenceDate, calendar: calendar)
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: monday) }
+    }
+
+    private static func startOfWeek(for date: Date, calendar: Calendar) -> Date {
+        let startOfDay = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: startOfDay)
+        let daysFromMonday = (weekday + 5) % 7
+        return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
+    }
+}
+
+@MainActor
+private struct HomeViewActions<Store: HomeTodoStore> {
+    let store: Store
+    let coordinator: AppCoordinator
+    let permissionManager: PermissionManager
+    let setProcessing: (Bool) -> Void
+    let setManualInputPresented: (Bool) -> Void
+    let selectTodo: (TodoItemData) -> Void
+
+    func showManualInput() {
+        setManualInputPresented(true)
+    }
+
+    func cancelExtraction() {
+        coordinator.cancelExtraction()
+        updateProcessing(false)
+    }
+
+    func navigateToDeepLinkedTodo(id: UUID) {
+        if let todo = store.todos.first(where: { $0.id == id }) {
+            selectTodo(todo)
+            coordinator.deepLinkTodoId = nil
+            return
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard coordinator.deepLinkTodoId == id else { return }
+            if let todo = store.todos.first(where: { $0.id == id }) {
+                selectTodo(todo)
+            }
+            coordinator.deepLinkTodoId = nil
+        }
+    }
+
+    func toggleRecording() {
+        if coordinator.isRecording {
+            Task { @MainActor in
+                updateProcessing(true)
+                await coordinator.stopRecordingAndProcess()
+                updateProcessing(false)
+            }
+        } else {
+            Task { @MainActor in
+                let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
+                if readiness == .granted {
+                    await coordinator.startRecording()
+                } else {
+                    coordinator.showVoicePermissionRequiredToast()
+                }
+            }
+        }
+    }
+
+    func submitManualInput(_ text: String) {
+        setManualInputPresented(false)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            updateProcessing(true)
+            await coordinator.processManualInput(text)
+            updateProcessing(false)
+        }
+    }
+
+    func toggleTodo(_ id: UUID) {
+        withAnimation(WarmAnimation.springSmooth) {
+            do {
+                try store.toggleComplete(id)
+                WidgetCenter.shared.reloadAllTimelines()
+                VoiceTodoLog.store.info("ui.home.toggle.success id=\(id.uuidString, privacy: .public)")
+            } catch {
+                VoiceTodoLog.store.error("ui.home.toggle.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                coordinator.showToast(
+                    message: ErrorMessages.storageError,
+                    style: .warning
+                )
+            }
+        }
+    }
+
+    func toggleOccurrence(_ occurrence: TodoOccurrenceData) {
+        withAnimation(WarmAnimation.springSmooth) {
+            do {
+                try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
+                WidgetCenter.shared.reloadAllTimelines()
+                VoiceTodoLog.store.info("ui.home.toggle_occurrence.success id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public)")
+            } catch {
+                VoiceTodoLog.store.error("ui.home.toggle_occurrence.failed id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                coordinator.showToast(
+                    message: ErrorMessages.storageError,
+                    style: .warning
+                )
+            }
+        }
+    }
+
+    func deleteTodo(_ id: UUID) {
+        withAnimation(WarmAnimation.springSmooth) {
+            do {
+                try coordinator.deleteTodo(id)
+                VoiceTodoLog.store.info("ui.home.delete.success id=\(id.uuidString, privacy: .public)")
+            } catch {
+                VoiceTodoLog.store.error("ui.home.delete.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                coordinator.showToast(
+                    message: ErrorMessages.storageError,
+                    style: .warning
+                )
+            }
+        }
+    }
+
+    private func updateProcessing(_ isProcessing: Bool) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            setProcessing(isProcessing)
+        }
+    }
+}
+
+private struct HomeMonthHeaderView: View {
+    let state: HomeCalendarState
+    let onShiftMonth: (Int) -> Void
+    let onJumpToToday: () -> Void
+    let onSelectDay: (Date) -> Void
+
+    var body: some View {
+        VStack(spacing: WarmSpacing.sm) {
+            HStack {
+                Button(action: { onShiftMonth(-1) }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("PreviousMonthButton")
+                .accessibilityLabel(String(localized: "a11y.previous_month"))
+
+                Text(state.monthTitle)
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .frame(maxWidth: .infinity)
+
+                Button(action: { onShiftMonth(1) }) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("NextMonthButton")
+                .accessibilityLabel(String(localized: "a11y.next_month"))
+
+                Button(action: onJumpToToday) {
+                    Text(String(localized: "home.week.today_button"))
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(WarmTheme.primaryDark)
+                        .padding(.horizontal, WarmSpacing.sm)
+                        .frame(height: 32)
+                        .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TodayMonthButton")
+                .accessibilityLabel(String(localized: "a11y.today_month"))
+            }
+
+            HStack(spacing: WarmSpacing.xs) {
+                ForEach(state.weekHeaderDays, id: \.self) { day in
+                    Text(state.weekdayTitle(for: day))
+                        .font(WarmFont.caption(11))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
+                ForEach(state.monthDays, id: \.self) { day in
+                    HomeMonthDayButton(dayState: state.dayState(for: day), onSelect: onSelectDay)
+                }
+            }
+        }
+        .padding(.horizontal, WarmSpacing.lg)
+        .padding(.top, WarmSpacing.xxs)
+        .padding(.bottom, WarmSpacing.sm)
+        .background(WarmTheme.background.opacity(0.94))
+    }
+}
+
+private struct HomeMonthDayButton: View {
+    let dayState: HomeCalendarDayState
+    let onSelect: (Date) -> Void
+
+    var body: some View {
+        Button {
+            onSelect(dayState.date)
+        } label: {
+            VStack(spacing: WarmSpacing.xxs) {
+                Text(dayState.date.formatted(.dateTime.day(.twoDigits)))
+                    .font(WarmFont.headline(14))
+                    .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
+
+                HStack(spacing: 2) {
+                    ForEach(0..<min(dayState.occurrences.count, 3), id: \.self) { index in
+                        Circle()
+                            .fill(dayState.hasHighPriority && index == 0 ? WarmTheme.urgent : (dayState.isSelected ? Color.white : WarmTheme.primary))
+                            .frame(width: 4, height: 4)
+                    }
+                }
+                .frame(height: 4)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: WarmSpacing.xxxl)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.card)
+                    .fill(dayState.isSelected ? WarmTheme.primary : Color.white.opacity(dayState.isCurrentMonth ? 0.9 : 0.45))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WarmRadius.card)
+                            .stroke(dayState.isToday && !dayState.isSelected ? WarmTheme.primary.opacity(0.55) : Color.clear, lineWidth: 1.5)
+                    )
+                    .shadow(color: dayState.isSelected ? WarmTheme.shadowMedium : WarmTheme.shadowLight, radius: dayState.isSelected ? 8 : 4, x: 0, y: 3)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("MonthDay_\(dayState.date.formatted(.dateTime.year().month().day()))")
+    }
+}
+
+private struct HomeSelectedDayListView: View {
+    let state: HomeCalendarState
+    @Binding var cardAppeared: Set<UUID>
+    let onToggleTodo: (UUID) -> Void
+    let onToggleOccurrence: (TodoOccurrenceData) -> Void
+    let onDeleteTodo: (UUID) -> Void
+    let onOpenTodo: (TodoItemData) -> Void
+    let onStartRecording: @Sendable () -> Void
+    let onShowManualInput: @Sendable () -> Void
+
+    var body: some View {
+        List {
+            Section {
+                if !state.hasTodos {
+                    homeGlobalEmptyRow
+                } else if state.selectedOccurrences.isEmpty {
+                    emptySelectedDayRow
+                } else {
+                    ForEach(Array(zip(state.uncompletedOccurrences.indices, state.uncompletedOccurrences)), id: \.1.id) { index, occurrence in
+                        occurrenceRow(occurrence, index: index)
+                    }
+                }
+            } header: {
+                daySectionHeader(title: state.selectedDateTitle, count: state.uncompletedOccurrences.count)
+            }
+
+            if !state.completedOccurrences.isEmpty {
+                Section {
+                    ForEach(Array(zip(state.completedOccurrences.indices, state.completedOccurrences)), id: \.1.id) { idx, occurrence in
+                        occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
+                    }
+                } header: {
+                    daySectionHeader(title: String(localized: "home.completed_section \(state.completedOccurrences.count)"), count: state.completedOccurrences.count)
+                }
+            }
+
+            if !state.unscheduledTodos.isEmpty {
+                Section {
+                    ForEach(Array(zip(state.unscheduledTodos.indices, state.unscheduledTodos)), id: \.1.id) { idx, todo in
+                        todoRow(todo, index: state.selectedOccurrences.count + idx)
+                    }
+                } header: {
+                    daySectionHeader(title: String(localized: "home.week.unscheduled"), count: state.unscheduledTodos.count)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("TodoList")
+    }
+
+    private var homeGlobalEmptyRow: some View {
+        ProductEmptyStateView(
+            icon: "sparkles",
+            title: String(localized: "empty.home.title"),
+            message: String(localized: "empty.home.message"),
+            primaryAction: ProductEmptyStateAction(
+                title: String(localized: "empty.home.primary"),
+                systemImage: "mic.fill",
+                action: onStartRecording
+            ),
+            secondaryAction: ProductEmptyStateAction(
+                title: String(localized: "empty.home.secondary"),
+                systemImage: "keyboard",
+                action: onShowManualInput
+            )
+        )
+        .accessibilityIdentifier("EmptyState")
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.sm, trailing: WarmSpacing.lg))
+        .listRowBackground(Color.clear)
+    }
+
+    private var emptySelectedDayRow: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Image(systemName: "calendar.badge.checkmark")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(WarmTheme.primary)
+
+            Text(String(localized: "empty.day.title"))
+                .font(WarmFont.body(15))
+                .foregroundColor(WarmTheme.textSecondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.section)
+                .fill(Color.white.opacity(0.86))
+                .shadow(color: WarmTheme.shadowLight, radius: 5, x: 0, y: 2)
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
+        .listRowBackground(Color.clear)
+        .accessibilityIdentifier("EmptyState")
+    }
+
+    private func daySectionHeader(title: String, count: Int) -> some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Text(title)
+                .font(WarmFont.headline(15))
+            Text("\(count)")
+                .font(WarmFont.caption(13))
+                .foregroundColor(WarmTheme.primaryDark)
+                .padding(.horizontal, WarmSpacing.xs)
+                .padding(.vertical, WarmSpacing.xxs)
+                .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+        }
+        .foregroundColor(WarmTheme.textSecondary)
+        .textCase(nil)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.md, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
+    }
+
+    private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
+        WarmTodoCard(
+            index: index,
+            todo: todo,
+            onToggle: { onToggleTodo(todo.id) },
+            onTap: { onOpenTodo(todo) }
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
+        .listRowBackground(Color.clear)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                onDeleteTodo(todo.id)
+            } label: {
+                Label(String(localized: "home.delete"), systemImage: "trash")
+            }
+        }
+        .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
+        .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
+        .onAppear {
+            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
+                _ = cardAppeared.insert(todo.id)
+            }
+        }
+        .transition(.asymmetric(
+            insertion: .scale(scale: 0.9).combined(with: .opacity),
+            removal: .scale(scale: 0.95).combined(with: .opacity)
+        ))
+    }
+
+    private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
+        WarmTodoCard(
+            index: index,
+            todo: occurrence.todo,
+            onToggle: { onToggleOccurrence(occurrence) },
+            onTap: { onOpenTodo(occurrence.todo) }
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
+        .listRowBackground(Color.clear)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                onDeleteTodo(occurrence.todo.id)
+            } label: {
+                Label(String(localized: "home.delete"), systemImage: "trash")
+            }
+        }
+        .opacity(cardAppeared.contains(occurrence.todo.id) ? 1 : 0)
+        .offset(y: cardAppeared.contains(occurrence.todo.id) ? 0 : 20)
+        .onAppear {
+            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
+                _ = cardAppeared.insert(occurrence.todo.id)
+            }
+        }
+        .transition(.asymmetric(
+            insertion: .scale(scale: 0.9).combined(with: .opacity),
+            removal: .scale(scale: 0.95).combined(with: .opacity)
+        ))
+    }
+}
+
 /// 主页视图 - 温暖手账风格
 /// 纸张纹理背景 + 手写展示字体 + 分类色带卡片
 struct HomeView<Store: HomeTodoStore>: View {
@@ -432,6 +986,17 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var listOffset: CGFloat = 30
     @State private var listOpacity: Double = 0
     @State private var cardAppeared: Set<UUID> = []
+
+    private var actions: HomeViewActions<Store> {
+        HomeViewActions(
+            store: store,
+            coordinator: coordinator,
+            permissionManager: permissionManager,
+            setProcessing: { isProcessing = $0 },
+            setManualInputPresented: { showManualInputSheet = $0 },
+            selectTodo: { selectedTodo = $0 }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -470,7 +1035,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
             .sheet(isPresented: $showManualInputSheet) {
                 ManualInputSheetView { text in
-                    submitManualInput(text)
+                    actions.submitManualInput(text)
                 }
             }
             .sheet(isPresented: $showSettingsSheet) {
@@ -482,7 +1047,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
             .onChange(of: coordinator.deepLinkTodoId) { _, todoId in
                 guard let todoId else { return }
-                navigateToDeepLinkedTodo(id: todoId)
+                actions.navigateToDeepLinkedTodo(id: todoId)
             }
             .onChange(of: store.todos.count) { _, _ in
                 let currentIds: Set<UUID> = Set(store.todos.map(\.id))
@@ -600,10 +1165,7 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                     if coordinator.isExtracting {
                         Button(action: {
-                            coordinator.cancelExtraction()
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                isProcessing = false
-                            }
+                            actions.cancelExtraction()
                         }) {
                             Text(String(localized: "home.cancel_extraction"))
                                 .font(WarmFont.body(15))
@@ -673,329 +1235,51 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Month Home View
 
-    private var visibleMonthDays: [Date] {
-        let monthStart = startOfMonth(for: visibleMonthAnchor)
-        let weekday = calendar.component(.weekday, from: monthStart)
-        let leadingDays = (weekday + 5) % 7
-        let gridStart = calendar.date(byAdding: .day, value: -leadingDays, to: monthStart) ?? monthStart
-        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
-    }
-
-    private var unscheduledTodos: [TodoItemData] {
-        store.todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
-    }
-
-    private var selectedDateTitle: String {
-        if calendar.isDateInToday(selectedDate) {
-            return String(localized: "home.week.today")
-        }
-        if calendar.isDateInTomorrow(selectedDate) {
-            return String(localized: "home.week.tomorrow")
-        }
-        return selectedDate.formatted(.dateTime.month().day().weekday(.wide))
-    }
-
     private var monthHomeView: some View {
-        let monthDays = visibleMonthDays
-        let occurrencesByDay = monthOccurrencesByDay(for: monthDays)
+        let state = HomeCalendarState.make(
+            store: store,
+            selectedDate: selectedDate,
+            visibleMonthAnchor: visibleMonthAnchor,
+            calendar: calendar
+        )
 
         return VStack(spacing: 0) {
-            monthHeaderView(monthDays: monthDays, occurrencesByDay: occurrencesByDay)
-            selectedDayListView(occurrencesByDay: occurrencesByDay)
+            HomeMonthHeaderView(
+                state: state,
+                onShiftMonth: shiftMonth,
+                onJumpToToday: jumpToToday,
+                onSelectDay: selectDay
+            )
+
+            HomeSelectedDayListView(
+                state: state,
+                cardAppeared: $cardAppeared,
+                onToggleTodo: { actions.toggleTodo($0) },
+                onToggleOccurrence: { actions.toggleOccurrence($0) },
+                onDeleteTodo: { actions.deleteTodo($0) },
+                onOpenTodo: { selectedTodo = $0 },
+                onStartRecording: {
+                    Task { @MainActor in
+                        actions.toggleRecording()
+                    }
+                },
+                onShowManualInput: {
+                    Task { @MainActor in
+                        actions.showManualInput()
+                    }
+                }
+            )
         }
         .offset(y: listOffset)
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
     }
 
-    private func monthHeaderView(
-        monthDays: [Date],
-        occurrencesByDay: [String: [TodoOccurrenceData]]
-    ) -> some View {
-        VStack(spacing: WarmSpacing.sm) {
-            HStack {
-                Button(action: { shiftMonth(by: -1) }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(WarmTheme.secondaryBackground))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("PreviousMonthButton")
-                .accessibilityLabel(String(localized: "a11y.previous_month"))
-
-                Text(monthTitle)
-                    .font(WarmFont.headline(16))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .frame(maxWidth: .infinity)
-
-                Button(action: { shiftMonth(by: 1) }) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(WarmTheme.secondaryBackground))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("NextMonthButton")
-                .accessibilityLabel(String(localized: "a11y.next_month"))
-
-                Button(action: jumpToToday) {
-                    Text(String(localized: "home.week.today_button"))
-                        .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.primaryDark)
-                        .padding(.horizontal, WarmSpacing.sm)
-                        .frame(height: 32)
-                        .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("TodayMonthButton")
-                .accessibilityLabel(String(localized: "a11y.today_month"))
-            }
-
-            HStack(spacing: WarmSpacing.xs) {
-                ForEach(visibleWeekDaysForHeader, id: \.self) { day in
-                    Text(shortWeekday(for: day))
-                        .font(WarmFont.caption(11))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
-                ForEach(monthDays, id: \.self) { day in
-                    monthDayButton(for: day, occurrencesByDay: occurrencesByDay)
-                }
-            }
+    private func selectDay(_ day: Date) {
+        withAnimation(WarmAnimation.springStandard) {
+            selectedDate = calendar.startOfDay(for: day)
+            visibleMonthAnchor = calendar.startOfDay(for: day)
         }
-        .padding(.horizontal, WarmSpacing.lg)
-        .padding(.top, WarmSpacing.xxs)
-        .padding(.bottom, WarmSpacing.sm)
-        .background(WarmTheme.background.opacity(0.94))
-    }
-
-    private var visibleWeekDaysForHeader: [Date] {
-        let monday = startOfWeek(for: Date())
-        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: monday) }
-    }
-
-    private var monthTitle: String {
-        visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
-    }
-
-    private func monthDayButton(
-        for day: Date,
-        occurrencesByDay: [String: [TodoOccurrenceData]]
-    ) -> some View {
-        let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
-        let isToday = calendar.isDateInToday(day)
-        let isCurrentMonth = calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month)
-        let dayOccurrences = occurrences(on: day, in: occurrencesByDay)
-        let hasHighPriority = dayOccurrences.contains { $0.todo.priority == .high && !$0.isCompleted }
-
-        return Button {
-            withAnimation(WarmAnimation.springStandard) {
-                selectedDate = calendar.startOfDay(for: day)
-                visibleMonthAnchor = calendar.startOfDay(for: day)
-            }
-        } label: {
-            VStack(spacing: WarmSpacing.xxs) {
-                Text(day.formatted(.dateTime.day(.twoDigits)))
-                    .font(WarmFont.headline(14))
-                    .foregroundColor(isSelected ? .white : (isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
-
-                HStack(spacing: 2) {
-                    ForEach(0..<min(dayOccurrences.count, 3), id: \.self) { index in
-                        Circle()
-                            .fill(hasHighPriority && index == 0 ? WarmTheme.urgent : (isSelected ? Color.white : WarmTheme.primary))
-                            .frame(width: 4, height: 4)
-                    }
-                }
-                .frame(height: 4)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: WarmSpacing.xxxl)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .fill(isSelected ? WarmTheme.primary : Color.white.opacity(isCurrentMonth ? 0.9 : 0.45))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: WarmRadius.card)
-                            .stroke(isToday && !isSelected ? WarmTheme.primary.opacity(0.55) : Color.clear, lineWidth: 1.5)
-                    )
-                    .shadow(color: isSelected ? WarmTheme.shadowMedium : WarmTheme.shadowLight, radius: isSelected ? 8 : 4, x: 0, y: 3)
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("MonthDay_\(day.formatted(.dateTime.year().month().day()))")
-    }
-
-    private func selectedDayListView(occurrencesByDay: [String: [TodoOccurrenceData]]) -> some View {
-        let selectedOccurrences = occurrences(on: selectedDate, in: occurrencesByDay)
-        let uncompleted = selectedOccurrences.filter { !$0.isCompleted }
-        let completed = selectedOccurrences.filter { $0.isCompleted }
-
-        return List {
-            Section {
-                if store.todos.isEmpty {
-                    homeGlobalEmptyRow
-                } else if selectedOccurrences.isEmpty {
-                    emptySelectedDayRow
-                } else {
-                    ForEach(Array(zip(uncompleted.indices, uncompleted)), id: \.1.id) { index, occurrence in
-                        occurrenceRow(occurrence, index: index)
-                    }
-                }
-            } header: {
-                daySectionHeader(title: selectedDateTitle, count: uncompleted.count)
-            }
-
-            if !completed.isEmpty {
-                Section {
-                    ForEach(Array(zip(completed.indices, completed)), id: \.1.id) { idx, occurrence in
-                        occurrenceRow(occurrence, index: uncompleted.count + idx)
-                    }
-                } header: {
-                    daySectionHeader(title: String(localized: "home.completed_section \(completed.count)"), count: completed.count)
-                }
-            }
-
-            if !unscheduledTodos.isEmpty {
-                Section {
-                    ForEach(Array(zip(unscheduledTodos.indices, unscheduledTodos)), id: \.1.id) { idx, todo in
-                        todoRow(todo, index: selectedOccurrences.count + idx)
-                    }
-                } header: {
-                    daySectionHeader(title: String(localized: "home.week.unscheduled"), count: unscheduledTodos.count)
-                }
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .accessibilityIdentifier("TodoList")
-    }
-
-    private var homeGlobalEmptyRow: some View {
-        ProductEmptyStateView(
-            icon: "sparkles",
-            title: String(localized: "empty.home.title"),
-            message: String(localized: "empty.home.message"),
-            primaryAction: ProductEmptyStateAction(
-                title: String(localized: "empty.home.primary"),
-                systemImage: "mic.fill",
-                action: toggleRecording
-            ),
-            secondaryAction: ProductEmptyStateAction(
-                title: String(localized: "empty.home.secondary"),
-                systemImage: "keyboard",
-                action: { showManualInputSheet = true }
-            )
-        )
-        .accessibilityIdentifier("EmptyState")
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.sm, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
-    }
-
-    private var emptySelectedDayRow: some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Image(systemName: "calendar.badge.checkmark")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(WarmTheme.primary)
-
-            Text(String(localized: "empty.day.title"))
-                .font(WarmFont.body(15))
-                .foregroundColor(WarmTheme.textSecondary)
-
-            Spacer()
-        }
-        .padding(.horizontal, WarmSpacing.md)
-        .padding(.vertical, WarmSpacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.section)
-                .fill(Color.white.opacity(0.86))
-                .shadow(color: WarmTheme.shadowLight, radius: 5, x: 0, y: 2)
-        )
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
-        .accessibilityIdentifier("EmptyState")
-    }
-
-    private func daySectionHeader(title: String, count: Int) -> some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Text(title)
-                .font(WarmFont.headline(15))
-            Text("\(count)")
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.primaryDark)
-                .padding(.horizontal, WarmSpacing.xs)
-                .padding(.vertical, WarmSpacing.xxs)
-                .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
-        }
-        .foregroundColor(WarmTheme.textSecondary)
-        .textCase(nil)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.md, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
-    }
-
-    private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: todo,
-            onToggle: { toggleTodo(todo.id) },
-            onTap: { selectedTodo = todo }
-        )
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                deleteTodo(todo.id)
-            } label: {
-                Label(String(localized: "home.delete"), systemImage: "trash")
-            }
-        }
-        .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
-        .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
-        .onAppear {
-            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
-                _ = cardAppeared.insert(todo.id)
-            }
-        }
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.9).combined(with: .opacity),
-            removal: .scale(scale: 0.95).combined(with: .opacity)
-        ))
-    }
-
-    private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: occurrence.todo,
-            onToggle: { toggleOccurrence(occurrence) },
-            onTap: { selectedTodo = occurrence.todo }
-        )
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                deleteTodo(occurrence.todo.id)
-            } label: {
-                Label(String(localized: "home.delete"), systemImage: "trash")
-            }
-        }
-        .opacity(cardAppeared.contains(occurrence.todo.id) ? 1 : 0)
-        .offset(y: cardAppeared.contains(occurrence.todo.id) ? 0 : 20)
-        .onAppear {
-            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
-                _ = cardAppeared.insert(occurrence.todo.id)
-            }
-        }
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.9).combined(with: .opacity),
-            removal: .scale(scale: 0.95).combined(with: .opacity)
-        ))
     }
 
     // MARK: - Bottom Actions
@@ -1013,7 +1297,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private var manualInputButton: some View {
-        Button(action: { showManualInputSheet = true }) {
+        Button(action: { actions.showManualInput() }) {
             HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: "keyboard")
                     .font(.system(size: 17, weight: .semibold))
@@ -1050,7 +1334,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private var recordingButton: some View {
-        Button(action: toggleRecording) {
+        Button(action: { actions.toggleRecording() }) {
             HStack(spacing: WarmSpacing.xs) {
                 ZStack {
                     if coordinator.isRecording {
@@ -1096,22 +1380,6 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Actions
 
-    private func navigateToDeepLinkedTodo(id: UUID) {
-        if let todo = store.todos.first(where: { $0.id == id }) {
-            selectedTodo = todo
-            coordinator.deepLinkTodoId = nil
-            return
-        }
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard coordinator.deepLinkTodoId == id else { return }
-            if let todo = store.todos.first(where: { $0.id == id }) {
-                selectedTodo = todo
-            }
-            coordinator.deepLinkTodoId = nil
-        }
-    }
-
     private func startEntranceAnimation() {
         if !hasStartedEntranceAnimation {
             let today = calendar.startOfDay(for: Date())
@@ -1138,52 +1406,11 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
     }
 
-    private func startOfWeek(for date: Date) -> Date {
-        let startOfDay = calendar.startOfDay(for: date)
-        let weekday = calendar.component(.weekday, from: startOfDay)
-        let daysFromMonday = (weekday + 5) % 7
-        return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
-    }
-
-    private func monthOccurrencesByDay(for monthDays: [Date]) -> [String: [TodoOccurrenceData]] {
-        guard let firstDay = monthDays.first,
-              let lastDay = monthDays.last else {
-            return [:]
-        }
-        return Dictionary(grouping: store.calendarOccurrences(from: firstDay, to: lastDay)) { occurrence in
-            TodoOccurrenceData.dayKey(for: occurrence.occurrenceDate, calendar: calendar)
-        }
-    }
-
-    private func occurrences(
-        on day: Date,
-        in occurrencesByDay: [String: [TodoOccurrenceData]]
-    ) -> [TodoOccurrenceData] {
-        occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
-    }
-
-    private func shortWeekday(for date: Date) -> String {
-        switch calendar.component(.weekday, from: date) {
-        case 1: return String(localized: "home.week.sun")
-        case 2: return String(localized: "home.week.mon")
-        case 3: return String(localized: "home.week.tue")
-        case 4: return String(localized: "home.week.wed")
-        case 5: return String(localized: "home.week.thu")
-        case 6: return String(localized: "home.week.fri")
-        default: return String(localized: "home.week.sat")
-        }
-    }
-
-    private func startOfMonth(for date: Date) -> Date {
-        let components = calendar.dateComponents([.year, .month], from: date)
-        return calendar.date(from: components) ?? calendar.startOfDay(for: date)
-    }
-
     private func shiftMonth(by value: Int) {
         guard let newAnchor = calendar.date(byAdding: .month, value: value, to: visibleMonthAnchor) else {
             return
         }
-        let normalizedAnchor = startOfMonth(for: newAnchor)
+        let normalizedAnchor = HomeCalendarState.startOfMonth(for: newAnchor, calendar: calendar)
         withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
@@ -1195,90 +1422,6 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today
-        }
-    }
-
-    private func toggleRecording() {
-        if coordinator.isRecording {
-            Task {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isProcessing = true
-                }
-                await coordinator.stopRecordingAndProcess()
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isProcessing = false
-                }
-            }
-        } else {
-            Task {
-                let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
-                if readiness == .granted {
-                    await coordinator.startRecording()
-                } else {
-                    coordinator.showVoicePermissionRequiredToast()
-                }
-            }
-        }
-    }
-
-    private func submitManualInput(_ text: String) {
-        showManualInputSheet = false
-        Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            withAnimation(.easeInOut(duration: 0.3)) {
-                isProcessing = true
-            }
-            await coordinator.processManualInput(text)
-            withAnimation(.easeInOut(duration: 0.3)) {
-                isProcessing = false
-            }
-        }
-    }
-
-    private func toggleTodo(_ id: UUID) {
-        withAnimation(WarmAnimation.springSmooth) {
-            do {
-                try store.toggleComplete(id)
-                WidgetCenter.shared.reloadAllTimelines()
-                VoiceTodoLog.store.info("ui.home.toggle.success id=\(id.uuidString, privacy: .public)")
-            } catch {
-                VoiceTodoLog.store.error("ui.home.toggle.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                coordinator.showToast(
-                    message: ErrorMessages.storageError,
-                    style: .warning
-                )
-            }
-        }
-    }
-
-    private func toggleOccurrence(_ occurrence: TodoOccurrenceData) {
-        withAnimation(WarmAnimation.springSmooth) {
-            do {
-                try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
-                WidgetCenter.shared.reloadAllTimelines()
-                VoiceTodoLog.store.info("ui.home.toggle_occurrence.success id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public)")
-            } catch {
-                VoiceTodoLog.store.error("ui.home.toggle_occurrence.failed id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                coordinator.showToast(
-                    message: ErrorMessages.storageError,
-                    style: .warning
-                )
-            }
-        }
-    }
-
-    private func deleteTodo(_ id: UUID) {
-        withAnimation(WarmAnimation.springSmooth) {
-            do {
-                try coordinator.deleteTodo(id)
-                VoiceTodoLog.store.info("ui.home.delete.success id=\(id.uuidString, privacy: .public)")
-            } catch {
-                VoiceTodoLog.store.error("ui.home.delete.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                coordinator.showToast(
-                    message: ErrorMessages.storageError,
-                    style: .warning
-                )
-            }
         }
     }
 }

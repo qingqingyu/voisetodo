@@ -1,0 +1,13 @@
+[main 87c4889] refactor: candidate 3 - 拆出日期/重复规则 domain module
+ 13 files changed, 39127 insertions(+), 560 deletions(-)
+ create mode 100644 .refactor-logs/cand2-commit.log
+ create mode 100644 .refactor-logs/cand3-codex.log
+ create mode 100644 .refactor-logs/cand3-review.log
+ create mode 100644 .refactor-logs/cand3-verify-after-codex.log
+ create mode 100644 .refactor-logs/cand3-verify-after-review.log
+ create mode 100644 Protocols/Domain/CodingUserInfoKey+Recurrence.swift
+ create mode 100644 Protocols/Domain/RecurrenceRule.swift
+ create mode 100644 Protocols/Domain/RecurrenceRuleResolver.swift
+ create mode 100644 Protocols/Domain/TodoDueDateResolver.swift
+ create mode 100644 Protocols/Domain/WidgetTodoFilter.swift
+ create mode 100644 VoiceTodoTests/Protocols/DomainModuleTests.swift

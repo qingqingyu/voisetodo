@@ -75,6 +75,19 @@ protocol CalendarOccurrenceStore {
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws
 }
 
+extension CalendarOccurrenceStore {
+    /// 获取日期区间内的 occurrence，并按日历日分组供 Home 月历渲染。
+    func groupedCalendarOccurrences(
+        from startDate: Date,
+        to endDate: Date,
+        calendar: Calendar = .current
+    ) -> [String: [TodoOccurrenceData]] {
+        Dictionary(grouping: calendarOccurrences(from: startDate, to: endDate)) { occurrence in
+            TodoOccurrenceData.dayKey(for: occurrence.occurrenceDate, calendar: calendar)
+        }
+    }
+}
+
 /// Pending 转写读取能力。
 protocol PendingTranscriptReadable {
     /// 获取需要 AI 补处理的条目（needsAIProcessing == true）
