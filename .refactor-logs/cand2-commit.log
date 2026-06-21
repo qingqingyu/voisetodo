@@ -1,7 +1,0 @@
-[main 67076f5] refactor: candidate 2 - 收窄 TodoStoreProtocol interface
- 29 files changed, 17214 insertions(+), 212 deletions(-)
- create mode 100644 .refactor-logs/cand2-codex.log
- create mode 100644 .refactor-logs/cand2-review.log
- create mode 100644 .refactor-logs/cand2-verify-after-codex.log
- create mode 100644 .refactor-logs/cand2-verify-after-review.log
- create mode 100644 refactor-loop.sh

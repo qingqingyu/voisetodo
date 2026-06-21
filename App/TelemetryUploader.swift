@@ -176,9 +176,42 @@ final class TelemetryUploader {
     /// 从 `NetworkConfig.proxyEndpoint` 推导 telemetry endpoint。
     /// 若 proxyEndpoint 未配置则返回 nil（开发环境常见，可跳过上报）。
     static func makeDefaultEndpoint() -> URL? {
-        let trimmed = NetworkConfig.proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        telemetryEndpoint(fromProxyEndpoint: NetworkConfig.proxyEndpoint)
+    }
+
+    /// 从指定 AI proxy endpoint 推导 telemetry endpoint。
+    ///
+    /// 支持两种配置形态：
+    /// - 完整提取端点（推荐）：`https://proxy/v1/todo-extractions`（带或不带尾斜杠）
+    ///   → `https://proxy/v1/telemetry/events`
+    /// - 仅 origin 或任意非 `/v1/todo-extractions` 结尾的根端点：
+    ///   `https://proxy` → `https://proxy/v1/telemetry/events`
+    ///
+    /// 注意：若配置成 `https://proxy/v1`（仅到版本前缀），会得到
+    /// `https://proxy/v1/v1/telemetry/events`，应避免此类配置。
+    static func telemetryEndpoint(fromProxyEndpoint proxyEndpoint: String) -> URL? {
+        let trimmed = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let base = URL(string: trimmed) else { return nil }
-        return base.appendingPathComponent("v1/telemetry/events")
+        // 规范化 path：去掉尾斜杠后再做后缀匹配与路径操作，
+        // 避免 `https://proxy/v1/todo-extractions/` 被误判并拼出错误路径。
+        let normalizedBase = normalizedPathURL(base)
+        if normalizedBase.path.hasSuffix("/v1/todo-extractions") {
+            return normalizedBase
+                .deletingLastPathComponent()
+                .appendingPathComponent("telemetry/events")
+        }
+        return normalizedBase
+            .appendingPathComponent("v1")
+            .appendingPathComponent("telemetry/events")
+    }
+
+    /// 返回去掉 path 尾斜杠的 URL（根路径 `/` 保留）。
+    private static func normalizedPathURL(_ url: URL) -> URL {
+        guard url.path.count > 1, url.path.hasSuffix("/") else { return url }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let path = components?.path ?? ""
+        components?.path = String(path.dropLast())
+        return components?.url ?? url
     }
 }
 

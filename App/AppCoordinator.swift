@@ -52,7 +52,7 @@ final class AppCoordinator: ObservableObject {
     private var pendingItemIds: [UUID] = []
     private var pendingGeneratedTodoIdsByPendingId: [UUID: [UUID]] = [:]
 
-    /// 本次 session 中用户已取消确认的 pending ID（避免重复弹窗）
+    /// 本次 session 中已跳过恢复弹窗的 pending ID（用户取消或展示状态冲突时避免重复弹窗/重复请求）
     private var dismissedPendingIds: Set<UUID> = []
 
     /// 合并的原始转写文本（多个 pending 的 rawTranscript 合并，避免丢失）
@@ -445,30 +445,13 @@ final class AppCoordinator: ObservableObject {
         result.deletionErrors.forEach(handleError)
         guard result.hasPending else { return }
 
+        completeNoTodoPendingRecoveries(result.processedWithoutTodosIds)
+
         if !result.extractedTodos.isEmpty {
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else {
                 VoiceTodoLog.coordinator.warning("coordinator.foreground.results_deferred id=\(flowID, privacy: .public) extractedCount=\(result.extractedTodos.count) isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) isProcessingTranscript=\(self.isProcessingTranscript) showConfirmSheet=\(self.showConfirmSheet)")
+                skipPendingForCurrentSession(result.processedWithTodosIds, reason: "presentation_busy", flowID: flowID)
                 return
-            }
-
-            for pendingId in result.processedWithoutTodosIds {
-                if deleteProcessedPending(id: pendingId) {
-                    updateHistoryForPendingRecord(
-                        pendingId: pendingId,
-                        status: .noTodos,
-                        generatedTodoIDs: [],
-                        generatedTodoCount: 0,
-                        errorMessage: nil
-                    )
-                } else {
-                    updateHistoryForPendingRecord(
-                        pendingId: pendingId,
-                        status: .failed,
-                        generatedTodoIDs: [],
-                        generatedTodoCount: 0,
-                        errorMessage: ErrorMessages.storageError
-                    )
-                }
             }
 
             pendingGeneratedTodoIdsByPendingId = result.extractedTodoIdsByPendingId
@@ -491,29 +474,32 @@ final class AppCoordinator: ObservableObject {
             for pendingId in result.processedWithTodosIds {
                 deleteProcessedPending(id: pendingId)
             }
-            for pendingId in result.processedWithoutTodosIds {
-                if deleteProcessedPending(id: pendingId) {
-                    updateHistoryForPendingRecord(
-                        pendingId: pendingId,
-                        status: .noTodos,
-                        generatedTodoIDs: [],
-                        generatedTodoCount: 0,
-                        errorMessage: nil
-                    )
-                } else {
-                    updateHistoryForPendingRecord(
-                        pendingId: pendingId,
-                        status: .failed,
-                        generatedTodoIDs: [],
-                        generatedTodoCount: 0,
-                        errorMessage: ErrorMessages.storageError
-                    )
-                }
-            }
             pendingItemIds = []
             pendingGeneratedTodoIdsByPendingId = [:]
             combinedRawTranscript = nil
             VoiceTodoLog.coordinator.info("coordinator.foreground.pending_finished_empty id=\(flowID, privacy: .public) processed=\(result.processedWithTodosIds.count + result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        }
+    }
+
+    private func completeNoTodoPendingRecoveries(_ pendingIds: [UUID]) {
+        for pendingId in pendingIds {
+            if deleteProcessedPending(id: pendingId) {
+                updateHistoryForPendingRecord(
+                    pendingId: pendingId,
+                    status: .noTodos,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    errorMessage: nil
+                )
+            } else {
+                updateHistoryForPendingRecord(
+                    pendingId: pendingId,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    errorMessage: ErrorMessages.storageError
+                )
+            }
         }
     }
 
@@ -654,7 +640,7 @@ final class AppCoordinator: ObservableObject {
 
         // 记录已取消的 pending ID，避免本次 session 重复弹窗
         // 不删除 pending 条目，保留离线转写数据
-        dismissedPendingIds.formUnion(pendingItemIds)
+        skipPendingForCurrentSession(pendingItemIds, reason: "confirm_cancelled", flowID: nil)
 
         isExtracting = false
         isProcessingTranscript = false
@@ -1093,6 +1079,12 @@ final class AppCoordinator: ObservableObject {
         case .saved, .noTodos:
             return false
         }
+    }
+
+    private func skipPendingForCurrentSession(_ pendingIds: [UUID], reason: String, flowID: String?) {
+        guard !pendingIds.isEmpty else { return }
+        dismissedPendingIds.formUnion(pendingIds)
+        VoiceTodoLog.coordinator.info("coordinator.pending.skip_session reason=\(reason, privacy: .public) flowID=\(flowID ?? "none", privacy: .public) pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public)")
     }
 
     @discardableResult

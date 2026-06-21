@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import XCTest
 @testable import VoiceTodo
 
@@ -53,6 +54,33 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
+        XCTAssertEqual(store.pendingItems().map(\.id), [pendingId])
+        XCTAssertTrue(store.deletedIds.isEmpty)
+        XCTAssertTrue(coordinator.extractedTodos.isEmpty)
+    }
+
+    func testHandleAppForegroundSkipsDeferredPendingForCurrentSession() async {
+        let pendingId = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: pendingId, transcript: "pending while sheet opens")
+        ])
+        let extractor = DelayedExtractor()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store
+        )
+        extractor.onExtract = {
+            await MainActor.run {
+                coordinator.showConfirmSheet = true
+            }
+        }
+
+        await coordinator.handleAppForeground()
+        coordinator.showConfirmSheet = false
+        await coordinator.handleAppForeground()
+
+        XCTAssertEqual(extractor.extractedTranscripts, ["pending while sheet opens"])
         XCTAssertEqual(store.pendingItems().map(\.id), [pendingId])
         XCTAssertTrue(store.deletedIds.isEmpty)
         XCTAssertTrue(coordinator.extractedTodos.isEmpty)
@@ -566,6 +594,68 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(historyStore.records.first?.status, .failed)
         XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
         assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
+    }
+
+    func testHandleAppForegroundDeletesNoTodoPendingEvenWhenPresentationIsBusy() async {
+        let noTodoPendingID = UUID()
+        let withTodoPendingID = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: noTodoPendingID, transcript: "没有行动项"),
+            pendingTodo(id: withTodoPendingID, transcript: "生成待办但暂时不能展示")
+        ])
+        let historyStore = CoordinatorTestHistoryStore()
+        let noTodoRecord = try! historyStore.createRecord(
+            transcript: "没有行动项",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        let withTodoRecord = try! historyStore.createRecord(
+            transcript: "生成待办但暂时不能展示",
+            source: .recordButton,
+            localeIdentifier: "zh-Hans",
+            now: Date()
+        )
+        _ = try! historyStore.updateRecord(
+            id: noTodoRecord.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(noTodoPendingID),
+            errorMessage: nil
+        )
+        _ = try! historyStore.updateRecord(
+            id: withTodoRecord.id,
+            status: .pending,
+            generatedTodoIDs: [],
+            generatedTodoCount: 0,
+            pendingTodoLink: .set(withTodoPendingID),
+            errorMessage: nil
+        )
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["没有行动项"] = ExtractionResult(todos: [], ignored: "no action")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            historyStore: historyStore,
+            networkIsConnectedProvider: { true }
+        )
+        extractor.onExtract = {
+            await MainActor.run {
+                coordinator.showConfirmSheet = true
+            }
+        }
+
+        await coordinator.handleAppForeground()
+        coordinator.showConfirmSheet = false
+        await coordinator.handleAppForeground()
+
+        XCTAssertEqual(store.pendingItems().map(\.id), [withTodoPendingID])
+        XCTAssertEqual(extractor.extractedTranscripts.sorted(), ["没有行动项", "生成待办但暂时不能展示"])
+        XCTAssertEqual(historyStore.records.first(where: { $0.id == noTodoRecord.id })?.status, .noTodos)
+        XCTAssertNil(historyStore.records.first(where: { $0.id == noTodoRecord.id })?.pendingTodoID)
+        XCTAssertEqual(historyStore.records.first(where: { $0.id == withTodoRecord.id })?.pendingTodoID, withTodoPendingID)
     }
 
     func testVoiceCaptureHistorySavedAfterConfirm() async {
@@ -1218,12 +1308,20 @@ private final class DelayedExtractor: TodoExtractorProtocol {
     var extractionErrors: [String: Error] = [:]
     var streamingResults: [ExtractionResult]?
     var streamingError: Error?
+    private let extractedTranscriptsLock = NSLock()
+    private var storedExtractedTranscripts: [String] = []
+    var extractedTranscripts: [String] {
+        extractedTranscriptsLock.lock()
+        defer { extractedTranscriptsLock.unlock() }
+        return storedExtractedTranscripts
+    }
 
     init(delays: [String: UInt64] = [:]) {
         self.delays = delays
     }
 
     func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
+        recordExtractedTranscript(transcript)
         if let delay = delays[transcript] {
             try await Task.sleep(nanoseconds: delay)
         }
@@ -1238,6 +1336,12 @@ private final class DelayedExtractor: TodoExtractorProtocol {
             todos: [ExtractedTodo(title: "extracted \(transcript)", detail: transcript)],
             ignored: ""
         )
+    }
+
+    private func recordExtractedTranscript(_ transcript: String) {
+        extractedTranscriptsLock.lock()
+        defer { extractedTranscriptsLock.unlock() }
+        storedExtractedTranscripts.append(transcript)
     }
 
     func extractStreaming(from transcript: String, locale: Locale) -> AsyncThrowingStream<ExtractionResult, Error> {
