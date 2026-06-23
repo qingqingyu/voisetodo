@@ -3,7 +3,6 @@ main = "worker.js"
 compatibility_date = "2026-05-26"
 
 [vars]
-AI_PROVIDER = "anthropic"
 DAILY_REQUEST_LIMIT = "100"
 # 每设备每天遥测事件上限（默认 500）
 TELEMETRY_DAILY_LIMIT = "500"
@@ -11,10 +10,87 @@ TELEMETRY_DAILY_LIMIT = "500"
 # 不配置时 fallback 到 APP_TOKEN，仍未配置则用 "voicetodo"（仅 dev 可接受）。
 # LOG_HASH_SALT = "please-generate-a-unique-salt"
 
+# ─── 多供应商配置 ───────────────────────────────────────────────────────────
+# 推荐方式：用 PROVIDERS JSON var 声明所有 provider 的非敏感字段，每个 provider
+# 的密钥通过 secretName 字段指定，再用 `wrangler secret put <SECRET_NAME>` 单独
+# 注入。proxy 会按优先级 + 健康状态 + 延迟排序，自动 failover。
+#
+# PROVIDERS = '''
+# [
+#   {
+#     "id": "ANTHROPIC_PRIMARY",
+#     "type": "anthropic",
+#     "url": "https://api.anthropic.com/v1/messages",
+#     "model": "claude-sonnet-4-5-20250929",
+#     "priority": 1,
+#     "weight": 10,
+#     "enabled": true,
+#     "secretName": "PROVIDER_KEY_ANTHROPIC_PRIMARY",
+#     "timeoutMs": 15000
+#   },
+#   {
+#     "id": "OPENAI_FALLBACK",
+#     "type": "openai",
+#     "url": "https://api.openai.com/v1/chat/completions",
+#     "model": "gpt-4o-mini",
+#     "priority": 2,
+#     "weight": 5,
+#     "enabled": true,
+#     "secretName": "PROVIDER_KEY_OPENAI_FALLBACK",
+#     "timeoutMs": 15000
+#   },
+#   {
+#     "id": "GEMINI_FALLBACK",
+#     "type": "gemini",
+#     "url": "https://generativelanguage.googleapis.com/v1beta/models",
+#     "model": "gemini-1.5-flash",
+#     "priority": 3,
+#     "weight": 2,
+#     "enabled": true,
+#     "secretName": "PROVIDER_KEY_GEMINI_FALLBACK",
+#     "timeoutMs": 15000
+#   }
+# ]
+# '''
+#
+# 字段说明：
+#   id         必填，匹配 ^[A-Z0-9_]+$，用于日志 / KV key / 默认 secretName
+#   type       必填，已注册 adapter 之一：anthropic | openai | gemini
+#   url        必填，https://
+#   model      必填，非空
+#   priority   选填，数字越小优先级越高（默认 100）
+#   weight     选填，冷启动加权随机的权重（>0；默认 1；全部相等时退化为 priority 排序）
+#   enabled    选填，false 时被 selector 过滤（默认 true）
+#   secretName 选填，密钥 env 名；默认 "PROVIDER_KEY_<id>"；缺失时只 warn，不 fail startup
+#   timeoutMs  选填，单次调用超时，封顶 60_000（默认 15_000）
+#
+# 然后用 wrangler secret 注入实际密钥：
+#   wrangler secret put PROVIDER_KEY_ANTHROPIC_PRIMARY
+#   wrangler secret put PROVIDER_KEY_OPENAI_FALLBACK
+#   wrangler secret put PROVIDER_KEY_GEMINI_FALLBACK
+
+# 可选：限制每次请求最多尝试多少个 provider（默认 = 过滤后的候选总数）。
+# AI_PROVIDER_MAX_ATTEMPTS = "3"
+
+# ─── 旧版单供应商配置（向后兼容） ────────────────────────────────────────────
+# 未配置 PROVIDERS 时，proxy 自动从下列扁平 env 装配单个 provider：
+#   AI_PROVIDER       = "anthropic" 或 "openai"（默认 anthropic）
+#   ANTHROPIC_API_KEY = "..."    （AI_PROVIDER=anthropic 时必需）
+#   ANTHROPIC_MODEL   = "..."    （可选）
+#   OPENAI_API_KEY    = "..."    （AI_PROVIDER=openai 时必需）
+#   OPENAI_MODEL      = "..."    （AI_PROVIDER=openai 时必需）
+#   AI_PROVIDER_TIMEOUT_MS = "..." （可选，覆盖默认 20_000ms）
+
 # Bind this after creating a KV namespace if you want per-device quotas.
 # [[kv_namespaces]]
 # binding = "RATE_LIMIT_KV"
 # id = "your-kv-namespace-id"
+
+# 供应商健康状态 KV（独立命名空间，避免和配额数据互相挤占）。
+# 不绑定时代码会退化为单 isolate 内存模式，failover 仍可用，但熔断/延迟不跨 isolate 共享。
+# [[kv_namespaces]]
+# binding = "AI_PROVIDER_STATE_KV"
+# id = "your-provider-state-kv-namespace-id"
 
 # D1 数据库用于遥测事件存储。
 # 创建：`wrangler d1 create voicetodo-telemetry`，把返回的 database_id 填入。

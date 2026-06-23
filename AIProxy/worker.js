@@ -1,11 +1,28 @@
+import { loadProviders } from "./src/config.js";
+import { ProxyHTTPError } from "./src/errors.js";
+import { HealthStore } from "./src/health.js";
+import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
+import { executeWithFailover } from "./src/provider.js";
+import { pickCandidates } from "./src/selector.js";
+import { normalizeProviderStream } from "./src/stream.js";
+
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TRANSCRIPT_CHARS = 4000;
 const MAX_VOCABULARY_HINTS = 30;
 const MAX_VOCABULARY_HINT_CHARS = 32;
-const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
 const MAX_TELEMETRY_BODY_BYTES = 256 * 1024;
 const MAX_TELEMETRY_EVENTS_PER_BATCH = 100;
 const TELEMETRY_RETENTION_DAYS = 90;
+
+// Module-level HealthStore: isolates are reused across requests in Cloudflare Workers,
+// so this keeps in-memory circuit-breaker / EWMA state alive between requests without
+// requiring KV on every read. KV binding is refreshed per-request via updateKv().
+const sharedHealthStore = new HealthStore();
+
+// Test-only export: allows tests to reset module-level health state between runs.
+export function _testResetHealth() {
+  sharedHealthStore.reset();
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -66,23 +83,78 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
 
     const locale = normalizeLocale(payload.locale);
-    requestContext.locale = locale;
-    requestContext.stream = payload.stream === true;
-    requestContext.transcriptChars = transcript.length;
-    requestContext.provider = normalizeProvider(env.AI_PROVIDER);
+    const stream = payload.stream === true;
     const vocabularyHints = normalizeVocabularyHints(payload.vocabularyHints);
+    requestContext.locale = locale;
+    requestContext.stream = stream;
+    requestContext.transcriptChars = transcript.length;
     requestContext.vocabularyHintCount = vocabularyHints.length;
     logInfo("proxy.payload.accepted", requestContext);
 
     await enforceDailyLimit(request, env, requestContext);
 
-    const provider = requestContext.provider;
-    if (payload.stream === true) {
-      const response = await streamProviderResponse(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext);
+    sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+
+    let providers;
+    try {
+      providers = loadProviders(env, {
+        onSecretMissing: ({ id, secretName }) => {
+          logWarn("proxy.provider.secret_missing", { ...requestContext, providerId: id, secretName });
+        }
+      });
+    } catch (error) {
+      logError("proxy.providers.config_failed", { ...requestContext, ...errorFields(error) });
+      return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_config_invalid" });
+    }
+    if (providers.length === 0) {
+      logError("proxy.providers.empty", { ...requestContext });
+      return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_empty" });
+    }
+
+    const candidates = await pickCandidates(providers, sharedHealthStore, Date.now(), {
+      maxAttempts: resolveMaxAttempts(env)
+    });
+    if (candidates.length === 0) {
+      logError("proxy.selector.no_candidates", { ...requestContext });
+      // All filtered out (missing keys or disabled) — distinct from config-invalid.
+      return finishRequest(new Response("AI proxy failed", { status: 503 }), requestContext, { error: "no_providers_available" });
+    }
+    requestContext.candidateCount = candidates.length;
+
+    const params = { transcript, locale, vocabularyHints, stream };
+    const result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
+      healthStore: sharedHealthStore,
+      onResponse: stream
+        ? ({ response, provider }) => validateProviderStreamBody(response, provider, requestContext)
+        : ({ response, provider, adapter }) => readProviderText(response, provider, adapter, requestContext)
+    });
+    requestContext.provider = result.provider.type;
+    requestContext.providerId = result.provider.id;
+
+    if (stream) {
+      const response = new Response(normalizeProviderStream(
+        result.response.body,
+        result.provider,
+        result.adapter,
+        requestContext,
+        {
+          onSuccess: result.confirmSuccess,
+          onFailure: () => result.confirmFailure("stream")
+        }
+      ), {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Connection": "keep-alive"
+        }
+      });
       return finishRequest(response, requestContext, { streamingBodyContinues: true });
     }
 
-    const text = await callProviderText(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext);
+    const text = result.bodyResult.text;
+    await result.confirmSuccess();
+    logInfo("proxy.provider.text_success", { ...requestContext, provider: result.provider.type, responseChars: text.length });
     return finishRequest(new Response(text, {
       status: 200,
       headers: {
@@ -99,6 +171,14 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     logError("proxy.request.failed", { ...requestContext, ...errorFields(error) });
     return finishRequest(new Response("AI proxy failed", { status: 502 }), requestContext, { error: "AI proxy failed" });
   }
+}
+
+function resolveMaxAttempts(env) {
+  const configured = Number(env.AI_PROVIDER_MAX_ATTEMPTS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return undefined;
+  }
+  return Math.floor(configured);
 }
 
 // MARK: - Telemetry batch handler
@@ -348,14 +428,6 @@ function normalizeLocale(locale) {
   return raw.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-function normalizeProvider(provider) {
-  const value = String(provider || "anthropic").toLowerCase();
-  if (value === "openai") {
-    return "openai";
-  }
-  return "anthropic";
-}
-
 function normalizeVocabularyHints(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -383,222 +455,44 @@ function normalizeVocabularyHints(value) {
   return hints;
 }
 
-async function callProviderText(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext) {
-  const response = await callProvider(provider, transcript, locale, vocabularyHints, env, fetchImpl, false, requestContext);
-  const data = await readProviderJSON(response, provider, requestContext);
-
-  if (provider === "openai") {
-    const text = data?.choices?.[0]?.message?.content;
-    if (!text) {
-      logError("proxy.provider.missing_text", { ...requestContext, provider });
-      throw new ProxyHTTPError(502, "OpenAI response missing text");
-    }
-    const stripped = stripMarkdownFence(text);
-    logInfo("proxy.provider.text_success", { ...requestContext, provider, responseChars: stripped.length });
-    return stripped;
-  }
-
-  const text = data?.content?.find((part) => part.type === "text")?.text
-    || data?.content?.[0]?.text;
-  if (!text) {
-    logError("proxy.provider.missing_text", { ...requestContext, provider });
-    throw new ProxyHTTPError(502, "Anthropic response missing text");
-  }
-  const stripped = stripMarkdownFence(text);
-  logInfo("proxy.provider.text_success", { ...requestContext, provider, responseChars: stripped.length });
-  return stripped;
-}
-
-async function streamProviderResponse(provider, transcript, locale, vocabularyHints, env, fetchImpl, requestContext) {
-  const response = await callProvider(provider, transcript, locale, vocabularyHints, env, fetchImpl, true, requestContext);
+function validateProviderStreamBody(response, provider, requestContext) {
   if (!response.body) {
-    logError("proxy.provider.stream_missing_body", { ...requestContext, provider });
-    throw new ProxyHTTPError(502, "AI provider streaming response missing body");
-  }
-
-  return new Response(normalizeProviderStream(response.body, provider, requestContext), {
-    status: 200,
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-store",
-      "Connection": "keep-alive"
-    }
-  });
-}
-
-async function callProvider(provider, transcript, locale, vocabularyHints, env, fetchImpl, stream, requestContext) {
-  const startedAt = Date.now();
-  logInfo("proxy.provider.call_start", { ...requestContext, provider, stream });
-  const response = provider === "openai"
-    ? await callOpenAI(transcript, locale, vocabularyHints, env, fetchImpl, stream)
-    : await callAnthropic(transcript, locale, vocabularyHints, env, fetchImpl, stream);
-
-  if (!response.ok) {
-    const status = response.status === 429 ? 429 : 502;
-    logWarn("proxy.provider.call_failed", {
+    logError("proxy.provider.stream_missing_body", {
       ...requestContext,
-      provider,
-      stream,
-      providerStatus: response.status,
-      durationMs: Date.now() - startedAt
+      provider: provider.type,
+      providerId: provider.id
     });
-    throw new ProxyHTTPError(status, "AI provider error");
+    throw new ProxyHTTPError(502, "AI provider streaming response missing body", { errorType: "stream_missing_body" });
   }
-  logInfo("proxy.provider.call_success", {
-    ...requestContext,
-    provider,
-    stream,
-    providerStatus: response.status,
-    durationMs: Date.now() - startedAt
-  });
-  return response;
+  return null;
 }
 
-async function callAnthropic(transcript, locale, vocabularyHints, env, fetchImpl, stream) {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new ProxyHTTPError(500, "Anthropic key not configured");
+async function readProviderText(response, provider, adapter, requestContext) {
+  const data = await readProviderJSON(response, provider, requestContext);
+  const text = adapter.extractText(data);
+  if (text === null) {
+    logError("proxy.provider.missing_text", {
+      ...requestContext,
+      provider: provider.type,
+      providerId: provider.id
+    });
+    throw new ProxyHTTPError(502, `${provider.type} response missing text`, { errorType: "missing_text" });
   }
-
-  return fetchImpl("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    signal: providerTimeoutSignal(env),
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": env.ANTHROPIC_API_KEY
-    },
-    body: JSON.stringify({
-      model: env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-      max_tokens: 500,
-      temperature: 0.1,
-      stream,
-      system: systemPrompt(locale, vocabularyHints),
-      messages: [{ role: "user", content: transcript }]
-    })
-  });
-}
-
-async function callOpenAI(transcript, locale, vocabularyHints, env, fetchImpl, stream) {
-  if (!env.OPENAI_API_KEY) {
-    throw new ProxyHTTPError(500, "OpenAI key not configured");
-  }
-  if (!env.OPENAI_MODEL) {
-    throw new ProxyHTTPError(500, "OpenAI model not configured");
-  }
-
-  return fetchImpl("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    signal: providerTimeoutSignal(env),
-    headers: {
-      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: env.OPENAI_MODEL,
-      temperature: 0.1,
-      stream,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt(locale, vocabularyHints) },
-        { role: "user", content: transcript }
-      ]
-    })
-  });
-}
-
-function providerTimeoutSignal(env) {
-  const configuredTimeout = Number(env.AI_PROVIDER_TIMEOUT_MS);
-  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
-    ? Math.min(configuredTimeout, 60_000)
-    : DEFAULT_PROVIDER_TIMEOUT_MS;
-  return AbortSignal.timeout(timeoutMs);
+  return { text };
 }
 
 async function readProviderJSON(response, provider, requestContext) {
   try {
     return await response.json();
   } catch (error) {
-    logError("proxy.provider.invalid_json", { ...requestContext, provider, ...errorFields(error) });
-    throw new ProxyHTTPError(502, "AI provider returned invalid JSON", { cause: error });
+    logError("proxy.provider.invalid_json", {
+      ...requestContext,
+      provider: provider.type,
+      providerId: provider.id,
+      ...errorFields(error)
+    });
+    throw new ProxyHTTPError(502, "AI provider returned invalid JSON", { cause: error, errorType: "invalid_json" });
   }
-}
-
-function normalizeProviderStream(body, provider, requestContext) {
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finished = false;
-  let chunkCount = 0;
-  let emittedCount = 0;
-  let emittedChars = 0;
-  const startedAt = Date.now();
-
-  return new ReadableStream({
-    async start(controller) {
-      const reader = body.getReader();
-      let sendDone = false;
-      try {
-        while (!finished) {
-          const { value, done } = await reader.read();
-          if (done) {
-            break;
-          }
-          chunkCount += 1;
-          buffer += decoder.decode(value, { stream: true });
-          let newlineIndex;
-          while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, newlineIndex).trim();
-            buffer = buffer.slice(newlineIndex + 1);
-            if (!line.startsWith("data:")) {
-              continue;
-            }
-            const normalized = normalizeSSEData(line.slice(5).trim(), provider);
-            if (normalized.done) {
-              finished = true;
-              logInfo("proxy.provider.stream_done", { ...requestContext, provider, chunkCount, emittedCount, emittedChars });
-              break;
-            }
-            if (normalized.text) {
-              emittedCount += 1;
-              emittedChars += normalized.text.length;
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: normalized.text })}\n\n`));
-            }
-          }
-        }
-        if (!finished) {
-          throw new ProxyHTTPError(502, "AI provider stream ended before done");
-        }
-        sendDone = true;
-      } catch (error) {
-        logError("proxy.provider.stream_failed", {
-          ...requestContext,
-          provider,
-          chunkCount,
-          emittedCount,
-          emittedChars,
-          durationMs: Date.now() - startedAt,
-          ...errorFields(error)
-        });
-        controller.error(error);
-        return;
-      } finally {
-        reader.releaseLock();
-      }
-
-      if (sendDone) {
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-        logInfo("proxy.provider.stream_success", {
-          ...requestContext,
-          provider,
-          chunkCount,
-          emittedCount,
-          emittedChars,
-          durationMs: Date.now() - startedAt
-        });
-      }
-    }
-  });
 }
 
 async function makeRequestContext(request, env) {
@@ -647,169 +541,3 @@ async function shortHash(value) {
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
-
-function errorFields(error) {
-  const fields = {
-    errorName: error?.name || "Error",
-    errorMessage: error?.message || String(error),
-    errorStack: error?.stack || ""
-  };
-  if (error?.cause) {
-    fields.causeName = error.cause?.name || "Error";
-    fields.causeMessage = error.cause?.message || String(error.cause);
-    fields.causeStack = error.cause?.stack || "";
-  }
-  return fields;
-}
-
-function logInfo(event, fields = {}) {
-  log("info", event, fields);
-}
-
-function logWarn(event, fields = {}) {
-  log("warn", event, fields);
-}
-
-function logError(event, fields = {}) {
-  log("error", event, fields);
-}
-
-function log(level, event, fields = {}) {
-  const payload = {
-    ts: new Date().toISOString(),
-    level,
-    event,
-    ...fields
-  };
-  const line = JSON.stringify(payload);
-  if (level === "error") {
-    console.error(line);
-  } else if (level === "warn") {
-    console.warn(line);
-  } else {
-    console.log(line);
-  }
-}
-
-function normalizeSSEData(data, provider) {
-  if (data === "[DONE]") {
-    return { done: true };
-  }
-
-  let event;
-  try {
-    event = JSON.parse(data);
-  } catch (error) {
-    throw new ProxyHTTPError(502, "AI provider stream returned invalid JSON", { cause: error });
-  }
-
-  if (provider === "openai") {
-    const choice = event.choices?.[0];
-    return {
-      done: Boolean(choice?.finish_reason),
-      text: choice?.delta?.content || ""
-    };
-  }
-
-  if (event.type === "message_stop") {
-    return { done: true };
-  }
-  if (event.type === "content_block_delta") {
-    return { text: event.delta?.text || "" };
-  }
-  return {};
-}
-
-function stripMarkdownFence(text) {
-  return String(text)
-    .trim()
-    .replace(/^```(?:json|JSON)?\s*\n/, "")
-    .replace(/\n\s*```\s*$/, "")
-    .trim();
-}
-
-function systemPrompt(locale, vocabularyHints = []) {
-  const basePrompt = locale === "zh" ? CHINESE_SYSTEM_PROMPT : ENGLISH_SYSTEM_PROMPT;
-  if (!vocabularyHints.length) {
-    return basePrompt;
-  }
-  return `${basePrompt}\n\n${vocabularyHintPrompt(locale, vocabularyHints)}`;
-}
-
-function vocabularyHintPrompt(locale, vocabularyHints) {
-  if (locale === "zh") {
-    return `用户近期常用词（仅作为识别和保留原词的上下文，不要因为这些词本身创建待办）：${vocabularyHints.join("、")}`;
-  }
-  return `Recent user vocabulary hints (context only for recognition and preserving exact terms; do not create todos just because these terms appear here): ${vocabularyHints.join(", ")}`;
-}
-
-class ProxyHTTPError extends Error {
-  constructor(status, message, options = {}) {
-    super(message, options);
-    this.status = status;
-  }
-}
-
-const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户的口语化输入中精准提取行动项。
-
-核心规则：
-1. 只提取行动项：感受、抱怨、背景信息不是 TODO。只有明确「要去做某事」才算
-2. 过滤口语噪音：忽略「嗯」「那个」「就是」「我想想」等填充词
-3. 保留用户原意：不要擅自扩展或拆解。用户说「准备面试」就是「准备面试」，不要拆成子步骤
-4. 提取时间线索：如果提到时间（明天、下周三、月底前），提取为 due_hint 字段。没提到就留 null
-5. 提取重复规则：只有明确出现「每天/每日/每周X/每月X号」时才设置 recurrence_rule；否则为 null。若出现「未来7天/接下来7天/连续7天」这类有限周期，end_date 用 YYYY-MM-DD 表示最后一次发生日期；无法确定具体日期时设为 null
-6. 识别优先级线索：语气中有紧急感（赶紧、必须、来不及了）标记为 high，否则 normal
-7. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条
-8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」
-
-只返回 JSON，不要返回解释。格式如下：
-{
-  "todos": [
-    {
-      "title": "10字以内行动描述",
-      "detail": "原话语境",
-      "due_hint": "时间线索原文或null",
-      "recurrence_rule": {
-        "frequency": "daily/weekly/monthly",
-        "weekdays": [2],
-        "day_of_month": null,
-        "end_date": null
-      } 或 null,
-      "priority": "high或normal",
-      "category_hint": "work/study/life/health/finance/social/other"
-    }
-  ],
-  "ignored": "被过滤内容摘要"
-}`;
-
-const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
-
-Core rules:
-1. Only extract action items: feelings, complaints, and background info are NOT todos. Only explicit "going to do something" counts
-2. Filter filler words: ignore "um", "like", "you know", "let me think" etc.
-3. Preserve user intent: don't expand or split. If the user says "prepare for interview", keep it as is
-4. Extract time cues: if a time is mentioned (tomorrow, next Wednesday, by end of month), capture it in due_hint. Otherwise null
-5. Extract recurrence only for explicit phrases like "every day", "daily", "every Monday", "weekly", or "monthly on the 1st"; otherwise recurrence_rule must be null. For bounded phrases like "for the next 7 days", set end_date to the final occurrence date in YYYY-MM-DD when the date can be determined; otherwise use null
-6. Detect urgency: if tone has urgency (ASAP, must, running out of time) mark as high, otherwise normal
-7. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc.
-8. Ambiguous intent: pure state descriptions ("I'm so tired") are ignored; implied action ("so tired, need to see a doctor") extracts "see a doctor"
-
-Return JSON only, with this shape:
-{
-  "todos": [
-    {
-      "title": "Brief action description (under 10 words)",
-      "detail": "Original context",
-      "due_hint": "Time cue text or null",
-      "recurrence_rule": {
-        "frequency": "daily/weekly/monthly",
-        "weekdays": [6],
-        "day_of_month": null,
-        "end_date": null
-      } or null,
-      "priority": "high or normal",
-      "category_hint": "work/study/life/health/finance/social/other"
-    }
-  ],
-  "ignored": "Summary of filtered content"
-}`;

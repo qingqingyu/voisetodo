@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { handleRequest, handleTelemetryBatch, handleScheduled } from "./worker.js";
+import { test, beforeEach } from "node:test";
+import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth } from "./worker.js";
+
+// Reset module-level HealthStore between tests so circuit-breaker / latency state
+// from one test doesn't leak into another.
+beforeEach(() => _testResetHealth());
+import { anthropicAdapter, openaiAdapter, geminiAdapter } from "./src/adapters/index.js";
+import { HealthStore } from "./src/health.js";
+import { pickCandidates } from "./src/selector.js";
 
 test("rejects missing app token when APP_TOKEN is configured", async () => {
   const response = await handleRequest(
@@ -301,6 +308,36 @@ test("rejects provider streaming response without body", async () => {
   assert.equal(await response.text(), "AI proxy failed");
 });
 
+test("failovers in streaming mode when first provider returns 200 without body", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x", stream: true }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+        { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+      ],
+      { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      if (url.includes("a.example")) {
+        return new Response(null, { status: 200 });
+      }
+      return sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "{\"todos\":[]" } }] })}`,
+        `data: ${JSON.stringify({ choices: [{ finish_reason: "stop" }] })}`
+      ]);
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].includes("b.example"));
+  assert.ok((await response.text()).includes("data: [DONE]"));
+});
+
 test("propagates provider streaming read errors instead of sending done", async () => {
   const response = await handleRequest(
     request({ transcript: "今天完成英语背诵", locale: "zh-Hans", stream: true }, { "X-App-Token": "token" }),
@@ -333,6 +370,22 @@ test("propagates invalid provider streaming JSON instead of skipping it", async 
   await assert.rejects(() => response.text(), /AI provider stream returned invalid JSON/);
 });
 
+test("propagates oversized provider streaming events instead of buffering indefinitely", async () => {
+  const response = await handleRequest(
+    request({ transcript: "今天完成英语背诵", locale: "zh-Hans", stream: true }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async () => sseResponse([`data: ${"x".repeat(70 * 1024)}`])
+  );
+
+  assert.equal(response.status, 200);
+  await assert.rejects(() => response.text(), /AI provider stream event too large/);
+});
+
 test("propagates provider stream ending without done instead of sending done", async () => {
   const response = await handleRequest(
     request({ transcript: "今天完成英语背诵", locale: "zh-Hans", stream: true }, { "X-App-Token": "token" }),
@@ -349,6 +402,52 @@ test("propagates provider stream ending without done instead of sending done", a
 
   assert.equal(response.status, 200);
   await assert.rejects(() => response.text(), /AI provider stream ended before done/);
+});
+
+test("streaming failures count toward circuit breaker before a provider is marked healthy", async () => {
+  const calls = [];
+  const kv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes("a.example")) {
+      return sseResponse(["data: {not-json"]);
+    }
+    return sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "{\"todos\":[]" } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ finish_reason: "stop" }] })}`
+    ]);
+  };
+
+  for (let i = 0; i < 3; i++) {
+    const response = await handleRequest(
+      request({ transcript: "x", stream: true }, { "X-App-Token": "token" }),
+      env,
+      {},
+      fetchImpl
+    );
+    assert.equal(response.status, 200);
+    await assert.rejects(() => response.text(), /AI provider stream returned invalid JSON/);
+  }
+
+  calls.length = 0;
+  const responseAfter = await handleRequest(
+    request({ transcript: "x", stream: true }, { "X-App-Token": "token" }),
+    env,
+    {},
+    fetchImpl
+  );
+  assert.equal(responseAfter.status, 200);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("b.example"), "A's stream failures should open the circuit");
+  assert.ok((await responseAfter.text()).includes("data: [DONE]"));
 });
 
 test("rejects oversized transcript before calling provider", async () => {
@@ -822,6 +921,1236 @@ test("scheduled handler swallows DB errors", async () => {
     }
   };
   await handleScheduled({ TELEMETRY_DB: db });  // 不抛错即可
+});
+
+// MARK: - P2: PROVIDERS multi-provider config parsing
+
+function providersEnv(providers, secrets = {}, extra = {}) {
+  return {
+    APP_TOKEN: "token",
+    PROVIDERS: JSON.stringify(providers),
+    ...secrets,
+    ...extra
+  };
+}
+
+test("PROVIDERS picks first configured provider and routes through its adapter", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "今天完成英语背诵", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        {
+          id: "ANTHROPIC_PRIMARY",
+          type: "anthropic",
+          url: "https://api.anthropic.example/v1/messages",
+          model: "claude-test",
+          priority: 1,
+          weight: 10,
+          enabled: true,
+          secretName: "PROVIDER_KEY_ANTHROPIC_PRIMARY",
+          timeoutMs: 8000
+        }
+      ],
+      { PROVIDER_KEY_ANTHROPIC_PRIMARY: "anthropic-key" }
+    ),
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({
+        content: [{ type: "text", text: extractionJSON("完成英语背诵") }]
+      });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamRequest.url, "https://api.anthropic.example/v1/messages");
+  assert.equal(upstreamRequest.init.headers["x-api-key"], "anthropic-key");
+  assert.equal(upstreamRequest.body.model, "claude-test");
+});
+
+test("PROVIDERS uses timeoutMs from the provider config", async () => {
+  let upstreamSignal;
+  await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{
+        id: "ANTHROPIC_PRIMARY",
+        type: "anthropic",
+        url: "https://api.anthropic.example/v1/messages",
+        model: "claude-test",
+        timeoutMs: 7000
+      }],
+      { PROVIDER_KEY_ANTHROPIC_PRIMARY: "k" }
+    ),
+    {},
+    async (_url, init) => {
+      upstreamSignal = init.signal;
+      return jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] });
+    }
+  );
+  assert.ok(upstreamSignal instanceof AbortSignal);
+});
+
+test("PROVIDERS absent falls back to legacy ANTHROPIC_API_KEY config", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "今天完成英语背诵" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "legacy-anthropic-key",
+      ANTHROPIC_MODEL: "legacy-model"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({ content: [{ type: "text", text: extractionJSON("完成英语背诵") }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamRequest.url, "https://api.anthropic.com/v1/messages");
+  assert.equal(upstreamRequest.init.headers["x-api-key"], "legacy-anthropic-key");
+  assert.equal(upstreamRequest.body.model, "legacy-model");
+});
+
+test("PROVIDERS absent falls back to legacy OPENAI_API_KEY config when AI_PROVIDER=openai", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "buy milk" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "legacy-openai-key",
+      OPENAI_MODEL: "legacy-openai-model"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("Buy milk") } }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamRequest.url, "https://api.openai.com/v1/chat/completions");
+  assert.equal(upstreamRequest.init.headers.Authorization, "Bearer legacy-openai-key");
+  assert.equal(upstreamRequest.body.model, "legacy-openai-model");
+});
+
+test("legacy Anthropic config fails fast when API key is missing", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic"
+    },
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), "AI proxy failed");
+});
+
+test("legacy OpenAI config fails fast when model is missing", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "legacy-openai-key"
+    },
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), "AI proxy failed");
+});
+
+test("PROVIDERS empty array returns 500", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv([]),
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), "AI proxy failed");
+});
+
+test("PROVIDERS invalid JSON returns 500", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", PROVIDERS: "{not json" },
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+});
+
+test("PROVIDERS entry with malformed id returns 500", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{ id: "bad-id", type: "anthropic", url: "https://a.example/v1/messages", model: "m" }],
+      { PROVIDER_KEY_BAD_ID: "k" }
+    ),
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+});
+
+test("PROVIDERS entry with unregistered type returns 500", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{ id: "X", type: "made-up", url: "https://a.example", model: "m" }],
+      { PROVIDER_KEY_X: "k" }
+    ),
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+});
+
+test("PROVIDERS entry with non-https url returns 500", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{ id: "X", type: "anthropic", url: "http://insecure.example", model: "m" }],
+      { PROVIDER_KEY_X: "k" }
+    ),
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+});
+
+test("PROVIDERS entry with empty model returns 500", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{ id: "X", type: "anthropic", url: "https://a.example/v1/messages", model: "" }],
+      { PROVIDER_KEY_X: "k" }
+    ),
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 500);
+});
+
+test("PROVIDERS warns when a provider secret is missing but request still succeeds via a keyed provider", async () => {
+  let upstreamRequest;
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request({ transcript: "今天复习", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [
+          {
+            id: "ANTHROPIC_PRIMARY",
+            type: "anthropic",
+            url: "https://api.anthropic.example/v1/messages",
+            model: "claude-test",
+            priority: 1
+          },
+          {
+            id: "OPENAI_FALLBACK",
+            type: "openai",
+            url: "https://api.openai.example/v1/chat/completions",
+            model: "gpt-test",
+            priority: 2
+          }
+        ],
+        // Anthropic has key; OpenAI does not
+        { PROVIDER_KEY_ANTHROPIC_PRIMARY: "anthropic-key" }
+      ),
+      {},
+      async (url, init) => {
+        upstreamRequest = { url, init };
+        return jsonResponse({ content: [{ type: "text", text: extractionJSON("复习") }] });
+      }
+    );
+    assert.equal(response.status, 200);
+  });
+
+  assert.equal(upstreamRequest.url, "https://api.anthropic.example/v1/messages");
+  assert.ok(logs.some((line) => line.includes("proxy.provider.secret_missing") && line.includes("OPENAI_FALLBACK")));
+  assert.ok(logs.some((line) => line.includes("PROVIDER_KEY_OPENAI_FALLBACK")));
+});
+
+test("PROVIDERS logs never expose secret values", async () => {
+  const logs = await captureConsole(async () => {
+    await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [{ id: "ANTHROPIC_PRIMARY", type: "anthropic", url: "https://a.example/v1/messages", model: "m" }],
+        { PROVIDER_KEY_ANTHROPIC_PRIMARY: "super-secret-key-value" }
+      ),
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
+    );
+  });
+
+  assert.equal(logs.some((line) => line.includes("super-secret-key-value")), false);
+});
+
+// MARK: - P3: failover scheduling
+
+test("failovers to next provider when first returns 5xx", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "今天完成英语背诵", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "ANTHROPIC_PRIMARY", type: "anthropic", url: "https://anthropic.example/v1/messages", model: "claude-a", priority: 1 },
+        { id: "OPENAI_FALLBACK", type: "openai", url: "https://openai.example/v1/chat/completions", model: "gpt-b", priority: 2 }
+      ],
+      {
+        PROVIDER_KEY_ANTHROPIC_PRIMARY: "k-a",
+        PROVIDER_KEY_OPENAI_FALLBACK: "k-b"
+      }
+    ),
+    {},
+    async (url, init) => {
+      calls.push(url);
+      if (url.includes("anthropic.example")) {
+        return new Response(JSON.stringify({ error: "internal" }), { status: 503, headers: { "Content-Type": "application/json" } });
+      }
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("完成英语背诵") } }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], "https://anthropic.example/v1/messages");
+  assert.equal(calls[1], "https://openai.example/v1/chat/completions");
+  const data = await response.json();
+  assert.equal(data.todos[0].title, "完成英语背诵");
+});
+
+test("failovers to next provider when first fetch throws network error", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "buy milk", locale: "en-US" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "OPENAI_PRIMARY", type: "openai", url: "https://openai.example/v1/chat/completions", model: "gpt-a", priority: 1 },
+        { id: "ANTHROPIC_FALLBACK", type: "anthropic", url: "https://anthropic.example/v1/messages", model: "claude-b", priority: 2 }
+      ],
+      {
+        PROVIDER_KEY_OPENAI_PRIMARY: "k-a",
+        PROVIDER_KEY_ANTHROPIC_FALLBACK: "k-b"
+      }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      if (url.includes("openai.example")) {
+        throw new TypeError("network failed");
+      }
+      return jsonResponse({ content: [{ type: "text", text: extractionJSON("Buy milk") }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+  const data = await response.json();
+  assert.equal(data.todos[0].title, "Buy milk");
+});
+
+test("does not failover on 400 request-body errors and surfaces 502", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "ANTHROPIC_PRIMARY", type: "anthropic", url: "https://anthropic.example/v1/messages", model: "claude-a", priority: 1 },
+        { id: "OPENAI_FALLBACK", type: "openai", url: "https://openai.example/v1/chat/completions", model: "gpt-b", priority: 2 }
+      ],
+      {
+        PROVIDER_KEY_ANTHROPIC_PRIMARY: "k-a",
+        PROVIDER_KEY_OPENAI_FALLBACK: "k-b"
+      }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      // Generic malformed-transcript style error: no model keyword.
+      return new Response(JSON.stringify({ error: { message: "invalid_argument: transcript malformed" } }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  );
+
+  assert.equal(response.status, 502);
+  // Should NOT have tried OPENAI_FALLBACK since the 400 was classified request-body.
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("anthropic.example"));
+});
+
+test("failovers on 400 model-not-found error (treated as model_config)", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "ANTHROPIC_PRIMARY", type: "anthropic", url: "https://anthropic.example/v1/messages", model: "claude-a", priority: 1 },
+        { id: "OPENAI_FALLBACK", type: "openai", url: "https://openai.example/v1/chat/completions", model: "gpt-b", priority: 2 }
+      ],
+      {
+        PROVIDER_KEY_ANTHROPIC_PRIMARY: "k-a",
+        PROVIDER_KEY_OPENAI_FALLBACK: "k-b"
+      }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      if (url.includes("anthropic.example")) {
+        return new Response(JSON.stringify({ type: "error", error: { type: "model_not_found_error", message: "model not found: claude-a" } }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+});
+
+test("caps provider error body reads before retry classification", async () => {
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [
+          { id: "ANTHROPIC_PRIMARY", type: "anthropic", url: "https://anthropic.example/v1/messages", model: "claude-a", priority: 1 },
+          { id: "OPENAI_FALLBACK", type: "openai", url: "https://openai.example/v1/chat/completions", model: "gpt-b", priority: 2 }
+        ],
+        {
+          PROVIDER_KEY_ANTHROPIC_PRIMARY: "k-a",
+          PROVIDER_KEY_OPENAI_FALLBACK: "k-b"
+        }
+      ),
+      {},
+      async (url) => {
+        if (url.includes("anthropic.example")) {
+          return new Response(`model_not_found ${"x".repeat(128 * 1024)}`, {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+  });
+
+  const failedLog = logs
+    .filter((line) => line.includes("proxy.provider.call_failed"))
+    .map((line) => JSON.parse(line))
+    .find((entry) => entry.providerId === "ANTHROPIC_PRIMARY");
+  assert.equal(failedLog.errorBodyTruncated, true);
+  assert.ok(failedLog.errorBodyBytes <= 64 * 1024);
+});
+
+test("returns 503 when all providers fail with retryable errors", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+        { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+      ],
+      { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" }
+    ),
+    {},
+    async () => new Response("error", { status: 500 })
+  );
+
+  assert.equal(response.status, 503);
+});
+
+test("AI_PROVIDER_MAX_ATTEMPTS caps how many providers are tried", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+        { id: "B", type: "anthropic", url: "https://b.example/v1/messages", model: "m", priority: 2 },
+        { id: "C", type: "anthropic", url: "https://c.example/v1/messages", model: "m", priority: 3 }
+      ],
+      {
+        PROVIDER_KEY_A: "k-a",
+        PROVIDER_KEY_B: "k-b",
+        PROVIDER_KEY_C: "k-c"
+      },
+      { AI_PROVIDER_MAX_ATTEMPTS: "2" }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      return new Response("error", { status: 500 });
+    }
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(calls.length, 2);
+});
+
+test("failover emits providersTried telemetry on success after one failover", async () => {
+  let finishedLog = null;
+  const logs = await captureConsole(async () => {
+    await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [
+          { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+          { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+        ],
+        { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" }
+      ),
+      {},
+      async (url) => {
+        if (url.includes("a.example")) {
+          return new Response("error", { status: 500 });
+        }
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+      }
+    );
+  });
+
+  finishedLog = logs.find((line) => line.includes("proxy.request.finished"));
+  assert.ok(finishedLog, "expected a finished log line");
+  const parsed = JSON.parse(finishedLog);
+  assert.deepEqual(parsed.providersTried, ["A", "B"]);
+  assert.equal(parsed.providerUsed, "B");
+  assert.equal(parsed.failoverCount, 1);
+});
+
+test("does not emit failover telemetry for the final failed provider", async () => {
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [
+          { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+          { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+        ],
+        { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" }
+      ),
+      {},
+      async () => new Response("error", { status: 500 })
+    );
+    assert.equal(response.status, 503);
+  });
+
+  const failoverLogs = logs
+    .filter((line) => line.includes("proxy.provider.failover"))
+    .map((line) => JSON.parse(line));
+  assert.equal(failoverLogs.length, 1);
+  assert.equal(failoverLogs[0].fromProviderId, "A");
+});
+
+test("non-streaming invalid provider bodies failover and count toward circuit breaker", async () => {
+  const calls = [];
+  const kv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes("a.example")) {
+      return new Response("{not-json", {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+  };
+
+  for (let i = 0; i < 3; i++) {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      env,
+      {},
+      fetchImpl
+    );
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.todos[0].title, "x");
+  }
+
+  calls.length = 0;
+  const responseAfter = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    env,
+    {},
+    fetchImpl
+  );
+  assert.equal(responseAfter.status, 200);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("b.example"), "A's invalid bodies should open the circuit");
+});
+
+test("failover works in streaming mode when first provider fails before headers", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x", stream: true }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+        { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+      ],
+      { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      if (url.includes("a.example")) {
+        return new Response("error", { status: 500 });
+      }
+      return sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "{\"todos\":[]" } }] })}`,
+        `data: ${JSON.stringify({ choices: [{ finish_reason: "stop" }] })}`
+      ]);
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Type"), "text/event-stream; charset=utf-8");
+  assert.equal(calls.length, 2);
+
+  const body = await response.text();
+  assert.ok(body.includes("data: {\"text\":\"{\\\"todos\\\":[]\"}"));
+  assert.ok(body.includes("data: [DONE]"));
+});
+
+test("disabled provider is filtered from candidates", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, enabled: false },
+        { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+      ],
+      { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("b.example"));
+});
+
+test("provider with missing secret is filtered from candidates and not called", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+        { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+      ],
+      // Only B has a secret; A's PROVIDER_KEY_A is intentionally absent.
+      { PROVIDER_KEY_B: "k-b" }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("b.example"));
+});
+
+test("returns 503 when no providers pass the selector filter", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, enabled: false },
+        { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+      ],
+      // B has no secret configured either.
+      {}
+    ),
+    {},
+    failingFetch
+  );
+
+  assert.equal(response.status, 503);
+});
+
+// MARK: - P4: circuit breaker
+
+test("opens circuit after 3 retryable failures and skips that provider", async () => {
+  const calls = [];
+  const kv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes("a.example")) {
+      return new Response("error", { status: 500 });
+    }
+    return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+  };
+
+  for (let i = 0; i < 3; i++) {
+    const response = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+    assert.equal(response.status, 200);
+  }
+
+  calls.length = 0;
+  const responseAfter = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+  assert.equal(responseAfter.status, 200);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("b.example"), "A's circuit should be open; only B should be called");
+});
+
+test("non-retryable 4xx does not count toward circuit breaker", async () => {
+  const calls = [];
+  const kv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 }
+    ],
+    { PROVIDER_KEY_A: "k-a" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+
+  for (let i = 0; i < 5; i++) {
+    await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      env,
+      {},
+      async (url) => {
+        calls.push(url);
+        return new Response(JSON.stringify({ error: "invalid transcript" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    );
+  }
+
+  // All 5 should have hit A — circuit never opens on 4xx request-body errors.
+  assert.equal(calls.length, 5);
+});
+
+test("successful calls reset consecutive provider failures", async () => {
+  const healthStore = new HealthStore({ kv: null });
+
+  await healthStore.recordFailure("A", "status_500");
+  await healthStore.recordFailure("A", "status_500");
+  assert.equal(await healthStore.circuitState("A"), "closed");
+
+  await healthStore.recordSuccess("A", 100);
+  await healthStore.recordFailure("A", "status_500");
+  await healthStore.recordFailure("A", "status_500");
+
+  assert.equal(await healthStore.circuitState("A"), "closed");
+});
+
+test("half-open trial success closes the circuit", async () => {
+  const calls = [];
+  const kv = new MemoryKV(new Map());
+  let currentTime = 0;
+  const healthStore = new HealthStore({ kv, now: () => currentTime });
+
+  // First three failures open the circuit at t=0.
+  for (let i = 0; i < 3; i++) {
+    await healthStore.recordFailure("A", "status_500");
+  }
+  assert.equal(await healthStore.circuitState("A"), "open");
+
+  // Advance past 30s cooldown → half-open.
+  currentTime = 31_000;
+  assert.equal(await healthStore.circuitState("A"), "half-open");
+
+  // Half-open trial succeeds → close.
+  await healthStore.recordSuccess("A", 100);
+  assert.equal(await healthStore.circuitState("A"), "closed");
+
+  void calls;
+});
+
+test("half-open trial failure re-opens circuit with doubled cooldown", async () => {
+  const kv = new MemoryKV(new Map());
+  let currentTime = 0;
+  const healthStore = new HealthStore({ kv, now: () => currentTime });
+
+  for (let i = 0; i < 3; i++) {
+    await healthStore.recordFailure("A", "status_500");
+  }
+  // First open uses 30s cooldown.
+  currentTime = 31_000;
+  assert.equal(await healthStore.circuitState("A"), "half-open");
+
+  // Half-open trial fails → re-open with doubled cooldown (60s).
+  await healthStore.recordFailure("A", "status_500");
+  assert.equal(await healthStore.circuitState("A"), "open");
+
+  // Within 60s (since re-open at t=31000), still open.
+  currentTime = 31_000 + 50_000;
+  assert.equal(await healthStore.circuitState("A"), "open");
+  // After 60s since re-open, half-open again.
+  currentTime = 31_000 + 61_000;
+  assert.equal(await healthStore.circuitState("A"), "half-open");
+});
+
+test("HealthStore degrades to memory mode when KV throws", async () => {
+  const failingKv = {
+    async get() { throw new Error("KV down"); },
+    async put() { throw new Error("KV down"); }
+  };
+  const healthStore = new HealthStore({ kv: failingKv });
+
+  for (let i = 0; i < 3; i++) {
+    await healthStore.recordFailure("A", "status_500");
+  }
+  // Should still classify as open via in-memory state.
+  assert.equal(await healthStore.circuitState("A"), "open");
+  assert.equal(healthStore.degraded, true);
+});
+
+test("HealthStore works without KV (in-memory only)", async () => {
+  const healthStore = new HealthStore({ kv: null });
+  for (let i = 0; i < 3; i++) {
+    await healthStore.recordFailure("A", "status_500");
+  }
+  assert.equal(await healthStore.circuitState("A"), "open");
+});
+
+// MARK: - P5: latency-aware selector
+
+function makeProvider(overrides) {
+  return {
+    id: overrides.id,
+    type: overrides.type || "anthropic",
+    url: overrides.url || `https://${overrides.id.toLowerCase()}.example/v1/messages`,
+    model: overrides.model || "m",
+    apiKey: overrides.apiKey || "k",
+    priority: overrides.priority ?? 1,
+    weight: overrides.weight ?? 1,
+    enabled: overrides.enabled ?? true,
+    timeoutMs: overrides.timeoutMs ?? 15_000
+  };
+}
+
+// Stub HealthStore that returns pre-baked snapshots. Lets selector tests run without KV.
+function stubHealthStore(snapshotsByProvider) {
+  return {
+    async snapshot(providerId) {
+      return snapshotsByProvider[providerId] || { state: "closed", ewmaLatencyMs: 0, sampleCount: 0 };
+    },
+    async circuitState(providerId) {
+      const snap = snapshotsByProvider[providerId] || { state: "closed" };
+      return snap.state;
+    }
+  };
+}
+
+test("selector places warm providers (with latency) before cold providers", async () => {
+  const providers = [
+    makeProvider({ id: "WARM", priority: 5 }),
+    makeProvider({ id: "COLD", priority: 1 })
+  ];
+  const health = stubHealthStore({
+    WARM: { state: "closed", ewmaLatencyMs: 200, sampleCount: 5 },
+    COLD: { state: "closed", ewmaLatencyMs: 0, sampleCount: 0 }
+  });
+  const candidates = await pickCandidates(providers, health, Date.now());
+  assert.deepEqual(candidates.map((p) => p.id), ["WARM", "COLD"]);
+});
+
+test("selector sorts warm providers by latency ascending regardless of priority", async () => {
+  const providers = [
+    makeProvider({ id: "SLOW", priority: 1 }),
+    makeProvider({ id: "FAST", priority: 5 }),
+    makeProvider({ id: "MID", priority: 3 })
+  ];
+  const health = stubHealthStore({
+    SLOW: { state: "closed", ewmaLatencyMs: 800, sampleCount: 5 },
+    FAST: { state: "closed", ewmaLatencyMs: 100, sampleCount: 5 },
+    MID: { state: "closed", ewmaLatencyMs: 400, sampleCount: 5 }
+  });
+  const candidates = await pickCandidates(providers, health, Date.now());
+  assert.deepEqual(candidates.map((p) => p.id), ["FAST", "MID", "SLOW"]);
+});
+
+test("selector uses priority order for cold providers when weights are equal", async () => {
+  const providers = [
+    makeProvider({ id: "A", priority: 3 }),
+    makeProvider({ id: "B", priority: 1 }),
+    makeProvider({ id: "C", priority: 2 })
+  ];
+  // No latency data, default weights → fall back to priority.
+  const candidates = await pickCandidates(providers, null, Date.now());
+  assert.deepEqual(candidates.map((p) => p.id), ["B", "C", "A"]);
+});
+
+test("selector uses weighted random for cold providers when weights differ", async () => {
+  const providers = [
+    makeProvider({ id: "HEAVY", priority: 1, weight: 100 }),
+    makeProvider({ id: "LIGHT", priority: 2, weight: 1 })
+  ];
+  // Deterministic RNG: 0.5 for both draws. Math.pow(0.5, 1/100) > Math.pow(0.5, 1/1)
+  // because dividing by a larger weight brings the key closer to 1.
+  // So HEAVY should sort first.
+  const candidates = await pickCandidates(providers, null, Date.now(), { random: () => 0.5 });
+  assert.deepEqual(candidates.map((p) => p.id), ["HEAVY", "LIGHT"]);
+});
+
+test("selector puts half-open providers at the end of the candidate list", async () => {
+  const providers = [
+    makeProvider({ id: "HALF", priority: 1 }),
+    makeProvider({ id: "CLOSED", priority: 2 })
+  ];
+  const health = stubHealthStore({
+    HALF: { state: "half-open", ewmaLatencyMs: 0, sampleCount: 0 },
+    CLOSED: { state: "closed", ewmaLatencyMs: 0, sampleCount: 0 }
+  });
+  const candidates = await pickCandidates(providers, health, Date.now());
+  assert.deepEqual(candidates.map((p) => p.id), ["CLOSED", "HALF"]);
+});
+
+test("HealthStore EWMA converges toward new latency samples", async () => {
+  const healthStore = new HealthStore({ kv: null });
+  // Seed with a high first sample (no prior → set directly).
+  await healthStore.recordSuccess("A", 1000);
+  let snap = await healthStore.snapshot("A");
+  assert.equal(snap.ewmaLatencyMs, 1000);
+
+  // Now feed low-latency samples; EWMA should drift downward but never jump.
+  await healthStore.recordSuccess("A", 100);
+  snap = await healthStore.snapshot("A");
+  // ewma = 0.7 * 1000 + 0.3 * 100 = 730
+  assert.ok(snap.ewmaLatencyMs < 1000);
+  assert.ok(snap.ewmaLatencyMs > 100);
+  assert.equal(Math.round(snap.ewmaLatencyMs), 730);
+});
+
+test("HealthStore keeps newer in-memory samples when KV write is throttled", async () => {
+  const kv = new MemoryKV(new Map());
+  let currentTime = 1_000;
+  const healthStore = new HealthStore({ kv, now: () => currentTime });
+
+  await healthStore.recordSuccess("A", 100);
+  currentTime += 1_000;
+  await healthStore.recordSuccess("A", 101);
+
+  const snap = await healthStore.snapshot("A");
+  assert.equal(snap.sampleCount, 2);
+  assert.equal(Math.round(snap.ewmaLatencyMs), 100);
+});
+
+// MARK: - P6: Gemini adapter
+
+test("gemini provider builds URL with model and key in path/query", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "today standup", locale: "en-US" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{
+        id: "GEMINI_PRIMARY",
+        type: "gemini",
+        url: "https://generativelanguage.googleapis.com/v1beta/models",
+        model: "gemini-1.5-flash",
+        priority: 1
+      }],
+      { PROVIDER_KEY_GEMINI_PRIMARY: "gemini-key" }
+    ),
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({
+        candidates: [{
+          content: { parts: [{ text: extractionJSON("Standup") }] },
+          finishReason: "STOP"
+        }]
+      });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.ok(upstreamRequest.url.startsWith("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=gemini-key"));
+  assert.equal(upstreamRequest.init.headers["Content-Type"], "application/json");
+  // No Authorization header — Gemini uses the query param.
+  assert.equal(upstreamRequest.init.headers.Authorization, undefined);
+  // Body is Google's contents/parts schema.
+  assert.equal(upstreamRequest.body.contents[0].parts[0].text, "today standup");
+  assert.ok(upstreamRequest.body.systemInstruction.parts[0].text);
+  assert.equal(upstreamRequest.body.generationConfig.responseMimeType, "application/json");
+
+  const data = await response.json();
+  assert.equal(data.todos[0].title, "Standup");
+});
+
+test("gemini streaming uses streamGenerateContent with alt=sse", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "plan meeting", locale: "en-US", stream: true }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{
+        id: "GEMINI_PRIMARY",
+        type: "gemini",
+        url: "https://generativelanguage.googleapis.com/v1beta/models",
+        model: "gemini-1.5-flash",
+        priority: 1
+      }],
+      { PROVIDER_KEY_GEMINI_PRIMARY: "gemini-key" }
+    ),
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, init, body: JSON.parse(init.body) };
+      return sseResponse([
+        `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "{\"todos\":" }] } }] })}`,
+        `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "[]" }] } }] })}`,
+        `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "" }] }, finishReason: "STOP" }] })}`
+      ]);
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.ok(upstreamRequest.url.includes(":streamGenerateContent?"));
+  assert.ok(upstreamRequest.url.includes("alt=sse"));
+  assert.equal(response.headers.get("Content-Type"), "text/event-stream; charset=utf-8");
+
+  const body = await response.text();
+  assert.ok(body.includes('data: {"text":"{\\"todos\\":"}'));
+  assert.ok(body.includes('data: {"text":"[]"}'));
+  assert.ok(body.includes("data: [DONE]"));
+});
+
+test("gemini streaming emits text carried on the final finish event", async () => {
+  const response = await handleRequest(
+    request({ transcript: "plan meeting", locale: "en-US", stream: true }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{
+        id: "GEMINI_PRIMARY",
+        type: "gemini",
+        url: "https://generativelanguage.googleapis.com/v1beta/models",
+        model: "gemini-1.5-flash",
+        priority: 1
+      }],
+      { PROVIDER_KEY_GEMINI_PRIMARY: "gemini-key" }
+    ),
+    {},
+    async () => sseResponse([
+      `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "{\"todos\":" }] } }] })}`,
+      `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "[]" }] }, finishReason: "STOP" }] })}`
+    ])
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  assert.ok(body.includes('data: {"text":"{\\"todos\\":"}'));
+  assert.ok(body.includes('data: {"text":"[]"}'));
+  assert.ok(body.includes("data: [DONE]"));
+});
+
+test("gemini provider participates in failover when first provider fails", async () => {
+  const calls = [];
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "OPENAI_PRIMARY", type: "openai", url: "https://openai.example/v1/chat/completions", model: "gpt-a", priority: 1 },
+        { id: "GEMINI_FALLBACK", type: "gemini", url: "https://gemini.example/v1beta/models", model: "gemini-b", priority: 2 }
+      ],
+      { PROVIDER_KEY_OPENAI_PRIMARY: "k-a", PROVIDER_KEY_GEMINI_FALLBACK: "k-b" }
+    ),
+    {},
+    async (url) => {
+      calls.push(url);
+      if (url.includes("openai.example")) {
+        return new Response("error", { status: 503 });
+      }
+      return jsonResponse({
+        candidates: [{ content: { parts: [{ text: extractionJSON("x") }] }, finishReason: "STOP" }]
+      });
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.some((url) => url.includes("gemini.example")));
+});
+
+test("gemini adapter URL never appears in proxy logs", async () => {
+  const logs = await captureConsole(async () => {
+    await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [{
+          id: "GEMINI_PRIMARY",
+          type: "gemini",
+          url: "https://gemini.example/v1beta/models",
+          model: "gemini-1.5-flash",
+          priority: 1
+        }],
+        { PROVIDER_KEY_GEMINI_PRIMARY: "secret-key-in-url" }
+      ),
+      {},
+      async () => jsonResponse({
+        candidates: [{ content: { parts: [{ text: extractionJSON("x") }] }, finishReason: "STOP" }]
+      })
+    );
+  });
+
+  // No log line should expose the URL (which contains the key as a query param).
+  assert.equal(logs.some((line) => line.includes("secret-key-in-url")), false);
+  assert.equal(logs.some((line) => line.includes("gemini.example")), false);
+});
+
+test("provider fetch errors redact URL-embedded Gemini keys from logs", async () => {
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      providersEnv(
+        [{
+          id: "GEMINI_PRIMARY",
+          type: "gemini",
+          url: "https://gemini.example/v1beta/models",
+          model: "gemini-1.5-flash",
+          priority: 1
+        }],
+        { PROVIDER_KEY_GEMINI_PRIMARY: "secret-key-in-url" }
+      ),
+      {},
+      async (url) => {
+        throw new TypeError(`fetch failed for ${url}`);
+      }
+    );
+    assert.equal(response.status, 503);
+  });
+
+  assert.equal(logs.some((line) => line.includes("secret-key-in-url")), false);
+  assert.equal(logs.some((line) => line.includes(encodeURIComponent("secret-key-in-url"))), false);
+});
+
+test("isRetryable classifies 400 model-not-found as retryable for each adapter", async () => {
+  const anthropicClass = anthropicAdapter.isRetryable({ status: 400, bodyText: "model_not_found_error: claude-x" });
+  assert.equal(anthropicClass.retryable, true);
+  assert.equal(anthropicClass.errorType, "model_config");
+
+  const openaiClass = openaiAdapter.isRetryable({ status: 400, bodyText: "The model `gpt-x` does not exist" });
+  assert.equal(openaiClass.retryable, true);
+  assert.equal(openaiClass.errorType, "model_config");
+
+  const geminiClass = geminiAdapter.isRetryable({ status: 400, bodyText: "model not found: gemini-x" });
+  assert.equal(geminiClass.retryable, true);
+  assert.equal(geminiClass.errorType, "model_config");
+});
+
+test("isRetryable classifies generic 400 as request_body (non-retryable)", async () => {
+  for (const adapter of [anthropicAdapter, openaiAdapter, geminiAdapter]) {
+    const result = adapter.isRetryable({ status: 400, bodyText: "invalid_argument: transcript malformed" });
+    assert.equal(result.retryable, false);
+    assert.equal(result.errorType, "request_body");
+  }
+});
+
+test("isRetryable treats 5xx / 408 / 429 / 401 / 403 as retryable", async () => {
+  for (const status of [401, 403, 408, 429, 500, 502, 503, 504]) {
+    const result = anthropicAdapter.isRetryable({ status, bodyText: "" });
+    assert.equal(result.retryable, true, `expected ${status} to be retryable`);
+  }
+});
+
+test("PROVIDERS with gemini type now validates as registered", async () => {
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{
+        id: "GEMINI",
+        type: "gemini",
+        url: "https://gemini.example/v1beta/models",
+        model: "gemini-1.5-flash"
+      }],
+      { PROVIDER_KEY_GEMINI: "k" }
+    ),
+    {},
+    async () => jsonResponse({
+      candidates: [{ content: { parts: [{ text: extractionJSON("x") }] }, finishReason: "STOP" }]
+    })
+  );
+  assert.equal(response.status, 200);
+});
+
+test("half-open provider is placed last in candidate ordering", async () => {
+  const calls = [];
+  const kv = new MemoryKV(new Map());
+  let currentTime = 0;
+  const healthStore = new HealthStore({ kv, now: () => currentTime });
+
+  // Open A's circuit (priority 1, would normally be tried first).
+  for (let i = 0; i < 3; i++) {
+    await healthStore.recordFailure("A", "status_500");
+  }
+  currentTime = 31_000; // A goes half-open
+  assert.equal(await healthStore.circuitState("A"), "half-open");
+
+  const env = providersEnv(
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+
+  // B should be tried first (closed) — A only as a probe if B fails.
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes("a.example")) {
+      return new Response("error", { status: 500 });
+    }
+    return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+  };
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    env,
+    {},
+    fetchImpl
+  );
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes("b.example"));
 });
 
 async function captureConsole(operation) {
