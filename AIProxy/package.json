@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test worker.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.105.0"
   }
 }

@@ -73,6 +73,9 @@ Thumbs.db
 *.p12
 *.key
 secrets/
+Config/Secrets.xcconfig
 
 # Local agent/refactor logs
 .refactor-logs/
+.gstack/
+dev-flow.sh
