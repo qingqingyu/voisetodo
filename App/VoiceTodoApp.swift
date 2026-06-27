@@ -189,6 +189,12 @@ struct VoiceTodoApp: App {
                     OnboardingView(permissionManager: permissionManager, hasCompletedOnboarding: $hasCompletedOnboarding)
                         .interactiveDismissDisabled()
                 }
+                // 引导完成后主动关闭 sheet，避免它继续盖在主界面之上
+                .onChange(of: hasCompletedOnboarding) { _, completed in
+                    if completed {
+                        showOnboarding = false
+                    }
+                }
         }
         .modelContainer(modelContainer)
     }
