@@ -36,47 +36,10 @@ enum TelemetryQueue {
         UserDefaults(suiteName: WidgetConfig.appGroupIdentifier)
     }
 
-    // MARK: - Public（生产 API，默认使用 AppGroupConfig.sharedDefaults()）
+    // MARK: - Private 核心（始终编译，不可进 #if DEBUG）
+    // 生产便捷方法与 DEBUG 测试 seam 都转调这里的下划线核心，算法与原 defaults: 版完全一致。
 
-    /// 入队一个事件。会顺带做容量裁剪和过期 GC，保证队列不无限增长。
-    static func enqueue(_ payload: TelemetryPayload, now: Date = Date()) {
-        enqueue(payload, defaults: sharedDefaults(), now: now)
-    }
-
-    /// 取出全部事件并清空队列。调用方需在上报失败时手动 `restore(_:)` 回滚。
-    static func drain(now: Date = Date()) -> [TelemetryPayload] {
-        drain(defaults: sharedDefaults(), now: now)
-    }
-
-    /// 把上传失败的事件放回队列。成功时不调用。
-    static func restore(_ items: [TelemetryPayload], now: Date = Date()) {
-        restore(items, defaults: sharedDefaults(), now: now)
-    }
-
-    /// 仅查看队列内容，不清空。调试用。
-    static func peek() -> [TelemetryPayload] {
-        peek(defaults: sharedDefaults())
-    }
-
-    /// 当前队列长度。
-    static func count() -> Int {
-        count(defaults: sharedDefaults())
-    }
-
-    /// 手动触发 GC。通常由 enqueue 自动触发，此方法供测试或低存储场景使用。
-    static func gc(now: Date = Date()) {
-        gc(defaults: sharedDefaults(), now: now)
-    }
-
-    /// 清空队列（测试用）。生产代码不应调用。
-    static func clear() {
-        clear(defaults: sharedDefaults())
-    }
-
-    // MARK: - 测试专用 API（注入隔离 UserDefaults）
-
-    /// 入队一个事件到指定 UserDefaults。测试用。
-    static func enqueue(_ payload: TelemetryPayload, defaults: UserDefaults?, now: Date = Date()) {
+    private static func _enqueue(_ payload: TelemetryPayload, defaults: UserDefaults?, now: Date = Date()) {
         lock.sync {
             var items = load(defaults: defaults)
             items.append(payload)
@@ -85,8 +48,7 @@ enum TelemetryQueue {
         }
     }
 
-    /// 取出并清空指定 defaults 中的队列。测试用。
-    static func drain(defaults: UserDefaults?, now: Date = Date()) -> [TelemetryPayload] {
+    private static func _drain(defaults: UserDefaults?, now: Date = Date()) -> [TelemetryPayload] {
         lock.sync {
             let items = load(defaults: defaults)
             save([], defaults: defaults)
@@ -94,8 +56,7 @@ enum TelemetryQueue {
         }
     }
 
-    /// 把上传失败的事件放回指定 defaults。测试用。
-    static func restore(_ items: [TelemetryPayload], defaults: UserDefaults?, now: Date = Date()) {
+    private static func _restore(_ items: [TelemetryPayload], defaults: UserDefaults?, now: Date = Date()) {
         guard !items.isEmpty else { return }
         lock.sync {
             var current = load(defaults: defaults)
@@ -105,18 +66,15 @@ enum TelemetryQueue {
         }
     }
 
-    /// 查看指定 defaults 中的队列。测试用。
-    static func peek(defaults: UserDefaults?) -> [TelemetryPayload] {
+    private static func _peek(defaults: UserDefaults?) -> [TelemetryPayload] {
         lock.sync { load(defaults: defaults) }
     }
 
-    /// 查询指定 defaults 中队列长度。测试用。
-    static func count(defaults: UserDefaults?) -> Int {
+    private static func _count(defaults: UserDefaults?) -> Int {
         lock.sync { load(defaults: defaults).count }
     }
 
-    /// 手动 GC 指定 defaults。测试用。
-    static func gc(defaults: UserDefaults?, now: Date = Date()) {
+    private static func _gc(defaults: UserDefaults?, now: Date = Date()) {
         lock.sync {
             var items = load(defaults: defaults)
             trim(&items, now: now)
@@ -124,10 +82,72 @@ enum TelemetryQueue {
         }
     }
 
-    /// 清空指定 defaults 中的队列。测试用。
-    static func clear(defaults: UserDefaults?) {
+    private static func _clear(defaults: UserDefaults?) {
         lock.sync { save([], defaults: defaults) }
     }
+
+    // MARK: - Public（生产 API，默认使用 sharedDefaults()）
+    // 对外生产表面仅这 4 个：enqueue / drain / restore / count。
+
+    /// 入队一个事件。会顺带做容量裁剪和过期 GC，保证队列不无限增长。
+    static func enqueue(_ payload: TelemetryPayload, now: Date = Date()) {
+        _enqueue(payload, defaults: sharedDefaults(), now: now)
+    }
+
+    /// 取出全部事件并清空队列。调用方需在上报失败时手动 `restore(_:)` 回滚。
+    static func drain(now: Date = Date()) -> [TelemetryPayload] {
+        _drain(defaults: sharedDefaults(), now: now)
+    }
+
+    /// 把上传失败的事件放回队列。成功时不调用。空数组为 no-op。
+    static func restore(_ items: [TelemetryPayload], now: Date = Date()) {
+        _restore(items, defaults: sharedDefaults(), now: now)
+    }
+
+    /// 当前队列长度。
+    static func count() -> Int {
+        _count(defaults: sharedDefaults())
+    }
+
+    // MARK: - 测试 seam（注入隔离 UserDefaults）
+    // 此组方法仅供 @testable 测试访问，Release 配置编译缺席。
+    // 若以 Release 跑测试，TelemetryTests 将编译不过（预期取舍，因 swift test / Xcode 测试默认走 Debug）。
+#if DEBUG
+    /// 入队一个事件到指定 UserDefaults。测试用。
+    static func enqueue(_ payload: TelemetryPayload, defaults: UserDefaults?, now: Date = Date()) {
+        _enqueue(payload, defaults: defaults, now: now)
+    }
+
+    /// 取出并清空指定 defaults 中的队列。测试用。
+    static func drain(defaults: UserDefaults?, now: Date = Date()) -> [TelemetryPayload] {
+        _drain(defaults: defaults, now: now)
+    }
+
+    /// 把上传失败的事件放回指定 defaults。测试用。
+    static func restore(_ items: [TelemetryPayload], defaults: UserDefaults?, now: Date = Date()) {
+        _restore(items, defaults: defaults, now: now)
+    }
+
+    /// 查看指定 defaults 中的队列。测试用。
+    static func peek(defaults: UserDefaults?) -> [TelemetryPayload] {
+        _peek(defaults: defaults)
+    }
+
+    /// 查询指定 defaults 中队列长度。测试用。
+    static func count(defaults: UserDefaults?) -> Int {
+        _count(defaults: defaults)
+    }
+
+    /// 手动 GC 指定 defaults。测试用。
+    static func gc(defaults: UserDefaults?, now: Date = Date()) {
+        _gc(defaults: defaults, now: now)
+    }
+
+    /// 清空指定 defaults 中的队列。测试用。
+    static func clear(defaults: UserDefaults?) {
+        _clear(defaults: defaults)
+    }
+#endif
 
     // MARK: - Private
 
