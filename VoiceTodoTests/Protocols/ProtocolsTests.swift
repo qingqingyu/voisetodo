@@ -52,6 +52,66 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos[0].title, "任务")
     }
 
+    // MARK: - P2: 容错解码
+
+    func testPriorityTolerant() {
+        XCTAssertEqual(Priority.tolerant("high"), .high)
+        XCTAssertEqual(Priority.tolerant("High"), .high)       // 大小写不敏感
+        XCTAssertEqual(Priority.tolerant(" NORMAL "), .normal) // 去空格
+        XCTAssertEqual(Priority.tolerant("urgent"), .normal)   // 未知回落
+        XCTAssertEqual(Priority.tolerant(nil), .normal)        // 缺失回落
+    }
+
+    func testTodoCategoryTolerant() {
+        XCTAssertEqual(TodoCategory.tolerant("work"), .work)
+        XCTAssertEqual(TodoCategory.tolerant("WORK"), .work)   // 大小写不敏感
+        XCTAssertEqual(TodoCategory.tolerant("travel"), .other) // 未知回落
+        XCTAssertEqual(TodoCategory.tolerant(nil), .other)      // 缺失回落
+    }
+
+    /// AI 返回表外的 priority/category 值时，不应让整次解码失败，而是回落默认值。
+    func testExtractedTodoDecodesUnknownEnumsToDefaults() throws {
+        let json = """
+        {
+            "todos": [{"id": "00000000-0000-0000-0000-000000000003", "title": "任务", "detail": "", "priority": "urgent", "categoryHint": "travel"}],
+            "ignored": ""
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let result = try JSONDecoder().decode(ExtractionResult.self, from: data)
+        XCTAssertEqual(result.todos.count, 1)
+        XCTAssertEqual(result.todos[0].priority, .normal)
+        XCTAssertEqual(result.todos[0].categoryHint, .other)
+    }
+
+    /// priority/categoryHint 缺失时回落默认值，不抛错。
+    func testExtractedTodoDecodesMissingEnums() throws {
+        let json = """
+        {
+            "todos": [{"id": "00000000-0000-0000-0000-000000000004", "title": "无枚举任务"}],
+            "ignored": ""
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let result = try JSONDecoder().decode(ExtractionResult.self, from: data)
+        XCTAssertEqual(result.todos[0].priority, .normal)
+        XCTAssertEqual(result.todos[0].categoryHint, .other)
+    }
+
+    /// 异常超长标题应被截断到合理上限。
+    func testExtractedTodoTruncatesLongTitle() throws {
+        let longTitle = String(repeating: "字", count: 500)
+        let json = """
+        {
+            "todos": [{"id": "00000000-0000-0000-0000-000000000005", "title": "\(longTitle)", "priority": "normal", "categoryHint": "work"}],
+            "ignored": ""
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let result = try JSONDecoder().decode(ExtractionResult.self, from: data)
+        XCTAssertLessThanOrEqual(result.todos[0].title.count, 200)
+    }
+
     func testExtractionResultDecodesRecurrenceRule() throws {
         let json = """
         {
