@@ -6,15 +6,18 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
     private let networkClient: NetworkClient
     private let vocabularyProvider: any UserVocabularyProviding
+    private let circuitBreaker: ExtractorCircuitBreaker
 
     // MARK: - Initialization
 
     init(
         networkClient: NetworkClient = NetworkClient(),
-        vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared
+        vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared,
+        circuitBreaker: ExtractorCircuitBreaker = ExtractorCircuitBreaker()
     ) {
         self.networkClient = networkClient
         self.vocabularyProvider = vocabularyProvider
+        self.circuitBreaker = circuitBreaker
     }
 
     // MARK: - TodoExtractorProtocol Implementation
@@ -29,16 +32,26 @@ final class TodoExtractorService: TodoExtractorProtocol {
         let startedAt = Date()
         VoiceTodoLog.extractor.info("extract.start id=\(extractionID, privacy: .public) locale=\(locale.identifier, privacy: .public) retryCount=\(NetworkConfig.retryCount) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
 
-        var lastError: Error?
+        // 熔断：冷却窗口内直接失败，避免持续打击故障代理。调用方按网络错误处理（保留 pending / 走 fallback）。
+        if await circuitBreaker.shouldShortCircuit() {
+            VoiceTodoLog.extractor.warning("extract.circuit_open id=\(extractionID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            Telemetry.record(.extractFailed(reason: "circuitOpen", attempt: 0))
+            throw VoiceTodoError.networkUnavailable
+        }
 
-        // 重试策略：重试 1 次
+        var lastError: Error?
+        // 用于 429 Retry-After：命中时覆盖下一次的退避间隔
+        var nextDelayOverride: TimeInterval?
+
         for attempt in 0...NetworkConfig.retryCount {
             let attemptStart = Date()
             do {
-                // 第一次不等待，重试时等待指定间隔
+                // 第一次不等待；重试时按指数退避（或 Retry-After 覆盖）等待
                 if attempt > 0 {
-                    VoiceTodoLog.extractor.info("extract.retry_wait id=\(extractionID, privacy: .public) attempt=\(attempt) waitIntervalSeconds=\(NetworkConfig.retryInterval)")
-                    try await Task.sleep(nanoseconds: UInt64(NetworkConfig.retryInterval * 1_000_000_000))
+                    let delay = nextDelayOverride ?? Self.backoffDelay(forRetry: attempt)
+                    nextDelayOverride = nil
+                    VoiceTodoLog.extractor.info("extract.retry_wait id=\(extractionID, privacy: .public) attempt=\(attempt) waitIntervalSeconds=\(delay)")
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
                 VoiceTodoLog.extractor.info("extract.attempt.start id=\(extractionID, privacy: .public) attempt=\(attempt)")
 
@@ -49,6 +62,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 // 解析 JSON
                 let result = try parseResponse(responseText)
 
+                await circuitBreaker.recordSuccess()
                 VoiceTodoLog.extractor.info("extract.success id=\(extractionID, privacy: .public) attempt=\(attempt) todos=\(result.todos.count) ignoredChars=\(result.ignored.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 Telemetry.record(.extractOutcome(
                     outcome: .success,
@@ -62,18 +76,30 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 lastError = error
                 VoiceTodoLog.extractor.error("extract.attempt.failed id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: attemptStart)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
 
-                // 如果是配置错误或解析错误，不重试（AI 返回格式稳定，重试无意义）
                 if let voiceError = error as? VoiceTodoError {
+                    // 仅服务类故障计入熔断（解析类错误不代表代理不健康）
+                    if Self.countsAsServiceFailure(voiceError) {
+                        await circuitBreaker.recordFailure()
+                    }
+
                     switch voiceError {
                     case .apiResponseInvalid, .jsonParsingFailed:
+                        // 配置/解析错误，重试无意义
                         VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
+                    case .apiRateLimited(let retryAfter):
+                        // 有 Retry-After 才按其等待重试；否则不盲目重试以免加剧限流
+                        guard let retryAfter, attempt < NetworkConfig.retryCount else {
+                            VoiceTodoLog.extractor.warning("extract.rate_limited_stop id=\(extractionID, privacy: .public) attempt=\(attempt) hasRetryAfter=\(retryAfter != nil)")
+                            throw error
+                        }
+                        nextDelayOverride = min(retryAfter, NetworkConfig.retryMaxInterval)
                     default:
                         break
                     }
                 }
 
-                // 最后一次重试失败，抛出错误
+                // 最后一次重试失败，跳出
                 if attempt == NetworkConfig.retryCount {
                     break
                 }
@@ -260,6 +286,27 @@ final class TodoExtractorService: TodoExtractorProtocol {
         }
 
         return todos.isEmpty ? nil : todos
+    }
+
+    // MARK: - Retry / Circuit Helpers
+
+    /// 指数退避 + 抖动：第 N 次重试等待 base * 2^(N-1)（封顶 max）再加 0~30% 抖动。
+    private static func backoffDelay(forRetry attempt: Int) -> TimeInterval {
+        let exponential = NetworkConfig.retryBaseInterval * pow(2.0, Double(max(0, attempt - 1)))
+        let capped = min(exponential, NetworkConfig.retryMaxInterval)
+        let jitter = Double.random(in: 0...(capped * 0.3))
+        return capped + jitter
+    }
+
+    /// 是否计入熔断的「服务类」故障：网络不可用 / 超时 / 限流。
+    /// 解析类错误（apiResponseInvalid / jsonParsingFailed）不代表代理不健康，不计入。
+    private static func countsAsServiceFailure(_ error: VoiceTodoError) -> Bool {
+        switch error {
+        case .networkUnavailable, .apiTimeout, .apiRateLimited:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Private Methods

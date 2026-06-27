@@ -95,7 +95,7 @@ final class NetworkClient {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             VoiceTodoLog.network.error("proxy.request.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) bodyChars=\(errorMessage.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             if httpResponse.statusCode == 429 {
-                throw VoiceTodoError.apiRateLimited
+                throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
             }
             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
@@ -142,7 +142,7 @@ final class NetworkClient {
                     guard (200...299).contains(httpResponse.statusCode) else {
                         VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         if httpResponse.statusCode == 429 {
-                            throw VoiceTodoError.apiRateLimited
+                            throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
                         }
                         throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
@@ -242,6 +242,17 @@ final class NetworkClient {
             VoiceTodoLog.network.error("proxy.request.encode_failed stream=\(stream) locale=\(localeIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.jsonParsingFailed("请求序列化失败: \(error.localizedDescription)")
         }
+    }
+
+    /// 解析 Retry-After 响应头（仅支持 delta-seconds 形式；HTTP-date 形式返回 nil）
+    private static func parseRetryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
+        guard let raw = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              let seconds = TimeInterval(raw),
+              seconds >= 0 else {
+            return nil
+        }
+        return seconds
     }
 
     /// 将 URLError 映射为 VoiceTodoError

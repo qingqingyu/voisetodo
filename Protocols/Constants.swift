@@ -4,10 +4,16 @@ import Foundation
 enum NetworkConfig {
     /// API 超时时间（秒）
     static let apiTimeout: TimeInterval = 15.0
-    /// 重试次数
-    static let retryCount: Int = 1
-    /// 重试间隔（秒）
-    static let retryInterval: TimeInterval = 2.0
+    /// 最大重试次数
+    static let retryCount: Int = 2
+    /// 指数退避基准间隔（秒）：第 N 次重试等待 base * 2^(N-1) + 抖动
+    static let retryBaseInterval: TimeInterval = 1.0
+    /// 退避上限（秒）：单次等待不超过此值
+    static let retryMaxInterval: TimeInterval = 8.0
+    /// 熔断：连续失败达到此阈值后进入冷却
+    static let circuitBreakerFailureThreshold: Int = 3
+    /// 熔断：冷却窗口时长（秒），窗口内直接失败不打网络
+    static let circuitBreakerCooldown: TimeInterval = 30.0
     /// VoiceTodo AI 代理端点（公开 URL，不包含任何 AI 供应商密钥）
     static let proxyEndpoint: String = configuredValue(
         environmentKey: "VOICETODO_AI_PROXY_ENDPOINT",
