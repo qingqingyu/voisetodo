@@ -301,6 +301,24 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Recording" } }
       }
     },
+    "home.calendar.loading" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取日历待办" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading calendar todos" } }
+      }
+    },
+    "home.calendar.error.title" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办读取失败" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not load todos" } }
+      }
+    },
+    "home.calendar.error.message" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地待办暂时无法打开，请重试。" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local todos could not be opened. Please try again." } }
+      }
+    },
     "home.week.today" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } },

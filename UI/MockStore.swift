@@ -97,7 +97,7 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         }
     }
 
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] {
+    func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] {
         let calendar = Calendar.current
         var days: [Date] = []
         var current = calendar.startOfDay(for: min(startDate, endDate))
@@ -151,11 +151,11 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         }
     }
 
-    func pendingItems() -> [TodoItemData] {
+    func pendingItems() async throws -> [TodoItemData] {
         return todos.filter { $0.needsAIProcessing }
     }
 
-    func recentUncompleted(limit: Int) -> [TodoItemData] {
+    func recentUncompleted(limit: Int) async throws -> [TodoItemData] {
         let today = Calendar.current.startOfDay(for: Date())
         return WidgetTodoFilter.visibleTodos(
             from: todos,

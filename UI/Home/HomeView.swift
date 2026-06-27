@@ -441,18 +441,13 @@ private struct HomeCalendarState {
         store: Store,
         selectedDate: Date,
         visibleMonthAnchor: Date,
+        occurrencesByDay: [String: [TodoOccurrenceData]],
         calendar: Calendar,
         now: Date = Date()
     ) -> HomeCalendarState {
         let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
         let normalizedAnchor = calendar.startOfDay(for: visibleMonthAnchor)
         let monthDays = monthDays(for: normalizedAnchor, calendar: calendar)
-        let occurrencesByDay: [String: [TodoOccurrenceData]]
-        if let firstDay = monthDays.first, let lastDay = monthDays.last {
-            occurrencesByDay = store.groupedCalendarOccurrences(from: firstDay, to: lastDay, calendar: calendar)
-        } else {
-            occurrencesByDay = [:]
-        }
 
         return HomeCalendarState(
             todos: store.todos,
@@ -530,7 +525,7 @@ private struct HomeCalendarState {
         occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
-    private static func monthDays(for visibleMonthAnchor: Date, calendar: Calendar) -> [Date] {
+    static func monthDays(for visibleMonthAnchor: Date, calendar: Calendar) -> [Date] {
         let monthStart = startOfMonth(for: visibleMonthAnchor, calendar: calendar)
         let weekday = calendar.component(.weekday, from: monthStart)
         let leadingDays = (weekday + 5) % 7
@@ -551,7 +546,22 @@ private struct HomeCalendarState {
     }
 }
 
+private enum HomeCalendarLoadState {
+    case loading
+    case empty
+    case error
+    case success
+}
+
 @MainActor
+/// 月历 occurrence 缓存的刷新键：当月锚点 / 当前 todos / occurrence 完成修订号任一变化即重算。
+/// 用于 `.task(id:)` —— 规律任务 occurrence 完成切换不改 `store.todos`，必须靠 revision 触发刷新。
+private struct CalendarRefreshKey: Hashable {
+    let anchor: Date
+    let todos: [TodoItemData]
+    let revision: Int
+}
+
 private struct HomeViewActions<Store: HomeTodoStore> {
     let store: Store
     let coordinator: AppCoordinator
@@ -559,6 +569,8 @@ private struct HomeViewActions<Store: HomeTodoStore> {
     let setProcessing: (Bool) -> Void
     let setManualInputPresented: (Bool) -> Void
     let selectTodo: (TodoItemData) -> Void
+    /// 通知视图：规律任务 occurrence 完成状态已写入（store.todos 不会变化），需要刷新月历缓存。
+    let markCalendarDataChanged: () -> Void
 
     func showManualInput() {
         setManualInputPresented(true)
@@ -636,6 +648,7 @@ private struct HomeViewActions<Store: HomeTodoStore> {
             do {
                 try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
                 WidgetCenter.shared.reloadAllTimelines()
+                markCalendarDataChanged()
                 VoiceTodoLog.store.info("ui.home.toggle_occurrence.success id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public)")
             } catch {
                 VoiceTodoLog.store.error("ui.home.toggle_occurrence.failed id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -954,6 +967,63 @@ private struct HomeSelectedDayListView: View {
     }
 }
 
+private struct HomeCalendarLoadingView: View {
+    var body: some View {
+        VStack(spacing: WarmSpacing.md) {
+            Spacer()
+
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
+                .scaleEffect(1.2)
+
+            Text(String(localized: "home.calendar.loading"))
+                .font(WarmFont.body(15))
+                .foregroundColor(WarmTheme.textSecondary)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("HomeCalendarLoadingState")
+    }
+}
+
+private struct HomeCalendarErrorView: View {
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack {
+            Spacer()
+
+            VStack(spacing: WarmSpacing.md) {
+                ProductEmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    title: String(localized: "home.calendar.error.title"),
+                    message: String(localized: "home.calendar.error.message")
+                )
+
+                Button(action: onRetry) {
+                    Label(String(localized: "history.retry"), systemImage: "arrow.clockwise")
+                        .font(WarmFont.headline(15))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: WarmSize.touch)
+                        .background(
+                            Capsule()
+                                .fill(WarmTheme.primary)
+                                .shadow(color: WarmTheme.shadowMedium, radius: 8, x: 0, y: 4)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("HomeCalendarRetryButton")
+            }
+            .padding(.horizontal, WarmSpacing.xl)
+            .accessibilityIdentifier("HomeCalendarErrorState")
+
+            Spacer()
+        }
+    }
+}
+
 /// 主页视图 - 温暖手账风格
 /// 纸张纹理背景 + 手写展示字体 + 分类色带卡片
 struct HomeView<Store: HomeTodoStore>: View {
@@ -967,6 +1037,12 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
+    /// 月历 occurrence 缓存：由后台 `queryActor` 异步加载，主线程不再做 SwiftData fetch/展开。
+    /// `.task(id:)` 在 visibleMonthAnchor / store.todos / occurrenceRevision 变化时刷新。
+    @State private var monthOccurrences: [String: [TodoOccurrenceData]] = [:]
+    @State private var calendarLoadState: HomeCalendarLoadState = .loading
+    /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
+    @State private var occurrenceRevision = 0
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
@@ -994,7 +1070,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             permissionManager: permissionManager,
             setProcessing: { isProcessing = $0 },
             setManualInputPresented: { showManualInputSheet = $0 },
-            selectTodo: { selectedTodo = $0 }
+            selectTodo: { selectedTodo = $0 },
+            markCalendarDataChanged: { occurrenceRevision += 1 }
         )
     }
 
@@ -1240,6 +1317,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             store: store,
             selectedDate: selectedDate,
             visibleMonthAnchor: visibleMonthAnchor,
+            occurrencesByDay: monthOccurrences,
             calendar: calendar
         )
 
@@ -1251,28 +1329,69 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onSelectDay: selectDay
             )
 
-            HomeSelectedDayListView(
-                state: state,
-                cardAppeared: $cardAppeared,
-                onToggleTodo: { actions.toggleTodo($0) },
-                onToggleOccurrence: { actions.toggleOccurrence($0) },
-                onDeleteTodo: { actions.deleteTodo($0) },
-                onOpenTodo: { selectedTodo = $0 },
-                onStartRecording: {
-                    Task { @MainActor in
-                        actions.toggleRecording()
+            switch calendarLoadState {
+            case .loading:
+                HomeCalendarLoadingView()
+            case .error:
+                HomeCalendarErrorView(onRetry: retryCalendarLoad)
+            case .empty, .success:
+                HomeSelectedDayListView(
+                    state: state,
+                    cardAppeared: $cardAppeared,
+                    onToggleTodo: { actions.toggleTodo($0) },
+                    onToggleOccurrence: { actions.toggleOccurrence($0) },
+                    onDeleteTodo: { actions.deleteTodo($0) },
+                    onOpenTodo: { selectedTodo = $0 },
+                    onStartRecording: {
+                        Task { @MainActor in
+                            actions.toggleRecording()
+                        }
+                    },
+                    onShowManualInput: {
+                        Task { @MainActor in
+                            actions.showManualInput()
+                        }
                     }
-                },
-                onShowManualInput: {
-                    Task { @MainActor in
-                        actions.showManualInput()
-                    }
-                }
-            )
+                )
+            }
         }
         .offset(y: listOffset)
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
+        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todos: store.todos, revision: occurrenceRevision)) {
+            let startedAt = Date()
+            calendarLoadState = .loading
+            let monthDays = HomeCalendarState.monthDays(for: visibleMonthAnchor, calendar: calendar)
+            guard let firstDay = monthDays.first, let lastDay = monthDays.last else {
+                monthOccurrences = [:]
+                calendarLoadState = store.todos.isEmpty ? .empty : .success
+                VoiceTodoLog.store.warning("home.month_occurrences.load_skipped reason=no_month_days anchor=\(visibleMonthAnchor.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                return
+            }
+            do {
+                let groupedOccurrences = try await store.groupedCalendarOccurrences(
+                    from: firstDay,
+                    to: lastDay,
+                    calendar: calendar
+                )
+                guard !Task.isCancelled else {
+                    VoiceTodoLog.store.debug("home.month_occurrences.load_cancelled start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                    return
+                }
+                monthOccurrences = groupedOccurrences
+                calendarLoadState = store.todos.isEmpty ? .empty : .success
+                VoiceTodoLog.store.debug("home.month_occurrences.load_success start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) dayBuckets=\(monthOccurrences.count) todoCount=\(store.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            } catch is CancellationError {
+                VoiceTodoLog.store.debug("home.month_occurrences.load_cancelled start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            } catch {
+                calendarLoadState = .error
+                VoiceTodoLog.store.error("home.month_occurrences.load_failed start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) todoCount=\(store.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+        }
+    }
+
+    private func retryCalendarLoad() {
+        occurrenceRevision += 1
     }
 
     private func selectDay(_ day: Date) {

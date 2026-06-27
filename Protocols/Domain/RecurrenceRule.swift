@@ -1,14 +1,14 @@
 import Foundation
 
 /// 待办重复频率
-enum RecurrenceFrequency: String, Codable, CaseIterable {
+enum RecurrenceFrequency: String, Codable, CaseIterable, Sendable {
     case daily
     case weekly
     case monthly
 }
 
 /// 待办重复规则。weekday 使用 Calendar 的 weekday 语义：1=周日，2=周一 ... 7=周六。
-struct RecurrenceRule: Codable, Hashable {
+struct RecurrenceRule: Codable, Hashable, Sendable {
     var frequency: RecurrenceFrequency
     var weekdays: [Int]
     var dayOfMonth: Int?

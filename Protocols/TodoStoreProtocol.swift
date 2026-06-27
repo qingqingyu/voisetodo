@@ -69,7 +69,8 @@ protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionW
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {
     /// 获取日期区间内实际出现的待办
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData]
+    /// - Important: 读查询在后台 `@ModelActor` 执行；fetch 失败显式抛出，不静默回退。
+    func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData]
 
     /// 切换某一天的完成状态；重复任务只影响当天 occurrence
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws
@@ -81,8 +82,9 @@ extension CalendarOccurrenceStore {
         from startDate: Date,
         to endDate: Date,
         calendar: Calendar = .current
-    ) -> [String: [TodoOccurrenceData]] {
-        Dictionary(grouping: calendarOccurrences(from: startDate, to: endDate)) { occurrence in
+    ) async throws -> [String: [TodoOccurrenceData]] {
+        let occurrences = try await calendarOccurrences(from: startDate, to: endDate)
+        return Dictionary(grouping: occurrences) { occurrence in
             TodoOccurrenceData.dayKey(for: occurrence.occurrenceDate, calendar: calendar)
         }
     }
@@ -91,7 +93,8 @@ extension CalendarOccurrenceStore {
 /// Pending 转写读取能力。
 protocol PendingTranscriptReadable {
     /// 获取需要 AI 补处理的条目（needsAIProcessing == true）
-    func pendingItems() -> [TodoItemData]
+    /// - Important: 读查询在后台 `@ModelActor` 执行；fetch 失败显式抛出，不静默回退。
+    func pendingItems() async throws -> [TodoItemData]
 }
 
 /// Pending 转写创建能力。
@@ -104,7 +107,8 @@ protocol PendingTranscriptCreating {
 /// Widget 待办读取能力。
 protocol WidgetTodoReadable {
     /// 获取最近 N 条未完成待办（Widget 用）
-    func recentUncompleted(limit: Int) -> [TodoItemData]
+    /// - Important: 读查询在后台 `@ModelActor` 执行；fetch 失败显式抛出，不静默回退。
+    func recentUncompleted(limit: Int) async throws -> [TodoItemData]
 }
 
 /// Pending 转写替换能力。

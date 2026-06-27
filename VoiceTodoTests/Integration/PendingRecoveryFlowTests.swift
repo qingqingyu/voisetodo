@@ -28,7 +28,7 @@ final class PendingRecoveryFlowTests: XCTestCase {
         XCTAssertTrue(result.deletionErrors.isEmpty)
     }
 
-    func testRecoverKeepsPendingWhenExtractionFails() async {
+    func testRecoverKeepsPendingWhenExtractionFails() async throws {
         let pendingID = UUID()
         let store = PendingRecoveryTestStore(todos: [
             Self.pendingTodo(id: pendingID, transcript: "failed pending")
@@ -52,7 +52,7 @@ final class PendingRecoveryFlowTests: XCTestCase {
         XCTAssertEqual(result.failedPendingRecoveries.first?.error, .apiResponseInvalid("broken"))
         XCTAssertTrue(result.processedWithTodosIds.isEmpty)
         XCTAssertTrue(result.processedWithoutTodosIds.isEmpty)
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingID])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
         XCTAssertTrue(store.deletedIds.isEmpty)
     }
 
@@ -193,7 +193,7 @@ final class PendingRecoveryFlowTests: XCTestCase {
         XCTAssertEqual(extractor.locales, ["zh-Hans"])
     }
 
-    func testRecoverReportsSuccessfulPendingWithoutTodos() async {
+    func testRecoverReportsSuccessfulPendingWithoutTodos() async throws {
         let pendingID = UUID()
         let store = PendingRecoveryTestStore(todos: [
             Self.pendingTodo(id: pendingID, transcript: "nothing actionable")
@@ -215,7 +215,7 @@ final class PendingRecoveryFlowTests: XCTestCase {
         XCTAssertEqual(result.processedWithoutTodosIds, [pendingID])
         XCTAssertTrue(result.extractedTodos.isEmpty)
         XCTAssertNil(result.mergedRawTranscript)
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingID])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
     }
 
     func testRecoverStopsSchedulingNewPendingWhenNetworkDrops() async {
@@ -333,10 +333,10 @@ private final class PendingRecoveryTestStore: PendingRecoveryTodoStore {
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws {}
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {}
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] { [] }
+    func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] { [] }
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {}
-    func pendingItems() -> [TodoItemData] { todos.filter(\.needsAIProcessing) }
-    func recentUncompleted(limit: Int) -> [TodoItemData] { [] }
+    func pendingItems() async throws -> [TodoItemData] { todos.filter(\.needsAIProcessing) }
+    func recentUncompleted(limit: Int) async throws -> [TodoItemData] { [] }
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws {}
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws {}
     func replacePendingBatchWithExtracted(_ pendingIds: [UUID], _ items: [ExtractedTodo], rawTranscript: String?) throws {}

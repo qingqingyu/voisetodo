@@ -3,13 +3,13 @@ import Foundation
 // MARK: - 枚举类型
 
 /// 优先级
-enum Priority: String, Codable, CaseIterable {
+enum Priority: String, Codable, CaseIterable, Sendable {
     case high
     case normal
 }
 
 /// 待办分类
-enum TodoCategory: String, Codable, CaseIterable {
+enum TodoCategory: String, Codable, CaseIterable, Sendable {
     case work     // 工作
     case study    // 学习
     case life     // 生活
@@ -91,7 +91,7 @@ enum VoiceCaptureHistoryLoadState: String, Codable, Equatable {
 }
 
 /// 日历中某一天实际出现的一条待办。
-struct TodoOccurrenceData: Identifiable, Codable, Hashable {
+struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
     let todo: TodoItemData
     let occurrenceDate: Date
     var isCompleted: Bool
@@ -234,7 +234,7 @@ enum TextUtils {
 
 /// 待办数据传输对象，用于跨模块传递
 /// Agent D 的 UI 和 Widget 只依赖这个类型，不需要知道 SwiftData 的存在
-struct TodoItemData: Identifiable, Codable, Hashable {
+struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var title: String
     var detail: String?

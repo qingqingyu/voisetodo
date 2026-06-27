@@ -95,9 +95,7 @@ final class IntegrationTests: XCTestCase {
         }
 
         // When: 获取用于 Widget 的数据
-        let widgetData = await MainActor.run {
-            todoStore.recentUncompleted(limit: 10)
-        }
+        let widgetData = try await todoStore.recentUncompleted(limit: 10)
 
         // Then: 验证一致性
         XCTAssertEqual(widgetData.count, 2)
@@ -219,9 +217,7 @@ final class IntegrationTests: XCTestCase {
         }
 
         // Then: 验证未完成列表
-        let uncompleted = await MainActor.run {
-            todoStore.recentUncompleted(limit: 10)
-        }
+        let uncompleted = try await todoStore.recentUncompleted(limit: 10)
         XCTAssertEqual(uncompleted.count, 2, "未完成列表应该有 2 条")
         XCTAssertTrue(uncompleted.allSatisfy { !$0.isCompleted }, "未完成列表不应包含已完成项")
     }

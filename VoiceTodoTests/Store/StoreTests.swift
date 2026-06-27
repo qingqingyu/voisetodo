@@ -353,7 +353,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Test RecentUncompleted
 
-    func testRecentUncompletedOnlyReturnsUncompleted() throws {
+    func testRecentUncompletedOnlyReturnsUncompleted() async throws {
         // Given: 混合完成和未完成的待办
         let todos = [
             ExtractedTodo(title: "任务1", categoryHint: .work),
@@ -366,26 +366,26 @@ final class StoreTests: XCTestCase {
         try sut.toggleComplete(sut.todos[0].id)
 
         // When: 获取未完成待办
-        let uncompleted = sut.recentUncompleted(limit: 10)
+        let uncompleted = try await sut.recentUncompleted(limit: 10)
 
         // Then: 只返回未完成的
         XCTAssertEqual(uncompleted.count, 2)
         XCTAssertTrue(uncompleted.allSatisfy { !$0.isCompleted })
     }
 
-    func testRecentUncompletedRespectsLimit() throws {
+    func testRecentUncompletedRespectsLimit() async throws {
         // Given: 5 个待办
         let todos = (1...5).map { ExtractedTodo(title: "任务\($0)", categoryHint: .work) }
         try sut.addBatch(todos)
 
         // When: 限制返回 3 条
-        let result = sut.recentUncompleted(limit: 3)
+        let result = try await sut.recentUncompleted(limit: 3)
 
         // Then: 只返回 3 条
         XCTAssertEqual(result.count, 3)
     }
 
-    func testRecentUncompletedFiltersRecurringCandidatesBeforeApplyingLimit() throws {
+    func testRecentUncompletedFiltersRecurringCandidatesBeforeApplyingLimit() async throws {
         // Given: 排序靠前的是未来才会出现的规律任务，后面有一条今天应该显示的普通任务
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -414,13 +414,13 @@ final class StoreTests: XCTestCase {
         try sut.seedForUITests([futureRecurring, anotherFutureRecurring, visibleToday])
 
         // When: 只取 1 条最近未完成
-        let result = sut.recentUncompleted(limit: 1)
+        let result = try await sut.recentUncompleted(limit: 1)
 
         // Then: 先过滤掉今天不发生的规律任务，再应用 limit
         XCTAssertEqual(result.map(\.title), ["今天应显示"])
     }
 
-    func testRecentUncompletedOrderByCreatedAt() throws {
+    func testRecentUncompletedOrderByCreatedAt() async throws {
         // Given: 多个待办（不同创建时间）
         let todo1 = ExtractedTodo(title: "任务1", categoryHint: .work)
         try sut.add(todo1)
@@ -434,7 +434,7 @@ final class StoreTests: XCTestCase {
         try sut.add(todo3)
 
         // When: 获取未完成待办
-        let result = sut.recentUncompleted(limit: 10)
+        let result = try await sut.recentUncompleted(limit: 10)
 
         // Then: 按创建时间倒序
         XCTAssertEqual(result.count, 3)
@@ -445,28 +445,28 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Test PendingItems
 
-    func testPendingItemsOnlyReturnsNeedsProcessing() throws {
+    func testPendingItemsOnlyReturnsNeedsProcessing() async throws {
         // Given: 混合待处理和已处理的待办
         try sut.add(ExtractedTodo(title: "已处理任务", categoryHint: .work))
         try sut.addRawTranscript("这是一段原始转写文本")
         try sut.addRawTranscript("另一段原始转写")
 
         // When: 获取待处理条目
-        let pending = sut.pendingItems()
+        let pending = try await sut.pendingItems()
 
         // Then: 只返回 needsAIProcessing == true 的条目
         XCTAssertEqual(pending.count, 2)
         XCTAssertTrue(pending.allSatisfy { $0.needsAIProcessing })
     }
 
-    func testPendingItemsReturnsStableSortOrder() throws {
+    func testPendingItemsReturnsStableSortOrder() async throws {
         // Given: 多个待处理条目
         try sut.addRawTranscript("第一段原始转写")
         try sut.addRawTranscript("第二段原始转写")
         try sut.addRawTranscript("第三段原始转写")
 
         // When: 获取待处理条目
-        let pending = sut.pendingItems()
+        let pending = try await sut.pendingItems()
 
         // Then: 与主列表排序语义一致，按 sortOrder 升序稳定返回
         XCTAssertEqual(pending.map(\.rawTranscript), [
@@ -785,7 +785,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Test Recurrence
 
-    func testCalendarOccurrencesExpandsDailyRecurringTodo() throws {
+    func testCalendarOccurrencesExpandsDailyRecurringTodo() async throws {
         // Given: 一个每天重复的待办
         let today = Calendar.current.startOfDay(for: Date())
         let item = TodoItemData(
@@ -798,7 +798,7 @@ final class StoreTests: XCTestCase {
 
         // When: 查询三天日历 occurrence
         let end = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 2, to: today))
-        let occurrences = sut.calendarOccurrences(from: today, to: end)
+        let occurrences = try await sut.calendarOccurrences(from: today, to: end)
 
         // Then: 三天都出现
         XCTAssertEqual(occurrences.count, 3)
@@ -806,7 +806,7 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(occurrences.allSatisfy { !$0.isCompleted })
     }
 
-    func testCalendarOccurrencesStopsAtRecurrenceEndDate() throws {
+    func testCalendarOccurrencesStopsAtRecurrenceEndDate() async throws {
         // Given: 一个只持续 7 天的每天重复待办
         let calendar = Calendar(identifier: .gregorian)
         let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
@@ -821,14 +821,14 @@ final class StoreTests: XCTestCase {
         try sut.seedForUITests([item])
 
         // When: 查询包含第 8 天的区间
-        let occurrences = sut.calendarOccurrences(from: start, to: rangeEnd)
+        let occurrences = try await sut.calendarOccurrences(from: start, to: rangeEnd)
 
         // Then: 只展开 7 次，第 8 天不再出现
         XCTAssertEqual(occurrences.count, 7)
         XCTAssertEqual(occurrences.map { calendar.component(.day, from: $0.occurrenceDate) }, [4, 5, 6, 7, 8, 9, 10])
     }
 
-    func testCalendarOccurrencesExpandsBoundedDailyAcrossMonthBoundary() throws {
+    func testCalendarOccurrencesExpandsBoundedDailyAcrossMonthBoundary() async throws {
         // Given: 一个从 5 月 28 日开始、持续 7 天的每天重复待办
         let calendar = Calendar(identifier: .gregorian)
         let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 28)))
@@ -843,7 +843,7 @@ final class StoreTests: XCTestCase {
         try sut.seedForUITests([item])
 
         // When: 查询跨月且包含第 8 天的区间
-        let occurrences = sut.calendarOccurrences(from: start, to: rangeEnd)
+        let occurrences = try await sut.calendarOccurrences(from: start, to: rangeEnd)
 
         // Then: 5 月 28 日到 6 月 3 日出现，第 8 天 6 月 4 日不出现
         XCTAssertEqual(occurrences.count, 7)
@@ -855,7 +855,7 @@ final class StoreTests: XCTestCase {
         )
     }
 
-    func testToggleRecurringOccurrenceOnlyCompletesSelectedDay() throws {
+    func testToggleRecurringOccurrenceOnlyCompletesSelectedDay() async throws {
         // Given: 一个每天重复的待办
         let today = Calendar.current.startOfDay(for: Date())
         let tomorrow = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: today))
@@ -872,8 +872,10 @@ final class StoreTests: XCTestCase {
         try sut.toggleOccurrenceComplete(todoId, on: today)
 
         // Then: 今天完成，明天仍未完成
-        let todayOccurrence = try XCTUnwrap(sut.calendarOccurrences(from: today, to: today).first)
-        let tomorrowOccurrence = try XCTUnwrap(sut.calendarOccurrences(from: tomorrow, to: tomorrow).first)
+        let todayOccurrences = try await sut.calendarOccurrences(from: today, to: today)
+        let todayOccurrence = try XCTUnwrap(todayOccurrences.first)
+        let tomorrowOccurrences = try await sut.calendarOccurrences(from: tomorrow, to: tomorrow)
+        let tomorrowOccurrence = try XCTUnwrap(tomorrowOccurrences.first)
         XCTAssertTrue(todayOccurrence.isCompleted)
         XCTAssertFalse(tomorrowOccurrence.isCompleted)
 
@@ -881,10 +883,11 @@ final class StoreTests: XCTestCase {
         try sut.toggleOccurrenceComplete(todoId, on: today)
 
         // Then: 今天恢复未完成
-        XCTAssertFalse(try XCTUnwrap(sut.calendarOccurrences(from: today, to: today).first).isCompleted)
+        let restoredOccurrences = try await sut.calendarOccurrences(from: today, to: today)
+        XCTAssertFalse(try XCTUnwrap(restoredOccurrences.first).isCompleted)
     }
 
-    func testToggleOccurrenceCompleteIgnoresNonOccurringDate() throws {
+    func testToggleOccurrenceCompleteIgnoresNonOccurringDate() async throws {
         // Given: 一个明天才出现的每周待办
         let today = Calendar.current.startOfDay(for: Date())
         let tomorrow = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: today))
@@ -904,11 +907,12 @@ final class StoreTests: XCTestCase {
         // Then: 不写入无效 completion，明天仍保持未完成
         let completions = try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>())
         XCTAssertTrue(completions.isEmpty)
-        let tomorrowOccurrence = try XCTUnwrap(sut.calendarOccurrences(from: tomorrow, to: tomorrow).first)
+        let tomorrowOccurrences = try await sut.calendarOccurrences(from: tomorrow, to: tomorrow)
+        let tomorrowOccurrence = try XCTUnwrap(tomorrowOccurrences.first)
         XCTAssertFalse(tomorrowOccurrence.isCompleted)
     }
 
-    func testUpdateRecurrenceResetsCompletedBaseState() throws {
+    func testUpdateRecurrenceResetsCompletedBaseState() async throws {
         // Given: 一条已经完成的普通待办
         let today = Calendar.current.startOfDay(for: Date())
         let item = TodoItemData(
@@ -926,12 +930,13 @@ final class StoreTests: XCTestCase {
 
         // Then: base 完成态被清掉，首页和最近未完成/Widget 入口语义一致
         XCTAssertFalse(try XCTUnwrap(sut.todos.first).isCompleted)
-        let occurrence = try XCTUnwrap(sut.calendarOccurrences(from: today, to: today).first)
+        let occurrenceList = try await sut.calendarOccurrences(from: today, to: today)
+        let occurrence = try XCTUnwrap(occurrenceList.first)
         XCTAssertFalse(occurrence.isCompleted)
-        XCTAssertEqual(sut.recentUncompleted(limit: 1).map(\.title), ["完成后改成规律任务"])
+        XCTAssertEqual(try await sut.recentUncompleted(limit: 1).map(\.title), ["完成后改成规律任务"])
     }
 
-    func testWeeklyAndMonthlyRecurrenceExpansion() throws {
+    func testWeeklyAndMonthlyRecurrenceExpansion() async throws {
         // Given: 固定日期区间内的每周和每月规则
         let calendar = Calendar.current
         let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
@@ -953,14 +958,14 @@ final class StoreTests: XCTestCase {
         try sut.seedForUITests([weekly, monthly])
 
         // When: 查询 2026-05-04 到 2026-05-10
-        let occurrences = sut.calendarOccurrences(from: rangeStart, to: rangeEnd)
+        let occurrences = try await sut.calendarOccurrences(from: rangeStart, to: rangeEnd)
 
         // Then: 周一、周三出现周会，5 号出现月任务
         XCTAssertEqual(occurrences.map(\.todo.title), ["周会", "交房租", "周会"])
         XCTAssertEqual(occurrences.map { calendar.component(.day, from: $0.occurrenceDate) }, [4, 5, 6])
     }
 
-    func testMonthlyRecurrenceSkipsMissingDayAcrossMonthBoundary() throws {
+    func testMonthlyRecurrenceSkipsMissingDayAcrossMonthBoundary() async throws {
         // Given: 每月 31 号重复的待办，从 2026-01-31 开始
         let calendar = Calendar(identifier: .gregorian)
         let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 1, day: 31)))
@@ -976,7 +981,7 @@ final class StoreTests: XCTestCase {
         try sut.seedForUITests([monthly])
 
         // When: 查询 2 月到 3 月底
-        let occurrences = sut.calendarOccurrences(from: rangeStart, to: rangeEnd)
+        let occurrences = try await sut.calendarOccurrences(from: rangeStart, to: rangeEnd)
 
         // Then: 2 月没有 31 号所以不出现，3 月 31 日出现一次
         XCTAssertEqual(occurrences.map(\.todo.title), ["月末复盘"])
@@ -985,7 +990,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(calendar.component(.day, from: occurrenceDate), 31)
     }
 
-    func testLegacyTodoWithoutRecurrenceFieldsReadsAsNormalTodo() throws {
+    func testLegacyTodoWithoutRecurrenceFieldsReadsAsNormalTodo() async throws {
         // Given: 模拟旧版本普通待办，没有任何 recurrence 字段
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -1000,7 +1005,7 @@ final class StoreTests: XCTestCase {
 
         // When: 重新刷新并按今天查询 occurrence
         sut.refreshTodos()
-        let occurrences = sut.calendarOccurrences(from: today, to: today)
+        let occurrences = try await sut.calendarOccurrences(from: today, to: today)
 
         // Then: 按普通单次待办读取，不带重复规则
         XCTAssertNil(sut.todos.first?.recurrenceRule)
@@ -1008,7 +1013,7 @@ final class StoreTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(occurrences.first).isCompleted)
     }
 
-    func testLegacyTodoWithDueHintMigratesDueDateFromCreatedAt() throws {
+    func testLegacyTodoWithDueHintMigratesDueDateFromCreatedAt() async throws {
         // Given: 旧版本数据只有 dueHint，没有 dueDate
         let calendar = Calendar(identifier: .gregorian)
         let createdAt = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
@@ -1031,7 +1036,7 @@ final class StoreTests: XCTestCase {
         let dueDate = try XCTUnwrap(migrated.dueDate)
         XCTAssertTrue(calendar.isDate(dueDate, inSameDayAs: expectedDueDate))
         XCTAssertEqual(
-            sut.calendarOccurrences(from: expectedDueDate, to: expectedDueDate).map(\.todo.title),
+            try await sut.calendarOccurrences(from: expectedDueDate, to: expectedDueDate).map(\.todo.title),
             ["旧明天待办"]
         )
     }

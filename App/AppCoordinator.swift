@@ -443,6 +443,9 @@ final class AppCoordinator: ObservableObject {
             handleError(failure.error)
         }
         result.deletionErrors.forEach(handleError)
+        if let pendingReadError = result.pendingReadError {
+            handleError(pendingReadError)
+        }
         guard result.hasPending else { return }
 
         completeNoTodoPendingRecoveries(result.processedWithoutTodosIds)

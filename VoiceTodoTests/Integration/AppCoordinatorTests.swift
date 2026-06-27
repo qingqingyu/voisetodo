@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class AppCoordinatorTests: XCTestCase {
-    func testHandleAppForegroundKeepsPendingOrderWhenExtractionsFinishOutOfOrder() async {
+    func testHandleAppForegroundKeepsPendingOrderWhenExtractionsFinishOutOfOrder() async throws {
         let store = CoordinatorTestStore(todos: [
             pendingTodo(id: UUID(), transcript: "first pending"),
             pendingTodo(id: UUID(), transcript: "second pending"),
@@ -35,7 +35,7 @@ final class AppCoordinatorTests: XCTestCase {
         )
     }
 
-    func testHandleAppForegroundDoesNotConsumePendingWhenPresentationStateChangesBeforeDisplay() async {
+    func testHandleAppForegroundDoesNotConsumePendingWhenPresentationStateChangesBeforeDisplay() async throws {
         let pendingId = UUID()
         let store = CoordinatorTestStore(todos: [
             pendingTodo(id: pendingId, transcript: "pending while sheet opens")
@@ -54,9 +54,29 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingId])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingId])
         XCTAssertTrue(store.deletedIds.isEmpty)
         XCTAssertTrue(coordinator.extractedTodos.isEmpty)
+    }
+
+    func testHandleAppForegroundSurfacesPendingReadFailure() async {
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: UUID(), transcript: "pending read fails")
+        ])
+        store.pendingItemsError = VoiceTodoError.storageReadFailed("fetch failed")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store
+        )
+
+        await coordinator.handleAppForeground()
+
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
+        XCTAssertFalse(coordinator.showConfirmSheet)
+        XCTAssertTrue(coordinator.extractedTodos.isEmpty)
+        XCTAssertTrue(store.deletedIds.isEmpty)
     }
 
     func testHandleAppForegroundSkipsDeferredPendingForCurrentSession() async {
@@ -81,7 +101,7 @@ final class AppCoordinatorTests: XCTestCase {
         await coordinator.handleAppForeground()
 
         XCTAssertEqual(extractor.extractedTranscripts, ["pending while sheet opens"])
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingId])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingId])
         XCTAssertTrue(store.deletedIds.isEmpty)
         XCTAssertTrue(coordinator.extractedTodos.isEmpty)
     }
@@ -490,7 +510,7 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["先识别到的待办"])
     }
 
-    func testHandleAppForegroundKeepsInvalidPendingWhenDeleteFails() async {
+    func testHandleAppForegroundKeepsInvalidPendingWhenDeleteFails() async throws {
         let pendingId = UUID()
         let invalidPending = TodoItemData(
             id: pendingId,
@@ -507,13 +527,13 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingId])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingId])
         XCTAssertEqual(store.deletedIds, [pendingId])
         XCTAssertTrue(coordinator.showToast)
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
     }
 
-    func testHandleAppForegroundClearsHistoryLinkWhenInvalidPendingDeleted() async {
+    func testHandleAppForegroundClearsHistoryLinkWhenInvalidPendingDeleted() async throws {
         let pendingId = UUID()
         let invalidPending = TodoItemData(
             id: pendingId,
@@ -545,7 +565,7 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertTrue(store.pendingItems().isEmpty)
+        XCTAssertTrue(try await store.pendingItems().isEmpty)
         XCTAssertEqual(historyStore.records.first?.status, .failed)
         XCTAssertNil(historyStore.records.first?.pendingTodoID)
         do {
@@ -555,7 +575,7 @@ final class AppCoordinatorTests: XCTestCase {
         }
     }
 
-    func testHandleAppForegroundSurfacesPendingExtractionFailure() async {
+    func testHandleAppForegroundSurfacesPendingExtractionFailure() async throws {
         let pendingID = UUID()
         let store = CoordinatorTestStore(todos: [
             pendingTodo(id: pendingID, transcript: "恢复时失败")
@@ -587,7 +607,7 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingID])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
         XCTAssertFalse(coordinator.showConfirmSheet)
         XCTAssertTrue(coordinator.showToast)
         XCTAssertEqual(coordinator.toastMessage, VoiceTodoError.apiResponseInvalid("broken pending").localizedDescription)
@@ -596,7 +616,7 @@ final class AppCoordinatorTests: XCTestCase {
         assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
     }
 
-    func testHandleAppForegroundDeletesNoTodoPendingEvenWhenPresentationIsBusy() async {
+    func testHandleAppForegroundDeletesNoTodoPendingEvenWhenPresentationIsBusy() async throws {
         let noTodoPendingID = UUID()
         let withTodoPendingID = UUID()
         let store = CoordinatorTestStore(todos: [
@@ -651,7 +671,7 @@ final class AppCoordinatorTests: XCTestCase {
         coordinator.showConfirmSheet = false
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(store.pendingItems().map(\.id), [withTodoPendingID])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [withTodoPendingID])
         XCTAssertEqual(extractor.extractedTranscripts.sorted(), ["没有行动项", "生成待办但暂时不能展示"])
         XCTAssertEqual(historyStore.records.first(where: { $0.id == noTodoRecord.id })?.status, .noTodos)
         XCTAssertNil(historyStore.records.first(where: { $0.id == noTodoRecord.id })?.pendingTodoID)
@@ -791,7 +811,7 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(historyStore.records.first?.pendingTodoID, store.todos.first?.id)
     }
 
-    func testReprocessHistoryFailureMarksFailedAndShowsToast() async {
+    func testReprocessHistoryFailureMarksFailedAndShowsToast() async throws {
         let historyStore = CoordinatorTestHistoryStore()
         let record = try! historyStore.createRecord(
             transcript: "重新提取会失败",
@@ -847,7 +867,7 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.reprocessHistoryRecord(linkedRecord)
 
-        XCTAssertEqual(store.pendingItems().map(\.id), [pendingID])
+        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
         XCTAssertEqual(historyStore.records.first?.status, .failed)
         XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
         assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
@@ -1384,6 +1404,7 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
     var onUpdateIdentifier: (() -> Void)?
     var identifierUpdateError: Error?
     var replaceError: Error?
+    var pendingItemsError: Error?
 
     init(todos: [TodoItemData] = []) {
         self.todos = todos
@@ -1453,7 +1474,10 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         todos[index].recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
     }
 
-    func pendingItems() -> [TodoItemData] {
+    func pendingItems() async throws -> [TodoItemData] {
+        if let pendingItemsError {
+            throw pendingItemsError
+        }
         todos.filter(\.needsAIProcessing)
     }
 

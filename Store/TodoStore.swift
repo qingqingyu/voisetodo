@@ -11,6 +11,10 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     private let modelContext: ModelContext
     private let saveAction: (ModelContext) throws -> Void
 
+    /// 只读重查询的后台执行器（独立 ModelContext，跑在 actor executor 上）。
+    /// 用主上下文的 container 构造，与主线程写操作共享同一持久化存储。
+    private let queryActor: TodoQueryActor
+
     /// 所有待办（按 sortOrder 升序排列）
     @Published var todos: [TodoItemData] = []
 
@@ -24,6 +28,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     ) {
         self.modelContext = modelContext
         self.saveAction = saveAction
+        self.queryActor = TodoQueryActor(modelContainer: modelContext.container)
         VoiceTodoLog.store.info("store.init.start")
         migrateOldSortOrder()
         migrateDueDatesFromHints()
@@ -228,43 +233,9 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     ///   - startDate: 区间开始
     ///   - endDate: 区间结束
     /// - Returns: 展开的日历 occurrence
-    func calendarOccurrences(from startDate: Date, to endDate: Date) -> [TodoOccurrenceData] {
-        let days = daysBetween(startDate, endDate)
-        guard !days.isEmpty else { return [] }
-
-        let completionMap = completionMap(from: days[0], to: days[days.count - 1])
-        var occurrences: [TodoOccurrenceData] = []
-
-        for todo in todos {
-            if let recurrenceRule = todo.recurrenceRule {
-                let start = todo.dueDate ?? todo.createdAt
-                for day in days where recurrenceRule.occurs(on: day, startDate: start) {
-                    let key = TodoOccurrenceCompletion.key(todoId: todo.id, occurrenceDate: day)
-                    var occurrenceTodo = todo
-                    occurrenceTodo.isCompleted = completionMap[key] != nil
-                    occurrences.append(TodoOccurrenceData(
-                        todo: occurrenceTodo,
-                        occurrenceDate: day,
-                        isCompleted: completionMap[key] != nil
-                    ))
-                }
-            } else if let dueDate = todo.dueDate,
-                      days.contains(where: { Calendar.current.isDate($0, inSameDayAs: dueDate) }) {
-                let day = Calendar.current.startOfDay(for: dueDate)
-                occurrences.append(TodoOccurrenceData(
-                    todo: todo,
-                    occurrenceDate: day,
-                    isCompleted: todo.isCompleted
-                ))
-            }
-        }
-
-        return occurrences.sorted { lhs, rhs in
-            if lhs.occurrenceDate != rhs.occurrenceDate {
-                return lhs.occurrenceDate < rhs.occurrenceDate
-            }
-            return lhs.todo.sortOrder < rhs.todo.sortOrder
-        }
+    /// - Note: 读查询下沉到 `queryActor` 后台执行；失败显式抛出。
+    func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] {
+        try await queryActor.calendarOccurrences(from: startDate, to: endDate)
     }
 
     /// 切换某一天的完成状态；重复任务只影响当天 occurrence。
@@ -308,57 +279,17 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
 
     /// 获取需要 AI 补处理的条目（needsAIProcessing == true）
     /// - Returns: 待处理条目数组
-    func pendingItems() -> [TodoItemData] {
-        let descriptor = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { $0.needsAIProcessing },
-            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
-        )
-
-        do {
-            let items = try modelContext.fetch(descriptor)
-            VoiceTodoLog.store.debug("store.pending.fetch_success count=\(items.count)")
-            return items.map { $0.toData() }
-        } catch {
-            VoiceTodoLog.store.error("store.pending.fetch_failed fallbackCount=\(self.todos.filter { $0.needsAIProcessing }.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            return todos
-                .filter { $0.needsAIProcessing }
-                .sorted { $0.sortOrder < $1.sortOrder }
-        }
+    /// - Note: 读查询下沉到 `queryActor` 后台执行；失败显式抛出。
+    func pendingItems() async throws -> [TodoItemData] {
+        try await queryActor.pendingItems()
     }
 
     /// 获取最近 N 条未完成待办（Widget 用）
     /// - Parameter limit: 返回数量限制
     /// - Returns: 未完成待办数组
-    func recentUncompleted(limit: Int) -> [TodoItemData] {
-        guard limit > 0 else { return [] }
-
-        let descriptor = FetchDescriptor<TodoItem>(
-            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
-        )
-
-        do {
-            let today = Calendar.current.startOfDay(for: Date())
-            let completedToday = completionMap(from: today, to: today)
-            let items = try modelContext.fetch(descriptor)
-            let visible = WidgetTodoFilter.visibleTodos(
-                from: items.map { $0.toData() },
-                completionKeys: Set(completedToday.keys),
-                today: today,
-                limit: limit
-            )
-            VoiceTodoLog.store.debug("store.recent_uncompleted.fetch_success fetched=\(items.count) visible=\(visible.count) limit=\(limit)")
-            return visible
-        } catch {
-            VoiceTodoLog.store.error("store.recent_uncompleted.fetch_failed fallbackTotal=\(self.todos.count) limit=\(limit) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            let today = Calendar.current.startOfDay(for: Date())
-            let completedToday = completionMap(from: today, to: today)
-            return WidgetTodoFilter.visibleTodos(
-                from: todos,
-                completionKeys: Set(completedToday.keys),
-                today: today,
-                limit: limit
-            )
-        }
+    /// - Note: 读查询下沉到 `queryActor` 后台执行；失败显式抛出。
+    func recentUncompleted(limit: Int) async throws -> [TodoItemData] {
+        try await queryActor.recentUncompleted(limit: limit)
     }
 
     /// 替换待处理条目为提取结果（网络恢复后用）[v2]
@@ -692,40 +623,6 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
                 throw storageError
             }
             throw VoiceTodoError.storageReadFailed(error.localizedDescription)
-        }
-    }
-
-    private func daysBetween(_ startDate: Date, _ endDate: Date) -> [Date] {
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: min(startDate, endDate))
-        let end = calendar.startOfDay(for: max(startDate, endDate))
-        var days: [Date] = []
-        var current = start
-        while current <= end {
-            days.append(current)
-            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
-            current = next
-        }
-        return days
-    }
-
-    private func completionMap(from startDate: Date, to endDate: Date) -> [String: TodoOccurrenceCompletion] {
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: startDate)
-        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)) ?? endDate
-        let descriptor = FetchDescriptor<TodoOccurrenceCompletion>(
-            predicate: #Predicate { completion in
-                completion.occurrenceDate >= start && completion.occurrenceDate < end
-            }
-        )
-
-        do {
-            let completions = try modelContext.fetch(descriptor)
-            VoiceTodoLog.store.debug("store.completion_map.success start=\(start.ISO8601Format(), privacy: .public) end=\(end.ISO8601Format(), privacy: .public) count=\(completions.count)")
-            return Dictionary(uniqueKeysWithValues: completions.map { ($0.occurrenceKey, $0) })
-        } catch {
-            VoiceTodoLog.store.error("store.completion_map.failed start=\(start.ISO8601Format(), privacy: .public) end=\(end.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            return [:]
         }
     }
 

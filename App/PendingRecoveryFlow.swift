@@ -10,6 +10,9 @@ struct PendingRecoveryResult {
     let extractedTodoIdsByPendingId: [UUID: [UUID]]
     let mergedRawTranscript: String?
     let deletionErrors: [Error]
+    /// 本次恢复流程启动时读取 pending 列表的错误。
+    /// 非 nil 表示本次根本没进恢复循环（pending 读失败），调用方应通过 handleError 透出给用户。
+    let pendingReadError: Error?
 
     var hasPending: Bool {
         pendingCount > 0
@@ -47,7 +50,28 @@ final class PendingRecoveryFlow {
         flowID: String
     ) async -> PendingRecoveryResult {
         let startedAt = Date()
-        let pendingItems = store.pendingItems().filter { !dismissedPendingIds.contains($0.id) }
+        // pending 读取失败时把错误包进 result 透出给调用方（AppCoordinator 会通过 handleError 弹 toast），
+        // 而不是在这里静默返回 .empty —— 后者会让用户对读失败毫无感知。
+        // 下次回前台仍会重试，所以这里直接 short-circuit 返回，不继续恢复循环。
+        let rawPendingItems: [TodoItemData]
+        do {
+            rawPendingItems = try await store.pendingItems()
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.foreground.pending_read_failed id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return PendingRecoveryResult(
+                pendingCount: 0,
+                processedWithTodosIds: [],
+                processedWithoutTodosIds: [],
+                deletedInvalidPendingIds: [],
+                failedPendingRecoveries: [],
+                extractedTodos: [],
+                extractedTodoIdsByPendingId: [:],
+                mergedRawTranscript: nil,
+                deletionErrors: [],
+                pendingReadError: error
+            )
+        }
+        let pendingItems = rawPendingItems.filter { !dismissedPendingIds.contains($0.id) }
         guard !pendingItems.isEmpty else {
             VoiceTodoLog.coordinator.debug("coordinator.foreground.no_pending dismissedCount=\(dismissedPendingIds.count)")
             return PendingRecoveryResult.empty
@@ -138,7 +162,8 @@ final class PendingRecoveryFlow {
             extractedTodos: extractedTodos,
             extractedTodoIdsByPendingId: extractedTodoIdsByPendingId,
             mergedRawTranscript: mergedRawTranscript,
-            deletionErrors: deletionErrors
+            deletionErrors: deletionErrors,
+            pendingReadError: nil
         )
     }
 
@@ -229,7 +254,8 @@ private extension PendingRecoveryResult {
             extractedTodos: [],
             extractedTodoIdsByPendingId: [:],
             mergedRawTranscript: nil,
-            deletionErrors: []
+            deletionErrors: [],
+            pendingReadError: nil
         )
     }
 }
