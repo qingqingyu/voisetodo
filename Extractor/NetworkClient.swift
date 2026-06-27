@@ -66,7 +66,9 @@ final class NetworkClient {
                 transcript: transcript,
                 localeIdentifier: localeIdentifier,
                 stream: false,
-                vocabularyHints: vocabularyHints
+                vocabularyHints: vocabularyHints,
+                requestID: requestID,
+                extractID: extractID
             )
         } catch {
             VoiceTodoLog.network.error("proxy.request.build_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -95,7 +97,7 @@ final class NetworkClient {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             VoiceTodoLog.network.error("proxy.request.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) bodyChars=\(errorMessage.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             if httpResponse.statusCode == 429 {
-                throw VoiceTodoError.apiRateLimited
+                throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
             }
             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
@@ -130,7 +132,9 @@ final class NetworkClient {
                         transcript: transcript,
                         localeIdentifier: localeIdentifier,
                         stream: true,
-                        vocabularyHints: vocabularyHints
+                        vocabularyHints: vocabularyHints,
+                        requestID: requestID,
+                        extractID: extractID
                     )
 
                     let (bytes, response) = try await session.bytes(for: request)
@@ -142,7 +146,7 @@ final class NetworkClient {
                     guard (200...299).contains(httpResponse.statusCode) else {
                         VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         if httpResponse.statusCode == 429 {
-                            throw VoiceTodoError.apiRateLimited
+                            throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
                         }
                         throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
@@ -165,7 +169,7 @@ final class NetworkClient {
 
                         let event: ProxyStreamEvent
                         do {
-                            event = try JSONDecoder().decode(ProxyStreamEvent.self, from: jsonData)
+                            event = try JSONCoding.makeResponseDecoder().decode(ProxyStreamEvent.self, from: jsonData)
                         } catch {
                             VoiceTodoLog.network.error("proxy.stream.invalid_event_json id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) eventChars=\(jsonStr.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
@@ -206,7 +210,9 @@ final class NetworkClient {
         transcript: String,
         localeIdentifier: String,
         stream: Bool,
-        vocabularyHints: [String]
+        vocabularyHints: [String],
+        requestID: String,
+        extractID: String
     ) throws -> URLRequest {
         let trimmedEndpoint = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEndpoint.isEmpty,
@@ -226,10 +232,15 @@ final class NetworkClient {
         if !deviceIdentifier.isEmpty {
             request.setValue(deviceIdentifier, forHTTPHeaderField: "X-Device-ID")
         }
+        // 跨端链路追踪：requestID 标识单次请求，extractID 串联一次提取（含重试）
+        request.setValue(requestID, forHTTPHeaderField: "X-Request-ID")
+        if extractID != "none" {
+            request.setValue(extractID, forHTTPHeaderField: "X-Extract-ID")
+        }
         request.timeoutInterval = NetworkConfig.apiTimeout
 
         do {
-            request.httpBody = try JSONEncoder().encode(
+            request.httpBody = try JSONCoding.makeRequestEncoder().encode(
                 ProxyExtractionRequest(
                     transcript: transcript,
                     locale: localeIdentifier,
@@ -242,6 +253,17 @@ final class NetworkClient {
             VoiceTodoLog.network.error("proxy.request.encode_failed stream=\(stream) locale=\(localeIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.jsonParsingFailed("请求序列化失败: \(error.localizedDescription)")
         }
+    }
+
+    /// 解析 Retry-After 响应头（仅支持 delta-seconds 形式；HTTP-date 形式返回 nil）
+    private static func parseRetryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
+        guard let raw = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              let seconds = TimeInterval(raw),
+              seconds >= 0 else {
+            return nil
+        }
+        return seconds
     }
 
     /// 将 URLError 映射为 VoiceTodoError

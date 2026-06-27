@@ -14,6 +14,9 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     /// 所有待办（按 sortOrder 升序排列）
     @Published var todos: [TodoItemData] = []
 
+    /// P6: 上次同步到的外部变更版本（Widget/AppIntent 跨进程写入标记），用于按需失效内存缓存。
+    private var lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
+
     // MARK: - Initialization
 
     /// 初始化 TodoStore
@@ -37,7 +40,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     /// - Parameter item: AI 提取的待办
     func add(_ item: ExtractedTodo) throws {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) titleChars=\(item.title.count)")
+        VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) titleChars=\(item.title.count)")
         let todoItem = TodoItem.from(item)
         todoItem.sortOrder = try nextSortOrderForNewItem()
         todoItem.localeIdentifier = resolveLocaleIdentifier(item.localeIdentifier, fallback: Locale.current.identifier)
@@ -57,7 +60,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
         let startedAt = Date()
         let fallbackLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
-        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
         var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
@@ -81,7 +84,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let startedAt = Date()
         let effectiveLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
-        VoiceTodoLog.store.info("store.add_raw.start locale=\(effectiveLocaleIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        VoiceTodoLog.store.info("store.add_raw.start extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(effectiveLocaleIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
         let todoItem = TodoItem.rawTranscript(transcript)
         todoItem.localeIdentifier = effectiveLocaleIdentifier
         todoItem.sortOrder = try nextSortOrderForNewItem()
@@ -409,7 +412,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
         localeIdentifier: String? = nil
     ) throws {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) newCount=\(items.count) locale=\(localeIdentifier ?? "auto", privacy: .public) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
+        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) newCount=\(items.count) locale=\(localeIdentifier ?? "auto", privacy: .public) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
         guard !pendingIds.isEmpty else {
             VoiceTodoLog.store.error("store.replace_pending_batch.failed reason=empty_pending_ids")
             throw VoiceTodoError.storageReadFailed("未提供待处理 ID")
@@ -572,6 +575,22 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
         } catch {
             VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
+        lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
+    }
+
+    /// P6: 统一失效入口。仅当外部变更版本变化（或强制）时才全量重读，避免无谓 fetch。
+    /// 前台、Widget 写回、Action Button 返回等触发点统一调用它。
+    /// - Returns: 是否实际执行了刷新。
+    @discardableResult
+    func refreshIfStale(force: Bool = false) -> Bool {
+        let version = AppGroupConfig.currentExternalChangeVersion()
+        guard force || version != lastSyncedExternalChangeVersion else {
+            VoiceTodoLog.store.debug("store.refresh_if_stale.skip version=\(version)")
+            return false
+        }
+        VoiceTodoLog.store.info("store.refresh_if_stale.refresh force=\(force) old=\(self.lastSyncedExternalChangeVersion) new=\(version)")
+        refreshTodos()
+        return true
     }
 
     // MARK: - Private Methods
