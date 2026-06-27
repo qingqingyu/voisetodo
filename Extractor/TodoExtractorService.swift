@@ -237,8 +237,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
         let arrayContent = cleaned[todosStart.upperBound...]
         var todos: [ExtractedTodo] = []
         var searchStart = arrayContent.startIndex
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let decoder = JSONCoding.makeResponseDecoder()
 
         while searchStart < arrayContent.endIndex {
             guard let objStart = arrayContent[searchStart...].firstIndex(of: "{") else { break }
@@ -345,8 +344,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
         }
 
         do {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let decoder = JSONCoding.makeResponseDecoder()
             let result = try decoder.decode(ExtractionResult.self, from: jsonData)
             return result
         } catch {

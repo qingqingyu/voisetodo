@@ -169,7 +169,7 @@ final class NetworkClient {
 
                         let event: ProxyStreamEvent
                         do {
-                            event = try JSONDecoder().decode(ProxyStreamEvent.self, from: jsonData)
+                            event = try JSONCoding.makeResponseDecoder().decode(ProxyStreamEvent.self, from: jsonData)
                         } catch {
                             VoiceTodoLog.network.error("proxy.stream.invalid_event_json id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) eventChars=\(jsonStr.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
@@ -240,7 +240,7 @@ final class NetworkClient {
         request.timeoutInterval = NetworkConfig.apiTimeout
 
         do {
-            request.httpBody = try JSONEncoder().encode(
+            request.httpBody = try JSONCoding.makeRequestEncoder().encode(
                 ProxyExtractionRequest(
                     transcript: transcript,
                     locale: localeIdentifier,

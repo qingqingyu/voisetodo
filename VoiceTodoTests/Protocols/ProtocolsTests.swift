@@ -98,6 +98,25 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos[0].categoryHint, .other)
     }
 
+    // MARK: - P5: 统一序列化
+
+    func testResponseDecoderConvertsSnakeCase() throws {
+        let json = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000006","title":"复盘","due_hint":"明天","priority":"normal","category_hint":"work"}],"ignored":""}
+        """
+        let result = try JSONCoding.makeResponseDecoder().decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+        XCTAssertEqual(result.todos[0].dueHint, "明天")
+        XCTAssertEqual(result.todos[0].categoryHint, .work)
+    }
+
+    func testRequestEncoderUsesMillisecondsEpochDateAndCamelCaseKeys() throws {
+        struct Box: Codable { let createdAt: Date }
+        let data = try JSONCoding.makeRequestEncoder().encode(Box(createdAt: Date(timeIntervalSince1970: 1.5)))
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(text.contains("\"createdAt\""), "请求编码应保持 camelCase key，不转 snake_case")
+        XCTAssertTrue(text.contains("1500"), "日期应编码为 epoch 毫秒")
+    }
+
     /// 异常超长标题应被截断到合理上限。
     func testExtractedTodoTruncatesLongTitle() throws {
         let longTitle = String(repeating: "字", count: 500)
