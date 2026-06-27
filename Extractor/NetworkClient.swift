@@ -66,7 +66,9 @@ final class NetworkClient {
                 transcript: transcript,
                 localeIdentifier: localeIdentifier,
                 stream: false,
-                vocabularyHints: vocabularyHints
+                vocabularyHints: vocabularyHints,
+                requestID: requestID,
+                extractID: extractID
             )
         } catch {
             VoiceTodoLog.network.error("proxy.request.build_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -130,7 +132,9 @@ final class NetworkClient {
                         transcript: transcript,
                         localeIdentifier: localeIdentifier,
                         stream: true,
-                        vocabularyHints: vocabularyHints
+                        vocabularyHints: vocabularyHints,
+                        requestID: requestID,
+                        extractID: extractID
                     )
 
                     let (bytes, response) = try await session.bytes(for: request)
@@ -206,7 +210,9 @@ final class NetworkClient {
         transcript: String,
         localeIdentifier: String,
         stream: Bool,
-        vocabularyHints: [String]
+        vocabularyHints: [String],
+        requestID: String,
+        extractID: String
     ) throws -> URLRequest {
         let trimmedEndpoint = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEndpoint.isEmpty,
@@ -225,6 +231,11 @@ final class NetworkClient {
         }
         if !deviceIdentifier.isEmpty {
             request.setValue(deviceIdentifier, forHTTPHeaderField: "X-Device-ID")
+        }
+        // 跨端链路追踪：requestID 标识单次请求，extractID 串联一次提取（含重试）
+        request.setValue(requestID, forHTTPHeaderField: "X-Request-ID")
+        if extractID != "none" {
+            request.setValue(extractID, forHTTPHeaderField: "X-Extract-ID")
         }
         request.timeoutInterval = NetworkConfig.apiTimeout
 

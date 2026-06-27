@@ -37,7 +37,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     /// - Parameter item: AI 提取的待办
     func add(_ item: ExtractedTodo) throws {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) titleChars=\(item.title.count)")
+        VoiceTodoLog.store.info("store.add.start id=\(item.id.uuidString, privacy: .public) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) titleChars=\(item.title.count)")
         let todoItem = TodoItem.from(item)
         todoItem.sortOrder = try nextSortOrderForNewItem()
         todoItem.localeIdentifier = resolveLocaleIdentifier(item.localeIdentifier, fallback: Locale.current.identifier)
@@ -57,7 +57,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
         let startedAt = Date()
         let fallbackLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
-        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
         var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
@@ -81,7 +81,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let startedAt = Date()
         let effectiveLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
-        VoiceTodoLog.store.info("store.add_raw.start locale=\(effectiveLocaleIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        VoiceTodoLog.store.info("store.add_raw.start extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(effectiveLocaleIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
         let todoItem = TodoItem.rawTranscript(transcript)
         todoItem.localeIdentifier = effectiveLocaleIdentifier
         todoItem.sortOrder = try nextSortOrderForNewItem()
@@ -409,7 +409,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
         localeIdentifier: String? = nil
     ) throws {
         let startedAt = Date()
-        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) newCount=\(items.count) locale=\(localeIdentifier ?? "auto", privacy: .public) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
+        VoiceTodoLog.store.info("store.replace_pending_batch.start pending=\(VoiceTodoLog.idsSummary(pendingIds), privacy: .public) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) newCount=\(items.count) locale=\(localeIdentifier ?? "auto", privacy: .public) rawTranscriptChars=\(rawTranscript?.count ?? -1)")
         guard !pendingIds.isEmpty else {
             VoiceTodoLog.store.error("store.replace_pending_batch.failed reason=empty_pending_ids")
             throw VoiceTodoError.storageReadFailed("未提供待处理 ID")

@@ -116,6 +116,14 @@ final class ExtractorTests: XCTestCase {
         XCTAssertNil(URLProtocolStub.requests.last?.value(forHTTPHeaderField: "x-api-key"))
     }
 
+    /// P4: 请求应携带跨端追踪头 X-Request-ID。
+    func testProxyRequestIncludesTraceHeader() async throws {
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        _ = try await sut.extract(from: "追踪", locale: Locale(identifier: "zh-Hans"))
+        let request = try XCTUnwrap(URLProtocolStub.requests.last)
+        XCTAssertFalse((request.value(forHTTPHeaderField: "X-Request-ID") ?? "").isEmpty, "应携带 X-Request-ID 追踪头")
+    }
+
     func testNetworkClientRejectsNonLocalHTTPProxyEndpoint() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
