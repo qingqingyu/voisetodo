@@ -12,7 +12,8 @@ final class ScenarioTests: XCTestCase {
         continueAfterFailure = false
         appHelper = AppLaunchHelper()
 
-        let isDefaultEnabledScenario = name.contains("test_S11_homeView_emptyState")
+        let defaultEnabledScenarios = ["test_S11_homeView_emptyState", "test_S12_firstLaunch_onboarding"]
+        let isDefaultEnabledScenario = defaultEnabledScenarios.contains { name.contains($0) }
         let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
         guard isDefaultEnabledScenario || isLegacyScenarioEnabled else {
             throw XCTSkip("Legacy ScenarioTests 依赖旧的 SwiftUI 可访问性层级；默认跳过，待重写后再恢复。")
@@ -366,42 +367,41 @@ final class ScenarioTests: XCTestCase {
     /// 场景 S12: 首次启动引导流程
     /// 验证首次启动时显示引导流程
     func test_S12_firstLaunch_onboarding() {
-        // Step 1: App 首次启动
+        // Step 1: App 首次启动（不注入 --skip-onboarding，应显示引导）
         appHelper.launch()
-        // 不注入 --skip-onboarding，应该显示引导
 
-        // Step 2: 验证显示 OnboardingView
+        // Step 2: 验证显示 OnboardingView 及欢迎页
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+        XCTAssertTrue(appHelper.app.staticTexts["VoiceTodo"].waitForExistence(timeout: 2.0), "应显示欢迎页")
 
-        // Step 3: 点击「下一步」进入麦克风权限页
+        // Step 3: 逐屏走完 5 步引导。
+        // UI 测试下权限默认 mock 为「已授权」，故权限页不显示授权按钮，直接「下一步」即可。
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.staticTexts["需要你的麦克风"].exists)
+        XCTAssertTrue(appHelper.app.staticTexts["需要你的麦克风"].waitForExistence(timeout: 2.0), "应进入麦克风权限页")
 
-        // Step 4: 点击授权按钮（Mock 返回 granted）
-        let authorizeButton = appHelper.app.buttons["AuthorizeMicButton"]
-        authorizeButton.tap()
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.staticTexts["还需要语音识别"].waitForExistence(timeout: 2.0), "应进入语音识别权限页")
 
-        // Step 5: 进入语音识别权限页
-        XCTAssertTrue(appHelper.app.staticTexts["还需要语音识别"].waitForExistence(timeout: 2.0))
-        let authorizeSpeechButton = appHelper.app.buttons["AuthorizeSpeechButton"]
-        authorizeSpeechButton.tap()
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.staticTexts["设置一键录音"].waitForExistence(timeout: 2.0), "应进入 Action Button 引导页")
 
-        // Step 6: 完成全部引导步骤
-        // （继续点击下一步直到完成）
-        while appHelper.nextButton.exists {
-            appHelper.nextButton.tap()
-        }
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.staticTexts["搞定啦！"].waitForExistence(timeout: 2.0), "应进入完成页")
 
-        // Step 7: 进入 HomeView
-        appHelper.waitForAppReady()
+        // Step 4: 点击「开始使用」结束引导
+        appHelper.nextButton.tap()
 
-        // Step 8: 重新启动 App
+        // Step 5: 引导关闭并进入主界面
+        XCTAssertTrue(appHelper.app.otherElements["RootTabView"].waitForExistence(timeout: 5.0), "应进入主界面")
+        XCTAssertFalse(appHelper.onboardingView.exists, "引导 sheet 应已关闭")
+
+        // Step 6: 重新启动 App（保留数据，不重置 UserDefaults）
         appHelper.app.terminate()
-        appHelper.launch()
+        appHelper.relaunchPreservingData()
 
-        // Step 9: 验证直接进入 HomeView，不显示引导
-        XCTAssertFalse(appHelper.onboardingView.waitForExistence(timeout: 2.0), "不应再显示引导")
-        XCTAssertTrue(appHelper.app.otherElements["HomeView"].waitForExistence(timeout: 5.0))
+        // Step 7: 验证直接进入主界面，不再显示引导
+        XCTAssertTrue(appHelper.app.otherElements["RootTabView"].waitForExistence(timeout: 5.0), "重启后应直接进入主界面")
+        XCTAssertFalse(appHelper.onboardingView.waitForExistence(timeout: 2.0), "重启后不应再显示引导")
     }
 
     // MARK: - S13: 权限被拒绝场景

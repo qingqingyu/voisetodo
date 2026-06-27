@@ -547,6 +547,24 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Microphone illustration" } }
       }
     },
+    "a11y.onboarding.progress" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "引导进度" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Onboarding progress" } }
+      }
+    },
+    "a11y.onboarding.authorize_hint" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击后会弹出系统权限请求" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Opens the system permission request" } }
+      }
+    },
+    "a11y.onboarding.open_settings_hint" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "前往系统设置开启权限" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Opens Settings to enable the permission" } }
+      }
+    },
     "confirm.title" : {
       "localizations" : {
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "确认待办" } },

@@ -91,6 +91,13 @@ class AppLaunchHelper {
         app.launch()
     }
 
+    /// 重新启动 App，保留已有数据（不注入 --reset-user-data / --skip-onboarding）
+    /// 用于验证 hasCompletedOnboarding 等持久化状态在重启后保持。
+    func relaunchPreservingData() {
+        app.launchArguments.removeAll { $0 == "--reset-user-data" || $0 == "--skip-onboarding" }
+        app.launch()
+    }
+
     /// 等待 App 完全启动
     func waitForAppReady(timeout: TimeInterval = 5.0) {
         let homeView = app.otherElements["HomeView"]

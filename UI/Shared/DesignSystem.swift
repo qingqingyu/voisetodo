@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - 温暖配色主题
 
@@ -8,22 +9,22 @@ enum WarmTheme {
     static let primaryLight = Color(hex: "FFB5A0")
     static let primaryDark = Color(hex: "E56B4F")
 
-    // 背景色 - 奶油白
-    static let background = Color(hex: "FFFBF7")
-    static let cardBackground = Color(hex: "FFFFFF")
-    static let secondaryBackground = Color(hex: "FFF5EE")
+    // 背景色 - 奶油白（深色模式自适应为暖中性深色）
+    static let background = Color(light: "FFFBF7", dark: "1C1B1A")
+    static let cardBackground = Color(light: "FFFFFF", dark: "2B2926")
+    static let secondaryBackground = Color(light: "FFF5EE", dark: "26241F")
 
     // 手绘风格 - 纸张色
-    static let paperBackground = Color(hex: "FFF8F0")
+    static let paperBackground = Color(light: "FFF8F0", dark: "1F1E1C")
 
-    // 文字色
-    static let textPrimary = Color(hex: "3D3A38")
-    static let textSecondary = Color(hex: "8B8580")
-    static let textMuted = Color(hex: "B8B3AD")
+    // 文字色（深色模式自适应为浅墨色）
+    static let textPrimary = Color(light: "3D3A38", dark: "EDE8E2")
+    static let textSecondary = Color(light: "8B8580", dark: "A8A29B")
+    static let textMuted = Color(light: "B8B3AD", dark: "6B6660")
 
     // 手绘风格 - 墨水色
-    static let ink = Color(hex: "4A4543")
-    static let sketch = Color(hex: "6B6560")
+    static let ink = Color(light: "4A4543", dark: "E8E3DD")
+    static let sketch = Color(light: "6B6560", dark: "B0AAA3")
 
     // 状态色
     static let success = Color(hex: "7BC47F")
@@ -235,6 +236,14 @@ struct CornerDoodle: View {
 // MARK: - Color Extension
 
 extension Color {
+    /// 自适应颜色：根据系统浅色/深色模式选择对应的 hex 值。
+    /// 复用下方的 `Color(hex:)` 解析逻辑，通过动态 UIColor 在运行时跟随 traitCollection。
+    init(light: String, dark: String) {
+        self = Color(uiColor: UIColor { traits in
+            UIColor(traits.userInterfaceStyle == .dark ? Color(hex: dark) : Color(hex: light))
+        })
+    }
+
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0

@@ -9,6 +9,9 @@ struct OnboardingView: View {
     @ObservedObject var permissionManager: PermissionManager
     @Binding var hasCompletedOnboarding: Bool
 
+    // 无障碍：尊重「减弱动态效果」设置
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var currentStep = 0
     @State private var isRequestingPermission = false
 
@@ -25,6 +28,11 @@ struct OnboardingView: View {
     private var paperColor: Color { WarmTheme.paperBackground }
     private var highlightColor: Color { WarmTheme.primary }
     private var sketchColor: Color { WarmTheme.sketch }
+
+    /// 在「减弱动态效果」开启时返回 nil，从而禁用对应动画。
+    private func motionAnim(_ animation: Animation) -> Animation? {
+        reduceMotion ? nil : animation
+    }
 
     var body: some View {
         ZStack {
@@ -123,7 +131,7 @@ struct OnboardingView: View {
                                 .frame(width: 6, height: 6)
                         )
                         .scaleEffect(index == currentStep ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3), value: currentStep)
+                        .animation(motionAnim(.spring(response: 0.3)), value: currentStep)
                 } else if index < currentStep {
                     // 已完成 - 打勾
                     Image(systemName: "checkmark")
@@ -138,6 +146,9 @@ struct OnboardingView: View {
                 }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "a11y.onboarding.progress"))
+        .accessibilityValue("\(currentStep + 1) / \(totalSteps)")
     }
 
     // MARK: - Step 1: Welcome
@@ -151,8 +162,7 @@ struct OnboardingView: View {
             handDrawnMicIllustration
                 .scaleEffect(illustrationScale)
                 .rotationEffect(.degrees(illustrationRotation))
-                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: illustrationScale)
-                .accessibilityLabel(String(localized: "a11y.mic_illustration"))
+                .animation(motionAnim(.spring(response: 0.6, dampingFraction: 0.7)), value: illustrationScale)
                 .accessibilityHidden(true)
 
             VStack(spacing: 16) {
@@ -316,7 +326,7 @@ struct OnboardingView: View {
                 .frame(width: 52, height: 52)
                 .background(
                     Circle()
-                        .fill(Color.white)
+                        .fill(WarmTheme.cardBackground)
                         .shadow(color: sketchColor.opacity(0.1), radius: 4, y: 2)
                 )
 
@@ -335,7 +345,7 @@ struct OnboardingView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white)
+                .fill(WarmTheme.cardBackground)
                 .shadow(color: sketchColor.opacity(0.08), radius: 8, y: 4)
         )
         .overlay(
@@ -459,7 +469,7 @@ struct OnboardingView: View {
                 .offset(x: 45, y: -45)
         }
         .scaleEffect(illustrationScale)
-        .animation(.spring(response: 0.5), value: illustrationScale)
+        .animation(motionAnim(.spring(response: 0.5)), value: illustrationScale)
     }
 
     // MARK: - Permission Status Card
@@ -516,11 +526,12 @@ struct OnboardingView: View {
                         )
                     }
                     .accessibilityIdentifier("OpenSettingsButton")
+                    .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
                 }
                 .padding(24)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white)
+                        .fill(WarmTheme.cardBackground)
                         .shadow(color: sketchColor.opacity(0.1), radius: 8, y: 4)
                 )
 
@@ -549,6 +560,7 @@ struct OnboardingView: View {
                 }
                 .disabled(isRequestingPermission)
                 .accessibilityIdentifier(currentStep == 1 ? "AuthorizeMicButton" : "AuthorizeSpeechButton")
+                .accessibilityHint(String(localized: "a11y.onboarding.authorize_hint"))
             }
         }
     }
@@ -607,7 +619,7 @@ struct OnboardingView: View {
             .padding(20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.white)
+                    .fill(WarmTheme.cardBackground)
                     .shadow(color: sketchColor.opacity(0.08), radius: 12, y: 6)
             )
             .padding(.top, 16)
@@ -678,7 +690,7 @@ struct OnboardingView: View {
             .frame(width: 70, height: 140)
         }
         .scaleEffect(illustrationScale)
-        .animation(.spring(response: 0.5), value: illustrationScale)
+        .animation(motionAnim(.spring(response: 0.5)), value: illustrationScale)
     }
 
     private func instructionStep(number: Int, text: String, icon: String) -> some View {
@@ -739,7 +751,7 @@ struct OnboardingView: View {
             .padding(20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.white)
+                    .fill(WarmTheme.cardBackground)
                     .shadow(color: sketchColor.opacity(0.08), radius: 12, y: 6)
             )
             .padding(.top, 20)
@@ -772,7 +784,7 @@ struct OnboardingView: View {
                     .foregroundColor(.white)
             }
             .scaleEffect(illustrationScale)
-            .animation(.spring(response: 0.5, dampingFraction: 0.6), value: illustrationScale)
+            .animation(motionAnim(.spring(response: 0.5, dampingFraction: 0.6)), value: illustrationScale)
         }
         .frame(height: 140)
     }
@@ -810,7 +822,7 @@ struct OnboardingView: View {
             // 后退按钮
             if currentStep > 0 {
                 Button(action: {
-                    withAnimation(.spring(response: 0.4)) {
+                    withAnimation(motionAnim(.spring(response: 0.4))) {
                         currentStep -= 1
                     }
                 }) {
@@ -902,13 +914,22 @@ struct OnboardingView: View {
         if currentStep == totalSteps - 1 {
             hasCompletedOnboarding = true
         } else {
-            withAnimation(.spring(response: 0.4)) {
+            withAnimation(motionAnim(.spring(response: 0.4))) {
                 currentStep += 1
             }
         }
     }
 
     private func animateContentIn() {
+        // 「减弱动态效果」开启时跳过入场动画，直接显示终态
+        guard !reduceMotion else {
+            contentOffset = 0
+            contentOpacity = 1
+            illustrationScale = 1.0
+            illustrationRotation = 0
+            return
+        }
+
         contentOffset = 30
         contentOpacity = 0
         illustrationScale = 0.8
@@ -922,7 +943,7 @@ struct OnboardingView: View {
             }
 
             try? await Task.sleep(nanoseconds: 100_000_000)
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            withAnimation(WarmAnimation.springEntrance) {
                 contentOffset = 0
                 contentOpacity = 1
             }
