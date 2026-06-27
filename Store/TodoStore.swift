@@ -14,6 +14,9 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
     /// 所有待办（按 sortOrder 升序排列）
     @Published var todos: [TodoItemData] = []
 
+    /// P6: 上次同步到的外部变更版本（Widget/AppIntent 跨进程写入标记），用于按需失效内存缓存。
+    private var lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
+
     // MARK: - Initialization
 
     /// 初始化 TodoStore
@@ -572,6 +575,22 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
         } catch {
             VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
+        lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
+    }
+
+    /// P6: 统一失效入口。仅当外部变更版本变化（或强制）时才全量重读，避免无谓 fetch。
+    /// 前台、Widget 写回、Action Button 返回等触发点统一调用它。
+    /// - Returns: 是否实际执行了刷新。
+    @discardableResult
+    func refreshIfStale(force: Bool = false) -> Bool {
+        let version = AppGroupConfig.currentExternalChangeVersion()
+        guard force || version != lastSyncedExternalChangeVersion else {
+            VoiceTodoLog.store.debug("store.refresh_if_stale.skip version=\(version)")
+            return false
+        }
+        VoiceTodoLog.store.info("store.refresh_if_stale.refresh force=\(force) old=\(self.lastSyncedExternalChangeVersion) new=\(version)")
+        refreshTodos()
+        return true
     }
 
     // MARK: - Private Methods

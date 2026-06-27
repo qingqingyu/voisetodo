@@ -20,7 +20,6 @@ struct VoiceTodoApp: App {
 
     /// 标记是否应该自动开始录音（从 Action Button 启动）
     @State private var shouldAutoStartRecording = false
-    @State private var lastObservedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
     // MARK: - Environment
 
     @Environment(\.scenePhase) private var scenePhase
@@ -282,14 +281,8 @@ struct VoiceTodoApp: App {
     }
 
     private func refreshStoreIfNeededFromExternalChanges(force: Bool = false) {
-        let version = AppGroupConfig.currentExternalChangeVersion()
-        if force || version != lastObservedExternalChangeVersion {
-            VoiceTodoLog.app.info("app.external_changes.refresh force=\(force) oldVersion=\(lastObservedExternalChangeVersion) newVersion=\(version)")
-            todoStore.refreshTodos()
-            lastObservedExternalChangeVersion = version
-        } else {
-            VoiceTodoLog.app.debug("app.external_changes.skip oldVersion=\(lastObservedExternalChangeVersion) newVersion=\(version)")
-        }
+        // P6: 失效逻辑统一收口到 TodoStore.refreshIfStale，App 仅触发
+        todoStore.refreshIfStale(force: force)
     }
 
     // MARK: - URL Scheme Handling
