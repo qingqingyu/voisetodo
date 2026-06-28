@@ -49,3 +49,28 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
         }
     }
 }
+
+// MARK: - 错误归一化
+
+extension VoiceTodoError {
+    /// 把 raw SwiftData / Foundation 错误归一化为 `VoiceTodoError`。
+    /// - 已经是 `VoiceTodoError` 的原样返回，避免双层包装。
+    /// - 其他错误按读/写场景包成 `storageReadFailed` / `storageWriteFailed`。
+    /// 用法：所有从 SwiftData 拿到 raw error 的 catch 块都应通过此函数归一化后再 throw。
+    static func wrapStorage(_ error: Error, for operation: StorageOperation) -> VoiceTodoError {
+        if let voiceError = error as? VoiceTodoError {
+            return voiceError
+        }
+        switch operation {
+        case .read:
+            return .storageReadFailed(error.localizedDescription)
+        case .write:
+            return .storageWriteFailed(error.localizedDescription)
+        }
+    }
+
+    enum StorageOperation: Sendable {
+        case read
+        case write
+    }
+}

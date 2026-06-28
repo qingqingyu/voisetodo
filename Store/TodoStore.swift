@@ -270,10 +270,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             VoiceTodoLog.store.info("store.toggle_occurrence.success id=\(id.uuidString, privacy: .public) key=\(key, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
             VoiceTodoLog.store.error("store.toggle_occurrence.failed id=\(id.uuidString, privacy: .public) key=\(key, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .write)
         }
     }
 
@@ -396,10 +393,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count) deletedHistory=\(historyRecords.count)")
         } catch {
             VoiceTodoLog.store.error("store.reset_for_ui_tests.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .write)
         }
     }
 
@@ -461,10 +455,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             allUncompleted = try modelContext.fetch(descriptor)
         } catch {
             VoiceTodoLog.store.error("store.reorder.fetch_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
         let itemMap = Dictionary(uniqueKeysWithValues: allUncompleted.map { ($0.id, $0) })
 
@@ -520,10 +511,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             return minOrder - 1
         } catch {
             VoiceTodoLog.store.error("store.next_sort_order.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }
 
@@ -535,10 +523,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             VoiceTodoLog.store.error("store.save.failed_rollback error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             modelContext.rollback()
             refreshTodos()
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageWriteFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .write)
         }
     }
 
@@ -619,10 +604,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             return item
         } catch {
             VoiceTodoLog.store.error("store.find.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let storageError = error as? VoiceTodoError {
-                throw storageError
-            }
-            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }
 
@@ -637,10 +619,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             return completion
         } catch {
             VoiceTodoLog.store.error("store.find_completion.failed key=\(key, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }
 
@@ -656,10 +635,9 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
             VoiceTodoLog.store.debug("store.delete_completions.success todoID=\(todoId.uuidString, privacy: .public) count=\(completions.count)")
         } catch {
             VoiceTodoLog.store.error("store.delete_completions.failed todoID=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            if let voiceError = error as? VoiceTodoError {
-                throw voiceError
-            }
-            throw VoiceTodoError.storageReadFailed(error.localizedDescription)
+            // 注意：fetch + delete 是写操作（修改库），错误归类为 .write 而非 .read。
+            // 之前错归为 .read，导致用户看到 "storage read failed" 文案但实际是 write 失败。
+            throw VoiceTodoError.wrapStorage(error, for: .write)
         }
     }
 }

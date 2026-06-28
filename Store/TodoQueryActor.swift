@@ -27,10 +27,10 @@ actor TodoQueryActor {
             return items.map { $0.toData() }
         } catch {
             // 错误显式传播原则：不静默吞掉失败，向上抛出而不是返回空数组掩盖问题。
-            // 与 TodoStore.findTodoItem 保持一致：raw SwiftData 错误包成 VoiceTodoError.storageReadFailed，
+            // raw SwiftData 错误通过 VoiceTodoError.wrapStorage 归一化为 .storageReadFailed，
             // 让 AppCoordinator.handleError 命中 `.storageReadFailed` 显示统一文案。
             VoiceTodoLog.store.error("query_actor.pending.fetch_failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            throw Self.normalizedStorageError(error)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }
 
@@ -59,7 +59,7 @@ actor TodoQueryActor {
             return visible
         } catch {
             VoiceTodoLog.store.error("query_actor.recent_uncompleted.fetch_failed limit=\(limit) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            throw Self.normalizedStorageError(error)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }
 
@@ -130,17 +130,8 @@ actor TodoQueryActor {
             }
         } catch {
             VoiceTodoLog.store.error("query_actor.calendar.fetch_failed start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            throw Self.normalizedStorageError(error)
+            throw VoiceTodoError.wrapStorage(error, for: .read)
         }
-    }
-
-    /// 与 `TodoStore.findTodoItem` 一致的错误归一化：raw SwiftData 错误包成 `VoiceTodoError.storageReadFailed`，
-    /// 让 `AppCoordinator.handleError` 命中 `.storageReadFailed` case 显示统一文案。
-    private static func normalizedStorageError(_ error: Error) -> VoiceTodoError {
-        if let voiceError = error as? VoiceTodoError {
-            return voiceError
-        }
-        return .storageReadFailed(error.localizedDescription)
     }
 
     /// 计算区间内按日历日对齐的天数序列（含两端）。
