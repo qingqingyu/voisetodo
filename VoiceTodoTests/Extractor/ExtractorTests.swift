@@ -116,6 +116,14 @@ final class ExtractorTests: XCTestCase {
         XCTAssertNil(URLProtocolStub.requests.last?.value(forHTTPHeaderField: "x-api-key"))
     }
 
+    /// P4: 请求应携带跨端追踪头 X-Request-ID。
+    func testProxyRequestIncludesTraceHeader() async throws {
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        _ = try await sut.extract(from: "追踪", locale: Locale(identifier: "zh-Hans"))
+        let request = try XCTUnwrap(URLProtocolStub.requests.last)
+        XCTAssertFalse((request.value(forHTTPHeaderField: "X-Request-ID") ?? "").isEmpty, "应携带 X-Request-ID 追踪头")
+    }
+
     func testNetworkClientRejectsNonLocalHTTPProxyEndpoint() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
@@ -293,7 +301,8 @@ final class ExtractorTests: XCTestCase {
     }
 
     func testRetryLogicAllAttemptsFailed() async {
-        // Given: 所有尝试都失败
+        // Given: 所有尝试都失败（1 次初始 + retryCount 次重试）
+        mockNetworkClient.enqueueFailure(VoiceTodoError.networkUnavailable)
         mockNetworkClient.enqueueFailure(VoiceTodoError.networkUnavailable)
         mockNetworkClient.enqueueFailure(VoiceTodoError.networkUnavailable)
 
@@ -307,8 +316,8 @@ final class ExtractorTests: XCTestCase {
             XCTFail("错误的错误类型: \(error)")
         }
 
-        // 验证重试次数（1次初始 + 1次重试 = 2次）
-        XCTAssertEqual(URLProtocolStub.callCount, 2)
+        // 验证总尝试次数 = 1 次初始 + retryCount 次重试
+        XCTAssertEqual(URLProtocolStub.callCount, NetworkConfig.retryCount + 1)
     }
 
     func testRetryLogicSkipsOnInvalidProxyResponse() async {
@@ -481,6 +490,67 @@ final class ExtractorTests: XCTestCase {
     }
 }
 
+// MARK: - P3: 熔断 / 退避 / 429
+
+extension ExtractorTests {
+    /// 限流但无 Retry-After 时不应盲目重试（只发一次请求）。
+    func testRateLimitedWithoutRetryAfterIsNotRetried() async {
+        mockNetworkClient.enqueueHTTPFailure(statusCode: 429, body: "rate limited")
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        do {
+            _ = try await sut.extract(from: "限流", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("应抛出限流错误")
+        } catch {
+            XCTAssertEqual(URLProtocolStub.callCount, 1, "无 Retry-After 不应重试")
+        }
+    }
+
+    /// 限流且带 Retry-After 时按提示重试一次后成功。
+    func testRateLimitedWithRetryAfterRetries() async throws {
+        mockNetworkClient.enqueueHTTPFailure(statusCode: 429, body: "rate limited", headers: ["Retry-After": "0"])
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        let result = try await sut.extract(from: "限流重试", locale: Locale(identifier: "zh-Hans"))
+        XCTAssertEqual(URLProtocolStub.callCount, 2, "带 Retry-After 应重试一次")
+        XCTAssertEqual(result.todos.count, 0)
+    }
+
+    /// 传输类失败应重试，随后成功。
+    func testTransportFailureRetriesThenSucceeds() async throws {
+        mockNetworkClient.enqueueFailure(URLError(.networkConnectionLost))
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        let result = try await sut.extract(from: "断网重试", locale: Locale(identifier: "zh-Hans"))
+        XCTAssertEqual(URLProtocolStub.callCount, 2, "传输失败后应重试一次")
+        XCTAssertEqual(result.todos.count, 0)
+    }
+
+    /// 熔断器：达到阈值后短路，冷却到期转半开放行，成功后闭合。
+    func testCircuitBreakerOpensAfterThresholdAndRecovers() async {
+        final class Clock: @unchecked Sendable { var now = Date(timeIntervalSince1970: 0) }
+        let clock = Clock()
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 2, cooldown: 30, now: { clock.now })
+
+        var shorted = await breaker.shouldShortCircuit()
+        XCTAssertFalse(shorted, "初始闭合不应短路")
+
+        await breaker.recordFailure()
+        await breaker.recordFailure()
+        shorted = await breaker.shouldShortCircuit()
+        XCTAssertTrue(shorted, "达到阈值应短路")
+
+        clock.now = Date(timeIntervalSince1970: 20)
+        shorted = await breaker.shouldShortCircuit()
+        XCTAssertTrue(shorted, "冷却未到仍短路")
+
+        clock.now = Date(timeIntervalSince1970: 31)
+        shorted = await breaker.shouldShortCircuit()
+        XCTAssertFalse(shorted, "冷却到期应转半开放行")
+
+        await breaker.recordSuccess()
+        shorted = await breaker.shouldShortCircuit()
+        XCTAssertFalse(shorted, "成功后应闭合")
+    }
+}
+
 // MARK: - Mock Network Client
 
 private struct StaticExtractorVocabularyProvider: UserVocabularyProviding {
@@ -508,21 +578,21 @@ private final class MockNetworkClient {
     }
 
     func enqueueSuccess(text: String) {
-        URLProtocolStub.responses.append(.success(statusCode: 200, body: text))
+        URLProtocolStub.responses.append(.success(statusCode: 200, body: text, headers: [:]))
     }
 
     func enqueueFailure(_ error: Error) {
         URLProtocolStub.responses.append(.failure(error))
     }
 
-    func enqueueHTTPFailure(statusCode: Int, body: String) {
-        URLProtocolStub.responses.append(.success(statusCode: statusCode, body: body))
+    func enqueueHTTPFailure(statusCode: Int, body: String, headers: [String: String] = [:]) {
+        URLProtocolStub.responses.append(.success(statusCode: statusCode, body: body, headers: headers))
     }
 }
 
 private final class URLProtocolStub: URLProtocol {
     enum StubResponse {
-        case success(statusCode: Int, body: String)
+        case success(statusCode: Int, body: String, headers: [String: String])
         case failure(Error)
     }
 
@@ -558,12 +628,12 @@ private final class URLProtocolStub: URLProtocol {
         let response = Self.responses.removeFirst()
 
         switch response {
-        case .success(let statusCode, let body):
+        case .success(let statusCode, let body, let headers):
             let httpResponse = HTTPURLResponse(
                 url: request.url!,
                 statusCode: statusCode,
                 httpVersion: nil,
-                headerFields: ["Content-Type": "application/json"]
+                headerFields: ["Content-Type": "application/json"].merging(headers) { _, new in new }
             )!
             client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))

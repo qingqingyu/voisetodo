@@ -12,7 +12,8 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     // Network / AI 模块
     case networkUnavailable
     case apiTimeout
-    case apiRateLimited
+    /// 被限流（HTTP 429）。retryAfter 来自响应的 Retry-After 头（秒），可能缺失。
+    case apiRateLimited(retryAfter: TimeInterval?)
     case apiResponseInvalid(String)
     case jsonParsingFailed(String)
 

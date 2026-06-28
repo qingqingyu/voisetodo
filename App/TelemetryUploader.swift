@@ -32,9 +32,7 @@ final class TelemetryUploader {
         self.appToken = appToken
         self.deviceID = deviceID
         self.session = session
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .millisecondsSince1970
-        self.encoder = encoder
+        self.encoder = JSONCoding.makeRequestEncoder()
     }
 
     // MARK: - Background task lifecycle

@@ -6,6 +6,16 @@ import Foundation
 enum Priority: String, Codable, CaseIterable, Sendable {
     case high
     case normal
+
+    /// 从原始字符串容错构造：大小写不敏感，未知/缺失回落 .normal。
+    /// 用于解码 AI 响应这类不可信边界，避免单个未知值导致整次解码失败。
+    static func tolerant(_ raw: String?) -> Priority {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              let value = Priority(rawValue: raw) else {
+            return .normal
+        }
+        return value
+    }
 }
 
 /// 待办分类
@@ -17,6 +27,16 @@ enum TodoCategory: String, Codable, CaseIterable, Sendable {
     case finance  // 财务
     case social   // 社交
     case other    // 其他
+
+    /// 从原始字符串容错构造：大小写不敏感，未知/缺失回落 .other。
+    /// 用于解码 AI 响应这类不可信边界，避免单个未知值导致整次解码失败。
+    static func tolerant(_ raw: String?) -> TodoCategory {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              let value = TodoCategory(rawValue: raw) else {
+            return .other
+        }
+        return value
+    }
 
     var emoji: String {
         switch self {
@@ -171,7 +191,9 @@ struct ExtractedTodo: Identifiable, Codable {
         let referenceDate = decoder.userInfo[.recurrenceReferenceDate] as? Date ?? Date()
         let calendar = decoder.userInfo[.recurrenceCalendar] as? Calendar ?? .current
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        title = try container.decode(String.self, forKey: .title)
+        // 标题长度保护：AI 可能返回异常超长串，截断到合理上限（200，远大于正常标题，不影响常规内容）
+        let rawTitle = try container.decode(String.self, forKey: .title)
+        title = TextUtils.truncateTitle(from: rawTitle, maxLength: 200)
         detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
         let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)
         dueHint = Self.sanitizeDueHint(rawDueHint)
@@ -198,8 +220,9 @@ struct ExtractedTodo: Identifiable, Codable {
                 calendar: calendar
             )
         }
-        priority = try container.decode(Priority.self, forKey: .priority)
-        categoryHint = try container.decode(TodoCategory.self, forKey: .categoryHint)
+        // 容错解码：AI 返回表外的 priority/category 值时回落默认值，而非让整次解码失败
+        priority = Priority.tolerant(try container.decodeIfPresent(String.self, forKey: .priority))
+        categoryHint = TodoCategory.tolerant(try container.decodeIfPresent(String.self, forKey: .categoryHint))
         localeIdentifier = nil
     }
 }

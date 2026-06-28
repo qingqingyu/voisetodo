@@ -40,6 +40,15 @@ final class StoreTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - P6: 缓存失效契约
+
+    func testRefreshIfStaleSkipsWhenVersionUnchanged() {
+        // 强制刷新会同步到当前外部版本
+        XCTAssertTrue(sut.refreshIfStale(force: true), "强制刷新应执行")
+        // 版本未变化时应跳过，避免无谓全量 fetch
+        XCTAssertFalse(sut.refreshIfStale(force: false), "版本未变化应跳过")
+    }
+
     // MARK: - Test Add
 
     func testAddTodo() throws {
