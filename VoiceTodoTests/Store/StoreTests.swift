@@ -1061,4 +1061,34 @@ final class StoreTests: XCTestCase {
             line: line
         )
     }
+
+    // MARK: - Read-only enforcement for TodoQueryActor
+
+    /// 防御测试：`TodoQueryActor` 标注为 @ModelActor 编译期有完整写权限，
+    /// 文档约定"只读"靠人工把关。此测试调三个读方法，断言主上下文的 `todos` 不被修改 ——
+    /// 一旦有人误在 actor 内 `modelContext.save()` 写库，主上下文会 autosave 同步，本测试会失败。
+    ///
+    /// 覆盖盲区：本测试只能检测「写 + save」，不能检测「写但不 save」。
+    /// 后者在 actor 内无实际意义（独立 ModelContext 不 save 就随 actor 退出而丢），
+    /// 因此不构成真实威胁。如未来 SwiftData 提供 readonly ModelContext，可替换为编译期强制。
+    func testQueryActorReadMethodsDoNotMutateStore() async throws {
+        try sut.addBatch([
+            ExtractedTodo(title: "未完成", categoryHint: .work),
+            ExtractedTodo(title: "已完成", categoryHint: .life),
+        ])
+        try sut.toggleComplete(sut.todos[1].id)
+
+        let snapshotBefore = sut.todos.map { $0.id }
+        let snapshotCompletedBefore = sut.todos.map(\.isCompleted)
+
+        // 三个读方法都走 queryActor
+        _ = try await sut.recentUncompleted(limit: 10)
+        _ = try await sut.pendingItems()
+        let today = Calendar.current.startOfDay(for: Date())
+        _ = try await sut.calendarOccurrences(from: today, to: today)
+
+        // 比对：id 顺序 + 完成状态都应不变
+        XCTAssertEqual(sut.todos.map { $0.id }, snapshotBefore, "读方法不应改变 todos 的顺序或数量")
+        XCTAssertEqual(sut.todos.map(\.isCompleted), snapshotCompletedBefore, "读方法不应改变 todos 的完成状态")
+    }
 }

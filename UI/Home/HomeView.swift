@@ -556,6 +556,12 @@ private enum HomeCalendarLoadState {
 @MainActor
 /// 月历 occurrence 缓存的刷新键：当月锚点 / 当前 todos / occurrence 完成修订号任一变化即重算。
 /// 用于 `.task(id:)` —— 规律任务 occurrence 完成切换不改 `store.todos`，必须靠 revision 触发刷新。
+///
+/// 性能取舍：用 `[TodoItemData]` 全数组做 Hashable，500 todos × ~20 字段 = μs 级比较，
+/// 远小于 SwiftData fetch + 规则展开的耗时（后者才是 CLAUDE.md 性能表里的瓶颈）。
+/// 派生 token（count + lastMutatedId）会漏掉对单条 todo 字段编辑的感知，不正确；
+/// 用 `TodoStore.dataRevision` 全局自增能省掉这层比较，但需要 TodoStore 在所有写操作处 bump，
+/// 工作量大且容易漏。当前方案是正确性优先。
 private struct CalendarRefreshKey: Hashable {
     let anchor: Date
     let todos: [TodoItemData]
@@ -1360,7 +1366,13 @@ struct HomeView<Store: HomeTodoStore>: View {
         .accessibilityIdentifier("MonthHomeView")
         .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todos: store.todos, revision: occurrenceRevision)) {
             let startedAt = Date()
-            calendarLoadState = .loading
+            // 注意：这里**不**主动设 .loading（避免切月份时清掉旧数据导致闪烁）。
+            // 唯一例外：如果当前是 .error 态（上一次加载失败），重置为 .loading ——
+            // 因为错误态本来就没有可保留的旧数据，重置闪烁可接受，反而避免新月份加载期间错误视图盖屏。
+            if calendarLoadState == .error {
+                calendarLoadState = .loading
+            }
+            // .success / .empty / 初始 .loading 都不主动设，保留旧值。
             let monthDays = HomeCalendarState.monthDays(for: visibleMonthAnchor, calendar: calendar)
             guard let firstDay = monthDays.first, let lastDay = monthDays.last else {
                 monthOccurrences = [:]

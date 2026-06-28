@@ -444,7 +444,23 @@ final class AppCoordinator: ObservableObject {
         }
         result.deletionErrors.forEach(handleError)
         if let pendingReadError = result.pendingReadError {
-            handleError(pendingReadError)
+            // 不走通用 handleError（那只能弹纯文案 toast），
+            // 改用带「重试」按钮的 toast —— 用户点了直接重跑 handleAppForeground，
+            // 走完同样的 pending 读取 + 恢复流程。
+            VoiceTodoLog.coordinator.warning("coordinator.foreground.pending_read_error_surfacable action=retry_available error=\(VoiceTodoLog.errorSummary(pendingReadError), privacy: .public)")
+            showToast(
+                message: ErrorMessages.storageError,
+                style: .warning,
+                actionTitle: String(localized: "history.retry"),
+                action: { [weak self] in
+                    // 双重 [weak self]：外层防 toast 显示期间 AppCoordinator 无法释放；
+                    // 内层 Task 跑完前也不能强引用 self（handleAppForeground 是 transient，
+                    // 但严格并发语义下仍要避免 Task 闭包强持有 self）。
+                    Task { @MainActor [weak self] in
+                        self?.handleAppForeground()
+                    }
+                }
+            )
         }
         guard result.hasPending else { return }
 
