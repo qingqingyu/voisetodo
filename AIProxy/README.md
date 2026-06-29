@@ -72,6 +72,22 @@ Per-provider circuit state is persisted in `AI_PROVIDER_STATE_KV` (a dedicated K
 
 If the KV namespace is absent or starts erroring, the proxy degrades to per-isolate in-memory state — failover still works within a single isolate, just not across them.
 
+## Abuse / cost controls
+
+Layered defenses, all enforced **server-side** (client-side limits are bypassable — an abuser hits the endpoint directly):
+
+| Layer | Mechanism | Config |
+|---|---|---|
+| Input size | reject oversized body / transcript | `MAX_BODY_BYTES` (16KB), `MAX_TRANSCRIPT_CHARS` (4000) in `worker.js` |
+| Output size | hard cap on generated tokens | `max_tokens` in each adapter |
+| Per-device daily | `quota:<date>:<deviceId>` | `DAILY_REQUEST_LIMIT` + `RATE_LIMIT_KV` |
+| Per-IP daily / velocity | `ip-quota:<date>:<ipHash>`, `ip-rate:<minute>:<ipHash>` (independent of device → blocks `X-Device-ID` rotation) | `IP_DAILY_LIMIT`, `IP_RATE_PER_MINUTE` + `RATE_LIMIT_KV` |
+| Global budget | `global-quota:<date>` → 503 for everyone when exceeded | `GLOBAL_DAILY_LIMIT` + `RATE_LIMIT_KV` |
+
+**Recommended additional edge layer (configure in Cloudflare dashboard, not code):** add a **Rate Limiting Rule** on path `/v1/todo-extractions` keyed by `ip.src` (e.g. ≤ 10 req/min, ≤ 50 req/day per IP). Cloudflare's native rate limiter handles bursts and IP rotation more efficiently than KV counters and runs before the Worker — use it as the first line, with the Worker-level limits above as defense-in-depth.
+
+Not yet implemented (future): per-tier (free/paid) limits require a verified entitlement signal (StoreKit receipt) the proxy doesn't receive today; App Attest / DeviceCheck to make `X-Device-ID` unforgeable.
+
 ## Observability
 
 All log lines are JSON. Key events:

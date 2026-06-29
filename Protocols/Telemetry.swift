@@ -149,6 +149,7 @@ enum RecordingOutcome: String {
     case success = "success"
     case interrupted = "interrupted"
     case silenceTimeout = "silence_timeout"
+    case maxDurationReached = "max_duration_reached"
     case watchdogExpired = "watchdog_expired"
     case error = "error"
 }

@@ -92,6 +92,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     logInfo("proxy.payload.accepted", requestContext);
 
     await enforceDailyLimit(request, env, requestContext);
+    await enforcePerIpLimit(request, env, requestContext);
+    await enforceGlobalBudget(env, requestContext);
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
 
@@ -421,6 +423,64 @@ async function enforceDailyLimit(request, env, requestContext) {
   }
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
   logInfo("proxy.quota.incremented", { ...requestContext, current: current + 1, limit });
+}
+
+// 全局每日预算熔断：当天全网调用量超过 GLOBAL_DAILY_LIMIT 即对所有人返回 503，
+// 把"无限身份的分布式刷"的财务风险锁成可设的上限。粗粒度（KV 最终一致），作为预算兜底足够。
+async function enforceGlobalBudget(env, requestContext) {
+  if (!env.RATE_LIMIT_KV || !env.GLOBAL_DAILY_LIMIT) {
+    logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured" });
+    return;
+  }
+  const limit = Number(env.GLOBAL_DAILY_LIMIT);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    logWarn("proxy.global_budget.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.GLOBAL_DAILY_LIMIT });
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `global-quota:${today}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  if (current >= limit) {
+    logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit });
+    throw new ProxyHTTPError(503, "Service temporarily unavailable");
+  }
+  await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
+  logInfo("proxy.global_budget.incremented", { ...requestContext, current: current + 1, limit });
+}
+
+// 独立于设备的 IP 限流：始终按 CF-Connecting-IP 计，挡"单 IP 轮换 X-Device-ID 刷配额"。
+// 两层均按需开启（未配置对应 env 即跳过）：分钟级突发 IP_RATE_PER_MINUTE + 每日 IP_DAILY_LIMIT。
+async function enforcePerIpLimit(request, env, requestContext) {
+  if (!env.RATE_LIMIT_KV) {
+    return;
+  }
+  const rawIp = request.headers.get("CF-Connecting-IP") || "anonymous";
+  const ipHash = await safeDeviceId(rawIp, env);  // 复用加盐哈希，KV key 不落明文 IP
+  const now = new Date();
+
+  const perMinute = Number(env.IP_RATE_PER_MINUTE || 0);
+  if (Number.isFinite(perMinute) && perMinute > 0) {
+    const minuteBucket = now.toISOString().slice(0, 16);  // YYYY-MM-DDTHH:MM
+    const key = `ip-rate:${minuteBucket}:${ipHash}`;
+    const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+    if (current >= perMinute) {
+      logWarn("proxy.ip_rate.exceeded", { ...requestContext, current, limit: perMinute });
+      throw new ProxyHTTPError(429, "Too many requests");
+    }
+    await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
+  }
+
+  const perDay = Number(env.IP_DAILY_LIMIT || 0);
+  if (Number.isFinite(perDay) && perDay > 0) {
+    const today = now.toISOString().slice(0, 10);
+    const key = `ip-quota:${today}:${ipHash}`;
+    const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+    if (current >= perDay) {
+      logWarn("proxy.ip_quota.exceeded", { ...requestContext, current, limit: perDay });
+      throw new ProxyHTTPError(429, "Daily quota exceeded");
+    }
+    await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
+  }
 }
 
 function normalizeLocale(locale) {

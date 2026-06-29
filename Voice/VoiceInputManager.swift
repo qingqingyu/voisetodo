@@ -554,6 +554,18 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 只在录音状态下处理，避免 stopRecording 后的延迟回调
         guard isRecording else { return }
 
+        // 硬性最大录音时长：到达即自动停止（无论在说话还是静音）
+        if let start = recordingStartTime,
+           Date().timeIntervalSince(start) >= VoiceConstants.maxRecordingSeconds,
+           !isSilenceDetected {
+            isSilenceDetected = true  // 复用停止去重标志，避免与静音检测重复 stop
+            VoiceTodoLog.voice.info("recording.max_duration_reached id=\(self.recordingSessionID ?? "none", privacy: .public) maxSeconds=\(VoiceConstants.maxRecordingSeconds)")
+            let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+            Telemetry.record(.recordingOutcome(outcome: .maxDurationReached, durationMS: durationMS, transcript: transcript))
+            stopRecording()
+            return
+        }
+
         guard let channelData = buffer.floatChannelData?[0] else { return }
 
         // 直接用指针遍历计算 RMS，避免每帧分配临时数组
