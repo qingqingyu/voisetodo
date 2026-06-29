@@ -514,6 +514,64 @@ test("enforces optional daily quota by device id", async () => {
   }
 });
 
+test("enforces global daily budget with 503", async () => {
+  const kv = new MemoryKV(new Map([["global-quota:2026-05-26", "5"]]));
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const response = await handleRequest(
+      request({ transcript: "买菜" }, { "X-App-Token": "token" }),
+      {
+        APP_TOKEN: "token",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        GLOBAL_DAILY_LIMIT: "5",
+        RATE_LIMIT_KV: kv
+      },
+      {},
+      failingFetch
+    );
+    assert.equal(response.status, 503);
+  });
+});
+
+test("enforces per-IP per-minute velocity limit", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      IP_RATE_PER_MINUTE: "2",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "CF-Connecting-IP": "1.2.3.4" };
+    // 前两次通过 IP 检查（后续 provider 调用因 failingFetch 失败，但 IP 计数已自增）
+    await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
+    await handleRequest(request({ transcript: "b" }, headers), env, {}, failingFetch);
+    const third = await handleRequest(request({ transcript: "c" }, headers), env, {}, failingFetch);
+    assert.equal(third.status, 429);
+  });
+});
+
+test("enforces per-IP daily limit independent of device id", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      IP_DAILY_LIMIT: "2",
+      RATE_LIMIT_KV: kv
+    };
+    // 同一 IP 轮换 device id 也无法绕过：IP 维度独立计数
+    const mk = (n) => request({ transcript: `t${n}` }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": `rotating-${n}`
+    });
+    await handleRequest(mk(1), env, {}, failingFetch);
+    await handleRequest(mk(2), env, {}, failingFetch);
+    const third = await handleRequest(mk(3), env, {}, failingFetch);
+    assert.equal(third.status, 429);
+  });
+});
+
 test("redacts device identifiers in logs", async () => {
   const logs = await captureConsole(async () => {
     const response = await handleRequest(

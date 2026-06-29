@@ -3,7 +3,14 @@ main = "worker.js"
 compatibility_date = "2026-05-26"
 
 [vars]
+# 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
 DAILY_REQUEST_LIMIT = "100"
+# 全局每天调用上限：当天全网超过即对所有人返回 503，把分布式刷量的账单锁成可设上限。
+# 留空则不启用。建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。
+# GLOBAL_DAILY_LIMIT = "5000"
+# 按 IP 限流（独立于设备，挡"单 IP 轮换 X-Device-ID"）。留空则不启用。
+# IP_DAILY_LIMIT = "50"
+# IP_RATE_PER_MINUTE = "10"
 # 每设备每天遥测事件上限（默认 500）
 TELEMETRY_DAILY_LIMIT = "500"
 # 设备 ID 哈希 salt。生产环境强烈建议配置独立值（不复用 APP_TOKEN）。
