@@ -7,17 +7,21 @@ final class TodoExtractorService: TodoExtractorProtocol {
     private let networkClient: NetworkClient
     private let vocabularyProvider: any UserVocabularyProviding
     private let circuitBreaker: ExtractorCircuitBreaker
+    /// 可注入的退避延时，便于测试注入空实现以消除真实 sleep 耗时。
+    private let sleep: (TimeInterval) async -> Void
 
     // MARK: - Initialization
 
     init(
         networkClient: NetworkClient = NetworkClient(),
         vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared,
-        circuitBreaker: ExtractorCircuitBreaker = ExtractorCircuitBreaker()
+        circuitBreaker: ExtractorCircuitBreaker = ExtractorCircuitBreaker(),
+        sleep: @escaping (TimeInterval) async -> Void = { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
     ) {
         self.networkClient = networkClient
         self.vocabularyProvider = vocabularyProvider
         self.circuitBreaker = circuitBreaker
+        self.sleep = sleep
     }
 
     // MARK: - TodoExtractorProtocol Implementation
@@ -51,7 +55,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     let delay = nextDelayOverride ?? Self.backoffDelay(forRetry: attempt)
                     nextDelayOverride = nil
                     VoiceTodoLog.extractor.info("extract.retry_wait id=\(extractionID, privacy: .public) attempt=\(attempt) waitIntervalSeconds=\(delay)")
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    await self.sleep(delay)
                 }
                 VoiceTodoLog.extractor.info("extract.attempt.start id=\(extractionID, privacy: .public) attempt=\(attempt)")
 
@@ -178,6 +182,13 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 var accumulatedText = ""
                 var lastYieldedCount = 0
 
+                // 熔断：冷却窗口内直接失败，交由上层（TranscriptProcessingFlow）做离线兜底
+                if await self.circuitBreaker.shouldShortCircuit() {
+                    VoiceTodoLog.extractor.warning("extract.stream.circuit_open id=\(streamID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                    continuation.finish(throwing: VoiceTodoError.networkUnavailable)
+                    return
+                }
+
                 do {
                     let stream = client.callTodoExtractionProxyStreaming(
                         transcript: transcript,
@@ -203,6 +214,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
                     // 流结束后做最终完整解析
                     let finalResult = try self.parseResponse(accumulatedText)
+                    await self.circuitBreaker.recordSuccess()
                     continuation.yield(finalResult)
                     VoiceTodoLog.extractor.info("extract.stream.success id=\(streamID, privacy: .public) todos=\(finalResult.todos.count) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                     continuation.finish()
@@ -211,6 +223,10 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     if let partialTodos = self.tryParsePartialTodos(accumulatedText), !partialTodos.isEmpty {
                         VoiceTodoLog.extractor.warning("extract.stream.partial_before_error id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         continuation.yield(ExtractionResult(todos: partialTodos, ignored: ""))
+                    }
+                    // 服务类失败喂熔断器（与 extract() 同一分类口径）
+                    if let voiceError = error as? VoiceTodoError, Self.countsAsServiceFailure(voiceError) {
+                        await self.circuitBreaker.recordFailure()
                     }
                     VoiceTodoLog.extractor.error("extract.stream.failed id=\(streamID, privacy: .public) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     continuation.finish(throwing: error)
@@ -301,7 +317,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
     /// 解析类错误（apiResponseInvalid / jsonParsingFailed）不代表代理不健康，不计入。
     private static func countsAsServiceFailure(_ error: VoiceTodoError) -> Bool {
         switch error {
-        case .networkUnavailable, .apiTimeout, .apiRateLimited:
+        case .networkUnavailable, .apiTimeout, .apiRateLimited, .apiServerError:
             return true
         default:
             return false

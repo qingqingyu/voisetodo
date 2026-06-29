@@ -191,10 +191,12 @@ struct ExtractedTodo: Identifiable, Codable {
         let referenceDate = decoder.userInfo[.recurrenceReferenceDate] as? Date ?? Date()
         let calendar = decoder.userInfo[.recurrenceCalendar] as? Calendar ?? .current
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        // 标题长度保护：AI 可能返回异常超长串，截断到合理上限（200，远大于正常标题，不影响常规内容）
-        let rawTitle = try container.decode(String.self, forKey: .title)
-        title = TextUtils.truncateTitle(from: rawTitle, maxLength: 200)
         detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
+        // title 容错：缺失/null/空白时从 detail 派生，避免单条缺 title 导致整批 ExtractionResult 解码失败。
+        // 同时做长度保护：AI 可能返回异常超长串，截断到合理上限（200，远大于正常标题，不影响常规内容）。
+        let rawTitle = (try container.decodeIfPresent(String.self, forKey: .title) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        title = TextUtils.truncateTitle(from: rawTitle.isEmpty ? detail : rawTitle, maxLength: 200)
         let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)
         dueHint = Self.sanitizeDueHint(rawDueHint)
         if container.contains(.recurrenceRule) {

@@ -14,6 +14,8 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     case apiTimeout
     /// 被限流（HTTP 429）。retryAfter 来自响应的 Retry-After 头（秒），可能缺失。
     case apiRateLimited(retryAfter: TimeInterval?)
+    /// 服务端错误（HTTP 5xx）。属可重试的服务类故障，计入熔断。
+    case apiServerError(statusCode: Int)
     case apiResponseInvalid(String)
     case jsonParsingFailed(String)
 
@@ -39,6 +41,8 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.apiTimeout
         case .apiRateLimited:
             return ErrorMessages.apiRateLimited
+        case .apiServerError:
+            return ErrorMessages.apiError
         case .apiResponseInvalid(let detail):
             return String(localized: "error.api_response_invalid \(detail)")
         case .jsonParsingFailed(let detail):
