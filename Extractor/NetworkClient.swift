@@ -99,6 +99,9 @@ final class NetworkClient {
             if httpResponse.statusCode == 429 {
                 throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
             }
+            if (500...599).contains(httpResponse.statusCode) {
+                throw VoiceTodoError.apiServerError(statusCode: httpResponse.statusCode)
+            }
             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
 
@@ -147,6 +150,9 @@ final class NetworkClient {
                         VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         if httpResponse.statusCode == 429 {
                             throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
+                        }
+                        if (500...599).contains(httpResponse.statusCode) {
+                            throw VoiceTodoError.apiServerError(statusCode: httpResponse.statusCode)
                         }
                         throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }

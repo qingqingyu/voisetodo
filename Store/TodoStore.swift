@@ -493,11 +493,12 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
         do {
             let items = try modelContext.fetch(descriptor)
             todos = items.map { $0.toData() }
+            // 仅在 fetch 成功后同步版本号；失败时不推进，保证下次 refreshIfStale 仍会重试
+            lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
             VoiceTodoLog.store.debug("store.refresh.success count=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
             VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
-        lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
     }
 
     /// P6: 统一失效入口。仅当外部变更版本变化（或强制）时才全量重读，避免无谓 fetch。

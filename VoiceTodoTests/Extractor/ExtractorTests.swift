@@ -14,7 +14,8 @@ final class ExtractorTests: XCTestCase {
         mockNetworkClient = MockNetworkClient()
         sut = TodoExtractorService(
             networkClient: mockNetworkClient.networkClient,
-            vocabularyProvider: StaticExtractorVocabularyProvider(hints: [])
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: []),
+            sleep: { _ in }  // 注入空退避，消除真实 sleep 耗时
         )
     }
 
@@ -548,6 +549,52 @@ extension ExtractorTests {
         await breaker.recordSuccess()
         shorted = await breaker.shouldShortCircuit()
         XCTAssertFalse(shorted, "成功后应闭合")
+    }
+
+    /// 5xx 应被重试（区别于不可重试的 4xx/解析错误）。
+    func testServerErrorRetriesThenSucceeds() async throws {
+        mockNetworkClient.enqueueHTTPFailure(statusCode: 500, body: "boom")
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        let result = try await sut.extract(from: "5xx 重试", locale: Locale(identifier: "zh-Hans"))
+        XCTAssertEqual(URLProtocolStub.callCount, 2, "5xx 应重试一次")
+        XCTAssertEqual(result.todos.count, 0)
+    }
+
+    /// 5xx 重试耗尽后抛 apiServerError（且总尝试次数 = retryCount + 1）。
+    func testServerErrorExhaustedThrowsServerError() async {
+        for _ in 0...NetworkConfig.retryCount {
+            mockNetworkClient.enqueueHTTPFailure(statusCode: 503, body: "down")
+        }
+        do {
+            _ = try await sut.extract(from: "5xx 全失败", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("应抛出错误")
+        } catch let error as VoiceTodoError {
+            if case .apiServerError = error {
+                XCTAssertEqual(URLProtocolStub.callCount, NetworkConfig.retryCount + 1)
+            } else {
+                XCTFail("应为 apiServerError，实际 \(error)")
+            }
+        } catch {
+            XCTFail("错误类型: \(error)")
+        }
+    }
+
+    /// 熔断打开时，流式路径应直接失败、不发起网络请求（验证 #2 流式参与熔断）。
+    func testStreamingShortCircuitsWhenBreakerOpen() async {
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 1, cooldown: 60)
+        await breaker.recordFailure()  // 阈值 1 → 立即打开
+        let service = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: []),
+            circuitBreaker: breaker,
+            sleep: { _ in }
+        )
+        do {
+            for try await _ in service.extractStreaming(from: "x", locale: Locale(identifier: "zh-Hans")) {}
+            XCTFail("熔断打开应直接抛错")
+        } catch {
+            XCTAssertEqual(URLProtocolStub.callCount, 0, "熔断打开不应发起网络请求")
+        }
     }
 }
 

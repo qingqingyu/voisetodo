@@ -7,6 +7,9 @@ class AppLaunchHelper {
 
     init() {
         app = XCUIApplication()
+        // 强制中文渲染：S12 等用例断言中文界面文案，而文案有英文翻译；
+        // 不固定语言时英文模拟器会渲染英文导致断言失败。参数在实例上持续，覆盖所有 launch* 变体。
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_Hans"]
     }
 
     /// 启动 App 并注入 UI 测试参数

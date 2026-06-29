@@ -84,6 +84,20 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos[0].categoryHint, .other)
     }
 
+    /// 缺失 title 时从 detail 派生，而不是让整批 ExtractionResult 解码失败。
+    func testExtractedTodoDerivesTitleFromDetailWhenMissing() throws {
+        let json = """
+        {
+            "todos": [{"id": "00000000-0000-0000-0000-000000000007", "detail": "买牛奶和鸡蛋", "priority": "normal", "categoryHint": "life"}],
+            "ignored": ""
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let result = try JSONDecoder().decode(ExtractionResult.self, from: data)
+        XCTAssertEqual(result.todos.count, 1)
+        XCTAssertEqual(result.todos[0].title, "买牛奶和鸡蛋", "缺 title 应从 detail 派生")
+    }
+
     /// priority/categoryHint 缺失时回落默认值，不抛错。
     func testExtractedTodoDecodesMissingEnums() throws {
         let json = """
