@@ -1,1542 +1,4502 @@
 {
-  "sourceLanguage" : "zh-Hans",
-  "strings" : {
-    "error.mic_denied" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要麦克风权限才能录音，请在设置中开启" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Microphone access is required for recording. Please enable it in Settings." } }
-      }
-    },
-    "error.speech_denied" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要语音识别权限，请在设置中开启" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Speech recognition access is required. Please enable it in Settings." } }
-      }
-    },
-    "error.speech_unavailable" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音识别暂不可用，请稍后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Speech recognition is temporarily unavailable. Please try again later." } }
-      }
-    },
-    "error.audio_interrupted" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音被中断，请重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recording was interrupted. Please try again." } }
-      }
-    },
-    "error.network" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络连接失败，请检查网络后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Network connection failed. Please check your connection and try again." } }
-      }
-    },
-    "error.api_timeout" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请求超时，请稍后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Request timed out. Please try again later." } }
-      }
-    },
-    "error.api_error" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "理解失败，请稍后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed to process. Please try again later." } }
-      }
-    },
-    "error.json_parsing_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败，请稍后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parsing failed. Please try again later." } }
-      }
-    },
-    "error.storage" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存失败，请重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save failed. Please try again." } }
-      }
-    },
-    "error.shared_storage_unavailable" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "共享数据初始化失败，请重启 App；如果仍然失败，请重新安装。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shared data could not be initialized. Please restart the app; if it still fails, reinstall it." } }
-      }
-    },
-    "error.recording_failed %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音失败: %@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recording failed: %@" } }
-      }
-    },
-    "error.storage_read_failed %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存失败 (读取: %@)" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Storage error (read: %@)" } }
-      }
-    },
-    "error.storage_write_failed %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存失败 (写入: %@)" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Storage error (write: %@)" } }
-      }
-    },
-    "error.api_response_invalid %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "理解失败 (%@)" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing failed (%@)" } }
-      }
-    },
-    "error.api_response_invalid_detail" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务返回格式异常" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid service response" } }
-      }
-    },
-    "error.json_parsing_detail %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败 (%@)" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parsing failed (%@)" } }
-      }
-    },
-    "startup.storage_error.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法打开待办数据" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to open todo data" } }
-      }
-    },
-    "detail.saved" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved" } }
-      }
-    },
-    "detail.save_failed %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存失败：%@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save failed: %@" } }
-      }
-    },
-    "detail.deleted" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deleted" } }
-      }
-    },
-    "detail.delete_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除失败，请重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete failed. Please try again." } }
-      }
-    },
-    "ui.no_todos_found" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未识别到待办事项" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos detected" } }
-      }
-    },
-    "toast.open_settings" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "去设置" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } }
-      }
-    },
-    "ui.saved_offline" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存原始记录，联网后将自动整理" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Raw transcript saved. Will be organized when back online." } }
-      }
-    },
-    "ui.pending_processed %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "有 %lld 条待办已整理，点击查看" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld todo(s) organized. Tap to review." } }
-      }
-    },
-    "ui.added_success" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已添加到待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added to todos" } }
-      }
-    },
-    "ui.system_calendar_sync_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存到 App，但未能写入系统日历" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved in the app, but could not write to Calendar." } }
-      }
-    },
-    "ui.permissions_required" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请先授予麦克风和语音识别权限" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Please grant microphone and speech recognition permissions first" } }
-      }
-    },
-    "ui.finish_onboarding_first" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请先完成引导后再使用快捷录音" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Finish onboarding before using quick recording" } }
-      }
-    },
-    "category.work" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工作" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Work" } }
-      }
-    },
-    "category.study" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "学习" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Study" } }
-      }
-    },
-    "category.life" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生活" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Life" } }
-      }
-    },
-    "category.health" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "健康" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health" } }
-      }
-    },
-    "category.finance" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "财务" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Finance" } }
-      }
-    },
-    "category.social" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "社交" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Social" } }
-      }
-    },
-    "category.other" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "其他" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Other" } }
-      }
-    },
-    "home.greeting.morning" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "早安 ☀️" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Good Morning ☀️" } }
-      }
-    },
-    "home.greeting.noon" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "中午好 🌤" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Good Afternoon 🌤" } }
-      }
-    },
-    "home.greeting.afternoon" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下午好 🌈" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Good Afternoon 🌈" } }
-      }
-    },
-    "home.greeting.evening" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "晚上好 🌙" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Good Evening 🌙" } }
-      }
-    },
-    "home.greeting.night" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "夜深了 💫" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Late Night 💫" } }
-      }
-    },
-    "home.todos_count" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "todos" } }
-      }
-    },
-    "home.stats %lld %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld/%lld 已完成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld/%lld done" } }
-      }
-    },
-    "home.processing" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在整理中..." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing..." } }
-      }
-    },
-    "home.listening" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在聆听..." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Listening..." } }
-      }
-    },
-    "home.completed_section %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成 (%lld)" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed (%lld)" } }
-      }
-    },
-    "home.delete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } }
-      }
-    },
-    "home.empty_title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天还没有待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos yet" } }
-      }
-    },
-    "home.empty_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按下 Action Button 或下方录音按钮\n说出你想做的事情" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Press the Action Button or the record button below\nand say what you want to do" } }
-      }
-    },
-    "home.start_recording" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始录音" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Recording" } }
-      }
-    },
-    "home.calendar.loading" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取日历待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading calendar todos" } }
-      }
-    },
-    "home.calendar.error.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办读取失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not load todos" } }
-      }
-    },
-    "home.calendar.error.message" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地待办暂时无法打开，请重试。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local todos could not be opened. Please try again." } }
-      }
-    },
-    "home.week.today" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } }
-      }
-    },
-    "home.week.tomorrow" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "明天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tomorrow" } }
-      }
-    },
-    "home.week.today_button" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } }
-      }
-    },
-    "home.week.this_week" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本周" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Week" } }
-      }
-    },
-    "home.week.this_week_range %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本周 %@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Week %@" } }
-      }
-    },
-    "home.week.unscheduled" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未安排" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unscheduled" } }
-      }
-    },
-    "home.week.empty_day" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这一天还没有待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos for this day" } }
-      }
-    },
-    "empty.day.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这一天还没有安排" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing scheduled for this day" } }
-      }
-    },
-    "home.week.mon" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "一" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Mon" } }
-      }
-    },
-    "home.week.tue" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "二" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tue" } }
-      }
-    },
-    "home.week.wed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "三" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Wed" } }
-      }
-    },
-    "home.week.thu" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "四" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Thu" } }
-      }
-    },
-    "home.week.fri" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "五" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fri" } }
-      }
-    },
-    "home.week.sat" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "六" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sat" } }
-      }
-    },
-    "home.week.sun" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sun" } }
-      }
-    },
-    "manual_input.home_button" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文字输入" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type Todos" } }
-      }
-    },
-    "manual_input.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输入待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type Todos" } }
-      }
-    },
-    "manual_input.cancel" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
-      }
-    },
-    "manual_input.generate" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Generate" } }
-      }
-    },
-    "manual_input.placeholder" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "例如：明天上午买牛奶，周五前交周报，晚上提醒我运动" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "For example: buy milk tomorrow morning, submit the weekly report by Friday, and exercise tonight" } }
-      }
-    },
-    "manual_input.hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 会把这段文字拆成可确认的待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI will split this text into todos you can confirm." } }
-      }
-    },
-    "a11y.stop_recording" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "停止录音" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop recording" } }
-      }
-    },
-    "a11y.start_voice_input" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始语音录入" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start voice input" } }
-      }
-    },
-    "a11y.stop_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击停止录音并开始整理待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to stop recording and organize todos" } }
-      }
-    },
-    "a11y.start_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击开始录音，说出你的待办事项" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to start recording your todos" } }
-      }
-    },
-    "a11y.manual_input" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "手动输入" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manual input" } }
-      }
-    },
-    "a11y.manual_input_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击输入文字，并用 AI 整理成待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to type todos and organize them with AI" } }
-      }
-    },
-    "a11y.previous_week" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上一周" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Previous week" } }
-      }
-    },
-    "a11y.next_week" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下一周" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Next week" } }
-      }
-    },
-    "a11y.today_week" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回到今天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to today" } }
-      }
-    },
-    "a11y.completed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } }
-      }
-    },
-    "a11y.not_completed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未完成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not completed" } }
-      }
-    },
-    "a11y.toggle_complete %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击%@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to %@" } }
-      }
-    },
-    "a11y.mark_incomplete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消完成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "mark as incomplete" } }
-      }
-    },
-    "a11y.mark_complete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标记为已完成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "mark as complete" } }
-      }
-    },
-    "a11y.high_priority" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "高优先级" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "High priority" } }
-      }
-    },
-    "a11y.view_detail" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击查看详情" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to view details" } }
-      }
-    },
-    "a11y.delete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } }
-      }
-    },
-    "a11y.delete_todo" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除此待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete this todo" } }
-      }
-    },
-    "a11y.edit_todo_title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击编辑待办标题" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to edit todo title" } }
-      }
-    },
-    "a11y.mic_illustration" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "麦克风插画" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Microphone illustration" } }
-      }
-    },
-    "a11y.onboarding.progress" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "引导进度" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Onboarding progress" } }
-      }
-    },
-    "a11y.onboarding.authorize_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击后会弹出系统权限请求" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Opens the system permission request" } }
-      }
-    },
-    "a11y.onboarding.open_settings_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "前往系统设置开启权限" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Opens Settings to enable the permission" } }
-      }
-    },
-    "confirm.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "确认待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm Todos" } }
-      }
-    },
-    "confirm.cancel" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
-      }
-    },
-    "confirm.add %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "确认添加 (%lld)" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm (%lld)" } }
-      }
-    },
-    "confirm.transcript" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音原文" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Voice Transcript" } }
-      }
-    },
-    "confirm.hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击条目可编辑标题 · 点 ✕ 可删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to edit title · Tap ✕ to delete" } }
-      }
-    },
-    "confirm.calendar_target.app_only" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存到 App 日历" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save to app calendar" } }
-      }
-    },
-    "confirm.calendar_target.app_and_system" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存到 App，并写入系统日历" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save to app and system Calendar" } }
-      }
-    },
-    "confirm.todo_title_placeholder" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办标题" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todo title" } }
-      }
-    },
-    "confirm.urgent" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "紧急" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Urgent" } }
-      }
-    },
-    "detail.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办详情" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todo Details" } }
-      }
-    },
-    "detail.title_placeholder" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办标题" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todo title" } }
-      }
-    },
-    "detail.section.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标题" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Title" } }
-      }
-    },
-    "detail.section.category" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分类" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Category" } }
-      }
-    },
-    "detail.section.priority" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "优先级" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Priority" } }
-      }
-    },
-    "detail.priority.normal" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "普通" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Normal" } }
-      }
-    },
-    "detail.priority.high" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "高优先级" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "High" } }
-      }
-    },
-    "detail.section.due_hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间提示" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Due Date Hint" } }
-      }
-    },
-    "detail.due_hint_placeholder" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "例如：明天、周三前" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "e.g. tomorrow, by Wednesday" } }
-      }
-    },
-    "detail.created_at" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "创建时间" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Created" } }
-      }
-    },
-    "detail.needs_ai" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待 AI 整理" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending AI processing" } }
-      }
-    },
-    "detail.delete_button" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除此待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete This Todo" } }
-      }
-    },
-    "detail.discard" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放弃" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard" } }
-      }
-    },
-    "detail.save" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } }
-      }
-    },
-    "detail.confirm_delete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "确认删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm Delete" } }
-      }
-    },
-    "detail.cancel" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
-      }
-    },
-    "detail.delete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } }
-      }
-    },
-    "detail.delete_warning" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除后无法恢复" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This cannot be undone" } }
-      }
-    },
-    "onboarding.welcome" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "嗨，欢迎来到" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hi, welcome to" } }
-      }
-    },
-    "onboarding.feature1.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "说出来" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Speak It" } }
-      }
-    },
-    "onboarding.feature1.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按下按钮，说出你的待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Press the button and say your todos" } }
-      }
-    },
-    "onboarding.feature2.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "变整齐" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Get Organized" } }
-      }
-    },
-    "onboarding.feature2.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 帮你整理成清晰的列表" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI organizes them into a clear list" } }
-      }
-    },
-    "onboarding.feature3.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "看得见" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stay Visible" } }
-      }
-    },
-    "onboarding.feature3.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "锁屏桌面上随时提醒你" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Always visible on your lock screen and home screen" } }
-      }
-    },
-    "onboarding.mic.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要你的麦克风" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "We Need Your Microphone" } }
-      }
-    },
-    "onboarding.mic.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这样才能「听」到你说的话呀" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "So we can hear what you say" } }
-      }
-    },
-    "onboarding.mic.privacy" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音只用于识别你的语音，不会保存或上传" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recordings are only used for voice recognition and are never saved or uploaded" } }
-      }
-    },
-    "onboarding.speech.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还需要语音识别" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Speech Recognition Needed" } }
-      }
-    },
-    "onboarding.speech.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这样才能把你的话变成文字" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "To turn your speech into text" } }
-      }
-    },
-    "onboarding.speech.privacy" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音识别在设备本地进行，数据不会离开你的手机" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Speech recognition runs locally on your device — data never leaves your phone" } }
-      }
-    },
-    "onboarding.granted" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "太好了，已经授权了！" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Great, permission granted!" } }
-      }
-    },
-    "onboarding.open_settings" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "去设置里开启" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Settings" } }
-      }
-    },
-    "onboarding.authorize" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "好的，授权给 VoiceTodo" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "OK, Authorize VoiceTodo" } }
-      }
-    },
-    "onboarding.action_button.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置一键录音" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Set Up Quick Record" } }
-      }
-    },
-    "onboarding.action_button.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "把 VoiceTodo 设为 Action Button 的动作\n按一下就能开始录音" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Set VoiceTodo as the Action Button shortcut\nOne press to start recording" } }
-      }
-    },
-    "onboarding.action_button.step1" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开「设置」" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Settings" } }
-      }
-    },
-    "onboarding.action_button.step2" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "找到「Action Button」" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Find Action Button" } }
-      }
-    },
-    "onboarding.action_button.step3" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择「快捷方式」" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select Shortcut" } }
-      }
-    },
-    "onboarding.action_button.step4" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选「VoiceTodo」" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose VoiceTodo" } }
-      }
-    },
-    "onboarding.action_button.hint" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置完成后回到这里点「知道了」即可" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Come back here and tap \"Got it\" when done" } }
-      }
-    },
-    "onboarding.action_button.press_here" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按这里" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Press here" } }
-      }
-    },
-    "onboarding.done.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搞定啦！" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Set!" } }
-      }
-    },
-    "onboarding.done.desc" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "现在你可以按下 Action Button\n开始用语音记录待办了" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "You can now press the Action Button\nto start recording todos with your voice" } }
-      }
-    },
-    "onboarding.tip1" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "也可以在 App 里点录音按钮" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "You can also tap the record button in the app" } }
-      }
-    },
-    "onboarding.tip2" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点待办可以编辑或删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap a todo to edit or delete it" } }
-      }
-    },
-    "onboarding.tip3" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办会自动显示在 Widget" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todos automatically appear in the Widget" } }
-      }
-    },
-    "onboarding.back" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } }
-      }
-    },
-    "onboarding.button.start" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始使用" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Get Started" } }
-      }
-    },
-    "onboarding.button.skip" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先跳过" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Skip for now" } }
-      }
-    },
-    "onboarding.button.got_it" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知道了" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Got it" } }
-      }
-    },
-    "onboarding.button.next" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下一步" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Next" } }
-      }
-    },
-    "widget.no_todos" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos" } }
-      }
-    },
-    "widget.loading" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载中" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading" } }
-      }
-    },
-    "widget.load_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load failed" } }
-      }
-    },
-    "widget.todo_count" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todos" } }
-      }
-    },
-    "widget.display_name" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待办事项" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Todos" } }
-      }
-    },
-    "widget.description" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看最近的待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "View your recent todos" } }
-      }
-    },
-    "live_activity.recording" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音中" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recording" } }
-      }
-    },
-    "live_activity.stopped" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已停止" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopped" } }
-      }
-    },
-    "live_activity.listening" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在聆听..." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Listening..." } }
-      }
-    },
-    "live_activity.recording_title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "VoiceTodo 录音中" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "VoiceTodo Recording" } }
-      }
-    },
-    "live_activity.listening_subtitle" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在聆听你的声音..." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Listening to your voice..." } }
-      }
-    },
-    "empty.home" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无待办\n按下录音按钮开始" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos yet\nTap the record button to start" } }
-      }
-    },
-    "empty.home.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先把今天想做的事说出来" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Say what you want to do today" } }
-      }
-    },
-    "empty.home.message" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以录音，也可以直接输入一句话。VoiceTodo 会帮你整理成可确认的待办。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record your voice or type a sentence. VoiceTodo will turn it into todos you can confirm." } }
-      }
-    },
-    "empty.home.primary" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始录音" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Recording" } }
-      }
-    },
-    "empty.home.secondary" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文字输入" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type Instead" } }
-      }
-    },
-    "empty.confirm.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有识别到待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos found" } }
-      }
-    },
-    "empty.confirm.message" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以换一种更明确的说法，例如“明天上午买牛奶”或“未来 7 天每天背单词”。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try a clearer phrase, like “buy milk tomorrow morning” or “study vocabulary every day for the next 7 days.”" } }
-      }
-    },
-    "empty.confirm.primary" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新输入" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try Again" } }
-      }
-    },
-    "empty.widget.today" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天没有待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos today" } }
-      }
-    },
-    "empty.widget" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos" } }
-      }
-    },
-    "siri.intent.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Todo" } }
-      }
-    },
-    "siri.intent.description" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通过语音快速记录待办事项" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Quickly add todos by voice" } }
-      }
-    },
-    "siri.param.transcript" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内容" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Content" } }
-      }
-    },
-    "siri.summary %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录待办：%@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add todo: %@" } }
-      }
-    },
-    "siri.shortcut.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Todo" } }
-      }
-    },
-    "siri.result.added %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已添加 %lld 条待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added %lld todo(s)" } }
-      }
-    },
-    "siri.result.empty" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未识别到待办事项" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos recognized" } }
-      }
-    },
-    "siri.result.extract_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败，请稍后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed to extract todos. Please try again later." } }
-      }
-    },
-    "siri.result.offline" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络不可用，已用本地规则保存" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No network. Saved using local rules." } }
-      }
-    },
-    "siri.result.view_in_app" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 App 中查看" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "View in App" } }
-      }
-    },
-    "siri.result.more %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还有 %lld 条..." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld more..." } }
-      }
-    },
-    "siri.result.save_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存失败，请稍后在 App 中重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save failed. Please try again in the app." } }
-      }
-    },
-    "error.api_rate_limited" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请求过于频繁，请稍后重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Too many requests. Please try again later." } }
-      }
-    },
-    "home.cancel_extraction" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
-      }
-    },
-    "confirm.streaming" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在识别更多待办..." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recognizing more todos..." } }
-      }
-    },
-    "detail.section.recurrence" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重复" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repeat" } }
-      }
-    },
-    "recurrence.none" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不重复" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "None" } }
-      }
-    },
-    "recurrence.daily" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily" } }
-      }
-    },
-    "recurrence.weekly %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周 %@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly %@" } }
-      }
-    },
-    "recurrence.weekly_short" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly" } }
-      }
-    },
-    "recurrence.monthly %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月 %lld 号" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Monthly on day %lld" } }
-      }
-    },
-    "recurrence.monthly_short" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Monthly" } }
-      }
-    },
-    "recurrence.monthly_day_prefix" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月第" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Day" } }
-      }
-    },
-    "recurrence.monthly_day_placeholder" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日期" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Day" } }
-      }
-    },
-    "recurrence.monthly_day_suffix" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "号" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "of each month" } }
-      }
-    },
-    "recurrence.validation.weekly_required" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请选择至少一天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose at least one day" } }
-      }
-    },
-    "recurrence.validation.monthly_day" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入 1 到 31 之间的日期" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a day from 1 to 31" } }
-      }
-    },
-    "a11y.previous_month" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上个月" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Previous month" } }
-      }
-    },
-    "a11y.next_month" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下个月" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Next month" } }
-      }
-    },
-    "a11y.today_month" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回到今天所在月份" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to this month" } }
-      }
-    },
-    "settings.calendar_write.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "写入位置" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save destination" } }
-      }
-    },
-    "settings.calendar_write.app_only" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅 App 日历" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "App calendar only" } }
-      }
-    },
-    "settings.calendar_write.app_and_system" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "App + 系统日历" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "App + system Calendar" } }
-      }
-    },
-    "settings.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } }
-      }
-    },
-    "settings.done" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } }
-      }
-    },
-    "settings.cancel" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
-      }
-    },
-    "settings.personalization.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个性化识别" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Personalized recognition" } }
-      }
-    },
-    "settings.personalization.toggle" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个性化识别" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Personalized recognition" } }
-      }
-    },
-    "settings.personalization.description" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "根据你确认过的待办，在本机学习常用词，提高语音识别和整理准确度。处理待办时可能发送少量关键词，不发送完整历史记录。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Learns common words from confirmed todos on this device to improve speech recognition and organization. A few keywords may be sent when processing todos; full history is not sent." } }
-      }
-    },
-    "settings.personalization.clear" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除本地学习数据" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear local learning data" } }
-      }
-    },
-    "settings.personalization.cleared" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已清除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cleared" } }
-      }
-    },
-    "settings.personalization.clear_confirm.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除本地学习数据？" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear local learning data?" } }
-      }
-    },
-    "settings.personalization.clear_confirm.message" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这会删除本机保存的常用词，不会删除待办。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This deletes saved common words on this device. Todos are not deleted." } }
-      }
-    },
-    "settings.personalization.clear_confirm.action" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } }
-      }
-    },
-    "system_calendar.notes_due_hint %@" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间线索：%@" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Date hint: %@" } }
-      }
-    },
-    "system_calendar.notes_source" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来自 VoiceTodo" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "From VoiceTodo" } }
-      }
-    },
-    "tab.home" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "首页" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Home" } }
-      }
-    },
-    "tab.history" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "历史" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "History" } }
-      }
-    },
-    "history.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音记录" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Voice History" } }
-      }
-    },
-    "history.subtitle" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近 30 天" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 30 days" } }
-      }
-    },
-    "history.loading" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取语音记录" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading voice records" } }
-      }
-    },
-    "history.empty.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还没有语音记录" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No voice records yet" } }
-      }
-    },
-    "history.empty.message" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用录音按钮或 Action Button 记录待办后，会在这里保留转写文本。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcripts from the record button or Action Button will appear here." } }
-      }
-    },
-    "history.error.title" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "历史读取失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not load history" } }
-      }
-    },
-    "history.error.message" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地语音记录暂时无法打开，请重试。" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local voice records could not be opened. Please try again." } }
-      }
-    },
-    "history.retry" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } }
-      }
-    },
-    "history.status.processing" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "处理中" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing" } }
-      }
-    },
-    "history.status.reviewing" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待确认" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reviewing" } }
-      }
-    },
-    "history.status.saved" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已生成" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved" } }
-      }
-    },
-    "history.status.no_todos" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无待办" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No todos" } }
-      }
-    },
-    "history.status.pending" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待处理" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } }
-      }
-    },
-    "history.status.failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } }
-      }
-    },
-    "history.status.cancelled" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已取消" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancelled" } }
-      }
-    },
-    "history.generated_count %lld" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成 %lld 条" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld generated" } }
-      }
-    },
-    "history.source.record_button" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "录音按钮" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record button" } }
-      }
-    },
-    "history.source.action_button" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Action Button" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Action Button" } }
-      }
-    },
-    "history.reprocess" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新提取" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reprocess" } }
-      }
-    },
-    "history.copy" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy" } }
-      }
-    },
-    "history.delete" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } }
-      }
-    },
-    "history.copy_success" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已复制原文" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcript copied" } }
-      }
-    },
-    "history.create_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音记录保存失败，但待办处理会继续" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Voice history could not be saved, but todo processing will continue." } }
-      }
-    },
-    "history.update_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语音记录更新失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update voice history" } }
-      }
-    },
-    "history.delete_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除历史记录失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not delete history record" } }
-      }
-    },
-    "history.cleanup_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过期历史清理失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not clean expired history" } }
-      }
-    },
-    "history.reprocess_blocked" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前有任务正在处理，请稍后再试" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Another task is still running. Try again shortly." } }
-      }
-    },
-    "history.reprocess_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新提取失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reprocess failed" } }
-      }
-    },
-    "widget.update_failed" : {
-      "localizations" : {
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更新失败" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Update failed" } }
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "error.mic_denied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要麦克风权限才能录音，请在设置中开启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone access is required for recording. Please enable it in Settings."
+          }
+        }
+      }
+    },
+    "error.speech_denied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要语音识别权限，请在设置中开启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition access is required. Please enable it in Settings."
+          }
+        }
+      }
+    },
+    "error.speech_unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音识别暂不可用，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition is temporarily unavailable. Please try again later."
+          }
+        }
+      }
+    },
+    "error.audio_interrupted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音被中断，请重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording was interrupted. Please try again."
+          }
+        }
+      }
+    },
+    "error.network": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络连接失败，请检查网络后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network connection failed. Please check your connection and try again."
+          }
+        }
+      }
+    },
+    "error.api_timeout": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求超时，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request timed out. Please try again later."
+          }
+        }
+      }
+    },
+    "error.api_error": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "理解失败，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to process. Please try again later."
+          }
+        }
+      }
+    },
+    "error.json_parsing_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析失败，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parsing failed. Please try again later."
+          }
+        }
+      }
+    },
+    "error.storage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败，请重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save failed. Please try again."
+          }
+        }
+      }
+    },
+    "error.shared_storage_unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享数据初始化失败，请重启 App；如果仍然失败，请重新安装。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared data could not be initialized. Please restart the app; if it still fails, reinstall it."
+          }
+        }
+      }
+    },
+    "error.recording_failed %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音失败: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording failed: %@"
+          }
+        }
+      }
+    },
+    "error.storage_read_failed %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败 (读取: %@)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage error (read: %@)"
+          }
+        }
+      }
+    },
+    "error.storage_write_failed %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败 (写入: %@)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage error (write: %@)"
+          }
+        }
+      }
+    },
+    "error.api_response_invalid %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "理解失败 (%@)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing failed (%@)"
+          }
+        }
+      }
+    },
+    "error.api_response_invalid_detail": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务返回格式异常"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid service response"
+          }
+        }
+      }
+    },
+    "error.json_parsing_detail %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析失败 (%@)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parsing failed (%@)"
+          }
+        }
+      }
+    },
+    "startup.storage_error.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开待办数据"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to open todo data"
+          }
+        }
+      }
+    },
+    "detail.saved": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        }
+      }
+    },
+    "detail.save_failed %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save failed: %@"
+          }
+        }
+      }
+    },
+    "detail.deleted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleted"
+          }
+        }
+      }
+    },
+    "detail.delete_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除失败，请重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete failed. Please try again."
+          }
+        }
+      }
+    },
+    "ui.no_todos_found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未识别到待办事项"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos detected"
+          }
+        }
+      }
+    },
+    "toast.open_settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "ui.saved_offline": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存原始记录，联网后将自动整理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raw transcript saved. Will be organized when back online."
+          }
+        }
+      }
+    },
+    "ui.pending_processed %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 条待办已整理，点击查看"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld todo(s) organized. Tap to review."
+          }
+        }
+      }
+    },
+    "ui.added_success": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加到待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added to todos"
+          }
+        }
+      }
+    },
+    "ui.system_calendar_sync_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存到 App，但未能写入系统日历"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved in the app, but could not write to Calendar."
+          }
+        }
+      }
+    },
+    "ui.permissions_required": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先授予麦克风和语音识别权限"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please grant microphone and speech recognition permissions first"
+          }
+        }
+      }
+    },
+    "ui.finish_onboarding_first": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先完成引导后再使用快捷录音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish onboarding before using quick recording"
+          }
+        }
+      }
+    },
+    "category.work": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work"
+          }
+        }
+      }
+    },
+    "category.study": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学习"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Study"
+          }
+        }
+      }
+    },
+    "category.life": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生活"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Life"
+          }
+        }
+      }
+    },
+    "category.health": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "健康"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Health"
+          }
+        }
+      }
+    },
+    "category.finance": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "财务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finance"
+          }
+        }
+      }
+    },
+    "category.social": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社交"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Social"
+          }
+        }
+      }
+    },
+    "category.other": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        }
+      }
+    },
+    "home.greeting.morning": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "早安 ☀️"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good Morning ☀️"
+          }
+        }
+      }
+    },
+    "home.greeting.noon": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中午好 🌤"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good Afternoon 🌤"
+          }
+        }
+      }
+    },
+    "home.greeting.afternoon": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下午好 🌈"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good Afternoon 🌈"
+          }
+        }
+      }
+    },
+    "home.greeting.evening": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "晚上好 🌙"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good Evening 🌙"
+          }
+        }
+      }
+    },
+    "home.greeting.night": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夜深了 💫"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Late Night 💫"
+          }
+        }
+      }
+    },
+    "home.todos_count": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "todos"
+          }
+        }
+      }
+    },
+    "home.stats %lld %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld 已完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld done"
+          }
+        }
+      }
+    },
+    "home.processing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在整理中..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing..."
+          }
+        }
+      }
+    },
+    "home.listening": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在聆听..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening..."
+          }
+        }
+      }
+    },
+    "home.completed_section %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成 (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed (%lld)"
+          }
+        }
+      }
+    },
+    "home.delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "home.empty_title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天还没有待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos yet"
+          }
+        }
+      }
+    },
+    "home.empty_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下 Action Button 或下方录音按钮\n说出你想做的事情"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press the Action Button or the record button below\nand say what you want to do"
+          }
+        }
+      }
+    },
+    "home.start_recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始录音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Recording"
+          }
+        }
+      }
+    },
+    "home.calendar.loading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取日历待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading calendar todos"
+          }
+        }
+      }
+    },
+    "home.calendar.error.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办读取失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load todos"
+          }
+        }
+      }
+    },
+    "home.calendar.error.message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地待办暂时无法打开，请重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local todos could not be opened. Please try again."
+          }
+        }
+      }
+    },
+    "home.week.today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        }
+      }
+    },
+    "home.week.tomorrow": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tomorrow"
+          }
+        }
+      }
+    },
+    "home.week.today_button": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        }
+      }
+    },
+    "home.week.this_week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Week"
+          }
+        }
+      }
+    },
+    "home.week.this_week_range %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Week %@"
+          }
+        }
+      }
+    },
+    "home.week.unscheduled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安排"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unscheduled"
+          }
+        }
+      }
+    },
+    "home.week.empty_day": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一天还没有待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos for this day"
+          }
+        }
+      }
+    },
+    "empty.day.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一天还没有安排"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing scheduled for this day"
+          }
+        }
+      }
+    },
+    "home.week.mon": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mon"
+          }
+        }
+      }
+    },
+    "home.week.tue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tue"
+          }
+        }
+      }
+    },
+    "home.week.wed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "三"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wed"
+          }
+        }
+      }
+    },
+    "home.week.thu": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "四"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thu"
+          }
+        }
+      }
+    },
+    "home.week.fri": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "五"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fri"
+          }
+        }
+      }
+    },
+    "home.week.sat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "六"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sat"
+          }
+        }
+      }
+    },
+    "home.week.sun": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sun"
+          }
+        }
+      }
+    },
+    "manual_input.home_button": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字输入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type Todos"
+          }
+        }
+      }
+    },
+    "manual_input.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type Todos"
+          }
+        }
+      }
+    },
+    "manual_input.cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "manual_input.generate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate"
+          }
+        }
+      }
+    },
+    "manual_input.placeholder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：明天上午买牛奶，周五前交周报，晚上提醒我运动"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For example: buy milk tomorrow morning, submit the weekly report by Friday, and exercise tonight"
+          }
+        }
+      }
+    },
+    "manual_input.hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 会把这段文字拆成可确认的待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI will split this text into todos you can confirm."
+          }
+        }
+      }
+    },
+    "a11y.stop_recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止录音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop recording"
+          }
+        }
+      }
+    },
+    "a11y.start_voice_input": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始语音录入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start voice input"
+          }
+        }
+      }
+    },
+    "a11y.stop_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击停止录音并开始整理待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to stop recording and organize todos"
+          }
+        }
+      }
+    },
+    "a11y.start_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击开始录音，说出你的待办事项"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to start recording your todos"
+          }
+        }
+      }
+    },
+    "a11y.manual_input": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动输入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual input"
+          }
+        }
+      }
+    },
+    "a11y.manual_input_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击输入文字，并用 AI 整理成待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to type todos and organize them with AI"
+          }
+        }
+      }
+    },
+    "a11y.previous_week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一周"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous week"
+          }
+        }
+      }
+    },
+    "a11y.next_week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一周"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next week"
+          }
+        }
+      }
+    },
+    "a11y.today_week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到今天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to today"
+          }
+        }
+      }
+    },
+    "a11y.completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
+          }
+        }
+      }
+    },
+    "a11y.not_completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not completed"
+          }
+        }
+      }
+    },
+    "a11y.toggle_complete %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to %@"
+          }
+        }
+      }
+    },
+    "a11y.mark_incomplete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mark as incomplete"
+          }
+        }
+      }
+    },
+    "a11y.mark_complete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标记为已完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mark as complete"
+          }
+        }
+      }
+    },
+    "a11y.high_priority": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高优先级"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High priority"
+          }
+        }
+      }
+    },
+    "a11y.view_detail": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击查看详情"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to view details"
+          }
+        }
+      }
+    },
+    "a11y.delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "a11y.delete_todo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除此待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this todo"
+          }
+        }
+      }
+    },
+    "a11y.edit_todo_title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击编辑待办标题"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to edit todo title"
+          }
+        }
+      }
+    },
+    "a11y.mic_illustration": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风插画"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone illustration"
+          }
+        }
+      }
+    },
+    "a11y.onboarding.progress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引导进度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onboarding progress"
+          }
+        }
+      }
+    },
+    "a11y.onboarding.authorize_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击后会弹出系统权限请求"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the system permission request"
+          }
+        }
+      }
+    },
+    "a11y.onboarding.open_settings_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前往系统设置开启权限"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens Settings to enable the permission"
+          }
+        }
+      }
+    },
+    "confirm.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm Todos"
+          }
+        }
+      }
+    },
+    "confirm.cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "confirm.add %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认添加 (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm (%lld)"
+          }
+        }
+      }
+    },
+    "confirm.transcript": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音原文"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Transcript"
+          }
+        }
+      }
+    },
+    "confirm.hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击条目可编辑标题 · 点 ✕ 可删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to edit title · Tap ✕ to delete"
+          }
+        }
+      }
+    },
+    "confirm.calendar_target.app_only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存到 App 日历"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save to app calendar"
+          }
+        }
+      }
+    },
+    "confirm.calendar_target.app_and_system": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存到 App，并写入系统日历"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save to app and system Calendar"
+          }
+        }
+      }
+    },
+    "confirm.todo_title_placeholder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办标题"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo title"
+          }
+        }
+      }
+    },
+    "confirm.urgent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "紧急"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Urgent"
+          }
+        }
+      }
+    },
+    "detail.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办详情"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo Details"
+          }
+        }
+      }
+    },
+    "detail.title_placeholder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办标题"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo title"
+          }
+        }
+      }
+    },
+    "detail.section.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title"
+          }
+        }
+      }
+    },
+    "detail.section.category": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分类"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Category"
+          }
+        }
+      }
+    },
+    "detail.section.priority": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先级"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Priority"
+          }
+        }
+      }
+    },
+    "detail.priority.normal": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        }
+      }
+    },
+    "detail.priority.high": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高优先级"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High"
+          }
+        }
+      }
+    },
+    "detail.section.due_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间提示"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Due Date Hint"
+          }
+        }
+      }
+    },
+    "detail.due_hint_placeholder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：明天、周三前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. tomorrow, by Wednesday"
+          }
+        }
+      }
+    },
+    "detail.created_at": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建时间"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Created"
+          }
+        }
+      }
+    },
+    "detail.needs_ai": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待 AI 整理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending AI processing"
+          }
+        }
+      }
+    },
+    "detail.delete_button": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除此待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete This Todo"
+          }
+        }
+      }
+    },
+    "detail.discard": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放弃"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard"
+          }
+        }
+      }
+    },
+    "detail.save": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "detail.confirm_delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm Delete"
+          }
+        }
+      }
+    },
+    "detail.cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "detail.delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "detail.delete_warning": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除后无法恢复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This cannot be undone"
+          }
+        }
+      }
+    },
+    "onboarding.welcome": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "嗨，欢迎来到"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hi, welcome to"
+          }
+        }
+      }
+    },
+    "onboarding.feature1.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说出来"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak It"
+          }
+        }
+      }
+    },
+    "onboarding.feature1.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下按钮，说出你的待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press the button and say your todos"
+          }
+        }
+      }
+    },
+    "onboarding.feature2.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "变整齐"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get Organized"
+          }
+        }
+      }
+    },
+    "onboarding.feature2.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 帮你整理成清晰的列表"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI organizes them into a clear list"
+          }
+        }
+      }
+    },
+    "onboarding.feature3.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看得见"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stay Visible"
+          }
+        }
+      }
+    },
+    "onboarding.feature3.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "锁屏桌面上随时提醒你"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always visible on your lock screen and home screen"
+          }
+        }
+      }
+    },
+    "onboarding.mic.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要你的麦克风"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We Need Your Microphone"
+          }
+        }
+      }
+    },
+    "onboarding.mic.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这样才能「听」到你说的话呀"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "So we can hear what you say"
+          }
+        }
+      }
+    },
+    "onboarding.mic.privacy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音只用于识别你的语音，不会保存或上传"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordings are only used for voice recognition and are never saved or uploaded"
+          }
+        }
+      }
+    },
+    "onboarding.speech.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还需要语音识别"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech Recognition Needed"
+          }
+        }
+      }
+    },
+    "onboarding.speech.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这样才能把你的话变成文字"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To turn your speech into text"
+          }
+        }
+      }
+    },
+    "onboarding.speech.privacy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音识别在设备本地进行，数据不会离开你的手机"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition runs locally on your device — data never leaves your phone"
+          }
+        }
+      }
+    },
+    "onboarding.granted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "太好了，已经授权了！"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Great, permission granted!"
+          }
+        }
+      }
+    },
+    "onboarding.open_settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去设置里开启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings"
+          }
+        }
+      }
+    },
+    "onboarding.authorize": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好的，授权给 VoiceTodo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK, Authorize VoiceTodo"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置一键录音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set Up Quick Record"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把 VoiceTodo 设为 Action Button 的动作\n按一下就能开始录音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set VoiceTodo as the Action Button shortcut\nOne press to start recording"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.step1": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开「设置」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.step2": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找到「Action Button」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find Action Button"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.step3": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择「快捷方式」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Shortcut"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.step4": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选「VoiceTodo」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose VoiceTodo"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置完成后回到这里点「知道了」即可"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Come back here and tap \"Got it\" when done"
+          }
+        }
+      }
+    },
+    "onboarding.action_button.press_here": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按这里"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press here"
+          }
+        }
+      }
+    },
+    "onboarding.done.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搞定啦！"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Set!"
+          }
+        }
+      }
+    },
+    "onboarding.done.desc": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现在你可以按下 Action Button\n开始用语音记录待办了"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can now press the Action Button\nto start recording todos with your voice"
+          }
+        }
+      }
+    },
+    "onboarding.tip1": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "也可以在 App 里点录音按钮"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can also tap the record button in the app"
+          }
+        }
+      }
+    },
+    "onboarding.tip2": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点待办可以编辑或删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap a todo to edit or delete it"
+          }
+        }
+      }
+    },
+    "onboarding.tip3": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办会自动显示在 Widget"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos automatically appear in the Widget"
+          }
+        }
+      }
+    },
+    "onboarding.back": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        }
+      }
+    },
+    "onboarding.button.start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始使用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get Started"
+          }
+        }
+      }
+    },
+    "onboarding.button.skip": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先跳过"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip for now"
+          }
+        }
+      }
+    },
+    "onboarding.button.got_it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知道了"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Got it"
+          }
+        }
+      }
+    },
+    "onboarding.button.next": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一步"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next"
+          }
+        }
+      }
+    },
+    "widget.no_todos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos"
+          }
+        }
+      }
+    },
+    "widget.loading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载中"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading"
+          }
+        }
+      }
+    },
+    "widget.load_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load failed"
+          }
+        }
+      }
+    },
+    "widget.todo_count": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos"
+          }
+        }
+      }
+    },
+    "widget.display_name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办事项"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos"
+          }
+        }
+      }
+    },
+    "widget.description": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看最近的待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View your recent todos"
+          }
+        }
+      }
+    },
+    "live_activity.recording": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音中"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording"
+          }
+        }
+      }
+    },
+    "live_activity.stopped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        }
+      }
+    },
+    "live_activity.listening": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在聆听..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening..."
+          }
+        }
+      }
+    },
+    "live_activity.recording_title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VoiceTodo 录音中"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VoiceTodo Recording"
+          }
+        }
+      }
+    },
+    "live_activity.listening_subtitle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在聆听你的声音..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening to your voice..."
+          }
+        }
+      }
+    },
+    "empty.home": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无待办\n按下录音按钮开始"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos yet\nTap the record button to start"
+          }
+        }
+      }
+    },
+    "empty.home.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先把今天想做的事说出来"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Say what you want to do today"
+          }
+        }
+      }
+    },
+    "empty.home.message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以录音，也可以直接输入一句话。VoiceTodo 会帮你整理成可确认的待办。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record your voice or type a sentence. VoiceTodo will turn it into todos you can confirm."
+          }
+        }
+      }
+    },
+    "empty.home.primary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始录音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Recording"
+          }
+        }
+      }
+    },
+    "empty.home.secondary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字输入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type Instead"
+          }
+        }
+      }
+    },
+    "empty.confirm.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有识别到待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos found"
+          }
+        }
+      }
+    },
+    "empty.confirm.message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以换一种更明确的说法，例如“明天上午买牛奶”或“未来 7 天每天背单词”。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try a clearer phrase, like “buy milk tomorrow morning” or “study vocabulary every day for the next 7 days.”"
+          }
+        }
+      }
+    },
+    "empty.confirm.primary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新输入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again"
+          }
+        }
+      }
+    },
+    "empty.widget.today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天没有待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos today"
+          }
+        }
+      }
+    },
+    "empty.widget": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos"
+          }
+        }
+      }
+    },
+    "siri.intent.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Todo"
+          }
+        }
+      }
+    },
+    "siri.intent.description": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过语音快速记录待办事项"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quickly add todos by voice"
+          }
+        }
+      }
+    },
+    "siri.param.transcript": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content"
+          }
+        }
+      }
+    },
+    "siri.summary %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录待办：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add todo: %@"
+          }
+        }
+      }
+    },
+    "siri.shortcut.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Todo"
+          }
+        }
+      }
+    },
+    "siri.result.added %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加 %lld 条待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added %lld todo(s)"
+          }
+        }
+      }
+    },
+    "siri.result.empty": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未识别到待办事项"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos recognized"
+          }
+        }
+      }
+    },
+    "siri.result.extract_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析失败，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to extract todos. Please try again later."
+          }
+        }
+      }
+    },
+    "siri.result.offline": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络不可用，已用本地规则保存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No network. Saved using local rules."
+          }
+        }
+      }
+    },
+    "siri.result.view_in_app": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 App 中查看"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View in App"
+          }
+        }
+      }
+    },
+    "siri.result.more %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有 %lld 条..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more..."
+          }
+        }
+      }
+    },
+    "siri.result.save_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败，请稍后在 App 中重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save failed. Please try again in the app."
+          }
+        }
+      }
+    },
+    "error.api_rate_limited": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求过于频繁，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many requests. Please try again later."
+          }
+        }
+      }
+    },
+    "home.cancel_extraction": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "confirm.streaming": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在识别更多待办..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recognizing more todos..."
+          }
+        }
+      }
+    },
+    "detail.section.recurrence": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repeat"
+          }
+        }
+      }
+    },
+    "recurrence.none": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不重复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        }
+      }
+    },
+    "recurrence.daily": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily"
+          }
+        }
+      }
+    },
+    "recurrence.weekly %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每周 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekly %@"
+          }
+        }
+      }
+    },
+    "recurrence.weekly_short": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每周"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekly"
+          }
+        }
+      }
+    },
+    "recurrence.monthly %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月 %lld 号"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly on day %lld"
+          }
+        }
+      }
+    },
+    "recurrence.monthly_short": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly"
+          }
+        }
+      }
+    },
+    "recurrence.monthly_day_prefix": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月第"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Day"
+          }
+        }
+      }
+    },
+    "recurrence.monthly_day_placeholder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日期"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Day"
+          }
+        }
+      }
+    },
+    "recurrence.monthly_day_suffix": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "号"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "of each month"
+          }
+        }
+      }
+    },
+    "recurrence.validation.weekly_required": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择至少一天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose at least one day"
+          }
+        }
+      }
+    },
+    "recurrence.validation.monthly_day": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 1 到 31 之间的日期"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a day from 1 to 31"
+          }
+        }
+      }
+    },
+    "a11y.previous_month": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上个月"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous month"
+          }
+        }
+      }
+    },
+    "a11y.next_month": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下个月"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next month"
+          }
+        }
+      }
+    },
+    "a11y.today_month": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到今天所在月份"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to this month"
+          }
+        }
+      }
+    },
+    "settings.calendar_write.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写入位置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save destination"
+          }
+        }
+      }
+    },
+    "settings.calendar_write.app_only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅 App 日历"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App calendar only"
+          }
+        }
+      }
+    },
+    "settings.calendar_write.app_and_system": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App + 系统日历"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App + system Calendar"
+          }
+        }
+      }
+    },
+    "settings.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "settings.done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "settings.cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "settings.personalization.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "个性化识别"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personalized recognition"
+          }
+        }
+      }
+    },
+    "settings.personalization.toggle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "个性化识别"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personalized recognition"
+          }
+        }
+      }
+    },
+    "settings.personalization.description": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "根据你确认过的待办，在本机学习常用词，提高语音识别和整理准确度。处理待办时可能发送少量关键词，不发送完整历史记录。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learns common words from confirmed todos on this device to improve speech recognition and organization. A few keywords may be sent when processing todos; full history is not sent."
+          }
+        }
+      }
+    },
+    "settings.personalization.clear": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除本地学习数据"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear local learning data"
+          }
+        }
+      }
+    },
+    "settings.personalization.cleared": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleared"
+          }
+        }
+      }
+    },
+    "settings.personalization.clear_confirm.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除本地学习数据？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear local learning data?"
+          }
+        }
+      }
+    },
+    "settings.personalization.clear_confirm.message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会删除本机保存的常用词，不会删除待办。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This deletes saved common words on this device. Todos are not deleted."
+          }
+        }
+      }
+    },
+    "settings.personalization.clear_confirm.action": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        }
+      }
+    },
+    "system_calendar.notes_due_hint %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间线索：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date hint: %@"
+          }
+        }
+      }
+    },
+    "system_calendar.notes_source": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自 VoiceTodo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From VoiceTodo"
+          }
+        }
+      }
+    },
+    "tab.home": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首页"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home"
+          }
+        }
+      }
+    },
+    "tab.history": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History"
+          }
+        }
+      }
+    },
+    "history.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice History"
+          }
+        }
+      }
+    },
+    "history.subtitle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近 30 天"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last 30 days"
+          }
+        }
+      }
+    },
+    "history.loading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取语音记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading voice records"
+          }
+        }
+      }
+    },
+    "history.empty.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有语音记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No voice records yet"
+          }
+        }
+      }
+    },
+    "history.empty.message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用录音按钮或 Action Button 记录待办后，会在这里保留转写文本。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcripts from the record button or Action Button will appear here."
+          }
+        }
+      }
+    },
+    "history.error.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史读取失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load history"
+          }
+        }
+      }
+    },
+    "history.error.message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地语音记录暂时无法打开，请重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local voice records could not be opened. Please try again."
+          }
+        }
+      }
+    },
+    "history.retry": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        }
+      }
+    },
+    "history.status.processing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理中"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing"
+          }
+        }
+      }
+    },
+    "history.status.reviewing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待确认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reviewing"
+          }
+        }
+      }
+    },
+    "history.status.saved": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已生成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        }
+      }
+    },
+    "history.status.no_todos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无待办"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No todos"
+          }
+        }
+      }
+    },
+    "history.status.pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待处理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending"
+          }
+        }
+      }
+    },
+    "history.status.failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        }
+      }
+    },
+    "history.status.cancelled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelled"
+          }
+        }
+      }
+    },
+    "history.generated_count %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成 %lld 条"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld generated"
+          }
+        }
+      }
+    },
+    "history.source.record_button": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音按钮"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record button"
+          }
+        }
+      }
+    },
+    "history.source.action_button": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action Button"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action Button"
+          }
+        }
+      }
+    },
+    "history.reprocess": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新提取"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprocess"
+          }
+        }
+      }
+    },
+    "history.copy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        }
+      }
+    },
+    "history.delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "history.copy_success": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制原文"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcript copied"
+          }
+        }
+      }
+    },
+    "history.create_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音记录保存失败，但待办处理会继续"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice history could not be saved, but todo processing will continue."
+          }
+        }
+      }
+    },
+    "history.update_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音记录更新失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not update voice history"
+          }
+        }
+      }
+    },
+    "history.delete_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除历史记录失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not delete history record"
+          }
+        }
+      }
+    },
+    "history.cleanup_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过期历史清理失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not clean expired history"
+          }
+        }
+      }
+    },
+    "history.reprocess_blocked": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前有任务正在处理，请稍后再试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another task is still running. Try again shortly."
+          }
+        }
+      }
+    },
+    "history.reprocess_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新提取失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprocess failed"
+          }
+        }
+      }
+    },
+    "widget.update_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update failed"
+          }
+        }
+      }
+    },
+    "error.rate_limited": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求过于频繁，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many requests. Please try again later."
+          }
+        }
+      }
+    },
+    "error.quota_exhausted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日免费额度已用完，已离线保存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily free quota used up. Saved offline."
+          }
+        }
+      }
+    },
+    "error.service_busy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务繁忙，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service is busy. Please try again later."
+          }
+        }
+      }
+    },
+    "paywall.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级 VoiceTodo Pro"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upgrade to VoiceTodo Pro"
+          }
+        }
+      }
+    },
+    "paywall.subtitle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁更高每日额度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock a higher daily quota"
+          }
+        }
+      }
+    },
+    "paywall.monthly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly"
+          }
+        }
+      }
+    },
+    "paywall.yearly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每年"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yearly"
+          }
+        }
+      }
+    },
+    "paywall.yearly_save": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "省 17%"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save 17%"
+          }
+        }
+      }
+    },
+    "paywall.trial_hint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 天免费试用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7-day free trial"
+          }
+        }
+      }
+    },
+    "paywall.restore": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复购买"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore Purchases"
+          }
+        }
+      }
+    },
+    "paywall.close": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "paywall.purchase_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买失败，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Purchase failed. Please try again later."
+          }
+        }
+      }
+    },
+    "paywall.restoring": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在恢复…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restoring…"
+          }
+        }
+      }
+    },
+    "paywall.restore_failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复失败，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore failed. Please try again later."
+          }
+        }
+      }
+    },
+    "paywall.restore_nothing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到可恢复的订阅"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No purchases to restore."
+          }
+        }
+      }
+    },
+    "quota.today_used": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日已用 %1$d/%2$d"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today: %1$d/%2$d used"
+          }
+        }
+      }
+    },
+    "quota.unlimited": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无限"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlimited"
+          }
+        }
+      }
+    },
+    "quota.non_authoritative": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（估算）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(estimated)"
+          }
+        }
+      }
+    },
+    "quota.including_background": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含离线补处理 %1$d 次"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "incl. %1$d offline recoveries"
+          }
+        }
+      }
+    },
+    "quota.used_only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日已用 %1$d"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today: %1$d used"
+          }
+        }
+      }
+    },
+    "quota.loading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取额度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading quota"
+          }
+        }
+      }
+    },
+    "quota.empty": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无今日用量"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No usage yet today"
+          }
+        }
+      }
+    },
+    "quota.error": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "额度暂时不可用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quota unavailable"
+          }
+        }
+      }
+    },
+    "paywall.products_empty": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时没有可购买的订阅"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No subscriptions available right now"
+          }
+        }
+      }
+    },
+    "paywall.pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买待处理，请稍后"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Purchase pending"
+          }
+        }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

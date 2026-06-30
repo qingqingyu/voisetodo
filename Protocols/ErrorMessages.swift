@@ -11,7 +11,9 @@ enum ErrorMessages {
     // 网络/AI 相关
     static let networkError = String(localized: "error.network")
     static let apiTimeout = String(localized: "error.api_timeout")
-    static let apiRateLimited = String(localized: "error.api_rate_limited")
+    static let rateLimited = String(localized: "error.rate_limited")
+    static let quotaExhausted = String(localized: "error.quota_exhausted")
+    static let serviceBusy = String(localized: "error.service_busy")
     static let apiError = String(localized: "error.api_error")
     static let apiResponseInvalidDetail = String(localized: "error.api_response_invalid_detail")
     static let jsonParsingFailed = String(localized: "error.json_parsing_failed")
@@ -48,4 +50,10 @@ enum ErrorMessages {
     static func pendingProcessedMessage(_ count: Int) -> String {
         String(localized: "ui.pending_processed \(count)")
     }
+
+    // Paywall / 订阅相关
+    static let paywallPurchaseFailed = String(localized: "paywall.purchase_failed")
+    static let paywallRestoring = String(localized: "paywall.restoring")
+    static let paywallRestoreFailed = String(localized: "paywall.restore_failed")
+    static let paywallRestoreNothing = String(localized: "paywall.restore_nothing")
 }

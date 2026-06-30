@@ -1122,7 +1122,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                 }
             }
             .sheet(isPresented: $showSettingsSheet) {
-                HomeSettingsSheet(calendarWriteModeRaw: $calendarWriteModeRaw)
+                HomeSettingsSheet(
+                    calendarWriteModeRaw: $calendarWriteModeRaw,
+                    onUpgradePro: { coordinator.showPaywall = true }
+                )
             }
             .navigationDestination(item: $selectedTodo) { todo in
                 TodoDetailView(store: store, todo: todo)

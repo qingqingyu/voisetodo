@@ -9,18 +9,39 @@ struct HomeSettingsSheet: View {
     @State private var didClearLearningData = false
 
     private let vocabularyStore: UserVocabularyStore
+    private let onUpgradePro: () -> Void
 
     init(
         calendarWriteModeRaw: Binding<String>,
-        vocabularyStore: UserVocabularyStore = .shared
+        vocabularyStore: UserVocabularyStore = .shared,
+        onUpgradePro: @escaping () -> Void = {}
     ) {
         _calendarWriteModeRaw = calendarWriteModeRaw
         self.vocabularyStore = vocabularyStore
+        self.onUpgradePro = onUpgradePro
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button {
+                        onUpgradePro()
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Label(String(localized: "paywall.title"), systemImage: "sparkles")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                    .accessibilityIdentifier("UpgradeProButton")
+                } header: {
+                    Text(String(localized: "paywall.subtitle"))
+                }
+
                 Section(String(localized: "settings.calendar_write.title")) {
                     Picker(String(localized: "settings.calendar_write.title"), selection: $calendarWriteModeRaw) {
                         ForEach(CalendarWriteMode.allCases) { mode in
