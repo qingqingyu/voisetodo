@@ -9,6 +9,9 @@ enum TranscriptFlowEvent {
     case offlineSaveFailed(Error)
     case networkFallbackSaved(TodoItemData)
     case networkFallbackSaveFailed(Error)
+    /// 配额耗尽后离线兜底成功。与 `networkFallbackSaved` 等价（pending 保留、稍后重试），
+    /// 额外要求上层弹出 paywall 引导升级。
+    case quotaFallbackSaved(TodoItemData)
     case failed(Error)
 }
 
@@ -97,16 +100,42 @@ final class TranscriptProcessingFlow {
                         continuation.finish()
                         return
                     }
-                    if let voiceError = error as? VoiceTodoError,
-                       voiceError == .networkUnavailable || voiceError == .apiTimeout {
-                        VoiceTodoLog.coordinator.warning("coordinator.process_transcript.network_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                        await saveOffline(
-                            transcript: text,
-                            localeIdentifier: locale.identifier,
-                            success: TranscriptFlowEvent.networkFallbackSaved,
-                            failure: TranscriptFlowEvent.networkFallbackSaveFailed,
-                            continuation: continuation
-                        )
+                    if let voiceError = error as? VoiceTodoError {
+                        switch voiceError {
+                        case .networkUnavailable, .apiTimeout:
+                            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.network_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            await saveOffline(
+                                transcript: text,
+                                localeIdentifier: locale.identifier,
+                                success: TranscriptFlowEvent.networkFallbackSaved,
+                                failure: TranscriptFlowEvent.networkFallbackSaveFailed,
+                                continuation: continuation
+                            )
+                        case .quotaExhausted(let tier, let resetAt):
+                            // 配额耗尽：离线兜底保留转写（稍后重试）+ 上抛 paywall 信号。
+                            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.quota_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) tier=\(tier, privacy: .public) resetAt=\(resetAt, privacy: .public)")
+                            await saveOffline(
+                                transcript: text,
+                                localeIdentifier: locale.identifier,
+                                success: TranscriptFlowEvent.quotaFallbackSaved,
+                                failure: TranscriptFlowEvent.networkFallbackSaveFailed,
+                                continuation: continuation
+                            )
+                        case .rateLimited, .serviceUnavailable:
+                            // 限流/服务不可用：离线兜底，不丢转写，稍后自动重试。
+                            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.service_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            await saveOffline(
+                                transcript: text,
+                                localeIdentifier: locale.identifier,
+                                success: TranscriptFlowEvent.networkFallbackSaved,
+                                failure: TranscriptFlowEvent.networkFallbackSaveFailed,
+                                continuation: continuation
+                            )
+                        default:
+                            VoiceTodoLog.coordinator.error("coordinator.process_transcript.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            continuation.yield(.failed(error))
+                            continuation.finish()
+                        }
                     } else {
                         VoiceTodoLog.coordinator.error("coordinator.process_transcript.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         continuation.yield(.failed(error))

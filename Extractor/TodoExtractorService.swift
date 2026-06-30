@@ -87,11 +87,11 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     }
 
                     switch voiceError {
-                    case .apiResponseInvalid, .jsonParsingFailed:
-                        // 配置/解析错误，重试无意义
+                    case .apiResponseInvalid, .jsonParsingFailed, .quotaExhausted:
+                        // 配置/解析/配额错误，重试无意义（配额当日不会因重试恢复，交由上层离线兜底 + paywall）
                         VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
-                    case .apiRateLimited(let retryAfter):
+                    case .rateLimited(let retryAfter):
                         // 有 Retry-After 才按其等待重试；否则不盲目重试以免加剧限流
                         guard let retryAfter, attempt < NetworkConfig.retryCount else {
                             VoiceTodoLog.extractor.warning("extract.rate_limited_stop id=\(extractionID, privacy: .public) attempt=\(attempt) hasRetryAfter=\(retryAfter != nil)")
@@ -317,7 +317,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
     /// 解析类错误（apiResponseInvalid / jsonParsingFailed）不代表代理不健康，不计入。
     private static func countsAsServiceFailure(_ error: VoiceTodoError) -> Bool {
         switch error {
-        case .networkUnavailable, .apiTimeout, .apiRateLimited, .apiServerError:
+        case .networkUnavailable, .apiTimeout, .rateLimited, .apiServerError, .serviceUnavailable:
             return true
         default:
             return false

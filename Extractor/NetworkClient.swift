@@ -28,6 +28,10 @@ final class NetworkClient {
     private let proxyEndpoint: String
     private let appToken: String?
     private let deviceIdentifier: String
+    /// 订阅 JWS 提供者（StoreKit 2 EntitlementManager）。nil → 不发 X-Subscription-JWS，代理按免费档处理。
+    private let subscriptionJWSProvider: @MainActor () -> String?
+    /// 额度模型（权威数据来自代理 X-Quota-* 头）。nil → 不更新额度展示。
+    private weak var quotaProvider: (any QuotaProviding)?
 
     // MARK: - Initialization
 
@@ -35,12 +39,16 @@ final class NetworkClient {
         session: URLSession = .shared,
         proxyEndpoint: String = NetworkConfig.proxyEndpoint,
         appToken: String? = NetworkConfig.proxyAppToken,
-        deviceIdentifier: String = NetworkConfig.proxyDeviceIdentifier
+        deviceIdentifier: String = NetworkConfig.proxyDeviceIdentifier,
+        subscriptionJWSProvider: @escaping @MainActor () -> String? = { nil },
+        quotaProvider: (any QuotaProviding)? = nil
     ) {
         self.session = session
         self.proxyEndpoint = proxyEndpoint
         self.appToken = appToken
         self.deviceIdentifier = deviceIdentifier
+        self.subscriptionJWSProvider = subscriptionJWSProvider
+        self.quotaProvider = quotaProvider
     }
 
     // MARK: - Public Methods
@@ -62,13 +70,15 @@ final class NetworkClient {
 
         let request: URLRequest
         do {
+            let subscriptionJWS = await subscriptionJWSProvider()
             request = try buildProxyRequest(
                 transcript: transcript,
                 localeIdentifier: localeIdentifier,
                 stream: false,
                 vocabularyHints: vocabularyHints,
                 requestID: requestID,
-                extractID: extractID
+                extractID: extractID,
+                subscriptionJWS: subscriptionJWS
             )
         } catch {
             VoiceTodoLog.network.error("proxy.request.build_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -95,9 +105,14 @@ final class NetworkClient {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            VoiceTodoLog.network.error("proxy.request.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) bodyChars=\(errorMessage.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            VoiceTodoLog.network.error("proxy.request.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) rateLimitType=\(httpResponse.value(forHTTPHeaderField: "X-RateLimit-Type") ?? "nil", privacy: .public) responseBytes=\(data.count) bodyChars=\(errorMessage.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            // 配额耗尽的 429 也携带 X-Quota-* 头，先喂给额度模型再抛错。
+            await pushQuotaHeaders(httpResponse)
             if httpResponse.statusCode == 429 {
-                throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
+                throw Self.classify429(httpResponse, body: data)
+            }
+            if httpResponse.statusCode == 503 {
+                throw VoiceTodoError.serviceUnavailable
             }
             if (500...599).contains(httpResponse.statusCode) {
                 throw VoiceTodoError.apiServerError(statusCode: httpResponse.statusCode)
@@ -105,11 +120,13 @@ final class NetworkClient {
             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
 
+        await pushQuotaHeaders(httpResponse)
+
         guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
             VoiceTodoLog.network.error("proxy.request.empty_response id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
-        VoiceTodoLog.network.info("proxy.request.success id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) responseChars=\(text.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.network.info("proxy.request.success id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) plan=\(httpResponse.value(forHTTPHeaderField: "X-Quota-Plan") ?? "nil", privacy: .public) remaining=\(httpResponse.value(forHTTPHeaderField: "X-Quota-Remaining") ?? "nil", privacy: .public) responseBytes=\(data.count) responseChars=\(text.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         return text
     }
 
@@ -131,13 +148,15 @@ final class NetworkClient {
                 var totalChars = 0
                 var receivedDone = false
                 do {
+                    let subscriptionJWS = await subscriptionJWSProvider()
                     let request = try buildProxyRequest(
                         transcript: transcript,
                         localeIdentifier: localeIdentifier,
                         stream: true,
                         vocabularyHints: vocabularyHints,
                         requestID: requestID,
-                        extractID: extractID
+                        extractID: extractID,
+                        subscriptionJWS: subscriptionJWS
                     )
 
                     let (bytes, response) = try await session.bytes(for: request)
@@ -147,15 +166,20 @@ final class NetworkClient {
                         throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
                     guard (200...299).contains(httpResponse.statusCode) else {
-                        VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                        VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) rateLimitType=\(httpResponse.value(forHTTPHeaderField: "X-RateLimit-Type") ?? "nil", privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                        await pushQuotaHeaders(httpResponse)
                         if httpResponse.statusCode == 429 {
-                            throw VoiceTodoError.apiRateLimited(retryAfter: Self.parseRetryAfter(httpResponse))
+                            throw Self.classify429(httpResponse, body: nil)
+                        }
+                        if httpResponse.statusCode == 503 {
+                            throw VoiceTodoError.serviceUnavailable
                         }
                         if (500...599).contains(httpResponse.statusCode) {
                             throw VoiceTodoError.apiServerError(statusCode: httpResponse.statusCode)
                         }
                         throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
+                    await pushQuotaHeaders(httpResponse)
                     VoiceTodoLog.network.info("proxy.stream.connected id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
                     for try await line in bytes.lines {
@@ -218,7 +242,8 @@ final class NetworkClient {
         stream: Bool,
         vocabularyHints: [String],
         requestID: String,
-        extractID: String
+        extractID: String,
+        subscriptionJWS: String?
     ) throws -> URLRequest {
         let trimmedEndpoint = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEndpoint.isEmpty,
@@ -237,6 +262,12 @@ final class NetworkClient {
         }
         if !deviceIdentifier.isEmpty {
             request.setValue(deviceIdentifier, forHTTPHeaderField: "X-Device-ID")
+        }
+        // 设备时区本地日期：代理据此分桶配额，服务端做漂移校验后回退 UTC。
+        request.setValue(QuotaUsage.currentLocalDate(), forHTTPHeaderField: "X-Local-Date")
+        // 订阅凭证：Pro 档 JWS。nil 不发，代理按免费档处理。
+        if let subscriptionJWS, !subscriptionJWS.isEmpty {
+            request.setValue(subscriptionJWS, forHTTPHeaderField: "X-Subscription-JWS")
         }
         // 跨端链路追踪：requestID 标识单次请求，extractID 串联一次提取（含重试）
         request.setValue(requestID, forHTTPHeaderField: "X-Request-ID")
@@ -259,6 +290,47 @@ final class NetworkClient {
             VoiceTodoLog.network.error("proxy.request.encode_failed stream=\(stream) locale=\(localeIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.jsonParsingFailed("请求序列化失败: \(error.localizedDescription)")
         }
+    }
+
+    /// 把代理 `X-Quota-*` 响应头推送给额度模型（权威数据源）。
+    private func pushQuotaHeaders(_ response: HTTPURLResponse) async {
+        guard let quotaProvider else { return }
+        await quotaProvider.applyQuotaHeaders(from: response)
+    }
+
+    /// 区分配额耗尽（quota_exceeded → 离线兜底 + paywall）与限流（rate_limited → 稍后重试）。
+    /// 非流式传完整 body；流式传 nil，仅凭 `X-RateLimit-Type` 头分类（429 响应体很小，头已足够）。
+    private static func classify429(_ response: HTTPURLResponse, body data: Data?) -> VoiceTodoError {
+        let parsed = parseRateLimitBody(data)
+        let rateLimitType = response.value(forHTTPHeaderField: "X-RateLimit-Type")
+        let errorCode = parsed.errorCode ?? (rateLimitType == "quota" ? "quota_exceeded" : "rate_limited")
+
+        if errorCode == "quota_exceeded" {
+            let tier = parsed.tier
+                ?? response.value(forHTTPHeaderField: "X-Quota-Plan")
+                ?? "free"
+            let resetAt = parsed.resetAt
+                ?? response.value(forHTTPHeaderField: "X-Quota-Reset-Date")
+                ?? ""
+            return .quotaExhausted(tier: tier, resetAt: resetAt)
+        }
+        let retryAfter = parsed.retryAfter ?? Self.parseRetryAfter(response)
+        return .rateLimited(retryAfter: retryAfter)
+    }
+
+    private struct RateLimitBody: Decodable {
+        let error: String?
+        let tier: String?
+        let resetAt: String?
+        let retryAfter: Double?
+    }
+
+    private static func parseRateLimitBody(_ data: Data?) -> (errorCode: String?, tier: String?, resetAt: String?, retryAfter: TimeInterval?) {
+        guard let data else { return (nil, nil, nil, nil) }
+        guard let body = try? JSONCoding.makeResponseDecoder().decode(RateLimitBody.self, from: data) else {
+            return (nil, nil, nil, nil)
+        }
+        return (body.error, body.tier, body.resetAt, body.retryAfter)
     }
 
     /// 解析 Retry-After 响应头（仅支持 delta-seconds 形式；HTTP-date 形式返回 nil）

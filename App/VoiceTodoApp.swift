@@ -15,6 +15,8 @@ struct VoiceTodoApp: App {
     @StateObject private var todoStore: TodoStore
     @StateObject private var historyStore: VoiceCaptureHistoryStore
     @StateObject private var permissionManager = PermissionManager()
+    @StateObject private var entitlementManager: EntitlementManager
+    @StateObject private var quotaUsage: QuotaUsage
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
 
@@ -138,19 +140,34 @@ struct VoiceTodoApp: App {
         }
 
         // 初始化依赖
+        let entitlementManager = EntitlementManager()
+        let quotaUsage = QuotaUsage()
         let voiceInput: any VoiceInputProtocol = uiTestOptions.isUITesting ? UITestVoiceInputManager(options: uiTestOptions) : VoiceInputManager()
-        let extractor: any TodoExtractorProtocol = uiTestOptions.isUITesting ? UITestTodoExtractor() : TodoExtractorService()
+        let extractor: any TodoExtractorProtocol
+        if uiTestOptions.isUITesting {
+            extractor = UITestTodoExtractor()
+        } else {
+            // NetworkClient 注入订阅 JWS provider 与额度模型（构造器注入，保持依赖反转）
+            let networkClient = NetworkClient(
+                subscriptionJWSProvider: entitlementManager.jwsProvider,
+                quotaProvider: quotaUsage
+            )
+            extractor = TodoExtractorService(networkClient: networkClient)
+        }
 
         // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
         _todoStore = StateObject(wrappedValue: store)
         _historyStore = StateObject(wrappedValue: voiceHistoryStore)
+        _entitlementManager = StateObject(wrappedValue: entitlementManager)
+        _quotaUsage = StateObject(wrappedValue: quotaUsage)
 
         // 初始化 Coordinator
         _coordinator = StateObject(wrappedValue: AppCoordinator(
             voiceInput: voiceInput,
             extractor: extractor,
             store: store,
-            historyStore: voiceHistoryStore
+            historyStore: voiceHistoryStore,
+            quotaUsage: quotaUsage
         ))
         // BGTask 必须在 App 启动早期同步注册（before scene starts）
         TelemetryUploader.shared.registerBackgroundTask()
@@ -167,6 +184,13 @@ struct VoiceTodoApp: App {
             mainView
                 .environmentObject(coordinator)
                 .environmentObject(permissionManager)
+                .environmentObject(entitlementManager)
+                .environmentObject(quotaUsage)
+                .sheet(isPresented: $coordinator.showPaywall) {
+                    PaywallView()
+                        .environmentObject(entitlementManager)
+                        .environmentObject(quotaUsage)
+                }
                 .toast(
                     message: coordinator.toastMessage,
                     style: coordinator.toastStyle,
@@ -250,6 +274,7 @@ struct VoiceTodoApp: App {
         VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
         guard startupStorageError == nil else { return }
         coordinator.cleanupExpiredVoiceHistory()
+        Task { await entitlementManager.refresh() }
     }
 
     /// 处理场景状态变化

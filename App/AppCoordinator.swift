@@ -18,6 +18,8 @@ final class AppCoordinator: ObservableObject {
     private let calendarSyncService: CalendarSyncService
     private let pendingRecoveryFlow: PendingRecoveryFlow
     private let transcriptProcessingFlow: TranscriptProcessingFlow
+    /// 额度模型（用于离线补处理后的透明用量提示）。nil 时跳过额度相关 toast。
+    private weak var quotaUsage: QuotaUsage?
 
     // MARK: - Published State
 
@@ -32,6 +34,8 @@ final class AppCoordinator: ObservableObject {
     @Published var toastAction: (() -> Void)?
     @Published var deepLinkTodoId: UUID?
     @Published var isExtracting = false
+    /// 配额耗尽或用户手动进入时弹出订阅页。
+    @Published var showPaywall = false
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -91,13 +95,15 @@ final class AppCoordinator: ObservableObject {
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
-        vocabularyStore: UserVocabularyStore = .shared
+        vocabularyStore: UserVocabularyStore = .shared,
+        quotaUsage: QuotaUsage? = nil
     ) {
         self.voiceInput = voiceInput
         self.store = store
         self.historyStore = historyStore
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
+        self.quotaUsage = quotaUsage
         self.calendarSyncService = CalendarSyncService(store: store, writer: systemCalendarWriter)
         self.pendingRecoveryFlow = PendingRecoveryFlow(
             store: store,
@@ -498,6 +504,32 @@ final class AppCoordinator: ObservableObject {
             combinedRawTranscript = nil
             VoiceTodoLog.coordinator.info("coordinator.foreground.pending_finished_empty id=\(flowID, privacy: .public) processed=\(result.processedWithTodosIds.count + result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         }
+
+        // 透明提示：本次离线补处理消耗了额度（每条 pending 经代理调用自然计入当日额度）。
+        let recoveryCount = result.processedWithTodosIds.count + result.processedWithoutTodosIds.count
+        showRecoveryQuotaToast(recoveryCount: recoveryCount)
+    }
+
+    /// 离线补处理完成后的用量透明提示。数据源：代理 X-Quota-*（权威）+ 本次计数 Y。
+    /// 非权威态（极端：代理未回额度头）用本地估算并标「估算」。
+    private func showRecoveryQuotaToast(recoveryCount: Int) {
+        guard recoveryCount > 0, let quotaUsage else { return }
+        quotaUsage.rolloverLocalEstimateIfNeeded()
+        if !quotaUsage.isAuthoritative {
+            // 代理未回额度头：本地估算累加本次补处理条数（标非权威）。
+            for _ in 0..<recoveryCount { quotaUsage.recordLocalUsageIncrement(background: true) }
+        }
+        let used = quotaUsage.used
+        var message = quotaUsage.showsUnlimited
+            ? "\(String(localized: "quota.unlimited")) · \(String(format: String(localized: "quota.used_only"), used))"
+            : String(format: String(localized: "quota.today_used"), used, quotaUsage.limit)
+        if recoveryCount > 0 {
+            message += " " + String(format: String(localized: "quota.including_background"), recoveryCount)
+        }
+        if !quotaUsage.isAuthoritative {
+            message += " " + String(localized: "quota.non_authoritative")
+        }
+        showToast(message: message, style: .info)
     }
 
     private func completeNoTodoPendingRecoveries(_ pendingIds: [UUID]) {
@@ -930,38 +962,9 @@ final class AppCoordinator: ObservableObject {
             activeHistoryPendingTodoId = nil
             handleError(error)
         case .networkFallbackSaved(let pendingTodo):
-            let pendingDeletion = deleteActiveHistoryPendingIfNeeded(replacementPendingId: pendingTodo.id, reason: "history_reprocess_network_fallback_saved")
-            var historySucceeded = true
-            if let activeHistoryRecordId {
-                if pendingDeletion.succeeded {
-                    historySucceeded = updateHistoryRecord(
-                        id: activeHistoryRecordId,
-                        status: .pending,
-                        generatedTodoIDs: [],
-                        generatedTodoCount: 0,
-                        pendingTodoLink: .set(pendingTodo.id),
-                        errorMessage: nil
-                    )
-                } else {
-                    _ = deleteProcessedPending(id: pendingTodo.id)
-                    historySucceeded = updateHistoryRecord(
-                        id: activeHistoryRecordId,
-                        status: .failed,
-                        generatedTodoIDs: [],
-                        generatedTodoCount: 0,
-                        pendingTodoLink: .replacing(with: pendingDeletion.pendingId),
-                        errorMessage: pendingDeletion.error?.localizedDescription ?? ErrorMessages.storageError
-                    )
-                }
-            }
-            clearExtractionPresentation()
-            activeInputTranscript = nil
-            activeInputLocaleIdentifier = nil
-            activeHistoryRecordId = nil
-            activeHistoryPendingTodoId = nil
-            if historySucceeded && pendingDeletion.succeeded {
-                showToast(message: ErrorMessages.savedOffline, style: .info)
-            }
+            handleOfflineFallbackSaved(pendingTodo, historyReason: "history_reprocess_network_fallback_saved", triggerPaywall: false)
+        case .quotaFallbackSaved(let pendingTodo):
+            handleOfflineFallbackSaved(pendingTodo, historyReason: "history_reprocess_quota_fallback_saved", triggerPaywall: true)
         case .networkFallbackSaveFailed(let error):
             if let activeHistoryRecordId {
                 updateHistoryRecord(
@@ -1182,6 +1185,51 @@ final class AppCoordinator: ObservableObject {
         showConfirmSheet = false
     }
 
+    /// 网络降级（含配额耗尽）离线兜底成功后的统一处理：更新历史、清展示、提示已离线保存。
+    /// `triggerPaywall=true` 时额外弹出订阅页（仅配额耗尽场景）。
+    private func handleOfflineFallbackSaved(
+        _ pendingTodo: TodoItemData,
+        historyReason: String,
+        triggerPaywall: Bool
+    ) {
+        let pendingDeletion = deleteActiveHistoryPendingIfNeeded(replacementPendingId: pendingTodo.id, reason: historyReason)
+        var historySucceeded = true
+        if let activeHistoryRecordId {
+            if pendingDeletion.succeeded {
+                historySucceeded = updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: .pending,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: .set(pendingTodo.id),
+                    errorMessage: nil
+                )
+            } else {
+                _ = deleteProcessedPending(id: pendingTodo.id)
+                historySucceeded = updateHistoryRecord(
+                    id: activeHistoryRecordId,
+                    status: .failed,
+                    generatedTodoIDs: [],
+                    generatedTodoCount: 0,
+                    pendingTodoLink: .replacing(with: pendingDeletion.pendingId),
+                    errorMessage: pendingDeletion.error?.localizedDescription ?? ErrorMessages.storageError
+                )
+            }
+        }
+        clearExtractionPresentation()
+        activeInputTranscript = nil
+        activeInputLocaleIdentifier = nil
+        activeHistoryRecordId = nil
+        activeHistoryPendingTodoId = nil
+        if historySucceeded && pendingDeletion.succeeded {
+            showToast(message: ErrorMessages.savedOffline, style: .info)
+        }
+        if triggerPaywall {
+            VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted")
+            showPaywall = true
+        }
+    }
+
     /// 显示 Toast
     func showToast(message: String, style: ToastStyle, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         toastMessage = message
@@ -1230,6 +1278,14 @@ final class AppCoordinator: ObservableObject {
                 showToast(message: ErrorMessages.speechUnavailable, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
+            case .quotaExhausted:
+                // 配额耗尽：开 paywall 引导升级，不弹普通失败 toast。
+                VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted_handled")
+                showPaywall = true
+            case .rateLimited:
+                showToast(message: ErrorMessages.rateLimited, style: .warning)
+            case .serviceUnavailable:
+                showToast(message: ErrorMessages.serviceBusy, style: .warning)
             case .storageReadFailed, .storageWriteFailed:
                 showToast(message: ErrorMessages.storageError, style: .warning)
             default:

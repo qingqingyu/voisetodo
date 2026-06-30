@@ -12,9 +12,14 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     // Network / AI 模块
     case networkUnavailable
     case apiTimeout
-    /// 被限流（HTTP 429）。retryAfter 来自响应的 Retry-After 头（秒），可能缺失。
-    case apiRateLimited(retryAfter: TimeInterval?)
-    /// 服务端错误（HTTP 5xx）。属可重试的服务类故障，计入熔断。
+    /// 被限流（HTTP 429 velocity / IP 维度）。稍后重试即可恢复，retryAfter 可能缺失。
+    case rateLimited(retryAfter: TimeInterval?)
+    /// 配额耗尽（HTTP 429 quota_exceeded）。当日免费额度用尽，重试无意义：
+    /// 走离线兜底 + 引导付费。tier 为 "free" / "pro"，resetAt 为本地日期边界（YYYY-MM-DD）。
+    case quotaExhausted(tier: String, resetAt: String)
+    /// 服务不可用（HTTP 503，如全局预算熔断 / 无可用 provider）。稍后重试。
+    case serviceUnavailable
+    /// 服务端错误（HTTP 5xx，非 503）。属可重试的服务类故障，计入熔断。
     case apiServerError(statusCode: Int)
     case apiResponseInvalid(String)
     case jsonParsingFailed(String)
@@ -39,8 +44,12 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.networkError
         case .apiTimeout:
             return ErrorMessages.apiTimeout
-        case .apiRateLimited:
-            return ErrorMessages.apiRateLimited
+        case .rateLimited:
+            return ErrorMessages.rateLimited
+        case .quotaExhausted:
+            return ErrorMessages.quotaExhausted
+        case .serviceUnavailable:
+            return ErrorMessages.serviceBusy
         case .apiServerError:
             return ErrorMessages.apiError
         case .apiResponseInvalid(let detail):
