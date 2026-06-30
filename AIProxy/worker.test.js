@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
 import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth } from "./worker.js";
+import { mintTestJWS } from "./src/jws-fixture.js";
 
 // Reset module-level HealthStore between tests so circuit-breaker / latency state
 // from one test doesn't leak into another.
@@ -483,35 +484,317 @@ test("rejects oversized body even without content-length", async () => {
   assert.equal(response.status, 413);
 });
 
-test("enforces optional daily quota by device id", async () => {
-  const kv = new MemoryKV(new Map([["quota:2026-05-26:device-1", "1"]]));
-  const originalDate = globalThis.Date;
-  globalThis.Date = class extends originalDate {
-    constructor(...args) {
-      return args.length === 0 ? new originalDate("2026-05-26T12:00:00Z") : new originalDate(...args);
-    }
-    static now() {
-      return new originalDate("2026-05-26T12:00:00Z").getTime();
-    }
-  };
+test("enforces daily quota keyed by local date + hashed device id", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "2",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "device-1", "X-Local-Date": "2026-05-26" };
+    // 前两次发起即计数（后续 provider 失败不回退），第三次命中上限。
+    await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
+    await handleRequest(request({ transcript: "b" }, headers), env, {}, failingFetch);
+    const third = await handleRequest(request({ transcript: "c" }, headers), env, {}, failingFetch);
 
-  try {
-    const response = await handleRequest(
-      request({ transcript: "买菜" }, { "X-App-Token": "token", "X-Device-ID": "device-1" }),
-      {
-        APP_TOKEN: "token",
-        ANTHROPIC_API_KEY: "anthropic-key",
-        DAILY_REQUEST_LIMIT: "1",
-        RATE_LIMIT_KV: kv
-      },
+    assert.equal(third.status, 429);
+    const body = await third.json();
+    assert.equal(body.error, "quota_exceeded");
+    assert.equal(body.tier, "free");
+    assert.equal(body.remaining, 0);
+    assert.equal(body.resetAt, "2026-05-26");
+    assert.equal(third.headers.get("X-RateLimit-Type"), "quota");
+    assert.equal(third.headers.get("X-Quota-Plan"), "free");
+    assert.equal(third.headers.get("X-Quota-Remaining"), "0");
+    assert.equal(third.headers.get("X-Quota-Reset-Date"), "2026-05-26");
+
+    // key 用客户端本地日期 + sha256 摘要，不落明文设备号
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "quota key 应使用客户端本地日期");
+    assert.ok(quotaKey.includes("sha256:"), "quota key 应使用设备摘要");
+    assert.equal(quotaKey.includes("device-1"), false, "quota key 不得含明文设备号");
+  });
+});
+
+test("quota increments even when AI provider call fails (count on dispatch)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-x", "X-Local-Date": "2026-05-26" };
+    // failingFetch → 上游 AI 抛错，但配额已在调用前自增
+    await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应已写入 quota key");
+    assert.equal(kv.values.get(quotaKey), "1", "AI 失败仍应计数为 1");
+  });
+});
+
+test("accepts local date within ±1 day drift from server UTC", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    // 前一天（跨时区合法边界）
+    await handleRequest(
+      request({ transcript: "a" }, { "X-App-Token": "token", "X-Device-ID": "d-prev", "X-Local-Date": "2026-05-25" }),
+      env,
       {},
       failingFetch
     );
+    assert.ok(
+      [...kv.values.keys()].some((k) => k.startsWith("quota:2026-05-25:")),
+      "前一天的本地日期应被采纳"
+    );
+    // 后一天
+    await handleRequest(
+      request({ transcript: "b" }, { "X-App-Token": "token", "X-Device-ID": "d-next", "X-Local-Date": "2026-05-27" }),
+      env,
+      {},
+      failingFetch
+    );
+    assert.ok(
+      [...kv.values.keys()].some((k) => k.startsWith("quota:2026-05-27:")),
+      "后一天的本地日期应被采纳"
+    );
+  });
+});
 
-    assert.equal(response.status, 429);
-  } finally {
-    globalThis.Date = originalDate;
-  }
+test("falls back to server UTC date when local date drifts more than 1 day", async () => {
+  const kv = new MemoryKV(new Map());
+  const logs = await captureConsole(async () => {
+    await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+      const env = {
+        APP_TOKEN: "token",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        DAILY_REQUEST_LIMIT: "5",
+        RATE_LIMIT_KV: kv
+      };
+      // 伪造到 +6 天，企图提前重置配额
+      await handleRequest(
+        request({ transcript: "a" }, { "X-App-Token": "token", "X-Device-ID": "d-future", "X-Local-Date": "2026-06-01" }),
+        env,
+        {},
+        failingFetch
+      );
+    });
+  });
+  assert.ok(
+    [...kv.values.keys()].some((k) => k.startsWith("quota:2026-05-26:")),
+    "漂移超阈应回退服务端 UTC 日期"
+  );
+  assert.equal(
+    [...kv.values.keys()].some((k) => k.startsWith("quota:2026-06-01:")),
+    false,
+    "不得采纳漂移的本地日期"
+  );
+  assert.ok(logs.some((line) => line.includes("local_date_drift_rejected")), "应记录漂移拒绝日志");
+});
+
+test("falls back to server UTC date and logs when local date is invalid or missing", async () => {
+  const kv = new MemoryKV(new Map());
+  const logs = await captureConsole(async () => {
+    await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+      const env = {
+        APP_TOKEN: "token",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        DAILY_REQUEST_LIMIT: "5",
+        RATE_LIMIT_KV: kv
+      };
+      // 格式非法
+      await handleRequest(
+        request({ transcript: "a" }, { "X-App-Token": "token", "X-Device-ID": "d-bad", "X-Local-Date": "May 26" }),
+        env,
+        {},
+        failingFetch
+      );
+      // 缺失
+      await handleRequest(
+        request({ transcript: "b" }, { "X-App-Token": "token", "X-Device-ID": "d-missing" }),
+        env,
+        {},
+        failingFetch
+      );
+    });
+  });
+  const quotaKeys = [...kv.values.keys()].filter((k) => k.startsWith("quota:"));
+  assert.ok(quotaKeys.every((k) => k.startsWith("quota:2026-05-26:")), "非法/缺失都应回退服务端 UTC 日期");
+  assert.ok(logs.some((line) => line.includes("invalid_local_date")), "应记录 invalid_local_date 日志");
+});
+
+test("attaches quota headers on 2xx responses", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request({ transcript: "今天复习" }, { "X-App-Token": "token", "X-Device-ID": "d-ok", "X-Local-Date": "2026-05-26" }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        DAILY_REQUEST_LIMIT: "5",
+        RATE_LIMIT_KV: kv
+      },
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("复习") }] })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("X-Quota-Plan"), "free");
+    assert.equal(response.headers.get("X-Quota-Limit"), "5");
+    assert.equal(response.headers.get("X-Quota-Used"), "1");
+    assert.equal(response.headers.get("X-Quota-Remaining"), "4");
+    assert.equal(response.headers.get("X-Quota-Reset-Date"), "2026-05-26");
+  });
+});
+
+// MARK: - JWS 订阅验签 / Pro 档放行
+
+test("Pro JWS raises tier to paid limit", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "今天复习" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        RATE_LIMIT_KV: kv,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("复习") }] })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("X-Quota-Plan"), "pro");
+    assert.equal(response.headers.get("X-Quota-Limit"), "100");
+    assert.equal(response.headers.get("X-Quota-Remaining"), "99");
+  });
+});
+
+test("missing JWS stays on free tier even with PAID_DAILY_LIMIT configured", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token", "X-Device-ID": "d-free", "X-Local-Date": "2026-05-26" }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        RATE_LIMIT_KV: kv
+      },
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("X-Quota-Plan"), "free");
+    assert.equal(response.headers.get("X-Quota-Limit"), "5");
+  });
+});
+
+test("invalid JWS fails safe to free tier (not 500, not pro)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "x" },
+        { "X-App-Token": "token", "X-Device-ID": "d-badjws", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": "garbage.payload.sig" }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        RATE_LIMIT_KV: kv
+      },
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
+    );
+    // fail-safe：不 500，按免费档放行
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("X-Quota-Plan"), "free");
+    assert.equal(response.headers.get("X-Quota-Limit"), "5");
+  });
+});
+
+test("Pro JWS verification result is cached in KV", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  const env = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "k",
+    DAILY_REQUEST_LIMIT: "5",
+    PAID_DAILY_LIMIT: "100",
+    RATE_LIMIT_KV: kv,
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+    APP_BUNDLE_ID: "com.voicetodo.app"
+  };
+  const headers = { "X-App-Token": "token", "X-Device-ID": "dev-cached", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    await handleRequest(request({ transcript: "a" }, headers), env, {}, async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("a") }] }));
+    // 第二次用篡改的 JWS：若缓存生效仍应判 pro（缓存优先于重验）
+    const tamperedHeaders = { ...headers, "X-Subscription-JWS": "tampered.payload.sig" };
+    const response = await handleRequest(request({ transcript: "b" }, tamperedHeaders), env, {}, async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("b") }] }));
+    assert.equal(response.headers.get("X-Quota-Plan"), "pro");
+    // 缓存 key 已写入
+    assert.ok([...kv.values.keys()].some((k) => k.startsWith("sub:")), "应写入订阅缓存 key");
+  });
+});
+
+test("subscription cache entries without a future expiresAt are ignored", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  const env = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "k",
+    DAILY_REQUEST_LIMIT: "5",
+    PAID_DAILY_LIMIT: "100",
+    RATE_LIMIT_KV: kv,
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+    APP_BUNDLE_ID: "com.voicetodo.app"
+  };
+  const headers = { "X-App-Token": "token", "X-Device-ID": "dev-expiry-cache", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    await handleRequest(request({ transcript: "a" }, headers), env, {}, async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("a") }] }));
+    const cacheKey = [...kv.values.keys()].find((k) => k.startsWith("sub:"));
+    assert.ok(cacheKey, "应写入订阅缓存 key");
+    kv.values.set(cacheKey, JSON.stringify({ tier: "pro", productId: "com.voicetodo.pro.yearly" }));
+
+    const response = await handleRequest(
+      request({ transcript: "b" }, { ...headers, "X-Subscription-JWS": "tampered.payload.sig" }),
+      env,
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("b") }] })
+    );
+    assert.equal(response.headers.get("X-Quota-Plan"), "free");
+    assert.equal(response.headers.get("X-Quota-Limit"), "5");
+  });
 });
 
 test("enforces global daily budget with 503", async () => {
@@ -529,6 +812,8 @@ test("enforces global daily budget with 503", async () => {
       failingFetch
     );
     assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.error, "global_budget_exceeded");
   });
 });
 
@@ -547,6 +832,9 @@ test("enforces per-IP per-minute velocity limit", async () => {
     await handleRequest(request({ transcript: "b" }, headers), env, {}, failingFetch);
     const third = await handleRequest(request({ transcript: "c" }, headers), env, {}, failingFetch);
     assert.equal(third.status, 429);
+    const body = await third.json();
+    assert.equal(body.error, "rate_limited");
+    assert.equal(third.headers.get("X-RateLimit-Type"), "velocity");
   });
 });
 
@@ -569,6 +857,9 @@ test("enforces per-IP daily limit independent of device id", async () => {
     await handleRequest(mk(2), env, {}, failingFetch);
     const third = await handleRequest(mk(3), env, {}, failingFetch);
     assert.equal(third.status, 429);
+    const body = await third.json();
+    assert.equal(body.error, "rate_limited");
+    assert.equal(third.headers.get("X-RateLimit-Type"), "ip_daily");
   });
 });
 
@@ -2238,8 +2529,13 @@ class MemoryKV {
     this.values = values;
   }
 
-  async get(key) {
-    return this.values.get(key) || null;
+  async get(key, options) {
+    const value = this.values.get(key);
+    if (value === undefined || value === null) return null;
+    if (options && options.type === "json") {
+      try { return JSON.parse(value); } catch { return value; }
+    }
+    return value;
   }
 
   async put(key, value) {

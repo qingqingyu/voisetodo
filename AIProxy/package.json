@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test worker.test.js"
+    "test": "node --test worker.test.js src/subscription.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.105.0"

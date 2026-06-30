@@ -3,8 +3,12 @@ main = "worker.js"
 compatibility_date = "2026-05-26"
 
 [vars]
-# 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
-DAILY_REQUEST_LIMIT = "100"
+# 免费档每设备每天调用上限（按 X-Device-ID 摘要 + 客户端本地日期计；需配置 RATE_LIMIT_KV 才生效）。
+# 配额耗尽返回 429 {error:"quota_exceeded"}，客户端走离线兜底 + paywall。
+DAILY_REQUEST_LIMIT = "5"
+# Pro 档每设备每天调用上限。订阅验签（X-Subscription-JWS）通过后按此值放行。
+# 留空时 Pro 档回退到免费上限。建议设为 50–100。
+# PAID_DAILY_LIMIT = "100"
 # 全局每天调用上限：当天全网超过即对所有人返回 503，把分布式刷量的账单锁成可设上限。
 # 留空则不启用。建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。
 # GLOBAL_DAILY_LIMIT = "5000"

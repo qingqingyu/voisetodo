@@ -5,6 +5,7 @@ import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
 import { executeWithFailover } from "./src/provider.js";
 import { pickCandidates } from "./src/selector.js";
 import { normalizeProviderStream } from "./src/stream.js";
+import { verifySubscriptionJWS, APPLE_ROOT_CA_G3_SHA256 } from "./src/subscription.js";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TRANSCRIPT_CHARS = 4000;
@@ -91,7 +92,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     requestContext.vocabularyHintCount = vocabularyHints.length;
     logInfo("proxy.payload.accepted", requestContext);
 
-    await enforceDailyLimit(request, env, requestContext);
+    const quotaState = await enforceDailyLimit(request, env, requestContext);
     await enforcePerIpLimit(request, env, requestContext);
     await enforceGlobalBudget(env, requestContext);
 
@@ -148,7 +149,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         headers: {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-store",
-          "Connection": "keep-alive"
+          "Connection": "keep-alive",
+          ...quotaHeaders(quotaState)
         }
       });
       return finishRequest(response, requestContext, { streamingBodyContinues: true });
@@ -161,11 +163,24 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       status: 200,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store"
+        "Cache-Control": "no-store",
+        ...quotaHeaders(quotaState)
       }
     }), requestContext, { responseChars: text.length });
   } catch (error) {
     if (error instanceof ProxyHTTPError) {
+      if (error.body !== null) {
+        logWarn("proxy.request.http_error", { ...requestContext, status: error.status, rateLimitType: error.rateLimitType || null, ...errorFields(error) });
+        const structured = new Response(JSON.stringify(error.body), {
+          status: error.status,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+            ...(error.headers || {})
+          }
+        });
+        return finishRequest(structured, requestContext, { error: error.body.error || error.message });
+      }
       const clientMessage = error.status >= 500 ? "AI proxy failed" : error.message;
       logWarn("proxy.request.http_error", { ...requestContext, status: error.status, ...errorFields(error) });
       return finishRequest(new Response(clientMessage, { status: error.status }), requestContext, { error: clientMessage });
@@ -400,29 +415,153 @@ function validateAppToken(request, env) {
   };
 }
 
+// 免费档每日上限（DAILY_REQUEST_LIMIT）与 Pro 档每日上限（PAID_DAILY_LIMIT）。
+// 配额 key 由客户端本地日期 + 设备摘要构成：发起即计数（含后续 AI 调用失败），
+// 避免靠重试绕过计费。代理是唯一可信强制点，客户端只负责展示。
 async function enforceDailyLimit(request, env, requestContext) {
   if (!env.RATE_LIMIT_KV || !env.DAILY_REQUEST_LIMIT) {
     logInfo("proxy.quota.skipped", { ...requestContext, reason: "not_configured" });
-    return;
+    return null;
   }
-  const limit = Number(env.DAILY_REQUEST_LIMIT);
-  if (!Number.isFinite(limit) || limit <= 0) {
+  const freeLimit = Number(env.DAILY_REQUEST_LIMIT);
+  if (!Number.isFinite(freeLimit) || freeLimit <= 0) {
     logWarn("proxy.quota.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.DAILY_REQUEST_LIMIT });
-    return;
+    return null;
   }
 
-  const deviceId = request.headers.get("X-Device-ID")
-    || request.headers.get("CF-Connecting-IP")
-    || "anonymous";
-  const today = new Date().toISOString().slice(0, 10);
-  const key = `quota:${today}:${deviceId}`;
-  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  const { tier, limit, productId } = await resolveSubscriptionTier(request, env, requestContext);
+
+  const { date: quotaDate, source } = resolveQuotaDate(request, requestContext);
+  // requestContext.deviceId 已加盐 sha256，避免 KV 落明文设备号且与日志口径一致。
+  const quotaKey = `quota:${quotaDate}:${requestContext.deviceId}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(quotaKey) || "0");
   if (current >= limit) {
-    logWarn("proxy.quota.exceeded", { ...requestContext, current, limit });
-    throw new ProxyHTTPError(429, "Daily quota exceeded");
+    logWarn("proxy.quota.exceeded", { ...requestContext, quotaKey, quotaDate, dateSource: source, plan: tier, productId, current, limit, remaining: 0 });
+    throw new ProxyHTTPError(429, "Daily quota exceeded", {
+      errorType: "quota_exceeded",
+      rateLimitType: "quota",
+      body: { error: "quota_exceeded", tier, remaining: 0, resetAt: quotaDate },
+      headers: {
+        "X-RateLimit-Type": "quota",
+        "Retry-After": String(secondsUntilNextLocalDay(quotaDate)),
+        ...quotaHeaders({ plan: tier, limit, used: current, remaining: 0, resetDate: quotaDate })
+      }
+    });
   }
-  await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
-  logInfo("proxy.quota.incremented", { ...requestContext, current: current + 1, limit });
+  const used = current + 1;
+  await env.RATE_LIMIT_KV.put(quotaKey, String(used), { expirationTtl: 36 * 60 * 60 });
+  const remaining = Math.max(0, limit - used);
+  logInfo("proxy.quota.incremented", { ...requestContext, quotaKey, quotaDate, dateSource: source, plan: tier, productId, limit, used, remaining });
+  return { plan: tier, limit, used, remaining, resetDate: quotaDate };
+}
+
+// 解析配额日期：优先信任客户端 X-Local-Date（设备时区 YYYY-MM-DD），但做格式与漂移校验。
+// 格式非法/缺失 → 回退服务端 UTC 日期 + 记 invalid_local_date 日志（不静默）。
+// 漂移 > 1 天（典型伪造到未来提前重置）→ 回退 UTC + 记 local_date_drift_rejected。
+// 漂移容忍 ±1 天兼顾跨时区用户的合法边界。
+function resolveQuotaDate(request, requestContext) {
+  const serverToday = new Date().toISOString().slice(0, 10);
+  const raw = (request.headers.get("X-Local-Date") || "").trim();
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    logInfo("proxy.quota.local_date_invalid", { ...requestContext, reason: "invalid_local_date", hasHeader: raw.length > 0 });
+    return { date: serverToday, source: "server_utc" };
+  }
+  const localMs = Date.parse(`${raw}T00:00:00.000Z`);
+  const serverMs = Date.parse(`${serverToday}T00:00:00.000Z`);
+  if (!Number.isFinite(localMs) || !Number.isFinite(serverMs)) {
+    logInfo("proxy.quota.local_date_invalid", { ...requestContext, reason: "invalid_local_date", localDate: raw });
+    return { date: serverToday, source: "server_utc" };
+  }
+  const driftDays = Math.abs(localMs - serverMs) / (24 * 3600 * 1000);
+  if (driftDays > 1) {
+    logWarn("proxy.quota.local_date_drift_rejected", { ...requestContext, reason: "local_date_drift_rejected", localDate: raw, serverDate: serverToday, driftDays });
+    return { date: serverToday, source: "server_utc" };
+  }
+  return { date: raw, source: "client_local" };
+}
+
+// 判定订阅档位：读 X-Subscription-JWS → 验签（零信任）→ Pro / 免费档。
+// fail-safe 到免费档：无 JWS / 过期 / 验签失败 / 产品 ID 不匹配 / bundle 不匹配 一律按免费并记日志，
+// 绝不 fail-open（不默认当已付费）。验签结果 KV 缓存以分摊单请求成本。
+async function resolveSubscriptionTier(request, env, requestContext) {
+  const freeLimit = Number(env.DAILY_REQUEST_LIMIT);
+  const paidLimit = Number(env.PAID_DAILY_LIMIT);
+  const hasPaidLimit = Number.isFinite(paidLimit) && paidLimit > 0;
+  const jws = request.headers.get("X-Subscription-JWS");
+
+  // 无 JWS 或未配 Pro 上限 → 免费档
+  if (!jws || !hasPaidLimit) {
+    return { tier: "free", limit: freeLimit, productId: null };
+  }
+
+  // KV 缓存：命中且订阅未过期直接用（避免每请求都做 ES256 + 链校验）
+  const cacheKey = `sub:${requestContext.deviceId}`;
+  if (env.RATE_LIMIT_KV) {
+    try {
+      const cached = await env.RATE_LIMIT_KV.get(cacheKey, { type: "json" });
+      if (
+        cached
+        && cached.tier === "pro"
+        && typeof cached.expiresAt === "number"
+        && Number.isFinite(cached.expiresAt)
+        && cached.expiresAt > Date.now()
+      ) {
+        return {
+          tier: cached.tier,
+          limit: cached.tier === "pro" ? paidLimit : freeLimit,
+          productId: cached.productId,
+          cached: true
+        };
+      }
+    } catch (error) {
+      logWarn("proxy.subscription.cache_read_failed", { ...requestContext, ...errorFields(error) });
+    }
+  }
+
+  // 零信任验签：ES256 签名 + x5c 链锚定 Apple Root CA - G3 + payload 声明
+  const verifyStart = Date.now();
+  try {
+    const proProductIDs = env.PRO_PRODUCT_IDS
+      ? String(env.PRO_PRODUCT_IDS).split(",").map((s) => s.trim()).filter(Boolean)
+      : ["com.voicetodo.pro.monthly", "com.voicetodo.pro.yearly"];
+    const result = await verifySubscriptionJWS(jws, {
+      expectedBundleId: env.APP_BUNDLE_ID || "com.voicetodo.app",
+      productIDs: proProductIDs,
+      rootFingerprint: env.SUBSCRIPTION_ROOT_SHA256 || APPLE_ROOT_CA_G3_SHA256
+    });
+    const ttl = Math.min(Math.max(60, Math.floor((result.expiresAt - Date.now()) / 1000)), 15 * 60);
+    if (env.RATE_LIMIT_KV && result.expiresAt > 0) {
+      try {
+        await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify({ tier: "pro", productId: result.productId, expiresAt: result.expiresAt }), { expirationTtl: ttl });
+      } catch (error) {
+        logWarn("proxy.subscription.cache_write_failed", { ...requestContext, ...errorFields(error) });
+      }
+    }
+    logInfo("proxy.subscription.verified", { ...requestContext, tier: "pro", productId: result.productId, verifyMs: Date.now() - verifyStart, cached: false });
+    return { tier: "pro", limit: paidLimit, productId: result.productId };
+  } catch (error) {
+    // fail-safe 到免费档（不 fail-open，不 500）
+    logWarn("proxy.subscription.verify_failed", { ...requestContext, reason: "verify_failed", verifyMs: Date.now() - verifyStart, ...errorFields(error) });
+    return { tier: "free", limit: freeLimit, productId: null };
+  }
+}
+
+function quotaHeaders(state) {
+  if (!state) return {};
+  return {
+    "X-Quota-Plan": state.plan,
+    "X-Quota-Limit": String(state.limit),
+    "X-Quota-Used": String(state.used),
+    "X-Quota-Remaining": String(state.remaining),
+    "X-Quota-Reset-Date": state.resetDate
+  };
+}
+
+// 距下一个本地日期边界（UTC 0 点近似）的秒数，用于配额耗尽时的 Retry-After 提示。
+function secondsUntilNextLocalDay(quotaDate) {
+  const next = Date.parse(`${quotaDate}T00:00:00.000Z`) + 24 * 3600 * 1000;
+  const delta = Math.ceil((next - Date.now()) / 1000);
+  return Number.isFinite(delta) && delta > 0 ? delta : 3600;
 }
 
 // 全局每日预算熔断：当天全网调用量超过 GLOBAL_DAILY_LIMIT 即对所有人返回 503，
@@ -442,7 +581,10 @@ async function enforceGlobalBudget(env, requestContext) {
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= limit) {
     logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit });
-    throw new ProxyHTTPError(503, "Service temporarily unavailable");
+    throw new ProxyHTTPError(503, "Service temporarily unavailable", {
+      errorType: "global_budget_exceeded",
+      body: { error: "global_budget_exceeded" }
+    });
   }
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
   logInfo("proxy.global_budget.incremented", { ...requestContext, current: current + 1, limit });
@@ -465,7 +607,12 @@ async function enforcePerIpLimit(request, env, requestContext) {
     const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
     if (current >= perMinute) {
       logWarn("proxy.ip_rate.exceeded", { ...requestContext, current, limit: perMinute });
-      throw new ProxyHTTPError(429, "Too many requests");
+      throw new ProxyHTTPError(429, "Too many requests", {
+        errorType: "rate_limited",
+        rateLimitType: "velocity",
+        body: { error: "rate_limited", retryAfter: 60 },
+        headers: { "X-RateLimit-Type": "velocity", "Retry-After": "60" }
+      });
     }
     await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
   }
@@ -477,7 +624,12 @@ async function enforcePerIpLimit(request, env, requestContext) {
     const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
     if (current >= perDay) {
       logWarn("proxy.ip_quota.exceeded", { ...requestContext, current, limit: perDay });
-      throw new ProxyHTTPError(429, "Daily quota exceeded");
+      throw new ProxyHTTPError(429, "Too many requests from this IP", {
+        errorType: "rate_limited",
+        rateLimitType: "ip_daily",
+        body: { error: "rate_limited", retryAfter: secondsUntilNextLocalDay(today) },
+        headers: { "X-RateLimit-Type": "ip_daily", "Retry-After": String(secondsUntilNextLocalDay(today)) }
+      });
     }
     await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
   }
