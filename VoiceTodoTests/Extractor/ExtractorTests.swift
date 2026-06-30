@@ -125,6 +125,31 @@ final class ExtractorTests: XCTestCase {
         XCTAssertFalse((request.value(forHTTPHeaderField: "X-Request-ID") ?? "").isEmpty, "应携带 X-Request-ID 追踪头")
     }
 
+    func testProxyRequestIncludesQuotaDateAndSubscriptionHeaders() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let client = NetworkClient(
+            session: session,
+            proxyEndpoint: "https://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id",
+            subscriptionJWSProvider: { "signed-jws" }
+        )
+        sut = TodoExtractorService(
+            networkClient: client,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: []),
+            sleep: { _ in }
+        )
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+
+        _ = try await sut.extract(from: "订阅请求头", locale: Locale(identifier: "zh-Hans"))
+
+        let request = try XCTUnwrap(URLProtocolStub.requests.last)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Subscription-JWS"), "signed-jws")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Local-Date"), QuotaUsage.currentLocalDate())
+    }
+
     func testNetworkClientRejectsNonLocalHTTPProxyEndpoint() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
@@ -515,6 +540,29 @@ extension ExtractorTests {
         XCTAssertEqual(result.todos.count, 0)
     }
 
+    func testQuotaExhaustedIsNotRetried() async {
+        mockNetworkClient.enqueueHTTPFailure(
+            statusCode: 429,
+            body: #"{"error":"quota_exceeded","tier":"free","remaining":0,"resetAt":"2026-05-26"}"#,
+            headers: [
+                "X-RateLimit-Type": "quota",
+                "X-Quota-Plan": "free",
+                "X-Quota-Reset-Date": "2026-05-26"
+            ]
+        )
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+
+        do {
+            _ = try await sut.extract(from: "额度耗尽", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("应抛出配额耗尽错误")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .quotaExhausted(tier: "free", resetAt: "2026-05-26"))
+            XCTAssertEqual(URLProtocolStub.callCount, 1, "配额耗尽不应重试")
+        } catch {
+            XCTFail("错误类型: \(error)")
+        }
+    }
+
     /// 传输类失败应重试，随后成功。
     func testTransportFailureRetriesThenSucceeds() async throws {
         mockNetworkClient.enqueueFailure(URLError(.networkConnectionLost))
@@ -561,9 +609,10 @@ extension ExtractorTests {
     }
 
     /// 5xx 重试耗尽后抛 apiServerError（且总尝试次数 = retryCount + 1）。
+    /// 注：503 现已映射为 `.serviceUnavailable`，此处用 500 保留 apiServerError 语义。
     func testServerErrorExhaustedThrowsServerError() async {
         for _ in 0...NetworkConfig.retryCount {
-            mockNetworkClient.enqueueHTTPFailure(statusCode: 503, body: "down")
+            mockNetworkClient.enqueueHTTPFailure(statusCode: 500, body: "boom")
         }
         do {
             _ = try await sut.extract(from: "5xx 全失败", locale: Locale(identifier: "zh-Hans"))

@@ -150,6 +150,9 @@ private struct ObservedTranscriptEvent {
         case .networkFallbackSaved:
             name = "networkFallbackSaved"
             todoTitles = []
+        case .quotaFallbackSaved:
+            name = "quotaFallbackSaved"
+            todoTitles = []
         case .networkFallbackSaveFailed:
             name = "networkFallbackSaveFailed"
             todoTitles = []

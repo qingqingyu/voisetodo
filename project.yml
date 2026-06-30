@@ -51,9 +51,13 @@ targets:
       - path: UI/Detail
         excludes:
           - "**/.DS_Store"
+      - path: UI/Paywall
+        excludes:
+          - "**/.DS_Store"
       - path: UI/Shared
         excludes:
           - "**/.DS_Store"
+      - path: UI/MockStore.swift
       - path: Protocols
         excludes:
           - "**/.DS_Store"
@@ -61,6 +65,7 @@ targets:
       - path: VoiceTodo/Assets.xcassets
       - path: VoiceTodo/InfoPlist.xcstrings
       - path: VoiceTodo/PrivacyInfo.xcprivacy
+      - path: VoiceTodo/Products.storekit
       - path: Resources/Localizable.xcstrings
     configFiles:
       Debug: Config/Secrets.xcconfig
