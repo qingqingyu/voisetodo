@@ -141,8 +141,8 @@ protocol TodoRefreshing {
     func refreshTodos()
 }
 
-/// Home 页只需要列表、完成切换和日历 occurrence。
-protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore {}
+/// Home 页需要列表、完成切换、日历 occurrence、无日期任务拖拽排序，以及排序失败时的刷新回滚。
+protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing {}
 
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新和 pending 替换。
 protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing {}

@@ -859,6 +859,7 @@ private struct HomeSelectedDayListView: View {
     let onToggleOccurrence: (TodoOccurrenceData) -> Void
     let onDeleteTodo: (UUID) -> Void
     let onOpenTodo: (TodoItemData) -> Void
+    let onMoveUnscheduled: (IndexSet, Int) -> Void
     let onStartRecording: @Sendable () -> Void
     let onShowManualInput: @Sendable () -> Void
 
@@ -890,9 +891,10 @@ private struct HomeSelectedDayListView: View {
 
             if !state.unscheduledTodos.isEmpty {
                 Section {
-                    ForEach(Array(zip(state.unscheduledTodos.indices, state.unscheduledTodos)), id: \.1.id) { idx, todo in
+                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
                         todoRow(todo, index: state.selectedOccurrences.count + idx)
                     }
+                    .onMove(perform: onMoveUnscheduled)
                 } header: {
                     daySectionHeader(title: String(localized: "home.week.unscheduled"), count: state.unscheduledTodos.count)
                 }
@@ -1412,6 +1414,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                     onToggleOccurrence: { actions.toggleOccurrence($0) },
                     onDeleteTodo: { actions.deleteTodo($0) },
                     onOpenTodo: { selectedTodo = $0 },
+                    onMoveUnscheduled: { source, destination in
+                        moveUnscheduled(from: source, to: destination)
+                    },
                     onStartRecording: {
                         Task { @MainActor in
                             actions.toggleRecording()
@@ -1633,6 +1638,26 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today
+        }
+    }
+
+    /// 拖动重排「无日期」段：只在无日期任务之间互换全局位置，已排期/已完成任务槽位不动，
+    /// 避免打乱 Widget 依赖的全局 sortOrder。
+    private func moveUnscheduled(from source: IndexSet, to destination: Int) {
+        // 与 HomeCalendarState.unscheduledTodos 同源同序（store.todos 已按 sortOrder 升序）。
+        var displayed = store.todos.filter(TodoReorderPlanner.isUnscheduled)
+        displayed.move(fromOffsets: source, toOffset: destination)
+        let newUnscheduledOrder = displayed.filter { !$0.isCompleted }.map(\.id)
+        let uncompleted = store.todos.filter { !$0.isCompleted }
+        let fullIds = TodoReorderPlanner.reorderedUncompletedIDs(
+            uncompleted: uncompleted,
+            newUnscheduledOrder: newUnscheduledOrder
+        )
+        do {
+            try store.reorder(ids: fullIds)
+        } catch {
+            VoiceTodoLog.store.error("home.reorder_unscheduled.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            store.refreshTodos()
         }
     }
 }
