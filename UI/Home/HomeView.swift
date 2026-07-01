@@ -490,7 +490,10 @@ private struct HomeCalendarState {
             occurrences: dayOccurrences,
             isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
             isToday: calendar.isDateInToday(day),
-            isCurrentMonth: calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month),
+            // 周视图 7 天等权重，不按"当月"置灰；月视图保留跨月补齐日的弱化样式。
+            isCurrentMonth: viewMode == .week
+                ? true
+                : calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month),
             hasHighPriority: dayOccurrences.contains { $0.todo.priority == .high && !$0.isCompleted }
         )
     }
@@ -1617,6 +1620,11 @@ struct HomeView<Store: HomeTodoStore>: View {
         guard calendarViewMode != mode else { return }
         withAnimation(WarmAnimation.springStandard) {
             calendarViewModeRaw = mode.rawValue
+            // 把可视锚点对齐到当前选中日：切周→显示选中日所在周，切月→显示选中日所在月，
+            // 避免切换后选中高亮/下方任务列表落在看不见的区间外。
+            visibleMonthAnchor = mode == .week
+                ? calendar.startOfDay(for: selectedDate)
+                : HomeCalendarState.startOfMonth(for: selectedDate, calendar: calendar)
         }
     }
 
