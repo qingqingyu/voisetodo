@@ -409,10 +409,18 @@ private struct HomeCalendarDayState {
     let hasHighPriority: Bool
 }
 
+/// 首页日历视图模式：整月网格 / 单周一行。
+enum CalendarViewMode: String {
+    case month
+    case week
+}
+
 private struct HomeCalendarState {
     let selectedDate: Date
     let visibleMonthAnchor: Date
-    let monthDays: [Date]
+    let viewMode: CalendarViewMode
+    /// 当前模式下要渲染的日期：月视图为整月网格（42 天），周视图为所在周 7 天。
+    let visibleDays: [Date]
     let weekHeaderDays: [Date]
     let occurrencesByDay: [String: [TodoOccurrenceData]]
     let unscheduledTodos: [TodoItemData]
@@ -424,7 +432,15 @@ private struct HomeCalendarState {
     private let calendar: Calendar
 
     var monthTitle: String {
-        visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+        switch viewMode {
+        case .month:
+            return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+        case .week:
+            guard let first = visibleDays.first, let last = visibleDays.last else {
+                return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+            }
+            return "\(first.formatted(.dateTime.month().day())) – \(last.formatted(.dateTime.month().day()))"
+        }
     }
 
     var selectedDateTitle: String {
@@ -441,19 +457,21 @@ private struct HomeCalendarState {
         store: Store,
         selectedDate: Date,
         visibleMonthAnchor: Date,
+        viewMode: CalendarViewMode,
         occurrencesByDay: [String: [TodoOccurrenceData]],
         calendar: Calendar,
         now: Date = Date()
     ) -> HomeCalendarState {
         let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
         let normalizedAnchor = calendar.startOfDay(for: visibleMonthAnchor)
-        let monthDays = monthDays(for: normalizedAnchor, calendar: calendar)
+        let visibleDays = days(for: viewMode, anchor: normalizedAnchor, calendar: calendar)
 
         return HomeCalendarState(
             todos: store.todos,
             selectedDate: normalizedSelectedDate,
             visibleMonthAnchor: normalizedAnchor,
-            monthDays: monthDays,
+            viewMode: viewMode,
+            visibleDays: visibleDays,
             weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
             occurrencesByDay: occurrencesByDay,
             calendar: calendar
@@ -493,14 +511,16 @@ private struct HomeCalendarState {
         todos: [TodoItemData],
         selectedDate: Date,
         visibleMonthAnchor: Date,
-        monthDays: [Date],
+        viewMode: CalendarViewMode,
+        visibleDays: [Date],
         weekHeaderDays: [Date],
         occurrencesByDay: [String: [TodoOccurrenceData]],
         calendar: Calendar
     ) {
         self.selectedDate = selectedDate
         self.visibleMonthAnchor = visibleMonthAnchor
-        self.monthDays = monthDays
+        self.viewMode = viewMode
+        self.visibleDays = visibleDays
         self.weekHeaderDays = weekHeaderDays
         self.occurrencesByDay = occurrencesByDay
         self.unscheduledTodos = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
@@ -525,12 +545,28 @@ private struct HomeCalendarState {
         occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
+    /// 按模式返回要渲染/加载的日期集合。月视图 42 天网格；周视图所在周 7 天。
+    static func days(for viewMode: CalendarViewMode, anchor: Date, calendar: Calendar) -> [Date] {
+        switch viewMode {
+        case .month:
+            return monthDays(for: anchor, calendar: calendar)
+        case .week:
+            return weekDays(for: anchor, calendar: calendar)
+        }
+    }
+
     static func monthDays(for visibleMonthAnchor: Date, calendar: Calendar) -> [Date] {
         let monthStart = startOfMonth(for: visibleMonthAnchor, calendar: calendar)
         let weekday = calendar.component(.weekday, from: monthStart)
         let leadingDays = (weekday + 5) % 7
         let gridStart = calendar.date(byAdding: .day, value: -leadingDays, to: monthStart) ?? monthStart
         return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+    }
+
+    /// 锚点所在周的 7 天（与月视图同为周一起始，复用 startOfWeek）。
+    static func weekDays(for anchor: Date, calendar: Calendar) -> [Date] {
+        let start = startOfWeek(for: anchor, calendar: calendar)
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
     }
 
     private static func weekHeaderDays(referenceDate: Date, calendar: Calendar) -> [Date] {
@@ -564,6 +600,7 @@ private enum HomeCalendarLoadState {
 /// 工作量大且容易漏。当前方案是正确性优先。
 private struct CalendarRefreshKey: Hashable {
     let anchor: Date
+    let mode: CalendarViewMode
     let todos: [TodoItemData]
     let revision: Int
 }
@@ -690,14 +727,28 @@ private struct HomeViewActions<Store: HomeTodoStore> {
 
 private struct HomeMonthHeaderView: View {
     let state: HomeCalendarState
-    let onShiftMonth: (Int) -> Void
+    let onShift: (Int) -> Void
     let onJumpToToday: () -> Void
     let onSelectDay: (Date) -> Void
+    let onSetViewMode: (CalendarViewMode) -> Void
+
+    private var viewModeBinding: Binding<CalendarViewMode> {
+        Binding(get: { state.viewMode }, set: { onSetViewMode($0) })
+    }
 
     var body: some View {
         VStack(spacing: WarmSpacing.sm) {
+            Picker("", selection: viewModeBinding) {
+                Text(String(localized: "calendar.mode.month")).tag(CalendarViewMode.month)
+                Text(String(localized: "calendar.mode.week")).tag(CalendarViewMode.week)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 220)
+            .accessibilityIdentifier("CalendarViewModePicker")
+            .accessibilityLabel(String(localized: "a11y.calendar_mode"))
+
             HStack {
-                Button(action: { onShiftMonth(-1) }) {
+                Button(action: { onShift(-1) }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(WarmTheme.textSecondary)
@@ -706,14 +757,14 @@ private struct HomeMonthHeaderView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("PreviousMonthButton")
-                .accessibilityLabel(String(localized: "a11y.previous_month"))
+                .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.previous_week" : "a11y.previous_month"))
 
                 Text(state.monthTitle)
                     .font(WarmFont.headline(16))
                     .foregroundColor(WarmTheme.textPrimary)
                     .frame(maxWidth: .infinity)
 
-                Button(action: { onShiftMonth(1) }) {
+                Button(action: { onShift(1) }) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(WarmTheme.textSecondary)
@@ -722,7 +773,7 @@ private struct HomeMonthHeaderView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("NextMonthButton")
-                .accessibilityLabel(String(localized: "a11y.next_month"))
+                .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.next_week" : "a11y.next_month"))
 
                 Button(action: onJumpToToday) {
                     Text(String(localized: "home.week.today_button"))
@@ -747,7 +798,7 @@ private struct HomeMonthHeaderView: View {
             }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
-                ForEach(state.monthDays, id: \.self) { day in
+                ForEach(state.visibleDays, id: \.self) { day in
                     HomeMonthDayButton(dayState: state.dayState(for: day), onSelect: onSelectDay)
                 }
             }
@@ -1050,6 +1101,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
     @State private var occurrenceRevision = 0
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+    /// 日历视图模式（月/周），跨启动记住上次选择。
+    @AppStorage("calendarViewMode") private var calendarViewModeRaw = CalendarViewMode.month.rawValue
+    private var calendarViewMode: CalendarViewMode {
+        CalendarViewMode(rawValue: calendarViewModeRaw) ?? .month
+    }
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
@@ -1326,6 +1382,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             store: store,
             selectedDate: selectedDate,
             visibleMonthAnchor: visibleMonthAnchor,
+            viewMode: calendarViewMode,
             occurrencesByDay: monthOccurrences,
             calendar: calendar
         )
@@ -1333,9 +1390,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         return VStack(spacing: 0) {
             HomeMonthHeaderView(
                 state: state,
-                onShiftMonth: shiftMonth,
+                onShift: shiftPeriod,
                 onJumpToToday: jumpToToday,
-                onSelectDay: selectDay
+                onSelectDay: selectDay,
+                onSetViewMode: setViewMode
             )
 
             switch calendarLoadState {
@@ -1367,7 +1425,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         .offset(y: listOffset)
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
-        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todos: store.todos, revision: occurrenceRevision)) {
+        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, mode: calendarViewMode, todos: store.todos, revision: occurrenceRevision)) {
             let startedAt = Date()
             // 注意：这里**不**主动设 .loading（避免切月份时清掉旧数据导致闪烁）。
             // 唯一例外：如果当前是 .error 态（上一次加载失败），重置为 .loading ——
@@ -1376,8 +1434,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 calendarLoadState = .loading
             }
             // .success / .empty / 初始 .loading 都不主动设，保留旧值。
-            let monthDays = HomeCalendarState.monthDays(for: visibleMonthAnchor, calendar: calendar)
-            guard let firstDay = monthDays.first, let lastDay = monthDays.last else {
+            let rangeDays = HomeCalendarState.days(for: calendarViewMode, anchor: visibleMonthAnchor, calendar: calendar)
+            guard let firstDay = rangeDays.first, let lastDay = rangeDays.last else {
                 monthOccurrences = [:]
                 calendarLoadState = store.todos.isEmpty ? .empty : .success
                 VoiceTodoLog.store.warning("home.month_occurrences.load_skipped reason=no_month_days anchor=\(visibleMonthAnchor.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
@@ -1540,14 +1598,25 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
     }
 
-    private func shiftMonth(by value: Int) {
-        guard let newAnchor = calendar.date(byAdding: .month, value: value, to: visibleMonthAnchor) else {
+    /// 模式感知的翻页：月视图按月翻，周视图按周翻。
+    private func shiftPeriod(by value: Int) {
+        let component: Calendar.Component = calendarViewMode == .week ? .weekOfYear : .month
+        guard let newAnchor = calendar.date(byAdding: component, value: value, to: visibleMonthAnchor) else {
             return
         }
-        let normalizedAnchor = HomeCalendarState.startOfMonth(for: newAnchor, calendar: calendar)
+        let normalizedAnchor: Date = calendarViewMode == .week
+            ? calendar.startOfDay(for: newAnchor)
+            : HomeCalendarState.startOfMonth(for: newAnchor, calendar: calendar)
         withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
+        }
+    }
+
+    private func setViewMode(_ mode: CalendarViewMode) {
+        guard calendarViewMode != mode else { return }
+        withAnimation(WarmAnimation.springStandard) {
+            calendarViewModeRaw = mode.rawValue
         }
     }
 
