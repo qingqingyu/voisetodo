@@ -134,6 +134,8 @@ struct ExtractedTodo: Identifiable, Codable {
     var title: String
     var detail: String
     var dueHint: String?
+    /// AI 结构化返回的明确钟点（"HH:mm"，24 小时制），无则 nil。与 dueHint（freeform 文本）互补。
+    var dueTime: String?
     var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var categoryHint: TodoCategory
@@ -145,6 +147,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case title
         case detail
         case dueHint
+        case dueTime
         case recurrenceRule
         case priority
         case categoryHint
@@ -155,6 +158,7 @@ struct ExtractedTodo: Identifiable, Codable {
         title: String,
         detail: String = "",
         dueHint: String? = nil,
+        dueTime: String? = nil,
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         categoryHint: TodoCategory = .other,
@@ -164,6 +168,7 @@ struct ExtractedTodo: Identifiable, Codable {
         self.title = title
         self.detail = detail
         self.dueHint = Self.sanitizeDueHint(dueHint)
+        self.dueTime = Self.sanitizeDueTime(dueTime)
         self.recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
             recurrenceRule,
             dueHint: dueHint,
@@ -186,6 +191,15 @@ struct ExtractedTodo: Identifiable, Codable {
         return hint
     }
 
+    /// 过滤伪 null 并校验 "HH:mm" 格式；非法一律视为无时间，避免脏值流入下游。
+    private static func sanitizeDueTime(_ time: String?) -> String? {
+        guard let normalized = sanitizeDueHint(time),
+              TodoDueTimeResolver.parse(normalized) != nil else {
+            return nil
+        }
+        return normalized
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let referenceDate = decoder.userInfo[.recurrenceReferenceDate] as? Date ?? Date()
@@ -199,6 +213,8 @@ struct ExtractedTodo: Identifiable, Codable {
         title = TextUtils.truncateTitle(from: rawTitle.isEmpty ? detail : rawTitle, maxLength: 200)
         let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)
         dueHint = Self.sanitizeDueHint(rawDueHint)
+        let rawDueTime = try container.decodeIfPresent(String.self, forKey: .dueTime)
+        dueTime = Self.sanitizeDueTime(rawDueTime)
         if container.contains(.recurrenceRule) {
             let decodedRule = try? container.decodeIfPresent(RecurrenceRule.self, forKey: .recurrenceRule)
             if let rule = decodedRule ?? nil, rule.isValid {
@@ -265,6 +281,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     var detail: String?
     var dueHint: String?
     var dueDate: Date?
+    /// dueDate 是否携带明确钟点：true 时系统日历写"定时事件"，false 写"全天事件"。
+    var hasDueTime: Bool
     var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var category: TodoCategory
@@ -285,6 +303,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         detail: String? = nil,
         dueHint: String? = nil,
         dueDate: Date? = nil,
+        hasDueTime: Bool = false,
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
@@ -302,6 +321,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.detail = detail
         self.dueHint = dueHint
         self.dueDate = dueDate
+        self.hasDueTime = hasDueTime
         self.recurrenceRule = recurrenceRule
         self.priority = priority
         self.category = category
@@ -321,11 +341,14 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.title = extracted.title
         self.detail = extracted.detail.isEmpty ? nil : extracted.detail
         self.dueHint = extracted.dueHint
-        self.dueDate = TodoDueDateResolver.resolve(
+        let resolvedDate = TodoDueDateResolver.resolve(
             dueHint: extracted.dueHint,
             title: extracted.title,
             detail: extracted.detail
         )
+        let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
+        self.dueDate = timed.date
+        self.hasDueTime = timed.hasTime
         self.recurrenceRule = extracted.recurrenceRule
         self.priority = extracted.priority
         self.category = extracted.categoryHint

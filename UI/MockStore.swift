@@ -77,6 +77,8 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
                     title: todos[index].title,
                     detail: todos[index].detail ?? ""
                 )
+                // 手动编辑只有 freeform 文本、没有结构化钟点，回退全天事件。
+                todos[index].hasDueTime = false
             }
         }
     }

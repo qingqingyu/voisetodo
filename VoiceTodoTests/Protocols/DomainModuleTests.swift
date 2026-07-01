@@ -41,6 +41,33 @@ final class DomainModuleTests: XCTestCase {
         ))
     }
 
+    func testTodoDueTimeResolverCombinesClockTimeWithDate() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+        let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 9)))
+
+        // 有日期 + 合法钟点 → 带时分、hasTime = true
+        let combined = TodoDueTimeResolver.combine(date: day, dueTime: "15:30", referenceDate: reference, calendar: calendar)
+        XCTAssertTrue(combined.hasTime)
+        let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: try XCTUnwrap(combined.date))
+        XCTAssertEqual(comps.day, 4)
+        XCTAssertEqual(comps.hour, 15)
+        XCTAssertEqual(comps.minute, 30)
+
+        // 无日期 + 合法钟点 → 落到今天该时刻、hasTime = true
+        let noDate = TodoDueTimeResolver.combine(date: nil, dueTime: "08:00", referenceDate: reference, calendar: calendar)
+        XCTAssertTrue(noDate.hasTime)
+        let noDateComps = calendar.dateComponents([.day, .hour, .minute], from: try XCTUnwrap(noDate.date))
+        XCTAssertEqual(noDateComps.day, 4)
+        XCTAssertEqual(noDateComps.hour, 8)
+
+        // 无时间 / 非法 / 越界 → 原样返回日期、hasTime = false
+        XCTAssertFalse(TodoDueTimeResolver.combine(date: day, dueTime: nil, calendar: calendar).hasTime)
+        XCTAssertFalse(TodoDueTimeResolver.combine(date: day, dueTime: "下午三点", calendar: calendar).hasTime)
+        XCTAssertFalse(TodoDueTimeResolver.combine(date: day, dueTime: "25:70", calendar: calendar).hasTime)
+        XCTAssertNil(TodoDueTimeResolver.combine(date: nil, dueTime: nil, calendar: calendar).date)
+    }
+
     func testRecurrenceRuleResolverParsesRulesAndInferredEndDate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))

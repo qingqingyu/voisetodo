@@ -168,6 +168,28 @@ test("adds vocabulary hints to OpenAI system prompt as soft context", async () =
   assert.ok(systemMessage.includes("do not create todos just because these terms appear here"));
 });
 
+test("system prompt instructs extracting structured due_time (zh + en)", async () => {
+  for (const [locale, transcript] of [["zh-Hans", "明天下午3点开会"], ["en-US", "meeting at 3pm tomorrow"]]) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token" }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("开会") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    assert.ok(upstreamRequest.body.messages[0].content.includes("due_time"));
+  }
+});
+
 test("filters and caps vocabulary hints before calling provider", async () => {
   let upstreamRequest;
   const hints = ["A", "Anki", "Anki", "x".repeat(40), ...Array.from({ length: 35 }, (_, i) => `Term${i + 1}`)];

@@ -187,6 +187,8 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
                 title: todoItem.title,
                 detail: todoItem.detail ?? ""
             )
+            // 手动编辑只有 freeform 文本、没有结构化钟点，回退全天事件。
+            todoItem.hasDueTime = false
         }
         if shouldUpdateRecurrence {
             todoItem.recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
@@ -409,6 +411,7 @@ final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTo
                 detail: item.detail,
                 dueHint: item.dueHint,
                 dueDate: item.dueDate,
+                hasDueTime: item.hasDueTime,
                 recurrenceRule: item.recurrenceRule,
                 priority: item.priority,
                 category: item.category,

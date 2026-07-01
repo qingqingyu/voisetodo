@@ -30,8 +30,20 @@ enum SystemCalendarEventMapper {
     static func draft(from todo: TodoItemData, calendar: Calendar = .current) -> SystemCalendarEventDraft? {
         guard todo.dueDate != nil || todo.recurrenceRule != nil else { return nil }
 
-        let startDate = calendar.startOfDay(for: todo.dueDate ?? todo.createdAt)
-        let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate.addingTimeInterval(86_400)
+        // 带明确钟点 → 定时事件（默认 1 小时时长）；否则全天事件。
+        let isTimed = todo.hasDueTime && todo.dueDate != nil
+        let startDate: Date
+        let endDate: Date
+        let isAllDay: Bool
+        if isTimed, let due = todo.dueDate {
+            startDate = due
+            endDate = due.addingTimeInterval(Self.defaultTimedDuration)
+            isAllDay = false
+        } else {
+            startDate = calendar.startOfDay(for: todo.dueDate ?? todo.createdAt)
+            endDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate.addingTimeInterval(86_400)
+            isAllDay = true
+        }
         let notes = [
             todo.detail,
             todo.dueHint.map { String(localized: "system_calendar.notes_due_hint \($0)") },
@@ -47,10 +59,13 @@ enum SystemCalendarEventMapper {
             notes: notes.isEmpty ? nil : notes,
             startDate: startDate,
             endDate: endDate,
-            isAllDay: true,
+            isAllDay: isAllDay,
             recurrenceRule: todo.recurrenceRule
         )
     }
+
+    /// 定时事件的默认时长（无结束时间线索时）：1 小时。
+    static let defaultTimedDuration: TimeInterval = 3600
 }
 
 final class SystemCalendarWriter: SystemCalendarWritingProtocol {

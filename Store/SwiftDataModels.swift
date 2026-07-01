@@ -11,6 +11,9 @@ final class TodoItem {
     var detail: String?
     var dueHint: String?
     var dueDate: Date?
+    /// dueDate 是否携带明确钟点：true 写系统日历"定时事件"，false 写"全天事件"。
+    /// 带默认值 → SwiftData 轻量迁移，旧数据自动补 false。
+    var hasDueTime: Bool = false
     var recurrenceFrequencyRaw: String?
     var recurrenceWeekdaysRaw: String?
     var recurrenceDayOfMonth: Int?
@@ -50,6 +53,7 @@ final class TodoItem {
         detail: String? = nil,
         dueHint: String? = nil,
         dueDate: Date? = nil,
+        hasDueTime: Bool = false,
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
@@ -67,6 +71,7 @@ final class TodoItem {
         self.detail = detail
         self.dueHint = dueHint
         self.dueDate = dueDate
+        self.hasDueTime = hasDueTime
         self.recurrenceFrequencyRaw = recurrenceRule?.frequency.rawValue
         self.recurrenceWeekdaysRaw = Self.encodeWeekdays(recurrenceRule?.weekdays ?? [])
         self.recurrenceDayOfMonth = recurrenceRule?.dayOfMonth
@@ -94,6 +99,7 @@ final class TodoItem {
             detail: detail,
             dueHint: dueHint,
             dueDate: dueDate,
+            hasDueTime: hasDueTime,
             recurrenceRule: recurrenceRule,
             priority: Priority(rawValue: priorityRaw) ?? .normal,
             category: TodoCategory(rawValue: categoryRaw) ?? .other,
@@ -159,16 +165,19 @@ extension TodoItem {
     ///   - rawTranscript: 原始语音转写文本
     /// - Returns: TodoItem 实例
     static func from(_ extracted: ExtractedTodo, rawTranscript: String? = nil) -> TodoItem {
-        TodoItem(
+        let resolvedDate = TodoDueDateResolver.resolve(
+            dueHint: extracted.dueHint,
+            title: extracted.title,
+            detail: extracted.detail
+        )
+        let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
+        return TodoItem(
             id: extracted.id,
             title: extracted.title,
             detail: extracted.detail.isEmpty ? nil : extracted.detail,
             dueHint: extracted.dueHint,
-            dueDate: TodoDueDateResolver.resolve(
-                dueHint: extracted.dueHint,
-                title: extracted.title,
-                detail: extracted.detail
-            ),
+            dueDate: timed.date,
+            hasDueTime: timed.hasTime,
             recurrenceRule: extracted.recurrenceRule,
             priority: extracted.priority,
             category: extracted.categoryHint,
