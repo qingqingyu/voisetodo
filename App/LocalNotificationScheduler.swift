@@ -3,27 +3,24 @@ import UserNotifications
 
 /// 到点提醒的排程能力（协议便于注入 no-op 于测试）。
 protocol NotificationScheduling: AnyObject {
-    /// 用"应存在的提醒集合"对账系统待发通知：多退少补。
-    func reconcile(reminders: [PlannedReminder]) async
+    /// 用"应存在的通知集合"对账系统待发通知：多退少补。
+    func reconcile(notifications: [PlannedNotification]) async
 }
 
 /// 基于 `UNUserNotificationCenter` 的本地通知调度器。
 /// 权限懒申请（首次有可排提醒时才弹）；对账式排程，天然处理 iOS 64 条待发上限（上游已截断）。
 final class LocalNotificationScheduler: NSObject, NotificationScheduling, UNUserNotificationCenterDelegate {
-    /// 本 App 排的通知标识前缀，用于对账时只清理自己的请求。
-    static let identifierPrefix = "todo-reminder-"
-
     /// 点击通知打开对应待办的回调（由 App 注入，路由到深链）。
     var onOpenTodo: ((UUID) -> Void)?
 
     private let center = UNUserNotificationCenter.current()
 
-    func reconcile(reminders: [PlannedReminder]) async {
+    func reconcile(notifications: [PlannedNotification]) async {
         let settings = await center.notificationSettings()
         switch settings.authorizationStatus {
         case .notDetermined:
             // 没有要排的提醒就不打扰用户，等首次真有带时间待办再申请。
-            guard !reminders.isEmpty else { return }
+            guard !notifications.isEmpty else { return }
             let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
             VoiceTodoLog.notification.info("notification.authorization.requested granted=\(granted)")
             guard granted else {
@@ -40,20 +37,19 @@ final class LocalNotificationScheduler: NSObject, NotificationScheduling, UNUser
 
         await clearOurPending()
         var scheduled = 0
-        for reminder in reminders {
+        for notification in notifications {
             let content = UNMutableNotificationContent()
-            content.title = reminder.title
-            if let body = reminder.body { content.body = body }
+            content.title = notification.title
+            if let body = notification.body { content.body = body }
             content.sound = .default
-            content.userInfo = ["todoID": reminder.id.uuidString]
+            content.userInfo = ["todoID": notification.todoID.uuidString]
 
-            let comps = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute],
-                from: reminder.fireDate
+            let trigger = UNCalendarNotificationTrigger(
+                dateMatching: notification.dateComponents,
+                repeats: notification.repeats
             )
-            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             let request = UNNotificationRequest(
-                identifier: Self.identifierPrefix + reminder.id.uuidString,
+                identifier: notification.identifier,
                 content: content,
                 trigger: trigger
             )
@@ -61,15 +57,15 @@ final class LocalNotificationScheduler: NSObject, NotificationScheduling, UNUser
                 try await center.add(request)
                 scheduled += 1
             } catch {
-                VoiceTodoLog.notification.error("notification.add.failed todoID=\(reminder.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                VoiceTodoLog.notification.error("notification.add.failed id=\(notification.identifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             }
         }
-        VoiceTodoLog.notification.info("notification.reconcile.done requested=\(reminders.count) scheduled=\(scheduled)")
+        VoiceTodoLog.notification.info("notification.reconcile.done requested=\(notifications.count) scheduled=\(scheduled)")
     }
 
     private func clearOurPending() async {
         let pending = await center.pendingNotificationRequests()
-        let ours = pending.map(\.identifier).filter { $0.hasPrefix(Self.identifierPrefix) }
+        let ours = pending.map(\.identifier).filter { $0.hasPrefix(NotificationPlanner.identifierPrefix) }
         guard !ours.isEmpty else { return }
         center.removePendingNotificationRequests(withIdentifiers: ours)
     }
@@ -102,5 +98,5 @@ final class LocalNotificationScheduler: NSObject, NotificationScheduling, UNUser
 
 /// 测试/UI 测试用的空实现：不申请权限、不排程。
 final class NoopNotificationScheduler: NotificationScheduling {
-    func reconcile(reminders: [PlannedReminder]) async {}
+    func reconcile(notifications: [PlannedNotification]) async {}
 }

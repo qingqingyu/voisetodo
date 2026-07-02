@@ -90,7 +90,7 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertEqual(Set(result), Set(uncompleted.map(\.id)))
     }
 
-    func testNotificationPlannerFiltersSortsAndCaps() throws {
+    func testNotificationPlannerOneShotFiltersSortsAndCaps() throws {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let inHour = now.addingTimeInterval(3600)
         let inTwoHours = now.addingTimeInterval(7200)
@@ -101,16 +101,16 @@ final class DomainModuleTests: XCTestCase {
         let allDay = TodoItemData(title: "买菜", dueDate: inHour, hasDueTime: false)          // 无钟点
         let completed = TodoItemData(title: "已完成", dueDate: inHour, hasDueTime: true, isCompleted: true)
         let pastTimed = TodoItemData(title: "过期", dueDate: past, hasDueTime: true)           // 已过期
-        let recurring = TodoItemData(title: "吃药", dueDate: inHour, hasDueTime: true, recurrenceRule: RecurrenceRule(frequency: .daily))
 
-        let result = NotificationPlanner.plannedReminders(
-            from: [timedSoon, allDay, completed, pastTimed, recurring, timedSooner],
+        let result = NotificationPlanner.plannedNotifications(
+            from: [timedSoon, allDay, completed, pastTimed, timedSooner],
             now: now
         )
 
-        // 只保留带钟点/未完成/非规律/未过期，按 fireDate 升序
-        XCTAssertEqual(result.map(\.id), [timedSooner.id, timedSoon.id])
+        // 只保留带钟点/未完成/未过期，按触发时间升序；一次性 repeats=false
+        XCTAssertEqual(result.map(\.todoID), [timedSooner.id, timedSoon.id])
         XCTAssertEqual(result.first?.title, "电话")
+        XCTAssertFalse(result.first?.repeats ?? true)
         XCTAssertNil(result.first?.body)              // 无 detail → body nil
         XCTAssertEqual(result.last?.body, "3楼")       // 有 detail → 带上
 
@@ -118,7 +118,59 @@ final class DomainModuleTests: XCTestCase {
         let many = (0..<10).map { i in
             TodoItemData(title: "T\(i)", dueDate: now.addingTimeInterval(Double(i + 1) * 60), hasDueTime: true)
         }
-        XCTAssertEqual(NotificationPlanner.plannedReminders(from: many, now: now, limit: 3).count, 3)
+        XCTAssertEqual(NotificationPlanner.plannedNotifications(from: many, now: now, limit: 3).count, 3)
+    }
+
+    func testNotificationPlannerRecurring() throws {
+        let calendar = Calendar.current
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        // 构造一个带 20:xx 时刻的 dueDate（重复触发只取时分）
+        let due = calendar.date(bySettingHour: 20, minute: 15, second: 0, of: now)!
+
+        func todo(_ rule: RecurrenceRule, hasTime: Bool = true) -> TodoItemData {
+            TodoItemData(title: "R", dueDate: due, hasDueTime: hasTime, recurrenceRule: rule)
+        }
+
+        // daily 无界 → 1 条重复，仅 {hour,minute}
+        let daily = NotificationPlanner.plannedNotifications(from: [todo(RecurrenceRule(frequency: .daily))], now: now)
+        XCTAssertEqual(daily.count, 1)
+        XCTAssertTrue(daily[0].repeats)
+        XCTAssertEqual(daily[0].dateComponents.hour, 20)
+        XCTAssertEqual(daily[0].dateComponents.minute, 15)
+        XCTAssertNil(daily[0].dateComponents.day)
+        XCTAssertNil(daily[0].dateComponents.weekday)
+        XCTAssertNil(daily[0].dateComponents.year)
+
+        // weekly [2,4,6] → 每 weekday 一条
+        let weekly = NotificationPlanner.plannedNotifications(from: [todo(RecurrenceRule(frequency: .weekly, weekdays: [2, 4, 6]))], now: now)
+        XCTAssertEqual(weekly.count, 3)
+        XCTAssertTrue(weekly.allSatisfy { $0.repeats })
+        XCTAssertEqual(Set(weekly.compactMap { $0.dateComponents.weekday }), [2, 4, 6])
+
+        // monthly day=1 → 1 条含 {day:1}
+        let monthly = NotificationPlanner.plannedNotifications(from: [todo(RecurrenceRule(frequency: .monthly, dayOfMonth: 1))], now: now)
+        XCTAssertEqual(monthly.count, 1)
+        XCTAssertTrue(monthly[0].repeats)
+        XCTAssertEqual(monthly[0].dateComponents.day, 1)
+
+        // 有界 daily（endDate=+2天）→ 展开为一次性（repeats=false），不超上限
+        let end = calendar.date(byAdding: .day, value: 2, to: now)!
+        let bounded = NotificationPlanner.plannedNotifications(
+            from: [todo(RecurrenceRule(frequency: .daily, endDate: end))], now: now
+        )
+        XCTAssertFalse(bounded.isEmpty)
+        XCTAssertTrue(bounded.allSatisfy { !$0.repeats })
+        XCTAssertTrue(bounded.allSatisfy { $0.dateComponents.year != nil }) // 一次性含完整日期
+        XCTAssertLessThanOrEqual(bounded.count, NotificationPlanner.boundedExpansionCap)
+
+        // 规律但无具体时间 → 不产出
+        XCTAssertTrue(NotificationPlanner.plannedNotifications(from: [todo(RecurrenceRule(frequency: .daily), hasTime: false)], now: now).isEmpty)
+
+        // 已结束（endDate 在过去）→ 不产出
+        let pastEnd = calendar.date(byAdding: .day, value: -5, to: now)!
+        XCTAssertTrue(NotificationPlanner.plannedNotifications(
+            from: [todo(RecurrenceRule(frequency: .daily, endDate: pastEnd))], now: now
+        ).isEmpty)
     }
 
     func testRecurrenceRuleResolverParsesRulesAndInferredEndDate() throws {

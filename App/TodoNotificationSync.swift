@@ -24,9 +24,9 @@ final class TodoNotificationSync: ObservableObject {
 
     /// 立即用当前待办对账通知（生命周期钩子：冷启动、回前台）。
     func reconcileNow() {
-        let reminders = NotificationPlanner.plannedReminders(from: store.todos, now: Date())
+        let notifications = NotificationPlanner.plannedNotifications(from: store.todos, now: Date())
         Task { @MainActor in
-            await scheduler.reconcile(reminders: reminders)
+            await scheduler.reconcile(notifications: notifications)
         }
     }
 }
