@@ -90,6 +90,37 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertEqual(Set(result), Set(uncompleted.map(\.id)))
     }
 
+    func testNotificationPlannerFiltersSortsAndCaps() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let inHour = now.addingTimeInterval(3600)
+        let inTwoHours = now.addingTimeInterval(7200)
+        let past = now.addingTimeInterval(-3600)
+
+        let timedSoon = TodoItemData(title: "会议", detail: "3楼", dueDate: inTwoHours, hasDueTime: true)
+        let timedSooner = TodoItemData(title: "电话", dueDate: inHour, hasDueTime: true)
+        let allDay = TodoItemData(title: "买菜", dueDate: inHour, hasDueTime: false)          // 无钟点
+        let completed = TodoItemData(title: "已完成", dueDate: inHour, hasDueTime: true, isCompleted: true)
+        let pastTimed = TodoItemData(title: "过期", dueDate: past, hasDueTime: true)           // 已过期
+        let recurring = TodoItemData(title: "吃药", dueDate: inHour, hasDueTime: true, recurrenceRule: RecurrenceRule(frequency: .daily))
+
+        let result = NotificationPlanner.plannedReminders(
+            from: [timedSoon, allDay, completed, pastTimed, recurring, timedSooner],
+            now: now
+        )
+
+        // 只保留带钟点/未完成/非规律/未过期，按 fireDate 升序
+        XCTAssertEqual(result.map(\.id), [timedSooner.id, timedSoon.id])
+        XCTAssertEqual(result.first?.title, "电话")
+        XCTAssertNil(result.first?.body)              // 无 detail → body nil
+        XCTAssertEqual(result.last?.body, "3楼")       // 有 detail → 带上
+
+        // limit 截断
+        let many = (0..<10).map { i in
+            TodoItemData(title: "T\(i)", dueDate: now.addingTimeInterval(Double(i + 1) * 60), hasDueTime: true)
+        }
+        XCTAssertEqual(NotificationPlanner.plannedReminders(from: many, now: now, limit: 3).count, 3)
+    }
+
     func testRecurrenceRuleResolverParsesRulesAndInferredEndDate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))

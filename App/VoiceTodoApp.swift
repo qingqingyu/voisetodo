@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct VoiceTodoApp: App {
@@ -17,6 +18,7 @@ struct VoiceTodoApp: App {
     @StateObject private var permissionManager = PermissionManager()
     @StateObject private var entitlementManager: EntitlementManager
     @StateObject private var quotaUsage: QuotaUsage
+    @StateObject private var notificationSync: TodoNotificationSync
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
 
@@ -162,13 +164,30 @@ struct VoiceTodoApp: App {
         _quotaUsage = StateObject(wrappedValue: quotaUsage)
 
         // 初始化 Coordinator
-        _coordinator = StateObject(wrappedValue: AppCoordinator(
+        let coordinator = AppCoordinator(
             voiceInput: voiceInput,
             extractor: extractor,
             store: store,
             historyStore: voiceHistoryStore,
             quotaUsage: quotaUsage
-        ))
+        )
+        _coordinator = StateObject(wrappedValue: coordinator)
+
+        // 本地通知：调度器 + 对账同步。UI 测试用 no-op，避免弹权限/排程干扰测试。
+        let notificationScheduler: NotificationScheduling
+        if uiTestOptions.isUITesting {
+            notificationScheduler = NoopNotificationScheduler()
+        } else {
+            let local = LocalNotificationScheduler()
+            local.onOpenTodo = { [weak coordinator] todoID in
+                Task { @MainActor in coordinator?.deepLinkTodoId = todoID }
+            }
+            // 尽早设 delegate，以便前台展示 banner、并捕获从通知冷启动的点击。
+            UNUserNotificationCenter.current().delegate = local
+            notificationScheduler = local
+        }
+        _notificationSync = StateObject(wrappedValue: TodoNotificationSync(store: store, scheduler: notificationScheduler))
+
         // BGTask 必须在 App 启动早期同步注册（before scene starts）
         TelemetryUploader.shared.registerBackgroundTask()
         TelemetryUploader.shared.scheduleNextRun()
@@ -274,6 +293,7 @@ struct VoiceTodoApp: App {
         VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
         guard startupStorageError == nil else { return }
         coordinator.cleanupExpiredVoiceHistory()
+        notificationSync.reconcileNow()
         Task { await entitlementManager.refresh() }
     }
 
@@ -285,6 +305,8 @@ struct VoiceTodoApp: App {
             guard startupStorageError == nil else { return }
             // App 进入前台，同步 Widget Extension 可能做的修改（如打勾完成）
             refreshStoreIfNeededFromExternalChanges(force: true)
+            // 回前台补账本地通知（清过期、权限刚授予后补排、外部改动同步）
+            notificationSync.reconcileNow()
             NetworkMonitor.shared.restartIfNeeded()
             // 节流清理过期语音历史：launch 时已清一次，此处兜底长时间热启动场景。
             // 异步执行避免阻塞 UI 主线程（fetch + delete 可能涉及大量记录）。
