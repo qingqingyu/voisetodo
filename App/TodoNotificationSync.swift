@@ -20,11 +20,19 @@ final class TodoNotificationSync: ObservableObject {
                 self?.reconcileNow()
             }
             .store(in: &cancellables)
+        // 监听设置变化（含"到点提醒"总开关）：拨动后立即对账（关→清空，开→补排）。
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.reconcileNow()
+            }
+            .store(in: &cancellables)
     }
 
-    /// 立即用当前待办对账通知（生命周期钩子：冷启动、回前台）。
+    /// 立即用当前待办对账通知（生命周期钩子：冷启动、回前台、开关变化）。
     func reconcileNow() {
-        let notifications = NotificationPlanner.plannedNotifications(from: store.todos, now: Date())
+        let enabled = UserDefaults.standard.object(forKey: NotificationPlanner.enabledDefaultsKey) as? Bool ?? true
+        let notifications = NotificationPlanner.plannedNotifications(from: store.todos, now: Date(), enabled: enabled)
         Task { @MainActor in
             await scheduler.reconcile(notifications: notifications)
         }

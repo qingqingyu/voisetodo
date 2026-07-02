@@ -3489,6 +3489,54 @@
         }
       }
     },
+    "settings.notifications.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提醒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reminders"
+          }
+        }
+      }
+    },
+    "settings.notifications.toggle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到点提醒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time reminders"
+          }
+        }
+      }
+    },
+    "settings.notifications.description": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为带具体时间的待办到点发送本地通知。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send a local notification when a timed to-do is due."
+          }
+        }
+      }
+    },
     "settings.personalization.title": {
       "localizations": {
         "zh-Hans": {

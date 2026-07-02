@@ -119,6 +119,10 @@ final class DomainModuleTests: XCTestCase {
             TodoItemData(title: "T\(i)", dueDate: now.addingTimeInterval(Double(i + 1) * 60), hasDueTime: true)
         }
         XCTAssertEqual(NotificationPlanner.plannedNotifications(from: many, now: now, limit: 3).count, 3)
+
+        // 总开关关闭 → 空集合；打开 → 恢复
+        XCTAssertTrue(NotificationPlanner.plannedNotifications(from: [timedSoon, timedSooner], now: now, enabled: false).isEmpty)
+        XCTAssertEqual(NotificationPlanner.plannedNotifications(from: [timedSoon, timedSooner], now: now, enabled: true).count, 2)
     }
 
     func testNotificationPlannerRecurring() throws {

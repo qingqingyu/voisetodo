@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeSettingsSheet: View {
     @Binding var calendarWriteModeRaw: String
+    @AppStorage(NotificationPlanner.enabledDefaultsKey) private var notificationsEnabled = true
     @AppStorage(UserVocabularyStore.isEnabledKey, store: UserVocabularyStore.sharedDefaults())
     private var isPersonalizedRecognitionEnabled = true
     @Environment(\.dismiss) private var dismiss
@@ -51,6 +52,17 @@ struct HomeSettingsSheet: View {
                     }
                     .pickerStyle(.inline)
                     .accessibilityIdentifier("CalendarWriteModePicker")
+                }
+
+                Section {
+                    Toggle(String(localized: "settings.notifications.toggle"), isOn: $notificationsEnabled)
+                        .accessibilityIdentifier("NotificationsToggle")
+
+                    Text(String(localized: "settings.notifications.description"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(String(localized: "settings.notifications.title"))
                 }
 
                 Section {

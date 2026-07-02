@@ -23,6 +23,9 @@ struct PlannedNotification: Equatable, Sendable {
 enum NotificationPlanner {
     static let identifierPrefix = "todo-reminder-"
 
+    /// App 级"到点提醒"总开关的 UserDefaults 键（默认 ON）。
+    static let enabledDefaultsKey = "todoNotificationsEnabled"
+
     /// 有界规律展开时每条待办的 occurrence 上限，防止极端区间爆量。
     static let boundedExpansionCap = 30
 
@@ -30,8 +33,11 @@ enum NotificationPlanner {
         from todos: [TodoItemData],
         now: Date,
         calendar: Calendar = .current,
-        limit: Int = 60
+        limit: Int = 60,
+        enabled: Bool = true
     ) -> [PlannedNotification] {
+        // 总开关关闭：产出空集合，交由 reconcile 清空已排通知。
+        guard enabled else { return [] }
         var repeating: [PlannedNotification] = []
         var oneShots: [PlannedNotification] = []
 
