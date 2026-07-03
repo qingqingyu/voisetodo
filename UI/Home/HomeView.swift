@@ -907,20 +907,13 @@ private struct HomeSelectedDayListView: View {
     }
 
     private var homeGlobalEmptyRow: some View {
+        // 不放 primaryAction / secondaryAction——底部 action bar 已经有「录音」+「文字输入」
+        // 两个入口，这里再放一份会让用户在两个位置看到同样的按钮，UI 冗余。
+        // 空状态只做文案引导，用户视线自然落到屏幕底部 action bar。
         ProductEmptyStateView(
             icon: "sparkles",
             title: String(localized: "empty.home.title"),
-            message: String(localized: "empty.home.message"),
-            primaryAction: ProductEmptyStateAction(
-                title: String(localized: "empty.home.primary"),
-                systemImage: "mic.fill",
-                action: onStartRecording
-            ),
-            secondaryAction: ProductEmptyStateAction(
-                title: String(localized: "empty.home.secondary"),
-                systemImage: "keyboard",
-                action: onShowManualInput
-            )
+            message: String(localized: "empty.home.message")
         )
         .accessibilityIdentifier("EmptyState")
         .listRowSeparator(.hidden)
