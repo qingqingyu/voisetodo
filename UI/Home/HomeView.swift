@@ -24,14 +24,14 @@ struct RootTabView<Store: HomeTodoStore, HistoryStore: VoiceCaptureHistoryStoreP
             HomeView(store: todoStore)
                 .tag(RootTab.home)
                 .tabItem {
-                    Label(String(localized: "tab.home"), systemImage: "house")
+                    Label(String(localized: "tab.home"), systemImage: "house.fill")
                 }
                 .accessibilityIdentifier("HomeTab")
 
             VoiceHistoryView(historyStore: historyStore)
                 .tag(RootTab.history)
                 .tabItem {
-                    Label(String(localized: "tab.history"), systemImage: "clock.arrow.circlepath")
+                    Label(String(localized: "tab.history"), systemImage: "clock.fill")
                 }
                 .accessibilityIdentifier("HistoryTab")
         }
@@ -838,6 +838,10 @@ private struct HomeMonthDayButton: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: WarmSpacing.xxxl)
+            // 选中态放大 1.05x：弱动画提示用户"我点对了"，但不夸张到挤压相邻格
+            // （月历 7 列宽，放大太多会重叠）。Reduce Motion 时 animation 会被系统忽略。
+            .scaleEffect(dayState.isSelected ? 1.05 : 1.0)
+            .animation(WarmAnimation.springSmooth, value: dayState.isSelected)
             .background(
                 RoundedRectangle(cornerRadius: WarmRadius.card)
                     .fill(dayState.isSelected ? WarmTheme.primary : Color.white.opacity(dayState.isCurrentMonth ? 0.9 : 0.45))
@@ -849,7 +853,52 @@ private struct HomeMonthDayButton: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(VoiceOverLabel.build(for: dayState))
+        .accessibilityHint(String(localized: "a11y.day.hint"))
+        .accessibilityAddTraits(dayState.isSelected ? [.isButton, .isSelected] : [.isButton])
         .accessibilityIdentifier("MonthDay_\(dayState.date.formatted(.dateTime.year().month().day()))")
+    }
+}
+
+/// VoiceOver 文案构造：把日历单元格的状态翻译成完整一句话。
+/// 月视图单元格视觉信息（数字、点、底色）对低视力/盲人用户没用，必须用文字补全。
+private enum VoiceOverLabel {
+    static func build(for dayState: HomeCalendarDayState) -> String {
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: dayState.date)
+        let day = calendar.component(.day, from: dayState.date)
+        let weekdayIndex = calendar.component(.weekday, from: dayState.date)
+        let weekday = Self.weekdayText(for: weekdayIndex)
+
+        var parts: [String] = []
+        if !dayState.isCurrentMonth {
+            parts.append(String(localized: "a11y.day.out_of_month"))
+        }
+        parts.append("\(month)\(String(localized: "a11y.day.month_unit"))\(day)\(String(localized: "a11y.day.day_unit"))")
+        parts.append(weekday)
+        if dayState.isToday {
+            parts.append(String(localized: "a11y.day.today"))
+        }
+        let count = dayState.occurrences.count
+        if count > 0 {
+            parts.append(String(format: String(localized: "a11y.day.todo_count"), count))
+        } else {
+            parts.append(String(localized: "a11y.day.no_todo"))
+        }
+        return parts.joined(separator: "，")
+    }
+
+    private static func weekdayText(for index: Int) -> String {
+        switch index {
+        case 1: return String(localized: "a11y.day.sun")
+        case 2: return String(localized: "a11y.day.mon")
+        case 3: return String(localized: "a11y.day.tue")
+        case 4: return String(localized: "a11y.day.wed")
+        case 5: return String(localized: "a11y.day.thu")
+        case 6: return String(localized: "a11y.day.fri")
+        default: return String(localized: "a11y.day.sat")
+        }
     }
 }
 
