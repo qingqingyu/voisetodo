@@ -5,9 +5,9 @@ struct ManualInputSheetView: View {
     let onSubmit: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var isInputFocused: Bool
     @State private var text = ""
     @State private var isSubmitting = false
+    @State private var isInputFocused = false
 
     private var trimmedText: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -59,19 +59,13 @@ struct ManualInputSheetView: View {
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(isSubmitting)
         .accessibilityIdentifier("ManualInputSheet")
-        .task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            isInputFocused = true
-        }
     }
 
     private var inputCard: some View {
         ZStack(alignment: .topLeading) {
-            TextEditor(text: $text)
-                .font(WarmFont.body(17))
-                .foregroundColor(WarmTheme.textPrimary)
-                .scrollContentBackground(.hidden)
-                .focused($isInputFocused)
+            // 改用 UIKit UITextView 包装，绕过 SwiftUI TextEditor 的 sheet 聚焦 bug。
+            // sheet 弹出后 UITextView.makeUIView 里直接 becomeFirstResponder() 100% 可靠弹键盘。
+            FocusableTextView(text: $text)
                 .padding(WarmSpacing.xs)
                 .frame(minHeight: 180)
                 .background(Color.clear)
