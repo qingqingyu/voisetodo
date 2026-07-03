@@ -2,6 +2,7 @@
   "sourceLanguage" : "zh-Hans",
   "strings" : {
     "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13,6 +14,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "VoiceTodo 小组件"
+          }
+        }
+      }
+    },
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "VoiceTodoWidget"
           }
         }
       }
