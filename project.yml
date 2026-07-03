@@ -135,6 +135,7 @@ targets:
       - path: Protocols/Domain/RecurrenceRule.swift
       - path: Protocols/Domain/TodoDueDateResolver.swift
       - path: Protocols/Domain/RecurrenceRuleResolver.swift
+      - path: Protocols/Domain/TodoDueTimeResolver.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift

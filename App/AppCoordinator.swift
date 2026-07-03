@@ -399,8 +399,9 @@ final class AppCoordinator: ObservableObject {
     /// 节流版清理：仅当距上次清理超过 `historyCleanupThrottle` 时才触发。
     /// 用于 scenePhase .active 路径，避免每次切回前台都重复 fetch。
     func cleanupExpiredVoiceHistoryIfNeeded(now: Date = Date()) {
-        guard now.timeIntervalSince(lastHistoryCleanupAt) >= Self.historyCleanupThrottle else {
-            VoiceTodoLog.coordinator.debug("coordinator.history.cleanup.skipped reason=throttled secondsSinceLast=\(Int(now.timeIntervalSince(lastHistoryCleanupAt)))")
+        let lastCleanup = lastHistoryCleanupAt
+        guard now.timeIntervalSince(lastCleanup) >= Self.historyCleanupThrottle else {
+            VoiceTodoLog.coordinator.debug("coordinator.history.cleanup.skipped reason=throttled secondsSinceLast=\(Int(now.timeIntervalSince(lastCleanup)))")
             return
         }
         cleanupExpiredVoiceHistory(now: now, showWarning: false)
@@ -463,7 +464,7 @@ final class AppCoordinator: ObservableObject {
                     // 内层 Task 跑完前也不能强引用 self（handleAppForeground 是 transient，
                     // 但严格并发语义下仍要避免 Task 闭包强持有 self）。
                     Task { @MainActor [weak self] in
-                        self?.handleAppForeground()
+                        await self?.handleAppForeground()
                     }
                 }
             )

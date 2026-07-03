@@ -608,6 +608,7 @@ private struct CalendarRefreshKey: Hashable {
     let revision: Int
 }
 
+@MainActor
 private struct HomeViewActions<Store: HomeTodoStore> {
     let store: Store
     let coordinator: AppCoordinator

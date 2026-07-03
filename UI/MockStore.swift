@@ -421,7 +421,7 @@ extension MockVoiceCaptureHistoryStore {
                 transcript: "明天上午十点开会，记得带笔记本",
                 createdAt: now.addingTimeInterval(-3600),
                 status: .saved,
-                source: .record_button,
+                source: .recordButton,
                 localeIdentifier: "zh-Hans-CN",
                 generatedTodoCount: 1,
                 generatedTodoIDs: [UUID()]
@@ -439,7 +439,7 @@ extension MockVoiceCaptureHistoryStore {
                 transcript: "呃...",
                 createdAt: now.addingTimeInterval(-172800),
                 status: .noTodos,
-                source: .record_button,
+                source: .recordButton,
                 localeIdentifier: "zh-Hans-CN"
             )
         ])
