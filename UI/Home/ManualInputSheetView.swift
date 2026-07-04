@@ -64,7 +64,7 @@ struct ManualInputSheetView: View {
     private var inputCard: some View {
         ZStack(alignment: .topLeading) {
             // 改用 UIKit UITextView 包装，绕过 SwiftUI TextEditor 的 sheet 聚焦 bug。
-            // sheet 弹出后 UITextView.makeUIView 里直接 becomeFirstResponder() 100% 可靠弹键盘。
+            // sheet 弹出后等 UITextView attach 到 window 再请求焦点，避免 sheet present 时机问题。
             FocusableTextView(text: $text)
                 .padding(WarmSpacing.xs)
                 .frame(minHeight: 180)

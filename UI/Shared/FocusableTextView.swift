@@ -5,8 +5,13 @@ import UIKit
 ///
 /// 为什么不用 SwiftUI `TextEditor` + `@FocusState`：
 /// SwiftUI `TextEditor` 的 `.focused()` 在 sheet 里调用 `isInputFocused = true`
-/// 经常被吞掉（sheet 完成 present 之前 .task 已执行）。改用 UIKit
-/// `becomeFirstResponder()` 是 100% 可靠的方式，绕过 SwiftUI focus 系统的时机问题。
+/// 经常被吞掉（sheet 完成 present 之前 .task 已执行）。
+///
+/// 为什么先用 `didMoveToWindow`：
+/// sheet 的 present 动画有 200-300ms，而 `DispatchQueue.main.async` 只延迟一个
+/// runloop（~1ms），此时 view 还没 attach 到 window，`becomeFirstResponder()`
+/// 会被系统拒绝。`didMoveToWindow` 是 UIKit 保证 view 加到 window 后才调的回调，
+/// 时机最准；如果 attach 后系统仍暂时拒绝焦点，再做少量短延迟重试。
 struct FocusableTextView: UIViewRepresentable {
     @Binding var text: String
 
@@ -24,7 +29,7 @@ struct FocusableTextView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        let textView = FocusableUITextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = font
@@ -39,12 +44,8 @@ struct FocusableTextView: UIViewRepresentable {
         textView.smartDashesType = .yes
         textView.smartQuotesType = .yes
         textView.text = text
-
-        // 关键：在 view 加入窗口层级之后再 becomeFirstResponder。
-        // DispatchQueue.main.async 让它在下一 runloop 执行，确保 view 已 attached。
-        DispatchQueue.main.async {
-            textView.becomeFirstResponder()
-        }
+        // autoFocus 在 didMoveToWindow 里触发，无需此处主动 becomeFirstResponder
+        textView.autoFocusOnAttach = true
         return textView
     }
 
@@ -78,6 +79,49 @@ struct FocusableTextView: UIViewRepresentable {
             if text.wrappedValue != textView.text {
                 text.wrappedValue = textView.text
             }
+        }
+    }
+}
+
+/// UITextView 子类：在 view attach 到 window 后请求焦点，并在失败时有限重试。
+private final class FocusableUITextView: UITextView {
+    private static let maxFocusAttempts = 3
+    private static let focusRetryDelay: TimeInterval = 0.05
+
+    /// 控制位：true 时 didMoveToWindow 会触发 becomeFirstResponder。
+    /// 避免后续 view 重 attach（比如从背景回前台）反复抢焦点。
+    var autoFocusOnAttach = false
+    private var focusAttemptCount = 0
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        requestFocusIfNeeded()
+    }
+
+    private func requestFocusIfNeeded() {
+        // window nil = 被移除，不需要处理。
+        guard window != nil, autoFocusOnAttach else { return }
+
+        if isFirstResponder {
+            focusAttemptCount = 0
+            autoFocusOnAttach = false
+            return
+        }
+
+        guard focusAttemptCount < Self.maxFocusAttempts else {
+            autoFocusOnAttach = false
+            return
+        }
+
+        focusAttemptCount += 1
+        if becomeFirstResponder() {
+            focusAttemptCount = 0
+            autoFocusOnAttach = false
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.focusRetryDelay) { [weak self] in
+            self?.requestFocusIfNeeded()
         }
     }
 }
