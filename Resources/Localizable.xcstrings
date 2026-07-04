@@ -4672,34 +4672,18 @@
         }
       }
     },
-    "a11y.day.month_unit": {
+    "a11y.day.separator": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "月"
+            "value": "，"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "/"
-          }
-        }
-      }
-    },
-    "a11y.day.day_unit": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": ""
+            "value": ", "
           }
         }
       }
@@ -4748,118 +4732,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "No todos"
-          }
-        }
-      }
-    },
-    "a11y.day.sun": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期日"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sunday"
-          }
-        }
-      }
-    },
-    "a11y.day.mon": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期一"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monday"
-          }
-        }
-      }
-    },
-    "a11y.day.tue": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期二"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tuesday"
-          }
-        }
-      }
-    },
-    "a11y.day.wed": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期三"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wednesday"
-          }
-        }
-      }
-    },
-    "a11y.day.thu": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期四"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thursday"
-          }
-        }
-      }
-    },
-    "a11y.day.fri": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期五"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Friday"
-          }
-        }
-      }
-    },
-    "a11y.day.sat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星期六"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Saturday"
           }
         }
       }

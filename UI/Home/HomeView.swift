@@ -838,9 +838,9 @@ private struct HomeMonthDayButton: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: WarmSpacing.xxxl)
-            // 选中态放大 1.05x：弱动画提示用户"我点对了"，但不夸张到挤压相邻格
+            // 选中态放大：弱动画提示用户"我点对了"，但不夸张到挤压相邻格
             // （月历 7 列宽，放大太多会重叠）。Reduce Motion 时 animation 会被系统忽略。
-            .scaleEffect(dayState.isSelected ? 1.05 : 1.0)
+            .scaleEffect(dayState.isSelected ? WarmAnimation.monthDaySelectedScale : WarmAnimation.monthDayDefaultScale)
             .animation(WarmAnimation.springSmooth, value: dayState.isSelected)
             .background(
                 RoundedRectangle(cornerRadius: WarmRadius.card)
@@ -863,20 +863,21 @@ private struct HomeMonthDayButton: View {
 
 /// VoiceOver 文案构造：把日历单元格的状态翻译成完整一句话。
 /// 月视图单元格视觉信息（数字、点、底色）对低视力/盲人用户没用，必须用文字补全。
+/// 顺序遵循可达性惯例：身份（日期）在前，状态（非当月/今天/待办数）在后。
+/// 使用 app 当前本地化语言 + gregorian 日历格式化日期，避免系统区域语言与 app 文案混读。
 private enum VoiceOverLabel {
-    static func build(for dayState: HomeCalendarDayState) -> String {
-        let calendar = Calendar.current
-        let month = calendar.component(.month, from: dayState.date)
-        let day = calendar.component(.day, from: dayState.date)
-        let weekdayIndex = calendar.component(.weekday, from: dayState.date)
-        let weekday = Self.weekdayText(for: weekdayIndex)
+    private static let gregorian = Calendar(identifier: .gregorian)
 
-        var parts: [String] = []
+    static func build(for dayState: HomeCalendarDayState) -> String {
+        var parts = [
+            monthDayText(for: dayState.date),
+            weekdayText(for: dayState.date)
+        ]
+
+        // 状态在后
         if !dayState.isCurrentMonth {
             parts.append(String(localized: "a11y.day.out_of_month"))
         }
-        parts.append("\(month)\(String(localized: "a11y.day.month_unit"))\(day)\(String(localized: "a11y.day.day_unit"))")
-        parts.append(weekday)
         if dayState.isToday {
             parts.append(String(localized: "a11y.day.today"))
         }
@@ -886,19 +887,28 @@ private enum VoiceOverLabel {
         } else {
             parts.append(String(localized: "a11y.day.no_todo"))
         }
-        return parts.joined(separator: "，")
+        return parts.joined(separator: String(localized: "a11y.day.separator"))
     }
 
-    private static func weekdayText(for index: Int) -> String {
-        switch index {
-        case 1: return String(localized: "a11y.day.sun")
-        case 2: return String(localized: "a11y.day.mon")
-        case 3: return String(localized: "a11y.day.tue")
-        case 4: return String(localized: "a11y.day.wed")
-        case 5: return String(localized: "a11y.day.thu")
-        case 6: return String(localized: "a11y.day.fri")
-        default: return String(localized: "a11y.day.sat")
+    private static func monthDayText(for date: Date) -> String {
+        var style = Date.FormatStyle.dateTime.month(.wide).day()
+        style.calendar = gregorian
+        style.locale = appLocale
+        return date.formatted(style)
+    }
+
+    private static func weekdayText(for date: Date) -> String {
+        var style = Date.FormatStyle.dateTime.weekday(.wide)
+        style.calendar = gregorian
+        style.locale = appLocale
+        return date.formatted(style)
+    }
+
+    private static var appLocale: Locale {
+        guard let identifier = Bundle.main.preferredLocalizations.first(where: { $0 != "Base" }) else {
+            return .current
         }
+        return Locale(identifier: identifier)
     }
 }
 

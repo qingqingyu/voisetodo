@@ -100,6 +100,10 @@ enum WarmAnimation {
     static let springCard = Animation.spring(response: 0.45, dampingFraction: 0.8)
     static let springButton = Animation.spring(response: 0.5, dampingFraction: 0.75)
     static let springEntrance = Animation.spring(response: 0.6, dampingFraction: 0.8)
+
+    // 月历单元格选中态缩放系数：弱提示（避免挤压相邻格），Reduce Motion 时 animation 被系统忽略
+    static let monthDaySelectedScale: CGFloat = 1.05
+    static let monthDayDefaultScale: CGFloat = 1.0
 }
 
 // MARK: - 统一字体工具
