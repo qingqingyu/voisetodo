@@ -91,7 +91,7 @@ class AppLaunchHelper {
     func waitForAppReady(timeout: TimeInterval = 5.0) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if app.otherElements["HomeView"].exists
+            if app.otherElements["HomeRootView"].exists
                 || app.otherElements["RootTabView"].exists
                 || app.otherElements["MonthHomeView"].exists
                 || app.tables["TodoList"].exists {

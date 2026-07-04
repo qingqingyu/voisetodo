@@ -236,6 +236,47 @@ final class TodoOccurrenceCompletion {
     }
 }
 
+/// Legacy voice capture records retained only so stores created by older app
+/// versions can still open. New app code does not create or read these records;
+/// `TodoStore` purges them during startup migration.
+@Model
+final class VoiceCaptureRecord {
+    @Attribute(.unique) var id: UUID
+    var transcript: String
+    var createdAt: Date
+    var statusRaw: String
+    var sourceRaw: String
+    var localeIdentifier: String
+    var generatedTodoCount: Int
+    var generatedTodoIDsRaw: String
+    var pendingTodoID: UUID?
+    var errorMessage: String?
+
+    init(
+        id: UUID = UUID(),
+        transcript: String,
+        createdAt: Date = Date(),
+        statusRaw: String = "processing",
+        sourceRaw: String = "recordButton",
+        localeIdentifier: String,
+        generatedTodoCount: Int = 0,
+        generatedTodoIDsRaw: String = "",
+        pendingTodoID: UUID? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.transcript = transcript
+        self.createdAt = createdAt
+        self.statusRaw = statusRaw
+        self.sourceRaw = sourceRaw
+        self.localeIdentifier = localeIdentifier
+        self.generatedTodoCount = generatedTodoCount
+        self.generatedTodoIDsRaw = generatedTodoIDsRaw
+        self.pendingTodoID = pendingTodoID
+        self.errorMessage = errorMessage
+    }
+}
+
 enum WidgetTodoFetch {
     static func recentTodos(
         context: ModelContext,
@@ -293,6 +334,7 @@ enum VoiceTodoSchema {
     /// 当前 App 注册的所有 SwiftData @Model 类型。
     static let schema = Schema([
         TodoItem.self,
-        TodoOccurrenceCompletion.self
+        TodoOccurrenceCompletion.self,
+        VoiceCaptureRecord.self
     ])
 }

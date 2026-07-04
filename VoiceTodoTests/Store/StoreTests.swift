@@ -888,6 +888,33 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(occurrenceTitles, ["旧明天待办"])
     }
 
+    func testLegacyVoiceCaptureRecordsArePurgedWhenStoreInitializes() throws {
+        let legacyRecord = VoiceCaptureRecord(
+            transcript: "旧语音历史",
+            localeIdentifier: "zh-Hans"
+        )
+        modelContext.insert(legacyRecord)
+        try modelContext.save()
+        XCTAssertEqual(try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>()).count, 1)
+
+        sut = TodoStore(modelContext: modelContext)
+
+        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>()).isEmpty)
+    }
+
+    func testResetForUITestsDeletesLegacyVoiceCaptureRecords() throws {
+        let legacyRecord = VoiceCaptureRecord(
+            transcript: "UI 测试前应清理的旧语音历史",
+            localeIdentifier: "zh-Hans"
+        )
+        modelContext.insert(legacyRecord)
+        try modelContext.save()
+
+        try sut.resetForUITests()
+
+        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>()).isEmpty)
+    }
+
     private func assertDateIsTomorrowRelativeToTestWindow(
         _ date: Date,
         windowStart: Date,

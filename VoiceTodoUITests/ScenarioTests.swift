@@ -392,15 +392,15 @@ final class ScenarioTests: XCTestCase {
         appHelper.nextButton.tap()
 
         // Step 5: 引导关闭并进入主界面
-        XCTAssertTrue(appHelper.app.otherElements["RootTabView"].waitForExistence(timeout: 5.0), "应进入主界面")
-        XCTAssertFalse(appHelper.onboardingView.exists, "引导 sheet 应已关闭")
+        appHelper.waitForAppReady(timeout: 5.0)
+        XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 2.0), "引导 sheet 应已关闭")
 
         // Step 6: 重新启动 App（保留数据，不重置 UserDefaults）
         appHelper.app.terminate()
         appHelper.relaunchPreservingData()
 
         // Step 7: 验证直接进入主界面，不再显示引导
-        XCTAssertTrue(appHelper.app.otherElements["RootTabView"].waitForExistence(timeout: 5.0), "重启后应直接进入主界面")
+        appHelper.waitForAppReady(timeout: 5.0)
         XCTAssertFalse(appHelper.onboardingView.waitForExistence(timeout: 2.0), "重启后不应再显示引导")
     }
 

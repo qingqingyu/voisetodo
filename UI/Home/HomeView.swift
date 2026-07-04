@@ -725,7 +725,7 @@ private struct HomeCalendarErrorView: View {
                 )
 
                 Button(action: onRetry) {
-                    Label(String(localized: "history.retry"), systemImage: "arrow.clockwise")
+                    Label(String(localized: "common.retry"), systemImage: "arrow.clockwise")
                         .font(WarmFont.headline(15))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)

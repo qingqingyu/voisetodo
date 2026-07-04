@@ -41,6 +41,7 @@ final class TodoStore:
         self.saveAction = saveAction
         self.queryActor = TodoQueryActor(modelContainer: modelContext.container)
         VoiceTodoLog.store.info("store.init.start")
+        purgeLegacyVoiceCaptureRecords()
         migrateOldSortOrder()
         migrateDueDatesFromHints()
         refreshTodos()
@@ -397,9 +398,13 @@ final class TodoStore:
             for completion in completions {
                 modelContext.delete(completion)
             }
+            let historyRecords = try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>())
+            for record in historyRecords {
+                modelContext.delete(record)
+            }
             try saveOrRollback()
             todos = []
-            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count)")
+            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count) deletedLegacyHistory=\(historyRecords.count)")
         } catch {
             VoiceTodoLog.store.error("store.reset_for_ui_tests.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.wrapStorage(error, for: .write)
@@ -551,6 +556,23 @@ final class TodoStore:
             modelContext.rollback()
             refreshTodos()
             throw VoiceTodoError.wrapStorage(error, for: .write)
+        }
+    }
+
+    /// 一次性迁移：清理已移除的语音历史功能遗留记录。
+    private func purgeLegacyVoiceCaptureRecords() {
+        do {
+            let records = try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>())
+            guard !records.isEmpty else { return }
+
+            VoiceTodoLog.store.info("store.migration.legacy_voice_capture.start count=\(records.count)")
+            for record in records {
+                modelContext.delete(record)
+            }
+            try saveOrRollback()
+            VoiceTodoLog.store.info("store.migration.legacy_voice_capture.success count=\(records.count)")
+        } catch {
+            VoiceTodoLog.store.error("store.migration.legacy_voice_capture.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 

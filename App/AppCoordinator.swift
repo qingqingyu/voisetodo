@@ -337,7 +337,7 @@ final class AppCoordinator: ObservableObject {
             showToast(
                 message: ErrorMessages.storageError,
                 style: .warning,
-                actionTitle: String(localized: "history.retry"),
+                actionTitle: String(localized: "common.retry"),
                 action: { [weak self] in
                     // 双重 [weak self]：外层防 toast 显示期间 AppCoordinator 无法释放；
                     // 内层 Task 跑完前也不能强引用 self（handleAppForeground 是 transient，
