@@ -39,6 +39,32 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(item.detail, "详情")
     }
 
+    func testUITestLaunchOptionsDecodesPresetTodos() throws {
+        let todo = TodoItemData(title: "Preset todo", hasDueTime: true)
+        let data = try JSONEncoder().encode([todo])
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        let options = UITestLaunchOptions(arguments: ["--ui-testing", "--todos-data=\(json)"])
+
+        XCTAssertNil(options.presetTodosDecodeError)
+        XCTAssertEqual(options.presetTodos.map(\.title), ["Preset todo"])
+        XCTAssertEqual(options.presetTodos.first?.hasDueTime, true)
+    }
+
+    func testUITestLaunchOptionsRecordsPresetTodoDecodeFailure() {
+        let options = UITestLaunchOptions(arguments: ["--ui-testing", "--todos-data=not-json"])
+
+        XCTAssertTrue(options.presetTodos.isEmpty)
+        XCTAssertNotNil(options.presetTodosDecodeError)
+    }
+
+    func testUITestLaunchOptionsRequiresDataWhenPresetTodosRequested() {
+        let options = UITestLaunchOptions(arguments: ["--ui-testing", "--preset-todos"])
+
+        XCTAssertTrue(options.presetTodos.isEmpty)
+        XCTAssertNotNil(options.presetTodosDecodeError)
+    }
+
     func testExtractionResultDecoding() throws {
         let json = """
         {

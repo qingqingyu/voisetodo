@@ -54,7 +54,8 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingId])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingId])
         XCTAssertTrue(store.deletedIds.isEmpty)
         XCTAssertTrue(coordinator.extractedTodos.isEmpty)
     }
@@ -79,7 +80,7 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(store.deletedIds.isEmpty)
     }
 
-    func testHandleAppForegroundSkipsDeferredPendingForCurrentSession() async {
+    func testHandleAppForegroundSkipsDeferredPendingForCurrentSession() async throws {
         let pendingId = UUID()
         let store = CoordinatorTestStore(todos: [
             pendingTodo(id: pendingId, transcript: "pending while sheet opens")
@@ -101,7 +102,8 @@ final class AppCoordinatorTests: XCTestCase {
         await coordinator.handleAppForeground()
 
         XCTAssertEqual(extractor.extractedTranscripts, ["pending while sheet opens"])
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingId])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingId])
         XCTAssertTrue(store.deletedIds.isEmpty)
         XCTAssertTrue(coordinator.extractedTodos.isEmpty)
     }
@@ -172,10 +174,8 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(success)
         await fulfillment(of: [expectation], timeout: 1)
-        await Task.yield()
         XCTAssertEqual(store.todos.map(\.title), ["完成英语背诵"])
-        XCTAssertTrue(coordinator.showToast)
-        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+        await assertSystemCalendarSyncFailureToastShown(coordinator)
     }
 
     func testConfirmTodosPersistsPartialSystemCalendarResultsWhenWriteFails() async {
@@ -205,12 +205,10 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(success)
         await fulfillment(of: [writeFailed, identifierPersisted], timeout: 1)
-        await Task.yield()
         XCTAssertEqual(store.todos.map(\.title), ["完成英语背诵", "完成数学作业"])
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item1.id], "event-partial")
         XCTAssertNil(store.systemCalendarEventIdentifiers[item2.id])
-        XCTAssertTrue(coordinator.showToast)
-        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+        await assertSystemCalendarSyncFailureToastShown(coordinator)
     }
 
     func testConfirmTodosRemovesSystemCalendarEventWhenIdentifierPersistenceFails() async {
@@ -232,11 +230,9 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(success)
         await fulfillment(of: [rollbackDone], timeout: 1)
-        await Task.yield()
         XCTAssertEqual(writer.removedIdentifiers, ["event-\(item.id.uuidString)"])
         XCTAssertNil(store.systemCalendarEventIdentifiers[item.id])
-        XCTAssertTrue(coordinator.showToast)
-        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+        await assertSystemCalendarSyncFailureToastShown(coordinator)
     }
 
     func testRapidConsecutiveConfirmsSerializeCalendarWrites() async {
@@ -436,11 +432,9 @@ final class AppCoordinatorTests: XCTestCase {
         )
 
         await fulfillment(of: [removeAttempted], timeout: 1)
-        await Task.yield()
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old")
         XCTAssertTrue(writer.receivedTodos.isEmpty)
-        XCTAssertTrue(coordinator.showToast)
-        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.systemCalendarSyncFailed)
+        await assertSystemCalendarSyncFailureToastShown(coordinator)
     }
 
     func testCancelRecordingDueToInterruptionStopsRecordingAndShowsToast() async {
@@ -527,7 +521,8 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingId])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingId])
         XCTAssertEqual(store.deletedIds, [pendingId])
         XCTAssertTrue(coordinator.showToast)
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
@@ -565,7 +560,8 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertTrue(try await store.pendingItems().isEmpty)
+        let pendingItems = try await store.pendingItems()
+        XCTAssertTrue(pendingItems.isEmpty)
         XCTAssertEqual(historyStore.records.first?.status, .failed)
         XCTAssertNil(historyStore.records.first?.pendingTodoID)
         do {
@@ -607,7 +603,8 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingID])
         XCTAssertFalse(coordinator.showConfirmSheet)
         XCTAssertTrue(coordinator.showToast)
         XCTAssertEqual(coordinator.toastMessage, VoiceTodoError.apiResponseInvalid("broken pending").localizedDescription)
@@ -671,7 +668,8 @@ final class AppCoordinatorTests: XCTestCase {
         coordinator.showConfirmSheet = false
         await coordinator.handleAppForeground()
 
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [withTodoPendingID])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [withTodoPendingID])
         XCTAssertEqual(extractor.extractedTranscripts.sorted(), ["没有行动项", "生成待办但暂时不能展示"])
         XCTAssertEqual(historyStore.records.first(where: { $0.id == noTodoRecord.id })?.status, .noTodos)
         XCTAssertNil(historyStore.records.first(where: { $0.id == noTodoRecord.id })?.pendingTodoID)
@@ -836,7 +834,7 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, VoiceTodoError.apiResponseInvalid("broken").localizedDescription)
     }
 
-    func testReprocessHistoryNoTodosKeepsPendingDeleteErrorToast() async {
+    func testReprocessHistoryNoTodosKeepsPendingDeleteErrorToast() async throws {
         let pendingID = UUID()
         let store = CoordinatorTestStore(todos: [pendingTodo(id: pendingID, transcript: "旧 pending")])
         store.deleteErrorIds.insert(pendingID)
@@ -867,7 +865,8 @@ final class AppCoordinatorTests: XCTestCase {
 
         await coordinator.reprocessHistoryRecord(linkedRecord)
 
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingID])
         XCTAssertEqual(historyStore.records.first?.status, .failed)
         XCTAssertEqual(historyStore.records.first?.pendingTodoID, pendingID)
         assertHistoryRecord(historyStore, pendingID: pendingID, isLinkedTo: record.id)
@@ -1276,6 +1275,26 @@ final class AppCoordinatorTests: XCTestCase {
         }
     }
 
+    private func assertSystemCalendarSyncFailureToastShown(
+        _ coordinator: AppCoordinator,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if coordinator.showToast && coordinator.toastMessage == ErrorMessages.systemCalendarSyncFailed {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTFail(
+            "Expected system calendar sync failure toast, got showToast=\(coordinator.showToast), toastMessage=\(coordinator.toastMessage)",
+            file: file,
+            line: line
+        )
+    }
+
     private func assertHistoryRecord(
         _ historyStore: CoordinatorTestHistoryStore,
         pendingID: UUID,
@@ -1478,7 +1497,7 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         if let pendingItemsError {
             throw pendingItemsError
         }
-        todos.filter(\.needsAIProcessing)
+        return todos.filter(\.needsAIProcessing)
     }
 
     func replacePendingWithExtracted(_ pendingId: UUID, _ items: [ExtractedTodo], rawTranscript: String?) throws {
@@ -1624,7 +1643,7 @@ private final class CoordinatorTestHistoryStore: VoiceCaptureHistoryStoreProtoco
         if let lookupError {
             throw lookupError
         }
-        records.first { $0.pendingTodoID == id }
+        return records.first { $0.pendingTodoID == id }
     }
 }
 

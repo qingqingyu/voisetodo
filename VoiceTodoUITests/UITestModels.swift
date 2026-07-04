@@ -6,6 +6,7 @@ struct UITestTodoPayload: Codable, Equatable {
     let detail: String?
     let dueHint: String?
     let dueDate: Date?
+    let hasDueTime: Bool
     let priority: String
     let category: String
     let isCompleted: Bool
@@ -20,6 +21,7 @@ struct UITestTodoPayload: Codable, Equatable {
         detail: String? = nil,
         dueHint: String? = nil,
         dueDate: Date? = nil,
+        hasDueTime: Bool = false,
         priority: UITestPriority = .normal,
         category: UITestCategory = .other,
         isCompleted: Bool = false,
@@ -33,6 +35,7 @@ struct UITestTodoPayload: Codable, Equatable {
         self.detail = detail
         self.dueHint = dueHint
         self.dueDate = dueDate
+        self.hasDueTime = hasDueTime
         self.priority = priority.rawValue
         self.category = category.rawValue
         self.isCompleted = isCompleted

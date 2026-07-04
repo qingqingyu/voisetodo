@@ -190,6 +190,11 @@ final class TelemetryUploader {
     static func telemetryEndpoint(fromProxyEndpoint proxyEndpoint: String) -> URL? {
         let trimmed = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let base = URL(string: trimmed) else { return nil }
+        guard let scheme = base.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              base.host?.isEmpty == false else {
+            return nil
+        }
         // 规范化 path：去掉尾斜杠后再做后缀匹配与路径操作，
         // 避免 `https://proxy/v1/todo-extractions/` 被误判并拼出错误路径。
         let normalizedBase = normalizedPathURL(base)

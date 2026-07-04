@@ -52,7 +52,8 @@ final class PendingRecoveryFlowTests: XCTestCase {
         XCTAssertEqual(result.failedPendingRecoveries.first?.error, .apiResponseInvalid("broken"))
         XCTAssertTrue(result.processedWithTodosIds.isEmpty)
         XCTAssertTrue(result.processedWithoutTodosIds.isEmpty)
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingID])
         XCTAssertTrue(store.deletedIds.isEmpty)
     }
 
@@ -215,7 +216,8 @@ final class PendingRecoveryFlowTests: XCTestCase {
         XCTAssertEqual(result.processedWithoutTodosIds, [pendingID])
         XCTAssertTrue(result.extractedTodos.isEmpty)
         XCTAssertNil(result.mergedRawTranscript)
-        XCTAssertEqual(try await store.pendingItems().map(\.id), [pendingID])
+        let pendingIds = try await store.pendingItems().map(\.id)
+        XCTAssertEqual(pendingIds, [pendingID])
     }
 
     func testRecoverStopsSchedulingNewPendingWhenNetworkDrops() async {

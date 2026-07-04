@@ -10,6 +10,7 @@ struct UITestLaunchOptions {
     let enableAccessibilityIdentifiers: Bool
     let scenario: String?
     let presetTodos: [TodoItemData]
+    let presetTodosDecodeError: Error?
 
     static let current = UITestLaunchOptions()
 
@@ -25,16 +26,27 @@ struct UITestLaunchOptions {
         scenario = arguments.first(where: { $0.hasPrefix("--scenario=") })
             .map { String($0.dropFirst("--scenario=".count)) }
 
+        let presetTodosRequested = arguments.contains("--preset-todos")
         if let todosArgument = arguments.first(where: { $0.hasPrefix("--todos-data=") }) {
             let json = String(todosArgument.dropFirst("--todos-data=".count))
-            if let data = json.data(using: .utf8),
-               let decoded = try? JSONDecoder().decode([TodoItemData].self, from: data) {
-                presetTodos = decoded
-            } else {
+            guard let data = json.data(using: .utf8) else {
                 presetTodos = []
+                presetTodosDecodeError = VoiceTodoError.apiResponseInvalid("Invalid --todos-data UTF-8")
+                return
+            }
+            do {
+                let decoded = try JSONDecoder().decode([TodoItemData].self, from: data)
+                presetTodos = decoded
+                presetTodosDecodeError = nil
+            } catch {
+                presetTodos = []
+                presetTodosDecodeError = error
             }
         } else {
             presetTodos = []
+            presetTodosDecodeError = presetTodosRequested
+                ? VoiceTodoError.apiResponseInvalid("Missing --todos-data for --preset-todos")
+                : nil
         }
     }
 

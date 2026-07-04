@@ -35,6 +35,11 @@ struct VoiceTodoApp: App {
         let uiTestOptions = UITestLaunchOptions.current
         VoiceTodoLog.app.info("app.init.start isUITesting=\(uiTestOptions.isUITesting) resetUserData=\(uiTestOptions.resetUserData) skipOnboarding=\(uiTestOptions.skipOnboarding)")
 
+        if uiTestOptions.isUITesting, let presetTodosDecodeError = uiTestOptions.presetTodosDecodeError {
+            VoiceTodoLog.app.critical("app.ui_test.preset_decode_failed error=\(VoiceTodoLog.errorSummary(presetTodosDecodeError), privacy: .public)")
+            fatalError("Invalid UI test preset todo data: \(presetTodosDecodeError)")
+        }
+
         if uiTestOptions.resetUserData {
             UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
             VoiceTodoLog.app.warning("app.init.reset_user_data")

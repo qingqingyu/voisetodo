@@ -91,9 +91,11 @@ final class TranscriptProcessingFlow {
                     if !receivedAny {
                         VoiceTodoLog.coordinator.info("coordinator.process_transcript.no_todos id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         continuation.yield(.noTodos)
+                        continuation.finish()
                     } else {
                         VoiceTodoLog.coordinator.info("coordinator.process_transcript.success id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) finalTodos=\(finalTodos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         continuation.yield(.success(finalTodos: finalTodos))
+                        continuation.finish()
                     }
                 } catch {
                     guard !Task.isCancelled else {

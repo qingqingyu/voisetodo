@@ -942,7 +942,8 @@ final class StoreTests: XCTestCase {
         let occurrenceList = try await sut.calendarOccurrences(from: today, to: today)
         let occurrence = try XCTUnwrap(occurrenceList.first)
         XCTAssertFalse(occurrence.isCompleted)
-        XCTAssertEqual(try await sut.recentUncompleted(limit: 1).map(\.title), ["完成后改成规律任务"])
+        let recentTitles = try await sut.recentUncompleted(limit: 1).map(\.title)
+        XCTAssertEqual(recentTitles, ["完成后改成规律任务"])
     }
 
     func testWeeklyAndMonthlyRecurrenceExpansion() async throws {
@@ -1044,10 +1045,8 @@ final class StoreTests: XCTestCase {
         let migrated = try XCTUnwrap(sut.todos.first)
         let dueDate = try XCTUnwrap(migrated.dueDate)
         XCTAssertTrue(calendar.isDate(dueDate, inSameDayAs: expectedDueDate))
-        XCTAssertEqual(
-            try await sut.calendarOccurrences(from: expectedDueDate, to: expectedDueDate).map(\.todo.title),
-            ["旧明天待办"]
-        )
+        let occurrenceTitles = try await sut.calendarOccurrences(from: expectedDueDate, to: expectedDueDate).map(\.todo.title)
+        XCTAssertEqual(occurrenceTitles, ["旧明天待办"])
     }
 
     private func assertDateIsTomorrowRelativeToTestWindow(

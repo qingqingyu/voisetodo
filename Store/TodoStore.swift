@@ -4,7 +4,15 @@ import SwiftData
 
 /// 待办存储服务
 @MainActor
-final class TodoStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStore, PendingTranscriptCreating, CalendarSyncTodoStore, TodoMutationWriting, WidgetTodoReadable, TodoRefreshing {
+final class TodoStore:
+    @MainActor HomeTodoStore,
+    @MainActor AppCoordinatorTodoStore,
+    @MainActor PendingRecoveryTodoStore,
+    @MainActor PendingTranscriptCreating,
+    @MainActor CalendarSyncTodoStore,
+    @MainActor TodoMutationWriting,
+    @MainActor WidgetTodoReadable,
+    @MainActor TodoRefreshing {
     // MARK: - Properties
 
     /// SwiftData 模型上下文

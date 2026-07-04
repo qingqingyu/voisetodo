@@ -4,107 +4,103 @@ import XCTest
 /// 封装 XCUIApplication 启动，注入 --ui-testing 参数
 class AppLaunchHelper {
     let app: XCUIApplication
+    private let baseLaunchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_Hans"]
+    private let defaultUITestArguments = ["--ui-testing", "--enable-accessibility-identifiers"]
 
     init() {
         app = XCUIApplication()
         // 强制中文渲染：S12 等用例断言中文界面文案，而文案有英文翻译；
         // 不固定语言时英文模拟器会渲染英文导致断言失败。参数在实例上持续，覆盖所有 launch* 变体。
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_Hans"]
+        app.launchArguments = baseLaunchArguments
     }
 
     /// 启动 App 并注入 UI 测试参数
     func launch() {
-        // 注入 UI 测试标志
-        app.launchArguments.append("--ui-testing")
-
-        // 设置 accessibility identifiers（用于测试定位）
-        app.launchArguments.append("--enable-accessibility-identifiers")
-
-        // 重置 UserDefaults（确保每次测试从干净状态开始）
-        app.launchArguments.append("--reset-user-data")
-
+        configureLaunchArguments(["--reset-user-data"])
         app.launch()
     }
 
     /// 启动 App 并配置特定场景
     /// - Parameter scenario: 场景名称
     func launch(withScenario scenario: String) {
-        app.launchArguments.append("--ui-testing")
-        app.launchArguments.append("--enable-accessibility-identifiers")
-        app.launchArguments.append("--scenario=\(scenario)")
-        app.launchArguments.append("--reset-user-data")
+        configureLaunchArguments(["--scenario=\(scenario)", "--reset-user-data"])
         app.launch()
     }
 
     /// 启动 App 并跳过引导（已授权状态）
     func launchWithCompletedOnboarding(scenario: String? = nil) {
-        app.launchArguments.append("--ui-testing")
-        app.launchArguments.append("--enable-accessibility-identifiers")
-        app.launchArguments.append("--skip-onboarding")
-        app.launchArguments.append("--reset-user-data")
+        var arguments = ["--skip-onboarding", "--reset-user-data"]
         if let scenario {
-            app.launchArguments.append("--scenario=\(scenario)")
+            arguments.append("--scenario=\(scenario)")
         }
+        configureLaunchArguments(arguments)
         app.launch()
     }
 
     /// 启动 App 并模拟网络断开
     func launchWithNetworkOff(scenario: String? = nil) {
-        app.launchArguments.append("--ui-testing")
-        app.launchArguments.append("--enable-accessibility-identifiers")
-        app.launchArguments.append("--network-off")
-        app.launchArguments.append("--reset-user-data")
+        var arguments = ["--network-off", "--reset-user-data"]
         if let scenario {
-            app.launchArguments.append("--scenario=\(scenario)")
+            arguments.append("--scenario=\(scenario)")
         }
+        configureLaunchArguments(arguments)
         app.launch()
     }
 
     /// 启动 App 并模拟麦克风权限被拒绝
     func launchWithMicPermissionDenied() {
-        app.launchArguments.append("--ui-testing")
-        app.launchArguments.append("--enable-accessibility-identifiers")
-        app.launchArguments.append("--mic-permission-denied")
-        app.launchArguments.append("--reset-user-data")
+        configureLaunchArguments(["--mic-permission-denied", "--reset-user-data"])
         app.launch()
     }
 
     /// 启动 App 并模拟语音识别权限被拒绝
     func launchWithSpeechPermissionDenied() {
-        app.launchArguments.append("--ui-testing")
-        app.launchArguments.append("--enable-accessibility-identifiers")
-        app.launchArguments.append("--speech-permission-denied")
-        app.launchArguments.append("--reset-user-data")
+        configureLaunchArguments(["--speech-permission-denied", "--reset-user-data"])
         app.launch()
     }
 
     /// 启动 App 并预置待办数据
     /// - Parameter todos: 预置的待办数据
     func launchWithPresetTodos(_ todos: [UITestTodoPayload]) {
-        app.launchArguments.append("--ui-testing")
-        app.launchArguments.append("--enable-accessibility-identifiers")
-        app.launchArguments.append("--preset-todos")
-        // 将数据编码为 JSON 传递（实际实现需要编码）
-        if let data = try? JSONEncoder().encode(todos),
-           let jsonString = String(data: data, encoding: .utf8) {
-            app.launchArguments.append("--todos-data=\(jsonString)")
+        var arguments = ["--preset-todos"]
+        do {
+            let data = try JSONEncoder().encode(todos)
+            guard let jsonString = String(data: data, encoding: .utf8) else {
+                XCTFail("预置待办数据无法转换为 UTF-8 JSON")
+                return
+            }
+            arguments.append("--todos-data=\(jsonString)")
+        } catch {
+            XCTFail("预置待办数据编码失败: \(error)")
+            return
         }
-        app.launchArguments.append("--skip-onboarding")
-        app.launchArguments.append("--reset-user-data")
+        arguments.append("--skip-onboarding")
+        arguments.append("--reset-user-data")
+        configureLaunchArguments(arguments)
         app.launch()
     }
 
     /// 重新启动 App，保留已有数据（不注入 --reset-user-data / --skip-onboarding）
     /// 用于验证 hasCompletedOnboarding 等持久化状态在重启后保持。
     func relaunchPreservingData() {
-        app.launchArguments.removeAll { $0 == "--reset-user-data" || $0 == "--skip-onboarding" }
+        configureLaunchArguments([])
         app.launch()
     }
 
     /// 等待 App 完全启动
     func waitForAppReady(timeout: TimeInterval = 5.0) {
-        let homeView = app.otherElements["HomeView"]
-        XCTAssertTrue(homeView.waitForExistence(timeout: timeout), "HomeView 应该在规定时间内出现")
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.otherElements["HomeView"].exists
+                || app.otherElements["RootTabView"].exists
+                || app.otherElements["MonthHomeView"].exists
+                || app.tables["TodoList"].exists {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        XCTFail("首页根视图应该在规定时间内出现")
     }
 
     /// 重置 App 状态（清空数据库）
@@ -113,6 +109,10 @@ class AppLaunchHelper {
         // 或者直接 terminate 并重新 launch
         app.terminate()
         launch()
+    }
+
+    private func configureLaunchArguments(_ arguments: [String]) {
+        app.launchArguments = baseLaunchArguments + defaultUITestArguments + arguments
     }
 }
 
@@ -170,7 +170,13 @@ extension AppLaunchHelper {
 
     /// 下一步按钮（引导中）
     var nextButton: XCUIElement {
-        app.buttons["NextButton"]
+        let identifierMatch = app.buttons["NextButton"]
+        if identifierMatch.exists {
+            return identifierMatch
+        }
+
+        let labels = ["下一步", "跳过", "知道了", "开始使用", "Next", "Skip", "Got it", "Get started"]
+        return app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
     }
 
     /// 跳转设置按钮

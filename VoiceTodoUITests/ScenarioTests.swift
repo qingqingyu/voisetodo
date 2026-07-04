@@ -358,8 +358,8 @@ final class ScenarioTests: XCTestCase {
         XCTAssertTrue(appHelper.app.otherElements["MonthHomeView"].exists, "应该显示月历视图")
         XCTAssertTrue(appHelper.emptyState.exists, "应该显示 EmptyStateView")
         XCTAssertTrue(appHelper.emptyState.staticTexts["先把今天想做的事说出来"].exists, "应该显示首页空状态标题")
-        XCTAssertTrue(appHelper.app.buttons["ProductEmptyPrimaryButton"].exists, "应该显示开始录音按钮")
-        XCTAssertTrue(appHelper.app.buttons["ProductEmptySecondaryButton"].exists, "应该显示文字输入按钮")
+        XCTAssertTrue(appHelper.app.buttons["RecordButton"].exists, "应该显示开始录音按钮")
+        XCTAssertTrue(appHelper.app.buttons["ManualInputButton"].exists, "应该显示文字输入按钮")
     }
 
     // MARK: - S12: 首次启动引导流程
