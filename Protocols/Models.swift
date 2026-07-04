@@ -63,53 +63,6 @@ enum TodoCategory: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// 语音捕捉历史记录状态。
-enum VoiceCaptureStatus: String, Codable, CaseIterable {
-    case processing
-    case reviewing
-    case saved
-    case noTodos
-    case pending
-    case failed
-    case cancelled
-
-    /// 终态或重置态：进入这些状态时应清空已生成 todo 关联数据。
-    /// `updateRecord` 用此判断是否要把 generatedTodoIDs / generatedTodoCount 置空。
-    var resetsGeneratedArtifacts: Bool {
-        switch self {
-        case .processing, .pending, .noTodos, .failed, .cancelled:
-            return true
-        case .reviewing, .saved:
-            return false
-        }
-    }
-}
-
-/// 更新语音历史与离线 pending todo 的关联方式。
-enum VoiceCapturePendingTodoLinkUpdate: Equatable {
-    case keepCurrent
-    case set(UUID)
-    case clear
-
-    static func replacing(with pendingTodoID: UUID?) -> VoiceCapturePendingTodoLinkUpdate {
-        pendingTodoID.map(VoiceCapturePendingTodoLinkUpdate.set) ?? .clear
-    }
-}
-
-/// 语音捕捉入口来源。
-enum VoiceCaptureSource: String, Codable, CaseIterable {
-    case recordButton
-    case actionButton
-}
-
-/// 历史记录列表加载状态。
-enum VoiceCaptureHistoryLoadState: String, Codable, Equatable {
-    case loading
-    case empty
-    case error
-    case success
-}
-
 /// 日历中某一天实际出现的一条待办。
 struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
     let todo: TodoItemData
@@ -360,43 +313,5 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.sortOrder = 0
         self.systemCalendarEventIdentifier = nil
         self.localeIdentifier = extracted.localeIdentifier
-    }
-}
-
-/// 语音捕捉历史记录 DTO，不依赖 SwiftData。
-struct VoiceCaptureRecordData: Identifiable, Codable, Hashable {
-    let id: UUID
-    var transcript: String
-    var createdAt: Date
-    var status: VoiceCaptureStatus
-    var source: VoiceCaptureSource
-    var localeIdentifier: String
-    var generatedTodoCount: Int
-    var generatedTodoIDs: [UUID]
-    var pendingTodoID: UUID?
-    var errorMessage: String?
-
-    init(
-        id: UUID = UUID(),
-        transcript: String,
-        createdAt: Date = Date(),
-        status: VoiceCaptureStatus = .processing,
-        source: VoiceCaptureSource,
-        localeIdentifier: String,
-        generatedTodoCount: Int = 0,
-        generatedTodoIDs: [UUID] = [],
-        pendingTodoID: UUID? = nil,
-        errorMessage: String? = nil
-    ) {
-        self.id = id
-        self.transcript = transcript
-        self.createdAt = createdAt
-        self.status = status
-        self.source = source
-        self.localeIdentifier = localeIdentifier
-        self.generatedTodoCount = generatedTodoCount
-        self.generatedTodoIDs = generatedTodoIDs
-        self.pendingTodoID = pendingTodoID
-        self.errorMessage = errorMessage
     }
 }

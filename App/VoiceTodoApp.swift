@@ -14,7 +14,6 @@ struct VoiceTodoApp: App {
 
     @StateObject private var coordinator: AppCoordinator
     @StateObject private var todoStore: TodoStore
-    @StateObject private var historyStore: VoiceCaptureHistoryStore
     @StateObject private var permissionManager = PermissionManager()
     @StateObject private var entitlementManager: EntitlementManager
     @StateObject private var quotaUsage: QuotaUsage
@@ -129,7 +128,6 @@ struct VoiceTodoApp: App {
         startupStorageError = storageError
 
         let store = TodoStore(modelContext: container.mainContext)
-        let voiceHistoryStore = VoiceCaptureHistoryStore(modelContext: container.mainContext)
 
         if uiTestOptions.resetUserData {
             do {
@@ -164,7 +162,6 @@ struct VoiceTodoApp: App {
 
         // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
         _todoStore = StateObject(wrappedValue: store)
-        _historyStore = StateObject(wrappedValue: voiceHistoryStore)
         _entitlementManager = StateObject(wrappedValue: entitlementManager)
         _quotaUsage = StateObject(wrappedValue: quotaUsage)
 
@@ -173,7 +170,6 @@ struct VoiceTodoApp: App {
             voiceInput: voiceInput,
             extractor: extractor,
             store: store,
-            historyStore: voiceHistoryStore,
             quotaUsage: quotaUsage
         )
         _coordinator = StateObject(wrappedValue: coordinator)
@@ -297,7 +293,6 @@ struct VoiceTodoApp: App {
         // 此处仅处理需要启动时执行的逻辑
         VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
         guard startupStorageError == nil else { return }
-        coordinator.cleanupExpiredVoiceHistory()
         notificationSync.reconcileNow()
         Task { await entitlementManager.refresh() }
     }
@@ -313,11 +308,6 @@ struct VoiceTodoApp: App {
             // 回前台补账本地通知（清过期、权限刚授予后补排、外部改动同步）
             notificationSync.reconcileNow()
             NetworkMonitor.shared.restartIfNeeded()
-            // 节流清理过期语音历史：launch 时已清一次，此处兜底长时间热启动场景。
-            // 异步执行避免阻塞 UI 主线程（fetch + delete 可能涉及大量记录）。
-            Task { @MainActor in
-                coordinator.cleanupExpiredVoiceHistoryIfNeeded()
-            }
             Task {
                 await coordinator.handleAppForeground()
             }
