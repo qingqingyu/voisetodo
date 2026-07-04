@@ -255,7 +255,7 @@ struct VoiceTodoApp: App {
                 .accessibilityIdentifier("StartupStorageErrorView")
         } else if hasCompletedOnboarding {
             // 已完成引导，显示主界面
-            RootTabView(todoStore: todoStore, historyStore: historyStore)
+            HomeView(store: todoStore)
                 .sheet(isPresented: $coordinator.showConfirmSheet) {
                     ConfirmSheetView(
                         transcript: coordinator.confirmSheetTranscript,
@@ -269,7 +269,7 @@ struct VoiceTodoApp: App {
                         }
                     )
                 }
-                .accessibilityIdentifier("RootTabView")
+                .accessibilityIdentifier("HomeRootView")
                 // ✅ 当 shouldAutoStartRecording 为 true 时自动开始录音
                 .onChange(of: shouldAutoStartRecording) { _, newValue in
                     if newValue {
