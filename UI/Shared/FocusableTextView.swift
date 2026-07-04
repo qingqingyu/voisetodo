@@ -50,8 +50,10 @@ struct FocusableTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextView, context: Context) {
-        // 防止循环：只有外部 text 与当前不一致才更新
-        if uiView.text != text {
+        // IME 组字期间（存在 marked text）绝不回写 .text：否则会清掉未提交的拼音/候选，
+        // 导致中文（搜狗/系统拼音）打不出字、光标跳动。组字提交后 textViewDidChange 会同步最终文本。
+        // 防止循环：只有外部 text 与当前不一致才更新。
+        if uiView.markedTextRange == nil, uiView.text != text {
             uiView.text = text
         }
         // 字体/颜色变化时同步
