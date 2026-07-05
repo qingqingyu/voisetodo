@@ -345,7 +345,7 @@ final class ScenarioTests: XCTestCase {
     // MARK: - S11: HomeView 空状态
 
     /// 场景 S11: HomeView 全局空状态
-    /// 验证无待办时保留月历，并显示录音/文字输入引导
+    /// 验证无待办时保留月历，并显示底部录音入口
     func test_S11_homeView_emptyState() {
         // Step 1: 数据库无待办条目
         appHelper.launchWithCompletedOnboarding()
@@ -358,8 +358,7 @@ final class ScenarioTests: XCTestCase {
         XCTAssertTrue(appHelper.app.otherElements["MonthHomeView"].exists, "应该显示月历视图")
         XCTAssertTrue(appHelper.emptyState.exists, "应该显示 EmptyStateView")
         XCTAssertTrue(appHelper.emptyState.staticTexts["先把今天想做的事说出来"].exists, "应该显示首页空状态标题")
-        XCTAssertTrue(appHelper.app.buttons["RecordButton"].exists, "应该显示开始录音按钮")
-        XCTAssertTrue(appHelper.app.buttons["ManualInputButton"].exists, "应该显示文字输入按钮")
+        XCTAssertTrue(appHelper.app.buttons["RecordFAB"].exists, "应该显示底部录音入口")
     }
 
     // MARK: - S12: 首次启动引导流程

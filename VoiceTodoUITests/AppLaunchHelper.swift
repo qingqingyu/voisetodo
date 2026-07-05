@@ -121,7 +121,7 @@ class AppLaunchHelper {
 extension AppLaunchHelper {
     /// 录音按钮
     var recordButton: XCUIElement {
-        app.buttons["RecordButton"]
+        app.buttons["RecordFAB"]
     }
 
     /// 确认弹窗
@@ -198,7 +198,10 @@ extension AppLaunchHelper {
 
     /// 停止录音
     func stopRecording() {
-        recordButton.tap()
+        let sendButton = app.buttons["InputSendButton"]
+        XCTAssertTrue(sendButton.waitForExistence(timeout: 2.0), "录音面板发送按钮应该出现")
+        XCTAssertTrue(sendButton.waitUntilEnabled(timeout: 2.0), "录音面板发送按钮应该可用")
+        sendButton.tap()
         // 等待录音指示器消失
         let recordingIndicator = app.otherElements["RecordingIndicator"]
         XCTAssertTrue(recordingIndicator.waitForNonExistence(timeout: 2.0), "录音指示器应该消失")
@@ -304,6 +307,17 @@ extension XCUIElement {
     @discardableResult
     func waitForNonExistence(timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "exists == false")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
+        let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
+        return result == .completed
+    }
+
+    /// 等待元素变为可用
+    /// - Parameter timeout: 超时时间
+    /// - Returns: 是否成功等待
+    @discardableResult
+    func waitUntilEnabled(timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "isEnabled == true")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
         let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
         return result == .completed

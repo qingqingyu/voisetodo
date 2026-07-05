@@ -150,8 +150,14 @@ MockScenarios.networkError
 为了可靠的 UI 测试，所有 UI 元素都应该设置 accessibility identifier:
 
 ```swift
-// 录音按钮
-"RecordButton"
+// 底部录音入口
+"RecordFAB"
+
+// 底部输入面板发送按钮
+"InputSendButton"
+
+// 底部输入面板关闭按钮
+"InputPanelCloseButton"
 
 // 确认弹窗
 "ConfirmSheet"

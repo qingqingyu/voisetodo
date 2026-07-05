@@ -220,16 +220,10 @@ private struct CalendarRefreshKey: Hashable {
 private struct HomeViewActions<Store: HomeTodoStore> {
     let store: Store
     let coordinator: AppCoordinator
-    let permissionManager: PermissionManager
     let setProcessing: (Bool) -> Void
-    let setManualInputPresented: (Bool) -> Void
     let selectTodo: (TodoItemData) -> Void
     /// 通知视图：规律任务 occurrence 完成状态已写入（store.todos 不会变化），需要刷新月历缓存。
     let markCalendarDataChanged: () -> Void
-
-    func showManualInput() {
-        setManualInputPresented(true)
-    }
 
     func cancelExtraction() {
         coordinator.cancelExtraction()
@@ -253,27 +247,7 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         }
     }
 
-    func toggleRecording() {
-        if coordinator.isRecording {
-            Task { @MainActor in
-                updateProcessing(true)
-                await coordinator.stopRecordingAndProcess()
-                updateProcessing(false)
-            }
-        } else {
-            Task { @MainActor in
-                let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
-                if readiness == .granted {
-                    await coordinator.startRecording()
-                } else {
-                    coordinator.showVoicePermissionRequiredToast()
-                }
-            }
-        }
-    }
-
     func submitManualInput(_ text: String) {
-        setManualInputPresented(false)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
             updateProcessing(true)
@@ -528,8 +502,6 @@ private struct HomeSelectedDayListView: View {
     let onDeleteTodo: (UUID) -> Void
     let onOpenTodo: (TodoItemData) -> Void
     let onMoveUnscheduled: (IndexSet, Int) -> Void
-    let onStartRecording: @Sendable () -> Void
-    let onShowManualInput: @Sendable () -> Void
 
     var body: some View {
         List {
@@ -574,9 +546,7 @@ private struct HomeSelectedDayListView: View {
     }
 
     private var homeGlobalEmptyRow: some View {
-        // 不放 primaryAction / secondaryAction——底部 action bar 已经有「录音」+「文字输入」
-        // 两个入口，这里再放一份会让用户在两个位置看到同样的按钮，UI 冗余。
-        // 空状态只做文案引导，用户视线自然落到屏幕底部 action bar。
+        // 空状态只做文案引导，主要输入入口由底部 FAB + 输入面板承载。
         ProductEmptyStateView(
             icon: "sparkles",
             title: String(localized: "empty.home.title"),
@@ -753,10 +723,15 @@ struct HomeView<Store: HomeTodoStore>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
     @EnvironmentObject private var permissionManager: PermissionManager
-    @State private var showRecordingButton = false
     @State private var isProcessing = false
-    @State private var showManualInputSheet = false
     @State private var showSettingsSheet = false
+    // 底部 Tab + FAB + 输入面板状态
+    @State private var selectedBottomTab: BottomTab = .today
+    @State private var showInputPanel = false
+    @State private var isKeyboardMode = false
+    @State private var panelInputText = ""
+    @State private var inputPanelPermissionTask: Task<Void, Never>?
+    @State private var inputPanelResetTask: Task<Void, Never>?
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
@@ -775,6 +750,13 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
+    private var isInputEntryBlockedByProcessing: Bool {
+        coordinator.isExtracting || isProcessing || coordinator.showConfirmSheet
+    }
+
+    private var isInputEntryDisabled: Bool {
+        coordinator.isRecording || isInputEntryBlockedByProcessing
+    }
 
     // MARK: - Initialization
 
@@ -795,9 +777,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         HomeViewActions(
             store: store,
             coordinator: coordinator,
-            permissionManager: permissionManager,
             setProcessing: { isProcessing = $0 },
-            setManualInputPresented: { showManualInputSheet = $0 },
             selectTodo: { selectedTodo = $0 },
             markCalendarDataChanged: { occurrenceRevision += 1 }
         )
@@ -834,13 +814,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if showRecordingButton {
-                    bottomActionBar
-                }
+                BottomTabBar(
+                    selectedTab: $selectedBottomTab,
+                    isFABDisabled: isInputEntryDisabled,
+                    onFABTap: { openVoiceInputPanel() }
+                )
             }
-            .sheet(isPresented: $showManualInputSheet) {
-                ManualInputSheetView { text in
-                    actions.submitManualInput(text)
+            // 底部输入面板（从底部滑出 + 遮罩）
+            .overlay(alignment: .bottom) {
+                if showInputPanel {
+                    inputPanelOverlay
                 }
             }
             .sheet(isPresented: $showSettingsSheet) {
@@ -860,6 +843,11 @@ struct HomeView<Store: HomeTodoStore>: View {
             .onChange(of: store.todos.count) { _, _ in
                 let currentIds: Set<UUID> = Set(store.todos.map(\.id))
                 cardAppeared = cardAppeared.intersection(currentIds)
+            }
+            .onChange(of: selectedBottomTab) { _, tab in
+                if tab == .today {
+                    jumpToToday()
+                }
             }
         }
         .accessibilityIdentifier("HomeView")
@@ -1077,16 +1065,6 @@ struct HomeView<Store: HomeTodoStore>: View {
                     onOpenTodo: { selectedTodo = $0 },
                     onMoveUnscheduled: { source, destination in
                         moveUnscheduled(from: source, to: destination)
-                    },
-                    onStartRecording: {
-                        Task { @MainActor in
-                            actions.toggleRecording()
-                        }
-                    },
-                    onShowManualInput: {
-                        Task { @MainActor in
-                            actions.showManualInput()
-                        }
                     }
                 )
             }
@@ -1137,106 +1115,149 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private func selectDay(_ day: Date) {
+        let normalizedDay = calendar.startOfDay(for: day)
         withAnimation(WarmAnimation.springStandard) {
-            selectedDate = calendar.startOfDay(for: day)
-            visibleMonthAnchor = calendar.startOfDay(for: day)
+            selectedDate = normalizedDay
+            visibleMonthAnchor = normalizedDay
+            selectedBottomTab = calendar.isDateInToday(normalizedDay) ? .today : .calendar
         }
     }
 
-    // MARK: - Bottom Actions
+    // MARK: - Input Panel
 
-    private var bottomActionBar: some View {
-        VStack(spacing: WarmSpacing.xs) {
-            manualInputButton
-            recordingButton
-        }
-        .padding(.horizontal, WarmSpacing.xl)
-        .padding(.top, WarmSpacing.xs)
-        .padding(.bottom, WarmSpacing.sm)
-        .background(WarmTheme.background.opacity(0.92))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
+    private var inputPanelOverlay: some View {
+        ZStack(alignment: .bottom) {
+            // 遮罩
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+                .onTapGesture { closeInputPanel() }
+                .transition(.opacity)
 
-    private var manualInputButton: some View {
-        Button(action: { actions.showManualInput() }) {
-            HStack(spacing: WarmSpacing.xs) {
-                Image(systemName: "keyboard")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(WarmTheme.primary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        Circle()
-                            .fill(WarmTheme.primary.opacity(0.12))
-                    )
-
-                Text(String(localized: "manual_input.home_button"))
-                    .font(WarmFont.headline(16))
-                    .foregroundColor(WarmTheme.textPrimary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, WarmSpacing.md)
-            .padding(.vertical, WarmSpacing.sm)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.95))
-                    .overlay(
-                        Capsule()
-                            .stroke(WarmTheme.primary.opacity(0.22), lineWidth: 1)
-                    )
-                    .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 3)
+            // 面板
+            BottomInputPanelView(
+                isKeyboardMode: $isKeyboardMode,
+                inputText: $panelInputText,
+                isRecording: coordinator.isRecording,
+                onClose: { closeInputPanel() },
+                onModeChange: { switchInputPanelMode(toKeyboard: $0) },
+                onSend: { text in handlePanelSend(text: text) }
             )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .buttonStyle(.plain)
-        .disabled(coordinator.isRecording || coordinator.isExtracting || isProcessing)
-        .opacity(coordinator.isRecording || coordinator.isExtracting || isProcessing ? 0.55 : 1)
-        .accessibilityIdentifier("ManualInputButton")
-        .accessibilityLabel(String(localized: "a11y.manual_input"))
-        .accessibilityHint(String(localized: "a11y.manual_input_hint"))
+        .zIndex(100)
     }
 
-    private var recordingButton: some View {
-        Button(action: { actions.toggleRecording() }) {
-            HStack(spacing: WarmSpacing.xs) {
-                ZStack {
-                    if coordinator.isRecording {
-                        Circle()
-                            .stroke(WarmTheme.primary.opacity(0.3), lineWidth: 3)
-                            .frame(width: WarmSize.touch, height: WarmSize.touch)
-                            .scaleEffect(coordinator.isRecording ? 1.3 : 1.0)
-                            .animation(
-                                Animation.easeInOut(duration: 0.8)
-                                    .repeatForever(autoreverses: true),
-                                value: coordinator.isRecording
-                            )
+    private func openVoiceInputPanel() {
+        guard !isInputEntryDisabled else { return }
+        inputPanelResetTask?.cancel()
+        panelInputText = ""
+        withAnimation(WarmAnimation.springSmooth) {
+            showInputPanel = true
+            isKeyboardMode = false
+        }
+        startRecordingForInputPanel()
+    }
+
+    private func startRecordingForInputPanel() {
+        inputPanelPermissionTask?.cancel()
+        inputPanelPermissionTask = Task { @MainActor in
+            let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
+            guard !Task.isCancelled, showInputPanel, !isKeyboardMode else { return }
+
+            if readiness == .granted {
+                guard !isInputEntryDisabled else {
+                    withAnimation(WarmAnimation.springSmooth) {
+                        showInputPanel = false
                     }
-
-                    Image(systemName: coordinator.isRecording ? "waveform" : "mic.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: WarmSize.touch, height: WarmSize.touch)
-                        .background(
-                            Circle()
-                                .fill(coordinator.isRecording ? WarmTheme.urgent : WarmTheme.primary)
-                        )
+                    scheduleInputPanelReset()
+                    return
                 }
-
-                Text(coordinator.isRecording ? String(localized: "home.listening") : String(localized: "home.start_recording"))
-                    .font(WarmFont.headline(17))
-                    .foregroundColor(WarmTheme.textPrimary)
+                await coordinator.startRecording()
+                guard coordinator.isRecording else {
+                    guard !Task.isCancelled, showInputPanel else { return }
+                    withAnimation(WarmAnimation.springSmooth) {
+                        isKeyboardMode = true
+                    }
+                    return
+                }
+                guard !Task.isCancelled, showInputPanel, !isKeyboardMode, !isInputEntryBlockedByProcessing else {
+                    if coordinator.isRecording {
+                        coordinator.cancelRecording()
+                    }
+                    return
+                }
+            } else {
+                isKeyboardMode = true
+                coordinator.showVoicePermissionRequiredToast()
             }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, WarmSpacing.xl)
-            .padding(.vertical, WarmSpacing.md)
-            .background(
-                Capsule()
-                    .fill(Color.white)
-                    .shadow(color: WarmTheme.shadowMedium, radius: 12, x: 0, y: 6)
-            )
         }
-        .animation(WarmAnimation.springSmooth, value: coordinator.isRecording)
-        .accessibilityIdentifier("RecordButton")
-        .accessibilityLabel(coordinator.isRecording ? String(localized: "a11y.stop_recording") : String(localized: "a11y.start_voice_input"))
-        .accessibilityHint(coordinator.isRecording ? String(localized: "a11y.stop_hint") : String(localized: "a11y.start_hint"))
+    }
+
+    private func switchInputPanelMode(toKeyboard keyboardMode: Bool) {
+        inputPanelResetTask?.cancel()
+        if keyboardMode {
+            inputPanelPermissionTask?.cancel()
+            if coordinator.isRecording {
+                coordinator.cancelRecording()
+            }
+            withAnimation(WarmAnimation.springSmooth) {
+                isKeyboardMode = true
+            }
+        } else {
+            panelInputText = ""
+            withAnimation(WarmAnimation.springSmooth) {
+                isKeyboardMode = false
+            }
+            startRecordingForInputPanel()
+        }
+    }
+
+    private func closeInputPanel() {
+        inputPanelPermissionTask?.cancel()
+        inputPanelPermissionTask = nil
+        if coordinator.isRecording {
+            coordinator.cancelRecording()
+        }
+        withAnimation(WarmAnimation.springSmooth) {
+            showInputPanel = false
+        }
+        scheduleInputPanelReset()
+    }
+
+    private func handlePanelSend(text: String) {
+        inputPanelPermissionTask?.cancel()
+        inputPanelPermissionTask = nil
+        if isKeyboardMode {
+            if coordinator.isRecording {
+                coordinator.cancelRecording()
+            }
+            actions.submitManualInput(text)
+        } else {
+            guard coordinator.isRecording else { return }
+            Task { @MainActor in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isProcessing = true
+                }
+                await coordinator.stopRecordingAndProcess()
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isProcessing = false
+                }
+            }
+        }
+        withAnimation(WarmAnimation.springSmooth) {
+            showInputPanel = false
+        }
+        scheduleInputPanelReset()
+    }
+
+    private func scheduleInputPanelReset() {
+        inputPanelResetTask?.cancel()
+        inputPanelResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled, !showInputPanel else { return }
+            panelInputText = ""
+            isKeyboardMode = false
+        }
     }
 
     // MARK: - Actions
@@ -1258,13 +1279,6 @@ struct HomeView<Store: HomeTodoStore>: View {
             listOffset = 0
             listOpacity = 1
         }
-
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            withAnimation(WarmAnimation.springButton) {
-                showRecordingButton = true
-            }
-        }
     }
 
     /// 模式感知的翻页：月视图按月翻，周视图按周翻。
@@ -1279,6 +1293,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
+            selectedBottomTab = calendar.isDateInToday(normalizedAnchor) ? .today : .calendar
         }
     }
 
@@ -1299,6 +1314,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today
+            selectedBottomTab = .today
         }
     }
 

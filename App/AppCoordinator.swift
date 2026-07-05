@@ -158,6 +158,21 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
     }
 
+    /// 用户主动取消当前录音，不将其作为音频中断错误上报给 UI。
+    func cancelRecording() {
+        let flowID = VoiceTodoLog.makeID("coord-cancel")
+        let startedAt = Date()
+        guard voiceInput.isRecording else {
+            VoiceTodoLog.coordinator.debug("coordinator.recording.cancel_ignored id=\(flowID, privacy: .public) reason=not_recording durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return
+        }
+        VoiceTodoLog.coordinator.info("coordinator.recording.cancelled id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        voiceInput.stopRecording()
+        isAutoProcessing = false
+        isProcessingTranscript = false
+        isExtracting = false
+    }
+
     /// 停止录音并处理结果
     func stopRecordingAndProcess() async {
         let flowID = VoiceTodoLog.makeID("stop-process")

@@ -455,6 +455,23 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.audioSessionInterrupted)
     }
 
+    func testCancelRecordingStopsRecordingWithoutToast() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.isRecording = true
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore()
+        )
+
+        coordinator.cancelRecording()
+        await Task.yield()
+
+        XCTAssertFalse(voiceInput.isRecording)
+        XCTAssertFalse(coordinator.isRecording)
+        XCTAssertFalse(coordinator.showToast)
+    }
+
     func testStreamingFailureAfterPartialResultsClearsConfirmSheet() async {
         let extractor = DelayedExtractor()
         extractor.streamingResults = [

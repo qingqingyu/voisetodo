@@ -222,38 +222,6 @@
         }
       }
     },
-    "a11y.manual_input" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manual input"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "手动输入"
-          }
-        }
-      }
-    },
-    "a11y.manual_input_hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap to type todos and organize them with AI"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击输入文字，并用 AI 整理成待办"
-          }
-        }
-      }
-    },
     "a11y.mark_complete" : {
       "localizations" : {
         "en" : {
@@ -436,6 +404,7 @@
       }
     },
     "a11y.start_hint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -452,6 +421,7 @@
       }
     },
     "a11y.start_voice_input" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1994,6 +1964,7 @@
       }
     },
     "home.start_recording" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2349,22 +2320,6 @@
         }
       }
     },
-    "manual_input.cancel" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消"
-          }
-        }
-      }
-    },
     "manual_input.generate" : {
       "localizations" : {
         "en" : {
@@ -2393,54 +2348,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI 会把这段文字拆成可确认的待办"
-          }
-        }
-      }
-    },
-    "manual_input.home_button" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type Todos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字输入"
-          }
-        }
-      }
-    },
-    "manual_input.placeholder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "For example: buy milk tomorrow morning, submit the weekly report by Friday, and exercise tonight"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "例如：明天上午买牛奶，周五前交周报，晚上提醒我运动"
-          }
-        }
-      }
-    },
-    "manual_input.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type Todos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入待办"
           }
         }
       }
@@ -2985,6 +2892,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "嗨，欢迎来到"
+          }
+        }
+      }
+    },
+    "panel.close" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "panel.fab.record" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record to add todo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录音添加待办"
+          }
+        }
+      }
+    },
+    "panel.keyboard_hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type and tap → to add"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入文字后点右侧添加"
+          }
+        }
+      }
+    },
+    "panel.recording_hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording… say your todo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在录音…说出你的待办"
+          }
+        }
+      }
+    },
+    "panel.switch_to_keyboard" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to Keyboard"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改用键盘"
+          }
+        }
+      }
+    },
+    "panel.switch_to_voice" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to Voice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改用录音"
           }
         }
       }
@@ -4035,6 +4038,22 @@
         }
       }
     },
+    "tab.calendar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日历"
+          }
+        }
+      }
+    },
     "tab.home" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4048,6 +4067,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "首页"
+          }
+        }
+      }
+    },
+    "tab.today" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
           }
         }
       }
