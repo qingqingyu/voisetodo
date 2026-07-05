@@ -254,7 +254,7 @@ private struct HomeViewActions<Store: HomeTodoStore> {
     /// 由调用方持有以便在视图销毁时 cancel（防止访问已销毁的 @State）。
     @discardableResult
     func submitManualInput(_ text: String) -> Task<Void, Never> {
-        Task { @MainActor in
+        return Task { @MainActor in
             // 等输入面板滑出动画结束（springSmooth ≈ 350ms）再盖 processing overlay，
             // 否则两层 overlay 同时淡入会撕裂。给 400ms 留余量。
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -336,18 +336,11 @@ private struct HomeMonthHeaderView: View {
     }
 
     /// 根据可用高度计算日期格行高。
-    /// 固定段（Picker + 导航行 + 星期表头 + spacing）约 ~100pt；
+    /// 固定段（Picker + 导航行 + 星期表头 + spacing + padding）≈ 130pt（见 calendarFixedSectionHeight）；
     /// 剩余空间平分给网格行（月视图 6 行 / 周视图 1 行）。
     /// availableHeight = 0 时回退到默认 WarmSpacing.xxxl（48pt）。
     private var dayRowHeight: CGFloat {
-        guard availableHeight > 0 else { return WarmSpacing.xxxl }
-        // 经验值：Picker(~32) + navRow(32) + weekday(16) + VStack spacing(20)。
-        // 受系统字体缩放影响会浮动 ±4pt，但 dayRowHeight 有 14pt 下限兜底，不会崩。
-        let fixedHeight: CGFloat = HomeLayoutMetrics.calendarFixedSectionHeight
-        let rows: CGFloat = state.viewMode == .month ? 6 : 1
-        let gridSpacing: CGFloat = WarmSpacing.xs * max(0, rows - 1)
-        let usable = max(HomeLayoutMetrics.calendarMinUsableHeight, availableHeight - fixedHeight - gridSpacing)
-        return max(HomeLayoutMetrics.dayRowMinHeight, usable / rows)
+        HomeLayoutMetrics.dayRowHeight(availableHeight: availableHeight, viewMode: state.viewMode)
     }
 
     var body: some View {
@@ -427,17 +420,53 @@ private struct HomeMonthHeaderView: View {
 // MARK: - Home layout constants
 
 private enum HomeLayoutMetrics {
+    /// 月历区域目标上限比例（对齐 HTML 参考的 max-height:38vh）。
+    static let calendarTargetHeightRatio: CGFloat = 0.38
     /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing + padding）。
-    /// 经验值，需视觉回归——动态字体放大时由 dayRowHeight 的 22pt 下限兜底。
-    static let calendarFixedSectionHeight: CGFloat = 100
-    /// 月历可用区域下限，防止极矮屏（如 landscape 小窗）算出负数。
-    static let calendarMinUsableHeight: CGFloat = 80
-    /// 单行日期格最小高度：14pt 日期文字 + 4pt 间距 + 4pt 圆点 = 22pt。
-    /// 低于此值会让日期数字 + 圆点挤压变形，导致"今天"高亮颜色渲染异常（Bug 1）。
-    static let dayRowMinHeight: CGFloat = 22
+    /// 拆解：Picker segmented(~32) + navRow(32) + weekday(16) + VStack spacing(WarmSpacing.xs×5≈20)
+    ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~14) ≈ 130pt 保守上限。
+    /// 低估会导致 calendarHeight 算出比实际小，底部日期行被 `.clipped()` 裁切（Bug 1 根因）。
+    static let calendarFixedSectionHeight: CGFloat = 130
+    /// 单行日期格最小高度：优先保证 14pt 日期数字可读；圆点在空间不足时隐藏。
+    static let dayRowMinHeight: CGFloat = 14
     /// 单行日期格阈值：低于此值时隐藏圆点行，只保留日期数字。
     /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
     static let dayRowDotsVisibleThreshold: CGFloat = 24
+
+    /// 月历区域高度。
+    /// 优先级（对齐 HTML 参考 `max-height:38vh; overflow:hidden`）：
+    ///   1. 硬约束：封顶 38% availableHeight —— 列表区至少 62%，不可妥协。
+    ///   2. 极矮屏：若 38% < 最小可读高度（month 6 行），仍按 38%，
+    ///      接受底部日期行被 `.clipped()` 裁切（与 HTML overflow:hidden 一致，列表区不下穿 62%）。
+    /// 反方案"最小高度优先，极矮屏列表区 < 62%"被否决——破坏"列表占主体"的产品意图。
+    static func calendarHeight(availableHeight: CGFloat, selectedTab: BottomTab, viewMode: CalendarViewMode) -> CGFloat {
+        guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
+        return availableHeight * calendarTargetHeightRatio
+    }
+
+    static func dayRowHeight(availableHeight: CGFloat, viewMode: CalendarViewMode) -> CGFloat {
+        guard availableHeight > 0 else { return WarmSpacing.xxxl }
+        let rows = rowCount(for: viewMode)
+        let usable = max(0, availableHeight - calendarFixedSectionHeight - gridSpacing(forRows: rows))
+        return max(dayRowMinHeight, usable / rows)
+    }
+
+    static func showsDots(rowHeight: CGFloat) -> Bool {
+        rowHeight >= dayRowDotsVisibleThreshold
+    }
+
+    private static func rowCount(for viewMode: CalendarViewMode) -> CGFloat {
+        switch viewMode {
+        case .month:
+            return 6
+        case .week:
+            return 1
+        }
+    }
+
+    private static func gridSpacing(forRows rows: CGFloat) -> CGFloat {
+        WarmSpacing.xs * max(0, rows - 1)
+    }
 }
 
 private struct HomeMonthDayButton: View {
@@ -448,7 +477,7 @@ private struct HomeMonthDayButton: View {
     /// 极矮行高下隐藏圆点行：优先保证日期数字可读，避免 14pt 文字 + 4pt 圆点挤压
     /// 导致背景颜色渲染异常（Bug 1："今天"颜色歪了）。
     private var showsDots: Bool {
-        rowHeight >= HomeLayoutMetrics.dayRowDotsVisibleThreshold
+        HomeLayoutMetrics.showsDots(rowHeight: rowHeight)
     }
 
     var body: some View {
@@ -1116,9 +1145,14 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
 
         return GeometryReader { proxy in
-            // 月历封顶 38% 高度（对齐 solution-b-capped-calendar.html 的 max-height:38vh）。
-            // 列表占剩余空间可滚动。「今日」tab 隐藏月历，列表占满 100%。
-            let calendarHeight = proxy.size.height * (selectedBottomTab == .calendar ? 0.38 : 0)
+            // 月历封顶 38% 高度（硬约束，对齐 solution-b-capped-calendar.html 的 max-height:38vh）。
+            // 极矮屏日期行可能被裁切，与 HTML overflow:hidden 一致；列表区始终 ≥ 62% 可滚动。
+            // 「今日」tab 隐藏月历，列表占满 100%。
+            let calendarHeight = HomeLayoutMetrics.calendarHeight(
+                availableHeight: proxy.size.height,
+                selectedTab: selectedBottomTab,
+                viewMode: calendarViewMode
+            )
 
             VStack(spacing: 0) {
                 if selectedBottomTab == .calendar {
@@ -1338,10 +1372,12 @@ struct HomeView<Store: HomeTodoStore>: View {
                     isProcessing = true
                 }
                 await coordinator.stopRecordingAndProcess()
-                // 防竞态：用户可能在 await 期间重开面板启动新录音。
-                // 此时若继续翻转 isProcessing=false 会盖掉新录音的 overlay，需先确认
-                // 本任务没被 cancel、且面板仍然关闭（即我们仍然是当前的处理流程）。
-                guard !Task.isCancelled, !showInputPanel else { return }
+                // 注：注释曾描述"用户可能在 await 期间重开面板启动新录音"竞态，但实际已被
+                // startRecordingForInputPanel 的 `!isInputEntryBlockedByProcessing` guard
+                // （含 isProcessing）拦截——处理期间无法启动新录音。
+                // 原 `!showInputPanel` guard 冗余且有害（面板关闭时会让 isProcessing 卡住），
+                // 故删除。此处只需检查任务是否被取消。
+                guard !Task.isCancelled else { return }
                 withAnimation(WarmAnimation.springSmooth) {
                     isProcessing = false
                 }

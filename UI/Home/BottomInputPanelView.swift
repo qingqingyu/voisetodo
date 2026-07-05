@@ -106,9 +106,10 @@ struct BottomInputPanelView: View {
                 Spacer()
 
                 // 右下角：发送
+                // canSend (键盘模式 = 非空文本 / 录音模式 = 正在录音) 已通过 .disabled(!canSend) 保证
+                // 按钮仅在可发送时可点，此处无需重复 guard。
                 Button {
                     if isKeyboardMode {
-                        guard !trimmedInputText.isEmpty else { return }
                         onSendText(trimmedInputText)
                     } else {
                         // 录音模式：发送 = 停止录音 + 进入处理
