@@ -25,6 +25,7 @@ struct ConfirmSheetView: View {
                     mainContent
                 }
             }
+            // 标题改为更显标题感的"确认待办事项"——避免与"取消/确认添加"按钮视觉混淆。
             .navigationTitle(String(localized: "confirm.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -33,6 +34,11 @@ struct ConfirmSheetView: View {
                         cancelAction()
                     }
                     .accessibilityIdentifier("CancelButton")
+                }
+                // 日历写入目标移到顶部 toolbar 中央——用户确认前最该看到的元信息。
+                // 用 secondary 色让它不抢按钮焦点，但比原来居中胶囊更不挡待办条目。
+                ToolbarItem(placement: .principal) {
+                    calendarTargetLabel
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: confirmAction) {
@@ -44,7 +50,10 @@ struct ConfirmSheetView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        // P4 修复：单条目时只给 .medium（半高），避免下半截空感。
+        // 2+ 条目解锁 .large，用户可上滑展开。
+        // 流式期间先用 medium 等数据到位再调整（避免流式初期高度抖动）。
+        .presentationDetents(todos.count <= 1 && !isStreaming ? [.medium] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .accessibilityIdentifier("ConfirmSheet")
         .onDisappear {
@@ -63,14 +72,16 @@ struct ConfirmSheetView: View {
 
     private var mainContent: some View {
         ScrollView {
-            VStack(spacing: WarmSpacing.md) {
+            VStack(spacing: WarmSpacing.sm) {
                 transcriptSection
 
                 if !todos.isEmpty {
-                    operationHint
-                    calendarTargetHint
-
                     todosSection
+
+                    // 操作提示：从前几次的显眼胶囊改成 todosSection 下方的一行浅灰小字。
+                    // 用户主要看条目，提示降级为辅助信息。
+                    operationHintLabel
+                        .padding(.top, WarmSpacing.xs)
                 } else if isStreaming {
                     todosSection
                 } else {
@@ -148,41 +159,34 @@ struct ConfirmSheetView: View {
 
     // MARK: - Operation Hint
 
-    private var operationHint: some View {
-        HStack(spacing: WarmSpacing.xs) {
+    /// todosSection 下方的轻量操作提示——一行浅灰小字，不带胶囊背景。
+    /// P2 修复：从原来的居中胶囊降级，避免压过待办条目本身的视觉权重。
+    private var operationHintLabel: some View {
+        HStack(spacing: WarmSpacing.xxs) {
             Image(systemName: "hand.tap")
-                .font(.system(size: 12))
+                .font(.system(size: 11))
             Text(String(localized: "confirm.hint"))
-                .font(WarmFont.caption(13))
+                .font(WarmFont.caption(12))
         }
-        .foregroundColor(WarmTheme.textSecondary)
-        .padding(.horizontal, WarmSpacing.sm)
-        .padding(.vertical, WarmSpacing.xs)
-        .background(
-            Capsule()
-                .fill(WarmTheme.secondaryBackground)
-        )
-        .frame(maxWidth: .infinity, alignment: .center)
+        .foregroundColor(WarmTheme.textMuted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("OperationHintLabel")
     }
 
-    private var calendarTargetHint: some View {
+    /// 移到 toolbar principal 的日历写入目标——更紧凑的标签样式。
+    /// P2 修复：原来居中胶囊占了核心视觉位置，移到顶部 nav bar 让出待办条目空间。
+    private var calendarTargetLabel: some View {
         let mode = CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
-        return HStack(spacing: WarmSpacing.xs) {
+        return HStack(spacing: WarmSpacing.xxs) {
             Image(systemName: mode == .appAndSystemCalendar ? "calendar.badge.plus" : "calendar")
-                .font(.system(size: 12))
+                .font(.system(size: 11))
             Text(mode == .appAndSystemCalendar
                  ? String(localized: "confirm.calendar_target.app_and_system")
                  : String(localized: "confirm.calendar_target.app_only"))
-                .font(WarmFont.caption(13))
+                .font(WarmFont.caption(12))
         }
         .foregroundColor(WarmTheme.textSecondary)
-        .padding(.horizontal, WarmSpacing.sm)
-        .padding(.vertical, WarmSpacing.xs)
-        .background(
-            Capsule()
-                .fill(WarmTheme.secondaryBackground)
-        )
-        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityIdentifier("CalendarTargetLabel")
     }
 
     // MARK: - Success Overlay

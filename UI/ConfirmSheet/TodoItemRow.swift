@@ -14,6 +14,30 @@ struct TodoItemRow: View {
     @State private var offset: CGFloat = 0
     @State private var opacity: Double = 1.0
 
+    /// 合并所有时间相关字段成一个用户可读的字符串。
+    /// 优先级：recurrence(含 end_date) + dueTime > dueHint > 空（返回 nil 不渲染）。
+    /// 这是 P3 修复核心——之前 dueHint + recurrence 分两行且 dueTime 丢失，
+    /// 用户看到"未来一个月 · 每天"但"15:00"和"至 8月5日"都丢了。
+    private var composedTimeText: String? {
+        var parts: [String] = []
+        if let rule = todo.recurrenceRule {
+            parts.append(rule.displayTextWithEndDate)
+        }
+        if let dueTime = todo.dueTime, !dueTime.isEmpty {
+            parts.append(dueTime)
+        }
+        if parts.isEmpty {
+            // 没有结构化字段时退回 dueHint 原文（AI 自由文本，例如"明天下午3点"）。
+            if let dueHint = todo.dueHint, !dueHint.isEmpty {
+                return dueHint
+            }
+            return nil
+        }
+        // 如果同时有 dueHint 且 hint 文本与结构化字段不一致（例如"未来一个月每天下午3点"），
+        // 结构化字段已包含同等信息——只显示结构化，避免冗余。
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         HStack(spacing: WarmSpacing.sm) {
             Text(todo.categoryHint.emoji)
@@ -36,24 +60,18 @@ struct TodoItemRow: View {
                         .accessibilityIdentifier("TodoTitleText_\(index)")
                 }
 
-                if let dueHint = todo.dueHint, !dueHint.isEmpty {
+                // 时间行：优先用结构化字段（recurrence + dueTime + end_date）合并成一行，
+                // 让用户校对时一眼看到"每天 15:00 · 至 8月5日"而不是模糊的"未来一个月"。
+                // 结构化字段全空时退回 dueHint 原文。
+                if let timeText = composedTimeText {
                     HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: "clock")
                             .font(.system(size: 11))
-                        Text(dueHint)
+                        Text(timeText)
                             .font(WarmFont.caption(13))
                     }
                     .foregroundColor(WarmTheme.textSecondary)
-                }
-
-                if let recurrenceRule = todo.recurrenceRule {
-                    HStack(spacing: WarmSpacing.xxs) {
-                        Image(systemName: "repeat")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(recurrenceRule.displayText)
-                            .font(WarmFont.caption(13))
-                    }
-                    .foregroundColor(WarmTheme.primaryDark)
+                    .accessibilityIdentifier("TodoTimeText_\(index)")
                 }
             }
 

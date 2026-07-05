@@ -129,6 +129,24 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
         }
     }
 
+    /// 带 end_date 的完整重复描述（用于 ConfirmSheet 用户校对）。
+    /// 例：`recurrence.displayText` → "每天"；`recurrence.displayTextWithEndDate` → "每天 · 至 8月5日"。
+    /// end_date nil 或解析失败时退化为 displayText。
+    /// 翻译策略：用"至 M月D日"而不是"至 YYYY-MM-DD"，更符合中文口语习惯且更紧凑；
+    /// 英文用 "until Mon D"。
+    var displayTextWithEndDate: String {
+        let base = displayText
+        guard let endDate else { return base }
+        let formatter = DateFormatter()
+        if let identifier = Bundle.main.preferredLocalizations.first(where: { $0 != "Base" }) {
+            formatter.locale = Locale(identifier: identifier)
+        }
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        let endStr = formatter.string(from: endDate)
+        let template = String(localized: "recurrence.with_end_date")
+        return String(format: template, base, endStr)
+    }
+
     private static func shortWeekdayName(_ weekday: Int) -> String {
         switch weekday {
         case 1: return String(localized: "home.week.sun")

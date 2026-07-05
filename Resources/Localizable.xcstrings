@@ -795,13 +795,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Confirm Todos"
+            "value" : "Confirm To-dos"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "确认待办"
+            "value" : "确认待办事项"
           }
         }
       }
@@ -3502,6 +3502,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每周 %@"
+          }
+        }
+      }
+    },
+    "recurrence.with_end_date" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · until %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · 至 %2$@"
           }
         }
       }
