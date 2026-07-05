@@ -25,7 +25,7 @@ const OPENAI_MODEL_CONFIG_KEYWORDS = [
 export const openaiAdapter = {
   type: "openai",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "OpenAI key not configured");
     }
@@ -47,7 +47,7 @@ export const openaiAdapter = {
           stream,
           response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: buildSystemPrompt(locale, vocabularyHints) },
+            { role: "system", content: buildSystemPrompt(locale, vocabularyHints, today) },
             { role: "user", content: transcript }
           ]
         })

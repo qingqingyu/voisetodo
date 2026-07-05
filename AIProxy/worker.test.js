@@ -190,6 +190,36 @@ test("system prompt instructs extracting structured due_time (zh + en)", async (
   }
 });
 
+test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
+  // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
+  // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。
+  for (const [locale, expectedSnippet] of [["zh-Hans", "今天的日期是 2026-07-05"], ["en-US", "Today's date is 2026-07-05"]]) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript: "未来一个月每天下午3点接孩子", locale }, {
+        "X-App-Token": "token",
+        "X-Local-Date": "2026-07-05"
+      }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("接孩子") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    assert.ok(
+      upstreamRequest.body.messages[0].content.includes(expectedSnippet),
+      `locale=${locale} 应在 system prompt 中包含 today 注入（"${expectedSnippet}"）`
+    );
+  }
+});
+
 test("filters and caps vocabulary hints before calling provider", async () => {
   let upstreamRequest;
   const hints = ["A", "Anki", "Anki", "x".repeat(40), ...Array.from({ length: 35 }, (_, i) => `Term${i + 1}`)];

@@ -25,7 +25,7 @@ const ANTHROPIC_MODEL_CONFIG_KEYWORDS = [
 export const anthropicAdapter = {
   type: "anthropic",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "Anthropic key not configured");
     }
@@ -44,7 +44,7 @@ export const anthropicAdapter = {
           max_tokens: 500,
           temperature: 0.1,
           stream,
-          system: buildSystemPrompt(locale, vocabularyHints),
+          system: buildSystemPrompt(locale, vocabularyHints, today),
           messages: [{ role: "user", content: transcript }]
         })
       }

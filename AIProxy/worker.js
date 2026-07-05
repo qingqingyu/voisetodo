@@ -124,7 +124,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     requestContext.candidateCount = candidates.length;
 
-    const params = { transcript, locale, vocabularyHints, stream };
+    const params = { transcript, locale, vocabularyHints, stream, today: resolveQuotaDate(request, requestContext).date };
     const result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
       healthStore: sharedHealthStore,
       onResponse: stream

@@ -25,7 +25,7 @@ const GEMINI_MODEL_CONFIG_KEYWORDS = [
 export const geminiAdapter = {
   type: "gemini",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "Gemini key not configured");
     }
@@ -46,7 +46,7 @@ export const geminiAdapter = {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: buildSystemPrompt(locale, vocabularyHints) }] },
+          systemInstruction: { parts: [{ text: buildSystemPrompt(locale, vocabularyHints, today) }] },
           contents: [{ role: "user", parts: [{ text: transcript }] }],
           generationConfig: {
             temperature: 0.1,
