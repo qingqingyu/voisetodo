@@ -1212,6 +1212,12 @@ struct HomeView<Store: HomeTodoStore>: View {
                 case .error:
                     HomeCalendarErrorView(onRetry: retryCalendarLoad)
                 case .empty, .success:
+                    // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
+                    // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
+                    // List 会渲染所有内容而不滚动（已知行为）。
+                    // 这里用 proxy.size.height - calendarHeight 算出实际可用高度，
+                    // List 在此 concrete 高度内会正确启用滚动。
+                    let listHeight = max(0, proxy.size.height - calendarHeight)
                     HomeSelectedDayListView(
                         state: state,
                         cardAppeared: $cardAppeared,
@@ -1223,7 +1229,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             moveUnscheduled(from: source, to: destination)
                         }
                     )
-                    .frame(maxHeight: .infinity)
+                    .frame(height: listHeight)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
