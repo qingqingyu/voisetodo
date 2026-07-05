@@ -202,6 +202,22 @@ struct ExtractedTodo: Identifiable, Codable {
 struct ExtractionResult: Codable {
     let todos: [ExtractedTodo]
     let ignored: String
+
+    /// Memberwise init（业务代码 / Preview / 测试 fixture 用）。
+    /// 加了自定义 init(from:) 后 Swift 不再合成默认 memberwise init，需显式声明。
+    init(todos: [ExtractedTodo], ignored: String) {
+        self.todos = todos
+        self.ignored = ignored
+    }
+
+    /// 自定义解码：AI 偶尔返回 `"ignored": null` 或省略字段，
+    /// 用默认 decode 会抛 DecodingError.valueNotFound 导致整次抽取失败（已有 1 条 todo 也会丢）。
+    /// 兜底为空串，保持外部类型 String 不变，调用方（日志/测试）零感知。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        todos = try container.decodeIfPresent([ExtractedTodo].self, forKey: .todos) ?? []
+        ignored = try container.decodeIfPresent(String.self, forKey: .ignored) ?? ""
+    }
 }
 
 /// 文本工具（enum namespace）
