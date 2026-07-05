@@ -1538,27 +1538,35 @@ struct WarmTodoCard: View {
     }
 
     /// 合并所有时间元数据成单行（用于第 2 行展示）。
-    /// 复用 ConfirmSheet composedTimeText 同款逻辑（commit bd936f5）：
-    /// 优先用结构化字段（recurrence.displayTextWithEndDate + dueTime）拼成
-    /// "每天 · 至 8月5日 · 15:00"；结构化全空时退回 dueHint 原文。
-    /// P5 修复：列表里也用具体日期，不再让用户看"未来一个月"模糊标签。
+    /// 拼装规则抽到了 `TodoTimeDisplayComposer`（与 ConfirmSheet 共用），
+    /// 这里只负责"从 TodoItemData 模型字段取出结构化时间"——
+    /// 注意 TodoItemData 没有 ExtractedTodo 的 dueTime 字符串字段，
+    /// 钟点合在了 dueDate + hasDueTime，所以这里在 hasDueTime=true 时用
+    /// DateFormatter 提取 "HH:mm"。
     private var composedTimeText: String? {
         guard !todo.isCompleted else { return nil }
-        var parts: [String] = []
-        if let rule = todo.recurrenceRule {
-            parts.append(rule.displayTextWithEndDate)
+        let timeText: String?
+        if todo.hasDueTime, let dueDate = todo.dueDate {
+            timeText = Self.timeFormatter.string(from: dueDate)
+        } else {
+            timeText = nil
         }
-        if let dueTime = todo.dueTime, !dueTime.isEmpty {
-            parts.append(dueTime)
-        }
-        if parts.isEmpty {
-            if let dueHint = todo.dueHint, !dueHint.isEmpty {
-                return dueHint
-            }
-            return nil
-        }
-        return parts.joined(separator: " · ")
+        return TodoTimeDisplayComposer.compose(
+            recurrenceRule: todo.recurrenceRule,
+            timeText: timeText,
+            dueHint: todo.dueHint
+        )
     }
+
+    /// "HH:mm"（24 小时制）格式化器——与 ExtractedTodo.dueTime 原始格式一致，
+    /// 这样 HomeView 与 ConfirmSheet 显示的钟点串能保持一致。
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     var body: some View {
         HStack(spacing: WarmSpacing.sm) {
@@ -1588,6 +1596,8 @@ struct WarmTodoCard: View {
                         .frame(width: WarmSize.icon - 10, height: WarmSize.icon - 10)
                         .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
                 }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("TodoCheckbox_\(index)")
@@ -1602,7 +1612,7 @@ struct WarmTodoCard: View {
             // 内容区：2 行布局（标题 + 元数据合并行）。
             // P1 修复：原来 3 行（title / dueHint / recurrence）挤压左侧 40%，
             // 现在元数据合并成一行，卡片高度降三分之一。
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 HStack(spacing: WarmSpacing.xxs) {
                     Text(todo.category.emoji)
                         .font(.system(size: 14))
@@ -1616,15 +1626,15 @@ struct WarmTodoCard: View {
 
                 // 元数据合并行：clock + composedTimeText 一行展示。
                 // P3 修复：原 recurrence 用 primaryDark 红色（与 urgent 警告冲突），
-                // 改为 textMuted 灰色；字号 12 → 11 进一步压低视觉权重。
+                // 改为 textSecondary 灰色（与 ConfirmSheet 时间行一致）；字号 12 → 11 进一步压低视觉权重。
                 if let timeText = composedTimeText {
-                    HStack(spacing: WarmSpacing.xxxs) {
+                    HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: "clock")
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                         Text(timeText)
                             .font(WarmFont.caption(11))
                     }
-                    .foregroundColor(WarmTheme.textMuted)
+                    .foregroundColor(WarmTheme.textSecondary)
                 }
             }
 
@@ -1648,7 +1658,7 @@ struct WarmTodoCard: View {
         // P4 修复：卡片感减重——
         // - 移除白底 + shadow（孤岛感来源）
         // - 改用极浅 secondaryBackground 让卡片与背景融合
-        // - 圆角 section(20) → chip(8)（与待办列表"轻分隔"语义匹配）
+        // - 圆角 section(16) → chip(8)（与待办列表"轻分隔"语义匹配）
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.chip)
                 .fill(WarmTheme.secondaryBackground.opacity(0.5))

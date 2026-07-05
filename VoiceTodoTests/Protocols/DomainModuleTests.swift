@@ -241,4 +241,54 @@ final class DomainModuleTests: XCTestCase {
 
         XCTAssertEqual(result.map(\.title), ["今天规律任务", "今天普通任务", "无日期任务"])
     }
+
+    // MARK: - TodoTimeDisplayComposer
+
+    func testTimeDisplayComposerReturnsNilWhenAllInputsNil() {
+        XCTAssertNil(TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: nil, dueHint: nil))
+    }
+
+    func testTimeDisplayComposerReturnsNilWhenAllInputsEmptyOrWhitespace() {
+        XCTAssertNil(TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: "   ", dueHint: ""))
+    }
+
+    func testTimeDisplayComposerFallsBackToDueHintWhenStructuredFieldsAbsent() {
+        XCTAssertEqual(
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: nil, dueHint: "明天下午3点"),
+            "明天下午3点"
+        )
+    }
+
+    func testTimeDisplayComposerUsesOnlyTimeTextWhenNoRecurrence() {
+        XCTAssertEqual(
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: "15:00", dueHint: "下午三点"),
+            "15:00"
+        )
+    }
+
+    func testTimeDisplayComposerJoinsRecurrenceAndTimeText() throws {
+        let rule = RecurrenceRule(frequency: .daily)
+        let result = try XCTUnwrap(
+            TodoTimeDisplayComposer.compose(recurrenceRule: rule, timeText: "15:00", dueHint: nil)
+        )
+        XCTAssertTrue(result.hasPrefix(rule.displayTextWithEndDate), "result should start with recurrence text: \(result)")
+        XCTAssertTrue(result.contains("15:00"), "result should contain time text: \(result)")
+        XCTAssertTrue(result.contains(" · "), "result should join with ' · ': \(result)")
+    }
+
+    func testTimeDisplayComposerDropsDueHintWhenStructuredFieldsPresent() throws {
+        // Review 决策：结构化字段存在时丢弃 dueHint，避免冗余串。
+        let rule = RecurrenceRule(frequency: .daily)
+        let result = try XCTUnwrap(
+            TodoTimeDisplayComposer.compose(recurrenceRule: rule, timeText: "15:00", dueHint: "每天下午三点")
+        )
+        XCTAssertFalse(result.contains("每天下午三点"), "should drop redundant dueHint: \(result)")
+    }
+
+    func testTimeDisplayComposerTrimsWhitespaceOnInputs() throws {
+        XCTAssertEqual(
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: "  15:00  ", dueHint: "  \n  "),
+            "15:00"
+        )
+    }
 }
