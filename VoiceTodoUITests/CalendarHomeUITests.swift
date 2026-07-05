@@ -39,6 +39,10 @@ final class CalendarHomeUITests: XCTestCase {
         XCTAssertTrue(appHelper.app.staticTexts["今天日历任务"].waitForExistence(timeout: 2))
         XCTAssertFalse(appHelper.app.staticTexts["明天日历任务"].exists)
 
+        let calendarTab = appHelper.app.buttons["CalendarTabButton"]
+        XCTAssertTrue(calendarTab.waitForExistence(timeout: 2), "应该能找到日历 tab")
+        calendarTab.tap()
+
         let tomorrowButtonIdentifier = "MonthDay_\(tomorrow.formatted(.dateTime.year().month().day()))"
         let tomorrowButton = appHelper.app.buttons[tomorrowButtonIdentifier]
         XCTAssertTrue(tomorrowButton.waitForExistence(timeout: 2), "应该能找到明天的月历日期按钮")
@@ -46,5 +50,13 @@ final class CalendarHomeUITests: XCTestCase {
 
         XCTAssertTrue(appHelper.app.staticTexts["明天日历任务"].waitForExistence(timeout: 2))
         XCTAssertFalse(appHelper.app.staticTexts["今天日历任务"].exists)
+
+        let todayButtonIdentifier = "MonthDay_\(today.formatted(.dateTime.year().month().day()))"
+        let todayButton = appHelper.app.buttons[todayButtonIdentifier]
+        XCTAssertTrue(todayButton.waitForExistence(timeout: 2), "应该能找到今天的月历日期按钮")
+        todayButton.tap()
+
+        XCTAssertTrue(appHelper.app.staticTexts["今天日历任务"].waitForExistence(timeout: 2))
+        XCTAssertTrue(appHelper.app.buttons[tomorrowButtonIdentifier].waitForExistence(timeout: 2), "日历内选择今天后仍应保留月历")
     }
 }

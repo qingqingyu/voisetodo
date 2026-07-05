@@ -1042,13 +1042,16 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
 
         return VStack(spacing: 0) {
-            HomeMonthHeaderView(
-                state: state,
-                onShift: shiftPeriod,
-                onJumpToToday: jumpToToday,
-                onSelectDay: selectDay,
-                onSetViewMode: setViewMode
-            )
+            // 月历网格只在「日历」tab 显示。「今日」tab 隐藏网格，只显示列表。
+            if selectedBottomTab == .calendar {
+                HomeMonthHeaderView(
+                    state: state,
+                    onShift: shiftPeriod,
+                    onJumpToToday: jumpToToday,
+                    onSelectDay: selectDay,
+                    onSetViewMode: setViewMode
+                )
+            }
 
             switch calendarLoadState {
             case .loading:
@@ -1119,7 +1122,6 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = normalizedDay
             visibleMonthAnchor = normalizedDay
-            selectedBottomTab = calendar.isDateInToday(normalizedDay) ? .today : .calendar
         }
     }
 
@@ -1293,7 +1295,6 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
-            selectedBottomTab = calendar.isDateInToday(normalizedAnchor) ? .today : .calendar
         }
     }
 
@@ -1314,7 +1315,8 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today
-            selectedBottomTab = .today
+            // 不设 selectedBottomTab——日历里"今天"按钮只让月历跳到今天位置，
+            // 不切底部 tab。底部 tab 切"今日"时 onChange 会调此方法设 selectedDate。
         }
     }
 

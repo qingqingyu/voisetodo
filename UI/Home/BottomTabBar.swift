@@ -79,6 +79,7 @@ struct BottomTabBar: View {
             .padding(.bottom, 8)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(tab.accessibilityIdentifier)
     }
 }
 
@@ -86,6 +87,15 @@ struct BottomTabBar: View {
 enum BottomTab: Hashable {
     case today
     case calendar
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .today:
+            return "TodayTabButton"
+        case .calendar:
+            return "CalendarTabButton"
+        }
+    }
 }
 
 #Preview {

@@ -153,6 +153,10 @@ MockScenarios.networkError
 // 底部录音入口
 "RecordFAB"
 
+// 底部 Tab
+"TodayTabButton"
+"CalendarTabButton"
+
 // 底部输入面板发送按钮
 "InputSendButton"
 
