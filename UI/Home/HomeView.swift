@@ -427,19 +427,29 @@ private struct HomeMonthHeaderView: View {
 // MARK: - Home layout constants
 
 private enum HomeLayoutMetrics {
-    /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing）。
-    /// 经验值，需视觉回归——动态字体放大时由 dayRowHeight 的 14pt 下限兜底。
+    /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing + padding）。
+    /// 经验值，需视觉回归——动态字体放大时由 dayRowHeight 的 22pt 下限兜底。
     static let calendarFixedSectionHeight: CGFloat = 100
     /// 月历可用区域下限，防止极矮屏（如 landscape 小窗）算出负数。
     static let calendarMinUsableHeight: CGFloat = 80
-    /// 单行日期格最小高度，保证两位日期数字可读。
-    static let dayRowMinHeight: CGFloat = 14
+    /// 单行日期格最小高度：14pt 日期文字 + 4pt 间距 + 4pt 圆点 = 22pt。
+    /// 低于此值会让日期数字 + 圆点挤压变形，导致"今天"高亮颜色渲染异常（Bug 1）。
+    static let dayRowMinHeight: CGFloat = 22
+    /// 单行日期格阈值：低于此值时隐藏圆点行，只保留日期数字。
+    /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
+    static let dayRowDotsVisibleThreshold: CGFloat = 24
 }
 
 private struct HomeMonthDayButton: View {
     let dayState: HomeCalendarDayState
     let onSelect: (Date) -> Void
     var rowHeight: CGFloat = WarmSpacing.xxxl
+
+    /// 极矮行高下隐藏圆点行：优先保证日期数字可读，避免 14pt 文字 + 4pt 圆点挤压
+    /// 导致背景颜色渲染异常（Bug 1："今天"颜色歪了）。
+    private var showsDots: Bool {
+        rowHeight >= HomeLayoutMetrics.dayRowDotsVisibleThreshold
+    }
 
     var body: some View {
         Button {
@@ -450,14 +460,16 @@ private struct HomeMonthDayButton: View {
                     .font(WarmFont.headline(14))
                     .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
 
-                HStack(spacing: 2) {
-                    ForEach(0..<min(dayState.occurrences.count, 3), id: \.self) { index in
-                        Circle()
-                            .fill(dayState.hasHighPriority && index == 0 ? WarmTheme.urgent : (dayState.isSelected ? Color.white : WarmTheme.primary))
-                            .frame(width: 4, height: 4)
+                if showsDots {
+                    HStack(spacing: 2) {
+                        ForEach(0..<min(dayState.occurrences.count, 3), id: \.self) { index in
+                            Circle()
+                                .fill(dayState.hasHighPriority && index == 0 ? WarmTheme.urgent : (dayState.isSelected ? Color.white : WarmTheme.primary))
+                                .frame(width: 4, height: 4)
+                        }
                     }
+                    .frame(height: 4)
                 }
-                .frame(height: 4)
             }
             .frame(maxWidth: .infinity)
             .frame(height: rowHeight)
@@ -1104,9 +1116,9 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
 
         return GeometryReader { proxy in
-            // 月历占 36% 高度，列表占剩余空间可滚动。
-            // 「今日」tab 隐藏月历，列表占满 100%。
-            let calendarHeight = proxy.size.height * (selectedBottomTab == .calendar ? 0.36 : 0)
+            // 月历封顶 38% 高度（对齐 solution-b-capped-calendar.html 的 max-height:38vh）。
+            // 列表占剩余空间可滚动。「今日」tab 隐藏月历，列表占满 100%。
+            let calendarHeight = proxy.size.height * (selectedBottomTab == .calendar ? 0.38 : 0)
 
             VStack(spacing: 0) {
                 if selectedBottomTab == .calendar {
@@ -1118,7 +1130,11 @@ struct HomeView<Store: HomeTodoStore>: View {
                         onSetViewMode: setViewMode,
                         availableHeight: calendarHeight
                     )
+                    // 封顶 + 裁切：对齐 HTML 参考的 max-height:38vh + overflow:hidden。
+                    // 防止月历内容（网格行高过小时）向上溢出盖住"下午好"标题、
+                    // 或向下溢出侵入列表滚动区。
                     .frame(height: calendarHeight)
+                    .clipped()
                 }
 
                 switch calendarLoadState {
@@ -1138,8 +1154,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                             moveUnscheduled(from: source, to: destination)
                         }
                     )
+                    .frame(maxHeight: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .offset(y: listOffset)
         .opacity(listOpacity)
