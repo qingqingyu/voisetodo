@@ -47,14 +47,17 @@ private struct HomeCalendarState {
             guard let first = visibleDays.first, let last = visibleDays.last else {
                 return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
             }
-            // 去掉 zh/ja/ko 等语言默认追加的"日/일"后缀，保留 locale-aware 的月份/日表达。
-            // en/等无此后缀的语言保持原样（hasSuffix 不命中即 no-op）。
+            // 去掉 zh/ja locale 下 `.dateTime.month().day()` 默认追加的"日"后缀，
+            // 保留 locale-aware 的月份/日表达。en/等无此后缀的语言 hasSuffix 不命中即 no-op。
+            // 注意：ko locale 的"일"后缀未在此处理——若后续要支持 ko，需扩展 stripDaySuffix
+            // 并按字符（而非字节）dropLast；当前目标用户语言为 zh/en，ko 不在范围内。
             return "\(Self.stripDaySuffix(first.formatted(.dateTime.month().day()))) – \(Self.stripDaySuffix(last.formatted(.dateTime.month().day())))"
         }
     }
 
-    /// 去掉 `.formatted(.dateTime.day())` 在 zh/ja 等 locale 末尾产生的"日"后缀。
+    /// 去掉 `.formatted(.dateTime.day())` 在 zh/ja locale 末尾产生的"日"后缀。
     /// 仅当以单字符"日"结尾时删除——避免误伤含"日"的星期或更复杂文案（此处 month().day() 不会出现）。
+    /// ko locale 的"일"后缀不在处理范围（见 monthTitle 上方注释）。
     private static func stripDaySuffix(_ formatted: String) -> String {
         guard formatted.hasSuffix("日") else { return formatted }
         return String(formatted.dropLast())
@@ -444,15 +447,19 @@ private enum HomeLayoutMetrics {
     /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
     static let dayRowDotsVisibleThreshold: CGFloat = 24
     /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
-    /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 ~128pt 过高；
-    /// 这里用固定 ~48pt 让周视图紧凑，腾出更多空间给列表。
+    /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 128pt 过高；
+    /// 这里用固定 48pt 让周视图紧凑，腾出更多空间给列表。
     static let weekDesiredRowHeight: CGFloat = 48
 
-    /// 月历区域高度。
+    /// 月历区域高度（容器封顶值，不直接决定行高）。
     /// 设计意图（对齐 HTML 参考 `max-height:38vh; overflow:hidden`）：
     ///   - **月视图**：6 行内容通常接近 38% cap，直接用 cap 让 dayRowHeight 自适应撑满。
-    ///   - **周视图**：1 行内容远低于 38%，若套用 cap 会把单行撑到 ~128pt 过高；
+    ///   - **周视图**：1 行内容远低于 38%，若套用 cap 会把单行撑到 128pt 过高；
     ///     改用 content-driven（header + 1 行 48pt = 178pt），列表获得更多空间。
+    /// 与 `dayRowHeight` 的契约：本函数返回容器高度，`dayRowHeight` 在容器内独立计算行高
+    /// （`max(dayRowMinHeight, (container - fixedSection - spacing) / rows)`）。
+    /// 极矮屏（maxCap < 178）下周视图 dayRowHeight 会 < 48，容器底部可能被 `.clipped()` 裁切，
+    /// 这是已知取舍（与月视图一致）：列表区至少 62% 不可妥协。
     static func calendarHeight(availableHeight: CGFloat, selectedTab: BottomTab, viewMode: CalendarViewMode) -> CGFloat {
         guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
         let maxCap = availableHeight * calendarTargetHeightRatio
