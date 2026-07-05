@@ -74,6 +74,12 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
       // the persisted attempt keeps secrets out of logs unconditionally.
       response = await fetchImpl(url, init);
     } catch (error) {
+      // 不变量违反（如 buildSystemPrompt 的 today 缺失）不属于 provider 故障，
+      // 不应触发 failover 浪费其他 provider 配额。直接向上抛，由 handleRequest 的
+      // catch 统一处理为 500。
+      if (error instanceof ProxyHTTPError && error.body?.error === "invariant_violation") {
+        throw error;
+      }
       responseError = error;
     }
 

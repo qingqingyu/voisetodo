@@ -96,6 +96,17 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     await enforcePerIpLimit(request, env, requestContext);
     await enforceGlobalBudget(env, requestContext);
 
+    // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
+    // 直接复用作为 today 注入 prompt，避免重复调用 resolveQuotaDate 产生重复漂移校验日志。
+    // 防御性检查：若未来 enforceDailyLimit 重构遗漏 resetDate，立即抛错而非静默注入 undefined。
+    const todayDate = quotaState.resetDate;
+    if (!todayDate) {
+      throw new ProxyHTTPError(500, "enforceDailyLimit returned no resetDate", {
+        errorType: "invariant_violation",
+        body: { error: "invariant_violation", detail: "resetDate missing" }
+      });
+    }
+
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
 
     let providers;
@@ -124,7 +135,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     requestContext.candidateCount = candidates.length;
 
-    const params = { transcript, locale, vocabularyHints, stream, today: resolveQuotaDate(request, requestContext).date };
+    const params = { transcript, locale, vocabularyHints, stream, today: todayDate };
     const result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
       healthStore: sharedHealthStore,
       onResponse: stream
@@ -419,19 +430,20 @@ function validateAppToken(request, env) {
 // 配额 key 由客户端本地日期 + 设备摘要构成：发起即计数（含后续 AI 调用失败），
 // 避免靠重试绕过计费。代理是唯一可信强制点，客户端只负责展示。
 async function enforceDailyLimit(request, env, requestContext) {
+  // 即使配额未启用也预先解析 quotaDate，让调用方（today 注入）能复用而无需重复调用
+  // resolveQuotaDate（避免重复漂移校验日志）。
+  const { date: quotaDate, source } = resolveQuotaDate(request, requestContext);
   if (!env.RATE_LIMIT_KV || !env.DAILY_REQUEST_LIMIT) {
     logInfo("proxy.quota.skipped", { ...requestContext, reason: "not_configured" });
-    return null;
+    return { skipped: true, resetDate: quotaDate, dateSource: source };
   }
   const freeLimit = Number(env.DAILY_REQUEST_LIMIT);
   if (!Number.isFinite(freeLimit) || freeLimit <= 0) {
     logWarn("proxy.quota.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.DAILY_REQUEST_LIMIT });
-    return null;
+    return { skipped: true, resetDate: quotaDate, dateSource: source };
   }
 
   const { tier, limit, productId } = await resolveSubscriptionTier(request, env, requestContext);
-
-  const { date: quotaDate, source } = resolveQuotaDate(request, requestContext);
   // requestContext.deviceId 已加盐 sha256，避免 KV 落明文设备号且与日志口径一致。
   const quotaKey = `quota:${quotaDate}:${requestContext.deviceId}`;
   const current = Number(await env.RATE_LIMIT_KV.get(quotaKey) || "0");
@@ -452,7 +464,7 @@ async function enforceDailyLimit(request, env, requestContext) {
   await env.RATE_LIMIT_KV.put(quotaKey, String(used), { expirationTtl: 36 * 60 * 60 });
   const remaining = Math.max(0, limit - used);
   logInfo("proxy.quota.incremented", { ...requestContext, quotaKey, quotaDate, dateSource: source, plan: tier, productId, limit, used, remaining });
-  return { plan: tier, limit, used, remaining, resetDate: quotaDate };
+  return { skipped: false, plan: tier, limit, used, remaining, resetDate: quotaDate };
 }
 
 // 解析配额日期：优先信任客户端 X-Local-Date（设备时区 YYYY-MM-DD），但做格式与漂移校验。
@@ -547,7 +559,9 @@ async function resolveSubscriptionTier(request, env, requestContext) {
 }
 
 function quotaHeaders(state) {
-  if (!state) return {};
+  // state 可能为 null（未启用配额）或 { skipped: true, resetDate, dateSource }（启用但跳过）。
+  // 两种情况都不应输出 undefined 头字段。
+  if (!state || state.skipped) return {};
   return {
     "X-Quota-Plan": state.plan,
     "X-Quota-Limit": String(state.limit),
