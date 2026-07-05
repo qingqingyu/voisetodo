@@ -513,7 +513,11 @@ private struct HomeMonthDayButton: View {
             onSelect(dayState.date)
         } label: {
             VStack(spacing: WarmSpacing.xxs) {
-                Text(dayState.date.formatted(.dateTime.day(.twoDigits)))
+                // 纯数字（5/29 等），不用 .formatted(.dateTime.day(.twoDigits))
+                // 后者在 zh locale 下产生"29日"，与日期格上下文冲突显冗余。
+                // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
+                // 视觉显示与无障碍朗读职责分离。
+                Text("\(Calendar.current.component(.day, from: dayState.date))")
                     .font(WarmFont.headline(14))
                     .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
 
