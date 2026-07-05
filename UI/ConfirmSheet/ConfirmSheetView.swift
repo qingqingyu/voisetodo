@@ -38,7 +38,7 @@ struct ConfirmSheetView: View {
                 // 日历写入目标移到顶部 toolbar 中央——用户确认前最该看到的元信息。
                 // 用 secondary 色让它不抢按钮焦点，但比原来居中胶囊更不挡待办条目。
                 ToolbarItem(placement: .principal) {
-                    calendarTargetLabel
+                    calendarTarget
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: confirmAction) {
@@ -50,9 +50,10 @@ struct ConfirmSheetView: View {
                 }
             }
         }
-        // P4 修复：单条目时只给 .medium（半高），避免下半截空感。
-        // 2+ 条目解锁 .large，用户可上滑展开。
-        // 流式期间先用 medium 等数据到位再调整（避免流式初期高度抖动）。
+        // 单条目时只给 .medium（半高），避免下半截空感；2+ 条目解锁 .large。
+        // 流式期间 (isStreaming=true) 即使只有 0-1 条也走 .medium+.large，等数据到位再收敛。
+        // 注意：用户从 2+ 条删除到 1 条时，detents 会从 [.medium,.large] 收到 [.medium]——
+        // 这是有意的 UX（单条目就该紧凑），iOS 会动画过渡。
         .presentationDetents(todos.count <= 1 && !isStreaming ? [.medium] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .accessibilityIdentifier("ConfirmSheet")
@@ -80,7 +81,7 @@ struct ConfirmSheetView: View {
 
                     // 操作提示：从前几次的显眼胶囊改成 todosSection 下方的一行浅灰小字。
                     // 用户主要看条目，提示降级为辅助信息。
-                    operationHintLabel
+                    operationHint
                         .padding(.top, WarmSpacing.xs)
                 } else if isStreaming {
                     todosSection
@@ -161,7 +162,7 @@ struct ConfirmSheetView: View {
 
     /// todosSection 下方的轻量操作提示——一行浅灰小字，不带胶囊背景。
     /// P2 修复：从原来的居中胶囊降级，避免压过待办条目本身的视觉权重。
-    private var operationHintLabel: some View {
+    private var operationHint: some View {
         HStack(spacing: WarmSpacing.xxs) {
             Image(systemName: "hand.tap")
                 .font(.system(size: 11))
@@ -175,7 +176,7 @@ struct ConfirmSheetView: View {
 
     /// 移到 toolbar principal 的日历写入目标——更紧凑的标签样式。
     /// P2 修复：原来居中胶囊占了核心视觉位置，移到顶部 nav bar 让出待办条目空间。
-    private var calendarTargetLabel: some View {
+    private var calendarTarget: some View {
         let mode = CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
         return HStack(spacing: WarmSpacing.xxs) {
             Image(systemName: mode == .appAndSystemCalendar ? "calendar.badge.plus" : "calendar")

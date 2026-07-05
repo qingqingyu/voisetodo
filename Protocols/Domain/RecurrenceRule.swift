@@ -137,15 +137,22 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
     var displayTextWithEndDate: String {
         let base = displayText
         guard let endDate else { return base }
+        let formatter = Self.cachedEndDateFormatter
+        let endStr = formatter.string(from: endDate)
+        let template = String(localized: "recurrence.with_end_date")
+        return String(format: template, base, endStr)
+    }
+
+    /// 缓存的 endDate 格式化器——避免每次 view 重渲染都重建 DateFormatter。
+    /// locale 跟随 Bundle.main.preferredLocalizations；用户改系统语言后下次进程启动会重新解析。
+    private static let cachedEndDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         if let identifier = Bundle.main.preferredLocalizations.first(where: { $0 != "Base" }) {
             formatter.locale = Locale(identifier: identifier)
         }
         formatter.setLocalizedDateFormatFromTemplate("MMMd")
-        let endStr = formatter.string(from: endDate)
-        let template = String(localized: "recurrence.with_end_date")
-        return String(format: template, base, endStr)
-    }
+        return formatter
+    }()
 
     private static func shortWeekdayName(_ weekday: Int) -> String {
         switch weekday {
