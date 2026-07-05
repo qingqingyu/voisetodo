@@ -44,16 +44,22 @@ struct FocusableTextView: UIViewRepresentable {
         textView.smartDashesType = .yes
         textView.smartQuotesType = .yes
         textView.text = text
+        // 同步初始 uiText 到 coordinator，避免首次 updateUIView 误判"用户刚改过未同步"。
+        context.coordinator.lastKnownUIText = text
         // autoFocus 在 didMoveToWindow 里触发，无需此处主动 becomeFirstResponder
         textView.autoFocusOnAttach = true
         return textView
     }
 
     func updateUIView(_ uiView: UITextView, context: Context) {
-        // IME 组字期间（存在 marked text）绝不回写 .text：否则会清掉未提交的拼音/候选，
-        // 导致中文（搜狗/系统拼音）打不出字、光标跳动。组字提交后 textViewDidChange 会同步最终文本。
-        // 防止循环：只有外部 text 与当前不一致才更新。
-        if uiView.markedTextRange == nil, uiView.text != text {
+        // 守卫 1：IME 组字期间（存在 marked text）绝不回写 .text：否则会清掉未提交的拼音/候选，
+        // 导致中文（搜狗/系统拼音）打不出字、光标跳动。组字提交后 textViewDidChange 同步最终文本。
+        // 守卫 2：uiView 刚被用户改过（粘贴/输入）但 binding 异步同步尚未完成时，绝不回写——
+        // 否则 updateUIView 会用滞后 binding 把刚粘贴的内容清空（"粘贴不进去"bug）。
+        // 通过对比 coordinator.lastKnownUIText 判断 uiView 是否处于"用户改过未同步"状态。
+        if uiView.markedTextRange == nil,
+           uiView.text == context.coordinator.lastKnownUIText,
+           uiView.text != text {
             uiView.text = text
         }
         // 字体/颜色变化时同步
@@ -71,12 +77,17 @@ struct FocusableTextView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         private let text: Binding<String>
+        /// 同步 uiView.text 的最新已知值。textViewDidChange 立即更新此字段；
+        /// updateUIView 用它判断"text binding 滞后于 uiView"的竞态窗口。
+        var lastKnownUIText: String = ""
 
         init(text: Binding<String>) {
             self.text = text
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            // 立即同步 lastKnownUIText，让 updateUIView 能识别"用户刚改过"。
+            lastKnownUIText = textView.text
             // 防止光标跳动：只有内容真的变了才更新 binding
             if text.wrappedValue != textView.text {
                 text.wrappedValue = textView.text
