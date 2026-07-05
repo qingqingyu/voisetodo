@@ -1537,106 +1537,121 @@ struct WarmTodoCard: View {
         WarmTheme.color(for: todo.category)
     }
 
+    /// 合并所有时间元数据成单行（用于第 2 行展示）。
+    /// 复用 ConfirmSheet composedTimeText 同款逻辑（commit bd936f5）：
+    /// 优先用结构化字段（recurrence.displayTextWithEndDate + dueTime）拼成
+    /// "每天 · 至 8月5日 · 15:00"；结构化全空时退回 dueHint 原文。
+    /// P5 修复：列表里也用具体日期，不再让用户看"未来一个月"模糊标签。
+    private var composedTimeText: String? {
+        guard !todo.isCompleted else { return nil }
+        var parts: [String] = []
+        if let rule = todo.recurrenceRule {
+            parts.append(rule.displayTextWithEndDate)
+        }
+        if let dueTime = todo.dueTime, !dueTime.isEmpty {
+            parts.append(dueTime)
+        }
+        if parts.isEmpty {
+            if let dueHint = todo.dueHint, !dueHint.isEmpty {
+                return dueHint
+            }
+            return nil
+        }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(todo.isCompleted ? WarmTheme.textMuted.opacity(0.3) : categoryColor)
-                .frame(width: 4)
-                .padding(.vertical, WarmSpacing.xs)
-
-            HStack(spacing: WarmSpacing.sm) {
-                Button(action: onToggle) {
-                    ZStack {
-                        Circle()
-                            .stroke(
-                                todo.isCompleted ? WarmTheme.success : categoryColor,
-                                lineWidth: 2.5
-                            )
-                            .frame(width: WarmSize.icon, height: WarmSize.icon)
-
-                        Circle()
-                            .fill(WarmTheme.success)
-                            .frame(width: WarmSize.icon, height: WarmSize.icon)
-                            .opacity(todo.isCompleted ? 1 : 0)
-                            .animation(.easeInOut(duration: 0.2), value: todo.isCompleted)
-
-                        WarmCheckmarkShape()
-                            .trim(from: 0, to: todo.isCompleted ? 1 : 0)
-                            .stroke(
-                                .white,
-                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
-                            )
-                            .frame(width: WarmSize.icon - 6, height: WarmSize.icon - 6)
-                            .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("TodoCheckbox_\(index)")
-                .accessibilityLabel(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
-                .accessibilityHint({
-                    let action = todo.isCompleted
-                        ? String(localized: "a11y.mark_incomplete")
-                        : String(localized: "a11y.mark_complete")
-                    return String(localized: "a11y.toggle_complete \(action)")
-                }())
-
-                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                    HStack(spacing: WarmSpacing.xs) {
-                        Text(todo.category.emoji)
-                            .font(.system(size: 15))
-
-                        Text(todo.title)
-                            .font(todo.priority == .high ? WarmFont.headline(16) : WarmFont.body(16))
-                            .foregroundColor(todo.isCompleted ? WarmTheme.textMuted : WarmTheme.textPrimary)
-                            .strikethrough(todo.isCompleted, color: WarmTheme.textMuted)
-                            .lineLimit(2)
-                    }
-
-                    if let dueHint = todo.dueHint, !todo.isCompleted {
-                        HStack(spacing: WarmSpacing.xxs) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 10))
-                            Text(dueHint)
-                                .font(WarmFont.caption(12))
-                        }
-                        .foregroundColor(WarmTheme.textSecondary)
-                    }
-
-                    if let recurrenceRule = todo.recurrenceRule, !todo.isCompleted {
-                        HStack(spacing: WarmSpacing.xxs) {
-                            Image(systemName: "repeat")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(recurrenceRule.displayText)
-                                .font(WarmFont.caption(12))
-                        }
-                        .foregroundColor(WarmTheme.primaryDark)
-                    }
-                }
-
-                Spacer()
-
-                if todo.priority == .high && !todo.isCompleted {
-                    Image(systemName: "exclamationmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
-                        .background(
-                            Circle()
-                                .fill(WarmTheme.urgent)
+        HStack(spacing: WarmSpacing.sm) {
+            // 砍掉左侧色条——P2 修复：原色条 + 圆圈 checkbox 双重标记冗余。
+            // 现在只用圆圈 checkbox 按 category 上色，更接近 Things 3 的极简做法。
+            Button(action: onToggle) {
+                ZStack {
+                    Circle()
+                        .stroke(
+                            todo.isCompleted ? WarmTheme.success : categoryColor,
+                            lineWidth: 2
                         )
-                        .accessibilityIdentifier("PriorityLabel")
-                        .accessibilityLabel(String(localized: "a11y.high_priority"))
+                        .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
+
+                    Circle()
+                        .fill(WarmTheme.success)
+                        .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
+                        .opacity(todo.isCompleted ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.2), value: todo.isCompleted)
+
+                    WarmCheckmarkShape()
+                        .trim(from: 0, to: todo.isCompleted ? 1 : 0)
+                        .stroke(
+                            .white,
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                        )
+                        .frame(width: WarmSize.icon - 10, height: WarmSize.icon - 10)
+                        .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
                 }
             }
-            .padding(.leading, WarmSpacing.sm)
-            .padding(.trailing, WarmSpacing.md)
-            .padding(.vertical, WarmSpacing.md)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("TodoCheckbox_\(index)")
+            .accessibilityLabel(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
+            .accessibilityHint({
+                let action = todo.isCompleted
+                    ? String(localized: "a11y.mark_incomplete")
+                    : String(localized: "a11y.mark_complete")
+                return String(localized: "a11y.toggle_complete \(action)")
+            }())
+
+            // 内容区：2 行布局（标题 + 元数据合并行）。
+            // P1 修复：原来 3 行（title / dueHint / recurrence）挤压左侧 40%，
+            // 现在元数据合并成一行，卡片高度降三分之一。
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: WarmSpacing.xxs) {
+                    Text(todo.category.emoji)
+                        .font(.system(size: 14))
+
+                    Text(todo.title)
+                        .font(todo.priority == .high ? WarmFont.headline(16) : WarmFont.body(16))
+                        .foregroundColor(todo.isCompleted ? WarmTheme.textMuted : WarmTheme.textPrimary)
+                        .strikethrough(todo.isCompleted, color: WarmTheme.textMuted)
+                        .lineLimit(2)
+                }
+
+                // 元数据合并行：clock + composedTimeText 一行展示。
+                // P3 修复：原 recurrence 用 primaryDark 红色（与 urgent 警告冲突），
+                // 改为 textMuted 灰色；字号 12 → 11 进一步压低视觉权重。
+                if let timeText = composedTimeText {
+                    HStack(spacing: WarmSpacing.xxxs) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 9))
+                        Text(timeText)
+                            .font(WarmFont.caption(11))
+                    }
+                    .foregroundColor(WarmTheme.textMuted)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if todo.priority == .high && !todo.isCompleted {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
+                    .background(
+                        Circle()
+                            .fill(WarmTheme.urgent)
+                    )
+                    .accessibilityIdentifier("PriorityLabel")
+                    .accessibilityLabel(String(localized: "a11y.high_priority"))
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.section))
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.sm)
+        // P4 修复：卡片感减重——
+        // - 移除白底 + shadow（孤岛感来源）
+        // - 改用极浅 secondaryBackground 让卡片与背景融合
+        // - 圆角 section(20) → chip(8)（与待办列表"轻分隔"语义匹配）
         .background(
-            RoundedRectangle(cornerRadius: WarmRadius.section)
-                .fill(Color.white)
-                .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
+            RoundedRectangle(cornerRadius: WarmRadius.chip)
+                .fill(WarmTheme.secondaryBackground.opacity(0.5))
         )
         .contentShape(Rectangle())
         .onTapGesture {
