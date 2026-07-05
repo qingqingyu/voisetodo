@@ -419,7 +419,7 @@ private struct HomeMonthHeaderView: View {
 
 // MARK: - Home layout constants
 
-private enum HomeLayoutMetrics {
+enum HomeLayoutMetrics {
     /// 月历区域目标上限比例（对齐 HTML 参考的 max-height:38vh）。
     static let calendarTargetHeightRatio: CGFloat = 0.38
     /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing + padding）。
@@ -429,9 +429,13 @@ private enum HomeLayoutMetrics {
     static let calendarFixedSectionHeight: CGFloat = 130
     /// 单行日期格最小高度：优先保证 14pt 日期数字可读；圆点在空间不足时隐藏。
     static let dayRowMinHeight: CGFloat = 14
+    /// 圆点直径，与 HomeMonthDayButton 内的 Circle frame 保持一致。
+    static let dayRowDotSize: CGFloat = 4
     /// 单行日期格阈值：低于此值时隐藏圆点行，只保留日期数字。
     /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
-    static let dayRowDotsVisibleThreshold: CGFloat = 24
+    static var dayRowDotsVisibleThreshold: CGFloat {
+        dayRowMinHeight + WarmSpacing.xxs + dayRowDotSize
+    }
     /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
     /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 ~128pt 过高；
     /// 这里用固定 ~48pt 让周视图紧凑，腾出更多空间给列表。
@@ -504,10 +508,10 @@ private struct HomeMonthDayButton: View {
                         ForEach(0..<min(dayState.occurrences.count, 3), id: \.self) { index in
                             Circle()
                                 .fill(dayState.hasHighPriority && index == 0 ? WarmTheme.urgent : (dayState.isSelected ? Color.white : WarmTheme.primary))
-                                .frame(width: 4, height: 4)
+                                .frame(width: HomeLayoutMetrics.dayRowDotSize, height: HomeLayoutMetrics.dayRowDotSize)
                         }
                     }
-                    .frame(height: 4)
+                    .frame(height: HomeLayoutMetrics.dayRowDotSize)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -1177,7 +1181,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                     // 封顶 + 裁切：对齐 HTML 参考的 max-height:38vh + overflow:hidden。
                     // 防止月历内容（网格行高过小时）向上溢出盖住"下午好"标题、
                     // 或向下溢出侵入列表滚动区。
-                    .frame(height: calendarHeight)
+                    // alignment: .top —— 内容贴顶；周→月切换动画期间 frame 从 178pt 涨到 258pt，
+                    // 但内容立即变 6 行（~244pt），中途 frame ~200pt 装不下时，.top 让溢出只往下走，
+                    // 上方 Picker/月份标题不被切（默认 .center 会上下都切，"上面文字被切掉"的 bug）。
+                    .frame(height: calendarHeight, alignment: .top)
                     .clipped()
                 }
 
