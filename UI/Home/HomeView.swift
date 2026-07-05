@@ -432,16 +432,26 @@ private enum HomeLayoutMetrics {
     /// 单行日期格阈值：低于此值时隐藏圆点行，只保留日期数字。
     /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
     static let dayRowDotsVisibleThreshold: CGFloat = 24
+    /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
+    /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 ~128pt 过高；
+    /// 这里用固定 ~48pt 让周视图紧凑，腾出更多空间给列表。
+    static let weekDesiredRowHeight: CGFloat = 48
 
     /// 月历区域高度。
-    /// 优先级（对齐 HTML 参考 `max-height:38vh; overflow:hidden`）：
-    ///   1. 硬约束：封顶 38% availableHeight —— 列表区至少 62%，不可妥协。
-    ///   2. 极矮屏：若 38% < 最小可读高度（month 6 行），仍按 38%，
-    ///      接受底部日期行被 `.clipped()` 裁切（与 HTML overflow:hidden 一致，列表区不下穿 62%）。
-    /// 反方案"最小高度优先，极矮屏列表区 < 62%"被否决——破坏"列表占主体"的产品意图。
+    /// 设计意图（对齐 HTML 参考 `max-height:38vh; overflow:hidden`）：
+    ///   - **月视图**：6 行内容通常接近 38% cap，直接用 cap 让 dayRowHeight 自适应撑满。
+    ///   - **周视图**：1 行内容远低于 38%，若套用 cap 会把单行撑到 ~128pt 过高；
+    ///     改用 content-driven（header + 1 行 48pt = 178pt），列表获得更多空间。
     static func calendarHeight(availableHeight: CGFloat, selectedTab: BottomTab, viewMode: CalendarViewMode) -> CGFloat {
         guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
-        return availableHeight * calendarTargetHeightRatio
+        let maxCap = availableHeight * calendarTargetHeightRatio
+        switch viewMode {
+        case .month:
+            return maxCap
+        case .week:
+            let contentHeight = calendarFixedSectionHeight + weekDesiredRowHeight
+            return min(maxCap, contentHeight)
+        }
     }
 
     static func dayRowHeight(availableHeight: CGFloat, viewMode: CalendarViewMode) -> CGFloat {
