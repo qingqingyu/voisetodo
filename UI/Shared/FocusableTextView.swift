@@ -86,8 +86,13 @@ struct FocusableTextView: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            // 立即同步 lastKnownUIText，让 updateUIView 能识别"用户刚改过"。
-            lastKnownUIText = textView.text
+            // 仅在非 IME 组字期同步 lastKnownUIText。
+            // 组字期 markedTextRange != nil，textView.text 含未提交候选；
+            // 此时若写入 lastKnownUIText，组字提交后会因 uiView.text != lastKnownUIText
+            // 阻塞合法的外部 reset/clear，并可能误判用户输入。
+            if textView.markedTextRange == nil {
+                lastKnownUIText = textView.text
+            }
             // 防止光标跳动：只有内容真的变了才更新 binding
             if text.wrappedValue != textView.text {
                 text.wrappedValue = textView.text

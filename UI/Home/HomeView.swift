@@ -47,12 +47,17 @@ private struct HomeCalendarState {
             guard let first = visibleDays.first, let last = visibleDays.last else {
                 return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
             }
-            // 手动拼"6月29 – 7月5"，去掉 Date.FormatStyle 默认在中文 locale 下的"日"后缀。
-            // 用 calendar.dateComponents 取整数月日，避免 .formatted(.dateTime.day()) 在 zh 里产生"29日"。
-            let firstComps = calendar.dateComponents([.month, .day], from: first)
-            let lastComps = calendar.dateComponents([.month, .day], from: last)
-            return "\(firstComps.month ?? 0)月\(firstComps.day ?? 0) – \(lastComps.month ?? 0)月\(lastComps.day ?? 0)"
+            // 去掉 zh/ja/ko 等语言默认追加的"日/일"后缀，保留 locale-aware 的月份/日表达。
+            // en/等无此后缀的语言保持原样（hasSuffix 不命中即 no-op）。
+            return "\(Self.stripDaySuffix(first.formatted(.dateTime.month().day()))) – \(Self.stripDaySuffix(last.formatted(.dateTime.month().day())))"
         }
+    }
+
+    /// 去掉 `.formatted(.dateTime.day())` 在 zh/ja 等 locale 末尾产生的"日"后缀。
+    /// 仅当以单字符"日"结尾时删除——避免误伤含"日"的星期或更复杂文案（此处 month().day() 不会出现）。
+    private static func stripDaySuffix(_ formatted: String) -> String {
+        guard formatted.hasSuffix("日") else { return formatted }
+        return String(formatted.dropLast())
     }
 
     var selectedDateTitle: String {
@@ -423,7 +428,7 @@ private struct HomeMonthHeaderView: View {
 
 // MARK: - Home layout constants
 
-enum HomeLayoutMetrics {
+private enum HomeLayoutMetrics {
     /// 月历区域目标上限比例（对齐 HTML 参考的 max-height:38vh）。
     static let calendarTargetHeightRatio: CGFloat = 0.38
     /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing + padding）。
@@ -437,9 +442,7 @@ enum HomeLayoutMetrics {
     static let dayRowDotSize: CGFloat = 4
     /// 单行日期格阈值：低于此值时隐藏圆点行，只保留日期数字。
     /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
-    static var dayRowDotsVisibleThreshold: CGFloat {
-        dayRowMinHeight + WarmSpacing.xxs + dayRowDotSize
-    }
+    static let dayRowDotsVisibleThreshold: CGFloat = 24
     /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
     /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 ~128pt 过高；
     /// 这里用固定 ~48pt 让周视图紧凑，腾出更多空间给列表。
