@@ -213,10 +213,19 @@ struct ExtractionResult: Codable {
     /// 自定义解码：AI 偶尔返回 `"ignored": null` 或省略字段，
     /// 用默认 decode 会抛 DecodingError.valueNotFound 导致整次抽取失败（已有 1 条 todo 也会丢）。
     /// 兜底为空串，保持外部类型 String 不变，调用方（日志/测试）零感知。
+    /// 命中兜底时记 warning 日志，便于线上追踪 AI 输出质量（日志分析 AI 可识别该模式）。
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         todos = try container.decodeIfPresent([ExtractedTodo].self, forKey: .todos) ?? []
-        ignored = try container.decodeIfPresent(String.self, forKey: .ignored) ?? ""
+        // 提到局部变量避免 autoclosure 捕获 mutating self。
+        let todosCount = todos.count
+        // 区分 null/缺失 vs 合法 String：前者走兜底并记日志，后者正常返回。
+        if let ignoredValue = try? container.decode(String.self, forKey: .ignored) {
+            ignored = ignoredValue
+        } else {
+            ignored = ""
+            VoiceTodoLog.extractor.warning("extract.result.ignored_fallback reason=null_or_missing todosCount=\(todosCount)")
+        }
     }
 }
 
