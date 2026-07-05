@@ -34,6 +34,8 @@ enum ErrorMessages {
     static let systemCalendarSyncFailed = String(localized: "ui.system_calendar_sync_failed")
     static let permissionsRequired = String(localized: "ui.permissions_required")
     static let finishOnboardingFirst = String(localized: "ui.finish_onboarding_first")
+    /// 录音模式发送时录音已不在活动状态——给用户明确反馈而不是静默关闭面板。
+    static let recordingNotActive = String(localized: "ui.recording_not_active")
 
     /// 带参数的格式化方法
     static func todoSaveFailedMessage(_ detail: String) -> String {

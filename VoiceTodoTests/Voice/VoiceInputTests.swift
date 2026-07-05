@@ -24,6 +24,19 @@ final class VoiceInputTests: XCTestCase {
         XCTAssertFalse(isRecording, "停止后应该不在录音状态")
     }
 
+    /// 用户主动取消在「未在录音」时应该是 no-op：不抛错、不设 error。
+    /// 与 `cancelRecordingDueToInterruption` 的差别就在于不动 error 字段。
+    func testCancelRecordingByUserWhenNotRecordingIsNoOp() async {
+        let sut = await MainActor.run { VoiceInputManager() }
+        await MainActor.run {
+            sut.cancelRecordingByUser()
+        }
+
+        let snapshot = await MainActor.run { (sut.isRecording, sut.error) }
+        XCTAssertFalse(snapshot.0, "未在录音状态应保持")
+        XCTAssertNil(snapshot.1, "用户取消在未录音时不应设置 error（区别于中断路径）")
+    }
+
     // MARK: - 常量配置测试
 
     func testVoiceConstantsSilenceThreshold() {

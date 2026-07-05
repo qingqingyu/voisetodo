@@ -161,13 +161,14 @@ final class AppCoordinator: ObservableObject {
     /// 用户主动取消当前录音，不将其作为音频中断错误上报给 UI。
     func cancelRecording() {
         let flowID = VoiceTodoLog.makeID("coord-cancel")
-        let startedAt = Date()
         guard voiceInput.isRecording else {
-            VoiceTodoLog.coordinator.debug("coordinator.recording.cancel_ignored id=\(flowID, privacy: .public) reason=not_recording durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            VoiceTodoLog.coordinator.debug("coordinator.recording.cancel_ignored id=\(flowID, privacy: .public) reason=not_recording")
             return
         }
-        VoiceTodoLog.coordinator.info("coordinator.recording.cancelled id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-        voiceInput.stopRecording()
+        VoiceTodoLog.coordinator.info("coordinator.recording.cancelled id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count)")
+        // 委托给 voiceInput.cancelRecordingByUser() —— Telemetry/duration 由其内部记录（与
+        // cancelRecordingDueToInterruption 对称），coordinator 这里只重置编排状态。
+        voiceInput.cancelRecordingByUser()
         isAutoProcessing = false
         isProcessingTranscript = false
         isExtracting = false

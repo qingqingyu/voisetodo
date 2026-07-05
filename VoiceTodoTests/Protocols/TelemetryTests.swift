@@ -64,7 +64,7 @@ final class TelemetryTests: XCTestCase {
     }
 
     func testRecordingOutcomeParamsForAllOutcomes() {
-        for outcome in [RecordingOutcome.success, .interrupted, .silenceTimeout, .maxDurationReached, .watchdogExpired, .error] {
+        for outcome in [RecordingOutcome.success, .interrupted, .userCancelled, .silenceTimeout, .maxDurationReached, .watchdogExpired, .error] {
             let params = TelemetryEvent.recordingOutcome(outcome: outcome, durationMS: 0, transcript: "").params
             XCTAssertEqual(params["outcome"], outcome.rawValue)
         }

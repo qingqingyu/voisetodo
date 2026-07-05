@@ -40,6 +40,10 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
         error = .audioSessionInterrupted
     }
 
+    func cancelRecordingByUser() {
+        isRecording = false
+    }
+
     func finishRecording() {
         stopRecording()
     }

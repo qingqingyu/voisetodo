@@ -44,6 +44,9 @@ enum WarmTheme {
     static let shadowLight = Color(hex: "3D3A38").opacity(0.08)
     static let shadowMedium = Color(hex: "3D3A38").opacity(0.12)
 
+    // 输入面板：键盘模式下「发送」按钮的深色（替代散落的 RGB 字面量）
+    static let deepAction = Color(light: "2F2A26", dark: "EDE8E2")
+
     /// 根据分类获取对应颜色
     static func color(for category: TodoCategory) -> Color {
         switch category {
@@ -85,6 +88,8 @@ enum WarmRadius {
 enum WarmSize {
     static let icon: CGFloat = 28      // 内嵌图标 badge
     static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
+    static let fab: CGFloat = 64       // 底部 FAB 圆形按钮
+    static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
     static let mega: CGFloat = 120     // 最大装饰元素
 }

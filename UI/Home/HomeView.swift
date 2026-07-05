@@ -230,16 +230,19 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         updateProcessing(false)
     }
 
-    func navigateToDeepLinkedTodo(id: UUID) {
+    /// 启动 deeplink 重试任务并返回 Task 句柄。
+    /// 与 submitManualInput 同样需要调用方持有，视图销毁时 cancel。
+    @discardableResult
+    func navigateToDeepLinkedTodo(id: UUID) -> Task<Void, Never> {
         if let todo = store.todos.first(where: { $0.id == id }) {
             selectTodo(todo)
             coordinator.deepLinkTodoId = nil
-            return
+            return Task { } // 同步命中，返回已完成 Task 保持签名一致
         }
 
-        Task { @MainActor in
+        return Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
-            guard coordinator.deepLinkTodoId == id else { return }
+            guard !Task.isCancelled, coordinator.deepLinkTodoId == id else { return }
             if let todo = store.todos.first(where: { $0.id == id }) {
                 selectTodo(todo)
             }
@@ -247,11 +250,19 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         }
     }
 
-    func submitManualInput(_ text: String) {
+    /// 启动「延时盖 overlay → 处理 → 关 overlay」任务并返回 Task 句柄，
+    /// 由调用方持有以便在视图销毁时 cancel（防止访问已销毁的 @State）。
+    @discardableResult
+    func submitManualInput(_ text: String) -> Task<Void, Never> {
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            // 等输入面板滑出动画结束（springSmooth ≈ 350ms）再盖 processing overlay，
+            // 否则两层 overlay 同时淡入会撕裂。给 400ms 留余量。
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
             updateProcessing(true)
             await coordinator.processManualInput(text)
+            // 处理期间用户可能退出 HomeView，再次校验避免访问已销毁状态。
+            guard !Task.isCancelled else { return }
             updateProcessing(false)
         }
     }
@@ -317,13 +328,30 @@ private struct HomeMonthHeaderView: View {
     let onJumpToToday: () -> Void
     let onSelectDay: (Date) -> Void
     let onSetViewMode: (CalendarViewMode) -> Void
+    /// 可用高度（来自 GeometryReader）。0 = 不约束，用默认行高。
+    var availableHeight: CGFloat = 0
 
     private var viewModeBinding: Binding<CalendarViewMode> {
         Binding(get: { state.viewMode }, set: { onSetViewMode($0) })
     }
 
+    /// 根据可用高度计算日期格行高。
+    /// 固定段（Picker + 导航行 + 星期表头 + spacing）约 ~100pt；
+    /// 剩余空间平分给网格行（月视图 6 行 / 周视图 1 行）。
+    /// availableHeight = 0 时回退到默认 WarmSpacing.xxxl（48pt）。
+    private var dayRowHeight: CGFloat {
+        guard availableHeight > 0 else { return WarmSpacing.xxxl }
+        // 经验值：Picker(~32) + navRow(32) + weekday(16) + VStack spacing(20)。
+        // 受系统字体缩放影响会浮动 ±4pt，但 dayRowHeight 有 14pt 下限兜底，不会崩。
+        let fixedHeight: CGFloat = HomeLayoutMetrics.calendarFixedSectionHeight
+        let rows: CGFloat = state.viewMode == .month ? 6 : 1
+        let gridSpacing: CGFloat = WarmSpacing.xs * max(0, rows - 1)
+        let usable = max(HomeLayoutMetrics.calendarMinUsableHeight, availableHeight - fixedHeight - gridSpacing)
+        return max(HomeLayoutMetrics.dayRowMinHeight, usable / rows)
+    }
+
     var body: some View {
-        VStack(spacing: WarmSpacing.sm) {
+        VStack(spacing: WarmSpacing.xs) {
             Picker("", selection: viewModeBinding) {
                 Text(String(localized: "calendar.mode.month")).tag(CalendarViewMode.month)
                 Text(String(localized: "calendar.mode.week")).tag(CalendarViewMode.week)
@@ -385,7 +413,7 @@ private struct HomeMonthHeaderView: View {
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
                 ForEach(state.visibleDays, id: \.self) { day in
-                    HomeMonthDayButton(dayState: state.dayState(for: day), onSelect: onSelectDay)
+                    HomeMonthDayButton(dayState: state.dayState(for: day), onSelect: onSelectDay, rowHeight: dayRowHeight)
                 }
             }
         }
@@ -396,9 +424,22 @@ private struct HomeMonthHeaderView: View {
     }
 }
 
+// MARK: - Home layout constants
+
+private enum HomeLayoutMetrics {
+    /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing）。
+    /// 经验值，需视觉回归——动态字体放大时由 dayRowHeight 的 14pt 下限兜底。
+    static let calendarFixedSectionHeight: CGFloat = 100
+    /// 月历可用区域下限，防止极矮屏（如 landscape 小窗）算出负数。
+    static let calendarMinUsableHeight: CGFloat = 80
+    /// 单行日期格最小高度，保证两位日期数字可读。
+    static let dayRowMinHeight: CGFloat = 14
+}
+
 private struct HomeMonthDayButton: View {
     let dayState: HomeCalendarDayState
     let onSelect: (Date) -> Void
+    var rowHeight: CGFloat = WarmSpacing.xxxl
 
     var body: some View {
         Button {
@@ -419,7 +460,7 @@ private struct HomeMonthDayButton: View {
                 .frame(height: 4)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: WarmSpacing.xxxl)
+            .frame(height: rowHeight)
             // 选中态放大：弱动画提示用户"我点对了"，但不夸张到挤压相邻格
             // （月历 7 列宽，放大太多会重叠）。Reduce Motion 时 animation 会被系统忽略。
             .scaleEffect(dayState.isSelected ? WarmAnimation.monthDaySelectedScale : WarmAnimation.monthDayDefaultScale)
@@ -732,6 +773,13 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var panelInputText = ""
     @State private var inputPanelPermissionTask: Task<Void, Never>?
     @State private var inputPanelResetTask: Task<Void, Never>?
+    /// 「录音模式发送」触发的 stop-and-process 任务。视图销毁时一并 cancel。
+    @State private var stopAndProcessTask: Task<Void, Never>?
+    /// 「键盘模式发送」触发的延时处理任务。与 stopAndProcessTask 同样需要在
+    /// 视图销毁时 cancel，否则会在 await 后访问已销毁的 @State/coordinator。
+    @State private var manualInputTask: Task<Void, Never>?
+    /// Deeplink 重试任务（todos 尚未加载时延后重试）。同样需要 onDisappear cancel。
+    @State private var deepLinkTask: Task<Void, Never>?
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
@@ -838,7 +886,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
             .onChange(of: coordinator.deepLinkTodoId) { _, todoId in
                 guard let todoId else { return }
-                actions.navigateToDeepLinkedTodo(id: todoId)
+                deepLinkTask?.cancel()
+                deepLinkTask = actions.navigateToDeepLinkedTodo(id: todoId)
             }
             .onChange(of: store.todos.count) { _, _ in
                 let currentIds: Set<UUID> = Set(store.todos.map(\.id))
@@ -848,6 +897,19 @@ struct HomeView<Store: HomeTodoStore>: View {
                 if tab == .today {
                     jumpToToday()
                 }
+            }
+            .onDisappear {
+                // 视图销毁时主动收尾异步 Task，避免它们继续访问已销毁的 @State。
+                inputPanelPermissionTask?.cancel()
+                inputPanelPermissionTask = nil
+                inputPanelResetTask?.cancel()
+                inputPanelResetTask = nil
+                stopAndProcessTask?.cancel()
+                stopAndProcessTask = nil
+                manualInputTask?.cancel()
+                manualInputTask = nil
+                deepLinkTask?.cancel()
+                deepLinkTask = nil
             }
         }
         .accessibilityIdentifier("HomeView")
@@ -1041,35 +1103,42 @@ struct HomeView<Store: HomeTodoStore>: View {
             calendar: calendar
         )
 
-        return VStack(spacing: 0) {
-            // 月历网格只在「日历」tab 显示。「今日」tab 隐藏网格，只显示列表。
-            if selectedBottomTab == .calendar {
-                HomeMonthHeaderView(
-                    state: state,
-                    onShift: shiftPeriod,
-                    onJumpToToday: jumpToToday,
-                    onSelectDay: selectDay,
-                    onSetViewMode: setViewMode
-                )
-            }
+        return GeometryReader { proxy in
+            // 月历占 36% 高度，列表占剩余空间可滚动。
+            // 「今日」tab 隐藏月历，列表占满 100%。
+            let calendarHeight = proxy.size.height * (selectedBottomTab == .calendar ? 0.36 : 0)
 
-            switch calendarLoadState {
-            case .loading:
-                HomeCalendarLoadingView()
-            case .error:
-                HomeCalendarErrorView(onRetry: retryCalendarLoad)
-            case .empty, .success:
-                HomeSelectedDayListView(
-                    state: state,
-                    cardAppeared: $cardAppeared,
-                    onToggleTodo: { actions.toggleTodo($0) },
-                    onToggleOccurrence: { actions.toggleOccurrence($0) },
-                    onDeleteTodo: { actions.deleteTodo($0) },
-                    onOpenTodo: { selectedTodo = $0 },
-                    onMoveUnscheduled: { source, destination in
-                        moveUnscheduled(from: source, to: destination)
-                    }
-                )
+            VStack(spacing: 0) {
+                if selectedBottomTab == .calendar {
+                    HomeMonthHeaderView(
+                        state: state,
+                        onShift: shiftPeriod,
+                        onJumpToToday: jumpToToday,
+                        onSelectDay: selectDay,
+                        onSetViewMode: setViewMode,
+                        availableHeight: calendarHeight
+                    )
+                    .frame(height: calendarHeight)
+                }
+
+                switch calendarLoadState {
+                case .loading:
+                    HomeCalendarLoadingView()
+                case .error:
+                    HomeCalendarErrorView(onRetry: retryCalendarLoad)
+                case .empty, .success:
+                    HomeSelectedDayListView(
+                        state: state,
+                        cardAppeared: $cardAppeared,
+                        onToggleTodo: { actions.toggleTodo($0) },
+                        onToggleOccurrence: { actions.toggleOccurrence($0) },
+                        onDeleteTodo: { actions.deleteTodo($0) },
+                        onOpenTodo: { selectedTodo = $0 },
+                        onMoveUnscheduled: { source, destination in
+                            moveUnscheduled(from: source, to: destination)
+                        }
+                    )
+                }
             }
         }
         .offset(y: listOffset)
@@ -1142,7 +1211,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 isRecording: coordinator.isRecording,
                 onClose: { closeInputPanel() },
                 onModeChange: { switchInputPanelMode(toKeyboard: $0) },
-                onSend: { text in handlePanelSend(text: text) }
+                onSendText: { text in handlePanelSend(text: text) },
+                onStopRecordingForProcessing: { handlePanelSend(text: "") }
             )
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -1171,12 +1241,14 @@ struct HomeView<Store: HomeTodoStore>: View {
                     withAnimation(WarmAnimation.springSmooth) {
                         showInputPanel = false
                     }
-                    scheduleInputPanelReset()
+                    scheduleDeferredPanelStateReset()
                     return
                 }
                 await coordinator.startRecording()
                 guard coordinator.isRecording else {
                     guard !Task.isCancelled, showInputPanel else { return }
+                    // 走到这里说明 startRecording 没抛但录音未真正起来（音频会话/识别器边界场景）。
+                    VoiceTodoLog.ui.warning("home.input_panel.start_recording_no_op fallback=keyboard")
                     withAnimation(WarmAnimation.springSmooth) {
                         isKeyboardMode = true
                     }
@@ -1199,6 +1271,8 @@ struct HomeView<Store: HomeTodoStore>: View {
         inputPanelResetTask?.cancel()
         if keyboardMode {
             inputPanelPermissionTask?.cancel()
+            // 外层 if 不是冗余：cancelRecording 内部 guard 会生成 flowID/打日志，
+            // 键盘模式正常情况下录音未启动，避免每次切换都触发无意义调用。
             if coordinator.isRecording {
                 coordinator.cancelRecording()
             }
@@ -1217,42 +1291,57 @@ struct HomeView<Store: HomeTodoStore>: View {
     private func closeInputPanel() {
         inputPanelPermissionTask?.cancel()
         inputPanelPermissionTask = nil
+        // 外层 if 不是冗余：cancelRecording 内部 guard 会生成 flowID/打日志，
+        // 关闭时若录音未启动（权限被拒等），避免触发无意义调用。
         if coordinator.isRecording {
             coordinator.cancelRecording()
         }
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = false
         }
-        scheduleInputPanelReset()
+        scheduleDeferredPanelStateReset()
     }
 
     private func handlePanelSend(text: String) {
         inputPanelPermissionTask?.cancel()
         inputPanelPermissionTask = nil
         if isKeyboardMode {
+            // 键盘模式正常情况下录音未启动（switchInputPanelMode 已处理取消），
+            // 这里只兜底竞态——保留 if 防止每次发送都触发 cancelRecording 的内部日志噪音。
             if coordinator.isRecording {
                 coordinator.cancelRecording()
             }
-            actions.submitManualInput(text)
-        } else {
-            guard coordinator.isRecording else { return }
-            Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.3)) {
+            manualInputTask?.cancel()
+            manualInputTask = actions.submitManualInput(text)
+        } else if coordinator.isRecording {
+            stopAndProcessTask?.cancel()
+            stopAndProcessTask = Task { @MainActor in
+                withAnimation(WarmAnimation.springSmooth) {
                     isProcessing = true
                 }
                 await coordinator.stopRecordingAndProcess()
-                withAnimation(.easeInOut(duration: 0.3)) {
+                // 防竞态：用户可能在 await 期间重开面板启动新录音。
+                // 此时若继续翻转 isProcessing=false 会盖掉新录音的 overlay，需先确认
+                // 本任务没被 cancel、且面板仍然关闭（即我们仍然是当前的处理流程）。
+                guard !Task.isCancelled, !showInputPanel else { return }
+                withAnimation(WarmAnimation.springSmooth) {
                     isProcessing = false
                 }
             }
+        } else {
+            // 录音模式但录音未启动（权限/竞态/系统中断）—— 不静默吞掉，记日志并提示用户。
+            VoiceTodoLog.ui.warning("home.input_panel.send_skipped reason=not_recording isKeyboardMode=\(self.isKeyboardMode)")
+            coordinator.showToast(message: ErrorMessages.recordingNotActive, style: .warning)
         }
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = false
         }
-        scheduleInputPanelReset()
+        scheduleDeferredPanelStateReset()
     }
 
-    private func scheduleInputPanelReset() {
+    /// 400ms 后如果面板没被重开，重置 panelInputText / isKeyboardMode。
+    /// 用 delay 是为了让用户在快速关闭→重开时不会看到内容闪一下被清空。
+    private func scheduleDeferredPanelStateReset() {
         inputPanelResetTask?.cancel()
         inputPanelResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)

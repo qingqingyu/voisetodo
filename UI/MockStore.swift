@@ -310,6 +310,10 @@ final class MockVoiceInput: VoiceInputProtocol {
     func cancelRecordingDueToInterruption() {
         error = .audioSessionInterrupted
     }
+    func cancelRecordingByUser() {
+        // Mock 路径：与生产路径行为对齐（清掉录音态），便于 Preview 演示关闭面板。
+        isRecording = false
+    }
     func finishRecording() { stopRecording() }
 }
 

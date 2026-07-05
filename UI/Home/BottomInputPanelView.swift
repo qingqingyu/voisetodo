@@ -13,7 +13,10 @@ struct BottomInputPanelView: View {
     let isRecording: Bool
     let onClose: () -> Void
     let onModeChange: (Bool) -> Void
-    let onSend: (String) -> Void
+    /// 键盘模式：发送文本。录音模式此回调不会被调用，改触发 onStopRecordingForProcessing。
+    let onSendText: (String) -> Void
+    /// 录音模式专用：停止录音并进入处理流程。
+    let onStopRecordingForProcessing: () -> Void
 
     private var trimmedInputText: String {
         inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -28,8 +31,8 @@ struct BottomInputPanelView: View {
             ZStack {
                 // 下拉抓手
                 Capsule()
-                    .fill(Color(white: 0.85))
-                    .frame(width: 38, height: 4)
+                    .fill(WarmTheme.textMuted.opacity(0.5))
+                    .frame(width: LayoutMetrics.grabHandleWidth, height: LayoutMetrics.grabHandleHeight)
 
                 HStack {
                     Spacer()
@@ -38,34 +41,37 @@ struct BottomInputPanelView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(WarmTheme.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(Color(white: 0.95)))
+                            // 内容 32×32，触控热区扩展到 44×44（HIG 最小目标）
+                            .frame(width: LayoutMetrics.closeIconSize, height: LayoutMetrics.closeIconSize)
+                            .contentShape(Rectangle())
+                            .frame(width: WarmSize.touch, height: WarmSize.touch)
+                            .background(Circle().fill(WarmTheme.secondaryBackground))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("InputPanelCloseButton")
                     .accessibilityLabel(String(localized: "panel.close"))
                 }
             }
-            .frame(height: 32)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .frame(height: LayoutMetrics.headerHeight)
+            .padding(.top, WarmSpacing.sm)
+            .padding(.bottom, WarmSpacing.xs)
 
             // 录音模式：波形动画
             if !isKeyboardMode {
-                WaveformView(color: WarmTheme.primary)
-                    .padding(.bottom, 16)
+                WaveformView(color: WarmTheme.primary, isActive: isRecording)
+                    .padding(.bottom, WarmSpacing.md)
             }
 
             // 键盘模式：文本框
             if isKeyboardMode {
                 FocusableTextView(text: $inputText, fontSize: 16)
-                    .frame(minHeight: 50)
-                    .padding(13)
+                    .frame(minHeight: LayoutMetrics.inputMinHeight)
+                    .padding(WarmSpacing.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: 13)
+                        RoundedRectangle(cornerRadius: WarmRadius.card)
                             .stroke(WarmTheme.primary.opacity(0.2), lineWidth: 1)
                     )
-                    .padding(.bottom, 16)
+                    .padding(.bottom, WarmSpacing.md)
             }
 
             // 底部控制行：左下角切换 + 右下角发送
@@ -74,20 +80,20 @@ struct BottomInputPanelView: View {
                 Button {
                     onModeChange(!isKeyboardMode)
                 } label: {
-                    HStack(spacing: 7) {
+                    HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: isKeyboardMode ? "mic.fill" : "keyboard")
                             .font(.system(size: 16))
                         Text(isKeyboardMode
                              ? String(localized: "panel.switch_to_voice")
                              : String(localized: "panel.switch_to_keyboard"))
-                            .font(.system(size: 12))
+                            .font(WarmFont.caption(12))
                     }
                     .foregroundColor(WarmTheme.textSecondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, WarmSpacing.sm)
+                    .padding(.vertical, WarmSpacing.xs)
                     .background(
                         Capsule()
-                            .fill(Color(white: 0.95))
+                            .fill(WarmTheme.secondaryBackground)
                             .overlay(
                                 Capsule()
                                     .stroke(WarmTheme.primary.opacity(0.1), lineWidth: 1)
@@ -103,19 +109,19 @@ struct BottomInputPanelView: View {
                 Button {
                     if isKeyboardMode {
                         guard !trimmedInputText.isEmpty else { return }
-                        onSend(trimmedInputText)
+                        onSendText(trimmedInputText)
                     } else {
-                        // 录音模式：发送 = 停止录音 + 处理
-                        onSend("")
+                        // 录音模式：发送 = 停止录音 + 进入处理
+                        onStopRecordingForProcessing()
                     }
                 } label: {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 21, weight: .medium))
                         .foregroundColor(.white)
-                        .frame(width: 48, height: 48)
+                        .frame(width: WarmSize.sendButton, height: WarmSize.sendButton)
                         .background(
                             Circle()
-                                .fill(isKeyboardMode ? Color(red: 0x2F/255, green: 0x2A/255, blue: 0x26/255) : WarmTheme.primary)
+                                .fill(isKeyboardMode ? WarmTheme.deepAction : WarmTheme.primary)
                         )
                 }
                 .buttonStyle(.plain)
@@ -130,19 +136,34 @@ struct BottomInputPanelView: View {
             Text(isKeyboardMode
                  ? String(localized: "panel.keyboard_hint")
                  : String(localized: "panel.recording_hint"))
-                .font(.system(size: 11.5))
+                .font(WarmFont.caption(LayoutMetrics.hintFontSize))
                 .foregroundColor(WarmTheme.textMuted)
-                .padding(.top, 14)
+                .padding(.top, WarmSpacing.sm)
         }
-        .padding(.horizontal, 18)
-        .padding(.bottom, 26)
+        .padding(.horizontal, LayoutMetrics.panelHorizontalPadding)
+        .padding(.bottom, LayoutMetrics.panelBottomPadding)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.white)
+            RoundedRectangle(cornerRadius: WarmRadius.sheet, style: .continuous)
+                .fill(WarmTheme.cardBackground)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.sheet, style: .continuous))
         .shadow(color: .black.opacity(0.16), radius: 40, x: 0, y: -12)
         .accessibilityIdentifier("BottomInputPanel")
+    }
+}
+
+// MARK: - Layout constants
+
+private extension BottomInputPanelView {
+    enum LayoutMetrics {
+        static let grabHandleWidth: CGFloat = 38
+        static let grabHandleHeight: CGFloat = 4
+        static let closeIconSize: CGFloat = 32
+        static let headerHeight: CGFloat = 32
+        static let inputMinHeight: CGFloat = 50
+        static let hintFontSize: CGFloat = 11.5
+        static let panelHorizontalPadding: CGFloat = 18
+        static let panelBottomPadding: CGFloat = 26
     }
 }
 
@@ -153,7 +174,8 @@ struct BottomInputPanelView: View {
         isRecording: true,
         onClose: {},
         onModeChange: { _ in },
-        onSend: { _ in }
+        onSendText: { _ in },
+        onStopRecordingForProcessing: {}
     )
     .padding()
     .background(WarmTheme.background)

@@ -192,6 +192,21 @@ final class VoiceInputManager: VoiceInputProtocol {
         error = .audioSessionInterrupted
     }
 
+    /// 用户主动取消当前录音（点击关闭/切换模式等）。
+    /// 与 `cancelRecordingDueToInterruption` 的差别：
+    /// - 不设置 `error`（不弹 toast，用户已知）
+    /// - Telemetry 记 `userCancelled` 而非 `interrupted`，便于在数据中区分主动/被动结束。
+    func cancelRecordingByUser() {
+        guard isRecording else {
+            VoiceTodoLog.voice.debug("recording.cancel_user.ignored activeID=\(self.recordingSessionID ?? "none", privacy: .public) reason=not_recording")
+            return
+        }
+        VoiceTodoLog.voice.info("recording.cancelled_by_user id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
+        let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+        Telemetry.record(.recordingOutcome(outcome: .userCancelled, durationMS: durationMS, transcript: transcript))
+        cleanupRecordingPipeline(markNotRecording: true, reason: "user_cancel")
+    }
+
     /// 通知识别器音频输入结束，等待最终识别结果
     /// 与 stopRecording() 不同，此方法不取消识别任务，
     /// 而是让 Apple Speech Framework 自然完成识别，
@@ -456,6 +471,10 @@ final class VoiceInputManager: VoiceInputProtocol {
         }
     }
 
+    /// 清理录音管道：停 audioEngine、取消识别任务、停观察者、清状态。
+    /// **不动 `error` 字段** —— 由调用方按场景决定（中断设 `.audioSessionInterrupted`，
+    /// 用户取消不设）。这是 `cancelRecordingDueToInterruption` 与 `cancelRecordingByUser`
+    /// 的关键差别，不要在此处隐式重置或设置 error。
     private func cleanupRecordingPipeline(markNotRecording: Bool, reason: String) {
         let sessionID = recordingSessionID ?? "none"
         let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0

@@ -4189,6 +4189,22 @@
         }
       }
     },
+    "ui.recording_not_active" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording is not active. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录音未就绪，请重试"
+          }
+        }
+      }
+    },
     "ui.saved_offline" : {
       "localizations" : {
         "en" : {

@@ -19,9 +19,9 @@ struct BottomTabBar: View {
                 tab: .today
             )
 
-            // 中：留洞给 FAB
+            // 中：留洞给 FAB（直径 64 + 阴影/描边余量）
             Spacer()
-                .frame(width: 80)
+                .frame(width: 96)
 
             // 右：日历
             tabButton(
@@ -37,21 +37,23 @@ struct BottomTabBar: View {
                 .ignoresSafeArea(edges: .bottom)
         )
         .overlay(alignment: .center) {
-            // FAB：悬浮在 tab bar 中央上方
+            // FAB：悬浮在 tab bar 中央上方。contentShape 限定命中区域为圆形，
+            // 防止阴影扩展到两侧 tab 按钮的 frame 后产生命中歧义。
             Button(action: onFABTap) {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 24))
                     .foregroundColor(.white)
-                    .frame(width: 64, height: 64)
+                    .frame(width: WarmSize.fab, height: WarmSize.fab)
                     .background(
                         Circle()
                             .fill(WarmTheme.primary)
                             .overlay(
                                 Circle()
-                                    .stroke(WarmTheme.background, lineWidth: 4)
+                                    .stroke(WarmTheme.background, lineWidth: WarmSpacing.xxs)
                             )
-                            .shadow(color: WarmTheme.primary.opacity(0.42), radius: 22, x: 0, y: 8)
+                            .shadow(color: WarmTheme.primary.opacity(0.42), radius: 22, x: 0, y: WarmSpacing.xs)
                     )
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(isFABDisabled)
@@ -68,7 +70,7 @@ struct BottomTabBar: View {
                 selectedTab = tab
             }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: WarmSpacing.xxs) {
                 Image(systemName: icon)
                     .font(.system(size: 23))
                 Text(title)
@@ -76,7 +78,8 @@ struct BottomTabBar: View {
             }
             .foregroundColor(selectedTab == tab ? WarmTheme.textPrimary : WarmTheme.textMuted)
             .frame(maxWidth: .infinity)
-            .padding(.bottom, 8)
+            .frame(height: WarmSize.touch)
+            .padding(.bottom, WarmSpacing.xs)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(tab.accessibilityIdentifier)

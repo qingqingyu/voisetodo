@@ -470,6 +470,10 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertFalse(voiceInput.isRecording)
         XCTAssertFalse(coordinator.isRecording)
         XCTAssertFalse(coordinator.showToast)
+        // 区分路径：用户取消应调 cancelRecordingByUser，不是 stopRecording 或中断。
+        XCTAssertEqual(voiceInput.cancelByUserCallCount, 1, "应调 cancelRecordingByUser")
+        XCTAssertEqual(voiceInput.stopRecordingCallCount, 0, "不应回退到 stopRecording")
+        XCTAssertEqual(voiceInput.cancelByInterruptionCallCount, 0, "不应误用中断路径")
     }
 
     func testStreamingFailureAfterPartialResultsClearsConfirmSheet() async {
@@ -586,6 +590,11 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
     @Published var error: VoiceTodoError?
     let currentLocale = Locale(identifier: "zh-Hans")
 
+    /// 记录各方法被调用次数，便于区分 cancel 走的是哪条路径。
+    private(set) var stopRecordingCallCount = 0
+    private(set) var cancelByUserCallCount = 0
+    private(set) var cancelByInterruptionCallCount = 0
+
     var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
     var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
     var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { $error.eraseToAnyPublisher() }
@@ -595,12 +604,19 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
     }
 
     func stopRecording() {
+        stopRecordingCallCount += 1
         isRecording = false
     }
 
     func cancelRecordingDueToInterruption() {
+        cancelByInterruptionCallCount += 1
         isRecording = false
         error = .audioSessionInterrupted
+    }
+
+    func cancelRecordingByUser() {
+        cancelByUserCallCount += 1
+        isRecording = false
     }
 
     func finishRecording() {

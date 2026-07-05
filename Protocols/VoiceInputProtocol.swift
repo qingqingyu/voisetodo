@@ -26,6 +26,8 @@ protocol VoiceInputProtocol: ObservableObject {
     func stopRecording()
     /// 取消当前录音并标记为被系统中断
     func cancelRecordingDueToInterruption()
+    /// 用户主动取消当前录音（不弹错误 toast，记 user_cancelled 遥测）
+    func cancelRecordingByUser()
     /// 通知识别器音频输入结束，等待最终识别结果后自动停止
     /// 适用于用户手动停止场景，确保获取最终识别结果
     func finishRecording()
