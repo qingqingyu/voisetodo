@@ -47,7 +47,11 @@ private struct HomeCalendarState {
             guard let first = visibleDays.first, let last = visibleDays.last else {
                 return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
             }
-            return "\(first.formatted(.dateTime.month().day())) – \(last.formatted(.dateTime.month().day()))"
+            // 手动拼"6月29 – 7月5"，去掉 Date.FormatStyle 默认在中文 locale 下的"日"后缀。
+            // 用 calendar.dateComponents 取整数月日，避免 .formatted(.dateTime.day()) 在 zh 里产生"29日"。
+            let firstComps = calendar.dateComponents([.month, .day], from: first)
+            let lastComps = calendar.dateComponents([.month, .day], from: last)
+            return "\(firstComps.month ?? 0)月\(firstComps.day ?? 0) – \(lastComps.month ?? 0)月\(lastComps.day ?? 0)"
         }
     }
 
