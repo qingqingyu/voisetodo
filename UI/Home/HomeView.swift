@@ -494,10 +494,6 @@ private enum HomeLayoutMetrics {
         return max(dayRowMinHeight, usable / rows)
     }
 
-    static func showsDots(rowHeight: CGFloat) -> Bool {
-        dotSize(for: rowHeight) != nil
-    }
-
     private static func rowCount(for viewMode: CalendarViewMode) -> CGFloat {
         switch viewMode {
         case .month:
@@ -1041,7 +1037,12 @@ struct HomeView<Store: HomeTodoStore>: View {
 
             Spacer()
 
-            if !store.todos.isEmpty {
+            // statsBadge 显隐：
+            // - store.todos 为空：彻底不渲染（无内容可统计）
+            // - calendarLoadState == .error：隐藏——缓存不可信且 fallback 每帧 O(n) 遍历 store.todos
+            //   会持续触发性能开销（用户越滑越卡）。错误态让用户先看到 retry 按钮，统计徽章次要。
+            // - 其他（loading/success/empty）：正常显示，缓存命中优先，未命中走 fallback 同步兜底。
+            if !store.todos.isEmpty && calendarLoadState != .error {
                 statsBadge
             }
 
@@ -1074,13 +1075,37 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
     }
 
+    /// 计算 selectedDate 当天的完成度统计。
+    /// 优先用 `monthOccurrences` 缓存（已通过 .task(id:) 异步算好）；
+    /// 缓存未就绪（冷启动/跨月切换）时同步从 `store.todos` 过滤兜底，
+    /// 避免 statsBadge 闪现 "0/0"。
+    ///
+    /// 已知瞬态：跨月切换瞬间缓存清空，fallback 只覆盖原始 dueDate 命中（保守，
+    /// 不计 recurrenceRule 重复展开），数字会从"含重复任务的真实计数"暂时回落到
+    /// "仅原始 dueDate 计数"，几十 ms 后缓存加载完成即恢复。这是可接受的瞬态——
+    /// 比闪 "0/0" 更友好（用户至少能看到当天有任务）。
+    private func selectedDayStats() -> (total: Int, completed: Int) {
+        let dayKey = TodoOccurrenceData.dayKey(for: selectedDate, calendar: calendar)
+        if let cached = monthOccurrences[dayKey] {
+            let completed = cached.filter { $0.isCompleted }.count
+            return (cached.count, completed)
+        }
+        // 兜底：直接遍历 store.todos，覆盖 dueDate 命中 selectedDate 的非重复任务。
+        // 重复任务在 monthOccurrences 加载前先不计入（保守，避免重复渲染高估）。
+        let day = calendar.startOfDay(for: selectedDate)
+        let onDay = store.todos.filter { todo in
+            guard let due = todo.dueDate else { return false }
+            return calendar.isDate(due, inSameDayAs: day)
+        }
+        let completed = onDay.filter { $0.isCompleted }.count
+        return (onDay.count, completed)
+    }
+
     private var statsBadge: some View {
-        // 改动 D：统计口径从全量 store.todos 改为 selectedDate 当天的完成度。
-        // 与列表 section header 的"今天 N"口径一致——避免"0/6 已完成"和"今天 4"打架。
-        // 直接从 monthOccurrences 缓存查（已在 .task(id:) 里异步算好），不重算 HomeCalendarState。
-        let occurrences = monthOccurrences[TodoOccurrenceData.dayKey(for: selectedDate, calendar: calendar)] ?? []
-        let total = occurrences.count
-        let completed = occurrences.filter { $0.isCompleted }.count
+        // 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
+        // today tab 下 selectedDate 恒为今天（无 UI 改变），实际就是"今天的完成度"；
+        // calendar tab 下跟用户点的日期走。
+        let (total, completed) = selectedDayStats()
         return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 14))
