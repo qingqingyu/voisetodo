@@ -102,9 +102,28 @@ struct ExtractedTodo: Identifiable, Codable {
         case dueHint
         case dueTime
         case recurrenceRule
-        case recurrenceEnd
+        case recurrenceEnd  // 仅用于 init(from:) 解码 AI 返回的结构化截止边界
         case priority
         case categoryHint
+    }
+
+    /// 自定义 encode：跳过 `recurrenceEnd` case。
+    /// 这个字段只是 init(from:) 里的临时变量（解码后通过 RecurrenceEndResolver
+    /// 算出 endDate 塞进 recurrenceRule），不需要持久化。
+    /// 不写自定义 encode，Swift 合成的 Encodable 会要求 CodingKeys 所有 case
+    /// 对应存储属性，编译报 "Type 'ExtractedTodo' does not conform to 'Encodable'"。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(detail, forKey: .detail)
+        try container.encodeIfPresent(dueHint, forKey: .dueHint)
+        try container.encodeIfPresent(dueTime, forKey: .dueTime)
+        try container.encodeIfPresent(recurrenceRule, forKey: .recurrenceRule)
+        try container.encode(priority, forKey: .priority)
+        try container.encode(categoryHint, forKey: .categoryHint)
+        // 故意跳过 .recurrenceEnd 和 localeIdentifier——
+        // recurrenceEnd 不持久化，localeIdentifier 由本地附加，AI 响应不包含。
     }
 
     init(
