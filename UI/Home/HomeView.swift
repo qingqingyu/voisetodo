@@ -357,12 +357,13 @@ private struct HomeMonthHeaderView: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
+            // iOS 26：.segmented picker 自带 Liquid Glass 渲染，
+            // 不再需要 maxWidth 220 限制——让系统决定宽度，玻璃胶囊贴合系统风格。
             Picker("", selection: viewModeBinding) {
                 Text(String(localized: "calendar.mode.month")).tag(CalendarViewMode.month)
                 Text(String(localized: "calendar.mode.week")).tag(CalendarViewMode.week)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
             .accessibilityIdentifier("CalendarViewModePicker")
             .accessibilityLabel(String(localized: "a11y.calendar_mode"))
 
@@ -397,12 +398,13 @@ private struct HomeMonthHeaderView: View {
                 Button(action: onJumpToToday) {
                     Text(String(localized: "home.week.today_button"))
                         .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.primaryDark)
+                        .foregroundStyle(WarmTheme.primaryDark)
                         .padding(.horizontal, WarmSpacing.sm)
                         .frame(height: 32)
-                        .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                // 淡橙 tint 呼应 FAB 的橙色调，但更弱（"今天"是次要操作）。
+                .glassEffect(.regular.tint(WarmTheme.primary.opacity(0.3)))
                 .accessibilityIdentifier("TodayMonthButton")
                 .accessibilityLabel(String(localized: "a11y.today_month"))
             }
@@ -1105,38 +1107,36 @@ struct HomeView<Store: HomeTodoStore>: View {
         // 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
         // today tab 下 selectedDate 恒为今天（无 UI 改变），实际就是"今天的完成度"；
         // calendar tab 下跟用户点的日期走。
+        // iOS 26：背景改为 .glassEffect，让 statsBadge 在 headerView 上有通透感。
         let (total, completed) = selectedDayStats()
         return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 14))
-                .foregroundColor(WarmTheme.primary)
+                .foregroundStyle(WarmTheme.primary)
 
             Text(String(localized: "home.stats \(completed) \(total)"))
                 .font(WarmFont.caption(14))
-                .foregroundColor(WarmTheme.textSecondary)
+                .foregroundStyle(WarmTheme.textSecondary)
         }
         .padding(.horizontal, WarmSpacing.sm)
         .padding(.vertical, WarmSpacing.xs)
-        .background(
-            Capsule()
-                .fill(WarmTheme.secondaryBackground)
-        )
+        .glassEffect(.regular)
     }
 
     private var settingsButton: some View {
+        // iOS 26：圆形按钮用 .buttonStyle(.glass) + .glassEffect(.regular)，
+        // 替代原来的 Circle().fill(secondaryBackground)。设置图标在玻璃上保持 secondary 色。
         Button {
             showSettingsSheet = true
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(WarmTheme.textSecondary)
+                .foregroundStyle(WarmTheme.textSecondary)
                 .frame(width: WarmSize.touch, height: WarmSize.touch)
-                .background(
-                    Circle()
-                        .fill(WarmTheme.secondaryBackground)
-                )
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .glassEffect(.regular)
         .accessibilityIdentifier("HomeSettingsButton")
         .accessibilityLabel(String(localized: "settings.title"))
     }
