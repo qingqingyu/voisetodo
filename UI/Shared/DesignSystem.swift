@@ -90,6 +90,10 @@ enum WarmSize {
     static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
     static let fab: CGFloat = 70       // 底部 FAB 圆形按钮（凸出长条之上，比两侧 tab 略大）
     static let tabPillHeight: CGFloat = 52 // 底部 tab 长条 capsule 高度（去文字后保持 HIG 触控）
+    /// FAB 向上偏移量：让 FAB 上半部分突破 capsule 顶边、下半部分仍坐进 capsule 内。
+    /// 起点 (fab - tabPillHeight) / 2 = 9 居中差，加经验上移 ~4pt 让凸出感更明显。
+    /// 4 是经验值，可在真机上视觉微调。
+    static let fabLift: CGFloat = 13
     static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
     static let mega: CGFloat = 120     // 最大装饰元素

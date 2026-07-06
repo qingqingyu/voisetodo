@@ -17,23 +17,22 @@ struct BottomTabBar: View {
     let onFABTap: () -> Void
 
     var body: some View {
-        // FAB 凸出量：让 FAB 顶部超出 capsule 顶部 ~1/3，下方坐进 capsule 内。
-        // (fab - tabPillHeight) / 2 = (70 - 52) / 2 = 9，再加 4 让上方更凸。
-        let fabLift: CGFloat = 13
-
         ZStack {
-            // 长条 capsule 容器：单一玻璃，两端排 tab icon，中间留洞给 FAB
+            // 长条 capsule 容器 + 凸出 FAB：模仿 iOS 26 dock notch 风格。
+            // 有意不用 GlassEffectContainer——capsule 与 FAB 的玻璃边缘独立渲染，
+            // FAB 跨越 capsule 顶边形成"凸出"视觉，而非多元素融合。
             HStack(spacing: 0) {
-                tabIcon(title: String(localized: "tab.today"), icon: "checklist", tab: .today)
+                tabIcon(label: String(localized: "tab.today"), icon: "checklist", tab: .today)
+                // 为 FAB 留洞：直径 fab + 两侧 lg 余量，避免 FAB 与 tab icon 撞车
                 Spacer(minLength: WarmSize.fab + WarmSpacing.lg)
-                tabIcon(title: String(localized: "tab.calendar"), icon: "calendar", tab: .calendar)
+                tabIcon(label: String(localized: "tab.calendar"), icon: "calendar", tab: .calendar)
             }
             .padding(.horizontal, WarmSpacing.sm)
             .frame(height: WarmSize.tabPillHeight)
             .glassEffect(.regular, in: .capsule)
             .overlay(alignment: .center) {
                 fabButton
-                    .offset(y: -fabLift)
+                    .offset(y: -WarmSize.fabLift)
             }
         }
         .padding(.horizontal, WarmSpacing.lg)
@@ -61,7 +60,7 @@ struct BottomTabBar: View {
     // MARK: - Tab 图标
 
     @ViewBuilder
-    private func tabIcon(title: String, icon: String, tab: BottomTab) -> some View {
+    private func tabIcon(label: String, icon: String, tab: BottomTab) -> some View {
         let isSelected = selectedTab == tab
         Button {
             withAnimation(WarmAnimation.springFast) { selectedTab = tab }
@@ -76,7 +75,7 @@ struct BottomTabBar: View {
         // 不再给单个 tab 加 .glassEffect——它们坐在长条 capsule 内，
         // 长条 capsule 已经是玻璃。选中态用前景色 + 字重区分。
         .accessibilityIdentifier(tab.accessibilityIdentifier)
-        .accessibilityLabel(title)
+        .accessibilityLabel(label)
     }
 }
 
@@ -100,5 +99,4 @@ enum BottomTab: Hashable {
         Spacer()
         BottomTabBar(selectedTab: .constant(.today), isFABDisabled: false, onFABTap: {})
     }
-    .background(Color.gray.opacity(0.3))
 }
