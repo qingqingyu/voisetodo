@@ -102,6 +102,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case dueHint
         case dueTime
         case recurrenceRule
+        case recurrenceEnd
         case priority
         case categoryHint
     }
@@ -168,9 +169,29 @@ struct ExtractedTodo: Identifiable, Codable {
         dueHint = Self.sanitizeDueHint(rawDueHint)
         let rawDueTime = try container.decodeIfPresent(String.self, forKey: .dueTime)
         dueTime = Self.sanitizeDueTime(rawDueTime)
+        // 结构化截止边界（模型归一化产出，只分类不算日期）；malformed 一律吞成 nil，不炸整条解码。
+        let recurrenceEnd = (try? container.decodeIfPresent(RecurrenceEnd.self, forKey: .recurrenceEnd)) ?? nil
+        // 重复起始日：把 after_count 这类边界锚定到起点；无则回落今天。
+        let recurrenceStart = TodoDueDateResolver.resolve(
+            dueHint: dueHint,
+            title: title,
+            detail: detail,
+            referenceDate: referenceDate,
+            calendar: calendar
+        ) ?? calendar.startOfDay(for: referenceDate)
+        // 截止优先级：模型 end_date（绝对） > 结构化 recurrence_end（客户端确定性算） > 文本兜底（未来N天）> nil。
+        let structuredEndDate = RecurrenceEndResolver.resolve(
+            recurrenceEnd,
+            start: recurrenceStart,
+            today: referenceDate,
+            calendar: calendar
+        )
         if container.contains(.recurrenceRule) {
             let decodedRule = try? container.decodeIfPresent(RecurrenceRule.self, forKey: .recurrenceRule)
-            if let rule = decodedRule ?? nil, rule.isValid {
+            if var rule = decodedRule ?? nil, rule.isValid {
+                if rule.endDate == nil, let structuredEndDate {
+                    rule.endDate = structuredEndDate
+                }
                 recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
                     rule,
                     dueHint: dueHint,
@@ -183,13 +204,18 @@ struct ExtractedTodo: Identifiable, Codable {
                 recurrenceRule = nil
             }
         } else {
-            recurrenceRule = RecurrenceRuleResolver.resolve(
+            var resolvedRule = RecurrenceRuleResolver.resolve(
                 dueHint: dueHint,
                 title: title,
                 detail: detail,
                 referenceDate: referenceDate,
                 calendar: calendar
             )
+            if var rule = resolvedRule, rule.endDate == nil, let structuredEndDate {
+                rule.endDate = structuredEndDate
+                resolvedRule = rule
+            }
+            recurrenceRule = resolvedRule
         }
         // 容错解码：AI 返回表外的 priority/category 值时回落默认值，而非让整次解码失败
         priority = Priority.tolerant(try container.decodeIfPresent(String.self, forKey: .priority))

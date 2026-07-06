@@ -177,6 +177,50 @@ final class DomainModuleTests: XCTestCase {
         ).isEmpty)
     }
 
+    func testRecurrenceEndResolverComputesExactDates() throws {
+        let cal = Calendar(identifier: .gregorian)
+        func d(_ y: Int, _ m: Int, _ day: Int) throws -> Date {
+            try XCTUnwrap(cal.date(from: DateComponents(year: y, month: m, day: day)))
+        }
+        let monday = try d(2026, 7, 6) // 周一
+
+        // after_count：天 / 周 / 月
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.afterCount(count: 7, unit: .day), start: monday, today: monday, calendar: cal), try d(2026, 7, 12))
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.afterCount(count: 2, unit: .week), start: monday, today: monday, calendar: cal), try d(2026, 7, 19))
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.afterCount(count: 1, unit: .month), start: monday, today: monday, calendar: cal), try d(2026, 8, 6))
+
+        // weekday：本周五(6) / 下周五
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.weekday(weekday: 6, scope: .this), start: monday, today: monday, calendar: cal), try d(2026, 7, 10))
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.weekday(weekday: 6, scope: .next), start: monday, today: monday, calendar: cal), try d(2026, 7, 17))
+
+        // month_end：本月 / 下月
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.monthEnd(scope: .this), start: monday, today: monday, calendar: cal), try d(2026, 7, 31))
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.monthEnd(scope: .next), start: monday, today: monday, calendar: cal), try d(2026, 8, 31))
+
+        // day_of_month：下月15号
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.dayOfMonth(day: 15, scope: .next), start: monday, today: monday, calendar: cal), try d(2026, 8, 15))
+
+        // 绝对日期
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.date("2026-07-20"), start: monday, today: monday, calendar: cal), try d(2026, 7, 20))
+
+        // nil / 截止早于起始 → nil
+        XCTAssertNil(RecurrenceEndResolver.resolve(nil, start: monday, today: monday, calendar: cal))
+        XCTAssertNil(RecurrenceEndResolver.resolve(.date("2026-07-01"), start: monday, today: monday, calendar: cal))
+    }
+
+    func testRecurrenceEndResolverClampsAndRollsOver() throws {
+        let cal = Calendar(identifier: .gregorian)
+        func d(_ y: Int, _ m: Int, _ day: Int) throws -> Date {
+            try XCTUnwrap(cal.date(from: DateComponents(year: y, month: m, day: day)))
+        }
+        // day_of_month 31 落在 2026-02（28 天）→ clamp 到 02-28
+        let feb = try d(2026, 2, 10)
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.dayOfMonth(day: 31, scope: .this), start: feb, today: feb, calendar: cal), try d(2026, 2, 28))
+        // 周六求"本周五"（已过）→ 顺延到下周五
+        let sat = try d(2026, 7, 11) // 周六
+        XCTAssertEqual(RecurrenceEndResolver.resolve(.weekday(weekday: 6, scope: .this), start: sat, today: sat, calendar: cal), try d(2026, 7, 17))
+    }
+
     func testRecurrenceRuleResolverParsesRulesAndInferredEndDate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))

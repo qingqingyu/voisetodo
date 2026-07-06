@@ -220,6 +220,31 @@ test("system prompt injects today date from X-Local-Date header (zh + en)", asyn
   }
 });
 
+test("system prompt instructs structured recurrence_end boundary (zh + en)", async () => {
+  for (const [locale, transcript] of [["zh-Hans", "未来7天每天下午5点接小孩"], ["en-US", "pick up kids at 5pm every day for the next 7 days"]]) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token", "X-Local-Date": "2026-07-06" }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("接小孩") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    assert.ok(systemMessage.includes("recurrence_end"));
+    assert.ok(systemMessage.includes("after_count"));
+    assert.ok(systemMessage.includes("month_end"));
+  }
+});
+
 test("system prompt falls back to server UTC date when X-Local-Date missing", async () => {
   // X-Local-Date 缺失时 resolveQuotaDate 回退到服务端 UTC 日期（同样注入 prompt，
   // 不静默丢弃），AI 仍能拿到一个参考日期，只是可能与用户真实"今天"差 1 天。

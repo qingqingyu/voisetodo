@@ -375,6 +375,38 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos[0].recurrenceRule?.endDate, expectedEnd)
     }
 
+    func testExtractionResultResolvesStructuredRecurrenceEnd() throws {
+        let json = """
+        {
+            "todos": [{
+                "id": "00000000-0000-0000-0000-000000000009",
+                "title": "接小孩",
+                "detail": "未来7天每天下午5点去幼儿园接小孩",
+                "due_hint": "每天下午5点",
+                "due_time": "17:00",
+                "recurrence_rule": { "frequency": "daily", "weekdays": [], "day_of_month": null, "end_date": null },
+                "recurrence_end": { "kind": "after_count", "count": 7, "unit": "day" },
+                "priority": "normal",
+                "category_hint": "life"
+            }],
+            "ignored": ""
+        }
+        """
+        let calendar = Calendar(identifier: .gregorian)
+        let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 6)))
+        let expectedEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 12)))
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.userInfo[.recurrenceReferenceDate] = reference
+        decoder.userInfo[.recurrenceCalendar] = calendar
+
+        let result = try decoder.decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+
+        XCTAssertEqual(result.todos[0].recurrenceRule?.frequency, .daily)
+        XCTAssertEqual(result.todos[0].recurrenceRule?.endDate, expectedEnd)
+        XCTAssertEqual(result.todos[0].dueTime, "17:00")
+    }
+
     func testDueDateResolverParsesEnglishRelativeDays() throws {
         let calendar = Calendar(identifier: .gregorian)
         let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
