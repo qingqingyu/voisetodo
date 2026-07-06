@@ -880,6 +880,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var showInputPanel = false
     @State private var isKeyboardMode = false
     @State private var panelInputText = ""
+    /// 键盘当前高度（监听 UIResponder.keyboardWillShow/Hide 通知）。
+    /// 用于把 BottomInputPanelView 整体上推到键盘之上——否则 .overlay(alignment: .bottom)
+    /// 的内容会被键盘挡住（提交按钮看不到）。
+    @State private var keyboardHeight: CGFloat = 0
     @State private var inputPanelPermissionTask: Task<Void, Never>?
     @State private var inputPanelResetTask: Task<Void, Never>?
     /// 「录音模式发送」触发的 stop-and-process 任务。视图销毁时一并 cancel。
@@ -1369,7 +1373,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .onTapGesture { closeInputPanel() }
                 .transition(.opacity)
 
-            // 面板
+            // 面板：用 .padding(.bottom, keyboardHeight) 让其整体跟随键盘推上，
+            // 否则 .overlay(alignment: .bottom) 的内容会被键盘挡住（提交按钮看不到）。
             BottomInputPanelView(
                 isKeyboardMode: $isKeyboardMode,
                 inputText: $panelInputText,
@@ -1379,9 +1384,24 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onSendText: { text in handlePanelSend(text: text) },
                 onStopRecordingForProcessing: { handlePanelSend(text: "") }
             )
+            .padding(.bottom, keyboardHeight)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .zIndex(100)
+        // 监听键盘事件：弹起时记录高度推面板上移；收回时清零。
+        // 用 willShow/willHide（不是 did）让动画与系统键盘同步，避免滞后感。
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
+            if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    keyboardHeight = frame.height
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) {
+                keyboardHeight = 0
+            }
+        }
     }
 
     private func openVoiceInputPanel() {
@@ -1446,6 +1466,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
         } else {
             panelInputText = ""
+            // 切回录音模式时主动收键盘（同 closeInputPanel 的根因）。
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             withAnimation(WarmAnimation.springSmooth) {
                 isKeyboardMode = false
             }
@@ -1461,6 +1483,9 @@ struct HomeView<Store: HomeTodoStore>: View {
         if coordinator.isRecording {
             coordinator.cancelRecording()
         }
+        // 主动收键盘：UIKit UITextView 的 firstResponder 不响应 SwiftUI @State 变化，
+        // 必须显式 endEditing，否则键盘会停留在已关闭的面板上。
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = false
         }
