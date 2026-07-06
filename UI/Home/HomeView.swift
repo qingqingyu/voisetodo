@@ -675,10 +675,10 @@ private struct HomeSelectedDayListView: View {
                 }
             }
 
-            // 改动 E：防 FAB 遮挡的尾部留白 Section。
-            // List .frame(height: listHeight) 钉死后，safeAreaInset(.bottom, BottomTabBar 72pt)
-            // 没被 List 感知，最后一项滚到 FAB 后面。Color.clear 占位让出 96pt 空间。
-            // 96 = 72 tab + 16 FAB 上偏 + 8 余量。
+            // 防底部玻璃簇遮挡的尾部留白 Section。
+            // List .frame(height: listHeight) 钉死后 safeAreaInset(.bottom) 不被 List 感知，
+            // 最后一项会滚到底部悬浮玻璃簇后面。Color.clear 占位让出空间。
+            // 96 ≥ 簇高（FAB 60 + 悬浮/余量）留足安全边距，防最后一条被盖。
             Section {
                 Color.clear
                     .frame(height: HomeLayoutMetrics.listBottomInset)
