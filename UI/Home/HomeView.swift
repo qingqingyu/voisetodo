@@ -445,9 +445,9 @@ private enum HomeLayoutMetrics {
     static let calendarFixedSectionHeight: CGFloat = 130
     /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
     static let dayRowMinHeight: CGFloat = 14
-    /// 列表底部留白：72pt BottomTabBar + 16pt FAB 上偏 + 8pt 余量。
-    /// 防 List 最后一条被 FAB 遮挡（改动 E）。
-    static let listBottomInset: CGFloat = 96
+    /// 列表底部留白：长条 capsule 52pt + FAB 凸出 13pt + 余量。
+    /// 防 List 最后一条被底部玻璃簇遮挡。
+    static let listBottomInset: CGFloat = 88
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，

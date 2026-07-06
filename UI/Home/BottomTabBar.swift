@@ -1,32 +1,42 @@
 import SwiftUI
 
-/// 底部导航：今日胶囊 / 麦克风 FAB 圆 / 日历胶囊，三件同排、居中悬浮成一个玻璃簇。
-/// FAB 点击弹出底部输入面板。
+/// 底部导航：长条玻璃 capsule 容器 + 中央凸出的麦克风 FAB。
 ///
-/// iOS 26 Liquid Glass 统一：
-/// - 三个元素放进**同一个** GlassEffectContainer，用同一 gap 间距一致、玻璃边缘连贯融合。
-/// - FAB 只用 `.glassEffect(.regular.tint(.orange).interactive(), in: .circle)`（单层玻璃，
-///   不再叠 `.buttonStyle(.glass)`，去掉双层发光边缘），直径 60、内联不浮起、不遮挡列表。
-/// - 两侧 tab 恒为玻璃胶囊，选中态用橙色 tint + 前景色区分。
-/// - 全程原生 glassEffect，**不使用** ultraThinMaterial / 自定义半透明背景模拟玻璃。
+/// 设计参考：iOS 26 dock / notch tab bar 风格——
+/// - 整体一个长条 capsule 玻璃容器（不再 3 个独立 capsule 融合）
+/// - 两侧 tab 仅图标（无文字），左右对称坐在 capsule 内
+/// - 中央 FAB 是凸出的圆形玻璃，直径比 capsule 高度大、向上突破容器顶边
+///
+/// 用户反馈（2026-07-06）：
+/// 1. 不要显示汉字，只要图标
+/// 2. 底部采用长条形设计
+/// 3. 中间的录音按钮要做成一个稍微大一点、凸出来的圆
 struct BottomTabBar: View {
     @Binding var selectedTab: BottomTab
     let isFABDisabled: Bool
     let onFABTap: () -> Void
 
-    /// 三元素间距 = GlassEffectContainer 融合间距，保持一致。
-    private let gap = WarmSpacing.xs
-
     var body: some View {
-        GlassEffectContainer(spacing: gap) {
-            HStack(spacing: gap) {
-                tabButton(title: String(localized: "tab.today"), icon: "checklist", tab: .today)
+        // FAB 凸出量：让 FAB 顶部超出 capsule 顶部 ~1/3，下方坐进 capsule 内。
+        // (fab - tabPillHeight) / 2 = (70 - 52) / 2 = 9，再加 4 让上方更凸。
+        let fabLift: CGFloat = 13
+
+        ZStack {
+            // 长条 capsule 容器：单一玻璃，两端排 tab icon，中间留洞给 FAB
+            HStack(spacing: 0) {
+                tabIcon(title: String(localized: "tab.today"), icon: "checklist", tab: .today)
+                Spacer(minLength: WarmSize.fab + WarmSpacing.lg)
+                tabIcon(title: String(localized: "tab.calendar"), icon: "calendar", tab: .calendar)
+            }
+            .padding(.horizontal, WarmSpacing.sm)
+            .frame(height: WarmSize.tabPillHeight)
+            .glassEffect(.regular, in: .capsule)
+            .overlay(alignment: .center) {
                 fabButton
-                tabButton(title: String(localized: "tab.calendar"), icon: "calendar", tab: .calendar)
+                    .offset(y: -fabLift)
             }
         }
-        // 内容自然宽度的簇居中悬浮（不再全宽贴边），底部留一点悬浮间隙。
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, WarmSpacing.lg)
         .padding(.bottom, WarmSpacing.xs)
     }
 
@@ -35,7 +45,7 @@ struct BottomTabBar: View {
     private var fabButton: some View {
         Button(action: onFABTap) {
             Image(systemName: "mic.fill")
-                .font(.system(size: 24))
+                .font(.system(size: 26))
                 .foregroundStyle(.white)
                 .frame(width: WarmSize.fab, height: WarmSize.fab)
                 .contentShape(.circle)
@@ -48,41 +58,25 @@ struct BottomTabBar: View {
         .accessibilityLabel(String(localized: "panel.fab.record"))
     }
 
-    // MARK: - Tab 胶囊
+    // MARK: - Tab 图标
 
     @ViewBuilder
-    private func tabButton(title: String, icon: String, tab: BottomTab) -> some View {
+    private func tabIcon(title: String, icon: String, tab: BottomTab) -> some View {
         let isSelected = selectedTab == tab
         Button {
             withAnimation(WarmAnimation.springFast) { selectedTab = tab }
         } label: {
-            VStack(spacing: WarmSpacing.xxs) {
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                Text(title)
-                    .font(.system(size: 10.5))
-            }
-            .foregroundStyle(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
-            .frame(height: WarmSize.tabPillHeight)
-            .padding(.horizontal, WarmSpacing.lg)
-            .contentShape(.capsule)
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
+                .frame(width: WarmSize.touch, height: WarmSize.touch)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .glassEffectTinted(isSelected: isSelected, tint: WarmTheme.primary.opacity(0.18))
+        // 不再给单个 tab 加 .glassEffect——它们坐在长条 capsule 内，
+        // 长条 capsule 已经是玻璃。选中态用前景色 + 字重区分。
         .accessibilityIdentifier(tab.accessibilityIdentifier)
-    }
-}
-
-/// 两侧胶囊恒为玻璃：选中加橙色 tint，未选中素玻璃。用 ViewBuilder 分支承载
-/// glassEffect 的字面量入参（其类型未公开命名，需分支各自写字面量）。
-private extension View {
-    @ViewBuilder
-    func glassEffectTinted(isSelected: Bool, tint: Color) -> some View {
-        if isSelected {
-            self.glassEffect(.regular.tint(tint), in: .capsule)
-        } else {
-            self.glassEffect(.regular, in: .capsule)
-        }
+        .accessibilityLabel(title)
     }
 }
 
@@ -106,4 +100,5 @@ enum BottomTab: Hashable {
         Spacer()
         BottomTabBar(selectedTab: .constant(.today), isFABDisabled: false, onFABTap: {})
     }
+    .background(Color.gray.opacity(0.3))
 }

@@ -88,8 +88,8 @@ enum WarmRadius {
 enum WarmSize {
     static let icon: CGFloat = 28      // 内嵌图标 badge
     static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
-    static let fab: CGFloat = 60       // 底部 FAB 圆形按钮（略高于两侧胶囊）
-    static let tabPillHeight: CGFloat = 48 // 底部 tab 玻璃胶囊高度
+    static let fab: CGFloat = 70       // 底部 FAB 圆形按钮（凸出长条之上，比两侧 tab 略大）
+    static let tabPillHeight: CGFloat = 52 // 底部 tab 长条 capsule 高度（去文字后保持 HIG 触控）
     static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
     static let mega: CGFloat = 120     // 最大装饰元素
