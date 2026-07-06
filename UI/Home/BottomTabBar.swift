@@ -67,28 +67,45 @@ struct BottomTabBar: View {
         }
     }
 
+    @ViewBuilder
     private func tabButton(title: String, icon: String, tab: BottomTab) -> some View {
+        let isSelected = selectedTab == tab
+        let label = VStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: icon)
+                .font(.system(size: 23))
+            Text(title)
+                .font(.system(size: 10.5))
+        }
+        .foregroundStyle(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
+        .frame(maxWidth: .infinity)
+        .frame(height: WarmSize.touch)
+        .padding(.bottom, WarmSpacing.xs)
+        .contentShape(Rectangle())
+
         Button {
             withAnimation(WarmAnimation.springFast) {
                 selectedTab = tab
             }
-        } label: {
-            VStack(spacing: WarmSpacing.xxs) {
-                Image(systemName: icon)
-                    .font(.system(size: 23))
-                Text(title)
-                    .font(.system(size: 10.5))
-            }
-            .foregroundStyle(selectedTab == tab ? WarmTheme.textPrimary : WarmTheme.textMuted)
-            .frame(maxWidth: .infinity)
-            .frame(height: WarmSize.touch)
-            .padding(.bottom, WarmSpacing.xs)
-            .contentShape(Rectangle())
-        }
+        } label: { label }
         .buttonStyle(.glass)
-        // 选中态加 glass 染色（淡橙 tint 提示当前 tab）；未选中保持透明让背景穿透。
-        .glassEffect(selectedTab == tab ? .regular.tint(WarmTheme.primary.opacity(0.2)) : .clear)
+        // 选中态加 glass 染色（淡橙 tint 提示当前 tab）；未选中不加 .glassEffect——
+        // 不加 modifier 比 .glassEffect(.clear) 更干净（避免创建空玻璃 layer 多余渲染）。
+        .glassEffectIfSelected(isSelected, tint: WarmTheme.primary.opacity(0.2))
         .accessibilityIdentifier(tab.accessibilityIdentifier)
+    }
+}
+
+/// 条件性 .glassEffect——用 ViewBuilder 分支避免 .glassEffect(.clear) 创建空 layer。
+/// iOS 26 .glassEffect 的入参类型未公开命名（Swift 通过字面量推断），
+/// 用 generic modifier 包装：选中走 glassEffect 路径，未选中直接透传。
+private extension View {
+    @ViewBuilder
+    func glassEffectIfSelected(_ isSelected: Bool, tint: Color) -> some View {
+        if isSelected {
+            self.glassEffect(.regular.tint(tint))
+        } else {
+            self
+        }
     }
 }
 

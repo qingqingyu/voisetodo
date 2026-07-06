@@ -357,13 +357,15 @@ private struct HomeMonthHeaderView: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            // iOS 26：.segmented picker 自带 Liquid Glass 渲染，
-            // 不再需要 maxWidth 220 限制——让系统决定宽度，玻璃胶囊贴合系统风格。
+            // iOS 26：.segmented picker 自带 Liquid Glass 渲染。
+            // 保留 maxWidth 220——VStack 无其他宽度约束时 segmented 会撑满父容器，
+            // 视觉上不协调；220pt 让 picker 紧凑居中。
             Picker("", selection: viewModeBinding) {
                 Text(String(localized: "calendar.mode.month")).tag(CalendarViewMode.month)
                 Text(String(localized: "calendar.mode.week")).tag(CalendarViewMode.week)
             }
             .pickerStyle(.segmented)
+            .frame(maxWidth: 220)
             .accessibilityIdentifier("CalendarViewModePicker")
             .accessibilityLabel(String(localized: "a11y.calendar_mode"))
 
@@ -1105,9 +1107,10 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private var statsBadge: some View {
         // 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
-        // today tab 下 selectedDate 恒为今天（无 UI 改变），实际就是"今天的完成度"；
+        // today tab 下 selectedDate 恒为今天（无 UI 改定），实际就是"今天的完成度"；
         // calendar tab 下跟用户点的日期走。
-        // iOS 26：背景改为 .glassEffect，让 statsBadge 在 headerView 上有通透感。
+        // iOS 26：.glassEffect 默认按 content shape 渲染（HStack 是圆角矩形），
+        // 用 .clipShape(Capsule()) 强制成胶囊形，与原 Capsule().fill 观感对齐。
         let (total, completed) = selectedDayStats()
         return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "checkmark.circle")
@@ -1121,6 +1124,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         .padding(.horizontal, WarmSpacing.sm)
         .padding(.vertical, WarmSpacing.xs)
         .glassEffect(.regular)
+        .clipShape(Capsule())
     }
 
     private var settingsButton: some View {
