@@ -439,13 +439,28 @@ private enum HomeLayoutMetrics {
     ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~14) ≈ 130pt 保守上限。
     /// 低估会导致 calendarHeight 算出比实际小，底部日期行被 `.clipped()` 裁切（Bug 1 根因）。
     static let calendarFixedSectionHeight: CGFloat = 130
-    /// 单行日期格最小高度：优先保证 14pt 日期数字可读；圆点在空间不足时隐藏。
+    /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
     static let dayRowMinHeight: CGFloat = 14
-    /// 圆点直径，与 HomeMonthDayButton 内的 Circle frame 保持一致。
-    static let dayRowDotSize: CGFloat = 4
-    /// 单行日期格阈值：低于此值时隐藏圆点行，只保留日期数字。
-    /// 优先保证日期可读，待办圆点在极矮屏下可省略（用户点进去看列表即可）。
-    static let dayRowDotsVisibleThreshold: CGFloat = 24
+    /// 列表底部留白：72pt BottomTabBar + 16pt FAB 上偏 + 8pt 余量。
+    /// 防 List 最后一条被 FAB 遮挡（改动 E）。
+    static let listBottomInset: CGFloat = 96
+
+    /// 圆点直径跟 rowHeight 自适应（改动 A）：
+    /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
+    /// 但月视图实际 dayRowHeight ≈ 18pt < 24，圆点永不显示。
+    /// 现在按行高动态返回圆点尺寸，月视图也能看到"有事/没事"标记。
+    /// - rowHeight < 16：返回 nil（极矮屏，连日期数字都紧，不渲染圆点）
+    /// - 16-20：返回 3（月视图典型）
+    /// - 21-28：返回 3.5
+    /// - ≥29：返回 4（周视图典型）
+    static func dotSize(for rowHeight: CGFloat) -> CGFloat? {
+        switch rowHeight {
+        case ..<16: return nil
+        case 16...20: return 3
+        case 21...28: return 3.5
+        default: return 4
+        }
+    }
     /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
     /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 128pt 过高；
     /// 这里用固定 48pt 让周视图紧凑，腾出更多空间给列表。
@@ -480,7 +495,7 @@ private enum HomeLayoutMetrics {
     }
 
     static func showsDots(rowHeight: CGFloat) -> Bool {
-        rowHeight >= dayRowDotsVisibleThreshold
+        dotSize(for: rowHeight) != nil
     }
 
     private static func rowCount(for viewMode: CalendarViewMode) -> CGFloat {
@@ -502,10 +517,11 @@ private struct HomeMonthDayButton: View {
     let onSelect: (Date) -> Void
     var rowHeight: CGFloat = WarmSpacing.xxxl
 
-    /// 极矮行高下隐藏圆点行：优先保证日期数字可读，避免 14pt 文字 + 4pt 圆点挤压
-    /// 导致背景颜色渲染异常（Bug 1："今天"颜色歪了）。
-    private var showsDots: Bool {
-        HomeLayoutMetrics.showsDots(rowHeight: rowHeight)
+    /// 圆点尺寸跟 rowHeight 自适应（改动 A）：
+    /// 月视图 18pt 行高下返回 3pt，周视图 48pt 行高下返回 4pt。
+    /// 极矮屏（< 16pt）返回 nil，不渲染圆点。
+    private var dotSize: CGFloat? {
+        HomeLayoutMetrics.dotSize(for: rowHeight)
     }
 
     var body: some View {
@@ -521,15 +537,15 @@ private struct HomeMonthDayButton: View {
                     .font(WarmFont.headline(14))
                     .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
 
-                if showsDots {
+                if let dotSize {
                     HStack(spacing: 2) {
                         ForEach(0..<min(dayState.occurrences.count, 3), id: \.self) { index in
                             Circle()
                                 .fill(dayState.hasHighPriority && index == 0 ? WarmTheme.urgent : (dayState.isSelected ? Color.white : WarmTheme.primary))
-                                .frame(width: HomeLayoutMetrics.dayRowDotSize, height: HomeLayoutMetrics.dayRowDotSize)
+                                .frame(width: dotSize, height: dotSize)
                         }
                     }
-                    .frame(height: HomeLayoutMetrics.dayRowDotSize)
+                    .frame(height: dotSize)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -538,15 +554,20 @@ private struct HomeMonthDayButton: View {
             // （月历 7 列宽，放大太多会重叠）。Reduce Motion 时 animation 会被系统忽略。
             .scaleEffect(dayState.isSelected ? WarmAnimation.monthDaySelectedScale : WarmAnimation.monthDayDefaultScale)
             .animation(WarmAnimation.springSmooth, value: dayState.isSelected)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .fill(dayState.isSelected ? WarmTheme.primary : Color.white.opacity(dayState.isCurrentMonth ? 0.9 : 0.45))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: WarmRadius.card)
-                            .stroke(dayState.isToday && !dayState.isSelected ? WarmTheme.primary.opacity(0.55) : Color.clear, lineWidth: 1.5)
-                    )
-                    .shadow(color: dayState.isSelected ? WarmTheme.shadowMedium : WarmTheme.shadowLight, radius: dayState.isSelected ? 8 : 4, x: 0, y: 3)
-            )
+            // 改动 B：背景简化——
+            // - 选中：实心 primary 背景 + 白字（白字在 fill 上面，靠 foregroundColor 控制）
+            // - 今天未选中：primary 0.18 浅填充（视觉锚点，替代原来的 stroke 边框）
+            // - 其他：裸背景（无填充、无边框、无阴影），让圆点成为主视觉标记
+            // 删除的内容：Color.white.opacity(0.9/0.45) 白底、stroke 边框、shadow 阴影
+            .background {
+                if dayState.isSelected {
+                    RoundedRectangle(cornerRadius: WarmRadius.card)
+                        .fill(WarmTheme.primary)
+                } else if dayState.isToday {
+                    RoundedRectangle(cornerRadius: WarmRadius.card)
+                        .fill(WarmTheme.primary.opacity(0.18))
+                }
+            }
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -652,6 +673,19 @@ private struct HomeSelectedDayListView: View {
                 } header: {
                     daySectionHeader(title: String(localized: "home.week.unscheduled"), count: state.unscheduledTodos.count)
                 }
+            }
+
+            // 改动 E：防 FAB 遮挡的尾部留白 Section。
+            // List .frame(height: listHeight) 钉死后，safeAreaInset(.bottom, BottomTabBar 72pt)
+            // 没被 List 感知，最后一项滚到 FAB 后面。Color.clear 占位让出 96pt 空间。
+            // 96 = 72 tab + 16 FAB 上偏 + 8 余量。
+            Section {
+                Color.clear
+                    .frame(height: HomeLayoutMetrics.listBottomInset)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .accessibilityHidden(true)
             }
         }
         .listStyle(.plain)
@@ -997,7 +1031,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .font(WarmFont.caption(14))
                     .foregroundColor(WarmTheme.textSecondary)
 
-                Text(greetingText)
+                // tab 感知：today 显示问候语；calendar 显示"日历"标题（改动 C）。
+                // 复用现有 tab.calendar key（"日历" / "Calendar"），不新增 localization。
+                // 字体/颜色两 tab 一致，切换无位移。
+                Text(selectedBottomTab == .today ? greetingText : String(localized: "tab.calendar"))
                     .font(WarmFont.display(30))
                     .foregroundColor(WarmTheme.textPrimary)
             }
@@ -1038,8 +1075,12 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private var statsBadge: some View {
-        let total = store.todos.count
-        let completed = store.todos.filter { $0.isCompleted }.count
+        // 改动 D：统计口径从全量 store.todos 改为 selectedDate 当天的完成度。
+        // 与列表 section header 的"今天 N"口径一致——避免"0/6 已完成"和"今天 4"打架。
+        // 直接从 monthOccurrences 缓存查（已在 .task(id:) 里异步算好），不重算 HomeCalendarState。
+        let occurrences = monthOccurrences[TodoOccurrenceData.dayKey(for: selectedDate, calendar: calendar)] ?? []
+        let total = occurrences.count
+        let completed = occurrences.filter { $0.isCompleted }.count
         return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 14))
