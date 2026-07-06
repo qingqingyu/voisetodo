@@ -212,6 +212,15 @@ private enum HomeCalendarLoadState {
     case success
 }
 
+/// 键盘动画常量。放在文件作用域，避免在泛型 `HomeView<Store>` 内定义 static 属性
+/// （Swift 不支持泛型类型的 static stored properties）。
+private enum HomeKeyboardAnimation {
+    /// 当通知 userInfo 缺失 duration 时的兜底值（iOS 默认键盘动画 0.25s）。
+    static let fallbackDuration: TimeInterval = 0.25
+    /// duration clamp 下限。硬件键盘场景可能给 0.0，SwiftUI 不接受 0 时长的 easeInOut。
+    static let minDuration: TimeInterval = 0.05
+}
+
 @MainActor
 /// 月历 occurrence 缓存的刷新键：当月锚点 / 当前 todos / occurrence 完成修订号任一变化即重算。
 /// 用于 `.task(id:)` —— 规律任务 occurrence 完成切换不改 `store.todos`，必须靠 revision 触发刷新。
@@ -883,6 +892,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 键盘当前高度（监听 UIResponder.keyboardWillShow/Hide 通知）。
     /// 用于把 BottomInputPanelView 整体上推到键盘之上——否则 .overlay(alignment: .bottom)
     /// 的内容会被键盘挡住（提交按钮看不到）。
+    ///
+    /// 残留兜底：`.onReceive` 订阅挂在 `inputPanelOverlay` 的 ZStack 上，当
+    /// `showInputPanel=false` 时整个 overlay 会被移除，可能错过 `keyboardWillHide` 通知
+    /// 导致 `keyboardHeight` 残留非零。body 末尾的 `onChange(of: showInputPanel)` 在面板
+    /// 关闭时显式归零兜底，避免新增 close 路径漏改。
     @State private var keyboardHeight: CGFloat = 0
     @State private var inputPanelPermissionTask: Task<Void, Never>?
     @State private var inputPanelResetTask: Task<Void, Never>?
@@ -1009,6 +1023,15 @@ struct HomeView<Store: HomeTodoStore>: View {
             .onChange(of: selectedBottomTab) { _, tab in
                 if tab == .today {
                     jumpToToday()
+                }
+            }
+            // 面板关闭时显式归零 keyboardHeight 作为兜底——onReceive 订阅挂在 inputPanelOverlay
+            // 的 ZStack 上，showInputPanel=false 后整个 overlay 会被移除，可能错过
+            // keyboardWillHide 通知导致 keyboardHeight 残留非零。集中在此处理比每个 close/send
+            // 路径内联归零更可靠（不会因新增路径漏改）。
+            .onChange(of: showInputPanel) { _, isVisible in
+                if !isVisible, keyboardHeight != 0 {
+                    keyboardHeight = 0
                 }
             }
             .onDisappear {
@@ -1390,15 +1413,18 @@ struct HomeView<Store: HomeTodoStore>: View {
         .zIndex(100)
         // 监听键盘事件：弹起时记录高度推面板上移；收回时清零。
         // 用 willShow/willHide（不是 did）让动画与系统键盘同步，避免滞后感。
+        // 动画 duration/curve 优先读取通知 userInfo 中的系统值，缺省时退回默认（键盘动画兜底）。
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
-            if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    keyboardHeight = frame.height
-                }
+            guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+                VoiceTodoLog.ui.warning("home.keyboard.will_show missing frame userInfo")
+                return
+            }
+            withAnimation(keyboardAnimation(from: note)) {
+                keyboardHeight = frame.height
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            withAnimation(.easeOut(duration: 0.25)) {
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { note in
+            withAnimation(keyboardAnimation(from: note)) {
                 keyboardHeight = 0
             }
         }
@@ -1467,7 +1493,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         } else {
             panelInputText = ""
             // 切回录音模式时主动收键盘（同 closeInputPanel 的根因）。
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            dismissKeyboard()
             withAnimation(WarmAnimation.springSmooth) {
                 isKeyboardMode = false
             }
@@ -1485,7 +1511,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         // 主动收键盘：UIKit UITextView 的 firstResponder 不响应 SwiftUI @State 变化，
         // 必须显式 endEditing，否则键盘会停留在已关闭的面板上。
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        dismissKeyboard()
+        // keyboardHeight 与 showInputPanel 在同一 withAnimation 内一起动画，
+        // 避免 padding 瞬变 + 面板缓动造成的「跳一下」错位。
+        // onChange(of: showInputPanel) 兜底归零，此处不必显式置零。
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = false
         }
@@ -1525,6 +1554,9 @@ struct HomeView<Store: HomeTodoStore>: View {
             VoiceTodoLog.ui.warning("home.input_panel.send_skipped reason=not_recording isKeyboardMode=\(self.isKeyboardMode)")
             coordinator.showToast(message: ErrorMessages.recordingNotActive, style: .warning)
         }
+        // 与 closeInputPanel 同根因：overlay 即将移除，UIKit firstResponder 不主动释放就会
+        // 错过 keyboardWillHide。dismissKeyboard + onChange(of: showInputPanel) 兜底归零。
+        dismissKeyboard()
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = false
         }
@@ -1540,6 +1572,45 @@ struct HomeView<Store: HomeTodoStore>: View {
             guard !Task.isCancelled, !showInputPanel else { return }
             panelInputText = ""
             isKeyboardMode = false
+        }
+    }
+
+    /// 主动释放 firstResponder 收键盘。封装成方法以消除三处 close/switch/send 路径的重复调用。
+    /// UIKit 的 UITextView 不响应 SwiftUI @State 变化，必须显式 endEditing。
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
+    }
+
+    /// 从键盘通知 userInfo 读取系统动画 duration/curve，缺省时退回 KeyboardAnimation 兜底。
+    /// 不直接硬编码 0.25 easeOut——iOS 26 系统键盘动画常为 spring 且时长可变，
+    /// 与系统值对齐才能避免「面板跑得快、键盘跑得慢」的错位。
+    private func keyboardAnimation(from note: Notification) -> Animation {
+        let userInfo = note.userInfo ?? [:]
+        let rawDuration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double)
+            ?? HomeKeyboardAnimation.fallbackDuration
+        // 防 0/负值：硬件键盘断开或 stage manager 场景下 userInfo 可能给 0.0，
+        // SwiftUI .easeInOut(duration: 0) 行为未定义，clamp 到最小 0.05s 保证可观测动画。
+        let duration = max(rawDuration, HomeKeyboardAnimation.minDuration)
+        let curveRaw = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int)
+            ?? UIView.AnimationCurve.easeInOut.rawValue
+        let curve = UIView.AnimationCurve(rawValue: curveRaw) ?? .easeInOut
+        // UIView.AnimationCurve 与 SwiftUI.Animation 没有直接桥接，这里用与系统键盘近似的
+        // timingCurve + duration 还原：easeInOut → SwiftUI 默认 easeInOut；其它曲线退回同曲线近似。
+        // 未知曲线值（@unknown default）一律退回 easeInOut，避免假还原。
+        switch curve {
+        case .easeInOut:
+            return .easeInOut(duration: duration)
+        case .easeIn:
+            return .easeIn(duration: duration)
+        case .easeOut:
+            return .easeOut(duration: duration)
+        case .linear:
+            return .linear(duration: duration)
+        @unknown default:
+            return .easeInOut(duration: duration)
         }
     }
 
