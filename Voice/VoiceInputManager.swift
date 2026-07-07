@@ -284,8 +284,20 @@ final class VoiceInputManager: VoiceInputProtocol {
                     DispatchQueue.main.async {
                         // 已被看门狗/正常停止收敛时，忽略陈旧的取消回调，避免覆盖既有错误
                         guard self.isRecording else { return }
-                        self.error = VoiceTodoError.recordingFailed(error.localizedDescription)
-                        VoiceTodoLog.voice.error("recording.recognition.final_error id=\(self.recordingSessionID ?? "none", privacy: .public) isFinal=\(isFinal) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        // 识别器初始化失败（模拟器缺 Siri asset / runtime 故障）映射为
+                        // speechRecognitionUnavailable，让上层能自动切键盘 fallback，
+                        // 而不是弹"录音失败"toast 让用户干瞪眼。
+                        // kLSRErrorDomain Code=300 = "Failed to initialize recognizer"
+                        let mapped: VoiceTodoError
+                        if let nsError = error as? NSError,
+                           nsError.domain == "kLSRErrorDomain",
+                           nsError.code == 300 {
+                            mapped = .speechRecognitionUnavailable
+                        } else {
+                            mapped = VoiceTodoError.recordingFailed(error.localizedDescription)
+                        }
+                        self.error = mapped
+                        VoiceTodoLog.voice.error("recording.recognition.final_error id=\(self.recordingSessionID ?? "none", privacy: .public) isFinal=\(isFinal) error=\(VoiceTodoLog.errorSummary(error), privacy: .public) mapped=\(mapped, privacy: .public)")
                         Telemetry.record(.recordingFailed(reason: "recognition_error", errorCode: nil))
                         self.cleanupRecordingPipeline(markNotRecording: true, reason: "recognitionError")
                     }

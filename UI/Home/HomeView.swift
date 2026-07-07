@@ -1043,6 +1043,17 @@ struct HomeView<Store: HomeTodoStore>: View {
                     keyboardHeight = 0
                 }
             }
+            .onChange(of: coordinator.voiceInputFallbackToKeyboard) { oldValue, shouldFallback in
+                // 识别器初始化失败（模拟器缺 Siri asset / 真机罕见故障）时，
+                // coordinator 信号 → 自动切键盘模式，避免用户被困在录音模式看 toast。
+                // 仅在面板打开、且未已处于键盘模式时响应；面板没开就没必要切。
+                // 用 rising edge (oldValue=false, newValue=true) 过滤掉复位产生的额外触发，
+                // 也避免 handleError 被并发调用多次时键盘模式闪两次。
+                guard !oldValue, shouldFallback, showInputPanel, !isKeyboardMode else { return }
+                coordinator.voiceInputFallbackToKeyboard = false
+                print("🔍 [DIAG] home.fallback_to_keyboard reason=recognizer_unavailable")
+                switchInputPanelMode(toKeyboard: true)
+            }
             .onDisappear {
                 // 视图销毁时主动收尾异步 Task，避免它们继续访问已销毁的 @State。
                 inputPanelPermissionTask?.cancel()
@@ -1402,7 +1413,20 @@ struct HomeView<Store: HomeTodoStore>: View {
             // 遮罩
             Color.black.opacity(0.28)
                 .ignoresSafeArea()
-                .onTapGesture { closeInputPanel() }
+                .onTapGesture {
+                    // 键盘模式下点遮罩：只收键盘，**不关面板、不清空输入**。
+                    // 否则用户瞄准 send 按钮但 tap 落点偏到遮罩上，会触发 closeInputPanel
+                    // → 400ms 后 scheduleDeferredPanelStateReset 把刚输入的内容全清空，体验恶劣。
+                    // 录音模式保持原行为（关面板），因为没有输入可丢，且录音模式下面板外 tap
+                    // 通常就是"我不想录音了"的语义。
+                    if isKeyboardMode {
+                        print("🔍 [DIAG] home.panel.mask_tapped action=dismiss_keyboard (键盘模式：收键盘不关面板)")
+                        dismissKeyboard()
+                    } else {
+                        print("🔍 [DIAG] home.panel.mask_tapped action=close_panel (录音模式：关面板)")
+                        closeInputPanel()
+                    }
+                }
                 .transition(.opacity)
 
             // 面板：用 .padding(.bottom, keyboardHeight) 让其整体跟随键盘推上，
@@ -1443,6 +1467,9 @@ struct HomeView<Store: HomeTodoStore>: View {
         guard !isInputEntryDisabled else { return }
         inputPanelResetTask?.cancel()
         panelInputText = ""
+        // 复位 fallback 信号：上次 Action Button / 面板外识别失败可能留下陈旧的 true，
+        // 若不复位，onChange 不会再次触发（值未变化），本次录音失败时无法自动切键盘。
+        coordinator.voiceInputFallbackToKeyboard = false
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = true
             isKeyboardMode = false
@@ -1464,10 +1491,14 @@ struct HomeView<Store: HomeTodoStore>: View {
                     scheduleDeferredPanelStateReset()
                     return
                 }
-                await coordinator.startRecording()
-                guard coordinator.isRecording else {
-                    guard !Task.isCancelled, showInputPanel else { return }
-                    // 走到这里说明 startRecording 没抛但录音未真正起来（音频会话/识别器边界场景）。
+                // 用返回值判断录音是否真正起来——不要读 coordinator.isRecording，
+                // 那是 Combine 绑定 (.receive(on: .main))，await 后还在 pending，
+                // 会把已起来的录音误判成 no_op 并切键盘（日志里的 fallback=keyboard）。
+                let didStart = await coordinator.startRecording()
+                guard !Task.isCancelled, showInputPanel else { return }
+                guard didStart else {
+                    // startRecording 没抛但录音未真正起来（音频会话/识别器边界场景，
+                    // 例如模拟器缺 Siri asset）。回退到键盘模式让用户继续输入。
                     VoiceTodoLog.ui.warning("home.input_panel.start_recording_no_op fallback=keyboard")
                     withAnimation(WarmAnimation.springSmooth) {
                         isKeyboardMode = true
@@ -1475,9 +1506,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                     return
                 }
                 guard !Task.isCancelled, showInputPanel, !isKeyboardMode, !isInputEntryBlockedByProcessing else {
-                    if coordinator.isRecording {
-                        coordinator.cancelRecording()
-                    }
+                    // didStart=true 表示录音已起来过。这里无条件 cancelRecording，
+                    // coordinator.cancelRecording 内部 guard 读同步 voiceInput.isRecording
+                    // （非 Combine 绑定的 coordinator.isRecording），不会误 cancel 已停止的录音。
+                    coordinator.cancelRecording()
                     return
                 }
             } else {

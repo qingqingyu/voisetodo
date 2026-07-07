@@ -35,6 +35,9 @@ final class AppCoordinator: ObservableObject {
     @Published var isExtracting = false
     /// 配额耗尽或用户手动进入时弹出订阅页。
     @Published var showPaywall = false
+    /// 语音输入不可用（识别器初始化失败 / 资源缺失）时设为 true，通知 UI 自动切键盘模式。
+    /// UI 监听到 true 后应 switchInputPanelMode(toKeyboard: true) 并复位为 false。
+    @Published var voiceInputFallbackToKeyboard = false
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -123,11 +126,17 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// 启动录音流程
-    func startRecording() async {
+    /// 启动录音流程。
+    ///
+    /// 返回值：录音是否真正处于活跃状态。调用方（尤其 UI 层）应以此返回值为准，
+    /// 不要在 `await` 后立刻读 `coordinator.isRecording`：那是 Combine 绑定
+    /// (`.receive(on: .main).assign`)，值要等下一个 runloop 才到，会触发误判
+    /// （参见 `home.input_panel.start_recording_no_op fallback=keyboard` 竞态）。
+    @discardableResult
+    func startRecording() async -> Bool {
         guard !voiceInput.isRecording else {
             VoiceTodoLog.coordinator.warning("coordinator.recording.start_ignored reason=already_recording")
-            return
+            return false
         }
         let flowID = VoiceTodoLog.makeID("coord-record")
         let startedAt = Date()
@@ -138,10 +147,12 @@ final class AppCoordinator: ObservableObject {
             try await voiceInput.startRecording()
             VoiceTodoLog.coordinator.info("coordinator.recording.started id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             Telemetry.record(.recordingStarted(source: source))
+            return true
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.recording.start_failed id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             Telemetry.record(.recordingFailed(reason: Telemetry.reason(for: error), errorCode: nil))
             handleError(error)
+            return false
         }
     }
 
@@ -271,10 +282,10 @@ final class AppCoordinator: ObservableObject {
         isAutoProcessing = true
         VoiceTodoLog.coordinator.info("coordinator.action_button.start id=\(flowID, privacy: .public)")
 
-        await startRecording()
+        let didStart = await startRecording()
 
         // 录音未成功启动（权限错误等），直接返回
-        guard voiceInput.isRecording else {
+        guard didStart else {
             isAutoProcessing = false
             VoiceTodoLog.coordinator.warning("coordinator.action_button.recording_not_started id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return
@@ -775,7 +786,12 @@ final class AppCoordinator: ObservableObject {
             case .speechRecognitionPermissionDenied:
                 showToast(message: ErrorMessages.speechDenied, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .speechRecognitionUnavailable:
-                showToast(message: ErrorMessages.speechUnavailable, style: .warning, actionTitle: settingsTitle, action: settingsAction)
+                // 识别器初始化失败 / 资源缺失 / isAvailable=false 都走这里。
+                // "去设置"按钮对这类环境故障没用（设置里没有可恢复的开关），
+                // 改为触发键盘 fallback：UI 收到信号后自动 switchInputPanelMode(toKeyboard: true)，
+                // 让用户继续输入而不是干瞪眼看 toast。
+                voiceInputFallbackToKeyboard = true
+                showToast(message: ErrorMessages.speechUnavailable, style: .info)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
             case .quotaExhausted:

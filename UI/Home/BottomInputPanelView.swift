@@ -39,6 +39,7 @@ struct BottomInputPanelView: View {
                 HStack(spacing: WarmSpacing.xs) {
                     // 左：改用键盘 / 改用录音
                     Button {
+                        print("🔍 [DIAG] bottom_panel.mode_tapped current_isKeyboardMode=\(isKeyboardMode) trimmed=\(trimmedInputText.count)")
                         onModeChange(!isKeyboardMode)
                     } label: {
                         Image(systemName: isKeyboardMode ? "mic.fill" : "keyboard")
@@ -46,16 +47,21 @@ struct BottomInputPanelView: View {
                             .foregroundColor(WarmTheme.textSecondary)
                             .frame(width: 28, height: 28)
                             .background(Circle().fill(WarmTheme.secondaryBackground))
+                            // 扩 hit area 到 44x44（Apple HIG 最小可触控）。
+                            // 视觉尺寸保持 28x28 不变，外层 frame 仅用于 hit-test。
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("InputModeSwitch")
 
                     Spacer()
 
-                    // 右：发送 + 关闭（紧邻）
-                    HStack(spacing: WarmSpacing.xs) {
+                    // 右：发送 + 关闭。spacing 用 WarmSpacing.md（16pt）让两个 44pt hit area 不重叠。
+                    HStack(spacing: WarmSpacing.md) {
                         // 发送钮
                         Button {
+                            print("🔍 [DIAG] bottom_panel.send_tapped isKeyboardMode=\(isKeyboardMode) canSend=\(canSend) trimmed=\(trimmedInputText.count)")
                             if isKeyboardMode {
                                 onSendText(trimmedInputText)
                             } else {
@@ -70,6 +76,8 @@ struct BottomInputPanelView: View {
                                     Circle()
                                         .fill(canSend ? (isKeyboardMode ? WarmTheme.deepAction : WarmTheme.primary) : WarmTheme.textMuted.opacity(0.3))
                                 )
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(!canSend)
@@ -77,12 +85,17 @@ struct BottomInputPanelView: View {
                         .accessibilityLabel(isKeyboardMode ? String(localized: "manual_input.generate") : String(localized: "a11y.stop_recording"))
 
                         // 关闭钮
-                        Button(action: onClose) {
+                        Button(action: {
+                            print("🔍 [DIAG] bottom_panel.close_tapped isKeyboardMode=\(isKeyboardMode) trimmed=\(trimmedInputText.count)")
+                            onClose()
+                        }) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(WarmTheme.textSecondary)
                                 .frame(width: 28, height: 28)
                                 .background(Circle().fill(WarmTheme.secondaryBackground))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("InputPanelCloseButton")
@@ -130,6 +143,15 @@ struct BottomInputPanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: WarmRadius.sheet, style: .continuous))
         .shadow(color: .black.opacity(0.16), radius: 40, x: 0, y: -12)
         .accessibilityIdentifier("BottomInputPanel")
+        // 诊断：监听 inputText / isKeyboardMode 变化，记录 binding 是否同步以及 canSend 状态。
+        // 用于排查"点发送无反应"——确认 canSend 计算路径是否被正确触发。
+        .onChange(of: inputText) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("🔍 [DIAG] bottom_panel.text_changed length=\(newValue.count) trimmed=\(trimmed.count) canSend=\(isKeyboardMode ? !trimmed.isEmpty : isRecording)")
+        }
+        .onChange(of: isKeyboardMode) { _, newValue in
+            print("🔍 [DIAG] bottom_panel.mode_changed isKeyboardMode=\(newValue)")
+        }
     }
 }
 
@@ -139,7 +161,8 @@ private extension BottomInputPanelView {
     enum LayoutMetrics {
         static let grabHandleWidth: CGFloat = 38
         static let grabHandleHeight: CGFloat = 4
-        static let headerHeight: CGFloat = 36
+        // header 容器高度对齐 Apple HIG 最小可触控 44pt，避免 44pt 按钮溢出裁切。
+        static let headerHeight: CGFloat = 44
         static let inputMinHeight: CGFloat = 50
         static let hintFontSize: CGFloat = 11.5
         static let panelHorizontalPadding: CGFloat = 18
