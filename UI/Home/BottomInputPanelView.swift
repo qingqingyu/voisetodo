@@ -6,7 +6,7 @@ import SwiftUI
 /// - 录音模式（默认）：显示波形 + "正在录音…说出你的待办"
 /// - 键盘模式：波形隐藏 + 文本框 + 自动弹键盘
 ///
-/// 左下角「改用键盘 / 改用录音」切换，右下角发送钮（录音红 / 键盘深色）。
+/// 操作按钮（切换 + 发送）放在顶部行——键盘弹起时不会遮挡。
 struct BottomInputPanelView: View {
     @Binding var isKeyboardMode: Bool
     @Binding var inputText: String
@@ -28,29 +28,68 @@ struct BottomInputPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // 顶部操作行：抓手 + 切换 + 发送 + 关闭
+            // 所有操作按钮在顶部，键盘弹起时不遮挡。
             ZStack {
-                // 下拉抓手
+                // 下拉抓手（居中）
                 Capsule()
                     .fill(WarmTheme.textMuted.opacity(0.5))
                     .frame(width: LayoutMetrics.grabHandleWidth, height: LayoutMetrics.grabHandleHeight)
 
-                HStack {
-                    Spacer()
-
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .semibold))
+                HStack(spacing: WarmSpacing.xs) {
+                    // 左：改用键盘 / 改用录音
+                    Button {
+                        onModeChange(!isKeyboardMode)
+                    } label: {
+                        Image(systemName: isKeyboardMode ? "mic.fill" : "keyboard")
+                            .font(.system(size: 14))
                             .foregroundColor(WarmTheme.textSecondary)
-                            // 内容 32×32，触控热区扩展到 44×44（HIG 最小目标）
-                            .frame(width: LayoutMetrics.closeIconSize, height: LayoutMetrics.closeIconSize)
-                            .contentShape(Rectangle())
-                            .frame(width: WarmSize.touch, height: WarmSize.touch)
+                            .frame(width: 28, height: 28)
                             .background(Circle().fill(WarmTheme.secondaryBackground))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("InputPanelCloseButton")
-                    .accessibilityLabel(String(localized: "panel.close"))
+                    .accessibilityIdentifier("InputModeSwitch")
+
+                    Spacer()
+
+                    // 右：发送 + 关闭（紧邻）
+                    HStack(spacing: WarmSpacing.xs) {
+                        // 发送钮
+                        Button {
+                            if isKeyboardMode {
+                                onSendText(trimmedInputText)
+                            } else {
+                                onStopRecordingForProcessing()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    Circle()
+                                        .fill(canSend ? (isKeyboardMode ? WarmTheme.deepAction : WarmTheme.primary) : WarmTheme.textMuted.opacity(0.3))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend)
+                        .accessibilityIdentifier("InputSendButton")
+                        .accessibilityLabel(isKeyboardMode ? String(localized: "manual_input.generate") : String(localized: "a11y.stop_recording"))
+
+                        // 关闭钮
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(WarmTheme.textSecondary)
+                                .frame(width: 28, height: 28)
+                                .background(Circle().fill(WarmTheme.secondaryBackground))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("InputPanelCloseButton")
+                        .accessibilityLabel(String(localized: "panel.close"))
+                    }
                 }
+                .padding(.horizontal, WarmSpacing.sm)
             }
             .frame(height: LayoutMetrics.headerHeight)
             .padding(.top, WarmSpacing.sm)
@@ -74,73 +113,13 @@ struct BottomInputPanelView: View {
                     .padding(.bottom, WarmSpacing.md)
             }
 
-            // 底部控制行：左下角切换 + 右下角发送
-            HStack {
-                // 左下角：改用键盘 / 改用录音
-                Button {
-                    onModeChange(!isKeyboardMode)
-                } label: {
-                    HStack(spacing: WarmSpacing.xxs) {
-                        Image(systemName: isKeyboardMode ? "mic.fill" : "keyboard")
-                            .font(.system(size: 16))
-                        Text(isKeyboardMode
-                             ? String(localized: "panel.switch_to_voice")
-                             : String(localized: "panel.switch_to_keyboard"))
-                            .font(WarmFont.caption(12))
-                    }
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .padding(.horizontal, WarmSpacing.sm)
-                    .padding(.vertical, WarmSpacing.xs)
-                    .background(
-                        Capsule()
-                            .fill(WarmTheme.secondaryBackground)
-                            .overlay(
-                                Capsule()
-                                    .stroke(WarmTheme.primary.opacity(0.1), lineWidth: 1)
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("InputModeSwitch")
-
-                Spacer()
-
-                // 右下角：发送
-                // canSend (键盘模式 = 非空文本 / 录音模式 = 正在录音) 已通过 .disabled(!canSend) 保证
-                // 按钮仅在可发送时可点，此处无需重复 guard。
-                Button {
-                    print("🔍 [DIAG] send_button_tapped isKeyboardMode=\(isKeyboardMode) trimmed='\(trimmedInputText)' canSend=\(canSend)")
-                    if isKeyboardMode {
-                        onSendText(trimmedInputText)
-                    } else {
-                        // 录音模式：发送 = 停止录音 + 进入处理
-                        onStopRecordingForProcessing()
-                    }
-                } label: {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 21, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: WarmSize.sendButton, height: WarmSize.sendButton)
-                        .background(
-                            Circle()
-                                .fill(isKeyboardMode ? WarmTheme.deepAction : WarmTheme.primary)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .opacity(canSend ? 1 : 0.5)
-                .accessibilityIdentifier("InputSendButton")
-                .accessibilityLabel(isKeyboardMode ? String(localized: "manual_input.generate") : String(localized: "a11y.stop_recording"))
-                .accessibilityHint(isKeyboardMode ? String(localized: "manual_input.hint") : String(localized: "a11y.stop_hint"))
-            }
-
             // 状态提示
             Text(isKeyboardMode
                  ? String(localized: "panel.keyboard_hint")
                  : String(localized: "panel.recording_hint"))
                 .font(WarmFont.caption(LayoutMetrics.hintFontSize))
                 .foregroundColor(WarmTheme.textMuted)
-                .padding(.top, WarmSpacing.sm)
+                .padding(.bottom, WarmSpacing.sm)
         }
         .padding(.horizontal, LayoutMetrics.panelHorizontalPadding)
         .padding(.bottom, LayoutMetrics.panelBottomPadding)
@@ -160,8 +139,7 @@ private extension BottomInputPanelView {
     enum LayoutMetrics {
         static let grabHandleWidth: CGFloat = 38
         static let grabHandleHeight: CGFloat = 4
-        static let closeIconSize: CGFloat = 32
-        static let headerHeight: CGFloat = 32
+        static let headerHeight: CGFloat = 36
         static let inputMinHeight: CGFloat = 50
         static let hintFontSize: CGFloat = 11.5
         static let panelHorizontalPadding: CGFloat = 18
