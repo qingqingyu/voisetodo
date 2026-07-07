@@ -276,15 +276,24 @@ private struct HomeViewActions<Store: HomeTodoStore> {
     @discardableResult
     func submitManualInput(_ text: String) -> Task<Void, Never> {
         return Task { @MainActor in
+            VoiceTodoLog.ui.info("home.manual_input.task_start text=\(VoiceTodoLog.textSummary(text), privacy: .public)")
             // 等输入面板滑出动画结束（springSmooth ≈ 350ms）再盖 processing overlay，
             // 否则两层 overlay 同时淡入会撕裂。给 400ms 留余量。
             try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                VoiceTodoLog.ui.warning("home.manual_input.task_cancelled reason=cancelled_during_sleep")
+                return
+            }
+            VoiceTodoLog.ui.info("home.manual_input.task_post_sleep calling_processManualInput")
             updateProcessing(true)
             await coordinator.processManualInput(text)
             // 处理期间用户可能退出 HomeView，再次校验避免访问已销毁状态。
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                VoiceTodoLog.ui.warning("home.manual_input.task_cancelled reason=cancelled_during_process")
+                return
+            }
             updateProcessing(false)
+            VoiceTodoLog.ui.info("home.manual_input.task_done")
         }
     }
 
@@ -1522,6 +1531,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private func handlePanelSend(text: String) {
+        // 诊断日志：用户反馈"输入后提交信息消失"，需确认 text/isKeyboardMode/manualInputTask 启动状态。
+        // 各路径都加 log 便于从 console.app 定位丢文本的环节。
+        VoiceTodoLog.ui.info("home.panel.send_received text=\(VoiceTodoLog.textSummary(text), privacy: .public) isKeyboardMode=\(self.isKeyboardMode) isRecording=\(self.coordinator.isRecording)")
         inputPanelPermissionTask?.cancel()
         inputPanelPermissionTask = nil
         if isKeyboardMode {
