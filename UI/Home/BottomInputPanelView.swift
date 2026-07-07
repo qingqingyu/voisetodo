@@ -109,6 +109,7 @@ struct BottomInputPanelView: View {
                 // canSend (键盘模式 = 非空文本 / 录音模式 = 正在录音) 已通过 .disabled(!canSend) 保证
                 // 按钮仅在可发送时可点，此处无需重复 guard。
                 Button {
+                    print("🔍 [DIAG] send_button_tapped isKeyboardMode=\(isKeyboardMode) trimmed='\(trimmedInputText)' canSend=\(canSend)")
                     if isKeyboardMode {
                         onSendText(trimmedInputText)
                     } else {

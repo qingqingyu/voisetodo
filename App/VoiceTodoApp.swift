@@ -32,6 +32,7 @@ struct VoiceTodoApp: App {
     init() {
         let appStart = Date()
         let uiTestOptions = UITestLaunchOptions.current
+        print("🔍 [DIAG] app.init.start — 如果 Xcode console 看到这行说明 print 工作正常")
         VoiceTodoLog.app.info("app.init.start isUITesting=\(uiTestOptions.isUITesting) resetUserData=\(uiTestOptions.resetUserData) skipOnboarding=\(uiTestOptions.skipOnboarding)")
 
         if uiTestOptions.isUITesting, let presetTodosDecodeError = uiTestOptions.presetTodosDecodeError {
