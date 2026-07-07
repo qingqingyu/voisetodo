@@ -438,6 +438,7 @@
       }
     },
     "a11y.stop_hint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2337,6 +2338,7 @@
       }
     },
     "manual_input.hint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2961,6 +2963,7 @@
       }
     },
     "panel.switch_to_keyboard" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2977,6 +2980,7 @@
       }
     },
     "panel.switch_to_voice" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3506,22 +3510,6 @@
         }
       }
     },
-    "recurrence.with_end_date" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · until %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · 至 %2$@"
-          }
-        }
-      }
-    },
     "recurrence.weekly_short" : {
       "localizations" : {
         "en" : {
@@ -3534,6 +3522,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每周"
+          }
+        }
+      }
+    },
+    "recurrence.with_end_date" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · until %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · 至 %2$@"
           }
         }
       }
