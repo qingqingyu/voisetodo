@@ -47,6 +47,11 @@ enum WarmTheme {
     // 输入面板：键盘模式下「发送」按钮的深色（替代散落的 RGB 字面量）
     static let deepAction = Color(light: "2F2A26", dark: "EDE8E2")
 
+    // 警告 banner 文字色：深棕橙（浅色）/ 浅米色（深色），保证在 WarmTheme.warning.opacity(0.1) 背景上可读
+    static let warningText = Color(light: "92600A", dark: "F0D9A8")
+    // 键盘模式文本框背景：奶油白（浅色）/ 深灰（深色），跟随 cardBackground 的明暗逻辑
+    static let inputFieldBackground = Color(light: "FAFAF8", dark: "2B2926")
+
     /// 根据分类获取对应颜色
     static func color(for category: TodoCategory) -> Color {
         switch category {

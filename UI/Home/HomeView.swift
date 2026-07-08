@@ -6,6 +6,29 @@ private func formattedHomeDate(_ date: Date) -> String {
     date.formatted(.dateTime.month().day().weekday(.wide))
 }
 
+/// 读取当前 window 的底部 safe area inset（home indicator 高度，≈34pt on notched devices）。
+/// 用于 `inputPanelOverlay` 在 `.ignoresSafeArea(edges: .bottom)`（等同 .all region）后、
+/// 键盘未弹起时给 `BottomInputPanelView` 补一段 padding，避免面板内容侵入 home indicator 区域。
+///
+/// 实现选择：用 SwiftUI 原生 GeometryReader 而不是直接读 UIApplication.shared.connectedScenes。
+/// 原因：GeometryReader 的 safeAreaInsets 是 SwiftUI 依赖图的一等公民，横竖屏切换 / 分屏
+/// 改变 bottom safe area 时会自动 invalidate body；直接读 UIWindow.safeAreaInsets 绕过依赖图，
+/// 可能停在旧值。GeometryReader 返回 Color.clear 不占布局空间，避免影响外层布局。
+private struct BottomSafeAreaReader: View {
+    let onChange: (CGFloat) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { onChange(proxy.safeAreaInsets.bottom) }
+                .onChange(of: proxy.safeAreaInsets.bottom) { _, newValue in
+                    onChange(newValue)
+                }
+        }
+        .frame(width: 0, height: 0)
+    }
+}
+
 // MARK: - HomeView
 
 private struct HomeCalendarDayState {
@@ -897,6 +920,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var selectedBottomTab: BottomTab = .today
     @State private var showInputPanel = false
     @State private var isKeyboardMode = false
+    /// 键盘模式是否由录音失败 fallback 触发（区别于未来可能的手动切换入口）。
+    /// true 时 BottomInputPanelView 显示警告 banner + 「重新尝试语音」按钮。
+    @State private var isFallbackMode = false
     @State private var panelInputText = ""
     /// 键盘当前高度（监听 UIResponder.keyboardWillShow/Hide 通知）。
     /// 用于把 BottomInputPanelView 整体上推到键盘之上——否则 .overlay(alignment: .bottom)
@@ -907,6 +933,28 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 导致 `keyboardHeight` 残留非零。body 末尾的 `onChange(of: showInputPanel)` 在面板
     /// 关闭时显式归零兜底，避免新增 close 路径漏改。
     @State private var keyboardHeight: CGFloat = 0
+    /// 底部 safe area inset（home indicator 高度），由 `BottomSafeAreaReader` 同步过来。
+    /// 用于 `inputPanelOverlay` 在键盘未弹起时给面板补 padding 避开 home indicator。
+    /// 用 @State 让 SwiftUI 把 inset 作为视图依赖：横竖屏切换 / 分屏改变时自动 invalidate body。
+    @State private var bottomSafeAreaInset: CGFloat = 0
+    /// 两阶段关闭的过渡标志：键盘模式下第一次点遮罩只收键盘后置 true，
+    /// 让第二次点无脑走 closeInputPanel 而不再依赖 keyboardHeight 是否归零。
+    /// 解决两个竞态：
+    ///   (1) dismissKeyboard 是 no-op（first responder 不是 FocusableUITextView）→
+    ///       keyboardWillHide 不触发 → keyboardHeight 卡在 >0 → 用户永远进不了第二阶段
+    ///   (2) 用户快速连点：keyboardWillHide 异步派发尚未把 keyboardHeight 改 0 时，
+    ///       第二次点又被判定为「键盘弹起」再次 dismissKeyboard
+    /// 重置时机：closeInputPanel 后 scheduleDeferredPanelStateReset 一并清，与
+    /// panelInputText 同生命周期；openVoiceInputPanel / switchInputPanelMode 也复位。
+    @State private var keyboardDismissStageTriggered: Bool = false
+    /// dismissKeyboard 后的兜底 timer：若 N 毫秒后 keyboardHeight 仍 > 0，
+    /// 说明 resignFirstResponder 没有真正触发 keyboardWillHide（no-op 场景），
+    /// 此时把 keyboardDismissStageTriggered 强制设 true，让下一次 tap 直接 closeInputPanel。
+    @State private var keyboardDismissFallbackTask: Task<Void, Never>?
+    /// 输入面板会话 epoch：每次 openVoiceInputPanel 自增。所有键盘异步比对路径
+    /// （scheduleKeyboardDismissFallback）快照时记录 epoch，比对时校验 epoch 未变，
+    /// 彻底消除"会话切换恰好 keyboardHeight 相同"的 TOCTOU 假阳性。
+    @State private var panelSessionEpoch: Int = 0
     @State private var inputPanelPermissionTask: Task<Void, Never>?
     @State private var inputPanelResetTask: Task<Void, Never>?
     /// 「录音模式发送」触发的 stop-and-process 任务。视图销毁时一并 cancel。
@@ -1039,8 +1087,14 @@ struct HomeView<Store: HomeTodoStore>: View {
             // keyboardWillHide 通知导致 keyboardHeight 残留非零。集中在此处理比每个 close/send
             // 路径内联归零更可靠（不会因新增路径漏改）。
             .onChange(of: showInputPanel) { _, isVisible in
-                if !isVisible, keyboardHeight != 0 {
-                    keyboardHeight = 0
+                if !isVisible {
+                    // 面板关闭：归零 keyboardHeight 兜底（避免非正常退出残留）
+                    if keyboardHeight != 0 {
+                        keyboardHeight = 0
+                    }
+                    // 取消两阶段 fallback timer：closeInputPanel 通常已 cancel，
+                    // 但 onChange 路径兜底外部将 showInputPanel 置 false 的场景（生命周期/路由切换）。
+                    keyboardDismissFallbackTask?.cancel()
                 }
             }
             .onChange(of: coordinator.voiceInputFallbackToKeyboard) { oldValue, shouldFallback in
@@ -1049,23 +1103,34 @@ struct HomeView<Store: HomeTodoStore>: View {
                 // 仅在面板打开、且未已处于键盘模式时响应；面板没开就没必要切。
                 // 用 rising edge (oldValue=false, newValue=true) 过滤掉复位产生的额外触发，
                 // 也避免 handleError 被并发调用多次时键盘模式闪两次。
+                // 并发安全：handleError 同步连续调用多次时，SwiftUI 会合并变更通知，
+                // 最终值仍为 true，observer 至少触发一次，isFallbackMode 会被正确置 true。
                 guard !oldValue, shouldFallback, showInputPanel, !isKeyboardMode else { return }
                 coordinator.voiceInputFallbackToKeyboard = false
                 print("🔍 [DIAG] home.fallback_to_keyboard reason=recognizer_unavailable")
+                isFallbackMode = true
                 switchInputPanelMode(toKeyboard: true)
             }
             .onDisappear {
                 // 视图销毁时主动收尾异步 Task，避免它们继续访问已销毁的 @State。
+                // cancel 后统一 nil 清空，让 ARC 尽早回收（与已 nil 的 task 一致）。
                 inputPanelPermissionTask?.cancel()
                 inputPanelPermissionTask = nil
                 inputPanelResetTask?.cancel()
                 inputPanelResetTask = nil
+                keyboardDismissFallbackTask?.cancel()
+                keyboardDismissFallbackTask = nil
                 stopAndProcessTask?.cancel()
                 stopAndProcessTask = nil
                 manualInputTask?.cancel()
                 manualInputTask = nil
                 deepLinkTask?.cancel()
                 deepLinkTask = nil
+                // 复位两阶段标志 + fallback 标志：scheduleDeferredPanelStateReset 只在 closeInputPanel
+                // 后 400ms 触发，若 view 在此之前销毁（tab 切换 / sheet dismiss），复位就漏了。
+                // 与 openVoiceInputPanel 已做的复位动作对齐，保证"销毁→重建"与"open→close"状态等价。
+                keyboardDismissStageTriggered = false
+                isFallbackMode = false
             }
         }
         .accessibilityIdentifier("HomeView")
@@ -1408,20 +1473,42 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Input Panel
 
+    /// 面板底部 padding 的单一来源：键盘弹起时推到键盘顶（keyboardHeight），
+    /// 键盘未弹起时补一段 safe area inset 避开 home indicator。
+    /// 合并成单一计算属性避免两个连续 .padding(.bottom, ...) 隐式互斥的阅读负担。
+    private var panelBottomPadding: CGFloat {
+        keyboardHeight + (keyboardHeight == 0 ? bottomSafeAreaInset : 0)
+    }
+
     private var inputPanelOverlay: some View {
         ZStack(alignment: .bottom) {
             // 遮罩
             Color.black.opacity(0.28)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    // 键盘模式下点遮罩：只收键盘，**不关面板、不清空输入**。
-                    // 否则用户瞄准 send 按钮但 tap 落点偏到遮罩上，会触发 closeInputPanel
-                    // → 400ms 后 scheduleDeferredPanelStateReset 把刚输入的内容全清空，体验恶劣。
-                    // 录音模式保持原行为（关面板），因为没有输入可丢，且录音模式下面板外 tap
-                    // 通常就是"我不想录音了"的语义。
+                    // 两阶段关闭（键盘模式下）：
+                    //   - 键盘弹起时第一次点：只收键盘，面板变矮但仍可见，输入内容保留
+                    //   - 键盘已收起时再点：关面板
+                    // 这样兼顾两种意图：
+                    //   (1) 用户瞄准 send 按钮 tap 偏到遮罩——只丢键盘不丢内容，能继续找 send
+                    //   (2) 用户明确放弃输入——连点两次外面就全收起来
+                    // 录音模式没有键盘可收，直接关面板。
                     if isKeyboardMode {
-                        print("🔍 [DIAG] home.panel.mask_tapped action=dismiss_keyboard (键盘模式：收键盘不关面板)")
-                        dismissKeyboard()
+                        if keyboardDismissStageTriggered {
+                            // 已经触发过第一阶段（或兜底 timer 强制置位）→ 第二次点直接关面板
+                            print("🔍 [DIAG] home.panel.mask_tapped action=close_panel (键盘模式：第二阶段关面板)")
+                            closeInputPanel()
+                        } else if keyboardHeight > 0 {
+                            // 第一阶段：收键盘，置标志位防止后续 tap 再次走 dismissKeyboard 路径
+                            print("🔍 [DIAG] home.panel.mask_tapped action=dismiss_keyboard (键盘弹起：第一阶段收键盘)")
+                            keyboardDismissStageTriggered = true
+                            dismissKeyboard()
+                            scheduleKeyboardDismissFallback()
+                        } else {
+                            // 键盘本来就没弹（hardware keyboard / Stage Manager 等），直接关
+                            print("🔍 [DIAG] home.panel.mask_tapped action=close_panel (键盘未弹起：直接关面板)")
+                            closeInputPanel()
+                        }
                     } else {
                         print("🔍 [DIAG] home.panel.mask_tapped action=close_panel (录音模式：关面板)")
                         closeInputPanel()
@@ -1435,14 +1522,52 @@ struct HomeView<Store: HomeTodoStore>: View {
                 isKeyboardMode: $isKeyboardMode,
                 inputText: $panelInputText,
                 isRecording: coordinator.isRecording,
+                isFallbackMode: isFallbackMode,
                 onClose: { closeInputPanel() },
                 onModeChange: { switchInputPanelMode(toKeyboard: $0) },
                 onSendText: { text in handlePanelSend(text: text) },
                 onStopRecordingForProcessing: { handlePanelSend(text: "") }
             )
-            .padding(.bottom, keyboardHeight)
+            // 强制按内容大小（垂直方向），不被 ZStack 里的 Color.black.ignoresSafeArea
+            // 反向撑大。没有这行，BottomInputPanelView 会跟 ZStack 同高（=屏幕全屏），
+            // 加上 padding 后超出屏幕飞到顶部。
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, panelBottomPadding)
+            // 诊断：用 iOS 17+ onGeometryChange（不通过 GeometryReader，不影响 layout）
+            // 跟踪面板 frame，定位"超出屏幕"问题。
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .global)
+            } action: { newFrame in
+                #if DEBUG
+                print("🔍 [DIAG] panel.frame_global minY=\(newFrame.minY) height=\(newFrame.height) maxY=\(newFrame.maxY) keyboardHeight=\(keyboardHeight) panelBottomPadding=\(panelBottomPadding)")
+                #endif
+            }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+        // 必须忽略所有 safe area region（包括 .keyboard），让 ZStack 在键盘弹起时也不缩小：
+        //   - 若只忽略 .container（home indicator）不忽略 .keyboard：键盘弹起时 ZStack 底部
+        //     被推到键盘顶（如 539），同时 .padding(.bottom, keyboardHeight=335) 又把 view
+        //     再推 335pt，view 顶部跑到屏幕外（minY=-147），面板和键盘之间出现 335pt 空白间隙。
+        //   - 忽略 .all（含 .keyboard）：ZStack 底部始终对齐屏幕底（874），padding 推 view
+        //     上去 keyboardHeight 让 BottomInputPanelView 底部贴键盘顶，无间隙也不飞屏。
+        // .ignoresSafeArea(edges: .bottom) 等同于 .ignoresSafeArea(.all, edges: .bottom)。
+        //
+        // 副作用补偿：键盘未弹（keyboardHeight=0）时 ZStack 贴屏幕底，BottomInputPanelView
+        // 内部的 panelInternalBottomPadding（22pt）不足以避开 home indicator（≈34pt），面板内容会侵入。
+        // 此时通过 panelBottomPadding（见上）额外补一段 safe area 高度的 padding；
+        // 键盘弹起后由 keyboardHeight 推上去，无需补偿。
+        //
+        // 顺序契约：`.background` modifier 应用在 `.ignoresSafeArea` 之前，
+        // 意味着 background 内的 GeometryReader 读到的是 ignore 之前的 safeAreaInsets（含 home indicator）。
+        // SwiftUI modifier 是链式后置包装，`.background` 的内容位于链中「未 ignore」的视图上下文中。
+        // 这是一个隐式契约——若未来 iOS 版本改变 modifier 应用语义，需重新验证。
+        // iPad 等无 home indicator 设备天然返回 0，SwiftUI 对 @State 相等赋值不会触发额外渲染。
+        .background(
+            BottomSafeAreaReader { inset in
+                bottomSafeAreaInset = inset
+            }
+        )
+        .ignoresSafeArea(edges: .bottom)
         .zIndex(100)
         // 监听键盘事件：弹起时记录高度推面板上移；收回时清零。
         // 用 willShow/willHide（不是 did）让动画与系统键盘同步，避免滞后感。
@@ -1452,11 +1577,33 @@ struct HomeView<Store: HomeTodoStore>: View {
                 VoiceTodoLog.ui.warning("home.keyboard.will_show missing frame userInfo")
                 return
             }
+            // 诊断：iOS 26 模拟器疑似返回异常 frame（如整屏高度），让 panelBottomPadding 过大
+            // 把面板推到屏幕顶端。打印 frame 实际值 + 屏幕高度对比，定位是 keyboard通知 bug
+            // 还是 padding 计算 bug。
+            // 注意： UIScreen.main 在 iOS 16+ 已弃用，用 connectedScenes 取 window scene 的屏高。
+            // 多 window 场景（iPad / Stage Manager）下取所有 foregroundActive scene 的最大屏高
+            // 作为 clamp 上限基准——clamp 只用作异常 frame 兜底，取最大值保证不会把正常键盘误 clamp 矮。
+            // 真实单 window 设备（iPhone）只有一个 foregroundActive scene，等价原行为。
+            let activeScenes = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .filter { $0.activationState == .foregroundActive }
+            let screenHeight = activeScenes.map { $0.screen.bounds.height }.max() ?? frame.height
+            #if DEBUG
+            print("🔍 [DIAG] home.keyboard.will_show frame=\(frame) screenHeight=\(screenHeight) frame.height=\(frame.height) origin.y=\(frame.origin.y)")
+            #endif
+            // 保底 clamp：键盘高度不可能超过屏幕高度的 70%。超过说明是异常值
+            // （iOS 26 模拟器某些版本返回整个 UIWindow 的 frame）。用 origin.y 反推真实高度：
+            // 键盘顶部 = 屏幕底 - 键盘高度 = origin.y（在屏幕坐标系下）。
+            let resolvedHeight = (frame.origin.y > 0 && frame.origin.y < screenHeight)
+                ? (screenHeight - frame.origin.y)
+                : min(frame.height, screenHeight * 0.7)
             withAnimation(keyboardAnimation(from: note)) {
-                keyboardHeight = frame.height
+                keyboardHeight = resolvedHeight
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { note in
+            // 收到 keyboardWillHide → dismissKeyboard 已成功生效，作废兜底 timer 避免竞态窗口误触发
+            keyboardDismissFallbackTask?.cancel()
             withAnimation(keyboardAnimation(from: note)) {
                 keyboardHeight = 0
             }
@@ -1466,9 +1613,24 @@ struct HomeView<Store: HomeTodoStore>: View {
     private func openVoiceInputPanel() {
         guard !isInputEntryDisabled else { return }
         inputPanelResetTask?.cancel()
+        keyboardDismissFallbackTask?.cancel()
+        // 自增 epoch：让上一会话残留的异步比对 task（fallback timer）即使 cancel 信号未及时送达，
+        // 比对时也能识别"已进入新会话"而短路退出。
+        // 用 += 而非 &+=：Int 在 app 生命周期内不可能溢出（每次 open +1，需 9×10^18 次才溢出），
+        // 万一溢出应 trap 而非静默回绕（项目原则：错误显式传播）。
+        panelSessionEpoch += 1
         panelInputText = ""
-        // 复位 fallback 信号：上次 Action Button / 面板外识别失败可能留下陈旧的 true，
-        // 若不复位，onChange 不会再次触发（值未变化），本次录音失败时无法自动切键盘。
+        // 复位两阶段标志 + fallback 信号：上次会话残留的 true 会让本次首点直接关面板
+        keyboardDismissStageTriggered = false
+        // 复位 keyboardHeight：上次会话非正常退出（后台挂起后回来 / overlay 销毁错过
+        // keyboardWillHide）可能残留 >0，让本次首点误走「键盘弹起」分支浪费一次 tap。
+        // onChange(of: showInputPanel) 只在关闭时归零，打开时这里显式重置。
+        keyboardHeight = 0
+        // 复位 fallback 标志：本次是主动打开录音，不是 fallback 触发的键盘模式。
+        isFallbackMode = false
+        // 复位录音失败 fallback 信号（注意与 keyboardDismissStageTriggered 不同对象）：
+        // 上次 Action Button / 面板外识别失败可能留下陈旧的 true，若不复位，
+        // onChange 不会再次触发（值未变化），本次录音失败时无法自动切键盘。
         coordinator.voiceInputFallbackToKeyboard = false
         withAnimation(WarmAnimation.springSmooth) {
             showInputPanel = true
@@ -1500,6 +1662,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                     // startRecording 没抛但录音未真正起来（音频会话/识别器边界场景，
                     // 例如模拟器缺 Siri asset）。回退到键盘模式让用户继续输入。
                     VoiceTodoLog.ui.warning("home.input_panel.start_recording_no_op fallback=keyboard")
+                    // no_op 路径属于 fallback 触发：置位 isFallbackMode 显示 banner + retry 按钮。
+                    // 否则 isFallbackMode 残留上一轮值（手动切键盘后被关掉仍是 false / 旧 fallback 残留 true），
+                    // 误导用户「麦克风坏了」或反之不显示 retry。
+                    isFallbackMode = true
                     withAnimation(WarmAnimation.springSmooth) {
                         isKeyboardMode = true
                     }
@@ -1513,6 +1679,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                     return
                 }
             } else {
+                // 权限未授予也属于 fallback 触发：置位 isFallbackMode 与 no_op 路径保持一致，
+                // 让 banner 解释麦克风不可用并提供 retry。
+                isFallbackMode = true
                 isKeyboardMode = true
                 coordinator.showVoicePermissionRequiredToast()
             }
@@ -1521,6 +1690,8 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private func switchInputPanelMode(toKeyboard keyboardMode: Bool) {
         inputPanelResetTask?.cancel()
+        keyboardDismissFallbackTask?.cancel()
+        keyboardDismissStageTriggered = false
         if keyboardMode {
             inputPanelPermissionTask?.cancel()
             // 外层 if 不是冗余：cancelRecording 内部 guard 会生成 flowID/打日志，
@@ -1533,6 +1704,9 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
         } else {
             panelInputText = ""
+            // 切回录音模式 = 用户主动放弃键盘输入，复位 fallback 标志。
+            // 若本次录音再次失败，coordinator 会重新触发 fallback 并置 true。
+            isFallbackMode = false
             // 切回录音模式时主动收键盘（同 closeInputPanel 的根因）。
             dismissKeyboard()
             withAnimation(WarmAnimation.springSmooth) {
@@ -1545,6 +1719,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     private func closeInputPanel() {
         inputPanelPermissionTask?.cancel()
         inputPanelPermissionTask = nil
+        keyboardDismissFallbackTask?.cancel()
         // 外层 if 不是冗余：cancelRecording 内部 guard 会生成 flowID/打日志，
         // 关闭时若录音未启动（权限被拒等），避免触发无意义调用。
         if coordinator.isRecording {
@@ -1568,6 +1743,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         print("🔍 [DIAG] home.panel.send_received text='\(text)' isKeyboardMode=\(isKeyboardMode) isRecording=\(coordinator.isRecording)")
         inputPanelPermissionTask?.cancel()
         inputPanelPermissionTask = nil
+        keyboardDismissFallbackTask?.cancel()
         if isKeyboardMode {
             // 键盘模式正常情况下录音未启动（switchInputPanelMode 已处理取消），
             // 这里只兜底竞态——保留 if 防止每次发送都触发 cancelRecording 的内部日志噪音。
@@ -1607,7 +1783,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         scheduleDeferredPanelStateReset()
     }
 
-    /// 400ms 后如果面板没被重开，重置 panelInputText / isKeyboardMode。
+    /// 400ms 后如果面板没被重开，重置 panelInputText / isKeyboardMode / 两阶段标志。
     /// 用 delay 是为了让用户在快速关闭→重开时不会看到内容闪一下被清空。
     private func scheduleDeferredPanelStateReset() {
         inputPanelResetTask?.cancel()
@@ -1616,6 +1792,39 @@ struct HomeView<Store: HomeTodoStore>: View {
             guard !Task.isCancelled, !showInputPanel else { return }
             panelInputText = ""
             isKeyboardMode = false
+            keyboardDismissStageTriggered = false
+            isFallbackMode = false
+        }
+    }
+
+    /// dismissKeyboard 后的兜底：若 `dismissFallbackDeadline` 后 keyboardHeight 仍 > 0，
+    /// 说明 resignFirstResponder 没有触发 keyboardWillHide（no-op 场景：
+    /// first responder 不是 FocusableUITextView / 被系统 Alert 抢焦点等），
+    /// 此时强制 keyboardDismissStageTriggered=true，让下一次 tap 直接走 closeInputPanel，
+    /// 避免用户被困在「点遮罩只调 dismissKeyboard no-op，永远进不了第二阶段」的死锁。
+    private func scheduleKeyboardDismissFallback() {
+        // 350ms 取值依据：
+        //   - 下界：iOS keyboardWillHide 通知在 resignFirstResponder 后约 1 个 runloop（~16ms）发出，
+        //     350ms 留 ~20 倍余量吸收主线程卡顿 / SwiftUI 渲染排队。
+        //   - 上界：人类感知「双击」的最小间隔约 300-500ms（Apple DoubleTap 间隔 250-300ms），
+        //     350ms 在多数用户的「第一次 tap 收键盘 → 第二次 tap 关面板」节奏内，
+        //     即使用户略快也会被 stageTriggered 直接 close，不会卡在死循环。
+        // 没有更短的「正确」值——iOS 没有提供「first responder 是否成功 resign」的同步 API。
+        let dismissFallbackDeadline: UInt64 = 350_000_000
+        keyboardDismissFallbackTask?.cancel()
+        let snapshot = keyboardHeight
+        let snapshotEpoch = panelSessionEpoch
+        keyboardDismissFallbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: dismissFallbackDeadline)
+            // 面板已关闭（closeInputPanel / handlePanelSend / onChange(of: showInputPanel) 都会取消本 task；
+            // 但为防 cancel 信号未送达 / Task 正好在 sleep 退出时被替换的极小竞态，再读一次 showInputPanel）。
+            // epoch 校验：若期间 openVoiceInputPanel 已自增（用户重开面板），即便 keyboardHeight
+            // 恰好相同也短路退出，彻底消除跨会话 TOCTOU。
+            guard !Task.isCancelled, showInputPanel, panelSessionEpoch == snapshotEpoch else { return }
+            // 键盘仍未收起 → 视为 dismissKeyboard no-op，强制推进到第二阶段
+            if keyboardHeight == snapshot, snapshot > 0 {
+                keyboardDismissStageTriggered = true
+            }
         }
     }
 

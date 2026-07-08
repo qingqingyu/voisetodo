@@ -782,8 +782,11 @@ final class AppCoordinator: ObservableObject {
 
             switch voiceError {
             case .microphonePermissionDenied:
+                // 权限被拒：切键盘让用户继续输入 + 引导去设置开权限
+                voiceInputFallbackToKeyboard = true
                 showToast(message: ErrorMessages.micDenied, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .speechRecognitionPermissionDenied:
+                voiceInputFallbackToKeyboard = true
                 showToast(message: ErrorMessages.speechDenied, style: .warning, actionTitle: settingsTitle, action: settingsAction)
             case .speechRecognitionUnavailable:
                 // 识别器初始化失败 / 资源缺失 / isAvailable=false 都走这里。
@@ -792,6 +795,16 @@ final class AppCoordinator: ObservableObject {
                 // 让用户继续输入而不是干瞪眼看 toast。
                 voiceInputFallbackToKeyboard = true
                 showToast(message: ErrorMessages.speechUnavailable, style: .info)
+            case .audioSessionInterrupted:
+                // 音频会话被中断（来电 / 闹钟 / 其他 app 抢音频）：切键盘让用户继续输入
+                voiceInputFallbackToKeyboard = true
+                showToast(message: ErrorMessages.audioSessionInterrupted, style: .warning)
+            case .recordingFailed(let detail):
+                // 录音失败（音频引擎启动失败、识别过程其他错误等）：切键盘让用户继续输入。
+                // 注意：这条路径是兜底，特定识别错误（kLSRErrorDomain Code=300）已在
+                // VoiceInputManager 里映射为 .speechRecognitionUnavailable 走更友好的文案。
+                voiceInputFallbackToKeyboard = true
+                showToast(message: ErrorMessages.recordingFailed(detail), style: .warning)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
             case .quotaExhausted:

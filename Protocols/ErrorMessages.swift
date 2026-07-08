@@ -8,6 +8,12 @@ enum ErrorMessages {
     static let speechUnavailable = String(localized: "error.speech_unavailable")
     static let audioSessionInterrupted = String(localized: "error.audio_interrupted")
 
+    /// 录音失败兜底文案（带 detail 参数）。与 VoiceTodoError.errorDescription 共用 l10n key
+    /// `error.recording_failed`，确保单一文案来源。
+    static func recordingFailed(_ detail: String) -> String {
+        String(localized: "error.recording_failed \(detail)")
+    }
+
     // 网络/AI 相关
     static let networkError = String(localized: "error.network")
     static let apiTimeout = String(localized: "error.api_timeout")

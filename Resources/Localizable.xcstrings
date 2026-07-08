@@ -2930,34 +2930,82 @@
         }
       }
     },
-    "panel.keyboard_hint" : {
+    "panel.fallback_banner" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type and tap → to add"
+            "value" : "Microphone unavailable. Switched to typing — just enter what you need to do today."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入文字后点右侧添加"
+            "value" : "无法启动麦克风，已切换到打字。直接输入今天要做的事即可。"
           }
         }
       }
     },
-    "panel.recording_hint" : {
+    "panel.listening" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recording… say your todo"
+            "value" : "Listening"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在录音…说出你的待办"
+            "value" : "正在聆听"
+          }
+        }
+      }
+    },
+    "panel.listening_hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· Tell me what you want to do today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· 说出你今天要做的事"
+          }
+        }
+      }
+    },
+    "panel.retry_voice" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try voice again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新尝试语音"
+          }
+        }
+      }
+    },
+    "panel.send_to_ai" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send to AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送给 AI"
           }
         }
       }
