@@ -50,6 +50,21 @@ enum TodoCategory: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// 分类对应的 SF Symbol 名称——比 emoji 更统一可控（emoji 在不同平台渲染差异大，
+    /// 且当前 AI 提取的 life 分类全是 🏠，没区分度）。用 SF Symbol + categoryColor
+    /// 着色，形成一套视觉一致的图标体系。
+    var sfSymbolName: String {
+        switch self {
+        case .work: return "briefcase.fill"
+        case .study: return "book.fill"
+        case .life: return "house.fill"
+        case .health: return "heart.fill"
+        case .finance: return "yensign.circle.fill"
+        case .social: return "person.2.fill"
+        case .other: return "tag.fill"
+        }
+    }
+
     var displayName: String {
         switch self {
         case .work: return String(localized: "category.work")

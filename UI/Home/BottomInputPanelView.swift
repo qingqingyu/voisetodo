@@ -7,7 +7,7 @@ import SwiftUI
 /// - 键盘模式：wise-todo-keyboard.html
 ///
 /// 录音模式布局（从上到下）：
-///   抓手 → 状态文字（● 正在聆听 · 说出你今天要做的事）→ 波形 → [取消] [发送给 AI]
+///   抓手 → 状态文字（● 正在聆听 · 说出你今天要做的事）→ 波形 → 录音时长 → [取消] [发送给 AI]
 ///
 /// 键盘模式布局（fallback 触发时）：
 ///   抓手 → 警告 banner → 文本框 → [取消] [发送给 AI] → 重新尝试语音
@@ -17,6 +17,11 @@ import SwiftUI
 /// 共享 actionsRow：
 ///   - 取消：50pt 圆形 + X 图标，触发 onClose
 ///   - 发送：56pt 高大块按钮，flex:1 占满剩余宽度，触发 onSendText / onStopRecordingForProcessing
+///
+/// 字体策略：Text 全部用 SwiftUI 语义化字体（.footnote / .caption / .callout / .title3），
+/// 跟随 Dynamic Type 视障缩放。Image 图标保留 .system(size:)——图标不需要
+/// Dynamic Type，SF Symbols 有自己的缩放语义。`.title3` 仅用于录音计时器，
+/// 因为计时器是录音模式的视觉焦点，需要比正文更重的存在感。
 ///
 /// 键盘弹起时面板整体跟随 HomeView 的 `.padding(.bottom, keyboardHeight)` 推到键盘上方。
 struct BottomInputPanelView: View {
@@ -33,12 +38,34 @@ struct BottomInputPanelView: View {
     /// 录音模式专用：停止录音并进入处理流程。
     let onStopRecordingForProcessing: () -> Void
 
+    /// 录音时长（秒），由 ticker Task 每秒刷新（用 Date() 差值计算，非累加）。
+    /// ticker 跟随 isRecording 生命周期——isRecording=true 时启动，false 时自动取消，
+    /// 无空转，无内存泄漏（比 Timer + onDisappear 更可靠）。
+    @State private var recordingElapsed: TimeInterval = 0
+
     private var trimmedInputText: String {
         inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var canSend: Bool {
         isKeyboardMode ? !trimmedInputText.isEmpty : isRecording
+    }
+
+    /// 把秒数格式化为 "MM:SS"，>=1 小时切到 "H:MM:SS"。
+    /// 负数（类型允许但实际不会出现）按 0 处理，避免负数取整乱码。
+    /// NaN/Infinity（调试器暂停后恢复等极端场景）也按 0 处理，
+    /// 否则 Int(Infinity) 会触发 runtime trap 导致 UI 崩溃。
+    /// 可视化文本不本地化（ASCII 冒号是国际通用格式，iOS Clock app 同样用 MM:SS）；
+    /// 但无障碍标签 `a11y.recording_duration` 走本地化——视障用户需听完整描述。
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds > 0 else { return "00:00" }
+        let total = Int(seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return h > 0
+            ? String(format: "%d:%02d:%02d", h, m, s)
+            : String(format: "%02d:%02d", m, s)
     }
 
     var body: some View {
@@ -73,6 +100,32 @@ struct BottomInputPanelView: View {
         .onChange(of: isKeyboardMode) { _, newValue in
             print("🔍 [DIAG] bottom_panel.mode_changed isKeyboardMode=\(newValue)")
         }
+        // P1: ticker Task 跟随 isRecording 生命周期——isRecording=true 时启动并捕获开始时间，
+        // false 时自动取消。elapsed 用 Date() 计算（非累加），即使 Task 重启也不丢精度。
+        // startedAt 在 Task 内部捕获，单一来源，无外部状态参与。
+        //
+        // 已知取舍：isRecording 快速翻转（如权限重试）时，新 Task 入口归零 + sleep 1s
+        // 才更新，用户会看到计时器从旧值跳回 "00:00" 再 1 秒后到 "00:01"。这是为了精度
+        // （Date 差值 vs 累加 drift）和简洁性（不维护跨 Task 的 startedAt）做的取舍。
+        // 若录音 session 实际是连续的，应在外层避免翻转 isRecording，而非在此处补偿。
+        .task(id: isRecording) {
+            guard isRecording else {
+                recordingElapsed = 0
+                return
+            }
+            let startedAt = Date()
+            // 防御性归零：覆盖「view 初次出现时 isRecording 已为 true」场景
+            // （task 首次启动时 UI 可能还显示上次遗留值）。guard false 分支已处理停止清零。
+            recordingElapsed = 0
+            // Task.sleep 抛 CancellationError 即「Task 被取消」，正常退出路径。
+            // 只捕获取消错误——其它错误路径（系统休眠唤醒等）不应静默退出计时器。
+            while true {
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+                catch is CancellationError { break }
+                catch { continue }
+                recordingElapsed = Date().timeIntervalSince(startedAt)
+            }
+        }
     }
 
     // MARK: - Recording mode
@@ -81,22 +134,55 @@ struct BottomInputPanelView: View {
     private var recordingModeContent: some View {
         // 状态文字：● 正在聆听 · 说出你今天要做的事
         HStack(spacing: LayoutMetrics.statusTextSpacing) {
+            // P1: 红点脉动——用 PhaseAnimator（iOS 17+）替代 repeatForever，
+            // 避免 repeatForever 在 value 切换时无法可靠停止的 SwiftUI 已知问题。
+            // isRecording=false 时只渲染 .idle 单帧，不进入心跳循环。
             Circle()
                 .fill(WarmTheme.urgent)
                 .frame(width: LayoutMetrics.statusDotSize, height: LayoutMetrics.statusDotSize)
+                // 不传 trigger——只让 phases 数组切换驱动 phaseAnimator，
+                // 避免 iOS 17.0-17.1 中 trigger + phases 同时变化的已知跳帧 bug。
+                // 单相位 [.idle] 依赖 iOS 17.x 当前实现：停在那一帧不循环。
+                // 若未来 SwiftUI 改成单相位退化为普通 modifier，语义仍正确（静态渲染）。
+                .phaseAnimator(
+                    isRecording ? PulsePhase.pulsePhases : [.idle]
+                ) { content, phase in
+                    content
+                        .scaleEffect(phase.scale)
+                        .opacity(phase.opacity)
+                } animation: { phase in
+                    switch phase {
+                    case .idle: return .default
+                    default: return .easeInOut(duration: 0.8)
+                    }
+                }
             Text(String(localized: "panel.listening"))
-                .font(.system(size: LayoutMetrics.statusFontSize, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundColor(WarmTheme.urgent)
             Text(String(localized: "panel.listening_hint"))
-                .font(.system(size: LayoutMetrics.statusFontSize, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundColor(WarmTheme.textMuted)
         }
         .padding(.bottom, WarmSpacing.xl)
 
-        // 波形（红色）
+        // 波形（红色）——放大成录音主视觉，填补"正在聆听"和操作行之间的空白。
         WaveformView(color: WarmTheme.urgent, isActive: isRecording)
             .frame(height: LayoutMetrics.waveformHeight)
-            .padding(.bottom, LayoutMetrics.waveformBottomPadding)
+            .padding(.bottom, WarmSpacing.sm)
+
+        // P1: 录音时长——`.monospacedDigit()` 让 0-9 等宽，避免 "00:07" → "00:12" 跳。
+        // 用语义化 `.title3` 跟随 Dynamic Type，叠加 `.monospacedDigit()` 修饰。
+        Text(formatDuration(recordingElapsed))
+            .font(.title3.weight(.bold))
+            .monospacedDigit()
+            .foregroundColor(WarmTheme.ink)
+            .padding(.bottom, LayoutMetrics.timerBottomPadding)
+            .accessibilityLabel(
+                // 格式占位符必须与所有翻译保持参数数量/位置一致；
+                // Int 在 64 位平台用 %lld，String(format) 严格按位置匹配。
+                // 翻译者注意：此 key 只允许单个 %lld 占位符，不可增减或换位。
+                String(format: String(localized: "a11y.recording_duration"), Int(recordingElapsed))
+            )
 
         // 操作行
         actionsRow
@@ -114,12 +200,11 @@ struct BottomInputPanelView: View {
                     .foregroundColor(WarmTheme.warning)
                     .padding(.top, 1)
                 Text(String(localized: "panel.fallback_banner"))
-                    .font(.system(size: LayoutMetrics.bannerTextFontSize))
+                    .font(.caption)
                     .foregroundColor(WarmTheme.warningText)
-                    // 限制 3 行兜底小屏溢出：banner 文案在 zh-Hans / 小宽度（iPhone SE 375pt）下
-                    // 可能达 4-5 行，配合 .fixedSize(vertical: true) 在 VStack 内会让面板总高度
-                    // 超过屏幕可用区（屏幕高 - 顶部 safe area - 键盘高），导致顶部内容被键盘遮挡。
-                    // lineLimit(3) + truncationTail 保证 banner 占用有界。
+                    // iPhone SE 375pt 适配:zh-Hans banner 原文可达 4-5 行,配合
+                    // fixedSize(vertical: true) 会撑高面板导致顶部被键盘遮挡。
+                    // lineLimit(3) + truncationTail 保证 banner 高度有界。
                     .lineLimit(3)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
@@ -156,6 +241,7 @@ struct BottomInputPanelView: View {
         // 重新尝试语音（仅 fallback 模式显示，居中小按钮）
         // 死循环防护：用户手动点 retry → onModeChange(false) → switchInputPanelMode 重新启动录音；
         // 若权限仍被拒，coordinator 会再次 fallback，但用户已看到 toast 知道原因，不算无意义循环。
+        // P2: 扩 hit area 到 44pt（Apple HIG 最小可触控），padding 不变但 frame 强制最小高度。
         if isFallbackMode {
             Button {
                 print("🔍 [DIAG] bottom_panel.retry_voice_tapped")
@@ -165,11 +251,12 @@ struct BottomInputPanelView: View {
                     Image(systemName: "mic.fill")
                         .font(.system(size: LayoutMetrics.retryIconFontSize))
                     Text(String(localized: "panel.retry_voice"))
-                        .font(.system(size: LayoutMetrics.retryTextFontSize, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                 }
                 .foregroundColor(WarmTheme.textMuted)
                 .padding(.horizontal, WarmSpacing.xs)
-                .padding(.vertical, WarmSpacing.xxs)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("InputRetryVoice")
@@ -202,8 +289,6 @@ struct BottomInputPanelView: View {
             .accessibilityLabel(String(localized: "panel.close"))
 
             // 发送按钮：56pt 高大块按钮，flex:1 占满剩余宽度，飞机图标 + "发送给 AI"
-            // （设计稿 .send 样式）。配色保持项目品牌色 WarmTheme.primary，
-            // 而非设计稿的紫色 #4f46e5——以项目视觉系统为准。
             Button {
                 print("🔍 [DIAG] bottom_panel.send_tapped isKeyboardMode=\(isKeyboardMode) canSend=\(canSend) trimmed=\(trimmedInputText.count)")
                 if isKeyboardMode {
@@ -214,22 +299,56 @@ struct BottomInputPanelView: View {
             } label: {
                 HStack(spacing: WarmSpacing.xs) {
                     Image(systemName: "paperplane.fill")
-                        .font(.system(size: LayoutMetrics.sendIconFontSize, weight: .semibold))
+                        // 图标用语义字体对齐文字缩放，避免 Dynamic Type XXL 下文字放大图标不变的比例失衡。
+                        .font(.callout.weight(.semibold))
+                        .imageScale(.medium)
                     Text(String(localized: "panel.send_to_ai"))
-                        .font(.system(size: LayoutMetrics.sendTextFontSize, weight: .bold))
+                        .font(.callout.weight(.bold))
                 }
-                .foregroundColor(.white)
+                // disabled 时前景色跟着降为半透明灰，避免白字在灰底上像"空胶囊"。
+                .foregroundColor(canSend ? .white : WarmTheme.textMuted.opacity(0.6))
                 .frame(maxWidth: .infinity)
                 .frame(height: LayoutMetrics.sendButtonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: LayoutMetrics.sendCornerRadius)
-                        .fill(canSend ? WarmTheme.primary : WarmTheme.textMuted.opacity(0.3))
+                        .fill(canSend ? WarmTheme.primary : WarmTheme.textMuted.opacity(0.15))
                 )
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
             .accessibilityIdentifier("InputSendButton")
             .accessibilityLabel(isKeyboardMode ? String(localized: "manual_input.generate") : String(localized: "a11y.stop_recording"))
+        }
+    }
+}
+
+// MARK: - Red dot pulse phase
+
+/// 红点脉动动画的相位。`.idle` 用于 isRecording=false 时只渲染一帧不循环；
+/// `.expanded`/`.contracted` 在 PhaseAnimator 内 0.8s easeInOut 循环，模拟心跳呼吸。
+/// 故意不声明 CaseIterable——动画相位用 `pulsePhases` 静态数组显式列出，
+/// 避免未来误用 allCases 把 .idle 混入动画循环产生闪烁。
+private enum PulsePhase {
+    case idle
+    case expanded
+    case contracted
+
+    /// 心跳循环相位（不含 idle）。预计算为静态常量，避免在 view body hot path 上 filter。
+    static let pulsePhases: [PulsePhase] = [.expanded, .contracted]
+
+    var scale: CGFloat {
+        switch self {
+        case .idle:       return 0.8
+        case .expanded:   return 1.0
+        case .contracted: return 0.8
+        }
+    }
+
+    var opacity: Double {
+        switch self {
+        case .idle:       return 0.4
+        case .expanded:   return 1.0
+        case .contracted: return 0.4
         }
     }
 }
@@ -244,22 +363,19 @@ private extension BottomInputPanelView {
         static let grabHandleBottomPadding: CGFloat = WarmSpacing.md
         // 文本框最小高度（设计稿 min-height: 76px）
         static let inputMinHeight: CGFloat = 76
-        // 波形高度（设计稿 .wave height: 56px）
-        static let waveformHeight: CGFloat = 56
-        // 面板水平/底部 padding：来自设计稿像素值（22px），不归 4 借数系统。
-        // 设计稿在此处刻意用非标准间距对齐 HTML 规格，保留以匹配视觉。
+        // 波形高度（从 56 放大到 80，让波形成为录音态主视觉，填补空白感）
+        static let waveformHeight: CGFloat = 80
+        // 面板水平/底部 padding：来自设计稿像素值（22px），对齐 HTML 规格，
+        // 故意不归 4 借数系统以匹配视觉。
         static let panelHorizontalPadding: CGFloat = 22
-        // 面板内部底部 padding（固定常量）。注意：HomeView 外部还有一个动态的
-        // panelBottomPadding 计算属性（keyboardHeight + safeAreaInset），两者叠加生效。
         static let panelInternalBottomPadding: CGFloat = 22
         // 录音状态文字
         static let statusDotSize: CGFloat = 8
         static let statusTextSpacing: CGFloat = 6
-        static let statusFontSize: CGFloat = 13
-        static let waveformBottomPadding: CGFloat = 18
-        // 键盘模式 banner
+        // 录音计时器底距（设计稿 18px）——波形用 WarmSpacing.sm，不共用此常量。
+        static let timerBottomPadding: CGFloat = 18
+        // 键盘模式 banner（图标尺寸保留——SF Symbols 不走 Dynamic Type）
         static let bannerIconFontSize: CGFloat = 14
-        static let bannerTextFontSize: CGFloat = 12
         // 键盘模式文本框
         static let inputFontSize: CGFloat = 15
         static let inputCornerRadius: CGFloat = 14
@@ -268,11 +384,8 @@ private extension BottomInputPanelView {
         static let cancelIconFontSize: CGFloat = 18
         static let sendButtonHeight: CGFloat = 56
         static let sendCornerRadius: CGFloat = 18
-        static let sendIconFontSize: CGFloat = 16
-        static let sendTextFontSize: CGFloat = 16
-        // 重新尝试语音
+        // 重新尝试语音（图标尺寸保留）
         static let retryIconFontSize: CGFloat = 14
-        static let retryTextFontSize: CGFloat = 12
     }
 }
 

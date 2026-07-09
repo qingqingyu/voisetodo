@@ -486,11 +486,10 @@ private enum HomeLayoutMetrics {
     static let calendarFixedSectionHeight: CGFloat = 130
     /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
     static let dayRowMinHeight: CGFloat = 14
-    /// 列表底部留白：safeAreaInset 占用 = capsule 52 + bottom padding 8 = 60pt；
-    /// FAB 通过 offset 上移 13pt 后顶部超出 capsule 顶 (35-13)=22pt，
-    /// FAB 顶端在 List 内容坐标系 = 60 + 22 = 82pt。
-    /// 取 96 留 14pt 余量，应对 Dynamic Type XXL + VoiceOver 双击放大场景。
-    static let listBottomInset: CGFloat = 96
+    /// 列表底部留白：新版 Tab 簇（2026-07-09）safeAreaInset 占用 =
+    /// FAB 56pt + bottom padding 16pt = 72pt；加渐隐遮罩 40pt = 112pt。
+    /// 取 112 留余量，应对 Dynamic Type XXL + VoiceOver 双击放大场景。
+    static let listBottomInset: CGFloat = 112
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
@@ -703,7 +702,7 @@ private struct HomeSelectedDayListView: View {
                         occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
                     }
                 } header: {
-                    daySectionHeader(title: String(localized: "home.completed_section \(state.completedOccurrences.count)"), count: state.completedOccurrences.count)
+                    daySectionHeader(title: String(localized: "home.completed_section_title"), count: state.completedOccurrences.count)
                 }
             }
 
@@ -998,6 +997,12 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     @State private var selectedTodo: TodoItemData?
 
+    /// 列表可见性：录音 / 处理 / 抽取中时隐藏列表与底部渐隐遮罩。
+    /// 集中此条件避免 Group 与遮罩两处重复判断漂移。
+    private var isListVisible: Bool {
+        !coordinator.isRecording && !isProcessing && !coordinator.isExtracting
+    }
+
     // 动画状态
     @State private var headerOffset: CGFloat = -50
     @State private var headerOpacity: Double = 0
@@ -1028,11 +1033,25 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
 
                     Group {
-                        if !coordinator.isRecording && !isProcessing && !coordinator.isExtracting {
+                        if isListVisible {
                             monthHomeView
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                // 底部渐隐遮罩：让列表内容淡出到 Tab 簇下方，而不是被硬切。
+                // 只在列表可见时显示（录音态有全屏 overlay 不需要）。
+                // allowsHitTesting(false) 确保不拦截列表滚动 / 点击。
+                if isListVisible {
+                    LinearGradient(
+                        colors: [.clear, WarmTheme.background.opacity(0.9)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .frame(height: 40)
+                    .allowsHitTesting(false)
                 }
             }
             .onAppear {
@@ -1168,7 +1187,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.md)
-        .padding(.bottom, WarmSpacing.lg)
+        .padding(.bottom, WarmSpacing.sm)
         .background(
             WarmTheme.background.opacity(0.9)
                 .shadow(color: WarmTheme.shadowLight, radius: 1, y: 1)
@@ -1997,7 +2016,7 @@ struct WarmTodoCard: View {
                 ZStack {
                     Circle()
                         .stroke(
-                            todo.isCompleted ? WarmTheme.success : categoryColor,
+                            todo.isCompleted ? WarmTheme.success : WarmTheme.sketch,
                             lineWidth: 2
                         )
                         .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
@@ -2035,13 +2054,18 @@ struct WarmTodoCard: View {
             // 现在元数据合并成一行，卡片高度降三分之一。
             VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 HStack(spacing: WarmSpacing.xxs) {
-                    Text(todo.category.emoji)
-                        .font(.system(size: 14))
+                    // 分类图标：统一 SF Symbol 体系（替代 emoji），按 categoryColor 着色。
+                    // 已完成时图标跟着文字一起降为 textSecondary，视觉上"整行变灰"。
+                    // opacity 0.85（而非 0.7）：12pt 小图标下 7 种分类色（尤其黄/橙）
+                    // 需要更高饱和度才可辨识；0.7 适合大色块，小图标会糊在一起。
+                    Image(systemName: todo.category.sfSymbolName)
+                        .font(.system(size: 12))
+                        .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor.opacity(0.85))
 
                     Text(todo.title)
                         .font(todo.priority == .high ? WarmFont.headline(16) : WarmFont.body(16))
-                        .foregroundColor(todo.isCompleted ? WarmTheme.textMuted : WarmTheme.textPrimary)
-                        .strikethrough(todo.isCompleted, color: WarmTheme.textMuted)
+                        .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : WarmTheme.textPrimary)
+                        .strikethrough(todo.isCompleted, color: WarmTheme.textSecondary)
                         .lineLimit(2)
                 }
 

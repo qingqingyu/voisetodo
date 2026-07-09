@@ -15,14 +15,21 @@ import UIKit
 struct FocusableTextView: UIViewRepresentable {
     @Binding var text: String
 
-    /// 字体（Avenir Next Medium，对齐 WarmFont.body）
-    private let font: UIFont
+    /// 基础字体（Avenir Next Medium，未缩放）。缩放交给系统：
+    /// `adjustsFontForContentSizeCategory = true` 会基于 traitCollection 自动按
+    /// UIFontMetrics 缩放当前 font，无需（也不应）手动 scaledFont——否则会双重缩放。
+    ///
+    /// 不变量：baseFont 在 init 后不可变（let）。fontSize 是 struct 的不可变配置，
+    /// 调用方若需换字号必须销毁重建 FocusableTextView，而非依赖 updateUIView 同步——
+    /// 因为 updateUIView 不再同步 font（避免与系统 Dynamic Type 缩放冲突）。
+    /// 当前唯一调用方 BottomInputPanelView 传常量 fontSize，符合此契约。
+    private let baseFont: UIFont
     /// 文字颜色（对齐 WarmTheme.textPrimary 浅色模式 #3D3A38）
     private let textColor: UIColor
 
     init(text: Binding<String>, fontSize: CGFloat = 17) {
         self._text = text
-        self.font = UIFont(name: "AvenirNext-Medium", size: fontSize)
+        self.baseFont = UIFont(name: "AvenirNext-Medium", size: fontSize)
             ?? .systemFont(ofSize: fontSize, weight: .medium)
         // #3D3A38 — WarmTheme.textPrimary 浅色模式值；UIUserInterfaceStyle 锁 Light
         self.textColor = UIColor(red: 0x3D / 255.0, green: 0x3A / 255.0, blue: 0x38 / 255.0, alpha: 1.0)
@@ -32,7 +39,10 @@ struct FocusableTextView: UIViewRepresentable {
         let textView = FocusableUITextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
-        textView.font = font
+        // P0: set 未缩放的 baseFont + 打开 adjustsFontForContentSizeCategory，
+        // 系统会在 category 变化时用 UIFontMetrics 自动缩放，单一职责。
+        textView.font = baseFont
+        textView.adjustsFontForContentSizeCategory = true
         textView.textColor = textColor
         // 去掉 UITextView 默认内边距，让文字对齐 SwiftUI 视图布局
         textView.textContainerInset = .zero
@@ -62,10 +72,7 @@ struct FocusableTextView: UIViewRepresentable {
            uiView.text != text {
             uiView.text = text
         }
-        // 字体/颜色变化时同步
-        if uiView.font !== font {
-            uiView.font = font
-        }
+        // 颜色变化时同步（baseFont 不变，Dynamic Type 缩放由系统自动处理）
         if uiView.textColor != textColor {
             uiView.textColor = textColor
         }
