@@ -37,7 +37,6 @@ private struct HomeCalendarDayState {
     let isSelected: Bool
     let isToday: Bool
     let isCurrentMonth: Bool
-    let hasHighPriority: Bool
 }
 
 /// 首页日历视图模式：整月网格 / 单周一行。
@@ -136,8 +135,7 @@ private struct HomeCalendarState {
             // 周视图 7 天等权重，不按"当月"置灰；月视图保留跨月补齐日的弱化样式。
             isCurrentMonth: viewMode == .week
                 ? true
-                : calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month),
-            hasHighPriority: dayOccurrences.contains { $0.todo.priority == .high && !$0.isCompleted }
+                : calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month)
         )
     }
 
@@ -384,12 +382,8 @@ private struct HomeMonthHeaderView: View {
     /// 可用高度（来自 GeometryReader）。0 = 不约束，用默认行高。
     var availableHeight: CGFloat = 0
 
-    private var viewModeBinding: Binding<CalendarViewMode> {
-        Binding(get: { state.viewMode }, set: { onSetViewMode($0) })
-    }
-
     /// 根据可用高度计算日期格行高。
-    /// 固定段（Picker + 导航行 + 星期表头 + spacing + padding）≈ 130pt（见 calendarFixedSectionHeight）；
+    /// 固定段（导航行 + 星期表头 + spacing + padding）≈ 90pt（见 calendarFixedSectionHeight）；
     /// 剩余空间平分给网格行（月视图 6 行 / 周视图 1 行）。
     /// availableHeight = 0 时回退到默认 WarmSpacing.xxxl（48pt）。
     private var dayRowHeight: CGFloat {
@@ -398,19 +392,19 @@ private struct HomeMonthHeaderView: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            // iOS 26：.segmented picker 自带 Liquid Glass 渲染。
-            // 保留 maxWidth 220——VStack 无其他宽度约束时 segmented 会撑满父容器，
-            // 视觉上不协调；220pt 让 picker 紧凑居中。
-            Picker("", selection: viewModeBinding) {
-                Text(String(localized: "calendar.mode.month")).tag(CalendarViewMode.month)
-                Text(String(localized: "calendar.mode.week")).tag(CalendarViewMode.week)
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
-            .accessibilityIdentifier("CalendarViewModePicker")
-            .accessibilityLabel(String(localized: "a11y.calendar_mode"))
-
+            // 导航行内嵌月/周切换图标按钮 + 今天图标按钮，省掉 segmented Picker 那一行。
             HStack {
+                Button(action: onJumpToToday) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(WarmTheme.primaryDark)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TodayMonthButton")
+                .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.today_week" : "a11y.today_month"))
+
                 Button(action: { onShift(-1) }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
@@ -438,18 +432,27 @@ private struct HomeMonthHeaderView: View {
                 .accessibilityIdentifier("NextMonthButton")
                 .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.next_week" : "a11y.next_month"))
 
-                Button(action: onJumpToToday) {
-                    Text(String(localized: "home.week.today_button"))
-                        .font(WarmFont.caption(13))
-                        .foregroundStyle(WarmTheme.primaryDark)
-                        .padding(.horizontal, WarmSpacing.sm)
-                        .frame(height: 32)
+                Button(action: { onSetViewMode(.month) }) {
+                    Image(systemName: "square.grid.3x3")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(state.viewMode == .month ? WarmTheme.primary : WarmTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(state.viewMode == .month ? WarmTheme.primary.opacity(0.15) : Color.clear))
                 }
-                .buttonStyle(.glass)
-                // 淡橙 tint 呼应 FAB 的橙色调，但更弱（"今天"是次要操作）。
-                .glassEffect(.regular.tint(WarmTheme.primary.opacity(0.3)))
-                .accessibilityIdentifier("TodayMonthButton")
-                .accessibilityLabel(String(localized: "a11y.today_month"))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("CalendarMonthModeButton")
+                .accessibilityLabel(String(localized: "calendar.mode.month"))
+
+                Button(action: { onSetViewMode(.week) }) {
+                    Image(systemName: "rectangle.grid.1x2")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(state.viewMode == .week ? WarmTheme.primary : WarmTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(state.viewMode == .week ? WarmTheme.primary.opacity(0.15) : Color.clear))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("CalendarWeekModeButton")
+                .accessibilityLabel(String(localized: "calendar.mode.week"))
             }
 
             HStack(spacing: WarmSpacing.xs) {
@@ -479,24 +482,22 @@ private struct HomeMonthHeaderView: View {
 private enum HomeLayoutMetrics {
     /// 月历区域目标上限比例（对齐 HTML 参考的 max-height:38vh）。
     static let calendarTargetHeightRatio: CGFloat = 0.38
-    /// 月历表头固定段高度（Picker + 导航行 + 星期表头 + VStack spacing + padding）。
-    /// 拆解：Picker segmented(~32) + navRow(32) + weekday(16) + VStack spacing(WarmSpacing.xs×5≈20)
-    ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~14) ≈ 130pt 保守上限。
+    /// 月历表头固定段高度（导航行 + 星期表头 + VStack spacing + padding）。
+    /// 拆解：navRow(32) + weekday(16) + VStack spacing(WarmSpacing.xs×2≈16)
+    ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~10) ≈ 90pt 保守上限。
     /// 低估会导致 calendarHeight 算出比实际小，底部日期行被 `.clipped()` 裁切（Bug 1 根因）。
-    static let calendarFixedSectionHeight: CGFloat = 130
+    static let calendarFixedSectionHeight: CGFloat = 90
     /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
     static let dayRowMinHeight: CGFloat = 14
-    /// 列表底部留白（Color.clear 占位 Section 的高度），与 BottomTabBar 实占高度解耦。
-    /// 几何推导：safeAreaInset 实占 = BottomTabBar 自身高度 + .padding(.bottom, WarmSpacing.md)
-    ///   = max(WarmSize.fab, WarmSize.tabPillSize) + WarmSpacing.md
-    ///   = WarmSize.fab + WarmSpacing.md（因 fab > tabPillSize 不变量）
-    ///   = 60 + 16 = 76pt。
-    /// listBottomInset = 76pt + 余量 64pt(滚动停位呼吸 + 底部小渐隐视觉缓冲) = 140pt。
-    /// 调参规则：
-    /// - 改 BottomTabBar 布局（HStack 高度、padding、Tab 簇尺寸）时必须重新测量 safeAreaInset 实占高度。
-    static let listBottomInset: CGFloat = 140
+    /// 底部浮动操作簇的可视高度：FAB 高度 + BottomTabBar 自身底部 padding。
+    static let bottomBarHeight: CGFloat = WarmSize.fab + WarmSpacing.md
     /// 底部列表渐隐只负责贴近底部浮动操作簇的过渡，不能覆盖到中部 todo 卡片。
     static let bottomListFadeHeight: CGFloat = 40
+    /// 列表底部滚动留白，用 contentMargins 作用在真实 scroll content 上，而不是追加假 Section。
+    /// 组成：底部操作簇高度 + 渐隐区 + 额外呼吸空间，确保最后一项能完整停在按钮上方。
+    /// 调参规则：
+    /// - 改 BottomTabBar 布局（HStack 高度、padding、Tab 簇尺寸）时必须重新测量 safeAreaInset 实占高度。
+    static let listBottomInset: CGFloat = bottomBarHeight + bottomListFadeHeight + WarmSpacing.xl
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
@@ -588,9 +589,15 @@ private struct HomeMonthDayButton: View {
 
                 if let dotSize {
                     HStack(spacing: 2) {
-                        ForEach(0..<min(dayState.occurrences.count, 3), id: \.self) { index in
+                        ForEach(0..<min(dayState.occurrences.count, 5), id: \.self) { index in
+                            let occurrence = dayState.occurrences[index]
+                            let isUrgent = occurrence.todo.priority == .high && !occurrence.isCompleted
                             Circle()
-                                .fill(dayState.hasHighPriority && index == 0 ? WarmTheme.urgent : (dayState.isSelected ? Color.white : WarmTheme.primary))
+                                .fill(
+                                    dayState.isSelected ? Color.white :
+                                    (occurrence.isCompleted ? WarmTheme.textMuted :
+                                     (isUrgent ? WarmTheme.urgent : WarmTheme.primary))
+                                )
                                 .frame(width: dotSize, height: dotSize)
                         }
                     }
@@ -724,21 +731,11 @@ private struct HomeSelectedDayListView: View {
                 }
             }
 
-            // 防底部玻璃簇遮挡的尾部留白 Section。
-            // List .frame(height: listHeight) 钉死后 safeAreaInset(.bottom) 不被 List 感知，
-            // 最后一项会滚到底部悬浮玻璃簇后面。Color.clear 占位让出空间。
-            // listBottomInset 见 HomeLayoutMetrics 顶部注释拆解（Tab 簇 safeAreaInset 实占 76pt + 余量 64pt）。
-            Section {
-                Color.clear
-                    .frame(height: HomeLayoutMetrics.listBottomInset)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                    .accessibilityHidden(true)
-            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollContent)
+        .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollIndicators)
         .accessibilityIdentifier("TodoList")
     }
 
@@ -793,7 +790,7 @@ private struct HomeSelectedDayListView: View {
         }
         .foregroundColor(WarmTheme.textSecondary)
         .textCase(nil)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.md, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
     }
 
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
@@ -804,7 +801,7 @@ private struct HomeSelectedDayListView: View {
             onTap: { onOpenTodo(todo) }
         )
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
@@ -834,7 +831,7 @@ private struct HomeSelectedDayListView: View {
             onTap: { onOpenTodo(occurrence.todo) }
         )
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
@@ -1249,8 +1246,6 @@ struct HomeView<Store: HomeTodoStore>: View {
         // 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
         // today tab 下 selectedDate 恒为今天（无 UI 改定），实际就是"今天的完成度"；
         // calendar tab 下跟用户点的日期走。
-        // iOS 26：.glassEffect 默认按 content shape 渲染（HStack 是圆角矩形），
-        // 用 .clipShape(Capsule()) 强制成胶囊形，与原 Capsule().fill 观感对齐。
         let (total, completed) = selectedDayStats()
         return HStack(spacing: WarmSpacing.xs) {
             Image(systemName: "checkmark.circle")
@@ -1261,10 +1256,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .font(WarmFont.caption(14))
                 .foregroundStyle(WarmTheme.textSecondary)
         }
-        .padding(.horizontal, WarmSpacing.sm)
-        .padding(.vertical, WarmSpacing.xs)
-        .glassEffect(.regular)
-        .clipShape(Capsule())
+        .padding(.horizontal, WarmSpacing.xs)
+        .padding(.vertical, WarmSpacing.xxs)
+        .background(Capsule().fill(WarmTheme.secondaryBackground.opacity(0.5)))
     }
 
     private var settingsButton: some View {
