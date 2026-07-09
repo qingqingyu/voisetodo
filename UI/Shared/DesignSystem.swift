@@ -93,13 +93,16 @@ enum WarmRadius {
 enum WarmSize {
     static let icon: CGFloat = 28      // 内嵌图标 badge
     static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
-    /// 底部 FAB 圆形按钮直径（2026-07-09 从 70 缩到 56）。
-    /// 之前 70 大幅凸出于长条 capsule，与两侧裸图标不成团。
-    /// 现在 FAB 只比 tab 胶囊（48）略大，整簇视觉一致。
-    static let fab: CGFloat = 56
-    /// 底部 tab 玻璃胶囊直径（正方形 → circle 渲染）。
-    /// 比 FAB 小 8pt，形成"FAB 是主操作但不过分突出"的层级。
-    static let tabPillSize: CGFloat = 48
+    /// FAB 与 tabPillSize 的直径差：FAB 是主操作，比 tab 胶囊略大形成视觉层级。
+    /// 改任一个直径时必须同步评估此不变量是否仍合理。
+    static let fabTabSizeDelta: CGFloat = 8
+    /// 底部 FAB 圆形按钮直径（56→60 增大热区，Apple HIG 推荐 ≥44pt）。
+    /// 与 tabPillSize 保持 fabTabSizeDelta 的层级差，FAB 视觉为主操作但不至于凸出过多。
+    static let fab: CGFloat = 60
+    /// 底部 tab 玻璃胶囊直径（48→52 增大热区）。
+    /// 只读计算属性（Swift 计算属性必须用 static var 声明，无 setter 故不可写），
+    /// 由 fab - fabTabSizeDelta 推导，不变量在编译期成立。
+    static var tabPillSize: CGFloat { fab - fabTabSizeDelta }
     static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
     static let mega: CGFloat = 120     // 最大装饰元素

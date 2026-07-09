@@ -486,10 +486,17 @@ private enum HomeLayoutMetrics {
     static let calendarFixedSectionHeight: CGFloat = 130
     /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
     static let dayRowMinHeight: CGFloat = 14
-    /// 列表底部留白：新版 Tab 簇（2026-07-09）safeAreaInset 占用 =
-    /// FAB 56pt + bottom padding 16pt = 72pt；加渐隐遮罩 40pt = 112pt。
-    /// 取 112 留余量，应对 Dynamic Type XXL + VoiceOver 双击放大场景。
-    static let listBottomInset: CGFloat = 112
+    /// 列表底部留白（Color.clear 占位 Section 的高度），与 BottomTabBar 实占高度解耦。
+    /// 几何推导：safeAreaInset 实占 = BottomTabBar 自身高度 + .padding(.bottom, WarmSpacing.md)
+    ///   = max(WarmSize.fab, WarmSize.tabPillSize) + WarmSpacing.md
+    ///   = WarmSize.fab + WarmSpacing.md（因 fab > tabPillSize 不变量）
+    ///   = 60 + 16 = 76pt。
+    /// listBottomInset = 76pt + 余量 64pt(滚动停位呼吸 + 渐隐遮罩视觉缓冲) = 140pt。
+    /// `.background` 内的渐隐遮罩 20pt 只覆盖在 Tab 簇背后、不进入布局流，不占用 safeAreaInset 高度。
+    /// 调参规则：
+    /// - 改 BottomTabBar.tabBarFadeHeight 时不应联动改本值——它不是 safeAreaInset 的高度。
+    /// - 改 BottomTabBar 布局（HStack 高度、padding、Tab 簇尺寸）时必须重新测量 safeAreaInset 实占高度。
+    static let listBottomInset: CGFloat = 140
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
@@ -720,7 +727,7 @@ private struct HomeSelectedDayListView: View {
             // 防底部玻璃簇遮挡的尾部留白 Section。
             // List .frame(height: listHeight) 钉死后 safeAreaInset(.bottom) 不被 List 感知，
             // 最后一项会滚到底部悬浮玻璃簇后面。Color.clear 占位让出空间。
-            // 96 ≥ 簇高（FAB 60 + 悬浮/余量）留足安全边距，防最后一条被盖。
+            // listBottomInset 见 HomeLayoutMetrics 顶部注释拆解（Tab 簇 safeAreaInset 实占 76pt + 余量 64pt）。
             Section {
                 Color.clear
                     .frame(height: HomeLayoutMetrics.listBottomInset)
@@ -1433,6 +1440,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                         }
                     )
                     .frame(height: listHeight)
+                    .clipped()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
