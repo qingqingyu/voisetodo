@@ -40,11 +40,11 @@
 	<key>VoiceTodoProxyAppToken</key>
 	<string>$(VOICETODO_AI_PROXY_APP_TOKEN)</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VoiceTodo 需要麦克风来录制你的语音</string>
+	<string>VoiceTodo needs microphone access to record your voice.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-	<string>VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历</string>
+	<string>VoiceTodo needs access to add your todos to the system calendar.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>VoiceTodo 需要语音识别权限来理解你的语音指令</string>
+	<string>VoiceTodo needs speech recognition access to understand your voice commands.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

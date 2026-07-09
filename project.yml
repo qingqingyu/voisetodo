@@ -4,7 +4,7 @@ options:
   deploymentTarget:
     iOS: "26.0"
   xcodeVersion: "26.0"
-  developmentLanguage: zh-Hans
+  developmentLanguage: en
   knownRegions:
     - Base
     - zh-Hans
@@ -17,7 +17,7 @@ settings:
     SWIFT_VERSION: "5"
     PRODUCT_NAME: "$(TARGET_NAME)"
     ENABLE_TESTABILITY: YES
-    DEVELOPMENT_LANGUAGE: zh-Hans
+    DEVELOPMENT_LANGUAGE: en
     SWIFT_EMIT_LOC_STRINGS: YES
   debug:
     SWIFT_OPTIMIZATION_LEVEL: -Onone
@@ -102,9 +102,9 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
           UISceneConfigurations: {}
-        NSSpeechRecognitionUsageDescription: "VoiceTodo 需要语音识别权限来理解你的语音指令"
-        NSMicrophoneUsageDescription: "VoiceTodo 需要麦克风来录制你的语音"
-        NSCalendarsWriteOnlyAccessUsageDescription: "VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历"
+        NSSpeechRecognitionUsageDescription: "VoiceTodo needs speech recognition access to understand your voice commands."
+        NSMicrophoneUsageDescription: "VoiceTodo needs microphone access to record your voice."
+        NSCalendarsWriteOnlyAccessUsageDescription: "VoiceTodo needs access to add your todos to the system calendar."
         UIBackgroundModes:
           - audio
         BGTaskSchedulerPermittedIdentifiers:

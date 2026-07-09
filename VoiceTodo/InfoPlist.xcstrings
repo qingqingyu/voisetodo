@@ -1,5 +1,5 @@
 {
-  "sourceLanguage" : "zh-Hans",
+  "sourceLanguage" : "en",
   "strings" : {
     "CFBundleDisplayName" : {
       "comment" : "Bundle display name",
@@ -20,11 +20,16 @@
     },
     "CFBundleName" : {
       "comment" : "Bundle name",
-      "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "VoiceTodo"
           }
         }
@@ -32,11 +37,16 @@
     },
     "NSCalendarsWriteOnlyAccessUsageDescription" : {
       "comment" : "Privacy - Calendars Write Only Usage Description",
-      "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo needs access to add your todos to the system calendar."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历"
           }
         }

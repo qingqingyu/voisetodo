@@ -113,21 +113,21 @@ struct UIDemoView: View {
                 // MARK: - Mock 数据状态
                 Section("Mock 数据状态") {
                     HStack {
-                        Text("总待办数")
+                        Text(String(localized: "demo.total_count"))
                         Spacer()
                         Text("\(store.todos.count)")
                             .foregroundColor(.secondary)
                     }
 
                     HStack {
-                        Text("未完成")
+                        Text(String(localized: "demo.uncompleted"))
                         Spacer()
                         Text("\(store.todos.filter { !$0.isCompleted }.count)")
                             .foregroundColor(.secondary)
                     }
 
                     HStack {
-                        Text("高优先级")
+                        Text(String(localized: "demo.high_priority"))
                         Spacer()
                         Text("\(store.todos.filter { $0.priority == .high }.count)")
                             .foregroundColor(.red)
