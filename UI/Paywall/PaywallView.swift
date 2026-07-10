@@ -134,8 +134,8 @@ struct PaywallView: View {
                 }
             }
             Text(String(localized: "paywall.trial_hint"))
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(WarmTheme.textMuted)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(WarmTheme.primaryDark)
         }
         .padding(.horizontal, WarmSpacing.lg)
     }

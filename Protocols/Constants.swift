@@ -40,7 +40,7 @@ enum NetworkConfig {
     /// 离线 pending 批量处理最大并发数
     static let pendingBatchConcurrency = 3
     /// 免费档每日上限（UI 占位 / 本地估算后备；代理 `X-Quota-*` 头优先于此值）。
-    static let freeDailyLimit: Int = 5
+    static let freeDailyLimit: Int = 2
 
     private static func configuredValue(environmentKey: String, infoPlistKey: String) -> String? {
         if let value = ProcessInfo.processInfo.environment[environmentKey],

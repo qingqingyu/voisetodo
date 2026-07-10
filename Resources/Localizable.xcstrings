@@ -3305,13 +3305,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "7-day free trial"
+            "value" : "3-day free trial"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "7 天免费试用"
+            "value" : "3 天免费试用"
           }
         }
       }

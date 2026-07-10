@@ -31,8 +31,8 @@
             "displayPrice" : "0",
             "internal" : false,
             "paymentMode" : "freeTrial",
-            "subscriptionPeriod" : "P7D",
-            "referenceName" : "7 天免费试用"
+            "subscriptionPeriod" : "P3D",
+            "referenceName" : "3 天免费试用"
           },
           "internal" : false,
           "levels" : [],
@@ -66,8 +66,8 @@
             "displayPrice" : "0",
             "internal" : false,
             "paymentMode" : "freeTrial",
-            "subscriptionPeriod" : "P7D",
-            "referenceName" : "7 天免费试用"
+            "subscriptionPeriod" : "P3D",
+            "referenceName" : "3 天免费试用"
           },
           "internal" : false,
           "levels" : [],
