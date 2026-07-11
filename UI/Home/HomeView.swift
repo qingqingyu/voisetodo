@@ -501,17 +501,18 @@ private enum HomeLayoutMetrics {
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
-    /// 但月视图实际 dayRowHeight ≈ 18pt < 24，圆点永不显示。
-    /// 现在按行高动态返回圆点尺寸，月视图也能看到"有事/没事"标记。
-    /// - rowHeight < 16：返回 nil（极矮屏，连日期数字都紧，不渲染圆点）
-    /// - 16-20：返回 3（月视图典型）
-    /// - 21-28：返回 3.5
-    /// - ≥29：返回 4（周视图典型）
+    /// 但月视图实际 dayRowHeight 可能 ≈16pt，圆点跟数字挤一起。
+    /// 现在按行高动态返回圆点尺寸，矮屏隐藏圆点保证数字清爽。
+    /// - rowHeight < 26：返回 nil（14pt headline 的 lineHeight~19pt + 圆点3 + padding4 ≈ 26，
+    ///   低于此值圆点跟数字中心距离 <5pt，视觉上挤）
+    /// - 26-32：返回 3
+    /// - 33-44：返回 3.5
+    /// - ≥45：返回 4（周视图典型）
     static func dotSize(for rowHeight: CGFloat) -> CGFloat? {
         switch rowHeight {
-        case ..<16: return nil
-        case 16...20: return 3
-        case 21...28: return 3.5
+        case ..<26: return nil
+        case 26...32: return 3
+        case 33...44: return 3.5
         default: return 4
         }
     }
@@ -578,15 +579,20 @@ private struct HomeMonthDayButton: View {
         Button {
             onSelect(dayState.date)
         } label: {
-            VStack(spacing: WarmSpacing.xxs) {
-                // 纯数字（5/29 等），不用 .formatted(.dateTime.day(.twoDigits))
-                // 后者在 zh locale 下产生"29日"，与日期格上下文冲突显冗余。
-                // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
-                // 视觉显示与无障碍朗读职责分离。
-                Text("\(Calendar.current.component(.day, from: dayState.date))")
-                    .font(WarmFont.headline(14))
-                    .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
-
+            // 数字在 .frame(height: rowHeight) 容器里默认居中；
+            // 圆点 overlay 挂在容器上（不是 Text 上），钉在 rowHeight 底部。
+            // （之前挂在 Text + .frame(maxHeight: .infinity) 上——Text 实际撑不满 rowHeight，
+            // overlay 底部只是 Text 高度的底部，圆点跟数字挤在一起。）
+            // 纯数字（5/29 等），不用 .formatted(.dateTime.day(.twoDigits))
+            // 后者在 zh locale 下产生"29日"，与日期格上下文冲突显冗余。
+            // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
+            // 视觉显示与无障碍朗读职责分离。
+            Text("\(Calendar.current.component(.day, from: dayState.date))")
+                .font(WarmFont.headline(14))
+                .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
+            .frame(maxWidth: .infinity)
+            .frame(height: rowHeight)
+            .overlay(alignment: .bottom) {
                 if let dotSize {
                     HStack(spacing: 2) {
                         ForEach(0..<min(dayState.occurrences.count, 5), id: \.self) { index in
@@ -602,10 +608,9 @@ private struct HomeMonthDayButton: View {
                         }
                     }
                     .frame(height: dotSize)
+                    .padding(.bottom, WarmSpacing.xxs)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: rowHeight)
             // 选中态放大：弱动画提示用户"我点对了"，但不夸张到挤压相邻格
             // （月历 7 列宽，放大太多会重叠）。Reduce Motion 时 animation 会被系统忽略。
             .scaleEffect(dayState.isSelected ? WarmAnimation.monthDaySelectedScale : WarmAnimation.monthDayDefaultScale)
