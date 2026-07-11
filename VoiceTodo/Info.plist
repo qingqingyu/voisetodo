@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.qingqingyu.voicetodo.telemetry-upload</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -33,16 +37,10 @@
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>UIUserInterfaceStyle</key>
-	<string>Light</string>
-	<key>VoiceTodoProxyEndpoint</key>
-	<string>$(VOICETODO_AI_PROXY_ENDPOINT)</string>
-	<key>VoiceTodoProxyAppToken</key>
-	<string>$(VOICETODO_AI_PROXY_APP_TOKEN)</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>VoiceTodo needs microphone access to record your voice.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>VoiceTodo needs access to add your todos to the system calendar.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>VoiceTodo needs microphone access to record your voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>VoiceTodo needs speech recognition access to understand your voice commands.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -56,14 +54,16 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.voicetodo.app.telemetry-upload</string>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
 		<string>AccentColor</string>
 	</dict>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
+	<key>VoiceTodoProxyAppToken</key>
+	<string>$(VOICETODO_AI_PROXY_APP_TOKEN)</string>
+	<key>VoiceTodoProxyEndpoint</key>
+	<string>$(VOICETODO_AI_PROXY_ENDPOINT)</string>
 </dict>
 </plist>
