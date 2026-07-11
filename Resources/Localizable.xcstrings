@@ -1,9 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-
-    },
     "%@ %@" : {
       "localizations" : {
         "en" : {
@@ -43,6 +40,7 @@
 
     },
     "a11y.calendar_mode" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2241,6 +2239,7 @@
       }
     },
     "home.week.today_button" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3090,7 +3089,6 @@
       }
     },
     "panel.switch_to_keyboard" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3107,7 +3105,6 @@
       }
     },
     "panel.switch_to_voice" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

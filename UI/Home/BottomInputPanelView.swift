@@ -186,6 +186,27 @@ struct BottomInputPanelView: View {
 
         // 操作行
         actionsRow
+
+        // 手动切换到键盘输入（非 fallback 触发，不显示警告 banner）
+        Button {
+            print("🔍 [DIAG] bottom_panel.switch_to_keyboard_tapped")
+            onModeChange(true)
+        } label: {
+            HStack(spacing: WarmSpacing.xxs) {
+                Image(systemName: "keyboard.fill")
+                    .font(.system(size: LayoutMetrics.retryIconFontSize))
+                Text(String(localized: "panel.switch_to_keyboard"))
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundColor(WarmTheme.textMuted)
+            .padding(.horizontal, WarmSpacing.xs)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("InputSwitchToKeyboard")
+        .accessibilityLabel(String(localized: "panel.switch_to_keyboard"))
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     // MARK: - Keyboard mode
@@ -261,6 +282,27 @@ struct BottomInputPanelView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("InputRetryVoice")
             .accessibilityLabel(String(localized: "panel.retry_voice"))
+            .frame(maxWidth: .infinity, alignment: .center)
+        } else {
+            // 手动切回语音输入（本次是用户主动切到键盘，提供切回入口）
+            Button {
+                print("🔍 [DIAG] bottom_panel.switch_to_voice_tapped")
+                onModeChange(false)
+            } label: {
+                HStack(spacing: WarmSpacing.xxs) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: LayoutMetrics.retryIconFontSize))
+                    Text(String(localized: "panel.switch_to_voice"))
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundColor(WarmTheme.textMuted)
+                .padding(.horizontal, WarmSpacing.xs)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("InputSwitchToVoice")
+            .accessibilityLabel(String(localized: "panel.switch_to_voice"))
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }
