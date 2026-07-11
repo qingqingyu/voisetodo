@@ -41,8 +41,9 @@ final class VoiceInputManager: VoiceInputProtocol {
     private let audioSessionHelper = AudioSessionHelper()
     private let vocabularyProvider: any UserVocabularyProviding
 
-    // 静音检测相关
-    private var silenceStartTime: Date?
+    // 静音检测已移除——用户打开录音面板即视为有意录音，
+    // 不应因短暂静音自动停止（2s 超时对"按完按钮才开口"的正常反应太短）。
+    // isSilenceDetected 保留作为 max-duration 自动停止的去重 flag，与静音无关。
     private var isSilenceDetected = false
 
     // Live Activity 相关
@@ -81,7 +82,6 @@ final class VoiceInputManager: VoiceInputProtocol {
         transcript = ""
         error = nil
         isSilenceDetected = false
-        silenceStartTime = nil
         recordingStartTime = startedAt
 
         // 1. 检查权限
@@ -510,7 +510,6 @@ final class VoiceInputManager: VoiceInputProtocol {
             isRecording = false
         }
         isSilenceDetected = false
-        silenceStartTime = nil
         endLiveActivity()
         recordingSessionID = nil
     }
@@ -579,59 +578,24 @@ final class VoiceInputManager: VoiceInputProtocol {
         }
     }
 
-    /// 处理音频缓冲区，进行静音检测
-    /// 注意：此方法通过 DispatchQueue.main.async 调用，已在主线程执行
+    /// 处理音频缓冲区。
+    /// 注意：此方法通过 DispatchQueue.main.async 调用，已在主线程执行。
+    /// 静音检测已移除——现仅保留硬性最大录音时长检查。
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         // 只在录音状态下处理，避免 stopRecording 后的延迟回调
         guard isRecording else { return }
+        _ = buffer  // 当前只用时间做 max-duration 检查；buffer 留参数位以便未来恢复音频分析
 
         // 硬性最大录音时长：到达即自动停止（无论在说话还是静音）
         if let start = recordingStartTime,
            Date().timeIntervalSince(start) >= VoiceConstants.maxRecordingSeconds,
            !isSilenceDetected {
-            isSilenceDetected = true  // 复用停止去重标志，避免与静音检测重复 stop
+            isSilenceDetected = true  // 去重 flag，避免回调重复触发 stop
             VoiceTodoLog.voice.info("recording.max_duration_reached id=\(self.recordingSessionID ?? "none", privacy: .public) maxSeconds=\(VoiceConstants.maxRecordingSeconds)")
             let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
             Telemetry.record(.recordingOutcome(outcome: .maxDurationReached, durationMS: durationMS, transcript: transcript))
             stopRecording()
             return
-        }
-
-        guard let channelData = buffer.floatChannelData?[0] else { return }
-
-        // 直接用指针遍历计算 RMS，避免每帧分配临时数组
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength > 0 else { return }
-
-        var sum: Float = 0
-        for i in 0..<frameLength {
-            sum += channelData[i] * channelData[i]
-        }
-        let rms = sqrt(sum / Float(frameLength))
-
-        // 转换为 dB（避免 log10(0)）
-        guard rms > 0 else { return }
-        let avgPower = 20 * log10(rms)
-
-        // 静音检测
-        if avgPower < VoiceConstants.silenceThresholdDB {
-            // 低于阈值，开始计时
-            if silenceStartTime == nil {
-                silenceStartTime = Date()
-            } else if let startTime = silenceStartTime {
-                let duration = Date().timeIntervalSince(startTime)
-                if duration >= VoiceConstants.silenceTimeoutSeconds && !isSilenceDetected {
-                    // 超时，自动停止（已在主线程，直接调用）
-                    isSilenceDetected = true
-                    VoiceTodoLog.voice.info("recording.silence_detected id=\(self.recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) thresholdDB=\(VoiceConstants.silenceThresholdDB)")
-                    let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-                    Telemetry.record(.recordingOutcome(outcome: .silenceTimeout, durationMS: durationMS, transcript: transcript))
-                    stopRecording()
-                }
-            }
-        } else {
-            // 高于阈值，重置计时
-            silenceStartTime = nil
         }
     }
 }
