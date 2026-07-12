@@ -489,15 +489,17 @@ private enum HomeLayoutMetrics {
     static let calendarFixedSectionHeight: CGFloat = 90
     /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
     static let dayRowMinHeight: CGFloat = 14
-    /// 底部浮动操作簇的可视高度：FAB 高度 + BottomTabBar 自身底部 padding。
+    /// 底部 VoiceFAB 的可视高度：FAB 直径 + 底部 padding。
     static let bottomBarHeight: CGFloat = WarmSize.fab + WarmSpacing.md
     /// 底部列表渐隐只负责贴近底部浮动操作簇的过渡，不能覆盖到中部 todo 卡片。
     static let bottomListFadeHeight: CGFloat = 40
     /// 列表底部滚动留白，用 contentMargins 作用在真实 scroll content 上，而不是追加假 Section。
     /// 组成：底部操作簇高度 + 渐隐区 + 额外呼吸空间，确保最后一项能完整停在按钮上方。
     /// 调参规则：
-    /// - 改 BottomTabBar 布局（HStack 高度、padding、Tab 簇尺寸）时必须重新测量 safeAreaInset 实占高度。
+    /// - 改 VoiceFAB 布局（直径、padding）时必须重新测量 safeAreaInset 实占高度。
     static let listBottomInset: CGFloat = bottomBarHeight + bottomListFadeHeight + WarmSpacing.xl
+    /// 空状态 top inset：加大让内容接近屏幕视觉中心（~40-45% 高度）。
+    static let emptyStateTopInset: CGFloat = 80
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
@@ -692,6 +694,7 @@ private enum VoiceOverLabel {
 
 private struct HomeSelectedDayListView: View {
     let state: HomeCalendarState
+    let selectedBottomTab: BottomTab
     @Binding var cardAppeared: Set<UUID>
     let onToggleTodo: (UUID) -> Void
     let onToggleOccurrence: (TodoOccurrenceData) -> Void
@@ -745,15 +748,23 @@ private struct HomeSelectedDayListView: View {
     }
 
     private var homeGlobalEmptyRow: some View {
-        // 空状态只做文案引导，主要输入入口由底部 FAB + 输入面板承载。
-        ProductEmptyStateView(
-            icon: "sparkles",
-            title: String(localized: "empty.home.title"),
-            message: String(localized: "empty.home.message")
-        )
+        // 空状态：去卡片容器，内容直接坐背景上；加向下箭头引导视线到 FAB；
+        // top inset 加大让内容接近屏幕视觉中心（~40-45% 高度）。
+        VStack(spacing: WarmSpacing.lg) {
+            ProductEmptyStateView(
+                icon: "sparkles",
+                title: String(localized: "empty.home.title"),
+                message: String(localized: "empty.home.message"),
+                cardless: true
+            )
+            Image(systemName: "arrow.down")
+                .font(.system(size: 20, weight: .light))
+                .foregroundColor(WarmTheme.primary.opacity(0.35))
+                .accessibilityHidden(true)
+        }
         .accessibilityIdentifier("EmptyState")
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.sm, trailing: WarmSpacing.lg))
+        .listRowInsets(EdgeInsets(top: HomeLayoutMetrics.emptyStateTopInset, leading: WarmSpacing.lg, bottom: WarmSpacing.sm, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
     }
 
@@ -763,7 +774,7 @@ private struct HomeSelectedDayListView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(WarmTheme.primary)
 
-            Text(String(localized: "empty.day.title"))
+            Text(String(localized: selectedBottomTab == .today ? "empty.day.today" : "empty.day.title"))
                 .font(WarmFont.body(15))
                 .foregroundColor(WarmTheme.textSecondary)
 
@@ -786,12 +797,15 @@ private struct HomeSelectedDayListView: View {
         HStack(spacing: WarmSpacing.xs) {
             Text(title)
                 .font(WarmFont.headline(15))
-            Text("\(count)")
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.primaryDark)
-                .padding(.horizontal, WarmSpacing.xs)
-                .padding(.vertical, WarmSpacing.xxs)
-                .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+            // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态
+            if count > 0 {
+                Text("\(count)")
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.primaryDark)
+                    .padding(.horizontal, WarmSpacing.xs)
+                    .padding(.vertical, WarmSpacing.xxs)
+                    .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+            }
         }
         .foregroundColor(WarmTheme.textSecondary)
         .textCase(nil)
@@ -1074,11 +1088,11 @@ struct HomeView<Store: HomeTodoStore>: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                BottomTabBar(
-                    selectedTab: $selectedBottomTab,
-                    isFABDisabled: isInputEntryDisabled,
-                    onFABTap: { openVoiceInputPanel() }
+                VoiceFAB(
+                    isDisabled: isInputEntryDisabled,
+                    onTap: { openVoiceInputPanel() }
                 )
+                .opacity(showInputPanel ? 0 : 1)
             }
             // 底部输入面板（从底部滑出 + 遮罩）
             .overlay(alignment: .bottom) {
@@ -1139,6 +1153,15 @@ struct HomeView<Store: HomeTodoStore>: View {
                 isFallbackMode = true
                 switchInputPanelMode(toKeyboard: true)
             }
+            .onChange(of: coordinator.didAutoFinishDueToSilence) { oldValue, didAutoFinish in
+                // 静音自动提交：用户说完话 1.5s 后自动触发 Send 流程，
+                // 等效于用户手动点"Done"按钮——复用 handlePanelSend 走同一条处理路径。
+                // 若 isRecording 已为 false（看门狗超时已收敛），静音信号到达太晚——
+                // 此时调 handlePanelSend 会走 else 分支弹"录音未活跃"误导 toast，静默丢弃。
+                guard !oldValue, didAutoFinish, showInputPanel, !isKeyboardMode, coordinator.isRecording else { return }
+                coordinator.didAutoFinishDueToSilence = false
+                handlePanelSend(text: "")
+            }
             .onDisappear {
                 // 视图销毁时主动收尾异步 Task，避免它们继续访问已销毁的 @State。
                 // cancel 后统一 nil 清空，让 ARC 尽早回收（与已 nil 的 task 一致）。
@@ -1167,32 +1190,32 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                Text(formattedHomeDate(Date()))
-                    .font(WarmFont.caption(14))
-                    .foregroundColor(WarmTheme.textSecondary)
+        VStack(spacing: WarmSpacing.sm) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    Text(formattedHomeDate(Date()))
+                        .font(WarmFont.caption(14))
+                        .foregroundColor(WarmTheme.textSecondary)
 
-                // tab 感知：today 显示问候语；calendar 显示"日历"标题（改动 C）。
-                // 复用现有 tab.calendar key（"日历" / "Calendar"），不新增 localization。
-                // 字体/颜色两 tab 一致，切换无位移。
-                Text(selectedBottomTab == .today ? greetingText : String(localized: "tab.calendar"))
-                    .font(WarmFont.display(30))
-                    .foregroundColor(WarmTheme.textPrimary)
+                    Text(selectedBottomTab == .today ? greetingText : String(localized: "tab.calendar"))
+                        .font(WarmFont.display(30))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                }
+
+                Spacer()
+
+                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
+                    statsBadge
+                }
+
+                settingsButton
             }
 
-            Spacer()
-
-            // statsBadge 显隐：
-            // - store.todos 为空：彻底不渲染（无内容可统计）
-            // - calendarLoadState == .error：隐藏——缓存不可信且 fallback 每帧 O(n) 遍历 store.todos
-            //   会持续触发性能开销（用户越滑越卡）。错误态让用户先看到 retry 按钮，统计徽章次要。
-            // - 其他（loading/success/empty）：正常显示，缓存命中优先，未命中走 fallback 同步兜底。
-            if !store.todos.isEmpty && calendarLoadState != .error {
-                statsBadge
-            }
-
-            settingsButton
+            // 导航切换器：Today / Calendar 下划线样式。
+            // 方案一核心——导航退到头部（轻量），底部只留动作（FAB）。
+            viewSwitcher
         }
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.md)
@@ -1203,6 +1226,35 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
         .offset(y: headerOffset)
         .opacity(headerOpacity)
+    }
+
+    // MARK: - View Switcher
+
+    private var viewSwitcher: some View {
+        HStack(spacing: WarmSpacing.lg) {
+            switcherTab(label: String(localized: "tab.today"), tab: .today)
+            switcherTab(label: String(localized: "tab.calendar"), tab: .calendar)
+            Spacer()
+        }
+    }
+
+    private func switcherTab(label: String, tab: BottomTab) -> some View {
+        let isSelected = selectedBottomTab == tab
+        return VStack(spacing: 3) {
+            Text(label)
+                .font(WarmFont.headline(14))
+                .foregroundColor(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
+            Capsule()
+                .fill(isSelected ? WarmTheme.primary : Color.clear)
+                .frame(width: 20, height: 2)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(WarmAnimation.springFast) { selectedBottomTab = tab }
+        }
+        .accessibilityIdentifier(tab.accessibilityIdentifier)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var greetingText: String {
@@ -1429,6 +1481,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                     let listHeight = max(0, proxy.size.height - calendarHeight)
                     HomeSelectedDayListView(
                         state: state,
+                        selectedBottomTab: selectedBottomTab,
                         cardAppeared: $cardAppeared,
                         onToggleTodo: { actions.toggleTodo($0) },
                         onToggleOccurrence: { actions.toggleOccurrence($0) },
@@ -1548,6 +1601,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 isKeyboardMode: $isKeyboardMode,
                 inputText: $panelInputText,
                 isRecording: coordinator.isRecording,
+                transcript: coordinator.transcript,
+                audioLevel: coordinator.audioLevel,
                 isFallbackMode: isFallbackMode,
                 onClose: { closeInputPanel() },
                 onModeChange: { switchInputPanelMode(toKeyboard: $0) },
@@ -2107,13 +2162,11 @@ struct WarmTodoCard: View {
         }
         .padding(.horizontal, WarmSpacing.md)
         .padding(.vertical, WarmSpacing.sm)
-        // P4 修复：卡片感减重——
-        // - 移除白底 + shadow（孤岛感来源）
-        // - 改用极浅 secondaryBackground 让卡片与背景融合
-        // - 圆角 section(16) → chip(8)（与待办列表"轻分隔"语义匹配）
+        // 卡片底色：secondaryBackground 满不透明——0.5 透明度时卡片几乎融入背景，
+        // 边界"似有似无"最尴尬。提到 1.0 让 #FFF5EE 与背景 #FFFBF7 有可辨识的对比。
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.chip)
-                .fill(WarmTheme.secondaryBackground.opacity(0.5))
+                .fill(WarmTheme.secondaryBackground)
         )
         .contentShape(Rectangle())
         .onTapGesture {

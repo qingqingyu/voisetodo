@@ -33,6 +33,11 @@ final class AppCoordinator: ObservableObject {
     @Published var toastAction: (() -> Void)?
     @Published var deepLinkTodoId: UUID?
     @Published var isExtracting = false
+    /// 静音自动提交信号（true = 语音识别检测到说话后静音，已自动 finishRecording，
+    /// UI 应触发 handlePanelSend 进入处理流程）。UI 消费后复位为 false。
+    @Published var didAutoFinishDueToSilence = false
+    /// 当前音频电平 (0...1)，驱动波形动画
+    @Published var audioLevel: Float = 0
     /// 配额耗尽或用户手动进入时弹出订阅页。
     @Published var showPaywall = false
     /// 语音输入不可用（识别器初始化失败 / 资源缺失）时设为 true，通知 UI 自动切键盘模式。
@@ -122,6 +127,18 @@ final class AppCoordinator: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // 监听静音自动提交信号——转发给 UI 层触发 handlePanelSend
+        voiceInput.didAutoFinishDueToSilencePublisher
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$didAutoFinishDueToSilence)
+
+        // 监听音频电平——驱动波形动画。
+        // throttle 到 30Hz 对齐 WaveformView 的 TimelineView(.animation) 帧率，
+        // 避免 43Hz tap 回调全量触发 SwiftUI body 重算。
+        voiceInput.audioLevelPublisher
+            .throttle(for: .seconds(1.0 / 30.0), scheduler: DispatchQueue.main, latest: true)
+            .assign(to: &$audioLevel)
     }
 
     // MARK: - Public Methods

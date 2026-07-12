@@ -12,6 +12,10 @@ protocol VoiceInputProtocol: ObservableObject {
     var transcript: String { get }
     /// 错误状态
     var error: VoiceTodoError? { get }
+    /// 静音自动提交触发标志（true = 检测到说话后静音，已自动 finishRecording）
+    var didAutoFinishDueToSilence: Bool { get }
+    /// 当前音频电平 (0...1，归一化 RMS)，用于驱动波形动画
+    var audioLevel: Float { get }
     /// 当前语音识别使用的 locale（用于选择匹配的 AI prompt）
     var currentLocale: Locale { get }
 
@@ -19,6 +23,8 @@ protocol VoiceInputProtocol: ObservableObject {
     var isRecordingPublisher: AnyPublisher<Bool, Never> { get }
     var transcriptPublisher: AnyPublisher<String, Never> { get }
     var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { get }
+    var didAutoFinishDueToSilencePublisher: AnyPublisher<Bool, Never> { get }
+    var audioLevelPublisher: AnyPublisher<Float, Never> { get }
 
     /// 开始录音
     func startRecording() async throws

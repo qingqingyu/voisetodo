@@ -28,6 +28,11 @@ struct BottomInputPanelView: View {
     @Binding var isKeyboardMode: Bool
     @Binding var inputText: String
     let isRecording: Bool
+    /// 录音模式的实时转写文本（来自 SFSpeechRecognizer partial results）。
+    /// 空字符串时不显示，有内容时在波形上方展示，让用户确认"它有没有听对"。
+    let transcript: String
+    /// 当前音频电平 (0...1)，驱动波形动画
+    let audioLevel: Float
     /// 键盘模式是否由录音失败 fallback 触发。true 时显示警告 banner + 「重新尝试语音」按钮；
     /// false（手动切换）时只显示文本框 + 操作行，避免误导用户「麦克风坏了」。
     let isFallbackMode: Bool
@@ -132,57 +137,69 @@ struct BottomInputPanelView: View {
 
     @ViewBuilder
     private var recordingModeContent: some View {
-        // 状态文字：● 正在聆听 · 说出你今天要做的事
-        HStack(spacing: LayoutMetrics.statusTextSpacing) {
-            // P1: 红点脉动——用 PhaseAnimator（iOS 17+）替代 repeatForever，
-            // 避免 repeatForever 在 value 切换时无法可靠停止的 SwiftUI 已知问题。
-            // isRecording=false 时只渲染 .idle 单帧，不进入心跳循环。
-            Circle()
-                .fill(WarmTheme.urgent)
-                .frame(width: LayoutMetrics.statusDotSize, height: LayoutMetrics.statusDotSize)
-                // 不传 trigger——只让 phases 数组切换驱动 phaseAnimator，
-                // 避免 iOS 17.0-17.1 中 trigger + phases 同时变化的已知跳帧 bug。
-                // 单相位 [.idle] 依赖 iOS 17.x 当前实现：停在那一帧不循环。
-                // 若未来 SwiftUI 改成单相位退化为普通 modifier，语义仍正确（静态渲染）。
-                .phaseAnimator(
-                    isRecording ? PulsePhase.pulsePhases : [.idle]
-                ) { content, phase in
-                    content
-                        .scaleEffect(phase.scale)
-                        .opacity(phase.opacity)
-                } animation: { phase in
-                    switch phase {
-                    case .idle: return .default
-                    default: return .easeInOut(duration: 0.8)
+        // 状态文字：第一行 ● 正在聆听，第二行提示语。
+        // 拆两层避免一行挤三个元素导致基线不齐 + 提示语折行带孤立"·"。
+        // 提示语在转写出现后淡出——它的使命在用户开口前完成。
+        VStack(spacing: WarmSpacing.xs) {
+            HStack(spacing: LayoutMetrics.statusTextSpacing) {
+                // P1: 红点脉动——用 PhaseAnimator（iOS 17+）替代 repeatForever，
+                // 避免 repeatForever 在 value 切换时无法可靠停止的 SwiftUI 已知问题。
+                // isRecording=false 时只渲染 .idle 单帧，不进入心跳循环。
+                Circle()
+                    .fill(WarmTheme.urgent)
+                    .frame(width: LayoutMetrics.statusDotSize, height: LayoutMetrics.statusDotSize)
+                    .phaseAnimator(
+                        isRecording ? PulsePhase.pulsePhases : [.idle]
+                    ) { content, phase in
+                        content
+                            .scaleEffect(phase.scale)
+                            .opacity(phase.opacity)
+                    } animation: { phase in
+                        switch phase {
+                        case .idle: return .default
+                        default: return .easeInOut(duration: 0.8)
+                        }
                     }
-                }
-            Text(String(localized: "panel.listening"))
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(WarmTheme.urgent)
-            Text(String(localized: "panel.listening_hint"))
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(WarmTheme.textMuted)
+                Text(String(localized: "panel.listening"))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(WarmTheme.urgent)
+            }
+            if transcript.isEmpty {
+                Text(String(localized: "panel.listening_hint"))
+                    .font(.footnote)
+                    .foregroundColor(WarmTheme.textMuted)
+                    .transition(.opacity)
+            }
         }
         .padding(.bottom, WarmSpacing.xl)
+        .animation(.easeOut(duration: 0.2), value: transcript.isEmpty)
 
-        // 波形（红色）——放大成录音主视觉，填补"正在聆听"和操作行之间的空白。
-        WaveformView(color: WarmTheme.urgent, isActive: isRecording)
-            .frame(height: LayoutMetrics.waveformHeight)
-            .padding(.bottom, WarmSpacing.sm)
+        // 实时转写——SFSpeechRecognizer partial results，让用户确认"它有没有听对"。
+        // 空时不显示（波形填补空白）；有内容时成为面板主视觉，波形降为配角。
+        if !transcript.isEmpty {
+            Text(transcript)
+                .font(.system(size: 17, weight: .medium, design: .rounded))
+                .foregroundColor(WarmTheme.textPrimary)
+                .multilineTextAlignment(.center)
+                .lineLimit(4)
+                .padding(.horizontal, WarmSpacing.lg)
+                .padding(.bottom, WarmSpacing.md)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .animation(.easeOut(duration: 0.2), value: transcript)
+        }
 
-        // P1: 录音时长——`.monospacedDigit()` 让 0-9 等宽，避免 "00:07" → "00:12" 跳。
-        // 用语义化 `.title3` 跟随 Dynamic Type，叠加 `.monospacedDigit()` 修饰。
-        Text(formatDuration(recordingElapsed))
-            .font(.title3.weight(.bold))
-            .monospacedDigit()
-            .foregroundColor(WarmTheme.ink)
-            .padding(.bottom, LayoutMetrics.timerBottomPadding)
-            .accessibilityLabel(
-                // 格式占位符必须与所有翻译保持参数数量/位置一致；
-                // Int 在 64 位平台用 %lld，String(format) 严格按位置匹配。
-                // 翻译者注意：此 key 只允许单个 %lld 占位符，不可增减或换位。
-                String(format: String(localized: "a11y.recording_duration"), Int(recordingElapsed))
-            )
+        // 波形 + 计时器：波形接真实音量驱动，计时器缩成配角（小灰字挪到波形右边）
+        HStack(spacing: WarmSpacing.sm) {
+            WaveformView(color: WarmTheme.urgent, isActive: isRecording, audioLevel: audioLevel)
+            Text(formatDuration(recordingElapsed))
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .foregroundColor(WarmTheme.textMuted)
+                .accessibilityLabel(
+                    String(format: String(localized: "a11y.recording_duration"), Int(recordingElapsed))
+                )
+        }
+        .padding(.bottom, WarmSpacing.sm)
 
         // 操作行
         actionsRow
@@ -325,6 +342,7 @@ struct BottomInputPanelView: View {
                     .background(
                         Circle().fill(WarmTheme.ink.opacity(0.05))
                     )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("InputPanelCloseButton")
@@ -340,11 +358,11 @@ struct BottomInputPanelView: View {
                 }
             } label: {
                 HStack(spacing: WarmSpacing.xs) {
-                    Image(systemName: "paperplane.fill")
+                    Image(systemName: "checkmark")
                         // 图标用语义字体对齐文字缩放，避免 Dynamic Type XXL 下文字放大图标不变的比例失衡。
                         .font(.callout.weight(.semibold))
                         .imageScale(.medium)
-                    Text(String(localized: "panel.send_to_ai"))
+                    Text(String(localized: "panel.done"))
                         .font(.callout.weight(.bold))
                 }
                 // disabled 时前景色跟着降为半透明灰，避免白字在灰底上像"空胶囊"。
@@ -405,8 +423,6 @@ private extension BottomInputPanelView {
         static let grabHandleBottomPadding: CGFloat = WarmSpacing.md
         // 文本框最小高度（设计稿 min-height: 76px）
         static let inputMinHeight: CGFloat = 76
-        // 波形高度（从 56 放大到 80，让波形成为录音态主视觉，填补空白感）
-        static let waveformHeight: CGFloat = 80
         // 面板水平/底部 padding：来自设计稿像素值（22px），对齐 HTML 规格，
         // 故意不归 4 借数系统以匹配视觉。
         static let panelHorizontalPadding: CGFloat = 22
@@ -414,8 +430,6 @@ private extension BottomInputPanelView {
         // 录音状态文字
         static let statusDotSize: CGFloat = 8
         static let statusTextSpacing: CGFloat = 6
-        // 录音计时器底距（设计稿 18px）——波形用 WarmSpacing.sm，不共用此常量。
-        static let timerBottomPadding: CGFloat = 18
         // 键盘模式 banner（图标尺寸保留——SF Symbols 不走 Dynamic Type）
         static let bannerIconFontSize: CGFloat = 14
         // 键盘模式文本框
@@ -436,6 +450,8 @@ private extension BottomInputPanelView {
         isKeyboardMode: .constant(false),
         inputText: .constant(""),
         isRecording: true,
+        transcript: "明天下午三点开会",
+        audioLevel: 0.5,
         isFallbackMode: false,
         onClose: {},
         onModeChange: { _ in },

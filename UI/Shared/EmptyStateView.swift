@@ -23,12 +23,16 @@ struct ProductEmptyStateView: View {
     var message: String?
     var primaryAction: ProductEmptyStateAction?
     var secondaryAction: ProductEmptyStateAction?
+    /// 去掉白色卡片容器，让内容直接坐在背景上（首页空状态用 true）。
+    var cardless: Bool = false
+
+    @State private var sparkleAnimating = false
 
     var body: some View {
         content
             .padding(WarmSpacing.lg)
             .frame(maxWidth: .infinity)
-            .background(background)
+            .background(cardless ? nil : background)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ProductEmptyState")
     }
@@ -72,6 +76,10 @@ struct ProductEmptyStateView: View {
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundColor(WarmTheme.primary)
         }
+        .opacity(sparkleAnimating ? 0.6 : 1.0)
+        .animation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true), value: sparkleAnimating)
+        .onAppear { sparkleAnimating = true }
+        .onDisappear { sparkleAnimating = false }
         .accessibilityHidden(true)
     }
 

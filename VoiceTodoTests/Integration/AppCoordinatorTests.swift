@@ -588,6 +588,8 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
     @Published var isRecording = false
     @Published var transcript = ""
     @Published var error: VoiceTodoError?
+    @Published var didAutoFinishDueToSilence = false
+    @Published var audioLevel: Float = 0
     let currentLocale = Locale(identifier: "zh-Hans")
 
     /// 记录各方法被调用次数，便于区分 cancel 走的是哪条路径。
@@ -598,6 +600,8 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
     var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
     var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
     var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { $error.eraseToAnyPublisher() }
+    var didAutoFinishDueToSilencePublisher: AnyPublisher<Bool, Never> { $didAutoFinishDueToSilence.eraseToAnyPublisher() }
+    var audioLevelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
 
     func startRecording() async throws {
         isRecording = true

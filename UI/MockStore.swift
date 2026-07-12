@@ -299,11 +299,15 @@ final class MockVoiceInput: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""
     @Published var error: VoiceTodoError?
+    @Published var didAutoFinishDueToSilence: Bool = false
+    @Published var audioLevel: Float = 0
     let currentLocale: Locale = .current
 
     var isRecordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
     var transcriptPublisher: AnyPublisher<String, Never> { $transcript.eraseToAnyPublisher() }
     var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { $error.eraseToAnyPublisher() }
+    var didAutoFinishDueToSilencePublisher: AnyPublisher<Bool, Never> { $didAutoFinishDueToSilence.eraseToAnyPublisher() }
+    var audioLevelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
 
     func startRecording() async throws {}
     func stopRecording() {}

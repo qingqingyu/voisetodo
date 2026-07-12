@@ -96,9 +96,8 @@ enum WarmSize {
     /// FAB 与 tabPillSize 的直径差：FAB 是主操作，比 tab 胶囊略大形成视觉层级。
     /// 改任一个直径时必须同步评估此不变量是否仍合理。
     static let fabTabSizeDelta: CGFloat = 8
-    /// 底部 FAB 圆形按钮直径（56→60 增大热区，Apple HIG 推荐 ≥44pt）。
-    /// 与 tabPillSize 保持 fabTabSizeDelta 的层级差，FAB 视觉为主操作但不至于凸出过多。
-    static let fab: CGFloat = 60
+    /// 底部 VoiceFAB 直径（68pt——方案一：FAB 独占底部，是 app 签名按钮，比三件套时代大一圈）。
+    static let fab: CGFloat = 68
     /// 底部 tab 玻璃胶囊直径（48→52 增大热区）。
     /// 只读计算属性（Swift 计算属性必须用 static var 声明，无 setter 故不可写），
     /// 由 fab - fabTabSizeDelta 推导，不变量在编译期成立。

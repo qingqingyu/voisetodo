@@ -497,6 +497,7 @@
       }
     },
     "a11y.today_month" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1349,6 +1350,7 @@
       }
     },
     "empty.day.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1360,6 +1362,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这一天还没有安排"
+          }
+        }
+      }
+    },
+    "empty.day.today" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing scheduled today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天没有安排"
           }
         }
       }
@@ -1385,13 +1404,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Record your voice or type a sentence. VoiceTodo will turn it into todos you can confirm."
+            "value" : "Speak or type — I'll turn it into tasks."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可以录音，也可以直接输入一句话。VoiceTodo 会帮你整理成可确认的待办。"
+            "value" : "说出来或打字，我帮你整理成待办"
           }
         }
       }
@@ -2992,6 +3011,22 @@
         }
       }
     },
+    "panel.done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
     "panel.fab.record" : {
       "localizations" : {
         "en" : {
@@ -3073,6 +3108,7 @@
       }
     },
     "panel.send_to_ai" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

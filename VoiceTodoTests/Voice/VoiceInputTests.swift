@@ -39,6 +39,16 @@ final class VoiceInputTests: XCTestCase {
 
     // MARK: - 常量配置测试
 
+    func testVoiceConstantsSilenceThreshold() {
+        XCTAssertGreaterThanOrEqual(VoiceConstants.silenceThresholdDB, -45.0)
+        XCTAssertLessThanOrEqual(VoiceConstants.silenceThresholdDB, -35.0)
+    }
+
+    func testVoiceConstantsSilenceTimeout() {
+        XCTAssertGreaterThanOrEqual(VoiceConstants.silenceTimeoutSeconds, 1.0)
+        XCTAssertLessThanOrEqual(VoiceConstants.silenceTimeoutSeconds, 3.0)
+    }
+
     func testVoiceConstantsFinishRecordingWatchdogTimeout() {
         XCTAssertGreaterThanOrEqual(VoiceConstants.finishRecordingWatchdogTimeoutSeconds, 3.0)
         XCTAssertLessThanOrEqual(VoiceConstants.finishRecordingWatchdogTimeoutSeconds, 10.0)

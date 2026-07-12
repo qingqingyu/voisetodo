@@ -13,6 +13,8 @@ final class VoiceInputManager: VoiceInputProtocol {
     @Published var isRecording: Bool = false
     @Published var transcript: String = ""
     @Published var error: VoiceTodoError?
+    @Published var didAutoFinishDueToSilence: Bool = false
+    @Published var audioLevel: Float = 0
 
     // MARK: - Publisher Accessors (协议要求)
 
@@ -28,6 +30,14 @@ final class VoiceInputManager: VoiceInputProtocol {
         $error.eraseToAnyPublisher()
     }
 
+    var didAutoFinishDueToSilencePublisher: AnyPublisher<Bool, Never> {
+        $didAutoFinishDueToSilence.eraseToAnyPublisher()
+    }
+
+    var audioLevelPublisher: AnyPublisher<Float, Never> {
+        $audioLevel.eraseToAnyPublisher()
+    }
+
     // MARK: - Public Properties
 
     let currentLocale: Locale
@@ -41,10 +51,16 @@ final class VoiceInputManager: VoiceInputProtocol {
     private let audioSessionHelper = AudioSessionHelper()
     private let vocabularyProvider: any UserVocabularyProviding
 
-    // 静音检测已移除——用户打开录音面板即视为有意录音，
-    // 不应因短暂静音自动停止（2s 超时对"按完按钮才开口"的正常反应太短）。
-    // isSilenceDetected 保留作为 max-duration 自动停止的去重 flag，与静音无关。
+    // 静音自动提交：用户说完话后 1.5s 静音即自动 finishRecording + 触发提交。
+    // 仅在已有转写内容时触发——用户没说话不自动提交（避免空 transcript 送 AI）。
+    // 与旧版区别：路由到 finishRecording（等识别完成）而非 stopRecording（直接断 → 僵尸态）。
+    private var silenceStartTime: Date?
+    // max-duration + silence 共用的去重 flag，避免回调重复触发 stop
     private var isSilenceDetected = false
+    // finishRecording 去重 flag：静音自动提交调一次 finishRecording 后，
+    // HomeView 的 onChange 再触发 stopRecordingAndProcess → finishRecording 会被二次调用。
+    // 此 flag 让第二次调用安全跳过，避免重复 stop/removeTap/endAudio/deactivate。
+    private var hasFinishedRecording = false
 
     // Live Activity 相关
     private var liveActivity: Activity<RecordingActivityAttributes>?
@@ -82,6 +98,10 @@ final class VoiceInputManager: VoiceInputProtocol {
         transcript = ""
         error = nil
         isSilenceDetected = false
+        silenceStartTime = nil
+        hasFinishedRecording = false
+        didAutoFinishDueToSilence = false
+        audioLevel = 0
         recordingStartTime = startedAt
 
         // 1. 检查权限
@@ -129,13 +149,21 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 防御性移除旧 tap，避免重复安装导致 crash
         inputNode.removeTap(onBus: 0)
 
-        // 安装音频 tap 进行音量监控
+        // 在主线程捕获 recognitionRequest 的局部引用，避免 tap 回调跨 @MainActor 边界
+        // 访问 self.recognitionRequest 属性（数据竞争隐患）。
+        // SFSpeechAudioBufferRecognitionRequest.append() 本身是线程安全的（Apple 文档），
+        // 用局部引用避免属性读取的竞态即可。
+        let request = recognitionRequest
+        // 安装音频 tap：喂音频给识别器 + max-duration 检查
         inputNode.installTap(
             onBus: 0,
             bufferSize: VoiceConstants.audioBufferSize,
             format: recordingFormat
         ) { [weak self] buffer, _ in
-            // 将静音检测派发到主线程，避免与 stopRecording 竞态
+            // 必须在 tap 回调线程直接 append——SFSpeechAudioBufferRecognitionRequest
+            // 靠这个拿音频数据，不 append 识别器永远拿不到音频，转写为空。
+            request?.append(buffer)
+            // max-duration + 静音检测派发到主线程，避免与 stopRecording 竞态
             DispatchQueue.main.async {
                 self?.processAudioBuffer(buffer)
             }
@@ -216,6 +244,11 @@ final class VoiceInputManager: VoiceInputProtocol {
             VoiceTodoLog.voice.debug("recording.finish.ignored activeID=\(self.recordingSessionID ?? "none", privacy: .public) reason=not_recording")
             return
         }
+        guard !hasFinishedRecording else {
+            VoiceTodoLog.voice.debug("recording.finish.ignored activeID=\(self.recordingSessionID ?? "none", privacy: .public) reason=already_finished")
+            return
+        }
+        hasFinishedRecording = true
 
         VoiceTodoLog.voice.info("recording.finish.requested id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
 
@@ -510,6 +543,9 @@ final class VoiceInputManager: VoiceInputProtocol {
             isRecording = false
         }
         isSilenceDetected = false
+        silenceStartTime = nil
+        hasFinishedRecording = false
+        audioLevel = 0
         endLiveActivity()
         recordingSessionID = nil
     }
@@ -578,24 +614,68 @@ final class VoiceInputManager: VoiceInputProtocol {
         }
     }
 
-    /// 处理音频缓冲区。
+    /// 处理音频缓冲区：max-duration 检查 + 静音自动提交检测。
     /// 注意：此方法通过 DispatchQueue.main.async 调用，已在主线程执行。
-    /// 静音检测已移除——现仅保留硬性最大录音时长检查。
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         // 只在录音状态下处理，避免 stopRecording 后的延迟回调
         guard isRecording else { return }
-        _ = buffer  // 当前只用时间做 max-duration 检查；buffer 留参数位以便未来恢复音频分析
 
         // 硬性最大录音时长：到达即自动停止（无论在说话还是静音）
         if let start = recordingStartTime,
            Date().timeIntervalSince(start) >= VoiceConstants.maxRecordingSeconds,
            !isSilenceDetected {
-            isSilenceDetected = true  // 去重 flag，避免回调重复触发 stop
+            isSilenceDetected = true
             VoiceTodoLog.voice.info("recording.max_duration_reached id=\(self.recordingSessionID ?? "none", privacy: .public) maxSeconds=\(VoiceConstants.maxRecordingSeconds)")
             let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
             Telemetry.record(.recordingOutcome(outcome: .maxDurationReached, durationMS: durationMS, transcript: transcript))
             stopRecording()
             return
+        }
+
+        // RMS 音量计算——用于静音检测
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+        var sum: Float = 0
+        for i in 0..<frameLength {
+            sum += channelData[i] * channelData[i]
+        }
+        let rms = sqrt(sum / Float(frameLength))
+        guard rms > 0 else { return }
+        let avgPower = 20 * log10(rms)
+
+        // 归一化音频电平 (-40dB...0dB → 0...1) 驱动波形动画
+        audioLevel = max(0, min(1, (avgPower + 40) / 40))
+
+        // 静音自动提交：基于音频电平检测静音，超时后仅在已有转写内容时触发提交。
+        // 静音计时器只受音频电平控制——不受 transcript 是否为空影响。
+        // 这样识别器短暂返回空 transcript 时不会重置静音计时器，避免自动提交永不触发。
+        // transcript.isEmpty 的检查放在超时触发处：用户没说话（全程空 transcript）不自动提交。
+        //
+        // 宽限期：录音开始后 silenceTimeoutSeconds 内不启动静音检测——
+        // 用户按完按钮需要反应时间才开口，初始静音不应触发自动提交。
+        let recordingElapsed = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        let inGracePeriod = recordingElapsed < VoiceConstants.silenceTimeoutSeconds
+        if avgPower < VoiceConstants.silenceThresholdDB && !inGracePeriod {
+            if silenceStartTime == nil {
+                silenceStartTime = Date()
+            } else if let startTime = silenceStartTime {
+                let duration = Date().timeIntervalSince(startTime)
+                if duration >= VoiceConstants.silenceTimeoutSeconds && !isSilenceDetected {
+                    // 标记已处理此静音周期——即使用户没说话（transcript 为空）也要设 flag，
+                    // 否则每个后续 buffer 都会重复进入超时分支。
+                    isSilenceDetected = true
+                    // 已有转写内容才自动提交——避免用户没说话就送空 transcript 给 AI
+                    guard !transcript.isEmpty else { return }
+                    VoiceTodoLog.voice.info("recording.silence_auto_submit id=\(self.recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) transcriptChars=\(self.transcript.count)")
+                    let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+                    Telemetry.record(.recordingOutcome(outcome: .silenceTimeout, durationMS: durationMS, transcript: transcript))
+                    didAutoFinishDueToSilence = true
+                    finishRecording()
+                }
+            }
+        } else {
+            silenceStartTime = nil
         }
     }
 }
