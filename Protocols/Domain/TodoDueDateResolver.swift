@@ -43,6 +43,79 @@ enum TodoDueDateResolver {
             return nextDate(matchingWeekday: weekday, from: today, calendar: calendar)
         }
 
+        // N days from now / in N days / N天后
+        if let offset = daysOffset(in: lowercasedText, original: text) {
+            return calendar.date(byAdding: .day, value: offset, to: today)
+        }
+
+        return nil
+    }
+
+    // MARK: - Relative Days Offset
+
+    /// 英文数字词映射（"three" → 3），用于解析 "three days from now"
+    private static let englishNumberWords: [String: Int] = [
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+        "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+        "nineteen": 19, "twenty": 20, "thirty": 30
+    ]
+
+    /// 中文数字单字映射（"三" → 3），用于解析 "三天后"
+    private static let chineseNumerals: [Character: Int] = [
+        "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+        "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "两": 2
+    ]
+
+    /// 从文本中提取 "N days from now" / "in N days" / "N天后" 的天数偏移。
+    /// 支持阿拉伯数字和英文/中文拼写数字。
+    private static func daysOffset(in lowercased: String, original: String) -> Int? {
+        // 英文数字词："three days from now", "in five days"
+        for (word, value) in englishNumberWords {
+            if lowercased.contains("\(word) days") || lowercased.contains("\(word) day ") {
+                return value
+            }
+        }
+
+        // 英文阿拉伯数字："3 days from now", "in 3 days", "3 days later"
+        if let regex = try? NSRegularExpression(pattern: #"(?:in\s+|)(\d+)\s+days?\b"#, options: []) {
+            let nsRange = NSRange(location: 0, length: lowercased.utf16.count)
+            if let match = regex.firstMatch(in: lowercased, options: [], range: nsRange), match.numberOfRanges > 1,
+               let captureRange = Range(match.range(at: 1), in: lowercased) {
+                return Int(lowercased[captureRange])
+            }
+        }
+
+        // 中文数字："三天后", "五天之后"
+        if let idx = original.range(of: "天") {
+            let before = original[..<idx.lowerBound]
+            if let lastChar = before.last, let value = chineseNumerals[lastChar] {
+                let after = original[idx.upperBound...]
+                if after.hasPrefix("后") || after.hasPrefix("後") ||
+                   after.hasPrefix("之后") || after.hasPrefix("之後") ||
+                   after.hasPrefix("以后") || after.hasPrefix("以後") {
+                    return value
+                }
+            }
+        }
+
+        // 中文阿拉伯数字："3天后", "5天之后"
+        if let regex = try? NSRegularExpression(pattern: #"(\d+)天"#, options: []) {
+            let nsRange = NSRange(location: 0, length: original.utf16.count)
+            if let match = regex.firstMatch(in: original, options: [], range: nsRange), match.numberOfRanges > 1,
+               let captureRange = Range(match.range(at: 1), in: original),
+               let n = Int(original[captureRange]) {
+                // 确认后面跟着 后/之后/以后
+                let after = original[Range(match.range, in: original)!.upperBound...]
+                if after.hasPrefix("后") || after.hasPrefix("後") ||
+                   after.hasPrefix("之后") || after.hasPrefix("之後") ||
+                   after.hasPrefix("以后") || after.hasPrefix("以後") {
+                    return n
+                }
+            }
+        }
+
         return nil
     }
 

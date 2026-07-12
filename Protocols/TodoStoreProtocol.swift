@@ -48,6 +48,16 @@ protocol TodoBasicUpdating {
 protocol TodoDetailUpdating {
     /// 原子更新待办详情（基础字段 + 重复规则）
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
+
+    /// 完整更新（含 dueDate + detail + hasDueTime，详情页用）
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
+}
+
+extension TodoDetailUpdating {
+    /// 默认实现：忽略 dueDate/detail/hasDueTime，回退到基础 update
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+        try update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
+    }
 }
 
 /// 重复规则写入能力。
@@ -145,7 +155,7 @@ protocol TodoRefreshing {
 protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing {}
 
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新和 pending 替换。
-protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing {}
+protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting {}
 
 /// Pending 恢复流程只需要读取 pending 与删除无效 pending。
 protocol PendingRecoveryTodoStore: PendingTranscriptReadable, TodoDeletionWriting {}

@@ -289,23 +289,46 @@ final class DomainModuleTests: XCTestCase {
     // MARK: - TodoTimeDisplayComposer
 
     func testTimeDisplayComposerReturnsNilWhenAllInputsNil() {
-        XCTAssertNil(TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: nil, dueHint: nil))
+        XCTAssertNil(TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: nil, timeText: nil, dueHint: nil))
     }
 
     func testTimeDisplayComposerReturnsNilWhenAllInputsEmptyOrWhitespace() {
-        XCTAssertNil(TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: "   ", dueHint: ""))
+        XCTAssertNil(TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: nil, timeText: "   ", dueHint: ""))
     }
 
     func testTimeDisplayComposerFallsBackToDueHintWhenStructuredFieldsAbsent() {
         XCTAssertEqual(
-            TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: nil, dueHint: "明天下午3点"),
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: nil, timeText: nil, dueHint: "明天下午3点"),
             "明天下午3点"
         )
     }
 
+    func testTimeDisplayComposerUsesRelativeDateOverDueHint() {
+        // Bug 2 核心修复：有 dueDate 时用相对日期，不再透传 LLM 的 dueHint 原文
+        XCTAssertEqual(
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: "明天", timeText: nil, dueHint: "next Wednesday"),
+            "明天"
+        )
+    }
+
+    func testTimeDisplayComposerJoinsRelativeDateAndTime() {
+        XCTAssertEqual(
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: "明天", timeText: "15:00", dueHint: nil),
+            "明天 · 15:00"
+        )
+    }
+
+    func testTimeDisplayComposerSkipsRelativeDateWhenRecurrencePresent() {
+        // recurrenceRule 自带日期范围，relativeDateText 不重复展示
+        let rule = RecurrenceRule(frequency: .daily)
+        let result = TodoTimeDisplayComposer.compose(recurrenceRule: rule, relativeDateText: "明天", timeText: "15:00", dueHint: nil)
+        XCTAssertNotNil(result)
+        XCTAssertFalse(result?.contains("明天") ?? true, "should not duplicate relative date when recurrence present")
+    }
+
     func testTimeDisplayComposerUsesOnlyTimeTextWhenNoRecurrence() {
         XCTAssertEqual(
-            TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: "15:00", dueHint: "下午三点"),
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: nil, timeText: "15:00", dueHint: "下午三点"),
             "15:00"
         )
     }
@@ -313,7 +336,7 @@ final class DomainModuleTests: XCTestCase {
     func testTimeDisplayComposerJoinsRecurrenceAndTimeText() throws {
         let rule = RecurrenceRule(frequency: .daily)
         let result = try XCTUnwrap(
-            TodoTimeDisplayComposer.compose(recurrenceRule: rule, timeText: "15:00", dueHint: nil)
+            TodoTimeDisplayComposer.compose(recurrenceRule: rule, relativeDateText: nil, timeText: "15:00", dueHint: nil)
         )
         XCTAssertTrue(result.hasPrefix(rule.displayTextWithEndDate), "result should start with recurrence text: \(result)")
         XCTAssertTrue(result.contains("15:00"), "result should contain time text: \(result)")
@@ -321,18 +344,87 @@ final class DomainModuleTests: XCTestCase {
     }
 
     func testTimeDisplayComposerDropsDueHintWhenStructuredFieldsPresent() throws {
-        // Review 决策：结构化字段存在时丢弃 dueHint，避免冗余串。
         let rule = RecurrenceRule(frequency: .daily)
         let result = try XCTUnwrap(
-            TodoTimeDisplayComposer.compose(recurrenceRule: rule, timeText: "15:00", dueHint: "每天下午三点")
+            TodoTimeDisplayComposer.compose(recurrenceRule: rule, relativeDateText: nil, timeText: "15:00", dueHint: "每天下午三点")
         )
         XCTAssertFalse(result.contains("每天下午三点"), "should drop redundant dueHint: \(result)")
     }
 
     func testTimeDisplayComposerTrimsWhitespaceOnInputs() throws {
         XCTAssertEqual(
-            TodoTimeDisplayComposer.compose(recurrenceRule: nil, timeText: "  15:00  ", dueHint: "  \n  "),
+            TodoTimeDisplayComposer.compose(recurrenceRule: nil, relativeDateText: nil, timeText: "  15:00  ", dueHint: "  \n  "),
             "15:00"
         )
+    }
+
+    // MARK: - TodoRelativeDateFormatter
+
+    func testRelativeDateFormatterToday() {
+        let result = TodoRelativeDateFormatter.format(Date())
+        XCTAssertNotNil(result)
+        XCTAssertFalse(result.isEmpty)
+    }
+
+    func testRelativeDateFormatterTomorrow() {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let result = TodoRelativeDateFormatter.format(tomorrow)
+        XCTAssertNotNil(result)
+        XCTAssertFalse(result.isEmpty)
+    }
+
+    func testRelativeDateFormatterConsistency() {
+        // 同一个日期多次格式化结果应一致（确定性）
+        let date = Calendar.current.date(byAdding: .day, value: 3, to: Date())!
+        let r1 = TodoRelativeDateFormatter.format(date)
+        let r2 = TodoRelativeDateFormatter.format(date)
+        XCTAssertEqual(r1, r2)
+    }
+
+    // MARK: - TodoDueDateResolver (N days offset)
+
+    func testDueDateResolverParsesNDaysFromNow() throws {
+        let reference = Date()
+        let calendar = Calendar.current
+        let result = try XCTUnwrap(TodoDueDateResolver.resolve(
+            dueHint: "3 days from now", referenceDate: reference, calendar: calendar
+        ))
+        XCTAssertEqual(calendar.startOfDay(for: result), calendar.startOfDay(for: calendar.date(byAdding: .day, value: 3, to: reference)!))
+    }
+
+    func testDueDateResolverParsesSpelledOutDays() throws {
+        let reference = Date()
+        let calendar = Calendar.current
+        let result = try XCTUnwrap(TodoDueDateResolver.resolve(
+            dueHint: "three days from now", referenceDate: reference, calendar: calendar
+        ))
+        XCTAssertEqual(calendar.startOfDay(for: result), calendar.startOfDay(for: calendar.date(byAdding: .day, value: 3, to: reference)!))
+    }
+
+    func testDueDateResolverParsesInNDays() throws {
+        let reference = Date()
+        let calendar = Calendar.current
+        let result = try XCTUnwrap(TodoDueDateResolver.resolve(
+            dueHint: "in 5 days", referenceDate: reference, calendar: calendar
+        ))
+        XCTAssertEqual(calendar.startOfDay(for: result), calendar.startOfDay(for: calendar.date(byAdding: .day, value: 5, to: reference)!))
+    }
+
+    func testDueDateResolverParsesChineseDaysOffset() throws {
+        let reference = Date()
+        let calendar = Calendar.current
+        let result = try XCTUnwrap(TodoDueDateResolver.resolve(
+            dueHint: "三天后", referenceDate: reference, calendar: calendar
+        ))
+        XCTAssertEqual(calendar.startOfDay(for: result), calendar.startOfDay(for: calendar.date(byAdding: .day, value: 3, to: reference)!))
+    }
+
+    func testDueDateResolverParsesChineseDigitDaysOffset() throws {
+        let reference = Date()
+        let calendar = Calendar.current
+        let result = try XCTUnwrap(TodoDueDateResolver.resolve(
+            dueHint: "5天之后", referenceDate: reference, calendar: calendar
+        ))
+        XCTAssertEqual(calendar.startOfDay(for: result), calendar.startOfDay(for: calendar.date(byAdding: .day, value: 5, to: reference)!))
     }
 }

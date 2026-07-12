@@ -2055,6 +2055,7 @@ struct WarmTodoCard: View {
         }
         return TodoTimeDisplayComposer.compose(
             recurrenceRule: todo.recurrenceRule,
+            relativeDateText: todo.dueDate.map { TodoRelativeDateFormatter.format($0) },
             timeText: timeText,
             dueHint: todo.dueHint
         )

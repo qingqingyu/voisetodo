@@ -6,50 +6,38 @@ private func formattedDetailDate(_ date: Date) -> String {
 }
 
 /// 待办详情页 - 温暖主题风格
-/// 支持编辑标题、分类、优先级、时间提示，以及删除
+/// 支持编辑标题、备注、分类、优先级、日期（DatePicker）、重复，以及标记完成/删除
 struct TodoDetailView<Store: TodoListReadable>: View {
-    // MARK: - Properties
-
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var coordinator: AppCoordinator
     @ObservedObject var store: Store
     let todo: TodoItemData
 
     @State private var editedTitle: String
+    @State private var editedDetail: String
     @State private var editedCategory: TodoCategory
     @State private var editedPriority: Priority
-    @State private var editedDueHint: String
+    @State private var editedDueDate: Date?
     @State private var editedRecurrenceFrequency: RecurrenceFrequency?
     @State private var editedWeekdays: Set<Int>
     @State private var editedDayOfMonth: String
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
 
-    // MARK: - Initialization
-
     init(store: Store, todo: TodoItemData) {
         self.store = store
         self.todo = todo
         _editedTitle = State(initialValue: todo.title)
+        _editedDetail = State(initialValue: todo.detail ?? "")
         _editedCategory = State(initialValue: todo.category)
         _editedPriority = State(initialValue: todo.priority)
-        _editedDueHint = State(initialValue: todo.dueHint ?? "")
+        _editedDueDate = State(initialValue: todo.dueDate)
         _editedRecurrenceFrequency = State(initialValue: todo.recurrenceRule?.frequency)
         _editedWeekdays = State(initialValue: Set(todo.recurrenceRule?.weekdays ?? []))
         _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
     }
 
-    // MARK: - Body
-
-    private var categoryColor: Color {
-        WarmTheme.color(for: editedCategory)
-    }
-
-    private var canSave: Bool {
-        hasChanges &&
-            !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            recurrenceValidationMessage == nil
-    }
+    private var categoryColor: Color { WarmTheme.color(for: editedCategory) }
 
     var body: some View {
         ZStack {
@@ -57,18 +45,16 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
             ScrollView {
                 VStack(spacing: WarmSpacing.lg) {
-                    // 标题编辑 — 视觉焦点，更大的 padding 和装饰
+                    // 标题
                     VStack(alignment: .leading) {
                         HStack(spacing: WarmSpacing.xs) {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(categoryColor)
                                 .frame(width: 4, height: WarmSpacing.xl)
-
                             Text(String(localized: "detail.section.title"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
                         }
-
                         TextField(String(localized: "detail.title_placeholder"), text: $editedTitle, axis: .vertical)
                             .font(WarmFont.display(22))
                             .foregroundColor(WarmTheme.textPrimary)
@@ -83,30 +69,42 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             .shadow(color: WarmTheme.shadowMedium, radius: 10, x: 0, y: 5)
                     )
 
-                    // 分类选择
+                    // 备注（issue 3：新增 Notes 字段）
+                    detailCard {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                            Text(String(localized: "detail.section.notes"))
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
+                            TextField(String(localized: "detail.notes_placeholder"), text: $editedDetail, axis: .vertical)
+                                .font(WarmFont.body(16))
+                                .foregroundColor(WarmTheme.textPrimary)
+                                .lineLimit(1...5)
+                                .onChange(of: editedDetail) { _, _ in checkForChanges() }
+                        }
+                    }
+
+                    // 分类
                     detailCard {
                         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             Text(String(localized: "detail.section.category"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
-
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: WarmSpacing.xs) {
-                                    ForEach(TodoCategory.allCases, id: \.self) { category in
-                                        categoryChip(category)
+                                    ForEach(TodoCategory.allCases, id: \.self) { cat in
+                                        categoryChip(cat)
                                     }
                                 }
                             }
                         }
                     }
 
-                    // 优先级选择
+                    // 优先级（issue 7：绿色改橙色系；issue 8：统一实心填充）
                     detailCard {
                         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             Text(String(localized: "detail.section.priority"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
-
                             HStack(spacing: WarmSpacing.sm) {
                                 priorityButton(.normal, label: String(localized: "detail.priority.normal"), icon: "minus")
                                 priorityButton(.high, label: String(localized: "detail.priority.high"), icon: "exclamationmark")
@@ -114,48 +112,86 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                         }
                     }
 
-                    // 时间提示
+                    // 日期（issue 1：DatePicker 替换 hint TextField）
                     detailCard {
                         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                            Text(String(localized: "detail.section.due_hint"))
+                            Text(String(localized: "detail.section.due_date"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
-                            TextField(String(localized: "detail.due_hint_placeholder"), text: $editedDueHint)
-                                .font(WarmFont.body(17))
-                                .foregroundColor(WarmTheme.textPrimary)
-                                .onChange(of: editedDueHint) { _, _ in checkForChanges() }
+                            if editedDueDate != nil {
+                                HStack {
+                                    DatePicker(
+                                        "",
+                                        selection: Binding(
+                                            get: { editedDueDate ?? Date() },
+                                            set: { editedDueDate = $0; checkForChanges() }
+                                        ),
+                                        displayedComponents: .date
+                                    )
+                                    .datePickerStyle(.compact)
+                                    .labelsHidden()
+                                    Spacer()
+                                    Button {
+                                        editedDueDate = nil
+                                        checkForChanges()
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 18))
+                                            .foregroundColor(WarmTheme.textMuted)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            } else {
+                                Button {
+                                    self.editedDueDate = Calendar.current.startOfDay(for: Date())
+                                    checkForChanges()
+                                } label: {
+                                    HStack(spacing: WarmSpacing.xs) {
+                                        Image(systemName: "calendar")
+                                            .font(.system(size: 15))
+                                        Text(String(localized: "detail.add_date"))
+                                            .font(WarmFont.body(16))
+                                    }
+                                    .foregroundColor(WarmTheme.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            // 语音原文备注（保留但不编辑）
+                            if let hint = todo.dueHint, !hint.isEmpty {
+                                Text(String(format: String(localized: "detail.voice_hint_format"), hint))
+                                    .font(WarmFont.caption(12))
+                                    .foregroundColor(WarmTheme.textMuted)
+                            }
                         }
                     }
 
                     recurrenceEditorCard
 
-                    // 元信息
-                    detailCard {
-                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                            HStack {
-                                Text(String(localized: "detail.created_at"))
-                                    .font(WarmFont.body(15))
-                                    .foregroundColor(WarmTheme.textPrimary)
-                                Spacer()
-                                Text(formattedDetailDate(todo.createdAt))
-                                    .font(WarmFont.caption(14))
-                                    .foregroundColor(WarmTheme.textSecondary)
+                    // 标记完成（issue 4：新增）
+                    if !todo.isCompleted {
+                        Button {
+                            coordinator.toggleTodo(todo.id)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: WarmSpacing.xs) {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text(String(localized: "detail.mark_done"))
                             }
-
-                            if todo.needsAIProcessing {
-                                HStack(spacing: WarmSpacing.xs) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(WarmTheme.warning)
-                                    Text(String(localized: "detail.needs_ai"))
-                                        .font(WarmFont.body(14))
-                                        .foregroundColor(WarmTheme.warning)
-                                }
-                            }
+                            .font(WarmFont.body(16))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, WarmSpacing.md)
+                            .background(
+                                RoundedRectangle(cornerRadius: WarmRadius.section)
+                                    .fill(WarmTheme.primary)
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
 
-                    // 删除按钮
+                    // 删除（issue 10：加大间距）
                     Button(action: { showDeleteConfirmation = true }) {
                         HStack(spacing: WarmSpacing.xs) {
                             Image(systemName: "trash")
@@ -170,32 +206,36 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .fill(WarmTheme.urgent.opacity(0.08))
                         )
                     }
-                    .padding(.top, WarmSpacing.xs)
+                    .buttonStyle(.plain)
+                    .padding(.top, WarmSpacing.xl)
+
+                    // 元信息（issue 9：降为底部小字，不做卡片）
+                    VStack(spacing: WarmSpacing.xxs) {
+                        if todo.needsAIProcessing {
+                            HStack(spacing: WarmSpacing.xs) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(WarmTheme.warning)
+                                Text(String(localized: "detail.needs_ai"))
+                                    .font(WarmFont.body(13))
+                                    .foregroundColor(WarmTheme.warning)
+                            }
+                        }
+                        Text("\(String(localized: "detail.created_at")) \(formattedDetailDate(todo.createdAt))")
+                            .font(WarmFont.caption(12))
+                            .foregroundColor(WarmTheme.textMuted)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, WarmSpacing.sm)
                 }
                 .padding(.horizontal, WarmSpacing.xl)
-                .padding(.top, WarmSpacing.md)
+                .padding(.top, WarmSpacing.xl) // issue 6：加大 top padding 防 Title 被导航栏截断
                 .padding(.bottom, 40)
             }
         }
         .navigationTitle(String(localized: "detail.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(hasChanges)
-        .toolbar {
-            if hasChanges {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(String(localized: "detail.discard")) { dismiss() }
-                        .font(WarmFont.body(16))
-                        .foregroundColor(WarmTheme.textSecondary)
-                }
-            }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(String(localized: "detail.save")) { saveChanges() }
-                        .font(WarmFont.headline(16))
-                        .foregroundColor(canSave ? WarmTheme.primary : WarmTheme.textMuted)
-                        .disabled(!canSave)
-                }
-            }
+        // issue 2：砍掉 Save/Discard，返回即自动保存
+        .onDisappear { saveIfChanged() }
         .alert(String(localized: "detail.confirm_delete"), isPresented: $showDeleteConfirmation) {
             Button(String(localized: "detail.cancel"), role: .cancel) {}
             Button(String(localized: "detail.delete"), role: .destructive) { deleteTodo() }
@@ -207,77 +247,50 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     // MARK: - Card Wrapper
 
     private func detailCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading) {
-            content()
-        }
-        .padding(WarmSpacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.section)
-                .fill(Color.white)
-                .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
-        )
+        VStack(alignment: .leading) { content() }
+            .padding(WarmSpacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.section)
+                    .fill(Color.white)
+                    .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
+            )
     }
 
-    // MARK: - Category Chip
+    // MARK: - Chips (issue 8：统一实心填充选中样式)
 
     private func categoryChip(_ category: TodoCategory) -> some View {
         let isSelected = editedCategory == category
         return Button {
-            withAnimation(WarmAnimation.springStandard) {
-                editedCategory = category
-                checkForChanges()
-            }
+            withAnimation(WarmAnimation.springStandard) { editedCategory = category; checkForChanges() }
         } label: {
             HStack(spacing: WarmSpacing.xxs) {
-                Text(category.emoji)
-                    .font(.system(size: 14))
-                Text(category.displayName)
-                    .font(WarmFont.caption(13))
+                Text(category.emoji).font(.system(size: 14))
+                Text(category.displayName).font(WarmFont.caption(13))
             }
             .padding(.horizontal, WarmSpacing.sm)
             .padding(.vertical, WarmSpacing.xs)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .fill(isSelected ? WarmTheme.primary.opacity(0.15) : WarmTheme.secondaryBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .stroke(isSelected ? WarmTheme.primary : Color.clear, lineWidth: 1.5)
-            )
-            .foregroundColor(isSelected ? WarmTheme.primaryDark : WarmTheme.textSecondary)
+            .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
+            .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Priority Button
-
+    // issue 7：Normal=橙色，High=红色，不用绿色
     private func priorityButton(_ priority: Priority, label: String, icon: String) -> some View {
         let isSelected = editedPriority == priority
-        let color = priority == .high ? WarmTheme.urgent : WarmTheme.success
+        let color = priority == .high ? WarmTheme.urgent : WarmTheme.primary
         return Button {
-            withAnimation(WarmAnimation.springStandard) {
-                editedPriority = priority
-                checkForChanges()
-            }
+            withAnimation(WarmAnimation.springStandard) { editedPriority = priority; checkForChanges() }
         } label: {
             HStack(spacing: WarmSpacing.xs) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(label)
-                    .font(WarmFont.body(15))
+                Image(systemName: icon).font(.system(size: 14, weight: .semibold))
+                Text(label).font(WarmFont.body(15))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, WarmSpacing.sm)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .fill(isSelected ? color.opacity(0.12) : WarmTheme.secondaryBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
-            )
-            .foregroundColor(isSelected ? color : WarmTheme.textSecondary)
+            .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? color : WarmTheme.secondaryBackground))
+            .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
         }
         .buttonStyle(.plain)
     }
@@ -300,9 +313,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
                 if editedRecurrenceFrequency == .weekly {
                     HStack(spacing: WarmSpacing.xs) {
-                        ForEach(1...7, id: \.self) { weekday in
-                            weekdayButton(weekday)
-                        }
+                        ForEach(1...7, id: \.self) { weekday in weekdayButton(weekday) }
                     }
                 }
 
@@ -318,10 +329,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             .frame(width: 48)
                             .padding(.horizontal, WarmSpacing.xs)
                             .padding(.vertical, WarmSpacing.xs)
-                            .background(
-                                RoundedRectangle(cornerRadius: WarmRadius.card)
-                                    .fill(WarmTheme.secondaryBackground)
-                            )
+                            .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(WarmTheme.secondaryBackground))
                             .onChange(of: editedDayOfMonth) { _, _ in checkForChanges() }
                         Text(String(localized: "recurrence.monthly_day_suffix"))
                             .font(WarmFont.body(15))
@@ -357,10 +365,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, WarmSpacing.xs)
-                .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.card)
-                        .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
-                )
+                .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
         }
         .buttonStyle(.plain)
     }
@@ -368,11 +373,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     private func weekdayButton(_ weekday: Int) -> some View {
         let isSelected = editedWeekdays.contains(weekday)
         return Button {
-            if isSelected {
-                editedWeekdays.remove(weekday)
-            } else {
-                editedWeekdays.insert(weekday)
-            }
+            if isSelected { editedWeekdays.remove(weekday) } else { editedWeekdays.insert(weekday) }
             checkForChanges()
         } label: {
             Text(shortWeekdayName(weekday))
@@ -380,10 +381,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
                 .frame(maxWidth: .infinity)
                 .frame(height: WarmSpacing.xxl)
-                .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.chip)
-                        .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
-                )
+                .background(RoundedRectangle(cornerRadius: WarmRadius.chip).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
         }
         .buttonStyle(.plain)
     }
@@ -402,47 +400,32 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     private var editedRecurrenceRule: RecurrenceRule? {
         switch editedRecurrenceFrequency {
-        case .daily:
-            return RecurrenceRule(frequency: .daily)
-        case .weekly:
-            return editedWeekdays.isEmpty ? nil : RecurrenceRule(frequency: .weekly, weekdays: Array(editedWeekdays))
+        case .daily: return RecurrenceRule(frequency: .daily)
+        case .weekly: return editedWeekdays.isEmpty ? nil : RecurrenceRule(frequency: .weekly, weekdays: Array(editedWeekdays))
         case .monthly:
-            guard let day = Int(editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  (1...31).contains(day) else {
-                return nil
-            }
+            guard let day = Int(editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)), (1...31).contains(day) else { return nil }
             return RecurrenceRule(frequency: .monthly, dayOfMonth: day)
-        case nil:
-            return nil
+        case nil: return nil
         }
     }
 
     private var recurrenceValidationMessage: String? {
         switch editedRecurrenceFrequency {
-        case .weekly:
-            return editedWeekdays.isEmpty ? String(localized: "recurrence.validation.weekly_required") : nil
+        case .weekly: return editedWeekdays.isEmpty ? String(localized: "recurrence.validation.weekly_required") : nil
         case .monthly:
             let trimmed = editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let day = Int(trimmed), (1...31).contains(day) else {
-                return String(localized: "recurrence.validation.monthly_day")
-            }
+            guard let day = Int(trimmed), (1...31).contains(day) else { return String(localized: "recurrence.validation.monthly_day") }
             return nil
-        case .daily, nil:
-            return nil
+        case .daily, nil: return nil
         }
     }
 
     private var recurrenceStateChanged: Bool {
-        if editedRecurrenceFrequency != todo.recurrenceRule?.frequency {
-            return true
-        }
+        if editedRecurrenceFrequency != todo.recurrenceRule?.frequency { return true }
         switch editedRecurrenceFrequency {
-        case .weekly:
-            return editedWeekdays != Set(todo.recurrenceRule?.weekdays ?? [])
-        case .monthly:
-            return editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines) != (todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
-        case .daily, nil:
-            return false
+        case .weekly: return editedWeekdays != Set(todo.recurrenceRule?.weekdays ?? [])
+        case .monthly: return editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines) != (todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
+        case .daily, nil: return false
         }
     }
 
@@ -450,37 +433,33 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     private func checkForChanges() {
         hasChanges = editedTitle != todo.title ||
+                     editedDetail != (todo.detail ?? "") ||
                      editedCategory != todo.category ||
                      editedPriority != todo.priority ||
-                     editedDueHint != (todo.dueHint ?? "") ||
+                     editedDueDate != todo.dueDate ||
                      recurrenceStateChanged
     }
 
-    private func saveChanges() {
+    private func saveIfChanged() {
+        guard hasChanges else { return }
         guard recurrenceValidationMessage == nil else {
             coordinator.showToast(message: recurrenceValidationMessage ?? ErrorMessages.storageError, style: .warning)
             return
         }
-
         do {
-            let newCategory = editedCategory != todo.category ? editedCategory : nil
-            let newPriority = editedPriority != todo.priority ? editedPriority : nil
-            let newDueHint: String? = editedDueHint != (todo.dueHint ?? "") ? editedDueHint : nil
-
-            try coordinator.updateTodo(
+            try coordinator.updateTodoDetail(
                 todo.id,
                 title: editedTitle,
-                category: newCategory,
-                priority: newPriority,
-                dueHint: newDueHint,
+                detail: editedDetail.isEmpty ? nil : editedDetail,
+                category: editedCategory != todo.category ? editedCategory : nil,
+                priority: editedPriority != todo.priority ? editedPriority : nil,
+                dueDate: editedDueDate,
+                hasDueTime: false,
+                dueHint: nil,
                 recurrenceRule: editedRecurrenceRule
             )
-
-            coordinator.showToast(message: ErrorMessages.todoSaved, style: .success)
-            dismiss()
         } catch {
-            VoiceTodoLog.store.error("ui.detail.save_failed id=\(todo.id.uuidString, privacy: .public) titleChars=\(editedTitle.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            coordinator.showToast(message: ErrorMessages.todoSaveFailedMessage(error.localizedDescription), style: .warning)
+            VoiceTodoLog.store.error("ui.detail.save_failed id=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
     }
 

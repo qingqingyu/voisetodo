@@ -610,6 +610,47 @@ final class AppCoordinator: ObservableObject {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    /// 切换完成状态（详情页 "Mark as Done" 用）
+    func toggleTodo(_ id: UUID) {
+        do {
+            try store.toggleComplete(id)
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            VoiceTodoLog.store.error("coordinator.toggle_failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// 详情页完整更新——支持 dueDate / detail / hasDueTime（不限于 dueHint 文本）
+    func updateTodoDetail(
+        _ id: UUID,
+        title: String,
+        detail: String?,
+        category: TodoCategory?,
+        priority: Priority?,
+        dueDate: Date?,
+        hasDueTime: Bool?,
+        dueHint: String?,
+        recurrenceRule: RecurrenceRule?
+    ) throws {
+        let oldTodo = store.todos.first { $0.id == id }
+        try store.updateFull(id, title: title, detail: detail, category: category, priority: priority, dueDate: dueDate, hasDueTime: hasDueTime, dueHint: dueHint, recurrenceRule: recurrenceRule)
+        VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(dueDate != nil) hasDetail=\(detail != nil)")
+
+        let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
+        if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {
+            observeCalendarSync(
+                calendarSyncService.enqueueReplace(
+                    todoID: id,
+                    oldEventIdentifier: oldTodo?.systemCalendarEventIdentifier,
+                    shouldWriteNewEvent: shouldSyncSystemCalendar,
+                    sourceID: id.uuidString
+                )
+            )
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     // MARK: - Private Methods
 
     /// 取消正在进行的 AI 提取

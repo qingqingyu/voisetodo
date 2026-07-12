@@ -101,6 +101,10 @@ struct ExtractedTodo: Identifiable, Codable {
     let id: UUID
     var title: String
     var detail: String
+    /// AI 返回的 ISO 8601 绝对日期（"2026-07-15"），已结合参考日期换算。
+    /// 优先于此前的 dueHint 文本解析——dueHint 会过期（"next Wednesday"下周含义就变了），
+    /// 而 dueDate 是绝对日期，不会随时间推移产生歧义。
+    var dueDate: Date?
     var dueHint: String?
     /// AI 结构化返回的明确钟点（"HH:mm"，24 小时制），无则 nil。与 dueHint（freeform 文本）互补。
     var dueTime: String?
@@ -114,6 +118,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case id
         case title
         case detail
+        case dueDate = "due_date"
         case dueHint
         case dueTime
         case recurrenceRule
@@ -132,6 +137,7 @@ struct ExtractedTodo: Identifiable, Codable {
         try container.encode(id, forKey: .id)
         try container.encode(title, forKey: .title)
         try container.encode(detail, forKey: .detail)
+        try container.encodeIfPresent(dueDate, forKey: .dueDate)
         try container.encodeIfPresent(dueHint, forKey: .dueHint)
         try container.encodeIfPresent(dueTime, forKey: .dueTime)
         try container.encodeIfPresent(recurrenceRule, forKey: .recurrenceRule)
@@ -145,6 +151,7 @@ struct ExtractedTodo: Identifiable, Codable {
         id: UUID = UUID(),
         title: String,
         detail: String = "",
+        dueDate: Date? = nil,
         dueHint: String? = nil,
         dueTime: String? = nil,
         recurrenceRule: RecurrenceRule? = nil,
@@ -155,6 +162,7 @@ struct ExtractedTodo: Identifiable, Codable {
         self.id = id
         self.title = title
         self.detail = detail
+        self.dueDate = dueDate
         self.dueHint = Self.sanitizeDueHint(dueHint)
         self.dueTime = Self.sanitizeDueTime(dueTime)
         self.recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
@@ -167,6 +175,14 @@ struct ExtractedTodo: Identifiable, Codable {
         self.categoryHint = categoryHint
         self.localeIdentifier = localeIdentifier
     }
+
+    /// 解析 AI 返回的 ISO 8601 日期串（"2026-07-15"）。固定 en_US_POSIX 防 locale 漂移。
+    private static let isoDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
     /// 过滤 AI 可能返回的伪 null 值（如 "null"、"None"、"none"）
     private static func sanitizeDueHint(_ hint: String?) -> String? {
@@ -199,14 +215,22 @@ struct ExtractedTodo: Identifiable, Codable {
         let rawTitle = (try container.decodeIfPresent(String.self, forKey: .title) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         title = TextUtils.truncateTitle(from: rawTitle.isEmpty ? detail : rawTitle, maxLength: 200)
+        // AI 返回的 ISO 8601 绝对日期（"2026-07-15"），优先于 dueHint 文本解析
+        if let dueDateString = try container.decodeIfPresent(String.self, forKey: .dueDate),
+           let parsed = Self.isoDateFormatter.date(from: dueDateString.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            dueDate = parsed
+        } else {
+            dueDate = nil
+        }
         let rawDueHint = try container.decodeIfPresent(String.self, forKey: .dueHint)
         dueHint = Self.sanitizeDueHint(rawDueHint)
         let rawDueTime = try container.decodeIfPresent(String.self, forKey: .dueTime)
         dueTime = Self.sanitizeDueTime(rawDueTime)
         // 结构化截止边界（模型归一化产出，只分类不算日期）；malformed 一律吞成 nil，不炸整条解码。
         let recurrenceEnd = (try? container.decodeIfPresent(RecurrenceEnd.self, forKey: .recurrenceEnd)) ?? nil
-        // 重复起始日：把 after_count 这类边界锚定到起点；无则回落今天。
-        let recurrenceStart = TodoDueDateResolver.resolve(
+        // 重复起始日：优先用 AI 算好的 dueDate，其次文本解析，无则回落今天。
+        let recurrenceStart = dueDate ??
+            TodoDueDateResolver.resolve(
             dueHint: dueHint,
             title: title,
             detail: detail,
@@ -379,11 +403,14 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.title = extracted.title
         self.detail = extracted.detail.isEmpty ? nil : extracted.detail
         self.dueHint = extracted.dueHint
-        let resolvedDate = TodoDueDateResolver.resolve(
-            dueHint: extracted.dueHint,
-            title: extracted.title,
-            detail: extracted.detail
-        )
+        // 优先用 AI 算好的绝对日期（dueDate），其次文本解析兜底。
+        // dueDate 不会过期；dueHint 文本（"next Wednesday"）会随时间推移含义漂移。
+        let resolvedDate = extracted.dueDate ??
+            TodoDueDateResolver.resolve(
+                dueHint: extracted.dueHint,
+                title: extracted.title,
+                detail: extracted.detail
+            )
         let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
         self.dueDate = timed.date
         self.hasDueTime = timed.hasTime

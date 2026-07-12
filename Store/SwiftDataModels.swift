@@ -165,11 +165,13 @@ extension TodoItem {
     ///   - rawTranscript: 原始语音转写文本
     /// - Returns: TodoItem 实例
     static func from(_ extracted: ExtractedTodo, rawTranscript: String? = nil) -> TodoItem {
-        let resolvedDate = TodoDueDateResolver.resolve(
-            dueHint: extracted.dueHint,
-            title: extracted.title,
-            detail: extracted.detail
-        )
+        // 优先用 AI 算好的绝对日期，其次文本解析兜底
+        let resolvedDate = extracted.dueDate ??
+            TodoDueDateResolver.resolve(
+                dueHint: extracted.dueHint,
+                title: extracted.title,
+                detail: extracted.detail
+            )
         let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
         return TodoItem(
             id: extracted.id,

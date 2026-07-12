@@ -218,6 +218,39 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.update.success id=\(id.uuidString, privacy: .public) recurrenceSet=\(todoItem.recurrenceRule != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
+    /// 详情页完整更新——支持直接设 dueDate（不依赖 dueHint 文本解析）和 detail。
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+        let startedAt = Date()
+        let todoItem = try findTodoItem(by: id)
+
+        todoItem.title = title
+        if let detail = detail { todoItem.detail = detail }
+        if let category = category { todoItem.category = category }
+        if let priority = priority { todoItem.priority = priority }
+        // dueDate 始终覆盖——nil = 清除日期（详情页 "Remove date" 用）
+        todoItem.dueDate = dueDate
+        todoItem.hasDueTime = hasDueTime ?? false
+        if let dueHint = dueHint {
+            let normalized = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            todoItem.dueHint = normalized.isEmpty ? nil : normalized
+        }
+        if let recurrenceRule = recurrenceRule {
+            todoItem.recurrenceRule = recurrenceRule.isValid == true ? recurrenceRule : nil
+            if todoItem.recurrenceRule == nil {
+                try? deleteCompletions(for: id)
+            } else {
+                todoItem.isCompleted = false
+                todoItem.completedAt = nil
+            }
+        }
+
+        try saveOrRollback()
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
+        }
+        VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(dueDate != nil) detail=\(detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
     /// 更新重复规则（nil 表示关闭重复）
     /// - Parameters:
     ///   - id: 待办 ID

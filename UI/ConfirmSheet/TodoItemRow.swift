@@ -23,6 +23,7 @@ struct TodoItemRow: View {
     private var composedTimeText: String? {
         TodoTimeDisplayComposer.compose(
             recurrenceRule: todo.recurrenceRule,
+            relativeDateText: nil,
             timeText: todo.dueTime,
             dueHint: todo.dueHint
         )
