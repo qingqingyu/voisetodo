@@ -616,21 +616,14 @@ private struct HomeMonthDayButton: View {
             .frame(maxWidth: .infinity)
             .frame(height: rowHeight)
             .overlay(alignment: .bottom) {
-                if let dotSize {
-                    HStack(spacing: 2) {
-                        ForEach(0..<min(dayState.occurrences.count, 5), id: \.self) { index in
-                            let occurrence = dayState.occurrences[index]
-                            let isUrgent = occurrence.todo.priority == .high && !occurrence.isCompleted
-                            Circle()
-                                .fill(
-                                    dayState.isSelected ? Color.white :
-                                    (occurrence.isCompleted ? WarmTheme.textMuted :
-                                     (isUrgent ? WarmTheme.urgent : WarmTheme.primary))
-                                )
-                                .frame(width: dotSize, height: dotSize)
-                        }
-                    }
-                    .frame(height: dotSize)
+                if let dotSize, !dayState.occurrences.isEmpty {
+                    let hasUncompletedOccurrence = dayState.occurrences.contains { !$0.isCompleted }
+                    Circle()
+                        .fill(
+                            dayState.isSelected ? Color.white :
+                            (hasUncompletedOccurrence ? WarmTheme.primary : WarmTheme.textMuted)
+                        )
+                        .frame(width: dotSize, height: dotSize)
                     .padding(.bottom, WarmSpacing.xxs)
                 }
             }
@@ -1242,12 +1235,21 @@ struct HomeView<Store: HomeTodoStore>: View {
         VStack(spacing: WarmSpacing.sm) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                    Text(formattedHomeDate(Date()))
-                        .font(WarmFont.caption(14))
-                        .foregroundColor(WarmTheme.textSecondary)
+                    HStack(spacing: WarmSpacing.xs) {
+                        Text(formattedHomeDate(Date()))
+                            .font(WarmFont.caption(14))
+                            .foregroundColor(WarmTheme.textSecondary)
 
-                    Text(selectedBottomTab == .today ? greetingText : calendarMonthTitle)
-                        .font(WarmFont.display(30))
+                        if selectedBottomTab == .today {
+                            Text(greetingText)
+                                .font(WarmFont.displayLight(18))
+                                .foregroundColor(WarmTheme.primaryDark.opacity(0.82))
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Text(selectedBottomTab == .today ? todayWeekdayTitle : calendarMonthTitle)
+                        .font(WarmFont.serifDisplay(30))
                         .foregroundColor(WarmTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.65)
@@ -1311,6 +1313,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         visibleMonthAnchor.formatted(.dateTime.month(.wide))
     }
 
+    private var todayWeekdayTitle: String {
+        Date().formatted(.dateTime.weekday(.wide))
+    }
+
     private var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
@@ -1358,18 +1364,23 @@ struct HomeView<Store: HomeTodoStore>: View {
         // today tab 下 selectedDate 恒为今天（无 UI 改定），实际就是"今天的完成度"；
         // calendar tab 下跟用户点的日期走。
         let (total, completed) = selectedDayStats()
+        let isAllCompleted = total > 0 && completed == total
+        let text = isAllCompleted
+            ? String(localized: "home.stats.all_complete")
+            : String(format: String(localized: "home.stats %lld %lld"), completed, total)
         return HStack(spacing: WarmSpacing.xs) {
-            Image(systemName: "checkmark.circle")
+            Text("🎉")
                 .font(.system(size: 14))
-                .foregroundStyle(WarmTheme.primary)
 
-            Text(String(localized: "home.stats \(completed) \(total)"))
+            Text(text)
                 .font(WarmFont.caption(14))
-                .foregroundStyle(WarmTheme.textSecondary)
+                .foregroundStyle(isAllCompleted ? WarmTheme.primaryDark : WarmTheme.textSecondary)
         }
         .padding(.horizontal, WarmSpacing.xs)
         .padding(.vertical, WarmSpacing.xxs)
-        .background(Capsule().fill(WarmTheme.secondaryBackground.opacity(0.5)))
+        .background(Capsule().fill((isAllCompleted ? WarmTheme.primary.opacity(0.16) : WarmTheme.secondaryBackground.opacity(0.5))))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("HomeStatsBadge")
     }
 
     private var settingsButton: some View {
@@ -2144,10 +2155,51 @@ struct WarmTodoCard: View {
         }
         return TodoTimeDisplayComposer.compose(
             recurrenceRule: todo.recurrenceRule,
-            relativeDateText: todo.dueDate.map { TodoRelativeDateFormatter.format($0) },
+            relativeDateText: nil,
             timeText: timeText,
-            dueHint: todo.dueHint
+            dueHint: todo.dueDate == nil ? todo.dueHint : nil
         )
+    }
+
+    private var dueStatus: TodoDueStatus? {
+        RelativeDueLabel.status(
+            dueDate: todo.dueDate,
+            isCompleted: todo.isCompleted,
+            recurrenceRule: todo.recurrenceRule
+        )
+    }
+
+    private var dueStatusText: String? {
+        switch dueStatus {
+        case .overdue:
+            return String(localized: "due.overdue")
+        case .today:
+            return String(localized: "due.today")
+        case .tomorrow:
+            return String(localized: "due.tomorrow")
+        case .future(let date):
+            return date.formatted(.dateTime.month().day())
+        case nil:
+            return nil
+        }
+    }
+
+    private var dueStatusColor: Color {
+        switch dueStatus {
+        case .overdue:
+            return WarmTheme.urgent
+        case .today:
+            return WarmTheme.warningText
+        case .tomorrow, .future, nil:
+            return WarmTheme.textSecondary
+        }
+    }
+
+    private var isOverdue: Bool {
+        if case .overdue = dueStatus {
+            return true
+        }
+        return false
     }
 
     /// "HH:mm"（24 小时制）格式化器——与 ExtractedTodo.dueTime 原始格式一致，
@@ -2206,13 +2258,15 @@ struct WarmTodoCard: View {
             // 现在元数据合并成一行，卡片高度降三分之一。
             VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 HStack(spacing: WarmSpacing.xxs) {
-                    // 分类图标：统一 SF Symbol 体系（替代 emoji），按 categoryColor 着色。
-                    // 已完成时图标跟着文字一起降为 textSecondary，视觉上"整行变灰"。
-                    // opacity 0.85（而非 0.7）：12pt 小图标下 7 种分类色（尤其黄/橙）
-                    // 需要更高饱和度才可辨识；0.7 适合大色块，小图标会糊在一起。
-                    Image(systemName: todo.category.sfSymbolName)
-                        .font(.system(size: 12))
-                        .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor.opacity(0.85))
+                    ZStack {
+                        Circle()
+                            .fill(todo.isCompleted ? WarmTheme.textMuted.opacity(0.16) : categoryColor.opacity(0.16))
+                            .frame(width: 28, height: 28)
+
+                        Image(systemName: todo.category.sfSymbolName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
+                    }
 
                     Text(todo.title)
                         .font(todo.priority == .high ? WarmFont.headline(16) : WarmFont.body(16))
@@ -2237,6 +2291,15 @@ struct WarmTodoCard: View {
 
             Spacer(minLength: 0)
 
+            if let dueStatusText {
+                Text(dueStatusText)
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(dueStatusColor)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityIdentifier("TodoDueStatus_\(index)")
+            }
+
             if todo.priority == .high && !todo.isCompleted {
                 Image(systemName: "exclamationmark")
                     .font(.system(size: 11, weight: .bold))
@@ -2244,14 +2307,14 @@ struct WarmTodoCard: View {
                     .frame(width: 20, height: 20)
                     .background(
                         Circle()
-                            .fill(WarmTheme.urgent)
+                            .fill(isOverdue ? WarmTheme.textSecondary : WarmTheme.urgent)
                     )
                     .accessibilityIdentifier("PriorityLabel")
                     .accessibilityLabel(String(localized: "a11y.high_priority"))
             }
         }
         .padding(.horizontal, WarmSpacing.md)
-        .padding(.vertical, WarmSpacing.sm)
+        .padding(.vertical, WarmSpacing.xs)
         // 卡片底色：secondaryBackground 满不透明——0.5 透明度时卡片几乎融入背景，
         // 边界"似有似无"最尴尬。提到 1.0 让 #FFF5EE 与背景 #FFFBF7 有可辨识的对比。
         .background(

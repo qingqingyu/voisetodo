@@ -155,6 +155,11 @@ enum WarmFont {
         .custom("Noteworthy", size: size, relativeTo: relativeTextStyle(for: size)).weight(.light)
     }
 
+    /// 衬线展示字体：主页与日历标题使用系统语义字号，随 Dynamic Type 缩放。
+    static func serifDisplay(_ size: CGFloat) -> Font {
+        .system(relativeTextStyle(for: size), design: .serif).weight(.semibold)
+    }
+
     static func title(_ size: CGFloat) -> Font {
         .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.bold)
     }

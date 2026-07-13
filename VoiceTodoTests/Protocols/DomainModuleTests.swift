@@ -381,6 +381,32 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertEqual(r1, r2)
     }
 
+    // MARK: - RelativeDueLabel
+
+    func testRelativeDueLabelClassifiesOverdueTodayTomorrowAndFuture() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13)))
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: today))
+        let future = try XCTUnwrap(calendar.date(byAdding: .day, value: 3, to: today))
+
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: yesterday, isCompleted: false, recurrenceRule: nil, now: today, calendar: calendar), .overdue)
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: today, isCompleted: false, recurrenceRule: nil, now: today, calendar: calendar), .today)
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: tomorrow, isCompleted: false, recurrenceRule: nil, now: today, calendar: calendar), .tomorrow)
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: future, isCompleted: false, recurrenceRule: nil, now: today, calendar: calendar), .future(future))
+    }
+
+    func testRelativeDueLabelHidesCompletedAndRecurringTasks() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13)))
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+
+        XCTAssertNil(RelativeDueLabel.status(dueDate: yesterday, isCompleted: true, recurrenceRule: nil, now: today, calendar: calendar))
+        XCTAssertNil(RelativeDueLabel.status(dueDate: yesterday, isCompleted: false, recurrenceRule: RecurrenceRule(frequency: .daily), now: today, calendar: calendar))
+    }
+
     // MARK: - TodoDueDateResolver (N days offset)
 
     func testDueDateResolverParsesNDaysFromNow() throws {
