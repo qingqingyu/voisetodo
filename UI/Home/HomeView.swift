@@ -451,22 +451,22 @@ private struct HomeMonthHeaderView: View {
             }
             // 手势切换月/周：上滑→周（放大细节），下滑→月（缩小概览）
             // 挂在导航行上而非整个 VStack，避免与日期格 Button 争抢手势。
-            // 用 simultaneousGesture 让 Button tap 和 DragGesture 共存——tap 正常触发，
-            // 只有拖拽超过阈值时才走视图切换。
-            .simultaneousGesture(
-                DragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold)
-                    .onEnded { value in
-                        let vertical = abs(value.translation.height)
-                        let horizontal = abs(value.translation.width)
-                        guard vertical > horizontal else { return }
-                        if value.translation.height < -HomeLayoutMetrics.viewModeDragThreshold,
-                           state.viewMode != .week {
-                            onSetViewMode(.week)
-                        } else if value.translation.height > HomeLayoutMetrics.viewModeDragThreshold,
-                                  state.viewMode != .month {
-                            onSetViewMode(.month)
-                        }
+            // 用 SimultaneousDragGesture(UIKit UIGestureRecognizer 包装) 让 Button tap 和
+            // 拖拽共存——iOS 26 起 SwiftUI .simultaneousGesture 在含 Button 的 HStack 内失效
+            // (FB18199844),改走 UIKit 路径恢复同时识别。
+            .gesture(
+                SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
+                    let vertical = abs(drag.translation.height)
+                    let horizontal = abs(drag.translation.width)
+                    guard vertical > horizontal else { return }
+                    if drag.translation.height < -HomeLayoutMetrics.viewModeDragThreshold,
+                       state.viewMode != .week {
+                        onSetViewMode(.week)
+                    } else if drag.translation.height > HomeLayoutMetrics.viewModeDragThreshold,
+                              state.viewMode != .month {
+                        onSetViewMode(.month)
                     }
+                }
             )
             // VoiceOver 用户无法做拖拽手势——提供自定义 rotor action 切换视图模式
             .accessibilityAction(named: Text(state.viewMode == .month
