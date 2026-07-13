@@ -33,10 +33,11 @@ final class ProtocolsTests: XCTestCase {
     }
 
     func testTodoItemDataFromExtracted() {
-        let extracted = ExtractedTodo(title: "测试", detail: "详情")
+        let extracted = ExtractedTodo(title: "测试", detail: "详情", timeBucket: .evening)
         let item = TodoItemData(from: extracted)
         XCTAssertEqual(item.title, "测试")
         XCTAssertEqual(item.detail, "详情")
+        XCTAssertEqual(item.timeBucket, .evening)
     }
 
     func testUITestLaunchOptionsDecodesPresetTodos() throws {
@@ -108,6 +109,36 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos.count, 1)
         XCTAssertEqual(result.todos[0].priority, .normal)
         XCTAssertEqual(result.todos[0].categoryHint, .other)
+    }
+
+    func testExtractedTodoDecodesExplicitTimeBucketAndIgnoresUnknownValue() throws {
+        let validJSON = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000011","title":"去健身","time_bucket":"evening"}],"ignored":""}
+        """
+        let invalidJSON = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000012","title":"去健身","time_bucket":"night"}],"ignored":""}
+        """
+
+        let valid = try JSONDecoder().decode(ExtractionResult.self, from: try XCTUnwrap(validJSON.data(using: .utf8)))
+        let invalid = try JSONDecoder().decode(ExtractionResult.self, from: try XCTUnwrap(invalidJSON.data(using: .utf8)))
+
+        XCTAssertEqual(valid.todos.first?.timeBucket, .evening)
+        XCTAssertNil(invalid.todos.first?.timeBucket)
+    }
+
+    func testExtractedTodoDiscardsFuzzyTimeBucketWhenClockTimeIsPresent() {
+        let extracted = ExtractedTodo(
+            title: "开会",
+            dueTime: "15:00",
+            timeBucket: .evening
+        )
+
+        XCTAssertEqual(extracted.dueTime, "15:00")
+        XCTAssertNil(extracted.timeBucket)
+
+        let item = TodoItemData(from: extracted)
+        XCTAssertTrue(item.hasDueTime)
+        XCTAssertNil(item.timeBucket)
     }
 
     /// 缺失 title 时从 detail 派生，而不是让整批 ExtractionResult 解码失败。

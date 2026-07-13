@@ -18,6 +18,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var editedCategory: TodoCategory
     @State private var editedPriority: Priority
     @State private var editedDueDate: Date?
+    @State private var editedHasDueTime: Bool
+    @State private var editedTimeBucket: TimeBucket?
     @State private var editedRecurrenceFrequency: RecurrenceFrequency?
     @State private var editedWeekdays: Set<Int>
     @State private var editedDayOfMonth: String
@@ -32,6 +34,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         _editedCategory = State(initialValue: todo.category)
         _editedPriority = State(initialValue: todo.priority)
         _editedDueDate = State(initialValue: todo.dueDate)
+        _editedHasDueTime = State(initialValue: todo.hasDueTime)
+        _editedTimeBucket = State(initialValue: todo.timeBucket)
         _editedRecurrenceFrequency = State(initialValue: todo.recurrenceRule?.frequency)
         _editedWeekdays = State(initialValue: Set(todo.recurrenceRule?.weekdays ?? []))
         _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
@@ -134,6 +138,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                     Spacer()
                                     Button {
                                         editedDueDate = nil
+                                        editedHasDueTime = false
                                         checkForChanges()
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
@@ -163,6 +168,29 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 Text(String(format: String(localized: "detail.voice_hint_format"), hint))
                                     .font(WarmFont.caption(12))
                                     .foregroundColor(WarmTheme.textMuted)
+                            }
+                        }
+                    }
+
+                    detailCard {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                            Text(String(localized: "detail.section.time_bucket"))
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
+
+                            if editedHasDueTime, let dueDate = editedDueDate {
+                                Label(
+                                    dueDate.formatted(.dateTime.hour().minute()),
+                                    systemImage: "clock"
+                                )
+                                .font(WarmFont.body(15))
+                                .foregroundColor(WarmTheme.textSecondary)
+                            } else {
+                                HStack(spacing: WarmSpacing.xs) {
+                                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                                        timeBucketButton(bucket)
+                                    }
+                                }
                             }
                         }
                     }
@@ -291,6 +319,28 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             .padding(.vertical, WarmSpacing.sm)
             .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? color : WarmTheme.secondaryBackground))
             .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func timeBucketButton(_ bucket: TimeBucket) -> some View {
+        let selectedBucket = editedTimeBucket ?? .anytime
+        let isSelected = selectedBucket == bucket
+        return Button {
+            withAnimation(WarmAnimation.springFast) {
+                editedTimeBucket = bucket == .anytime ? nil : bucket
+                checkForChanges()
+            }
+        } label: {
+            Text(bucket.localizedTitle)
+                .font(WarmFont.caption(12))
+                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, WarmSpacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: WarmRadius.card)
+                        .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -437,6 +487,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                      editedCategory != todo.category ||
                      editedPriority != todo.priority ||
                      editedDueDate != todo.dueDate ||
+                     editedHasDueTime != todo.hasDueTime ||
+                     editedTimeBucket != todo.timeBucket ||
                      recurrenceStateChanged
     }
 
@@ -454,12 +506,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 category: editedCategory != todo.category ? editedCategory : nil,
                 priority: editedPriority != todo.priority ? editedPriority : nil,
                 dueDate: editedDueDate,
-                hasDueTime: false,
+                hasDueTime: editedHasDueTime,
+                timeBucket: editedTimeBucket,
                 dueHint: nil,
                 recurrenceRule: editedRecurrenceRule
             )
         } catch {
             VoiceTodoLog.store.error("ui.detail.save_failed id=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
         }
     }
 

@@ -21,6 +21,22 @@ final class SystemCalendarWriterTests: XCTestCase {
         XCTAssertEqual(draft.title, "完成英语背诵")
     }
 
+    func testDraftUsesAllDayEventForDateWithFuzzyTimeBucket() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 22)))
+        let todo = TodoItemData(
+            title: "去健身",
+            dueDate: start,
+            timeBucket: .evening,
+            createdAt: start
+        )
+
+        let draft = try XCTUnwrap(SystemCalendarEventMapper.draft(from: todo, calendar: calendar))
+
+        XCTAssertTrue(draft.isAllDay)
+        XCTAssertTrue(calendar.isDate(draft.startDate, inSameDayAs: start))
+    }
+
     func testDraftKeepsBoundedDailyRecurrenceForSystemCalendarWrite() throws {
         let calendar = Calendar(identifier: .gregorian)
         let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 22)))

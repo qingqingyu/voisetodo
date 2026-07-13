@@ -758,6 +758,13 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         todos.removeAll { $0.id == id }
     }
 
+    func toggleComplete(_ id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+        }
+        todos[index].isCompleted.toggle()
+    }
+
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")

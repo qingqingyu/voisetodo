@@ -25,7 +25,8 @@ struct TodoItemRow: View {
             recurrenceRule: todo.recurrenceRule,
             relativeDateText: nil,
             timeText: todo.dueTime,
-            dueHint: todo.dueHint
+            dueHint: todo.dueHint,
+            timeBucketText: todo.timeBucket?.localizedTitle
         )
     }
 
@@ -63,6 +64,31 @@ struct TodoItemRow: View {
                     }
                     .foregroundColor(WarmTheme.textSecondary)
                     .accessibilityIdentifier("TodoTimeText_\(index)")
+                }
+
+                if todo.dueTime == nil {
+                    Menu {
+                        ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                            Button {
+                                todo.timeBucket = bucket == .anytime ? nil : bucket
+                            } label: {
+                                if todo.timeBucket == bucket || (todo.timeBucket == nil && bucket == .anytime) {
+                                    Label(bucket.localizedTitle, systemImage: "checkmark")
+                                } else {
+                                    Text(bucket.localizedTitle)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(
+                            (todo.timeBucket ?? .anytime).localizedTitle,
+                            systemImage: "sun.max"
+                        )
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.primaryDark)
+                    }
+                    .accessibilityIdentifier("TodoTimeBucketPicker_\(index)")
+                    .accessibilityLabel(String(localized: "time_bucket.accessibility_label"))
                 }
             }
 

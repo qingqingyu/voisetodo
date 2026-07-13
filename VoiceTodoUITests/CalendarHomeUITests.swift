@@ -59,4 +59,27 @@ final class CalendarHomeUITests: XCTestCase {
         XCTAssertTrue(appHelper.app.staticTexts["今天日历任务"].waitForExistence(timeout: 2))
         XCTAssertTrue(appHelper.app.buttons[tomorrowButtonIdentifier].waitForExistence(timeout: 2), "日历内选择今天后仍应保留月历")
     }
+
+    func testTodayListGroupsTodosByTimeBucket() throws {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let morning = try XCTUnwrap(calendar.date(bySettingHour: 9, minute: 0, second: 0, of: today))
+        let afternoon = try XCTUnwrap(calendar.date(bySettingHour: 15, minute: 0, second: 0, of: today))
+        let todos = [
+            UITestTodoPayload(title: "随时任务", dueDate: today, createdAt: today, sortOrder: -4),
+            UITestTodoPayload(title: "上午任务", dueDate: morning, hasDueTime: true, createdAt: today, sortOrder: -3),
+            UITestTodoPayload(title: "下午任务", dueDate: afternoon, hasDueTime: true, createdAt: today, sortOrder: -2),
+            UITestTodoPayload(title: "晚上健身", dueDate: today, timeBucket: "evening", createdAt: today, sortOrder: -1)
+        ]
+
+        appHelper.launchWithPresetTodos(todos)
+        appHelper.waitForAppReady()
+
+        for identifier in ["anytime", "morning", "afternoon", "evening"] {
+            XCTAssertTrue(
+                appHelper.app.staticTexts["TimeBucketHeader_\(identifier)"].waitForExistence(timeout: 2),
+                "应该显示 \(identifier) 时段分组"
+            )
+        }
+    }
 }

@@ -137,6 +137,7 @@ targets:
       - path: Protocols/Domain/RecurrenceRuleResolver.swift
       - path: Protocols/Domain/TodoDueTimeResolver.swift
       - path: Protocols/Domain/TodoTimeDisplayComposer.swift
+      - path: Protocols/Domain/TimeBucket.swift
       - path: Protocols/Domain/RecurrenceEnd.swift
       - path: Protocols/Domain/RecurrenceEndResolver.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift

@@ -189,6 +189,17 @@ private struct HomeCalendarState {
         occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
+    func uncompletedOccurrences(in timeBucket: TimeBucket) -> [TodoOccurrenceData] {
+        uncompletedOccurrences.filter { occurrence in
+            TimeBucketResolver.effective(
+                explicitBucket: occurrence.todo.timeBucket,
+                dueDate: occurrence.todo.dueDate,
+                hasDueTime: occurrence.todo.hasDueTime,
+                calendar: calendar
+            ) == timeBucket
+        }
+    }
+
     /// 按模式返回要渲染/加载的日期集合。月视图 42 天网格；周视图所在周 7 天。
     static func days(for viewMode: CalendarViewMode, anchor: Date, calendar: Calendar) -> [Date] {
         switch viewMode {
@@ -741,8 +752,15 @@ private struct HomeSelectedDayListView: View {
                 } else if state.selectedOccurrences.isEmpty {
                     emptySelectedDayRow
                 } else {
-                    ForEach(Array(zip(state.uncompletedOccurrences.indices, state.uncompletedOccurrences)), id: \.1.id) { index, occurrence in
-                        occurrenceRow(occurrence, index: index)
+                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                        let occurrences = state.uncompletedOccurrences(in: bucket)
+                        if !occurrences.isEmpty {
+                            timeBucketHeader(bucket)
+                            ForEach(Array(occurrences.enumerated()), id: \.element.id) { index, occurrence in
+                                let originalIndex = state.uncompletedOccurrences.firstIndex(where: { $0.id == occurrence.id }) ?? index
+                                occurrenceRow(occurrence, index: originalIndex)
+                            }
+                        }
                     }
                 }
             } header: {
@@ -843,6 +861,17 @@ private struct HomeSelectedDayListView: View {
         .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
     }
 
+    private func timeBucketHeader(_ bucket: TimeBucket) -> some View {
+        Text(bucket.localizedTitle)
+            .font(WarmFont.caption(12))
+            .foregroundColor(WarmTheme.textMuted)
+            .textCase(nil)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
+            .listRowBackground(Color.clear)
+            .accessibilityIdentifier("TimeBucketHeader_\(bucket.rawValue)")
+    }
+
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
         WarmTodoCard(
             index: index,
@@ -889,7 +918,8 @@ private struct HomeSelectedDayListView: View {
             index: index,
             todo: occurrence.todo,
             onToggle: { onToggleOccurrence(occurrence) },
-            onTap: { onOpenTodo(occurrence.todo) }
+            onTap: { onOpenTodo(occurrence.todo) },
+            showsTimeBucketMetadata: false
         )
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
@@ -1291,18 +1321,20 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private func switcherTab(label: String, tab: BottomTab) -> some View {
         let isSelected = selectedBottomTab == tab
-        return VStack(spacing: 3) {
-            Text(label)
-                .font(WarmFont.headline(14))
-                .foregroundColor(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
-            Capsule()
-                .fill(isSelected ? WarmTheme.primary : Color.clear)
-                .frame(width: 20, height: 2)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
+        return Button {
             withAnimation(WarmAnimation.springFast) { selectedBottomTab = tab }
+        } label: {
+            VStack(spacing: 3) {
+                Text(label)
+                    .font(WarmFont.headline(14))
+                    .foregroundColor(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
+                Capsule()
+                    .fill(isSelected ? WarmTheme.primary : Color.clear)
+                    .frame(width: 20, height: 2)
+            }
         }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityIdentifier(tab.accessibilityIdentifier)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -2109,6 +2141,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 priority: nil,
                 dueDate: day,
                 hasDueTime: false,
+                timeBucket: todo.timeBucket,
                 // 传空字符串而非 nil：updateFull 中 nil 会跳过赋值（保留旧 hint），
                 // 空字符串会被 normalize 为 nil，确保旧 hint（如"明天"）不与新 dueDate 矛盾。
                 dueHint: "",
@@ -2134,6 +2167,7 @@ struct WarmTodoCard: View {
     let todo: TodoItemData
     let onToggle: () -> Void
     var onTap: (() -> Void)? = nil
+    var showsTimeBucketMetadata = true
 
     private var categoryColor: Color {
         WarmTheme.color(for: todo.category)
@@ -2157,8 +2191,21 @@ struct WarmTodoCard: View {
             recurrenceRule: todo.recurrenceRule,
             relativeDateText: nil,
             timeText: timeText,
-            dueHint: todo.dueDate == nil ? todo.dueHint : nil
+            dueHint: todo.dueDate == nil ? todo.dueHint : nil,
+            timeBucketText: timeBucketText
         )
+    }
+
+    private var timeBucketText: String? {
+        guard showsTimeBucketMetadata, !todo.hasDueTime else {
+            return nil
+        }
+        let bucket = TimeBucketResolver.effective(
+            explicitBucket: todo.timeBucket,
+            dueDate: todo.dueDate,
+            hasDueTime: todo.hasDueTime
+        )
+        return bucket == .anytime ? nil : bucket.localizedTitle
     }
 
     private var dueStatus: TodoDueStatus? {

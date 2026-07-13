@@ -49,13 +49,13 @@ protocol TodoDetailUpdating {
     /// 原子更新待办详情（基础字段 + 重复规则）
     func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
 
-    /// 完整更新（含 dueDate + detail + hasDueTime，详情页用）
-    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
+    /// 完整更新（含 dueDate、时段和重复规则，详情页用）
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, timeBucket: TimeBucket?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
 }
 
 extension TodoDetailUpdating {
-    /// 默认实现：忽略 dueDate/detail/hasDueTime，回退到基础 update
-    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+    /// 默认实现：忽略 dueDate/detail/hasDueTime/timeBucket，回退到基础 update
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, timeBucket: TimeBucket?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
         try update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
     }
 }

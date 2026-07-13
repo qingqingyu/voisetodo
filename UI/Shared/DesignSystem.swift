@@ -177,6 +177,21 @@ enum WarmFont {
     }
 }
 
+extension TimeBucket {
+    var localizedTitle: String {
+        switch self {
+        case .anytime:
+            return String(localized: "time_bucket.anytime")
+        case .morning:
+            return String(localized: "time_bucket.morning")
+        case .afternoon:
+            return String(localized: "time_bucket.afternoon")
+        case .evening:
+            return String(localized: "time_bucket.evening")
+        }
+    }
+}
+
 // MARK: - 纸张纹理背景
 
 /// 可复用的纸张纹理背景组件 — 从 Onboarding 延续到全局

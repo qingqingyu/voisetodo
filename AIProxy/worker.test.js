@@ -168,8 +168,11 @@ test("adds vocabulary hints to OpenAI system prompt as soft context", async () =
   assert.ok(systemMessage.includes("do not create todos just because these terms appear here"));
 });
 
-test("system prompt instructs extracting structured due_time (zh + en)", async () => {
-  for (const [locale, transcript] of [["zh-Hans", "明天下午3点开会"], ["en-US", "meeting at 3pm tomorrow"]]) {
+test("system prompt instructs extracting structured due_time and time_bucket (zh + en)", async () => {
+  for (const [locale, transcript, exclusivityRule] of [
+    ["zh-Hans", "明天下午3点开会", "time_bucket 必须为 null"],
+    ["en-US", "meeting at 3pm tomorrow", "time_bucket must be null"]
+  ]) {
     let upstreamRequest;
     const response = await handleRequest(
       request({ transcript, locale }, { "X-App-Token": "token" }),
@@ -186,38 +189,45 @@ test("system prompt instructs extracting structured due_time (zh + en)", async (
       }
     );
     assert.equal(response.status, 200);
-    assert.ok(upstreamRequest.body.messages[0].content.includes("due_time"));
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    assert.ok(systemMessage.includes("due_time"));
+    assert.ok(systemMessage.includes("time_bucket"));
+    assert.ok(systemMessage.includes(exclusivityRule));
+    assert.ok(systemMessage.includes('"time_bucket":"evening"'));
+    assert.ok((systemMessage.match(/"time_bucket":/g) ?? []).length >= 10);
   }
 });
 
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。
-  for (const [locale, expectedSnippet] of [["zh-Hans", "参考日期：2026-07-05"], ["en-US", "Reference date: 2026-07-05"]]) {
-    let upstreamRequest;
-    const response = await handleRequest(
-      request({ transcript: "未来一个月每天下午3点接孩子", locale }, {
-        "X-App-Token": "token",
-        "X-Local-Date": "2026-07-05"
-      }),
-      {
-        APP_TOKEN: "token",
-        AI_PROVIDER: "openai",
-        OPENAI_API_KEY: "openai-key",
-        OPENAI_MODEL: "test-model"
-      },
-      {},
-      async (url, init) => {
-        upstreamRequest = { body: JSON.parse(init.body) };
-        return jsonResponse({ choices: [{ message: { content: extractionJSON("接孩子") } }] });
-      }
-    );
-    assert.equal(response.status, 200);
-    assert.ok(
-      upstreamRequest.body.messages[0].content.includes(expectedSnippet),
-      `locale=${locale} 应在 system prompt 中包含 today 注入（"${expectedSnippet}"）`
-    );
-  }
+  await withMockedToday("2026-07-05T12:00:00.000Z", async () => {
+    for (const [locale, expectedSnippet] of [["zh-Hans", "参考日期：2026-07-05"], ["en-US", "Reference date: 2026-07-05"]]) {
+      let upstreamRequest;
+      const response = await handleRequest(
+        request({ transcript: "未来一个月每天下午3点接孩子", locale }, {
+          "X-App-Token": "token",
+          "X-Local-Date": "2026-07-05"
+        }),
+        {
+          APP_TOKEN: "token",
+          AI_PROVIDER: "openai",
+          OPENAI_API_KEY: "openai-key",
+          OPENAI_MODEL: "test-model"
+        },
+        {},
+        async (url, init) => {
+          upstreamRequest = { body: JSON.parse(init.body) };
+          return jsonResponse({ choices: [{ message: { content: extractionJSON("接孩子") } }] });
+        }
+      );
+      assert.equal(response.status, 200);
+      assert.ok(
+        upstreamRequest.body.messages[0].content.includes(expectedSnippet),
+        `locale=${locale} 应在 system prompt 中包含 today 注入（"${expectedSnippet}"）`
+      );
+    }
+  });
 });
 
 test("system prompt instructs structured recurrence_end boundary (zh + en)", async () => {
@@ -1044,7 +1054,10 @@ function extractionJSON(title) {
     todos: [{
       title,
       detail: title,
+      due_date: null,
       due_hint: null,
+      due_time: null,
+      time_bucket: null,
       recurrence_rule: null,
       priority: "normal",
       category_hint: "other"

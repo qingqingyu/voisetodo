@@ -14,6 +14,8 @@ final class TodoItem {
     /// dueDate 是否携带明确钟点：true 写系统日历"定时事件"，false 写"全天事件"。
     /// 带默认值 → SwiftData 轻量迁移，旧数据自动补 false。
     var hasDueTime: Bool = false
+    /// 显式模糊时段。Optional 字段让旧数据保持 nil，并由展示层从钟点推导。
+    var timeBucketRaw: String?
     var recurrenceFrequencyRaw: String?
     var recurrenceWeekdaysRaw: String?
     var recurrenceDayOfMonth: Int?
@@ -45,6 +47,12 @@ final class TodoItem {
         set { categoryRaw = newValue.rawValue }
     }
 
+    /// 显式模糊时段；`.anytime` 规范化为 nil，避免阻断精确钟点的展示推导。
+    var timeBucket: TimeBucket? {
+        get { hasDueTime ? nil : TimeBucket.explicit(from: timeBucketRaw) }
+        set { timeBucketRaw = hasDueTime || newValue == .anytime ? nil : newValue?.rawValue }
+    }
+
     // MARK: - Initialization
 
     init(
@@ -54,6 +62,7 @@ final class TodoItem {
         dueHint: String? = nil,
         dueDate: Date? = nil,
         hasDueTime: Bool = false,
+        timeBucket: TimeBucket? = nil,
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
@@ -72,6 +81,7 @@ final class TodoItem {
         self.dueHint = dueHint
         self.dueDate = dueDate
         self.hasDueTime = hasDueTime
+        self.timeBucketRaw = hasDueTime || timeBucket == .anytime ? nil : timeBucket?.rawValue
         self.recurrenceFrequencyRaw = recurrenceRule?.frequency.rawValue
         self.recurrenceWeekdaysRaw = Self.encodeWeekdays(recurrenceRule?.weekdays ?? [])
         self.recurrenceDayOfMonth = recurrenceRule?.dayOfMonth
@@ -100,6 +110,7 @@ final class TodoItem {
             dueHint: dueHint,
             dueDate: dueDate,
             hasDueTime: hasDueTime,
+            timeBucket: timeBucket,
             recurrenceRule: recurrenceRule,
             priority: Priority(rawValue: priorityRaw) ?? .normal,
             category: TodoCategory(rawValue: categoryRaw) ?? .other,
@@ -180,6 +191,7 @@ extension TodoItem {
             dueHint: extracted.dueHint,
             dueDate: timed.date,
             hasDueTime: timed.hasTime,
+            timeBucket: extracted.timeBucket,
             recurrenceRule: extracted.recurrenceRule,
             priority: extracted.priority,
             category: extracted.categoryHint,

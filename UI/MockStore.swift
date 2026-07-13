@@ -88,6 +88,27 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         try updateRecurrence(id, recurrenceRule: recurrenceRule)
     }
 
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, timeBucket: TimeBucket?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+        }
+
+        todos[index].title = title
+        if let detail { todos[index].detail = detail }
+        if let category { todos[index].category = category }
+        if let priority { todos[index].priority = priority }
+        todos[index].dueDate = dueDate
+        let resolvedHasDueTime = hasDueTime ?? false
+        todos[index].hasDueTime = resolvedHasDueTime
+        todos[index].timeBucket = resolvedHasDueTime ? nil : timeBucket
+        if let dueHint {
+            todos[index].dueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : dueHint
+        }
+        if let recurrenceRule {
+            todos[index].recurrenceRule = recurrenceRule
+        }
+    }
+
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index].recurrenceRule = recurrenceRule

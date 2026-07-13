@@ -218,9 +218,17 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.update.success id=\(id.uuidString, privacy: .public) recurrenceSet=\(todoItem.recurrenceRule != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
-    /// 详情页完整更新——支持直接设 dueDate（不依赖 dueHint 文本解析）和 detail。
-    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+    /// 详情页完整更新——支持直接设 dueDate、模糊时段和 detail。
+    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, timeBucket: TimeBucket?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
         let startedAt = Date()
+        // 钟点和模糊时段互斥；有钟点时让展示层按钟点推导分组。
+        let normalizedTimeBucket = (hasDueTime ?? false) ? nil : timeBucket
+        let effectiveBucket = TimeBucketResolver.effective(
+            explicitBucket: normalizedTimeBucket,
+            dueDate: dueDate,
+            hasDueTime: hasDueTime ?? false
+        )
+        VoiceTodoLog.store.info("store.updateFull.start id=\(id.uuidString, privacy: .public) dueDate=\(dueDate != nil) hasDueTime=\(hasDueTime ?? false) explicitTimeBucket=\(timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public)")
         let todoItem = try findTodoItem(by: id)
 
         todoItem.title = title
@@ -230,6 +238,7 @@ final class TodoStore:
         // dueDate 始终覆盖——nil = 清除日期（详情页 "Remove date" 用）
         todoItem.dueDate = dueDate
         todoItem.hasDueTime = hasDueTime ?? false
+        todoItem.timeBucket = normalizedTimeBucket
         if let dueHint = dueHint {
             let normalized = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
             todoItem.dueHint = normalized.isEmpty ? nil : normalized
@@ -248,7 +257,7 @@ final class TodoStore:
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
-        VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(dueDate != nil) detail=\(detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(dueDate != nil) explicitTimeBucket=\(todoItem.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public) detail=\(detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 更新重复规则（nil 表示关闭重复）
@@ -454,6 +463,7 @@ final class TodoStore:
                 dueHint: item.dueHint,
                 dueDate: item.dueDate,
                 hasDueTime: item.hasDueTime,
+                timeBucket: item.timeBucket,
                 recurrenceRule: item.recurrenceRule,
                 priority: item.priority,
                 category: item.category,

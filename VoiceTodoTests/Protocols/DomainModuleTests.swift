@@ -358,6 +358,45 @@ final class DomainModuleTests: XCTestCase {
         )
     }
 
+    func testTimeDisplayComposerUsesTimeBucketWhenClockTimeIsAbsent() {
+        XCTAssertEqual(
+            TodoTimeDisplayComposer.compose(
+                recurrenceRule: nil,
+                relativeDateText: nil,
+                timeText: nil,
+                dueHint: "今天晚上去健身",
+                timeBucketText: "晚上"
+            ),
+            "晚上"
+        )
+    }
+
+    // MARK: - TimeBucketResolver
+
+    func testTimeBucketResolverPrefersExplicitBucketOverClockTime() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let dueDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 15)))
+
+        XCTAssertEqual(
+            TimeBucketResolver.effective(explicitBucket: .morning, dueDate: dueDate, hasDueTime: true, calendar: calendar),
+            .morning
+        )
+    }
+
+    func testTimeBucketResolverDerivesClockTimeAndFallsBackToAnytime() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 5)))
+        let afternoon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 12)))
+        let evening = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 23)))
+
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: morning, hasDueTime: true, calendar: calendar), .morning)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: afternoon, hasDueTime: true, calendar: calendar), .afternoon)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: evening, hasDueTime: true, calendar: calendar), .evening)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: nil, hasDueTime: false, calendar: calendar), .anytime)
+    }
+
     // MARK: - TodoRelativeDateFormatter
 
     func testRelativeDateFormatterToday() {

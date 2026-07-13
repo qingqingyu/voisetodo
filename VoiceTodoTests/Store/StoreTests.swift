@@ -109,6 +109,40 @@ final class StoreTests: XCTestCase {
         XCTAssertNil(sut.todos[0].dueDate)
     }
 
+    func testAddTodoPersistsExplicitTimeBucketWithoutInventingClockTime() throws {
+        let extractedTodo = ExtractedTodo(
+            title: "去健身",
+            dueDate: Calendar.current.startOfDay(for: Date()),
+            dueHint: "今天晚上",
+            timeBucket: .evening,
+            categoryHint: .health
+        )
+
+        try sut.add(extractedTodo)
+        sut.refreshTodos()
+
+        XCTAssertEqual(sut.todos.first?.timeBucket, .evening)
+        XCTAssertFalse(sut.todos.first?.hasDueTime ?? true)
+    }
+
+    func testAddTodoWithFuzzyTimeButNoDateRemainsUnscheduled() throws {
+        let extractedTodo = ExtractedTodo(
+            title: "晚上去健身",
+            detail: "晚上去健身",
+            dueHint: "晚上",
+            timeBucket: .evening,
+            categoryHint: .health
+        )
+
+        try sut.add(extractedTodo)
+        sut.refreshTodos()
+
+        let saved = try XCTUnwrap(sut.todos.first)
+        XCTAssertNil(saved.dueDate)
+        XCTAssertFalse(saved.hasDueTime)
+        XCTAssertEqual(saved.timeBucket, .evening)
+    }
+
     func testAddRollbackDoesNotPersistFailedInsertOnLaterSave() throws {
         let gate = SaveFailureGate()
         sut = TodoStore(modelContext: modelContext, saveAction: gate.save)

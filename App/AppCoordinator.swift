@@ -621,7 +621,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    /// 详情页完整更新——支持 dueDate / detail / hasDueTime（不限于 dueHint 文本）
+    /// 详情页完整更新——支持 dueDate、模糊时段和 detail。
     func updateTodoDetail(
         _ id: UUID,
         title: String,
@@ -630,12 +630,13 @@ final class AppCoordinator: ObservableObject {
         priority: Priority?,
         dueDate: Date?,
         hasDueTime: Bool?,
+        timeBucket: TimeBucket?,
         dueHint: String?,
         recurrenceRule: RecurrenceRule?
     ) throws {
         let oldTodo = store.todos.first { $0.id == id }
-        try store.updateFull(id, title: title, detail: detail, category: category, priority: priority, dueDate: dueDate, hasDueTime: hasDueTime, dueHint: dueHint, recurrenceRule: recurrenceRule)
-        VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(dueDate != nil) hasDetail=\(detail != nil)")
+        try store.updateFull(id, title: title, detail: detail, category: category, priority: priority, dueDate: dueDate, hasDueTime: hasDueTime, timeBucket: timeBucket, dueHint: dueHint, recurrenceRule: recurrenceRule)
+        VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(dueDate != nil) explicitTimeBucket=\(timeBucket?.rawValue ?? "nil", privacy: .public) hasDetail=\(detail != nil)")
 
         let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
         if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {

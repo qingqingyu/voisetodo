@@ -108,6 +108,8 @@ struct ExtractedTodo: Identifiable, Codable {
     var dueHint: String?
     /// AI 结构化返回的明确钟点（"HH:mm"，24 小时制），无则 nil。与 dueHint（freeform 文本）互补。
     var dueTime: String?
+    /// AI 返回的模糊时段；仅在没有明确钟点时存在。
+    var timeBucket: TimeBucket?
     var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var categoryHint: TodoCategory
@@ -121,6 +123,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case dueDate = "due_date"
         case dueHint
         case dueTime
+        case timeBucket = "time_bucket"
         case recurrenceRule
         case recurrenceEnd  // 仅用于 init(from:) 解码 AI 返回的结构化截止边界
         case priority
@@ -140,6 +143,7 @@ struct ExtractedTodo: Identifiable, Codable {
         try container.encodeIfPresent(dueDate, forKey: .dueDate)
         try container.encodeIfPresent(dueHint, forKey: .dueHint)
         try container.encodeIfPresent(dueTime, forKey: .dueTime)
+        try container.encodeIfPresent(timeBucket, forKey: .timeBucket)
         try container.encodeIfPresent(recurrenceRule, forKey: .recurrenceRule)
         try container.encode(priority, forKey: .priority)
         try container.encode(categoryHint, forKey: .categoryHint)
@@ -154,6 +158,7 @@ struct ExtractedTodo: Identifiable, Codable {
         dueDate: Date? = nil,
         dueHint: String? = nil,
         dueTime: String? = nil,
+        timeBucket: TimeBucket? = nil,
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         categoryHint: TodoCategory = .other,
@@ -165,6 +170,9 @@ struct ExtractedTodo: Identifiable, Codable {
         self.dueDate = dueDate
         self.dueHint = Self.sanitizeDueHint(dueHint)
         self.dueTime = Self.sanitizeDueTime(dueTime)
+        // 明确钟点与模糊时段互斥。即使上游模型异常同时返回两者，
+        // 也优先保留可精确执行的钟点，避免展示和分组发生冲突。
+        self.timeBucket = self.dueTime == nil && timeBucket != .anytime ? timeBucket : nil
         self.recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
             recurrenceRule,
             dueHint: dueHint,
@@ -226,6 +234,10 @@ struct ExtractedTodo: Identifiable, Codable {
         dueHint = Self.sanitizeDueHint(rawDueHint)
         let rawDueTime = try container.decodeIfPresent(String.self, forKey: .dueTime)
         dueTime = Self.sanitizeDueTime(rawDueTime)
+        // 上游可能没有完全遵守 JSON 约束；明确钟点优先，丢弃冲突的模糊时段。
+        timeBucket = dueTime == nil
+            ? TimeBucket.explicit(from: try container.decodeIfPresent(String.self, forKey: .timeBucket))
+            : nil
         // 结构化截止边界（模型归一化产出，只分类不算日期）；malformed 一律吞成 nil，不炸整条解码。
         let recurrenceEnd = (try? container.decodeIfPresent(RecurrenceEnd.self, forKey: .recurrenceEnd)) ?? nil
         // 重复起始日：优先用 AI 算好的 dueDate，其次文本解析，无则回落今天。
@@ -345,6 +357,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     var dueDate: Date?
     /// dueDate 是否携带明确钟点：true 时系统日历写"定时事件"，false 写"全天事件"。
     var hasDueTime: Bool
+    /// 用户或 AI 显式给出的模糊时段；nil 由明确钟点推导或显示为“随时”。
+    var timeBucket: TimeBucket?
     var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var category: TodoCategory
@@ -366,6 +380,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         dueHint: String? = nil,
         dueDate: Date? = nil,
         hasDueTime: Bool = false,
+        timeBucket: TimeBucket? = nil,
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
@@ -384,6 +399,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.dueHint = dueHint
         self.dueDate = dueDate
         self.hasDueTime = hasDueTime
+        // 已有明确钟点时，时段由钟点推导，不能保留独立的模糊时段。
+        self.timeBucket = hasDueTime || timeBucket == .anytime ? nil : timeBucket
         self.recurrenceRule = recurrenceRule
         self.priority = priority
         self.category = category
@@ -414,6 +431,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
         self.dueDate = timed.date
         self.hasDueTime = timed.hasTime
+        self.timeBucket = timed.hasTime ? nil : extracted.timeBucket
         self.recurrenceRule = extracted.recurrenceRule
         self.priority = extracted.priority
         self.category = extracted.categoryHint

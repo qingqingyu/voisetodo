@@ -4,12 +4,12 @@ import Foundation
 ///
 /// 解决的问题：HomeView 与 ConfirmSheet 各自实现了一份 `composedTimeText`，
 /// 因数据源不同（`ExtractedTodo.dueTime: String?` vs `TodoItemData.dueDate+hasDueTime`）
-/// 而出现行为偏差。这里抽出"给定 recurrence + 相对日期 + 钟点 + 自由文本兜底，怎么拼"
+/// 而出现行为偏差。这里抽出"给定 recurrence + 相对日期 + 钟点/模糊时段 + 自由文本兜底，怎么拼"
 /// 的纯展示逻辑，让两个调用方各自负责"怎么把模型字段转成钟点串 / 相对日期串"，
 /// 拼装规则只此一处。
 ///
 /// 规则：
-/// 1. 优先用结构化字段（recurrence.displayTextWithEndDate + 相对日期 + 钟点）拼成
+/// 1. 优先用结构化字段（recurrence.displayTextWithEndDate + 相对日期 + 钟点/模糊时段）拼成
 ///    "每天 · 至 8月5日 · 15:00" 或 "明天 · 15:00"。
 /// 2. 结构化字段全空时退回 `dueHint` 原文（AI 自由文本，例如"明天下午3点"）。
 ///    注意：HomeView 的 TodoItemData 有 dueDate，会传 relativeDateText，
@@ -26,13 +26,15 @@ enum TodoTimeDisplayComposer {
     ///   - relativeDateText: 从 dueDate 实时算出的相对日期串（"今天"/"明天"/"周三"/"7月15日"）。
     ///     仅在无 recurrenceRule 时使用（recurrenceRule 自带日期范围展示）。nil 表示无 dueDate。
     ///   - timeText: 已格式化好的钟点串（"HH:mm"），传 nil 表示无明确钟点。
+    ///   - timeBucketText: 已本地化的模糊时段文本；只有没有明确钟点时传入。
     ///   - dueHint: AI 自由文本兜底；仅在前三者全空时使用。
     /// - Returns: 拼好的展示串；输入全空时返回 nil。
     static func compose(
         recurrenceRule: RecurrenceRule?,
         relativeDateText: String?,
         timeText: String?,
-        dueHint: String?
+        dueHint: String?,
+        timeBucketText: String? = nil
     ) -> String? {
         var parts: [String] = []
         if let rule = recurrenceRule {
@@ -44,6 +46,8 @@ enum TodoTimeDisplayComposer {
         }
         if let time = timeText?.trimmingCharacters(in: .whitespacesAndNewlines), !time.isEmpty {
             parts.append(time)
+        } else if let bucket = timeBucketText?.trimmingCharacters(in: .whitespacesAndNewlines), !bucket.isEmpty {
+            parts.append(bucket)
         }
         if parts.isEmpty {
             if let hint = dueHint?.trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty {
