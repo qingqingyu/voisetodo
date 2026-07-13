@@ -597,6 +597,38 @@
         }
       }
     },
+    "a11y.switch_to_month" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to month view"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换到月视图"
+          }
+        }
+      }
+    },
+    "a11y.switch_to_week" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to week view"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换到周视图"
+          }
+        }
+      }
+    },
     "category.finance" : {
       "localizations" : {
         "en" : {

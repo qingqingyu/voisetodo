@@ -437,30 +437,31 @@ private struct HomeMonthHeaderView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("NextMonthButton")
                 .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.next_week" : "a11y.next_month"))
-
-                Button(action: { onSetViewMode(.month) }) {
-                    Text(String(localized: "calendar.mode.month"))
-                        .font(WarmFont.caption(13).weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .foregroundColor(state.viewMode == .month ? WarmTheme.primary : WarmTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(state.viewMode == .month ? WarmTheme.primary.opacity(0.15) : Color.clear))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("CalendarMonthModeButton")
-
-                Button(action: { onSetViewMode(.week) }) {
-                    Text(String(localized: "calendar.mode.week"))
-                        .font(WarmFont.caption(13).weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .foregroundColor(state.viewMode == .week ? WarmTheme.primary : WarmTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(state.viewMode == .week ? WarmTheme.primary.opacity(0.15) : Color.clear))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("CalendarWeekModeButton")
+            }
+            // 手势切换月/周：上滑→周（放大细节），下滑→月（缩小概览）
+            // 挂在导航行上而非整个 VStack，避免与日期格 Button 争抢手势。
+            // 用 simultaneousGesture 让 Button tap 和 DragGesture 共存——tap 正常触发，
+            // 只有拖拽超过阈值时才走视图切换。
+            .simultaneousGesture(
+                DragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold)
+                    .onEnded { value in
+                        let vertical = abs(value.translation.height)
+                        let horizontal = abs(value.translation.width)
+                        guard vertical > horizontal else { return }
+                        if value.translation.height < -HomeLayoutMetrics.viewModeDragThreshold,
+                           state.viewMode != .week {
+                            onSetViewMode(.week)
+                        } else if value.translation.height > HomeLayoutMetrics.viewModeDragThreshold,
+                                  state.viewMode != .month {
+                            onSetViewMode(.month)
+                        }
+                    }
+            )
+            // VoiceOver 用户无法做拖拽手势——提供自定义 rotor action 切换视图模式
+            .accessibilityAction(named: Text(state.viewMode == .month
+                                             ? String(localized: "a11y.switch_to_week")
+                                             : String(localized: "a11y.switch_to_month"))) {
+                onSetViewMode(state.viewMode == .month ? .week : .month)
             }
 
             HStack(spacing: WarmSpacing.xs) {
@@ -513,6 +514,9 @@ private enum HomeLayoutMetrics {
     static let listBottomInset: CGFloat = bottomBarHeight + bottomListFadeHeight + WarmSpacing.xl
     /// 空状态 top inset：加大让内容接近屏幕视觉中心（~40-45% 高度）。
     static let emptyStateTopInset: CGFloat = 80
+    /// 月/周视图切换的拖拽阈值（pt）。超过此距离才判定为切换手势，
+    /// 避免点击按钮或日期格时的轻微滑动误触发。同时用于 minimumDistance 和方向判定。
+    static let viewModeDragThreshold: CGFloat = 40
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
