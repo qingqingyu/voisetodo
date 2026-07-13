@@ -379,6 +379,10 @@ private struct HomeMonthHeaderView: View {
     let onJumpToToday: () -> Void
     let onSelectDay: (Date) -> Void
     let onSetViewMode: (CalendarViewMode) -> Void
+    /// 从 Unscheduled 拖任务到日期格时触发（UUID = 任务，Date = 格子日期）。
+    var onDropTodo: ((UUID, Date) -> Void)? = nil
+    /// 当前是否停在今天——true 时隐藏"回今天"按钮（此时按钮无意义）。
+    var isOnToday: Bool = false
     /// 可用高度（来自 GeometryReader）。0 = 不约束，用默认行高。
     var availableHeight: CGFloat = 0
 
@@ -392,18 +396,20 @@ private struct HomeMonthHeaderView: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            // 导航行内嵌月/周切换图标按钮 + 今天图标按钮，省掉 segmented Picker 那一行。
             HStack {
-                Button(action: onJumpToToday) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(WarmTheme.primaryDark)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                // 回今天按钮：仅在非今天时显示（已停在今天时按钮无意义，省掉一个控件）。
+                if !isOnToday {
+                    Button(action: onJumpToToday) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(WarmTheme.primaryDark)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(WarmTheme.secondaryBackground))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("TodayMonthButton")
+                    .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.today_week" : "a11y.today_month"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("TodayMonthButton")
-                .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.today_week" : "a11y.today_month"))
 
                 Button(action: { onShift(-1) }) {
                     Image(systemName: "chevron.left")
@@ -433,26 +439,28 @@ private struct HomeMonthHeaderView: View {
                 .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.next_week" : "a11y.next_month"))
 
                 Button(action: { onSetViewMode(.month) }) {
-                    Image(systemName: "square.grid.3x3")
-                        .font(.system(size: 14, weight: .semibold))
+                    Text(String(localized: "calendar.mode.month"))
+                        .font(WarmFont.caption(13).weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                         .foregroundColor(state.viewMode == .month ? WarmTheme.primary : WarmTheme.textSecondary)
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(state.viewMode == .month ? WarmTheme.primary.opacity(0.15) : Color.clear))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("CalendarMonthModeButton")
-                .accessibilityLabel(String(localized: "calendar.mode.month"))
 
                 Button(action: { onSetViewMode(.week) }) {
-                    Image(systemName: "rectangle.grid.1x2")
-                        .font(.system(size: 14, weight: .semibold))
+                    Text(String(localized: "calendar.mode.week"))
+                        .font(WarmFont.caption(13).weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                         .foregroundColor(state.viewMode == .week ? WarmTheme.primary : WarmTheme.textSecondary)
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(state.viewMode == .week ? WarmTheme.primary.opacity(0.15) : Color.clear))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("CalendarWeekModeButton")
-                .accessibilityLabel(String(localized: "calendar.mode.week"))
             }
 
             HStack(spacing: WarmSpacing.xs) {
@@ -466,7 +474,12 @@ private struct HomeMonthHeaderView: View {
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
                 ForEach(state.visibleDays, id: \.self) { day in
-                    HomeMonthDayButton(dayState: state.dayState(for: day), onSelect: onSelectDay, rowHeight: dayRowHeight)
+                    HomeMonthDayButton(
+                        dayState: state.dayState(for: day),
+                        onSelect: onSelectDay,
+                        onDropTodo: onDropTodo.map { callback in { id in callback(id, day) } },
+                        rowHeight: dayRowHeight
+                    )
                 }
             }
         }
@@ -568,7 +581,11 @@ private enum HomeLayoutMetrics {
 private struct HomeMonthDayButton: View {
     let dayState: HomeCalendarDayState
     let onSelect: (Date) -> Void
+    /// 拖拽 drop 回调——从 Unscheduled 拖任务到日期格时触发。
+    var onDropTodo: ((UUID) -> Void)? = nil
     var rowHeight: CGFloat = WarmSpacing.xxxl
+
+    @State private var isDropTargeted = false
 
     /// 圆点尺寸跟 rowHeight 自适应（改动 A）：
     /// 月视图 18pt 行高下返回 3pt，周视图 48pt 行高下返回 4pt。
@@ -638,6 +655,23 @@ private struct HomeMonthDayButton: View {
         .accessibilityHint(String(localized: "a11y.day.hint"))
         .accessibilityAddTraits(dayState.isSelected ? [.isButton, .isSelected] : [.isButton])
         .accessibilityIdentifier("MonthDay_\(dayState.date.formatted(.dateTime.year().month().day()))")
+        // 拖拽：从 Unscheduled 拖任务到日期格 → 赋日期
+        .dropDestination(for: String.self) { items, _ in
+            guard let idString = items.first, let id = UUID(uuidString: idString) else { return false }
+            onDropTodo?(id)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: WarmRadius.card)
+                    .stroke(WarmTheme.primary, lineWidth: 2)
+                    .scaleEffect(1.15)
+                    .padding(2)
+            }
+        }
+        .animation(WarmAnimation.springFast, value: isDropTargeted)
     }
 }
 
@@ -840,6 +874,17 @@ private struct HomeSelectedDayListView: View {
             insertion: .scale(scale: 0.9).combined(with: .opacity),
             removal: .scale(scale: 0.95).combined(with: .opacity)
         ))
+        // 拖拽到日历日期：所有 unscheduled 任务可拖
+        .draggable(todo.id.uuidString) {
+            HStack(spacing: WarmSpacing.xxs) {
+                Text(todo.category.emoji)
+                Text(todo.title).lineLimit(1)
+            }
+            .font(WarmFont.caption(13))
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, WarmSpacing.xs)
+            .background(Capsule().fill(WarmTheme.secondaryBackground))
+        }
     }
 
     private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
@@ -1197,7 +1242,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                         .font(WarmFont.caption(14))
                         .foregroundColor(WarmTheme.textSecondary)
 
-                    Text(selectedBottomTab == .today ? greetingText : String(localized: "tab.calendar"))
+                    Text(selectedBottomTab == .today ? greetingText : calendarMonthTitle)
                         .font(WarmFont.display(30))
                         .foregroundColor(WarmTheme.textPrimary)
                         .lineLimit(1)
@@ -1255,6 +1300,11 @@ struct HomeView<Store: HomeTodoStore>: View {
         .accessibilityIdentifier(tab.accessibilityIdentifier)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Calendar tab 的大标题：当前可见月份名（"July" / "七月"），替代冗余的 "Calendar" 字面量。
+    private var calendarMonthTitle: String {
+        visibleMonthAnchor.formatted(.dateTime.month(.wide))
     }
 
     private var greetingText: String {
@@ -1455,6 +1505,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                         onJumpToToday: jumpToToday,
                         onSelectDay: selectDay,
                         onSetViewMode: setViewMode,
+                        onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
+                        isOnToday: calendar.isDateInToday(selectedDate) && calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .month),
                         availableHeight: calendarHeight
                     )
                     // 封顶 + 裁切：对齐 HTML 参考的 max-height:38vh + overflow:hidden。
@@ -2023,6 +2075,39 @@ struct HomeView<Store: HomeTodoStore>: View {
         } catch {
             VoiceTodoLog.store.error("home.reorder_unscheduled.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             store.refreshTodos()
+        }
+    }
+
+    /// 拖拽赋日期：从 Unscheduled 拖任务到日历格 → 设置 dueDate
+    private func assignTodoToDate(_ todoId: UUID, date: Date) {
+        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+            VoiceTodoLog.ui.warning("home.drag_assign.todo_not_found id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        let day = calendar.startOfDay(for: date)
+        do {
+            try coordinator.updateTodoDetail(
+                todoId,
+                title: todo.title,
+                detail: nil,
+                category: nil,
+                priority: nil,
+                dueDate: day,
+                hasDueTime: false,
+                // 传空字符串而非 nil：updateFull 中 nil 会跳过赋值（保留旧 hint），
+                // 空字符串会被 normalize 为 nil，确保旧 hint（如"明天"）不与新 dueDate 矛盾。
+                dueHint: "",
+                recurrenceRule: nil
+            )
+            occurrenceRevision += 1
+            coordinator.showToast(
+                message: String(format: String(localized: "home.assigned_to_date"),
+                                todo.title, TodoRelativeDateFormatter.format(day)),
+                style: .success
+            )
+        } catch {
+            VoiceTodoLog.store.error("home.drag_assign.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
         }
     }
 }
