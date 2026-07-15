@@ -57,6 +57,9 @@ targets:
       - path: UI/Shared
         excludes:
           - "**/.DS_Store"
+      - path: UI/Review
+        excludes:
+          - "**/.DS_Store"
       - path: UI/MockStore.swift
       - path: Protocols
         excludes:

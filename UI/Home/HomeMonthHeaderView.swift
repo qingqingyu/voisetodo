@@ -6,7 +6,6 @@ struct HomeMonthHeaderView: View {
     let onShift: (Int) -> Void
     let onJumpToToday: () -> Void
     let onSelectDay: (Date) -> Void
-    let onSetViewMode: (CalendarViewMode) -> Void
     /// 从 Unscheduled 拖任务到日期格时触发（UUID = 任务，Date = 格子日期）。
     var onDropTodo: ((UUID, Date) -> Void)? = nil
     /// 当前是否停在今天——true 时隐藏"回今天"按钮（此时按钮无意义）。
@@ -87,31 +86,6 @@ struct HomeMonthHeaderView: View {
                 }
             }
         }
-        // 手势切换月/周:上滑→周(放大细节),下滑→月(缩小概览)。
-        // 挂在整个 VStack(导航行 + 星期表头 + 日期格),让用户在日历任意位置上下拉都能切换——
-        // 不再局限于导航行那一小条。用 SimultaneousDragGesture(UIKit UIGestureRecognizer 包装)
-        // 让日期格 Button tap 和拖拽共存;iOS 26 起 SwiftUI .simultaneousGesture 在含 Button 的
-        // 容器内失效(FB18199844),改走 UIKit 路径恢复同时识别。
-        .gesture(
-            SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
-                let vertical = abs(drag.translation.height)
-                let horizontal = abs(drag.translation.width)
-                guard vertical > horizontal else { return }
-                if drag.translation.height < -HomeLayoutMetrics.viewModeDragThreshold,
-                   state.viewMode != .week {
-                    onSetViewMode(.week)
-                } else if drag.translation.height > HomeLayoutMetrics.viewModeDragThreshold,
-                          state.viewMode != .month {
-                    onSetViewMode(.month)
-                }
-            }
-        )
-        // VoiceOver 用户无法做拖拽手势——提供自定义 rotor action 切换视图模式
-        .accessibilityAction(named: Text(state.viewMode == .month
-                                         ? String(localized: "a11y.switch_to_week")
-                                         : String(localized: "a11y.switch_to_month"))) {
-            onSetViewMode(state.viewMode == .month ? .week : .month)
-        }
         .padding(.horizontal, WarmSpacing.lg)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
@@ -142,9 +116,12 @@ enum HomeLayoutMetrics {
     static let listBottomInset: CGFloat = bottomBarHeight + bottomListFadeHeight + WarmSpacing.xl
     /// 空状态 top inset：加大让内容接近屏幕视觉中心（~40-45% 高度）。
     static let emptyStateTopInset: CGFloat = 80
-    /// 月/周视图切换的拖拽阈值（pt）。超过此距离才判定为切换手势，
-    /// 避免点击按钮或日期格时的轻微滑动误触发。同时用于 minimumDistance 和方向判定。
+    /// 月/周视图切换的拖拽阈值（pt）。手势 minimumDistance 用此值——超过才开始跟踪。
+    /// 避免点击按钮或日期格时的轻微滑动误触发。
     static let viewModeDragThreshold: CGFloat = 40
+    /// 月/周视图切换的实际触发阈值（pt）。必须明显高于此值才算"有意切换"而非"普通滚动"。
+    /// 全屏手势下列表也在同一个 VStack——80pt 区分有意切换和普通列表滚动。
+    static let viewModeSwitchThreshold: CGFloat = 80
 
     /// 圆点直径跟 rowHeight 自适应（改动 A）：
     /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，

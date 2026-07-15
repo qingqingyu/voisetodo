@@ -219,45 +219,48 @@ final class TodoStore:
     }
 
     /// 详情页完整更新——支持直接设 dueDate、模糊时段和 detail。
-    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, timeBucket: TimeBucket?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
         let startedAt = Date()
-        // 钟点和模糊时段互斥；有钟点时让展示层按钟点推导分组。
-        let normalizedTimeBucket = (hasDueTime ?? false) ? nil : timeBucket
         let effectiveBucket = TimeBucketResolver.effective(
-            explicitBucket: normalizedTimeBucket,
-            dueDate: dueDate,
-            hasDueTime: hasDueTime ?? false
+            explicitBucket: update.timeBucket,
+            dueDate: update.dueDate,
+            hasDueTime: update.hasDueTime
         )
-        VoiceTodoLog.store.info("store.updateFull.start id=\(id.uuidString, privacy: .public) dueDate=\(dueDate != nil) hasDueTime=\(hasDueTime ?? false) explicitTimeBucket=\(timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public)")
+        VoiceTodoLog.store.info("store.updateFull.start id=\(id.uuidString, privacy: .public) dueDate=\(update.dueDate != nil) hasDueTime=\(update.hasDueTime) explicitTimeBucket=\(update.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public)")
         let todoItem = try findTodoItem(by: id)
+        let hadRecurrence = todoItem.recurrenceRule != nil
 
-        todoItem.title = title
-        if let detail = detail { todoItem.detail = detail }
-        if let category = category { todoItem.category = category }
-        if let priority = priority { todoItem.priority = priority }
+        // 先完成可能失败的写操作（删除旧完成记录），再修改 TodoItem。
+        // 显式 try 而非 try?：如果 completion 删除失败，说明底层 SwiftData 出了问题，
+        // 此时继续修改 TodoItem 可能导致不一致状态（recurrenceRule 清了但 completion 还在）。
+        // 放在 mutate 之前：失败时 todoItem 完全未被动过，上下文保持干净。
+        if hadRecurrence, update.recurrenceRule == nil {
+            try deleteCompletions(for: id)
+        }
+
+        todoItem.title = update.title
+        todoItem.detail = update.detail
+        if let category = update.category { todoItem.category = category }
+        if let priority = update.priority { todoItem.priority = priority }
         // dueDate 始终覆盖——nil = 清除日期（详情页 "Remove date" 用）
-        todoItem.dueDate = dueDate
-        todoItem.hasDueTime = hasDueTime ?? false
-        todoItem.timeBucket = normalizedTimeBucket
-        if let dueHint = dueHint {
+        todoItem.dueDate = update.dueDate
+        todoItem.hasDueTime = update.hasDueTime
+        todoItem.timeBucket = update.timeBucket
+        if let dueHint = update.dueHint {
             let normalized = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
             todoItem.dueHint = normalized.isEmpty ? nil : normalized
         }
-        if let recurrenceRule = recurrenceRule {
-            todoItem.recurrenceRule = recurrenceRule.isValid == true ? recurrenceRule : nil
-            if todoItem.recurrenceRule == nil {
-                try? deleteCompletions(for: id)
-            } else {
-                todoItem.isCompleted = false
-                todoItem.completedAt = nil
-            }
+        todoItem.recurrenceRule = update.recurrenceRule
+        if update.recurrenceRule != nil {
+            todoItem.isCompleted = false
+            todoItem.completedAt = nil
         }
 
         try saveOrRollback()
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
-        VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(dueDate != nil) explicitTimeBucket=\(todoItem.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public) detail=\(detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(update.dueDate != nil) explicitTimeBucket=\(todoItem.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public) detail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 更新重复规则（nil 表示关闭重复）

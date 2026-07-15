@@ -88,24 +88,29 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         try updateRecurrence(id, recurrenceRule: recurrenceRule)
     }
 
-    func updateFull(_ id: UUID, title: String, detail: String?, category: TodoCategory?, priority: Priority?, dueDate: Date?, hasDueTime: Bool?, timeBucket: TimeBucket?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
+    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }
 
-        todos[index].title = title
-        if let detail { todos[index].detail = detail }
-        if let category { todos[index].category = category }
-        if let priority { todos[index].priority = priority }
-        todos[index].dueDate = dueDate
-        let resolvedHasDueTime = hasDueTime ?? false
-        todos[index].hasDueTime = resolvedHasDueTime
-        todos[index].timeBucket = resolvedHasDueTime ? nil : timeBucket
-        if let dueHint {
-            todos[index].dueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : dueHint
+        let hadRecurrence = todos[index].recurrenceRule != nil
+        todos[index].title = update.title
+        todos[index].detail = update.detail
+        if let category = update.category { todos[index].category = category }
+        if let priority = update.priority { todos[index].priority = priority }
+        todos[index].dueDate = update.dueDate
+        todos[index].hasDueTime = update.hasDueTime
+        todos[index].timeBucket = update.timeBucket
+        if let dueHint = update.dueHint {
+            let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            todos[index].dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
         }
-        if let recurrenceRule {
-            todos[index].recurrenceRule = recurrenceRule
+        todos[index].recurrenceRule = update.recurrenceRule
+        if hadRecurrence, todos[index].recurrenceRule == nil {
+            completedOccurrences = completedOccurrences.filter { !$0.hasPrefix(id.uuidString) }
+        } else if todos[index].recurrenceRule != nil {
+            todos[index].isCompleted = false
+            todos[index].completedAt = nil
         }
     }
 

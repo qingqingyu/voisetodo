@@ -12,8 +12,8 @@ import Foundation
 /// 1. 优先用结构化字段（recurrence.displayTextWithEndDate + 相对日期 + 钟点/模糊时段）拼成
 ///    "每天 · 至 8月5日 · 15:00" 或 "明天 · 15:00"。
 /// 2. 结构化字段全空时退回 `dueHint` 原文（AI 自由文本，例如"明天下午3点"）。
-///    注意：HomeView 的 TodoItemData 有 dueDate，会传 relativeDateText，
-///    所以 dueHint 兜底只在 ConfirmSheet 的 ExtractedTodo（无 dueDate）场景触发。
+///    调用方可以把日期单独显示并传入 nil；当前 HomeView 就采用这种方式，
+///    ConfirmSheet 则在缺少结构化时间字段时使用 dueHint 兜底。
 /// 3. 再空则返回 nil（调用方不渲染）。
 ///
 /// 冗余权衡：当结构化字段存在时丢弃 dueHint 原文，

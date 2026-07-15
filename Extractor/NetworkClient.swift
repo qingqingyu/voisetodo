@@ -8,6 +8,7 @@ private struct ProxyExtractionRequest: Encodable {
     let locale: String
     let stream: Bool
     let vocabularyHints: [String]?
+    let personalHints: String?
 }
 
 // MARK: - SSE Parsing Models
@@ -61,12 +62,13 @@ final class NetworkClient {
     func callTodoExtractionProxy(
         transcript: String,
         localeIdentifier: String,
-        vocabularyHints: [String] = []
+        vocabularyHints: [String] = [],
+        personalHints: String? = nil
     ) async throws -> String {
         let requestID = VoiceTodoLog.makeID("proxy")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
 
         let request: URLRequest
         do {
@@ -76,6 +78,7 @@ final class NetworkClient {
                 localeIdentifier: localeIdentifier,
                 stream: false,
                 vocabularyHints: vocabularyHints,
+                personalHints: personalHints,
                 requestID: requestID,
                 extractID: extractID,
                 subscriptionJWS: subscriptionJWS
@@ -135,12 +138,13 @@ final class NetworkClient {
     func callTodoExtractionProxyStreaming(
         transcript: String,
         localeIdentifier: String,
-        vocabularyHints: [String] = []
+        vocabularyHints: [String] = [],
+        personalHints: String? = nil
     ) -> AsyncThrowingStream<String, Error> {
         let requestID = VoiceTodoLog.makeID("stream")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.stream.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -154,6 +158,7 @@ final class NetworkClient {
                         localeIdentifier: localeIdentifier,
                         stream: true,
                         vocabularyHints: vocabularyHints,
+                        personalHints: personalHints,
                         requestID: requestID,
                         extractID: extractID,
                         subscriptionJWS: subscriptionJWS
@@ -241,6 +246,7 @@ final class NetworkClient {
         localeIdentifier: String,
         stream: Bool,
         vocabularyHints: [String],
+        personalHints: String?,
         requestID: String,
         extractID: String,
         subscriptionJWS: String?
@@ -282,7 +288,8 @@ final class NetworkClient {
                     transcript: transcript,
                     locale: localeIdentifier,
                     stream: stream,
-                    vocabularyHints: vocabularyHints.isEmpty ? nil : vocabularyHints
+                    vocabularyHints: vocabularyHints.isEmpty ? nil : vocabularyHints,
+                    personalHints: personalHints
                 )
             )
             return request

@@ -14,6 +14,7 @@ final class AppCoordinator: ObservableObject {
     private let store: any AppCoordinatorTodoStore
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
+    private let correctionTracker = CorrectionTracker.shared
     private let calendarSyncService: CalendarSyncService
     private let pendingRecoveryFlow: PendingRecoveryFlow
     private let transcriptProcessingFlow: TranscriptProcessingFlow
@@ -43,6 +44,8 @@ final class AppCoordinator: ObservableObject {
     /// 语音输入不可用（识别器初始化失败 / 资源缺失）时设为 true，通知 UI 自动切键盘模式。
     /// UI 监听到 true 后应 switchInputPanelMode(toKeyboard: true) 并复位为 false。
     @Published var voiceInputFallbackToKeyboard = false
+    /// A2 自动学习:当用户反复把同一说法改成同一结果时,弹出建议写入 glossary。nil = 无建议。
+    @Published var glossarySuggestion: GlossarySuggestion?
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -493,6 +496,24 @@ final class AppCoordinator: ObservableObject {
             }
             activeInputLocaleIdentifier = nil
 
+            // A2: 自动学习——diff 原始提取 title vs 确认后 title,累计频次,达阈值弹建议
+            let originalTodos = self.extractedTodos
+            Task { [correctionTracker] in
+                for confirmed in todos {
+                    guard let original = originalTodos.first(where: { $0.id == confirmed.id }) else { continue }
+                    if original.title != confirmed.title {
+                        correctionTracker.record(
+                            original: original.title,
+                            confirmed: confirmed.title,
+                            localeIdentifier: confirmed.localeIdentifier ?? fallbackLearningLocaleIdentifier
+                        )
+                    }
+                }
+                if let first = correctionTracker.suggestions().first, self.glossarySuggestion == nil {
+                    self.glossarySuggestion = GlossarySuggestion(correction: first)
+                }
+            }
+
             let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
             if shouldSyncSystemCalendar {
                 let current = store.todos.filter { confirmedIds.contains($0.id) }
@@ -622,21 +643,11 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// 详情页完整更新——支持 dueDate、模糊时段和 detail。
-    func updateTodoDetail(
-        _ id: UUID,
-        title: String,
-        detail: String?,
-        category: TodoCategory?,
-        priority: Priority?,
-        dueDate: Date?,
-        hasDueTime: Bool?,
-        timeBucket: TimeBucket?,
-        dueHint: String?,
-        recurrenceRule: RecurrenceRule?
-    ) throws {
+    func updateTodoDetail(_ id: UUID, update: TodoDetailUpdate) throws {
+        let startedAt = Date()
         let oldTodo = store.todos.first { $0.id == id }
-        try store.updateFull(id, title: title, detail: detail, category: category, priority: priority, dueDate: dueDate, hasDueTime: hasDueTime, timeBucket: timeBucket, dueHint: dueHint, recurrenceRule: recurrenceRule)
-        VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(dueDate != nil) explicitTimeBucket=\(timeBucket?.rawValue ?? "nil", privacy: .public) hasDetail=\(detail != nil)")
+        try store.updateFull(id, update: update)
+        VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(update.dueDate != nil) explicitTimeBucket=\(update.timeBucket?.rawValue ?? "nil", privacy: .public) hasDetail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
         let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
         if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {

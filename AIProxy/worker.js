@@ -135,7 +135,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     requestContext.candidateCount = candidates.length;
 
-    const params = { transcript, locale, vocabularyHints, stream, today: todayDate };
+    const personalHints = typeof payload.personalHints === "string" ? payload.personalHints.trim() : null;
+    const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints };
     const result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
       healthStore: sharedHealthStore,
       onResponse: stream

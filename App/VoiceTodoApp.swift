@@ -296,6 +296,7 @@ struct VoiceTodoApp: App {
         guard startupStorageError == nil else { return }
         notificationSync.reconcileNow()
         Task { await entitlementManager.refresh() }
+        Task { await ReviewNotificationScheduler.scheduleWeekly() }
     }
 
     /// 处理场景状态变化

@@ -2,7 +2,7 @@
 //
 // Each provider adapter is a plain object implementing:
 //   - type                       : provider type tag (matches ProviderConfig.type)
-//   - buildRequest({transcript, locale, vocabularyHints, stream, provider, today}) -> {url, init}
+//   - buildRequest({transcript, locale, vocabularyHints, stream, provider, today, personalHints}) -> {url, init}
 //   - extractText(json)          : pull text from a non-streaming provider response
 //   - parseSSEEvent(rawData)     : convert one upstream SSE payload into {done, text}
 //   - isRetryable({status, bodyText, error}) -> {retryable, errorType}
@@ -41,15 +41,16 @@ export function classifyHttpRetryable({ status, bodyText, errorType }, modelConf
 }
 
 /**
- * 构造 system prompt（含 today 参考日期注入 + 可选 vocabulary hints）。
+ * 构造 system prompt（含 today 参考日期注入 + 可选 vocabulary hints + 可选 personal hints）。
  *
  * @param {"zh"|"zh-Hans"|"en"|"en-US"|string} locale
  * @param {string[]} vocabularyHints 词汇提示，可为空数组
  * @param {string} today 必填，YYYY-MM-DD 格式的参考日期（来自 resolveQuotaDate）
+ * @param {string|null} [personalHints=null] 用户个人约定提示，nullable。格式化由调用方完成，这里直接拼接
  * @returns {string} 完整 system prompt
  * @throws {ProxyHTTPError} today 缺失时抛 500（invariant_violation）
  */
-export function buildSystemPrompt(locale, vocabularyHints = [], today) {
+export function buildSystemPrompt(locale, vocabularyHints = [], today, personalHints = null) {
   // today 是参考日期（YYYY-MM-DD）。优先取客户端 X-Local-Date（已通过 resolveQuotaDate
   // 漂移校验），缺失/非法时回退服务端 UTC。用于帮助模型理解相对日期语境。
   // 注意：重复任务的「截止边界」不再让模型算日期——模型只输出结构化 recurrence_end
@@ -70,10 +71,14 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today) {
     todayLine = `\n\nReference date: ${today} (YYYY-MM-DD). Use this as the base for understanding relative dates.`;
   }
   const basePrompt = locale === "zh" ? CHINESE_SYSTEM_PROMPT : ENGLISH_SYSTEM_PROMPT;
-  if (!vocabularyHints.length) {
-    return `${basePrompt}${todayLine}`;
+  let prompt = `${basePrompt}${todayLine}`;
+  if (vocabularyHints.length) {
+    prompt += `\n\n${vocabularyHintPrompt(locale, vocabularyHints)}`;
   }
-  return `${basePrompt}${todayLine}\n\n${vocabularyHintPrompt(locale, vocabularyHints)}`;
+  if (personalHints) {
+    prompt += `\n\n${personalHints}`;
+  }
+  return prompt;
 }
 
 export function vocabularyHintPrompt(locale, vocabularyHints) {

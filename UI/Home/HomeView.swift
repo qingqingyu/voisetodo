@@ -293,6 +293,31 @@ struct HomeView<Store: HomeTodoStore>: View {
                         .accessibilityIdentifier("RecordingIndicator")
                 }
             }
+            // A2 自动学习建议 banner
+            .overlay(alignment: .top) {
+                if let suggestion = coordinator.glossarySuggestion {
+                    GlossarySuggestionBanner(
+                        suggestion: suggestion,
+                        onAccept: {
+                            PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
+                                type: .alias,
+                                phrase: suggestion.correction.originalTitle,
+                                expansion: suggestion.correction.confirmedTitle,
+                                localeIdentifier: suggestion.correction.localeIdentifier
+                            ))
+                            CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                            withAnimation { coordinator.glossarySuggestion = nil }
+                        },
+                        onDismiss: {
+                            CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                            withAnimation { coordinator.glossarySuggestion = nil }
+                        }
+                    )
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .padding(.top, WarmSpacing.xs)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VoiceFAB(
                     isDisabled: isInputEntryDisabled,
@@ -691,7 +716,6 @@ struct HomeView<Store: HomeTodoStore>: View {
                         onShift: shiftPeriod,
                         onJumpToToday: jumpToToday,
                         onSelectDay: selectDay,
-                        onSetViewMode: setViewMode,
                         onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
                         isOnToday: calendar.isDateInToday(selectedDate) && calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .month),
                         availableHeight: calendarHeight
@@ -733,6 +757,29 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .frame(height: listHeight)
                     .clipped()
                 }
+            }
+            // 全屏手势:整个屏幕(日历 + 列表)上下滑切换月/周。
+            // 上滑→周(放大细节),下滑→月(缩小概览)。
+            // 用 SimultaneousDragGesture(UIKit UIGestureRecognizer 包装)让列表滚动和拖拽共存——
+            // iOS 26 起 SwiftUI .simultaneousGesture 在容器内失效(FB18199844),改走 UIKit 路径。
+            .gesture(
+                SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
+                    let vertical = abs(drag.translation.height)
+                    let horizontal = abs(drag.translation.width)
+                    guard vertical > horizontal else { return }
+                    if drag.translation.height < -HomeLayoutMetrics.viewModeSwitchThreshold,
+                       calendarViewMode != .week {
+                        setViewMode(.week)
+                    } else if drag.translation.height > HomeLayoutMetrics.viewModeSwitchThreshold,
+                              calendarViewMode != .month {
+                        setViewMode(.month)
+                    }
+                }
+            )
+            .accessibilityAction(named: Text(calendarViewMode == .month
+                                             ? String(localized: "a11y.switch_to_week")
+                                             : String(localized: "a11y.switch_to_month"))) {
+                setViewMode(calendarViewMode == .month ? .week : .month)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -1302,6 +1349,59 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 }
 
-// MARK: - Warm Todo Card
+// MARK: - A2 自动学习建议 Banner
+
+private struct GlossarySuggestionBanner: View {
+    let suggestion: GlossarySuggestion
+    let onAccept: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: WarmSpacing.sm) {
+            Image(systemName: "lightbulb.fill")
+                .foregroundColor(.yellow)
+                .font(.system(size: 16))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("你常把「\(suggestion.correction.originalTitle)」")
+                    .font(WarmFont.body(13))
+                    .foregroundColor(WarmTheme.textPrimary)
+                + Text("改成「\(suggestion.correction.confirmedTitle)」")
+                    .font(WarmFont.body(13))
+                    .foregroundColor(WarmTheme.primary)
+                Text("记住这个说法吗?")
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textSecondary)
+            }
+
+            Spacer()
+
+            VStack(spacing: 6) {
+                Button(action: onAccept) {
+                    Text("记住")
+                        .font(WarmFont.headline(13))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, WarmSpacing.md)
+                        .padding(.vertical, WarmSpacing.xxs)
+                        .background(Capsule().fill(WarmTheme.primary))
+                }
+                .buttonStyle(.plain)
+
+                Button(action: onDismiss) {
+                    Text("不用")
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(WarmSpacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.section)
+                .fill(WarmTheme.background)
+                .shadow(color: WarmTheme.shadowLight, radius: 8, y: 2)
+        )
+    }
+}
 
 

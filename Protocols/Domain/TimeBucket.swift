@@ -23,28 +23,28 @@ enum TimeBucket: String, CaseIterable, Codable, Hashable, Sendable {
 
 /// 统一解析任务在首页展示时应归属的时段。
 enum TimeBucketResolver {
-    /// 显式模糊时段优先；否则仅在明确钟点存在时按小时推导；最后回退为随时。
+    /// 明确钟点优先；否则使用显式模糊时段；最后回退为随时。
     static func effective(
         explicitBucket: TimeBucket?,
         dueDate: Date?,
         hasDueTime: Bool,
         calendar: Calendar = .current
     ) -> TimeBucket {
+        if hasDueTime, let dueDate {
+            switch calendar.component(.hour, from: dueDate) {
+            case 5..<12:
+                return .morning
+            case 12..<18:
+                return .afternoon
+            default:
+                return .evening
+            }
+        }
+
         if let explicitBucket, explicitBucket != .anytime {
             return explicitBucket
         }
 
-        guard hasDueTime, let dueDate else {
-            return .anytime
-        }
-
-        switch calendar.component(.hour, from: dueDate) {
-        case 5..<12:
-            return .morning
-        case 12..<18:
-            return .afternoon
-        default:
-            return .evening
-        }
+        return .anytime
     }
 }

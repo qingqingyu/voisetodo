@@ -819,6 +819,83 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(recentTitles, ["完成后改成规律任务"])
     }
 
+    func testUpdateFullDisablesRecurrenceAndDeletesOccurrenceCompletions() async throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let item = TodoItemData(
+            title: "停止重复的任务",
+            dueDate: today,
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            createdAt: today,
+            sortOrder: -1
+        )
+        try sut.seedForUITests([item])
+        let todo = try XCTUnwrap(sut.todos.first)
+        try sut.toggleOccurrenceComplete(todo.id, on: today)
+        XCTAssertEqual(try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>()).count, 1)
+
+        try sut.updateFull(
+            todo.id,
+            update: TodoDetailUpdate(
+                title: todo.title,
+                detail: todo.detail,
+                category: nil,
+                priority: nil,
+                dueDate: todo.dueDate,
+                hasDueTime: todo.hasDueTime,
+                timeBucket: todo.timeBucket,
+                dueHint: nil,
+                recurrenceRule: nil
+            )
+        )
+
+        XCTAssertNil(sut.todos.first?.recurrenceRule)
+        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>()).isEmpty)
+    }
+
+    func testUpdateFullClearsDetailWhenCommandDetailIsNil() throws {
+        let item = TodoItemData(title: "清空备注", detail: "旧备注", sortOrder: -1)
+        try sut.seedForUITests([item])
+
+        try sut.updateFull(
+            item.id,
+            update: TodoDetailUpdate(
+                title: item.title,
+                detail: nil,
+                category: nil,
+                priority: nil,
+                dueDate: nil,
+                hasDueTime: false,
+                timeBucket: nil,
+                dueHint: nil,
+                recurrenceRule: nil
+            )
+        )
+
+        XCTAssertNil(sut.todos.first?.detail)
+    }
+
+    func testUpdateFullClearsDueHintWhenCommandDueHintIsEmpty() throws {
+        let item = TodoItemData(title: "清空旧时间提示", dueHint: "明天", sortOrder: -1)
+        try sut.seedForUITests([item])
+
+        try sut.updateFull(
+            item.id,
+            update: TodoDetailUpdate(
+                title: item.title,
+                detail: item.detail,
+                category: nil,
+                priority: nil,
+                dueDate: nil,
+                hasDueTime: false,
+                timeBucket: nil,
+                dueHint: "",
+                recurrenceRule: nil
+            )
+        )
+
+        XCTAssertNil(sut.todos.first?.dueHint)
+    }
+
     func testWeeklyAndMonthlyRecurrenceExpansion() async throws {
         // Given: 固定日期区间内的每周和每月规则
         let calendar = Calendar.current

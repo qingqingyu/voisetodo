@@ -407,6 +407,35 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)")
     }
 
+    func testUpdateTodoDetailPersistsTimeBucketThroughStoreContract() throws {
+        let item = TodoItemData(title: "晚上健身")
+        let store = CoordinatorTestStore(todos: [item])
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            calendarWriteModeProvider: { .appOnly }
+        )
+
+        try coordinator.updateTodoDetail(
+            item.id,
+            update: TodoDetailUpdate(
+                title: item.title,
+                detail: nil,
+                category: nil,
+                priority: nil,
+                dueDate: Calendar.current.startOfDay(for: Date()),
+                hasDueTime: false,
+                timeBucket: .evening,
+                dueHint: nil,
+                recurrenceRule: nil
+            )
+        )
+
+        XCTAssertEqual(store.todos.first?.timeBucket, .evening)
+        XCTAssertFalse(store.todos.first?.hasDueTime ?? true)
+    }
+
     func testUpdateTodoKeepsCalendarIdentifierWhenRemovingOldEventFails() async throws {
         let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "明天")
         var savedTodo = TodoItemData(from: item)
@@ -786,6 +815,29 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
             )
         }
         todos[index].recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
+    }
+
+    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+        }
+
+        todos[index].title = update.title
+        todos[index].detail = update.detail
+        if let category = update.category { todos[index].category = category }
+        if let priority = update.priority { todos[index].priority = priority }
+        todos[index].dueDate = update.dueDate
+        todos[index].hasDueTime = update.hasDueTime
+        todos[index].timeBucket = update.timeBucket
+        if let dueHint = update.dueHint {
+            let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            todos[index].dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
+        }
+        todos[index].recurrenceRule = update.recurrenceRule
+        if todos[index].recurrenceRule != nil {
+            todos[index].isCompleted = false
+            todos[index].completedAt = nil
+        }
     }
 
     func pendingItems() async throws -> [TodoItemData] {

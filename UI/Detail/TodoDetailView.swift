@@ -498,18 +498,24 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             coordinator.showToast(message: recurrenceValidationMessage ?? ErrorMessages.storageError, style: .warning)
             return
         }
+        let timeMetadataChanged = editedDueDate != todo.dueDate ||
+                                  editedHasDueTime != todo.hasDueTime ||
+                                  editedTimeBucket != todo.timeBucket ||
+                                  recurrenceStateChanged
         do {
             try coordinator.updateTodoDetail(
                 todo.id,
-                title: editedTitle,
-                detail: editedDetail.isEmpty ? nil : editedDetail,
-                category: editedCategory != todo.category ? editedCategory : nil,
-                priority: editedPriority != todo.priority ? editedPriority : nil,
-                dueDate: editedDueDate,
-                hasDueTime: editedHasDueTime,
-                timeBucket: editedTimeBucket,
-                dueHint: nil,
-                recurrenceRule: editedRecurrenceRule
+                update: TodoDetailUpdate(
+                    title: editedTitle,
+                    detail: editedDetail.isEmpty ? nil : editedDetail,
+                    category: editedCategory != todo.category ? editedCategory : nil,
+                    priority: editedPriority != todo.priority ? editedPriority : nil,
+                    dueDate: editedDueDate,
+                    hasDueTime: editedHasDueTime,
+                    timeBucket: editedTimeBucket,
+                    dueHint: timeMetadataChanged ? "" : nil,
+                    recurrenceRule: editedRecurrenceRule
+                )
             )
         } catch {
             VoiceTodoLog.store.error("ui.detail.save_failed id=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")

@@ -80,6 +80,18 @@ struct HomeSettingsSheet: View {
                     }
                     .accessibilityIdentifier("ClearVocabularyButton")
 
+                    NavigationLink {
+                        PersonalGlossaryView()
+                    } label: {
+                        Label("我的说法", systemImage: "text.book.closed")
+                    }
+
+                    NavigationLink {
+                        ReviewView()
+                    } label: {
+                        Label("回顾", systemImage: "chart.bar.fill")
+                    }
+
                     if didClearLearningData {
                         Text(String(localized: "settings.personalization.cleared"))
                             .font(.footnote)

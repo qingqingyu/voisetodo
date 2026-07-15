@@ -371,16 +371,35 @@ final class DomainModuleTests: XCTestCase {
         )
     }
 
+    // MARK: - TodoDetailUpdate
+
+    func testTodoDetailUpdateNormalizesClockTimeWithoutDueDate() {
+        let update = TodoDetailUpdate(
+            title: "无日期但带钟点标记",
+            detail: nil,
+            category: nil,
+            priority: nil,
+            dueDate: nil,
+            hasDueTime: true,
+            timeBucket: .evening,
+            dueHint: nil,
+            recurrenceRule: nil
+        )
+
+        XCTAssertFalse(update.hasDueTime)
+        XCTAssertEqual(update.timeBucket, .evening)
+    }
+
     // MARK: - TimeBucketResolver
 
-    func testTimeBucketResolverPrefersExplicitBucketOverClockTime() throws {
+    func testTimeBucketResolverPrefersClockTimeOverConflictingExplicitBucket() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
         let dueDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 15)))
 
         XCTAssertEqual(
             TimeBucketResolver.effective(explicitBucket: .morning, dueDate: dueDate, hasDueTime: true, calendar: calendar),
-            .morning
+            .afternoon
         )
     }
 

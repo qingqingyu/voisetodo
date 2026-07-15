@@ -6,6 +6,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
     private let networkClient: NetworkClient
     private let vocabularyProvider: any UserVocabularyProviding
+    private let glossaryProvider: any PersonalGlossaryProviding
     private let circuitBreaker: ExtractorCircuitBreaker
     /// 可注入的退避延时，便于测试注入空实现以消除真实 sleep 耗时。
     private let sleep: (TimeInterval) async -> Void
@@ -15,11 +16,13 @@ final class TodoExtractorService: TodoExtractorProtocol {
     init(
         networkClient: NetworkClient = NetworkClient(),
         vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared,
+        glossaryProvider: any PersonalGlossaryProviding = PersonalGlossaryStore.shared,
         circuitBreaker: ExtractorCircuitBreaker = ExtractorCircuitBreaker(),
         sleep: @escaping (TimeInterval) async -> Void = { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
     ) {
         self.networkClient = networkClient
         self.vocabularyProvider = vocabularyProvider
+        self.glossaryProvider = glossaryProvider
         self.circuitBreaker = circuitBreaker
         self.sleep = sleep
     }
@@ -175,7 +178,8 @@ final class TodoExtractorService: TodoExtractorProtocol {
             localeIdentifier: localeIdentifier,
             limit: UserVocabularyConfig.aiHintsLimit
         )
-        VoiceTodoLog.extractor.info("extract.stream.start id=\(streamID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        let personalHints = glossaryProvider.personalHints(localeIdentifier: localeIdentifier)
+        VoiceTodoLog.extractor.info("extract.stream.start id=\(streamID, privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -193,7 +197,8 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     let stream = client.callTodoExtractionProxyStreaming(
                         transcript: transcript,
                         localeIdentifier: localeIdentifier,
-                        vocabularyHints: vocabularyHints
+                        vocabularyHints: vocabularyHints,
+                        personalHints: personalHints
                     )
 
                     for try await delta in stream {
@@ -332,11 +337,13 @@ final class TodoExtractorService: TodoExtractorProtocol {
             localeIdentifier: locale.identifier,
             limit: UserVocabularyConfig.aiHintsLimit
         )
-        VoiceTodoLog.extractor.info("extract.context.ready id=\(VoiceTodoLog.currentExtractID(fallbackPrefix: "extract"), privacy: .public) vocabularyHints=\(vocabularyHints.count)")
+        let personalHints = glossaryProvider.personalHints(localeIdentifier: locale.identifier)
+        VoiceTodoLog.extractor.info("extract.context.ready id=\(VoiceTodoLog.currentExtractID(fallbackPrefix: "extract"), privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public)")
         return try await networkClient.callTodoExtractionProxy(
             transcript: transcript,
             localeIdentifier: locale.identifier,
-            vocabularyHints: vocabularyHints
+            vocabularyHints: vocabularyHints,
+            personalHints: personalHints
         )
     }
 
