@@ -10,12 +10,15 @@ enum RecurrenceFrequency: String, Codable, CaseIterable, Sendable {
 /// 待办重复规则。weekday 使用 Calendar 的 weekday 语义：1=周日，2=周一 ... 7=周六。
 struct RecurrenceRule: Codable, Hashable, Sendable {
     var frequency: RecurrenceFrequency
+    /// 每 N 个周期重复一次(默认 1)。"每两周"=interval 2,"每三个月"=interval 3。
+    var interval: Int
     var weekdays: [Int]
     var dayOfMonth: Int?
     var endDate: Date?
 
     private enum CodingKeys: String, CodingKey {
         case frequency
+        case interval
         case weekdays
         case dayOfMonth
         case endDate
@@ -23,11 +26,13 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
 
     init(
         frequency: RecurrenceFrequency,
+        interval: Int = 1,
         weekdays: [Int] = [],
         dayOfMonth: Int? = nil,
         endDate: Date? = nil
     ) {
         self.frequency = frequency
+        self.interval = max(1, interval)
         self.weekdays = Array(Set(weekdays.filter { (1...7).contains($0) })).sorted()
         self.dayOfMonth = dayOfMonth.flatMap { (1...31).contains($0) ? $0 : nil }
         self.endDate = endDate.map { Calendar.current.startOfDay(for: $0) }
@@ -36,12 +41,14 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let frequency = try container.decode(RecurrenceFrequency.self, forKey: .frequency)
+        let interval = try container.decodeIfPresent(Int.self, forKey: .interval) ?? 1
         let weekdays = try container.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
         let dayOfMonth = try container.decodeIfPresent(Int.self, forKey: .dayOfMonth)
         let endDate = try Self.decodeEndDate(from: container)
 
         self.init(
             frequency: frequency,
+            interval: interval,
             weekdays: weekdays,
             dayOfMonth: dayOfMonth,
             endDate: endDate
@@ -51,6 +58,7 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(frequency, forKey: .frequency)
+        try container.encode(interval, forKey: .interval)
         try container.encode(weekdays, forKey: .weekdays)
         try container.encodeIfPresent(dayOfMonth, forKey: .dayOfMonth)
         try container.encodeIfPresent(endDate, forKey: .endDate)
@@ -92,7 +100,8 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
         case .daily:
             return true
         case .weekly:
-            return !weekdays.isEmpty
+            // weekly 有效条件:指定了 weekdays,或者 interval > 1(如"每两周"不需要指定周几)
+            return !weekdays.isEmpty || interval > 1
         case .monthly:
             return dayOfMonth != nil
         }
@@ -110,7 +119,21 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
         case .daily:
             return true
         case .weekly:
-            return weekdays.contains(calendar.component(.weekday, from: day))
+            if weekdays.isEmpty {
+                // interval-based weekly("每两周"无指定周几):从起始日每 interval*7 天一次
+                guard interval > 1 else { return false }
+                let dayDiff = calendar.dateComponents([.day], from: start, to: day).day ?? 0
+                return dayDiff % (interval * 7) == 0
+            }
+            // weekday-based:检查周几匹配
+            guard weekdays.contains(calendar.component(.weekday, from: day)) else { return false }
+            if interval > 1 {
+                // weekday + interval("每两周周一"):只匹配每隔 interval 周的那天
+                let dayDiff = calendar.dateComponents([.day], from: start, to: day).day ?? 0
+                let weekDiff = dayDiff / 7
+                return weekDiff % interval == 0
+            }
+            return true
         case .monthly:
             guard let dayOfMonth else { return false }
             return calendar.component(.day, from: day) == dayOfMonth

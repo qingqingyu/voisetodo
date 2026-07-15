@@ -113,6 +113,8 @@ struct ExtractedTodo: Identifiable, Codable {
     var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var categoryHint: TodoCategory
+    /// 多个提醒时间点(["15:00","17:00","19:00"]),AI schema 新增。nil = 无多时间提醒。
+    var reminderTimes: [String]?
     /// 本地附加的输入语言标识；AI 响应不会提供，离线恢复用于保留原 pending locale。
     var localeIdentifier: String?
 
@@ -126,6 +128,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case timeBucket = "time_bucket"
         case recurrenceRule
         case recurrenceEnd  // 仅用于 init(from:) 解码 AI 返回的结构化截止边界
+        case reminderTimes = "reminder_times"
         case priority
         case categoryHint
     }
@@ -145,6 +148,7 @@ struct ExtractedTodo: Identifiable, Codable {
         try container.encodeIfPresent(dueTime, forKey: .dueTime)
         try container.encodeIfPresent(timeBucket, forKey: .timeBucket)
         try container.encodeIfPresent(recurrenceRule, forKey: .recurrenceRule)
+        try container.encodeIfPresent(reminderTimes, forKey: .reminderTimes)
         try container.encode(priority, forKey: .priority)
         try container.encode(categoryHint, forKey: .categoryHint)
         // 故意跳过 .recurrenceEnd 和 localeIdentifier——
@@ -162,6 +166,7 @@ struct ExtractedTodo: Identifiable, Codable {
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         categoryHint: TodoCategory = .other,
+        reminderTimes: [String]? = nil,
         localeIdentifier: String? = nil
     ) {
         self.id = id
@@ -181,6 +186,9 @@ struct ExtractedTodo: Identifiable, Codable {
         )
         self.priority = priority
         self.categoryHint = categoryHint
+        // reminderTimes: 逐条过 sanitizeDueTime(校验 "HH:mm" 格式),非法值过滤掉
+        self.reminderTimes = reminderTimes?.compactMap { Self.sanitizeDueTime($0) }
+        self.reminderTimes = self.reminderTimes?.isEmpty == false ? self.reminderTimes : nil
         self.localeIdentifier = localeIdentifier
     }
 
@@ -288,6 +296,8 @@ struct ExtractedTodo: Identifiable, Codable {
             recurrenceRule = resolvedRule
         }
         // 容错解码：AI 返回表外的 priority/category 值时回落默认值，而非让整次解码失败
+        // reminder_times: 多个提醒时间点(schema 新增),malformed 一律吞成 nil
+        reminderTimes = (try? container.decodeIfPresent([String].self, forKey: .reminderTimes)) ?? nil
         priority = Priority.tolerant(try container.decodeIfPresent(String.self, forKey: .priority))
         categoryHint = TodoCategory.tolerant(try container.decodeIfPresent(String.self, forKey: .categoryHint))
         localeIdentifier = nil
@@ -347,6 +357,55 @@ enum TextUtils {
 
 // MARK: - 跨模块传递的通用数据类型（不依赖 SwiftData）
 
+/// 详情页提交给存储层的一次完整更新。
+///
+/// 将相关字段收拢为一个命令对象，后续扩展详情字段时无需修改所有协议和方法签名。
+/// 字段 nil 语义：
+/// - `title`：始终提供，直接覆盖。
+/// - `detail`：nil = 清空备注，非 nil = 替换。
+/// - `dueDate`：nil = 清除日期，非 nil = 设置日期。
+/// - `hasDueTime`：无 `dueDate` 时归一化为 false；否则直接覆盖。
+/// - `timeBucket`：nil = 不保留模糊时段（有钟点或 .anytime 时 init 会自动归零）。
+/// - `recurrenceRule`：nil = 清除重复规则（会删除已记录的完成），非 nil = 设置规则（重置完成状态）。
+/// - `category`、`priority`：nil = 保留原值，非 nil = 替换。
+/// - `dueHint`：nil = 保留原值，空字符串 = 清除，非空 = 替换。
+struct TodoDetailUpdate: Sendable {
+    let title: String
+    let detail: String?
+    let category: TodoCategory?
+    let priority: Priority?
+    let dueDate: Date?
+    let hasDueTime: Bool
+    let timeBucket: TimeBucket?
+    let dueHint: String?
+    let recurrenceRule: RecurrenceRule?
+
+    init(
+        title: String,
+        detail: String?,
+        category: TodoCategory?,
+        priority: Priority?,
+        dueDate: Date?,
+        hasDueTime: Bool,
+        timeBucket: TimeBucket?,
+        dueHint: String?,
+        recurrenceRule: RecurrenceRule?
+    ) {
+        self.title = title
+        self.detail = detail
+        self.category = category
+        self.priority = priority
+        self.dueDate = dueDate
+        let normalizedHasDueTime = dueDate != nil && hasDueTime
+        self.hasDueTime = normalizedHasDueTime
+        // 有钟点时丢弃模糊时段：TimeBucketResolver 也以钟点优先推导，
+        // 在此处归零可避免持久化一个与钟点矛盾的 timeBucket。
+        self.timeBucket = normalizedHasDueTime || timeBucket == .anytime ? nil : timeBucket
+        self.dueHint = dueHint
+        self.recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
+    }
+}
+
 /// 待办数据传输对象，用于跨模块传递
 /// Agent D 的 UI 和 Widget 只依赖这个类型，不需要知道 SwiftData 的存在
 struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
@@ -362,6 +421,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     var recurrenceRule: RecurrenceRule?
     var priority: Priority
     var category: TodoCategory
+    /// 多个提醒时间点(["15:00","17:00"]),nil = 无。
+    var reminderTimes: [String]?
     var isCompleted: Bool
     var completedAt: Date?
     var createdAt: Date
@@ -384,6 +445,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         recurrenceRule: RecurrenceRule? = nil,
         priority: Priority = .normal,
         category: TodoCategory = .other,
+        reminderTimes: [String]? = nil,
         isCompleted: Bool = false,
         completedAt: Date? = nil,
         createdAt: Date = Date(),
@@ -404,6 +466,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.recurrenceRule = recurrenceRule
         self.priority = priority
         self.category = category
+        self.reminderTimes = reminderTimes
         self.isCompleted = isCompleted
         self.completedAt = completedAt
         self.createdAt = createdAt
@@ -435,6 +498,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.recurrenceRule = extracted.recurrenceRule
         self.priority = extracted.priority
         self.category = extracted.categoryHint
+        self.reminderTimes = extracted.reminderTimes
         self.isCompleted = false
         self.completedAt = nil
         self.createdAt = Date()

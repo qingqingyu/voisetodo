@@ -20,6 +20,10 @@ final class TodoItem {
     var recurrenceWeekdaysRaw: String?
     var recurrenceDayOfMonth: Int?
     var recurrenceEndDate: Date?
+    /// 重复间隔(每 N 个周期)。默认 1 → SwiftData 轻量迁移,旧数据自动补 1。
+    var recurrenceInterval: Int = 1
+    /// 多个提醒时间点(JSON 数组字符串,如 "[\"15:00\",\"17:00\"]")。nil = 无多时间提醒。
+    var reminderTimesRaw: String?
     var priorityRaw: String
     var categoryRaw: String
     var isCompleted: Bool
@@ -73,7 +77,8 @@ final class TodoItem {
         needsAIProcessing: Bool = false,
         sortOrder: Int = 0,
         systemCalendarEventIdentifier: String? = nil,
-        localeIdentifier: String? = nil
+        localeIdentifier: String? = nil,
+        reminderTimes: [String]? = nil
     ) {
         self.id = id
         self.title = title
@@ -83,6 +88,7 @@ final class TodoItem {
         self.hasDueTime = hasDueTime
         self.timeBucketRaw = hasDueTime || timeBucket == .anytime ? nil : timeBucket?.rawValue
         self.recurrenceFrequencyRaw = recurrenceRule?.frequency.rawValue
+        self.recurrenceInterval = recurrenceRule?.interval ?? 1
         self.recurrenceWeekdaysRaw = Self.encodeWeekdays(recurrenceRule?.weekdays ?? [])
         self.recurrenceDayOfMonth = recurrenceRule?.dayOfMonth
         self.recurrenceEndDate = recurrenceRule?.endDate
@@ -96,6 +102,14 @@ final class TodoItem {
         self.sortOrder = sortOrder
         self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
         self.localeIdentifier = localeIdentifier
+        // reminderTimes → JSON 字符串存储
+        if let reminderTimes, !reminderTimes.isEmpty,
+           let data = try? JSONEncoder().encode(reminderTimes),
+           let raw = String(data: data, encoding: .utf8) {
+            self.reminderTimesRaw = raw
+        } else {
+            self.reminderTimesRaw = nil
+        }
     }
 
     // MARK: - Conversion
@@ -114,6 +128,7 @@ final class TodoItem {
             recurrenceRule: recurrenceRule,
             priority: Priority(rawValue: priorityRaw) ?? .normal,
             category: TodoCategory(rawValue: categoryRaw) ?? .other,
+            reminderTimes: reminderTimes,
             isCompleted: isCompleted,
             completedAt: completedAt,
             createdAt: createdAt,
@@ -133,6 +148,7 @@ final class TodoItem {
             }
             let rule = RecurrenceRule(
                 frequency: frequency,
+                interval: recurrenceInterval,
                 weekdays: Self.decodeWeekdays(recurrenceWeekdaysRaw),
                 dayOfMonth: recurrenceDayOfMonth,
                 endDate: recurrenceEndDate
@@ -141,9 +157,31 @@ final class TodoItem {
         }
         set {
             recurrenceFrequencyRaw = newValue?.frequency.rawValue
+            recurrenceInterval = newValue?.interval ?? 1
             recurrenceWeekdaysRaw = Self.encodeWeekdays(newValue?.weekdays ?? [])
             recurrenceDayOfMonth = newValue?.dayOfMonth
             recurrenceEndDate = newValue?.endDate
+        }
+    }
+
+    /// 多个提醒时间点(["15:00","17:00","19:00"])。nil = 无多时间提醒。
+    var reminderTimes: [String]? {
+        get {
+            guard let raw = reminderTimesRaw,
+                  let data = raw.data(using: .utf8),
+                  let times = try? JSONDecoder().decode([String].self, from: data) else {
+                return nil
+            }
+            return times.isEmpty ? nil : times
+        }
+        set {
+            guard let newValue, !newValue.isEmpty,
+                  let data = try? JSONEncoder().encode(newValue),
+                  let raw = String(data: data, encoding: .utf8) else {
+                reminderTimesRaw = nil
+                return
+            }
+            reminderTimesRaw = raw
         }
     }
 
@@ -200,7 +238,8 @@ extension TodoItem {
             rawTranscript: rawTranscript,
             needsAIProcessing: false,
             systemCalendarEventIdentifier: nil,
-            localeIdentifier: extracted.localeIdentifier
+            localeIdentifier: extracted.localeIdentifier,
+            reminderTimes: extracted.reminderTimes
         )
     }
 
