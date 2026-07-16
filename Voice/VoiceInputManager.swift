@@ -40,7 +40,14 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     // MARK: - Public Properties
 
-    let currentLocale: Locale
+    /// 当前识别 locale。`private(set)`——外部只读，写入由 `startRecording` 在每次
+    /// 录音前根据用户设置（`SpeechRecognitionLanguage.storageKey`）刷新。
+    /// 协议 `VoiceInputProtocol.currentLocale` 声明为 `{ get }`，外部读访问兼容。
+    ///
+    /// 注意：此值仅在 `startRecording` 入口刷新。`AppCoordinator` 在录音进行中或
+    /// 刚结束时读取此属性拿到的都是上次 `startRecording` 时的 locale——这是有意的,
+    /// 因为识别结果对应的 locale 应该与录音开始时一致，不应中途变化。
+    private(set) var currentLocale: Locale
 
     // MARK: - Private Properties
 
@@ -73,7 +80,7 @@ final class VoiceInputManager: VoiceInputProtocol {
     // MARK: - Initialization
 
     init(vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared) {
-        let locale = VoiceInputManager.selectLocale()
+        let locale = VoiceInputManager.resolveCurrentLocale()
         self.currentLocale = locale
         self.vocabularyProvider = vocabularyProvider
         speechRecognizer = SFSpeechRecognizer(locale: locale)
@@ -86,6 +93,23 @@ final class VoiceInputManager: VoiceInputProtocol {
         guard !isRecording else {
             VoiceTodoLog.voice.warning("recording.start.ignored reason=already_recording activeID=\(self.recordingSessionID ?? "none", privacy: .public)")
             return
+        }
+
+        // 用户可能在上次录音结束后改了设置页的语言选项。每次开始录音前重新解析一次,
+        // 如果跟当前 currentLocale 不同就重建 SFSpeechRecognizer——
+        // 识别器对象本身是廉价的(不预加载模型),重建成本可忽略,
+        // 比让用户改了设置必须重启 App 才生效好得多。
+        // 若新 locale 无法创建识别器（设备不支持），保留旧识别器并回退到旧 locale,
+        // 避免用户切到不支持的 locale 后丢失可用的识别器。
+        let desired = VoiceInputManager.resolveCurrentLocale()
+        if desired.identifier != currentLocale.identifier {
+            if let newRecognizer = SFSpeechRecognizer(locale: desired) {
+                VoiceTodoLog.voice.info("locale.rotated old=\(self.currentLocale.identifier, privacy: .public) new=\(desired.identifier, privacy: .public)")
+                speechRecognizer = newRecognizer
+                currentLocale = desired
+            } else {
+                VoiceTodoLog.voice.error("locale.rotation_failed unsupported_locale=\(desired.identifier, privacy: .public) keeping=\(self.currentLocale.identifier, privacy: .public)")
+            }
         }
 
         let sessionID = VoiceTodoLog.makeID("recording")
@@ -574,14 +598,32 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     // MARK: - Private Methods
 
-    /// 根据系统语言选择 locale
-    private static func selectLocale() -> Locale {
+    /// 解析当前应该使用的 locale。
+    ///
+    /// 优先级：用户的显式选择（`SpeechRecognitionLanguage.storageKey`）>
+    /// 系统首选语言（`auto` 模式）> 英文兜底。
+    ///
+    /// **每次 `init` 和 `startRecording` 都调用一次**——这让用户在设置页改了之后，
+    /// 下次录音立即生效（不用重启 App，不需要重建 VoiceInputManager）。
+    private static func resolveCurrentLocale() -> Locale {
+        let stored = UserDefaults.standard.string(forKey: SpeechRecognitionLanguage.storageKey)
+            ?? SpeechRecognitionLanguage.auto.rawValue
+        let choice = SpeechRecognitionLanguage(rawValue: stored) ?? .auto
+        if let fixed = choice.fixedLocale {
+            VoiceTodoLog.voice.info("locale.user_selected choice=\(choice.rawValue, privacy: .public) selected=\(fixed.identifier, privacy: .public)")
+            return fixed
+        }
+        return resolveSystemLocale()
+    }
+
+    /// `auto` 模式下的系统首选语言匹配。
+    private static func resolveSystemLocale() -> Locale {
         let preferredLanguage = Locale.preferredLanguages.first ?? "en-US"
 
         // 检查是否支持
         for locale in VoiceConstants.supportedLocales {
             if preferredLanguage.hasPrefix(locale.languageCode ?? "") {
-                VoiceTodoLog.voice.info("locale.selected preferred=\(preferredLanguage, privacy: .public) selected=\(locale.identifier, privacy: .public)")
+                VoiceTodoLog.voice.info("locale.system preferred=\(preferredLanguage, privacy: .public) selected=\(locale.identifier, privacy: .public)")
                 return locale
             }
         }

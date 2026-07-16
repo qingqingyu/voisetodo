@@ -5,6 +5,10 @@ struct HomeSettingsSheet: View {
     @AppStorage(NotificationPlanner.enabledDefaultsKey) private var notificationsEnabled = true
     @AppStorage(UserVocabularyStore.isEnabledKey, store: UserVocabularyStore.sharedDefaults())
     private var isPersonalizedRecognitionEnabled = true
+    /// 语音识别语言（"auto" / "zh-Hans" / "en-US"）。
+    /// 改了之后下次 startRecording 立即生效（不用重启 App）。
+    @AppStorage(SpeechRecognitionLanguage.storageKey)
+    private var speechRecognitionLanguage: String = SpeechRecognitionLanguage.auto.rawValue
     @Environment(\.dismiss) private var dismiss
     @State private var showClearConfirmation = false
     @State private var didClearLearningData = false
@@ -52,6 +56,17 @@ struct HomeSettingsSheet: View {
                     }
                     .pickerStyle(.inline)
                     .accessibilityIdentifier("CalendarWriteModePicker")
+                }
+
+                Section(String(localized: "settings.speech_language.title")) {
+                    Picker(String(localized: "settings.speech_language.title"), selection: $speechRecognitionLanguage) {
+                        ForEach(SpeechRecognitionLanguage.allCases) { lang in
+                            Text(lang.displayName)
+                                .tag(lang.rawValue)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .accessibilityIdentifier("SpeechLanguagePicker")
                 }
 
                 Section {
