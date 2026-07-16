@@ -13,15 +13,24 @@ enum TodoDueStatus: Equatable {
 /// 根据待办状态生成轻量的截止日期语义。
 enum RelativeDueLabel {
     /// 返回普通待办的截止日期状态；已完成和重复待办不显示截止状态。
+    ///
+    /// `hasDueTime=true` 时按"具体时刻"判过期：今天 12:00 的任务在 12:00 之后即算 `.overdue`
+    /// （不再等到跨天）。无钟点的任务（含"时段⇒今天"落的模糊时段任务）仍按天判定，不误标过期。
     static func status(
         dueDate: Date?,
         isCompleted: Bool,
         recurrenceRule: RecurrenceRule?,
+        hasDueTime: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> TodoDueStatus? {
         guard let dueDate, !isCompleted, recurrenceRule == nil else {
             return nil
+        }
+
+        // 带钟点且具体时刻已过 → 过期（哪怕就是今天）。
+        if hasDueTime, dueDate < now {
+            return .overdue
         }
 
         let dueDay = calendar.startOfDay(for: dueDate)

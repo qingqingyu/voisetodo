@@ -3,7 +3,9 @@ import UIKit
 import WidgetKit
 
 private func formattedHomeDate(_ date: Date) -> String {
-    date.formatted(.dateTime.month().day().weekday(.wide))
+    // 只给「月 日」（"Jul 16"）：星期已由下方大标题（todayWeekdayTitle）承担，
+    // 这里再带 weekday 会重复，还会把顶部一行挤到折行 + greeting 截断。
+    date.formatted(.dateTime.month().day())
 }
 
 private enum HomeKeyboardAnimation {

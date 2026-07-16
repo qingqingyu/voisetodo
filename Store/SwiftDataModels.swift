@@ -222,12 +222,18 @@ extension TodoItem {
                 detail: extracted.detail
             )
         let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
+        // 时段⇒今天：只有模糊时段没日期时补今天，让任务落进「今日/时段」而非 Unscheduled。
+        let effectiveDate = TodoScheduleDefaults.effectiveDueDate(
+            resolvedDate: timed.date,
+            hasDueTime: timed.hasTime,
+            timeBucket: extracted.timeBucket
+        )
         return TodoItem(
             id: extracted.id,
             title: extracted.title,
             detail: extracted.detail.isEmpty ? nil : extracted.detail,
             dueHint: extracted.dueHint,
-            dueDate: timed.date,
+            dueDate: effectiveDate,
             hasDueTime: timed.hasTime,
             timeBucket: extracted.timeBucket,
             recurrenceRule: extracted.recurrenceRule,

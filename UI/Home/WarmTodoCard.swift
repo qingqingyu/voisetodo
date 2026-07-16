@@ -48,12 +48,22 @@ enum VoiceOverLabel {
 }
 
 
+/// 截止状态尾标的展示策略。
+enum DueStatusDisplayMode {
+    /// 显示全部状态（overdue / today / tomorrow / 具体日期）。
+    case full
+    /// 只显示 `.overdue`，其余返回 nil。用于按天分组的列表——日期已由分区头给出，
+    /// 挂 "Today" 是冗余，只有"过期"才补充信息。
+    case overdueOnly
+}
+
 struct WarmTodoCard: View {
     let index: Int
     let todo: TodoItemData
     let onToggle: () -> Void
     var onTap: (() -> Void)? = nil
     var showsTimeBucketMetadata = true
+    var dueStatusDisplayMode: DueStatusDisplayMode = .full
 
     private var categoryColor: Color {
         WarmTheme.color(for: todo.category)
@@ -95,11 +105,18 @@ struct WarmTodoCard: View {
     }
 
     private var dueStatus: TodoDueStatus? {
-        RelativeDueLabel.status(
+        let status = RelativeDueLabel.status(
             dueDate: todo.dueDate,
             isCompleted: todo.isCompleted,
-            recurrenceRule: todo.recurrenceRule
+            recurrenceRule: todo.recurrenceRule,
+            hasDueTime: todo.hasDueTime
         )
+        // overdueOnly：按天分组的列表里只保留"过期"，其余日期状态由分区头承担。
+        if dueStatusDisplayMode == .overdueOnly {
+            if case .overdue = status { return status }
+            return nil
+        }
+        return status
     }
 
     private var dueStatusText: String? {

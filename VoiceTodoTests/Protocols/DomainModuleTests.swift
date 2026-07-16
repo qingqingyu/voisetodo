@@ -465,6 +465,54 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertNil(RelativeDueLabel.status(dueDate: yesterday, isCompleted: false, recurrenceRule: RecurrenceRule(frequency: .daily), now: today, calendar: calendar))
     }
 
+    func testRelativeDueLabelMarksTimedTaskOverdueOncePastClockTimeSameDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let noon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 12, minute: 0)))
+        let sameDayEvening = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 23, minute: 21)))
+        let sameDayMorning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 9, minute: 0)))
+
+        // 今天 12:00 的定时任务，23:21 看 → 过期（带钟点、时刻已过）。
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: noon, isCompleted: false, recurrenceRule: nil, hasDueTime: true, now: sameDayEvening, calendar: calendar), .overdue)
+        // 今天 12:00 的定时任务，09:00 看 → 今天（还没到点）。
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: noon, isCompleted: false, recurrenceRule: nil, hasDueTime: true, now: sameDayMorning, calendar: calendar), .today)
+        // 无钟点（模糊时段/时段⇒今天）今天任务，23:21 看 → 今天，不误判过期。
+        XCTAssertEqual(RelativeDueLabel.status(dueDate: noon, isCompleted: false, recurrenceRule: nil, hasDueTime: false, now: sameDayEvening, calendar: calendar), .today)
+    }
+
+    // MARK: - TodoScheduleDefaults（时段⇒今天）
+
+    func testTodoScheduleDefaultsBucketWithoutDateFallsToToday() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: 23, minute: 21)))
+        let startOfToday = calendar.startOfDay(for: now)
+
+        // 有模糊时段、无日期、无钟点 → 补今天。
+        XCTAssertEqual(TodoScheduleDefaults.effectiveDueDate(resolvedDate: nil, hasDueTime: false, timeBucket: .morning, now: now, calendar: calendar), startOfToday)
+        // 无时段、无日期 → 仍 nil（保持 Unscheduled）。
+        XCTAssertNil(TodoScheduleDefaults.effectiveDueDate(resolvedDate: nil, hasDueTime: false, timeBucket: nil, now: now, calendar: calendar))
+        // anytime 不算显式时段 → nil。
+        XCTAssertNil(TodoScheduleDefaults.effectiveDueDate(resolvedDate: nil, hasDueTime: false, timeBucket: .anytime, now: now, calendar: calendar))
+        // 已有日期 → 原样返回，不覆盖。
+        let explicit = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 20)))
+        XCTAssertEqual(TodoScheduleDefaults.effectiveDueDate(resolvedDate: explicit, hasDueTime: false, timeBucket: .morning, now: now, calendar: calendar), explicit)
+    }
+
+    func testTimeBucketResolverBoundariesLockNoonToAfternoon() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        func at(_ hour: Int, _ minute: Int) throws -> Date {
+            try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13, hour: hour, minute: minute)))
+        }
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(4, 59), hasDueTime: true, calendar: calendar), .evening)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(5, 0), hasDueTime: true, calendar: calendar), .morning)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(11, 59), hasDueTime: true, calendar: calendar), .morning)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(12, 0), hasDueTime: true, calendar: calendar), .afternoon)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(17, 59), hasDueTime: true, calendar: calendar), .afternoon)
+        XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(18, 0), hasDueTime: true, calendar: calendar), .evening)
+    }
+
     // MARK: - TodoDueDateResolver (N days offset)
 
     func testDueDateResolverParsesNDaysFromNow() throws {

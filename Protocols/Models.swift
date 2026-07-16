@@ -492,7 +492,12 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
                 detail: extracted.detail
             )
         let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
-        self.dueDate = timed.date
+        // 时段⇒今天：只有模糊时段没日期时补今天，让任务落进「今日/时段」而非 Unscheduled。
+        self.dueDate = TodoScheduleDefaults.effectiveDueDate(
+            resolvedDate: timed.date,
+            hasDueTime: timed.hasTime,
+            timeBucket: extracted.timeBucket
+        )
         self.hasDueTime = timed.hasTime
         self.timeBucket = timed.hasTime ? nil : extracted.timeBucket
         self.recurrenceRule = extracted.recurrenceRule

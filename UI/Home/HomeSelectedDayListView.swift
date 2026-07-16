@@ -184,7 +184,9 @@ struct HomeSelectedDayListView: View {
             todo: occurrence.todo,
             onToggle: { onToggleOccurrence(occurrence) },
             onTap: { onOpenTodo(occurrence.todo) },
-            showsTimeBucketMetadata: false
+            showsTimeBucketMetadata: false,
+            // 已在按天分组的分区里，"Today" 尾标冗余；只保留"过期"红标。
+            dueStatusDisplayMode: .overdueOnly
         )
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
