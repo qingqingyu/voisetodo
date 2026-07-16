@@ -74,7 +74,9 @@ private struct GlossaryEntryRow: View {
                     .font(WarmFont.body(14))
                     .foregroundColor(WarmTheme.textSecondary)
             }
-            Text(entry.type == .alias ? "别名" : "时间约定")
+            Text(entry.type == .alias
+                 ? String(localized: "glossary.entry.alias_badge")
+                 : String(localized: "glossary.entry.convention_badge"))
                 .font(WarmFont.caption(11))
                 .foregroundColor(WarmTheme.primary)
                 .padding(.horizontal, WarmSpacing.xs)
@@ -109,45 +111,45 @@ private struct AddGlossaryEntrySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("类型") {
-                    Picker("类型", selection: $type) {
-                        Text("别名映射").tag(PersonalGlossaryEntryType.alias)
-                        Text("时间约定").tag(PersonalGlossaryEntryType.convention)
+                Section(String(localized: "glossary.add.section.type")) {
+                    Picker(String(localized: "glossary.add.section.type"), selection: $type) {
+                        Text(String(localized: "glossary.add.type.alias")).tag(PersonalGlossaryEntryType.alias)
+                        Text(String(localized: "glossary.add.type.convention")).tag(PersonalGlossaryEntryType.convention)
                     }
                     .pickerStyle(.segmented)
                 }
 
-                Section("你的说法") {
-                    TextField("例如:老地方、公司、交作业", text: $phrase)
+                Section(String(localized: "glossary.add.section.phrase")) {
+                    TextField(String(localized: "glossary.add.phrase.placeholder"), text: $phrase)
                 }
 
                 if type == .alias {
-                    Section("展开成") {
-                        TextField("例如:星光健身房、XX大厦", text: $expansion)
+                    Section(String(localized: "glossary.add.section.expansion")) {
+                        TextField(String(localized: "glossary.add.expansion.placeholder"), text: $expansion)
                     }
                 } else {
-                    Section("默认时间") {
-                        TextField("例如:每周五、3天内、月底", text: $defaultTimeHint)
+                    Section(String(localized: "glossary.add.section.default_time")) {
+                        TextField(String(localized: "glossary.add.default_time.placeholder"), text: $defaultTimeHint)
                     }
                 }
 
                 Section {
                     Text(type == .alias
-                        ? "之后说「\(phrase)」会自动理解为「\(expansion)」"
-                        : "之后说「\(phrase)」会默认安排在\(defaultTimeHint)"
+                        ? String(localized: "glossary.add.preview.alias \(phrase) \(expansion)")
+                        : String(localized: "glossary.add.preview.convention \(phrase) \(defaultTimeHint)")
                     )
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.textSecondary)
                 }
             }
-            .navigationTitle("添加说法")
+            .navigationTitle(String(localized: "glossary.add.nav_title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
+                    Button(String(localized: "common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("保存") {
+                    Button(String(localized: "common.save")) {
                         onSave(PersonalGlossaryEntry(
                             type: type,
                             phrase: phrase.trimmingCharacters(in: .whitespacesAndNewlines),

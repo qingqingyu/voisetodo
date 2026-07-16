@@ -415,7 +415,9 @@ struct ReviewView: View {
     }
 
     private func percentageString(_ value: Double) -> String {
-        let pct = Int((value * 100).rounded())
+        // 夹逼到 [0,100]：分子是完成事件数(含规律任务多次完成)、分母是区间内创建数,
+        // 人群不一致时比率可能 >100%,显示成 "150%" 观感像 bug。夹逼避免误解。
+        let pct = Int((min(max(value, 0), 1) * 100).rounded())
         return "\(pct)%"
     }
 }
