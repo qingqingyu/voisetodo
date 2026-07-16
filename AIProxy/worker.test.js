@@ -201,33 +201,37 @@ test("system prompt instructs extracting structured due_time and time_bucket (zh
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。
-  await withMockedToday("2026-07-05T12:00:00.000Z", async () => {
-    for (const [locale, expectedSnippet] of [["zh-Hans", "参考日期：2026-07-05"], ["en-US", "Reference date: 2026-07-05"]]) {
-      let upstreamRequest;
-      const response = await handleRequest(
-        request({ transcript: "未来一个月每天下午3点接孩子", locale }, {
-          "X-App-Token": "token",
-          "X-Local-Date": "2026-07-05"
-        }),
-        {
-          APP_TOKEN: "token",
-          AI_PROVIDER: "openai",
-          OPENAI_API_KEY: "openai-key",
-          OPENAI_MODEL: "test-model"
-        },
-        {},
-        async (url, init) => {
-          upstreamRequest = { body: JSON.parse(init.body) };
-          return jsonResponse({ choices: [{ message: { content: extractionJSON("接孩子") } }] });
-        }
-      );
-      assert.equal(response.status, 200);
-      assert.ok(
-        upstreamRequest.body.messages[0].content.includes(expectedSnippet),
-        `locale=${locale} 应在 system prompt 中包含 today 注入（"${expectedSnippet}"）`
-      );
-    }
-  });
+  //
+  // 用真实"今天"动态生成 X-Local-Date，而非硬编码日期：
+  //   - drift 与服务端 serverToday 恒为 0，不会被 resolveQuotaDate 的漂移校验拒；
+  //   - 不再 mutate 全局 Date.prototype（withMockedToday 会污染并发中的其它用例，
+  //     曾导致本用例偶发 flake——mock 泄漏时 today 回退成真实日期，断言落空）。
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [locale, expectedSnippet] of [["zh-Hans", `参考日期：${today}`], ["en-US", `Reference date: ${today}`]]) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript: "未来一个月每天下午3点接孩子", locale }, {
+        "X-App-Token": "token",
+        "X-Local-Date": today
+      }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("接孩子") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    assert.ok(
+      upstreamRequest.body.messages[0].content.includes(expectedSnippet),
+      `locale=${locale} 应在 system prompt 中包含 today 注入（"${expectedSnippet}"）`
+    );
+  }
 });
 
 test("system prompt instructs structured recurrence_end boundary (zh + en)", async () => {
@@ -253,6 +257,56 @@ test("system prompt instructs structured recurrence_end boundary (zh + en)", asy
     assert.ok(systemMessage.includes("after_count"));
     assert.ok(systemMessage.includes("month_end"));
   }
+});
+
+test("system prompt injects personal conventions when personalHints provided (A1)", async () => {
+  // A1: PersonalGlossary 把用户个人约定作为结构化文本经 personalHints 注入 system prompt，
+  // 让 AI 展开别名 / 套用默认时间。计划要求断言 outgoing system prompt 原样含该段。
+  const personalHints = "用户个人约定(请展开别名并套用默认时间):\n• \"老地方\" 指 \"星光健身房\"";
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "去老地方", locale: "zh-Hans", personalHints }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_MODEL: "test-model"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { body: JSON.parse(init.body) };
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("去星光健身房") } }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  assert.ok(
+    upstreamRequest.body.messages[0].content.includes(personalHints),
+    "system prompt 应原样包含 personalHints 个人约定段"
+  );
+});
+
+test("system prompt omits personal conventions when personalHints absent", async () => {
+  // 没有个人约定时不应凭空冒出"个人约定"段（避免污染 prompt / 误导模型）。
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "买菜", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_MODEL: "test-model"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { body: JSON.parse(init.body) };
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("买菜") } }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  assert.ok(
+    !upstreamRequest.body.messages[0].content.includes("个人约定"),
+    "无 personalHints 时不应出现个人约定段"
+  );
 });
 
 test("system prompt falls back to server UTC date when X-Local-Date missing", async () => {

@@ -71,6 +71,11 @@ struct ReviewView: View {
     @Query(sort: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)])
     private var recurringCompletions: [TodoOccurrenceCompletion]
 
+    /// 全部待办(不过滤 isCompleted)——用于给规律任务完成记录查父任务分类。
+    /// 规律任务父 TodoItem 永远 isCompleted==false(完成落在 TodoOccurrenceCompletion),
+    /// 故不能用 completedTodos 建分类表,否则规律完成全部 fallback 成 .other。
+    @Query private var allTodos: [TodoItem]
+
     @State private var selectedPeriod: ReviewPeriod = .month
 
     private let calendar = Calendar.current
@@ -102,8 +107,9 @@ struct ReviewView: View {
                 category: item.category
             )
         }
-        // 规律任务完成(union,分类从已完成父任务查,查不到 fallback .other)
-        let categoryById = Dictionary(uniqueKeysWithValues: completedTodos.map { ($0.id, $0.category) })
+        // 规律任务完成(union,分类取父任务)。用 allTodos 建表——规律父任务 isCompleted==false,
+        // 不在 completedTodos 里,只有全量表才能查到它的分类。父任务被删则 fallback .other。
+        let categoryById = Dictionary(allTodos.map { ($0.id, $0.category) }, uniquingKeysWith: { first, _ in first })
         for completion in recurringCompletions {
             events.append(CompletionEvent(
                 id: completion.id,
