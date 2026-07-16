@@ -1363,13 +1363,13 @@ private struct GlossarySuggestionBanner: View {
                 .font(.system(size: 16))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("你常把「\(suggestion.correction.originalTitle)」")
+                Text(String(localized: "suggestion.banner_prefix") + "「\(suggestion.correction.originalTitle)」")
                     .font(WarmFont.body(13))
                     .foregroundColor(WarmTheme.textPrimary)
-                + Text("改成「\(suggestion.correction.confirmedTitle)」")
+                + Text(String(localized: "suggestion.banner_changed_to") + "「\(suggestion.correction.confirmedTitle)」")
                     .font(WarmFont.body(13))
                     .foregroundColor(WarmTheme.primary)
-                Text("记住这个说法吗?")
+                Text(String(localized: "suggestion.banner_question"))
                     .font(WarmFont.caption(12))
                     .foregroundColor(WarmTheme.textSecondary)
             }
@@ -1378,7 +1378,7 @@ private struct GlossarySuggestionBanner: View {
 
             VStack(spacing: 6) {
                 Button(action: onAccept) {
-                    Text("记住")
+                    Text(String(localized: "suggestion.remember"))
                         .font(WarmFont.headline(13))
                         .foregroundColor(.white)
                         .padding(.horizontal, WarmSpacing.md)
@@ -1388,7 +1388,7 @@ private struct GlossarySuggestionBanner: View {
                 .buttonStyle(.plain)
 
                 Button(action: onDismiss) {
-                    Text("不用")
+                    Text(String(localized: "suggestion.dismiss"))
                         .font(WarmFont.caption(12))
                         .foregroundColor(WarmTheme.textSecondary)
                 }

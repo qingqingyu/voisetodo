@@ -83,13 +83,13 @@ struct HomeSettingsSheet: View {
                     NavigationLink {
                         PersonalGlossaryView()
                     } label: {
-                        Label("我的说法", systemImage: "text.book.closed")
+                        Label(String(localized: "settings.my_expressions"), systemImage: "text.book.closed")
                     }
 
                     NavigationLink {
                         ReviewView()
                     } label: {
-                        Label("回顾", systemImage: "chart.bar.fill")
+                        Label(String(localized: "settings.review"), systemImage: "chart.bar.fill")
                     }
 
                     if didClearLearningData {

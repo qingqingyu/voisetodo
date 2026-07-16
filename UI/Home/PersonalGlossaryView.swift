@@ -11,7 +11,7 @@ struct PersonalGlossaryView: View {
     var body: some View {
         List {
             if entries.isEmpty {
-                Text("还没有教过任何说法。点击右上角添加,让 AI 更懂你说话的方式。")
+                Text(String(localized: "glossary.empty_state"))
                     .font(WarmFont.body(14))
                     .foregroundColor(WarmTheme.textSecondary)
                     .padding(.vertical, WarmSpacing.lg)
@@ -23,13 +23,13 @@ struct PersonalGlossaryView: View {
                                 store.remove(id: entry.id)
                                 reload()
                             } label: {
-                                Label("删除", systemImage: "trash")
+                                Label(String(localized: "common.delete"), systemImage: "trash")
                             }
                         }
                 }
             }
         }
-        .navigationTitle("我的说法")
+        .navigationTitle(String(localized: "glossary.nav_title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

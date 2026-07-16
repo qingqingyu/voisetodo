@@ -25,8 +25,8 @@ enum ReviewNotificationScheduler {
         dc.weekday = 2  // 周一(Calendar weekday: 2=Monday)
 
         let content = UNMutableNotificationContent()
-        content.title = "本周回顾"
-        content.body = "上周完成了多少件事?点击查看 📊"
+        content.title = String(localized: "review.notification.title")
+        content.body = String(localized: "review.notification.body")
         content.sound = .default
 
         let trigger = UNCalendarNotificationTrigger(dateMatching: dc, repeats: true)

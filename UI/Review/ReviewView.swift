@@ -126,11 +126,16 @@ struct ReviewView: View {
         let start = selectedPeriod.startDay(from: today, calendar: calendar)
         let end = selectedPeriod.endDay(from: today, calendar: calendar)
         let label = selectedPeriod.periodLabel(for: today, calendar: calendar)
+        let createdCount = allTodos.filter { item in
+            let created = calendar.startOfDay(for: item.createdAt)
+            return created >= start && created < end
+        }.count
         let result = ReviewAggregator.summarize(
             events: completionEvents,
             from: start,
             to: end,
-            calendar: calendar
+            calendar: calendar,
+            createdCount: createdCount > 0 ? createdCount : nil
         )
         return ReviewSummary(
             periodLabel: label,
