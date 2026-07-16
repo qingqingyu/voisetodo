@@ -46,6 +46,8 @@ final class AppCoordinator: ObservableObject {
     @Published var voiceInputFallbackToKeyboard = false
     /// A2 自动学习:当用户反复把同一说法改成同一结果时,弹出建议写入 glossary。nil = 无建议。
     @Published var glossarySuggestion: GlossarySuggestion?
+    /// 回顾通知深链:通知点击后设 true,HomeView 监听后弹出 ReviewView。
+    @Published var showReviewFromNotification = false
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -501,10 +503,11 @@ final class AppCoordinator: ObservableObject {
             Task { [correctionTracker] in
                 for confirmed in todos {
                     guard let original = originalTodos.first(where: { $0.id == confirmed.id }) else { continue }
-                    if original.title != confirmed.title {
+                    if original.title != confirmed.title,
+                       let diff = TitleCorrection.extractPhraseDiff(original: original.title, confirmed: confirmed.title) {
                         correctionTracker.record(
-                            original: original.title,
-                            confirmed: confirmed.title,
+                            original: diff.phrase,
+                            confirmed: diff.expansion,
                             localeIdentifier: confirmed.localeIdentifier ?? fallbackLearningLocaleIdentifier
                         )
                     }

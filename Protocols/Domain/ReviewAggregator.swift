@@ -104,11 +104,16 @@ enum ReviewAggregator {
             }
         }
 
-        // streakDays: 从 endDay 前一天开始往前数连续有事件的天数
-        // (endDay 是开区间,区间最后一天 = endDay 前一天)
+        // streakDays: 从最后一天有事件的天开始往前数连续天数。
+        // 今天没完成不算断(从最近有活动的那天开始数),避免"今天还没做事 streak 就归零"。
         var streakDays = 0
         var cursor = calendar.date(byAdding: .day, value: -1, to: normalizedEnd) ?? normalizedEnd
-        while byDay[cursor] != nil {
+        // 先跳过没有事件的天,找到最近的活动日
+        while cursor >= normalizedStart && byDay[cursor] == nil {
+            cursor = calendar.date(byAdding: .day, value: -1, to: cursor) ?? cursor
+        }
+        // 从活动日开始往前数连续天数
+        while cursor >= normalizedStart && byDay[cursor] != nil {
             streakDays += 1
             guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else {
                 break

@@ -184,6 +184,9 @@ struct VoiceTodoApp: App {
             local.onOpenTodo = { [weak coordinator] todoID in
                 Task { @MainActor in coordinator?.deepLinkTodoId = todoID }
             }
+            local.onOpenReview = { [weak coordinator] in
+                Task { @MainActor in coordinator?.showReviewFromNotification = true }
+            }
             // 尽早设 delegate，以便前台展示 banner、并捕获从通知冷启动的点击。
             UNUserNotificationCenter.current().delegate = local
             notificationScheduler = local

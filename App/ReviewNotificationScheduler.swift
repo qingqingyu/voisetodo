@@ -28,6 +28,7 @@ enum ReviewNotificationScheduler {
         content.title = String(localized: "review.notification.title")
         content.body = String(localized: "review.notification.body")
         content.sound = .default
+        content.userInfo = ["deepLink": "review"]
 
         let trigger = UNCalendarNotificationTrigger(dateMatching: dc, repeats: true)
         let request = UNNotificationRequest(

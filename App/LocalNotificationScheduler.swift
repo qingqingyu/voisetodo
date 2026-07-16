@@ -12,6 +12,8 @@ protocol NotificationScheduling: AnyObject {
 final class LocalNotificationScheduler: NSObject, NotificationScheduling, UNUserNotificationCenterDelegate {
     /// 点击通知打开对应待办的回调（由 App 注入，路由到深链）。
     var onOpenTodo: ((UUID) -> Void)?
+    /// 点击回顾通知打开回顾页的回调（由 App 注入）。
+    var onOpenReview: (() -> Void)?
 
     private let center = UNUserNotificationCenter.current()
 
@@ -81,16 +83,21 @@ final class LocalNotificationScheduler: NSObject, NotificationScheduling, UNUser
         completionHandler([.banner, .sound])
     }
 
-    /// 点击通知 → 路由打开对应待办。
+    /// 点击通知 → 路由打开对应待办或回顾页。
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let raw = response.notification.request.content.userInfo["todoID"] as? String,
+        let userInfo = response.notification.request.content.userInfo
+        if let raw = userInfo["todoID"] as? String,
            let todoID = UUID(uuidString: raw) {
             let handler = onOpenTodo
             DispatchQueue.main.async { handler?(todoID) }
+        }
+        if let deepLink = userInfo["deepLink"] as? String, deepLink == "review",
+           let handler = onOpenReview {
+            DispatchQueue.main.async { handler() }
         }
         completionHandler()
     }

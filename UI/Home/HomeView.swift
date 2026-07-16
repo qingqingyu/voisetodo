@@ -239,6 +239,18 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var listOpacity: Double = 0
     @State private var cardAppeared: Set<UUID> = []
 
+    /// 本周完成数(用于首页"本周小结"卡片)。
+    private var weeklyCompletedCount: Int {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
+        return store.todos.filter { $0.isCompleted }.filter { todo in
+            guard let completed = todo.completedAt else { return false }
+            let day = cal.startOfDay(for: completed)
+            return day >= weekStart && day <= today
+        }.count
+    }
+
     private var actions: HomeViewActions<Store> {
         HomeViewActions(
             store: store,
@@ -256,6 +268,29 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 VStack(spacing: 0) {
                     headerView
+
+                    // 本周小结卡片(快速入口到回顾页)
+                    if weeklyCompletedCount > 0 {
+                        NavigationLink {
+                            ReviewView()
+                        } label: {
+                            HStack(spacing: WarmSpacing.sm) {
+                                Image(systemName: "chart.bar.fill")
+                                    .foregroundColor(WarmTheme.primary)
+                                    .font(.system(size: 14))
+                                Text(String(localized: "home.weekly_summary \(weeklyCompletedCount)"))
+                                    .font(WarmFont.caption(13))
+                                    .foregroundColor(WarmTheme.textSecondary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(WarmTheme.textMuted)
+                            }
+                            .padding(.horizontal, WarmSpacing.lg)
+                            .padding(.vertical, WarmSpacing.xs)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     if coordinator.isRecording || isProcessing || coordinator.isExtracting {
                         recordingOverlay
@@ -336,6 +371,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                     calendarWriteModeRaw: $calendarWriteModeRaw,
                     onUpgradePro: { coordinator.showPaywall = true }
                 )
+            }
+            // B3 通知深链:回顾通知点击后弹出 ReviewView
+            .sheet(isPresented: Binding(
+                get: { coordinator.showReviewFromNotification },
+                set: { coordinator.showReviewFromNotification = $0 }
+            )) {
+                NavigationStack { ReviewView() }
             }
             .navigationDestination(item: $selectedTodo) { todo in
                 TodoDetailView(store: store, todo: todo)
