@@ -10,6 +10,10 @@ struct HomeSelectedDayListView: View {
     let onOpenTodo: (TodoItemData) -> Void
     let onMoveUnscheduled: (IndexSet, Int) -> Void
 
+    /// Unscheduled 重排编辑态。激活时行显示原生三横线把手（区别于"拖到月历"的胶囊）。
+    /// 由 Unscheduled 分区头的「排序/完成」按钮切换。
+    @State private var editMode: EditMode = .inactive
+
     var body: some View {
         List {
             Section {
@@ -49,13 +53,14 @@ struct HomeSelectedDayListView: View {
                     }
                     .onMove(perform: onMoveUnscheduled)
                 } header: {
-                    daySectionHeader(title: String(localized: "home.week.unscheduled"), count: state.unscheduledTodos.count)
+                    unscheduledSectionHeader
                 }
             }
 
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .environment(\.editMode, $editMode)
         .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollContent)
         .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollIndicators)
         .accessibilityIdentifier("TodoList")
@@ -126,6 +131,44 @@ struct HomeSelectedDayListView: View {
         .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
     }
 
+    /// Unscheduled 分区头：复用 daySectionHeader 的标题 + 数字徽章，尾部加「排序/完成」切换。
+    /// 排序按钮仅在 ≥2 条时出现（1 条无从重排）；点击进/出编辑态，行显示原生三横线把手。
+    private var unscheduledSectionHeader: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Text(String(localized: "home.week.unscheduled"))
+                .font(WarmFont.headline(15))
+            if state.unscheduledTodos.count > 0 {
+                Text("\(state.unscheduledTodos.count)")
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.primaryDark)
+                    .padding(.horizontal, WarmSpacing.xs)
+                    .padding(.vertical, WarmSpacing.xxs)
+                    .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+            }
+
+            Spacer()
+
+            if state.unscheduledTodos.count > 1 {
+                Button {
+                    withAnimation(WarmAnimation.springFast) {
+                        editMode = editMode.isEditing ? .inactive : .active
+                    }
+                } label: {
+                    Text(String(localized: editMode.isEditing
+                                ? "home.unscheduled.reorder_done"
+                                : "home.unscheduled.reorder"))
+                        .font(WarmFont.headline(13))
+                        .foregroundColor(WarmTheme.primary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ReorderUnscheduledButton")
+            }
+        }
+        .foregroundColor(WarmTheme.textSecondary)
+        .textCase(nil)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
+    }
+
     private func timeBucketHeader(_ bucket: TimeBucket) -> some View {
         Text(bucket.localizedTitle)
             .font(WarmFont.caption(12))
@@ -137,8 +180,9 @@ struct HomeSelectedDayListView: View {
             .accessibilityIdentifier("TimeBucketHeader_\(bucket.rawValue)")
     }
 
+    @ViewBuilder
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
-        WarmTodoCard(
+        let base = WarmTodoCard(
             index: index,
             todo: todo,
             onToggle: { onToggleTodo(todo.id) },
@@ -165,16 +209,22 @@ struct HomeSelectedDayListView: View {
             insertion: .scale(scale: 0.9).combined(with: .opacity),
             removal: .scale(scale: 0.95).combined(with: .opacity)
         ))
-        // 拖拽到日历日期：所有 unscheduled 任务可拖
-        .draggable(todo.id.uuidString) {
-            HStack(spacing: WarmSpacing.xxs) {
-                Text(todo.category.emoji)
-                Text(todo.title).lineLimit(1)
+
+        // 编辑态只重排（原生三横线把手）；非编辑态才挂"拖到月历"的胶囊 draggable——
+        // 两个操作从起手就区分开，不再共用同一预览。
+        if editMode.isEditing {
+            base
+        } else {
+            base.draggable(todo.id.uuidString) {
+                HStack(spacing: WarmSpacing.xxs) {
+                    Text(todo.category.emoji)
+                    Text(todo.title).lineLimit(1)
+                }
+                .font(WarmFont.caption(13))
+                .padding(.horizontal, WarmSpacing.sm)
+                .padding(.vertical, WarmSpacing.xs)
+                .background(Capsule().fill(WarmTheme.secondaryBackground))
             }
-            .font(WarmFont.caption(13))
-            .padding(.horizontal, WarmSpacing.sm)
-            .padding(.vertical, WarmSpacing.xs)
-            .background(Capsule().fill(WarmTheme.secondaryBackground))
         }
     }
 
