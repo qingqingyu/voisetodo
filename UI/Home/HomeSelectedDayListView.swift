@@ -36,13 +36,21 @@ struct HomeSelectedDayListView: View {
                 daySectionHeader(title: state.selectedDateTitle, count: state.uncompletedOccurrences.count)
             }
 
-            if !state.completedOccurrences.isEmpty {
+            // 「已完成」分区 = 当日 occurrence 的已完成 + 全局无安排任务的已完成。
+            // 两者都已完成态、都不应再触发重排/拖月历，统一放进同一分区。
+            if !state.completedOccurrences.isEmpty || !state.completedUnscheduledTodos.isEmpty {
                 Section {
                     ForEach(Array(zip(state.completedOccurrences.indices, state.completedOccurrences)), id: \.1.id) { idx, occurrence in
                         occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
                     }
+                    ForEach(Array(state.completedUnscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
+                        // index 偏移要避开所有已用的范围（时段 occurrence + 已完成 occurrence + 未完成 unscheduled），
+                        // 保证 accessibility id / cardAppeared 动画 delay 不撞号。
+                        completedTodoRow(todo, index: state.selectedOccurrences.count + state.unscheduledTodos.count + idx)
+                    }
                 } header: {
-                    daySectionHeader(title: String(localized: "home.completed_section_title"), count: state.completedOccurrences.count)
+                    let totalCount = state.completedOccurrences.count + state.completedUnscheduledTodos.count
+                    daySectionHeader(title: String(localized: "home.completed_section_title"), count: totalCount)
                 }
             }
 
@@ -180,35 +188,17 @@ struct HomeSelectedDayListView: View {
             .accessibilityIdentifier("TimeBucketHeader_\(bucket.rawValue)")
     }
 
+    /// 未完成 unscheduled 行。挂 `draggable`（拖到月历）或编辑态三横线把手。
+    /// 完成态样式（绿勾/删除线）由 WarmTodoCard 根据 `todo.isCompleted` 自行渲染。
     @ViewBuilder
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
-        let base = WarmTodoCard(
-            index: index,
+        let base = unscheduledTodoCardBase(
             todo: todo,
+            index: index,
             onToggle: { onToggleTodo(todo.id) },
-            onTap: { onOpenTodo(todo) }
+            onTap: { onOpenTodo(todo) },
+            onDelete: { onDeleteTodo(todo.id) }
         )
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                onDeleteTodo(todo.id)
-            } label: {
-                Label(String(localized: "home.delete"), systemImage: "trash")
-            }
-        }
-        .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
-        .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
-        .onAppear {
-            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
-                _ = cardAppeared.insert(todo.id)
-            }
-        }
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.9).combined(with: .opacity),
-            removal: .scale(scale: 0.95).combined(with: .opacity)
-        ))
 
         // 编辑态只重排（原生三横线把手）；非编辑态才挂"拖到月历"的胶囊 draggable——
         // 两个操作从起手就区分开，不再共用同一预览。
@@ -226,6 +216,65 @@ struct HomeSelectedDayListView: View {
                 .background(Capsule().fill(WarmTheme.secondaryBackground))
             }
         }
+    }
+
+    /// 已完成无安排任务的行。与 `todoRow` 的差别：
+    /// - 不挂 `.draggable`（已完成的不该再拖月历）
+    /// - 不参与编辑态重排（Unscheduled 分区的 `.onMove` 只对未完成行生效，
+    ///   completedTodoRow 在「已完成」分区，本来就不在 .onMove 作用域内）
+    /// 完成态样式（绿勾/删除线）由 WarmTodoCard 根据 `todo.isCompleted` 自行渲染。
+    /// 取消完成时 onToggle 会把 isCompleted 翻回 false → 下次重渲染时该行离开「已完成」、
+    /// 回到「未安排」分区（unscheduledTodos 重新含它）。
+    @ViewBuilder
+    private func completedTodoRow(_ todo: TodoItemData, index: Int) -> some View {
+        unscheduledTodoCardBase(
+            todo: todo,
+            index: index,
+            onToggle: { onToggleTodo(todo.id) },
+            onTap: { onOpenTodo(todo) },
+            onDelete: { onDeleteTodo(todo.id) }
+        )
+    }
+
+    /// Unscheduled 系卡片（todoRow / completedTodoRow）共用样式：
+    /// WarmTodoCard + inset/背景/删除 swipe/入场动画/transition。
+    /// 抽出来避免两处复制粘贴——后续改卡片样式只改一处。
+    /// 不含 `draggable` / `editMode` 分支，那两个由调用方按完成态自行决定。
+    @ViewBuilder
+    private func unscheduledTodoCardBase(
+        todo: TodoItemData,
+        index: Int,
+        onToggle: @escaping () -> Void,
+        onTap: @escaping () -> Void,
+        onDelete: @escaping () -> Void
+    ) -> some View {
+        WarmTodoCard(
+            index: index,
+            todo: todo,
+            onToggle: onToggle,
+            onTap: onTap
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
+        .listRowBackground(Color.clear)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label(String(localized: "home.delete"), systemImage: "trash")
+            }
+        }
+        .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
+        .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
+        .onAppear {
+            withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
+                _ = cardAppeared.insert(todo.id)
+            }
+        }
+        .transition(.asymmetric(
+            insertion: .scale(scale: 0.9).combined(with: .opacity),
+            removal: .scale(scale: 0.95).combined(with: .opacity)
+        ))
     }
 
     private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {

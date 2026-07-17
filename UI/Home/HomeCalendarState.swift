@@ -24,6 +24,11 @@ struct HomeCalendarState {
     let weekHeaderDays: [Date]
     let occurrencesByDay: [String: [TodoOccurrenceData]]
     let unscheduledTodos: [TodoItemData]
+    /// 已完成的无安排任务（dueDate==nil && recurrenceRule==nil && isCompleted）。
+    /// 按 completedAt 倒序——最近完成在上。用于在底部「已完成」分区里和 occurrence 一起显示。
+    /// 与 `unscheduledTodos` 对称：那个只留未完成（留在「未安排」分区），
+    /// 这个只留已完成（下移到「已完成」分区），让无安排任务的完成行为和有安排任务对齐。
+    let completedUnscheduledTodos: [TodoItemData]
     let selectedOccurrences: [TodoOccurrenceData]
     let uncompletedOccurrences: [TodoOccurrenceData]
     let completedOccurrences: [TodoOccurrenceData]
@@ -137,7 +142,14 @@ struct HomeCalendarState {
         self.visibleDays = visibleDays
         self.weekHeaderDays = weekHeaderDays
         self.occurrencesByDay = occurrencesByDay
-        self.unscheduledTodos = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
+        // 无安排任务（无 dueDate + 无 recurrenceRule）按完成态拆两路：
+        // 未完成 → 留在「未安排」分区（可重排/可拖月历）
+        // 已完成 → 下移到底部「已完成」分区，跟 occurrence 的完成行为对齐
+        let unscheduled = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
+        self.unscheduledTodos = unscheduled.filter { !$0.isCompleted }
+        self.completedUnscheduledTodos = unscheduled
+            .filter { $0.isCompleted }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         self.hasTodos = !todos.isEmpty
         self.calendar = calendar
 
