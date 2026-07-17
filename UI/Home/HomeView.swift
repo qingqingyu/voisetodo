@@ -3,8 +3,8 @@ import UIKit
 import WidgetKit
 
 private func formattedHomeDate(_ date: Date) -> String {
-    // 只给「月 日」（"Jul 16"）：星期已由下方大标题（todayWeekdayTitle）承担，
-    // 这里再带 weekday 会重复，还会把顶部一行挤到折行 + greeting 截断。
+    // 只给「月 日」（"7月17日" / "Jul 17"）：星期已由旁边的大标题（todayWeekdayTitle）承担，
+    // 这里再带 weekday 会重复。
     date.formatted(.dateTime.month().day())
 }
 
@@ -464,53 +464,50 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Header View
 
-    /// 居中标题两侧预留的按钮区宽度：44pt 玻璃按钮 + 一点间隙。
-    /// 标题层加这个水平 padding，保证文字永远不钻到两角按钮下面。
-    private let headerSideGutter: CGFloat = WarmSize.touch + WarmSpacing.sm
-
     private var headerView: some View {
-        VStack(spacing: WarmSpacing.sm) {
-            // ZStack 双层：标题几何居中，不受两角内容宽度影响
-            // （「回今天」按钮动态出现/消失时标题纹丝不动——HStack+Spacer 做不到这一点）。
-            ZStack(alignment: .top) {
-                // 层1：居中标题块
-                VStack(alignment: .center, spacing: WarmSpacing.xxs) {
-                    // 小字行：今日 tab 显示完整日期（+问候语）；
-                    // 日历 tab 显示年份（月模式）/ 周范围（周模式）——月份名已在大标题，
-                    // 避免与大标题、网格重复出现月份信息。
-                    HStack(spacing: WarmSpacing.xs) {
-                        Text(selectedBottomTab == .today
-                             ? formattedHomeDate(Date())
-                             : HomeCalendarState.periodCaption(anchor: visibleMonthAnchor, viewMode: calendarViewMode, calendar: calendar))
+        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+            // 左右分布（对齐 HTML 设计稿）：左=标题组，右=进度环+设置齿轮。
+            HStack(alignment: .center, spacing: WarmSpacing.md) {
+                if selectedBottomTab == .today {
+                    // 今日 tab：星期几（主，大字）+ 日期（副，小灰字），基线对齐。
+                    // 问候语已按设计稿移除。
+                    HStack(alignment: .firstTextBaseline, spacing: WarmSpacing.sm) {
+                        Text(todayWeekdayTitle)
+                            .font(WarmFont.serifDisplay(30))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+
+                        Text(formattedHomeDate(Date()))
                             .font(WarmFont.caption(14))
                             .foregroundColor(WarmTheme.textSecondary)
+                    }
+                } else {
+                    // 日历 tab：月份 + 「回到今天」胶囊（仅浏览月/周 ≠ 当前时渲染）。
+                    HStack(spacing: WarmSpacing.sm) {
+                        Text(calendarMonthTitle)
+                            .font(WarmFont.serifDisplay(30))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
 
-                        if selectedBottomTab == .today {
-                            Text(greetingText)
-                                .font(WarmFont.displayLight(18))
-                                .foregroundColor(WarmTheme.primaryDark.opacity(0.82))
-                                .lineLimit(1)
+                        if !isViewingCurrentPeriod {
+                            backToTodayCapsule
+                                .transition(.opacity)
                         }
                     }
-
-                    Text(selectedBottomTab == .today ? todayWeekdayTitle : calendarMonthTitle)
-                        .font(WarmFont.serifDisplay(30))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, headerSideGutter)
 
-                // 层2：两角控件。左=回今天（日历 tab 非今天）/ 统计徽章（今日 tab），右=设置。
-                HStack(alignment: .top) {
-                    leadingHeaderControl
-                    Spacer()
-                    settingsButton
+                Spacer()
+
+                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
+                    statsBadge
                 }
+
+                settingsButton
             }
 
-            // 导航切换器：Today / Calendar 下划线样式，随标题居中。
+            // 导航切换器：Today / Calendar 下划线样式，左对齐（对齐设计稿）。
             viewSwitcher
         }
         .padding(.horizontal, WarmSpacing.xl)
@@ -527,10 +524,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - View Switcher
 
     private var viewSwitcher: some View {
-        // 无 Spacer：随页头 VStack 的 .center 对齐居中，与居中标题呼应。
         HStack(spacing: WarmSpacing.lg) {
             switcherTab(label: String(localized: "tab.today"), tab: .today)
             switcherTab(label: String(localized: "tab.calendar"), tab: .calendar)
+            Spacer()
         }
     }
 
@@ -555,68 +552,53 @@ struct HomeView<Store: HomeTodoStore>: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    /// Calendar tab 的大标题：当前可见月份名（"July" / "七月"），替代冗余的 "Calendar" 字面量。
+    /// Calendar tab 的大标题：当前可见月份（"9月" / "Sep"，对齐设计稿的紧凑数字月份）。
+    /// 跨年浏览时带上年份（"2027年1月" / "Jan 2027"）——单独的年份小字行已按设计稿删除。
     private var calendarMonthTitle: String {
-        visibleMonthAnchor.formatted(.dateTime.month(.wide))
-    }
-
-    /// 当前是否停在今天（选中今天 + 可见月为本月）——true 时隐藏"回今天"按钮。
-    /// 与旧版日历卡片内导航行的 isOnToday 判断一致。
-    private var isCalendarOnToday: Bool {
-        calendar.isDateInToday(selectedDate) && calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .month)
-    }
-
-    /// 页头左上角控件：日历 tab 非今天时是「回今天」，今日 tab 是统计徽章，其余为空。
-    /// ZStack 分层保证这里出现/消失不影响居中标题的位置。
-    /// 注：翻月箭头已删除——翻月改为日历区域左右滑动（见 monthHomeView 的手势），
-    /// VoiceOver 翻页入口由容器上的 accessibilityActions 提供。
-    @ViewBuilder
-    private var leadingHeaderControl: some View {
-        if selectedBottomTab == .calendar {
-            if !isCalendarOnToday {
-                todayJumpButton
-                    .transition(.opacity)
-            }
-        } else if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
-            // 统计徽章只在今日 tab 显示（原先两个 tab 都显示）：
-            // 日历 tab 左角属于「回今天」，且列表 section header 已有当日计数胶囊，信息不丢。
-            statsBadge
+        if calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .year) {
+            return visibleMonthAnchor.formatted(.dateTime.month())
         }
+        return visibleMonthAnchor.formatted(.dateTime.year().month())
     }
 
-    /// 「回今天」：44pt 玻璃圆钮，与右上角 settingsButton 成对称对（样式镜像它）。
-    private var todayJumpButton: some View {
+    /// 当前浏览的月（周视图为周）是否就是今天所在的月/周。
+    /// 设计稿规则：只按月/周判断，不看选中的具体某天——停在本月就不渲染「回到今天」胶囊。
+    private var isViewingCurrentPeriod: Bool {
+        calendar.isDate(
+            visibleMonthAnchor,
+            equalTo: Date(),
+            toGranularity: calendarViewMode == .week ? .weekOfYear : .month
+        )
+    }
+
+    /// 「回到今天」胶囊（设计稿 today-dot）：小圆点 + 文字，浅主色底 + 细描边。
+    /// 仅当浏览月/周 ≠ 今天所在月/周时渲染；点击跳回今天并选中今天。
+    private var backToTodayCapsule: some View {
         Button(action: jumpToToday) {
-            Image(systemName: "calendar")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(WarmTheme.primaryDark)
-                .frame(width: WarmSize.touch, height: WarmSize.touch)
-                .contentShape(Circle())
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(WarmTheme.primary)
+                    .frame(width: 6, height: 6)
+
+                Text(String(localized: "home.back_to_today"))
+                    .font(WarmFont.headline(12))
+            }
+            .foregroundStyle(WarmTheme.primaryDark)
+            .padding(.horizontal, 10)
+            .padding(.vertical, WarmSpacing.xxs)
+            .background(
+                Capsule()
+                    .fill(WarmTheme.primary.opacity(0.1))
+                    .overlay(Capsule().stroke(WarmTheme.primary.opacity(0.22), lineWidth: 1))
+            )
         }
-        .buttonStyle(.glass)
-        .glassEffect(.regular)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("TodayMonthButton")
         .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.today_week" : "a11y.today_month"))
     }
 
     private var todayWeekdayTitle: String {
         Date().formatted(.dateTime.weekday(.wide))
-    }
-
-    private var greetingText: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12:
-            return String(localized: "home.greeting.morning")
-        case 12..<14:
-            return String(localized: "home.greeting.noon")
-        case 14..<18:
-            return String(localized: "home.greeting.afternoon")
-        case 18..<22:
-            return String(localized: "home.greeting.evening")
-        default:
-            return String(localized: "home.greeting.night")
-        }
     }
 
     /// 计算 selectedDate 当天的完成度统计。
@@ -645,33 +627,30 @@ struct HomeView<Store: HomeTodoStore>: View {
         return (onDay.count, completed)
     }
 
+    /// 当日完成进度环（设计稿 ring）：环形填充 = 已完成 ÷ 总数，中心显示「完成/总数」。
+    /// 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
+    /// today tab 下 selectedDate 恒为今天，实际就是"今天的完成度"；
+    /// calendar tab 下跟用户点的日期走——选哪天显示哪天的进度。
     private var statsBadge: some View {
-        // 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
-        // today tab 下 selectedDate 恒为今天（无 UI 改定），实际就是"今天的完成度"；
-        // calendar tab 下跟用户点的日期走。
         let (total, completed) = selectedDayStats()
-        let isAllCompleted = total > 0 && completed == total
-        let text = isAllCompleted
-            ? String(localized: "home.stats.all_complete")
-            : String(format: String(localized: "home.stats %lld %lld"), completed, total)
-        return HStack(spacing: WarmSpacing.xs) {
-            if isAllCompleted {
-                Text("🎉")
-                    .font(.system(size: 14))
-            } else {
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(WarmTheme.primary)
-            }
+        let progress = total > 0 ? Double(completed) / Double(total) : 0
+        return ZStack {
+            Circle()
+                .stroke(WarmTheme.primary.opacity(0.2), lineWidth: 4)
 
-            Text(text)
-                .font(WarmFont.caption(14))
-                .foregroundStyle(isAllCompleted ? WarmTheme.primaryDark : WarmTheme.textSecondary)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(WarmTheme.primary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+
+            Text(verbatim: "\(completed)/\(total)")
+                .font(WarmFont.headline(11))
+                .foregroundStyle(WarmTheme.textSecondary)
         }
-        .padding(.horizontal, WarmSpacing.xs)
-        .padding(.vertical, WarmSpacing.xxs)
-        .background(Capsule().fill((isAllCompleted ? WarmTheme.primary.opacity(0.16) : WarmTheme.secondaryBackground.opacity(0.5))))
-        .accessibilityElement(children: .combine)
+        .frame(width: 40, height: 40)
+        .animation(WarmAnimation.springSmooth, value: progress)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(format: String(localized: "home.stats %lld %lld"), completed, total))
         .accessibilityIdentifier("HomeStatsBadge")
     }
 

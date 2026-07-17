@@ -2454,6 +2454,22 @@
         }
       }
     },
+    "home.back_to_today" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到今天"
+          }
+        }
+      }
+    },
     "home.completed_section_title" : {
       "localizations" : {
         "en" : {
