@@ -464,13 +464,20 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Header View
 
+    /// 居中标题两侧预留的按钮区宽度：44pt 玻璃按钮 + 一点间隙。
+    /// 标题层加这个水平 padding，保证文字永远不钻到两角按钮下面。
+    private let headerSideGutter: CGFloat = WarmSize.touch + WarmSpacing.sm
+
     private var headerView: some View {
         VStack(spacing: WarmSpacing.sm) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            // ZStack 双层：标题几何居中，不受两角内容宽度影响
+            // （「回今天」按钮动态出现/消失时标题纹丝不动——HStack+Spacer 做不到这一点）。
+            ZStack(alignment: .top) {
+                // 层1：居中标题块
+                VStack(alignment: .center, spacing: WarmSpacing.xxs) {
                     // 小字行：今日 tab 显示完整日期（+问候语）；
                     // 日历 tab 显示年份（月模式）/ 周范围（周模式）——月份名已在大标题，
-                    // 避免与大标题、网格重复出现月份信息（页头合并改版）。
+                    // 避免与大标题、网格重复出现月份信息。
                     HStack(spacing: WarmSpacing.xs) {
                         Text(selectedBottomTab == .today
                              ? formattedHomeDate(Date())
@@ -486,32 +493,24 @@ struct HomeView<Store: HomeTodoStore>: View {
                         }
                     }
 
-                    // 大标题行：日历 tab 下翻月/回今天按钮跟在月份名右侧
-                    // （原来在日历卡片内部的导航行，合并到页头后卡片内导航行已删除）。
-                    HStack(spacing: WarmSpacing.sm) {
-                        Text(selectedBottomTab == .today ? todayWeekdayTitle : calendarMonthTitle)
-                            .font(WarmFont.serifDisplay(30))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-
-                        if selectedBottomTab == .calendar {
-                            calendarNavButtons
-                        }
-                    }
+                    Text(selectedBottomTab == .today ? todayWeekdayTitle : calendarMonthTitle)
+                        .font(WarmFont.serifDisplay(30))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, headerSideGutter)
 
-                Spacer()
-
-                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
-                    statsBadge
+                // 层2：两角控件。左=回今天（日历 tab 非今天）/ 统计徽章（今日 tab），右=设置。
+                HStack(alignment: .top) {
+                    leadingHeaderControl
+                    Spacer()
+                    settingsButton
                 }
-
-                settingsButton
             }
 
-            // 导航切换器：Today / Calendar 下划线样式。
-            // 方案一核心——导航退到头部（轻量），底部只留动作（FAB）。
+            // 导航切换器：Today / Calendar 下划线样式，随标题居中。
             viewSwitcher
         }
         .padding(.horizontal, WarmSpacing.xl)
@@ -528,10 +527,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - View Switcher
 
     private var viewSwitcher: some View {
+        // 无 Spacer：随页头 VStack 的 .center 对齐居中，与居中标题呼应。
         HStack(spacing: WarmSpacing.lg) {
             switcherTab(label: String(localized: "tab.today"), tab: .today)
             switcherTab(label: String(localized: "tab.calendar"), tab: .calendar)
-            Spacer()
         }
     }
 
@@ -567,45 +566,37 @@ struct HomeView<Store: HomeTodoStore>: View {
         calendar.isDateInToday(selectedDate) && calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .month)
     }
 
-    /// 页头大标题右侧的日历导航按钮簇：回今天（非今天时）+ 上/下翻月（周视图为翻周）。
-    /// 保留原日历卡片导航行的 accessibility id 与 label，UITest 与 VoiceOver 行为不变。
-    private var calendarNavButtons: some View {
-        HStack(spacing: WarmSpacing.xs) {
+    /// 页头左上角控件：日历 tab 非今天时是「回今天」，今日 tab 是统计徽章，其余为空。
+    /// ZStack 分层保证这里出现/消失不影响居中标题的位置。
+    /// 注：翻月箭头已删除——翻月改为日历区域左右滑动（见 monthHomeView 的手势），
+    /// VoiceOver 翻页入口由容器上的 accessibilityActions 提供。
+    @ViewBuilder
+    private var leadingHeaderControl: some View {
+        if selectedBottomTab == .calendar {
             if !isCalendarOnToday {
-                Button(action: jumpToToday) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(WarmTheme.primaryDark)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(WarmTheme.secondaryBackground))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("TodayMonthButton")
-                .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.today_week" : "a11y.today_month"))
+                todayJumpButton
+                    .transition(.opacity)
             }
-
-            Button(action: { shiftPeriod(by: -1) }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(WarmTheme.secondaryBackground))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("PreviousMonthButton")
-            .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.previous_week" : "a11y.previous_month"))
-
-            Button(action: { shiftPeriod(by: 1) }) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(WarmTheme.secondaryBackground))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("NextMonthButton")
-            .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.next_week" : "a11y.next_month"))
+        } else if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
+            // 统计徽章只在今日 tab 显示（原先两个 tab 都显示）：
+            // 日历 tab 左角属于「回今天」，且列表 section header 已有当日计数胶囊，信息不丢。
+            statsBadge
         }
+    }
+
+    /// 「回今天」：44pt 玻璃圆钮，与右上角 settingsButton 成对称对（样式镜像它）。
+    private var todayJumpButton: some View {
+        Button(action: jumpToToday) {
+            Image(systemName: "calendar")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(WarmTheme.primaryDark)
+                .frame(width: WarmSize.touch, height: WarmSize.touch)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.glass)
+        .glassEffect(.regular)
+        .accessibilityIdentifier("TodayMonthButton")
+        .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.today_week" : "a11y.today_month"))
     }
 
     private var todayWeekdayTitle: String {
@@ -859,21 +850,29 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .clipped()
                 }
             }
-            // 全屏手势:整个屏幕(日历 + 列表)上下滑切换月/周。
-            // 上滑→周(放大细节),下滑→月(缩小概览)。
+            // 全屏手势:上下滑切换月/周视图;日历区域左右滑翻月/翻周(替代已删除的页头箭头)。
+            // 上滑→周(放大细节),下滑→月(缩小概览);左滑→下一月/周,右滑→上一月/周。
             // 用 SimultaneousDragGesture(UIKit UIGestureRecognizer 包装)让列表滚动和拖拽共存——
             // iOS 26 起 SwiftUI .simultaneousGesture 在容器内失效(FB18199844),改走 UIKit 路径。
             .gesture(
                 SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
                     let vertical = abs(drag.translation.height)
                     let horizontal = abs(drag.translation.width)
-                    guard vertical > horizontal else { return }
-                    if drag.translation.height < -HomeLayoutMetrics.viewModeSwitchThreshold,
-                       calendarViewMode != .week {
-                        setViewMode(.week)
-                    } else if drag.translation.height > HomeLayoutMetrics.viewModeSwitchThreshold,
-                              calendarViewMode != .month {
-                        setViewMode(.month)
+                    if vertical > horizontal {
+                        if drag.translation.height < -HomeLayoutMetrics.viewModeSwitchThreshold,
+                           calendarViewMode != .week {
+                            setViewMode(.week)
+                        } else if drag.translation.height > HomeLayoutMetrics.viewModeSwitchThreshold,
+                                  calendarViewMode != .month {
+                            setViewMode(.month)
+                        }
+                    } else if selectedBottomTab == .calendar,
+                              drag.startLocation.y <= calendarHeight,
+                              horizontal > HomeLayoutMetrics.periodSwipeThreshold {
+                        // 起点门控(只判 startLocation,终点可滑进列表):
+                        // - 从日历格起滑才翻页,列表行上的横滑留给卡片 swipe action / 拖拽排期
+                        // - 今日 tab 下 calendarHeight=0 且本视图也会渲染,tab guard 防止 y=0 起点误翻
+                        shiftPeriod(by: drag.translation.width < 0 ? 1 : -1)
                     }
                 }
             )
@@ -881,6 +880,17 @@ struct HomeView<Store: HomeTodoStore>: View {
                                              ? String(localized: "a11y.switch_to_week")
                                              : String(localized: "a11y.switch_to_month"))) {
                 setViewMode(calendarViewMode == .month ? .week : .month)
+            }
+            // 翻页箭头已从页头删除,滑动手势对 VoiceOver 不可达——这里补翻页动作入口。
+            .accessibilityActions {
+                if selectedBottomTab == .calendar {
+                    Button(String(localized: calendarViewMode == .week ? "a11y.previous_week" : "a11y.previous_month")) {
+                        shiftPeriod(by: -1)
+                    }
+                    Button(String(localized: calendarViewMode == .week ? "a11y.next_week" : "a11y.next_month")) {
+                        shiftPeriod(by: 1)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }

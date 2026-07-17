@@ -58,7 +58,7 @@ enum HomeLayoutMetrics {
     /// 月历表头固定段高度（星期表头 + VStack spacing + padding）。
     /// 拆解：weekday(16) + VStack spacing(WarmSpacing.xs≈8)
     ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~8) ≈ 48pt 保守上限。
-    /// （导航行 32pt 已合并进页头，从此拆解式中移除。）
+    /// （导航行已删除：月份标题居中在页头，翻页改为日历区域左右横滑。）
     /// 低估会导致 calendarHeight 算出比实际小，底部日期行被 `.clipped()` 裁切（Bug 1 根因）。
     static let calendarFixedSectionHeight: CGFloat = 48
     /// 单行日期格最小高度：保证 14pt 日期数字 + 缩小后的选中圆可读（旧值 14 只顾数字）。
@@ -80,6 +80,12 @@ enum HomeLayoutMetrics {
     /// 月/周视图切换的实际触发阈值（pt）。必须明显高于此值才算"有意切换"而非"普通滚动"。
     /// 全屏手势下列表也在同一个 VStack——80pt 区分有意切换和普通列表滚动。
     static let viewModeSwitchThreshold: CGFloat = 80
+    /// 翻月/翻周的水平滑动触发阈值（pt）。
+    /// 低于 viewModeSwitchThreshold(80)：水平方向与列表滚动（垂直）不冲突，无需同等防误触余量；
+    /// 高于 viewModeDragThreshold(40)：避免点按日期格时的斜向抖动误翻页。
+    /// 注：位移取原始视图坐标，未按 layoutDirection 翻转——app 目前只有 zh/en（均 LTR）；
+    /// 将来支持 RTL 语言时需按 @Environment(\.layoutDirection) 翻转符号。
+    static let periodSwipeThreshold: CGFloat = 60
 
     /// 圆点直径跟 rowHeight 自适应：
     /// 改版后圆点移到选中圆下方的固定槽位（不再与数字底部 overlay 挤压），
