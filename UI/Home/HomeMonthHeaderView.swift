@@ -3,69 +3,23 @@ import UIKit
 
 struct HomeMonthHeaderView: View {
     let state: HomeCalendarState
-    let onShift: (Int) -> Void
-    let onJumpToToday: () -> Void
     let onSelectDay: (Date) -> Void
     /// 从 Unscheduled 拖任务到日期格时触发（UUID = 任务，Date = 格子日期）。
     var onDropTodo: ((UUID, Date) -> Void)? = nil
-    /// 当前是否停在今天——true 时隐藏"回今天"按钮（此时按钮无意义）。
-    var isOnToday: Bool = false
     /// 可用高度（来自 GeometryReader）。0 = 不约束，用默认行高。
     var availableHeight: CGFloat = 0
 
     /// 根据可用高度计算日期格行高。
-    /// 固定段（导航行 + 星期表头 + spacing + padding）≈ 90pt（见 calendarFixedSectionHeight）；
+    /// 固定段（星期表头 + spacing + padding）≈ 48pt（见 calendarFixedSectionHeight）；
     /// 剩余空间平分给网格行（月视图 6 行 / 周视图 1 行）。
     /// availableHeight = 0 时回退到默认 WarmSpacing.xxxl（48pt）。
+    /// 注：月份标题 + 翻月按钮已合并进页头（HomeView.headerView），卡片内不再有导航行。
     private var dayRowHeight: CGFloat {
         HomeLayoutMetrics.dayRowHeight(availableHeight: availableHeight, viewMode: state.viewMode)
     }
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            HStack {
-                // 回今天按钮：仅在非今天时显示（已停在今天时按钮无意义，省掉一个控件）。
-                if !isOnToday {
-                    Button(action: onJumpToToday) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(WarmTheme.primaryDark)
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(WarmTheme.secondaryBackground))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("TodayMonthButton")
-                    .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.today_week" : "a11y.today_month"))
-                }
-
-                Button(action: { onShift(-1) }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(WarmTheme.secondaryBackground))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("PreviousMonthButton")
-                .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.previous_week" : "a11y.previous_month"))
-
-                Text(state.monthTitle)
-                    .font(WarmFont.headline(16))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .frame(maxWidth: .infinity)
-
-                Button(action: { onShift(1) }) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(WarmTheme.secondaryBackground))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("NextMonthButton")
-                .accessibilityLabel(String(localized: state.viewMode == .week ? "a11y.next_week" : "a11y.next_month"))
-            }
-
             HStack(spacing: WarmSpacing.xs) {
                 ForEach(state.weekHeaderDays, id: \.self) { day in
                     Text(state.weekdayTitle(for: day))
@@ -86,25 +40,29 @@ struct HomeMonthHeaderView: View {
                 }
             }
         }
-        .padding(.horizontal, WarmSpacing.lg)
+        // 水平 padding 用 xl（24）与页头对齐——旧值 lg（20）导致网格与大标题左缘错位 4pt。
+        // 导航行删除后卡片直接坐在纸纹背景上，不再需要垫底色。
+        .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
-        .background(WarmTheme.background.opacity(0.94))
     }
 }
 
 // MARK: - Home layout constants
 
 enum HomeLayoutMetrics {
-    /// 月历区域目标上限比例（对齐 HTML 参考的 max-height:38vh）。
-    static let calendarTargetHeightRatio: CGFloat = 0.38
-    /// 月历表头固定段高度（导航行 + 星期表头 + VStack spacing + padding）。
-    /// 拆解：navRow(32) + weekday(16) + VStack spacing(WarmSpacing.xs×2≈16)
-    ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~10) ≈ 90pt 保守上限。
+    /// 月历区域目标上限比例。改版从 0.38 提到 0.44：导航行合并进页头后卡片内容变少，
+    /// 多出的比例全部转成日期格行高（典型机型 ~19pt → ~32pt），圆形高亮和待办圆点有了呼吸空间。
+    /// 不超过 ~0.46——列表仍是主界面，保住 ≥56% 高度。
+    static let calendarTargetHeightRatio: CGFloat = 0.44
+    /// 月历表头固定段高度（星期表头 + VStack spacing + padding）。
+    /// 拆解：weekday(16) + VStack spacing(WarmSpacing.xs≈8)
+    ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~8) ≈ 48pt 保守上限。
+    /// （导航行 32pt 已合并进页头，从此拆解式中移除。）
     /// 低估会导致 calendarHeight 算出比实际小，底部日期行被 `.clipped()` 裁切（Bug 1 根因）。
-    static let calendarFixedSectionHeight: CGFloat = 90
-    /// 单行日期格最小高度：优先保证 14pt 日期数字可读。
-    static let dayRowMinHeight: CGFloat = 14
+    static let calendarFixedSectionHeight: CGFloat = 48
+    /// 单行日期格最小高度：保证 14pt 日期数字 + 缩小后的选中圆可读（旧值 14 只顾数字）。
+    static let dayRowMinHeight: CGFloat = 22
     /// 底部 VoiceFAB 的可视高度：FAB 直径 + 底部 padding。
     static let bottomBarHeight: CGFloat = WarmSize.fab + WarmSpacing.md
     /// 底部列表渐隐只负责贴近底部浮动操作簇的过渡，不能覆盖到中部 todo 卡片。
@@ -123,37 +81,42 @@ enum HomeLayoutMetrics {
     /// 全屏手势下列表也在同一个 VStack——80pt 区分有意切换和普通列表滚动。
     static let viewModeSwitchThreshold: CGFloat = 80
 
-    /// 圆点直径跟 rowHeight 自适应（改动 A）：
-    /// 之前用固定 dayRowDotSize=4 + dayRowDotsVisibleThreshold=24，
-    /// 但月视图实际 dayRowHeight 可能 ≈16pt，圆点跟数字挤一起。
-    /// 现在按行高动态返回圆点尺寸，矮屏隐藏圆点保证数字清爽。
-    /// - rowHeight < 26：返回 nil（14pt headline 的 lineHeight~19pt + 圆点3 + padding4 ≈ 26，
-    ///   低于此值圆点跟数字中心距离 <5pt，视觉上挤）
-    /// - 26-32：返回 3
-    /// - 33-44：返回 3.5
-    /// - ≥45：返回 4（周视图典型）
+    /// 圆点直径跟 rowHeight 自适应：
+    /// 改版后圆点移到选中圆下方的固定槽位（不再与数字底部 overlay 挤压），
+    /// 阈值相应放宽——行高 ≥22 即可容纳「圆 + 6pt 槽位」结构。
+    /// - rowHeight < 22：返回 nil（极矮屏，圆点省略保数字清爽）
+    /// - 22-28：返回 3
+    /// - 29-40：返回 3.5（月视图典型 ~32pt 落在这档）
+    /// - >40：返回 4（周视图典型）
     static func dotSize(for rowHeight: CGFloat) -> CGFloat? {
         switch rowHeight {
-        case ..<26: return nil
-        case 26...32: return 3
-        case 33...44: return 3.5
+        case ..<22: return nil
+        case 22...28: return 3
+        case 29...40: return 3.5
         default: return 4
         }
     }
+
+    /// 选中/今天高亮圆直径：正常行高下用固定 WarmSize.calendarDayCircle（30pt），
+    /// 矮行自适应缩小。扣除量 8 = 圆点槽位(6) + VStack spacing(2)，
+    /// 保证「圆 + 间距 + 圆点槽」恰好装进 rowHeight 不溢出。
+    static func selectionCircleDiameter(for rowHeight: CGFloat) -> CGFloat {
+        min(WarmSize.calendarDayCircle, rowHeight - 8)
+    }
     /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
-    /// 周视图只有 1 行，若套用 38% cap 会把单行撑到 128pt 过高；
+    /// 周视图只有 1 行，若套用高度 cap 会把单行撑得过高；
     /// 这里用固定 48pt 让周视图紧凑，腾出更多空间给列表。
     static let weekDesiredRowHeight: CGFloat = 48
 
     /// 月历区域高度（容器封顶值，不直接决定行高）。
-    /// 设计意图（对齐 HTML 参考 `max-height:38vh; overflow:hidden`）：
-    ///   - **月视图**：6 行内容通常接近 38% cap，直接用 cap 让 dayRowHeight 自适应撑满。
-    ///   - **周视图**：1 行内容远低于 38%，若套用 cap 会把单行撑到 128pt 过高；
-    ///     改用 content-driven（header + 1 行 48pt = 178pt），列表获得更多空间。
+    /// 设计意图（`max-height + overflow:hidden` 的 SwiftUI 等价）：
+    ///   - **月视图**：6 行内容通常接近 44% cap，直接用 cap 让 dayRowHeight 自适应撑满。
+    ///   - **周视图**：1 行内容远低于 cap，若套用 cap 会把单行撑得过高；
+    ///     改用 content-driven（表头 48 + 1 行 48 = 96pt），列表获得更多空间。
     /// 与 `dayRowHeight` 的契约：本函数返回容器高度，`dayRowHeight` 在容器内独立计算行高
     /// （`max(dayRowMinHeight, (container - fixedSection - spacing) / rows)`）。
-    /// 极矮屏（maxCap < 178）下周视图 dayRowHeight 会 < 48，容器底部可能被 `.clipped()` 裁切，
-    /// 这是已知取舍（与月视图一致）：列表区至少 62% 不可妥协。
+    /// 极矮屏（maxCap < 96）下周视图 dayRowHeight 会 < 48，容器底部可能被 `.clipped()` 裁切，
+    /// 这是已知取舍（与月视图一致）：列表区至少 56% 不可妥协。
     static func calendarHeight(availableHeight: CGFloat, selectedTab: BottomTab, viewMode: CalendarViewMode) -> CGFloat {
         guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
         let maxCap = availableHeight * calendarTargetHeightRatio
@@ -196,60 +159,68 @@ struct HomeMonthDayButton: View {
 
     @State private var isDropTargeted = false
 
-    /// 圆点尺寸跟 rowHeight 自适应（改动 A）：
-    /// 月视图 18pt 行高下返回 3pt，周视图 48pt 行高下返回 4pt。
-    /// 极矮屏（< 16pt）返回 nil，不渲染圆点。
+    /// 圆点尺寸跟 rowHeight 自适应：
+    /// 月视图 ~32pt 行高下返回 3.5pt，周视图 48pt 行高下返回 4pt。
+    /// 极矮屏（< 22pt）返回 nil，不渲染圆点。
     private var dotSize: CGFloat? {
         HomeLayoutMetrics.dotSize(for: rowHeight)
+    }
+
+    /// 选中/今天高亮圆直径（正常 30pt，矮行自适应缩小）。
+    private var circleDiameter: CGFloat {
+        HomeLayoutMetrics.selectionCircleDiameter(for: rowHeight)
     }
 
     var body: some View {
         Button {
             onSelect(dayState.date)
         } label: {
-            // 数字在 .frame(height: rowHeight) 容器里默认居中；
-            // 圆点 overlay 挂在容器上（不是 Text 上），钉在 rowHeight 底部。
-            // （之前挂在 Text + .frame(maxHeight: .infinity) 上——Text 实际撑不满 rowHeight，
-            // overlay 底部只是 Text 高度的底部，圆点跟数字挤在一起。）
-            // 纯数字（5/29 等），不用 .formatted(.dateTime.day(.twoDigits))
-            // 后者在 zh locale 下产生"29日"，与日期格上下文冲突显冗余。
-            // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
-            // 视觉显示与无障碍朗读职责分离。
-            Text("\(Calendar.current.component(.day, from: dayState.date))")
-                .font(WarmFont.headline(14))
-                .foregroundColor(dayState.isSelected ? .white : (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
+            // TickTick 式圆形高亮：数字 + 高亮圆组成固定尺寸的居中单元，
+            // 圆点在其下方的固定 6pt 槽位（无圆点时占位，保证各格数字垂直对齐）。
+            // 点击热区仍是整格（外层 maxWidth: .infinity × rowHeight）。
+            VStack(spacing: 2) {
+                ZStack {
+                    // - 选中：实心 primary 圆 + 白字
+                    // - 今天未选中：primary 0.18 浅圆 + primaryDark 数字（"今天永远有标记"）
+                    // - 其他：无背景；跨月补齐日弱化为 textMuted
+                    if dayState.isSelected {
+                        Circle().fill(WarmTheme.primary)
+                    } else if dayState.isToday {
+                        Circle().fill(WarmTheme.primary.opacity(0.18))
+                    }
+
+                    // 纯数字（5/29 等），不用 .formatted(.dateTime.day(.twoDigits))
+                    // 后者在 zh locale 下产生"29日"，与日期格上下文冲突显冗余。
+                    // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
+                    // 视觉显示与无障碍朗读职责分离。
+                    Text("\(dayState.dayNumber)")
+                        .font(WarmFont.headline(14))
+                        .foregroundColor(
+                            dayState.isSelected ? .white :
+                            (dayState.isToday ? WarmTheme.primaryDark :
+                            (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
+                        )
+                }
+                .frame(width: circleDiameter, height: circleDiameter)
+                // 选中态放大只作用于圆+数字单元：30pt 圆放大 1.05 不会碰到相邻格。
+                // Reduce Motion 时 animation 会被系统忽略。
+                .scaleEffect(dayState.isSelected ? WarmAnimation.monthDaySelectedScale : WarmAnimation.monthDayDefaultScale)
+                .animation(WarmAnimation.springSmooth, value: dayState.isSelected)
+
+                // 圆点槽位：固定 6pt 高。圆点在页面底色上（不再被选中圆覆盖），
+                // 无需旧版"选中时白点"分支——统一 primary（有未完成）/ textMuted（全完成）。
+                ZStack {
+                    if let dotSize, !dayState.occurrences.isEmpty {
+                        let hasUncompletedOccurrence = dayState.occurrences.contains { !$0.isCompleted }
+                        Circle()
+                            .fill(hasUncompletedOccurrence ? WarmTheme.primary : WarmTheme.textMuted)
+                            .frame(width: dotSize, height: dotSize)
+                    }
+                }
+                .frame(height: 6)
+            }
             .frame(maxWidth: .infinity)
             .frame(height: rowHeight)
-            .overlay(alignment: .bottom) {
-                if let dotSize, !dayState.occurrences.isEmpty {
-                    let hasUncompletedOccurrence = dayState.occurrences.contains { !$0.isCompleted }
-                    Circle()
-                        .fill(
-                            dayState.isSelected ? Color.white :
-                            (hasUncompletedOccurrence ? WarmTheme.primary : WarmTheme.textMuted)
-                        )
-                        .frame(width: dotSize, height: dotSize)
-                    .padding(.bottom, WarmSpacing.xxs)
-                }
-            }
-            // 选中态放大：弱动画提示用户"我点对了"，但不夸张到挤压相邻格
-            // （月历 7 列宽，放大太多会重叠）。Reduce Motion 时 animation 会被系统忽略。
-            .scaleEffect(dayState.isSelected ? WarmAnimation.monthDaySelectedScale : WarmAnimation.monthDayDefaultScale)
-            .animation(WarmAnimation.springSmooth, value: dayState.isSelected)
-            // 改动 B：背景简化——
-            // - 选中：实心 primary 背景 + 白字（白字在 fill 上面，靠 foregroundColor 控制）
-            // - 今天未选中：primary 0.18 浅填充（视觉锚点，替代原来的 stroke 边框）
-            // - 其他：裸背景（无填充、无边框、无阴影），让圆点成为主视觉标记
-            // 删除的内容：Color.white.opacity(0.9/0.45) 白底、stroke 边框、shadow 阴影
-            .background {
-                if dayState.isSelected {
-                    RoundedRectangle(cornerRadius: WarmRadius.card)
-                        .fill(WarmTheme.primary)
-                } else if dayState.isToday {
-                    RoundedRectangle(cornerRadius: WarmRadius.card)
-                        .fill(WarmTheme.primary.opacity(0.18))
-                }
-            }
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -266,11 +237,11 @@ struct HomeMonthDayButton: View {
             isDropTargeted = targeted
         }
         .overlay {
+            // 拖拽目标提示：与高亮同语言的圆形描边，比高亮圆大一圈（d+6）居中。
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: WarmRadius.card)
+                Circle()
                     .stroke(WarmTheme.primary, lineWidth: 2)
-                    .scaleEffect(1.15)
-                    .padding(2)
+                    .frame(width: circleDiameter + 6, height: circleDiameter + 6)
             }
         }
         .animation(WarmAnimation.springFast, value: isDropTargeted)

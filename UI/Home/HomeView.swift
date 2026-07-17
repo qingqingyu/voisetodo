@@ -466,8 +466,13 @@ struct HomeView<Store: HomeTodoStore>: View {
         VStack(spacing: WarmSpacing.sm) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    // 小字行：今日 tab 显示完整日期（+问候语）；
+                    // 日历 tab 显示年份（月模式）/ 周范围（周模式）——月份名已在大标题，
+                    // 避免与大标题、网格重复出现月份信息（页头合并改版）。
                     HStack(spacing: WarmSpacing.xs) {
-                        Text(formattedHomeDate(Date()))
+                        Text(selectedBottomTab == .today
+                             ? formattedHomeDate(Date())
+                             : HomeCalendarState.periodCaption(anchor: visibleMonthAnchor, viewMode: calendarViewMode, calendar: calendar))
                             .font(WarmFont.caption(14))
                             .foregroundColor(WarmTheme.textSecondary)
 
@@ -479,11 +484,19 @@ struct HomeView<Store: HomeTodoStore>: View {
                         }
                     }
 
-                    Text(selectedBottomTab == .today ? todayWeekdayTitle : calendarMonthTitle)
-                        .font(WarmFont.serifDisplay(30))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
+                    // 大标题行：日历 tab 下翻月/回今天按钮跟在月份名右侧
+                    // （原来在日历卡片内部的导航行，合并到页头后卡片内导航行已删除）。
+                    HStack(spacing: WarmSpacing.sm) {
+                        Text(selectedBottomTab == .today ? todayWeekdayTitle : calendarMonthTitle)
+                            .font(WarmFont.serifDisplay(30))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+
+                        if selectedBottomTab == .calendar {
+                            calendarNavButtons
+                        }
+                    }
                 }
 
                 Spacer()
@@ -544,6 +557,53 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// Calendar tab 的大标题：当前可见月份名（"July" / "七月"），替代冗余的 "Calendar" 字面量。
     private var calendarMonthTitle: String {
         visibleMonthAnchor.formatted(.dateTime.month(.wide))
+    }
+
+    /// 当前是否停在今天（选中今天 + 可见月为本月）——true 时隐藏"回今天"按钮。
+    /// 与旧版日历卡片内导航行的 isOnToday 判断一致。
+    private var isCalendarOnToday: Bool {
+        calendar.isDateInToday(selectedDate) && calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .month)
+    }
+
+    /// 页头大标题右侧的日历导航按钮簇：回今天（非今天时）+ 上/下翻月（周视图为翻周）。
+    /// 保留原日历卡片导航行的 accessibility id 与 label，UITest 与 VoiceOver 行为不变。
+    private var calendarNavButtons: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            if !isCalendarOnToday {
+                Button(action: jumpToToday) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(WarmTheme.primaryDark)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(WarmTheme.secondaryBackground))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TodayMonthButton")
+                .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.today_week" : "a11y.today_month"))
+            }
+
+            Button(action: { shiftPeriod(by: -1) }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(WarmTheme.secondaryBackground))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("PreviousMonthButton")
+            .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.previous_week" : "a11y.previous_month"))
+
+            Button(action: { shiftPeriod(by: 1) }) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(WarmTheme.secondaryBackground))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("NextMonthButton")
+            .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.next_week" : "a11y.next_month"))
+        }
     }
 
     private var todayWeekdayTitle: String {
@@ -742,8 +802,8 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
 
         return GeometryReader { proxy in
-            // 月历封顶 38% 高度（硬约束，对齐 solution-b-capped-calendar.html 的 max-height:38vh）。
-            // 极矮屏日期行可能被裁切，与 HTML overflow:hidden 一致；列表区始终 ≥ 62% 可滚动。
+            // 月历封顶 44% 高度（硬约束，见 HomeLayoutMetrics.calendarTargetHeightRatio）。
+            // 极矮屏日期行可能被裁切（overflow:hidden 语义）；列表区始终 ≥ 56% 可滚动。
             // 「今日」tab 隐藏月历，列表占满 100%。
             let calendarHeight = HomeLayoutMetrics.calendarHeight(
                 availableHeight: proxy.size.height,
@@ -755,11 +815,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 if selectedBottomTab == .calendar {
                     HomeMonthHeaderView(
                         state: state,
-                        onShift: shiftPeriod,
-                        onJumpToToday: jumpToToday,
                         onSelectDay: selectDay,
                         onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
-                        isOnToday: calendar.isDateInToday(selectedDate) && calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .month),
                         availableHeight: calendarHeight
                     )
                     // 封顶 + 裁切：对齐 HTML 参考的 max-height:38vh + overflow:hidden。

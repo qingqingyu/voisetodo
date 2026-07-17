@@ -105,6 +105,10 @@ enum WarmSize {
     static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
     static let mega: CGFloat = 120     // 最大装饰元素
+    /// 月历日期格选中/今天高亮圆直径（TickTick 式圆形标记）。
+    /// 30pt：7 列网格单列宽 ~42pt、14pt 数字下的合适比例；矮行时由
+    /// HomeLayoutMetrics.selectionCircleDiameter 自适应缩小。
+    static let calendarDayCircle: CGFloat = 30
 }
 
 // MARK: - 动画

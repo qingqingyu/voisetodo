@@ -3,6 +3,9 @@ import SwiftUI
 
 struct HomeCalendarDayState {
     let date: Date
+    /// 格子上显示的日数字。由 HomeCalendarState 用注入的 calendar 计算，
+    /// 避免视图层用 Calendar.current 与状态层日历不一致的隐患。
+    let dayNumber: Int
     let occurrences: [TodoOccurrenceData]
     let isSelected: Bool
     let isToday: Bool
@@ -31,25 +34,28 @@ struct HomeCalendarState {
 
     private let calendar: Calendar
 
-    var monthTitle: String {
+    /// 页头大标题下方的小字说明：月视图显示年份（大标题已有月份名），周视图显示周范围。
+    /// 静态方法——页头（HomeView.headerView）没有完整的 HomeCalendarState，只有 anchor + viewMode。
+    static func periodCaption(anchor: Date, viewMode: CalendarViewMode, calendar: Calendar) -> String {
         switch viewMode {
         case .month:
-            return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+            return anchor.formatted(.dateTime.year())
         case .week:
+            let visibleDays = days(for: viewMode, anchor: anchor, calendar: calendar)
             guard let first = visibleDays.first, let last = visibleDays.last else {
-                return visibleMonthAnchor.formatted(.dateTime.year().month(.wide))
+                return anchor.formatted(.dateTime.year())
             }
             // 去掉 zh/ja locale 下 `.dateTime.month().day()` 默认追加的"日"后缀，
             // 保留 locale-aware 的月份/日表达。en/等无此后缀的语言 hasSuffix 不命中即 no-op。
             // 注意：ko locale 的"일"后缀未在此处理——若后续要支持 ko，需扩展 stripDaySuffix
             // 并按字符（而非字节）dropLast；当前目标用户语言为 zh/en，ko 不在范围内。
-            return "\(Self.stripDaySuffix(first.formatted(.dateTime.month().day()))) – \(Self.stripDaySuffix(last.formatted(.dateTime.month().day())))"
+            return "\(stripDaySuffix(first.formatted(.dateTime.month().day()))) – \(stripDaySuffix(last.formatted(.dateTime.month().day())))"
         }
     }
 
     /// 去掉 `.formatted(.dateTime.day())` 在 zh/ja locale 末尾产生的"日"后缀。
     /// 仅当以单字符"日"结尾时删除——避免误伤含"日"的星期或更复杂文案（此处 month().day() 不会出现）。
-    /// ko locale 的"일"后缀不在处理范围（见 monthTitle 上方注释）。
+    /// ko locale 的"일"后缀不在处理范围（见 periodCaption 上方注释）。
     private static func stripDaySuffix(_ formatted: String) -> String {
         guard formatted.hasSuffix("日") else { return formatted }
         return String(formatted.dropLast())
@@ -99,6 +105,7 @@ struct HomeCalendarState {
         let dayOccurrences = occurrences(on: day)
         return HomeCalendarDayState(
             date: day,
+            dayNumber: calendar.component(.day, from: day),
             occurrences: dayOccurrences,
             isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
             isToday: calendar.isDateInToday(day),
