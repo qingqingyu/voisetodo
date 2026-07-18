@@ -2032,22 +2032,6 @@
         }
       }
     },
-    "error.recording_failed %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't record: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "录音失败: %@"
-          }
-        }
-      }
-    },
     "error.recording_failed_message" : {
       "localizations" : {
         "en" : {

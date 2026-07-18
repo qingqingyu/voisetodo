@@ -13,6 +13,7 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     case speechRecognitionPermissionDenied    // [v2] 新增
     case speechRecognitionUnavailable
     case audioSessionInterrupted
+    /// 录音失败(音频引擎启动失败 / 识别过程其他错误等)。detail 仅入日志(UI 走通用文案)。
     case recordingFailed(String)              // [v2] 新增
 
     // Network / AI 模块
@@ -36,7 +37,9 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     case transcriptTooLong
 
     // Storage 模块
+    /// SwiftData 读失败。detail 仅入日志(UI 走 storageError 通用文案)。
     case storageReadFailed(String)            // [v2] 优化
+    /// SwiftData 写失败。detail 仅入日志(UI 走 storageError 通用文案)。
     case storageWriteFailed(String)           // [v2] 优化
 
     var errorDescription: String? {

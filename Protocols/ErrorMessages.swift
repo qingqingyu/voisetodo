@@ -8,11 +8,9 @@ enum ErrorMessages {
     static let speechUnavailable = String(localized: "error.speech_unavailable")
     static let audioSessionInterrupted = String(localized: "error.audio_interrupted")
 
-    /// 录音失败兜底文案（带 detail 参数）。与 VoiceTodoError.errorDescription 共用 l10n key
-    /// `error.recording_failed`，确保单一文案来源。
-    static func recordingFailed(_ detail: String) -> String {
-        String(localized: "error.recording_failed \(detail)")
-    }
+    /// 录音失败通用文案(不暴露 AVAudioSession 英文细节)。
+    /// 旧 `recordingFailed(_:)` 带参数版本已删除——detail 仅入 log,UI 统一走这条文案。
+    static let recordingFailedMessage = String(localized: "error.recording_failed_message")
 
     // 网络/AI 相关
     static let networkError = String(localized: "error.network")
@@ -21,16 +19,15 @@ enum ErrorMessages {
     static let quotaExhausted = String(localized: "error.quota_exhausted")
     static let serviceBusy = String(localized: "error.service_busy")
     static let apiError = String(localized: "error.api_error")
-    /// `apiResponseInvalid` 的旧 detail 字符串——保留给 ExtractorTests 断言用(测试代码会把它当 detail 传进去验证 enum 相等)。
-    /// UI 不再用这个文案(VoiceTodoError.errorDescription 走 apiResponseInvalidMessage)。
+    /// `apiResponseInvalid` case 关联值常用的 detail 字符串——被 NetworkClient 8 个失败路径
+    /// 用作 enum 关联值(便于测试断言 `== .apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)`)。
+    /// UI 不再显示这个文案(VoiceTodoError.errorDescription 走 apiResponseInvalidMessage)。
     static let apiResponseInvalidDetail = String(localized: "error.api_response_invalid_detail")
     /// `apiResponseInvalid` 给用户看的文案(无 detail,问题简述 + 重试建议)。
     static let apiResponseInvalidMessage = String(localized: "error.api_response_invalid_message")
     static let jsonParsingFailed = String(localized: "error.json_parsing_failed")
     /// 输入待办过多导致 AI 输出被 max_tokens 截断。用户可解决(分批输入),文案必须给具体建议。
     static let transcriptTooLong = String(localized: "error.transcript_too_long")
-    /// 录音失败通用文案(不暴露 AVAudioSession 英文细节)。
-    static let recordingFailedMessage = String(localized: "error.recording_failed_message")
 
     // 存储相关
     static let storageError = String(localized: "error.storage")

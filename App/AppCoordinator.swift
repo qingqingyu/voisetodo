@@ -872,12 +872,14 @@ final class AppCoordinator: ObservableObject {
                 // 音频会话被中断（来电 / 闹钟 / 其他 app 抢音频）：切键盘让用户继续输入
                 voiceInputFallbackToKeyboard = true
                 showToast(message: ErrorMessages.audioSessionInterrupted, style: .warning)
-            case .recordingFailed(let detail):
+            case .recordingFailed:
                 // 录音失败（音频引擎启动失败、识别过程其他错误等）：切键盘让用户继续输入。
                 // 注意：这条路径是兜底，特定识别错误（kLSRErrorDomain Code=300）已在
                 // VoiceInputManager 里映射为 .speechRecognitionUnavailable 走更友好的文案。
+                // detail 仅入日志(见 VoiceInputManager 里的 error.localizedDescription),
+                // UI 走通用文案——与 VoiceTodoError.errorDescription 口径一致。
                 voiceInputFallbackToKeyboard = true
-                showToast(message: ErrorMessages.recordingFailed(detail), style: .warning)
+                showToast(message: ErrorMessages.recordingFailedMessage, style: .warning)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
             case .quotaExhausted:
