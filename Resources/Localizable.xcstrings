@@ -1828,13 +1828,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hmm, couldn't make sense of that. Try again?"
+            "value" : "Our service hiccuped. Please try again shortly."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "理解失败，请稍后重试"
+            "value" : "服务开小差,请稍后重试"
           }
         }
       }
@@ -1893,13 +1893,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI response format was abnormal. Please try again."
+            "value" : "Didn't quite catch that. Could you try again?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 返回格式异常,请稍后重试"
+            "value" : "没听明白结果,请重试一次"
           }
         }
       }
@@ -1957,13 +1957,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't make sense of the response. Try again later."
+            "value" : "Didn't catch that. Please try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解析失败，请稍后重试"
+            "value" : "没听明白,请重试"
           }
         }
       }
@@ -2124,6 +2124,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "内容太多,我没法一次性处理完。试试分几次发送,每次少说几条。"
+          }
+        }
+      }
+    },
+    "error.unexpected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出了点问题,请稍后重试"
           }
         }
       }
@@ -5166,13 +5182,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Failed to extract todos. Please try again later."
+            "value" : "I didn't quite catch that. Please add it manually in the app."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解析失败，请稍后重试"
+            "value" : "我没听明白,请打开 App 自己添加"
           }
         }
       }
@@ -5214,13 +5230,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save failed. Please try again in the app."
+            "value" : "Got the keyword. Please finish it in the app."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存失败，请稍后在 App 中重试"
+            "value" : "已记下关键词,请打开 App 完成"
           }
         }
       }
@@ -5792,13 +5808,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Update failed"
+            "value" : "Open the app to sync"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新失败"
+            "value" : "打开 App 同步一下"
           }
         }
       }

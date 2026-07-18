@@ -32,6 +32,12 @@ enum ErrorMessages {
     // 存储相关
     static let storageError = String(localized: "error.storage")
     static let sharedStorageUnavailable = String(localized: "error.shared_storage_unavailable")
+    /// 兜底文案——任何**非 VoiceTodoError 类型**的系统错误(URLError / SwiftDataError /
+    /// 第三方库原生 NSError 等)统一显示这条,不暴露 `.localizedDescription` 的英文
+    /// 技术描述。原始 error 通过 `VoiceTodoLog.errorSummary(_:)` 入日志/telemetry,
+    /// 诊断信息不丢。
+    /// 触发位置:`AppCoordinator.handleError(_:)` 的 `else` 分支。
+    static let unexpectedError = String(localized: "error.unexpected")
 
     // 详情页
     static let todoSaved = String(localized: "detail.saved")
