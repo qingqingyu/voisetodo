@@ -882,26 +882,33 @@ struct HomeView<Store: HomeTodoStore>: View {
                 case .error:
                     HomeCalendarErrorView(onRetry: retryCalendarLoad)
                 case .empty, .success:
-                    // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
-                    // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
-                    // List 会渲染所有内容而不滚动（已知行为）。
-                    // 这里用 proxy.size.height - calendarHeight 算出实际可用高度，
-                    // List 在此 concrete 高度内会正确启用滚动。
-                    let listHeight = max(0, proxy.size.height - calendarHeight)
-                    HomeSelectedDayListView(
-                        state: state,
-                        selectedBottomTab: selectedBottomTab,
-                        cardAppeared: $cardAppeared,
-                        onToggleTodo: { actions.toggleTodo($0) },
-                        onToggleOccurrence: { actions.toggleOccurrence($0) },
-                        onDeleteTodo: { actions.deleteTodo($0) },
-                        onOpenTodo: { selectedTodo = $0 },
-                        onMoveUnscheduled: { source, destination in
-                            moveUnscheduled(from: source, to: destination)
-                        }
-                    )
-                    .frame(height: listHeight)
-                    .clipped()
+                    // grid+月:网格本身已显示事件概览(数字 + ≤2 事件条 + +N),
+                    // 下方不再渲染列表——避免「今天/这一天没有安排」等视觉元素侵入,
+                    // 网格下方保持完全空白。网格+周仍需要列表(时间轴下方显示选中日任务)。
+                    // list+月/list+周当然也保留列表(原本的列表视图)。
+                    let isGridMonthWithoutList = calendarDisplayMode == .grid && calendarViewMode == .month
+                    if !isGridMonthWithoutList {
+                        // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
+                        // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
+                        // List 会渲染所有内容而不滚动（已知行为）。
+                        // 这里用 proxy.size.height - calendarHeight 算出实际可用高度，
+                        // List 在此 concrete 高度内会正确启用滚动。
+                        let listHeight = max(0, proxy.size.height - calendarHeight)
+                        HomeSelectedDayListView(
+                            state: state,
+                            selectedBottomTab: selectedBottomTab,
+                            cardAppeared: $cardAppeared,
+                            onToggleTodo: { actions.toggleTodo($0) },
+                            onToggleOccurrence: { actions.toggleOccurrence($0) },
+                            onDeleteTodo: { actions.deleteTodo($0) },
+                            onOpenTodo: { selectedTodo = $0 },
+                            onMoveUnscheduled: { source, destination in
+                                moveUnscheduled(from: source, to: destination)
+                            }
+                        )
+                        .frame(height: listHeight)
+                        .clipped()
+                    }
                 }
             }
             // 全屏手势:仅处理上下滑切换月/周视图。左右滑翻月/翻周已挪到

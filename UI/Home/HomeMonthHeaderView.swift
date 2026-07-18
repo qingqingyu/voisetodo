@@ -106,6 +106,10 @@ enum HomeLayoutMetrics {
     /// 不超过 0.72——给底部输入面板/列表留 ≥28% 高度，避免完全无空间。
     /// 网格+周（WeekTimelineView）也走这个比例：时间轴需要垂直滚动空间。
     static let gridCalendarTargetHeightRatio: CGFloat = 0.70
+    /// 网格+月专属：网格下方不渲染列表(HomeSelectedDayListView 跳过),
+    /// 月历可占满几乎全部可用高度,留 5% 底部空白作为视觉缓冲
+    /// (避免紧贴底部 safe area / FAB 区域)。
+    static let gridMonthFullHeightRatio: CGFloat = 0.95
     /// 网格+月单格最小行高。每格内容预算：数字(14pt) + 2×事件条(14pt + spacing 2pt) + `+N`(10pt) ≈ 70pt + 余量。
     /// 取 80pt 作为舒适下限；极矮屏算出的可用高度不足时按此兜底，宁可底部裁切也不压扁事件条。
     static let gridMonthMinRowHeight: CGFloat = 80
@@ -229,7 +233,13 @@ enum HomeLayoutMetrics {
                 return min(maxCap, contentHeight)
             }
         case .grid:
-            // 网格模式：月/周都用更高比例（时间轴/事件条都需要垂直空间）
+            // 网格+月:网格已显示事件概览(数字 + ≤2 事件条 + +N),
+            // 下方不再渲染 HomeSelectedDayListView(见 HomeView.monthHomeView),
+            // 网格可占满几乎全部高度,留小底部空白作为视觉缓冲。
+            // 网格+周:仍需保留 30% 给列表(时间轴下方显示选中日任务)。
+            if viewMode == .month {
+                return availableHeight * gridMonthFullHeightRatio
+            }
             return availableHeight * gridCalendarTargetHeightRatio
         }
     }
