@@ -41,7 +41,10 @@ export const anthropicAdapter = {
         },
         body: JSON.stringify({
           model: provider.model,
-          max_tokens: 500,
+          // Sonnet 4.5 输出上限 8192。4096 能装下 20+ 待办的完整 JSON 输出,
+          // 又留一半余量防极端 case 溢出。旧值 500 在中文 JSON 下只够 ~10 个待办就被强制截断,
+          // 导致下游 JSON 解析失败(见 iOS 端 jsonParsingFailed 报错)。
+          max_tokens: 4096,
           temperature: 0.1,
           stream,
           system: buildSystemPrompt(locale, vocabularyHints, today, personalHints),
