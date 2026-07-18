@@ -75,9 +75,23 @@ final class TodoStore:
         let startedAt = Date()
         let fallbackLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
         VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        #if DEBUG
+        logAddBatchDiag(items: items)
+        #endif
         var baseSortOrder = try nextSortOrderForNewItem()
         var newTodos: [TodoItemData] = []
         for item in items {
+            // 兜底查重:SwiftData @Attribute(.unique) 在 modelContext.insert 时不查重,
+            // save 也不报错。如果调用方(例如 ConfirmSheet 重入、Siri intent)传入了
+            // 已存在的 id,会产生 id 冲突的重复记录,导致 ForEach 警告、
+            // toggleComplete(id) fetchLimit=1 只命中第一条。
+            // 这里显式跳过已存在的 id 并记 warning。
+            // 用 existingTodoItem 而非 findTodoItem:前者把 not_found 当正常 nil 返回,
+            // 只抛真实 SwiftData 读异常——避免 try? 吞掉底层错误。
+            if let existing = try existingTodoItem(by: item.id) {
+                VoiceTodoLog.store.warning("store.add_batch.skip_duplicate id=\(item.id.uuidString, privacy: .public) existingTitle=\(existing.title, privacy: .public)")
+                continue
+            }
             let todoItem = TodoItem.from(item)
             todoItem.sortOrder = baseSortOrder
             todoItem.localeIdentifier = resolveLocaleIdentifier(localeIdentifier ?? item.localeIdentifier, fallback: fallbackLocaleIdentifier)
@@ -86,9 +100,15 @@ final class TodoStore:
             newTodos.append(todoItem.toData())
         }
 
+        // 全部被跳过(整批重复)时 early return:避免空 insert + success count=0 误导日志。
+        guard !newTodos.isEmpty else {
+            VoiceTodoLog.store.warning("store.add_batch.all_duplicates_skipped requestedCount=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return
+        }
+
         try saveOrRollback()
         todos.insert(contentsOf: newTodos.reversed(), at: 0)
-        VoiceTodoLog.store.info("store.add_batch.success count=\(items.count) locale=\(fallbackLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.add_batch.success count=\(newTodos.count) locale=\(fallbackLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 添加原始转写文本（离线降级用）[v2]
@@ -116,6 +136,12 @@ final class TodoStore:
     func toggleComplete(_ id: UUID) throws {
         let startedAt = Date()
         VoiceTodoLog.store.info("store.toggle.start id=\(id.uuidString, privacy: .public)")
+        // 诊断:走 OSLog 而非 print,与同文件其它诊断一致 + 应用 privacy 规则。
+        // title 来自用户语音,用 .public 标注 id 和 isCompleted,title 走默认 private。
+        #if DEBUG
+        let titleForDiag = todos.first(where: { $0.id == id })?.title ?? "nil"
+        VoiceTodoLog.store.info("store.toggle.diag_enter id=\(id.uuidString, privacy: .public) titleChars=\(titleForDiag.count) titlePreview=\(String(titleForDiag.prefix(40)), privacy: .public)")
+        #endif
         let todoItem = try findTodoItem(by: id)
 
         todoItem.isCompleted.toggle()
@@ -126,6 +152,9 @@ final class TodoStore:
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
+        #if DEBUG
+        VoiceTodoLog.store.info("store.toggle.diag_success id=\(id.uuidString, privacy: .public) newIsCompleted=\(todoItem.isCompleted)")
+        #endif
         VoiceTodoLog.store.info("store.toggle.success id=\(id.uuidString, privacy: .public) isCompleted=\(todoItem.isCompleted) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
@@ -304,6 +333,13 @@ final class TodoStore:
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {
         let startedAt = Date()
         VoiceTodoLog.store.info("store.toggle_occurrence.start id=\(id.uuidString, privacy: .public) date=\(date.ISO8601Format(), privacy: .public)")
+        // 诊断:走 OSLog 与同文件其它诊断一致。title 是用户语音,走默认 private + 截断。
+        // 不在此处打印 recurrenceRule==nil 的分支(后续会调 toggleComplete,那里会再打印),
+        // 避免同一次用户操作产生两行同 id 的日志被误判为重复调用。
+        #if DEBUG
+        let titleForDiag = todos.first(where: { $0.id == id })?.title ?? "nil"
+        VoiceTodoLog.store.info("store.toggle_occurrence.diag_enter id=\(id.uuidString, privacy: .public) date=\(date.ISO8601Format(), privacy: .public) titleChars=\(titleForDiag.count) titlePreview=\(String(titleForDiag.prefix(40)), privacy: .public)")
+        #endif
         let todoItem = try findTodoItem(by: id)
         guard let recurrenceRule = todoItem.recurrenceRule else {
             try toggleComplete(id)
@@ -317,6 +353,9 @@ final class TodoStore:
         }
 
         let key = TodoOccurrenceCompletion.key(todoId: id, occurrenceDate: day)
+        #if DEBUG
+        VoiceTodoLog.store.info("store.toggle_occurrence.diag_key key=\(key, privacy: .public)")
+        #endif
 
         do {
             if let existing = try findCompletion(by: key) {
@@ -702,6 +741,45 @@ final class TodoStore:
             throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }
+
+    /// 查重专用询问:返回已存在的 TodoItem 或 nil。
+    /// 与 `findTodoItem` 区别:后者把 not_found 当错误抛,本方法把 not_found 当正常结果返回 nil。
+    /// 真实的 SwiftData 读异常仍然向上抛——不被吞掉。
+    ///
+    /// 查重范围**仅限当前 ModelContext**:App Group 共享场景下,Widget extension 或
+    /// 其它进程可能用自己的 ModelContext 写入相同 id 的记录,本方法看不到。
+    /// 因此调用方不能假设"查重通过 = 全局无重复",只能假设"当前进程无重复"。
+    ///
+    /// - Parameter id: 待办 ID
+    /// - Returns: 已存在的 TodoItem,nil 表示没找到(用于查重场景)
+    private func existingTodoItem(by id: UUID) throws -> TodoItem? {
+        var descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        do {
+            return try modelContext.fetch(descriptor).first
+        } catch {
+            VoiceTodoLog.store.error("store.existing_query.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
+    #if DEBUG
+    /// 打印每条 todo 的 id 前缀 + title 截断(60 字符),排查"标题相同的两条 todo 是否 id 也相同"。
+    /// 走 OSLog 而非 print:与同文件其它诊断一致 + 自动应用 privacy 规则。
+    /// title 是用户语音内容,属敏感数据——截断避免长 transcript 刷屏。
+    /// - Parameter items: 即将写入的待办数组
+    private func logAddBatchDiag(items: [ExtractedTodo]) {
+        let titleSummary = items.enumerated().map { idx, item -> String in
+            let titleTrimmed = item.title.count > 60
+                ? String(item.title.prefix(60)) + "…"
+                : item.title
+            return "[\(idx)] id=\(item.id.uuidString.prefix(8)) title=\"\(titleTrimmed)\""
+        }.joined(separator: " | ")
+        VoiceTodoLog.store.info("store.add_batch.diag_titles \(titleSummary, privacy: .public)")
+    }
+    #endif
 
     private func findCompletion(by key: String) throws -> TodoOccurrenceCompletion? {
         var descriptor = FetchDescriptor<TodoOccurrenceCompletion>(

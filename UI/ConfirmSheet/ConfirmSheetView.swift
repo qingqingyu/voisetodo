@@ -45,7 +45,10 @@ struct ConfirmSheetView: View {
                         Text(String(localized: "confirm.add \(todos.count)"))
                             .bold()
                     }
-                    .disabled(todos.isEmpty || isStreaming)
+                    // didFinish 也 disabled:防止用户快速双击或 SwiftUI Button 在 iOS 26/27
+                    // 触发 action 两次(已知回归)导致同一批 todos 被 confirmTodos 保存两次,
+                    // 产生 id 相同的重复 TodoItem(SwiftData @Attribute(.unique) 在 insert 时不查重)。
+                    .disabled(todos.isEmpty || isStreaming || didFinish)
                     .accessibilityIdentifier("ConfirmAddButton")
                 }
             }
@@ -226,18 +229,33 @@ struct ConfirmSheetView: View {
     // MARK: - Actions
 
     private func confirmAction() {
+        // 防重入:cancelAction 已有同样 guard,confirmAction 缺失导致同一批 todos 可能被保存两次。
+        // 触发场景:用户快速双击 / SwiftUI Button 在 iOS 26/27 触发 action 两次。
+        // 后果:两次 confirmTodos 调用传入同一批 ExtractedTodo(同 UUID),
+        //      SwiftData @Attribute(.unique) 在 modelContext.insert 时不查重,save 也不报错,
+        //      数据库里出现 2 条 id 相同的 TodoItem,导致 toggleComplete(id) 只命中第一条、
+        //      ForEach id 冲突 UI 错位(用户看到「勾 A 影响 B」)。
+        //
+        // 双重防线:① 入口 guard + didFinish 立即置 true(set-before-call)
+        //          ② 按钮 .disabled(didFinish)(UI 层拦截)
+        // didFinish=true 放在 onConfirm 之前而非 success 分支:即使未来 onConfirm 改成 async,
+        // guard 在 await 期间依然成立。失败时复位为 false,保留编辑上下文重试。
+        guard !didFinish else { return }
         guard !todos.isEmpty else { return }
 
+        didFinish = true
         let success = onConfirm(todos)
 
-        if success {
-            Telemetry.record(.todoSaved(source: .confirm, count: todos.count))
-            didFinish = true
-            withAnimation(WarmAnimation.springBouncy) {
-                showSuccess = true
-            }
+        guard success else {
+            didFinish = false
+            // 失败时不 dismiss：保留编辑上下文；Coordinator 已通过 Toast 等方式反馈错误。
+            return
         }
-        // 失败时不 dismiss：保留编辑上下文；Coordinator 已通过 Toast 等方式反馈错误。
+
+        Telemetry.record(.todoSaved(source: .confirm, count: todos.count))
+        withAnimation(WarmAnimation.springBouncy) {
+            showSuccess = true
+        }
     }
 
     private func cancelAction() {

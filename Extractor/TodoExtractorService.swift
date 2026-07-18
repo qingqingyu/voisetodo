@@ -361,6 +361,17 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
         cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // 诊断:打印 AI 返回的完整 JSON 原文(去掉 markdown fence 后)。
+        // 用于排查"一句话被拆两条 todo"类问题——能看到模型实际返回了几条、
+        // 每条的 id/title/due_date 是什么。OSLog 有 size 限制会截断长字符串,
+        // 用 print 保证完整输出到 Xcode console。
+        // 隐私:JSON 内容来自 AI 对用户语音的解析,可能含用户原话。仅 DEBUG configuration
+        // 下编译进二进制(默认 Debug configuration 才设 DEBUG=1),Release/TestFlight 不含。
+        // 注意:若未来 Archive 时误启用 DEBUG 符号,日志会随 syslog 流出——上线前需确认 configuration。
+        #if DEBUG
+        print("extract.parse.raw_json \(cleanedText)")
+        #endif
+
         // 解析 JSON
         guard let jsonData = cleanedText.data(using: .utf8) else {
             throw VoiceTodoError.jsonParsingFailed("无法转换为 UTF-8 数据")
