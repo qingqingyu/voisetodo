@@ -172,6 +172,20 @@ enum WarmFont {
         .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.semibold)
     }
 
+    /// 固定字号版 — 不响应 Dynamic Type。
+    /// 用于 UI 元素(辅助按钮 label、日历日期数字、进度环里的完成计数),这些元素参考
+    /// Apple Calendar 的做法不跟随系统字号缩放——日期数字是 UI 而非内容,放大后会撑爆
+    /// 格子或挤压布局。
+    ///
+    /// 何时**不**用:tab 标签、section header、卡片标题等「文本内容」应跟随 Dynamic Type
+    /// 以满足 iOS HIG 无障碍建议——继续用 `headline(_:)` 即可。判定标准:
+    /// 「这是 UI 装饰数字 / label」→ 用 fixed;「这是用户要读的文本」→ 用动态。
+    ///
+    /// 实现:不带 `relativeTo:` 参数,`.custom` 即退化为固定字号(等同 UIKit 的 UIFont)。
+    static func headlineFixed(_ size: CGFloat) -> Font {
+        .custom("Avenir Next", size: size).weight(.semibold)
+    }
+
     static func body(_ size: CGFloat) -> Font {
         .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.medium)
     }

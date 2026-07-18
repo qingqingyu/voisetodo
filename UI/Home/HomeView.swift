@@ -581,7 +581,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .frame(width: 6, height: 6)
 
                 Text(String(localized: "home.back_to_today"))
-                    .font(WarmFont.headline(12))
+                    // fixed 字号 + lineLimit(1) + fixedSize:解决 Dynamic Type 放大后字号过大 +
+                    // 英文较长换行。fixedSize 让 capsule 水平外扩跟随文本,不 truncation。
+                    // 已知限制:仅支持 zh/en(短字符串);若未来加长字符串语言(如俄语 19 字符),
+                    // capsule 可能挤占旁边 monthTitle 空间——届时改用 minimumScaleFactor 方案。
+                    .font(WarmFont.headlineFixed(11))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(WarmTheme.primaryDark)
             .padding(.horizontal, 10)
@@ -644,7 +650,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .rotationEffect(.degrees(-90))
 
             Text(verbatim: "\(completed)/\(total)")
-                .font(WarmFont.headline(11))
+                .font(WarmFont.headlineFixed(11))
                 .foregroundStyle(WarmTheme.textSecondary)
         }
         .frame(width: 40, height: 40)
@@ -789,6 +795,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                         state: state,
                         onSelectDay: selectDay,
                         onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
+                        onShiftPeriod: { shiftPeriod(by: $0) },
                         availableHeight: calendarHeight
                     )
                     // 封顶 + 裁切：对齐 HTML 参考的 max-height:38vh + overflow:hidden。
@@ -829,29 +836,23 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .clipped()
                 }
             }
-            // 全屏手势:上下滑切换月/周视图;日历区域左右滑翻月/翻周(替代已删除的页头箭头)。
-            // 上滑→周(放大细节),下滑→月(缩小概览);左滑→下一月/周,右滑→上一月/周。
+            // 全屏手势:仅处理上下滑切换月/周视图。左右滑翻月/翻周已挪到
+            // HomeMonthHeaderView 内部(挂在那里避免 startLocation 坐标空间不匹配——
+            // 详见 HomeMonthHeaderView.onShiftPeriod 注释)。
+            // 上滑→周(放大细节),下滑→月(缩小概览)。
             // 用 SimultaneousDragGesture(UIKit UIGestureRecognizer 包装)让列表滚动和拖拽共存——
             // iOS 26 起 SwiftUI .simultaneousGesture 在容器内失效(FB18199844),改走 UIKit 路径。
             .gesture(
                 SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
                     let vertical = abs(drag.translation.height)
                     let horizontal = abs(drag.translation.width)
-                    if vertical > horizontal {
-                        if drag.translation.height < -HomeLayoutMetrics.viewModeSwitchThreshold,
-                           calendarViewMode != .week {
-                            setViewMode(.week)
-                        } else if drag.translation.height > HomeLayoutMetrics.viewModeSwitchThreshold,
-                                  calendarViewMode != .month {
-                            setViewMode(.month)
-                        }
-                    } else if selectedBottomTab == .calendar,
-                              drag.startLocation.y <= calendarHeight,
-                              horizontal > HomeLayoutMetrics.periodSwipeThreshold {
-                        // 起点门控(只判 startLocation,终点可滑进列表):
-                        // - 从日历格起滑才翻页,列表行上的横滑留给卡片 swipe action / 拖拽排期
-                        // - 今日 tab 下 calendarHeight=0 且本视图也会渲染,tab guard 防止 y=0 起点误翻
-                        shiftPeriod(by: drag.translation.width < 0 ? 1 : -1)
+                    guard vertical > horizontal else { return }
+                    if drag.translation.height < -HomeLayoutMetrics.viewModeSwitchThreshold,
+                       calendarViewMode != .week {
+                        setViewMode(.week)
+                    } else if drag.translation.height > HomeLayoutMetrics.viewModeSwitchThreshold,
+                              calendarViewMode != .month {
+                        setViewMode(.month)
                     }
                 }
             )

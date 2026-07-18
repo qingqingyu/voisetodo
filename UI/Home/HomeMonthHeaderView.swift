@@ -6,6 +6,17 @@ struct HomeMonthHeaderView: View {
     let onSelectDay: (Date) -> Void
     /// 从 Unscheduled 拖任务到日期格时触发（UUID = 任务，Date = 格子日期）。
     var onDropTodo: ((UUID, Date) -> Void)? = nil
+    /// 左右滑翻月/翻周回调：参数 +1 = 下一月/周，-1 = 上一月/周。
+    /// 手势挂在本视图（日历区域）本身——挂在这里的 recognizer，
+    /// 其 host view 的 bounds 只覆盖日历区，起点天然在日历区，不需要 startLocation 判定。
+    /// 历史：原手势挂在 monthHomeView 外层 VStack 上，用 `drag.startLocation.y <= calendarHeight`
+    /// 做起点门控，但 host view 实际覆盖整个屏幕（随机型变化，典型值 ~800pt），startLocation.y
+    /// 是屏幕坐标，与基于 monthHomeView 高度算出的 calendarHeight 不可比，导致判定永远 false、左右滑失效。
+    ///
+    /// 调用方契约：本视图自带手势在 `onShiftPeriod != nil` 时始终激活,Header **不做 tab 守卫**——
+    /// 外层(HomeView.monthHomeView)必须仅在 `selectedBottomTab == .calendar` 时渲染本视图,
+    /// 否则「今日」tab 误挂载时左右滑仍会触发翻月。
+    var onShiftPeriod: ((Int) -> Void)? = nil
     /// 可用高度（来自 GeometryReader）。0 = 不约束，用默认行高。
     var availableHeight: CGFloat = 0
 
@@ -45,6 +56,20 @@ struct HomeMonthHeaderView: View {
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
+        // 横向翻月/翻周：只识别水平主导（horizontal > vertical）且超过阈值的滑动。
+        // 垂直方向的月/周视图切换由 monthHomeView 外层 VStack 上的另一个手势处理——
+        // 两个手势都用 SimultaneousDragGesture(allow simultaneous)，可共存不互斥。
+        // 用 SimultaneousDragGesture 而非原生 .simultaneousGesture 的原因见
+        // SimultaneousDragGesture.swift 头注释（iOS 26+ FB18199844 回归）。
+        .gesture(
+            SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
+                let vertical = abs(drag.translation.height)
+                let horizontal = abs(drag.translation.width)
+                guard horizontal > vertical,
+                      horizontal > HomeLayoutMetrics.periodSwipeThreshold else { return }
+                onShiftPeriod?(drag.translation.width < 0 ? 1 : -1)
+            }
+        )
     }
 }
 
@@ -200,7 +225,7 @@ struct HomeMonthDayButton: View {
                     // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
                     // 视觉显示与无障碍朗读职责分离。
                     Text("\(dayState.dayNumber)")
-                        .font(WarmFont.headline(14))
+                        .font(WarmFont.headlineFixed(14))
                         .foregroundColor(
                             dayState.isSelected ? .white :
                             (dayState.isToday ? WarmTheme.primaryDark :
