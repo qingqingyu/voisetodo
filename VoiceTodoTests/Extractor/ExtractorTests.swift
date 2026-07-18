@@ -263,6 +263,63 @@ final class ExtractorTests: XCTestCase {
         XCTAssertEqual(result.todos[0].title, "买菜")
     }
 
+    // MARK: - Test Truncated JSON (max_tokens 截断 → transcriptTooLong)
+
+    func testTruncatedJSONThrowsTranscriptTooLong() async {
+        // Given: AI 输出被 max_tokens 强制截断 —— JSON 末尾不完整(没有闭合 `]` 和 `}`)
+        // 错误结构:顶层 DecodingError.dataCorrupted(NSCocoaErrorDomain 4864),
+        // 它的 underlyingError 是 NSCocoaErrorDomain 3840 + NSDebugDescription 含 "end of file"。
+        // isJsonTruncationError 需要遍历 underlyingError 链才能命中。
+        let truncatedJSON = """
+        {
+          "todos": [
+            {"id": "A", "title": "买菜", "detail": "晚上买菜"},
+            {"id": "B", "title": "做饭
+        """
+
+        mockNetworkClient.enqueueSuccess(text: truncatedJSON)
+
+        // When & Then: 抛 transcriptTooLong(而非 jsonParsingFailed),提示用户分批输入
+        do {
+            _ = try await sut.extract(from: "测试截断", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("应该抛出 transcriptTooLong")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .transcriptTooLong, "截断的 JSON 必须映射为 transcriptTooLong,实际: \(error)")
+        } catch {
+            XCTFail("错误的错误类型: \(error)")
+        }
+
+        // 不重试 —— 用户可解决的错误重试无意义
+        XCTAssertEqual(URLProtocolStub.callCount, 1)
+    }
+
+    func testSchemaMismatchThrowsJsonParsingFailed() async {
+        // Given: 完整的 JSON 但 schema 不匹配(todos 字段类型错误,非数组)
+        // JSON 解析会失败,但不是截断类(NSDebugDescription 不含 "end of file")
+        let schemaMismatchJSON = """
+        {
+          "todos": "这不是数组",
+          "ignored": ""
+        }
+        """
+
+        mockNetworkClient.enqueueSuccess(text: schemaMismatchJSON)
+
+        // When & Then: 抛 jsonParsingFailed(而非 transcriptTooLong)—— 用户输入没问题,重试或上层兜底
+        do {
+            _ = try await sut.extract(from: "测试 schema 不匹配", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("应该抛出 jsonParsingFailed")
+        } catch let error as VoiceTodoError {
+            // 期望是 .jsonParsingFailed(_),关联值 detail 是运行时拼的,只能断言 case kind
+            guard case .jsonParsingFailed = error else {
+                XCTFail("期望 jsonParsingFailed,实际: \(error)")
+                return
+            }
+        } catch {
+            XCTFail("错误的错误类型: \(error)")
+        }
+    }
+
     // MARK: - Test Fallback Extract
 
     func testFallbackExtractTruncatesTo20Characters() {

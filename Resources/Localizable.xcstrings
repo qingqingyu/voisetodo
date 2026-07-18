@@ -20,6 +20,16 @@
         }
       }
     },
+    "%@ %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lld"
+          }
+        }
+      }
+    },
     "%lld" : {
 
     },
@@ -40,9 +50,6 @@
       }
     },
     "+%lld" : {
-
-    },
-    "🎉" : {
 
     },
     "a11y.calendar_mode" : {
@@ -222,6 +229,22 @@
         }
       }
     },
+    "a11y.display_mode.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switches between list and grid display"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换列表与网格显示"
+          }
+        }
+      }
+    },
     "a11y.edit_todo_title" : {
       "localizations" : {
         "en" : {
@@ -237,6 +260,9 @@
           }
         }
       }
+    },
+    "a11y.event_hour_separator" : {
+
     },
     "a11y.high_priority" : {
       "localizations" : {
@@ -1834,13 +1860,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hmm, couldn't make sense of that. Try again?"
+            "value" : "Our service hiccuped. Please try again shortly."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "理解失败，请稍后重试"
+            "value" : "服务开小差，请稍后重试"
           }
         }
       }
@@ -1890,6 +1916,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务返回格式异常"
+          }
+        }
+      }
+    },
+    "error.api_response_invalid_message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong on our end. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务出了点问题，请稍后重试"
           }
         }
       }
@@ -1947,13 +1989,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't make sense of the response. Try again later."
+            "value" : "Couldn't read the result. Please try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解析失败，请稍后重试"
+            "value" : "结果读不出来，请稍后重试"
           }
         }
       }
@@ -2022,18 +2064,18 @@
         }
       }
     },
-    "error.recording_failed %@" : {
+    "error.recording_failed_message" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't record: %@"
+            "value" : "Recording failed. Please try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "录音失败: %@"
+            "value" : "录音失败,请重试"
           }
         }
       }
@@ -2098,6 +2140,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "语音识别暂不可用，请稍后重试"
+          }
+        }
+      }
+    },
+    "error.transcript_too_long" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That's a lot to process at once. Try sending fewer items at a time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内容太多,我没法一次性处理完。试试分几次发送,每次少说几条。"
+          }
+        }
+      }
+    },
+    "error.unexpected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出了点问题，请稍后重试"
           }
         }
       }
@@ -2422,6 +2496,22 @@
         }
       }
     },
+    "home.back_to_today" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到今天"
+          }
+        }
+      }
+    },
     "home.calendar.error.message" : {
       "localizations" : {
         "en" : {
@@ -2486,22 +2576,6 @@
         }
       }
     },
-    "home.back_to_today" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to today"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回到今天"
-          }
-        }
-      }
-    },
     "home.completed_section_title" : {
       "localizations" : {
         "en" : {
@@ -2530,6 +2604,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除"
+          }
+        }
+      }
+    },
+    "home.display.grid" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grid"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网格"
+          }
+        }
+      }
+    },
+    "home.display.list" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "列表"
           }
         }
       }
@@ -2569,6 +2677,7 @@
       }
     },
     "home.greeting.afternoon" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2585,6 +2694,7 @@
       }
     },
     "home.greeting.evening" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2601,6 +2711,7 @@
       }
     },
     "home.greeting.morning" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2617,6 +2728,7 @@
       }
     },
     "home.greeting.night" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2633,6 +2745,7 @@
       }
     },
     "home.greeting.noon" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2714,6 +2827,7 @@
       }
     },
     "home.stats.all_complete" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5100,13 +5214,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Failed to extract todos. Please try again later."
+            "value" : "Couldn't turn that into a todo. Please add it in the app."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解析失败，请稍后重试"
+            "value" : "没解析出待办，请打开 App 手动添加"
           }
         }
       }
@@ -5148,13 +5262,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save failed. Please try again in the app."
+            "value" : "Got the keyword. Please finish it in the app."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存失败，请稍后在 App 中重试"
+            "value" : "已记下关键词，请打开 App 完成"
           }
         }
       }
@@ -5726,13 +5840,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Update failed"
+            "value" : "Couldn't update. Open the app to sync."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新失败"
+            "value" : "更新失败，请打开 App 同步"
           }
         }
       }

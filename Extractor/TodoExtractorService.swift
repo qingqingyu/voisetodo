@@ -90,7 +90,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     }
 
                     switch voiceError {
-                    case .apiResponseInvalid, .jsonParsingFailed, .quotaExhausted:
+                    case .apiResponseInvalid, .jsonParsingFailed, .transcriptTooLong, .quotaExhausted:
                         // 配置/解析/配额错误，重试无意义（配额当日不会因重试恢复，交由上层离线兜底 + paywall）
                         VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
@@ -383,7 +383,59 @@ final class TodoExtractorService: TodoExtractorProtocol {
             return result
         } catch {
             VoiceTodoLog.extractor.error("extract.parse.failed responseChars=\(responseText.count) cleanedChars=\(cleanedText.count) summary=\(VoiceTodoLog.textSummary(cleanedText, previewLimit: 160), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            // 截断识别:JSON 末尾不完整(Unexpected end of file)通常是 AI 输出被 max_tokens 切断。
+            // 这种 case 用户可解决(分批输入),跟服务端格式异常(重试可解决)语义不同,需走 transcriptTooLong。
+            // 检测特征(见 isJsonTruncationError):DecodingError.dataCorrupted 的 underlyingError
+            // 是 NSCocoaErrorDomain 3840 + NSDebugDescription 含 "Unexpected end of file"。
+            // 用 NSDebugDescription(英文程序员向,不随 locale 变)而非 localizedDescription(随系统语言变)。
+            // 其他 DecodingError 子类(schema 不匹配、类型错误等)仍走 jsonParsingFailed。
+            if isJsonTruncationError(error) {
+                throw VoiceTodoError.transcriptTooLong
+            }
             throw VoiceTodoError.jsonParsingFailed("JSON 解析失败: \(error.localizedDescription)")
         }
+    }
+
+    /// 判断底层 JSON 解析错误是否是"流被截断/末尾不完整"。
+    /// 用于把 `transcriptTooLong`(用户可解决)从 `jsonParsingFailed`(服务端问题)中区分出来。
+    ///
+    /// - 顶层错误是 `DecodingError.dataCorrupted`(NSError domain=NSCocoaErrorDomain code=4864),
+    ///   它的 `userInfo[NSUnderlyingErrorKey]` 才是真正的 JSONSerialization 错误
+    ///   (domain=NSCocoaErrorDomain code=3840,NSDebugDescription 含 "Unexpected end of file")。
+    ///   顶层错误的 NSDebugDescription 是 "The given data was not valid JSON."(不含 "end of file"),
+    ///   直接查顶层会漏判。
+    /// - 用 `userInfo[NSDebugDescriptionErrorKey]` 而非 `localizedDescription`:debug 描述是程序员向英文,
+    ///   不随系统 locale 变化;localizedDescription 在 zh-Hans 下会本地化为"数据无法读取,因为文件结尾意外"等
+    ///   不同文案,导致匹配失效。
+    /// - 其他 case(typeMismatch、valueNotFound 等 DecodingError 子类)不算截断,
+    ///   通常是 schema 不匹配或格式异常。
+    private func isJsonTruncationError(_ error: Error) -> Bool {
+        // 先看顶层,再回退到 underlyingError
+        let candidates: [NSError] = [error as NSError] + underlyingErrors(of: error as NSError)
+        for candidate in candidates {
+            guard candidate.domain == NSCocoaErrorDomain, candidate.code == 3840 else { continue }
+            let debugDescription = (candidate.userInfo[NSDebugDescriptionErrorKey] as? String) ?? ""
+            if debugDescription.contains("end of file") {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 递归取出 NSError 的 underlyingError 链(最多 5 层防循环)。
+    private func underlyingErrors(of error: NSError) -> [NSError] {
+        var result: [NSError] = []
+        var current: NSError? = error
+        var depth = 0
+        while let cur = current, depth < 5 {
+            if let underlying = cur.userInfo[NSUnderlyingErrorKey] as? NSError, underlying !== cur {
+                result.append(underlying)
+                current = underlying
+                depth += 1
+            } else {
+                break
+            }
+        }
+        return result
     }
 }

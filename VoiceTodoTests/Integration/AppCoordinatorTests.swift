@@ -526,9 +526,11 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.showConfirmSheet)
         XCTAssertTrue(coordinator.extractedTodos.isEmpty)
         XCTAssertTrue(coordinator.showToast)
+        // detail 不再暴露给 UI(errorDescription 走"问题+建议"格式)——
+        // toast 必须等于通用文案而非"broken stream"——后者只入 log。
         XCTAssertEqual(
             coordinator.toastMessage,
-            VoiceTodoError.apiResponseInvalid("broken stream").localizedDescription
+            ErrorMessages.apiResponseInvalidMessage
         )
     }
 

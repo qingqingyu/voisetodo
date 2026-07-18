@@ -19,6 +19,9 @@ struct HomeMonthHeaderView: View {
     var onShiftPeriod: ((Int) -> Void)? = nil
     /// 可用高度（来自 GeometryReader）。0 = 不约束，用默认行高。
     var availableHeight: CGFloat = 0
+    /// 显示样式：`.list` 用 `HomeMonthDayButton`（数字+圆点），`.grid` 用 `HomeMonthGridButton`（数字+事件条）。
+    /// 默认 `.list` 保持现有调用方零改动。
+    var displayMode: CalendarDisplayMode = .list
 
     /// 根据可用高度计算日期格行高。
     /// 固定段（星期表头 + spacing + padding）≈ 48pt（见 calendarFixedSectionHeight）；
@@ -26,7 +29,7 @@ struct HomeMonthHeaderView: View {
     /// availableHeight = 0 时回退到默认 WarmSpacing.xxxl（48pt）。
     /// 注：月份标题 + 翻月按钮已合并进页头（HomeView.headerView），卡片内不再有导航行。
     private var dayRowHeight: CGFloat {
-        HomeLayoutMetrics.dayRowHeight(availableHeight: availableHeight, viewMode: state.viewMode)
+        HomeLayoutMetrics.dayRowHeight(availableHeight: availableHeight, viewMode: state.viewMode, displayMode: displayMode)
     }
 
     var body: some View {
@@ -42,12 +45,7 @@ struct HomeMonthHeaderView: View {
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
                 ForEach(state.visibleDays, id: \.self) { day in
-                    HomeMonthDayButton(
-                        dayState: state.dayState(for: day),
-                        onSelect: onSelectDay,
-                        onDropTodo: onDropTodo.map { callback in { id in callback(id, day) } },
-                        rowHeight: dayRowHeight
-                    )
+                    dayCell(for: day)
                 }
             }
         }
@@ -71,6 +69,29 @@ struct HomeMonthHeaderView: View {
             }
         )
     }
+
+    /// 根据 displayMode 选格子：list=数字+圆点 / grid=数字+事件条。
+    /// 两种 button 共用相同的 onSelect/onDropTodo/rowHeight 契约，调用方无需感知。
+    @ViewBuilder
+    private func dayCell(for day: Date) -> some View {
+        let dropCallback = onDropTodo.map { callback in { (id: UUID) in callback(id, day) } }
+        switch displayMode {
+        case .list:
+            HomeMonthDayButton(
+                dayState: state.dayState(for: day),
+                onSelect: onSelectDay,
+                onDropTodo: dropCallback,
+                rowHeight: dayRowHeight
+            )
+        case .grid:
+            HomeMonthGridButton(
+                dayState: state.dayState(for: day),
+                onSelect: onSelectDay,
+                onDropTodo: dropCallback,
+                rowHeight: dayRowHeight
+            )
+        }
+    }
 }
 
 // MARK: - Home layout constants
@@ -80,6 +101,14 @@ enum HomeLayoutMetrics {
     /// 多出的比例全部转成日期格行高（典型机型 ~19pt → ~32pt），圆形高亮和待办圆点有了呼吸空间。
     /// 不超过 ~0.46——列表仍是主界面，保住 ≥56% 高度。
     static let calendarTargetHeightRatio: CGFloat = 0.44
+    /// 网格模式（displayMode == .grid）月历区目标上限比例。
+    /// 比列表模式（0.44）高，因为每格要容纳「数字 + ≤2 事件条 + `+N`」结构，至少 ~80pt 行高 × 6 行 ≈ 480pt。
+    /// 不超过 0.72——给底部输入面板/列表留 ≥28% 高度，避免完全无空间。
+    /// 网格+周（WeekTimelineView）也走这个比例：时间轴需要垂直滚动空间。
+    static let gridCalendarTargetHeightRatio: CGFloat = 0.70
+    /// 网格+月单格最小行高。每格内容预算：数字(14pt) + 2×事件条(14pt + spacing 2pt) + `+N`(10pt) ≈ 70pt + 余量。
+    /// 取 80pt 作为舒适下限；极矮屏算出的可用高度不足时按此兜底，宁可底部裁切也不压扁事件条。
+    static let gridMonthMinRowHeight: CGFloat = 80
     /// 月历表头固定段高度（星期表头 + VStack spacing + padding）。
     /// 拆解：weekday(16) + VStack spacing(WarmSpacing.xs≈8)
     ///       + top/bottom padding(xxs+sm≈16) + 动态字体浮动余量(~8) ≈ 48pt 保守上限。
@@ -174,23 +203,52 @@ enum HomeLayoutMetrics {
     /// （`max(dayRowMinHeight, (container - fixedSection - spacing) / rows)`）。
     /// 极矮屏（maxCap < 96）下周视图 dayRowHeight 会 < 48，容器底部可能被 `.clipped()` 裁切，
     /// 这是已知取舍（与月视图一致）：列表区至少 56% 不可妥协。
-    static func calendarHeight(availableHeight: CGFloat, selectedTab: BottomTab, viewMode: CalendarViewMode) -> CGFloat {
+    ///
+    /// `displayMode` 参数：
+    ///   - `.list`：用 `calendarTargetHeightRatio`（0.44），list+week 走 content-driven 96pt 封顶。
+    ///   - `.grid`（month/week 共用）：用 `gridCalendarTargetHeightRatio`（0.70），网格行更高
+    ///     / 周时间轴需垂直滚动空间。列表区在 grid 模式下剩 30%，对月视图够用，
+    ///     对周视图因时间轴内部还自带 ScrollView 故不会挤压任务列表交互。
+    ///     若未来发现 grid+week 列表可滚动空间不足，调高 `gridCalendarTargetHeightRatio`
+    ///     到 0.80+（不超过 0.85，必须给底部输入面板/voice FAB 至少 15%）。
+    static func calendarHeight(
+        availableHeight: CGFloat,
+        selectedTab: BottomTab,
+        viewMode: CalendarViewMode,
+        displayMode: CalendarDisplayMode = .list
+    ) -> CGFloat {
         guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
-        let maxCap = availableHeight * calendarTargetHeightRatio
-        switch viewMode {
-        case .month:
-            return maxCap
-        case .week:
-            let contentHeight = calendarFixedSectionHeight + weekDesiredRowHeight
-            return min(maxCap, contentHeight)
+        switch displayMode {
+        case .list:
+            let maxCap = availableHeight * calendarTargetHeightRatio
+            switch viewMode {
+            case .month:
+                return maxCap
+            case .week:
+                let contentHeight = calendarFixedSectionHeight + weekDesiredRowHeight
+                return min(maxCap, contentHeight)
+            }
+        case .grid:
+            // 网格模式：月/周都用更高比例（时间轴/事件条都需要垂直空间）
+            return availableHeight * gridCalendarTargetHeightRatio
         }
     }
 
-    static func dayRowHeight(availableHeight: CGFloat, viewMode: CalendarViewMode) -> CGFloat {
+    static func dayRowHeight(
+        availableHeight: CGFloat,
+        viewMode: CalendarViewMode,
+        displayMode: CalendarDisplayMode = .list
+    ) -> CGFloat {
         guard availableHeight > 0 else { return WarmSpacing.xxxl }
         let rows = rowCount(for: viewMode)
         let usable = max(0, availableHeight - calendarFixedSectionHeight - gridSpacing(forRows: rows))
-        return max(dayRowMinHeight, usable / rows)
+        let computed = max(dayRowMinHeight, usable / rows)
+        // 网格+月：每格至少要放数字 + ≤2 事件条 + `+N`，目标 ~80pt 起步。
+        // 极矮屏算出的 computed 不足时也按 gridMinRowHeight 兜底，宁可裁切也不压扁。
+        if displayMode == .grid && viewMode == .month {
+            return max(computed, gridMonthMinRowHeight)
+        }
+        return computed
     }
 
     private static func rowCount(for viewMode: CalendarViewMode) -> CGFloat {

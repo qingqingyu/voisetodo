@@ -872,12 +872,14 @@ final class AppCoordinator: ObservableObject {
                 // 音频会话被中断（来电 / 闹钟 / 其他 app 抢音频）：切键盘让用户继续输入
                 voiceInputFallbackToKeyboard = true
                 showToast(message: ErrorMessages.audioSessionInterrupted, style: .warning)
-            case .recordingFailed(let detail):
+            case .recordingFailed:
                 // 录音失败（音频引擎启动失败、识别过程其他错误等）：切键盘让用户继续输入。
                 // 注意：这条路径是兜底，特定识别错误（kLSRErrorDomain Code=300）已在
                 // VoiceInputManager 里映射为 .speechRecognitionUnavailable 走更友好的文案。
+                // detail 仅入日志(见 VoiceInputManager 里的 error.localizedDescription),
+                // UI 走通用文案——与 VoiceTodoError.errorDescription 口径一致。
                 voiceInputFallbackToKeyboard = true
-                showToast(message: ErrorMessages.recordingFailed(detail), style: .warning)
+                showToast(message: ErrorMessages.recordingFailedMessage, style: .warning)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
             case .quotaExhausted:
@@ -891,10 +893,19 @@ final class AppCoordinator: ObservableObject {
             case .storageReadFailed, .storageWriteFailed:
                 showToast(message: ErrorMessages.storageError, style: .warning)
             default:
-                showToast(message: voiceError.localizedDescription, style: .warning)
+                // 未明确归类的 VoiceTodoError case——走通用兜底文案(与 else 分支口径一致),
+                // 以防未来新增 case 忘记加分支时暴露 LocalizedError 默认的程序员向文案。
+                // 原始 case 已在第 851 行入日志。
+                // ⚠️ 新增 VoiceTodoError case 时**必须**在此 switch 补显式分支或在
+                // VoiceTodoError.errorDescription 里返回 ErrorMessages.<name>,否则 toast 上看不到
+                // 针对该 case 的人性化文案。
+                showToast(message: ErrorMessages.unexpectedError, style: .warning)
             }
         } else {
-            showToast(message: error.localizedDescription, style: .warning)
+            // 非 VoiceTodoError 类型的错误(URLError / SwiftDataError / 第三方库原生 NSError 等):
+            // 一律走通用文案,**绝不暴露 .localizedDescription 的英文/程序员向描述**。
+            // 原始 error 已在第 851 行 `coordinator.error_handled` 入 VoiceTodoLog,诊断信息不丢。
+            showToast(message: ErrorMessages.unexpectedError, style: .warning)
         }
     }
 }

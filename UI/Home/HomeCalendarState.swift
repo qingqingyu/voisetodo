@@ -18,6 +18,17 @@ enum CalendarViewMode: String {
     case week
 }
 
+/// 首页日历显示样式：与 `CalendarViewMode` 正交。
+/// - `.list`：每个日期格只渲染数字 + 圆点（旧版默认）
+/// - `.grid`：每个日期格渲染数字 + ≤2 个事件条 + `+N`（网格+月）；
+///            或单周 7 天横排时间轴（网格+周）。
+/// 手势只切 `viewMode`，与 `displayMode` 完全独立——4 种组合全部成立。
+/// 通过 `@AppStorage("calendarDisplayMode")` 持久化，与 `calendarViewMode` 同套机制。
+enum CalendarDisplayMode: String {
+    case list
+    case grid
+}
+
 struct HomeCalendarState {
     let selectedDate: Date
     let visibleMonthAnchor: Date
@@ -37,7 +48,10 @@ struct HomeCalendarState {
     let completedOccurrences: [TodoOccurrenceData]
     let hasTodos: Bool
 
-    private let calendar: Calendar
+    /// 状态层使用的 calendar 实例（注入时传入）。暴露给视图层（如 `WeekTimelineView.position`）
+    /// 是为了确保 hour/minute 计算与 `occurrencesByDay` 的 dayKey 聚合口径一致——
+    /// 若视图层自己用 `Calendar.current` 在非 gregorian locale 下会产生错位。
+    let calendar: Calendar
 
     /// 页头大标题下方的小字说明：月视图显示年份（大标题已有月份名），周视图显示周范围。
     /// 静态方法——页头（HomeView.headerView）没有完整的 HomeCalendarState，只有 anchor + viewMode。
