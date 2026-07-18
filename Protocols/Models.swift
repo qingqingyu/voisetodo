@@ -88,6 +88,13 @@ struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
         "\(todo.id.uuidString)-\(Self.dayKey(for: occurrenceDate))"
     }
 
+    /// 该 occurrence 是否来自规律任务(每日/每周/每月等)。
+    /// 与 `isCompleted` 同风格,把"是否规律"判定从视图层上移到模型,
+    /// 让 HomeMonthDayButton / VoiceOverLabel 等多处判定保持单一来源。
+    var isRecurring: Bool {
+        todo.recurrenceRule != nil
+    }
+
     static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
         let comps = calendar.dateComponents([.year, .month, .day], from: calendar.startOfDay(for: date))
         return String(format: "%04d-%02d-%02d", comps.year ?? 0, comps.month ?? 0, comps.day ?? 0)

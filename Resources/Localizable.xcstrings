@@ -78,6 +78,22 @@
         }
       }
     },
+    "a11y.day.has_recurring_count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d recurring task(s)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其中 %d 项规律"
+          }
+        }
+      }
+    },
     "a11y.day.hint" : {
       "localizations" : {
         "en" : {
@@ -1533,6 +1549,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "待办标题"
+          }
+        }
+      }
+    },
+    "detail.time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间"
           }
         }
       }

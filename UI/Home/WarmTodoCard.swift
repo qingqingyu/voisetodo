@@ -16,9 +16,21 @@ enum VoiceOverLabel {
         if dayState.isToday {
             parts.append(String(localized: "a11y.day.today"))
         }
-        let count = dayState.occurrences.count
+        // 单次 reduce 同时累计总数和规律数,避免对 occurrences 数组做两次扫描。
+        // 日级数据通常很小(≤10),这是预防性的——避免将来单日批量导入时退化。
+        // 具名元组标签让闭包内访问可读 acc.count / acc.recurring 而非 acc.0 / acc.1。
+        let (count, recurringCount) = dayState.occurrences.reduce(into: (count: 0, recurring: 0)) { acc, occ in
+            acc.count += 1
+            if occ.isRecurring { acc.recurring += 1 }
+        }
         if count > 0 {
             parts.append(String(format: String(localized: "a11y.day.todo_count"), count))
+            // 视觉上空心环已区分规律任务,VoiceOver 用文字补全——低视力用户看不到形态差异。
+            // 给出规律任务的具体数量,避免混合日(部分规律 + 部分单次)语义丢失:
+            // "5 项待办,其中 2 项规律"比"5 项待办,含规律任务"更精准。
+            if recurringCount > 0 {
+                parts.append(String(format: String(localized: "a11y.day.has_recurring_count"), recurringCount))
+            }
         } else {
             parts.append(String(localized: "a11y.day.no_todo"))
         }

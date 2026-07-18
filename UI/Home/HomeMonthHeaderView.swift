@@ -119,6 +119,11 @@ enum HomeLayoutMetrics {
     /// - 22-28：返回 3
     /// - 29-40：返回 3.5（月视图典型 ~32pt 落在这档）
     /// - >40：返回 4（周视图典型）
+    ///
+    /// **不变量**:任何修改本函数分档的改动,必须同步更新 `recurringRingSize(for:)`——
+    /// 两个函数的分档必须一致(对同一 rowHeight,要么都返回 nil 要么都返回非 nil),
+    /// 否则 HomeMonthDayButton 的 `if hasRecurring, let ringSize = ...` 会落到 else 分支,
+    /// 让规律任务日误渲染为实心点。
     static func dotSize(for rowHeight: CGFloat) -> CGFloat? {
         switch rowHeight {
         case ..<22: return nil
@@ -127,6 +132,27 @@ enum HomeLayoutMetrics {
         default: return 4
         }
     }
+
+    /// 规律任务的空心环直径,跟 `dotSize(for:)` 同档位但略大(+2pt)——
+    /// 空心环需要包住实心点的视觉权重,周视图下也要跟实心点形成清晰对比。
+    /// 返回 nil 表示该行高下不渲染规律环(极矮屏,跟 dotSize=nil 对齐)。
+    /// - rowHeight < 22：返回 nil（极矮屏,规律信号也省略,保数字清爽）
+    /// - 22-28：返回 5
+    /// - 29-40：返回 5.5（月视图典型）
+    /// - >40：返回 6（周视图）
+    ///
+    /// **不变量**:分档必须跟 `dotSize(for:)` 镜像(见其文档)。
+    static func recurringRingSize(for rowHeight: CGFloat) -> CGFloat? {
+        switch rowHeight {
+        case ..<22: return nil
+        case 22...28: return 5
+        case 29...40: return 5.5
+        default: return 6
+        }
+    }
+
+    /// 空心环描边宽度。1pt 在 5-6pt 直径下足够清晰,再细则抗锯齿糊边。
+    static let recurringRingStrokeWidth: CGFloat = 1
 
     /// 选中/今天高亮圆直径：正常行高下用固定 WarmSize.calendarDayCircle（30pt），
     /// 矮行自适应缩小。扣除量 8 = 圆点槽位(6) + VStack spacing(2)，
@@ -239,13 +265,27 @@ struct HomeMonthDayButton: View {
                 .animation(WarmAnimation.springSmooth, value: dayState.isSelected)
 
                 // 圆点槽位：固定 6pt 高。圆点在页面底色上（不再被选中圆覆盖），
-                // 无需旧版"选中时白点"分支——统一 primary（有未完成）/ textMuted（全完成）。
+                // 颜色按完成态：primary（有未完成）/ textMuted（全完成）。
+                // 形态按是否含规律任务：空心环（有重复）/ 实心点（纯单次）——
+                // 区分信号避免用户翻日历看到"每天有点"误以为排满，
+                // 重复任务的"完成"只算当次,日历上仍需持续提示"这天还有规律任务"。
+                // 混合日(同时有重复 + 单次)按"有重复"算:重复任务需要持续可见,
+                // 单次任务的实心信号会丢失,但当天点的颜色(primary=有未完成)仍能反映"有事未做完"。
                 ZStack {
                     if let dotSize, !dayState.occurrences.isEmpty {
                         let hasUncompletedOccurrence = dayState.occurrences.contains { !$0.isCompleted }
-                        Circle()
-                            .fill(hasUncompletedOccurrence ? WarmTheme.primary : WarmTheme.textMuted)
-                            .frame(width: dotSize, height: dotSize)
+                        let hasRecurringOccurrence = dayState.occurrences.contains { $0.isRecurring }
+                        let dotColor = hasUncompletedOccurrence ? WarmTheme.primary : WarmTheme.textMuted
+                        if hasRecurringOccurrence, let ringSize = HomeLayoutMetrics.recurringRingSize(for: rowHeight) {
+                            // 空心环：直径跟 rowHeight 自适应,1pt 描边
+                            Circle()
+                                .stroke(dotColor, lineWidth: HomeLayoutMetrics.recurringRingStrokeWidth)
+                                .frame(width: ringSize, height: ringSize)
+                        } else {
+                            Circle()
+                                .fill(dotColor)
+                                .frame(width: dotSize, height: dotSize)
+                        }
                     }
                 }
                 .frame(height: 6)
