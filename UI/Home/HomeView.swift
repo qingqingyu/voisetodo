@@ -209,6 +209,12 @@ struct HomeView<Store: HomeTodoStore>: View {
     private var calendarViewMode: CalendarViewMode {
         CalendarViewMode(rawValue: calendarViewModeRaw) ?? .month
     }
+    /// 显示样式（list/grid）独立于 viewMode（month/week），两者正交组合出 4 种视图。
+    /// 通过 @AppStorage 持久化，跟 calendarViewMode 同套机制。默认 list（保持现状）。
+    @AppStorage("calendarDisplayMode") private var calendarDisplayModeRaw = CalendarDisplayMode.list.rawValue
+    private var calendarDisplayMode: CalendarDisplayMode {
+        CalendarDisplayMode(rawValue: calendarDisplayModeRaw) ?? .list
+    }
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
@@ -504,6 +510,11 @@ struct HomeView<Store: HomeTodoStore>: View {
                     statsBadge
                 }
 
+                // 仅 Calendar tab 显示「列表/网格」切换按钮——Today tab 无日历视图。
+                if selectedBottomTab == .calendar {
+                    displayModeToggleButton
+                }
+
                 settingsButton
             }
 
@@ -678,6 +689,36 @@ struct HomeView<Store: HomeTodoStore>: View {
         .accessibilityLabel(String(localized: "settings.title"))
     }
 
+    /// 列表/网格切换按钮：胶囊样式，图标 + 文字。
+    /// 与 statsBadge/settingsButton 同高（40pt）保持视觉对齐。
+    /// 点击在 list↔grid 之间 toggle，不影响 viewMode。
+    /// 对齐 HTML 设计稿的 iconcard .ib.active 样式（primary 底 + 白字）。
+    private var displayModeToggleButton: some View {
+        let isGrid = calendarDisplayMode == .grid
+        return Button {
+            setDisplayMode(isGrid ? .list : .grid)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isGrid ? "list.bullet" : "square.grid.2x2")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(String(localized: isGrid ? "home.display.list" : "home.display.grid"))
+                    .font(WarmFont.caption(12))
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(isGrid ? WarmTheme.textSecondary : .white)
+            .padding(.horizontal, 10)
+            .frame(height: WarmSize.touch)
+            .background(
+                Capsule().fill(isGrid ? WarmTheme.cardBackground : WarmTheme.primary)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("CalendarDisplayModeToggle")
+        .accessibilityLabel(String(localized: isGrid ? "home.display.list" : "home.display.grid"))
+        .accessibilityHint(String(localized: "a11y.display_mode.hint"))
+    }
+
     // MARK: - Recording Overlay
 
     private var recordingOverlay: some View {
@@ -769,6 +810,38 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Month Home View
 
+    /// 根据 (displayMode, viewMode) 分发日历内容视图：
+    /// - list + (month|week) → `HomeMonthHeaderView(displayMode: .list)`（现状，零行为变化）
+    /// - grid + month        → `HomeMonthHeaderView(displayMode: .grid)`（6×7 事件条格子）
+    /// - grid + week         → `WeekTimelineView`（7 天横排时间轴）
+    /// 三者共用 onSelectDay / onDropTodo / onShiftPeriod 契约 + calendarHeight 限高。
+    ///
+    /// `calendarHeight` 在两种路径下用法不同：
+    ///   - `HomeMonthHeaderView`：通过 `availableHeight` 参数传入，Header 内部用它算 dayRowHeight。
+    ///   - `WeekTimelineView`：本函数不透传——`WeekTimelineView` 内部高度由 ScrollView 自适应；
+    ///     外层 `.frame(height: calendarHeight)` + `.clipped()`（见 monthHomeView）封顶即可。
+    @ViewBuilder
+    private func calendarContentView(state: HomeCalendarState, calendarHeight: CGFloat) -> some View {
+        switch (calendarDisplayMode, calendarViewMode) {
+        case (.grid, .week):
+            WeekTimelineView(
+                state: state,
+                onSelectDay: selectDay,
+                onOpenTodo: { selectedTodo = $0 },
+                onShiftPeriod: { shiftPeriod(by: $0) }
+            )
+        case (.list, _), (.grid, .month):
+            HomeMonthHeaderView(
+                state: state,
+                onSelectDay: selectDay,
+                onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
+                onShiftPeriod: { shiftPeriod(by: $0) },
+                availableHeight: calendarHeight,
+                displayMode: calendarDisplayMode
+            )
+        }
+    }
+
     private var monthHomeView: some View {
         let state = HomeCalendarState.make(
             store: store,
@@ -780,25 +853,20 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
 
         return GeometryReader { proxy in
-            // 月历封顶 44% 高度（硬约束，见 HomeLayoutMetrics.calendarTargetHeightRatio）。
-            // 极矮屏日期行可能被裁切（overflow:hidden 语义）；列表区始终 ≥ 56% 可滚动。
+            // 月历封顶高度：list 模式 44%（窄行）/ grid 模式 70%（事件条需要垂直空间）。
+            // 极矮屏日期行可能被裁切（overflow:hidden 语义）；列表区在 list 模式下 ≥ 30% 可滚动。
             // 「今日」tab 隐藏月历，列表占满 100%。
             let calendarHeight = HomeLayoutMetrics.calendarHeight(
                 availableHeight: proxy.size.height,
                 selectedTab: selectedBottomTab,
-                viewMode: calendarViewMode
+                viewMode: calendarViewMode,
+                displayMode: calendarDisplayMode
             )
 
             VStack(spacing: 0) {
                 if selectedBottomTab == .calendar {
-                    HomeMonthHeaderView(
-                        state: state,
-                        onSelectDay: selectDay,
-                        onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
-                        onShiftPeriod: { shiftPeriod(by: $0) },
-                        availableHeight: calendarHeight
-                    )
-                    // 封顶 + 裁切：对齐 HTML 参考的 max-height:38vh + overflow:hidden。
+                    calendarContentView(state: state, calendarHeight: calendarHeight)
+                    // 封顶 + 裁切：对齐 HTML 参考的 max-height + overflow:hidden。
                     // 防止月历内容（网格行高过小时）向上溢出盖住"下午好"标题、
                     // 或向下溢出侵入列表滚动区。
                     // alignment: .top —— 内容贴顶；周→月切换动画期间 frame 从 178pt 涨到 258pt，
@@ -1370,6 +1438,15 @@ struct HomeView<Store: HomeTodoStore>: View {
             visibleMonthAnchor = mode == .week
                 ? calendar.startOfDay(for: selectedDate)
                 : HomeCalendarState.startOfMonth(for: selectedDate, calendar: calendar)
+        }
+    }
+
+    /// 切换 list↔grid 显示样式。与 viewMode 完全独立——不修改锚点、不动选中日，
+    /// 仅触发渲染容器高度 + cell 类型的动画过渡。
+    private func setDisplayMode(_ mode: CalendarDisplayMode) {
+        guard calendarDisplayMode != mode else { return }
+        withAnimation(WarmAnimation.springStandard) {
+            calendarDisplayModeRaw = mode.rawValue
         }
     }
 
