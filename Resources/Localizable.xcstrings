@@ -1834,7 +1834,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务开小差,请稍后重试"
+            "value" : "服务开小差，请稍后重试"
           }
         }
       }
@@ -1893,13 +1893,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Didn't quite catch that. Could you try again?"
+            "value" : "Something went wrong on our end. Please try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没听明白结果,请重试一次"
+            "value" : "服务出了点问题，请稍后重试"
           }
         }
       }
@@ -1957,13 +1957,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Didn't catch that. Please try again."
+            "value" : "Couldn't read the result. Please try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没听明白,请重试"
+            "value" : "结果读不出来，请稍后重试"
           }
         }
       }
@@ -2139,7 +2139,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "出了点问题,请稍后重试"
+            "value" : "出了点问题，请稍后重试"
           }
         }
       }
@@ -5182,13 +5182,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "I didn't quite catch that. Please add it manually in the app."
+            "value" : "Couldn't turn that into a todo. Please add it in the app."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "我没听明白,请打开 App 自己添加"
+            "value" : "没解析出待办，请打开 App 手动添加"
           }
         }
       }
@@ -5236,7 +5236,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已记下关键词,请打开 App 完成"
+            "value" : "已记下关键词，请打开 App 完成"
           }
         }
       }
@@ -5808,13 +5808,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open the app to sync"
+            "value" : "Couldn't update. Open the app to sync."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 App 同步一下"
+            "value" : "更新失败，请打开 App 同步"
           }
         }
       }

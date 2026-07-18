@@ -20,8 +20,7 @@ enum ErrorMessages {
     static let serviceBusy = String(localized: "error.service_busy")
     static let apiError = String(localized: "error.api_error")
     /// `apiResponseInvalid` case 关联值常用的 detail 字符串——被 NetworkClient 8 个失败路径
-    /// 用作 enum 关联值(便于测试断言 `== .apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)`)。
-    /// UI 不再显示这个文案(VoiceTodoError.errorDescription 走 apiResponseInvalidMessage)。
+    /// 用作 enum 关联值。UI 不再显示这个文案(VoiceTodoError.errorDescription 走 apiResponseInvalidMessage)。
     static let apiResponseInvalidDetail = String(localized: "error.api_response_invalid_detail")
     /// `apiResponseInvalid` 给用户看的文案(无 detail,问题简述 + 重试建议)。
     static let apiResponseInvalidMessage = String(localized: "error.api_response_invalid_message")

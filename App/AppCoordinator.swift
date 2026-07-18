@@ -893,9 +893,13 @@ final class AppCoordinator: ObservableObject {
             case .storageReadFailed, .storageWriteFailed:
                 showToast(message: ErrorMessages.storageError, style: .warning)
             default:
-                // 未明确归类的 VoiceTodoError case——理论上 errorDescription 都是人性化的,
-                // 这里走 .warning 兜底以防未来新增 case 忘记加分支。原始 case 已在第 851 行入日志。
-                showToast(message: voiceError.localizedDescription, style: .warning)
+                // 未明确归类的 VoiceTodoError case——走通用兜底文案(与 else 分支口径一致),
+                // 以防未来新增 case 忘记加分支时暴露 LocalizedError 默认的程序员向文案。
+                // 原始 case 已在第 851 行入日志。
+                // ⚠️ 新增 VoiceTodoError case 时**必须**在此 switch 补显式分支或在
+                // VoiceTodoError.errorDescription 里返回 ErrorMessages.<name>,否则 toast 上看不到
+                // 针对该 case 的人性化文案。
+                showToast(message: ErrorMessages.unexpectedError, style: .warning)
             }
         } else {
             // 非 VoiceTodoError 类型的错误(URLError / SwiftDataError / 第三方库原生 NSError 等):
