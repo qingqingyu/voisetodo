@@ -49,17 +49,28 @@ struct ToastModifier: ViewModifier {
                             insertion: .move(edge: .top).combined(with: .scale(scale: 0.9)),
                             removal: .move(edge: .top).combined(with: .opacity)
                         ))
-                        .onAppear {
-                            scheduleDismiss()
-                        }
-                        .onChange(of: message) { _, _ in
-                            scheduleDismiss()
-                        }
                         .padding(.top, WarmSpacing.xxxl)
                         .zIndex(1)
                 }
             }
             .animation(WarmAnimation.springSlow, value: isPresented)
+            // 自动消失定时器挂在 isPresented 的变化上,而不是 ToastView.onAppear。
+            // 原因:ToastView 是 `if isPresented` 条件渲染,只要 content 重渲染(用户改字段
+            // 触发 store 变化 → view tree 重渲染),ToastView 就被销毁重建,.onAppear
+            // 会反复触发,cancel + 重启 2s 定时器 → toast 在用户持续操作期间永不消失。
+            // 改用 onChange(of: isPresented) 只在 false→true 瞬间调度一次,重渲染不会重启。
+            .onChange(of: isPresented) { _, presented in
+                if presented {
+                    scheduleDismiss()
+                }
+            }
+            // message 变化(用户连续触发不同文案的 toast)时重置定时器,
+            // 让最新一条 toast 仍按完整 duration 显示。
+            .onChange(of: message) { _, _ in
+                if isPresented {
+                    scheduleDismiss()
+                }
+            }
     }
 
     /// 调度自动隐藏（取消旧定时器，启动新定时器）
