@@ -20,6 +20,16 @@
         }
       }
     },
+    "%@ %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lld"
+          }
+        }
+      }
+    },
     "%lld" : {
 
     },
@@ -40,9 +50,6 @@
       }
     },
     "+%lld" : {
-
-    },
-    "🎉" : {
 
     },
     "a11y.calendar_mode" : {
@@ -237,6 +244,9 @@
           }
         }
       }
+    },
+    "a11y.event_hour_separator" : {
+
     },
     "a11y.high_priority" : {
       "localizations" : {
@@ -1878,6 +1888,22 @@
         }
       }
     },
+    "error.api_response_invalid_message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI response format was abnormal. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 返回格式异常,请稍后重试"
+          }
+        }
+      }
+    },
     "error.api_timeout" : {
       "localizations" : {
         "en" : {
@@ -2022,6 +2048,22 @@
         }
       }
     },
+    "error.recording_failed_message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording failed. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录音失败,请重试"
+          }
+        }
+      }
+    },
     "error.service_busy" : {
       "localizations" : {
         "en" : {
@@ -2082,6 +2124,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "语音识别暂不可用，请稍后重试"
+          }
+        }
+      }
+    },
+    "error.transcript_too_long" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That's a lot to process at once. Try sending fewer items at a time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内容太多,我没法一次性处理完。试试分几次发送,每次少说几条。"
           }
         }
       }
@@ -2406,6 +2464,22 @@
         }
       }
     },
+    "home.back_to_today" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到今天"
+          }
+        }
+      }
+    },
     "home.calendar.error.message" : {
       "localizations" : {
         "en" : {
@@ -2470,22 +2544,6 @@
         }
       }
     },
-    "home.back_to_today" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to today"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回到今天"
-          }
-        }
-      }
-    },
     "home.completed_section_title" : {
       "localizations" : {
         "en" : {
@@ -2519,6 +2577,7 @@
       }
     },
     "home.display.grid" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2535,6 +2594,7 @@
       }
     },
     "home.display.list" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2585,6 +2645,7 @@
       }
     },
     "home.greeting.afternoon" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2601,6 +2662,7 @@
       }
     },
     "home.greeting.evening" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2617,6 +2679,7 @@
       }
     },
     "home.greeting.morning" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2633,6 +2696,7 @@
       }
     },
     "home.greeting.night" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2649,6 +2713,7 @@
       }
     },
     "home.greeting.noon" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2730,6 +2795,7 @@
       }
     },
     "home.stats.all_complete" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

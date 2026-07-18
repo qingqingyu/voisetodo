@@ -530,6 +530,9 @@ final class AppCoordinatorTests: XCTestCase {
             coordinator.toastMessage,
             VoiceTodoError.apiResponseInvalid("broken stream").localizedDescription
         )
+        // detail 不再暴露给 UI(errorDescription 走"问题+建议"格式)——
+        // toast 上只看到人性化文案,"broken stream" 仅入 log。
+        XCTAssertFalse(coordinator.toastMessage.contains("broken stream"))
     }
 
     func testManualInputKeepsPartialTodosWhenLaterPartialIsEmpty() async {

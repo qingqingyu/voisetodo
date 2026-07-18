@@ -90,7 +90,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     }
 
                     switch voiceError {
-                    case .apiResponseInvalid, .jsonParsingFailed, .quotaExhausted:
+                    case .apiResponseInvalid, .jsonParsingFailed, .transcriptTooLong, .quotaExhausted:
                         // 配置/解析/配额错误，重试无意义（配额当日不会因重试恢复，交由上层离线兜底 + paywall）
                         VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
@@ -383,7 +383,25 @@ final class TodoExtractorService: TodoExtractorProtocol {
             return result
         } catch {
             VoiceTodoLog.extractor.error("extract.parse.failed responseChars=\(responseText.count) cleanedChars=\(cleanedText.count) summary=\(VoiceTodoLog.textSummary(cleanedText, previewLimit: 160), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            // 截断识别:JSON 末尾不完整(Unexpected end of file)通常是 AI 输出被 max_tokens 切断。
+            // 这种 case 用户可解决(分批输入),跟服务端格式异常(重试可解决)语义不同,需走 transcriptTooLong。
+            // 检测特征:NSCocoaErrorDomain 3840 + "Unexpected end of file"(JSONSerialization 标准截断文案,
+            // 跨 iOS 版本稳定)。其他 DecodingError 子类(schema 不匹配、类型错误等)仍走 jsonParsingFailed。
+            if isJsonTruncationError(error) {
+                throw VoiceTodoError.transcriptTooLong
+            }
             throw VoiceTodoError.jsonParsingFailed("JSON 解析失败: \(error.localizedDescription)")
         }
+    }
+
+    /// 判断底层 JSON 解析错误是否是"流被截断/末尾不完整"。
+    /// 用于把 `transcriptTooLong`(用户可解决)从 `jsonParsingFailed`(服务端问题)中区分出来。
+    /// - NSCocoaErrorDomain code=3840 + message 含 "Unexpected end of file" → JSONSerialization 标准截断特征
+    /// - 其他 case(dataCorrupted、typeMismatch 等)不算截断,可能是 schema 不匹配或格式异常
+    private func isJsonTruncationError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == NSCocoaErrorDomain, nsError.code == 3840 else { return false }
+        let message = nsError.localizedDescription.lowercased()
+        return message.contains("unexpected end of file") || message.contains("end of file")
     }
 }

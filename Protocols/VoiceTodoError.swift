@@ -1,6 +1,12 @@
 import Foundation
 
 /// VoiceTodo 统一错误类型
+///
+/// ## UI 文案规范
+/// 所有 case 的 `errorDescription` 走"**问题简述。+ 解决建议。**"两段式,不拼底层 detail。
+/// 底层技术细节(DecodingError.localizedDescription / SwiftData error 等)只留在 case 关联值里,
+/// 供 `VoiceTodoLog.errorSummary(_:)` 写日志/telemetry——用户看到的文案必须是普通用户能理解
+/// 且能据此行动的。
 enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     // Voice 模块
     case microphonePermissionDenied
@@ -21,8 +27,13 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     case serviceUnavailable
     /// 服务端错误（HTTP 5xx，非 503）。属可重试的服务类故障，计入熔断。
     case apiServerError(statusCode: Int)
+    /// AI 返回的响应不是预期格式(非 JSON / 字段缺失 / 类型不匹配等)。detail 仅入日志。
     case apiResponseInvalid(String)
+    /// JSON 解析失败但**非截断类**(模型返回了完整 JSON 但 schema 不匹配等)。detail 仅入日志。
     case jsonParsingFailed(String)
+    /// 输入待办条数太多/字符太长,导致 AI 输出超过 max_tokens 被强制截断,JSON 不完整。
+    /// UI 提示用户分批输入——这是**用户可解决**的错误,跟 jsonParsingFailed(服务端问题,重试)语义不同。
+    case transcriptTooLong
 
     // Storage 模块
     case storageReadFailed(String)            // [v2] 优化
@@ -38,8 +49,10 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.speechUnavailable
         case .audioSessionInterrupted:
             return ErrorMessages.audioSessionInterrupted
-        case .recordingFailed(let detail):
-            return String(localized: "error.recording_failed \(detail)")
+        case .recordingFailed:
+            // detail 通常是 AVAudioSession 的英文错误描述,对用户无意义——只显示通用文案。
+            // detail 仍保留在关联值里供 VoiceTodoLog 打日志。
+            return ErrorMessages.recordingFailedMessage
         case .networkUnavailable:
             return ErrorMessages.networkError
         case .apiTimeout:
@@ -52,14 +65,17 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.serviceBusy
         case .apiServerError:
             return ErrorMessages.apiError
-        case .apiResponseInvalid(let detail):
-            return String(localized: "error.api_response_invalid \(detail)")
-        case .jsonParsingFailed(let detail):
-            return String(localized: "error.json_parsing_detail \(detail)")
-        case .storageReadFailed(let detail):
-            return String(localized: "error.storage_read_failed \(detail)")
-        case .storageWriteFailed(let detail):
-            return String(localized: "error.storage_write_failed \(detail)")
+        case .apiResponseInvalid:
+            // 不拼 detail——"AI 响应格式异常。请稍后重试。" 是用户能理解的版本。
+            return ErrorMessages.apiResponseInvalidMessage
+        case .jsonParsingFailed:
+            // 不拼 detail——"JSON 不完整" / "Unexpected end of file" 这种底层文案对普通用户无意义。
+            return ErrorMessages.jsonParsingFailed
+        case .transcriptTooLong:
+            return ErrorMessages.transcriptTooLong
+        case .storageReadFailed, .storageWriteFailed:
+            // SwiftData 错误描述也是程序员向的——只显示通用保存失败文案。
+            return ErrorMessages.storageError
         }
     }
 }
