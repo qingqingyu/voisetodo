@@ -1823,6 +1823,38 @@
         }
       }
     },
+    "empty.week.no_timed.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to list view to see all todos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切到列表视图可看到全部待办"
+          }
+        }
+      }
+    },
+    "empty.week.no_timed.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No timed events this week"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本周没有定时事件"
+          }
+        }
+      }
+    },
     "empty.widget" : {
       "localizations" : {
         "en" : {
