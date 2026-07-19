@@ -336,77 +336,6 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(writer.removedIdentifiers.isEmpty)
     }
 
-    func testUpdateTodoWithAppOnlyModeRemovesStaleSystemCalendarEvent() async throws {
-        let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "明天")
-        var savedTodo = TodoItemData(from: item)
-        savedTodo.systemCalendarEventIdentifier = "event-old"
-        let store = CoordinatorTestStore(todos: [savedTodo])
-        let writer = CoordinatorTestSystemCalendarWriter()
-        let removeDone = expectation(description: "stale event removed")
-        writer.onRemove = { removeDone.fulfill() }
-        let identifierCleared = expectation(description: "stale identifier cleared")
-        store.onUpdateIdentifier = { identifierCleared.fulfill() }
-        let coordinator = AppCoordinator(
-            voiceInput: CoordinatorTestVoiceInput(),
-            extractor: DelayedExtractor(),
-            store: store,
-            systemCalendarWriter: writer,
-            calendarWriteModeProvider: { .appOnly }
-        )
-
-        try coordinator.updateTodo(
-            item.id,
-            title: "完成数学作业",
-            dueHint: "后天",
-            recurrenceRule: nil
-        )
-
-        XCTAssertEqual(store.todos[0].title, "完成数学作业")
-        await fulfillment(of: [removeDone, identifierCleared], timeout: 1)
-        XCTAssertTrue(writer.receivedTodos.isEmpty)
-        XCTAssertEqual(writer.removedIdentifiers, ["event-old"])
-        // appOnly 模式不再创建新系统事件，但会清理旧镜像，避免系统日历留下过期内容
-        XCTAssertNil(store.systemCalendarEventIdentifiers[item.id])
-    }
-
-    func testUpdateTodoReplacesSystemCalendarEvent() async throws {
-        let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "明天")
-        var savedTodo = TodoItemData(from: item)
-        savedTodo.systemCalendarEventIdentifier = "event-old"
-        let store = CoordinatorTestStore(todos: [savedTodo])
-        let writer = CoordinatorTestSystemCalendarWriter()
-
-        let removeDone = expectation(description: "old event removed")
-        writer.onRemove = { removeDone.fulfill() }
-        let writeDone = expectation(description: "new event written")
-        writer.onWrite = { writeDone.fulfill() }
-        let identifiersUpdated = expectation(description: "stale and new identifiers updated")
-        identifiersUpdated.expectedFulfillmentCount = 2
-        store.onUpdateIdentifier = { identifiersUpdated.fulfill() }
-
-        let coordinator = AppCoordinator(
-            voiceInput: CoordinatorTestVoiceInput(),
-            extractor: DelayedExtractor(),
-            store: store,
-            systemCalendarWriter: writer,
-            calendarWriteModeProvider: { .appAndSystemCalendar }
-        )
-
-        try coordinator.updateTodo(
-            item.id,
-            title: "完成数学作业",
-            dueHint: "后天",
-            recurrenceRule: nil
-        )
-
-        XCTAssertEqual(store.todos[0].title, "完成数学作业")
-        await fulfillment(of: [removeDone, writeDone, identifiersUpdated], timeout: 1)
-        XCTAssertEqual(writer.removedIdentifiers, ["event-old"])
-        XCTAssertEqual(writer.receivedTodos.count, 1)
-        XCTAssertNil(writer.receivedTodos.first?.systemCalendarEventIdentifier)
-        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)")
-    }
-
     func testUpdateTodoDetailPersistsTimeBucketThroughStoreContract() throws {
         let item = TodoItemData(title: "晚上健身")
         let store = CoordinatorTestStore(todos: [item])
@@ -434,36 +363,6 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(store.todos.first?.timeBucket, .evening)
         XCTAssertFalse(store.todos.first?.hasDueTime ?? true)
-    }
-
-    func testUpdateTodoKeepsCalendarIdentifierWhenRemovingOldEventFails() async throws {
-        let item = ExtractedTodo(title: "完成英语背诵", detail: "今天完成英语背诵", dueHint: "明天")
-        var savedTodo = TodoItemData(from: item)
-        savedTodo.systemCalendarEventIdentifier = "event-old"
-        let store = CoordinatorTestStore(todos: [savedTodo])
-        let writer = CoordinatorTestSystemCalendarWriter(removeError: VoiceTodoError.storageWriteFailed("remove failed"))
-        let removeAttempted = expectation(description: "old event remove attempted")
-        writer.onRemove = { removeAttempted.fulfill() }
-
-        let coordinator = AppCoordinator(
-            voiceInput: CoordinatorTestVoiceInput(),
-            extractor: DelayedExtractor(),
-            store: store,
-            systemCalendarWriter: writer,
-            calendarWriteModeProvider: { .appAndSystemCalendar }
-        )
-
-        try coordinator.updateTodo(
-            item.id,
-            title: "完成数学作业",
-            dueHint: "后天",
-            recurrenceRule: nil
-        )
-
-        await fulfillment(of: [removeAttempted], timeout: 1)
-        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old")
-        XCTAssertTrue(writer.receivedTodos.isEmpty)
-        await assertSystemCalendarSyncFailureToastShown(coordinator)
     }
 
     func testCancelRecordingDueToInterruptionStopsRecordingAndShowsToast() async {
@@ -794,29 +693,6 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }
         todos[index].isCompleted.toggle()
-    }
-
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws {
-        guard let index = todos.firstIndex(where: { $0.id == id }) else {
-            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
-        }
-        todos[index].title = title
-        if let category {
-            todos[index].category = category
-        }
-        if let priority {
-            todos[index].priority = priority
-        }
-        if let dueHint {
-            let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
-            todos[index].dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
-            todos[index].dueDate = TodoDueDateResolver.resolve(
-                dueHint: todos[index].dueHint,
-                title: todos[index].title,
-                detail: todos[index].detail ?? ""
-            )
-        }
-        todos[index].recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
     }
 
     func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {

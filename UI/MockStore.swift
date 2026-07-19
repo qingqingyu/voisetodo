@@ -60,34 +60,6 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         todos.removeAll { $0.id == id }
     }
 
-    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil) throws {
-        if let index = todos.firstIndex(where: { $0.id == id }) {
-            todos[index].title = title
-            if let category = category {
-                todos[index].category = category
-            }
-            if let priority = priority {
-                todos[index].priority = priority
-            }
-            if let dueHint = dueHint {
-                let normalizedDueHint = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
-                todos[index].dueHint = normalizedDueHint.isEmpty ? nil : normalizedDueHint
-                todos[index].dueDate = TodoDueDateResolver.resolve(
-                    dueHint: todos[index].dueHint,
-                    title: todos[index].title,
-                    detail: todos[index].detail ?? ""
-                )
-                // 手动编辑只有 freeform 文本、没有结构化钟点，回退全天事件。
-                todos[index].hasDueTime = false
-            }
-        }
-    }
-
-    func update(_ id: UUID, title: String, category: TodoCategory? = nil, priority: Priority? = nil, dueHint: String? = nil, recurrenceRule: RecurrenceRule?) throws {
-        try update(id, title: title, category: category, priority: priority, dueHint: dueHint)
-        try updateRecurrence(id, recurrenceRule: recurrenceRule)
-    }
-
     func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
@@ -184,7 +156,7 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
     }
 
     func recentUncompleted(limit: Int) async throws -> [TodoItemData] {
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = DayClock.startOfUserDay(for: Date())
         return WidgetTodoFilter.visibleTodos(
             from: todos,
             completionKeys: completedOccurrences,

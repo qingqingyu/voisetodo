@@ -38,17 +38,8 @@ protocol TodoDeletionWriting {
     func delete(_ id: UUID) throws
 }
 
-/// 基础待办详情写入能力。
-protocol TodoBasicUpdating {
-    /// 更新待办（支持标题、分类、优先级、时间提示）
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?) throws
-}
-
 /// 待办详情与重复规则原子写入能力。
 protocol TodoDetailUpdating {
-    /// 原子更新待办详情（基础字段 + 重复规则）
-    func update(_ id: UUID, title: String, category: TodoCategory?, priority: Priority?, dueHint: String?, recurrenceRule: RecurrenceRule?) throws
-
     /// 完整更新（含 dueDate、时段和重复规则，详情页用）
     func updateFull(_ id: UUID, update: TodoDetailUpdate) throws
 }
@@ -67,7 +58,7 @@ protocol TodoOrderingWriting {
 }
 
 /// 完整待办写入能力集合。
-protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoBasicUpdating, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting {}
+protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting {}
 
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {

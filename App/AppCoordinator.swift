@@ -581,59 +581,6 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.todo.delete.success id=\(id.uuidString, privacy: .public) hadCalendarEvent=\(todo?.systemCalendarEventIdentifier != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
-    /// 更新待办（含系统日历同步：删旧建新）
-    /// - Parameters:
-    ///   - id: 待办 ID
-    ///   - title: 新标题
-    ///   - category: 新分类（nil 表示不修改）
-    ///   - priority: 新优先级（nil 表示不修改）
-    ///   - dueHint: 新时间提示（nil 表示不修改，空字符串清除）
-    ///   - recurrenceRule: 新重复规则（nil 表示关闭重复）
-    func updateTodo(
-        _ id: UUID,
-        title: String,
-        category: TodoCategory? = nil,
-        priority: Priority? = nil,
-        dueHint: String? = nil,
-        recurrenceRule: RecurrenceRule? = nil
-    ) throws {
-        let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.todo.update.start id=\(id.uuidString, privacy: .public) titleChars=\(title.count) hasCategory=\(category != nil) hasPriority=\(priority != nil) dueHintChars=\(dueHint?.count ?? -1) recurrenceSet=\(recurrenceRule != nil)")
-        let oldTodo = store.todos.first { $0.id == id }
-
-        try store.update(id, title: title, category: category, priority: priority, dueHint: dueHint, recurrenceRule: recurrenceRule)
-        VoiceTodoLog.coordinator.info("coordinator.todo.update.saved id=\(id.uuidString, privacy: .public) hadOldCalendarEvent=\(oldTodo?.systemCalendarEventIdentifier != nil) shouldSyncCalendar=\(self.calendarWriteModeProvider() == .appAndSystemCalendar) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-
-        if let updated = store.todos.first(where: { $0.id == id }) {
-            let learningTitle = title
-            let learningDetail = updated.detail
-            let learningDueHint = updated.dueHint
-            // 优先用 todo 创建时记录的 locale；旧数据无 localeIdentifier 时回退到当前输入 locale
-            let learningLocaleIdentifier = updated.localeIdentifier ?? voiceInput.currentLocale.identifier
-            Task.detached(priority: .utility) { [vocabularyStore] in
-                vocabularyStore.learn(
-                    fromTexts: [learningTitle, learningDetail, learningDueHint].compactMap { $0 },
-                    localeIdentifier: learningLocaleIdentifier,
-                    source: .editedTodo
-                )
-            }
-        }
-
-        let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
-        if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {
-            observeCalendarSync(
-                calendarSyncService.enqueueReplace(
-                    todoID: id,
-                    oldEventIdentifier: oldTodo?.systemCalendarEventIdentifier,
-                    shouldWriteNewEvent: shouldSyncSystemCalendar,
-                    sourceID: id.uuidString
-                )
-            )
-        }
-
-        WidgetCenter.shared.reloadAllTimelines()
-    }
-
     /// 切换完成状态（详情页 "Mark as Done" 用）
     func toggleTodo(_ id: UUID) {
         do {
