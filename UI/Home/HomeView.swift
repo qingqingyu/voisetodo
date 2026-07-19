@@ -891,7 +891,12 @@ struct HomeView<Store: HomeTodoStore>: View {
                     // 下方不再渲染列表——避免「今天/这一天没有安排」等视觉元素侵入,
                     // 网格下方保持完全空白。网格+周仍需要列表(时间轴下方显示选中日任务)。
                     // list+月/list+周当然也保留列表(原本的列表视图)。
-                    let isGridMonthWithoutList = calendarDisplayMode == .grid && calendarViewMode == .month
+                    // 必须同时是 Calendar tab:Today tab 不渲染任何日历(包括网格),
+                    // 若此时再按 displayMode 屏蔽列表会让整页空白——calendarDisplayMode 是
+                    // @AppStorage 持久化的,从 Calendar grid+月切回 Today tab 时它仍是 .grid。
+                    let isGridMonthWithoutList = selectedBottomTab == .calendar
+                        && calendarDisplayMode == .grid
+                        && calendarViewMode == .month
                     if !isGridMonthWithoutList {
                         // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
                         // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
