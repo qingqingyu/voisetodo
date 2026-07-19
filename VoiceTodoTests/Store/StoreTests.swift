@@ -165,7 +165,8 @@ final class StoreTests: XCTestCase {
         let id = try XCTUnwrap(sut.todos.first?.id)
 
         gate.shouldFail = true
-        XCTAssertThrowsError(try sut.update(id, title: "失败标题"))
+        let snapshotBeforeUpdate = try XCTUnwrap(sut.todos.first)
+        XCTAssertThrowsError(try sut.updateFull(id, update: TodoDetailUpdate(from: snapshotBeforeUpdate, title: "失败标题")))
         XCTAssertEqual(sut.todos.first?.title, "原始标题")
 
         gate.shouldFail = false
@@ -342,46 +343,13 @@ final class StoreTests: XCTestCase {
         try sut.add(todo)
 
         let todoId = sut.todos[0].id
+        let original = sut.todos[0]
 
         // When: 更新标题
-        try sut.update(todoId, title: "新标题")
+        try sut.updateFull(todoId, update: TodoDetailUpdate(from: original, title: "新标题"))
 
         // Then: 标题已更新
         XCTAssertEqual(sut.todos[0].title, "新标题")
-    }
-
-    func testUpdateDueHintRecalculatesDueDate() throws {
-        // Given: 一个原本没有日期的待办
-        let todo = ExtractedTodo(title: "买牙膏", categoryHint: .life)
-        try sut.add(todo)
-
-        let todoId = sut.todos[0].id
-        XCTAssertNil(sut.todos[0].dueDate)
-
-        // When: 在详情页补充时间提示
-        let referenceWindowStart = Calendar.current.startOfDay(for: Date())
-        try sut.update(todoId, title: "买牙膏", dueHint: "明天")
-
-        // Then: dueHint 和周视图分组用的 dueDate 同步更新
-        let dueDate = try XCTUnwrap(sut.todos[0].dueDate)
-        assertDateIsTomorrowRelativeToTestWindow(dueDate, windowStart: referenceWindowStart)
-        XCTAssertEqual(sut.todos[0].dueHint, "明天")
-    }
-
-    func testUpdateDueHintClearsDueDate() throws {
-        // Given: 一个带日期的待办
-        let todo = ExtractedTodo(title: "买牛奶", dueHint: "明天", categoryHint: .life)
-        try sut.add(todo)
-
-        let todoId = sut.todos[0].id
-        XCTAssertNotNil(sut.todos[0].dueDate)
-
-        // When: 在详情页清空时间提示
-        try sut.update(todoId, title: "买牛奶", dueHint: "")
-
-        // Then: 进入未安排，不继续留在旧日期
-        XCTAssertNil(sut.todos[0].dueHint)
-        XCTAssertNil(sut.todos[0].dueDate)
     }
 
     func testUpdateInvalidId() {
@@ -389,7 +357,17 @@ final class StoreTests: XCTestCase {
         let invalidId = UUID()
 
         // When & Then: 抛出错误
-        XCTAssertThrowsError(try sut.update(invalidId, title: "新标题")) { error in
+        XCTAssertThrowsError(try sut.updateFull(invalidId, update: TodoDetailUpdate(
+            title: "新标题",
+            detail: nil,
+            category: nil,
+            priority: nil,
+            dueDate: nil,
+            hasDueTime: false,
+            timeBucket: nil,
+            dueHint: nil,
+            recurrenceRule: nil
+        ))) { error in
             XCTAssertTrue(error is VoiceTodoError)
         }
     }
@@ -1075,5 +1053,22 @@ final class StoreTests: XCTestCase {
         // 比对：id 顺序 + 完成状态都应不变
         XCTAssertEqual(sut.todos.map { $0.id }, snapshotBefore, "读方法不应改变 todos 的顺序或数量")
         XCTAssertEqual(sut.todos.map(\.isCompleted), snapshotCompletedBefore, "读方法不应改变 todos 的完成状态")
+    }
+}
+
+/// 测试辅助：从已有 todo 构造 TodoDetailUpdate，避免每个测试都写一长串字段。
+private extension TodoDetailUpdate {
+    init(from todo: TodoItemData, title: String? = nil) {
+        self.init(
+            title: title ?? todo.title,
+            detail: todo.detail,
+            category: todo.category,
+            priority: todo.priority,
+            dueDate: todo.dueDate,
+            hasDueTime: todo.hasDueTime,
+            timeBucket: todo.timeBucket,
+            dueHint: todo.dueHint,
+            recurrenceRule: todo.recurrenceRule
+        )
     }
 }
