@@ -86,8 +86,32 @@ final class CalendarSyncServiceTests: XCTestCase {
         XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)")
     }
 
-    func testReplaceStopsWhenOldEventRemovalFails() async {
-        var item = TodoItemData(title: "移除失败", dueHint: "今天", dueDate: Date())
+    /// 写新事件失败时，旧事件必须保留、store identifier 不变 —— Risk 2 的核心保护。
+    /// 旧逻辑（先删后写）会在「删成功 + 写失败」时永久丢事件，新逻辑（先写后删）规避此问题。
+    func testReplacePreservesOldEventWhenWriteFails() async {
+        var item = TodoItemData(title: "写新失败", dueHint: "今天", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-old"
+        let store = CalendarSyncTestStore(todos: [item])
+        let writer = CalendarSyncTestWriter(writeError: VoiceTodoError.storageWriteFailed("write failed"))
+        let service = CalendarSyncService(store: store, writer: writer)
+
+        let result = await service.enqueueReplace(
+            todoID: item.id,
+            oldEventIdentifier: "event-old",
+            shouldWriteNewEvent: true,
+            sourceID: "test-write-failed"
+        ).value
+
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertTrue(result.shouldShowFailureToast)
+        XCTAssertTrue(writer.removedIdentifiers.isEmpty, "写新失败时不应触碰旧事件")
+        XCTAssertEqual(writer.receivedTodos.map(\.id), [item.id], "写新流程应被尝试")
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old", "store identifier 必须保留以便重试")
+    }
+
+    /// 写新成功 + 删旧失败 → 整体 success（新事件已就位），旧事件成孤儿但不影响新 todo 呈现。
+    func testReplaceSucceedsWhenOldEventCleanupFailsAfterWrite() async {
+        var item = TodoItemData(title: "清理失败", dueHint: "今天", dueDate: Date())
         item.systemCalendarEventIdentifier = "event-old"
         let store = CalendarSyncTestStore(todos: [item])
         let writer = CalendarSyncTestWriter(removeError: VoiceTodoError.storageWriteFailed("remove failed"))
@@ -97,14 +121,35 @@ final class CalendarSyncServiceTests: XCTestCase {
             todoID: item.id,
             oldEventIdentifier: "event-old",
             shouldWriteNewEvent: true,
-            sourceID: "test-remove-failed"
+            sourceID: "test-cleanup-failed"
         ).value
 
-        XCTAssertEqual(result.status, .failed)
-        XCTAssertTrue(result.shouldShowFailureToast)
+        XCTAssertEqual(result.status, .success, "新事件已写入，整体应判定成功")
+        XCTAssertEqual(writer.receivedTodos.map(\.id), [item.id])
+        XCTAssertEqual(writer.removedIdentifiers, ["event-old"], "应尝试清理旧事件")
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)")
+    }
+
+    /// appOnly 模式（shouldWriteNewEvent=false）：只清理旧事件镜像，不写新事件。
+    /// 用户切回不同步模式后编辑 todo 触发此分支。
+    func testReplaceInAppOnlyModeOnlyRemovesOldEvent() async {
+        var item = TodoItemData(title: "切模式清理", dueHint: "今天", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-old"
+        let store = CalendarSyncTestStore(todos: [item])
+        let writer = CalendarSyncTestWriter()
+        let service = CalendarSyncService(store: store, writer: writer)
+
+        let result = await service.enqueueReplace(
+            todoID: item.id,
+            oldEventIdentifier: "event-old",
+            shouldWriteNewEvent: false,
+            sourceID: "test-app-only"
+        ).value
+
+        XCTAssertEqual(result.status, .success)
         XCTAssertEqual(writer.removedIdentifiers, ["event-old"])
-        XCTAssertTrue(writer.receivedTodos.isEmpty)
-        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old")
+        XCTAssertTrue(writer.receivedTodos.isEmpty, "appOnly 模式不应写新事件")
+        XCTAssertNil(store.systemCalendarEventIdentifiers[item.id])
     }
 }
 

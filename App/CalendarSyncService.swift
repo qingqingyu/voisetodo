@@ -146,18 +146,24 @@ final class CalendarSyncService {
         shouldWriteNewEvent: Bool,
         sourceID: String
     ) async -> CalendarSyncResult {
-        if let oldEventIdentifier {
-            do {
-                try await writer.removeEvents(identifiers: [oldEventIdentifier])
-                try store.updateSystemCalendarEventIdentifier(nil, for: todoID)
-                VoiceTodoLog.calendar.info("calendar.update.removed_old todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public)")
-            } catch {
-                VoiceTodoLog.calendar.error("calendar.update.remove_old_failed todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                return .failed(.replace, error: error)
-            }
-        }
+        // 顺序：先写新事件 → 成功后再删旧事件。
+        // 反过来（先删后写）会在「删成功 + 写失败」时永久丢失日历事件且无法自愈
+        // （store 里的 eventID 已被置 nil，下次编辑不会再触发 replace）。
+        // 改成「先写后删」后：写新失败 → 旧事件保留，用户重试即可；
+        // 写新成功 + 删旧失败 → 旧事件成孤儿留在日历，但不影响新 todo 呈现。
 
         guard shouldWriteNewEvent else {
+            // appOnly 模式：用户切回不同步，只需清理旧镜像（不写新事件）
+            if let oldEventIdentifier {
+                do {
+                    try await writer.removeEvents(identifiers: [oldEventIdentifier])
+                    try store.updateSystemCalendarEventIdentifier(nil, for: todoID)
+                    VoiceTodoLog.calendar.info("calendar.update.removed_old todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public)")
+                } catch {
+                    VoiceTodoLog.calendar.error("calendar.update.remove_old_failed todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    return .failed(.replace, error: error)
+                }
+            }
             return oldEventIdentifier == nil ? .skipped(.replace) : .success(.replace)
         }
 
@@ -168,6 +174,7 @@ final class CalendarSyncService {
 
         let writeResult = await write(todos: [updated], sourceID: sourceID)
         if writeResult.status == .failed {
+            // 写新失败：旧事件未动，store 里 oldEventIdentifier 也未变，下次编辑可重试
             return CalendarSyncResult(
                 operation: .replace,
                 status: .failed,
@@ -175,6 +182,17 @@ final class CalendarSyncService {
                 error: writeResult.error
             )
         }
+
+        // 写新成功：现在安全地删旧事件。失败不影响主流程（新事件已就位）。
+        if let oldEventIdentifier {
+            do {
+                try await writer.removeEvents(identifiers: [oldEventIdentifier])
+                VoiceTodoLog.calendar.info("calendar.update.removed_old_after_write todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public)")
+            } catch {
+                VoiceTodoLog.calendar.warning("calendar.update.remove_old_failed_after_write todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+        }
+
         return CalendarSyncResult(
             operation: .replace,
             status: writeResult.status,
