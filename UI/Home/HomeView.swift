@@ -490,12 +490,17 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
                 } else {
                     // 日历 tab：月份 + 「回到今天」胶囊（仅浏览月/周 ≠ 当前时渲染）。
+                    // layoutPriority(1)：切到非当前月时 backToTodayCapsule 出现挤压水平空间，
+                    // SwiftUI 会把声明了 minimumScaleFactor 的 Text 当作"可压缩"目标——
+                    // 实测在 iOS 17 中文 locale 下"8月"也会被压成 0 宽度并触发"..."布局缓存不刷新。
+                    // layoutPriority(1) 让 Text 优先于 Spacer 拿到所需宽度，绕开压缩路径。
+                    // 已知限制：若未来支持长字符串月份名（如俄语），需重新引入 minimumScaleFactor。
                     HStack(spacing: WarmSpacing.sm) {
                         Text(calendarMonthTitle)
                             .font(WarmFont.serifDisplay(30))
                             .foregroundColor(WarmTheme.textPrimary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.65)
+                            .layoutPriority(1)
 
                         if !isViewingCurrentPeriod {
                             backToTodayCapsule
