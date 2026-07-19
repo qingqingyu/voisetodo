@@ -188,22 +188,17 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                     .foregroundColor(WarmTheme.textMuted)
                             }
 
-                            // 时段区:有明确钟点 → 显示 HH:mm;否则 → 4 个模糊时段胶囊。
-                            // DatePicker 只 displayedComponents: .date,钟点要单独显示。
+                            // 时段区:三种状态。
+                            // - 有 dueDate + 有钟点:钟点 picker(可编辑) + TimeBucket 只读派生 + 清除钟点按钮
+                            // - 有 dueDate + 无钟点:"添加钟点"按钮 + TimeBucket 胶囊(可手动选)
+                            // - 无 dueDate:保持原"设计妥协"——TimeBucket 胶囊仍显示,因为
+                            //   TimeBucket 业务上可独立于 dueDate 存在(如"下午"不绑定具体日期)。
                             //
-                            // **设计妥协**:editedDueDate == nil 时时段胶囊仍显示(TimeBucket
-                            // 业务上可独立于 dueDate 存在,如"下午"不绑定具体日期)。用户心智上
-                            // 可能困惑"没选日期怎么有时段"。原版(两独立卡)也有此问题,合并到
-                            // 一卡后 Divider 让问题更可见。后续可考虑在没选日期时隐藏时段区,
-                            // 但这会破坏"语音说下午就存下午"的快速录入流。
+                            // 派生 TimeBucket 只用于显示,不写回 editedTimeBucket——避免污染
+                            // 用户的手动选择。清钟点后 editedTimeBucket 保留,自然回到手动模式。
                             Divider()
-                            if editedHasDueTime, let dueDate = editedDueDate {
-                                Label(
-                                    dueDate.formatted(.dateTime.hour().minute()),
-                                    systemImage: "clock"
-                                )
-                                .font(WarmFont.body(15))
-                                .foregroundColor(WarmTheme.textSecondary)
+                            if editedDueDate != nil {
+                                timeRowWithDueDate
                             } else {
                                 HStack(spacing: WarmSpacing.xs) {
                                     ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
@@ -379,6 +374,92 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             shape.stroke(WarmTheme.textSecondary, lineWidth: 1)
         } else {
             shape.fill(WarmTheme.secondaryBackground)
+        }
+    }
+
+    /// 有 dueDate 时的时段区:三种情况由 editedHasDueTime 决定。
+    /// - hasDueTime=true: 钟点 DatePicker + 派生 TimeBucket 只读 + 清除钟点按钮
+    /// - hasDueTime=false: "添加钟点"按钮 + TimeBucket 胶囊(手动选)
+    @ViewBuilder
+    private var timeRowWithDueDate: some View {
+        if editedHasDueTime {
+            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                HStack {
+                    DatePicker(
+                        "",
+                        selection: Binding(
+                            get: { editedDueDate ?? Date() },
+                            set: { newTime in
+                                // DatePicker(.hourAndMinute) 的 set 给的是完整 Date,
+                                // 但只有钟点部分有意义——把它合并到 editedDueDate 的日期部分,
+                                // 避免替换掉用户刚选的日期。
+                                let calendar = Calendar.current
+                                var components = calendar.dateComponents([.year, .month, .day], from: editedDueDate ?? Date())
+                                components.hour = calendar.component(.hour, from: newTime)
+                                components.minute = calendar.component(.minute, from: newTime)
+                                editedDueDate = calendar.date(from: components)
+                                checkForChanges()
+                            }
+                        ),
+                        displayedComponents: .hourAndMinute
+                    )
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+
+                    Spacer()
+
+                    // 清除钟点:保留 editedDueDate(日期部分) 和 editedTimeBucket(手动选择),
+                    // 只切 hasDueTime=false。下次再点"添加钟点"会从当前时刻开始。
+                    Button {
+                        editedHasDueTime = false
+                        checkForChanges()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(WarmTheme.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // 派生 TimeBucket 只读显示:不写回 editedTimeBucket,清钟点后会自然回到手动模式。
+                let derived = TimeBucketResolver.effective(
+                    explicitBucket: editedTimeBucket,
+                    dueDate: editedDueDate,
+                    hasDueTime: editedHasDueTime
+                )
+                Text(derived.localizedTitle)
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                // "添加钟点":首次按下时把钟点设为当前时刻,避免显示 startOfDay 的 00:00。
+                Button {
+                    let calendar = Calendar.current
+                    let now = Date()
+                    var components = calendar.dateComponents([.year, .month, .day], from: editedDueDate ?? now)
+                    components.hour = calendar.component(.hour, from: now)
+                    components.minute = calendar.component(.minute, from: now)
+                    editedDueDate = calendar.date(from: components)
+                    editedHasDueTime = true
+                    checkForChanges()
+                } label: {
+                    HStack(spacing: WarmSpacing.xxs) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 13))
+                        Text(String(localized: "detail.add_time"))
+                            .font(WarmFont.body(15))
+                    }
+                    .foregroundColor(WarmTheme.primary)
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: WarmSpacing.xs) {
+                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                        timeBucketButton(bucket)
+                    }
+                }
+            }
         }
     }
 

@@ -1119,6 +1119,22 @@
         }
       }
     },
+    "detail.add_time": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add time"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加钟点"
+          }
+        }
+      }
+    },
     "detail.cancel": {
       "localizations": {
         "en": {
