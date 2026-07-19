@@ -1057,6 +1057,84 @@ test("redacts device identifiers in logs", async () => {
   assert.equal(logs.some((line) => line.includes("sha256:")), true);
 });
 
+// 验证 worker 原样透传 AI 返回的 due_date_basis 字段(方案 2)。
+// worker.js:174 用 new Response(text) 直接返回 AI 原始 JSON,不经 postProcess。
+// 这个测试守住"客户端需要的字段必须透传,不能被中间层丢弃"。
+test("passes through due_date_basis field from provider response unchanged", async () => {
+  const providerResponse = {
+    todos: [{
+      title: "交房租",
+      detail: "明天交房租",
+      due_date: "2026-07-20",
+      due_hint: "明天",
+      due_time: null,
+      time_bucket: null,
+      recurrence_rule: null,
+      recurrence_end: null,
+      reminder_times: null,
+      due_date_basis: "user_explicit",
+      priority: "normal",
+      category_hint: "finance"
+    }],
+    ignored: ""
+  };
+  const response = await handleRequest(
+    request({ transcript: "明天交房租", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify(providerResponse) }]
+    })
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.todos[0].due_date_basis, "user_explicit");
+  assert.equal(data.todos[0].due_date, "2026-07-20");
+});
+
+test("passes through title_mention basis when AI flags title-borne date word", async () => {
+  // 模拟 AI 正确识别 "prepare for Sunday" 是 title_mention 而非 user_explicit
+  const providerResponse = {
+    todos: [{
+      title: "Prepare for Sunday",
+      detail: "Prepare for Sunday",
+      due_date: null,
+      due_hint: null,
+      due_time: null,
+      time_bucket: null,
+      recurrence_rule: null,
+      recurrence_end: null,
+      reminder_times: null,
+      due_date_basis: "title_mention",
+      priority: "normal",
+      category_hint: "other"
+    }],
+    ignored: ""
+  };
+  const response = await handleRequest(
+    request({ transcript: "prepare for Sunday", locale: "en-US" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify(providerResponse) }]
+    })
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.todos[0].due_date_basis, "title_mention");
+  assert.equal(data.todos[0].due_date, null);
+});
+
 function request(body, headers = {}) {
   return new Request("https://proxy.test/v1/todo-extractions", {
     method: "POST",

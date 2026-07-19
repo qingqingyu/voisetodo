@@ -214,39 +214,87 @@ extension TodoItem {
     ///   - rawTranscript: 原始语音转写文本
     /// - Returns: TodoItem 实例
     static func from(_ extracted: ExtractedTodo, rawTranscript: String? = nil) -> TodoItem {
+        // 方案 2 + 3:先用 basis 白名单 + transcript 兜底过滤 dueDate。
+        // 副作用:可能改写 extracted.dueDate(清空或兜底重算);其他字段不动。
+        var effective = extracted
+        applyDueDateBasisFilter(&effective, rawTranscript: rawTranscript)
+
         // 优先用 AI 算好的绝对日期，其次文本解析兜底
-        let resolvedDate = extracted.dueDate ??
+        let resolvedDate = effective.dueDate ??
             TodoDueDateResolver.resolve(
-                dueHint: extracted.dueHint,
-                title: extracted.title,
-                detail: extracted.detail
+                dueHint: effective.dueHint,
+                title: effective.title,
+                detail: effective.detail
             )
-        let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: extracted.dueTime)
+        let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: effective.dueTime)
         // 时段⇒今天：只有模糊时段没日期时补今天，让任务落进「今日/时段」而非 Unscheduled。
         let effectiveDate = TodoScheduleDefaults.effectiveDueDate(
             resolvedDate: timed.date,
             hasDueTime: timed.hasTime,
-            timeBucket: extracted.timeBucket
+            timeBucket: effective.timeBucket
         )
         return TodoItem(
-            id: extracted.id,
-            title: extracted.title,
-            detail: extracted.detail.isEmpty ? nil : extracted.detail,
-            dueHint: extracted.dueHint,
+            id: effective.id,
+            title: effective.title,
+            detail: effective.detail.isEmpty ? nil : effective.detail,
+            dueHint: effective.dueHint,
             dueDate: effectiveDate,
             hasDueTime: timed.hasTime,
-            timeBucket: extracted.timeBucket,
-            recurrenceRule: extracted.recurrenceRule,
-            priority: extracted.priority,
-            category: extracted.categoryHint,
+            timeBucket: effective.timeBucket,
+            recurrenceRule: effective.recurrenceRule,
+            priority: effective.priority,
+            category: effective.categoryHint,
             isCompleted: false,
             createdAt: Date(),
             rawTranscript: rawTranscript,
             needsAIProcessing: false,
             systemCalendarEventIdentifier: nil,
-            localeIdentifier: extracted.localeIdentifier,
-            reminderTimes: extracted.reminderTimes
+            localeIdentifier: effective.localeIdentifier,
+            reminderTimes: effective.reminderTimes
         )
+    }
+
+    /// 方案 2 + 3:基于 `dueDateBasis`(AI 自报) + `rawTranscript`(原文时间状语扫描)
+    /// 双层过滤 dueDate,拦截"任务标题里偶然出现的日期词被误识别为 due_date"。
+    ///
+    /// 规则矩阵:
+    /// - `.userExplicit`(AI 说用户明确表达):
+    ///   - rawTranscript == nil → 保留(没法校验,信 AI)
+    ///   - rawTranscript 非空 + hasExplicitTimeCue → 保留(双重确认)
+    ///   - rawTranscript 非空 + 无 cue → 清空(AI 错标,方案 3 兜底拦截)
+    /// - `.titleMention` / `.inferred` / nil(AI 说不明确):
+    ///   - rawTranscript 非空 + 有 cue → 用 `TodoDueDateResolver.resolve` 扫 transcript 兜底算日期
+    ///   - 其他 → 清空(保守)
+    ///
+    /// 清 dueDate 时**保留 dueHint / dueTime**——用户在 ConfirmSheet 仍能看到 AI 的原始判断,手动改回。
+    ///
+    /// 设计取舍:TodoStore.swift:58/95(Siri intent / 手动批量添加)调用时不传 rawTranscript,
+    /// 走 nil 分支——`.userExplicit` 保留、其他清空。这两条路径 ExtractedTodo 通常由本地构造,
+    /// `dueDateBasis` 默认 nil,所以**有 dueDate 的会清空**。若上游构造时设了 dueDate,
+    /// 需同时显式设 `dueDateBasis = .userExplicit`,否则会被清空。
+    private static func applyDueDateBasisFilter(_ extracted: inout ExtractedTodo, rawTranscript: String?) {
+        // 无 dueDate 时无需过滤
+        guard extracted.dueDate != nil else { return }
+
+        let hasCue = TodoDueDateResolver.hasExplicitTimeCue(in: rawTranscript)
+
+        switch extracted.dueDateBasis {
+        case .userExplicit:
+            // rawTranscript 非空 + 无 cue = AI 错标,清空;其他情况保留
+            if rawTranscript != nil && !hasCue {
+                extracted.dueDate = nil
+            }
+        case .titleMention, .inferred, nil:
+            // transcript 有明确时间状语:扫 transcript 算日期兜底;否则清空
+            if let transcript = rawTranscript, hasCue,
+               let fallbackDate = TodoDueDateResolver.resolve(
+                   dueHint: transcript
+               ) {
+                extracted.dueDate = fallbackDate
+            } else {
+                extracted.dueDate = nil
+            }
+        }
     }
 
     /// 创建原始转写待办（离线降级用）

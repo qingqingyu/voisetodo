@@ -51,6 +51,110 @@ enum TodoDueDateResolver {
         return nil
     }
 
+    // MARK: - Explicit Time Cue Detection (方案 3 兜底)
+
+    /// 扫原始 transcript,判断用户是否**明确表达**了时间意图(用于反校验 AI basis)。
+    ///
+    /// 设计原则:
+    /// - **直接时间词**(今天/明天/后天/N天后/下周X/这周末/月底)命中即 `true`
+    /// - **weekday 词**默认 `true`(用户说"周日去健身"通常是 user_explicit),
+    ///   但若周围有"prepare for / 为...准备"等**目标语义**(把 weekday 当作动作目标
+    ///   而非时间状语),返回 `false`。
+    ///
+    /// 关键用例:
+    /// - `"prepare for Sunday"` → false(Sunday 是"准备"的目标,不是截止日)
+    /// - `"周日去健身"` → true(weekday + 动作)
+    /// - `"周五前交报告"` → true(weekday + 截止"前")
+    /// - `"明天交房租"` → true(直接时间词)
+    /// - `nil` / `""` → false
+    static func hasExplicitTimeCue(in text: String?) -> Bool {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return false
+        }
+        let lowercased = trimmed.lowercased()
+
+        // 1. 直接时间词命中 → true
+        if hasDirectTimeWord(trimmed, lowercased: lowercased) {
+            return true
+        }
+
+        // 2. weekday 出现:默认 true,但有"目标语义"时 false
+        if weekdayNumber(in: trimmed) != nil {
+            return !hasTargetSemantics(lowercased: lowercased, original: trimmed)
+        }
+
+        return false
+    }
+
+    /// 直接时间词检测(高置信度):今天/明天/后天/N天后/下周X/这周末/月底等。
+    /// 注意:`下周X` 在 resolve() 里走 weekday 路径,这里也复用 weekdayNumber,
+    /// 但带"下周/下星期"前缀的不算"目标语义"——直接在 hasDirectTimeWord 提前返回 true。
+    private static func hasDirectTimeWord(_ text: String, lowercased: String) -> Bool {
+        // 相对今天/明天/后天
+        if text.contains("今天") || text.contains("今晚") ||
+            lowercased.containsEnglishPhrase("today") ||
+            lowercased.containsEnglishPhrase("tonight") {
+            return true
+        }
+        if text.contains("明天") || text.contains("明晚") ||
+            lowercased.containsEnglishPhrase("tomorrow") ||
+            lowercased.containsEnglishPhrase("tmr") {
+            return true
+        }
+        if text.contains("后天") ||
+            lowercased.containsEnglishPhrase("day after tomorrow") {
+            return true
+        }
+        // N 天后 / in N days / N days from now(复用 daysOffset)
+        if daysOffset(in: lowercased, original: text) != nil {
+            return true
+        }
+        // 下周/下星期/下礼拜 + weekday(这种结构意图明确,weekday 不可能是"目标")
+        if text.contains("下周") || text.contains("下星期") || text.contains("下礼拜") ||
+            lowercased.containsEnglishPhrase("next week") {
+            return true
+        }
+        // 这周末/本周末/下周末/this weekend/next weekend
+        if text.contains("这周末") || text.contains("本周末") || text.contains("下周末") ||
+            lowercased.containsEnglishPhrase("this weekend") ||
+            lowercased.containsEnglishPhrase("next weekend") {
+            return true
+        }
+        // 月底/月初/月中/end of month
+        if text.contains("月底") || text.contains("月初") || text.contains("月中") ||
+            lowercased.containsEnglishPhrase("end of month") ||
+            lowercased.containsEnglishPhrase("end of this month") {
+            return true
+        }
+        return false
+    }
+
+    /// "目标语义"检测:把 weekday 当作动作目标而非时间状语。
+    /// 命中即返回 true(在 hasExplicitTimeCue 中取反)。
+    ///
+    /// 已知覆盖模式(保守起步,边界用测试用例固化):
+    /// - 英文:`prepare for X` / `get ready for X` / `prep for X` / `ready for X`
+    /// - 中文:`为 X 准备` / `为 X 做` / `为 X 打算`(必须在同一文本中出现"为"+ 动词)
+    ///
+    /// 不覆盖:`on Sunday` / `by Friday` / `周日去健身` / `周五前交报告`——这些是合法
+    /// 时间状语,不应被识别为目标语义。
+    private static func hasTargetSemantics(lowercased: String, original: String) -> Bool {
+        // 英文目标介词短语
+        let targetPhrases = ["prepare for", "get ready for", "prep for", "ready for"]
+        if targetPhrases.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+        // 中文"为...准备/做/打算"——必须同时出现"为"+ 目标动词
+        if original.contains("为") {
+            let targetVerbs: [String] = ["准备", "做", "打算", "筹办", "筹划"]
+            if targetVerbs.contains(where: { original.contains($0) }) {
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: - Relative Days Offset
 
     /// 英文数字词映射（"three" → 3），用于解析 "three days from now"

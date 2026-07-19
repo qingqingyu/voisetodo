@@ -559,4 +559,72 @@ final class DomainModuleTests: XCTestCase {
         ))
         XCTAssertEqual(calendar.startOfDay(for: result), calendar.startOfDay(for: calendar.date(byAdding: .day, value: 5, to: reference)!))
     }
+
+    // MARK: - hasExplicitTimeCue (方案 3 兜底核心逻辑)
+
+    /// 直接时间词(今天/明天/后天/today/tomorrow)命中即 true。
+    func testHasExplicitTimeCueDirectTimeWords() {
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "今天交房租"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "明天开会"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "今晚去健身"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "后天截止"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Pay rent tomorrow"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Submit tonight"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Meeting day after tomorrow"))
+    }
+
+    /// weekday 词单独出现(无目标语义) → true。
+    /// 覆盖"周日去健身""周五前交报告""on Friday"等合法时间状语。
+    func testHasExplicitTimeCueWeekdayWithoutTargetSemantics() {
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "周日去健身"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "周五前交报告"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "周一开会"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Meeting on Friday"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Submit by Sunday"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Pay rent next Wednesday"))
+    }
+
+    /// weekday + 目标语义(prepare for / 为 X 准备) → false。
+    /// 这是 bug 修复的核心场景:标题里的日期词不该被识别为 due_date。
+    func testHasExplicitTimeCueWeekdayWithTargetSemantics() {
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "prepare for Sunday"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "Prepare for Sunday"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "get ready for Friday"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "prep for Monday"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "为周日聚会做准备"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "为周五的报告准备"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "为周六的考试打算"))
+    }
+
+    /// 模糊时段(这周末/月底等) → true。
+    func testHasExplicitTimeCueFuzzyPeriods() {
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "这周末去爬山"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "本周末大扫除"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "下周末大扫除"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "月底前交税"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "月初交房租"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Go hiking this weekend"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Submit by end of month"))
+    }
+
+    /// 下周X / N天后 / in N days → true(明确未来时间)。
+    func testHasExplicitTimeCueRelativeOffsets() {
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "下周三交房租"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "下周一开会"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "三天后开会"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "5天后交报告"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Meeting in 3 days"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Submit three days from now"))
+        XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "next week"))
+    }
+
+    /// 空文本 / nil / 无时间词 → false。
+    func testHasExplicitTimeCueEmptyAndIrrelevant() {
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: nil))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: ""))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "   "))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "买菜"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "Buy groceries"))
+        XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "准备面试"))
+    }
 }

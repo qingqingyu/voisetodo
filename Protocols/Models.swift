@@ -103,6 +103,24 @@ struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
 
 // MARK: - AI 提取结果（从 API 返回的结构）
 
+/// AI 自报的 due_date 来源标注（用于客户端白名单过滤）。
+///
+/// 解决 bug:任务标题里偶然出现的日期词(如 "prepare for Sunday")被 AI 误识别为
+/// due_date。客户端只接受 `.userExplicit`,其他清空 due_date(由 TodoItem.from 处理)。
+///
+/// - userExplicit: 用户明确表达截止日("明天交房租"、"Submit report by Friday")
+/// - titleMention: 标题/上下文偶然提到("prepare for Sunday"、"周日聚会准备"),due_date 应为 null
+/// - inferred: AI 从模糊词推断("今晚" → 推 today + evening)
+///
+/// 向后兼容:旧 AI 响应没这字段,Codable 合成的 init(from:) 对 Optional 字段走
+/// decodeIfPresent,缺失时返回 nil。客户端把 nil 视同非 userExplicit(保守清空,
+/// 但若 rawTranscript 有明确时间状语会兜底恢复 —— 见 TodoItem.from)。
+enum DueDateBasis: String, Codable {
+    case userExplicit = "user_explicit"
+    case titleMention = "title_mention"
+    case inferred = "inferred"
+}
+
 /// 单条提取的待办（AI 返回格式）
 struct ExtractedTodo: Identifiable, Codable {
     let id: UUID
@@ -122,6 +140,8 @@ struct ExtractedTodo: Identifiable, Codable {
     var categoryHint: TodoCategory
     /// 多个提醒时间点(["15:00","17:00","19:00"]),AI schema 新增。nil = 无多时间提醒。
     var reminderTimes: [String]?
+    /// AI 自报的 due_date 来源(见 DueDateBasis)。nil = 旧响应/未提供,客户端走保守路径。
+    var dueDateBasis: DueDateBasis?
     /// 本地附加的输入语言标识；AI 响应不会提供，离线恢复用于保留原 pending locale。
     var localeIdentifier: String?
 
@@ -136,6 +156,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case recurrenceRule
         case recurrenceEnd  // 仅用于 init(from:) 解码 AI 返回的结构化截止边界
         case reminderTimes = "reminder_times"
+        case dueDateBasis = "due_date_basis"
         case priority
         case categoryHint
     }
@@ -156,6 +177,7 @@ struct ExtractedTodo: Identifiable, Codable {
         try container.encodeIfPresent(timeBucket, forKey: .timeBucket)
         try container.encodeIfPresent(recurrenceRule, forKey: .recurrenceRule)
         try container.encodeIfPresent(reminderTimes, forKey: .reminderTimes)
+        try container.encodeIfPresent(dueDateBasis, forKey: .dueDateBasis)
         try container.encode(priority, forKey: .priority)
         try container.encode(categoryHint, forKey: .categoryHint)
         // 故意跳过 .recurrenceEnd 和 localeIdentifier——
@@ -174,6 +196,7 @@ struct ExtractedTodo: Identifiable, Codable {
         priority: Priority = .normal,
         categoryHint: TodoCategory = .other,
         reminderTimes: [String]? = nil,
+        dueDateBasis: DueDateBasis? = nil,
         localeIdentifier: String? = nil
     ) {
         self.id = id
@@ -196,6 +219,7 @@ struct ExtractedTodo: Identifiable, Codable {
         // reminderTimes: 逐条过 sanitizeDueTime(校验 "HH:mm" 格式),非法值过滤掉
         self.reminderTimes = reminderTimes?.compactMap { Self.sanitizeDueTime($0) }
         self.reminderTimes = self.reminderTimes?.isEmpty == false ? self.reminderTimes : nil
+        self.dueDateBasis = dueDateBasis
         self.localeIdentifier = localeIdentifier
     }
 
