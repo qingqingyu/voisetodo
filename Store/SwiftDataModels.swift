@@ -354,11 +354,15 @@ enum WidgetTodoFetch {
         descriptor.fetchLimit = candidateLimit
         let items = try context.fetch(descriptor)
 
-        let day = calendar.startOfDay(for: today)
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+        // day 用"用户日"起点（hour=3 时是当日 03:00 或前一日 03:00）。
+        // completion 查询区间用 day 所在的自然日 [00:00, 次日 00:00)，与 occurrenceDate
+        // 存储语义（自然日 0 点）保持一致——路线 A 决策。
+        let day = DayClock.startOfUserDay(for: today, calendar: calendar)
+        let naturalDayStart = calendar.startOfDay(for: day)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: naturalDayStart) ?? naturalDayStart
         let completionDescriptor = FetchDescriptor<TodoOccurrenceCompletion>(
             predicate: #Predicate { completion in
-                completion.occurrenceDate >= day && completion.occurrenceDate < tomorrow
+                completion.occurrenceDate >= naturalDayStart && completion.occurrenceDate < tomorrow
             }
         )
         let completions = try context.fetch(completionDescriptor)

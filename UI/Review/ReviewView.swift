@@ -20,9 +20,9 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 从今天往回推算的起始日（startOfDay 归一化）。
+    /// 从今天往回推算的起始日（用户日归一化）。
     func startDay(from today: Date, calendar: Calendar) -> Date {
-        let todayStart = calendar.startOfDay(for: today)
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
         switch self {
         case .week:
             return calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
@@ -31,11 +31,11 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 区间结束日（明天 startOfDay，开区间——对齐 ReviewAggregator `[start, end)` 约定）。
-    /// ReviewAggregator 内部会对 endDay 再做 `startOfDay` 归一化，
-    /// 因此传入明天 00:00 后归一化仍为明天，确保今天被包含在区间内。
+    /// 区间结束日（明天用户日起点，开区间——对齐 ReviewAggregator `[start, end)` 约定）。
+    /// ReviewAggregator 内部会对 endDay 再做用户日归一化，
+    /// 因此传入明天起点后归一化仍为明天，确保今天被包含在区间内。
     func endDay(from today: Date, calendar: Calendar) -> Date {
-        let todayStart = calendar.startOfDay(for: today)
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
         return calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
     }
 
@@ -127,7 +127,7 @@ struct ReviewView: View {
         let end = selectedPeriod.endDay(from: today, calendar: calendar)
         let label = selectedPeriod.periodLabel(for: today, calendar: calendar)
         let createdCount = allTodos.filter { item in
-            let created = calendar.startOfDay(for: item.createdAt)
+            let created = DayClock.startOfUserDay(for: item.createdAt, calendar: calendar)
             return created >= start && created < end
         }.count
         let result = ReviewAggregator.summarize(
@@ -357,7 +357,7 @@ struct ReviewView: View {
 
         var result: [(day: Date, count: Int)] = []
         var cursor = start
-        let todayStart = calendar.startOfDay(for: today)
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
 
         while cursor <= todayStart {
             let count = summary.byDay[cursor] ?? 0

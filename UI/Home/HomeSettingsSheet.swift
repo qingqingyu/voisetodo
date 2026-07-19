@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 struct HomeSettingsSheet: View {
     @Binding var calendarWriteModeRaw: String
@@ -9,6 +10,11 @@ struct HomeSettingsSheet: View {
     /// 改了之后下次 startRecording 立即生效（不用重启 App）。
     @AppStorage(SpeechRecognitionLanguage.storageKey)
     private var speechRecognitionLanguage: String = SpeechRecognitionLanguage.auto.rawValue
+
+    /// 一天起始时刻（0–23）。0 = 自然日午夜；3 = 凌晨 3 点才算新一天。
+    /// 存 App Group UserDefaults，Widget 直接读，无需额外同步逻辑。
+    @AppStorage(DayClock.startHourKey, store: DayClock.appGroupDefaults)
+    private var dayStartHour: Int = 0
     @Environment(\.dismiss) private var dismiss
     @State private var showClearConfirmation = false
     @State private var didClearLearningData = false
@@ -56,6 +62,32 @@ struct HomeSettingsSheet: View {
                     }
                     .pickerStyle(.inline)
                     .accessibilityIdentifier("CalendarWriteModePicker")
+                }
+
+                Section {
+                    Stepper(
+                        value: $dayStartHour,
+                        in: 0...23
+                    ) {
+                        HStack {
+                            Text(String(localized: "settings.day_start_hour.label"))
+                            Spacer()
+                            Text(dayStartHourFormatted)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    .accessibilityIdentifier("DayStartHourStepper")
+
+                    Text(String(localized: "settings.day_start_hour.description"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Text(String(localized: "settings.day_start_hour.calendar_note"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(String(localized: "settings.day_start_hour.title"))
                 }
 
                 Section(String(localized: "settings.speech_language.title")) {
@@ -141,7 +173,14 @@ struct HomeSettingsSheet: View {
             .onChange(of: isPersonalizedRecognitionEnabled) { _ in
                 didClearLearningData = false
             }
+            .onChange(of: dayStartHour) { _ in
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         }
+    }
+
+    private var dayStartHourFormatted: String {
+        String(format: "%02d:00", dayStartHour)
     }
 }
 

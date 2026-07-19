@@ -145,6 +145,7 @@ targets:
       - path: Protocols/Domain/TimeBucket.swift
       - path: Protocols/Domain/RecurrenceEnd.swift
       - path: Protocols/Domain/RecurrenceEndResolver.swift
+      - path: Protocols/Domain/DayClock.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift

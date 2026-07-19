@@ -45,7 +45,7 @@ actor TodoQueryActor {
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
 
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = DayClock.startOfUserDay(for: Date())
         do {
             let items = try modelContext.fetch(descriptor)
             let completedToday = try fetchCompletionKeys(from: today, to: today)

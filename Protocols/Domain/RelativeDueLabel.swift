@@ -33,17 +33,17 @@ enum RelativeDueLabel {
             return .overdue
         }
 
-        let dueDay = calendar.startOfDay(for: dueDate)
-        let today = calendar.startOfDay(for: now)
+        let dueDay = DayClock.startOfUserDay(for: dueDate, calendar: calendar)
+        let today = DayClock.startOfUserDay(for: now, calendar: calendar)
 
         if dueDay < today {
             return .overdue
         }
-        if calendar.isDate(dueDay, inSameDayAs: today) {
+        if DayClock.isSameUserDay(dueDay, today, calendar: calendar) {
             return .today
         }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today),
-           calendar.isDate(dueDay, inSameDayAs: tomorrow) {
+           DayClock.isSameUserDay(dueDay, tomorrow, calendar: calendar) {
             return .tomorrow
         }
         return .future(dueDay)

@@ -194,7 +194,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var manualInputTask: Task<Void, Never>?
     /// Deeplink 重试任务（todos 尚未加载时延后重试）。同样需要 onDisappear cancel。
     @State private var deepLinkTask: Task<Void, Never>?
-    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var selectedDate = DayClock.startOfUserDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
     /// 月历 occurrence 缓存：由后台 `queryActor` 异步加载，主线程不再做 SwiftData fetch/展开。
@@ -250,11 +250,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 本周完成数(用于首页"本周小结"卡片)。
     private var weeklyCompletedCount: Int {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let today = DayClock.startOfUserDay(for: Date(), calendar: cal)
         let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
         return store.todos.filter { $0.isCompleted }.filter { todo in
             guard let completed = todo.completedAt else { return false }
-            let day = cal.startOfDay(for: completed)
+            let day = DayClock.startOfUserDay(for: completed, calendar: cal)
             return day >= weekStart && day <= today
         }.count
     }
@@ -640,10 +640,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         // 兜底：直接遍历 store.todos，覆盖 dueDate 命中 selectedDate 的非重复任务。
         // 重复任务在 monthOccurrences 加载前先不计入（保守，避免重复渲染高估）。
-        let day = calendar.startOfDay(for: selectedDate)
+        let day = DayClock.startOfUserDay(for: selectedDate, calendar: calendar)
         let onDay = store.todos.filter { todo in
             guard let due = todo.dueDate else { return false }
-            return calendar.isDate(due, inSameDayAs: day)
+            return DayClock.isSameUserDay(due, day, calendar: calendar)
         }
         let completed = onDay.filter { $0.isCompleted }.count
         return (onDay.count, completed)
@@ -1414,7 +1414,7 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private func startEntranceAnimation() {
         if !hasStartedEntranceAnimation {
-            let today = calendar.startOfDay(for: Date())
+            let today = DayClock.startOfUserDay(for: Date(), calendar: calendar)
             selectedDate = today
             visibleMonthAnchor = today
             hasStartedEntranceAnimation = true
@@ -1468,7 +1468,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private func jumpToToday() {
-        let today = calendar.startOfDay(for: Date())
+        let today = DayClock.startOfUserDay(for: Date(), calendar: calendar)
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today

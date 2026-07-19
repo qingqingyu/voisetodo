@@ -16,7 +16,7 @@ enum TodoDueDateResolver {
 
         guard !text.isEmpty else { return nil }
 
-        let today = calendar.startOfDay(for: referenceDate)
+        let today = DayClock.startOfUserDay(for: referenceDate, calendar: calendar)
         let lowercasedText = text.lowercased()
 
         if text.contains("今天") || text.contains("今晚") ||

@@ -12,7 +12,10 @@ enum WidgetTodoFilter {
     ) -> [TodoItemData] {
         guard limit > 0 else { return [] }
 
-        let day = calendar.startOfDay(for: today)
+        // day 用"用户日"起点（如 hour=3 时是当日 03:00）。
+        // 下游 rule.occurs / TodoOccurrenceData.dayKey 内部都会 startOfDay 归一化为该自然日 0 点，
+        // 所以传 userDay 起点等价于判断"用户日开始的那一自然日"——与 occurrenceKey 存储语义一致。
+        let day = DayClock.startOfUserDay(for: today, calendar: calendar)
         var scheduled: [TodoItemData] = []
         var unscheduled: [TodoItemData] = []
 

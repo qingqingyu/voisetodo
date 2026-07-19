@@ -15,7 +15,7 @@ struct ReviewSummary: Hashable, Equatable, Sendable {
     let total: Int
     /// 分类计数。
     let byCategory: [TodoCategory: Int]
-    /// 每天完成数(startOfDay 归一化)。
+    /// 每天完成数(用户日归一化)。
     let byDay: [Date: Int]
     /// 连续有完成的天数。
     let streakDays: Int
@@ -33,8 +33,8 @@ enum ReviewAggregator {
     ///
     /// - Parameters:
     ///   - events: 完成事件列表(已从 SwiftData 转换好)
-    ///   - startDay: 区间起始(按 startOfDay 归一化,闭区间)
-    ///   - endDay: 区间结束(按 startOfDay 归一化,开区间——不含当天)
+    ///   - startDay: 区间起始(按用户日归一化,闭区间)
+    ///   - endDay: 区间结束(按用户日归一化,开区间——不含当天)
     ///   - calendar: 日历,默认 .current
     ///   - createdCount: 可选分母,用于算 completionRate
     /// - Returns: 聚合后的回顾摘要
@@ -45,8 +45,8 @@ enum ReviewAggregator {
         calendar: Calendar = .current,
         createdCount: Int? = nil
     ) -> ReviewSummary {
-        let normalizedStart = calendar.startOfDay(for: startDay)
-        let normalizedEnd = calendar.startOfDay(for: endDay)
+        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
+        let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
 
         // 空区间或无事件 → 全零摘要
         guard normalizedStart < normalizedEnd, !events.isEmpty else {
@@ -64,7 +64,7 @@ enum ReviewAggregator {
 
         // 过滤到 [startDay, endDay) 区间
         let inRange = events.filter { event in
-            let day = calendar.startOfDay(for: event.completedAt)
+            let day = DayClock.startOfUserDay(for: event.completedAt, calendar: calendar)
             return day >= normalizedStart && day < normalizedEnd
         }
 
@@ -87,10 +87,10 @@ enum ReviewAggregator {
             byCategory[event.category, default: 0] += 1
         }
 
-        // byDay: group by startOfDay, count
+        // byDay: group by userDay, count
         var byDay: [Date: Int] = [:]
         for event in inRange {
-            let day = calendar.startOfDay(for: event.completedAt)
+            let day = DayClock.startOfUserDay(for: event.completedAt, calendar: calendar)
             byDay[day, default: 0] += 1
         }
 

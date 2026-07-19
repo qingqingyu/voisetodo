@@ -167,7 +167,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 }
                             } else {
                                 Button {
-                                    self.editedDueDate = Calendar.current.startOfDay(for: Date())
+                                    self.editedDueDate = DayClock.startOfUserDay(for: Date())
                                     checkForChanges()
                                 } label: {
                                     HStack(spacing: WarmSpacing.xs) {
