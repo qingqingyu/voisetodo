@@ -710,11 +710,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .font(WarmFont.caption(12))
                     .fontWeight(.semibold)
             }
-            .foregroundColor(isGrid ? WarmTheme.textSecondary : .white)
+            // 颜色固定，不随 isGrid 变化——只有图标和文案切换状态（用户反馈：
+            // 切换网格/列表时按钮不应该变色）。
+            .foregroundColor(WarmTheme.textSecondary)
             .padding(.horizontal, 10)
             .frame(height: WarmSize.touch)
             .background(
-                Capsule().fill(isGrid ? WarmTheme.cardBackground : WarmTheme.primary)
+                Capsule().fill(WarmTheme.cardBackground)
             )
             .contentShape(Capsule())
         }
