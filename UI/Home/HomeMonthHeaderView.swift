@@ -190,8 +190,15 @@ enum HomeLayoutMetrics {
     /// 选中/今天高亮圆直径：正常行高下用固定 WarmSize.calendarDayCircle（30pt），
     /// 矮行自适应缩小。扣除量 8 = 圆点槽位(6) + VStack spacing(2)，
     /// 保证「圆 + 间距 + 圆点槽」恰好装进 rowHeight 不溢出。
+    ///
+    /// 下限 18pt（而非放任缩到 dayRowMinHeight-8=14pt）：14pt fixed 字号的两位数日期
+    /// （如 "28"）在 14pt 容器里会被挤压到接近 0 宽——这类瞬时挤压会触发 SwiftUI/iOS 17
+    /// 的已知渲染缓存 bug（同类根因见 HomeView.swift 页头月份标题的 "..." 冻结注释）：
+    /// Text 一旦某一帧被压到极小尺寸，即使之后空间恢复也会永久卡死显示 "..."。
+    /// LazyVGrid 懒加载下只有恰好在那一帧被创建的格子会中招，表现为"部分格子变省略号"。
+    /// 18pt 留够两位数的安全边界，从根上不让 Text 进入这个退化尺寸。
     static func selectionCircleDiameter(for rowHeight: CGFloat) -> CGFloat {
-        min(WarmSize.calendarDayCircle, rowHeight - 8)
+        max(18, min(WarmSize.calendarDayCircle, rowHeight - 8))
     }
     /// 周视图单行期望高度（舒适触摸目标 + 视觉留白）。
     /// 周视图只有 1 行，若套用高度 cap 会把单行撑得过高；
