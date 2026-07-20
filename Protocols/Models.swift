@@ -4,8 +4,9 @@ import Foundation
 
 /// 优先级
 enum Priority: String, Codable, CaseIterable, Sendable {
-    case high
+    case low
     case normal
+    case high
 
     /// 从原始字符串容错构造：大小写不敏感，未知/缺失回落 .normal。
     /// 用于解码 AI 响应这类不可信边界，避免单个未知值导致整次解码失败。

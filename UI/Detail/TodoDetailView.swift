@@ -129,6 +129,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
                             HStack(spacing: WarmSpacing.sm) {
+                                priorityButton(.low, label: String(localized: "detail.priority.low"), icon: "arrow.down")
                                 priorityButton(.normal, label: String(localized: "detail.priority.normal"), icon: "minus")
                                 priorityButton(.high, label: String(localized: "detail.priority.high"), icon: "exclamationmark")
                             }
@@ -348,11 +349,13 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .buttonStyle(.plain)
     }
 
-    /// 颜色语义跟优先级强度对应:
-    /// - High 选中 → 实心 urgent + 白字(强调态,危险/紧急)
-    /// - Normal 选中 → 描边 textSecondary + textPrimary(已选定但不强调)
-    /// - 未选中 → 浅灰底 + textSecondary
-    /// Normal ≠ 强调态,只是「已选定」——避免橙色实心让 Normal 看起来像高优先级。
+    /// 颜色语义跟优先级强度对应(三档都是实心填充,深浅表达强度,不再用描边):
+    /// - High 选中   → 实心 urgent(红) + 白字(强调态,危险/紧急)
+    /// - Normal 选中 → 实心 primary(中珊瑚橙) + 白字(标准强调)
+    /// - Low 选中    → 实心 primaryLight(浅珊瑚) + textPrimary(弱强调,浅底配深字保证可读)
+    /// - 未选中      → 浅灰底 + textSecondary
+    /// 之前 Normal 选中是细描边,跟未选中的浅灰底几乎分不清——统一改实心后
+    /// 三档的"选中/未选中"对比都很强,颜色深浅本身就是强度提示,一眼能看出选的是哪档。
     private func priorityButton(_ priority: Priority, label: String, icon: String) -> some View {
         let isSelected = editedPriority == priority
         return Button {
@@ -367,7 +370,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             .background(priorityButtonBackground(isSelected: isSelected, priority: priority))
             .foregroundColor(
                 isSelected
-                    ? (priority == .high ? .white : WarmTheme.textPrimary)
+                    ? (priority == .low ? WarmTheme.textPrimary : .white)
                     : WarmTheme.textSecondary
             )
         }
@@ -380,10 +383,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @ViewBuilder
     private func priorityButtonBackground(isSelected: Bool, priority: Priority) -> some View {
         let shape = RoundedRectangle(cornerRadius: WarmRadius.card)
-        if isSelected && priority == .high {
-            shape.fill(WarmTheme.urgent)
-        } else if isSelected {
-            shape.stroke(WarmTheme.textSecondary, lineWidth: 1)
+        if isSelected {
+            switch priority {
+            case .high:
+                shape.fill(WarmTheme.urgent)
+            case .normal:
+                shape.fill(WarmTheme.primary)
+            case .low:
+                shape.fill(WarmTheme.primaryLight)
+            }
         } else {
             shape.fill(WarmTheme.secondaryBackground)
         }

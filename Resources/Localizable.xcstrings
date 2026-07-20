@@ -1361,6 +1361,22 @@
         }
       }
     },
+    "detail.priority.low": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低优先级"
+          }
+        }
+      }
+    },
     "detail.priority.normal": {
       "localizations": {
         "en": {
