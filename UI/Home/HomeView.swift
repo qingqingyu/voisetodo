@@ -489,33 +489,27 @@ struct HomeView<Store: HomeTodoStore>: View {
                             .foregroundColor(WarmTheme.textSecondary)
                     }
                 } else {
-                    // 日历 tab：月份 + 「回到今天」胶囊（仅浏览月/周 ≠ 当前时渲染）。
-                    // 内层 layoutPriority(1)：标题 vs 胶囊——切到非当前月时 backToTodayCapsule
-                    // 出现挤压水平空间，SwiftUI 会把声明了 minimumScaleFactor 的 Text 当作
-                    // "可压缩"目标——实测在 iOS 17 中文 locale 下"8月"也会被压成 0 宽度并
-                    // 触发"..."布局缓存不刷新。layoutPriority(1) 让 Text 优先于胶囊拿到所需宽度。
-                    // 已知限制：若未来支持长字符串月份名（如俄语），需重新引入 minimumScaleFactor。
+                    // 日历 tab：月份标题；浏览月/周 ≠ 当前时，标题后挂一个小回退箭头，
+                    // 整个「标题 + 箭头」作为一个 Button 跳回今天。
                     //
-                    // 外层再包一层 layoutPriority(1)（用户反馈修复）：上面那层优先级只在
-                    // "标题 vs 胶囊"这对兄弟之间生效，管不到外层 HStack 里跟统计环/Grid切换/
-                    // 设置齿轮抢空间——英文 locale 下"Back to today"比中文"回到今天"长得多，
-                    // 叠上长月份名（"September"）+ Grid 按钮 + 齿轮，一整行会超宽。外层 HStack
-                    // 压缩时只会压这个"标题+胶囊"整体（其余都是固定尺寸按钮，压不动），
-                    // 结果标题被压成几乎 0 宽、只剩一道笔画残影。加这层 priority 让 Spacer
-                    // 先让出空间，把这个整体保护起来。
-                    HStack(spacing: WarmSpacing.sm) {
-                        Text(calendarMonthTitle)
-                            .font(WarmFont.serifDisplay(30))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .lineLimit(1)
+                    // 设计取舍：原先用"回到今天"文字胶囊——英文"Back to today"较长，
+                    // 叠上长月份名（"September"）+ Grid 按钮 + 齿轮，一整行会超宽，
+                    // 月份名被挤到几乎 0 宽、向左滑月份时直接"消失"。改成 chevron 后
+                    // 占用宽度从 ~100pt 压到 ~16pt，月份名恒定拿到所需空间。
+                    //
+                    // monthTitleText 是「当前月 Text」与「backToTodayTitleButton 内 Text」
+                    // 的共享样式来源——避免两处字号/颜色/scaleFactor 分叉。
+                    //
+                    // layoutPriority(1) 保护月份标题优先于 Spacer/statsBadge/Grid 按钮拿到
+                    // 所需宽度，避免再次触发月份名被挤到 0 宽（不论当前/非当前月分支均需要）。
+                    if isViewingCurrentPeriod {
+                        monthTitleText
+                            .frame(minHeight: WarmSize.touch, alignment: .center)
                             .layoutPriority(1)
-
-                        if !isViewingCurrentPeriod {
-                            backToTodayCapsule
-                                .transition(.opacity)
-                        }
+                    } else {
+                        backToTodayTitleButton
+                            .layoutPriority(1)
                     }
-                    .layoutPriority(1)
                 }
 
                 Spacer()
@@ -596,32 +590,38 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
     }
 
-    /// 「回到今天」胶囊（设计稿 today-dot）：小圆点 + 文字，浅主色底 + 细描边。
-    /// 仅当浏览月/周 ≠ 今天所在月/周时渲染；点击跳回今天并选中今天。
-    private var backToTodayCapsule: some View {
-        Button(action: jumpToToday) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(WarmTheme.primary)
-                    .frame(width: 6, height: 6)
+    /// 日历 tab 月份标题的共享样式（当前月 Text 与 `backToTodayTitleButton` 内的 Text 共用）。
+    /// 提取为单一来源避免两处 font/color/scaleFactor 分叉。
+    private var monthTitleText: some View {
+        Text(calendarMonthTitle)
+            .font(WarmFont.serifDisplay(30))
+            .foregroundColor(WarmTheme.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+    }
 
-                Text(String(localized: "home.back_to_today"))
-                    // fixed 字号 + lineLimit(1) + fixedSize:解决 Dynamic Type 放大后字号过大 +
-                    // 英文较长换行。fixedSize 让 capsule 水平外扩跟随文本,不 truncation。
-                    // 已知限制:仅支持 zh/en(短字符串);若未来加长字符串语言(如俄语 19 字符),
-                    // capsule 可能挤占旁边 monthTitle 空间——届时改用 minimumScaleFactor 方案。
-                    .font(WarmFont.headlineFixed(11))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+    /// 「回到今天」标题按钮：月份名 + 小回退箭头（chevron.left），整个区域可点。
+    /// 仅当浏览月/周 ≠ 今天所在月/周时渲染；点击跳回今天并选中今天。
+    ///
+    /// 取代原"回到今天"文字胶囊——胶囊宽度（~100pt）在英文 locale + 长月份名下
+    /// 会挤占月份标题，导致向左滑月份时月份名被压成 0 宽消失。chevron 仅占 ~16pt，
+    /// 让月份名恒定拿到完整宽度。
+    ///
+    /// 设计约束：
+    /// - `monthTitleText` 复用月份标题样式，保证与当前月分支视觉一致。
+    /// - `frame(minHeight: WarmSize.touch)` 把整个 HStack 撑到 ≥ 44pt 以满足 HIG 点击目标，
+    ///   与当前月分支 frame 对齐避免切月时标题位置跳动。
+    private var backToTodayTitleButton: some View {
+        Button(action: jumpToToday) {
+            HStack(spacing: 4) {
+                monthTitleText
+
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(WarmTheme.primary)
             }
-            .foregroundStyle(WarmTheme.primaryDark)
-            .padding(.horizontal, 10)
-            .padding(.vertical, WarmSpacing.xxs)
-            .background(
-                Capsule()
-                    .fill(WarmTheme.primary.opacity(0.1))
-                    .overlay(Capsule().stroke(WarmTheme.primary.opacity(0.22), lineWidth: 1))
-            )
+            .frame(minHeight: WarmSize.touch, alignment: .center)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("TodayMonthButton")
