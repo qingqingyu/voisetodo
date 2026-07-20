@@ -13,6 +13,11 @@ struct TodoItemRow: View {
 
     @State private var offset: CGFloat = 0
     @State private var opacity: Double = 1.0
+    /// 删除动画的 unstructured task 句柄。视图销毁 / 重复点击时必须 cancel,
+    /// 否则 sleep 结束后仍会调 onDelete()——闭包捕获的 @Binding todo 可能已失效。
+    /// 用 `Task<Void, Error>` 而非 `Never`:Task.sleep 闭包 throwing(只 throw
+    /// CancellationError),Failure=Never 编译失败。
+    @State private var deleteTask: Task<Void, Error>?
 
     /// 合并所有时间相关字段成一个用户可读的字符串。
     /// 拼装规则抽到了 `TodoTimeDisplayComposer`（与 HomeView WarmTodoCard 共用），
@@ -137,6 +142,9 @@ struct TodoItemRow: View {
                 finishEditing()
             }
         }
+        .onDisappear {
+            deleteTask?.cancel()
+        }
     }
 
     // MARK: - Actions
@@ -155,15 +163,37 @@ struct TodoItemRow: View {
     }
 
     private func performDelete() {
-        withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
-            offset = 300
-            opacity = 0
-        }
-
-        Task {
-            try? await Task.sleep(nanoseconds: UInt64(UIConfig.deleteAnimationDuration * 1_000_000_000))
+        // 重复点击或动画途中再次触发:cancel 旧 task(旧 task 的 catch 会判断
+        // "自己是否还是 deleteTask 最新值",是才复位视觉状态,避免与新 task 的
+        // 动画打架),再起新 task。保持删除动画可打断 + 不累积多个 onDelete 调用。
+        deleteTask?.cancel()
+        let task = Task { @MainActor in
+            withAnimation(WarmAnimation.springFast) {
+                offset = 300
+                opacity = 0
+            }
+            do {
+                try await Task.sleep(nanoseconds: UInt64(UIConfig.deleteAnimationDuration * 1_000_000_000))
+            } catch is CancellationError {
+                // 不静默吞(违反 CLAUDE.md 错误显式传播),显式 catch CancellationError。
+                // 仅当当前 task 仍是 deleteTask 最新持有者(即视图未销毁且未被新 performDelete
+                // 覆盖)时才复位视觉状态:若已被新 task 覆盖,让新 task 的 withAnimation 独占,
+                // 避免连击时旧 task 的复位与新 task 的位移动画互相打架。
+                // Task 是引用类型,=== 比较句柄;@State 内部 storage 是引用语义,
+                // 闭包内读到的是最新值。
+                guard deleteTask === task else { return }
+                withAnimation(WarmAnimation.springFast) {
+                    offset = 0
+                    opacity = 1
+                }
+                return
+            }
+            // 双重 guard:await 后视图可能已销毁(虽然 onDisappear cancel 了 task,
+            // 但 cancel 信号送达有窗口),用 Task.isCancelled 兜底防止调用已失效闭包。
+            guard !Task.isCancelled else { return }
             onDelete()
         }
+        deleteTask = task
     }
 }
 
