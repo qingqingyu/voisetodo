@@ -490,11 +490,19 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
                 } else {
                     // 日历 tab：月份 + 「回到今天」胶囊（仅浏览月/周 ≠ 当前时渲染）。
-                    // layoutPriority(1)：切到非当前月时 backToTodayCapsule 出现挤压水平空间，
-                    // SwiftUI 会把声明了 minimumScaleFactor 的 Text 当作"可压缩"目标——
-                    // 实测在 iOS 17 中文 locale 下"8月"也会被压成 0 宽度并触发"..."布局缓存不刷新。
-                    // layoutPriority(1) 让 Text 优先于 Spacer 拿到所需宽度，绕开压缩路径。
+                    // 内层 layoutPriority(1)：标题 vs 胶囊——切到非当前月时 backToTodayCapsule
+                    // 出现挤压水平空间，SwiftUI 会把声明了 minimumScaleFactor 的 Text 当作
+                    // "可压缩"目标——实测在 iOS 17 中文 locale 下"8月"也会被压成 0 宽度并
+                    // 触发"..."布局缓存不刷新。layoutPriority(1) 让 Text 优先于胶囊拿到所需宽度。
                     // 已知限制：若未来支持长字符串月份名（如俄语），需重新引入 minimumScaleFactor。
+                    //
+                    // 外层再包一层 layoutPriority(1)（用户反馈修复）：上面那层优先级只在
+                    // "标题 vs 胶囊"这对兄弟之间生效，管不到外层 HStack 里跟统计环/Grid切换/
+                    // 设置齿轮抢空间——英文 locale 下"Back to today"比中文"回到今天"长得多，
+                    // 叠上长月份名（"September"）+ Grid 按钮 + 齿轮，一整行会超宽。外层 HStack
+                    // 压缩时只会压这个"标题+胶囊"整体（其余都是固定尺寸按钮，压不动），
+                    // 结果标题被压成几乎 0 宽、只剩一道笔画残影。加这层 priority 让 Spacer
+                    // 先让出空间，把这个整体保护起来。
                     HStack(spacing: WarmSpacing.sm) {
                         Text(calendarMonthTitle)
                             .font(WarmFont.serifDisplay(30))
@@ -507,6 +515,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                                 .transition(.opacity)
                         }
                     }
+                    .layoutPriority(1)
                 }
 
                 Spacer()
