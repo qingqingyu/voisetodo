@@ -104,8 +104,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     }
 
                     // 分类（自适应网格：7 个分类按屏宽换行，避免横向滚动藏起「其他」）
-                    // minimum 64pt：emoji+文字改竖排后，每列只需容纳文字本身的宽度
-                    // （不用再和 emoji 抢横向空间），64pt 足够放下 13pt 字体的 "Finance"/"Social"。
+                    // minimum 64pt：去掉 emoji 后每列只需容纳文字本身宽度，
+                    // 64pt 足够放下 13pt 字体的 "Finance"/"Social"，
+                    // 配合 chip 内 lineLimit(1) + minimumScaleFactor 兜底 Dynamic Type 最大档。
                     detailCard {
                         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                             Text(String(localized: "detail.section.category"))
@@ -323,28 +324,20 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     // MARK: - Chips（自适应网格 + 统一实心填充选中样式）
 
-    /// emoji 在上、文字在下的竖排布局（而非横排 HStack）：
-    /// 横排时 emoji + 长分类名（"Finance"/"Social"）在窄格子里必须共享一行宽度，
-    /// 文字没有 lineLimit 就会被迫折成两三行，而且 emoji 视觉居中、文字被挤右侧，
-    /// 两者重心对不齐。竖排让每个元素独占整行宽度，天然垂直居中对齐，
-    /// 配合 lineLimit(1) + minimumScaleFactor 兜底极端字体缩放场景。
     private func categoryChip(_ category: TodoCategory) -> some View {
         let isSelected = editedCategory == category
         return Button {
             withAnimation(WarmAnimation.springStandard) { editedCategory = category; checkForChanges() }
         } label: {
-            VStack(spacing: WarmSpacing.xxs) {
-                Text(category.emoji).font(.system(size: 18))
-                Text(category.displayName)
-                    .font(WarmFont.caption(12))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, WarmSpacing.xs)
-            .padding(.vertical, WarmSpacing.sm)
-            .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
-            .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+            Text(category.displayName)
+                .font(WarmFont.caption(13))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, WarmSpacing.sm)
+                .padding(.vertical, WarmSpacing.xs)
+                .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
+                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
         }
         .buttonStyle(.plain)
     }
