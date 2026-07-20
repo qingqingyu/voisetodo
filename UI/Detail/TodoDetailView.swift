@@ -72,7 +72,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .foregroundColor(WarmTheme.textSecondary)
                         }
                         TextField(String(localized: "detail.title_placeholder"), text: $editedTitle, axis: .vertical)
-                            .font(WarmFont.headline(18))
+                            // 20pt：比 Notes(14pt) 拉开明显级差，确立标题是页面视觉重心
+                            // （原先 18pt vs Notes 16pt 太接近，两者读起来重量差不多）。
+                            .font(WarmFont.headline(20))
                             .foregroundColor(WarmTheme.textPrimary)
                             .lineLimit(1...2)
                             .onChange(of: editedTitle) { _, _ in checkForChanges() }
@@ -91,8 +93,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             Text(String(localized: "detail.section.notes"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
+                            // 14pt：比 Title(20pt) 明显降一级，正文不再跟标题抢视觉重量；
+                            // 字号收小后满宽文本块的视觉密度也随之减轻（原 16pt 显得笨重）。
                             TextField(String(localized: "detail.notes_placeholder"), text: $editedDetail, axis: .vertical)
-                                .font(WarmFont.body(16))
+                                .font(WarmFont.body(14))
                                 .foregroundColor(WarmTheme.textPrimary)
                                 .lineLimit(1...3)
                                 .onChange(of: editedDetail) { _, _ in checkForChanges() }
