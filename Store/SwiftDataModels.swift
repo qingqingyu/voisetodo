@@ -217,15 +217,24 @@ extension TodoItem {
         // 方案 2 + 3:先用 basis 白名单 + transcript 兜底过滤 dueDate。
         // 副作用:可能改写 extracted.dueDate(清空或兜底重算);其他字段不动。
         var effective = extracted
-        applyDueDateBasisFilter(&effective, rawTranscript: rawTranscript)
+        let dueDateWasFilteredOut = applyDueDateBasisFilter(&effective, rawTranscript: rawTranscript)
 
-        // 优先用 AI 算好的绝对日期，其次文本解析兜底
-        let resolvedDate = effective.dueDate ??
-            TodoDueDateResolver.resolve(
-                dueHint: effective.dueHint,
-                title: effective.title,
-                detail: effective.detail
-            )
+        // 优先用 AI 算好的绝对日期，其次文本解析兜底。
+        // 但若 applyDueDateBasisFilter 已判定该清空 dueDate(AI 错标 / 无明确时间 cue),
+        // 不再走 resolve 兜底重算——否则两次判断会矛盾:
+        // 例如 "Prepare for Sunday" 被 hasExplicitTimeCue 判为目标语义无 cue 而清空,
+        // resolve 看到 "Sunday" 又解析成下周日。basisFilter 的"清空"必须是最终判决。
+        let resolvedDate: Date?
+        if dueDateWasFilteredOut {
+            resolvedDate = nil
+        } else {
+            resolvedDate = effective.dueDate ??
+                TodoDueDateResolver.resolve(
+                    dueHint: effective.dueHint,
+                    title: effective.title,
+                    detail: effective.detail
+                )
+        }
         let timed = TodoDueTimeResolver.combine(date: resolvedDate, dueTime: effective.dueTime)
         // 时段⇒今天：只有模糊时段没日期时补今天，让任务落进「今日/时段」而非 Unscheduled。
         let effectiveDate = TodoScheduleDefaults.effectiveDueDate(
@@ -272,9 +281,12 @@ extension TodoItem {
     /// 走 nil 分支——`.userExplicit` 保留、其他清空。这两条路径 ExtractedTodo 通常由本地构造,
     /// `dueDateBasis` 默认 nil,所以**有 dueDate 的会清空**。若上游构造时设了 dueDate,
     /// 需同时显式设 `dueDateBasis = .userExplicit`,否则会被清空。
-    private static func applyDueDateBasisFilter(_ extracted: inout ExtractedTodo, rawTranscript: String?) {
+    /// 返回值:`true` = 本次调用清空了 dueDate(AI 错标 / 无明确时间 cue),
+    /// 调用方应跳过 `TodoDueDateResolver.resolve` 兜底重算;`false` = 未清空(短路 /
+    /// 保留 / 兜底改写),调用方可继续走原本的 ?? resolve 兜底逻辑。
+    private static func applyDueDateBasisFilter(_ extracted: inout ExtractedTodo, rawTranscript: String?) -> Bool {
         // 无 dueDate 时无需过滤
-        guard extracted.dueDate != nil else { return }
+        guard extracted.dueDate != nil else { return false }
 
         let hasCue = TodoDueDateResolver.hasExplicitTimeCue(in: rawTranscript)
 
@@ -283,7 +295,9 @@ extension TodoItem {
             // rawTranscript 非空 + 无 cue = AI 错标,清空;其他情况保留
             if rawTranscript != nil && !hasCue {
                 extracted.dueDate = nil
+                return true
             }
+            return false
         case .titleMention, .inferred, nil:
             // transcript 有明确时间状语:扫 transcript 算日期兜底;否则清空
             if let transcript = rawTranscript, hasCue,
@@ -291,8 +305,10 @@ extension TodoItem {
                    dueHint: transcript
                ) {
                 extracted.dueDate = fallbackDate
+                return false
             } else {
                 extracted.dueDate = nil
+                return true
             }
         }
     }

@@ -125,7 +125,7 @@ final class StoreTests: XCTestCase {
         XCTAssertFalse(sut.todos.first?.hasDueTime ?? true)
     }
 
-    func testAddTodoWithFuzzyTimeButNoDateRemainsUnscheduled() throws {
+    func testAddTodoWithFuzzyTimeButNoDateFallsBackToToday() throws {
         let extractedTodo = ExtractedTodo(
             title: "晚上去健身",
             detail: "晚上去健身",
@@ -138,7 +138,16 @@ final class StoreTests: XCTestCase {
         sut.refreshTodos()
 
         let saved = try XCTUnwrap(sut.todos.first)
-        XCTAssertNil(saved.dueDate)
+        // "时段⇒今天"决策(commit 4cba205):只有 timeBucket 没日期时补今天 0 点,
+        // 让任务落进「今日/时段」分区而非 Unscheduled——
+        // 否则卡片显示 "Evening" 但任务在 Unscheduled,自相矛盾。
+        let savedDueDate = try XCTUnwrap(saved.dueDate, "时段⇒今天决策应补今天")
+        let calendar = Calendar.current
+        XCTAssertEqual(
+            calendar.startOfDay(for: savedDueDate),
+            calendar.startOfDay(for: Date()),
+            "补的 dueDate 应是今天 0 点"
+        )
         XCTAssertFalse(saved.hasDueTime)
         XCTAssertEqual(saved.timeBucket, .evening)
     }

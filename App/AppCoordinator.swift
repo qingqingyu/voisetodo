@@ -839,6 +839,16 @@ final class AppCoordinator: ObservableObject {
                 showToast(message: ErrorMessages.serviceBusy, style: .warning)
             case .storageReadFailed, .storageWriteFailed:
                 showToast(message: ErrorMessages.storageError, style: .warning)
+            case .apiTimeout:
+                showToast(message: ErrorMessages.apiTimeout, style: .warning)
+            case .apiServerError:
+                showToast(message: ErrorMessages.apiError, style: .warning)
+            case .apiResponseInvalid:
+                showToast(message: ErrorMessages.apiResponseInvalidMessage, style: .warning)
+            case .jsonParsingFailed:
+                showToast(message: ErrorMessages.jsonParsingFailed, style: .warning)
+            case .transcriptTooLong:
+                showToast(message: ErrorMessages.transcriptTooLong, style: .warning)
             default:
                 // 未明确归类的 VoiceTodoError case——走通用兜底文案(与 else 分支口径一致),
                 // 以防未来新增 case 忘记加分支时暴露 LocalizedError 默认的程序员向文案。
