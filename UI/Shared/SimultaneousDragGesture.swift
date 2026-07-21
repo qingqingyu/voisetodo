@@ -155,7 +155,7 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
             // minimumDistance 语义对齐 DragGesture:任一方向位移超过阈值才算手势成立。
             // 位移不足则不调用 onEnded,等价于"手势未激活"。
             guard abs(translation.x) >= minD || abs(translation.y) >= minD else { return }
-            coordinator.onEnded?(DragTranslation(startLocation: startLocation, location: location))
+            coordinator.onEnded?(DragTranslation(startLocation: startLocation, location: location, velocity: .zero))
         case .cancelled, .failed:
             // .cancelled 表示手势被系统中断(如 ScrollView / 系统边缘滑动抢手势),
             // 非用户主动结束——此时用部分位移触发 onEnded 会误切换状态,故不调用。
