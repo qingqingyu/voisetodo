@@ -579,13 +579,12 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .buttonStyle(.plain)
     }
 
-    /// chip 容器:宽度够时用 HStack,不够时退化为横向 ScrollView,避免手势冲突与默认溢出。
+    /// chip 容器:FlowLayout 自适应换行。默认档位 4 chip 一行;AX5 / 长词撑破
+    /// 屏宽时自动换行到 2 行 / 3 行,所有 chip 完整可见不滚动、不缩字、不截断。
+    /// chip 自身已用 fixedSize 暴露稳定 intrinsic 宽度,FlowLayout 按内容算行宽。
     private func chipRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: WarmSpacing.xs) { content() }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: WarmSpacing.xs) { content() }
-            }
+        FlowLayout(horizontalSpacing: WarmSpacing.xs, verticalSpacing: WarmSpacing.xs) {
+            content()
         }
     }
 
