@@ -608,6 +608,38 @@
         }
       }
     },
+    "a11y.timeline.due_time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Due time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "钟点"
+          }
+        }
+      }
+    },
+    "a11y.timeline.set_hour" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set time for tasks in this slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为本时段任务设钟点"
+          }
+        }
+      }
+    },
     "a11y.today_month" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2582,6 +2614,22 @@
         }
       }
     },
+    "home.assigned_to_bucket" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" → %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" → %@"
+          }
+        }
+      }
+    },
     "home.assigned_to_date" : {
       "localizations" : {
         "en" : {
@@ -2959,6 +3007,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "项待办"
+          }
+        }
+      }
+    },
+    "home.timeline.hour_assigned" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" set to %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" 已设为 %@"
+          }
+        }
+      }
+    },
+    "home.timeline.no_candidates" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No tasks to assign a time to in this slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本时段没有可设钟点的任务"
+          }
+        }
+      }
+    },
+    "home.timeline.set_hour" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set time…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设钟点…"
+          }
+        }
+      }
+    },
+    "home.unassigned_from_day" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" moved to Unscheduled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" 已移回未安排"
           }
         }
       }

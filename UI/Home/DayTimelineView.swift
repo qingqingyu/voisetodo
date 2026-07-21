@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// `BucketHourSheet` 触发器。`TimeBucket` 自身非 `Identifiable`,
+/// 用 wrapper 让 `.sheet(item:)` 可绑 `TimeBucket?`。
+private struct BucketHourSheetItem: Identifiable {
+    let bucket: TimeBucket
+    var id: String { bucket.rawValue }
+}
+
 /// 纵向单天 timeline:Calendar tab 选中日的渲染器。
 ///
 /// 按 TimeBucket(Anytime/Morning/Afternoon/Evening)分 4 个 slot,每个 slot:
@@ -9,6 +16,9 @@ import SwiftUI
 /// - 静态渲染(不做 drawer ↔ timeline 拖拽,下阶段加)
 /// - slot 用 TimeBucket,不用具体小时(下阶段扩)
 /// - 卡片不挂 swipe delete(用 tap 进详情页删除代替)
+///
+/// **后续扩展(已落地)**:
+/// - bucket slot 末尾「+ 设钟点」按钮,弹 `BucketHourSheet` 给 slot 内未指定钟点的 todo 设钟点
 struct DayTimelineView: View {
     let state: HomeCalendarState
     @Binding var cardAppeared: Set<UUID>
@@ -18,6 +28,17 @@ struct DayTimelineView: View {
     let onToggleTodo: (UUID) -> Void
     let onToggleOccurrence: (TodoOccurrenceData) -> Void
     let onOpenTodo: (TodoItemData) -> Void
+    /// slot「+ 设钟点」入口:把选中的 todo + hour/minute Date 传给调用方。
+    /// 调用方(`HomeView`)负责合入选中日,写 `dueDate+hasDueTime=true+timeBucket=nil`。
+    let onSetTodoHour: (UUID, Date) -> Void
+    /// drawer → timeline:unscheduled 卡片拖到 bucket slot 排程。
+    /// 调用方(`HomeView`)实现 `assignTodoToBucket`(设 dueDate + bucket)。
+    let onDropToBucket: (UUID, TimeBucket) -> Void
+
+    /// 当前打开钟点 sheet 的 bucket(`nil` 表示未打开)。仅 non-anytime bucket 可设。
+    @State private var hourSheetItem: BucketHourSheetItem?
+    /// 当前拖拽命中的 bucket(`nil` 表示未命中)。bucket slot 用它描边高亮。
+    @State private var targetedBucket: TimeBucket?
 
     /// 左侧 bucket 标签列宽。caption(12) 默认档位下最长 "Afternoon" ~55pt,留余量到 64。
     /// **Dynamic Type**:`WarmFont.caption` 跟随系统字号缩放,AX 档位会放大到 ~2-3x。
@@ -45,29 +66,45 @@ struct DayTimelineView: View {
         labelColumnWidth + nodeSize + WarmSpacing.xs + WarmSpacing.xxs
 
     var body: some View {
-        if state.selectedOccurrences.isEmpty && state.completedOccurrences.isEmpty {
-            // 选中日完全空:显示空状态(跟 HomeSelectedDayListView.emptySelectedDayRow 同文案)
-            VStack {
-                Spacer()
-                emptyStateRow
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
-                        bucketSlot(bucket)
-                    }
-                    if !state.completedOccurrences.isEmpty || !state.completedUnscheduledTodos.isEmpty {
-                        completedSection
-                    }
+        Group {
+            if state.selectedOccurrences.isEmpty && state.completedOccurrences.isEmpty {
+                // 选中日完全空:显示空状态(跟 HomeSelectedDayListView.emptySelectedDayRow 同文案)
+                VStack {
+                    Spacer()
+                    emptyStateRow
+                    Spacer()
                 }
-                .padding(.top, WarmSpacing.sm)
-                // 底部 inset 组成:HomeLayoutMetrics.listBottomInset(原 VoiceFAB 渐隐区)
-                // + drawer 展开态高度(补偿遮挡)。drawer 折叠时此值为 0。
-                .padding(.bottom, HomeLayoutMetrics.listBottomInset + unscheduledDrawerExpandedHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                            bucketSlot(bucket)
+                        }
+                        if !state.completedOccurrences.isEmpty || !state.completedUnscheduledTodos.isEmpty {
+                            completedSection
+                        }
+                    }
+                    .padding(.top, WarmSpacing.sm)
+                    // 底部 inset 组成:HomeLayoutMetrics.listBottomInset(原 VoiceFAB 渐隐区)
+                    // + drawer 展开态高度(补偿遮挡)。drawer 折叠时此值为 0。
+                    .padding(.bottom, HomeLayoutMetrics.listBottomInset + unscheduledDrawerExpandedHeight)
+                }
             }
+        }
+        .sheet(item: $hourSheetItem) { item in
+            BucketHourSheet(
+                bucket: item.bucket,
+                candidates: state.indexedUncompletedOccurrences(in: item.bucket)
+                    .compactMap { _, occurrence -> TodoItemData? in
+                        occurrence.todo.hasDueTime ? nil : occurrence.todo
+                    },
+                onApply: { id, date in
+                    onSetTodoHour(id, date)
+                    hourSheetItem = nil
+                },
+                onDismiss: { hourSheetItem = nil }
+            )
         }
     }
 
@@ -79,6 +116,10 @@ struct DayTimelineView: View {
     private func bucketSlot(_ bucket: TimeBucket) -> some View {
         let occurrences = state.indexedUncompletedOccurrences(in: bucket)
         let hasCards = !occurrences.isEmpty
+        // Anytime 无钟点概念;只对 morning/afternoon/evening 显示「+ 设钟点」入口。
+        // 只在 slot 内有「未指定钟点的卡片」时显示按钮,避免 candidates 空时让用户白点。
+        let hasHourlessCard = bucket != .anytime
+            && occurrences.contains { !$0.1.todo.hasDueTime }
 
         HStack(alignment: .top, spacing: 0) {
             // 左侧 bucket 标签:右对齐,跟节点留 nodeInset 间距
@@ -108,6 +149,9 @@ struct DayTimelineView: View {
                     Color.clear
                         .frame(height: Self.emptySlotHeight)
                 }
+                if hasHourlessCard {
+                    setHourButton(bucket)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, WarmSpacing.xs)
@@ -115,6 +159,41 @@ struct DayTimelineView: View {
             .padding(.bottom, WarmSpacing.sm)
             .padding(.trailing, WarmSpacing.lg)
         }
+        // drawer → timeline 拖拽落点:把 unscheduled 卡片排到当前 bucket。
+        // Anytime slot 也接受 drop(用户可以把任务排到「随时」)。
+        .dropDestination(for: String.self) { items, _ in
+            guard let idString = items.first, let id = UUID(uuidString: idString) else { return false }
+            onDropToBucket(id, bucket)
+            return true
+        } isTargeted: { targeted in
+            withAnimation(WarmAnimation.springFast) {
+                targetedBucket = targeted ? bucket : (targetedBucket == bucket ? nil : targetedBucket)
+            }
+        }
+        .overlay {
+            if targetedBucket == bucket {
+                RoundedRectangle(cornerRadius: WarmRadius.card)
+                    .stroke(WarmTheme.primary, lineWidth: 2)
+                    .padding(.horizontal, WarmSpacing.xxs)
+                    .padding(.vertical, WarmSpacing.xxs)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// 「+ 设钟点」入口:打开 `BucketHourSheet`。candidates 由 `hourSheet` 计算。
+    /// 视觉保持小标签风格,避免抢 bucket 标签焦点。
+    private func setHourButton(_ bucket: TimeBucket) -> some View {
+        Button {
+            hourSheetItem = BucketHourSheetItem(bucket: bucket)
+        } label: {
+            Label(String(localized: "home.timeline.set_hour"), systemImage: "plus.circle")
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "a11y.timeline.set_hour"))
+        .padding(.top, WarmSpacing.xxs)
     }
 
     /// 中间列:垂直线 + 顶部节点圆点。
@@ -143,21 +222,47 @@ struct DayTimelineView: View {
 
     // MARK: - Cards
 
-    /// 单张 occurrence 卡片。复用 WarmTodoCard,但**不挂 swipeActions / draggable**
-    /// (不在 List 容器里 + 本阶段不做拖拽)。删除走详情页。
+    /// 单张 occurrence 卡片。复用 WarmTodoCard,挂 `.draggable` 支持反向拖回 drawer。
+    /// 删除走详情页(不挂 swipeActions,本阶段简化)。
     /// 入场动画复用 cardAppeared set,跟 HomeSelectedDayListView 一致。
+    ///
+    /// 若卡片已设钟点(`todo.hasDueTime=true`),在卡片下方显示钟点小标签,
+    /// 让用户在 timeline 内能扫到具体时间(参考 HTML 视觉)。
     @ViewBuilder
     private func occurrenceCard(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: occurrence.todo,
-            onToggle: { onToggleOccurrence(occurrence) },
-            onTap: { onOpenTodo(occurrence.todo) },
-            showsTimeBucketMetadata: false,
-            // 已在 timeline 内,bucket 标签冗余;只保留 overdue 红标。
-            dueStatusDisplayMode: .overdueOnly
-        )
+        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            WarmTodoCard(
+                index: index,
+                todo: occurrence.todo,
+                onToggle: { onToggleOccurrence(occurrence) },
+                onTap: { onOpenTodo(occurrence.todo) },
+                showsTimeBucketMetadata: false,
+                // 已在 timeline 内,bucket 标签冗余;只保留 overdue 红标。
+                dueStatusDisplayMode: .overdueOnly
+            )
+            if occurrence.todo.hasDueTime, let due = occurrence.todo.dueDate {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 10))
+                    Text(due, format: .dateTime.hour().minute())
+                        .font(WarmFont.caption(11))
+                }
+                .foregroundColor(WarmTheme.primaryDark)
+                .padding(.leading, WarmSpacing.sm)
+                .accessibilityLabel(String(localized: "a11y.timeline.due_time"))
+            }
+        }
         .cardEntrance(id: occurrence.todo.id, index: index, cardAppeared: $cardAppeared)
+        .draggable(occurrence.todo.id.uuidString) {
+            HStack(spacing: WarmSpacing.xxs) {
+                Text(occurrence.todo.category.emoji)
+                Text(occurrence.todo.title).lineLimit(1)
+            }
+            .font(WarmFont.caption(13))
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, WarmSpacing.xs)
+            .background(Capsule().fill(WarmTheme.secondaryBackground))
+        }
     }
 
     // MARK: - Completed section

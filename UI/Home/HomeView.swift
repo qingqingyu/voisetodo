@@ -940,7 +940,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                                         : 0,
                                     onToggleTodo: { actions.toggleTodo($0) },
                                     onToggleOccurrence: { actions.toggleOccurrence($0) },
-                                    onOpenTodo: { selectedTodo = $0 }
+                                    onOpenTodo: { selectedTodo = $0 },
+                                    onSetTodoHour: { id, date in setTodoHour(id, hourMinute: date) },
+                                    onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) }
                                 )
 
                                 if !state.unscheduledTodos.isEmpty {
@@ -950,6 +952,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                                         cardAppeared: $cardAppeared,
                                         onToggleTodo: { actions.toggleTodo($0) },
                                         onOpenTodo: { selectedTodo = $0 },
+                                        onDropToUnscheduled: { id in unassignTodoFromDay(id) },
                                         availableHeight: listHeight
                                     )
                                 }
@@ -1590,7 +1593,131 @@ struct HomeView<Store: HomeTodoStore>: View {
             coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
         }
     }
+
+    /// Bucket slot「+ 设钟点」入口:把传入的 hour/minute 合入选中日的 dueDate,
+    /// 写 `hasDueTime=true + timeBucket=nil`(TimeBucketResolver 走钟点派生分支)。
+    /// `hourMinute` 的日期部分被丢弃,只取 hour/minute;选 0:00 也能写入(夜班场景)。
+    private func setTodoHour(_ todoId: UUID, hourMinute: Date) {
+        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+            VoiceTodoLog.ui.warning("home.set_hour.todo_not_found id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        let dayComponents = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: hourMinute)
+        var combined = dayComponents
+        combined.hour = timeComponents.hour
+        combined.minute = timeComponents.minute
+        guard let dueDate = calendar.date(from: combined) else {
+            VoiceTodoLog.ui.error("home.set_hour.combined_date_invalid id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        do {
+            try coordinator.updateTodoDetail(
+                todoId,
+                update: TodoDetailUpdate(
+                    title: todo.title,
+                    detail: todo.detail,
+                    category: nil,
+                    priority: nil,
+                    dueDate: dueDate,
+                    hasDueTime: true,
+                    // 有钟点 → timeBucket 自动派生(传 nil 由 init 归零 + Resolver 走钟点分支)。
+                    timeBucket: nil,
+                    dueHint: "",
+                    recurrenceRule: todo.recurrenceRule
+                )
+            )
+            occurrenceRevision += 1
+            coordinator.showToast(
+                message: String(format: String(localized: "home.timeline.hour_assigned"),
+                                todo.title, HomeViewHourFormatter.string(from: dueDate)),
+                style: .success
+            )
+        } catch {
+            VoiceTodoLog.store.error("home.set_hour.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// drawer → timeline bucket slot 拖拽落点:把 unscheduled 任务排到选中日的某 bucket。
+    /// 写 `dueDate=选中日(00:00) + hasDueTime=false + timeBucket=bucket`,
+    /// `TimeBucketResolver` 走 explicitBucket 分支派生(覆盖原 bucket)。
+    /// 跟 `assignTodoToDate`(用原 timeBucket)语义不同,不能共用。
+    private func assignTodoToBucket(_ todoId: UUID, bucket: TimeBucket) {
+        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+            VoiceTodoLog.ui.warning("home.assign_bucket.todo_not_found id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        let day = calendar.startOfDay(for: selectedDate)
+        do {
+            try coordinator.updateTodoDetail(
+                todoId,
+                update: TodoDetailUpdate(
+                    title: todo.title,
+                    detail: todo.detail,
+                    category: nil,
+                    priority: nil,
+                    dueDate: day,
+                    hasDueTime: false,
+                    timeBucket: bucket,
+                    dueHint: "",
+                    recurrenceRule: todo.recurrenceRule
+                )
+            )
+            occurrenceRevision += 1
+            coordinator.showToast(
+                message: String(format: String(localized: "home.assigned_to_bucket"),
+                                todo.title, bucket.localizedTitle),
+                style: .success
+            )
+        } catch {
+            VoiceTodoLog.store.error("home.assign_bucket.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// timeline → drawer 反向拖拽落点:清 dueDate 让任务回 unscheduled。
+    /// 保留原 `timeBucket`,下次拖回同 bucket 仍按用户原意图分组(避免被 reset 到 anytime)。
+    private func unassignTodoFromDay(_ todoId: UUID) {
+        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+            VoiceTodoLog.ui.warning("home.unassign.todo_not_found id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        do {
+            try coordinator.updateTodoDetail(
+                todoId,
+                update: TodoDetailUpdate(
+                    title: todo.title,
+                    detail: todo.detail,
+                    category: nil,
+                    priority: nil,
+                    dueDate: nil,
+                    hasDueTime: false,
+                    timeBucket: todo.timeBucket,
+                    dueHint: "",
+                    recurrenceRule: todo.recurrenceRule
+                )
+            )
+            occurrenceRevision += 1
+            coordinator.showToast(
+                message: String(format: String(localized: "home.unassigned_from_day"), todo.title),
+                style: .success
+            )
+        } catch {
+            VoiceTodoLog.store.error("home.unassign.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
 }
+
+/// 钟点 toast 用的 formatter。HomeView 是 generic struct,不能持有 static stored property,
+/// 所以 formatter 提到文件顶层作为独立常量。
+private let HomeViewHourFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.timeStyle = .short
+    formatter.dateStyle = .none
+    return formatter
+}()
 
 // MARK: - A2 自动学习建议 Banner
 

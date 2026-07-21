@@ -13,16 +13,28 @@ import SwiftUI
 /// **定位**:调用方在外层 `ZStack(alignment: .bottom)` 中把 drawer 作为第二个子 view 挂在
 /// Timeline 之上(不是 `.overlay`)——这样 drawer 与 Timeline 共享同一个剪裁 frame,
 /// 避免 drawer 超出 Calendar tab 列表区。drawer 自身不处理 safeAreaInset(VoiceFAB 占了)。
+///
+/// **后续扩展(已落地)**:
+/// - 卡片 `.draggable`:拖到 DayTimeline bucket slot 排程(dueDate + bucket)
+/// - drawer `.dropDestination`:从 timeline 反向拖回 → 清 dueDate 回 unscheduled
+/// - 折叠态命中 drop 时自动展开,让用户看清释放点
 struct UnscheduledDrawer: View {
     let todos: [TodoItemData]
     @Binding var isExpanded: Bool
     @Binding var cardAppeared: Set<UUID>
     let onToggleTodo: (UUID) -> Void
     let onOpenTodo: (TodoItemData) -> Void
+    /// 反向拖拽(timeline → drawer):清 dueDate 回 unscheduled。
+    /// 调用方(`HomeView`)实现 `unassignTodoFromDay`。
+    let onDropToUnscheduled: (UUID) -> Void
     /// 调用方(HomeView)所在 ZStack 的可用高度,等于 Calendar tab 内容区的 `listHeight`。
     /// **契约**:必须传真实 ZStack height(非 0、非 .infinity),否则小屏下 clamp 失效。
     /// drawer 内部用此值 clamp 展开态内容区,避免占满整个 timeline 视野。
     let availableHeight: CGFloat
+
+    /// 反向拖拽命中态:整个 drawer 描边高亮。
+    /// 折叠态下命中 drop 还会自动展开 `isExpanded = true`,避免释放点不可见。
+    @State private var isDropTargeted = false
 
     /// 展开态内容区最大高度。超过则 ScrollView 滚动。
     /// 估算:~5 张卡片(72pt 含间距) + header(50pt) + grabber(15pt) ≈ 425pt,clamp 到 360。
@@ -93,6 +105,32 @@ struct UnscheduledDrawer: View {
             .fill(WarmTheme.secondaryBackground)
         )
         .shadow(color: Color.black.opacity(0.1), radius: 24, x: 0, y: -6)
+        // 反向拖拽落点:timeline 卡片拖回 drawer → 清 dueDate。
+        // 命中时若折叠态自动展开,让用户看清释放区域。
+        .dropDestination(for: String.self) { items, _ in
+            guard let idString = items.first, let id = UUID(uuidString: idString) else { return false }
+            onDropToUnscheduled(id)
+            return true
+        } isTargeted: { targeted in
+            if targeted && !isExpanded {
+                withAnimation(WarmAnimation.springSmooth) {
+                    isExpanded = true
+                }
+            }
+            isDropTargeted = targeted
+        }
+        .overlay {
+            if isDropTargeted {
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 22,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 22,
+                    style: .continuous
+                )
+                .stroke(WarmTheme.primary, lineWidth: 2)
+            }
+        }
         .accessibilityIdentifier("UnscheduledDrawer")
     }
 
@@ -174,8 +212,9 @@ struct UnscheduledDrawer: View {
 
     // MARK: - Cards
 
-    /// Unscheduled 卡片。复用 WarmTodoCard,不挂 swipeActions / draggable
-    /// (本阶段不做拖拽;删除走详情页)。
+    /// Unscheduled 卡片。复用 WarmTodoCard,挂 `.draggable` 拖到 timeline bucket slot 排程。
+    /// 删除走详情页(不挂 swipeActions,本阶段简化)。
+    /// 拖拽预览用 emoji + 标题的紧凑 capsule,跟 HomeSelectedDayListView 现有风格一致。
     @ViewBuilder
     private func unscheduledCard(_ todo: TodoItemData, index: Int) -> some View {
         WarmTodoCard(
@@ -185,5 +224,15 @@ struct UnscheduledDrawer: View {
             onTap: { onOpenTodo(todo) }
         )
         .cardEntrance(id: todo.id, index: index, cardAppeared: $cardAppeared)
+        .draggable(todo.id.uuidString) {
+            HStack(spacing: WarmSpacing.xxs) {
+                Text(todo.category.emoji)
+                Text(todo.title).lineLimit(1)
+            }
+            .font(WarmFont.caption(13))
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, WarmSpacing.xs)
+            .background(Capsule().fill(WarmTheme.secondaryBackground))
+        }
     }
 }
