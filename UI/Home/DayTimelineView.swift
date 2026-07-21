@@ -12,13 +12,12 @@ private struct BucketHourSheetItem: Identifiable {
 /// 按 TimeBucket(Anytime/Morning/Afternoon/Evening)分 4 个 slot,每个 slot:
 /// 左侧 bucket 标签 + 中间节点圆点 + 贯穿垂直线 + 右侧卡片列表。
 ///
-/// **本 MVP 范围**:
-/// - 静态渲染(不做 drawer ↔ timeline 拖拽,下阶段加)
-/// - slot 用 TimeBucket,不用具体小时(下阶段扩)
+/// **功能范围**:
+/// - bucket slot 末尾「+ 设钟点」按钮(仅 morning/afternoon/evening),弹 `BucketHourSheet`
+///   给 slot 内未指定钟点的 todo 设钟点
+/// - drawer ↔ timeline 双向拖拽:`UnscheduledDrawer` 卡片拖到 bucket slot 排程,
+///   timeline 卡片拖回 drawer 清 dueDate
 /// - 卡片不挂 swipe delete(用 tap 进详情页删除代替)
-///
-/// **后续扩展(已落地)**:
-/// - bucket slot 末尾「+ 设钟点」按钮,弹 `BucketHourSheet` 给 slot 内未指定钟点的 todo 设钟点
 struct DayTimelineView: View {
     let state: HomeCalendarState
     @Binding var cardAppeared: Set<UUID>
@@ -92,6 +91,7 @@ struct DayTimelineView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(item: $hourSheetItem) { item in
             BucketHourSheet(
                 bucket: item.bucket,
@@ -119,7 +119,7 @@ struct DayTimelineView: View {
         // Anytime 无钟点概念;只对 morning/afternoon/evening 显示「+ 设钟点」入口。
         // 只在 slot 内有「未指定钟点的卡片」时显示按钮,避免 candidates 空时让用户白点。
         let hasHourlessCard = bucket != .anytime
-            && occurrences.contains { !$0.1.todo.hasDueTime }
+            && occurrences.contains { _, occurrence in !occurrence.todo.hasDueTime }
 
         HStack(alignment: .top, spacing: 0) {
             // 左侧 bucket 标签:右对齐,跟节点留 nodeInset 间距

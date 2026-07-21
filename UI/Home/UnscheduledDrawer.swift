@@ -5,19 +5,16 @@ import SwiftUI
 /// 折叠态:只露 grabber + header(标题 + count + chevron.up)
 /// 展开态:grabber + header + ScrollView(渲染 unscheduled tasks)
 ///
-/// **本 MVP 范围**:
-/// - 静态展示(不做拖拽排程,下阶段加)
+/// **功能范围**:
+/// - 卡片 `.draggable`:拖到 DayTimeline bucket slot 排程(dueDate + bucket)
+/// - drawer `.dropDestination`:从 timeline 反向拖回 → 清 dueDate 回 unscheduled
+/// - 折叠态命中 drop 时自动展开,让用户看清释放点
 /// - 卡片不挂 swipe delete(用 tap 进详情页删除代替)
-/// - 折叠/展开只走点击 chevron(不做 drag 手势,MVP 简化)
+/// - 折叠/展开只走点击 chevron(不做 drag 手势,简化)
 ///
 /// **定位**:调用方在外层 `ZStack(alignment: .bottom)` 中把 drawer 作为第二个子 view 挂在
 /// Timeline 之上(不是 `.overlay`)——这样 drawer 与 Timeline 共享同一个剪裁 frame,
 /// 避免 drawer 超出 Calendar tab 列表区。drawer 自身不处理 safeAreaInset(VoiceFAB 占了)。
-///
-/// **后续扩展(已落地)**:
-/// - 卡片 `.draggable`:拖到 DayTimeline bucket slot 排程(dueDate + bucket)
-/// - drawer `.dropDestination`:从 timeline 反向拖回 → 清 dueDate 回 unscheduled
-/// - 折叠态命中 drop 时自动展开,让用户看清释放点
 struct UnscheduledDrawer: View {
     let todos: [TodoItemData]
     @Binding var isExpanded: Bool
@@ -104,7 +101,7 @@ struct UnscheduledDrawer: View {
             )
             .fill(WarmTheme.secondaryBackground)
         )
-        .shadow(color: Color.black.opacity(0.1), radius: 24, x: 0, y: -6)
+        .shadow(color: WarmTheme.shadowMedium, radius: 24, x: 0, y: -6)
         // 反向拖拽落点:timeline 卡片拖回 drawer → 清 dueDate。
         // 命中时若折叠态自动展开,让用户看清释放区域。
         .dropDestination(for: String.self) { items, _ in
@@ -117,7 +114,9 @@ struct UnscheduledDrawer: View {
                     isExpanded = true
                 }
             }
-            isDropTargeted = targeted
+            withAnimation(WarmAnimation.springFast) {
+                isDropTargeted = targeted
+            }
         }
         .overlay {
             if isDropTargeted {

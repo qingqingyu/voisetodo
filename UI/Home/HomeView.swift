@@ -927,7 +927,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                         let listHeight = max(0, proxy.size.height - calendarHeight)
                         if selectedBottomTab == .calendar {
                             // Calendar tab:纵向 timeline + 底部 unscheduled drawer
-                            // (MVP 不做拖拽;用户仍可走原月历日期格 draggable 路径排程)
+                            // (drawer ↔ timeline 双向拖拽已落地;月历日期格 draggable 路径保留)
                             ZStack(alignment: .bottom) {
                                 DayTimelineView(
                                     state: state,
