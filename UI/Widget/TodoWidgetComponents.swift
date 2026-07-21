@@ -101,49 +101,52 @@ struct LockscreenRectangularWidget: View {
     }
 
     var body: some View {
-        switch loadState {
-        case .loading:
-            lockscreenState(systemName: "hourglass", title: String(localized: "widget.loading"))
-        case .empty:
-            VStack(spacing: WarmSpacing.xxs) {
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 16))
-                Text("VoiceTodo")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundColor(.primary.opacity(0.4))
-        case .error:
-            lockscreenState(systemName: "exclamationmark.triangle", title: String(localized: "widget.load_failed"))
-        case .success:
-            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                if let interactionError {
-                    WidgetInteractionErrorView(error: interactionError, compact: true)
+        Group {
+            switch loadState {
+            case .loading:
+                lockscreenState(systemName: "hourglass", title: String(localized: "widget.loading"))
+            case .empty:
+                VStack(spacing: WarmSpacing.xxs) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 16))
+                    Text("VoiceTodo")
+                        .font(.system(size: 12, weight: .medium))
                 }
-
-                ForEach(visibleTodos) { todo in
-                    Toggle(isOn: todo.isCompleted, intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
-                        HStack(spacing: WarmSpacing.xs) {
-                            Text(todo.title)
-                                .font(.system(size: 13, weight: .medium))
-                                .strikethrough(todo.isCompleted)
-                                .lineLimit(1)
-                                .contentTransition(WidgetAnimation.opacityContent(enabled: animationsEnabled))
-                                .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: todo.isCompleted)
-                                .invalidatableContent()
-
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                .foregroundColor(.primary.opacity(0.4))
+            case .error:
+                lockscreenState(systemName: "exclamationmark.triangle", title: String(localized: "widget.load_failed"))
+            case .success:
+                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    if let interactionError {
+                        WidgetInteractionErrorView(error: interactionError, compact: true)
                     }
-                    .toggleStyle(WidgetTodoToggleStyle(iconSize: 13, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled))
-                    .id(todo)
-                    .transition(WidgetAnimation.rowTransition(enabled: animationsEnabled))
+
+                    ForEach(visibleTodos) { todo in
+                        Toggle(isOn: todo.isCompleted, intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
+                            HStack(spacing: WarmSpacing.xs) {
+                                Text(todo.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .strikethrough(todo.isCompleted)
+                                    .lineLimit(1)
+                                    .contentTransition(WidgetAnimation.opacityContent(enabled: animationsEnabled))
+                                    .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: todo.isCompleted)
+                                    .invalidatableContent()
+
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .toggleStyle(WidgetTodoToggleStyle(iconSize: 13, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled))
+                        .id(todo)
+                        .transition(WidgetAnimation.rowTransition(enabled: animationsEnabled))
+                    }
                 }
+                .animation(WidgetAnimation.spring(enabled: animationsEnabled), value: visibleTodos)
+                .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: interactionError)
             }
-            .animation(WidgetAnimation.spring(enabled: animationsEnabled), value: visibleTodos)
-            .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: interactionError)
         }
+        .containerBackground(.clear, for: .widget)
     }
 
     private func lockscreenState(systemName: String, title: String) -> some View {
@@ -170,45 +173,48 @@ struct LockscreenCircularWidget: View {
     }
 
     var body: some View {
-        ZStack {
-            AccessoryWidgetBackground()
+        Group {
+            ZStack {
+                AccessoryWidgetBackground()
 
-            switch loadState {
-            case .loading:
-                Image(systemName: "hourglass")
-                    .font(.system(size: 18))
-            case .empty:
-                VStack(spacing: 2) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 20))
-                    Text("VT")
-                        .font(.system(size: 10, weight: .bold))
-                }
-            case .error:
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 18))
-            case .success:
-                if interactionError != nil {
-                    Image(systemName: "exclamationmark.triangle.fill")
+                switch loadState {
+                case .loading:
+                    Image(systemName: "hourglass")
                         .font(.system(size: 18))
-                        .foregroundColor(.orange.opacity(0.9))
-                        .transition(WidgetAnimation.errorTransition(enabled: animationsEnabled))
-                        .invalidatableContent()
-                } else {
+                case .empty:
                     VStack(spacing: 2) {
-                        Text("\(todos.count)")
-                            .font(.system(size: 24, weight: .bold))
-                            .minimumScaleFactor(0.6)
-                            .contentTransition(WidgetAnimation.numericContent(enabled: animationsEnabled))
-                            .animation(WidgetAnimation.spring(enabled: animationsEnabled), value: todos.count)
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 20))
+                        Text("VT")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                case .error:
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 18))
+                case .success:
+                    if interactionError != nil {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.orange.opacity(0.9))
+                            .transition(WidgetAnimation.errorTransition(enabled: animationsEnabled))
                             .invalidatableContent()
-                        Text(String(localized: "widget.todo_count"))
-                            .font(.system(size: 10, weight: .medium))
+                    } else {
+                        VStack(spacing: 2) {
+                            Text("\(todos.count)")
+                                .font(.system(size: 24, weight: .bold))
+                                .minimumScaleFactor(0.6)
+                                .contentTransition(WidgetAnimation.numericContent(enabled: animationsEnabled))
+                                .animation(WidgetAnimation.spring(enabled: animationsEnabled), value: todos.count)
+                                .invalidatableContent()
+                            Text(String(localized: "widget.todo_count"))
+                                .font(.system(size: 10, weight: .medium))
+                        }
                     }
                 }
             }
+            .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: interactionError)
         }
-        .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: interactionError)
+        .containerBackground(.clear, for: .widget)
     }
 }
 
@@ -218,18 +224,21 @@ struct LockscreenInlineWidget: View {
     let interactionError: WidgetInteractionError?
 
     var body: some View {
-        if loadState == .loading {
-            Text(String(localized: "widget.loading"))
-        } else if loadState == .error {
-            Text(String(localized: "widget.load_failed"))
-        } else if let interactionError {
-            Text(String(localized: LocalizedStringResource(stringLiteral: interactionError.messageKey)))
-                .invalidatableContent()
-        } else if let firstTodo = todos.first {
-            Text("\(firstTodo.category.emoji) \(firstTodo.title)")
-        } else {
-            Text(String(localized: "widget.no_todos"))
+        Group {
+            if loadState == .loading {
+                Text(String(localized: "widget.loading"))
+            } else if loadState == .error {
+                Text(String(localized: "widget.load_failed"))
+            } else if let interactionError {
+                Text(String(localized: LocalizedStringResource(stringLiteral: interactionError.messageKey)))
+                    .invalidatableContent()
+            } else if let firstTodo = todos.first {
+                Text("\(firstTodo.category.emoji) \(firstTodo.title)")
+            } else {
+                Text(String(localized: "widget.no_todos"))
+            }
         }
+        .containerBackground(.clear, for: .widget)
     }
 }
 
