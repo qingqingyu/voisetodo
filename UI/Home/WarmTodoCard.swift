@@ -283,10 +283,16 @@ struct WarmTodoCard: View {
             RoundedRectangle(cornerRadius: WarmRadius.chip)
                 .fill(WarmTheme.secondaryBackground)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap?()
-        }
+        // iOS 26 回归：把 .onTapGesture 挂到外层 HStack 会吞掉 List swipeActions
+        // 滑出按钮的 tap。改挂到 .background(Color.clear) 层——swipeActions 由 List
+        // 容器层管理（滑出覆盖层），不在此背景层的命中范围内；HStack 内非按钮区域
+        // （padding/Spacer/Text）的 tap 仍会透传到这层背景，与原行为等价。
+        // FB18199844（open as of iOS 26.0）。
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { onTap?() }
+        )
         .accessibilityIdentifier("TodoCell_\(index)")
         .accessibilityValue(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
         .accessibilityHint(String(localized: "a11y.view_detail"))
