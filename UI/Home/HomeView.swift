@@ -247,6 +247,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var listOpacity: Double = 0
     @State private var cardAppeared: Set<UUID> = []
 
+    /// Calendar tab 下「未安排的」底部抽屉展开态。
+    /// 默认折叠(unscheduled 多时视觉干净);Today tab 不用 drawer,此状态无意义。
+    @State private var unscheduledDrawerExpanded: Bool = false
+
     /// 本周完成数(用于首页"本周小结"卡片)。
     private var weeklyCompletedCount: Int {
         let cal = Calendar.current
@@ -366,7 +370,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                     isDisabled: isInputEntryDisabled,
                     onTap: { openVoiceInputPanel() }
                 )
-                .opacity(showInputPanel ? 0 : 1)
+                // 输入面板展开 OR Calendar tab 的 unscheduled drawer 展开 → FAB 淡出
+                // (drawer 覆盖底部,FAB 留着会视觉冲突 + 点不到)
+                .opacity((showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) ? 0 : 1)
             }
             // 底部输入面板（从底部滑出 + 遮罩）
             .overlay(alignment: .bottom) {
@@ -553,7 +559,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     private func switcherTab(label: String, tab: BottomTab) -> some View {
         let isSelected = selectedBottomTab == tab
         return Button {
-            withAnimation(WarmAnimation.springFast) { selectedBottomTab = tab }
+            withAnimation(WarmAnimation.springFast) {
+                selectedBottomTab = tab
+                // 切到 Today tab 时 drawer 状态无意义,reset 避免下次切回 Calendar 突然展开。
+                if tab != .calendar { unscheduledDrawerExpanded = false }
+            }
         } label: {
             VStack(spacing: 3) {
                 Text(label)
@@ -915,20 +925,54 @@ struct HomeView<Store: HomeTodoStore>: View {
                         // 这里用 proxy.size.height - calendarHeight 算出实际可用高度，
                         // List 在此 concrete 高度内会正确启用滚动。
                         let listHeight = max(0, proxy.size.height - calendarHeight)
-                        HomeSelectedDayListView(
-                            state: state,
-                            selectedBottomTab: selectedBottomTab,
-                            cardAppeared: $cardAppeared,
-                            onToggleTodo: { actions.toggleTodo($0) },
-                            onToggleOccurrence: { actions.toggleOccurrence($0) },
-                            onDeleteTodo: { actions.deleteTodo($0) },
-                            onOpenTodo: { selectedTodo = $0 },
-                            onMoveUnscheduled: { source, destination in
-                                moveUnscheduled(from: source, to: destination)
+                        if selectedBottomTab == .calendar {
+                            // Calendar tab:纵向 timeline + 底部 unscheduled drawer
+                            // (MVP 不做拖拽;用户仍可走原月历日期格 draggable 路径排程)
+                            ZStack(alignment: .bottom) {
+                                DayTimelineView(
+                                    state: state,
+                                    cardAppeared: $cardAppeared,
+                                    // drawer 展开时把内容区高度传给 timeline,补偿 bottom inset,
+                                    // 让 Evening/Completed section 不被 drawer 遮挡。
+                                    // 用 clamped 版本与 drawer 实际占用一致,避免小屏下补偿过多留空白。
+                                    unscheduledDrawerExpandedHeight: unscheduledDrawerExpanded
+                                        ? UnscheduledDrawer.expandedTotalHeightClamped(to: listHeight)
+                                        : 0,
+                                    onToggleTodo: { actions.toggleTodo($0) },
+                                    onToggleOccurrence: { actions.toggleOccurrence($0) },
+                                    onOpenTodo: { selectedTodo = $0 }
+                                )
+
+                                if !state.unscheduledTodos.isEmpty {
+                                    UnscheduledDrawer(
+                                        todos: state.unscheduledTodos,
+                                        isExpanded: $unscheduledDrawerExpanded,
+                                        cardAppeared: $cardAppeared,
+                                        onToggleTodo: { actions.toggleTodo($0) },
+                                        onOpenTodo: { selectedTodo = $0 },
+                                        availableHeight: listHeight
+                                    )
+                                }
                             }
-                        )
-                        .frame(height: listHeight)
-                        .clipped()
+                            .frame(height: listHeight)
+                            .clipped()
+                        } else {
+                            // Today tab:保留原 List 样式(刚关了 Reorder,不再动)
+                            HomeSelectedDayListView(
+                                state: state,
+                                selectedBottomTab: selectedBottomTab,
+                                cardAppeared: $cardAppeared,
+                                onToggleTodo: { actions.toggleTodo($0) },
+                                onToggleOccurrence: { actions.toggleOccurrence($0) },
+                                onDeleteTodo: { actions.deleteTodo($0) },
+                                onOpenTodo: { selectedTodo = $0 },
+                                onMoveUnscheduled: { source, destination in
+                                    moveUnscheduled(from: source, to: destination)
+                                }
+                            )
+                            .frame(height: listHeight)
+                            .clipped()
+                        }
                     }
                 }
             }
@@ -1020,6 +1064,9 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = normalizedDay
             visibleMonthAnchor = normalizedDay
+            // 切日时折叠 unscheduled drawer:新日期的 unscheduled 列表不同,
+            // 保持展开会让用户先看到旧列表动画切换,视觉跳跃;统一回到折叠态。
+            unscheduledDrawerExpanded = false
         }
     }
 

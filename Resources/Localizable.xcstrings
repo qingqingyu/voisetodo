@@ -213,6 +213,38 @@
         }
       }
     },
+    "a11y.drawer.collapse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse unscheduled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起未安排"
+          }
+        }
+      }
+    },
+    "a11y.drawer.expand" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand unscheduled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开未安排"
+          }
+        }
+      }
+    },
     "a11y.delete_todo" : {
       "localizations" : {
         "en" : {
