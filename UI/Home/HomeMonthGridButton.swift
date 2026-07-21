@@ -115,6 +115,10 @@ struct HomeMonthGridButton: View {
             Text("\(dayState.dayNumber)")
                 .font(WarmFont.headlineFixed(13))
                 .foregroundColor(dayNumberColor)
+                // fixedSize:绕开 SwiftUI 对固定字号 Text 的 Dynamic Type layout 补偿(AX 档位下
+                // intrinsic width 被放大 ×2~3 → 压进 22pt circleDiameter 触发 .tail truncation →
+                // 显示「…」)。详见 HomeMonthDayButton 同位置注释。
+                .fixedSize()
         }
         .frame(width: circleDiameter, height: circleDiameter)
     }

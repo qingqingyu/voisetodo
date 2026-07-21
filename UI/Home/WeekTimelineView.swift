@@ -179,6 +179,10 @@ struct WeekTimelineView: View {
                         isSelected ? .white :
                         (isToday ? WarmTheme.primaryDark : WarmTheme.textPrimary)
                     )
+                    // fixedSize:绕开 SwiftUI 对固定字号 Text 的 Dynamic Type layout 补偿(AX 档位下
+                    // intrinsic width 被放大 ×2~3 → 压进 26pt frame 触发 .tail truncation → 显示「…」)。
+                    // 详见 HomeMonthDayButton 同位置注释。
+                    .fixedSize()
             }
             .frame(width: 26, height: 26)
         }

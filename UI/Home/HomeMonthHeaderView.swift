@@ -325,6 +325,12 @@ struct HomeMonthDayButton: View {
                     // 后者在 zh locale 下产生"29日"，与日期格上下文冲突显冗余。
                     // VoiceOver 文案仍走 VoiceOverLabel.monthDayText（带"6月29日"完整表达），
                     // 视觉显示与无障碍朗读职责分离。
+                    //
+                    // fixedSize:headlineFixed 字号本身不缩放,但 SwiftUI 对固定字号 Text 在
+                    // ZStack + .frame 里仍会按 sizeCategory 加 layout 补偿(AX 档位下 ×2~3),
+                    // 把 Text 请求的 intrinsic width 撑到超过 circleDiameter → .tail truncation →
+                    // 显示「…」。fixedSize 让 Text 按字体本身算宽度(两位数 ~16pt),退出这个补偿。
+                    // 同类根因见 HomeMonthGridButton.dayNumberView / WeekTimelineView.dayHeaderColumn。
                     Text("\(dayState.dayNumber)")
                         .font(WarmFont.headlineFixed(14))
                         .foregroundColor(
@@ -332,6 +338,7 @@ struct HomeMonthDayButton: View {
                             (dayState.isToday ? WarmTheme.primaryDark :
                             (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
                         )
+                        .fixedSize()
                 }
                 .frame(width: circleDiameter, height: circleDiameter)
                 // 选中态放大只作用于圆+数字单元：30pt 圆放大 1.05 不会碰到相邻格。

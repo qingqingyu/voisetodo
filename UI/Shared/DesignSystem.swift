@@ -182,6 +182,23 @@ enum WarmFont {
     /// 「这是 UI 装饰数字 / label」→ 用 fixed;「这是用户要读的文本」→ 用动态。
     ///
     /// 实现:不带 `relativeTo:` 参数,`.custom` 即退化为固定字号(等同 UIKit 的 UIFont)。
+    ///
+    /// **已知陷阱(frame-locked 场景必须配 `.fixedSize()`)**:
+    /// 字号本身不缩放,但 SwiftUI 对固定字号 Text 在 `ZStack + .frame(width:height:)` 内
+    /// 仍会按 `@Environment(\.sizeCategory)` 调整 **layout 补偿**(AX1-AX5 档位下系数 ×2~3)。
+    /// 表现:Text 报给父容器的 intrinsic width 被放大到超过 frame 固定宽 → 触发 `.tail`
+    /// truncation → 真机显示「…」。上一轮列表模式行高下限修复未覆盖此根因。
+    ///
+    /// 解法:在用到本字体且被 `.frame(width:height:)` 硬约束的 `Text` 上**紧跟 `.fixedSize()`**,
+    /// 让 Text 按字体本身算宽度,退出 Dynamic Type layout 补偿。例外:若 Text 在自由布局里
+    /// (外层 `.frame(maxWidth: .infinity)` 或 capsule 自适应宽度),不加也不会出问题。
+    ///
+    /// **当前已加 fixedSize 的位置**(新增同类使用时按同模式处理):
+    /// - `HomeMonthDayButton` / `HomeMonthGridButton` 月历日期格(22~30pt circle)
+    /// - `WeekTimelineView.dayHeaderColumn` 周视图表头(26pt frame)
+    ///
+    /// **未加但不受影响**:
+    /// - `HomeView.statsBadge` 进度环 (40pt frame,3~5 字符 "12/30" 余量充足,暂未复现 truncation)
     static func headlineFixed(_ size: CGFloat) -> Font {
         .custom("Avenir Next", size: size).weight(.semibold)
     }
