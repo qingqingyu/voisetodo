@@ -467,7 +467,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 }
                 .buttonStyle(.plain)
 
-                HStack(spacing: WarmSpacing.xs) {
+                chipRow {
                     ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
                         timeBucketButton(bucket)
                     }
@@ -485,10 +485,13 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 checkForChanges()
             }
         } label: {
+            // chip 按内容宽度:lineLimit(1) 防换行/断词,fixedSize 让 chip 宽度跟文字走
             Text(bucket.localizedTitle)
                 .font(WarmFont.caption(12))
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
-                .frame(maxWidth: .infinity)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, WarmSpacing.sm)
                 .padding(.vertical, WarmSpacing.xs)
                 .background(
                     RoundedRectangle(cornerRadius: WarmRadius.card)
@@ -507,7 +510,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.textSecondary)
 
-                HStack(spacing: WarmSpacing.xs) {
+                chipRow {
                     recurrenceModeButton(nil, title: String(localized: "recurrence.none"))
                     recurrenceModeButton(.daily, title: String(localized: "recurrence.daily"))
                     recurrenceModeButton(.weekly, title: String(localized: "recurrence.weekly_short"))
@@ -563,14 +566,27 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 checkForChanges()
             }
         } label: {
+            // 同 timeBucketButton:chip 按内容宽度,同一套修饰符保证视觉一致
             Text(title)
                 .font(WarmFont.caption(12))
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
-                .frame(maxWidth: .infinity)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, WarmSpacing.sm)
                 .padding(.vertical, WarmSpacing.xs)
                 .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
         }
         .buttonStyle(.plain)
+    }
+
+    /// chip 容器:宽度够时用 HStack,不够时退化为横向 ScrollView,避免手势冲突与默认溢出。
+    private func chipRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: WarmSpacing.xs) { content() }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: WarmSpacing.xs) { content() }
+            }
+        }
     }
 
     private func weekdayButton(_ weekday: Int) -> some View {
