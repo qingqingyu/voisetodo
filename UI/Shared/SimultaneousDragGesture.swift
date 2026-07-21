@@ -22,26 +22,25 @@ struct DragTranslation: Equatable, Sendable {
 
 /// iOS 26 起,SwiftUI 的 `.simultaneousGesture(DragGesture(...))` 在 HStack/ScrollView/List
 /// 等容器内**不再可靠触发**(Apple 回归 bug FB18199844)。本类型用 `UIGestureRecognizerRepresentable`
-/// 包一个 `UILongPressGestureRecognizer`(minimumPressDuration=0 + allowableMovement=infinity),
-/// 通过 delegate 允许与其他手势(按钮点击 / List 等)同时识别。
+/// 包一个 `UIPanGestureRecognizer`,通过 delegate 允许与其他手势(按钮点击 / 列表滚动)同时识别,
+/// 等价于"全局拖拽监听"。
 ///
-/// **ScrollView 例外**:UIScrollView 的 pan 手势**不允许**同时识别——否则 ScrollView 滚动
-/// 与挂在 ScrollView 父容器上的 SimultaneousDragGesture 会**同时触发**(典型副作用:
-/// 用户大幅垂直滑 ScrollView,列表滚到一半视图被切走)。详见 `Coordinator.
-/// shouldRecognizeSimultaneouslyWith` 的注释。
+/// ## 为什么用 UIPanGestureRecognizer 而非 UILongPressGestureRecognizer
+///
+/// 早期版本用 `UILongPressGestureRecognizer(minimumPressDuration=0, allowableMovement=infinity)`。
+/// 问题:minimumPressDuration=0 时,手指一落下立即进入 `.began` 状态——
+/// SwiftUI List 的 swipe action 按钮的 tap 事件被 `.began` 状态吞掉
+/// (delete 按钮滑得出但点不动,因为 swipe action 按钮不走标准 Button 路径,
+/// 而是 List 底层渲染器处理 tap,看到外层 longpress began 就丢弃)。
+///
+/// 改用 `UIPanGestureRecognizer`:位移达到 UIKit 内置阈值(~10pt)前不 began,
+/// tap(位移 < 10pt)不受干扰,swipe action 按钮恢复响应。
 ///
 /// ## minimumDistance 语义
 ///
 /// 与原生 `DragGesture(minimumDistance:)` 类似:拖拽位移(任一方向)必须达到 `minimumDistance`
-/// 才会触发 `onChanged` / `onEnded`。底层 `UILongPressGestureRecognizer` 的 `.began` 会立即
-/// 触发(用于记录起点),但 `minimumDistance` 作为 `.changed` / `.ended` 的位移过滤阈值——
-/// 位移不足则不调用任何回调,等价于"手势未成立"。
-///
-/// ## velocity
-///
-/// `DragTranslation.velocity` 基于最近两次 `.changed` 采样的位移差 / 时间差估算(pt/s)。
-/// 供调用方做速度感知动画(spring `initialVelocity`)或快速轻扫阈值判定(位移不足但速度高
-/// 时仍触发)。`.began` / 第一次 `.changed` 时为 `.zero`(信息不足)。
+/// 才会触发 `onEnded`。`UIPanGestureRecognizer` 在 `.ended` 时用 `translation(in:)`
+/// 检查累计位移是否达到 `minimumDistance` 阈值,未达到则不调用 `onEnded`。
 ///
 /// 用法对齐 SwiftUI 原生手势:
 /// ```swift
@@ -91,10 +90,6 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         var minimumDistance: CGFloat = 0
         var onChanged: ((DragTranslation) -> Void)?
         var onEnded: ((DragTranslation) -> Void)?
-        var startLocation: CGPoint?
-        /// 最近一次 `.changed` / `.began` 的 (时间, 位置) 采样,供 `velocity` 估算用。
-        /// `.ended` / `.cancelled` / `.failed` 时清空。
-        var lastSample: (time: TimeInterval, point: CGPoint)?
 
         /// 与 Button / List 等内置手势同时识别,避免被它们吞掉。
         ///
@@ -126,75 +121,49 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         Coordinator()
     }
 
-    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
-        let recognizer = UILongPressGestureRecognizer()
-        // minimumPressDuration = 0:不等长按,手指一落下就跟踪
-        recognizer.minimumPressDuration = 0
-        // allowableMovement = infinity:手指只要没抬起都算手势内,不因移动距离失效。
-        // 不用有限值(如 1000pt)是为了在超大屏 / 多屏连续拖拽场景下不意外失效;
-        // delegate 已允许与 Button 同时识别,不会屏蔽系统手势。
-        recognizer.allowableMovement = .greatestFiniteMagnitude
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
         recognizer.delegate = context.coordinator
         return recognizer
     }
 
-    func updateUIGestureRecognizer(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
         // SwiftUI 每次重渲染都同步最新配置(闭包可能捕获了新状态)。
         context.coordinator.minimumDistance = minimumDistance
         context.coordinator.onChanged = onChanged
         context.coordinator.onEnded = onEnded
     }
 
-    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
         let coordinator = context.coordinator
         let now = CACurrentMediaTime()
         switch recognizer.state {
-        case .began:
-            // recognizer.view 在手势激活期间不应为 nil(view 持有 recognizer);
-            // 若 nil 则说明状态异常,不记录起点以避免后续产生无意义的数据。
-            guard let view = recognizer.view else { return }
-            let p = recognizer.location(in: view)
-            coordinator.startLocation = p
-            coordinator.lastSample = (now, p)
-        case .changed:
-            // 仅在位移达到 minimumDistance 后才触发 onChanged:点击 Button 时
-            // 手指会有微小抖动(1-3pt),不达阈值不该触发跟手回调。
-            guard let start = coordinator.startLocation,
-                  let view = recognizer.view else { return }
-            let p = recognizer.location(in: view)
-            // 无论是否过阈值都更新 lastSample:velocity 估算需要"最近一次采样"而非
-            // "最近一次过阈值采样",否则用户慢慢拖过阈值时第一次 onChanged 报告的
-            // velocity 会用 began 的采样点(时间差大、位移小)严重低估。
-            let velocity = estimateVelocity(current: (now, p), previous: coordinator.lastSample)
-            coordinator.lastSample = (now, p)
-            let dx = p.x - start.x, dy = p.y - start.y
-            let minD = coordinator.minimumDistance
-            guard abs(dx) >= minD || abs(dy) >= minD else { return }
-            coordinator.onChanged?(DragTranslation(
-                startLocation: start, location: p, velocity: velocity))
         case .ended:
-            defer {
-                coordinator.startLocation = nil
-                coordinator.lastSample = nil
-            }
-            guard let start = coordinator.startLocation else { return }
+            // recognizer.view 在手势激活期间不应为 nil(view 持有 recognizer);
+            // 若 nil 则说明状态异常,不派发回调以避免后续产生无意义的数据。
             guard let view = recognizer.view else { return }
-            let end = recognizer.location(in: view)
-            let translation = CGSize(width: end.x - start.x, height: end.y - start.y)
+            // translation(in:) 返回 CGPoint(.x/.y 是从手指落点到当前点的累计位移);
+            // location(in:) 在 .ended 时返回最后触摸位置。
+            // 由这两者反推起点,保持 DragTranslation 语义不变。
+            let translation = recognizer.translation(in: view)
+            let location = recognizer.location(in: view)
+            let startLocation = CGPoint(
+                x: location.x - translation.x,
+                y: location.y - translation.y
+            )
             let minD = coordinator.minimumDistance
             // minimumDistance 语义对齐 DragGesture:任一方向位移超过阈值才算手势成立。
             // 位移不足则不调用 onEnded,等价于"手势未激活"。
-            guard abs(translation.width) >= minD || abs(translation.height) >= minD else { return }
-            let velocity = estimateVelocity(current: (now, end), previous: coordinator.lastSample)
-            coordinator.onEnded?(DragTranslation(
-                startLocation: start, location: end, velocity: velocity))
+            guard abs(translation.x) >= minD || abs(translation.y) >= minD else { return }
+            coordinator.onEnded?(DragTranslation(startLocation: startLocation, location: location))
         case .cancelled, .failed:
-            // .cancelled 表示手势被系统中断(如系统边缘滑动抢手势 / 电话呼入),
-            // 非用户主动结束——此时用部分位移触发 onEnded 会误切换状态,故只清理起点。
-            // .failed 同为终态,也清理起点和采样保持状态机干净。
-            coordinator.startLocation = nil
-            coordinator.lastSample = nil
+            // .cancelled 表示手势被系统中断(如 ScrollView / 系统边缘滑动抢手势),
+            // 非用户主动结束——此时用部分位移触发 onEnded 会误切换状态,故不调用。
+            // .failed 同为终态,同样不调用。
+            break
         default:
+            // .began / .changed 不处理——只在 .ended 时一次性触发。
+            // 如需实时回调(onChanged),可在此扩展。
             break
         }
     }
