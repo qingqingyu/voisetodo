@@ -14,6 +14,13 @@ struct HomeSelectedDayListView: View {
     /// 由 Unscheduled 分区头的「排序/完成」按钮切换。
     @State private var editMode: EditMode = .inactive
 
+    /// 是否启用 Unscheduled 区的 Reorder 功能(排序按钮 + draggable + onMove 触发路径)。
+    /// Today tab 没有月历区,Unscheduled 拖出去无处落点,Reorder 不实用——关闭。
+    /// Calendar tab 保留:用户可以把 Unscheduled 拖到月历某一天安排上日期。
+    private var isReorderEnabled: Bool {
+        selectedBottomTab != .today
+    }
+
     var body: some View {
         List {
             Section {
@@ -156,7 +163,7 @@ struct HomeSelectedDayListView: View {
 
             Spacer()
 
-            if state.unscheduledTodos.count > 1 {
+            if isReorderEnabled && state.unscheduledTodos.count > 1 {
                 Button {
                     withAnimation(WarmAnimation.springFast) {
                         editMode = editMode.isEditing ? .inactive : .active
@@ -202,7 +209,11 @@ struct HomeSelectedDayListView: View {
 
         // 编辑态只重排（原生三横线把手）；非编辑态才挂"拖到月历"的胶囊 draggable——
         // 两个操作从起手就区分开，不再共用同一预览。
-        if editMode.isEditing {
+        // Today tab 关闭 Reorder(isReorderEnabled=false):不挂 draggable,
+        // 也没有"排序/完成"按钮入口,editMode 永远 .inactive → 三横线把手也不显示。
+        if !isReorderEnabled {
+            base
+        } else if editMode.isEditing {
             base
         } else {
             base.draggable(todo.id.uuidString) {
