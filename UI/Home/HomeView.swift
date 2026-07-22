@@ -390,13 +390,17 @@ struct HomeView<Store: HomeTodoStore>: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                VoiceFAB(
-                    isDisabled: isInputEntryDisabled,
-                    onTap: { openVoiceInputPanel() }
-                )
-                // 输入面板展开 OR Calendar tab 的 unscheduled drawer 展开 → FAB 淡出
-                // (drawer 覆盖底部,FAB 留着会视觉冲突 + 点不到)
-                .opacity((showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) ? 0 : 1)
+                // 输入面板展开 OR Calendar tab 的 unscheduled drawer 展开 → FAB 完全移除
+                // (drawer 展开时需要释放底部空间——之前用 .opacity(0) 会让 safeAreaInset
+                // 仍保留 FAB 的布局高度,变成「挡板」压缩 drawer 可用区域。
+                // 条件渲染 + .transition(.opacity) 既释放空间又保留淡入淡出动画。)
+                if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
+                    VoiceFAB(
+                        isDisabled: isInputEntryDisabled,
+                        onTap: { openVoiceInputPanel() }
+                    )
+                    .transition(.opacity)
+                }
             }
             // 底部输入面板（从底部滑出 + 遮罩）
             .overlay(alignment: .bottom) {
