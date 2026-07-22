@@ -74,8 +74,20 @@ struct WarmTodoCard: View {
     let todo: TodoItemData
     let onToggle: () -> Void
     var onTap: (() -> Void)? = nil
+    /// 长按 context menu:移到指定 bucket。nil 时不挂 contextMenu(向后兼容)。
+    var onMoveToBucket: ((TimeBucket) -> Void)? = nil
+    /// 长按 context menu:移到明天。nil 时不显示「移到明天」项。
+    var onMoveToTomorrow: (() -> Void)? = nil
     var showsTimeBucketMetadata = true
     var dueStatusDisplayMode: DueStatusDisplayMode = .full
+
+    /// 分类图标圆背景尺寸。用 @ScaledMetric 跟随 Dynamic Type 缩放,基准 28pt。
+    /// relativeTo: .body 跟卡片标题字号(WarmFont.body(16) → .body textStyle)同步缩放,
+    /// 避免 AX5 下字变大而图标不变导致比例失衡。
+    /// 用户原话:「任务卡片的分类图标用 @ScaledMetric 定尺寸」。
+    @ScaledMetric(relativeTo: .body) private var categoryIconCircleSize: CGFloat = 28
+    /// 分类图标 SF Symbol 字号。基准 12pt,同步跟随 .body 缩放。
+    @ScaledMetric(relativeTo: .body) private var categoryIconFontSize: CGFloat = 12
 
     private var categoryColor: Color {
         WarmTheme.color(for: todo.category)
@@ -223,10 +235,10 @@ struct WarmTodoCard: View {
                     ZStack {
                         Circle()
                             .fill(todo.isCompleted ? WarmTheme.textMuted.opacity(0.16) : categoryColor.opacity(0.16))
-                            .frame(width: 28, height: 28)
+                            .frame(width: categoryIconCircleSize, height: categoryIconCircleSize)
 
                         Image(systemName: todo.category.sfSymbolName)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: categoryIconFontSize, weight: .semibold))
                             .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
                     }
 
@@ -293,9 +305,49 @@ struct WarmTodoCard: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onTap?() }
         )
+        // 长按 context menu:兜底路径,不走拖拽也能改时段/移到明天。
+        // 只在调用方注入 callback 时才挂 —— preview / mock 场景两个 callback 都 nil,
+        // 此时 contextMenu 的 ViewBuilder 返回 EmptyView → SwiftUI 不挂 long-press 手势,
+        // 与「裸 view」行为等价,但保持 View tree 类型稳定(condition 切换不引起重建)。
+        // .draggable / .onTapGesture 与 contextMenu 三手势共存:
+        // tap = 立即抬起,drag = 位移达阈值,long-press = 按住不动达阈值;iOS 自动仲裁。
+        .contextMenu {
+            if let onMoveToBucket {
+                Section(String(localized: "card.menu.move_to_bucket")) {
+                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                        Button {
+                            HapticFeedback.light()
+                            onMoveToBucket(bucket)
+                        } label: {
+                            Label(bucket.localizedTitle, systemImage: Self.bucketIcon(bucket))
+                        }
+                    }
+                }
+            }
+            if let onMoveToTomorrow {
+                Button {
+                    HapticFeedback.light()
+                    onMoveToTomorrow()
+                } label: {
+                    Label(String(localized: "card.menu.move_to_tomorrow"), systemImage: "calendar.badge.plus")
+                }
+            }
+        }
         .accessibilityIdentifier("TodoCell_\(index)")
         .accessibilityValue(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
         .accessibilityHint(String(localized: "a11y.view_detail"))
+    }
+
+    /// Context menu 里每个 bucket 的 SF Symbol。
+    /// 与 TodoItemRow.swift 用的 `sun.max` 不同 —— 那里是 picker 的统一图标,
+    /// 这里是 menu 内的视觉扫描辅助,每个 bucket 各自的时段意象更直观。
+    static func bucketIcon(_ bucket: TimeBucket) -> String {
+        switch bucket {
+        case .anytime: return "circle.dotted"
+        case .morning: return "sun.haze"
+        case .afternoon: return "sun.max"
+        case .evening: return "moon.stars"
+        }
     }
 }
 

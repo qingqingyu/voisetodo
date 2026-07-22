@@ -28,6 +28,10 @@ struct UnscheduledDrawer: View {
     /// **契约**:必须传真实 ZStack height(非 0、非 .infinity),否则小屏下 clamp 失效。
     /// drawer 内部用此值 clamp 展开态内容区,避免占满整个 timeline 视野。
     let availableHeight: CGFloat
+    /// 长按 context menu:unscheduled 卡片移到选中日的某 bucket(同时设 dueDate + bucket)。
+    let onMoveToBucket: (UUID, TimeBucket) -> Void
+    /// 长按 context menu:unscheduled 卡片移到明天(保留 timeBucket)。
+    let onMoveToTomorrow: (UUID) -> Void
 
     /// 反向拖拽命中态:整个 drawer 描边高亮。
     /// 折叠态下命中 drop 还会自动展开 `isExpanded = true`,避免释放点不可见。
@@ -220,7 +224,9 @@ struct UnscheduledDrawer: View {
             index: index,
             todo: todo,
             onToggle: { onToggleTodo(todo.id) },
-            onTap: { onOpenTodo(todo) }
+            onTap: { onOpenTodo(todo) },
+            onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
+            onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
         )
         .cardEntrance(id: todo.id, index: index, cardAppeared: $cardAppeared)
         .draggable(todo.id.uuidString) {

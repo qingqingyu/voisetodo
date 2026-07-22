@@ -22,18 +22,28 @@ struct HomeMonthHeaderView: View {
     /// 显示样式：`.list` 用 `HomeMonthDayButton`（数字+圆点），`.grid` 用 `HomeMonthGridButton`（数字+事件条）。
     /// 默认 `.list` 保持现有调用方零改动。
     var displayMode: CalendarDisplayMode = .list
+    /// Header 收起进度,由 HomeView.headerCollapseProgress 注入(0=全展开、1=全收)。
+    /// 作用范围仅 list+week 分支:weekday 标签行淡出+收缩、日期圆行轻微压扁(48→44)。
+    /// grid 模式和 month 模式短路(不收),与 `calendarHeight` 的分支策略一致。
+    var collapseProgress: Double = 0
 
     /// 根据可用高度计算日期格行高。
     /// 固定段（星期表头 + spacing + padding）≈ 48pt（见 calendarFixedSectionHeight）；
     /// 剩余空间平分给网格行（月视图 6 行 / 周视图 1 行）。
     /// availableHeight = 0 时回退到默认 WarmSpacing.xxxl（48pt）。
     /// 注：月份标题 + 翻月按钮已合并进页头（HomeView.headerView），卡片内不再有导航行。
+    /// week 模式下随 collapseProgress 轻微压扁(48→44),配合 calendarHeight 96→44 的插值;
+    /// month 模式不压(日历网格用户要看)。
     private var dayRowHeight: CGFloat {
-        HomeLayoutMetrics.dayRowHeight(availableHeight: availableHeight, viewMode: state.viewMode, displayMode: displayMode)
+        let base = HomeLayoutMetrics.dayRowHeight(availableHeight: availableHeight, viewMode: state.viewMode, displayMode: displayMode)
+        guard state.viewMode == .week else { return base }
+        return base - HomeLayoutMetrics.weekCollapseRowShrink * CGFloat(collapseProgress)
     }
 
     var body: some View {
-        VStack(spacing: WarmSpacing.xs) {
+        VStack(spacing: WarmSpacing.xs * (1 - CGFloat(collapseProgress))) {
+            // weekday 标签行(周一/周二/...):拖拽时整体淡出 + 高度收缩到 0。
+            // 用户原话「周日期条吸顶变成一个紧凑的 44pt 条」= 只留日期圆,weekday 行消失。
             HStack(spacing: WarmSpacing.xs) {
                 ForEach(state.weekHeaderDays, id: \.self) { day in
                     Text(state.weekdayTitle(for: day))
@@ -42,6 +52,9 @@ struct HomeMonthHeaderView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
+            .opacity(1 - CGFloat(collapseProgress))
+            .frame(height: HomeLayoutMetrics.calendarFixedSectionHeight * (1 - CGFloat(collapseProgress)), alignment: .top)
+            .clipped()
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: WarmSpacing.xs), count: 7), spacing: WarmSpacing.xs) {
                 ForEach(state.visibleDays, id: \.self) { day in
@@ -145,6 +158,24 @@ enum HomeLayoutMetrics {
     /// 将来支持 RTL 语言时需按 @Environment(\.layoutDirection) 翻转符号。
     static let periodSwipeThreshold: CGFloat = 60
 
+    // MARK: - Header 收起(抽屉拖拽驱动)
+    // 以下高度都是经验估算,后续视觉微调集中改这里。详见 HomeView.headerCollapseProgress。
+
+    /// 标题行自然高度:serifDisplay(30) 文本 + 垂直 padding 余量。
+    /// 用于 headerView 标题行 `.frame(height:)` 随 progress 收缩。
+    static let headerTitleRowHeight: CGFloat = 50
+    /// Today/Calendar tab 切换行自然高度。
+    static let viewSwitcherRowHeight: CGFloat = 38
+    /// 本周小结行自然高度:小图标 + caption(13) 文本 + padding。
+    static let weeklySummaryRowHeight: CGFloat = 30
+    /// Header 完全收起后,周日期条吸顶保留的总高度。
+    /// = 日期圆 26pt + 上下各 9pt padding ≈ 44pt(对齐 iOS 44pt 触控区惯例)。
+    /// 用户原话:「周日期条吸顶变成一个紧凑的 44pt 条」。
+    static let collapsedWeekStripHeight: CGFloat = 44
+    /// week 模式下日期圆行随 collapseProgress 的压扁量(48→44)。
+    /// 4pt 是经验值:再大会裁切圆点槽位(6pt),再小则视觉上「没收回」。
+    static let weekCollapseRowShrink: CGFloat = 4
+
     /// 圆点直径跟 rowHeight 自适应：
     /// 改版后圆点移到选中圆下方的固定槽位（不再与数字底部 overlay 挤压），
     /// 阈值相应放宽——行高 ≥22 即可容纳「圆 + 6pt 槽位」结构。
@@ -226,7 +257,8 @@ enum HomeLayoutMetrics {
         availableHeight: CGFloat,
         selectedTab: BottomTab,
         viewMode: CalendarViewMode,
-        displayMode: CalendarDisplayMode = .list
+        displayMode: CalendarDisplayMode = .list,
+        collapseProgress: Double = 0
     ) -> CGFloat {
         guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
         switch displayMode {
@@ -234,9 +266,17 @@ enum HomeLayoutMetrics {
             let maxCap = availableHeight * calendarTargetHeightRatio
             switch viewMode {
             case .month:
+                // 月视图不插值:占 44% 屏高的日历网格用户仍要看,只收 headerView 标题/tab/summary。
                 return maxCap
             case .week:
-                let contentHeight = calendarFixedSectionHeight + weekDesiredRowHeight
+                // 抽屉拖拽驱动:
+                // - weekday 标签行(calendarFixedSectionHeight=48)随 progress 线性归零
+                // - 日期圆行 48→44(轻微压扁,保住圆点不被裁切)
+                // 总高 96 → 44,释放 52pt 给 timeline。
+                let p = CGFloat(collapseProgress)
+                let weekday = calendarFixedSectionHeight * (1 - p)
+                let weekRow = weekDesiredRowHeight - weekCollapseRowShrink * p
+                let contentHeight = weekday + weekRow
                 return min(maxCap, contentHeight)
             }
         case .grid:
@@ -244,6 +284,7 @@ enum HomeLayoutMetrics {
             // 下方不再渲染 HomeSelectedDayListView(见 HomeView.monthHomeView),
             // 网格可占满几乎全部高度,留小底部空白作为视觉缓冲。
             // 网格+周:仍需保留 30% 给列表(时间轴下方显示选中日任务)。
+            // grid 模式不参与 header collapse(WeekTimelineView 是独立组件,本次不动)。
             if viewMode == .month {
                 return availableHeight * gridMonthFullHeightRatio
             }

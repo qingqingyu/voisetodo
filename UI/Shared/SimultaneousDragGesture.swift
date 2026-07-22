@@ -136,7 +136,6 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
         let coordinator = context.coordinator
-        let now = CACurrentMediaTime()
         switch recognizer.state {
         case .ended:
             // recognizer.view 在手势激活期间不应为 nil(view 持有 recognizer);
@@ -155,7 +154,14 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
             // minimumDistance 语义对齐 DragGesture:任一方向位移超过阈值才算手势成立。
             // 位移不足则不调用 onEnded,等价于"手势未激活"。
             guard abs(translation.x) >= minD || abs(translation.y) >= minD else { return }
-            coordinator.onEnded?(DragTranslation(startLocation: startLocation, location: location, velocity: .zero))
+            // velocity(in:) 是 UIPanGestureRecognizer 原生的瞬时速度估算(pt/s),
+            // 比手动采样差分更稳。转 CGVector 保持 DragTranslation.velocity 语义。
+            let v = recognizer.velocity(in: view)
+            coordinator.onEnded?(DragTranslation(
+                startLocation: startLocation,
+                location: location,
+                velocity: CGVector(dx: v.x, dy: v.y)
+            ))
         case .cancelled, .failed:
             // .cancelled 表示手势被系统中断(如 ScrollView / 系统边缘滑动抢手势),
             // 非用户主动结束——此时用部分位移触发 onEnded 会误切换状态,故不调用。
@@ -163,24 +169,9 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
             break
         default:
             // .began / .changed 不处理——只在 .ended 时一次性触发。
-            // 如需实时回调(onChanged),可在此扩展。
+            // (历史:曾为 drawer drag 派发 onChanged 跟手回调,A 方案推翻后已不需要;
+            // velocity 修复保留 —— 原先硬编码 .zero 是 bug,与 A 无关。)
             break
         }
-    }
-
-    /// 用最近两次采样的位移差 / 时间差估算瞬时速度(pt/s)。
-    /// `previous` 为 nil(began 后第一次 changed)或时间差为 0(同帧多事件)时返回 .zero——
-    /// 避免除零;调用方对 .zero 应视为"速度未知"而非"静止",不影响位移判定。
-    private func estimateVelocity(
-        current: (time: TimeInterval, point: CGPoint),
-        previous: (time: TimeInterval, point: CGPoint)?
-    ) -> CGVector {
-        guard let prev = previous, current.time > prev.time else { return .zero }
-        // 下限 1/60s:同帧多事件时 dt 接近 0,会被成千倍放大位移差。clamp 到一帧时长。
-        let dt = max(current.time - prev.time, 1.0 / 60.0)
-        return CGVector(
-            dx: (current.point.x - prev.point.x) / dt,
-            dy: (current.point.y - prev.point.y) / dt
-        )
     }
 }

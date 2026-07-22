@@ -31,6 +31,10 @@ enum ErrorMessages {
     // 存储相关
     static let storageError = String(localized: "error.storage")
     static let sharedStorageUnavailable = String(localized: "error.shared_storage_unavailable")
+    /// 日期计算意外失败(Calendar.date(byAdding:...) 返回 nil)。
+    /// 理论上不会触发(只有 invalid calendar + 单位组合才 nil),但若触发
+    /// 需给用户比"存储错误"更准确的反馈——不是 SwiftData 写失败。
+    static let dateCalcFailed = String(localized: "error.date_calc_failed")
     /// 兜底文案——任何**非 VoiceTodoError 类型**的系统错误(URLError / SwiftDataError /
     /// 第三方库原生 NSError 等)统一显示这条,不暴露 `.localizedDescription` 的英文
     /// 技术描述。原始 error 通过 `VoiceTodoLog.errorSummary(_:)` 入日志/telemetry,

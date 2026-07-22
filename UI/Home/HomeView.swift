@@ -251,6 +251,26 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 默认折叠(unscheduled 多时视觉干净);Today tab 不用 drawer,此状态无意义。
     @State private var unscheduledDrawerExpanded: Bool = false
 
+    /// Header 收起进度,0 = 完全展开(header 全显)、1 = 完全收起(header 压到最紧)。
+    /// 由 `isTaskDragging` 驱动:任务卡片拖拽进行中 → 1.0(收起),否则 0.0(展开)。
+    /// `isTaskDragging` 由 `DragSessionTracker`(全屏 UIDropInteraction overlay)在
+    /// `sessionDidEnter` / `sessionDidEnd` 时 withAnimation 写入,SwiftUI 的 animation
+    /// 系统会在 0↔1 之间 spring 插值(因为写入处包了 withAnimation)。
+    ///
+    /// grid 模式短路:grid+week 走 `WeekTimelineView`(独立组件,本次不动);
+    /// grid+month 的日历网格用户要看,不能压。HomeLayoutMetrics.calendarHeight 的 grid 分支
+    /// 也不参与插值,若这里返回 1.0 会让 header 收起但 calendar 高度不变(grid+week 下)——
+    /// 视觉错位。grid 模式一律返回 0,只在 list 模式下响应 drag。
+    private var headerCollapseProgress: Double {
+        guard calendarDisplayMode == .list else { return 0 }
+        return isTaskDragging ? 1.0 : 0.0
+    }
+
+    /// 任务卡片拖拽是否进行中。由 `DragSessionTracker`(全屏 UIDropInteraction overlay)
+    /// 在 `sessionDidEnter` / `sessionDidEnd` 时 withAnimation 写入。
+    /// 驱动 `DragTargetOverlay` 的显示 + DayTimelineView 的 dim,Phase 3 还会驱动 header 收起。
+    @State private var isTaskDragging: Bool = false
+
     /// 本周完成数(用于首页"本周小结"卡片)。
     private var weeklyCompletedCount: Int {
         let cal = Calendar.current
@@ -282,6 +302,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                     headerView
 
                     // 本周小结卡片(快速入口到回顾页)
+                    // 拖拽时整体淡出 + 高度收(回顾类信息,与当下排程动作无关——用户原话)。
                     if weeklyCompletedCount > 0 {
                         NavigationLink {
                             ReviewView()
@@ -302,6 +323,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                             .padding(.vertical, WarmSpacing.xs)
                         }
                         .buttonStyle(.plain)
+                        .opacity(1 - headerCollapseProgress)
+                        .frame(height: HomeLayoutMetrics.weeklySummaryRowHeight * (1 - headerCollapseProgress), alignment: .top)
+                        .clipped()
                     }
 
                     if coordinator.isRecording || isProcessing || coordinator.isExtracting {
@@ -477,8 +501,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+        // spacing 跟着 progress 收:progress=1 时标题/tab 行完全收起,spacing 也归零,
+        // 避免收起后 VStack 中间留一条死空白。
+        VStack(alignment: .leading, spacing: WarmSpacing.sm * (1 - headerCollapseProgress)) {
             // 左右分布（对齐 HTML 设计稿）：左=标题组，右=进度环+设置齿轮。
+            // 拖拽时整行向上滑出 + 淡出(导航类,与当下排程动作无关)。
             HStack(alignment: .center, spacing: WarmSpacing.md) {
                 if selectedBottomTab == .today {
                     // 今日 tab：星期几（主，大字）+ 日期（副，小灰字），基线对齐。
@@ -531,13 +558,28 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 settingsButton
             }
+            .opacity(1 - headerCollapseProgress)
+            // frame height 按 progress 收缩 + .top alignment 让内容锚定在顶部,
+            // 底部先被 clipped:视觉上是"内容向上卷起"而非"挤压变形"。
+            // combined with opacity fade = "向上滑出并淡出" 的连续效果。
+            .frame(height: HomeLayoutMetrics.headerTitleRowHeight * (1 - headerCollapseProgress), alignment: .top)
+            .clipped()
+            // 收起期间禁用 hit testing:视觉上已淡出 + clipped,但 Button 仍可能响应
+            // 穿透 opacity=0 的深点。progress > 0.5 即认定「已进入收起态」,关掉事件。
+            .allowsHitTesting(headerCollapseProgress < 0.5)
 
             // 导航切换器：Today / Calendar 下划线样式，左对齐（对齐设计稿）。
+            // 同样跟着收起(tap tab 是导航类信息,拖拽时不需要看)。
             viewSwitcher
+                .opacity(1 - headerCollapseProgress)
+                .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight * (1 - headerCollapseProgress), alignment: .top)
+                .clipped()
+                .allowsHitTesting(headerCollapseProgress < 0.5)
         }
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.md)
-        .padding(.bottom, WarmSpacing.sm)
+        // bottom padding 跟着 progress 收:避免收起后底部留白。
+        .padding(.bottom, WarmSpacing.sm * (1 - headerCollapseProgress))
         .background(
             WarmTheme.background.opacity(0.9)
                 .shadow(color: WarmTheme.shadowLight, radius: 1, y: 1)
@@ -562,7 +604,9 @@ struct HomeView<Store: HomeTodoStore>: View {
             withAnimation(WarmAnimation.springFast) {
                 selectedBottomTab = tab
                 // 切到 Today tab 时 drawer 状态无意义,reset 避免下次切回 Calendar 突然展开。
-                if tab != .calendar { unscheduledDrawerExpanded = false }
+                if tab != .calendar {
+                    unscheduledDrawerExpanded = false
+                }
             }
         } label: {
             VStack(spacing: 3) {
@@ -863,7 +907,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
                 onShiftPeriod: { shiftPeriod(by: $0) },
                 availableHeight: calendarHeight,
-                displayMode: calendarDisplayMode
+                displayMode: calendarDisplayMode,
+                collapseProgress: headerCollapseProgress
             )
         }
     }
@@ -886,7 +931,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 availableHeight: proxy.size.height,
                 selectedTab: selectedBottomTab,
                 viewMode: calendarViewMode,
-                displayMode: calendarDisplayMode
+                displayMode: calendarDisplayMode,
+                collapseProgress: headerCollapseProgress
             )
 
             VStack(spacing: 0) {
@@ -942,8 +988,24 @@ struct HomeView<Store: HomeTodoStore>: View {
                                     onToggleOccurrence: { actions.toggleOccurrence($0) },
                                     onOpenTodo: { selectedTodo = $0 },
                                     onSetTodoHour: { id, date in setTodoHour(id, hourMinute: date) },
-                                    onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) }
+                                    onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                                    onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                                    onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
                                 )
+                                // 拖拽期间底层 dim 到 35%:让 overlay 主导视觉,
+                                // 但底层卡片位置仍隐约可辨(用户能看到原位置参考)。
+                                // 动画曲线由 DragSessionTracker 闭包内的 withAnimation 提供,
+                                // 这里不再重复 .animation(value:) 避免双重曲线冲突。
+                                .opacity(isTaskDragging ? 0.35 : 1.0)
+
+                                if isTaskDragging {
+                                    DragTargetOverlay(
+                                        state: state,
+                                        onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) }
+                                    )
+                                    .transition(.opacity)
+                                    .zIndex(1)
+                                }
 
                                 if !state.unscheduledTodos.isEmpty {
                                     UnscheduledDrawer(
@@ -953,9 +1015,36 @@ struct HomeView<Store: HomeTodoStore>: View {
                                         onToggleTodo: { actions.toggleTodo($0) },
                                         onOpenTodo: { selectedTodo = $0 },
                                         onDropToUnscheduled: { id in unassignTodoFromDay(id) },
-                                        availableHeight: listHeight
+                                        availableHeight: listHeight,
+                                        onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                                        onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
                                     )
                                 }
+                            }
+                            // DragSessionTracker:全屏 UIDropInteraction,放 ZStack 外层 overlay。
+                            // .allowsHitTesting(false) 让 tracker 不消费 touch,只观察 drop session。
+                            // sessionDidEnter/sessionDidEnd 派发到 isTaskDragging。
+                            //
+                            // **已知不确定点**:`.allowsHitTesting(false)` 是 SwiftUI 的 hit-test 门控,
+                            // 而 UIDropInteraction 走 UIKit 自己的 hit-test 链 —— 两者是否完全等价
+                            // 没有官方文档保证。当前实现在真机/模拟器下可用(scroll / tap 不受影响),
+                            // 但若 iOS 升级后出现 tracker 吞事件症状,优先怀疑此处,改用
+                            // UIView 的 `isUserInteractionEnabled = false` 或把 tracker 挂到
+                            // 非 overlay 的独立 window 上。
+                            .overlay {
+                                DragSessionTracker(
+                                    onSessionBegan: {
+                                        withAnimation(WarmAnimation.springFast) {
+                                            isTaskDragging = true
+                                        }
+                                    },
+                                    onSessionEnded: {
+                                        withAnimation(WarmAnimation.springSmooth) {
+                                            isTaskDragging = false
+                                        }
+                                    }
+                                )
+                                .allowsHitTesting(false)
                             }
                             .frame(height: listHeight)
                             .clipped()
@@ -971,7 +1060,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                                 onOpenTodo: { selectedTodo = $0 },
                                 onMoveUnscheduled: { source, destination in
                                     moveUnscheduled(from: source, to: destination)
-                                }
+                                },
+                                onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                                onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
                             )
                             .frame(height: listHeight)
                             .clipped()
@@ -1672,6 +1763,66 @@ struct HomeView<Store: HomeTodoStore>: View {
             )
         } catch {
             VoiceTodoLog.store.error("home.assign_bucket.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// Context menu「移到明天」:把任务 dueDate 推到明天(保留原 timeBucket/钟点)。
+    /// 跟 `assignTodoToBucket` 不同 —— 那个改 bucket 重置钟点;这个只挪日期不改时段语义。
+    /// 已完成的任务走这个路径也合理:用户可能在规划明天的安排时挪已完成的复盘项。
+    ///
+    /// **依赖契约**:`TodoDetailUpdate` 的 nil 字段(category / priority)语义是「不更新」,
+    /// 非 nil 字段(title / detail / dueDate / hasDueTime / timeBucket / dueHint /
+    /// recurrenceRule)显式重传 —— 为了只让 dueDate 变化,其他字段传回原值。
+    /// 若 TodoDetailUpdate 的语义将来改成「nil = 清空」,这里需同步改用 nil 表示不更新。
+    ///
+    /// **DST 边界**:`bySettingHour` 在春令时跳变日凌晨 2:00→3:00 时若原钟点是 2:30
+    /// 会返回 nil,fallback 到 `tomorrow`(00:00)。这是已知取舍(一年 1-2 次),
+    /// 不静默吞错误,但用户预期「明天 2:30」会变成「明天 0:00」。
+    private func moveTodoToTomorrow(_ todoId: UUID) {
+        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+            VoiceTodoLog.ui.warning("home.move_to_tomorrow.todo_not_found id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        // 用 DayClock.startOfUserDay 算"明天"而非 calendar.date(byAdding:.day, value:1, to: Date()),
+        // 保持与 app 其他地方"用户一天起点"的口径一致(自定义 dayStartHour 时不一致会差几小时)。
+        let today = DayClock.startOfUserDay(for: Date(), calendar: calendar)
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else {
+            VoiceTodoLog.ui.error("home.move_to_tomorrow.date_calc_failed id=\(todoId.uuidString, privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.dateCalcFailed, style: .warning)
+            return
+        }
+        // 保留原 hasDueTime 和 dueDate 的钟点分量 —— 明天同时段。
+        // 若原 hasDueTime=false,dueDate 直接换成明天的 00:00;若 true,需把钟点拼回明天日期上。
+        let newDueDate: Date = todo.hasDueTime
+            ? (todo.dueDate.map { originalDue in
+                calendar.date(bySettingHour: calendar.component(.hour, from: originalDue),
+                              minute: calendar.component(.minute, from: originalDue),
+                              second: 0, of: tomorrow) ?? tomorrow
+            } ?? tomorrow)
+            : tomorrow
+        do {
+            try coordinator.updateTodoDetail(
+                todoId,
+                update: TodoDetailUpdate(
+                    title: todo.title,
+                    detail: todo.detail,
+                    category: nil,
+                    priority: nil,
+                    dueDate: newDueDate,
+                    hasDueTime: todo.hasDueTime,
+                    timeBucket: todo.timeBucket,
+                    dueHint: "",
+                    recurrenceRule: todo.recurrenceRule
+                )
+            )
+            occurrenceRevision += 1
+            coordinator.showToast(
+                message: String(format: String(localized: "home.moved_to_tomorrow"), todo.title),
+                style: .success
+            )
+        } catch {
+            VoiceTodoLog.store.error("home.move_to_tomorrow.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
         }
     }

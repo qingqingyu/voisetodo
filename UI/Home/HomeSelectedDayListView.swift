@@ -9,6 +9,10 @@ struct HomeSelectedDayListView: View {
     let onDeleteTodo: (UUID) -> Void
     let onOpenTodo: (TodoItemData) -> Void
     let onMoveUnscheduled: (IndexSet, Int) -> Void
+    /// 长按 context menu:卡片移到某 bucket。
+    let onMoveToBucket: (UUID, TimeBucket) -> Void
+    /// 长按 context menu:卡片移到明天。
+    let onMoveToTomorrow: (UUID) -> Void
 
     /// Unscheduled 重排编辑态。激活时行显示原生三横线把手（区别于"拖到月历"的胶囊）。
     /// 由 Unscheduled 分区头的「排序/完成」按钮切换。
@@ -263,7 +267,9 @@ struct HomeSelectedDayListView: View {
             index: index,
             todo: todo,
             onToggle: onToggle,
-            onTap: onTap
+            onTap: onTap,
+            onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
+            onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
         )
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
@@ -294,6 +300,8 @@ struct HomeSelectedDayListView: View {
             todo: occurrence.todo,
             onToggle: { onToggleOccurrence(occurrence) },
             onTap: { onOpenTodo(occurrence.todo) },
+            onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
+            onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
             showsTimeBucketMetadata: false,
             // 已在按天分组的分区里，"Today" 尾标冗余；只保留"过期"红标。
             dueStatusDisplayMode: .overdueOnly

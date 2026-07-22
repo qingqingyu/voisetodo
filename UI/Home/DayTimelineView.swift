@@ -33,36 +33,27 @@ struct DayTimelineView: View {
     /// drawer → timeline:unscheduled 卡片拖到 bucket slot 排程。
     /// 调用方(`HomeView`)实现 `assignTodoToBucket`(设 dueDate + bucket)。
     let onDropToBucket: (UUID, TimeBucket) -> Void
+    /// 长按 context menu:卡片移到同 day 的另一 bucket。语义上跟 `onDropToBucket` 同业务动作,
+    /// 但来源是 contextMenu(非拖拽),独立 callback 不污染 drop 路径的语义。
+    let onMoveToBucket: (UUID, TimeBucket) -> Void
+    /// 长按 context menu:卡片移到明天(保留 timeBucket/钟点)。
+    let onMoveToTomorrow: (UUID) -> Void
 
     /// 当前打开钟点 sheet 的 bucket(`nil` 表示未打开)。仅 non-anytime bucket 可设。
     @State private var hourSheetItem: BucketHourSheetItem?
     /// 当前拖拽命中的 bucket(`nil` 表示未命中)。bucket slot 用它描边高亮。
     @State private var targetedBucket: TimeBucket?
 
-    /// 左侧 bucket 标签列宽。caption(12) 默认档位下最长 "Afternoon" ~55pt,留余量到 64。
-    /// **Dynamic Type**:`WarmFont.caption` 跟随系统字号缩放,AX 档位会放大到 ~2-3x。
-    /// 用 `.frame(maxWidth:, alignment: .trailing)` + `lineLimit(2)` 让 label
-    /// 在 AX 档位自动换行到 2 行而非被裁切,符合项目「全档位必须可读」硬约束。
-    /// 默认档位下最长 "Afternoon" 单行 ~55pt ≤ 64pt,lineLimit(2) 不影响布局。
-    private static let labelColumnWidth: CGFloat = 64
-    /// 节点圆点直径(跟参考视觉稿一致,12pt)。
-    private static let nodeSize: CGFloat = 12
-    /// 节点圆点的描边宽度。
-    private static let nodeStrokeWidth: CGFloat = 3
-    /// 垂直线宽度。
-    private static let lineWidth: CGFloat = 2
-    /// 空 slot 占位高度——保证时间线视觉不断,即使 bucket 内无卡片。
-    /// 取值对齐 WarmTodoCard 最小高度(单行标题 + padding ≈ 48pt)+ VStack spacing,
-    /// 让空 slot 与单卡片 slot 在垂直线长度上视觉一致。
-    private static let emptySlotHeight: CGFloat = 56
-    /// 节点圆点相对 bucket 标签的额外下移量,跟 `WarmFont.caption` 行高对齐,
-    /// 让圆点视觉上与第一张卡片的中线对齐。
-    private static let nodeVerticalOffset: CGFloat = 2
-    /// 已完成卡片相对 timeline 左侧的 leading inset,与 bucketSlot 右列起点对齐:
-    /// labelColumnWidth(标签列) + nodeSize(节点列) + WarmSpacing.xxs(label→node 间距)
-    /// + WarmSpacing.xs(node→卡片间距)。抽常量避免 layout 参数变化时手算公式失准。
-    private static let completedCardLeadingInset: CGFloat =
-        labelColumnWidth + nodeSize + WarmSpacing.xs + WarmSpacing.xxs
+    /// Section header 垂直 padding。用 `@ScaledMetric(relativeTo: .subheadline)`
+    /// 让 padding 跟随字号一起放大 —— AX5 下文字变 ~3x,padding 也变 ~3x,避免
+    /// 「字大但间距挤」的失衡。基准 8pt 对齐 SwiftUI 默认 List section header 间距。
+    @ScaledMetric(relativeTo: .subheadline) private var sectionVerticalPadding: CGFloat = 8
+
+    /// Section header 与下方卡片/分隔线的间距。同样跟随 Dynamic Type 缩放,
+    /// 基准 WarmSpacing.xs(8pt)。独立于 `sectionVerticalPadding` 是因为这两段
+    /// 语义不同:sectionVerticalPadding 是 header 内部上下边距,
+    /// headerToContentGap 是 header 到内容的过渡空间。
+    @ScaledMetric(relativeTo: .subheadline) private var headerToContentGap: CGFloat = WarmSpacing.xs
 
     var body: some View {
         Group {
@@ -110,8 +101,13 @@ struct DayTimelineView: View {
 
     // MARK: - Bucket slot
 
-    /// 渲染单个 bucket 的 timeline slot:左 label + 中 node/line + 右 cards。
-    /// bucket 内无卡片时仍渲染 slot(空占位),垂直线视觉连贯。
+    /// 渲染单个 bucket 的 timeline slot:水平 section header + 下方卡片列表。
+    /// 用户原话:「改成水平 section header:标签左对齐占满整行,下面挂该时段的任务卡片,
+    /// 去掉那条竖直时间线(它只是装饰,没承担功能)。这样和 Unscheduled 的分组逻辑一致,
+    /// 整个页面只有一套分组模式。」
+    ///
+    /// **不挂图标**(☀️/🌤/🌙):Morning/Afternoon/Evening 本身无歧义,任务卡片左侧
+    /// 已有分类彩色图标,时段属于结构层,应该更安静,不该再引入第二套图标系统。
     @ViewBuilder
     private func bucketSlot(_ bucket: TimeBucket) -> some View {
         let occurrences = state.indexedUncompletedOccurrences(in: bucket)
@@ -121,46 +117,52 @@ struct DayTimelineView: View {
         let hasHourlessCard = bucket != .anytime
             && occurrences.contains { _, occurrence in !occurrence.todo.hasDueTime }
 
-        HStack(alignment: .top, spacing: 0) {
-            // 左侧 bucket 标签:右对齐,跟节点留 nodeInset 间距
-            VStack {
+        VStack(alignment: .leading, spacing: headerToContentGap) {
+            // Section header:左对齐 bucket 标签 + 右侧可选「+ 设钟点」入口。
+            // 字体用语义 token(.subheadline + .semibold + .secondary),不写死 .system(size:),
+            // 跟随 Dynamic Type 全档位缩放。.lineLimit(nil) + .fixedSize 让 AX5 下整词换行
+            // 而非字符截断(避免 "Aftern/oon" 这种尴尬断词)。
+            HStack(alignment: .firstTextBaseline, spacing: WarmSpacing.sm) {
                 Text(bucket.localizedTitle)
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(2)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-            }
-            .frame(maxWidth: Self.labelColumnWidth, alignment: .trailing)
-            .frame(height: hasCards ? nil : Self.emptySlotHeight, alignment: .top)
-            .padding(.top, WarmSpacing.sm)
-            .padding(.trailing, WarmSpacing.xxs)
-
-            // 中间节点 + 垂直线
-            timelineColumn
-
-            // 右侧卡片列表
-            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                if hasCards {
-                    ForEach(occurrences, id: \.1.id) { originalIndex, occurrence in
-                        occurrenceCard(occurrence, index: originalIndex)
-                    }
-                } else {
-                    Color.clear
-                        .frame(height: Self.emptySlotHeight)
-                }
+                Spacer(minLength: WarmSpacing.sm)
                 if hasHourlessCard {
                     setHourButton(bucket)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, WarmSpacing.xs)
-            .padding(.top, WarmSpacing.sm)
-            .padding(.bottom, WarmSpacing.sm)
-            .padding(.trailing, WarmSpacing.lg)
+            .padding(.vertical, sectionVerticalPadding)
+
+            // 卡片列表或空 bucket 占位。
+            // 空状态不用固定高度 —— 让内容(分隔线 + padding)决定高度,
+            // 避免大字号下 header 被外层固定 frame 压扁。
+            if hasCards {
+                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                    ForEach(occurrences, id: \.1.id) { originalIndex, occurrence in
+                        occurrenceCard(occurrence, index: originalIndex)
+                    }
+                }
+            } else {
+                // 空 bucket 的「细条」视觉:一条淡淡的水平分隔线。
+                // 不用 Color.clear 占位 —— 用户反馈空时段仍需视觉锚点(否则看起来像漏渲染)。
+                Rectangle()
+                    .fill(WarmTheme.sketch.opacity(0.25))
+                    .frame(height: 0.5)
+                    .padding(.vertical, WarmSpacing.xs)
+            }
         }
+        .padding(.horizontal, WarmSpacing.xl)
+        .padding(.bottom, WarmSpacing.sm)
         // drawer → timeline 拖拽落点:把 unscheduled 卡片排到当前 bucket。
         // Anytime slot 也接受 drop(用户可以把任务排到「随时」)。
+        // **与 DragTargetOverlay 的协同**:drag session 进行中(isTaskDragging=true)
+        // HomeView 顶层会盖一层 DragTargetOverlay 作 drop target。当 overlay 完全覆盖本 slot 时,
+        // drop 命中 overlay;但 overlay 几何与本 slot 边缘可能不重合,drop 命中本 slot 仍走这里。
+        // 两路 drop 最终都调用 `onDropToBucket`(同业务动作),不会数据冲突,
+        // 但 haptic 反馈路径不同:overlay 走 DropStrip 的 HapticFeedback.success,
+        // 本 slot 不触发 haptic。用户感知上可能"丢一下振动",非功能性 bug。
         .dropDestination(for: String.self) { items, _ in
             guard let idString = items.first, let id = UUID(uuidString: idString) else { return false }
             onDropToBucket(id, bucket)
@@ -172,6 +174,7 @@ struct DayTimelineView: View {
         }
         .overlay {
             if targetedBucket == bucket {
+                // 拖拽命中态高亮:描边整个 slot 范围,跟外层 padding 对齐避免视觉溢出。
                 RoundedRectangle(cornerRadius: WarmRadius.card)
                     .stroke(WarmTheme.primary, lineWidth: 2)
                     .padding(.horizontal, WarmSpacing.xxs)
@@ -183,41 +186,17 @@ struct DayTimelineView: View {
 
     /// 「+ 设钟点」入口:打开 `BucketHourSheet`。candidates 由 `hourSheet` 计算。
     /// 视觉保持小标签风格,避免抢 bucket 标签焦点。
+    /// 字号跟随 Dynamic Type(.caption 是语义 token),不写死 size。
     private func setHourButton(_ bucket: TimeBucket) -> some View {
         Button {
             hourSheetItem = BucketHourSheetItem(bucket: bucket)
         } label: {
             Label(String(localized: "home.timeline.set_hour"), systemImage: "plus.circle")
-                .font(WarmFont.caption(12))
+                .font(.caption)
                 .foregroundColor(WarmTheme.textSecondary)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(String(localized: "a11y.timeline.set_hour"))
-        .padding(.top, WarmSpacing.xxs)
-    }
-
-    /// 中间列:垂直线 + 顶部节点圆点。
-    /// 垂直线用 `Color.clear.frame(maxHeight: .infinity)` 撑到 slot 全高,
-    /// 节点圆点对齐到 bucket 标签 + 第一张卡片的视觉中线。
-    private var timelineColumn: some View {
-        ZStack(alignment: .top) {
-            // 垂直线贯穿整 slot
-            Rectangle()
-                .fill(WarmTheme.sketch.opacity(0.25))
-                .frame(width: Self.lineWidth)
-                .frame(maxHeight: .infinity)
-            // 节点圆点:WarmTheme.background 填充 + sketch 描边
-            // (背景填充让圆点视觉上"穿过"垂直线,而不是叠加)
-            Circle()
-                .fill(WarmTheme.background)
-                .frame(width: Self.nodeSize, height: Self.nodeSize)
-                .overlay(
-                    Circle()
-                        .stroke(WarmTheme.sketch.opacity(0.6), lineWidth: Self.nodeStrokeWidth)
-                )
-                .padding(.top, WarmSpacing.sm + Self.nodeVerticalOffset) // 跟 bucket 标签底部对齐
-        }
-        .frame(width: Self.nodeSize)
     }
 
     // MARK: - Cards
@@ -236,6 +215,8 @@ struct DayTimelineView: View {
                 todo: occurrence.todo,
                 onToggle: { onToggleOccurrence(occurrence) },
                 onTap: { onOpenTodo(occurrence.todo) },
+                onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
+                onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
                 showsTimeBucketMetadata: false,
                 // 已在 timeline 内,bucket 标签冗余;只保留 overdue 红标。
                 dueStatusDisplayMode: .overdueOnly
@@ -270,12 +251,19 @@ struct DayTimelineView: View {
     /// 已完成区:跟 HomeSelectedDayListView 的「已完成」section 一致语义——
     /// 当日已完成 occurrence + 全局已完成 unscheduled。放 timeline 末尾,
     /// 用一个 sectionHeader 分隔(不再走 timeline slot 视觉,已完成不占用时段)。
+    ///
+    /// header 字体与 bucketSlot 的 section header 保持一致(.subheadline.weight(.semibold) +
+    /// .secondary),整个 timeline 只有一套 header 样式,避免 AX5 下两种 header 缩放系数不同
+    /// 形成「一放大一不放大」的撕裂。
     @ViewBuilder
     private var completedSection: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
             HStack(spacing: WarmSpacing.xs) {
                 Text(String(localized: "home.completed_section_title"))
-                    .font(WarmFont.headline(15))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                 let totalCount = state.completedOccurrences.count + state.completedUnscheduledTodos.count
                 Text("\(totalCount)")
                     .font(WarmFont.caption(13))
@@ -284,7 +272,6 @@ struct DayTimelineView: View {
                     .padding(.vertical, WarmSpacing.xxs)
                     .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
             }
-            .foregroundColor(WarmTheme.textSecondary)
             .padding(.leading, WarmSpacing.xl)
             .padding(.top, WarmSpacing.sm)
             .padding(.bottom, WarmSpacing.xxs)
@@ -307,8 +294,6 @@ struct DayTimelineView: View {
             onTap: { onOpenTodo(todo) }
         )
         .cardEntrance(id: todo.id, index: index, cardAppeared: $cardAppeared)
-        .padding(.leading, Self.completedCardLeadingInset)
-        .padding(.trailing, WarmSpacing.lg)
         .padding(.vertical, WarmSpacing.xxs)
     }
 

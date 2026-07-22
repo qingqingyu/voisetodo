@@ -213,6 +213,70 @@
         }
       }
     },
+    "a11y.delete_todo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this todo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此待办"
+          }
+        }
+      }
+    },
+    "a11y.drop_strip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$d task(s)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@,%2$d 项任务"
+          }
+        }
+      }
+    },
+    "a11y.drop_strip.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop the task here to assign it to this time slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将任务放至此处即可排到该时段"
+          }
+        }
+      }
+    },
+    "a11y.display_mode.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switches between list and grid display"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换列表与网格显示"
+          }
+        }
+      }
+    },
     "a11y.drawer.collapse" : {
       "localizations" : {
         "en" : {
@@ -241,38 +305,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "展开未安排"
-          }
-        }
-      }
-    },
-    "a11y.delete_todo" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete this todo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除此待办"
-          }
-        }
-      }
-    },
-    "a11y.display_mode.hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switches between list and grid display"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换列表与网格显示"
           }
         }
       }
@@ -736,6 +768,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "周"
+          }
+        }
+      }
+    },
+    "card.menu.move_to_bucket" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to time slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到时段"
+          }
+        }
+      }
+    },
+    "card.menu.move_to_tomorrow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to tomorrow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到明天"
           }
         }
       }
@@ -1709,6 +1773,22 @@
         }
       }
     },
+    "drop.release_here" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release to drop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "释放即可放下"
+          }
+        }
+      }
+    },
     "due.overdue" : {
       "localizations" : {
         "en" : {
@@ -1806,7 +1886,6 @@
       }
     },
     "empty.day.title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2095,6 +2174,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "录音被中断，请重试"
+          }
+        }
+      }
+    },
+    "error.date_calc_failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't calculate the date. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日期计算失败,请重试"
           }
         }
       }
@@ -2928,6 +3023,22 @@
         }
       }
     },
+    "home.moved_to_tomorrow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" moved to tomorrow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" 已挪到明天"
+          }
+        }
+      }
+    },
     "home.processing" : {
       "localizations" : {
         "en" : {
@@ -2994,23 +3105,6 @@
         }
       }
     },
-    "home.todos_count" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "todos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "项待办"
-          }
-        }
-      }
-    },
     "home.timeline.hour_assigned" : {
       "localizations" : {
         "en" : {
@@ -3055,6 +3149,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设钟点…"
+          }
+        }
+      }
+    },
+    "home.todos_count" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "todos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项待办"
           }
         }
       }
