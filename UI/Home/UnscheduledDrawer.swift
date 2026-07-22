@@ -156,24 +156,29 @@ struct UnscheduledDrawer: View {
     // MARK: - Grabber
 
     /// 顶部小条:视觉指示「这里可以拉开/收起」。点击同 header(扩大点击热区)。
-    /// 用 Button + .buttonStyle(.plain) 而非裸 onTapGesture,让 VoiceOver
-    /// 把 grabber 识别为可操作控件(带 accessibilityLabel),而不是无名装饰元素。
+    ///
+    /// 历史 bug:原实现 `Button + .buttonStyle(.plain) + label 内 padding +
+    /// .contentShape(Rectangle())` 在 SwiftUI 下 hit-test 区域被错误限制为
+    /// Capsule 本身(38×5pt),padding 扩展区不响应 tap——用户反馈「grabber
+    /// 点不动,只能点 header 右侧 chevron」。改用裸 `.onTapGesture` + 外层
+    /// `.contentShape(Rectangle())` 让整个 grabber 行(38×21pt 含 padding)
+    /// 都响应 tap。VoiceOver 可访问性靠手动 `accessibilityElement` +
+    /// `.isButton` trait + `accessibilityAction` 补齐(等效原 Button 行为)。
     private var grabber: some View {
-        Button {
-            toggleExpanded()
-        } label: {
-            Capsule()
-                .fill(WarmTheme.sketch.opacity(0.4))
-                .frame(width: 38, height: Self.grabberCapsuleHeight)
-                .padding(.top, WarmSpacing.xs)
-                .padding(.bottom, WarmSpacing.xs)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isExpanded
-                            ? String(localized: "a11y.drawer.collapse")
-                            : String(localized: "a11y.drawer.expand"))
+        Capsule()
+            .fill(WarmTheme.sketch.opacity(0.4))
+            .frame(width: 38, height: Self.grabberCapsuleHeight)
+            .padding(.top, WarmSpacing.xs)
+            .padding(.bottom, WarmSpacing.xs)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleExpanded() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(isExpanded
+                                ? String(localized: "a11y.drawer.collapse")
+                                : String(localized: "a11y.drawer.expand"))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { toggleExpanded() }
     }
 
     // MARK: - Header
