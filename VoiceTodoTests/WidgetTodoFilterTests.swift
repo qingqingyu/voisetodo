@@ -337,6 +337,181 @@ final class WidgetTodoFilterTests: XCTestCase {
         XCTAssertTrue(try context.fetch(FetchDescriptor<TodoOccurrenceCompletion>()).isEmpty)
     }
 
+    // MARK: - ToggleTodoMutation.apply(direction: .complete)
+
+    /// Siri CompleteTodoIntent 走 `.complete` 方向,核心语义是"幂等置完成":
+    /// 已完成的不重复 save、不覆盖 `completedAt`。这几个测试覆盖 4 条关键分支:
+    ///   1. 一次性任务从未完成 → 置完成
+    ///   2. 一次性任务已完成 → 不覆盖原 completedAt
+    ///   3. 重复任务今日首次完成 → 插 occurrence
+    ///   4. 重复任务今日已完成 → 不重复插 occurrence
+    ///   5. 重复任务今日不发生 → `.nonOccurringToday`
+    ///   6. 不存在的 ID → `.notFound`
+
+    func testCompleteDirectionSetsNormalTodoCompleted() throws {
+        let now = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 5, day: 21, hour: 12)))
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let todo = TodoItem(title: "一次性任务", createdAt: now)
+        context.insert(todo)
+        try context.save()
+
+        let result = try ToggleTodoMutation.apply(
+            todoID: todo.id,
+            context: context,
+            today: now,
+            completedAt: now,
+            direction: .complete
+        )
+        XCTAssertEqual(result, .toggled(recurrence: false, isCompleted: true))
+        XCTAssertTrue(todo.isCompleted)
+        XCTAssertEqual(todo.completedAt, now)
+    }
+
+    func testCompleteDirectionDoesNotOverwriteCompletedAtForAlreadyCompletedTodo() throws {
+        let originalCompletedAt = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 5, day: 20, hour: 9)))
+        let laterDate = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 5, day: 21, hour: 12)))
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let todo = TodoItem(
+            title: "已完成的任务",
+            isCompleted: true,
+            completedAt: originalCompletedAt,
+            createdAt: originalCompletedAt
+        )
+        context.insert(todo)
+        try context.save()
+
+        // 再次 .complete —— 不应覆盖原来的 completedAt。
+        let result = try ToggleTodoMutation.apply(
+            todoID: todo.id,
+            context: context,
+            today: laterDate,
+            completedAt: laterDate,
+            direction: .complete
+        )
+        XCTAssertEqual(result, .toggled(recurrence: false, isCompleted: true))
+        XCTAssertTrue(todo.isCompleted)
+        // 关键断言:completedAt 必须保留原值,不被 laterDate 覆盖。
+        XCTAssertEqual(todo.completedAt, originalCompletedAt)
+    }
+
+    func testCompleteDirectionInsertsOccurrenceForTodayRecurringTodo() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21, hour: 12)))
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let todo = TodoItem(
+            title: "规律任务",
+            dueDate: today,
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            createdAt: today
+        )
+        context.insert(todo)
+        try context.save()
+
+        let result = try ToggleTodoMutation.apply(
+            todoID: todo.id,
+            context: context,
+            today: today,
+            calendar: calendar,
+            completedAt: today,
+            direction: .complete
+        )
+        XCTAssertEqual(result, .toggled(recurrence: true, isCompleted: true))
+        // 关键:base todo 的 isCompleted 仍然 false(只记录 occurrence,不翻转 base)。
+        XCTAssertFalse(todo.isCompleted)
+
+        let completions = try context.fetch(FetchDescriptor<TodoOccurrenceCompletion>())
+        XCTAssertEqual(completions.count, 1)
+        XCTAssertEqual(completions.first?.todoId, todo.id)
+    }
+
+    func testCompleteDirectionDoesNotDuplicateOccurrenceWhenAlreadyCompletedToday() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21, hour: 12)))
+        let originalCompletedAt = today.addingTimeInterval(-3600)
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let todo = TodoItem(
+            title: "今日已完成的规律任务",
+            dueDate: today,
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            createdAt: today
+        )
+        context.insert(todo)
+        try context.save()
+
+        // 第一次 .complete —— 插入 occurrence,记录 originalCompletedAt。
+        _ = try ToggleTodoMutation.apply(
+            todoID: todo.id,
+            context: context,
+            today: today,
+            calendar: calendar,
+            completedAt: originalCompletedAt,
+            direction: .complete
+        )
+
+        // 第二次 .complete —— 幂等:不应插入重复 occurrence,不应覆盖 originalCompletedAt。
+        let secondResult = try ToggleTodoMutation.apply(
+            todoID: todo.id,
+            context: context,
+            today: today,
+            calendar: calendar,
+            completedAt: today,
+            direction: .complete
+        )
+        XCTAssertEqual(secondResult, .toggled(recurrence: true, isCompleted: true))
+
+        let completions = try context.fetch(FetchDescriptor<TodoOccurrenceCompletion>())
+        XCTAssertEqual(completions.count, 1, "重复 .complete 不应产生第二条 occurrence")
+        XCTAssertEqual(completions.first?.completedAt, originalCompletedAt, "原 completedAt 必须保留")
+    }
+
+    func testCompleteDirectionReturnsNonOccurringForRecurringTodoNotToday() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21)))
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: today))
+        let tomorrowWeekday = calendar.component(.weekday, from: tomorrow)
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let todo = TodoItem(
+            title: "非今日规律任务",
+            dueDate: tomorrow,
+            recurrenceRule: RecurrenceRule(frequency: .weekly, weekdays: [tomorrowWeekday]),
+            createdAt: today
+        )
+        context.insert(todo)
+        try context.save()
+
+        let result = try ToggleTodoMutation.apply(
+            todoID: todo.id,
+            context: context,
+            today: today,
+            calendar: calendar,
+            completedAt: today,
+            direction: .complete
+        )
+        XCTAssertEqual(result, .nonOccurringToday)
+        XCTAssertFalse(todo.isCompleted)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<TodoOccurrenceCompletion>()).isEmpty)
+    }
+
+    func testCompleteDirectionReturnsNotFoundForUnknownID() throws {
+        let now = Date()
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+
+        let result = try ToggleTodoMutation.apply(
+            todoID: UUID(),
+            context: context,
+            today: now,
+            completedAt: now,
+            direction: .complete
+        )
+        XCTAssertEqual(result, .notFound)
+    }
+
     func testWidgetTodoFetchReadsSwiftDataAndFiltersTodayOccurrences() throws {
         let calendar = Calendar(identifier: .gregorian)
         let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21)))

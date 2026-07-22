@@ -5893,13 +5893,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Found %lld todo(s)"
+            "value" : "You have %lld todo(s)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共 %lld 条待办"
+            "value" : "你有 %lld 条待办"
           }
         }
       }
