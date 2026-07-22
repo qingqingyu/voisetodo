@@ -243,7 +243,7 @@ struct WarmTodoCard: View {
                     }
 
                     Text(todo.title)
-                        .font(todo.priority == .high ? WarmFont.headline(16) : WarmFont.body(16))
+                        .font(todo.priority == .high ? WarmFont.headline(15) : WarmFont.body(15))
                         .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : WarmTheme.textPrimary)
                         .strikethrough(todo.isCompleted, color: WarmTheme.textSecondary)
                         .lineLimit(2)
@@ -251,13 +251,13 @@ struct WarmTodoCard: View {
 
                 // 元数据合并行：clock + composedTimeText 一行展示。
                 // P3 修复：原 recurrence 用 primaryDark 红色（与 urgent 警告冲突），
-                // 改为 textSecondary 灰色（与 ConfirmSheet 时间行一致）；字号 12 → 11 进一步压低视觉权重。
+                // 改为 textSecondary 灰色（与 ConfirmSheet 时间行一致）；字号继续下压到 10pt 进一步压低视觉权重。
                 if let timeText = composedTimeText {
                     HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: "clock")
                             .font(.system(size: 10))
                         Text(timeText)
-                            .font(WarmFont.caption(11))
+                            .font(WarmFont.caption(10))
                     }
                     .foregroundColor(WarmTheme.textSecondary)
                 }
@@ -267,7 +267,7 @@ struct WarmTodoCard: View {
 
             if let dueStatusText {
                 Text(dueStatusText)
-                    .font(WarmFont.caption(11))
+                    .font(WarmFont.caption(10))
                     .foregroundColor(dueStatusColor)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -288,7 +288,7 @@ struct WarmTodoCard: View {
             }
         }
         .padding(.horizontal, WarmSpacing.md)
-        .padding(.vertical, WarmSpacing.xs)
+        .padding(.vertical, WarmSpacing.xxs)
         // 卡片底色：secondaryBackground 满不透明——0.5 透明度时卡片几乎融入背景，
         // 边界"似有似无"最尴尬。提到 1.0 让 #FFF5EE 与背景 #FFFBF7 有可辨识的对比。
         .background(
