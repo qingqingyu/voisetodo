@@ -283,6 +283,16 @@ struct HomeView<Store: HomeTodoStore>: View {
         }.count
     }
 
+    /// 是否处于 grid+week 视图(Calendar tab + grid 显示模式 + week 视图模式)。
+    /// 单一事实来源(single source of truth):
+    /// - header 层:gate weeklySummary / statsBadge / viewSwitcher 等次要元素
+    /// - body 层:gate DayTimelineView(`monthHomeView` 内原先的局部变量
+    ///   `isGridWeekWithoutTimeline` 已合并到本属性,避免同条件两处分叉)
+    /// 让"一眼看全周"价值最大化。详见 plan: cheerful-coalescing-otter.md。
+    private var isGridWeekView: Bool {
+        selectedBottomTab == .calendar && calendarDisplayMode == .grid && calendarViewMode == .week
+    }
+
     private var actions: HomeViewActions<Store> {
         HomeViewActions(
             store: store,
@@ -303,7 +313,8 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                     // 本周小结卡片(快速入口到回顾页)
                     // 拖拽时整体淡出 + 高度收(回顾类信息,与当下排程动作无关——用户原话)。
-                    if weeklyCompletedCount > 0 {
+                    // grid+week 下隐藏:回流派给时间轴(详见 plan: cheerful-coalescing-otter.md)。
+                    if weeklyCompletedCount > 0 && !isGridWeekView {
                         NavigationLink {
                             ReviewView()
                         } label: {
@@ -551,7 +562,7 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 Spacer()
 
-                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
+                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error && !isGridWeekView {
                     statsBadge
                 }
 
@@ -574,11 +585,15 @@ struct HomeView<Store: HomeTodoStore>: View {
 
             // 导航切换器：Today / Calendar 下划线样式，左对齐（对齐设计稿）。
             // 同样跟着收起(tap tab 是导航类信息,拖拽时不需要看)。
-            viewSwitcher
-                .opacity(1 - headerCollapseProgress)
-                .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight * (1 - headerCollapseProgress), alignment: .top)
-                .clipped()
-                .allowsHitTesting(headerCollapseProgress < 0.5)
+            // grid+week 下隐藏:用户切 Today/Calendar tab 走底部 BottomTabBar。
+            // 详见 plan: cheerful-coalescing-otter.md。
+            if !isGridWeekView {
+                viewSwitcher
+                    .opacity(1 - headerCollapseProgress)
+                    .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight * (1 - headerCollapseProgress), alignment: .top)
+                    .clipped()
+                    .allowsHitTesting(headerCollapseProgress < 0.5)
+            }
         }
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.md)
@@ -975,9 +990,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                     let isGridMonthWithoutList = selectedBottomTab == .calendar
                         && calendarDisplayMode == .grid
                         && calendarViewMode == .month
-                    let isGridWeekWithoutTimeline = selectedBottomTab == .calendar
-                        && calendarDisplayMode == .grid
-                        && calendarViewMode == .week
+                    // grid+week 复用 header 层的 isGridWeekView(单一事实来源),
+                    // 避免同条件两处定义分叉。
                     if !isGridMonthWithoutList {
                         // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
                         // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
@@ -992,7 +1006,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             // grid+周 例外:WeekTimelineView 已经是完整时间轴,下方不再叠 timeline,
                             // 只保留 UnscheduledDrawer 让无 dueDate 任务可见。
                             ZStack(alignment: .bottom) {
-                                if !isGridWeekWithoutTimeline {
+                                if !isGridWeekView {
                                     DayTimelineView(
                                         state: state,
                                         cardAppeared: $cardAppeared,

@@ -261,11 +261,16 @@ struct WeekTimelineView: View {
         .frame(width: Self.gutterWidth, height: timelineHeight, alignment: .topLeading)
     }
 
-    /// 时间轴底:横向网格线(每 2 小时一条)+ 7 列分隔线。
+    /// 时间轴底:仅横向网格线(每 gridLineStepHours 一条,整点位置)。
+    ///
+    /// **设计取舍**(2026-07 用户反馈):
+    /// - 去掉 7 列分隔竖线 —— 竖线让空白区变成"格子纸",视觉噪音压过稀疏的事件内容。
+    ///   竞品(Apple Calendar / Google Calendar)只画横线,竖向用 column 间的视觉留白区分。
+    /// - 横线 opacity 0.3 → 0.08 —— 横线是必要的整点锚点,但 0.3 太重,降到 8% 让事件块主导视觉。
     private func timelineBackground(colWidth: CGFloat, minHour: Double, maxHour: Double, timelineHeight: CGFloat) -> some View {
         let totalWidth = colWidth * 7
         let rowPerHour = timelineHeight / CGFloat(maxHour - minHour)
-        let lineColor = WarmTheme.sketch.opacity(0.3)
+        let lineColor = WarmTheme.sketch.opacity(0.08)
         let hours = Self.gridLineHours(minHour: minHour, maxHour: maxHour)
         return ZStack(alignment: .topLeading) {
             ForEach(hours, id: \.self) { h in
@@ -273,12 +278,6 @@ struct WeekTimelineView: View {
                     .fill(lineColor)
                     .frame(width: totalWidth, height: 0.5)
                     .offset(y: CGFloat(h - minHour) * rowPerHour)
-            }
-            ForEach(0..<6, id: \.self) { i in
-                Rectangle()
-                    .fill(lineColor)
-                    .frame(width: 0.5, height: timelineHeight)
-                    .offset(x: colWidth * CGFloat(i + 1))
             }
         }
         .frame(width: totalWidth, height: timelineHeight, alignment: .topLeading)
