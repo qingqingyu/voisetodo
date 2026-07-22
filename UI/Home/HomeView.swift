@@ -902,7 +902,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 state: state,
                 onSelectDay: selectDay,
                 onOpenTodo: { selectedTodo = $0 },
-                onShiftPeriod: { shiftPeriod(by: $0) }
+                onShiftPeriod: { shiftPeriod(by: $0) },
+                onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) }
             )
         case (.list, _), (.grid, .month):
             HomeMonthHeaderView(

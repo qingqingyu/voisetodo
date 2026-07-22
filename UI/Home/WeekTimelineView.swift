@@ -31,6 +31,11 @@ struct WeekTimelineView: View {
     var onOpenTodo: ((TodoItemData) -> Void)? = nil
     /// 左右滑翻周回调(+1=下周,-1=上周)。与 `HomeMonthHeaderView.onShiftPeriod` 同契约。
     var onShiftPeriod: ((Int) -> Void)? = nil
+    /// drawer 卡片拖到某天 column 排程。签名与 `HomeMonthHeaderView.onDropTodo` 一致,
+    /// 让 HomeView 复用同一个 `assignTodoToDate` callback。
+    /// drop 点挂在 `dayHeaderColumn`(顶部 7 天表头)而非 `dayEventsColumn`(时间轴事件列):
+    /// 后者只在 timeRange != nil 时渲染,空状态(当周无定时事件)下不覆盖。
+    var onDropTodo: ((UUID, Date) -> Void)? = nil
 
     /// 时间轴最小范围(小时)。防止事件稀疏时时间轴过短(比如只有 1 个事件,
     /// range = 1 小时会让事件块占满整屏)。4 小时是合理的最小工作时段。
@@ -196,6 +201,22 @@ struct WeekTimelineView: View {
         .accessibilityLabel("\(weekdayTitle) \(dayState.dayNumber)")
         .accessibilityHint(isSelected ? String(localized: "a11y.day.hint") : "")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+        // drawer 卡片 drop 接收点:载荷是 `todo.id.uuidString`(见 UnscheduledDrawer.unscheduledCard),
+        // drop 到某天表头 → assignTodoToDate(id, date: day) 设 dueDate(不指定钟点,跟
+        // HomeMonthGridButton 的 drop 行为对齐)。用户从 drawer 把未安排任务拖到 week 网格,
+        // drop 到这一列的任意一天都能排程。
+        // **不加 isTargeted 视觉反馈**:与 HomeMonthGridButton(有 isDropTargeted 描边高亮)不同,
+        // week 分支主动省略命中态高亮,降低状态复杂度;系统默认 drag preview 已提供足够反馈
+        // (卡片跟随手指 + snap 行为)。如后续发现用户需要更明显的落点指示,可补 isTargeted + overlay。
+        .dropDestination(for: String.self) { items, _ in
+            // 无回调时返回 false:让系统知道 drop 未被处理,避免「drop 视觉成功但无副作用」
+            // 误导(对齐 HomeMonthGridButton.dropDestination 同场景做法)。
+            guard let callback = onDropTodo,
+                  let idString = items.first,
+                  let id = UUID(uuidString: idString) else { return false }
+            callback(id, day)
+            return true
+        }
     }
 
     // MARK: - Empty State
