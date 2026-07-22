@@ -18,17 +18,6 @@ enum CalendarViewMode: String {
     case week
 }
 
-/// 首页日历显示样式：与 `CalendarViewMode` 正交。
-/// - `.list`：每个日期格只渲染数字 + 圆点（旧版默认）
-/// - `.grid`：每个日期格渲染数字 + ≤2 个事件条 + `+N`（网格+月）；
-///            或单周 7 天横排时间轴（网格+周）。
-/// 手势只切 `viewMode`，与 `displayMode` 完全独立——4 种组合全部成立。
-/// 通过 `@AppStorage("calendarDisplayMode")` 持久化，与 `calendarViewMode` 同套机制。
-enum CalendarDisplayMode: String {
-    case list
-    case grid
-}
-
 struct HomeCalendarState {
     let selectedDate: Date
     let visibleMonthAnchor: Date

@@ -209,12 +209,6 @@ struct HomeView<Store: HomeTodoStore>: View {
     private var calendarViewMode: CalendarViewMode {
         CalendarViewMode(rawValue: calendarViewModeRaw) ?? .month
     }
-    /// 显示样式（list/grid）独立于 viewMode（month/week），两者正交组合出 4 种视图。
-    /// 通过 @AppStorage 持久化，跟 calendarViewMode 同套机制。默认 list（保持现状）。
-    @AppStorage("calendarDisplayMode") private var calendarDisplayModeRaw = CalendarDisplayMode.list.rawValue
-    private var calendarDisplayMode: CalendarDisplayMode {
-        CalendarDisplayMode(rawValue: calendarDisplayModeRaw) ?? .list
-    }
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
@@ -257,13 +251,12 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// `sessionDidEnter` / `sessionDidEnd` 时 withAnimation 写入,SwiftUI 的 animation
     /// 系统会在 0↔1 之间 spring 插值(因为写入处包了 withAnimation)。
     ///
-    /// grid 模式短路:grid+week 走 `WeekTimelineView`(独立组件,本次不动);
-    /// grid+month 的日历网格用户要看,不能压。HomeLayoutMetrics.calendarHeight 的 grid 分支
-    /// 也不参与插值,若这里返回 1.0 会让 header 收起但 calendar 高度不变(grid+week 下)——
-    /// 视觉错位。grid 模式一律返回 0,只在 list 模式下响应 drag。
+    /// **已废**:旧 list 模式下响应 drag collapse 的动画。废 calendarDisplayMode 后
+    /// Calendar tab 全是 grid 模式,且阶段 2 会进一步废 DayTimelineView/DragSessionTracker,
+    /// isTaskDragging 失去触发源 → headerCollapseProgress 永远 0。保留属性避免改所有依赖点,
+    /// 阶段 2 完成后再彻底清理。
     private var headerCollapseProgress: Double {
-        guard calendarDisplayMode == .list else { return 0 }
-        return isTaskDragging ? 1.0 : 0.0
+        return 0
     }
 
     /// 任务卡片拖拽是否进行中。由 `DragSessionTracker`(全屏 UIDropInteraction overlay)
@@ -283,14 +276,15 @@ struct HomeView<Store: HomeTodoStore>: View {
         }.count
     }
 
-    /// 是否处于 grid+week 视图(Calendar tab + grid 显示模式 + week 视图模式)。
+    /// 是否处于 week 视图(Calendar tab + week 模式)。
     /// 单一事实来源(single source of truth):
     /// - header 层:gate weeklySummary / statsBadge / viewSwitcher 等次要元素
     /// - body 层:gate DayTimelineView(`monthHomeView` 内原先的局部变量
     ///   `isGridWeekWithoutTimeline` 已合并到本属性,避免同条件两处分叉)
-    /// 让"一眼看全周"价值最大化。详见 plan: cheerful-coalescing-otter.md。
+    /// 让"一眼看全周"价值最大化。详见 plan: calendar-tab-simplification.md。
+    /// **已简化**:废 calendarDisplayMode 后不再判断 grid,Calendar tab 下 week 即本属性 true。
     private var isGridWeekView: Bool {
-        selectedBottomTab == .calendar && calendarDisplayMode == .grid && calendarViewMode == .week
+        selectedBottomTab == .calendar && calendarViewMode == .week
     }
 
     private var actions: HomeViewActions<Store> {
@@ -566,9 +560,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                     statsBadge
                 }
 
-                // 仅 Calendar tab 显示「列表/网格」切换按钮——Today tab 无日历视图。
+                // 仅 Calendar tab 显示「周/月」切换按钮——Today tab 无日历视图。
                 if selectedBottomTab == .calendar {
-                    displayModeToggleButton
+                    viewModeToggleButton
                 }
 
                 settingsButton
@@ -776,24 +770,24 @@ struct HomeView<Store: HomeTodoStore>: View {
         .accessibilityLabel(String(localized: "settings.title"))
     }
 
-    /// 列表/网格切换按钮：胶囊样式，图标 + 文字。
-    /// 与 statsBadge/settingsButton 同高（40pt）保持视觉对齐。
-    /// 点击在 list↔grid 之间 toggle，不影响 viewMode。
-    /// 对齐 HTML 设计稿的 iconcard .ib.active 样式（primary 底 + 白字）。
-    private var displayModeToggleButton: some View {
-        let isGrid = calendarDisplayMode == .grid
+    /// 周/月切换按钮:胶囊样式,图标 + 文字。
+    /// 与 statsBadge/settingsButton 同高(40pt)保持视觉对齐。
+    /// 点击在 week↔month 之间 toggle。
+    /// **已简化**:旧 displayModeToggleButton (list↔grid) 已废,Calendar tab
+    /// 不再有 list 模式。详见 plan: calendar-tab-simplification.md。
+    private var viewModeToggleButton: some View {
+        let isWeek = calendarViewMode == .week
         return Button {
-            setDisplayMode(isGrid ? .list : .grid)
+            setViewMode(isWeek ? .month : .week)
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: isGrid ? "list.bullet" : "square.grid.2x2")
+                Image(systemName: isWeek ? "calendar.month" : "calendar.week")
                     .font(.system(size: 13, weight: .semibold))
-                Text(String(localized: isGrid ? "home.display.list" : "home.display.grid"))
+                Text(String(localized: isWeek ? "home.view.month" : "home.view.week"))
                     .font(WarmFont.caption(12))
                     .fontWeight(.semibold)
             }
-            // 颜色固定，不随 isGrid 变化——只有图标和文案切换状态（用户反馈：
-            // 切换网格/列表时按钮不应该变色）。
+            // 颜色固定,不随 isWeek 变化——只有图标和文案切换状态。
             .foregroundColor(WarmTheme.textSecondary)
             .padding(.horizontal, 10)
             .frame(height: WarmSize.touch)
@@ -803,9 +797,9 @@ struct HomeView<Store: HomeTodoStore>: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("CalendarDisplayModeToggle")
-        .accessibilityLabel(String(localized: isGrid ? "home.display.list" : "home.display.grid"))
-        .accessibilityHint(String(localized: "a11y.display_mode.hint"))
+        .accessibilityIdentifier("CalendarViewModeToggle")
+        .accessibilityLabel(String(localized: isWeek ? "home.view.month" : "home.view.week"))
+        .accessibilityHint(String(localized: "a11y.view_mode.hint"))
     }
 
     // MARK: - Recording Overlay
@@ -899,20 +893,22 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Month Home View
 
-    /// 根据 (displayMode, viewMode) 分发日历内容视图：
-    /// - list + (month|week) → `HomeMonthHeaderView(displayMode: .list)`（现状，零行为变化）
-    /// - grid + month        → `HomeMonthHeaderView(displayMode: .grid)`（6×7 事件条格子）
-    /// - grid + week         → `WeekTimelineView`（7 天横排时间轴）
-    /// 三者共用 onSelectDay / onDropTodo / onShiftPeriod 契约 + calendarHeight 限高。
+    /// 根据 viewMode 分发日历内容视图：
+    /// - month → `HomeMonthHeaderView`(6×7 事件条格子)
+    /// - week  → `WeekTimelineView`(7 天横排时间轴)
+    /// 两者共用 onSelectDay / onDropTodo / onShiftPeriod 契约 + calendarHeight 限高。
     ///
     /// `calendarHeight` 在两种路径下用法不同：
     ///   - `HomeMonthHeaderView`：通过 `availableHeight` 参数传入，Header 内部用它算 dayRowHeight。
     ///   - `WeekTimelineView`：本函数不透传——`WeekTimelineView` 内部高度由 ScrollView 自适应；
     ///     外层 `.frame(height: calendarHeight)` + `.clipped()`（见 monthHomeView）封顶即可。
+    ///
+    /// **已简化**:废 calendarDisplayMode 后,Calendar tab 只有 month/week 两种模式,
+    /// 不再有 list 概念。list 模式的圆点行样式已永久移除。
     @ViewBuilder
     private func calendarContentView(state: HomeCalendarState, calendarHeight: CGFloat) -> some View {
-        switch (calendarDisplayMode, calendarViewMode) {
-        case (.grid, .week):
+        switch calendarViewMode {
+        case .week:
             WeekTimelineView(
                 state: state,
                 onSelectDay: selectDay,
@@ -920,14 +916,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onShiftPeriod: { shiftPeriod(by: $0) },
                 onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) }
             )
-        case (.list, _), (.grid, .month):
+        case .month:
             HomeMonthHeaderView(
                 state: state,
                 onSelectDay: selectDay,
                 onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
                 onShiftPeriod: { shiftPeriod(by: $0) },
                 availableHeight: calendarHeight,
-                displayMode: calendarDisplayMode,
                 collapseProgress: headerCollapseProgress
             )
         }
@@ -951,7 +946,6 @@ struct HomeView<Store: HomeTodoStore>: View {
                 availableHeight: proxy.size.height,
                 selectedTab: selectedBottomTab,
                 viewMode: calendarViewMode,
-                displayMode: calendarDisplayMode,
                 collapseProgress: headerCollapseProgress
             )
 
@@ -985,10 +979,11 @@ struct HomeView<Store: HomeTodoStore>: View {
                     //
                     // list+月/list+周 当然保留完整列表。
                     // 必须同时是 Calendar tab:Today tab 不渲染任何日历(包括网格),
-                    // 若此时再按 displayType 屏蔽列表会让整页空白——calendarDisplayMode 是
-                    // @AppStorage 持久化的,从 Calendar grid 切回 Today tab 时它仍是 .grid。
+                    // 若此时再按 displayType 屏蔽列表会让整页空白——calendarDisplayMode 已废,
+                    // Calendar tab 默认就是网格视图。
+                    //
+                    // **已简化**:废 calendarDisplayMode 后只判断 viewMode == .month。
                     let isGridMonthWithoutList = selectedBottomTab == .calendar
-                        && calendarDisplayMode == .grid
                         && calendarViewMode == .month
                     // grid+week 复用 header 层的 isGridWeekView(单一事实来源),
                     // 避免同条件两处定义分叉。
@@ -1000,46 +995,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                         // List 在此 concrete 高度内会正确启用滚动。
                         let listHeight = max(0, proxy.size.height - calendarHeight)
                         if selectedBottomTab == .calendar {
-                            // Calendar tab:纵向 timeline + 底部 unscheduled drawer
-                            // (drawer ↔ timeline 双向拖拽已落地;月历日期格 draggable 路径保留)
+                            // Calendar tab 下方只保留 UnscheduledDrawer(无 dueDate 任务入口)。
                             //
-                            // grid+周 例外:WeekTimelineView 已经是完整时间轴,下方不再叠 timeline,
-                            // 只保留 UnscheduledDrawer 让无 dueDate 任务可见。
+                            // **已简化**(详见 plan: calendar-tab-simplification.md):
+                            // - 废 DayTimelineView(用户反馈"不再混竖向时段轴和 Anytime 列表")
+                            // - 废 DragTargetOverlay(只服务 DayTimelineView)
+                            // - 废 DragSessionTracker(只观察 DayTimelineView 的 drag session 视觉反馈)
+                            // Anytime 任务(hasDueTime=false)归 Today tab 顶部,Calendar tab 不再渲染。
+                            // 旧 grid+month 的 "完全空白" 策略(isGridMonthWithoutList)也废,
+                            // month 下也保留 drawer 让无 dueDate 任务随时可见。
                             ZStack(alignment: .bottom) {
-                                if !isGridWeekView {
-                                    DayTimelineView(
-                                        state: state,
-                                        cardAppeared: $cardAppeared,
-                                        // drawer 展开时把内容区高度传给 timeline,补偿 bottom inset,
-                                        // 让 Evening/Completed section 不被 drawer 遮挡。
-                                        // 用 clamped 版本与 drawer 实际占用一致,避免小屏下补偿过多留空白。
-                                        unscheduledDrawerExpandedHeight: unscheduledDrawerExpanded
-                                            ? UnscheduledDrawer.expandedTotalHeightClamped(to: listHeight)
-                                            : 0,
-                                        onToggleTodo: { actions.toggleTodo($0) },
-                                        onToggleOccurrence: { actions.toggleOccurrence($0) },
-                                        onOpenTodo: { selectedTodo = $0 },
-                                        onSetTodoHour: { id, date in setTodoHour(id, hourMinute: date) },
-                                        onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                                        onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                                        onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
-                                    )
-                                    // 拖拽期间底层 dim 到 35%:让 overlay 主导视觉,
-                                    // 但底层卡片位置仍隐约可辨(用户能看到原位置参考)。
-                                    // 动画曲线由 DragSessionTracker 闭包内的 withAnimation 提供,
-                                    // 这里不再重复 .animation(value:) 避免双重曲线冲突。
-                                    .opacity(isTaskDragging ? 0.35 : 1.0)
-
-                                    if isTaskDragging {
-                                        DragTargetOverlay(
-                                            state: state,
-                                            onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) }
-                                        )
-                                        .transition(.opacity)
-                                        .zIndex(1)
-                                    }
-                                }
-
                                 if !state.unscheduledTodos.isEmpty {
                                     UnscheduledDrawer(
                                         todos: state.unscheduledTodos,
@@ -1053,31 +1018,6 @@ struct HomeView<Store: HomeTodoStore>: View {
                                         onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
                                     )
                                 }
-                            }
-                            // DragSessionTracker:全屏 UIDropInteraction,放 ZStack 外层 overlay。
-                            // .allowsHitTesting(false) 让 tracker 不消费 touch,只观察 drop session。
-                            // sessionDidEnter/sessionDidEnd 派发到 isTaskDragging。
-                            //
-                            // **已知不确定点**:`.allowsHitTesting(false)` 是 SwiftUI 的 hit-test 门控,
-                            // 而 UIDropInteraction 走 UIKit 自己的 hit-test 链 —— 两者是否完全等价
-                            // 没有官方文档保证。当前实现在真机/模拟器下可用(scroll / tap 不受影响),
-                            // 但若 iOS 升级后出现 tracker 吞事件症状,优先怀疑此处,改用
-                            // UIView 的 `isUserInteractionEnabled = false` 或把 tracker 挂到
-                            // 非 overlay 的独立 window 上。
-                            .overlay {
-                                DragSessionTracker(
-                                    onSessionBegan: {
-                                        withAnimation(WarmAnimation.springFast) {
-                                            isTaskDragging = true
-                                        }
-                                    },
-                                    onSessionEnded: {
-                                        withAnimation(WarmAnimation.springSmooth) {
-                                            isTaskDragging = false
-                                        }
-                                    }
-                                )
-                                .allowsHitTesting(false)
                             }
                             .frame(height: listHeight)
                             .clipped()
@@ -1640,15 +1580,6 @@ struct HomeView<Store: HomeTodoStore>: View {
             visibleMonthAnchor = mode == .week
                 ? calendar.startOfDay(for: selectedDate)
                 : HomeCalendarState.startOfMonth(for: selectedDate, calendar: calendar)
-        }
-    }
-
-    /// 切换 list↔grid 显示样式。与 viewMode 完全独立——不修改锚点、不动选中日，
-    /// 仅触发渲染容器高度 + cell 类型的动画过渡。
-    private func setDisplayMode(_ mode: CalendarDisplayMode) {
-        guard calendarDisplayMode != mode else { return }
-        withAnimation(WarmAnimation.springStandard) {
-            calendarDisplayModeRaw = mode.rawValue
         }
     }
 
