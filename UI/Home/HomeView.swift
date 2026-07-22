@@ -955,15 +955,24 @@ struct HomeView<Store: HomeTodoStore>: View {
                     HomeCalendarErrorView(onRetry: retryCalendarLoad)
                 case .empty, .success:
                     // grid+月:网格本身已显示事件概览(数字 + ≤2 事件条 + +N),
-                    // 下方不再渲染列表——避免「今天/这一天没有安排」等视觉元素侵入,
-                    // 网格下方保持完全空白。网格+周仍需要列表(时间轴下方显示选中日任务)。
-                    // list+月/list+周当然也保留列表(原本的列表视图)。
+                    // 下方完全空白,不渲染任何列表。
+                    //
+                    // grid+周:WeekTimelineView 是完整 7 天横排时间轴(含事件块/点击/翻周),
+                    // 用户反馈「网格下方不应再有 timeline」——DayTimelineView 即使已改造成
+                    // 水平 bucket 分组仍属冗余。下方只保留 UnscheduledDrawer 让无 dueDate
+                    // 任务可见。失去:全天任务(有 dueDate 无 dueTime)/已完成任务/+ 设钟点入口/
+                    // drawer 拖拽排程——需要这些功能时切回 list+月或 list+周。
+                    //
+                    // list+月/list+周 当然保留完整列表。
                     // 必须同时是 Calendar tab:Today tab 不渲染任何日历(包括网格),
-                    // 若此时再按 displayMode 屏蔽列表会让整页空白——calendarDisplayMode 是
-                    // @AppStorage 持久化的,从 Calendar grid+月切回 Today tab 时它仍是 .grid。
+                    // 若此时再按 displayType 屏蔽列表会让整页空白——calendarDisplayMode 是
+                    // @AppStorage 持久化的,从 Calendar grid 切回 Today tab 时它仍是 .grid。
                     let isGridMonthWithoutList = selectedBottomTab == .calendar
                         && calendarDisplayMode == .grid
                         && calendarViewMode == .month
+                    let isGridWeekWithoutTimeline = selectedBottomTab == .calendar
+                        && calendarDisplayMode == .grid
+                        && calendarViewMode == .week
                     if !isGridMonthWithoutList {
                         // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
                         // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
@@ -974,37 +983,42 @@ struct HomeView<Store: HomeTodoStore>: View {
                         if selectedBottomTab == .calendar {
                             // Calendar tab:纵向 timeline + 底部 unscheduled drawer
                             // (drawer ↔ timeline 双向拖拽已落地;月历日期格 draggable 路径保留)
+                            //
+                            // grid+周 例外:WeekTimelineView 已经是完整时间轴,下方不再叠 timeline,
+                            // 只保留 UnscheduledDrawer 让无 dueDate 任务可见。
                             ZStack(alignment: .bottom) {
-                                DayTimelineView(
-                                    state: state,
-                                    cardAppeared: $cardAppeared,
-                                    // drawer 展开时把内容区高度传给 timeline,补偿 bottom inset,
-                                    // 让 Evening/Completed section 不被 drawer 遮挡。
-                                    // 用 clamped 版本与 drawer 实际占用一致,避免小屏下补偿过多留空白。
-                                    unscheduledDrawerExpandedHeight: unscheduledDrawerExpanded
-                                        ? UnscheduledDrawer.expandedTotalHeightClamped(to: listHeight)
-                                        : 0,
-                                    onToggleTodo: { actions.toggleTodo($0) },
-                                    onToggleOccurrence: { actions.toggleOccurrence($0) },
-                                    onOpenTodo: { selectedTodo = $0 },
-                                    onSetTodoHour: { id, date in setTodoHour(id, hourMinute: date) },
-                                    onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                                    onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                                    onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
-                                )
-                                // 拖拽期间底层 dim 到 35%:让 overlay 主导视觉,
-                                // 但底层卡片位置仍隐约可辨(用户能看到原位置参考)。
-                                // 动画曲线由 DragSessionTracker 闭包内的 withAnimation 提供,
-                                // 这里不再重复 .animation(value:) 避免双重曲线冲突。
-                                .opacity(isTaskDragging ? 0.35 : 1.0)
-
-                                if isTaskDragging {
-                                    DragTargetOverlay(
+                                if !isGridWeekWithoutTimeline {
+                                    DayTimelineView(
                                         state: state,
-                                        onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) }
+                                        cardAppeared: $cardAppeared,
+                                        // drawer 展开时把内容区高度传给 timeline,补偿 bottom inset,
+                                        // 让 Evening/Completed section 不被 drawer 遮挡。
+                                        // 用 clamped 版本与 drawer 实际占用一致,避免小屏下补偿过多留空白。
+                                        unscheduledDrawerExpandedHeight: unscheduledDrawerExpanded
+                                            ? UnscheduledDrawer.expandedTotalHeightClamped(to: listHeight)
+                                            : 0,
+                                        onToggleTodo: { actions.toggleTodo($0) },
+                                        onToggleOccurrence: { actions.toggleOccurrence($0) },
+                                        onOpenTodo: { selectedTodo = $0 },
+                                        onSetTodoHour: { id, date in setTodoHour(id, hourMinute: date) },
+                                        onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                                        onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                                        onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
                                     )
-                                    .transition(.opacity)
-                                    .zIndex(1)
+                                    // 拖拽期间底层 dim 到 35%:让 overlay 主导视觉,
+                                    // 但底层卡片位置仍隐约可辨(用户能看到原位置参考)。
+                                    // 动画曲线由 DragSessionTracker 闭包内的 withAnimation 提供,
+                                    // 这里不再重复 .animation(value:) 避免双重曲线冲突。
+                                    .opacity(isTaskDragging ? 0.35 : 1.0)
+
+                                    if isTaskDragging {
+                                        DragTargetOverlay(
+                                            state: state,
+                                            onDropToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) }
+                                        )
+                                        .transition(.opacity)
+                                        .zIndex(1)
+                                    }
                                 }
 
                                 if !state.unscheduledTodos.isEmpty {
