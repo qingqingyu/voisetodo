@@ -59,7 +59,9 @@ struct TodoItemRow: View {
                     Text(todo.title)
                         .font(WarmFont.headline(17))
                         .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(2)
+                        // 主内容不允许截断:用户在校对 AI 提取的内容,看全是关键。
+                        // 长标题靠自然换行承接,sheet 内容可滚动。
+                        // 详见 feedback memory「文本截断/换行零容忍」。
                         .accessibilityIdentifier("TodoTitleText_\(index)")
                 }
 

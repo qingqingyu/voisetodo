@@ -263,7 +263,9 @@ struct WarmTodoCard: View {
                         .font(todo.priority == .high ? WarmFont.headline(15) : WarmFont.body(15))
                         .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : WarmTheme.textPrimary)
                         .strikethrough(todo.isCompleted, color: WarmTheme.textSecondary)
-                        .lineLimit(2)
+                        // 主内容不允许截断:长标题(尤其英文)靠自然换行 + 卡片高度自适应承接,
+                        // 卡片在 List 中可滚动。详见 feedback memory「文本截断/换行零容忍」
+                        // 用户内容分场景策略。
                 }
                 .accessibilityElement(children: .combine)
 

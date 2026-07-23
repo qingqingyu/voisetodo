@@ -40,7 +40,9 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
     }
 
     /// 用于展示的周期标签（如 "2026年7月" / "第29周"）。
-    func periodLabel(for today: Date, calendar: Calendar) -> String {
+    /// `compact=true` 时月份用 `.abbreviated`("Sep" 代替 "September"),
+    /// 供 AX 字号下避免长月份名挤爆标题。中文 locale 下 `.abbreviated` 与默认一致。
+    func periodLabel(for today: Date, calendar: Calendar, compact: Bool = false) -> String {
         switch self {
         case .week:
             let weekOfYear = calendar.component(.weekOfYear, from: today)
@@ -48,7 +50,8 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
             return String(localized: "review.label.week_\(year)_\(weekOfYear)")
         case .month:
             let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
-            return monthStart.formatted(.dateTime.year().month(.wide))
+            let monthSymbol: Date.FormatStyle.Symbol.Month = compact ? .abbreviated : .wide
+            return monthStart.formatted(.dateTime.year().month(monthSymbol))
         }
     }
 }
@@ -77,6 +80,10 @@ struct ReviewView: View {
     @Query private var allTodos: [TodoItem]
 
     @State private var selectedPeriod: ReviewPeriod = .month
+
+    /// 系统 Dynamic Type 档位。用于在 AX 字号下把日期格式切到简短形态,
+    /// 避免长英文月份/星期挤爆标题行。详见 feedback memory「文本截断/换行零容忍」。
+    @Environment(\.sizeCategory) private var sizeCategory
 
     private let calendar = Calendar.current
 
@@ -125,7 +132,11 @@ struct ReviewView: View {
         let today = Date()
         let start = selectedPeriod.startDay(from: today, calendar: calendar)
         let end = selectedPeriod.endDay(from: today, calendar: calendar)
-        let label = selectedPeriod.periodLabel(for: today, calendar: calendar)
+        let label = selectedPeriod.periodLabel(
+            for: today,
+            calendar: calendar,
+            compact: sizeCategory.isAccessibilityCategory
+        )
         let createdCount = allTodos.filter { item in
             let created = DayClock.startOfUserDay(for: item.createdAt, calendar: calendar)
             return created >= start && created < end
@@ -411,7 +422,11 @@ struct ReviewView: View {
     }
 
     private func busiestDayString(_ date: Date) -> String {
-        date.formatted(.dateTime.month().day().weekday(.wide))
+        // AX 字号下星期切到 `.abbreviated`("Mon" 代替 "Monday"),
+        // 中文 "星期一" → "周一",信息密度保留,字符数减半。
+        let weekday: Date.FormatStyle.Symbol.Weekday =
+            sizeCategory.isAccessibilityCategory ? .abbreviated : .wide
+        return date.formatted(.dateTime.month().day().weekday(weekday))
     }
 
     private func percentageString(_ value: Double) -> String {
