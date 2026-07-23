@@ -8,22 +8,10 @@ struct HomeSelectedDayListView: View {
     let onToggleOccurrence: (TodoOccurrenceData) -> Void
     let onDeleteTodo: (UUID) -> Void
     let onOpenTodo: (TodoItemData) -> Void
-    let onMoveUnscheduled: (IndexSet, Int) -> Void
     /// 长按 context menu:卡片移到某 bucket。
     let onMoveToBucket: (UUID, TimeBucket) -> Void
     /// 长按 context menu:卡片移到明天。
     let onMoveToTomorrow: (UUID) -> Void
-
-    /// Unscheduled 重排编辑态。激活时行显示原生三横线把手（区别于"拖到月历"的胶囊）。
-    /// 由 Unscheduled 分区头的「排序/完成」按钮切换。
-    @State private var editMode: EditMode = .inactive
-
-    /// 是否启用 Unscheduled 区的 Reorder 功能(排序按钮 + draggable + onMove 触发路径)。
-    /// Today tab 没有月历区,Unscheduled 拖出去无处落点,Reorder 不实用——关闭。
-    /// Calendar tab 保留:用户可以把 Unscheduled 拖到月历某一天安排上日期。
-    private var isReorderEnabled: Bool {
-        selectedBottomTab != .today
-    }
 
     var body: some View {
         List {
@@ -46,9 +34,11 @@ struct HomeSelectedDayListView: View {
                     ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
                         todoRow(todo, index: state.selectedOccurrences.count + idx)
                     }
-                    .onMove(perform: onMoveUnscheduled)
                 } header: {
-                    unscheduledSectionHeader
+                    daySectionHeader(
+                        title: String(localized: "home.week.unscheduled"),
+                        count: state.unscheduledTodos.count
+                    )
                 }
             }
 
@@ -71,7 +61,6 @@ struct HomeSelectedDayListView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .environment(\.editMode, $editMode)
         .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollContent)
         .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollIndicators)
         .accessibilityIdentifier("TodoList")
@@ -142,45 +131,8 @@ struct HomeSelectedDayListView: View {
         .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
     }
 
-    /// Unscheduled 分区头：复用 daySectionHeader 的标题 + 数字徽章，尾部加「排序/完成」切换。
-    /// 排序按钮仅在 ≥2 条时出现（1 条无从重排）；点击进/出编辑态，行显示原生三横线把手。
-    private var unscheduledSectionHeader: some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Text(String(localized: "home.week.unscheduled"))
-                .font(WarmFont.headline(15))
-            if state.unscheduledTodos.count > 0 {
-                Text("\(state.unscheduledTodos.count)")
-                    .font(WarmFont.caption(13))
-                    .foregroundColor(WarmTheme.primaryDark)
-                    .padding(.horizontal, WarmSpacing.xs)
-                    .padding(.vertical, WarmSpacing.xxs)
-                    .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
-            }
-
-            Spacer()
-
-            if isReorderEnabled && state.unscheduledTodos.count > 1 {
-                Button {
-                    withAnimation(WarmAnimation.springFast) {
-                        editMode = editMode.isEditing ? .inactive : .active
-                    }
-                } label: {
-                    Text(String(localized: editMode.isEditing
-                                ? "home.unscheduled.reorder_done"
-                                : "home.unscheduled.reorder"))
-                        .font(WarmFont.headline(13))
-                        .foregroundColor(WarmTheme.primary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ReorderUnscheduledButton")
-            }
-        }
-        .foregroundColor(WarmTheme.textSecondary)
-        .textCase(nil)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
-    }
-
-    /// 未完成 unscheduled 行。挂 `draggable`（拖到月历）或编辑态三横线把手。
+    /// 未完成 unscheduled 行。Calendar tab 挂 `draggable`——长按拖到月历某天/时间线排程；
+    /// Today tab 无月历可落点，不挂。
     /// 完成态样式（绿勾/删除线）由 WarmTodoCard 根据 `todo.isCompleted` 自行渲染。
     @ViewBuilder
     private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
@@ -192,15 +144,7 @@ struct HomeSelectedDayListView: View {
             onDelete: { onDeleteTodo(todo.id) }
         )
 
-        // 编辑态只重排（原生三横线把手）；非编辑态才挂"拖到月历"的胶囊 draggable——
-        // 两个操作从起手就区分开，不再共用同一预览。
-        // Today tab 关闭 Reorder(isReorderEnabled=false):不挂 draggable,
-        // 也没有"排序/完成"按钮入口,editMode 永远 .inactive → 三横线把手也不显示。
-        if !isReorderEnabled {
-            base
-        } else if editMode.isEditing {
-            base
-        } else {
+        if selectedBottomTab == .calendar {
             base.draggable(todo.id.uuidString) {
                 HStack(spacing: WarmSpacing.xxs) {
                     Text(todo.category.emoji)
@@ -211,13 +155,13 @@ struct HomeSelectedDayListView: View {
                 .padding(.vertical, WarmSpacing.xs)
                 .background(Capsule().fill(WarmTheme.secondaryBackground))
             }
+        } else {
+            base
         }
     }
 
     /// 已完成无安排任务的行。与 `todoRow` 的差别：
     /// - 不挂 `.draggable`（已完成的不该再拖月历）
-    /// - 不参与编辑态重排（Unscheduled 分区的 `.onMove` 只对未完成行生效，
-    ///   completedTodoRow 在「已完成」分区，本来就不在 .onMove 作用域内）
     /// 完成态样式（绿勾/删除线）由 WarmTodoCard 根据 `todo.isCompleted` 自行渲染。
     /// 取消完成时 onToggle 会把 isCompleted 翻回 false → 下次重渲染时该行离开「已完成」、
     /// 回到「未安排」分区（unscheduledTodos 重新含它）。
@@ -235,7 +179,7 @@ struct HomeSelectedDayListView: View {
     /// Unscheduled 系卡片（todoRow / completedTodoRow）共用样式：
     /// WarmTodoCard + inset/背景/删除 swipe/入场动画/transition。
     /// 抽出来避免两处复制粘贴——后续改卡片样式只改一处。
-    /// 不含 `draggable` / `editMode` 分支，那两个由调用方按完成态自行决定。
+    /// 不含 `draggable` 分支——draggable 由调用方按完成态与 tab 自行决定。
     @ViewBuilder
     private func unscheduledTodoCardBase(
         todo: TodoItemData,

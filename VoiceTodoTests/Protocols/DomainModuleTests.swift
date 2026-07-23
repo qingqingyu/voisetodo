@@ -68,28 +68,6 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertNil(TodoDueTimeResolver.combine(date: nil, dueTime: nil, calendar: calendar).date)
     }
 
-    func testTodoReorderPlannerKeepsScheduledSlotsAndPermutesUnscheduled() throws {
-        let scheduledA = TodoItemData(title: "S-A", dueDate: Date())
-        let unschedX = TodoItemData(title: "U-X")
-        let scheduledB = TodoItemData(title: "S-B", recurrenceRule: RecurrenceRule(frequency: .daily))
-        let unschedY = TodoItemData(title: "U-Y")
-        let unschedZ = TodoItemData(title: "U-Z")
-
-        // 全局未完成序：A(排期) X(无) B(规律) Y(无) Z(无)
-        let uncompleted = [scheduledA, unschedX, scheduledB, unschedY, unschedZ]
-
-        // 无日期新序：Z, X, Y
-        let result = TodoReorderPlanner.reorderedUncompletedIDs(
-            uncompleted: uncompleted,
-            newUnscheduledOrder: [unschedZ.id, unschedX.id, unschedY.id]
-        )
-
-        // 已排期/规律项槽位不动（第 0、2 位仍是 A、B），无日期槽位（1、3、4）按新序填回。
-        XCTAssertEqual(result, [scheduledA.id, unschedZ.id, scheduledB.id, unschedX.id, unschedY.id])
-        XCTAssertEqual(result.count, uncompleted.count)
-        XCTAssertEqual(Set(result), Set(uncompleted.map(\.id)))
-    }
-
     func testNotificationPlannerOneShotFiltersSortsAndCaps() throws {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let inHour = now.addingTimeInterval(3600)
