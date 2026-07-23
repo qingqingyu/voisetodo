@@ -16,10 +16,19 @@ import SwiftUI
 struct FlowLayout: Layout {
     var horizontalSpacing: CGFloat
     var verticalSpacing: CGFloat
+    /// 每行在 bounds 内的水平对齐:.leading(默认,保持旧行为) / .center / .trailing。
+    /// 仅影响 placeSubviews 的行内起点;sizeThatFits 仍回填 proposal.width(填满父宽),
+    /// 所以多行时各行按同一对齐方式独立排布。用于图例等需要居中展示的场景。
+    var alignment: HorizontalAlignment
 
-    init(horizontalSpacing: CGFloat = 8, verticalSpacing: CGFloat = 8) {
+    init(
+        horizontalSpacing: CGFloat = 8,
+        verticalSpacing: CGFloat = 8,
+        alignment: HorizontalAlignment = .leading
+    ) {
         self.horizontalSpacing = horizontalSpacing
         self.verticalSpacing = verticalSpacing
+        self.alignment = alignment
     }
 
     /// layout 计算结果缓存。`LayoutSubviews.Element` 是 struct(持有 index +
@@ -44,7 +53,19 @@ struct FlowLayout: Layout {
         var y = bounds.minY
         for row in cache.rows {
             let rowHeight = row.map { $0.size.height }.max() ?? 0
-            var x = bounds.minX
+            let rowWidth = row.reduce(CGFloat(0)) { partial, item in
+                partial + item.size.width
+            } + CGFloat(max(0, row.count - 1)) * horizontalSpacing
+            let startX: CGFloat
+            switch alignment {
+            case .center:
+                startX = bounds.minX + (bounds.width - rowWidth) / 2
+            case .trailing:
+                startX = bounds.maxX - rowWidth
+            default:
+                startX = bounds.minX
+            }
+            var x = startX
             for (subview, size) in row {
                 // 同行内 chip 垂直居中,高度对齐到行最高
                 subview.place(

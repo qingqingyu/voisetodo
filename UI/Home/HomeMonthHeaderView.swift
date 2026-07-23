@@ -340,12 +340,11 @@ struct WeekStripCard: View {
         HomeCalendarState.weekDays(for: state.selectedDate, calendar: state.calendar)
     }
 
-    /// 本周「专属」分类:本周 occurrence 涉及、但未安排 backlog 里没有的分类。
-    /// 委托给 HomeCalendarState.categoriesExclusiveToWeek。圆点行还是按天显示本周所有分类的色,
-    /// 图例只解码"本周专属"那几个;与圆点行的色盘不必 1:1 对齐——这是有意的取舍,用
-    /// 更少的图例项换取不再被截断。
-    private var exclusiveWeekCategories: [TodoCategory] {
-        state.categoriesExclusiveToWeek(of: state.selectedDate)
+    /// 本周出现过的所有分类(含昨天/前天等本周内任意一天的项)。
+    /// 委托给 HomeCalendarState.categoriesInWeek。与圆点行口径一致:
+    /// 圆点行按天显示本周所有分类的色,图例展示本周出现过哪些分类,两者不再做"独占"取舍。
+    private var weekCategories: [TodoCategory] {
+        state.categoriesInWeek(of: state.selectedDate)
     }
 
     var body: some View {
@@ -357,16 +356,17 @@ struct WeekStripCard: View {
                 }
             }
 
-            // 图例:仅本周「专属」分类(未安排 backlog 里没有的)。点其他周/切 backlog 会跟着变。
-            // FlowLayout 换行:5+ 项时自动换到第二行,不截断。
+            // 图例:本周出现过的所有分类。点其他周/切 backlog 会跟着变。
+            // FlowLayout 换行 + 居中:5+ 项时自动换到第二行,每行在卡片宽度内水平居中。
             // 字体用 `.system` 而非 WarmFont.caption:后者底层是 Avenir Next(纯拉丁),
             // 中文回落到 PingFang SC 后视觉偏小;.system 在中英混排下 cap-height 对齐、视觉一致。
-            if !exclusiveWeekCategories.isEmpty {
+            if !weekCategories.isEmpty {
                 FlowLayout(
                     horizontalSpacing: HomeLayoutMetrics.legendRowSpacing,
-                    verticalSpacing: HomeLayoutMetrics.legendRowVerticalSpacing
+                    verticalSpacing: HomeLayoutMetrics.legendRowVerticalSpacing,
+                    alignment: .center
                 ) {
-                    ForEach(exclusiveWeekCategories, id: \.self) { cat in
+                    ForEach(weekCategories, id: \.self) { cat in
                         HStack(spacing: HomeLayoutMetrics.legendItemSpacing) {
                             Circle()
                                 .fill(WarmTheme.color(for: cat))
@@ -379,7 +379,7 @@ struct WeekStripCard: View {
                         .fixedSize()
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity)
             }
 
             // 展开整月
