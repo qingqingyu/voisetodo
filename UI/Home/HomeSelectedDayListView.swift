@@ -206,8 +206,11 @@ struct HomeSelectedDayListView: View {
                 Label(String(localized: "home.delete"), systemImage: "trash")
             }
         }
+        // 入场动画:仅淡入,不用 .offset。
+        // .offset 会让 row frame 在动画期间持续偏移,List 内部 swipe 追踪与
+        // 命中测试会跟着偏移过的 frame 走,出现「刚出现就滑不动 / 滑到一半跳」。
+        // 纯 .opacity 不移动 frame,命中区恒定 → swipeActions 稳定。
         .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
-        .offset(y: cardAppeared.contains(todo.id) ? 0 : 20)
         .onAppear {
             withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(todo.id)
@@ -242,7 +245,6 @@ struct HomeSelectedDayListView: View {
             }
         }
         .opacity(cardAppeared.contains(occurrence.todo.id) ? 1 : 0)
-        .offset(y: cardAppeared.contains(occurrence.todo.id) ? 0 : 20)
         .onAppear {
             withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(occurrence.todo.id)
