@@ -39,8 +39,21 @@ struct HomeSelectedDayListView: View {
                 }
             }
 
+            // 「未安排」分区:无 dueDate 的任务,排在已完成之前——
+            // 用户关注优先级:未完成(有时间) > 未安排(待排期) > 已完成(历史)。
+            if !state.unscheduledTodos.isEmpty {
+                Section {
+                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
+                        todoRow(todo, index: state.selectedOccurrences.count + idx)
+                    }
+                    .onMove(perform: onMoveUnscheduled)
+                } header: {
+                    unscheduledSectionHeader
+                }
+            }
+
             // 「已完成」分区 = 当日 occurrence 的已完成 + 全局无安排任务的已完成。
-            // 两者都已完成态、都不应再触发重排/拖月历，统一放进同一分区。
+            // 放最后:已完成是历史信息,优先级最低。
             if !state.completedOccurrences.isEmpty || !state.completedUnscheduledTodos.isEmpty {
                 Section {
                     ForEach(Array(zip(state.completedOccurrences.indices, state.completedOccurrences)), id: \.1.id) { idx, occurrence in
@@ -52,17 +65,6 @@ struct HomeSelectedDayListView: View {
                 } header: {
                     let totalCount = state.completedOccurrences.count + state.completedUnscheduledTodos.count
                     daySectionHeader(title: String(localized: "home.completed_section_title"), count: totalCount)
-                }
-            }
-
-            if !state.unscheduledTodos.isEmpty {
-                Section {
-                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
-                        todoRow(todo, index: state.selectedOccurrences.count + idx)
-                    }
-                    .onMove(perform: onMoveUnscheduled)
-                } header: {
-                    unscheduledSectionHeader
                 }
             }
 

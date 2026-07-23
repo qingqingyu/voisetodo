@@ -183,10 +183,10 @@ enum HomeLayoutMetrics {
     static let weekStripDotDiameter: CGFloat = 5
     /// 圆点行 spacing。
     static let weekStripDotSpacing: CGFloat = 3
-    /// 圆点上限(超出显示 +N)。WeekStripCard 固定 4 个圆点;
-    /// 与 HomeMonthGridButton 的动态 maxVisibleEvents(由分配器决定 1-6)非对称——
-    /// 折叠态信息密度刻意低于展开态,鼓励用户展开看详情。
-    static let weekStripMaxDots: Int = 4
+    /// 圆点上限。与 `gridMaxBarsPerCell` 取相同值(6),保持折叠态周条与展开态月格在
+    /// "最多可见事件数"上的一致——折叠不是二等公民,密度对齐避免展开后信息突变。
+    /// 超过此值截断不显示 +N(数据仍在任务列表里,由 WeekStripCard 注释说明取舍)。
+    static let weekStripMaxDots: Int = 6
     /// 图例行 HStack 列间距。
     static let legendRowSpacing: CGFloat = 14
     /// 图例单条(圆点 + 文字)spacing。
@@ -430,24 +430,19 @@ struct WeekStripCard: View {
                 .frame(width: HomeLayoutMetrics.weekStripCircleDiameter,
                        height: HomeLayoutMetrics.weekStripCircleDiameter)
 
-                // 圆点:每个事件一个,颜色=分类。最多 weekStripMaxDots 个,超出显示 +N。
-                // 已完成的圆点降低透明度(对齐 WarmTheme.completedEventOpacity),
-                // 让折叠态周条卡片与月网格格子在"已完成 vs 未完成"视觉语言上一致。
-                let maxDots = HomeLayoutMetrics.weekStripMaxDots
-                let extra = occurrences.count - maxDots
+                // 圆点:只反映未完成事件。完成一项就少一个点,全完成则无点。
+                // 最多 weekStripMaxDots 个,超出不显示 +N(数据仍在任务列表里,只是圆点不渲染);
+                // 删除 +N 的代价是用户在折叠态看不出"今天 >6 件未完成",接受此取舍以换取更安静的视觉。
+                // 圆点行 frame 始终占 6pt(即使无圆点也保留占位),避免完成/取消时 cell 高度抖动
+                // 导致 HStack 内 7 天垂直对齐错位。
+                let uncompletedDots = occurrences.filter { !$0.isCompleted }
                 HStack(spacing: HomeLayoutMetrics.weekStripDotSpacing) {
-                    ForEach(Array(occurrences.prefix(maxDots)), id: \.id) { occ in
+                    ForEach(Array(uncompletedDots.prefix(HomeLayoutMetrics.weekStripMaxDots)), id: \.id) { occ in
                         Circle()
                             .fill(WarmTheme.color(for: occ.todo.category)
-                                .opacity(occ.isCompleted ? WarmTheme.completedEventOpacity : WarmTheme.activeEventOpacity))
+                                .opacity(WarmTheme.activeEventOpacity))
                             .frame(width: HomeLayoutMetrics.weekStripDotDiameter,
                                    height: HomeLayoutMetrics.weekStripDotDiameter)
-                    }
-                    if extra > 0 {
-                        Text("+\(extra)")
-                            .font(WarmFont.caption(9))
-                            .foregroundColor(WarmTheme.textMuted)
-                            .fixedSize()
                     }
                 }
                 .frame(height: 6)
