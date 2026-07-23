@@ -260,18 +260,6 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 默认折叠(unscheduled 多时视觉干净);Today tab 不用 drawer,此状态无意义。
     @State private var unscheduledDrawerExpanded: Bool = false
 
-    /// 本周完成数(用于首页"本周小结"卡片)。
-    private var weeklyCompletedCount: Int {
-        let cal = Calendar.current
-        let today = DayClock.startOfUserDay(for: Date(), calendar: cal)
-        let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
-        return store.todos.filter { $0.isCompleted }.filter { todo in
-            guard let completed = todo.completedAt else { return false }
-            let day = DayClock.startOfUserDay(for: completed, calendar: cal)
-            return day >= weekStart && day <= today
-        }.count
-    }
-
     private var actions: HomeViewActions<Store> {
         HomeViewActions(
             store: store,
@@ -289,32 +277,6 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 VStack(spacing: 0) {
                     headerView
-
-                    // 本周小结卡片(快速入口到回顾页)
-                    // 拖拽时整体淡出 + 高度收(回顾类信息,与当下排程动作无关——用户原话)。
-                    if weeklyCompletedCount > 0 {
-                        NavigationLink {
-                            ReviewView()
-                        } label: {
-                            HStack(spacing: WarmSpacing.sm) {
-                                Image(systemName: "chart.bar.fill")
-                                    .foregroundColor(WarmTheme.primary)
-                                    .font(.system(size: 14))
-                                Text(String(localized: "home.weekly_summary \(weeklyCompletedCount)"))
-                                    .font(WarmFont.caption(13))
-                                    .foregroundColor(WarmTheme.textSecondary)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(WarmTheme.textMuted)
-                            }
-                            .padding(.horizontal, WarmSpacing.lg)
-                            .padding(.vertical, WarmSpacing.xs)
-                        }
-                        .buttonStyle(.plain)
-                        .frame(height: HomeLayoutMetrics.weeklySummaryRowHeight, alignment: .top)
-                        .clipped()
-                    }
 
                     if coordinator.isRecording || isProcessing || coordinator.isExtracting {
                         recordingOverlay
@@ -503,7 +465,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        // 单次计算当日统计,避免 statsBadgeHiddenForToday / todayProgressCluster 各调一遍。
+        // 单次计算当日统计,避免 statsHidden / statsPillButton 各调一遍。
         let dayStats = selectedDayStats()
         let statsHidden = store.todos.isEmpty || dayStats.total == 0 || calendarLoadState == .error
         return VStack(alignment: .leading, spacing: WarmSpacing.sm) {
@@ -551,7 +513,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 Spacer()
 
                 if !statsHidden {
-                    todayProgressCluster(total: dayStats.total, completed: dayStats.completed)
+                    statsPillButton(total: dayStats.total, completed: dayStats.completed)
                         .transition(.opacity)
                 }
 
@@ -706,55 +668,79 @@ struct HomeView<Store: HomeTodoStore>: View {
         selectedDayStats().total
     }
 
-    /// "今天 (0/3)" + 进度环 的合并外壳。
-    /// 合并后才能让 transition(.opacity) 同步作用于标签和环(整体淡入淡出),
-    /// 并让 accessibilityElement 合并成一个可访问性节点(沿用 HomeStatsBadge id)。
-    /// total/completed 由 headerView 单次计算传入,避免重复调 selectedDayStats()。
-    private func todayProgressCluster(total: Int, completed: Int) -> some View {
+    /// 右上角统计入口胶囊按钮:点击进 ReviewView(替代被删的"本周完成"卡片,
+    /// 成为 ReviewView 唯一入口)。
+    /// 视觉按 pill-button-spec.md:[16pt 环] 今天 0/3 ›,白底+1px描边+轻阴影。
+    /// 0/0 时整个按钮隐藏(statsHidden 控制),齿轮横移到右对齐。
+    private func statsPillButton(total: Int, completed: Int) -> some View {
         let progress = total > 0 ? Double(completed) / Double(total) : 0
-        return HStack(spacing: WarmSpacing.xs) {
-            todayProgressLabel(completed: completed, total: total)
-            progressRing(progress: progress)
+        return NavigationLink {
+            ReviewView()
+        } label: {
+            HStack(spacing: WarmSpacing.xs) {
+                pillRing(progress: progress)
+                pillLabel(total: total, completed: completed)
+                // spec 强约束:箭头不能省——是控件唯一明确的"可点"信号
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(WarmTheme.textMuted)
+            }
+            .padding(.leading, 9)    // spec: 左内边距比右小,圆形图标视觉"轻"需补偿
+            .padding(.trailing, 11)
+            .padding(.vertical, 7)
+            .background(
+                Capsule()
+                    .fill(WarmTheme.cardBackground)
+                    .overlay(
+                        Capsule()
+                            // spec #E8E6E2 浅暖灰;sketch.opacity(0.3) 是项目现成浅描边惯例
+                            // (DesignSystem.swift:332 同款用法),不新增 token
+                            .stroke(WarmTheme.sketch.opacity(0.3), lineWidth: 1)
+                    )
+                    .shadow(color: WarmTheme.shadowLight, radius: 2, y: 1)
+            )
         }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(format: String(localized: "home.stats %lld %lld"), completed, total))
+        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("HomeStatsBadge")
     }
 
-    /// "今天 (0/3)" 标签。"今天"用主色,数字用次级灰。
-    /// monospacedDigit 防数字字宽变化抖动(0/3 → 1/3 切换);fixedSize 防外层 frame 压榨宽度。
-    private func todayProgressLabel(completed: Int, total: Int) -> some View {
+    /// 胶囊内的文案 "今天 0/3"(无括号,统一 textPrimary 色——按 spec)。
+    /// monospacedDigit 防数字字宽变化抖动;fixedSize 防外层 frame 压榨宽度。
+    private func pillLabel(total: Int, completed: Int) -> some View {
         HStack(spacing: WarmSpacing.xxs) {
             Text(String(localized: "home.today"))
                 .font(WarmFont.caption(13))
                 .foregroundStyle(WarmTheme.textPrimary)
-            Text("(\(completed)/\(total))")
+            Text("\(completed)/\(total)")
                 .font(WarmFont.caption(13))
                 .monospacedDigit()
-                .foregroundStyle(WarmTheme.textSecondary)
+                .foregroundStyle(WarmTheme.textPrimary)
         }
         .fixedSize()
     }
 
-    /// 44pt 纯环,无中心文字。底环 + 进度弧。
-    /// trim 受 ringEntranceProgress 驱动:入场时底环 trim 0→1(从 12 点顺时针绘制),
-    /// 进度弧 trim 同步增长到 progress。两段动画各自独立声明,入场 0.6s / 完成补动画 0.3s。
-    private func progressRing(progress: Double) -> some View {
+    /// 胶囊内的 16pt 进度环:底环 + 进度弧。
+    /// trim 受 ringEntranceProgress 驱动,入场时从 12 点顺时针绘制(保留上次规格);
+    /// 进度弧按 spec 用 450ms easeInOut 补动画(覆盖上次的 300ms easeOut)。
+    /// 描边 3.4 / 16pt ≈ 半径一半,0% 时仍是"实体"而非细线圈(spec 强约束 #5)。
+    private func pillRing(progress: Double) -> some View {
         ZStack {
             Circle()
                 .trim(from: 0, to: ringEntranceProgress)
                 .stroke(WarmTheme.primary.opacity(0.15),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Circle()
                 .trim(from: 0, to: progress * ringEntranceProgress)
                 .stroke(WarmTheme.primary,
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: 44, height: 44)
-        .shadow(color: WarmTheme.primary.opacity(0.15), radius: 4)
-        .animation(motionAnim(.easeOut(duration: 0.3)), value: progress)
+        .frame(width: 16, height: 16)
+        .animation(motionAnim(.easeInOut(duration: 0.45)), value: progress)
         .animation(motionAnim(.easeOut(duration: 0.6)), value: ringEntranceProgress)
     }
 
