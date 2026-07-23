@@ -141,10 +141,6 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 动态效果减弱开关。沿用 OnboardingView 的处理:动画用 motionAnim() 包一层,
     /// 开启时返回 nil 让 SwiftUI 直接跳终值,不播。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// 系统 Dynamic Type 档位。用于在 AX 字号下把日期/星期切到简短形态,
-    /// 而非靠 minimumScaleFactor 压扁——后者在英文长串("Thursday")下仍会截断。
-    /// 详见 feedback memory「文本截断/换行零容忍」。
-    @Environment(\.sizeCategory) private var sizeCategory
     @State private var isProcessing = false
     @State private var showSettingsSheet = false
     // 底部 Tab + FAB + 输入面板状态
@@ -580,14 +576,14 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// Calendar tab 的大标题：当前可见月份（"9月" / "Sep"，对齐设计稿的紧凑数字月份）。
     /// 跨年浏览时带上年份（"2027年1月" / "Jan 2027"）——单独的年份小字行已按设计稿删除。
     private var calendarMonthTitle: String {
-        // AX 字号下切到 `.abbreviated`:英文 "September" → "Sep"(字符减半),
-        // 中文 "9月" 不变(中文月份本就是数字)。避免长月份名在 AX5 下挤爆标题行。
-        let monthSymbol: Date.FormatStyle.Symbol.Month =
-            sizeCategory.isAccessibilityCategory ? .abbreviated : .defaultDigits
+        // 月份恒用 `.abbreviated`:英文 "September" → "Sep"(字符减半),
+        // 中文 "9月" 不变(中文月份本就是数字)。
+        // 起因:英文长月份名 + 进度环 + 齿轮并排时会撑爆标题行,触发 ViewThatFits 竖排回退,
+        // 用户明确反对竖排(视觉重量不对称)。缩写是 Apple Calendar/Reminders 的标准做法。
         if calendar.isDate(visibleMonthAnchor, equalTo: Date(), toGranularity: .year) {
-            return visibleMonthAnchor.formatted(.dateTime.month(monthSymbol))
+            return visibleMonthAnchor.formatted(.dateTime.month(.abbreviated))
         }
-        return visibleMonthAnchor.formatted(.dateTime.year().month(monthSymbol))
+        return visibleMonthAnchor.formatted(.dateTime.year().month(.abbreviated))
     }
 
     /// 当前浏览的月（周视图为周）是否就是今天所在的月/周。
@@ -639,18 +635,14 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private var todayWeekdayTitle: String {
-        // AX 字号下切到 `.abbreviated`:英文 "Thursday" → "Thu"(字符减半),
-        // 中文 "星期四" → "周四"。原字号下保持 `.wide` 不变,兼顾设计感和极限可读性。
-        // 不用 `.narrow`("T"/"四")——单字符信息密度太低,AX 用户也看不清语境。
-        let weekday: Date.FormatStyle.Symbol.Weekday =
-            sizeCategory.isAccessibilityCategory ? .abbreviated : .wide
-        return Date().formatted(.dateTime.weekday(weekday))
+        // 星期恒用 `.abbreviated`:英文 "Thursday" → "Thu"(标准缩写,Apple Calendar 同款),
+        // 中文 "星期四" → "周四"。起因同 calendarMonthTitle:避免英文长串在 HStack 撑爆触发竖排。
+        return Date().formatted(.dateTime.weekday(.abbreviated))
     }
 
-    /// 今日大标题"星期几"。`todayWeekdayTitle` 已在 AX 字号下自动切到 `.abbreviated`,
+    /// 今日大标题"星期几"。`todayWeekdayTitle` 已用 `.abbreviated`,
     /// 配合外层 ViewThatFits 的横→竖回退,绝大多数情况下能保持原字号显示。
-    /// `minimumScaleFactor(0.65)` 仅作为极端兜底(VeryLongLocale 未覆盖的情况),
-    /// 与 `monthTitleText` 保持一致避免两个并列 tab 标题压缩程度分叉。
+    /// `minimumScaleFactor(0.65)` 仅作为极端兜底,与 `monthTitleText` 保持一致。
     private var todayWeekdayText: some View {
         Text(todayWeekdayTitle)
             .font(WarmFont.serifDisplay(30))
@@ -659,13 +651,10 @@ struct HomeView<Store: HomeTodoStore>: View {
             .minimumScaleFactor(0.65)
     }
 
-    /// 今日副标题"7月23日" / "Jul 23"。AX 字号下月份切到 `.abbreviated`,
-    /// 英文 "July 23" → "Jul 23"(省 2 字符);中文 "7月23日" 不变(中文月份本就是数字)。
-    /// `.lineLimit(1)` 杜绝换行,`minimumScaleFactor(0.7)` 副标题本身字号小允许微缩。
+    /// 今日副标题。月份恒用 `.abbreviated`:英文 "July 24" → "Jul 24",中文 "7月24日" 不变。
+    /// `.lineLimit(1)` 杜绝换行,`minimumScaleFactor(0.7)` 副标题字号小允许微缩。
     private var todayDateText: some View {
-        let month: Date.FormatStyle.Symbol.Month =
-            sizeCategory.isAccessibilityCategory ? .abbreviated : .defaultDigits
-        return Text(Date().formatted(.dateTime.month(month).day()))
+        Text(Date().formatted(.dateTime.month(.abbreviated).day()))
             .font(WarmFont.caption(14))
             .foregroundColor(WarmTheme.textSecondary)
             .lineLimit(1)
