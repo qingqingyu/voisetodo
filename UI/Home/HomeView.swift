@@ -712,7 +712,12 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
             .padding(.leading, 9)    // spec: 左内边距比右小,圆形图标视觉"轻"需补偿
             .padding(.trailing, 11)
-            .padding(.vertical, 7)
+            // spec: 整高 32pt(规范下限)。显式锁高替代原 .padding(.vertical, 7)——
+            // 后者依赖内容自然撑高,但 NavigationLink 在 .buttonStyle(.plain) 下仍会被
+            // SwiftUI 施加隐式 hit area 扩展,实测渲染接近 44pt。frame 强制约束后,
+            // 内部 16pt ring + 13pt 文本(~18pt 自然行高)上下各空 ~7pt,正好 32pt。
+            // 内容自然高 < 32pt,不会被压缩;Text "今天 0/3" 短串在 AX5 下也不触发截断/换行。
+            .frame(height: 32)
             .background(
                 Capsule()
                     .fill(WarmTheme.cardBackground)
