@@ -274,27 +274,17 @@ struct HomeSelectedDayListView: View {
     }
 
     private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
-        HStack(spacing: WarmSpacing.xs) {
-            // 行内时间标签:有钟点的显示 "09:00"(分类色),替代旧的时段分组标题
-            if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
-                Text(dueDate, format: .dateTime.hour().minute())
-                    .font(WarmFont.mono(10))
-                    .foregroundColor(WarmTheme.color(for: occurrence.todo.category))
-                    // fixedSize:WarmFont.mono 是固定字号,在 HStack + List frame 上下文中
-                    // AX 档位下 Dynamic Type layout 补偿会触发 .tail truncation(见 DesignSystem 注释)。
-                    .fixedSize()
-            }
-            WarmTodoCard(
-                index: index,
-                todo: occurrence.todo,
-                onToggle: { onToggleOccurrence(occurrence) },
-                onTap: { onOpenTodo(occurrence.todo) },
-                onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
-                onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
-                showsTimeBucketMetadata: false,
-                dueStatusDisplayMode: .overdueOnly
-            )
-        }
+        WarmTodoCard(
+            index: index,
+            todo: occurrence.todo,
+            onToggle: { onToggleOccurrence(occurrence) },
+            onTap: { onOpenTodo(occurrence.todo) },
+            onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
+            onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
+            showsTimeBucketMetadata: false,
+            dueStatusDisplayMode: .overdueOnly,
+            showsInlineTimePrefix: true
+        )
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
