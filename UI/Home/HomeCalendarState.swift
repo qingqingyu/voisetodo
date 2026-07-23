@@ -145,14 +145,24 @@ struct HomeCalendarState {
         occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
-    /// 给定一周(7 天)涉及的分类集合。WeekStripCard 折叠态图例行用。
-    /// 默认按 `startOfWeek` 周一起始;若传入的 anchor 不在周一,内部会先对齐到周一。
-    func categoriesInWeek(of anchor: Date) -> [TodoCategory] {
+    /// WeekStripCard 图例数据源:本周 occurrence 涉及、但未安排 backlog(未完成)里没有的分类。
+    ///
+    /// 算法:`本周排程分类集合 − unscheduledTodos(未完成) 分类集合`。
+    /// 整周 7 天的 occurrence 分类合集常达 5+ 个,一行排不下会截断成 "Hea…/Fin…/So…"。
+    /// 这里排除"backlog 里还有未完成同类项"的分类——若一个分类在本周已排程、但 backlog 里
+    /// 还有同类未安排任务,说明它并非本周独有,图例省略以减少项数。剩下通常只有 1–3 个分类,
+    /// 不再截断。圆点行仍按天显示本周所有分类的色,与图例不必 1:1 对齐(有意取舍)。
+    ///
+    /// 注意:只看未完成的 unscheduledTodos;已完成的 completedUnscheduledTodos 不参与
+    /// (已完成不再争夺注意力,不进入减法集合)。
+    func categoriesExclusiveToWeek(of anchor: Date) -> [TodoCategory] {
         let weekDays = Self.weekDays(for: anchor, calendar: calendar)
-        let used = Set(weekDays.flatMap { day in
+        let weekUsed = Set(weekDays.flatMap { day in
             Self.occurrences(on: day, in: occurrencesByDay, calendar: calendar).map { $0.todo.category }
         })
-        return TodoCategory.allCases.filter { used.contains($0) }
+        let unscheduledUsed = Set(unscheduledTodos.map { $0.category })
+        let exclusive = weekUsed.subtracting(unscheduledUsed)
+        return TodoCategory.allCases.filter { exclusive.contains($0) }
     }
 
     /// 未完成 occurrence 按时间排序:有钟点的按 dueDate 升序,无钟点的排最后(保持原 sortOrder)。
@@ -180,8 +190,8 @@ struct HomeCalendarState {
     }
 
     /// 锚点所在周的 7 天(周一起始)。
-    /// 单一来源:WeekStripCard.weekDays + categoriesInWeek 共用,保证"本周是哪 7 天"
-    /// 的算法不分散在多处。若未来支持 RTL 周日起始或 Calendar.firstWeekday 配置,只改这里。
+    /// 单一来源:WeekStripCard.weekDays 共用,保证"本周是哪 7 天"的算法不分散在多处。
+    /// 若未来支持 RTL 周日起始或 Calendar.firstWeekday 配置,只改这里。
     static func weekDays(for anchor: Date, calendar: Calendar) -> [Date] {
         let start = startOfWeek(for: anchor, calendar: calendar)
         return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }

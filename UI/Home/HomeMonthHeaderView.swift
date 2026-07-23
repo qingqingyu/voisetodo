@@ -187,8 +187,10 @@ enum HomeLayoutMetrics {
     /// "最多可见事件数"上的一致——折叠不是二等公民,密度对齐避免展开后信息突变。
     /// 超过此值截断不显示 +N(数据仍在任务列表里,由 WeekStripCard 注释说明取舍)。
     static let weekStripMaxDots: Int = 6
-    /// 图例行 HStack 列间距。
+    /// 图例 FlowLayout 横向间距(单项之间)。
     static let legendRowSpacing: CGFloat = 14
+    /// 图例 FlowLayout 换行时的行间距。4pt 与 WarmSpacing.xxs 对齐,保持紧凑。
+    static let legendRowVerticalSpacing: CGFloat = 4
     /// 图例单条(圆点 + 文字)spacing。
     static let legendItemSpacing: CGFloat = 5
     /// 图例圆点直径。
@@ -333,16 +335,17 @@ struct WeekStripCard: View {
     let onSelectDay: (Date) -> Void
     let onExpand: () -> Void
 
-    /// 本周的 7 天(周一起始)。委托给 HomeCalendarState.weekDays 静态方法,
-    /// 与 categoriesInWeek 共用单一来源,保证 WeekStripCard 的圆点行与图例行的"本周"口径一致。
+    /// 本周的 7 天(周一起始)。委托给 HomeCalendarState.weekDays 静态方法,单一来源。
     private var weekDays: [Date] {
         HomeCalendarState.weekDays(for: state.selectedDate, calendar: state.calendar)
     }
 
-    /// 本周涉及的分类(去重),用于图例。委托给 HomeCalendarState.categoriesInWeek,
-    /// 与 HomeSelectedDayListView.legendCategories 共用单一来源,避免重复 flatMap + Set 构造。
-    private var weekCategories: [TodoCategory] {
-        state.categoriesInWeek(of: state.selectedDate)
+    /// 本周「专属」分类:本周 occurrence 涉及、但未安排 backlog 里没有的分类。
+    /// 委托给 HomeCalendarState.categoriesExclusiveToWeek。圆点行还是按天显示本周所有分类的色,
+    /// 图例只解码"本周专属"那几个;与圆点行的色盘不必 1:1 对齐——这是有意的取舍,用
+    /// 更少的图例项换取不再被截断。
+    private var exclusiveWeekCategories: [TodoCategory] {
+        state.categoriesExclusiveToWeek(of: state.selectedDate)
     }
 
     var body: some View {
@@ -354,22 +357,29 @@ struct WeekStripCard: View {
                 }
             }
 
-            // 图例
-            if !weekCategories.isEmpty {
-                HStack(spacing: HomeLayoutMetrics.legendRowSpacing) {
-                    ForEach(weekCategories, id: \.self) { cat in
+            // 图例:仅本周「专属」分类(未安排 backlog 里没有的)。点其他周/切 backlog 会跟着变。
+            // FlowLayout 换行:5+ 项时自动换到第二行,不截断。
+            // 字体用 `.system` 而非 WarmFont.caption:后者底层是 Avenir Next(纯拉丁),
+            // 中文回落到 PingFang SC 后视觉偏小;.system 在中英混排下 cap-height 对齐、视觉一致。
+            if !exclusiveWeekCategories.isEmpty {
+                FlowLayout(
+                    horizontalSpacing: HomeLayoutMetrics.legendRowSpacing,
+                    verticalSpacing: HomeLayoutMetrics.legendRowVerticalSpacing
+                ) {
+                    ForEach(exclusiveWeekCategories, id: \.self) { cat in
                         HStack(spacing: HomeLayoutMetrics.legendItemSpacing) {
                             Circle()
                                 .fill(WarmTheme.color(for: cat))
                                 .frame(width: HomeLayoutMetrics.legendDotDiameter,
                                        height: HomeLayoutMetrics.legendDotDiameter)
                             Text(cat.displayName)
-                                .font(WarmFont.caption(HomeLayoutMetrics.legendFontSize))
+                                .font(.system(size: HomeLayoutMetrics.legendFontSize, weight: .regular))
                                 .foregroundColor(WarmTheme.textMuted)
                         }
+                        .fixedSize()
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
 
             // 展开整月
