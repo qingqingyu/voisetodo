@@ -144,6 +144,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
     @EnvironmentObject private var permissionManager: PermissionManager
+    /// 动态效果减弱开关。沿用 OnboardingView 的处理:动画用 motionAnim() 包一层,
+    /// 开启时返回 nil 让 SwiftUI 直接跳终值,不播。
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isProcessing = false
     @State private var showSettingsSheet = false
     // 底部 Tab + FAB + 输入面板状态
@@ -197,6 +200,12 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var selectedDate = DayClock.startOfUserDay(for: Date())
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
+    /// 今日进度环入场进度:0→1 驱动底环 trim 与进度弧 trim(顺时针绘制)。
+    /// 会话级状态——HomeView 在 App 级长期存活,切 tab 不重置。
+    @State private var ringEntranceProgress: CGFloat = 0
+    /// 会话内只播一次入场动画的标记。0/0 启动场景下保持 false,
+    /// 直到用户新建第一个任务走 onChange 路径补播。
+    @State private var hasPlayedRingEntrance: Bool = false
     /// 月历 occurrence 缓存：由后台 `queryActor` 异步加载，主线程不再做 SwiftData fetch/展开。
     /// `.task(id:)` 在 visibleMonthAnchor / store.todos / occurrenceRevision 变化时刷新。
     @State private var monthOccurrences: [String: [TodoOccurrenceData]] = [:]
@@ -413,6 +422,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                 let currentIds: Set<UUID> = Set(store.todos.map(\.id))
                 cardAppeared = cardAppeared.intersection(currentIds)
             }
+            .onChange(of: todayTotalCount) { oldTotal, newTotal in
+                // 启动时是 0/0(环没入场)、之后用户新建第一个任务:补一次入场动画,
+                // 等同于"首次有内容"。playRingEntranceIfNeeded 内部 gate 保证会话内只播一次。
+                // 注意 trigger 必须用 todayTotalCount 而非 store.todos.count:
+                // 场景"今日 0/0 但其他日子有任务"下,store.todos.count 永远 >0,
+                // 用它做 trigger 永远不会进入此分支——补播会失效。
+                if oldTotal == 0, newTotal > 0 {
+                    playRingEntranceIfNeeded()
+                }
+            }
             .onChange(of: selectedBottomTab) { _, tab in
                 if tab == .today {
                     jumpToToday()
@@ -484,7 +503,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+        // 单次计算当日统计,避免 statsBadgeHiddenForToday / todayProgressCluster 各调一遍。
+        let dayStats = selectedDayStats()
+        let statsHidden = store.todos.isEmpty || dayStats.total == 0 || calendarLoadState == .error
+        return VStack(alignment: .leading, spacing: WarmSpacing.sm) {
             // 左右分布（对齐 HTML 设计稿）：左=标题组，右=进度环+设置齿轮。
             // 拖拽时整行向上滑出 + 淡出(导航类,与当下排程动作无关)。
             HStack(alignment: .center, spacing: WarmSpacing.md) {
@@ -528,12 +550,14 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 Spacer()
 
-                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
-                    statsBadge
+                if !statsHidden {
+                    todayProgressCluster(total: dayStats.total, completed: dayStats.completed)
+                        .transition(.opacity)
                 }
 
                 settingsButton
             }
+            .animation(motionAnim(.easeOut(duration: 0.3)), value: statsHidden)
 
             viewSwitcher
                 .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight, alignment: .top)
@@ -676,32 +700,62 @@ struct HomeView<Store: HomeTodoStore>: View {
         return (onDay.count, completed)
     }
 
-    /// 当日完成进度环（设计稿 ring）：环形填充 = 已完成 ÷ 总数，中心显示「完成/总数」。
-    /// 统计口径：selectedDate 当天（与列表 section header 一致，避免数字打架）。
-    /// today tab 下 selectedDate 恒为今天，实际就是"今天的完成度"；
-    /// calendar tab 下跟用户点的日期走——选哪天显示哪天的进度。
-    private var statsBadge: some View {
-        let (total, completed) = selectedDayStats()
+    /// 今日总数,仅用于 playRingEntranceIfNeeded 的 gate 检查(不在 body 中调用,
+    /// 避免 .onChange 热路径上重复跑 filter 遍历)。headerView 里的 dayStats 单算一次。
+    private var todayTotalCount: Int {
+        selectedDayStats().total
+    }
+
+    /// "今天 (0/3)" + 进度环 的合并外壳。
+    /// 合并后才能让 transition(.opacity) 同步作用于标签和环(整体淡入淡出),
+    /// 并让 accessibilityElement 合并成一个可访问性节点(沿用 HomeStatsBadge id)。
+    /// total/completed 由 headerView 单次计算传入,避免重复调 selectedDayStats()。
+    private func todayProgressCluster(total: Int, completed: Int) -> some View {
         let progress = total > 0 ? Double(completed) / Double(total) : 0
-        return ZStack {
-            Circle()
-                .stroke(WarmTheme.primary.opacity(0.15), lineWidth: 3)
-
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(WarmTheme.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-
-            Text(verbatim: "\(completed)/\(total)")
-                .font(WarmFont.mono(12))
-                .foregroundStyle(WarmTheme.textPrimary)
+        return HStack(spacing: WarmSpacing.xs) {
+            todayProgressLabel(completed: completed, total: total)
+            progressRing(progress: progress)
         }
-        .frame(width: 44, height: 44)
-        .shadow(color: WarmTheme.primary.opacity(0.15), radius: 4)
-        .animation(WarmAnimation.springSmooth, value: progress)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(format: String(localized: "home.stats %lld %lld"), completed, total))
         .accessibilityIdentifier("HomeStatsBadge")
+    }
+
+    /// "今天 (0/3)" 标签。"今天"用主色,数字用次级灰。
+    /// monospacedDigit 防数字字宽变化抖动(0/3 → 1/3 切换);fixedSize 防外层 frame 压榨宽度。
+    private func todayProgressLabel(completed: Int, total: Int) -> some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Text(String(localized: "home.today"))
+                .font(WarmFont.caption(13))
+                .foregroundStyle(WarmTheme.textPrimary)
+            Text("(\(completed)/\(total))")
+                .font(WarmFont.caption(13))
+                .monospacedDigit()
+                .foregroundStyle(WarmTheme.textSecondary)
+        }
+        .fixedSize()
+    }
+
+    /// 44pt 纯环,无中心文字。底环 + 进度弧。
+    /// trim 受 ringEntranceProgress 驱动:入场时底环 trim 0→1(从 12 点顺时针绘制),
+    /// 进度弧 trim 同步增长到 progress。两段动画各自独立声明,入场 0.6s / 完成补动画 0.3s。
+    private func progressRing(progress: Double) -> some View {
+        ZStack {
+            Circle()
+                .trim(from: 0, to: ringEntranceProgress)
+                .stroke(WarmTheme.primary.opacity(0.15),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Circle()
+                .trim(from: 0, to: progress * ringEntranceProgress)
+                .stroke(WarmTheme.primary,
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 44, height: 44)
+        .shadow(color: WarmTheme.primary.opacity(0.15), radius: 4)
+        .animation(motionAnim(.easeOut(duration: 0.3)), value: progress)
+        .animation(motionAnim(.easeOut(duration: 0.6)), value: ringEntranceProgress)
     }
 
     private var settingsButton: some View {
@@ -1481,6 +1535,35 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springEntrance.delay(0.25)) {
             listOffset = 0
             listOpacity = 1
+        }
+
+        playRingEntranceIfNeeded()
+    }
+
+    /// 动效减弱时返回 nil,关闭 SwiftUI 隐式动画。沿用 OnboardingView 同名 helper 风格。
+    private func motionAnim(_ animation: Animation) -> Animation? {
+        reduceMotion ? nil : animation
+    }
+
+    /// 今日进度环入场动画:底环从 12 点顺时针绘制,进度弧同步增长。
+    /// 触发规则(会话内"只播一次"):
+    ///   - Gate 1: total > 0(0/0 时环根本不显示,无需播)
+    ///   - Gate 2: !hasPlayedRingEntrance(切走再切回、删光再重建都不重播)
+    ///   - reduceMotion: 直接跳终值
+    /// 另有 .onChange(of: todayTotalCount) 路径处理"启动时 0/0、之后新建任务"的补播场景。
+    private func playRingEntranceIfNeeded() {
+        guard !hasPlayedRingEntrance else { return }
+        guard todayTotalCount > 0 else { return }
+        hasPlayedRingEntrance = true
+
+        if reduceMotion {
+            ringEntranceProgress = 1
+            return
+        }
+        // ringEntranceProgress 初始值为 0,gate 保证此函数会话内只执行一次,
+        // 因此无需先显式归零——直接 withAnimation 从当前值(0)动画到 1。
+        withAnimation(.easeOut(duration: 0.6)) {
+            ringEntranceProgress = 1
         }
     }
 
