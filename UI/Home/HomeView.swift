@@ -204,11 +204,15 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
     @State private var occurrenceRevision = 0
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
-    /// 日历视图模式（月/周），跨启动记住上次选择。
-    @AppStorage("calendarViewMode") private var calendarViewModeRaw = CalendarViewMode.month.rawValue
-    private var calendarViewMode: CalendarViewMode {
-        CalendarViewMode(rawValue: calendarViewModeRaw) ?? .month
-    }
+    /// 网格折叠进度(0=展开满屏 6 行, 1=折叠到选中日所在周 1 行 + 任务列表)。
+    /// 生命周期:与 HomeView 的 View identity 绑定。HomeView 在 App 级别长期存活,
+    /// 切 tab 不会销毁重建 HomeView,因此 collapseProgress 在 tab 切换间自然保留。
+    /// 切月 / jumpToToday 不重置:折叠是"视图密度偏好",与"看哪天/哪月"正交。
+    @State private var collapseProgress: CGFloat = 0
+    /// 手势起始时的 collapseProgress,首次 onChanged 时捕获。
+    @State private var gestureAnchorProgress: CGFloat = 0
+    /// 是否正在跟手(首次 onChanged=true, onEnded/onCancelled=false)。
+    @State private var isCollapseGesturing = false
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
@@ -237,6 +241,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     // 动画状态
     @State private var headerOffset: CGFloat = -50
     @State private var headerOpacity: Double = 0
+    /// 入场动画偏移/透明度。只作用于 Today tab 的 List;Calendar tab 的网格/WeekStripCard
+    /// 走 collapseProgress 驱动,不经过这两个 State。
     @State private var listOffset: CGFloat = 30
     @State private var listOpacity: Double = 0
     @State private var cardAppeared: Set<UUID> = []
@@ -244,25 +250,6 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// Calendar tab 下「未安排的」底部抽屉展开态。
     /// 默认折叠(unscheduled 多时视觉干净);Today tab 不用 drawer,此状态无意义。
     @State private var unscheduledDrawerExpanded: Bool = false
-
-    /// Header 收起进度,0 = 完全展开(header 全显)、1 = 完全收起(header 压到最紧)。
-    /// 由 `isTaskDragging` 驱动:任务卡片拖拽进行中 → 1.0(收起),否则 0.0(展开)。
-    /// `isTaskDragging` 由 `DragSessionTracker`(全屏 UIDropInteraction overlay)在
-    /// `sessionDidEnter` / `sessionDidEnd` 时 withAnimation 写入,SwiftUI 的 animation
-    /// 系统会在 0↔1 之间 spring 插值(因为写入处包了 withAnimation)。
-    ///
-    /// **已废**:旧 list 模式下响应 drag collapse 的动画。废 calendarDisplayMode 后
-    /// Calendar tab 全是 grid 模式,且阶段 2 会进一步废 DayTimelineView/DragSessionTracker,
-    /// isTaskDragging 失去触发源 → headerCollapseProgress 永远 0。保留属性避免改所有依赖点,
-    /// 阶段 2 完成后再彻底清理。
-    private var headerCollapseProgress: Double {
-        return 0
-    }
-
-    /// 任务卡片拖拽是否进行中。由 `DragSessionTracker`(全屏 UIDropInteraction overlay)
-    /// 在 `sessionDidEnter` / `sessionDidEnd` 时 withAnimation 写入。
-    /// 驱动 `DragTargetOverlay` 的显示 + DayTimelineView 的 dim,Phase 3 还会驱动 header 收起。
-    @State private var isTaskDragging: Bool = false
 
     /// 本周完成数(用于首页"本周小结"卡片)。
     private var weeklyCompletedCount: Int {
@@ -274,17 +261,6 @@ struct HomeView<Store: HomeTodoStore>: View {
             let day = DayClock.startOfUserDay(for: completed, calendar: cal)
             return day >= weekStart && day <= today
         }.count
-    }
-
-    /// 是否处于 week 视图(Calendar tab + week 模式)。
-    /// 单一事实来源(single source of truth):
-    /// - header 层:gate weeklySummary / statsBadge / viewSwitcher 等次要元素
-    /// - body 层:gate DayTimelineView(`monthHomeView` 内原先的局部变量
-    ///   `isGridWeekWithoutTimeline` 已合并到本属性,避免同条件两处分叉)
-    /// 让"一眼看全周"价值最大化。详见 plan: calendar-tab-simplification.md。
-    /// **已简化**:废 calendarDisplayMode 后不再判断 grid,Calendar tab 下 week 即本属性 true。
-    private var isGridWeekView: Bool {
-        selectedBottomTab == .calendar && calendarViewMode == .week
     }
 
     private var actions: HomeViewActions<Store> {
@@ -307,8 +283,7 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                     // 本周小结卡片(快速入口到回顾页)
                     // 拖拽时整体淡出 + 高度收(回顾类信息,与当下排程动作无关——用户原话)。
-                    // grid+week 下隐藏:回流派给时间轴(详见 plan: cheerful-coalescing-otter.md)。
-                    if weeklyCompletedCount > 0 && !isGridWeekView {
+                    if weeklyCompletedCount > 0 {
                         NavigationLink {
                             ReviewView()
                         } label: {
@@ -328,8 +303,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             .padding(.vertical, WarmSpacing.xs)
                         }
                         .buttonStyle(.plain)
-                        .opacity(1 - headerCollapseProgress)
-                        .frame(height: HomeLayoutMetrics.weeklySummaryRowHeight * (1 - headerCollapseProgress), alignment: .top)
+                        .frame(height: HomeLayoutMetrics.weeklySummaryRowHeight, alignment: .top)
                         .clipped()
                     }
 
@@ -510,9 +484,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        // spacing 跟着 progress 收:progress=1 时标题/tab 行完全收起,spacing 也归零,
-        // 避免收起后 VStack 中间留一条死空白。
-        VStack(alignment: .leading, spacing: WarmSpacing.sm * (1 - headerCollapseProgress)) {
+        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
             // 左右分布（对齐 HTML 设计稿）：左=标题组，右=进度环+设置齿轮。
             // 拖拽时整行向上滑出 + 淡出(导航类,与当下排程动作无关)。
             HStack(alignment: .center, spacing: WarmSpacing.md) {
@@ -556,43 +528,20 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 Spacer()
 
-                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error && !isGridWeekView {
+                if !store.todos.isEmpty && selectedDayStats().total > 0 && calendarLoadState != .error {
                     statsBadge
-                }
-
-                // 仅 Calendar tab 显示「周/月」切换按钮——Today tab 无日历视图。
-                if selectedBottomTab == .calendar {
-                    viewModeToggleButton
                 }
 
                 settingsButton
             }
-            .opacity(1 - headerCollapseProgress)
-            // frame height 按 progress 收缩 + .top alignment 让内容锚定在顶部,
-            // 底部先被 clipped:视觉上是"内容向上卷起"而非"挤压变形"。
-            // combined with opacity fade = "向上滑出并淡出" 的连续效果。
-            .frame(height: HomeLayoutMetrics.headerTitleRowHeight * (1 - headerCollapseProgress), alignment: .top)
-            .clipped()
-            // 收起期间禁用 hit testing:视觉上已淡出 + clipped,但 Button 仍可能响应
-            // 穿透 opacity=0 的深点。progress > 0.5 即认定「已进入收起态」,关掉事件。
-            .allowsHitTesting(headerCollapseProgress < 0.5)
 
-            // 导航切换器：Today / Calendar 下划线样式，左对齐（对齐设计稿）。
-            // 同样跟着收起(tap tab 是导航类信息,拖拽时不需要看)。
-            // grid+week 下隐藏:用户切 Today/Calendar tab 走底部 BottomTabBar。
-            // 详见 plan: cheerful-coalescing-otter.md。
-            if !isGridWeekView {
-                viewSwitcher
-                    .opacity(1 - headerCollapseProgress)
-                    .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight * (1 - headerCollapseProgress), alignment: .top)
-                    .clipped()
-                    .allowsHitTesting(headerCollapseProgress < 0.5)
-            }
+            viewSwitcher
+                .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight, alignment: .top)
+                .clipped()
         }
         .padding(.horizontal, WarmSpacing.xl)
         .padding(.top, WarmSpacing.md)
-        // bottom padding 跟着 progress 收:避免收起后底部留白。
-        .padding(.bottom, WarmSpacing.sm * (1 - headerCollapseProgress))
+        .padding(.bottom, WarmSpacing.sm)
         .background(
             WarmTheme.background.opacity(0.9)
                 .shadow(color: WarmTheme.shadowLight, radius: 1, y: 1)
@@ -627,7 +576,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .font(WarmFont.headline(14))
                     .foregroundColor(isSelected ? WarmTheme.textPrimary : WarmTheme.textMuted)
                 Capsule()
-                    .fill(isSelected ? WarmTheme.primary : Color.clear)
+                    // tab 下划线用 textPrimary 而非 primary:视觉改版后 primary 收回
+                    // 只用于"当前日期高亮圆 + 麦克风按钮",tab 导航属次要元素。
+                    .fill(isSelected ? WarmTheme.textPrimary : Color.clear)
                     .frame(width: 20, height: 2)
             }
         }
@@ -653,7 +604,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         calendar.isDate(
             visibleMonthAnchor,
             equalTo: Date(),
-            toGranularity: calendarViewMode == .week ? .weekOfYear : .month
+            toGranularity: .month
         )
     }
 
@@ -692,7 +643,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("TodayMonthButton")
-        .accessibilityLabel(String(localized: calendarViewMode == .week ? "a11y.today_week" : "a11y.today_month"))
+        .accessibilityLabel(String(localized: "a11y.today_month"))
     }
 
     private var todayWeekdayTitle: String {
@@ -734,18 +685,19 @@ struct HomeView<Store: HomeTodoStore>: View {
         let progress = total > 0 ? Double(completed) / Double(total) : 0
         return ZStack {
             Circle()
-                .stroke(WarmTheme.primary.opacity(0.2), lineWidth: 4)
+                .stroke(WarmTheme.primary.opacity(0.15), lineWidth: 3)
 
             Circle()
                 .trim(from: 0, to: progress)
-                .stroke(WarmTheme.primary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .stroke(WarmTheme.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
 
             Text(verbatim: "\(completed)/\(total)")
-                .font(WarmFont.headlineFixed(11))
-                .foregroundStyle(WarmTheme.textSecondary)
+                .font(WarmFont.mono(12))
+                .foregroundStyle(WarmTheme.textPrimary)
         }
-        .frame(width: 40, height: 40)
+        .frame(width: 44, height: 44)
+        .shadow(color: WarmTheme.primary.opacity(0.15), radius: 4)
         .animation(WarmAnimation.springSmooth, value: progress)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(format: String(localized: "home.stats %lld %lld"), completed, total))
@@ -768,38 +720,6 @@ struct HomeView<Store: HomeTodoStore>: View {
         .glassEffect(.regular)
         .accessibilityIdentifier("HomeSettingsButton")
         .accessibilityLabel(String(localized: "settings.title"))
-    }
-
-    /// 周/月切换按钮:胶囊样式,图标 + 文字。
-    /// 与 statsBadge/settingsButton 同高(40pt)保持视觉对齐。
-    /// 点击在 week↔month 之间 toggle。
-    /// **已简化**:旧 displayModeToggleButton (list↔grid) 已废,Calendar tab
-    /// 不再有 list 模式。详见 plan: calendar-tab-simplification.md。
-    private var viewModeToggleButton: some View {
-        let isWeek = calendarViewMode == .week
-        return Button {
-            setViewMode(isWeek ? .month : .week)
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: isWeek ? "calendar.month" : "calendar.week")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(String(localized: isWeek ? "home.view.month" : "home.view.week"))
-                    .font(WarmFont.caption(12))
-                    .fontWeight(.semibold)
-            }
-            // 颜色固定,不随 isWeek 变化——只有图标和文案切换状态。
-            .foregroundColor(WarmTheme.textSecondary)
-            .padding(.horizontal, 10)
-            .frame(height: WarmSize.touch)
-            .background(
-                Capsule().fill(WarmTheme.cardBackground)
-            )
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("CalendarViewModeToggle")
-        .accessibilityLabel(String(localized: isWeek ? "home.view.month" : "home.view.week"))
-        .accessibilityHint(String(localized: "a11y.view_mode.hint"))
     }
 
     // MARK: - Recording Overlay
@@ -893,39 +813,18 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Month Home View
 
-    /// 根据 viewMode 分发日历内容视图：
-    /// - month → `HomeMonthHeaderView`(6×7 事件条格子)
-    /// - week  → `WeekTimelineView`(7 天横排时间轴)
-    /// 两者共用 onSelectDay / onDropTodo / onShiftPeriod 契约 + calendarHeight 限高。
-    ///
-    /// `calendarHeight` 在两种路径下用法不同：
-    ///   - `HomeMonthHeaderView`：通过 `availableHeight` 参数传入，Header 内部用它算 dayRowHeight。
-    ///   - `WeekTimelineView`：本函数不透传——`WeekTimelineView` 内部高度由 ScrollView 自适应；
-    ///     外层 `.frame(height: calendarHeight)` + `.clipped()`（见 monthHomeView）封顶即可。
-    ///
-    /// **已简化**:废 calendarDisplayMode 后,Calendar tab 只有 month/week 两种模式,
-    /// 不再有 list 概念。list 模式的圆点行样式已永久移除。
+    /// 渲染日历内容视图(月历网格)。`rowHeightBasis` 是"用于算行高的基准高度",
+    /// 通常是展开态满高度(fullHeight)——折叠过程不改行高,只靠外层 frame + offset 动作。
+    /// 外层 `.frame(height: calendarHeight)` + `.clipped()` 封顶(见 monthHomeView)。
     @ViewBuilder
-    private func calendarContentView(state: HomeCalendarState, calendarHeight: CGFloat) -> some View {
-        switch calendarViewMode {
-        case .week:
-            WeekTimelineView(
-                state: state,
-                onSelectDay: selectDay,
-                onOpenTodo: { selectedTodo = $0 },
-                onShiftPeriod: { shiftPeriod(by: $0) },
-                onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) }
-            )
-        case .month:
-            HomeMonthHeaderView(
-                state: state,
-                onSelectDay: selectDay,
-                onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
-                onShiftPeriod: { shiftPeriod(by: $0) },
-                availableHeight: calendarHeight,
-                collapseProgress: headerCollapseProgress
-            )
-        }
+    private func calendarContentView(state: HomeCalendarState, rowHeightBasis: CGFloat) -> some View {
+        HomeMonthHeaderView(
+            state: state,
+            onSelectDay: selectDay,
+            onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
+            onShiftPeriod: { shiftPeriod(by: $0) },
+            availableHeight: rowHeightBasis
+        )
     }
 
     private var monthHomeView: some View {
@@ -933,31 +832,65 @@ struct HomeView<Store: HomeTodoStore>: View {
             store: store,
             selectedDate: selectedDate,
             visibleMonthAnchor: visibleMonthAnchor,
-            viewMode: calendarViewMode,
             occurrencesByDay: monthOccurrences,
             calendar: calendar
         )
+        // 选中日在 42 格里的行索引(0-5),折叠时把选中周推到顶部。
+        // 提到 GeometryReader 外:只依赖 visibleMonthAnchor / selectedDate,与 proxy.size 无关,
+        // 避免 60fps 跟手时每帧重做 42 次 isDate(inSameDayAs:) 调用(NSCalendar 桥接,有开销)。
+        // firstIndex 找不到时退回 0(选中日不在当月网格内,折叠 offset=0 等价于"不动")。
+        // 此情况只在 visibleMonthAnchor 与 selectedDate 不同步时发生——
+        // 正常路径(shiftPeriod / jumpToToday)会同时更新两者,保持同步。
+        let selectedRowIndex = CGFloat(
+            min((state.visibleDays.firstIndex { calendar.isDate($0, inSameDayAs: selectedDate) } ?? 0) / 7, 5)
+        )
 
         return GeometryReader { proxy in
-            // 月历封顶高度：list 模式 44%（窄行）/ grid 模式 70%（事件条需要垂直空间）。
-            // 极矮屏日期行可能被裁切（overflow:hidden 语义）；列表区在 list 模式下 ≥ 30% 可滚动。
-            // 「今日」tab 隐藏月历，列表占满 100%。
-            let calendarHeight = HomeLayoutMetrics.calendarHeight(
+            let fullHeight = HomeLayoutMetrics.calendarExpandedHeight(
                 availableHeight: proxy.size.height,
-                selectedTab: selectedBottomTab,
-                viewMode: calendarViewMode,
-                collapseProgress: headerCollapseProgress
+                selectedTab: selectedBottomTab
             )
+            // 行高固定用展开态(fullHeight)算:折叠时只靠外层 frame+offset 动作,不改每行 intrinsic 高度。
+            // 若用动态 calendarHeight 算,折叠过程每帧 relayout 42 格会掉帧。
+            let actualRowHeight = HomeLayoutMetrics.dayRowHeight(availableHeight: fullHeight)
+            // rowStride 必须与 HomeMonthHeaderView 内 VStack 的 spacing 一致(gridRowSpacing=2),
+            // 否则折叠 offset 会偏移过多/过少,选中周被推出视口。
+            let rowStride = actualRowHeight + HomeLayoutMetrics.gridRowSpacing
+            // 折叠态高度 = 固定段 + 1 行实际行高。不能用 gridMonthMinRowHeight 兜底值——
+            // 实际行高(随屏幕变大)会 > 80pt,折叠容器装不下整行就截断。
+            let collapsedHeight = HomeLayoutMetrics.calendarFixedSectionHeight + actualRowHeight
+            let calendarHeight = fullHeight + (collapsedHeight - fullHeight) * collapseProgress
+            let gridOffset = selectedRowIndex * rowStride * collapseProgress
 
             VStack(spacing: 0) {
                 if selectedBottomTab == .calendar {
-                    calendarContentView(state: state, calendarHeight: calendarHeight)
-                    // 封顶 + 裁切：对齐 HTML 参考的 max-height + overflow:hidden。
-                    // 防止月历内容（网格行高过小时）向上溢出盖住"下午好"标题、
-                    // 或向下溢出侵入列表滚动区。
-                    // alignment: .top —— 内容贴顶；周→月切换动画期间 frame 从 178pt 涨到 258pt，
-                    // 但内容立即变 6 行（~244pt），中途 frame ~200pt 装不下时，.top 让溢出只往下走，
-                    // 上方 Picker/月份标题不被切（默认 .center 会上下都切，"上面文字被切掉"的 bug）。
+                    ZStack(alignment: .top) {
+                        // 展开态:完整月网格(淡出)
+                        // allowsHitTesting 与 WeekStripCard 共用 0.5 阈值:progress > 0.5 时网格
+                        // 已淡到 < 50%,关掉命中避免与 WeekStripCard 形成双层响应;progress <= 0.5 时
+                        // WeekStripCard 关命中,网格独占。两层在任意 progress 下有且仅有一个可点击。
+                        calendarContentView(state: state, rowHeightBasis: fullHeight)
+                            .frame(height: calendarHeight, alignment: .top)
+                            .offset(y: -gridOffset)
+                            .clipped()
+                            .opacity(1 - collapseProgress)
+                            .allowsHitTesting(collapseProgress <= 0.5)
+
+                        // 折叠态:周条卡片(淡入)
+                        WeekStripCard(
+                            state: state,
+                            onSelectDay: selectDay,
+                            onExpand: {
+                                withAnimation(WarmAnimation.springStandard) {
+                                    collapseProgress = 0
+                                }
+                            }
+                        )
+                        .padding(.horizontal, WarmSpacing.xl)
+                        .padding(.top, WarmSpacing.xxs)
+                        .opacity(collapseProgress)
+                        .allowsHitTesting(collapseProgress > 0.5)
+                    }
                     .frame(height: calendarHeight, alignment: .top)
                     .clipped()
                 }
@@ -968,113 +901,111 @@ struct HomeView<Store: HomeTodoStore>: View {
                 case .error:
                     HomeCalendarErrorView(onRetry: retryCalendarLoad)
                 case .empty, .success:
-                    // grid+月:网格本身已显示事件概览(数字 + ≤2 事件条 + +N),
-                    // 下方完全空白,不渲染任何列表。
-                    //
-                    // grid+周:WeekTimelineView 是完整 7 天横排时间轴(含事件块/点击/翻周),
-                    // 用户反馈「网格下方不应再有 timeline」——DayTimelineView 即使已改造成
-                    // 水平 bucket 分组仍属冗余。下方只保留 UnscheduledDrawer 让无 dueDate
-                    // 任务可见。失去:全天任务(有 dueDate 无 dueTime)/已完成任务/+ 设钟点入口/
-                    // drawer 拖拽排程——需要这些功能时切回 list+月或 list+周。
-                    //
-                    // list+月/list+周 当然保留完整列表。
-                    // 必须同时是 Calendar tab:Today tab 不渲染任何日历(包括网格),
-                    // 若此时再按 displayType 屏蔽列表会让整页空白——calendarDisplayMode 已废,
-                    // Calendar tab 默认就是网格视图。
-                    //
-                    // **已简化**:废 calendarDisplayMode 后只判断 viewMode == .month。
-                    let isGridMonthWithoutList = selectedBottomTab == .calendar
-                        && calendarViewMode == .month
-                    // grid+week 复用 header 层的 isGridWeekView(单一事实来源),
-                    // 避免同条件两处定义分叉。
-                    if !isGridMonthWithoutList {
-                        // 列表高度必须 concrete（不能用 .frame(maxHeight: .infinity)）：
-                        // SwiftUI 在 GeometryReader + VStack 嵌套里对 List 提议"无限"高度时，
-                        // List 会渲染所有内容而不滚动（已知行为）。
-                        // 这里用 proxy.size.height - calendarHeight 算出实际可用高度，
-                        // List 在此 concrete 高度内会正确启用滚动。
-                        let listHeight = max(0, proxy.size.height - calendarHeight)
-                        if selectedBottomTab == .calendar {
-                            // Calendar tab 下方只保留 UnscheduledDrawer(无 dueDate 任务入口)。
-                            //
-                            // **已简化**(详见 plan: calendar-tab-simplification.md):
-                            // - 废 DayTimelineView(用户反馈"不再混竖向时段轴和 Anytime 列表")
-                            // - 废 DragTargetOverlay(只服务 DayTimelineView)
-                            // - 废 DragSessionTracker(只观察 DayTimelineView 的 drag session 视觉反馈)
-                            // Anytime 任务(hasDueTime=false)归 Today tab 顶部,Calendar tab 不再渲染。
-                            // 旧 grid+month 的 "完全空白" 策略(isGridMonthWithoutList)也废,
-                            // month 下也保留 drawer 让无 dueDate 任务随时可见。
-                            ZStack(alignment: .bottom) {
-                                if !state.unscheduledTodos.isEmpty {
-                                    UnscheduledDrawer(
-                                        todos: state.unscheduledTodos,
-                                        isExpanded: $unscheduledDrawerExpanded,
-                                        cardAppeared: $cardAppeared,
-                                        onToggleTodo: { actions.toggleTodo($0) },
-                                        onOpenTodo: { selectedTodo = $0 },
-                                        onDropToUnscheduled: { id in unassignTodoFromDay(id) },
-                                        availableHeight: listHeight,
-                                        onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                                        onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
-                                    )
-                                }
+                    // Today tab: 列表占整屏(月网格不渲染,calendarHeight=0 → listHeight=proxy.size.height);
+                    // Calendar tab 展开态(collapseProgress=0):网格占满 95% 高度已显示事件概览,
+                    // 下方仅 5% 余量不足以放列表 → 不渲染列表,用户下滑折叠后才出现列表。
+                    // Calendar tab 折叠态(collapseProgress > collapseListVisibleThreshold=0.3):
+                    // 网格收成 WeekStripCard,下方腾出空间渲染任务列表,随 progress 淡入并可点击。
+                    let listHeight = max(0, proxy.size.height - calendarHeight)
+                    let isCalendarList = selectedBottomTab == .calendar
+                    // 列表渲染阈值 0.3:progress 超过此值才挂载列表,提前挂载让 opacity 有时间渐入。
+                    // 命中阈值 0.5:对齐网格 allowsHitTesting(progress<=0.5) + WeekStripCard (>0.5),
+                    // 任意 progress 下有且仅有一层可点击,避免双层响应。
+                    // opacity 跟随 progress 渐变,0.3→0.5 之间列表淡入但不可点击(网格仍独占交互)。
+                    let listInteractive = !isCalendarList || collapseProgress > HomeLayoutMetrics.collapseListVisibleThreshold
+                    if listInteractive {
+                        HomeSelectedDayListView(
+                            state: state,
+                            selectedBottomTab: selectedBottomTab,
+                            cardAppeared: $cardAppeared,
+                            onToggleTodo: { actions.toggleTodo($0) },
+                            onToggleOccurrence: { actions.toggleOccurrence($0) },
+                            onDeleteTodo: { actions.deleteTodo($0) },
+                            onOpenTodo: { selectedTodo = $0 },
+                            onMoveUnscheduled: { source, destination in
+                                moveUnscheduled(from: source, to: destination)
+                            },
+                            onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
+                            onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
+                        )
+                        .frame(height: listHeight)
+                        .opacity(isCalendarList ? collapseProgress : 1)
+                        .allowsHitTesting(!isCalendarList || collapseProgress > 0.5)
+                        .clipped()
+                    }
+                }
+            }
+            // 上下滑手势:驱动网格折叠/展开。连续跟手,松手 snap。
+            // 左右滑翻月在 HomeMonthHeaderView 内部处理(方向判定互斥)。
+            .gesture(
+                SimultaneousDragGesture(
+                    minimumDistance: HomeLayoutMetrics.collapseDragThreshold,
+                    onChanged: { drag in
+                        let vertical = abs(drag.translation.height)
+                        let horizontal = abs(drag.translation.width)
+                        guard vertical > horizontal else { return }
+                        if !isCollapseGesturing {
+                            isCollapseGesturing = true
+                            gestureAnchorProgress = collapseProgress
+                        }
+                        // delta 计算扣掉 collapseDragThreshold:UIKit 派发首帧 onChanged 时
+                        // translation.height 可能已 = ±40pt(minimumDistance 拦掉前 40pt),
+                        // 不扣阈值会让 delta 瞬时跳 ±0.5,视觉上折叠动画"瞬移半屏"。
+                        // 扣阈值后首帧 delta=0,后续位移按 (travelDistance - threshold) 满量算 progress。
+                        let effective = abs(drag.translation.height) - HomeLayoutMetrics.collapseDragThreshold
+                        let travel = HomeLayoutMetrics.collapseTravelDistance - HomeLayoutMetrics.collapseDragThreshold
+                        // travel 必须为正:collapseTravelDistance 必须 > collapseDragThreshold(见 HomeLayoutMetrics 注释)。
+                        // 若常量被误改导致 travel <= 0,除以零/负数会产生 NaN/infinity,破坏 collapseProgress。
+                        // guard 兜底:travel 不合法时复位 isCollapseGesturing(否则 onEnded 读陈旧 anchor),
+                        // 并 snap 到展开稳态 0,避免 NaN 污染 UI 状态。
+                        guard travel > 0 else {
+                            isCollapseGesturing = false
+                            withAnimation(WarmAnimation.springStandard) {
+                                collapseProgress = 0
                             }
-                            .frame(height: listHeight)
-                            .clipped()
+                            return
+                        }
+                        let magnitude = max(0, effective) / travel
+                        let delta = drag.translation.height < 0 ? magnitude : -magnitude
+                        collapseProgress = max(0, min(1, gestureAnchorProgress + delta))
+                    },
+                    onEnded: { drag in
+                        guard isCollapseGesturing else { return }
+                        isCollapseGesturing = false
+                        // 不再按 vertical > horizontal 门控:onChanged 已确认手势起始方向为垂直,
+                        // 即使 onEnded 时累计位移因弧形滑动翻成水平主导,也必须 snap 到稳态,
+                        // 否则 collapseProgress 卡在中间值(半折叠 + 列表半透明)无动画回收。
+                        let target: CGFloat
+                        if abs(drag.velocity.dy) > HomeLayoutMetrics.collapseFlickVelocity {
+                            target = drag.velocity.dy < 0 ? 1 : 0
                         } else {
-                            // Today tab:保留原 List 样式(刚关了 Reorder,不再动)
-                            HomeSelectedDayListView(
-                                state: state,
-                                selectedBottomTab: selectedBottomTab,
-                                cardAppeared: $cardAppeared,
-                                onToggleTodo: { actions.toggleTodo($0) },
-                                onToggleOccurrence: { actions.toggleOccurrence($0) },
-                                onDeleteTodo: { actions.deleteTodo($0) },
-                                onOpenTodo: { selectedTodo = $0 },
-                                onMoveUnscheduled: { source, destination in
-                                    moveUnscheduled(from: source, to: destination)
-                                },
-                                onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                                onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
-                            )
-                            .frame(height: listHeight)
-                            .clipped()
+                            target = collapseProgress > 0.5 ? 1 : 0
+                        }
+                        withAnimation(WarmAnimation.springStandard) {
+                            collapseProgress = target
+                        }
+                    },
+                    onCancelled: {
+                        // 手势被系统中断(.cancelled / .failed):不复位 isCollapseGesturing 会让
+                        // 下次手势的 anchor 捕获落到 `if !isCollapseGesturing` 的 else 分支,
+                        // 基于陈旧 gestureAnchorProgress 累加 delta,产生视觉跳跃。
+                        // snap 到最近稳态(0 或 1):中断时 progress 停在中间态会让列表半透明
+                        // 且 allowsHitTesting=true,与半折叠的网格形成未定义交互态。
+                        guard isCollapseGesturing else { return }
+                        isCollapseGesturing = false
+                        let target: CGFloat = collapseProgress > 0.5 ? 1 : 0
+                        withAnimation(WarmAnimation.springStandard) {
+                            collapseProgress = target
                         }
                     }
-                }
-            }
-            // 全屏手势:仅处理上下滑切换月/周视图。左右滑翻月/翻周已挪到
-            // HomeMonthHeaderView 内部(挂在那里避免 startLocation 坐标空间不匹配——
-            // 详见 HomeMonthHeaderView.onShiftPeriod 注释)。
-            // 上滑→周(放大细节),下滑→月(缩小概览)。
-            // 用 SimultaneousDragGesture(UIKit UIGestureRecognizer 包装)让列表滚动和拖拽共存——
-            // iOS 26 起 SwiftUI .simultaneousGesture 在容器内失效(FB18199844),改走 UIKit 路径。
-            .gesture(
-                SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.viewModeDragThreshold) { drag in
-                    let vertical = abs(drag.translation.height)
-                    let horizontal = abs(drag.translation.width)
-                    guard vertical > horizontal else { return }
-                    if drag.translation.height < -HomeLayoutMetrics.viewModeSwitchThreshold,
-                       calendarViewMode != .week {
-                        setViewMode(.week)
-                    } else if drag.translation.height > HomeLayoutMetrics.viewModeSwitchThreshold,
-                              calendarViewMode != .month {
-                        setViewMode(.month)
-                    }
-                }
+                )
             )
-            .accessibilityAction(named: Text(calendarViewMode == .month
-                                             ? String(localized: "a11y.switch_to_week")
-                                             : String(localized: "a11y.switch_to_month"))) {
-                setViewMode(calendarViewMode == .month ? .week : .month)
-            }
-            // 翻页箭头已从页头删除,滑动手势对 VoiceOver 不可达——这里补翻页动作入口。
             .accessibilityActions {
                 if selectedBottomTab == .calendar {
-                    Button(String(localized: calendarViewMode == .week ? "a11y.previous_week" : "a11y.previous_month")) {
+                    Button(String(localized: "a11y.previous_month")) {
                         shiftPeriod(by: -1)
                     }
-                    Button(String(localized: calendarViewMode == .week ? "a11y.next_week" : "a11y.next_month")) {
+                    Button(String(localized: "a11y.next_month")) {
                         shiftPeriod(by: 1)
                     }
                 }
@@ -1084,16 +1015,12 @@ struct HomeView<Store: HomeTodoStore>: View {
         .offset(y: listOffset)
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
-        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, mode: calendarViewMode, todos: store.todos, revision: occurrenceRevision)) {
+        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todos: store.todos, revision: occurrenceRevision)) {
             let startedAt = Date()
-            // 注意：这里**不**主动设 .loading（避免切月份时清掉旧数据导致闪烁）。
-            // 唯一例外：如果当前是 .error 态（上一次加载失败），重置为 .loading ——
-            // 因为错误态本来就没有可保留的旧数据，重置闪烁可接受，反而避免新月份加载期间错误视图盖屏。
             if calendarLoadState == .error {
                 calendarLoadState = .loading
             }
-            // .success / .empty / 初始 .loading 都不主动设，保留旧值。
-            let rangeDays = HomeCalendarState.days(for: calendarViewMode, anchor: visibleMonthAnchor, calendar: calendar)
+            let rangeDays = HomeCalendarState.monthDays(for: visibleMonthAnchor, calendar: calendar)
             guard let firstDay = rangeDays.first, let lastDay = rangeDays.last else {
                 monthOccurrences = [:]
                 calendarLoadState = store.todos.isEmpty ? .empty : .success
@@ -1556,30 +1483,15 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
     }
 
-    /// 模式感知的翻页：月视图按月翻，周视图按周翻。
+    /// 翻月：按月向前/向后。
     private func shiftPeriod(by value: Int) {
-        let component: Calendar.Component = calendarViewMode == .week ? .weekOfYear : .month
-        guard let newAnchor = calendar.date(byAdding: component, value: value, to: visibleMonthAnchor) else {
+        guard let newAnchor = calendar.date(byAdding: .month, value: value, to: visibleMonthAnchor) else {
             return
         }
-        let normalizedAnchor: Date = calendarViewMode == .week
-            ? calendar.startOfDay(for: newAnchor)
-            : HomeCalendarState.startOfMonth(for: newAnchor, calendar: calendar)
+        let normalizedAnchor = HomeCalendarState.startOfMonth(for: newAnchor, calendar: calendar)
         withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
-        }
-    }
-
-    private func setViewMode(_ mode: CalendarViewMode) {
-        guard calendarViewMode != mode else { return }
-        withAnimation(WarmAnimation.springStandard) {
-            calendarViewModeRaw = mode.rawValue
-            // 把可视锚点对齐到当前选中日：切周→显示选中日所在周，切月→显示选中日所在月，
-            // 避免切换后选中高亮/下方任务列表落在看不见的区间外。
-            visibleMonthAnchor = mode == .week
-                ? calendar.startOfDay(for: selectedDate)
-                : HomeCalendarState.startOfMonth(for: selectedDate, calendar: calendar)
         }
     }
 

@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// 把"opacity 从 0→1 + y offset 20→0 + onAppear 延迟 insert 到 cardAppeared set +
 /// scale/opacity transition"这组行为集中到一个 modifier,
-/// 让 `DayTimelineView` / `UnscheduledDrawer` 两处卡片入场效果保持单一来源,
-/// 改参数只改这里。
+/// 让使用方保持单一来源,改参数只改这里。
+/// 当前唯一使用方:`UnscheduledDrawer`。
 ///
 /// **迁移状态**:`HomeSelectedDayListView` 仍保留旧的内联实现(本 PR 范围外),
 /// 后续 follow-up 应迁移到本 modifier 以彻底单一来源化。

@@ -91,7 +91,7 @@ struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
 
     /// 该 occurrence 是否来自规律任务(每日/每周/每月等)。
     /// 与 `isCompleted` 同风格,把"是否规律"判定从视图层上移到模型,
-    /// 让 HomeMonthDayButton / VoiceOverLabel 等多处判定保持单一来源。
+    /// 让 WarmTodoCard 等多处判定保持单一来源。
     var isRecurring: Bool {
         todo.recurrenceRule != nil
     }

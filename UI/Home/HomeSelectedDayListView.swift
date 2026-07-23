@@ -33,18 +33,10 @@ struct HomeSelectedDayListView: View {
                 } else if state.selectedOccurrences.isEmpty {
                     emptySelectedDayRow
                 } else {
-                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
-                        let occurrences = state.indexedUncompletedOccurrences(in: bucket)
-                        if !occurrences.isEmpty {
-                            timeBucketHeader(bucket)
-                            ForEach(occurrences, id: \.1.id) { originalIndex, occurrence in
-                                occurrenceRow(occurrence, index: originalIndex)
-                            }
-                        }
+                    ForEach(Array(state.sortedUncompletedOccurrences.enumerated()), id: \.element.id) { index, occurrence in
+                        occurrenceRow(occurrence, index: index)
                     }
                 }
-            } header: {
-                daySectionHeader(title: state.selectedDateTitle, count: state.uncompletedOccurrences.count)
             }
 
             // 「已完成」分区 = 当日 occurrence 的已完成 + 全局无安排任务的已完成。
@@ -55,8 +47,6 @@ struct HomeSelectedDayListView: View {
                         occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
                     }
                     ForEach(Array(state.completedUnscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
-                        // index 偏移要避开所有已用的范围（时段 occurrence + 已完成 occurrence + 未完成 unscheduled），
-                        // 保证 accessibility id / cardAppeared 动画 delay 不撞号。
                         completedTodoRow(todo, index: state.selectedOccurrences.count + state.unscheduledTodos.count + idx)
                     }
                 } header: {
@@ -188,17 +178,6 @@ struct HomeSelectedDayListView: View {
         .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
     }
 
-    private func timeBucketHeader(_ bucket: TimeBucket) -> some View {
-        Text(bucket.localizedTitle)
-            .font(WarmFont.caption(12))
-            .foregroundColor(WarmTheme.textMuted)
-            .textCase(nil)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
-            .listRowBackground(Color.clear)
-            .accessibilityIdentifier("TimeBucketHeader_\(bucket.rawValue)")
-    }
-
     /// 未完成 unscheduled 行。挂 `draggable`（拖到月历）或编辑态三横线把手。
     /// 完成态样式（绿勾/删除线）由 WarmTodoCard 根据 `todo.isCompleted` 自行渲染。
     @ViewBuilder
@@ -295,17 +274,27 @@ struct HomeSelectedDayListView: View {
     }
 
     private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: occurrence.todo,
-            onToggle: { onToggleOccurrence(occurrence) },
-            onTap: { onOpenTodo(occurrence.todo) },
-            onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
-            onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
-            showsTimeBucketMetadata: false,
-            // 已在按天分组的分区里，"Today" 尾标冗余；只保留"过期"红标。
-            dueStatusDisplayMode: .overdueOnly
-        )
+        HStack(spacing: WarmSpacing.xs) {
+            // 行内时间标签:有钟点的显示 "09:00"(分类色),替代旧的时段分组标题
+            if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
+                Text(dueDate, format: .dateTime.hour().minute())
+                    .font(WarmFont.mono(10))
+                    .foregroundColor(WarmTheme.color(for: occurrence.todo.category))
+                    // fixedSize:WarmFont.mono 是固定字号,在 HStack + List frame 上下文中
+                    // AX 档位下 Dynamic Type layout 补偿会触发 .tail truncation(见 DesignSystem 注释)。
+                    .fixedSize()
+            }
+            WarmTodoCard(
+                index: index,
+                todo: occurrence.todo,
+                onToggle: { onToggleOccurrence(occurrence) },
+                onTap: { onOpenTodo(occurrence.todo) },
+                onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
+                onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
+                showsTimeBucketMetadata: false,
+                dueStatusDisplayMode: .overdueOnly
+            )
+        }
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)

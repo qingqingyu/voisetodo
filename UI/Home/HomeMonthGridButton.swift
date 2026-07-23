@@ -1,35 +1,32 @@
 import SwiftUI
 
-/// 网格模式（`CalendarDisplayMode.grid`）的月历单格：与 `HomeMonthDayButton`（列表模式）并列。
+/// 月历网格单格:数字 + N 条纯色 Capsule 事件概览 + `+N`。
+/// N 由 `HomeMonthHeaderView` 的注水法分配器决定(0...`HomeLayoutMetrics.gridMaxBarsPerCell` = 6),
+/// 忙周分配更多条,空周更少;默认 3 仅供预览/测试使用。
+/// 契约:
+/// - 整格都是点击热区(点击 → `onSelect(date)`)
+/// - 拖拽 drop:从 Unscheduled 拖任务到格子 → `onDropTodo(id)`
+/// - accessibilityLabel 朗读完整状态(视觉信息翻译成文字,含可见事件 title,数量由分配器决定)
 ///
-/// 与 `HomeMonthDayButton` 的差异：
-/// - **列表模式**：每格只渲染数字 + 单圆点（信息密度低，配合下方任务列表读详情）。
-/// - **网格模式**：每格直接渲染数字 + ≤2 个事件条 + `+N`，事件概览不需要点开列表。
-///
-/// 共用契约（必须对齐 `HomeMonthDayButton`）：
-/// - 整格都是点击热区（点击 → `onSelect(date)`）
-/// - 拖拽 drop：从 Unscheduled 拖任务到格子 → `onDropTodo(id)`
-/// - accessibilityLabel 朗读完整状态（视觉信息翻译成文字）
-///
-/// 数据来源：`dayState.occurrences` 已按天分组，`todo.category` 给配色。
-///
-/// 命名对齐 `HomeMonthDayButton`（同为 Button 后缀）：虽然 SwiftUI 内部是 Button，
-/// 但外部类型名按项目约定「日期格 = Day/Grid Button」命名，便于按 Button 后缀检索。
+/// 数据来源:`dayState.occurrences` 已按天分组,`todo.category` 给配色。
 struct HomeMonthGridButton: View {
+    /// 提取为静态:避免 body 内每格每条事件都重建 Calendar.current(月视图 42 格 × N 事件/帧)。
+    /// 用 .current 而非 gregorian 是为了尊重用户时区(小时标签应匹配本地时间)。
+    private static let calendar = Calendar.current
+
     let dayState: HomeCalendarDayState
     let onSelect: (Date) -> Void
     var onDropTodo: ((UUID) -> Void)? = nil
-    // 默认值与 HomeMonthDayButton 同步（WarmSpacing.xxxl = 48pt）——只在"未通过 HomeMonthHeaderView
-    // 调用"的预览/测试场景下使用；正式路径 dayCell(for:) 永远会传 dayRowHeight（grid+月至少 80pt）。
     var rowHeight: CGFloat = WarmSpacing.xxxl
-    /// 单格最多渲染几个事件条。超过的显示 `+N`。
-    private static let maxVisibleEvents = 2
+    /// 由注水法分配器决定:忙周显示更多条,空周更少。默认 3 用于预览。
+    /// 调用方(HomeMonthHeaderView)传入的值由 `HomeLayoutMetrics.allocateRowHeights` 保证
+    /// 不超过 `gridMaxBarsPerCell`(=6)。调用方在传入前必须自行夹紧——
+    /// SwiftUI View struct 的 init 不触发 didSet,Swift memberwise init 也不夹紧,
+    /// 因此 clamping 责任在调用方(单一来源:HomeMonthHeaderView.dayCell)。
+    var maxVisibleEvents: Int = 3
 
     @State private var isDropTargeted = false
 
-    /// 日数字配色（与 `HomeMonthDayButton` 同色系）：选中白 / 今天 primaryDark /
-    /// 跨月补齐 textMuted / 其他 textPrimary。命名用 dayNumber 而非 category，
-    /// 因为这里只决定数字的颜色——事件条背景色由 `WarmTheme.color(for:)` 单独算。
     private var dayNumberColor: Color {
         dayState.isSelected ? .white :
         (dayState.isToday ? WarmTheme.primaryDark :
@@ -37,63 +34,56 @@ struct HomeMonthGridButton: View {
     }
 
     var body: some View {
-        // 单次计算 visibleEvents + extraCount + accessibilityLabel：避免在 ForEach / `+N` /
-        // VoiceOver 三处重复访问 computed property（过滤+切片）。月视图下 LazyVGrid 重绘时
-        // 会逐格调用 body,若 occurrences 大(>10) 且每次都算三遍,卡顿会被放大。
-        let visible = visibleEvents
-        let extra = extraEventsCount(from: visible)
-        let voiceOverText = gridAccessibilityLabel(from: visible)
+        let (visible, overflow) = slicedEvents()
+        let voiceOverText = gridAccessibilityLabel(from: visible, overflow: overflow)
         return Button {
             onSelect(dayState.date)
         } label: {
-            // VStack 左对齐：数字顶部对齐，事件条堆在下方。
-            // 事件条按 category 截断显示；超过 maxVisibleEvents 显示 `+N`。
-            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            VStack(alignment: .leading, spacing: 2) {
                 dayNumberView
-                // id 用 occurrence.id（稳定标识），不要用 .enumerated() + offset——
-                // offset 在 occurrences 数组变化时不稳定，会导致 SwiftUI view diff 错配，
-                // 触发不必要的重绘/动画异常。occurrence.id 已是 Identifiable 形态。
-                ForEach(visible, id: \.id) { occurrence in
-                    eventBar(occurrence)
-                }
-                if let extraCount = extra {
-                    Text("+\(extraCount)")
-                        .font(WarmFont.caption(9))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .lineLimit(1)
+                ForEach(Array(visible.enumerated()), id: \.element.id) { idx, occurrence in
+                    eventBar(occurrence, isLast: idx == visible.count - 1, overflow: overflow)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .padding(2)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .frame(height: rowHeight, alignment: .top)
-            // 跨月补齐日：整格降低存在感，不灰化事件条（仍可见，只是数字弱）。
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(dayState.isCurrentMonth ? WarmTheme.cardBackground : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(WarmTheme.sketch.opacity(dayState.isCurrentMonth ? 0.12 : 0), lineWidth: 1)
+            )
             .opacity(dayState.isCurrentMonth ? 1 : 0.5)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        // grid 模式视觉已显示事件 title（≤2 条），VoiceOver 必须把 title 也读出来——
-        // 否则盲人用户只能听到 "5 日 3 项待办"，不知道是哪 3 项。
-        // list 模式仍走 `VoiceOverLabel.build(for:)`（视觉只有圆点，没有 title 信息要翻译）。
         .accessibilityLabel(voiceOverText)
         .accessibilityHint(String(localized: "a11y.day.hint"))
         .accessibilityAddTraits(dayState.isSelected ? [.isButton, .isSelected] : [.isButton])
         .accessibilityIdentifier("MonthGridCell_\(dayState.date.formatted(.dateTime.year().month().day()))")
         .dropDestination(for: String.self) { items, _ in
-            // 无回调时返回 false：让系统知道 drop 未被处理（避免视觉反馈成功但无副作用）。
-            guard let callback = onDropTodo,
+            // 跨月补齐日(isCurrentMonth=false)视觉上被 opacity 0.5 弱化,
+            // 用户不会预期它可接收拖放;同时任务被排到"可见但非当月"的格子会误导。
+            // 这里直接拒绝 drop,让系统把拖拽事件回退给下层视图。
+            guard dayState.isCurrentMonth,
+                  let callback = onDropTodo,
                   let idString = items.first,
                   let id = UUID(uuidString: idString) else { return false }
             callback(id)
             return true
         } isTargeted: { targeted in
-            isDropTargeted = targeted
+            // 跨月格不显示 drop 高亮:与 dropDestination 的 accept 逻辑一致,
+            // 避免视觉暗示"可放"但实际被拒绝。
+            isDropTargeted = targeted && dayState.isCurrentMonth
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 7)
                     .stroke(WarmTheme.primary, lineWidth: 2)
             }
         }
@@ -102,87 +92,129 @@ struct HomeMonthGridButton: View {
 
     // MARK: - Subviews
 
-    /// 顶部日数字：选中实心圆 / 今天浅圆 / 其他无背景。
-    /// 与 `HomeMonthDayButton` 的视觉语言一致（同色系、同选中态），只是位置从居中改成左上。
     private var dayNumberView: some View {
-        let circleDiameter: CGFloat = 22
-        return ZStack {
-            if dayState.isSelected {
-                Circle().fill(WarmTheme.primary)
-            } else if dayState.isToday {
-                Circle().fill(WarmTheme.primary.opacity(0.18))
-            }
+        HStack(spacing: 2) {
             Text("\(dayState.dayNumber)")
-                .font(WarmFont.headlineFixed(13))
+                .font(WarmFont.mono(11))
                 .foregroundColor(dayNumberColor)
-                // fixedSize:绕开 SwiftUI 对固定字号 Text 的 Dynamic Type layout 补偿(AX 档位下
-                // intrinsic width 被放大 ×2~3 → 压进 22pt circleDiameter 触发 .tail truncation →
-                // 显示「…」)。详见 HomeMonthDayButton 同位置注释。
+                // 选中/今天加胶囊背景:选中=primary 实色+白字;今天=浅 primary+primaryDark 字。
+                // 不加背景时选中日白字会消失在白色卡片底上。
+                .padding(.horizontal, dayState.isSelected || dayState.isToday ? 4 : 0)
+                .background(
+                    Capsule().fill(
+                        dayState.isSelected ? WarmTheme.primary :
+                        dayState.isToday ? WarmTheme.primary.opacity(0.15) :
+                        Color.clear
+                    )
+                )
                 .fixedSize()
+            Spacer(minLength: 0)
         }
-        .frame(width: circleDiameter, height: circleDiameter)
+        .padding(.horizontal, 2)
     }
 
-    /// 单条事件条：分类色背景 + 截断 title。
-    /// 已完成的降低不透明度（视觉上"过去"），但不加删除线——网格密度下删除线会糊。
-    private func eventBar(_ occurrence: TodoOccurrenceData) -> some View {
-        let color = WarmTheme.color(for: occurrence.todo.category)
-        return Text(occurrence.todo.title)
-            .font(WarmFont.caption(9))
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.horizontal, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 14)
-            .background(color.opacity(occurrence.isCompleted ? 0.4 : 0.85))
-            .cornerRadius(3)
+    /// 单条事件文字条:浅色分类背景 + 深色文字 + 可选时间前缀 + 可选 +N 尾标。
+    /// 高度固定 14pt(对齐 HTML .bar 样式),Overflow +N 嵌入最后一条尾部。
+    /// 已完成态用分类色 40% 透明(非纯白 secondaryBackground):格子底色是 cardBackground(白),
+    /// 若已完成条也用白底会完全融入背景不可见。保留分类色相让用户仍能辨认"过去的事属于哪类"。
+    private func eventBar(_ occurrence: TodoOccurrenceData, isLast: Bool, overflow: Int?) -> some View {
+        let categoryBg = WarmTheme.categoryBackground(for: occurrence.todo.category)
+        let categoryTx = WarmTheme.categoryTextColor(for: occurrence.todo.category)
+        // 已完成:背景降透明度到 0.4(保留色相),文字用 textMuted 与未完成区分。
+        let bg = occurrence.isCompleted ? categoryBg.opacity(0.4) : categoryBg
+        let tx = occurrence.isCompleted ? WarmTheme.textMuted : categoryTx
+        return HStack(spacing: 2) {
+            if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
+                // 只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
+                Text(verbatim: String(format: "%02d", Self.calendar.component(.hour, from: dueDate)))
+                    .font(WarmFont.mono(8))
+                    .fixedSize()
+            }
+            Text(occurrence.todo.title)
+                .font(WarmFont.caption(9))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let overflow, isLast {
+                Text("+\(overflow)")
+                    .font(WarmFont.mono(8))
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 3)
+        .frame(height: HomeLayoutMetrics.gridBarHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 3).fill(bg))
+        .foregroundColor(tx)
     }
 
     // MARK: - Data slicing
 
-    /// 格子上要渲染的 events：优先未完成（信息密度更高，与 `HomeMonthDayButton`
-    /// 圆点逻辑"全完成 textMuted / 有未完成 primary"同语义）。已完成的事件折叠进 `+N`。
-    ///
-    /// **未完成不足时用已完成补齐**：保证格子里有事件可见，而不是显示空（信息丢失）。
-    /// 副作用:visible 可能含 1 未完成 + 1 已完成,但 `+N` 只算未完成余量——
-    /// 用户视觉看到 2 条但 +N 为 nil,可能误以为"今天 2 项"而实际可能更多。
-    /// 取舍:宁可让用户"看到已完成"也不要让格子空,真正的余量请切 list 视图查看。
-    private var visibleEvents: [TodoOccurrenceData] {
-        let uncompleted = dayState.occurrences.filter { !$0.isCompleted }
-        // 未完成不足 maxVisibleEvents 时用已完成补齐——保证格子里有事件可见，
-        // 而不是显示空（信息丢失）。优先顺序：未完成 > 已完成（按 dayState.occurrences 原顺序）。
-        if uncompleted.count >= Self.maxVisibleEvents {
-            return Array(uncompleted.prefix(Self.maxVisibleEvents))
+    /// 切片 + 排序:4 级规则(对齐 HTML 参考稿 sortT)。
+    /// 1. 未完成 → 已完成
+    /// 2. 有钟点的按 dueDate 升序(09:00 在 14:00 前)
+    /// 3. 无钟点的排所有有钟点的之后
+    /// 4. 同组(都无钟点 / 同一钟点)按 sortOrder 保持用户手动顺序
+    /// - overflow 只算"未完成且未渲染"的数量——避免把已完成历史任务计入 +N 误导用户
+    ///   以为"还有 N 项待办"。已完成事件的信息通过 visible 补齐已传达"过去有任务完成"。
+    /// - Returns: (visible 切片, overflow 数。overflow=nil 表示无未完成溢出)
+    private func slicedEvents() -> (visible: [TodoOccurrenceData], overflow: Int?) {
+        // maxVisibleEvents=0:行高预算极度紧张,无法显示任何事件条。
+        // 此时 overflow 也不显示(无处渲染)——这与分配器契约一致:
+        // demand==0 的周本来就没有事件;demand>0 但预算不足是极端边缘场景,
+        // 整月缩到几像素高时用户切到 list 视图看详情更合理。
+        guard maxVisibleEvents > 0 else { return ([], nil) }
+        // 单次 reduce 同时算 total 和 uncompletedCount,避免对 occurrences 两次全扫描。
+        let (total, uncompletedCount) = dayState.occurrences.reduce(into: (0, 0)) { acc, occ in
+            acc.0 += 1
+            if !occ.isCompleted { acc.1 += 1 }
         }
-        let completed = dayState.occurrences.filter { $0.isCompleted }
-        let needed = Self.maxVisibleEvents - uncompleted.count
-        return uncompleted + Array(completed.prefix(needed))
+
+        let pool = dayState.occurrences.sorted { (lhs: TodoOccurrenceData, rhs: TodoOccurrenceData) -> Bool in
+            // Rule 1: 未完成排前
+            if lhs.isCompleted != rhs.isCompleted {
+                return !lhs.isCompleted
+            }
+            let lhsHasTime = lhs.todo.hasDueTime && lhs.todo.dueDate != nil
+            let rhsHasTime = rhs.todo.hasDueTime && rhs.todo.dueDate != nil
+            // Rule 2: 都有钟点 → 按时间升序
+            if lhsHasTime && rhsHasTime, let l = lhs.todo.dueDate, let r = rhs.todo.dueDate {
+                return l < r
+            }
+            // Rule 3: 有钟点排无钟点前
+            if lhsHasTime != rhsHasTime {
+                return lhsHasTime
+            }
+            // Rule 4: 同组按 sortOrder;再 tiebreak 用 id(TodoOccurrenceData.id 是 String)
+            // 保证全序,避免 Swift sorted 不稳定导致同 sortOrder 任务在每次重算时顺序跳动。
+            if lhs.todo.sortOrder != rhs.todo.sortOrder {
+                return lhs.todo.sortOrder < rhs.todo.sortOrder
+            }
+            return lhs.id < rhs.id
+        }
+
+        if total <= maxVisibleEvents {
+            return (pool, nil)
+        }
+        // 直接取前 maxVisibleEvents 条;最后一条是否挂 +N 由 eventBar 内 isLast 判定,
+        // 构造时无需特殊处理。
+        let visible = Array(pool.prefix(maxVisibleEvents))
+        let uncompletedRendered = visible.filter { !$0.isCompleted }.count
+        let overflow = uncompletedCount - uncompletedRendered
+        return (visible, max(0, overflow))
     }
 
-    /// `+N` 计数：与 visibleEvents 同口径（未完成优先）。
-    /// 只显示"还有 N 个未完成未渲染"——避免把已完成历史任务挤进 +N 误导用户。
-    ///
-    /// **设计取舍**：visible 可能含 1 条已完成（当未完成不足 2 时补齐）。此时 +N 不含已完成的
-    /// 未渲染余量——用户看到的"事件条 1 未完成 + 1 已完成"已传达"过去有任务完成"的事实,
-    /// +N 只关心"还有几个未完成需要处理"。若用户切到 list 视图才能看到所有已完成事件。
-    /// 参数 `visible` 由调用方在 body 顶部一次性算好后传入,避免重复访问 `visibleEvents`。
-    private func extraEventsCount(from visible: [TodoOccurrenceData]) -> Int? {
-        let uncompletedTotal = dayState.occurrences.filter { !$0.isCompleted }.count
-        let uncompletedVisible = visible.filter { !$0.isCompleted }.count
-        let count = uncompletedTotal - uncompletedVisible
-        return count > 0 ? count : nil
-    }
-
-    /// VoiceOver 文案：基于 `VoiceOverLabel.build` 的基础描述 + 列出可见事件 title。
-    /// 视觉层显示的事件 title 必须翻译到无障碍文案,否则盲人用户只听到 "5 日 3 项待办"
-    /// 不知道是哪几项。`+N` 部分通过基础描述里的"todo_count"朗读。
-    /// 参数 `visible` 由调用方在 body 顶部一次性算好后传入,避免重复访问 `visibleEvents`。
-    private func gridAccessibilityLabel(from visible: [TodoOccurrenceData]) -> String {
+    private func gridAccessibilityLabel(from visible: [TodoOccurrenceData], overflow: Int?) -> String {
         let base = VoiceOverLabel.build(for: dayState)
         let titles = visible.map { $0.todo.title }
         guard !titles.isEmpty else { return base }
         let list = titles.joined(separator: String(localized: "a11y.day.separator"))
-        return base + String(localized: "a11y.day.separator") + list
+        var result = base + String(localized: "a11y.day.separator") + list
+        // VoiceOver 补读溢出数:视觉上 +N 嵌在最后一条尾部,但 accessibilityElement(.ignore)
+        // 把子视图吞掉,VoiceOver 用户听不到 "+5"。这里把溢出数显式拼进 label,
+        // 让盲人用户知道"除了念出的这几项,还有 N 项未完成"。
+        if let overflow, overflow > 0 {
+            result += String(localized: "a11y.day.separator") + String(format: String(localized: "a11y.day.overflow"), overflow)
+        }
+        return result
     }
 }

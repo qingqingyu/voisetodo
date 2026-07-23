@@ -12,17 +12,10 @@ struct HomeCalendarDayState {
     let isCurrentMonth: Bool
 }
 
-/// 首页日历视图模式：整月网格 / 单周一行。
-enum CalendarViewMode: String {
-    case month
-    case week
-}
-
 struct HomeCalendarState {
     let selectedDate: Date
     let visibleMonthAnchor: Date
-    let viewMode: CalendarViewMode
-    /// 当前模式下要渲染的日期：月视图为整月网格（42 天），周视图为所在周 7 天。
+    /// 当前模式下要渲染的日期：整月网格（42 天）。
     let visibleDays: [Date]
     let weekHeaderDays: [Date]
     let occurrencesByDay: [String: [TodoOccurrenceData]]
@@ -37,36 +30,14 @@ struct HomeCalendarState {
     let completedOccurrences: [TodoOccurrenceData]
     let hasTodos: Bool
 
-    /// 状态层使用的 calendar 实例（注入时传入）。暴露给视图层（如 `WeekTimelineView.position`）
+    /// 状态层使用的 calendar 实例（注入时传入）。暴露给视图层
     /// 是为了确保 hour/minute 计算与 `occurrencesByDay` 的 dayKey 聚合口径一致——
     /// 若视图层自己用 `Calendar.current` 在非 gregorian locale 下会产生错位。
     let calendar: Calendar
 
-    /// 页头大标题下方的小字说明：月视图显示年份（大标题已有月份名），周视图显示周范围。
-    /// 静态方法——页头（HomeView.headerView）没有完整的 HomeCalendarState，只有 anchor + viewMode。
-    static func periodCaption(anchor: Date, viewMode: CalendarViewMode, calendar: Calendar) -> String {
-        switch viewMode {
-        case .month:
-            return anchor.formatted(.dateTime.year())
-        case .week:
-            let visibleDays = days(for: viewMode, anchor: anchor, calendar: calendar)
-            guard let first = visibleDays.first, let last = visibleDays.last else {
-                return anchor.formatted(.dateTime.year())
-            }
-            // 去掉 zh/ja locale 下 `.dateTime.month().day()` 默认追加的"日"后缀，
-            // 保留 locale-aware 的月份/日表达。en/等无此后缀的语言 hasSuffix 不命中即 no-op。
-            // 注意：ko locale 的"일"后缀未在此处理——若后续要支持 ko，需扩展 stripDaySuffix
-            // 并按字符（而非字节）dropLast；当前目标用户语言为 zh/en，ko 不在范围内。
-            return "\(stripDaySuffix(first.formatted(.dateTime.month().day()))) – \(stripDaySuffix(last.formatted(.dateTime.month().day())))"
-        }
-    }
-
-    /// 去掉 `.formatted(.dateTime.day())` 在 zh/ja locale 末尾产生的"日"后缀。
-    /// 仅当以单字符"日"结尾时删除——避免误伤含"日"的星期或更复杂文案（此处 month().day() 不会出现）。
-    /// ko locale 的"일"后缀不在处理范围（见 periodCaption 上方注释）。
-    private static func stripDaySuffix(_ formatted: String) -> String {
-        guard formatted.hasSuffix("日") else { return formatted }
-        return String(formatted.dropLast())
+    /// 页头大标题下方的小字说明：显示年份（大标题已有月份名）。
+    static func periodCaption(anchor: Date, calendar: Calendar) -> String {
+        anchor.formatted(.dateTime.year())
     }
 
     var selectedDateTitle: String {
@@ -83,20 +54,18 @@ struct HomeCalendarState {
         store: Store,
         selectedDate: Date,
         visibleMonthAnchor: Date,
-        viewMode: CalendarViewMode,
         occurrencesByDay: [String: [TodoOccurrenceData]],
         calendar: Calendar,
         now: Date = Date()
     ) -> HomeCalendarState {
         let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
         let normalizedAnchor = calendar.startOfDay(for: visibleMonthAnchor)
-        let visibleDays = days(for: viewMode, anchor: normalizedAnchor, calendar: calendar)
+        let visibleDays = monthDays(for: normalizedAnchor, calendar: calendar)
 
         return HomeCalendarState(
             todos: store.todos,
             selectedDate: normalizedSelectedDate,
             visibleMonthAnchor: normalizedAnchor,
-            viewMode: viewMode,
             visibleDays: visibleDays,
             weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
             occurrencesByDay: occurrencesByDay,
@@ -117,10 +86,7 @@ struct HomeCalendarState {
             occurrences: dayOccurrences,
             isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
             isToday: calendar.isDateInToday(day),
-            // 周视图 7 天等权重，不按"当月"置灰；月视图保留跨月补齐日的弱化样式。
-            isCurrentMonth: viewMode == .week
-                ? true
-                : calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month)
+            isCurrentMonth: calendar.isDate(day, equalTo: visibleMonthAnchor, toGranularity: .month)
         )
     }
 
@@ -140,7 +106,6 @@ struct HomeCalendarState {
         todos: [TodoItemData],
         selectedDate: Date,
         visibleMonthAnchor: Date,
-        viewMode: CalendarViewMode,
         visibleDays: [Date],
         weekHeaderDays: [Date],
         occurrencesByDay: [String: [TodoOccurrenceData]],
@@ -148,7 +113,6 @@ struct HomeCalendarState {
     ) {
         self.selectedDate = selectedDate
         self.visibleMonthAnchor = visibleMonthAnchor
-        self.viewMode = viewMode
         self.visibleDays = visibleDays
         self.weekHeaderDays = weekHeaderDays
         self.occurrencesByDay = occurrencesByDay
@@ -181,25 +145,29 @@ struct HomeCalendarState {
         occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
-    func indexedUncompletedOccurrences(in timeBucket: TimeBucket) -> [(Int, TodoOccurrenceData)] {
-        uncompletedOccurrences.enumerated().compactMap { index, occurrence in
-            let effectiveBucket = TimeBucketResolver.effective(
-                explicitBucket: occurrence.todo.timeBucket,
-                dueDate: occurrence.todo.dueDate,
-                hasDueTime: occurrence.todo.hasDueTime,
-                calendar: calendar
-            )
-            return effectiveBucket == timeBucket ? (index, occurrence) : nil
-        }
+    /// 给定一周(7 天)涉及的分类集合。WeekStripCard 折叠态图例行用。
+    /// 默认按 `startOfWeek` 周一起始;若传入的 anchor 不在周一,内部会先对齐到周一。
+    func categoriesInWeek(of anchor: Date) -> [TodoCategory] {
+        let weekDays = Self.weekDays(for: anchor, calendar: calendar)
+        let used = Set(weekDays.flatMap { day in
+            Self.occurrences(on: day, in: occurrencesByDay, calendar: calendar).map { $0.todo.category }
+        })
+        return TodoCategory.allCases.filter { used.contains($0) }
     }
 
-    /// 按模式返回要渲染/加载的日期集合。月视图 42 天网格；周视图所在周 7 天。
-    static func days(for viewMode: CalendarViewMode, anchor: Date, calendar: Calendar) -> [Date] {
-        switch viewMode {
-        case .month:
-            return monthDays(for: anchor, calendar: calendar)
-        case .week:
-            return weekDays(for: anchor, calendar: calendar)
+    /// 未完成 occurrence 按时间排序:有钟点的按 dueDate 升序,无钟点的排最后(保持原 sortOrder)。
+    /// 用于扁平化列表渲染——替代旧的 TimeBucket 分组,消除半空时段子标题。
+    var sortedUncompletedOccurrences: [TodoOccurrenceData] {
+        uncompletedOccurrences.sorted { lhs, rhs in
+            let lhsHasTime = lhs.todo.hasDueTime && lhs.todo.dueDate != nil
+            let rhsHasTime = rhs.todo.hasDueTime && rhs.todo.dueDate != nil
+            if lhsHasTime != rhsHasTime {
+                return lhsHasTime  // 有钟点的排前面
+            }
+            if lhsHasTime, let lhsDue = lhs.todo.dueDate, let rhsDue = rhs.todo.dueDate {
+                return lhsDue < rhsDue
+            }
+            return lhs.todo.sortOrder < rhs.todo.sortOrder
         }
     }
 
@@ -211,7 +179,9 @@ struct HomeCalendarState {
         return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
     }
 
-    /// 锚点所在周的 7 天（与月视图同为周一起始，复用 startOfWeek）。
+    /// 锚点所在周的 7 天(周一起始)。
+    /// 单一来源:WeekStripCard.weekDays + categoriesInWeek 共用,保证"本周是哪 7 天"
+    /// 的算法不分散在多处。若未来支持 RTL 周日起始或 Calendar.firstWeekday 配置,只改这里。
     static func weekDays(for anchor: Date, calendar: Calendar) -> [Date] {
         let start = startOfWeek(for: anchor, calendar: calendar)
         return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
@@ -239,7 +209,6 @@ enum HomeCalendarLoadState {
 
 struct CalendarRefreshKey: Hashable {
     let anchor: Date
-    let mode: CalendarViewMode
     let todos: [TodoItemData]
     let revision: Int
 }

@@ -289,11 +289,13 @@ struct WarmTodoCard: View {
         }
         .padding(.horizontal, WarmSpacing.md)
         .padding(.vertical, WarmSpacing.xxs)
-        // 卡片底色：secondaryBackground 满不透明——0.5 透明度时卡片几乎融入背景，
-        // 边界"似有似无"最尴尬。提到 1.0 让 #FFF5EE 与背景 #FFFBF7 有可辨识的对比。
+        // 卡片底色:纯白 cardBackground + 阴影分层。
+        // 背景冷化后 cardBackground 与 background 都偏中性,
+        // 改靠阴影 + 圆角建立层次,不再依赖色相对比。
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.chip)
-                .fill(WarmTheme.secondaryBackground)
+                .fill(WarmTheme.cardBackground)
+                .shadow(color: WarmTheme.shadowLight, radius: 4, x: 0, y: 2)
         )
         // iOS 26 回归：把 .onTapGesture 挂到外层 HStack 会吞掉 List swipeActions
         // 滑出按钮的 tap。改挂到 .background(Color.clear) 层——swipeActions 由 List

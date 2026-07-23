@@ -4,6 +4,9 @@
     "" : {
 
     },
+    "%@" : {
+
+    },
     "%@ %@" : {
       "localizations" : {
         "en" : {
@@ -16,16 +19,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ %2$@"
-          }
-        }
-      }
-    },
-    "%@ %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ %2$lld"
           }
         }
       }
@@ -165,6 +158,22 @@
         }
       }
     },
+    "a11y.day.overflow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d more pending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还有 %d 项待办"
+          }
+        }
+      }
+    },
     "a11y.day.today" : {
       "localizations" : {
         "en" : {
@@ -229,38 +238,6 @@
         }
       }
     },
-    "a11y.drop_strip" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, %2$d task(s)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@,%2$d 项任务"
-          }
-        }
-      }
-    },
-    "a11y.drop_strip.hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drop the task here to assign it to this time slot"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将任务放至此处即可排到该时段"
-          }
-        }
-      }
-    },
     "a11y.display_mode.hint" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -274,22 +251,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换列表与网格显示"
-          }
-        }
-      }
-    },
-    "a11y.view_mode.hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switches between week and month view"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换周与月视图"
           }
         }
       }
@@ -326,6 +287,40 @@
         }
       }
     },
+    "a11y.drop_strip" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$d task(s)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@,%2$d 项任务"
+          }
+        }
+      }
+    },
+    "a11y.drop_strip.hint" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop the task here to assign it to this time slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将任务放至此处即可排到该时段"
+          }
+        }
+      }
+    },
     "a11y.edit_todo_title" : {
       "localizations" : {
         "en" : {
@@ -341,9 +336,6 @@
           }
         }
       }
-    },
-    "a11y.event_hour_separator" : {
-
     },
     "a11y.high_priority" : {
       "localizations" : {
@@ -411,7 +403,6 @@
       }
     },
     "a11y.next_month" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -423,23 +414,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下个月"
-          }
-        }
-      }
-    },
-    "a11y.next_week" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next week"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下一周"
           }
         }
       }
@@ -509,7 +483,6 @@
       }
     },
     "a11y.previous_month" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -521,23 +494,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上个月"
-          }
-        }
-      }
-    },
-    "a11y.previous_week" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Previous week"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上一周"
           }
         }
       }
@@ -625,39 +581,8 @@
         }
       }
     },
-    "a11y.switch_to_month" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch to month view"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换到月视图"
-          }
-        }
-      }
-    },
-    "a11y.switch_to_week" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch to week view"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换到周视图"
-          }
-        }
-      }
-    },
     "a11y.timeline.due_time" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -674,6 +599,7 @@
       }
     },
     "a11y.timeline.set_hour" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -690,7 +616,6 @@
       }
     },
     "a11y.today_month" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -702,23 +627,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "回到今天所在月份"
-          }
-        }
-      }
-    },
-    "a11y.today_week" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to today"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回到今天"
           }
         }
       }
@@ -1791,6 +1699,7 @@
       }
     },
     "drop.release_here" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1903,6 +1812,7 @@
       }
     },
     "empty.day.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2018,6 +1928,7 @@
       }
     },
     "empty.week.no_timed.message" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2034,6 +1945,7 @@
       }
     },
     "empty.week.no_timed.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2905,38 +2817,6 @@
         }
       }
     },
-    "home.view.week" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Week"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "周"
-          }
-        }
-      }
-    },
-    "home.view.month" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Month"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "月"
-          }
-        }
-      }
-    },
     "home.empty_hint" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3171,6 +3051,7 @@
       }
     },
     "home.timeline.no_candidates" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3187,6 +3068,7 @@
       }
     },
     "home.timeline.set_hour" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3282,6 +3164,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这一天还没有待办"
+          }
+        }
+      }
+    },
+    "home.week.expand_month" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand month"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开整月"
           }
         }
       }
@@ -5665,6 +5563,7 @@
       }
     },
     "siri.complete.summary %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5679,6 +5578,9 @@
           }
         }
       }
+    },
+    "siri.complete.summary ${todo}" : {
+
     },
     "siri.complete.title" : {
       "localizations" : {
@@ -5777,6 +5679,7 @@
       }
     },
     "siri.delete.summary %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5791,6 +5694,9 @@
           }
         }
       }
+    },
+    "siri.delete.summary ${todo}" : {
+
     },
     "siri.delete.title" : {
       "localizations" : {
@@ -5820,6 +5726,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "待办"
+          }
+        }
+      }
+    },
+    "siri.intent.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quickly add todos by voice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过语音快速记录待办事项"
+          }
+        }
+      }
+    },
+    "siri.intent.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Todo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "记录待办"
+          }
+        }
+      }
+    },
+    "siri.param.transcript" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Content"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内容"
           }
         }
       }
@@ -5969,6 +5923,7 @@
       }
     },
     "siri.query.summary %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5984,6 +5939,9 @@
         }
       }
     },
+    "siri.query.summary ${status}" : {
+
+    },
     "siri.query.title" : {
       "localizations" : {
         "en" : {
@@ -5996,102 +5954,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "查询待办"
-          }
-        }
-      }
-    },
-    "siri.shortcut.complete.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Complete Todo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成待办"
-          }
-        }
-      }
-    },
-    "siri.shortcut.delete.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete Todo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除待办"
-          }
-        }
-      }
-    },
-    "siri.shortcut.query.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Get Todos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查询待办"
-          }
-        }
-      }
-    },
-    "siri.intent.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quickly add todos by voice"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通过语音快速记录待办事项"
-          }
-        }
-      }
-    },
-    "siri.intent.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Todo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "记录待办"
-          }
-        }
-      }
-    },
-    "siri.param.transcript" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Content"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "内容"
           }
         }
       }
@@ -6204,6 +6066,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 App 中查看"
+          }
+        }
+      }
+    },
+    "siri.shortcut.complete.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complete Todo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成待办"
+          }
+        }
+      }
+    },
+    "siri.shortcut.delete.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Todo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除待办"
+          }
+        }
+      }
+    },
+    "siri.shortcut.query.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Todos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询待办"
           }
         }
       }

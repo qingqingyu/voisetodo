@@ -4,31 +4,32 @@ import UIKit
 // MARK: - 温暖配色主题
 
 enum WarmTheme {
-    // 主色调 - 温暖的珊瑚橙
+    // 主色调 - 珊瑚橙。使用场景收紧:仅用于「当前日期高亮 + 麦克风按钮」,
+    // 不覆盖任务卡背景 / 进度环 / tab 下划线 / overdue 等次要元素。
     static let primary = Color(hex: "FF8A6B")
     static let primaryLight = Color(hex: "FFB5A0")
     static let primaryDark = Color(hex: "E56B4F")
 
-    // 背景色 - 奶油白（深色模式自适应为暖中性深色）
-    static let background = Color(light: "FFFBF7", dark: "1C1B1A")
-    static let cardBackground = Color(light: "FFFFFF", dark: "2B2926")
-    static let secondaryBackground = Color(light: "FFF5EE", dark: "26241F")
+    // 背景色 - 中性冷灰白。冷化让白卡靠对比浮起。
+    static let background = Color(light: "F4F5F7", dark: "1A1C1E")
+    static let cardBackground = Color(light: "FFFFFF", dark: "26282B")
+    static let secondaryBackground = Color(light: "FFFFFF", dark: "2A2D31")
 
-    // 手绘风格 - 纸张色
-    static let paperBackground = Color(light: "FFF8F0", dark: "1F1E1C")
+    // 手绘风格 - 纸张色（名称保留,值跟随整体冷化）
+    static let paperBackground = Color(light: "F6F7F9", dark: "1F2022")
 
-    // 文字色（深色模式自适应为浅墨色）
-    static let textPrimary = Color(light: "3D3A38", dark: "EDE8E2")
-    static let textSecondary = Color(light: "8B8580", dark: "A8A29B")
-    static let textMuted = Color(light: "B8B3AD", dark: "6B6660")
+    // 文字色 - 深墨蓝。
+    static let textPrimary = Color(light: "1E2A3A", dark: "C5CBD3")
+    static let textSecondary = Color(light: "5C6A7A", dark: "8A94A4")
+    static let textMuted = Color(light: "8E97A4", dark: "5A626E")
 
     // 手绘风格 - 墨水色
-    static let ink = Color(light: "4A4543", dark: "E8E3DD")
-    static let sketch = Color(light: "6B6560", dark: "B0AAA3")
+    static let ink = Color(light: "2A3445", dark: "B0B8C2")
+    static let sketch = Color(light: "8993A4", dark: "4A5260")
 
-    // 状态色
+    // 状态色。urgent 用真正的红,与品牌橘明确拉开。
     static let success = Color(hex: "7BC47F")
-    static let urgent = Color(hex: "FF6B6B")
+    static let urgent = Color(hex: "E5484D")
     static let warning = Color(hex: "FFB347")
 
     // 分类色
@@ -40,17 +41,28 @@ enum WarmTheme {
     static let categorySocial = Color(hex: "E87C9B")
     static let categoryOther = Color(hex: "9BA8B8")
 
-    // 阴影
-    static let shadowLight = Color(hex: "3D3A38").opacity(0.08)
-    static let shadowMedium = Color(hex: "3D3A38").opacity(0.12)
+    // 阴影 - 冷墨蓝基色,opacity 补偿冷色阴影视觉感偏弱。
+    static let shadowLight = Color(hex: "1E2A3A").opacity(0.10)
+    static let shadowMedium = Color(hex: "1E2A3A").opacity(0.14)
 
-    // 输入面板：键盘模式下「发送」按钮的深色（替代散落的 RGB 字面量）
+    // 输入面板:键盘模式下「发送」按钮的深色。
+    // 刻意保留暖棕:发送按钮是高频主操作,暖色作为"温度锚点"与冷背景形成对比,
+    // 提升视觉优先级。
     static let deepAction = Color(light: "2F2A26", dark: "EDE8E2")
 
-    // 警告 banner 文字色：深棕橙（浅色）/ 浅米色（深色），保证在 WarmTheme.warning.opacity(0.1) 背景上可读
+    // 警告 banner 文字色:深棕橙(浅)/ 浅米色(深),保证在 warning.opacity(0.1) 背景上可读。
+    // 保留暖色:warning 背景本身是暖橙 opacity,文字同色系保证色相和谐 + 可读对比度。
     static let warningText = Color(light: "92600A", dark: "F0D9A8")
-    // 键盘模式文本框背景：奶油白（浅色）/ 深灰（深色），跟随 cardBackground 的明暗逻辑
-    static let inputFieldBackground = Color(light: "FAFAF8", dark: "2B2926")
+    // 键盘模式文本框背景:跟随 cardBackground 的明暗逻辑。
+    static let inputFieldBackground = Color(light: "F8FAFB", dark: "26282B")
+
+    // MARK: - 事件条 / 圆点透明度
+    // 集中管理 HomeMonthGridButton.eventBar / WeekStripCard.dayCell 等处的"已完成 vs 未完成"对比度。
+    // 调整对比度改这里,不散落在各个 View body 里。
+    /// 已完成事件的透明度(保留色相但明显淡于未完成,传达"过去"语义)。
+    static let completedEventOpacity: Double = 0.3
+    /// 未完成事件的透明度(接近不透明,保证分类色识别)。
+    static let activeEventOpacity: Double = 0.85
 
     /// 根据分类获取对应颜色
     static func color(for category: TodoCategory) -> Color {
@@ -63,6 +75,17 @@ enum WarmTheme {
         case .social: return categorySocial
         case .other: return categoryOther
         }
+    }
+
+    /// 分类浅色背景(月网格事件条用):主色 15% 透明度。
+    /// 改 color(for:) 主色会自动联动,不需单独维护一套 pastel hex。
+    static func categoryBackground(for category: TodoCategory) -> Color {
+        color(for: category).opacity(0.15)
+    }
+
+    /// 分类深色文字(月网格事件条用):主色 85%。
+    static func categoryTextColor(for category: TodoCategory) -> Color {
+        color(for: category).opacity(0.85)
     }
 }
 
@@ -105,10 +128,6 @@ enum WarmSize {
     static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
     static let mega: CGFloat = 120     // 最大装饰元素
-    /// 月历日期格选中/今天高亮圆直径（TickTick 式圆形标记）。
-    /// 30pt：7 列网格单列宽 ~42pt、14pt 数字下的合适比例；矮行时由
-    /// HomeLayoutMetrics.selectionCircleDiameter 自适应缩小。
-    static let calendarDayCircle: CGFloat = 30
 }
 
 // MARK: - 动画
@@ -122,10 +141,6 @@ enum WarmAnimation {
     static let springCard = Animation.spring(response: 0.45, dampingFraction: 0.8)
     static let springButton = Animation.spring(response: 0.5, dampingFraction: 0.75)
     static let springEntrance = Animation.spring(response: 0.6, dampingFraction: 0.8)
-
-    // 月历单元格选中态缩放系数：弱提示（避免挤压相邻格），Reduce Motion 时 animation 被系统忽略
-    static let monthDaySelectedScale: CGFloat = 1.05
-    static let monthDayDefaultScale: CGFloat = 1.0
 }
 
 // MARK: - 统一字体工具
@@ -194,8 +209,7 @@ enum WarmFont {
     /// (外层 `.frame(maxWidth: .infinity)` 或 capsule 自适应宽度),不加也不会出问题。
     ///
     /// **当前已加 fixedSize 的位置**(新增同类使用时按同模式处理):
-    /// - `HomeMonthDayButton` / `HomeMonthGridButton` 月历日期格(22~30pt circle)
-    /// - `WeekTimelineView.dayHeaderColumn` 周视图表头(26pt frame)
+    /// - `HomeMonthGridButton` 月历日期格(22pt circle)
     ///
     /// **未加但不受影响**:
     /// - `HomeView.statsBadge` 进度环 (40pt frame,3~5 字符 "12/30" 余量充足,暂未复现 truncation)
@@ -209,6 +223,14 @@ enum WarmFont {
 
     static func caption(_ size: CGFloat) -> Font {
         .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.regular)
+    }
+
+    /// 等宽数字字体（SF Mono）— 用于时间刻度、进度数字等技术性 UI 数据。
+    /// 与 `headlineFixed` 同逻辑：固定字号、不跟随 Dynamic Type（这些数字是 UI 装饰，
+    /// 放大会撑爆格子或破坏时间网格对齐）。受限于 `.frame(width:height:)` 的 Text 同样需要 `.fixedSize()`。
+    /// 2026-07 视觉改版：等宽 + 衬线标题 + Avenir 正文三种字体共存，营造「精致工具」辨识度。
+    static func mono(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium, design: .monospaced)
     }
 }
 
