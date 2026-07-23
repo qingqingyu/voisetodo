@@ -941,6 +941,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             .gesture(
                 SimultaneousDragGesture(
                     minimumDistance: HomeLayoutMetrics.collapseDragThreshold,
+                    direction: .vertical,
                     onChanged: { drag in
                         let vertical = abs(drag.translation.height)
                         let horizontal = abs(drag.translation.width)

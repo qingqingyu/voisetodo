@@ -46,6 +46,7 @@ struct DragTranslation: Equatable, Sendable {
 /// ```swift
 /// .gesture(SimultaneousDragGesture(
 ///     minimumDistance: 40,
+///     direction: .vertical,
 ///     onChanged: { drag in /* 可选: 跟手反馈 */ },
 ///     onEnded: { drag in
 ///         // drag.translation.height / drag.velocity 等语义
@@ -53,7 +54,17 @@ struct DragTranslation: Equatable, Sendable {
 /// ))
 /// ```
 struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
+    /// 方向约束。用于 `gestureRecognizerShouldBegin(_:)` 的进入门槛,
+    /// 让本 recognizer 一开始就放弃非匹配方向的触摸,把命中机会让给子视图的同类手势
+    /// (例:.vertical 时横滑交给 List 的 swipeActions / 横向滚动条)。
+    enum Direction {
+        case any
+        case vertical
+        case horizontal
+    }
+
     let minimumDistance: CGFloat
+    let direction: Direction
     /// 拖拽进行中的跟手回调(可选)。位移达到 `minimumDistance` 后才触发——
     /// 避免点击 Button 的微小抖动被误判为拖拽起始。
     /// 默认 nil,调用方不传即不接收跟手事件(向后兼容现有调用点)。
@@ -71,18 +82,21 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
     /// 的 trailing closure 会被错误地绑定到 `onChanged`。
     init(
         minimumDistance: CGFloat,
+        direction: Direction = .any,
         onEnded: @escaping (DragTranslation) -> Void
     ) {
-        self.init(minimumDistance: minimumDistance, onChanged: nil, onEnded: onEnded)
+        self.init(minimumDistance: minimumDistance, direction: direction, onChanged: nil, onEnded: onEnded)
     }
 
     init(
         minimumDistance: CGFloat,
+        direction: Direction = .any,
         onChanged: ((DragTranslation) -> Void)? = nil,
         onEnded: @escaping (DragTranslation) -> Void,
         onCancelled: (() -> Void)? = nil
     ) {
         self.minimumDistance = minimumDistance
+        self.direction = direction
         self.onChanged = onChanged
         self.onEnded = onEnded
         self.onCancelled = onCancelled
@@ -95,9 +109,38 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
     /// `onChanged` / `onEnded` 闭包捕获的外部引用也一并释放。不存在循环引用。
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var minimumDistance: CGFloat = 0
+        var direction: Direction = .any
         var onChanged: ((DragTranslation) -> Void)?
         var onEnded: ((DragTranslation) -> Void)?
         var onCancelled: (() -> Void)?
+
+        /// Recognizer 进入 `.began` 前的方向门控。
+        ///
+        /// **为什么需要**:仅靠 `shouldRecognizeSimultaneouslyWith` 返回 false
+        /// 只能阻止"共存",但 UIKit 仍要让两个 recognizer 之一进入 `.began`。
+        /// 若本 recognizer 比 UIScrollView 的 pan 先到 `.began`(默认场景,因
+        /// `UIScrollView.delaysContentTouches=true` 有延迟),UIKit 会强制对方
+        /// `.failed` —— 此时横滑想触发 List swipeActions 会被外层吞掉。
+        ///
+        /// 方向门控把"放弃"提前到 `.began` 之前:非匹配方向的触摸直接返回 false,
+        /// 本 recognizer 进入 `.failed`,子视图的 swipeActions / 横向滚动条正常接管。
+        ///
+        /// **判断时机**:UIKit 在位移足够判定方向后才调 `shouldBegin`(Apple 文档:
+        /// "called when a gesture recognizer is about to begin"),此时
+        /// `translation(in:)` 已能稳定反映主轴。位移 < 1pt 的极早期回调兜底
+        /// 返回 true,让 UIKit 继续观察。
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard direction != .any,
+                  let pan = gestureRecognizer as? UIPanGestureRecognizer,
+                  let view = gestureRecognizer.view else { return true }
+            let t = pan.translation(in: view)
+            guard abs(t.x) >= 1 || abs(t.y) >= 1 else { return true }
+            switch direction {
+            case .any: return true
+            case .vertical: return abs(t.y) > abs(t.x)
+            case .horizontal: return abs(t.x) > abs(t.y)
+            }
+        }
 
         /// 与 Button / List 等内置手势同时识别,避免被它们吞掉。
         ///
@@ -138,6 +181,7 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
     func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
         // SwiftUI 每次重渲染都同步最新配置(闭包可能捕获了新状态)。
         context.coordinator.minimumDistance = minimumDistance
+        context.coordinator.direction = direction
         context.coordinator.onChanged = onChanged
         context.coordinator.onEnded = onEnded
         context.coordinator.onCancelled = onCancelled
