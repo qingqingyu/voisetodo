@@ -116,6 +116,9 @@ enum WarmRadius {
 enum WarmSize {
     static let icon: CGFloat = 28      // 内嵌图标 badge
     static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
+    /// 次要入口的视觉尺寸（如 header 齿轮按钮）：低于 HIG 44 是有意识取舍——
+    /// 实际 hit target 通过外层 frame 扩展到 `touch`(44)，视觉只占 36。
+    static let secondaryHit: CGFloat = 36
     /// FAB 与 tabPillSize 的直径差：FAB 是主操作，比 tab 胶囊略大形成视觉层级。
     /// 改任一个直径时必须同步评估此不变量是否仍合理。
     static let fabTabSizeDelta: CGFloat = 8

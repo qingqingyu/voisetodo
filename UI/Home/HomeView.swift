@@ -705,19 +705,23 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private var settingsButton: some View {
-        // iOS 26：圆形按钮用 .buttonStyle(.glass) + .glassEffect(.regular)，
-        // 替代原来的 Circle().fill(secondaryBackground)。设置图标在玻璃上保持 secondary 色。
+        // 去玻璃 + 缩小：原 .buttonStyle(.glass) + .glassEffect(.regular) 会让 44×44 的圆形
+        // 玻璃背板在 header 里视觉过重。设置是低频次要入口，去掉背板改用 .plain。
+        // 视觉占 36×36（WarmSize.secondaryHit），但外层 frame 撑到 WarmSize.touch(44)
+        // 保证 HIG 最小 hit target——不靠 .plain 的默认行为，hit target 在此显式声明。
         Button {
             showSettingsSheet = true
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(WarmTheme.textSecondary)
+                .frame(width: WarmSize.secondaryHit, height: WarmSize.secondaryHit)
                 .frame(width: WarmSize.touch, height: WarmSize.touch)
-                .contentShape(Circle())
+                // Rectangle 对齐外层 44pt frame——整个 HIG 最小 hit target 都可点击，
+                // 不能用 Circle()（会只让内层 36pt 圆区可点）。
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.glass)
-        .glassEffect(.regular)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("HomeSettingsButton")
         .accessibilityLabel(String(localized: "settings.title"))
     }
