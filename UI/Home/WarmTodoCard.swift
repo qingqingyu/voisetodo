@@ -80,6 +80,10 @@ struct WarmTodoCard: View {
     var onMoveToTomorrow: (() -> Void)? = nil
     var showsTimeBucketMetadata = true
     var dueStatusDisplayMode: DueStatusDisplayMode = .full
+    /// 标题行是否内联钟点前缀（"09:00 吃药"）。默认 false——
+    /// 只有明确把外层时间标签删掉的调用方（HomeSelectedDayListView）才打开，
+    /// 避免 UnscheduledDrawer 等其它调用方被动改变外观。
+    var showsInlineTimePrefix = false
 
     /// 分类图标圆背景尺寸。用 @ScaledMetric 跟随 Dynamic Type 缩放,基准 28pt。
     /// relativeTo: .body 跟卡片标题字号(WarmFont.body(16) → .body textStyle)同步缩放,
@@ -93,24 +97,27 @@ struct WarmTodoCard: View {
         WarmTheme.color(for: todo.category)
     }
 
-    /// 合并所有时间元数据成单行（用于第 2 行展示）。
+    /// 标题行内联钟点串：showsInlineTimePrefix=true 且 hasDueTime=true 时返回 "HH:mm"。
+    /// 不看 isCompleted——已完成的卡片也保留时间前缀（与旧外置时间标签行为一致）。
+    /// 钟点串不进 composedTimeText（避免与标题行重复），第二行只负责 recurrence / bucket / hint。
+    private var inlineTimeText: String? {
+        guard showsInlineTimePrefix, todo.hasDueTime, let dueDate = todo.dueDate else { return nil }
+        return Self.timeFormatter.string(from: dueDate)
+    }
+
+    /// 合并剩余时间元数据成单行（用于第 2 行展示）。
     /// 拼装规则抽到了 `TodoTimeDisplayComposer`（与 ConfirmSheet 共用），
     /// 这里只负责"从 TodoItemData 模型字段取出结构化时间"——
-    /// 注意 TodoItemData 没有 ExtractedTodo 的 dueTime 字符串字段，
-    /// 钟点合在了 dueDate + hasDueTime，所以这里在 hasDueTime=true 时用
-    /// DateFormatter 提取 "HH:mm"。
+    /// 注意钟点已由 inlineTimeText 在标题行展示，这里传 nil 避免重复。
+    /// completed 状态下：默认调用方（UnscheduledDrawer 等）保持旧行为不显示第二行；
+    /// 只有 showsInlineTimePrefix=true 的调用方（HomeSelectedDayListView）才保留
+    /// recurrence / bucket —— 因为这些卡片不再有外层时间标签，需要补全规律语义。
     private var composedTimeText: String? {
-        guard !todo.isCompleted else { return nil }
-        let timeText: String?
-        if todo.hasDueTime, let dueDate = todo.dueDate {
-            timeText = Self.timeFormatter.string(from: dueDate)
-        } else {
-            timeText = nil
-        }
+        if todo.isCompleted, !showsInlineTimePrefix { return nil }
         return TodoTimeDisplayComposer.compose(
             recurrenceRule: todo.recurrenceRule,
             relativeDateText: nil,
-            timeText: timeText,
+            timeText: nil,
             dueHint: todo.dueDate == nil ? todo.dueHint : nil,
             timeBucketText: timeBucketText
         )
@@ -242,12 +249,23 @@ struct WarmTodoCard: View {
                             .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
                     }
 
+                    // 标题行内联钟点:hasDueTime 时在 title 前挂 "HH:mm"。
+                    // 10pt mono + 分类色,已完成降级到 textSecondary。
+                    // fixedSize:WarmFont.mono 是固定字号,AX 档位下 HStack + List frame 会触发 .tail truncation。
+                    if let inlineTime = inlineTimeText {
+                        Text(inlineTime)
+                            .font(WarmFont.mono(10))
+                            .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
+                            .fixedSize()
+                    }
+
                     Text(todo.title)
                         .font(todo.priority == .high ? WarmFont.headline(15) : WarmFont.body(15))
                         .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : WarmTheme.textPrimary)
                         .strikethrough(todo.isCompleted, color: WarmTheme.textSecondary)
                         .lineLimit(2)
                 }
+                .accessibilityElement(children: .combine)
 
                 // 元数据合并行：clock + composedTimeText 一行展示。
                 // P3 修复：原 recurrence 用 primaryDark 红色（与 urgent 警告冲突），
