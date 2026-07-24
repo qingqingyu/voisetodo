@@ -150,12 +150,10 @@ struct ConfirmSheetView: View {
         }
     }
 
-    /// 转录文字本体。展开时全显示;收起时用 ViewThatFits 先试完整(不截断),
-    /// 放不下再退到 2 行 + ...。展开/收起按钮始终显示(不再依赖长度阈值),
-    /// 确保任何 transcript 都有展开入口,不会出现「想看全文却没按钮」的违规态。
-    ///
-    /// accessibilityIdentifier 挂在外层 Group 上:ViewThatFits 会把候选 view 都加进
-    /// accessibility tree,若每个分支都挂同 id 会让 VoiceOver / UI 测试选择器不稳定。
+    /// 转录文字本体。展开 = 完整显示(fixedSize);收起 = lineLimit(2) 截断。
+    /// 展开/收起按钮始终显示,确保任何 transcript 都有展开入口。
+    /// 不用 ViewThatFits——它在 ScrollView 里失效(子视图垂直空间无限,完整分支永远 fits,
+    /// 长原文会占满半屏)。lineLimit(2) 是上限,短文本自然高度仍 1-2 行,不会被强拉。
     @ViewBuilder
     private var transcriptText: some View {
         if transcriptExpanded {
@@ -165,18 +163,12 @@ struct ConfirmSheetView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("TranscriptArea")
         } else {
-            ViewThatFits(in: .vertical) {
-                Text(transcript)
-                    .font(WarmFont.caption(14))
-                    .foregroundStyle(WarmTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(transcript)
-                    .font(WarmFont.caption(14))
-                    .foregroundStyle(WarmTheme.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .accessibilityIdentifier("TranscriptArea")
+            Text(transcript)
+                .font(WarmFont.caption(14))
+                .foregroundStyle(WarmTheme.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("TranscriptArea")
         }
     }
 
