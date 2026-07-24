@@ -1937,6 +1937,22 @@
         }
       }
     },
+    "empty.day.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold the mic below to speak your first task"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住下方的麦克风,说出今天的第一件事"
+          }
+        }
+      }
+    },
     "empty.day.title" : {
       "extractionState" : "stale",
       "localizations" : {

@@ -211,29 +211,46 @@ struct HomeSelectedDayListView: View {
         .listRowBackground(Color.clear)
     }
 
+    /// 选中日空状态:cardless + 大细线图标 + 引导文案 + 向下箭头。
+    /// 对齐 `homeGlobalEmptyRow` 的视觉模式(用户反馈:原版白底卡片像内容、无引导、
+    /// 浪费整屏空间)。两个 Text 都加 lineLimit + minimumScaleFactor,
+    /// 遵守 CLAUDE.md「文本布局规则」——AX5 字号下允许缩到 0.7 倍避免换行溢出。
     private var emptySelectedDayRow: some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Image(systemName: "calendar.badge.checkmark")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(WarmTheme.primary)
+        VStack(spacing: WarmSpacing.lg) {
+            VStack(spacing: WarmSpacing.xs) {
+                Image(systemName: "calendar.badge.checkmark")
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundColor(WarmTheme.primary.opacity(0.7))
 
-            Text(String(localized: selectedBottomTab == .today ? "empty.day.today" : "empty.day.title"))
-                .font(WarmFont.body(15))
-                .foregroundColor(WarmTheme.textSecondary)
+                Text(String(localized: selectedBottomTab == .today
+                             ? "empty.day.today" : "empty.day.title"))
+                    .font(WarmFont.body(15))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
 
-            Spacer()
+                Text(String(localized: "empty.day.hint"))
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+            }
+
+            Image(systemName: "arrow.down")
+                .font(.system(size: 20, weight: .light))
+                .foregroundColor(WarmTheme.primary.opacity(0.35))
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, WarmSpacing.md)
-        .padding(.vertical, WarmSpacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.section)
-                .fill(Color.white.opacity(0.86))
-                .shadow(color: WarmTheme.shadowLight, radius: 5, x: 0, y: 2)
-        )
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xs, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
+        .frame(maxWidth: .infinity)
         .accessibilityIdentifier("EmptyState")
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: HomeLayoutMetrics.emptyStateTopInset,
+                                  leading: WarmSpacing.lg,
+                                  bottom: WarmSpacing.sm,
+                                  trailing: WarmSpacing.lg))
+        .listRowBackground(Color.clear)
     }
 
     private func daySectionHeader(title: String, count: Int) -> some View {

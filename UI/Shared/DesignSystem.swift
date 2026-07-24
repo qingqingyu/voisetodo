@@ -126,13 +126,16 @@ enum WarmSize {
     /// 实际 hit target 通过外层 frame 扩展到 `touch`(44)，视觉只占 36。
     static let secondaryHit: CGFloat = 36
     /// FAB 与 tabPillSize 的直径差：FAB 是主操作，比 tab 胶囊略大形成视觉层级。
-    /// 改任一个直径时必须同步评估此不变量是否仍合理。
+    /// 2026-07 注:底部 TabBar 已删除,此值仅服务于下方 tabPillSize 推导,
+    /// 而 tabPillSize 已无引用方;保留两者仅供未来恢复 TabBar 时引用,值跟随 fab 变化不影响渲染。
     static let fabTabSizeDelta: CGFloat = 8
-    /// 底部 VoiceFAB 直径（68pt——方案一：FAB 独占底部，是 app 签名按钮，比三件套时代大一圈）。
-    static let fab: CGFloat = 68
+    /// 底部 VoiceFAB 直径（2026-07 用户反馈 68pt 在浅色玻璃材质下显眼度不足 → 72pt）。
+    /// 配合 VoiceFAB 外发光圈(见 BottomTabBar.swift)提升「主操作锚点」感。
+    static let fab: CGFloat = 72
     /// 底部 tab 玻璃胶囊直径（48→52 增大热区）。
     /// 只读计算属性（Swift 计算属性必须用 static var 声明，无 setter 故不可写），
-    /// 由 fab - fabTabSizeDelta 推导，不变量在编译期成立。
+    /// 由 fab - fabTabSizeDelta 推导。
+    /// 2026-07 注:底部 TabBar 已删除,此值已无引用方,保留仅供未来恢复时引用,值跟随 fab 变化不影响渲染。
     static var tabPillSize: CGFloat { fab - fabTabSizeDelta }
     static let sendButton: CGFloat = 48 // 输入面板发送钮
     static let hero: CGFloat = 80      // 大圆圈装饰
