@@ -242,11 +242,18 @@ enum WarmFont {
     /// **取舍**:违反 iOS HIG「内容文本应跟随 Dynamic Type」建议。判定标准与 `headlineFixed`
     /// 一致——「这是 UI 装饰/预览」→ 用 fixed;「这是用户要读的正文」→ 用动态 `caption`。
     ///
-    /// **陷阱(与 `headlineFixed` 相同)**:字号不缩放,但 SwiftUI 在 `ZStack + .frame(width:height:)`
-    /// 内仍会按 `@Environment(\.sizeCategory)` 做 layout 补偿(AX1-AX5 ×2~3)。若用在 frame-locked
-    /// 场景,需紧跟 `.fixedSize()`。例外:外层 `.frame(maxWidth: .infinity)` 自由布局时不触发此问题。
-    /// 在 `ViewThatFits` 候选里**禁止**挂 `fixedSize`——会让候选报告固定宽度突破父约束,
-    /// ViewThatFits 误判为"永远 fit"(详见 feedback_no_text_truncation.md 的 SwiftUI 陷阱条目)。
+    /// **陷阱 A — frame-locked 场景**:与 `headlineFixed` 相同。字号不缩放,但 SwiftUI 在
+    /// `ZStack + .frame(width:height:)` 内仍会按 `@Environment(\.sizeCategory)` 做 layout 补偿
+    /// (AX1-AX5 ×2~3)。判据:同时用 `.frame(width:height:)` 锁死两个维度才算 frame-locked,
+    /// 只锁高度(`.frame(height:)`)不触发。若 frame-locked 需紧跟 `.fixedSize()`。
+    /// 例外:外层 `.frame(maxWidth: .infinity)` 自由布局时不触发此问题。
+    ///
+    /// **陷阱 B — HStack 内多段同行文本**:当与其它挂 `fixedSize` 的兄弟元素(如时间数字、+N 尾标)
+    /// 同处一个 HStack 时,正文 Text(未挂 fixedSize)会被优先压缩(compression-resistance=250),
+    /// 即使物理上总宽度还有余量,也会被压成"…"伪截断。
+    /// 正解:用 `Text + Text` 拼接合并为单个 `Text`(iOS 13+ 稳定,每段保留自己的 `.font`),
+    /// 或用 `AttributedString` + `.font` run 属性(iOS 17.0~17.1 部分反馈称 run 属性被忽略,优先选前者)。
+    /// 详见 feedback_no_text_truncation.md 的"正确实现"条目。
     static func captionFixed(_ size: CGFloat) -> Font {
         .custom("Avenir Next", size: size).weight(.regular)
     }
