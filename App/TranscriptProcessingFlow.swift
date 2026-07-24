@@ -64,9 +64,11 @@ final class TranscriptProcessingFlow {
                     return
                 }
 
+                // 提到 do 块外:catch 分支需要据此判断走 partial fallback 还是原错误路径
+                var receivedAny = false
+                var finalTodos: [ExtractedTodo] = []
+
                 do {
-                    var receivedAny = false
-                    var finalTodos: [ExtractedTodo] = []
                     let stream = VoiceTodoLog.$extractID.withValue(extractID) {
                         ext.extractStreaming(from: trimmed, locale: locale)
                     }
@@ -101,6 +103,21 @@ final class TranscriptProcessingFlow {
                     guard !Task.isCancelled else {
                         continuation.finish()
                         return
+                    }
+                    // Partial fallback:流被截断(超时/网络抖动/服务 5xx)但已收到 ≥1 条
+                    // partial 时,把已收到的当成功结果上抛,而不是丢弃。
+                    // 用户输入 13 条解析出 11 条后被流断 → 给用户 11 条比清空让用户重来更友好,
+                    // 丢的 2 条让用户在 ConfirmSheet 里自己补。
+                    // 例外:配额耗尽仍走 paywall(用户额度真用完,不应用 partial 绕过引导升级)。
+                    if receivedAny {
+                        if let voiceError = error as? VoiceTodoError, case .quotaExhausted = voiceError {
+                            // 配额耗尽:即使有 partial 也走 paywall 路径(下方 switch 处理)
+                        } else {
+                            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.partial_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(finalTodos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            continuation.yield(.success(finalTodos: finalTodos))
+                            continuation.finish()
+                            return
+                        }
                     }
                     if let voiceError = error as? VoiceTodoError {
                         switch voiceError {
