@@ -933,8 +933,16 @@ struct HomeView<Store: HomeTodoStore>: View {
             // 折叠态高度 = 固定段 + 1 行实际行高。不能用 gridMonthMinRowHeight 兜底值——
             // 实际行高(随屏幕变大)会 > 80pt,折叠容器装不下整行就截断。
             let collapsedHeight = HomeLayoutMetrics.calendarFixedSectionHeight + actualRowHeight
-            let calendarHeight = fullHeight + (collapsedHeight - fullHeight) * collapseProgress
-            let gridOffset = selectedRowIndex * rowStride * collapseProgress
+            // today tab 不渲染月网格(if selectedBottomTab == .calendar 守卫),
+            // calendarHeight 必须恒为 0——否则 calendar tab 折叠后切回 today 时
+            // collapseProgress 残留(=1)会让 calendarHeight 算成 96pt,List 被压缩,
+            // VStack alignment: .top 导致 List 下方出现 96pt 空白,叠加 LinearGradient
+            // 渐隐带后视觉上"底部遮罩变高"。
+            // collapseProgress 在 tab 切换间保留是 by design(视图密度偏好),但 today tab
+            // 不消费这个状态,所以这里显式归零,不修改 @State(切回 calendar 仍保持折叠)。
+            let effectiveCollapseProgress: CGFloat = selectedBottomTab == .calendar ? collapseProgress : 0
+            let calendarHeight = fullHeight + (collapsedHeight - fullHeight) * effectiveCollapseProgress
+            let gridOffset = selectedRowIndex * rowStride * effectiveCollapseProgress
 
             VStack(spacing: 0) {
                 if selectedBottomTab == .calendar {
