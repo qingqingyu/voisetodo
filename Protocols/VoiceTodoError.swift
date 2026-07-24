@@ -41,6 +41,10 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     case storageReadFailed(String)            // [v2] 优化
     /// SwiftData 写失败。detail 仅入日志(UI 走 storageError 通用文案)。
     case storageWriteFailed(String)           // [v2] 优化
+    /// 待办 id 在 store 中查不到。UI 调用前已读过 todos,正常情况不应触发;
+    /// 触发即说明数据竞争(并发删除/换库),用专门 case 让测试与日志能精准断言,
+    /// 不再藏在 storageReadFailed("todo not found: ...") 字符串里。
+    case todoNotFound(UUID)
 
     var errorDescription: String? {
         switch self {
@@ -78,6 +82,10 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.transcriptTooLong
         case .storageReadFailed, .storageWriteFailed:
             // SwiftData 错误描述也是程序员向的——只显示通用保存失败文案。
+            return ErrorMessages.storageError
+        case .todoNotFound:
+            // 用户层不应见到这条(改时间 popover 失败时调用方会 fallback 到通用 toast)。
+            // 仍提供文案以备测试 / 调试。
             return ErrorMessages.storageError
         }
     }

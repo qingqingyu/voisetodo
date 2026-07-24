@@ -19,11 +19,22 @@ struct HomeCalendarState {
     let visibleDays: [Date]
     let weekHeaderDays: [Date]
     let occurrencesByDay: [String: [TodoOccurrenceData]]
+    /// 「未定时间」组:`.parsed` outcome + `dueDate==nil` + `recurrenceRule==nil`
+    /// + 没有任何时间信号(timeBucket==nil && dueHint 为空)。
+    /// 完全无时间信息的待排期货到这里——卡片不显示任何时间 chip,也没有「选日期」按钮。
     let unscheduledTodos: [TodoItemData]
-    /// 已完成的无安排任务（dueDate==nil && recurrenceRule==nil && isCompleted）。
-    /// 按 completedAt 倒序——最近完成在上。用于在底部「已完成」分区里和 occurrence 一起显示。
-    /// 与 `unscheduledTodos` 对称：那个只留未完成（留在「未安排」分区），
-    /// 这个只留已完成（下移到「已完成」分区），让无安排任务的完成行为和有安排任务对齐。
+    /// 「待定日期」组:`.parsed` outcome + `dueDate==nil` + `recurrenceRule==nil`
+    /// + 有时间信号(timeBucket 或 dueHint 非空)。
+    /// 卡片右侧带珊瑚色「选日期」按钮,chip 显示「时段 · 未定哪天」(HTML line 397-439)。
+    let pendingDateTodos: [TodoItemData]
+    /// 「没能识别」组:outcome != .parsed(.rawFallback 或 .unparsed) +
+    /// `dueDate==nil` + `recurrenceRule==nil`。
+    /// 卡片显示原文片段 + 「重新解析 / 删除」按钮(HTML line 442-458)。
+    let unparsedTodos: [TodoItemData]
+    /// 已完成的无安排任务(`dueDate==nil && recurrenceRule==nil && isCompleted`,
+    /// 不分 outcome / 是否有时间信号)。按 completedAt 倒序——最近完成在上。
+    /// 用于在底部「已完成」分区里和 occurrence 一起显示。
+    /// 与三个未完成组不对称:已完成的不再细分原状态,统一进「已完成」。
     let completedUnscheduledTodos: [TodoItemData]
     let selectedOccurrences: [TodoOccurrenceData]
     let uncompletedOccurrences: [TodoOccurrenceData]
@@ -64,6 +75,31 @@ struct HomeCalendarState {
 
         return HomeCalendarState(
             todos: store.todos,
+            selectedDate: normalizedSelectedDate,
+            visibleMonthAnchor: normalizedAnchor,
+            visibleDays: visibleDays,
+            weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
+            occurrencesByDay: occurrencesByDay,
+            calendar: calendar
+        )
+    }
+
+    /// 测试用工厂:绕开 `HomeTodoStore` 依赖,直接用 `[TodoItemData]` 构造状态。
+    /// 生产代码用 `make(store:...)`,只有 `HomeCalendarStateGroupingTests` 等单测调用本方法。
+    static func makeForTests(
+        todos: [TodoItemData],
+        selectedDate: Date,
+        visibleMonthAnchor: Date? = nil,
+        occurrencesByDay: [String: [TodoOccurrenceData]] = [:],
+        calendar: Calendar = Calendar(identifier: .gregorian),
+        now: Date = Date()
+    ) -> HomeCalendarState {
+        let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
+        let anchor = visibleMonthAnchor ?? selectedDate
+        let normalizedAnchor = calendar.startOfDay(for: anchor)
+        let visibleDays = monthDays(for: normalizedAnchor, calendar: calendar)
+        return HomeCalendarState(
+            todos: todos,
             selectedDate: normalizedSelectedDate,
             visibleMonthAnchor: normalizedAnchor,
             visibleDays: visibleDays,
@@ -116,12 +152,26 @@ struct HomeCalendarState {
         self.visibleDays = visibleDays
         self.weekHeaderDays = weekHeaderDays
         self.occurrencesByDay = occurrencesByDay
-        // 无安排任务（无 dueDate + 无 recurrenceRule）按完成态拆两路：
-        // 未完成 → 留在「未安排」分区（可重排/可拖月历）
-        // 已完成 → 下移到底部「已完成」分区，跟 occurrence 的完成行为对齐
-        let unscheduled = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
-        self.unscheduledTodos = unscheduled.filter { !$0.isCompleted }
-        self.completedUnscheduledTodos = unscheduled
+        // 无安排任务(dueDate==nil + recurrenceRule==nil)按"时间信号 + outcome + 完成态"拆四路:
+        //   未完成 + outcome != .parsed         → 「没能识别」(unparsedTodos)
+        //   未完成 + .parsed + 有时间信号        → 「待定日期」(pendingDateTodos)
+        //   未完成 + .parsed + 无时间信号        → 「未定时间」(unscheduledTodos)
+        //   已完成(不分 outcome / 时间信号)    → 「已完成」(completedUnscheduledTodos)
+        //
+        // 「时间信号」= timeBucket != nil 或 dueHint 非空。
+        // 之前版本只看 dueDate==nil 就归「未安排」,导致"下午/等会儿"标签的条目也撒谎成"未安排"。
+        let noSchedule = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
+        self.unparsedTodos = noSchedule
+            .filter { !$0.isCompleted && $0.extractionOutcome != .parsed }
+        let parsedIncomplete = noSchedule.filter { !$0.isCompleted && $0.extractionOutcome == .parsed }
+        let hasTimeSignal: (TodoItemData) -> Bool = { todo in
+            if todo.timeBucket != nil { return true }
+            let hint = todo.dueHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !hint.isEmpty
+        }
+        self.pendingDateTodos = parsedIncomplete.filter(hasTimeSignal)
+        self.unscheduledTodos = parsedIncomplete.filter { !hasTimeSignal($0) }
+        self.completedUnscheduledTodos = noSchedule
             .filter { $0.isCompleted }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         self.hasTodos = !todos.isEmpty
@@ -162,20 +212,59 @@ struct HomeCalendarState {
         return TodoCategory.allCases.filter { weekUsed.contains($0) }
     }
 
-    /// 未完成 occurrence 按时间排序:有钟点的按 dueDate 升序,无钟点的排最后(保持原 sortOrder)。
-    /// 用于扁平化列表渲染——替代旧的 TimeBucket 分组,消除半空时段子标题。
-    var sortedUncompletedOccurrences: [TodoOccurrenceData] {
-        uncompletedOccurrences.sorted { lhs, rhs in
-            let lhsHasTime = lhs.todo.hasDueTime && lhs.todo.dueDate != nil
-            let rhsHasTime = rhs.todo.hasDueTime && rhs.todo.dueDate != nil
-            if lhsHasTime != rhsHasTime {
-                return lhsHasTime  // 有钟点的排前面
+    /// 今天内未完成 occurrence 的三层分组,按时间确定度递增排序:
+    ///   1. **整天**:`hasDueTime == false && timeBucket == nil`(无钟点无时段)
+    ///   2. **时段**:`hasDueTime == false && timeBucket != nil`,按 morning → afternoon → evening 聚合
+    ///   3. **按时间**:`hasDueTime == true`,按 `dueDate` 升序
+    ///
+    /// 设计意图:时间标签本身是入口——整天的卡片完全不动(无 chip 无按钮),
+    /// 时段用 `.soft` chip(灰底),精确时刻用 `.solid` chip(彩色底)。
+    /// 三层之间用细分隔线 + 小标签(`tierLabelRow`)区分,不抢外层「今天 / 待定日期 / 没能识别」的层级。
+    var tieredUncompletedOccurrences: [(tier: TodayTier, items: [TodoOccurrenceData])] {
+        var allDay: [TodoOccurrenceData] = []
+        var byBucket: [TimeBucket: [TodoOccurrenceData]] = [:]
+        var timed: [TodoOccurrenceData] = []
+
+        for occurrence in uncompletedOccurrences {
+            let todo = occurrence.todo
+            if todo.hasDueTime {
+                timed.append(occurrence)
+            } else {
+                let bucket = TimeBucketResolver.effective(
+                    explicitBucket: todo.timeBucket,
+                    dueDate: todo.dueDate,
+                    hasDueTime: todo.hasDueTime,
+                    calendar: calendar
+                )
+                if bucket == .anytime {
+                    allDay.append(occurrence)
+                } else {
+                    byBucket[bucket, default: []].append(occurrence)
+                }
             }
-            if lhsHasTime, let lhsDue = lhs.todo.dueDate, let rhsDue = rhs.todo.dueDate {
-                return lhsDue < rhsDue
-            }
+        }
+
+        // 时段内保持原 sortOrder 稳定;时段间按 chronologicalOrder 固定。
+        timed.sort { lhs, rhs in
+            let lhsDate = lhs.todo.dueDate ?? .distantFuture
+            let rhsDate = rhs.todo.dueDate ?? .distantFuture
+            if lhsDate != rhsDate { return lhsDate < rhsDate }
             return lhs.todo.sortOrder < rhs.todo.sortOrder
         }
+
+        var result: [(tier: TodayTier, items: [TodoOccurrenceData])] = []
+        if !allDay.isEmpty {
+            result.append((.allDay, allDay))
+        }
+        for bucket in TimeBucket.chronologicalOrder where bucket != .anytime {
+            if let items = byBucket[bucket], !items.isEmpty {
+                result.append((.period(bucket), items))
+            }
+        }
+        if !timed.isEmpty {
+            result.append((.timed, timed))
+        }
+        return result
     }
 
     static func monthDays(for visibleMonthAnchor: Date, calendar: Calendar) -> [Date] {
@@ -204,6 +293,34 @@ struct HomeCalendarState {
         let weekday = calendar.component(.weekday, from: startOfDay)
         let daysFromMonday = (weekday + 5) % 7
         return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
+    }
+}
+
+/// 今天内未完成 occurrence 的三档时间分层,对应 HTML 设计稿 line 326-367
+/// 的细分隔线 + 小标签 tier 行。
+enum TodayTier: Equatable, Sendable {
+    /// 有日期,无钟点无时段(留空就是「不挑时间」,不写「未定时间」那种暗示缺信息的词)。
+    case allDay
+    /// 有日期,有时段(morning/afternoon/evening)但无钟点。`.soft` chip 样式。
+    case period(TimeBucket)
+    /// 有日期有钟点,按 dueDate 升序排列。`.solid` chip 样式。
+    case timed
+
+    /// tier-label 小标签的本地化文案(「整天」/「上午」/「下午」/「晚上」/「按时间」)。
+    var localizedLabel: String {
+        switch self {
+        case .allDay:
+            return String(localized: "home.tier.all_day")
+        case .period(let bucket):
+            switch bucket {
+            case .morning: return String(localized: "home.tier.period.morning")
+            case .afternoon: return String(localized: "home.tier.period.afternoon")
+            case .evening: return String(localized: "home.tier.period.evening")
+            case .anytime: return String(localized: "home.tier.all_day")
+            }
+        case .timed:
+            return String(localized: "home.tier.timed")
+        }
     }
 }
 

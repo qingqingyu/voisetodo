@@ -219,6 +219,77 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(update.dueDate != nil) explicitTimeBucket=\(todoItem.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public) detail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
+    /// 用 AI 重新提取的结果替换原 todo(用于「没能识别」分组的「重新解析」入口)。
+    /// - 第一条:mutate 原 TodoItem 保留 id / sortOrder / createdAt / locale,outcome 清成 `.parsed`,
+    ///   清 `needsAIProcessing`。
+    /// - 剩余的:逐条 `TodoItem.from` 创建新条目,sortOrder 锚定在 `preservedSortOrder - 1, -2, ...`,
+    ///   让一次 reextract 拆出的多条结果在列表里紧挨原条目,而非被推到末尾。
+    /// - 注:锚定区间可能与已存在 todo 的 sortOrder 撞号(tie 时稳定排序兜底,不破坏数据)。
+    func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.replaceTodo.start id=\(id.uuidString, privacy: .public) newCount=\(extracted.count)")
+        guard !extracted.isEmpty else {
+            // 调用方(AppCoordinator.reextract)已 guard 过,这里二次防御——
+            // 空数组调用 = 调用方契约违反,显式抛而非静默 return。
+            throw VoiceTodoError.apiResponseInvalid("replaceTodo with empty extracted")
+        }
+
+        let existingItem = try findTodoItem(by: id)
+        let preservedSortOrder = existingItem.sortOrder
+        let preservedCreatedAt = existingItem.createdAt
+        let preservedLocale = existingItem.localeIdentifier
+
+        // 第一条:mutate in place。
+        // 通过 updateFull 走完整字段写库,避免漏字段(同详情页 path)。
+        let first = extracted[0]
+        let firstTodoItem = TodoItem.from(first, rawTranscript: rawTranscript)
+        try updateFull(id, update: TodoDetailUpdate(
+            title: firstTodoItem.title,
+            detail: firstTodoItem.detail,
+            category: firstTodoItem.category,
+            priority: firstTodoItem.priority,
+            dueDate: firstTodoItem.dueDate,
+            hasDueTime: firstTodoItem.hasDueTime,
+            timeBucket: firstTodoItem.timeBucket,
+            dueHint: firstTodoItem.dueHint,
+            recurrenceRule: firstTodoItem.recurrenceRule
+        ))
+        // 保留 sortOrder / createdAt / locale:updateFull 没动这些字段,但显式重设防止边缘 case。
+        // 显式 try —— updateFull 成功后查不到条目 = 数据一致性异常,不能静默吞(错误显式传播)。
+        let updated = try findTodoItem(by: id)
+        updated.sortOrder = preservedSortOrder
+        updated.createdAt = preservedCreatedAt
+        // locale 口径与剩余条目对齐:原条目 locale 优先,原为 nil 才回退到新提取条目的 locale。
+        // 旧版只在 nil 时回填 preservedLocale,但 updateFull 已把 locale 留成旧值——
+        // 显式 set 让"整条替换"的语义更清晰(用户切语言后重解析仍归档到原 locale)。
+        updated.localeIdentifier = preservedLocale ?? updated.localeIdentifier
+        updated.extractionOutcome = .parsed
+        updated.needsAIProcessing = false
+        try saveOrRollback()
+
+        // 剩余的:逐条插入,sortOrder 锚定在 preservedSortOrder 之下(preservedSortOrder-1, -2, ...),
+        // 让一次 reextract 拆出的多条结果在列表里紧挨着原条目,而不是被 addBatch 推到列表末尾。
+        if extracted.count > 1 {
+            let rest = Array(extracted.dropFirst())
+            let fallbackLocale = resolveLocaleIdentifier(preservedLocale, fallback: Locale.current.identifier)
+            var nextSort = preservedSortOrder - 1
+            for item in rest {
+                if let existing = try existingTodoItem(by: item.id) {
+                    VoiceTodoLog.store.warning("store.replaceTodo.skip_duplicate id=\(item.id.uuidString, privacy: .public) existingTitle=\(existing.title, privacy: .public)")
+                    continue
+                }
+                let todoItem = TodoItem.from(item, rawTranscript: nil)
+                todoItem.sortOrder = nextSort
+                todoItem.localeIdentifier = resolveLocaleIdentifier(preservedLocale ?? item.localeIdentifier, fallback: fallbackLocale)
+                nextSort -= 1
+                modelContext.insert(todoItem)
+            }
+            try saveOrRollback()
+        }
+
+        VoiceTodoLog.store.info("store.replaceTodo.success id=\(id.uuidString, privacy: .public) newCount=\(extracted.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
     /// 更新重复规则（nil 表示关闭重复）
     /// - Parameters:
     ///   - id: 待办 ID

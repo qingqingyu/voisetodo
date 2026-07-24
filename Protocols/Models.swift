@@ -465,6 +465,9 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     /// 创建时的语言标识（如 "zh-Hans" / "en-US"），用于词汇学习按正确 locale 归档。
     /// Optional：旧数据为 nil，回退到 voiceInput.currentLocale。
     var localeIdentifier: String?
+    /// AI 提取结果来源标签。`.rawFallback / .unparsed` 的条目在 Today 页应进「没能识别」分组。
+    /// 详见 `ExtractionOutcome`。
+    var extractionOutcome: ExtractionOutcome
 
     init(
         id: UUID = UUID(),
@@ -485,7 +488,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         needsAIProcessing: Bool = false,
         sortOrder: Int = 0,
         systemCalendarEventIdentifier: String? = nil,
-        localeIdentifier: String? = nil
+        localeIdentifier: String? = nil,
+        extractionOutcome: ExtractionOutcome = .parsed
     ) {
         self.id = id
         self.title = title
@@ -507,6 +511,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.sortOrder = sortOrder
         self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
         self.localeIdentifier = localeIdentifier
+        self.extractionOutcome = extractionOutcome
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -544,5 +549,6 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.sortOrder = 0
         self.systemCalendarEventIdentifier = nil
         self.localeIdentifier = extracted.localeIdentifier
+        self.extractionOutcome = .parsed
     }
 }

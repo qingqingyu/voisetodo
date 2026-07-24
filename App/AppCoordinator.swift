@@ -12,6 +12,10 @@ final class AppCoordinator: ObservableObject {
 
     private let voiceInput: any VoiceInputProtocol
     private let store: any AppCoordinatorTodoStore
+    /// 用于「没能识别」分组的「重新解析」入口(`reextract(todoID:)`)。
+    /// transcriptProcessingFlow / pendingRecoveryFlow 内部各自持有 extractor;
+    /// 这里独立保留一个 reference 是因为 reextract 不走那两个 flow 的状态机,而是同步触发单次提取。
+    private let extractor: any TodoExtractorProtocol
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
     private let correctionTracker = CorrectionTracker.shared
@@ -34,6 +38,10 @@ final class AppCoordinator: ObservableObject {
     @Published var toastAction: (() -> Void)?
     @Published var deepLinkTodoId: UUID?
     @Published var isExtracting = false
+    /// 「没能识别」分组正在重新解析的 todo id 集合。
+    /// `reextract(todoID:)` 加入 → 完成/失败移除。UI(HomeView → UnparsedTodoCard)
+    /// 用它驱动按钮 disabled + ProgressView,防止用户连点触发并发提取。
+    @Published var reextractingTodoIDs: Set<UUID> = []
     /// 静音自动提交信号（true = 语音识别检测到说话后静音，已自动 finishRecording，
     /// UI 应触发 handlePanelSend 进入处理流程）。UI 消费后复位为 false。
     @Published var didAutoFinishDueToSilence = false
@@ -92,6 +100,7 @@ final class AppCoordinator: ObservableObject {
     ) {
         self.voiceInput = voiceInput
         self.store = store
+        self.extractor = extractor
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.quotaUsage = quotaUsage
@@ -536,6 +545,50 @@ final class AppCoordinator: ObservableObject {
             VoiceTodoLog.coordinator.error("coordinator.confirm.failed id=\(confirmID, privacy: .public) todoCount=\(todos.count) pendingCount=\(self.pendingItemIds.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             handleError(error)
             return false
+        }
+    }
+
+    /// 「没能识别」分组「重新解析」入口:把 todo.rawTranscript 再喂一次 extractor,
+    /// 成功 → 调 store.replaceTodo 替换为 .parsed 条目;失败 → 保留原 todo + toast 不打断。
+    /// 不复用 TranscriptProcessingFlow 状态机:那个 flow 是给"录入→确认"流程用的,
+    /// reextract 是"已落库的原文 → 重新提取",状态机不匹配。
+    func reextract(todoID: UUID) {
+        // 并发守卫:同一条 todo 正在重新解析时直接拒,避免连点触发多个 Task。
+        if reextractingTodoIDs.contains(todoID) {
+            VoiceTodoLog.coordinator.warning("coordinator.reextract.duplicate_skipped todoId=\(todoID.uuidString, privacy: .public)")
+            return
+        }
+        let reextractID = VoiceTodoLog.makeID("reextract")
+        VoiceTodoLog.coordinator.info("coordinator.reextract.start id=\(reextractID, privacy: .public) todoId=\(todoID.uuidString, privacy: .public)")
+        reextractingTodoIDs.insert(todoID)
+        Task {
+            defer { reextractingTodoIDs.remove(todoID) }
+            guard let todo = store.todos.first(where: { $0.id == todoID }),
+                  let transcript = todo.rawTranscript else {
+                VoiceTodoLog.coordinator.warning("coordinator.reextract.skipped id=\(reextractID, privacy: .public) reason=no_raw_transcript todoId=\(todoID.uuidString, privacy: .public)")
+                return
+            }
+            let localeIdentifier = todo.localeIdentifier ?? voiceInput.currentLocale.identifier
+            let locale = Locale(identifier: localeIdentifier)
+            do {
+                let result = try await extractor.extract(from: transcript, locale: locale)
+                if result.todos.isEmpty {
+                    VoiceTodoLog.coordinator.info("coordinator.reextract.empty id=\(reextractID, privacy: .public)")
+                    showToast(message: ErrorMessages.reextractStillEmpty, style: .info)
+                    return
+                }
+                try store.replaceTodo(id: todoID, with: result.todos, rawTranscript: transcript)
+                WidgetCenter.shared.reloadAllTimelines()
+                VoiceTodoLog.coordinator.info("coordinator.reextract.success id=\(reextractID, privacy: .public) todoId=\(todoID.uuidString, privacy: .public) newCount=\(result.todos.count)")
+            } catch VoiceTodoError.todoNotFound {
+                // 重新提取期间原 todo 被并发删除(用户在别处删了)。
+                // 原 todo 已不在,replaceTodo 无法替换——不打扰用户(他们已主动删除,无需感知)。
+                // 仅记 warning 用于调试。
+                VoiceTodoLog.coordinator.warning("coordinator.reextract.todo_vanished id=\(reextractID, privacy: .public) todoId=\(todoID.uuidString, privacy: .public)")
+            } catch {
+                VoiceTodoLog.coordinator.error("coordinator.reextract.failed id=\(reextractID, privacy: .public) todoId=\(todoID.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                handleError(error)
+            }
         }
     }
 

@@ -12,31 +12,95 @@ struct HomeSelectedDayListView: View {
     let onMoveToBucket: (UUID, TimeBucket) -> Void
     /// 长按 context menu:卡片移到明天。
     let onMoveToTomorrow: (UUID) -> Void
+    /// 时间 chip 点击后的改时间入口。(hasDueTime, dueDate, timeBucket) 由 `TimeEditPopover`
+    /// 提交时填好,本回调负责写库。改时间 popover 只用于「今日 Section」的 occurrence,
+    /// 待定日期组走自己的「选日期」按钮(Commit 6)。
+    let onChangeTime: (UUID, Bool, Date?, TimeBucket?) -> Void
+    /// 「待定日期」分组「选日期」按钮提交后写库。参数是用户选定的 startOfDay,
+    /// 调用方按 hasDueTime=false + timeBucket=nil 写入(剥离时段,只保留日期)。
+    let onPickDate: (UUID, Date) -> Void
+    /// 「没能识别」分组「重新解析」按钮入口。把 rawTranscript 再喂一遍 extractor,
+    /// 成功 → 替换原 todo 为 .parsed;失败 → 保留原 todo + toast。
+    let onReextract: (UUID) -> Void
+    /// 正在重新解析的 todo id 集合(来自 AppCoordinator.reextractingTodoIDs)。
+    /// 用于驱动 UnparsedTodoCard 的按钮 disabled + ProgressView,防连点。
+    var reextractingTodoIDs: Set<UUID> = []
 
     var body: some View {
         List {
             Section {
                 if !state.hasTodos {
                     homeGlobalEmptyRow
-                } else if state.selectedOccurrences.isEmpty {
+                } else if state.selectedOccurrences.isEmpty
+                            && state.pendingDateTodos.isEmpty
+                            && state.unparsedTodos.isEmpty
+                            && state.unscheduledTodos.isEmpty {
                     emptySelectedDayRow
                 } else {
-                    ForEach(Array(state.sortedUncompletedOccurrences.enumerated()), id: \.element.id) { index, occurrence in
-                        occurrenceRow(occurrence, index: index)
-                    }
+                    todaySectionBody
                 }
             }
 
-            // 「未安排」分区:无 dueDate 的任务,排在已完成之前——
-            // 用户关注优先级:未完成(有时间) > 未安排(待排期) > 已完成(历史)。
-            if !state.unscheduledTodos.isEmpty {
+            // 「待定日期」分区:有时间信号(timeBucket 或 dueHint)但没具体日期。
+            // 用 PendingDateTodoRow:右侧珊瑚色「选日期」按钮 + .loose chip 显示「时段 · 未定哪天」。
+            if !state.pendingDateTodos.isEmpty {
                 Section {
-                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
-                        todoRow(todo, index: state.selectedOccurrences.count + idx)
+                    ForEach(Array(state.pendingDateTodos.enumerated()), id: \.element.id) { idx, todo in
+                        PendingDateTodoRow(
+                            todo: todo,
+                            index: state.pendingDateTodos.startIndex + idx,
+                            onToggle: { onToggleTodo(todo.id) },
+                            onOpen: { onOpenTodo(todo) },
+                            onDelete: { onDeleteTodo(todo.id) },
+                            onPickDate: { date in onPickDate(todo.id, date) }
+                        )
                     }
                 } header: {
                     daySectionHeader(
-                        title: String(localized: "home.week.unscheduled"),
+                        title: String(localized: "home.pending_date.section"),
+                        count: state.pendingDateTodos.count
+                    )
+                }
+            }
+
+            // 「没能识别」分区:outcome != .parsed 的原文兜底条目。
+            // 用 UnparsedTodoCard:斜纹背景 + dashed border + 「重新解析 / 删除」按钮。
+            if !state.unparsedTodos.isEmpty {
+                Section {
+                    ForEach(Array(state.unparsedTodos.enumerated()), id: \.element.id) { idx, todo in
+                        UnparsedTodoCard(
+                            todo: todo,
+                            index: idx,
+                            onReextract: { onReextract(todo.id) },
+                            onDelete: { onDeleteTodo(todo.id) },
+                            isReextracting: reextractingTodoIDs.contains(todo.id)
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                onDeleteTodo(todo.id)
+                            } label: {
+                                Label(String(localized: "home.delete"), systemImage: "trash")
+                            }
+                        }
+                    }
+                } header: {
+                    daySectionHeader(
+                        title: String(localized: "home.unparsed.section"),
+                        count: state.unparsedTodos.count
+                    )
+                }
+            }
+
+            // 「未定时间」分区:完全无时间信号的待排期货(原「未安排」,语义收紧后改名)。
+            // 排在已完成之前——用户关注优先级:未完成(有时间) > 待定日期 > 没能识别 > 未定时间 > 已完成(历史)。
+            if !state.unscheduledTodos.isEmpty {
+                Section {
+                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
+                        todoRow(todo, index: state.selectedOccurrences.count + state.pendingDateTodos.count + state.unparsedTodos.count + idx)
+                    }
+                } header: {
+                    daySectionHeader(
+                        title: String(localized: "home.undated.section"),
                         count: state.unscheduledTodos.count
                     )
                 }
@@ -50,7 +114,12 @@ struct HomeSelectedDayListView: View {
                         occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
                     }
                     ForEach(Array(state.completedUnscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
-                        completedTodoRow(todo, index: state.selectedOccurrences.count + state.unscheduledTodos.count + idx)
+                        // index 延续「已完成 occurrence」之后,跨过 today / pendingDate / unparsed / unscheduled
+                        // 各 section 的行数,避免 a11y identifier 与前面 section 的行号撞号。
+                        completedTodoRow(todo, index: state.selectedOccurrences.count
+                                        + state.pendingDateTodos.count
+                                        + state.unparsedTodos.count
+                                        + state.unscheduledTodos.count + idx)
                     }
                 } header: {
                     let totalCount = state.completedOccurrences.count + state.completedUnscheduledTodos.count
@@ -64,6 +133,61 @@ struct HomeSelectedDayListView: View {
         .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollContent)
         .contentMargins(.bottom, HomeLayoutMetrics.listBottomInset, for: .scrollIndicators)
         .accessibilityIdentifier("TodoList")
+    }
+
+    /// 今天 Section 的内部 body:按时间确定度递增渲染三层 tier。
+    /// 每个 tier 先吐一行 tierLabelRow(细分隔线 + 小标签),再吐该 tier 的 occurrence。
+    /// tierLabelRow 不挂 `.swipeActions` —— 与 card 行互不干扰,与 iOS Reminders 分组同模式。
+    @ViewBuilder
+    private var todaySectionBody: some View {
+        let tiered = state.tieredUncompletedOccurrences
+        let occurrenceCountSoFar = occurrenceRunningCounter(within: tiered)
+        ForEach(Array(tiered.enumerated()), id: \.offset) { tierIndex, group in
+            tierLabelRow(group.tier)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: tierIndex == 0 ? WarmSpacing.xxs : WarmSpacing.sm,
+                                          leading: WarmSpacing.lg,
+                                          bottom: WarmSpacing.xxs,
+                                          trailing: WarmSpacing.lg))
+                .listRowBackground(Color.clear)
+
+            ForEach(Array(group.items.enumerated()), id: \.element.id) { inTierIndex, occurrence in
+                occurrenceRow(occurrence, index: occurrenceCountSoFar(tierIndex) + inTierIndex)
+            }
+        }
+    }
+
+    /// tier-label 行:细分隔线 + 小标签(整天 / 上午 / 下午 / 晚上 / 按时间)。
+    /// 字号 11.5pt + 字重 750 + 0.8 tracking,颜色 textMuted,与 HTML 设计稿 line 178-186 对齐。
+    /// 不挂 swipeActions / listRowSeparator 都隐藏 —— 与 card 行视觉解耦,
+    /// 不让 List 把它当数据 row 渲染。
+    @ViewBuilder
+    private func tierLabelRow(_ tier: TodayTier) -> some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Text(tier.localizedLabel)
+                .font(WarmFont.caption(11.5))
+                .tracking(0.8)
+                .foregroundColor(WarmTheme.textMuted)
+            Rectangle()
+                .fill(WarmTheme.sketch.opacity(0.6))
+                .frame(height: 1)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// 计算 tier 内 occurrence 的全局 running index,用于 warmTodoCard 的 `index` 参数
+    /// (a11y identifier `TodoCheckbox_\(index)` 需要全局稳定)。
+    /// 返回 closure: (tierIndex) -> 起始 index
+    private func occurrenceRunningCounter(
+        within tiered: [(tier: TodayTier, items: [TodoOccurrenceData])]
+    ) -> (Int) -> Int {
+        var runningSums = [Int]()
+        var accumulator = 0
+        for group in tiered {
+            runningSums.append(accumulator)
+            accumulator += group.items.count
+        }
+        return { tierIndex in tierIndex < runningSums.count ? runningSums[tierIndex] : 0 }
     }
 
     private var homeGlobalEmptyRow: some View {
@@ -237,6 +361,9 @@ struct HomeSelectedDayListView: View {
                 onToggle: { onToggleOccurrence(occurrence) },
                 onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
                 onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
+                onChangeTime: { hasDueTime, dueDate, bucket in
+                    onChangeTime(occurrence.todo.id, hasDueTime, dueDate, bucket)
+                },
                 showsTimeBucketMetadata: false,
                 dueStatusDisplayMode: .overdueOnly,
                 showsInlineTimePrefix: true
