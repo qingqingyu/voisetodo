@@ -183,10 +183,11 @@ enum HomeLayoutMetrics {
     static let weekStripDotDiameter: CGFloat = 5
     /// 圆点行 spacing。
     static let weekStripDotSpacing: CGFloat = 3
-    /// 圆点上限。与 `gridMaxBarsPerCell` 取相同值(6),保持折叠态周条与展开态月格在
-    /// "最多可见事件数"上的一致——折叠不是二等公民,密度对齐避免展开后信息突变。
-    /// 超过此值截断不显示 +N(数据仍在任务列表里,由 WeekStripCard 注释说明取舍)。
-    static let weekStripMaxDots: Int = 6
+    /// 圆点行区域固定高度(两行)。
+    /// 2 * weekStripDotDiameter + 1 * weekStripDotSpacing = 2*5 + 3 = 13pt。
+    /// 锁死高度避免完成/取消时 cell 高度抖动导致 HStack 内 7 天垂直对齐错位。
+    /// 无论当天 1 个点还是 7 个点,都占这个高度——大多数天第二行会留空,换取视觉稳定。
+    static let weekStripDotsAreaHeight: CGFloat = 13
     /// 图例 FlowLayout 横向间距(单项之间)。
     static let legendRowSpacing: CGFloat = 14
     /// 图例 FlowLayout 换行时的行间距。4pt 与 WarmSpacing.xxs 对齐,保持紧凑。
@@ -340,9 +341,9 @@ struct WeekStripCard: View {
         HomeCalendarState.weekDays(for: state.selectedDate, calendar: state.calendar)
     }
 
-    /// 本周出现过的所有分类(含昨天/前天等本周内任意一天的项)。
-    /// 委托给 HomeCalendarState.categoriesInWeek。与圆点行口径一致:
-    /// 圆点行按天显示本周所有分类的色,图例展示本周出现过哪些分类,两者不再做"独占"取舍。
+    /// 本周出现过的所有**未完成**分类(含昨天/前天等本周内任意一天的未完成项)。
+    /// 委托给 HomeCalendarState.categoriesInWeek。与圆点行口径完全一致:
+    /// 圆点行按天显示当天未完成类型的色,图例展示本周所有未完成类型,两者同步增减。
     private var weekCategories: [TodoCategory] {
         state.categoriesInWeek(of: state.selectedDate)
     }
@@ -440,22 +441,29 @@ struct WeekStripCard: View {
                 .frame(width: HomeLayoutMetrics.weekStripCircleDiameter,
                        height: HomeLayoutMetrics.weekStripCircleDiameter)
 
-                // 圆点:只反映未完成事件。完成一项就少一个点,全完成则无点。
-                // 最多 weekStripMaxDots 个,超出不显示 +N(数据仍在任务列表里,只是圆点不渲染);
-                // 删除 +N 的代价是用户在折叠态看不出"今天 >6 件未完成",接受此取舍以换取更安静的视觉。
-                // 圆点行 frame 始终占 6pt(即使无圆点也保留占位),避免完成/取消时 cell 高度抖动
-                // 导致 HStack 内 7 天垂直对齐错位。
-                let uncompletedDots = occurrences.filter { !$0.isCompleted }
-                HStack(spacing: HomeLayoutMetrics.weekStripDotSpacing) {
-                    ForEach(Array(uncompletedDots.prefix(HomeLayoutMetrics.weekStripMaxDots)), id: \.id) { occ in
+                // 圆点:按"类型"去重,不是按每条待办。当天有哪几种未完成类型,就画哪几个对应颜色的点。
+                // 同类型多条未完成只画一个点(丢失"同类型任务密度"信息,换取与图例口径一致)。
+                // 顺序按 TodoCategory.allCases 固定排序,与图例一致——避免不同天同色点位置跳动。
+                // FlowLayout 自适应换行:7 种类型全有时自动排成两行(一行约容 6 个点)。
+                // 固定两行高度(weekStripDotsAreaHeight)锁死,即使当天只有 1 个点也留两行空间,
+                // 避免完成/取消时 cell 高度抖动导致 HStack 内 7 天垂直对齐错位。
+                let uncompletedCategories: [TodoCategory] = TodoCategory.allCases.filter { cat in
+                    occurrences.contains { $0.todo.category == cat && !$0.isCompleted }
+                }
+                FlowLayout(
+                    horizontalSpacing: HomeLayoutMetrics.weekStripDotSpacing,
+                    verticalSpacing: HomeLayoutMetrics.weekStripDotSpacing,
+                    alignment: .center
+                ) {
+                    ForEach(uncompletedCategories, id: \.self) { cat in
                         Circle()
-                            .fill(WarmTheme.color(for: occ.todo.category)
+                            .fill(WarmTheme.color(for: cat)
                                 .opacity(WarmTheme.activeEventOpacity))
                             .frame(width: HomeLayoutMetrics.weekStripDotDiameter,
                                    height: HomeLayoutMetrics.weekStripDotDiameter)
                     }
                 }
-                .frame(height: 6)
+                .frame(height: HomeLayoutMetrics.weekStripDotsAreaHeight)
             }
             .frame(maxWidth: .infinity)
         }

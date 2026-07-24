@@ -145,17 +145,19 @@ struct HomeCalendarState {
         occurrencesByDay[TodoOccurrenceData.dayKey(for: day, calendar: calendar)] ?? []
     }
 
-    /// WeekStripCard 图例数据源:当前周 7 天内 occurrence 涉及的所有分类,去重后按
-    /// TodoCategory.allCases 固定顺序返回。
+    /// WeekStripCard 图例数据源:当前周 7 天内**未完成** occurrence 涉及的所有分类,
+    /// 去重后按 TodoCategory.allCases 固定顺序返回。
     ///
-    /// 算法:收集本周 7 天所有 occurrence 的分类合集,不做任何减法。
-    /// 早期版本曾与 unscheduledTodos 做减法(只显示"本周独占"分类)以控制项数避免一行排不下,
-    /// 但用户反馈:图例应反映"本周出现了哪些分类"——昨天/前天的项目也算本周,不应被 backlog
-    /// 抵消掉。整周分类合集可能 5+ 个,FlowLayout 会自动换行 + 居中,不再需要靠减法省空间。
+    /// 与 WeekStripCard.dayCell 圆点行口径完全一致:都看"未完成 occurrence 的类型"。
+    /// 圆点行出现的颜色,图例必然有对应项;本周某分类全完成,图例项随之消失,
+    /// 传达"这周这类已全部搞定"的语义。
+    /// 整周未完成分类合集可能 5+ 个,FlowLayout 会自动换行 + 居中。
     func categoriesInWeek(of anchor: Date) -> [TodoCategory] {
         let weekDays = Self.weekDays(for: anchor, calendar: calendar)
         let weekUsed = Set(weekDays.flatMap { day in
-            Self.occurrences(on: day, in: occurrencesByDay, calendar: calendar).map { $0.todo.category }
+            Self.occurrences(on: day, in: occurrencesByDay, calendar: calendar)
+                .filter { !$0.isCompleted }
+                .map { $0.todo.category }
         })
         return TodoCategory.allCases.filter { weekUsed.contains($0) }
     }
