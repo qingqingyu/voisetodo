@@ -223,16 +223,23 @@ struct UnscheduledDrawer: View {
     /// Unscheduled 卡片。复用 WarmTodoCard,挂 `.draggable` 拖到 timeline bucket slot 排程。
     /// 删除走详情页(不挂 swipeActions,本阶段简化)。
     /// 拖拽预览用 emoji + 标题的紧凑 capsule,跟 HomeSelectedDayListView 现有风格一致。
+    ///
+    /// Row tap 用 `Button(action: ...).buttonStyle(.plain)` 包装,理由同 HomeSelectedDayListView:
+    /// iOS 26 FB18199844 下 WarmTodoCard 内的 onTapGesture 不可靠,改由调用方 Button 接管。
+    /// `.cardEntrance` 和 `.draggable` 挂在 Button 外层,让 Button 先接管 tap,
+    /// drag/contextMenu 作为手势识别链上的兄弟节点(tap=短触,drag=长按+移动,互斥)。
     @ViewBuilder
     private func unscheduledCard(_ todo: TodoItemData, index: Int) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: todo,
-            onToggle: { onToggleTodo(todo.id) },
-            onTap: { onOpenTodo(todo) },
-            onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
-            onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
-        )
+        Button(action: { onOpenTodo(todo) }) {
+            WarmTodoCard(
+                index: index,
+                todo: todo,
+                onToggle: { onToggleTodo(todo.id) },
+                onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
+                onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
+            )
+        }
+        .buttonStyle(.plain)
         .cardEntrance(id: todo.id, index: index, cardAppeared: $cardAppeared)
         .draggable(todo.id.uuidString) {
             HStack(spacing: WarmSpacing.xxs) {

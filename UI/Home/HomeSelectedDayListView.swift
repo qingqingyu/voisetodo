@@ -180,6 +180,11 @@ struct HomeSelectedDayListView: View {
     /// WarmTodoCard + inset/背景/删除 swipe/入场动画/transition。
     /// 抽出来避免两处复制粘贴——后续改卡片样式只改一处。
     /// 不含 `draggable` 分支——draggable 由调用方按完成态与 tab 自行决定。
+    ///
+    /// Row tap 用 `Button(action: onTap).buttonStyle(.plain)` 包装而不是 WarmTodoCard 内的
+    /// `.onTapGesture`：iOS 26 FB18199844 下顶层 onTapGesture 会吞掉 swipeActions delete 按钮
+    /// 的 tap。Button 是显式控件，与 swipeActions 容器级手势天然共存（Apple Reminders 风格），
+    /// 内嵌 checkbox Button 由 SwiftUI 分派给最内层 Button，点 checkbox 只触发 toggle。
     @ViewBuilder
     private func unscheduledTodoCardBase(
         todo: TodoItemData,
@@ -188,14 +193,16 @@ struct HomeSelectedDayListView: View {
         onTap: @escaping () -> Void,
         onDelete: @escaping () -> Void
     ) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: todo,
-            onToggle: onToggle,
-            onTap: onTap,
-            onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
-            onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
-        )
+        Button(action: onTap) {
+            WarmTodoCard(
+                index: index,
+                todo: todo,
+                onToggle: onToggle,
+                onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
+                onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
+            )
+        }
+        .buttonStyle(.plain)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
@@ -223,17 +230,19 @@ struct HomeSelectedDayListView: View {
     }
 
     private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
-        WarmTodoCard(
-            index: index,
-            todo: occurrence.todo,
-            onToggle: { onToggleOccurrence(occurrence) },
-            onTap: { onOpenTodo(occurrence.todo) },
-            onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
-            onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
-            showsTimeBucketMetadata: false,
-            dueStatusDisplayMode: .overdueOnly,
-            showsInlineTimePrefix: true
-        )
+        Button(action: { onOpenTodo(occurrence.todo) }) {
+            WarmTodoCard(
+                index: index,
+                todo: occurrence.todo,
+                onToggle: { onToggleOccurrence(occurrence) },
+                onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
+                onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
+                showsTimeBucketMetadata: false,
+                dueStatusDisplayMode: .overdueOnly,
+                showsInlineTimePrefix: true
+            )
+        }
+        .buttonStyle(.plain)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
