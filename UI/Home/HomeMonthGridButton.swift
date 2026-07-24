@@ -117,6 +117,10 @@ struct HomeMonthGridButton: View {
     /// 高度固定 14pt(对齐 HTML .bar 样式),Overflow +N 嵌入最后一条尾部。
     /// 已完成态用分类色 40% 透明(非纯白 secondaryBackground):格子底色是 cardBackground(白),
     /// 若已完成条也用白底会完全融入背景不可见。保留分类色相让用户仍能辨认"过去的事属于哪类"。
+    ///
+    /// 字体用 `captionFixed` 不响应 Dynamic Type:月历格事件条是"预览类 UI"(用户点开看详情),
+    /// 不是主读内容;固定 9pt 让字号缩放不再影响布局判定,与 Apple Calendar 日期数字一致。
+    /// 取舍:违反 iOS HIG「内容应跟随 Dynamic Type」建议,但与 `headlineFixed`/`mono` 同模式。
     private func eventBar(_ occurrence: TodoOccurrenceData, isLast: Bool, overflow: Int?) -> some View {
         let categoryBg = WarmTheme.categoryBackground(for: occurrence.todo.category)
         let categoryTx = WarmTheme.categoryTextColor(for: occurrence.todo.category)
@@ -140,10 +144,10 @@ struct HomeMonthGridButton: View {
             // 候选报告固定宽度突破父约束,ViewThatFits 会误判为"永远 fit",导致长标题溢出 capsule。
             ViewThatFits(in: .horizontal) {
                 Text(occurrence.todo.title)
-                    .font(WarmFont.caption(9))
+                    .font(WarmFont.captionFixed(9))
                     .lineLimit(1)
                 Text(occurrence.todo.title)
-                    .font(WarmFont.caption(9))
+                    .font(WarmFont.captionFixed(9))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

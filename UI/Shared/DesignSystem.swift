@@ -228,6 +228,23 @@ enum WarmFont {
         .custom("Avenir Next", size: size, relativeTo: relativeTextStyle(for: size)).weight(.regular)
     }
 
+    /// `caption` 的固定字号版——不响应 Dynamic Type。
+    /// 用于"预览类 UI 容器"内的小字文本(如月历格事件条标题):这些文本是点开看详情的概览,
+    /// 不是用户主读内容,字号跟随系统缩放会撑爆容器或触发伪截断。与 `headlineFixed` 同模式:
+    /// 不带 `relativeTo:` 参数,`.custom` 即退化为固定字号(等同 UIKit UIFont)。
+    ///
+    /// **取舍**:违反 iOS HIG「内容文本应跟随 Dynamic Type」建议。判定标准与 `headlineFixed`
+    /// 一致——「这是 UI 装饰/预览」→ 用 fixed;「这是用户要读的正文」→ 用动态 `caption`。
+    ///
+    /// **陷阱(与 `headlineFixed` 相同)**:字号不缩放,但 SwiftUI 在 `ZStack + .frame(width:height:)`
+    /// 内仍会按 `@Environment(\.sizeCategory)` 做 layout 补偿(AX1-AX5 ×2~3)。若用在 frame-locked
+    /// 场景,需紧跟 `.fixedSize()`。例外:外层 `.frame(maxWidth: .infinity)` 自由布局时不触发此问题。
+    /// 在 `ViewThatFits` 候选里**禁止**挂 `fixedSize`——会让候选报告固定宽度突破父约束,
+    /// ViewThatFits 误判为"永远 fit"(详见 feedback_no_text_truncation.md 的 SwiftUI 陷阱条目)。
+    static func captionFixed(_ size: CGFloat) -> Font {
+        .custom("Avenir Next", size: size).weight(.regular)
+    }
+
     /// 等宽数字字体（SF Mono）— 用于时间刻度、进度数字等技术性 UI 数据。
     /// 与 `headlineFixed` 同逻辑：固定字号、不跟随 Dynamic Type（这些数字是 UI 装饰，
     /// 放大会撑爆格子或破坏时间网格对齐）。受限于 `.frame(width:height:)` 的 Text 同样需要 `.fixedSize()`。
