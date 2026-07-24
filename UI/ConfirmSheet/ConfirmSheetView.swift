@@ -135,26 +135,24 @@ struct ConfirmSheetView: View {
 
             HStack(alignment: .top, spacing: WarmSpacing.xs) {
                 transcriptText
-                if transcriptNeedsExpandHint {
-                    Button(transcriptExpanded
-                        ? String(localized: "confirm.transcript.collapse")
-                        : String(localized: "confirm.transcript.expand")) {
-                        withAnimation(WarmAnimation.springFast) {
-                            transcriptExpanded.toggle()
-                        }
+                Button(transcriptExpanded
+                    ? String(localized: "confirm.transcript.collapse")
+                    : String(localized: "confirm.transcript.expand")) {
+                    withAnimation(WarmAnimation.springFast) {
+                        transcriptExpanded.toggle()
                     }
-                    .font(WarmFont.caption(13))
-                    .foregroundStyle(WarmTheme.primary)
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("TranscriptExpandToggle")
                 }
+                .font(WarmFont.caption(13))
+                .foregroundStyle(WarmTheme.primary)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("TranscriptExpandToggle")
             }
         }
     }
 
     /// 转录文字本体。展开时全显示;收起时用 ViewThatFits 先试完整(不截断),
-    /// 放不下再退到 2 行 + ...。配合 transcriptNeedsExpandHint 的保守阈值,
-    /// 确保 AX5 + 长中文下也能看到展开按钮,不会出现「被截断但无展开按钮」的违规态。
+    /// 放不下再退到 2 行 + ...。展开/收起按钮始终显示(不再依赖长度阈值),
+    /// 确保任何 transcript 都有展开入口,不会出现「想看全文却没按钮」的违规态。
     ///
     /// accessibilityIdentifier 挂在外层 Group 上:ViewThatFits 会把候选 view 都加进
     /// accessibility tree,若每个分支都挂同 id 会让 VoiceOver / UI 测试选择器不稳定。
@@ -180,14 +178,6 @@ struct ConfirmSheetView: View {
             }
             .accessibilityIdentifier("TranscriptArea")
         }
-    }
-
-    /// 启发:transcript 含换行或长度 > 30 时显示「展开」按钮。
-    /// 阈值降到 30:AX5 + 中文下 30 个全角字符已接近 2 行满,
-    /// 阈值过高会导致「2 行已截断但无展开按钮」的违规态。
-    /// ViewThatFits 兜底保证「放得下就不截断」,这里只决定「是否给展开入口」。
-    private var transcriptNeedsExpandHint: Bool {
-        transcript.count > 30 || transcript.contains("\n")
     }
 
     // MARK: - Inline Empty State
