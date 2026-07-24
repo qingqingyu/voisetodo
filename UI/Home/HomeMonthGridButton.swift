@@ -130,10 +130,23 @@ struct HomeMonthGridButton: View {
                     .font(WarmFont.mono(8))
                     .fixedSize()
             }
-            Text(occurrence.todo.title)
-                .font(WarmFont.caption(9))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            // 优先完整显示标题;格子宽容不下时才 tail 截断。
+            // 旧实现只挂 lineLimit + truncationMode,SwiftUI HStack 会给 Text 分配"压缩后"宽度,
+            // 即使事件条实际还有水平余量也会过早出现"…"。ViewThatFits 会以无外部宽度约束测量
+            // 每个候选的理想尺寸,选第一个放得下的——第一个候选(无 truncationMode、lineLimit(1))
+            // 的理想尺寸即单行自然宽度,放得下就消除伪截断;放不下回退到带 tail 截断的第二个候选。
+            // 与"文本截断零容忍"约定一致:绝不优先选择截断布局。
+            // 注意:候选不能挂 fixedSize(horizontal: true, vertical: false)——fixedSize 会强制
+            // 候选报告固定宽度突破父约束,ViewThatFits 会误判为"永远 fit",导致长标题溢出 capsule。
+            ViewThatFits(in: .horizontal) {
+                Text(occurrence.todo.title)
+                    .font(WarmFont.caption(9))
+                    .lineLimit(1)
+                Text(occurrence.todo.title)
+                    .font(WarmFont.caption(9))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             if let overflow, isLast {
                 Text("+\(overflow)")
                     .font(WarmFont.mono(8))
