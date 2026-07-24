@@ -75,8 +75,14 @@ struct PendingDateTodoRow: View {
                     Text(String(localized: "home.pending_date.pick"))
                         .font(WarmFont.caption(13))
                         .foregroundColor(.white)
-                        .padding(.horizontal, WarmSpacing.sm)
-                        .padding(.vertical, WarmSpacing.xs)
+                        // padding 对齐 ChipView 的密度(horizontal 9 / vertical 3),
+                        // 避免垂直留白过厚让字看起来"浮"在橙色块中间产生断层感。
+                        // 略比 chip 大一档(10/4 vs 9/3)是因为它是 primary CTA,
+                        // 视觉权重需要稍强于纯展示 chip。
+                        // 说明:10 与 ChipView 的 9 一样偏离 WarmSpacing 的「4 借数系统」,
+                        // 是 chip 系视觉一致性的有意破例(WarmSpacing 无 9/10 档位,强行归档会破坏 chip 密度)。
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, WarmSpacing.xxs)
                         .background(
                             RoundedRectangle(cornerRadius: WarmRadius.chip)
                                 .fill(WarmTheme.primary)
