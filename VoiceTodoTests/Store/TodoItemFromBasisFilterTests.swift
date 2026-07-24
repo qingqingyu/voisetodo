@@ -143,6 +143,16 @@ final class TodoItemFromBasisFilterTests: XCTestCase {
         XCTAssertNil(item.dueDate)
     }
 
+    // MARK: - ExtractionOutcome stamping
+
+    /// TodoItem.from 工厂显式标 `.parsed`:AI 正常提取出的条目不进「没能识别」组。
+    /// 与 `TodoItem.rawTranscript(_:)` 的 `.rawFallback` 形成对照。
+    func testFromExtractedStampsParsedOutcome() {
+        let extracted = ExtractedTodo(title: "交房租", detail: "明天交房租", dueHint: "明天")
+        let item = TodoItem.from(extracted, rawTranscript: "明天交房租")
+        XCTAssertEqual(item.extractionOutcome, .parsed)
+    }
+
     // MARK: - Helpers
 
     private func makeDate(year: Int, month: Int, day: Int) throws -> Date {

@@ -718,6 +718,53 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         }
     }
 
+    func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws {
+        guard !extracted.isEmpty else {
+            throw VoiceTodoError.apiResponseInvalid("replaceTodo with empty extracted")
+        }
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        let preservedSort = todos[index].sortOrder
+        let preservedCreatedAt = todos[index].createdAt
+        let preservedLocale = todos[index].localeIdentifier
+        let first = TodoItemData(from: extracted[0], rawTranscript: rawTranscript)
+        let replaced = TodoItemData(
+            id: id,
+            title: first.title,
+            detail: first.detail,
+            dueHint: first.dueHint,
+            dueDate: first.dueDate,
+            hasDueTime: first.hasDueTime,
+            timeBucket: first.timeBucket,
+            recurrenceRule: first.recurrenceRule,
+            priority: first.priority,
+            category: first.category,
+            reminderTimes: first.reminderTimes,
+            isCompleted: false,
+            completedAt: nil,
+            createdAt: preservedCreatedAt,
+            rawTranscript: rawTranscript,
+            needsAIProcessing: false,
+            sortOrder: preservedSort,
+            systemCalendarEventIdentifier: nil,
+            localeIdentifier: preservedLocale ?? first.localeIdentifier,
+            extractionOutcome: .parsed
+        )
+        todos[index] = replaced
+        if extracted.count > 1 {
+            // 锚定 sortOrder 在 preservedSort 之下,匹配 TodoStore 行为。
+            var nextSort = preservedSort - 1
+            for extra in extracted.dropFirst() {
+                var item = TodoItemData(from: extra, rawTranscript: nil)
+                item.sortOrder = nextSort
+                item.localeIdentifier = preservedLocale ?? item.localeIdentifier
+                nextSort -= 1
+                todos.append(item)
+            }
+        }
+    }
+
     func pendingItems() async throws -> [TodoItemData] {
         if let pendingItemsError {
             throw pendingItemsError

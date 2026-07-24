@@ -524,6 +524,9 @@ final class StoreTests: XCTestCase {
         // 标题使用当前的智能截断策略
         XCTAssertEqual(sut.todos[0].title, TextUtils.truncateTitle(from: transcript))
         XCTAssertEqual(sut.todos[0].detail, transcript)
+        // 离线兜底条目标 .rawFallback,Today 页据此把它路由到「没能识别」组,
+        // 不再混进正常任务(参见 HomeCalendarState.unparsedTodos)。
+        XCTAssertEqual(sut.todos[0].extractionOutcome, .rawFallback)
     }
 
     // MARK: - Test ReplacePendingWithExtracted [v2]

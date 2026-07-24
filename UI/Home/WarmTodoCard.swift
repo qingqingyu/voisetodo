@@ -77,6 +77,10 @@ struct WarmTodoCard: View {
     var onMoveToBucket: ((TimeBucket) -> Void)? = nil
     /// 长按 context menu:移到明天。nil 时不显示「移到明天」项。
     var onMoveToTomorrow: (() -> Void)? = nil
+    /// 时间 chip 点击入口 + popover 提交处理。nil 时 chip 不可点(纯展示,无 dot)。
+    /// 接入方:HomeSelectedDayListView 注入 `onChangeTime`,chip 变成可点 button,
+    /// 弹出 `TimeEditPopover`,提交时把新的 (hasDueTime, dueDate, timeBucket) 回调出来写库。
+    var onChangeTime: ((Bool, Date?, TimeBucket?) -> Void)? = nil
     var showsTimeBucketMetadata = true
     var dueStatusDisplayMode: DueStatusDisplayMode = .full
     /// 标题行是否内联钟点前缀（"09:00 吃药"）。默认 false——
@@ -91,6 +95,13 @@ struct WarmTodoCard: View {
     @ScaledMetric(relativeTo: .body) private var categoryIconCircleSize: CGFloat = 28
     /// 分类图标 SF Symbol 字号。基准 12pt,同步跟随 .body 缩放。
     @ScaledMetric(relativeTo: .body) private var categoryIconFontSize: CGFloat = 12
+
+    /// 改时间 popover 状态。chip 点击触发,popover 内部提交时通过 `onChangeTime` 回调。
+    /// 编辑中的 date / period 由 chip 点击时的 `todo` 当前状态初始化。
+    @State private var showTimeEditor = false
+    @State private var editingDate: Date = Date()
+    @State private var editingPeriod: TimeBucket? = nil
+    @State private var editingMode: TimeEditPopover.Mode = .timed
 
     private var categoryColor: Color {
         WarmTheme.color(for: todo.category)
@@ -248,14 +259,19 @@ struct WarmTodoCard: View {
                             .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
                     }
 
-                    // 标题行内联钟点:hasDueTime 时在 title 前挂 "HH:mm"。
-                    // 10pt mono + 分类色,已完成降级到 textSecondary。
-                    // fixedSize:WarmFont.mono 是固定字号,AX 档位下 HStack + List frame 会触发 .tail truncation。
+                    // 标题行内联钟点:hasDueTime 时在 title 前挂 chip(HTML 设计稿 .chip 样式)。
+                    // solid 样式 = 精确时刻(彩色底 + 分类色),最强视觉权重;
+                    // 调用方注入 `onEditTime` 时 chip 变成可点 button(末尾 5pt dot 暗示),
+                    // 弹改时间 popover;nil 时纯展示不可点。
+                    // 已完成时降级到 textSecondary(灰)。
                     if let inlineTime = inlineTimeText {
-                        Text(inlineTime)
-                            .font(WarmFont.mono(10))
-                            .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
-                            .fixedSize()
+                        ChipView(
+                            text: inlineTime,
+                            style: .solid,
+                            accent: todo.isCompleted ? WarmTheme.textSecondary : categoryColor,
+                            onTap: onChangeTime != nil ? { startEditingTime() } : nil,
+                            accessibilityHintText: String(localized: "a11y.chip.time_edit_hint")
+                        )
                     }
 
                     Text(todo.title)
@@ -355,6 +371,58 @@ struct WarmTodoCard: View {
         .accessibilityIdentifier("TodoCell_\(index)")
         .accessibilityValue(todo.isCompleted ? String(localized: "a11y.completed") : String(localized: "a11y.not_completed"))
         .accessibilityHint(String(localized: "a11y.view_detail"))
+        .popover(isPresented: $showTimeEditor) {
+            TimeEditPopover(
+                initialMode: editingMode,
+                date: $editingDate,
+                period: $editingPeriod
+            ) { mode, date, period in
+                commitTimeEdit(mode: mode, date: date, period: period)
+            }
+        }
+    }
+
+    /// 把 chip 点击事件转成 popover 弹出。编辑态由当前 `todo` 字段推导。
+    /// - hasDueTime → timed 模式,初始钟点 = todo.dueDate
+    /// - timeBucket 非空 → period 模式,初始时段 = todo.timeBucket
+    /// - 否则 → allDay 模式
+    private func startEditingTime() {
+        if todo.hasDueTime, let dueDate = todo.dueDate {
+            editingMode = .timed
+            editingDate = dueDate
+            editingPeriod = nil
+        } else if let bucket = todo.timeBucket {
+            editingMode = .period
+            editingPeriod = bucket
+            editingDate = todo.dueDate ?? Date()
+        } else {
+            editingMode = .allDay
+            editingPeriod = nil
+            editingDate = todo.dueDate ?? Date()
+        }
+        showTimeEditor = true
+    }
+
+    /// popover 提交时:把 mode/date/period 翻译成 `(hasDueTime, dueDate, timeBucket)`,
+    /// 通过 `onChangeTime` 回调给调用方写库。失败的 callback 不该静默吞,但在卡片层
+    /// 没有 error UI,所以让调用方(AppCoordinator)负责 toast/重试。
+    private func commitTimeEdit(mode: TimeEditPopover.Mode, date: Date, period: TimeBucket?) {
+        let calendar = Calendar.current
+        switch mode {
+        case .timed:
+            onChangeTime?(true, date, nil)
+        case .period:
+            // 时段模式下保留原 dueDate(可能是今天),只更新 timeBucket。
+            // 若原 dueDate 为 nil,让调用方在写库时按需补今天(同 TodoScheduleDefaults.effectiveDueDate)。
+            let baseDate = todo.dueDate ?? calendar.startOfDay(for: Date())
+            onChangeTime?(false, baseDate, period)
+        case .allDay:
+            // 整天:保留原 dueDate 的日期部分,剥离钟点。
+            let baseDate = todo.dueDate.map { calendar.startOfDay(for: $0) }
+                ?? calendar.startOfDay(for: Date())
+            onChangeTime?(false, baseDate, nil)
+        }
+        showTimeEditor = false
     }
 
     /// Context menu 里每个 bucket 的 SF Symbol。

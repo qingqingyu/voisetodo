@@ -137,6 +137,7 @@ targets:
       - path: Store/AppGroupModelContainerProvider.swift
       - path: Protocols/Models.swift
       - path: Protocols/Domain/CodingUserInfoKey+Recurrence.swift
+      - path: Protocols/Domain/ExtractionOutcome.swift
       - path: Protocols/Domain/RecurrenceRule.swift
       - path: Protocols/Domain/TodoDueDateResolver.swift
       - path: Protocols/Domain/RecurrenceRuleResolver.swift

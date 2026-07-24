@@ -42,6 +42,44 @@ protocol TodoDeletionWriting {
 protocol TodoDetailUpdating {
     /// 完整更新（含 dueDate、时段和重复规则，详情页用）
     func updateFull(_ id: UUID, update: TodoDetailUpdate) throws
+
+    /// 用一组新提取的结果替换现有 TodoItem。
+    /// 用于「没能识别」分组的「重新解析」入口:把 outcome != .parsed 的原文条目,
+    /// 用 AI 重新提取的结果替换为 .parsed 条目,保留原 id / sortOrder / createdAt / locale
+    /// (避免破坏 occurrence 完成记录、widget 缓存等关联)。
+    /// 当 `extracted.count > 1` 时,第一条 mutate 原 todo,剩余的逐条插入,
+    /// sortOrder 锚定在原 todo 的 sortOrder 之下(详见 `TodoStore.replaceTodo` 实现)。
+    func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws
+}
+
+extension TodoDetailUpdating where Self: TodoListReadable {
+    /// 仅更新时间相关字段(hasDueTime / dueDate / timeBucket),其他字段不动。
+    /// 用于 Home 页时间 chip 点击后的改时间 popover。
+    ///
+    /// 默认实现:读现有 todo → 拼 TodoDetailUpdate → 走 updateFull。
+    /// 实现层可在 `TodoStore` 重写此方法做单字段 UPDATE,避免全字段往返。
+    func updateTime(
+        for id: UUID,
+        hasDueTime: Bool,
+        dueDate: Date?,
+        timeBucket: TimeBucket?
+    ) throws {
+        guard let existing = todos.first(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        let update = TodoDetailUpdate(
+            title: existing.title,
+            detail: existing.detail,
+            category: existing.category,
+            priority: existing.priority,
+            dueDate: dueDate,
+            hasDueTime: hasDueTime,
+            timeBucket: timeBucket,
+            dueHint: existing.dueHint,
+            recurrenceRule: existing.recurrenceRule
+        )
+        try updateFull(id, update: update)
+    }
 }
 
 /// 重复规则写入能力。
@@ -135,8 +173,10 @@ protocol TodoRefreshing {
     func refreshTodos()
 }
 
-/// Home 页需要列表、完成切换、日历 occurrence、无日期任务拖拽排序，以及排序失败时的刷新回滚。
-protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing {}
+/// Home 页需要列表、完成切换、日历 occurrence、无日期任务拖拽排序,以及排序失败时的刷新回滚。
+/// 含详情更新(`TodoDetailUpdating`)——chip 改时间 popover 需要直接走 store.updateTime,
+/// 而不是绕一层 coordinator(避免 HomeView 与 AppCoordinator 的耦合进一步加深)。
+protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating {}
 
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新和 pending 替换。
 protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting {}

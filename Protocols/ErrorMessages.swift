@@ -57,6 +57,9 @@ enum ErrorMessages {
     /// 录音模式发送时录音已不在活动状态——给用户明确反馈而不是静默关闭面板。
     static let recordingNotActive = String(localized: "ui.recording_not_active")
 
+    /// 「没能识别」分组「重新解析」后 AI 仍解析不出结构。提示用户原文片段保留、可继续手动处理。
+    static let reextractStillEmpty = String(localized: "error.reextract.empty")
+
     /// 带参数的格式化方法
     static func todoSaveFailedMessage(_ detail: String) -> String {
         String(localized: "detail.save_failed \(detail)")

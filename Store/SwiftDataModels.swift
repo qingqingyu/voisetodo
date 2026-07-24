@@ -37,6 +37,15 @@ final class TodoItem {
     /// Optional 字段：旧数据为 nil，回退到 voiceInput.currentLocale。
     var localeIdentifier: String?
 
+    /// AI 提取结果来源标签(原始字符串)。默认 `.parsed` → SwiftData 轻量迁移,
+    /// 旧数据自动补 `.parsed`(等同「过去所有成功提取的 todo」语义)。
+    /// 通过 computed `extractionOutcome` 类型安全访问。
+    ///
+    /// - Migration: 与 `hasDueTime` 同模式:新增 default-value stored property,
+    ///   不需要 `VersionedSchema` / `SchemaMigrationPlan`。`VoiceTodoSchema.schema`
+    ///   注册的仍是同一个 `TodoItem` 类,无需追加。
+    var extractionOutcomeRaw: String = ExtractionOutcome.parsed.rawValue
+
     // MARK: - Computed Properties
 
     /// 优先级（类型安全访问）
@@ -55,6 +64,13 @@ final class TodoItem {
     var timeBucket: TimeBucket? {
         get { hasDueTime ? nil : TimeBucket.explicit(from: timeBucketRaw) }
         set { timeBucketRaw = hasDueTime || newValue == .anytime ? nil : newValue?.rawValue }
+    }
+
+    /// AI 提取结果来源(类型安全)。Raw 写入失败时回退到 `.parsed`,
+    /// 避免历史脏数据(如手动改库)让 UI 整组下线。
+    var extractionOutcome: ExtractionOutcome {
+        get { ExtractionOutcome(rawValue: extractionOutcomeRaw) ?? .parsed }
+        set { extractionOutcomeRaw = newValue.rawValue }
     }
 
     // MARK: - Initialization
@@ -136,7 +152,8 @@ final class TodoItem {
             needsAIProcessing: needsAIProcessing,
             sortOrder: sortOrder,
             systemCalendarEventIdentifier: systemCalendarEventIdentifier,
-            localeIdentifier: localeIdentifier
+            localeIdentifier: localeIdentifier,
+            extractionOutcome: extractionOutcome
         )
     }
 
@@ -316,9 +333,12 @@ extension TodoItem {
     /// 创建原始转写待办（离线降级用）
     /// - Parameter transcript: 原始转写文本
     /// - Returns: TodoItem 实例
+    ///
+    /// 标 `extractionOutcome = .rawFallback`:原文未经 AI 处理,
+    /// UI 应把它路由到「没能识别」分组,而不是混进 Today 列表伪装成普通任务。
     static func rawTranscript(_ transcript: String) -> TodoItem {
         let title = TextUtils.truncateTitle(from: transcript)
-        return TodoItem(
+        let item = TodoItem(
             title: title,
             detail: transcript,
             dueHint: nil,
@@ -327,6 +347,8 @@ extension TodoItem {
             rawTranscript: transcript,
             needsAIProcessing: true
         )
+        item.extractionOutcome = .rawFallback
+        return item
     }
 }
 

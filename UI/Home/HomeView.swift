@@ -1010,7 +1010,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                             onDeleteTodo: { actions.deleteTodo($0) },
                             onOpenTodo: { selectedTodo = $0 },
                             onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                            onMoveToTomorrow: { id in moveTodoToTomorrow(id) }
+                            onMoveToTomorrow: { id in moveTodoToTomorrow(id) },
+                            onChangeTime: { id, hasDueTime, dueDate, bucket in
+                                changeTodoTime(id: id, hasDueTime: hasDueTime, dueDate: dueDate, timeBucket: bucket)
+                            },
+                            onPickDate: { id, date in pickTodoDate(id: id, date: date) },
+                            onReextract: { id in coordinator.reextract(todoID: id) },
+                            reextractingTodoIDs: coordinator.reextractingTodoIDs
                         )
                         .frame(height: listHeight)
                         .opacity(isCalendarList ? collapseProgress : 1)
@@ -1793,6 +1799,36 @@ struct HomeView<Store: HomeTodoStore>: View {
             )
         } catch {
             VoiceTodoLog.store.error("home.move_to_tomorrow.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// 改时间 popover 提交后写库。走 `store.updateTime` 默认实现(读现有 todo → 拼 TodoDetailUpdate → 走 updateFull)。
+    /// 失败 toast `storageError`,成功不 toast(卡片刷新即反馈,过多 toast 干扰)。
+    private func changeTodoTime(
+        id: UUID,
+        hasDueTime: Bool,
+        dueDate: Date?,
+        timeBucket: TimeBucket?
+    ) {
+        do {
+            try store.updateTime(for: id, hasDueTime: hasDueTime, dueDate: dueDate, timeBucket: timeBucket)
+            occurrenceRevision += 1
+        } catch {
+            VoiceTodoLog.store.error("home.change_time.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// 「待定日期」分组「选日期」按钮提交后写库。剥离时段(timeBucket=nil),
+    /// 只保留日期(让任务进入 Today 的「整天」tier);用户在 Today 内可以用时间 chip
+    /// 再细化为时段/钟点,流程对齐设计稿 HTML line 537-543。
+    private func pickTodoDate(id: UUID, date: Date) {
+        do {
+            try store.updateTime(for: id, hasDueTime: false, dueDate: date, timeBucket: nil)
+            occurrenceRevision += 1
+        } catch {
+            VoiceTodoLog.store.error("home.pick_date.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
         }
     }
