@@ -664,6 +664,23 @@ final class AppCoordinator: ObservableObject {
         activeInputTranscript = trimmed
         activeInputLocaleIdentifier = effectiveLocale.identifier
 
+        // 弹层录音结束即升起:transcript 已就绪,弹层带着空列表 + 「还在识别...」出现,
+        // todo 一条条流式插入。避免「全屏 loading → 弹层 loading」双转圈。
+        // 失败兜底由 .noTodos / .failed case 调 clearExtractionPresentation() 关闭弹层。
+        //
+        // 这里同时清空 extractedTodos:防御 cancel 与 partial 竞态——上一次录音被用户快速
+        // cancel 后,若 cancel 信号送达前已有 .partial 到达并写了 extractedTodos,
+        // showConfirmSheet 已被 cancelExtraction 关为 false,残留数据不会被清理。
+        // 下次录音开始若不在此清空,sheet 升起瞬间会闪现上一批 todo。
+        if !showConfirmSheet {
+            if !extractedTodos.isEmpty {
+                VoiceTodoLog.coordinator.warning("coordinator.process_transcript.stale_extracted_cleared count=\(self.extractedTodos.count)")
+                extractedTodos = []
+            }
+            showConfirmSheet = true
+            VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_early id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
+        }
+
         extractionTask = Task {
             let events = transcriptProcessingFlow.process(
                 text: text,
@@ -690,6 +707,9 @@ final class AppCoordinator: ObservableObject {
     ) {
         switch event {
         case .empty:
+            // 弹层已在 processTranscript 开头升起,.empty 是「识别为空」的短路路径,
+            // 必须显式关闭,否则弹层卡在「空列表 + 还在识别」永不消失。
+            clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             showToast(message: ErrorMessages.noTodosFound, style: .info)
@@ -699,21 +719,24 @@ final class AppCoordinator: ObservableObject {
                 break
             }
             extractedTodos = result.todos
-            if !showConfirmSheet {
-                showConfirmSheet = true
-                VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_shown id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) todos=\(result.todos.count)")
-            }
         case .success:
             break
         case .noTodos:
+            // 弹层已在 processTranscript 开头升起,识别为空必须显式关闭,
+            // 否则弹层会卡在「空列表 + 还在识别」永远不消失。
+            clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             showToast(message: ErrorMessages.noTodosFound, style: .info)
         case .offlineSaved:
+            // 弹层已升起,离线短路必须显式关闭,否则卡死。
+            clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             showToast(message: ErrorMessages.savedOffline, style: .info)
         case .offlineSaveFailed(let error):
+            // 弹层已升起,离线保存失败也必须关闭,否则卡死。
+            clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             handleError(error)

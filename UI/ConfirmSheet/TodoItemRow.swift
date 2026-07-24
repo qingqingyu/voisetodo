@@ -1,7 +1,13 @@
 import SwiftUI
 
-/// 待办条目行视图
-/// 用于 ConfirmSheetView 中显示单个待办
+/// 待办条目行视图。
+/// 用于 ConfirmSheetView 中显示单个待办。
+///
+/// 重设计(2026-07):对齐 jul-redesign.html 参考。
+/// - 左侧 4pt 分类色条(对齐 HTML .item::before)
+/// - 时间字段改胶囊底色,颜色与色条同系(对齐 HTML .time)
+/// - emoji 入场缩放动画(对齐 HTML .emoji bump)
+/// - 删除按钮 28×28 圆形灰底(对齐 HTML .del)
 struct TodoItemRow: View {
     let index: Int
     @Binding var todo: ExtractedTodo
@@ -25,12 +31,8 @@ struct TodoItemRow: View {
     /// 捕获时拷贝当前值,catch 时跟 @State 当前值比较。
     @State private var deleteTaskGeneration: Int = 0
 
-    /// 合并所有时间相关字段成一个用户可读的字符串。
-    /// 拼装规则抽到了 `TodoTimeDisplayComposer`（与 HomeView WarmTodoCard 共用），
-    /// 这里只负责"从 ExtractedTodo 取出 AI 给的 dueTime 字符串"作为钟点源。
-    ///
-    /// 冗余权衡（review 决策，详见 TodoTimeDisplayComposer 文档）：
-    /// 当结构化字段存在时丢弃 dueHint 原文，避免冗余串。
+    /// 卡片内的时间串:不传 relativeDateText(分组标题已带日期,避免冗余),
+    /// 让 composer 只拼「钟点 / 模糊时段 / dueHint 兜底」。
     private var composedTimeText: String? {
         TodoTimeDisplayComposer.compose(
             recurrenceRule: todo.recurrenceRule,
@@ -41,101 +43,127 @@ struct TodoItemRow: View {
         )
     }
 
+    private var categoryColor: Color {
+        WarmTheme.color(for: todo.categoryHint)
+    }
+
     var body: some View {
-        HStack(spacing: WarmSpacing.sm) {
-            Text(todo.categoryHint.emoji)
-                .font(.system(size: 24))
+        HStack(spacing: 0) {
+            // 左侧分类色条:4pt 宽,圆角小条,对齐 HTML .item::before
+            RoundedRectangle(cornerRadius: 2)
+                .fill(categoryColor)
+                .frame(width: 4)
+                .padding(.vertical, 4)
 
-            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                if isEditing {
-                    TextField(String(localized: "confirm.todo_title_placeholder"), text: $editedTitle)
-                        .font(WarmFont.headline(17))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .focused($isTextFieldFocused)
-                        .accessibilityIdentifier("TodoTitle_\(index)")
-                        .onSubmit { finishEditing() }
-                        .onAppear { isTextFieldFocused = true }
-                } else {
-                    Text(todo.title)
-                        .font(WarmFont.headline(17))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        // 主内容不允许截断:用户在校对 AI 提取的内容,看全是关键。
-                        // 长标题靠自然换行承接,sheet 内容可滚动。
-                        // 详见 feedback memory「文本截断/换行零容忍」。
-                        .accessibilityIdentifier("TodoTitleText_\(index)")
-                }
+            HStack(alignment: .center, spacing: WarmSpacing.sm) {
+                Text(todo.categoryHint.emoji)
+                    .font(.system(size: 22))
+                    .id(todo.id)
+                    .modifier(EmojiBumpModifier())
+                    .frame(width: 32, height: 32)
 
-                // 时间行：优先用结构化字段（recurrence + dueTime + end_date）合并成一行，
-                // 让用户校对时一眼看到"每天 15:00 · 至 8月5日"而不是模糊的"未来一个月"。
-                // 结构化字段全空时退回 dueHint 原文。
-                if let timeText = composedTimeText {
-                    HStack(spacing: WarmSpacing.xxs) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 11))
-                        Text(timeText)
-                            .font(WarmFont.caption(13))
+                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    if isEditing {
+                        TextField(String(localized: "confirm.todo_title_placeholder"), text: $editedTitle)
+                            .font(WarmFont.headline(16))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .focused($isTextFieldFocused)
+                            .accessibilityIdentifier("TodoTitle_\(index)")
+                            .onSubmit { finishEditing() }
+                            .onAppear { isTextFieldFocused = true }
+                    } else {
+                        Text(todo.title)
+                            .font(WarmFont.headline(16))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            // 主内容不允许截断:用户在校对 AI 提取的内容,看全是关键。
+                            // 长标题靠自然换行承接,sheet 内容可滚动。
+                            .accessibilityIdentifier("TodoTitleText_\(index)")
                     }
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .accessibilityIdentifier("TodoTimeText_\(index)")
-                }
 
-                if todo.dueTime == nil {
-                    Menu {
-                        ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
-                            Button {
-                                todo.timeBucket = bucket == .anytime ? nil : bucket
-                            } label: {
-                                if todo.timeBucket == bucket || (todo.timeBucket == nil && bucket == .anytime) {
-                                    Label(bucket.localizedTitle, systemImage: "checkmark")
-                                } else {
-                                    Text(bucket.localizedTitle)
+                    // 时间行:钟点 / 模糊时段 / dueHint 兜底。
+                    // 拼装逻辑抽到 TodoTimeDisplayComposer,这里只渲染。
+                    if let timeText = composedTimeText {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 10))
+                            Text(timeText)
+                                .font(WarmFont.caption(12))
+                        }
+                        .foregroundColor(categoryColor)
+                        .padding(.horizontal, WarmSpacing.xs)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(WarmTheme.categoryBackground(for: todo.categoryHint))
+                        )
+                        .accessibilityIdentifier("TodoTimeText_\(index)")
+                    }
+
+                    if todo.dueTime == nil {
+                        Menu {
+                            ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
+                                Button {
+                                    todo.timeBucket = bucket == .anytime ? nil : bucket
+                                } label: {
+                                    if todo.timeBucket == bucket || (todo.timeBucket == nil && bucket == .anytime) {
+                                        Label(bucket.localizedTitle, systemImage: "checkmark")
+                                    } else {
+                                        Text(bucket.localizedTitle)
+                                    }
                                 }
                             }
+                        } label: {
+                            Label(
+                                (todo.timeBucket ?? .anytime).localizedTitle,
+                                systemImage: "sun.max"
+                            )
+                            .font(WarmFont.caption(12))
+                            .foregroundColor(WarmTheme.primaryDark)
                         }
-                    } label: {
-                        Label(
-                            (todo.timeBucket ?? .anytime).localizedTitle,
-                            systemImage: "sun.max"
-                        )
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.primaryDark)
+                        .accessibilityIdentifier("TodoTimeBucketPicker_\(index)")
+                        .accessibilityLabel(String(localized: "time_bucket.accessibility_label"))
                     }
-                    .accessibilityIdentifier("TodoTimeBucketPicker_\(index)")
-                    .accessibilityLabel(String(localized: "time_bucket.accessibility_label"))
                 }
-            }
 
-            Spacer()
+                Spacer(minLength: WarmSpacing.xs)
 
-            if todo.priority == .high {
-                Text(String(localized: "confirm.urgent"))
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, WarmSpacing.xs)
-                    .padding(.vertical, WarmSpacing.xxs)
-                    .background(
-                        RoundedRectangle(cornerRadius: WarmRadius.chip)
-                            .fill(WarmTheme.urgent)
-                    )
-                    .accessibilityIdentifier("PriorityLabel")
-                    .accessibilityLabel(String(localized: "a11y.high_priority"))
-            }
+                if todo.priority == .high {
+                    Text(String(localized: "confirm.urgent"))
+                        .font(WarmFont.caption(11))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, WarmSpacing.xs)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: WarmRadius.chip)
+                                .fill(WarmTheme.urgent)
+                        )
+                        .accessibilityIdentifier("PriorityLabel")
+                        .accessibilityLabel(String(localized: "a11y.high_priority"))
+                }
 
-            Button(action: performDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundColor(WarmTheme.textMuted)
+                Button(action: performDelete) {
+                    ZStack {
+                        Circle()
+                            .fill(WarmTheme.subtleControlBackground)
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(WarmTheme.textMuted)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("DeleteTodo_\(index)")
+                .accessibilityLabel(String(localized: "a11y.delete"))
+                .accessibilityHint(String(localized: "a11y.delete_todo"))
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("DeleteTodo_\(index)")
-            .accessibilityLabel(String(localized: "a11y.delete"))
-            .accessibilityHint(String(localized: "a11y.delete_todo"))
+            .padding(.leading, WarmSpacing.xs)
+            .padding(.trailing, WarmSpacing.md)
+            .padding(.vertical, WarmSpacing.sm)
         }
-        .padding(.horizontal, WarmSpacing.md)
-        .padding(.vertical, WarmSpacing.sm)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.card)
-                .fill(WarmTheme.secondaryBackground)
+                .fill(WarmTheme.cardBackground)
+                .shadow(color: WarmTheme.shadowLight, radius: 2, y: 1)
         )
         .offset(x: offset)
         .opacity(opacity)
@@ -202,6 +230,28 @@ struct TodoItemRow: View {
             onDelete()
         }
         deleteTask = task
+    }
+}
+
+// MARK: - Helper:Delete Wrapper
+
+/// 辅助视图:处理待办删除逻辑。从原 ConfirmSheetView.swift 移入,
+/// 让删除逻辑与 row 视图同文件管理。
+struct TodoItemRowWithDelete: View {
+    let index: Int
+    @Binding var todo: ExtractedTodo
+    @Binding var todos: [ExtractedTodo]
+
+    var body: some View {
+        TodoItemRow(
+            index: index,
+            todo: $todo,
+            onDelete: {
+                withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
+                    todos.removeAll { $0.id == todo.id }
+                }
+            }
+        )
     }
 }
 

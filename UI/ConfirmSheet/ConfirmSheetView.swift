@@ -1,7 +1,13 @@
 import SwiftUI
 
 /// 确认弹窗视图 - 温暖友好风格
-/// 语音录入后的确认面板， 显示 AI 提取的待办列表
+/// 语音录入后的确认面板,显示 AI 提取的待办列表。
+///
+/// 重设计(2026-07):对齐 jul-redesign.html 参考。
+/// - Confirm 改珊瑚橙胶囊填充主操作,Cancel 降纯文字
+/// - 转录默认 2 行 + 展开按钮(不再挤压卡片)
+/// - 卡片按"今天/明天/周三"分组,左侧分类色条,时间胶囊底色
+/// - emoji 入场缩放、数字 pop、卡片 spring + haptic
 struct ConfirmSheetView: View {
     let transcript: String
     @Binding var todos: [ExtractedTodo]
@@ -13,51 +19,56 @@ struct ConfirmSheetView: View {
 
     @State private var showSuccess = false
     @State private var didFinish = false
+    @State private var transcriptExpanded = false
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 成功动画覆盖层
                 if showSuccess {
                     successOverlay
                 } else {
                     mainContent
                 }
             }
-            // 标题改为更显标题感的"确认待办事项"——避免与"取消/确认添加"按钮视觉混淆。
             .navigationTitle(String(localized: "confirm.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Cancel:纯文字次要操作,对齐 HTML .btn-ghost
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(String(localized: "confirm.cancel")) {
                         cancelAction()
                     }
+                    .font(WarmFont.body(15))
+                    .foregroundStyle(WarmTheme.textSecondary)
                     .accessibilityIdentifier("CancelButton")
                 }
-                // 日历写入目标移到顶部 toolbar 中央——用户确认前最该看到的元信息。
-                // 用 secondary 色让它不抢按钮焦点，但比原来居中胶囊更不挡待办条目。
                 ToolbarItem(placement: .principal) {
                     calendarTarget
                 }
+                // Confirm:珊瑚橙胶囊填充主操作,对齐 HTML .btn-primary
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: confirmAction) {
-                        Text(String(localized: "confirm.add \(todos.count)"))
-                            .bold()
+                        HStack(spacing: WarmSpacing.xs) {
+                            Text(String(localized: "confirm.add_count \(todos.count)"))
+                                .font(WarmFont.headline(15))
+                            PopCount(count: todos.count)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, WarmSpacing.md)
+                        .padding(.vertical, WarmSpacing.xs)
+                        .background(
+                            Capsule().fill(confirmButtonBackground)
+                        )
                     }
-                    // didFinish 也 disabled:防止用户快速双击或 SwiftUI Button 在 iOS 26/27
-                    // 触发 action 两次(已知回归)导致同一批 todos 被 confirmTodos 保存两次,
-                    // 产生 id 相同的重复 TodoItem(SwiftData @Attribute(.unique) 在 insert 时不查重)。
                     .disabled(todos.isEmpty || isStreaming || didFinish)
                     .accessibilityIdentifier("ConfirmAddButton")
                 }
             }
         }
-        // 单条目时只给 .medium（半高），避免下半截空感；2+ 条目解锁 .large。
-        // 流式期间 (isStreaming=true) 即使只有 0-1 条也走 .medium+.large，等数据到位再收敛。
-        // 注意：用户从 2+ 条删除到 1 条时，detents 会从 [.medium,.large] 收到 [.medium]——
-        // 这是有意的 UX（单条目就该紧凑），iOS 会动画过渡。
-        .presentationDetents(todos.count <= 1 && !isStreaming ? [.medium] : [.medium, .large])
+        // 弹层升起期间可能 todo=0(流式中),始终保留 .medium + .large 不再随 count 切,
+        // 避免 iOS detent 硬切造成弹层跳动。
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .accessibilityIdentifier("ConfirmSheet")
         .onDisappear {
@@ -67,7 +78,18 @@ struct ConfirmSheetView: View {
         }
         .task(id: showSuccess) {
             guard showSuccess else { return }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // .task 闭包签名是 non-throwing,用 do/catch 显式吞 CancellationError
+            // (Task.sleep 只 throw CancellationError),符合「错误显式传播」:
+            // 被取消是预期无操作路径,且此处不可能有其他错误。
+            do {
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+            } catch is CancellationError {
+                return
+            } catch {
+                // 不可达:Task.sleep 只 throw CancellationError。但 do/catch 语义上
+                // 要求 catch 穷尽,否则闭包整体 throws,与 .task 签名冲突。
+                return
+            }
             dismiss()
         }
     }
@@ -76,96 +98,132 @@ struct ConfirmSheetView: View {
 
     private var mainContent: some View {
         ScrollView {
-            VStack(spacing: WarmSpacing.sm) {
+            VStack(alignment: .leading, spacing: WarmSpacing.sm) {
                 transcriptSection
+                    .padding(.bottom, WarmSpacing.xs)
 
                 if !todos.isEmpty {
-                    todosSection
-
-                    // 操作提示：从前几次的显眼胶囊改成 todosSection 下方的一行浅灰小字。
-                    // 用户主要看条目，提示降级为辅助信息。
-                    operationHint
-                        .padding(.top, WarmSpacing.xs)
+                    ConfirmGroupedList(todos: $todos, isStreaming: isStreaming)
                 } else if isStreaming {
-                    todosSection
+                    StreamingFooter()
+                        .padding(.top, WarmSpacing.md)
                 } else {
-                    noResultEmptyState
+                    inlineEmptyState
                 }
             }
-            .padding()
+            .padding(.horizontal, WarmSpacing.md)
+            .padding(.top, WarmSpacing.sm)
+            .padding(.bottom, WarmSpacing.md)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            operationHintFooter
         }
     }
 
     // MARK: - Transcript Section
 
+    /// 转录原文:默认 2 行 + 展开/收起,对齐 HTML .transcript。
+    /// 截断策略破例:用户可点「展开」一键看全,与 feedback memory「文本截断零容忍」精神
+    /// (主内容不允许 ...)不冲突——转录是辅助校对内容,主读是 todo 卡片。
     private var transcriptSection: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
             Text(String(localized: "confirm.transcript"))
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.textSecondary)
+                .font(WarmFont.captionFixed(11))
+                .tracking(0.9)
+                .textCase(.uppercase)
+                .foregroundColor(WarmTheme.textMuted)
 
-            Text(transcript)
-                .font(WarmFont.body(14))
-                .foregroundColor(WarmTheme.textSecondary)
-                .padding(WarmSpacing.sm)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.chip)
-                        .fill(WarmTheme.secondaryBackground)
-                )
-                .accessibilityIdentifier("TranscriptArea")
-        }
-    }
-
-    // MARK: - Todos Section
-
-    private var todosSection: some View {
-        VStack(spacing: WarmSpacing.sm) {
-            ForEach(Array($todos.enumerated()), id: \.element.id) { index, $todo in
-                TodoItemRowWithDelete(
-                    index: index,
-                    todo: $todo,
-                    todos: $todos
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-
-            if isStreaming {
-                HStack(spacing: WarmSpacing.xs) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: WarmTheme.primary))
-                        .scaleEffect(0.8)
-                    Text(String(localized: "confirm.streaming"))
-                        .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.textSecondary)
+            HStack(alignment: .top, spacing: WarmSpacing.xs) {
+                transcriptText
+                if transcriptNeedsExpandHint {
+                    Button(transcriptExpanded
+                        ? String(localized: "confirm.transcript.collapse")
+                        : String(localized: "confirm.transcript.expand")) {
+                        withAnimation(WarmAnimation.springFast) {
+                            transcriptExpanded.toggle()
+                        }
+                    }
+                    .font(WarmFont.caption(13))
+                    .foregroundStyle(WarmTheme.primary)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("TranscriptExpandToggle")
                 }
-                .padding(.vertical, WarmSpacing.xs)
-                .transition(.opacity)
             }
         }
-        .animation(WarmAnimation.springSlow, value: todos.count)
-        .accessibilityIdentifier("ExtractedTodoList")
     }
 
-    private var noResultEmptyState: some View {
-        ProductEmptyStateView(
-            icon: "sparkles",
-            title: String(localized: "empty.confirm.title"),
-            message: String(localized: "empty.confirm.message"),
-            primaryAction: ProductEmptyStateAction(
-                title: String(localized: "empty.confirm.primary"),
-                systemImage: "arrow.counterclockwise",
-                action: cancelAction
-            )
-        )
+    /// 转录文字本体。展开时全显示;收起时用 ViewThatFits 先试完整(不截断),
+    /// 放不下再退到 2 行 + ...。配合 transcriptNeedsExpandHint 的保守阈值,
+    /// 确保 AX5 + 长中文下也能看到展开按钮,不会出现「被截断但无展开按钮」的违规态。
+    ///
+    /// accessibilityIdentifier 挂在外层 Group 上:ViewThatFits 会把候选 view 都加进
+    /// accessibility tree,若每个分支都挂同 id 会让 VoiceOver / UI 测试选择器不稳定。
+    @ViewBuilder
+    private var transcriptText: some View {
+        if transcriptExpanded {
+            Text(transcript)
+                .font(WarmFont.caption(14))
+                .foregroundStyle(WarmTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("TranscriptArea")
+        } else {
+            ViewThatFits(in: .vertical) {
+                Text(transcript)
+                    .font(WarmFont.caption(14))
+                    .foregroundStyle(WarmTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(transcript)
+                    .font(WarmFont.caption(14))
+                    .foregroundStyle(WarmTheme.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityIdentifier("TranscriptArea")
+        }
+    }
+
+    /// 启发:transcript 含换行或长度 > 30 时显示「展开」按钮。
+    /// 阈值降到 30:AX5 + 中文下 30 个全角字符已接近 2 行满,
+    /// 阈值过高会导致「2 行已截断但无展开按钮」的违规态。
+    /// ViewThatFits 兜底保证「放得下就不截断」,这里只决定「是否给展开入口」。
+    private var transcriptNeedsExpandHint: Bool {
+        transcript.count > 30 || transcript.contains("\n")
+    }
+
+    // MARK: - Inline Empty State
+
+    /// 流式结束 + 空结果:弹层内 inline 提示 + 「重新输入」按钮,
+    /// 取代原来的 ProductEmptyStateView 大块插画(对齐 HTML 紧凑风格)。
+    private var inlineEmptyState: some View {
+        VStack(spacing: WarmSpacing.sm) {
+            Text(String(localized: "empty.confirm.title"))
+                .font(WarmFont.headline(15))
+                .foregroundStyle(WarmTheme.textSecondary)
+
+            Button {
+                cancelAction()
+            } label: {
+                Label(String(localized: "confirm.retry"), systemImage: "arrow.counterclockwise")
+                    .font(WarmFont.body(14))
+                    .foregroundStyle(WarmTheme.primary)
+                    .padding(.horizontal, WarmSpacing.md)
+                    .padding(.vertical, WarmSpacing.xs)
+                    .background(
+                        Capsule().stroke(WarmTheme.primary.opacity(0.4), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ConfirmEmptyRetryButton")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, WarmSpacing.xl)
         .accessibilityIdentifier("ConfirmEmptyState")
     }
 
-    // MARK: - Operation Hint
+    // MARK: - Operation Hint Footer
 
-    /// todosSection 下方的轻量操作提示——一行浅灰小字，不带胶囊背景。
-    /// P2 修复：从原来的居中胶囊降级，避免压过待办条目本身的视觉权重。
-    private var operationHint: some View {
+    /// 移到底部 safeAreaInset,对齐 HTML .sheet-foot 居中灰小字。
+    private var operationHintFooter: some View {
         HStack(spacing: WarmSpacing.xxs) {
             Image(systemName: "hand.tap")
                 .font(.system(size: 11))
@@ -173,12 +231,13 @@ struct ConfirmSheetView: View {
                 .font(WarmFont.caption(12))
         }
         .foregroundColor(WarmTheme.textMuted)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, WarmSpacing.xs)
+        .padding(.bottom, WarmSpacing.xxs)
+        .background(WarmTheme.background)
         .accessibilityIdentifier("OperationHintLabel")
     }
 
-    /// 移到 toolbar principal 的日历写入目标——更紧凑的标签样式。
-    /// P2 修复：原来居中胶囊占了核心视觉位置，移到顶部 nav bar 让出待办条目空间。
     private var calendarTarget: some View {
         let mode = CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
         return HStack(spacing: WarmSpacing.xxs) {
@@ -193,13 +252,17 @@ struct ConfirmSheetView: View {
         .accessibilityIdentifier("CalendarTargetLabel")
     }
 
+    private var confirmButtonBackground: Color {
+        let disabled = todos.isEmpty || isStreaming || didFinish
+        return disabled ? WarmTheme.textMuted.opacity(0.5) : WarmTheme.primary
+    }
+
     // MARK: - Success Overlay
 
     private var successOverlay: some View {
         VStack(spacing: WarmSpacing.md) {
             Spacer()
 
-            // 成功图标
             ZStack {
                 Circle()
                     .fill(WarmTheme.success)
@@ -212,7 +275,6 @@ struct ConfirmSheetView: View {
             .scaleEffect(showSuccess ? 1.0 : 0.5)
             .animation(WarmAnimation.springBouncy, value: showSuccess)
 
-            // 成功文字
             Text(ErrorMessages.addedSuccess)
                 .font(WarmFont.headline(18))
                 .foregroundColor(WarmTheme.textPrimary)
@@ -229,17 +291,6 @@ struct ConfirmSheetView: View {
     // MARK: - Actions
 
     private func confirmAction() {
-        // 防重入:cancelAction 已有同样 guard,confirmAction 缺失导致同一批 todos 可能被保存两次。
-        // 触发场景:用户快速双击 / SwiftUI Button 在 iOS 26/27 触发 action 两次。
-        // 后果:两次 confirmTodos 调用传入同一批 ExtractedTodo(同 UUID),
-        //      SwiftData @Attribute(.unique) 在 modelContext.insert 时不查重,save 也不报错,
-        //      数据库里出现 2 条 id 相同的 TodoItem,导致 toggleComplete(id) 只命中第一条、
-        //      ForEach id 冲突 UI 错位(用户看到「勾 A 影响 B」)。
-        //
-        // 双重防线:① 入口 guard + didFinish 立即置 true(set-before-call)
-        //          ② 按钮 .disabled(didFinish)(UI 层拦截)
-        // didFinish=true 放在 onConfirm 之前而非 success 分支:即使未来 onConfirm 改成 async,
-        // guard 在 await 期间依然成立。失败时复位为 false,保留编辑上下文重试。
         guard !didFinish else { return }
         guard !todos.isEmpty else { return }
 
@@ -248,7 +299,6 @@ struct ConfirmSheetView: View {
 
         guard success else {
             didFinish = false
-            // 失败时不 dismiss：保留编辑上下文；Coordinator 已通过 Toast 等方式反馈错误。
             return
         }
 
@@ -263,26 +313,5 @@ struct ConfirmSheetView: View {
         didFinish = true
         onCancel()
         dismiss()
-    }
-}
-
-// MARK: - Helper View
-
-/// 辅助视图：处理待办删除逻辑
-struct TodoItemRowWithDelete: View {
-    let index: Int
-    @Binding var todo: ExtractedTodo
-    @Binding var todos: [ExtractedTodo]
-
-    var body: some View {
-        TodoItemRow(
-            index: index,
-            todo: $todo,
-            onDelete: {
-                withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
-                    todos.removeAll { $0.id == todo.id }
-                }
-            }
-        )
     }
 }

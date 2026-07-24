@@ -45,6 +45,12 @@ enum WarmTheme {
     static let shadowLight = Color(hex: "1E2A3A").opacity(0.10)
     static let shadowMedium = Color(hex: "1E2A3A").opacity(0.14)
 
+    // 分组分隔线 - 用于 ConfirmSheet 分组 header 后的细线(对齐 HTML --line #E7E4DE)。
+    // 浅色模式下接近 paperBackground 的暖灰;深色模式用 secondaryBackground 同色系。
+    static let divider = Color(light: "E7E4DE", dark: "3A3D42")
+    // ConfirmSheet 删除按钮的浅灰圆底(对齐 HTML #F0EDE8)。
+    static let subtleControlBackground = Color(light: "F0EDE8", dark: "2A2D31")
+
     // 输入面板:键盘模式下「发送」按钮的深色。
     // 刻意保留暖棕:发送按钮是高频主操作,暖色作为"温度锚点"与冷背景形成对比,
     // 提升视觉优先级。

@@ -235,10 +235,12 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     @State private var selectedTodo: TodoItemData?
 
-    /// 列表可见性：录音 / 处理 / 抽取中时隐藏列表与底部渐隐遮罩。
+    /// 列表可见性：录音 / 处理 / 抽取中 / 弹层升起时隐藏列表与底部渐隐遮罩。
     /// 集中此条件避免 Group 与遮罩两处重复判断漂移。
+    /// 含 showConfirmSheet:弹层一旦升起,底层 loading overlay 立即消失,
+    /// 避免「全屏 Sorting things out + 弹层内 Recognizing more」双转圈。
     private var isListVisible: Bool {
-        !coordinator.isRecording && !isProcessing && !coordinator.isExtracting
+        !coordinator.isRecording && !isProcessing && !coordinator.isExtracting && !coordinator.showConfirmSheet
     }
 
     // 动画状态
@@ -272,7 +274,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                 VStack(spacing: 0) {
                     headerView
 
-                    if coordinator.isRecording || isProcessing || coordinator.isExtracting {
+                    // recordingOverlay 仅在弹层未升起时显示。弹层一旦出现,
+                    // 由弹层接管「识别中」反馈(底部三个点 blink),底层不再叠 loading。
+                    if (coordinator.isRecording || isProcessing || coordinator.isExtracting)
+                        && !coordinator.showConfirmSheet {
                         recordingOverlay
                     }
 
