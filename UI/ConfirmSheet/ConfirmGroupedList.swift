@@ -34,9 +34,13 @@ struct ConfirmGroupedList: View {
     fileprivate struct GroupedSection: Identifiable {
         let key: String
         let title: String
-        /// 该组内条目的原始 todos 数组下标。用下标而非拷贝 ExtractedTodo,
-        /// 这样 TodoItemRow 的 @Binding 仍指向唯一真相源。
-        let originalIndices: [Int]
+        /// 该组内条目的稳定身份(UUID),而非原数组下标。
+        /// 原因:流式失败 / 用户删除导致 todos 缩短时,数组下标会失效,
+        /// SwiftUI 在 row removal transition 期间仍可能持有陈旧 section 实例调用 body,
+        /// 此刻 `$todos[staleIndex]` 会触发 Index out of range 致命错误。
+        /// 用 UUID 做 ForEach 身份,row 渲染时 firstIndex(where:) 现查 index,
+        /// 找不到 id 自动跳过(等价于"该 row 已不在数组里"),天然防御越界。
+        let todoIDs: [UUID]
         /// 组内最小 dueDate,nil 表示「待定」组(排最前)。
         let minDueDate: Date?
 
@@ -49,9 +53,9 @@ struct ConfirmGroupedList: View {
 
         // 按 title 分桶,用 Dictionary 避免 firstIndex(where:) 的 O(n^2) 查找。
         // 保留插入顺序用独立数组 titles 维护(展示顺序最后由 sorted 决定)。
-        var bucketByTitle: [String: (minDate: Date?, indices: [Int])] = [:]
+        var bucketByTitle: [String: (minDate: Date?, ids: [UUID])] = [:]
         var titles: [String] = []
-        for (index, todo) in todos.enumerated() {
+        for todo in todos {
             let title: String
             let date: Date?
             if let due = todo.dueDate {
@@ -62,7 +66,7 @@ struct ConfirmGroupedList: View {
                 date = nil
             }
             if var existing = bucketByTitle[title] {
-                existing.indices.append(index)
+                existing.ids.append(todo.id)
                 if let d = date, let prevMin = existing.minDate {
                     existing.minDate = min(prevMin, d)
                 } else if date != nil {
@@ -71,7 +75,7 @@ struct ConfirmGroupedList: View {
                 bucketByTitle[title] = existing
             } else {
                 titles.append(title)
-                bucketByTitle[title] = (date, [index])
+                bucketByTitle[title] = (date, [todo.id])
             }
         }
 
@@ -79,7 +83,7 @@ struct ConfirmGroupedList: View {
         return titles
             .compactMap { title -> GroupedSection? in
                 guard let bucket = bucketByTitle[title] else { return nil }
-                return GroupedSection(key: title, title: title, originalIndices: bucket.indices, minDueDate: bucket.minDate)
+                return GroupedSection(key: title, title: title, todoIDs: bucket.ids, minDueDate: bucket.minDate)
             }
             .sorted { lhs, rhs in
                 switch (lhs.minDueDate, rhs.minDueDate) {
@@ -103,23 +107,27 @@ private struct ConfirmGroupSection: View {
             ConfirmGroupHeader(title: section.title)
 
             // ForEach 的 row 身份用 todo.id(UUID):流式过程 .partial 整体替换 todos,
-            // originalIndices 的 Int 不变但数组对应位置的 todo 已换人。
-            // 外层 .id(todos[index].id) 覆盖 ForEach 的 `id: \.self` 身份,
-            // 让 SwiftUI 按 UUID 判定 view 重建,触发 EmojiBumpModifier 重播,
+            // 但 id 不变——让 SwiftUI 按 UUID 判定 view 重建,触发 EmojiBumpModifier 重播,
             // 避免「row 内容突变但 view 没换」的身份漂移。
-            ForEach(section.originalIndices, id: \.self) { index in
-                TodoItemRowWithDelete(
-                    index: index,
-                    todo: $todos[index],
-                    todos: $todos
-                )
-                .id(todos[index].id)
-                .transition(
-                    .asymmetric(
-                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                        removal: .move(edge: .trailing).combined(with: .opacity)
+            //
+            // 越界防御:流式失败 / clearExtractionPresentation 把 todos 置空时,
+            // SwiftUI 在 row removal transition 期间仍可能调用本 body;
+            // 用 firstIndex 现查 index,找不到 id 自动跳过,不再 $todos[staleIndex]。
+            ForEach(section.todoIDs, id: \.self) { id in
+                if let index = todos.firstIndex(where: { $0.id == id }) {
+                    TodoItemRowWithDelete(
+                        index: index,
+                        todo: $todos[index],
+                        todos: $todos
                     )
-                )
+                    .id(id)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .move(edge: .trailing).combined(with: .opacity)
+                        )
+                    )
+                }
             }
         }
     }
