@@ -121,47 +121,59 @@ struct HomeMonthGridButton: View {
     /// 字体用 `captionFixed` 不响应 Dynamic Type:月历格事件条是"预览类 UI"(用户点开看详情),
     /// 不是主读内容;固定 9pt 让字号缩放不再影响布局判定,与 Apple Calendar 日期数字一致。
     /// 取舍:违反 iOS HIG「内容应跟随 Dynamic Type」建议,但与 `headlineFixed`/`mono` 同模式。
+    ///
+    /// **布局**:可选的 hour 前缀 / 必有的标题 / 可选的 +N 尾标通过 `Text + Text`
+    /// 合并为单个 `Text`(SwiftUI 原生拼接,iOS 13+ 稳定)。
+    /// Why:HStack 对未挂 fixedSize 的 Text 会优先压缩(compression-resistance=250),
+    /// 即使总宽度有余量也会先压标题,产生"标题…" + 空白的伪截断。
+    /// 单 Text 让 SwiftUI 整体测量自然宽度,只在真超宽时末尾截断。
+    /// 字段间间距通过字符串内嵌空格实现(hour 段尾随空格、+N 段前导空格)——为合并 Text 的取舍,
+    /// 调整间距需改字面量。不用 `AttributedString.font` 是因其 run 属性在 iOS 17.0~17.1 有被忽略的反馈。
     private func eventBar(_ occurrence: TodoOccurrenceData, isLast: Bool, overflow: Int?) -> some View {
         let categoryBg = WarmTheme.categoryBackground(for: occurrence.todo.category)
         let categoryTx = WarmTheme.categoryTextColor(for: occurrence.todo.category)
         // 已完成:背景降透明度到 0.4(保留色相),文字用 textMuted 与未完成区分。
         let bg = occurrence.isCompleted ? categoryBg.opacity(0.4) : categoryBg
         let tx = occurrence.isCompleted ? WarmTheme.textMuted : categoryTx
-        return HStack(spacing: 2) {
-            if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
-                // 只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
-                Text(verbatim: String(format: "%02d", Self.calendar.component(.hour, from: dueDate)))
+
+        // hour 前缀:只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
+        // 各段用 `Text + Text` 拼接,SwiftUI 把结果当作单个 Text 渲染,
+        // 每段独立挂自己的 font —— 避免 AttributedString.font run 属性在某些 iOS 版本被忽略。
+        var segments: [Text] = []
+        if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
+            segments.append(
+                Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
                     .font(WarmFont.mono(8))
-                    .fixedSize()
-            }
-            // 优先完整显示标题;格子宽容不下时才 tail 截断。
-            // 旧实现只挂 lineLimit + truncationMode,SwiftUI HStack 会给 Text 分配"压缩后"宽度,
-            // 即使事件条实际还有水平余量也会过早出现"…"。ViewThatFits 会以无外部宽度约束测量
-            // 每个候选的理想尺寸,选第一个放得下的——第一个候选(无 truncationMode、lineLimit(1))
-            // 的理想尺寸即单行自然宽度,放得下就消除伪截断;放不下回退到带 tail 截断的第二个候选。
-            // 与"文本截断零容忍"约定一致:绝不优先选择截断布局。
-            // 注意:候选不能挂 fixedSize(horizontal: true, vertical: false)——fixedSize 会强制
-            // 候选报告固定宽度突破父约束,ViewThatFits 会误判为"永远 fit",导致长标题溢出 capsule。
-            ViewThatFits(in: .horizontal) {
-                Text(occurrence.todo.title)
-                    .font(WarmFont.captionFixed(9))
-                    .lineLimit(1)
-                Text(occurrence.todo.title)
-                    .font(WarmFont.captionFixed(9))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            if let overflow, isLast {
-                Text("+\(overflow)")
-                    .font(WarmFont.mono(8))
-                    .fixedSize()
-            }
+            )
         }
-        .padding(.horizontal, 3)
-        .frame(height: HomeLayoutMetrics.gridBarHeight, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 3).fill(bg))
-        .foregroundColor(tx)
+        segments.append(
+            Text(verbatim: occurrence.todo.title)
+                .font(WarmFont.captionFixed(9))
+        )
+        // +N 尾标:仅最后一条挂,前导空格与标题拉开间距。overflow<=0 时无尾标。
+        // 注:`overflow > 0` 防护是行为修复——slicedEvents() 契约未显式保证非零,
+        // 旧实现可能渲染 "+0",显式夹紧避免误导。
+        if let overflow, isLast, overflow > 0 {
+            segments.append(
+                Text(verbatim: " +\(overflow)")
+                    .font(WarmFont.mono(8))
+            )
+        }
+
+        // 拼接所有段为单个 Text;`Text + Text` 是 iOS 13+ 稳定 API,保留每段的 font。
+        // segments 至少含标题段(上方无条件 append),reduce 起点用空 Text 保证非 nil。
+        let combined = segments.reduce(Text(""), +)
+
+        return combined
+            .foregroundColor(tx)
+            // 单 Text + lineLimit(1) + truncationMode(.tail):SwiftUI 整体测量自然宽度,
+            // 超宽时从末尾截断。不再依赖 HStack 的子视图宽度分配。
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 3)
+            .frame(height: HomeLayoutMetrics.gridBarHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 3).fill(bg))
     }
 
     // MARK: - Data slicing
