@@ -57,7 +57,10 @@ struct HomeMonthHeaderView: View {
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
             // weekday 标签行
-            HStack(spacing: WarmSpacing.xs) {
+            // spacing 必须与下方格子行 (gridColumnSpacing=2) 一致：WarmSpacing.xs(8pt) 下
+            // 7 个标签按 8pt 排布、格子按 2pt 排布，中心逐位累积偏移，`Mon` 不在第一格中心。
+            // 统一到 2pt 后 weekday 中心严格对齐格子中心。
+            HStack(spacing: HomeLayoutMetrics.gridColumnSpacing) {
                 ForEach(state.weekHeaderDays, id: \.self) { day in
                     Text(state.weekdayTitle(for: day))
                         .font(WarmFont.caption(11))
@@ -88,9 +91,12 @@ struct HomeMonthHeaderView: View {
                 }
             }
         }
-        // 水平 padding 用 xl（24）与页头对齐——旧值 lg（20）导致网格与大标题左缘错位 4pt。
-        // 导航行删除后卡片直接坐在纸纹背景上，不再需要垫底色。
-        .padding(.horizontal, WarmSpacing.xl)
+        // 水平 padding 用 xs（8）：七列格里中文条目宽度紧张（"要…"只能塞两三个字）,
+        // 容器每侧 24pt padding 占去 ~12% 屏宽纯属浪费。降到 8pt 后每格多 ~4.5pt,
+        // 中文条目大约能多塞一个字。格子本身已有白底 + 圆角 + 1px 描边,
+        // 贴边视觉不会糊在一起。上方 headerView 仍保留水平 24pt padding（HomeView.swift:526）,
+        // 形成"上呼吸、下铺满"的层次。
+        .padding(.horizontal, HomeLayoutMetrics.monthGridPaddingHorizontal)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
         // 横向翻月：只识别水平主导（horizontal > vertical）且超过阈值的滑动。
@@ -168,6 +174,12 @@ enum HomeLayoutMetrics {
     static let headerTitleRowHeight: CGFloat = 50
     static let viewSwitcherRowHeight: CGFloat = 38
     static let weeklySummaryRowHeight: CGFloat = 30
+
+    // MARK: - MonthGrid(展开态月历网格)布局常量
+    /// 月历网格容器水平 padding(= WarmSpacing.xs)。
+    /// 刻意小于折叠态 WeekStripCard 的 24pt(xl)——此不对称是设计意图,不要为"对齐"改回 xl。
+    /// 引用 WarmSpacing.xs 而非裸字面量,design system 调整 xs 时自动跟随。
+    static let monthGridPaddingHorizontal: CGFloat = WarmSpacing.xs
 
     // MARK: - WeekStripCard(折叠态周条卡片)布局常量
     // 集中管理 WeekStripCard 内部布局字面量,调间距改这里,不散落在 View body 里。
