@@ -316,7 +316,7 @@ struct ReviewView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.vertical, WarmSpacing.md)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
@@ -341,7 +341,7 @@ struct ReviewView: View {
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textSecondary)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.vertical, WarmSpacing.md)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
