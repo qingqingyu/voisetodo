@@ -206,7 +206,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             if editedDueDate != nil {
                                 timeRowWithDueDate
                             } else {
-                                HStack(spacing: WarmSpacing.xs) {
+                                chipRow {
                                     ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
                                         timeBucketButton(bucket)
                                     }
