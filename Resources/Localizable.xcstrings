@@ -4590,6 +4590,118 @@
         }
       }
     },
+    "review.busiest.oneline_%@_%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busiest day: %1$@ · %2$lld completed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最忙的一天：%1$@ · 完成 %2$lld 项"
+          }
+        }
+      }
+    },
+    "review.empty.preview": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After a few days of data, you'll see completion trends, category breakdown, and streaks here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "累计几天数据后，这里会显示完成趋势、分类占比和连续打卡"
+          }
+        }
+      }
+    },
+    "review.sparse.day_%@_%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$lld completed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 完成 %2$lld 项"
+          }
+        }
+      }
+    },
+    "review.sparse.separator": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ". "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，"
+          }
+        }
+      }
+    },
+    "review.sparse.tail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ". No records on other days"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，其余日期无记录"
+          }
+        }
+      }
+    },
+    "review.stat.upcoming_7d_%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more in the next 7 days"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未来 7 天还有 %lld 项"
+          }
+        }
+      }
+    },
+    "review.trend.summary_%lld_%@_%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld completed · Most on %2$@ (%3$lld)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共完成 %1$lld 项 · %2$@ 最多（%3$lld 项）"
+          }
+        }
+      }
+    },
     "confirm.calendar_target.app_and_system": {
       "localizations": {
         "en": {
