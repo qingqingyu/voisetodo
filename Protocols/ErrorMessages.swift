@@ -15,7 +15,12 @@ enum ErrorMessages {
     // 网络/AI 相关
     static let networkError = String(localized: "error.network")
     static let apiTimeout = String(localized: "error.api_timeout")
+    /// 熔断器开启：服务近期不稳定，客户端冷却中。文案强调"稍后重试"而非"网络问题"。
+    static let circuitOpen = String(localized: "error.circuit_open")
     static let rateLimited = String(localized: "error.rate_limited")
+    /// 出口 IP 当日配额耗尽。与 rateLimited（velocity 短时）区分：当天不会恢复，
+    /// 文案不暗示"用户额度用完"或"网络故障"，只说事实 + 行动建议。
+    static let ipRateLimited = String(localized: "error.ip_rate_limited")
     static let quotaExhausted = String(localized: "error.quota_exhausted")
     static let serviceBusy = String(localized: "error.service_busy")
     static let apiError = String(localized: "error.api_error")

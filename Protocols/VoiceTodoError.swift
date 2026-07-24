@@ -19,8 +19,17 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     // Network / AI 模块
     case networkUnavailable
     case apiTimeout
+    /// 熔断器开启：代理近期连续失败，客户端进入冷却窗口自我保护。
+    /// 与 `.networkUnavailable`（当下网络不通）语义不同——熔断是"近期失败太多的自我保护"，
+    /// 此时网络可能正常，只是代理不健康。UI 据此显示精准文案，不误导用户检查网络。
+    case circuitOpen
     /// 被限流（HTTP 429 velocity / IP 维度）。稍后重试即可恢复，retryAfter 可能缺失。
     case rateLimited(retryAfter: TimeInterval?)
+    /// 出口 IP 当日配额耗尽（HTTP 429 ip_daily）。
+    /// 与 `.rateLimited`（velocity，1 分钟窗口）区分：ip_daily 当天不会恢复，
+    /// 重试无意义、重试只会加剧计数。走离线兜底 + 提示"明天再试"。
+    /// retryAfter 通常为到 UTC 0 点的秒数（北京时间次日上午 8 点）。
+    case ipRateLimited(retryAfter: TimeInterval?)
     /// 配额耗尽（HTTP 429 quota_exceeded）。当日免费额度用尽，重试无意义：
     /// 走离线兜底 + 引导付费。tier 为 "free" / "pro"，resetAt 为本地日期边界（YYYY-MM-DD）。
     case quotaExhausted(tier: String, resetAt: String)
@@ -62,10 +71,14 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.recordingFailedMessage
         case .networkUnavailable:
             return ErrorMessages.networkError
+        case .circuitOpen:
+            return ErrorMessages.circuitOpen
         case .apiTimeout:
             return ErrorMessages.apiTimeout
         case .rateLimited:
             return ErrorMessages.rateLimited
+        case .ipRateLimited:
+            return ErrorMessages.ipRateLimited
         case .quotaExhausted:
             return ErrorMessages.quotaExhausted
         case .serviceUnavailable:

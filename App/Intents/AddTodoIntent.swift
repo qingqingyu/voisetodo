@@ -40,7 +40,7 @@ struct AddTodoIntent: AppIntent {
         } catch let error as VoiceTodoError {
             VoiceTodoLog.intent.error("intent.add.extract_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             switch error {
-            case .networkUnavailable, .apiTimeout:
+            case .networkUnavailable, .apiTimeout, .circuitOpen, .rateLimited, .ipRateLimited:
                 let fallback = extractor.fallbackExtract(from: trimmed)
                 extractedTodos = Self.todosWithInputLocale(fallback.todos, localeIdentifier: inputLocale.identifier)
                 isOffline = true

@@ -39,11 +39,13 @@ final class TodoExtractorService: TodoExtractorProtocol {
         let startedAt = Date()
         VoiceTodoLog.extractor.info("extract.start id=\(extractionID, privacy: .public) locale=\(locale.identifier, privacy: .public) retryCount=\(NetworkConfig.retryCount) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
 
-        // 熔断：冷却窗口内直接失败，避免持续打击故障代理。调用方按网络错误处理（保留 pending / 走 fallback）。
+        // 熔断：冷却窗口内直接失败，避免持续打击故障代理。
+        // 抛 .circuitOpen（而非 .networkUnavailable）——熔断是"近期失败太多的自我保护"，
+        // 与"当下网络不通"语义不同；UI 因此能显示精准文案，不误导用户检查网络。
         if await circuitBreaker.shouldShortCircuit() {
             VoiceTodoLog.extractor.warning("extract.circuit_open id=\(extractionID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             Telemetry.record(.extractFailed(reason: "circuitOpen", attempt: 0))
-            throw VoiceTodoError.networkUnavailable
+            throw VoiceTodoError.circuitOpen
         }
 
         var lastError: Error?
@@ -90,14 +92,19 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     }
 
                     switch voiceError {
-                    case .apiResponseInvalid, .jsonParsingFailed, .transcriptTooLong, .quotaExhausted:
-                        // 配置/解析/配额错误，重试无意义（配额当日不会因重试恢复，交由上层离线兜底 + paywall）
+                    case .apiResponseInvalid, .jsonParsingFailed, .transcriptTooLong, .quotaExhausted, .ipRateLimited:
+                        // 配置/解析/配额/IP 当日限额错误，重试无意义（当日不会因重试恢复），交由上层离线兜底。
+                        // ipRateLimited 特别说明：当天 IP 配额耗尽，Retry-After 通常是到 UTC 0 点的几万秒，
+                        // 重试只会加剧计数并拖慢用户感知。直接抛，让上层显示"明天再试"。
                         VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
                     case .rateLimited(let retryAfter):
-                        // 有 Retry-After 才按其等待重试；否则不盲目重试以免加剧限流
-                        guard let retryAfter, attempt < NetworkConfig.retryCount else {
-                            VoiceTodoLog.extractor.warning("extract.rate_limited_stop id=\(extractionID, privacy: .public) attempt=\(attempt) hasRetryAfter=\(retryAfter != nil)")
+                        // velocity（1 分钟窗口）类短时限流：有 Retry-After 才按其等待重试；否则不盲目重试以免加剧限流
+                        // 保留 3600s 阈值兜底——若服务端漏带 X-RateLimit-Type 把 ip_daily 误分到这里，
+                        // 长 Retry-After 仍能阻止无意义重试。
+                        let nonRecoverableThreshold: TimeInterval = 3600
+                        guard let retryAfter, retryAfter <= nonRecoverableThreshold, attempt < NetworkConfig.retryCount else {
+                            VoiceTodoLog.extractor.warning("extract.rate_limited_stop id=\(extractionID, privacy: .public) attempt=\(attempt) retryAfter=\(retryAfter.map { String($0) } ?? "nil")")
                             throw error
                         }
                         nextDelayOverride = min(retryAfter, NetworkConfig.retryMaxInterval)
@@ -187,9 +194,10 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 var lastYieldedCount = 0
 
                 // 熔断：冷却窗口内直接失败，交由上层（TranscriptProcessingFlow）做离线兜底
+                // 抛 .circuitOpen 而非 .networkUnavailable，让 UI 能区分"熔断自我保护"与"网络不可达"
                 if await self.circuitBreaker.shouldShortCircuit() {
                     VoiceTodoLog.extractor.warning("extract.stream.circuit_open id=\(streamID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-                    continuation.finish(throwing: VoiceTodoError.networkUnavailable)
+                    continuation.finish(throwing: VoiceTodoError.circuitOpen)
                     return
                 }
 
@@ -318,11 +326,13 @@ final class TodoExtractorService: TodoExtractorProtocol {
         return capped + jitter
     }
 
-    /// 是否计入熔断的「服务类」故障：网络不可用 / 超时 / 限流。
+    /// 是否计入熔断的「服务类」故障：网络不可用 / 超时 / 服务端错误。
     /// 解析类错误（apiResponseInvalid / jsonParsingFailed）不代表代理不健康，不计入。
+    /// 限流（rateLimited）也不计入——限流是客户端 IP/设备配额问题，不代表代理本身不健康，
+    /// 若计入会让单个 IP 触发配额后熔断掉所有人的代理访问。
     private static func countsAsServiceFailure(_ error: VoiceTodoError) -> Bool {
         switch error {
-        case .networkUnavailable, .apiTimeout, .rateLimited, .apiServerError, .serviceUnavailable:
+        case .networkUnavailable, .apiTimeout, .apiServerError, .serviceUnavailable:
             return true
         default:
             return false

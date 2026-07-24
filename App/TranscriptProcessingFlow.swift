@@ -104,7 +104,7 @@ final class TranscriptProcessingFlow {
                     }
                     if let voiceError = error as? VoiceTodoError {
                         switch voiceError {
-                        case .networkUnavailable, .apiTimeout:
+                        case .networkUnavailable, .apiTimeout, .circuitOpen:
                             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.network_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                             await saveOffline(
                                 transcript: text,
@@ -123,7 +123,7 @@ final class TranscriptProcessingFlow {
                                 failure: TranscriptFlowEvent.networkFallbackSaveFailed,
                                 continuation: continuation
                             )
-                        case .rateLimited, .serviceUnavailable:
+                        case .rateLimited, .ipRateLimited, .serviceUnavailable:
                             // 限流/服务不可用：离线兜底，不丢转写，稍后自动重试。
                             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.service_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                             await saveOffline(

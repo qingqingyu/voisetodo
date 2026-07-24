@@ -905,12 +905,16 @@ final class AppCoordinator: ObservableObject {
                 showToast(message: ErrorMessages.recordingFailedMessage, style: .warning)
             case .networkUnavailable:
                 showToast(message: ErrorMessages.networkError, style: .warning)
+            case .circuitOpen:
+                showToast(message: ErrorMessages.circuitOpen, style: .warning)
             case .quotaExhausted:
                 // 配额耗尽：开 paywall 引导升级，不弹普通失败 toast。
                 VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted_handled")
                 showPaywall = true
             case .rateLimited:
                 showToast(message: ErrorMessages.rateLimited, style: .warning)
+            case .ipRateLimited:
+                showToast(message: ErrorMessages.ipRateLimited, style: .warning)
             case .serviceUnavailable:
                 showToast(message: ErrorMessages.serviceBusy, style: .warning)
             case .storageReadFailed, .storageWriteFailed:

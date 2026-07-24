@@ -305,7 +305,8 @@ final class NetworkClient {
         await quotaProvider.applyQuotaHeaders(from: response)
     }
 
-    /// 区分配额耗尽（quota_exceeded → 离线兜底 + paywall）与限流（rate_limited → 稍后重试）。
+    /// 区分配额耗尽（quota_exceeded → paywall）、出口 IP 当日配额（ip_daily → 离线兜底 + 明日再试）、
+    /// 与短时限流（velocity → 稍后重试）。
     /// 非流式传完整 body；流式传 nil，仅凭 `X-RateLimit-Type` 头分类（429 响应体很小，头已足够）。
     private static func classify429(_ response: HTTPURLResponse, body data: Data?) -> VoiceTodoError {
         let parsed = parseRateLimitBody(data)
@@ -322,6 +323,10 @@ final class NetworkClient {
             return .quotaExhausted(tier: tier, resetAt: resetAt)
         }
         let retryAfter = parsed.retryAfter ?? Self.parseRetryAfter(response)
+        // ip_daily 当天不可恢复 → 专属 case，调用方据此跳过重试 + 显示"明天再试"文案
+        if rateLimitType == "ip_daily" {
+            return .ipRateLimited(retryAfter: retryAfter)
+        }
         return .rateLimited(retryAfter: retryAfter)
     }
 

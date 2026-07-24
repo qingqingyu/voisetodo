@@ -2233,6 +2233,22 @@
         }
       }
     },
+    "error.circuit_open" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI service is unstable right now. Saved offline — please try again shortly."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 服务近期不稳定,已离线保存,请稍后重试"
+          }
+        }
+      }
+    },
     "error.date_calc_failed" : {
       "localizations" : {
         "en" : {
@@ -2245,6 +2261,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日期计算失败,请重试"
+          }
+        }
+      }
+    },
+    "error.ip_rate_limited" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today's call limit reached. Saved offline — please try again tomorrow."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日调用已达上限,已离线保存,请明天再试"
           }
         }
       }
@@ -5287,6 +5319,7 @@
       }
     },
     "review.busiest.day_%lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5298,6 +5331,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最活跃的一天 · 完成 %lld 件"
+          }
+        }
+      }
+    },
+    "review.busiest.oneline_%@_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busiest day: %1$@ · %2$lld completed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最忙的一天：%1$@ · 完成 %2$lld 项"
           }
         }
       }
@@ -5336,6 +5385,9 @@
         }
       }
     },
+    "review.chart.mark" : {
+
+    },
     "review.empty.message" : {
       "localizations" : {
         "en" : {
@@ -5348,6 +5400,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还没有完成的待办"
+          }
+        }
+      }
+    },
+    "review.empty.preview" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After a few days of data, you'll see completion trends, category breakdown, and streaks here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "累计几天数据后，这里会显示完成趋势、分类占比和连续打卡"
           }
         }
       }
@@ -5513,70 +5581,6 @@
         }
       }
     },
-    "review.stat.completion_rate" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Completion rate"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成率"
-          }
-        }
-      }
-    },
-    "review.stat.streak" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streak"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连续天数"
-          }
-        }
-      }
-    },
-    "review.busiest.oneline_%@_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Busiest day: %1$@ · %2$lld completed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最忙的一天：%1$@ · 完成 %2$lld 项"
-          }
-        }
-      }
-    },
-    "review.empty.preview" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "After a few days of data, you'll see completion trends, category breakdown, and streaks here."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "累计几天数据后，这里会显示完成趋势、分类占比和连续打卡"
-          }
-        }
-      }
-    },
     "review.sparse.day_%@_%lld" : {
       "localizations" : {
         "en" : {
@@ -5621,6 +5625,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "，其余日期无记录"
+          }
+        }
+      }
+    },
+    "review.stat.completion_rate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completion rate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成率"
+          }
+        }
+      }
+    },
+    "review.stat.streak" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streak"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连续天数"
           }
         }
       }
