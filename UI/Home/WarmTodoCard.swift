@@ -73,7 +73,6 @@ struct WarmTodoCard: View {
     let index: Int
     let todo: TodoItemData
     let onToggle: () -> Void
-    var onTap: (() -> Void)? = nil
     /// 长按 context menu:移到指定 bucket。nil 时不挂 contextMenu(向后兼容)。
     var onMoveToBucket: ((TimeBucket) -> Void)? = nil
     /// 长按 context menu:移到明天。nil 时不显示「移到明天」项。
@@ -317,22 +316,20 @@ struct WarmTodoCard: View {
                 .fill(WarmTheme.cardBackground)
                 .shadow(color: WarmTheme.shadowLight, radius: 4, x: 0, y: 2)
         )
-        // iOS 26 回归：把 .onTapGesture 挂到外层 HStack 会吞掉 List swipeActions
-        // 滑出按钮的 tap。改挂到 .background(Color.clear) 层——swipeActions 由 List
-        // 容器层管理（滑出覆盖层），不在此背景层的命中范围内；HStack 内非按钮区域
-        // （padding/Spacer/Text）的 tap 仍会透传到这层背景，与原行为等价。
-        // FB18199844（open as of iOS 26.0）。
-        .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { onTap?() }
-        )
+        // iOS 26 FB18199844: 顶层 .onTapGesture 会吞掉 List swipeActions delete 按钮 tap。
+        // 之前的 workaround 是把 onTapGesture 挂到 .background(Color.clear) 层,但背景层在
+        // z 序是下层,iOS 26 List 中前景 Text/HStack/padding 拦截 hit testing,背景层
+        // onTapGesture 收不到 tap —— 用户感知「整张卡片点不动」。改由调用方用
+        // `Button { onOpenTodo(...) } label: { WarmTodoCard(...) }.buttonStyle(.plain)` 包装:
+        // Button 是显式控件,跟 swipeActions 容器级手势天然共存(Apple Reminders 标准模式),
+        // 内嵌 checkbox Button 也由 SwiftUI 分派给最内层,不会误触发外层 row tap。
         // 长按 context menu:兜底路径,不走拖拽也能改时段/移到明天。
         // 只在调用方注入 callback 时才挂 —— preview / mock 场景两个 callback 都 nil,
         // 此时 contextMenu 的 ViewBuilder 返回 EmptyView → SwiftUI 不挂 long-press 手势,
         // 与「裸 view」行为等价,但保持 View tree 类型稳定(condition 切换不引起重建)。
-        // .draggable / .onTapGesture 与 contextMenu 三手势共存:
-        // tap = 立即抬起,drag = 位移达阈值,long-press = 按住不动达阈值;iOS 自动仲裁。
+        // 卡片内部只剩 contextMenu(long-press)。tap 由调用方 Button 接管(见各调用点),
+        // .draggable(如调用方挂)与 contextMenu 共存:long-press = 按住不动达阈值,
+        // drag = 位移达阈值;iOS 自动仲裁。
         .contextMenu {
             if let onMoveToBucket {
                 Section(String(localized: "card.menu.move_to_bucket")) {
