@@ -281,14 +281,17 @@ struct ConfirmSheetView: View {
         return disabled ? WarmTheme.textMuted.opacity(0.5) : WarmTheme.primary
     }
 
-    /// 动态 detent 的实际高度:内容高 + chrome(navigationBar + footer + padding),
-    /// clamp 到 [下限 280pt, 85% 屏高]。chrome 估算 ~120pt(navigationBar inline ~44 +
-    /// safeAreaInset footer ~30 + VStack padding ~24 + 余量),真机微调。
+    /// 动态 detent 的实际高度:内容高 + sheet 框架区域(导航栏 + footer + padding),
+    /// clamp 到 [下限 280pt, 85% 屏高]。框架估算:导航栏 inline ~44 + VStack padding
+    /// ~24 + 余量 ~22 = 90;footer 可见时再加 ~30(hintVisible 控制)。
+    /// **footer 淡出时框架同步减 30pt,sheet 高度跟着矮**,避免底部留空白——
+    /// 消失就消失,不影响底下 todo 内容区的布局。
     /// 超上限后 ScrollView 自动接管滚动;.large 仍可手动拖到全屏。
     private var clampedSheetHeight: CGFloat {
         let screenHeight = UIScreen.main.bounds.height
-        let chrome: CGFloat = 120
-        let raw = contentHeight + chrome
+        let footer: CGFloat = hintVisible ? 30 : 0
+        let frame: CGFloat = 90 + footer
+        let raw = contentHeight + frame
         let lowerBound: CGFloat = 280
         let upperBound = screenHeight * 0.85
         return min(max(raw, lowerBound), upperBound)
