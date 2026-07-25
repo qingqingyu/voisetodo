@@ -1,8 +1,14 @@
 import SwiftUI
 import StoreKit
 
-/// 订阅页（Paywall）。入口：① AppCoordinator.showPaywall（配额耗尽）；② 设置页手动入口。
-/// Pro 仅提高每日额度，不改核心工作流。恢复购买为 App Store 审核必需入口。
+/// 订阅页(Paywall)。
+///
+/// 入口:
+/// ① Onboarding 末屏点「开始 3 天免费试用」后弹出
+/// ② `AppCoordinator.showPaywall`(配额耗尽时)
+/// ③ 设置页手动入口
+///
+/// Pro 仅提高每日额度,不改核心工作流。恢复购买为 App Store 审核必需入口。
 struct PaywallView: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
@@ -13,14 +19,11 @@ struct PaywallView: View {
             ScrollView {
                 VStack(spacing: WarmSpacing.lg) {
                     header
-                    quotaSummary
+                    comparisonCard
+                    valuePropsList
                     productList
-                    if let error = entitlement.lastError {
-                        Text(error)
-                            .font(.system(size: 13, weight: .regular, design: .rounded))
-                            .foregroundColor(WarmTheme.urgent)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, WarmSpacing.lg)
+                    if entitlement.productLoadState == .success {
+                        legalText
                     }
                     restoreButton
                     Spacer(minLength: WarmSpacing.xs)
@@ -32,8 +35,15 @@ struct PaywallView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "paywall.close")) { dismiss() }
-                        .foregroundColor(WarmTheme.textSecondary)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(WarmTheme.textSecondary)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .center)
+                    }
+                    .accessibilityLabel(String(localized: "paywall.close"))
                 }
             }
         }
@@ -43,7 +53,7 @@ struct PaywallView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Header
 
     private var header: some View {
         VStack(spacing: WarmSpacing.sm) {
@@ -55,75 +65,194 @@ struct PaywallView: View {
                 .font(.system(size: 15, weight: .regular, design: .rounded))
                 .foregroundColor(WarmTheme.textSecondary)
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
                 .padding(.horizontal, WarmSpacing.lg)
         }
         .padding(.top, WarmSpacing.sm)
     }
 
-    private var quotaSummary: some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Image(systemName: quotaSummaryIcon)
+    // MARK: - Comparison Card
+
+    /// 用量展示卡:用户当天用量为 0 时显示「免费 100/天 vs Pro 无限」两列对比卡,
+    /// 强化付费动机;已用时切回实时计数,提醒配额耗尽进度。
+    @ViewBuilder
+    private var comparisonCard: some View {
+        if quotaUsage.loadState == .error {
+            quotaErrorPill
+        } else if quotaUsage.used == 0 {
+            freeVsProComparison
+        } else {
+            liveUsageCard
+        }
+    }
+
+    /// 两列对比卡:Free (limit/day) vs Pro (Unlimited)。
+    private var freeVsProComparison: some View {
+        HStack(spacing: 0) {
+            freeColumn
+            chevronDivider
+            proColumn
+        }
+        .padding(WarmSpacing.md)
+        .background(WarmTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
+        .shadow(color: WarmTheme.shadowLight, radius: 6, y: 2)
+        .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    private var freeColumn: some View {
+        VStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "bolt.circle")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundColor(WarmTheme.textSecondary)
+                .accessibilityHidden(true)
+            Text(String(localized: "paywall.comparison.free"))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text("\(quotaUsage.limit) / \(String(localized: "paywall.comparison.per_day"))")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var proColumn: some View {
+        VStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "infinity")
+                .font(.system(size: 22, weight: .medium))
                 .foregroundColor(WarmTheme.primary)
-            if quotaUsage.loadState == .loading {
-                ProgressView()
-                    .tint(WarmTheme.primary)
-            } else {
-                Text(quotaSummaryText)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundColor(WarmTheme.textPrimary)
-            }
+                .accessibilityHidden(true)
+            Text(String(localized: "paywall.comparison.pro"))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(WarmTheme.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(String(localized: "quota.unlimited"))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundColor(WarmTheme.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 中间的 chevron 分隔(RTL 安全:图标会自动翻转)。
+    private var chevronDivider: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(WarmTheme.textMuted)
+            .flipsForRightToLeftLayoutDirection(true)
+            .accessibilityHidden(true)
+            .padding(.horizontal, WarmSpacing.xs)
+    }
+
+    /// 实时用量卡(用户已开始消耗额度时显示)。
+    private var liveUsageCard: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Image(systemName: quotaUsage.showsUnlimited ? "infinity" : "bolt.circle")
+                .foregroundColor(WarmTheme.primary)
+                .accessibilityHidden(true)
+            Text(liveUsageText)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
             if !quotaUsage.isAuthoritative {
                 Text(String(localized: "quota.non_authoritative"))
                     .font(.system(size: 12, weight: .regular, design: .rounded))
                     .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
         }
         .padding(.horizontal, WarmSpacing.md)
         .padding(.vertical, WarmSpacing.sm)
         .background(WarmTheme.secondaryBackground)
         .clipShape(RoundedRectangle(cornerRadius: WarmRadius.chip))
+        .padding(.horizontal, WarmSpacing.lg)
     }
 
-    private var quotaSummaryIcon: String {
-        switch quotaUsage.loadState {
-        case .loading:
-            return "hourglass"
-        case .error:
-            return "exclamationmark.triangle"
-        case .empty:
-            return "bolt.circle"
-        case .success:
-            return quotaUsage.showsUnlimited ? "infinity" : "bolt.circle"
-        }
-    }
-
-    private var quotaSummaryText: String {
-        switch quotaUsage.loadState {
-        case .loading:
-            return String(localized: "quota.loading")
-        case .empty:
-            return String(localized: "quota.empty")
-        case .error:
-            return String(localized: "quota.error")
-        case .success:
-            break
-        }
+    private var liveUsageText: String {
         if quotaUsage.showsUnlimited {
             return "\(String(localized: "quota.unlimited")) · \(String(format: String(localized: "quota.used_only"), quotaUsage.used))"
         }
         return String(format: String(localized: "quota.today_used"), quotaUsage.used, quotaUsage.limit)
     }
 
+    private var quotaErrorPill: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundColor(WarmTheme.warning)
+                .accessibilityHidden(true)
+            Text(String(localized: "quota.error"))
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.sm)
+        .background(WarmTheme.secondaryBackground)
+        .clipShape(Capsule())
+        .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    // MARK: - Value Props
+
+    /// 价值主张:3 张卡片(更高额度 / 3 天试用 / 支持独立开发)。
+    /// 复用 OnboardingView 同源 `onboarding.pro.bullet.*` 文案,保证设计语言一致。
+    private var valuePropsList: some View {
+        VStack(spacing: WarmSpacing.md) {
+            ValuePropCard(
+                emoji: "🎯",
+                title: String(localized: "onboarding.pro.bullet.quota.title"),
+                description: String(localized: "onboarding.pro.bullet.quota.desc")
+            )
+            ValuePropCard(
+                emoji: "🎁",
+                title: String(localized: "onboarding.pro.bullet.trial.title"),
+                description: String(localized: "onboarding.pro.bullet.trial.desc")
+            )
+            ValuePropCard(
+                emoji: "🌱",
+                title: String(localized: "onboarding.pro.bullet.support.title"),
+                description: String(localized: "onboarding.pro.bullet.support.desc")
+            )
+        }
+        .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    // MARK: - Product List
+
+    @ViewBuilder
     private var productList: some View {
-        VStack(spacing: WarmSpacing.sm) {
-            switch entitlement.productLoadState {
-            case .loading:
-                loadingPlaceholder
-            case .empty:
-                stateMessage(icon: "tray", text: String(localized: "paywall.products_empty"))
-            case .error:
-                stateMessage(icon: "exclamationmark.triangle", text: entitlement.lastError ?? ErrorMessages.paywallPurchaseFailed)
-            case .success:
+        switch entitlement.productLoadState {
+        case .loading:
+            loadingPlaceholder
+        case .empty:
+            stateMessage(
+                icon: "wifi.exclamationmark",
+                title: String(localized: "paywall.products_empty.title"),
+                subtitle: String(localized: "paywall.products_empty.subtitle"),
+                retryAction: { Task { await entitlement.refresh() } }
+            )
+        case .error:
+            stateMessage(
+                icon: "exclamationmark.triangle",
+                title: String(localized: "paywall.products_empty.title"),
+                subtitle: entitlement.lastError ?? ErrorMessages.paywallPurchaseFailed,
+                retryAction: { Task { await entitlement.refresh() } }
+            )
+        case .success:
+            VStack(spacing: WarmSpacing.sm) {
                 ForEach(entitlement.products, id: \.id) { product in
                     ProductCard(
                         product: product,
@@ -133,39 +262,79 @@ struct PaywallView: View {
                     )
                 }
             }
-            Text(String(localized: "paywall.trial_hint"))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(WarmTheme.primaryDark)
+            .padding(.horizontal, WarmSpacing.lg)
         }
-        .padding(.horizontal, WarmSpacing.lg)
     }
 
-    private func stateMessage(icon: String, text: String) -> some View {
-        VStack(spacing: WarmSpacing.xs) {
+    private func stateMessage(
+        icon: String,
+        title: String,
+        subtitle: String,
+        retryAction: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: WarmSpacing.sm) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .medium))
+                .font(.system(size: 28, weight: .medium))
                 .foregroundColor(WarmTheme.textMuted)
                 .accessibilityHidden(true)
-            Text(text)
+            Text(title)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(WarmTheme.textPrimary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+            Text(subtitle)
                 .font(.system(size: 13, weight: .regular, design: .rounded))
                 .foregroundColor(WarmTheme.textSecondary)
                 .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .minimumScaleFactor(0.85)
+            Button(action: retryAction) {
+                HStack(spacing: WarmSpacing.xxs) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(String(localized: "paywall.products_empty.retry"))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .foregroundColor(WarmTheme.primary)
+                .padding(.horizontal, WarmSpacing.md)
+                .padding(.vertical, WarmSpacing.xs)
+                .background(
+                    Capsule()
+                        .stroke(WarmTheme.primary, lineWidth: 1.5)
+                )
+            }
+            .accessibilityIdentifier("PaywallRetryButton")
         }
-        .frame(maxWidth: .infinity, minHeight: 88)
-        .padding(.horizontal, WarmSpacing.md)
+        .frame(maxWidth: .infinity)
+        .padding(WarmSpacing.lg)
         .background(WarmTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
+        .padding(.horizontal, WarmSpacing.lg)
     }
 
     private var loadingPlaceholder: some View {
         RoundedRectangle(cornerRadius: WarmRadius.card)
             .fill(WarmTheme.cardBackground)
-            .frame(height: 88)
-            .overlay(
-                ProgressView()
-                    .tint(WarmTheme.primary)
-            )
+            .frame(height: 100)
+            .overlay(ProgressView().tint(WarmTheme.primary))
+            .padding(.horizontal, WarmSpacing.lg)
     }
+
+    // MARK: - Legal Text
+
+    /// App Store 审核要求的自动续费合规说明。
+    private var legalText: some View {
+        Text(String(localized: "paywall.legal.autorenew"))
+            .font(.system(size: 11, weight: .regular, design: .rounded))
+            .foregroundColor(WarmTheme.textMuted)
+            .multilineTextAlignment(.center)
+            .lineLimit(3)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    // MARK: - Restore
 
     private var restoreButton: some View {
         Button {
@@ -183,6 +352,8 @@ struct PaywallView: View {
             }
             .font(.system(size: 14, weight: .medium, design: .rounded))
             .foregroundColor(WarmTheme.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
         }
         .disabled(entitlement.isRestoring || entitlement.isPurchasing)
         .padding(.top, WarmSpacing.sm)
@@ -197,6 +368,12 @@ private struct ProductCard: View {
     let isPurchasing: Bool
     let action: () -> Void
 
+    private var periodUnit: String {
+        isYearly
+            ? String(localized: "paywall.period.year")
+            : String(localized: "paywall.period.month")
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: WarmSpacing.md) {
@@ -205,6 +382,8 @@ private struct ProductCard: View {
                         Text(product.displayName)
                             .font(.system(size: 17, weight: .semibold, design: .rounded))
                             .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                         if isYearly {
                             Text(String(localized: "paywall.yearly_save"))
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -219,15 +398,30 @@ private struct ProductCard: View {
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .foregroundColor(WarmTheme.textSecondary)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    Text(String(localized: "paywall.card.trial_included"))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(WarmTheme.success)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 HStack(spacing: 2) {
                     if isPurchasing {
                         ProgressView().tint(WarmTheme.primary)
                     } else {
-                        Text(product.displayPrice)
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                            .foregroundColor(WarmTheme.primary)
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(product.displayPrice)
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundColor(WarmTheme.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                            Text("/ \(periodUnit)")
+                                .font(.system(size: 11, weight: .regular, design: .rounded))
+                                .foregroundColor(WarmTheme.textMuted)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
                     }
                 }
             }
