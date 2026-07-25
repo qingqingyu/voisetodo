@@ -236,7 +236,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, WarmSpacing.xxl) // 跟前面卡片拉开节奏,危险操作不与其他 action 抢视觉重心
+                    .padding(.top, WarmSpacing.xxl) // 跟上方 recurrence 卡片拉开留白,危险操作单独成段
 
                     // 元信息（issue 9：降为底部小字，不做卡片）
                     VStack(spacing: WarmSpacing.xxs) {
@@ -535,11 +535,13 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                         Text(String(localized: "recurrence.monthly_day_prefix"))
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textSecondary)
-                        Picker(String(localized: "recurrence.monthly_day_placeholder"), selection: $editedDayOfMonth) {
+                        Picker("", selection: $editedDayOfMonth) {
                             ForEach(1...31, id: \.self) { Text("\($0)").tag($0) }
                         }
                         .pickerStyle(.wheel)
                         .frame(width: 80, height: 100)
+                        .labelsHidden()
+                        .accessibilityLabel(String(localized: "recurrence.monthly_day_placeholder"))
                         .onChange(of: editedDayOfMonth) { _, _ in checkForChanges() }
                         Text(String(localized: "recurrence.monthly_day_suffix"))
                             .font(WarmFont.body(15))
@@ -565,7 +567,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 if frequency == .weekly && editedWeekdays.isEmpty {
                     editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
                 }
-                // monthly:editedDayOfMonth 是 Int,init 时已设默认值(当前日或 todo.dayOfMonth),
+                // monthly: editedDayOfMonth 是 Int,init 时已设默认值(当前日或 todo.dayOfMonth),
                 // 切换时无需 fallback —— 用户切换走再切回应保留之前选择,不应被 reset。
                 checkForChanges()
             }
@@ -643,7 +645,12 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         if editedRecurrenceFrequency != todo.recurrenceRule?.frequency { return true }
         switch editedRecurrenceFrequency {
         case .weekly: return editedWeekdays != Set(todo.recurrenceRule?.weekdays ?? [])
-        case .monthly: return editedDayOfMonth != (todo.recurrenceRule?.dayOfMonth ?? 1)
+        case .monthly:
+            // todo 不是 monthly 时,frequency 已变化会先在第一行 return true,
+            // 这里的 fallback 实际走不到 —— 用 1 仅作占位,任意值都不影响判定结果。
+            // 不用 `Calendar.current.component(.day, ...)` 是为了避免 computed property
+            // 每次访问重新取值,在跨午夜停留 Detail 页的极端场景产生漂移。
+            return editedDayOfMonth != (todo.recurrenceRule?.dayOfMonth ?? 1)
         case .daily, nil: return false
         }
     }
