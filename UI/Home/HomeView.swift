@@ -1145,13 +1145,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
                 }
             }
-            .onChange(of: collapseProgress) { _ in
+            .onChange(of: collapseProgress) { _, _ in
                 evaluateExpandHintTrigger()
             }
-            .onChange(of: selectedBottomTab) { _ in
+            .onChange(of: selectedBottomTab) { _, _ in
                 evaluateExpandHintTrigger()
             }
-            .onChange(of: scenePhase) { phase in
+            .onChange(of: scenePhase) { _, phase in
                 // 退后台/ inactive 时立即取消挂起的触发任务:`Task.sleep` 在后台仍计时,
                 // 否则用户回到前台时 hint 已落盘却看不到动画,且永久不再显示。
                 if phase != .active {
@@ -1997,6 +1997,17 @@ private struct GlossarySuggestionBanner: View {
     let onAccept: () -> Void
     let onDismiss: () -> Void
 
+    /// iOS 26 起 `Text + Text` 重载 deprecated。本场景需要前后段不同颜色
+    /// (textPrimary 描述句 / primary 强调新值),用 AttributedString 拼接保留样式区分,
+    /// 单个 Text 自动跨行换行不撕裂。
+    private var glossaryBannerAttributed: AttributedString {
+        var banner = AttributedString(String(localized: "suggestion.banner_prefix") + "「\(suggestion.correction.originalTitle)」")
+        banner.foregroundColor = WarmTheme.textPrimary
+        var changed = AttributedString(String(localized: "suggestion.banner_changed_to") + "「\(suggestion.correction.confirmedTitle)」")
+        changed.foregroundColor = WarmTheme.primary
+        return banner + changed
+    }
+
     var body: some View {
         HStack(spacing: WarmSpacing.sm) {
             Image(systemName: "lightbulb.fill")
@@ -2004,12 +2015,9 @@ private struct GlossarySuggestionBanner: View {
                 .font(.system(size: 16))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "suggestion.banner_prefix") + "「\(suggestion.correction.originalTitle)」")
+                Text(glossaryBannerAttributed)
                     .font(WarmFont.body(13))
-                    .foregroundColor(WarmTheme.textPrimary)
-                + Text(String(localized: "suggestion.banner_changed_to") + "「\(suggestion.correction.confirmedTitle)」")
-                    .font(WarmFont.body(13))
-                    .foregroundColor(WarmTheme.primary)
+
                 Text(String(localized: "suggestion.banner_question"))
                     .font(WarmFont.caption(12))
                     .foregroundColor(WarmTheme.textSecondary)

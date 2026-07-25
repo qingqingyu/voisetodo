@@ -120,7 +120,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
                 VoiceTodoLog.calendar.info("system_calendar.event.save_success id=\(writeID, privacy: .public) todoID=\(draft.todoId.uuidString, privacy: .public) hasRecurrence=\(draft.recurrenceRule != nil)")
             } catch {
                 VoiceTodoLog.calendar.error("system_calendar.event.save_failed id=\(writeID, privacy: .public) todoID=\(draft.todoId.uuidString, privacy: .public) partialResults=\(results.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                throw SystemCalendarWriteError(results: results, underlyingError: storageWriteFailure(error))
+                throw SystemCalendarWriteError(results: results, underlyingError: Self.storageWriteFailure(error))
             }
             guard let eventIdentifier = event.eventIdentifier else {
                 VoiceTodoLog.calendar.error("system_calendar.event.missing_identifier id=\(writeID, privacy: .public) todoID=\(draft.todoId.uuidString, privacy: .public) partialResults=\(results.count)")
@@ -161,7 +161,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
 
         if let firstError {
             VoiceTodoLog.calendar.error("system_calendar.remove.failed id=\(removeID, privacy: .public) removed=\(removedCount) missing=\(missingCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(firstError), privacy: .public)")
-            throw storageWriteFailure(firstError)
+            throw Self.storageWriteFailure(firstError)
         }
         VoiceTodoLog.calendar.info("system_calendar.remove.success id=\(removeID, privacy: .public) removed=\(removedCount) missing=\(missingCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
@@ -171,7 +171,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             eventStore.requestWriteOnlyAccessToEvents { granted, error in
                 if let error {
                     VoiceTodoLog.calendar.error("system_calendar.permission.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                    continuation.resume(throwing: self.storageWriteFailure(error))
+                    continuation.resume(throwing: Self.storageWriteFailure(error))
                 } else {
                     VoiceTodoLog.calendar.info("system_calendar.permission.result granted=\(granted)")
                     continuation.resume(returning: granted)
@@ -222,7 +222,10 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
         }
     }
 
-    private func storageWriteFailure(_ error: Error) -> VoiceTodoError {
+    /// 把任意错误归一化为 VoiceTodoError.storageWriteFailed。
+    /// static:不依赖 instance 状态,可在 EKEventStore 的 @Sendable 回调里直接调用
+    /// 而不需要捕获 self(Swift 6 严格并发检查会拒绝 non-Sendable self 跨 isolation)。
+    private static func storageWriteFailure(_ error: Error) -> VoiceTodoError {
         if let voiceError = error as? VoiceTodoError {
             return voiceError
         }

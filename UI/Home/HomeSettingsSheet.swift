@@ -170,10 +170,10 @@ struct HomeSettingsSheet: View {
             } message: {
                 Text(String(localized: "settings.personalization.clear_confirm.message"))
             }
-            .onChange(of: isPersonalizedRecognitionEnabled) { _ in
+            .onChange(of: isPersonalizedRecognitionEnabled) { _, _ in
                 didClearLearningData = false
             }
-            .onChange(of: dayStartHour) { _ in
+            .onChange(of: dayStartHour) { _, _ in
                 WidgetCenter.shared.reloadAllTimelines()
             }
         }
