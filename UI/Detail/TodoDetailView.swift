@@ -265,13 +265,18 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // HomeView 移除 NavigationStack 后,详情页靠 fullScreenCover 内嵌的 NavigationStack 呈现。
-            // 内嵌 NavigationStack 无 push 历史 → 无自动 back,补关闭按钮(xmark)。
+            // 内嵌 NavigationStack 无 push 历史 → 无自动 back,补关闭按钮。
+            // 图标用 chevron.down(iOS 17+ 标准 modal dismiss 语义,跟系统提醒事项详情页一致):
+            //   - 旧版 xmark 在 autosave 机制下有歧义 —— 用户会误以为"放弃改动退出"
+            //   - checkmark 会跟卡片左侧 todo 完成勾选框视觉重复,误以为"标记 todo 完成"
+            //   - chevron.down 是纯导航语义,不暗示保存/取消,匹配 autosave 行为
             ToolbarItem(placement: .cancellationAction) {
                 Button {
                     dismiss()
                 } label: {
-                    Image(systemName: "xmark")
+                    Image(systemName: "chevron.down")
                 }
+                .accessibilityLabel(String(localized: "panel.close"))
                 .accessibilityIdentifier("TodoDetailCloseButton")
             }
         }
