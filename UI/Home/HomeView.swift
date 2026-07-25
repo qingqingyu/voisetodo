@@ -1010,7 +1010,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             onDeleteTodo: { actions.deleteTodo($0) },
                             onOpenTodo: { selectedTodo = $0 },
                             onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                            onMoveToTomorrow: { id in moveTodoToTomorrow(id) },
+                            onMoveToTomorrow: { id in moveTodoToTomorrow(id, baseDate: selectedDate) },
                             onChangeTime: { id, hasDueTime, dueDate, bucket in
                                 changeTodoTime(id: id, hasDueTime: hasDueTime, dueDate: dueDate, timeBucket: bucket)
                             },
@@ -1743,40 +1743,36 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
     }
 
-    /// Context menu「移到明天」:把任务 dueDate 推到明天(保留原 timeBucket/钟点)。
+    /// Context menu「移到明天」:把任务 dueDate 推到 baseDate 的下一天(保留原 timeBucket/钟点)。
     /// 跟 `assignTodoToBucket` 不同 —— 那个改 bucket 重置钟点;这个只挪日期不改时段语义。
     /// 已完成的任务走这个路径也合理:用户可能在规划明天的安排时挪已完成的复盘项。
+    ///
+    /// **语义相对"选中日"而非"真实今天"**(2026-07-25 修复):
+    /// baseDate = 当前 list 的选中日(HomeView.selectedDate)。例:真实今天是 23 号,
+    /// 用户在 calendar tab 选了 24 号 list,长按任务"移到明天" → 应该移到 25 号
+    /// (相对选中日的下一天),不是 24 号(相对真实今天的下一天)。
+    /// 之前用 `Date()` 会导致选中非今天时"移到明天"行为违背用户心智(原地不动 / 往回移)。
+    ///
+    /// 日期平移的算法细节(DST 处理、钟点保留)委托给 `TodoDueDateShifter.nextDay`,
+    /// 那里有单测覆盖 5 个相对日期场景。
     ///
     /// **依赖契约**:`TodoDetailUpdate` 的 nil 字段(category / priority)语义是「不更新」,
     /// 非 nil 字段(title / detail / dueDate / hasDueTime / timeBucket / dueHint /
     /// recurrenceRule)显式重传 —— 为了只让 dueDate 变化,其他字段传回原值。
     /// 若 TodoDetailUpdate 的语义将来改成「nil = 清空」,这里需同步改用 nil 表示不更新。
-    ///
-    /// **DST 边界**:`bySettingHour` 在春令时跳变日凌晨 2:00→3:00 时若原钟点是 2:30
-    /// 会返回 nil,fallback 到 `tomorrow`(00:00)。这是已知取舍(一年 1-2 次),
-    /// 不静默吞错误,但用户预期「明天 2:30」会变成「明天 0:00」。
-    private func moveTodoToTomorrow(_ todoId: UUID) {
+    private func moveTodoToTomorrow(_ todoId: UUID, baseDate: Date) {
         guard let todo = store.todos.first(where: { $0.id == todoId }) else {
             VoiceTodoLog.ui.warning("home.move_to_tomorrow.todo_not_found id=\(todoId.uuidString, privacy: .public)")
             return
         }
-        // 用 DayClock.startOfUserDay 算"明天"而非 calendar.date(byAdding:.day, value:1, to: Date()),
-        // 保持与 app 其他地方"用户一天起点"的口径一致(自定义 dayStartHour 时不一致会差几小时)。
-        let today = DayClock.startOfUserDay(for: Date(), calendar: calendar)
-        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else {
-            VoiceTodoLog.ui.error("home.move_to_tomorrow.date_calc_failed id=\(todoId.uuidString, privacy: .public)")
-            coordinator.showToast(message: ErrorMessages.dateCalcFailed, style: .warning)
-            return
-        }
-        // 保留原 hasDueTime 和 dueDate 的钟点分量 —— 明天同时段。
-        // 若原 hasDueTime=false,dueDate 直接换成明天的 00:00;若 true,需把钟点拼回明天日期上。
-        let newDueDate: Date = todo.hasDueTime
-            ? (todo.dueDate.map { originalDue in
-                calendar.date(bySettingHour: calendar.component(.hour, from: originalDue),
-                              minute: calendar.component(.minute, from: originalDue),
-                              second: 0, of: tomorrow) ?? tomorrow
-            } ?? tomorrow)
-            : tomorrow
+        // 日期平移委托给 TodoDueDateShifter(纯函数,单测覆盖 5 个相对日期场景)。
+        // baseDate 来自 HomeView.selectedDate,反映用户当前在看哪一天 —— "明天"语义相对该日。
+        let newDueDate = TodoDueDateShifter.nextDay(
+            baseDate: baseDate,
+            originalDue: todo.dueDate,
+            hasDueTime: todo.hasDueTime,
+            calendar: calendar
+        )
         do {
             try coordinator.updateTodoDetail(
                 todoId,
