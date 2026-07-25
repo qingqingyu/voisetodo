@@ -64,7 +64,14 @@ struct PendingDateTodoRow: View {
                     Text(todo.title)
                         .font(WarmFont.body(15))
                         .foregroundColor(WarmTheme.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        // lineLimit(2):右侧「选日期」按钮加了 fixedSize 后会按 intrinsic 宽度
+                        // 参与布局,在 AX5 字号 + 长标题场景下挤压标题空间(可用宽可能只剩 50pt,
+                        // 中文 1-2 字/行,长标题会换 5+ 行撑高卡片)。
+                        // 用户决定限 2 行后 tail 截断——卡片高度有界,用户点开详情看完整内容。
+                        // 详见 feedback memory「文本截断/换行零容忍」的"有按钮挤压"例外条款。
+                        // 与 WarmTodoCard(无按钮挤压)的 lineLimit(nil) 无限换行策略区分。
+                        .lineLimit(2)
+                        .truncationMode(.tail)
 
                     ChipView(
                         text: looseChipText,
