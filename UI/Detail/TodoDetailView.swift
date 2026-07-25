@@ -283,6 +283,18 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
         .navigationTitle(String(localized: "detail.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // HomeView 移除 NavigationStack 后,详情页靠 fullScreenCover 内嵌的 NavigationStack 呈现。
+            // 内嵌 NavigationStack 无 push 历史 → 无自动 back,补关闭按钮(xmark)。
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityIdentifier("TodoDetailCloseButton")
+            }
+        }
         // 自动保存:用户每次改字段会 schedule debounce,onDisappear 时 cancel 并立即静默保存兜底。
         // 这样用户改完停 0.8s 看到顶部「已保存 ✓」反馈,或在用户离开页面时静默落盘。
         // 不再用旧版「返回时一次性保存」(saveIfChanged) ——反馈缺失,用户不知道改的存了没。
