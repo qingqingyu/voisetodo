@@ -9,6 +9,12 @@ private struct SheetContentHeightKey: PreferenceKey {
     }
 }
 
+/// ConfirmSheet 自动滚动锚点 id 集中管理:消除字面量重复,
+/// 防止后续嵌入同名 id 子组件时 scrollTo 定位到错误目标。
+private enum ConfirmSheetScrollAnchor: String {
+    case sheetBottom
+}
+
 /// 确认弹窗视图 - 温暖友好风格
 /// 语音录入后的确认面板,显示 AI 提取的待办列表。
 ///
@@ -150,7 +156,7 @@ struct ConfirmSheetView: View {
                     // 自动滚动锚点:流式新增 todo 时 scrollTo 这里,让最新条目可见。
                     Color.clear
                         .frame(height: 1)
-                        .id("sheetBottom")
+                        .id(ConfirmSheetScrollAnchor.sheetBottom.rawValue)
                 }
                 .padding(.horizontal, WarmSpacing.md)
                 .padding(.top, WarmSpacing.sm)
@@ -166,7 +172,7 @@ struct ConfirmSheetView: View {
                 // 用 springSlow 跟随 ConfirmGroupedList 的列表插入动画,视觉同步。
                 // 内容未超可视区时 scrollTo 是 no-op(没地方滚),所以前几条 sheet 长高时不会乱跳。
                 withAnimation(WarmAnimation.springSlow) {
-                    proxy.scrollTo("sheetBottom", anchor: .bottom)
+                    proxy.scrollTo(ConfirmSheetScrollAnchor.sheetBottom.rawValue, anchor: .bottom)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
