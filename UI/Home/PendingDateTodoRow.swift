@@ -36,9 +36,11 @@ struct PendingDateTodoRow: View {
 
     var body: some View {
         Button(action: onOpen) {
-            // alignment: .top:checkbox frame 顶部对齐 VStack 顶部(第一行标题顶部),
-            // 避免 .center 时 checkbox 居中对齐整个 VStack(标题+chip)低于第一行标题中心。
-            HStack(alignment: .top, spacing: WarmSpacing.sm) {
+            // alignment: .center:checkbox + 「选日期」按钮都垂直居中对齐整个 VStack(标题+chip)。
+            // 用户 2026-07-25 真机反馈:之前用 .top 时,标题 1 行卡片扁平,checkbox 与按钮顶部
+            // 都贴标题字顶;当标题换 2 行后(AX5 字号/长英文)VStack 拉高,两者贴顶不齐。
+            // 改 .center 让两侧控件坐卡片纵向中点,与「视觉居中」预期一致。
+            HStack(alignment: .center, spacing: WarmSpacing.sm) {
                 Button(action: onToggle) {
                     ZStack {
                         Circle()
@@ -49,12 +51,9 @@ struct PendingDateTodoRow: View {
                             .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
                             .opacity(0)
                     }
-                    // alignment: .top 让 24pt 圆环居 44pt frame 顶部,
-                    // 圆环顶部 = frame 顶部 = 标题第一行顶部 → 几何上整齐对齐。
-                    // 之前用 offset 上移 3pt 让圆心对齐标题视觉中心,实际效果是
-                    // 圆环几乎贴卡片 padding 边缘(留白仅 1pt),用户反馈"贴卡片顶部不整齐"。
-                    // 去掉 offset 接受圆心稍低于标题视觉中心(3pt),换取圆环跟标题顶部对齐。
-                    .frame(width: 44, height: 44, alignment: .top)
+                    // alignment: .center 让 24pt 圆环居 44pt frame 中央,配合外层 HStack(.center)
+                    // 让 checkbox 始终坐卡片纵向中点。44pt frame 保留以撑 HIG hit target。
+                    .frame(width: 44, height: 44, alignment: .center)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
