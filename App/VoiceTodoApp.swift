@@ -42,6 +42,8 @@ struct VoiceTodoApp: App {
 
         if uiTestOptions.resetUserData {
             UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+            // 同步清引导标记:让 UI 测试每次重置后都能验证首次下拉引导动画。
+            UserDefaults.standard.removeObject(forKey: "hasShownExpandMonthHint")
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 

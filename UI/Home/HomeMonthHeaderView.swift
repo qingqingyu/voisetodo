@@ -217,8 +217,6 @@ enum HomeLayoutMetrics {
     static let weekStripPaddingHorizontal: CGFloat = 8
     static let weekStripPaddingTop: CGFloat = 12
     static let weekStripPaddingBottom: CGFloat = 10
-    /// 展开按钮 HStack(文字 + chevron)spacing。
-    static let weekStripExpandButtonSpacing: CGFloat = 5
 
     /// 月历展开态高度（容器封顶值）。
     static func calendarExpandedHeight(availableHeight: CGFloat, selectedTab: BottomTab) -> CGFloat {
@@ -359,8 +357,12 @@ enum HomeLayoutMetrics {
 
 // MARK: - Week strip card (折叠态周条)
 
-/// 折叠态的周条卡片:7 天 + 圆点 + 图例 + "展开整月"按钮。
+/// 折叠态的周条卡片:7 天 + 圆点 + 图例。
 /// 对齐竞品 HTML 参考稿:白色卡片容器 + border + 圆角,格子内用圆点不用横条。
+///
+/// **展开整月入口**:可见按钮已删除(用户通过下拉手势展开,首次由 `ExpandMonthHintView` 引导)。
+/// `onExpand` 保留——仅供 VoiceOver `accessibilityAction` 兜底使用,盲人用户仍可通过
+/// 双击"展开整月"动作触发展开,避免动画引导对 VoiceOver 不可见导致的可达性回退。
 struct WeekStripCard: View {
     let state: HomeCalendarState
     let onSelectDay: (Date) -> Void
@@ -413,19 +415,9 @@ struct WeekStripCard: View {
                 .frame(maxWidth: .infinity)
             }
 
-            // 展开整月
-            Button {
-                onExpand()
-            } label: {
-                HStack(spacing: HomeLayoutMetrics.weekStripExpandButtonSpacing) {
-                    Text(String(localized: "home.week.expand_month"))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.textMuted)
-            }
-            .buttonStyle(.plain)
+            // "展开整月"按钮已删除:可见入口由下拉手势承担,首次由 ExpandMonthHintView 引导。
+            // onExpand 保留作为 VoiceOver 兜底入口(accessibilityAction)——盲人用户无法看到引导动画,
+            // 仍需一个语义化动作触发展开。
         }
         .padding(.horizontal, HomeLayoutMetrics.weekStripPaddingHorizontal)
         .padding(.top, HomeLayoutMetrics.weekStripPaddingTop)
@@ -438,6 +430,10 @@ struct WeekStripCard: View {
             RoundedRectangle(cornerRadius: WarmRadius.section)
                 .stroke(WarmTheme.sketch.opacity(0.12), lineWidth: 1)
         )
+        .accessibilityAction(named: String(localized: "a11y.action.expand_month")) {
+            onExpand()
+        }
+        .accessibilityHint(String(localized: "a11y.week_strip.hint"))
         .accessibilityIdentifier("WeekStripCard")
     }
 

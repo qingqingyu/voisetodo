@@ -55,6 +55,38 @@
     "+%lld" : {
 
     },
+    "a11y.action.expand_month" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand Month"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开整月"
+          }
+        }
+      }
+    },
+    "a11y.week_strip.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe down on this card to expand the full month."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在卡片上下滑可展开整月。"
+          }
+        }
+      }
+    },
     "a11y.calendar_mode" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3674,22 +3706,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这一天还没有待办"
-          }
-        }
-      }
-    },
-    "home.week.expand_month" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expand month"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "展开整月"
           }
         }
       }
