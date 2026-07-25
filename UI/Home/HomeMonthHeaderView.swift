@@ -91,11 +91,12 @@ struct HomeMonthHeaderView: View {
                 }
             }
         }
-        // 水平 padding 用 xs（8）：七列格里中文条目宽度紧张（"要…"只能塞两三个字）,
-        // 容器每侧 24pt padding 占去 ~12% 屏宽纯属浪费。降到 8pt 后每格多 ~4.5pt,
-        // 中文条目大约能多塞一个字。格子本身已有白底 + 圆角 + 1px 描边,
-        // 贴边视觉不会糊在一起。上方 headerView 仍保留水平 24pt padding（HomeView.swift:526）,
-        // 形成"上呼吸、下铺满"的层次。
+        // 水平 padding 用 xxs(4):七列格里中文条目宽度紧张("要…"只能塞两三个字),
+        // 容器每侧 24pt padding 占去 ~12% 屏宽纯属浪费。从 24pt 一路降到 4pt 后,
+        // 相比 8pt 再多 ~4pt 可用宽度(每格 +0.57pt,中文条目约多塞 0.5 个字)。
+        // 留 4pt 不归零:防边格被 iPhone 屏幕圆角裁切、避免格子贴屏幕边显得溢出。
+        // 格子本身已有白底 + 圆角 + 1px 描边,贴边视觉不会糊在一起。
+        // 上方 headerView 仍保留水平 24pt padding(HomeView.swift:531),形成"上呼吸、下铺满"的层次。
         .padding(.horizontal, HomeLayoutMetrics.monthGridPaddingHorizontal)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
@@ -113,14 +114,14 @@ struct HomeMonthHeaderView: View {
         )
     }
 
-    /// 日期格:maxBars 由注水法分配器决定(忙周显示更多条),rowHeight 是该周行高。
-    /// maxBars 在传入前夹紧到 [0...gridMaxBarsPerCell]:
-    /// 分配器已保证不超过上限,但夹紧作为防御,防止未来分配器改动引入 >6 的值导致格子撑爆。
+    /// 日期格:maxBars 由注水法分配器决定(动态 cap,跟着每行物理高度走),rowHeight 是该周行高。
+    /// maxBars 在传入前夹紧到 [0...gridMaxBarsPerCellHardLimit]:
+    /// 分配器已保证不超过上限,但夹紧作为防御,防止未来分配器改动引入超大的值导致格子撑爆。
     /// 这是唯一调用 HomeMonthGridButton 的路径,clamping 集中在这里。
     @ViewBuilder
     private func dayCell(_ day: Date, maxBars: Int, rowHeight: CGFloat) -> some View {
         let dropCallback = onDropTodo.map { callback in { (id: UUID) in callback(id, day) } }
-        let clampedBars = max(0, min(HomeLayoutMetrics.gridMaxBarsPerCell, maxBars))
+        let clampedBars = max(0, min(HomeLayoutMetrics.gridMaxBarsPerCellHardLimit, maxBars))
         HomeMonthGridButton(
             dayState: state.dayState(for: day),
             onSelect: onSelectDay,
@@ -183,10 +184,12 @@ enum HomeLayoutMetrics {
     static let weeklySummaryRowHeight: CGFloat = 30
 
     // MARK: - MonthGrid(展开态月历网格)布局常量
-    /// 月历网格容器水平 padding(= WarmSpacing.xs)。
+    /// 月历网格容器水平 padding(= WarmSpacing.xxs = 4pt)。
     /// 刻意小于折叠态 WeekStripCard 的 24pt(xl)——此不对称是设计意图,不要为"对齐"改回 xl。
-    /// 引用 WarmSpacing.xs 而非裸字面量,design system 调整 xs 时自动跟随。
-    static let monthGridPaddingHorizontal: CGFloat = WarmSpacing.xs
+    /// 4pt 比原来 8pt(xs)再多 ~4pt 可用宽度(每格 +0.57pt,7 列中文条目约多塞 0.5 个字),
+    /// 同时仍留极少边距,避免边格被 iPhone 屏幕圆角裁切、不让格子贴屏幕边显得溢出。
+    /// 引用 WarmSpacing.xxs 而非裸字面量,design system 调整 xxs 时自动跟随。
+    static let monthGridPaddingHorizontal: CGFloat = WarmSpacing.xxs
 
     // MARK: - WeekStripCard(折叠态周条卡片)布局常量
     // 集中管理 WeekStripCard 内部布局字面量,调间距改这里,不散落在 View body 里。
@@ -241,16 +244,21 @@ enum HomeLayoutMetrics {
     static let gridRowSpacing: CGFloat = 2
     /// 网格列间距(pt)。
     static let gridColumnSpacing: CGFloat = 2
-    /// 单格最多显示的事件条数上限(超出折叠为 +N)。
-    static let gridMaxBarsPerCell: Int = 6
+    /// 单格事件条数的**硬上限**(防极端屏幕尺寸导致 cap 过大)。
+    /// 实际显示上限由下方 `allocateRowHeights` 内的 `dynamicCap` 根据每行物理高度反推,
+    /// 这里只作为天花板。15 对应格子高度 ~258pt(need(15) ≈ 18 + 16*15),
+    /// 仅在超大屏 + 1~2 周的极端月份下被命中。正常月份下 dynamicCap 才是实际生效值。
+    static let gridMaxBarsPerCellHardLimit: Int = 15
 
     /// 注水法行高分配(对齐 HTML month-view-allocator.html 的 allocate 函数)。
     ///
     /// 核心思路:忙的周行高更高,空的周更矮,但不会饿死任何一周。
-    /// 1. 每周 demand = 该周最忙日的事件数(cap maxBarsPerCell)
-    /// 2. 第一轮:给每个非空周分 1 条
-    /// 3. 第二轮:反复提升"当前显示最少条数"的周(tie-break: 隐藏任务数更多优先)
-    /// 4. 第三轮:剩余像素平均分给所有行,网格恰好填满
+    /// 1. **动态 cap**:根据每行估算高度反推能容几条事件条(N = (rowH - chrome + gap) / (barH + gap)),
+    ///    4 周的月每行高度大 → cap 大,6 周的月 → cap 小。物理空间不被硬编码浪费。
+    /// 2. 每周 demand = 该周最忙日的事件数(cap dynamicCap)
+    /// 3. 第一轮:给每个非空周分 1 条
+    /// 4. 第二轮:反复提升"当前显示最少条数"的周(tie-break: 隐藏任务数更多优先)
+    /// 5. 第三轮:剩余像素平均分给所有行,网格恰好填满
     static func allocateRowHeights(
         eventsPerDay: [[Int]],   // [周][日] = 事件数
         budgetHeight: CGFloat
@@ -262,9 +270,19 @@ enum HomeLayoutMetrics {
         let gap = gridBarSpacing
         let chrome = gridCellChrome
         let rowGap = gridRowSpacing
-        let cap = gridMaxBarsPerCell
 
         let avail = budgetHeight - rowGap * CGFloat(n - 1)
+
+        // 动态 cap:根据每行估算高度反推能容几条事件条。
+        // need(N) = chrome + N*barH + (N-1)*gap = (chrome - gap) + N*(barH + gap)
+        // 反推 N = (rowHeight - chrome + gap) / (barH + gap)
+        // 4 周的月每行高度大 → cap 大,能显示更多事件;
+        // 6 周的月每行高度小 → cap 小。物理空间不被硬编码浪费。
+        // 用 avail/n 估算 rowHeight 是一次近似——实际 rowHeight 由 Pass 3 按需分配会有微调,
+        // 但 cap 只决定 demand 上限,微小偏差不影响最终布局正确性(只会影响"是否能多塞 1 条")。
+        let estimatedRowHeight = avail / CGFloat(n)
+        let dynamicCap = max(0, Int((estimatedRowHeight - chrome + gap) / (barH + gap)))
+        let cap = min(gridMaxBarsPerCellHardLimit, dynamicCap)
 
         // 每周 demand = 最忙日的事件数(上限 cap)
         let demand = eventsPerDay.map { week in

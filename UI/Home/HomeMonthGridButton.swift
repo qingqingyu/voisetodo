@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// 月历网格单格:数字 + N 条纯色 Capsule 事件概览 + `+N`。
-/// N 由 `HomeMonthHeaderView` 的注水法分配器决定(0...`HomeLayoutMetrics.gridMaxBarsPerCell` = 6),
-/// 忙周分配更多条,空周更少;默认 3 仅供预览/测试使用。
+/// N 由 `HomeMonthHeaderView` 的注水法分配器决定,上限跟着每行物理高度动态反推
+/// (4 周的月每行 ~150pt → cap ~8,6 周的月每行 ~100pt → cap ~5),硬上限 15 防极端。
+/// 默认 3 仅供预览/测试使用。
 /// 契约:
 /// - 整格都是点击热区(点击 → `onSelect(date)`)
 /// - 拖拽 drop:从 Unscheduled 拖任务到格子 → `onDropTodo(id)`
@@ -18,9 +19,9 @@ struct HomeMonthGridButton: View {
     let onSelect: (Date) -> Void
     var onDropTodo: ((UUID) -> Void)? = nil
     var rowHeight: CGFloat = WarmSpacing.xxxl
-    /// 由注水法分配器决定:忙周显示更多条,空周更少。默认 3 用于预览。
-    /// 调用方(HomeMonthHeaderView)传入的值由 `HomeLayoutMetrics.allocateRowHeights` 保证
-    /// 不超过 `gridMaxBarsPerCell`(=6)。调用方在传入前必须自行夹紧——
+    /// 由注水法分配器决定:动态 cap 跟着每行物理高度反推(4 周的月 cap 大,6 周的月 cap 小)。
+    /// 默认 3 用于预览。调用方(HomeMonthHeaderView)传入的值由 `HomeLayoutMetrics.allocateRowHeights`
+    /// 保证不超过 `gridMaxBarsPerCellHardLimit`(=15,防极端)。调用方在传入前必须自行夹紧——
     /// SwiftUI View struct 的 init 不触发 didSet,Swift memberwise init 也不夹紧,
     /// 因此 clamping 责任在调用方(单一来源:HomeMonthHeaderView.dayCell)。
     var maxVisibleEvents: Int = 3
