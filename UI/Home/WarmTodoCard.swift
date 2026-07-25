@@ -204,9 +204,11 @@ struct WarmTodoCard: View {
     }()
 
     var body: some View {
-        // alignment: .top:checkbox frame 顶部对齐 VStack 顶部(第一行标题顶部),
-        // 避免 .center 时 checkbox 居中对齐整个 VStack(标题行+元数据行)低于第一行标题中心。
-        HStack(alignment: .top, spacing: WarmSpacing.sm) {
+        // alignment: .center:checkbox 垂直居中对齐整个 VStack(标题行+元数据行),
+        // 用户 2026-07-25 真机反馈:checkbox 跟第一行字顶对齐时,卡片有元数据第二行
+        // 会拉高 VStack,checkbox 视觉上贴在卡片偏上 1/3 处显得「没对齐」。
+        // 改成 .center 让 checkbox 始终坐卡片纵向中点,与「视觉居中」预期一致。
+        HStack(alignment: .center, spacing: WarmSpacing.sm) {
             // 砍掉左侧色条——P2 修复：原色条 + 圆圈 checkbox 双重标记冗余。
             // 现在只用圆圈 checkbox 按 category 上色，更接近 Things 3 的极简做法。
             Button(action: onToggle) {
@@ -233,11 +235,10 @@ struct WarmTodoCard: View {
                         .frame(width: WarmSize.icon - 10, height: WarmSize.icon - 10)
                         .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
                 }
-                // alignment: .top 让圆环居 44pt frame 顶部,圆环顶部 = 标题第一行顶部,几何对齐。
-                // 之前用 offset 上移 3pt 让圆心对齐标题视觉中心,实际效果是圆环几乎贴卡片
-                // padding 边缘(留白 1pt),用户反馈"贴卡片顶部不整齐"。
-                // 去掉 offset 接受圆心稍低于标题视觉中心(3pt),换取圆环跟标题顶部对齐。
-                .frame(width: 44, height: 44, alignment: .top)
+                // alignment: .center 让 24pt 圆环居 44pt frame 中央,配合外层 HStack(.center)
+                // 实现勾选框在卡片垂直居中。44pt frame 仍保留以撑大 hit target 到 HIG 标准,
+                // 避免 checkbox 视觉圆环 24pt 命中区过小。
+                .frame(width: 44, height: 44, alignment: .center)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

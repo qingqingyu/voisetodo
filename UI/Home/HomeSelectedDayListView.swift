@@ -155,7 +155,13 @@ struct HomeSelectedDayListView: View {
         ForEach(Array(tiered.enumerated()), id: \.offset) { tierIndex, group in
             tierLabelRow(group.tier)
                 .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: tierIndex == 0 ? WarmSpacing.xxs : WarmSpacing.sm,
+                // 留白分组(苹果 Reminders / Calendar 模式):
+                // - tierIndex==0:第一个 tier,上面紧贴 Today Section 顶,留 xs(8) 不挤压
+                // - 后续 tier:加大顶距到 lg(20),靠呼吸感把上一个 tier 的卡片群与下一个 tier 标题切开
+                // - bottom 永远 xxs(4):标签和它管的第一张卡片贴近,让「标题—卡片群」是一个视觉块
+                // 用户 2026-07-25 真机反馈:之前用 1px 横线切割,在毛玻璃 + 圆角卡片语言里违和;
+                // 去线后靠「上空白大 / 下空白小」的非对称留白做层级,更贴合系统视觉。
+                .listRowInsets(EdgeInsets(top: tierIndex == 0 ? WarmSpacing.xs : WarmSpacing.lg,
                                           leading: WarmSpacing.lg,
                                           bottom: WarmSpacing.xxs,
                                           trailing: WarmSpacing.lg))
@@ -167,22 +173,19 @@ struct HomeSelectedDayListView: View {
         }
     }
 
-    /// tier-label 行:细分隔线 + 小标签(整天 / 上午 / 下午 / 晚上 / 按时间)。
-    /// 字号 11.5pt + 字重 750 + 0.8 tracking,颜色 textMuted,与 HTML 设计稿 line 178-186 对齐。
+    /// tier-label 行:纯灰小字标题(整天 / 上午 / 下午 / 晚上 / 按时间)。
+    /// 字号 11pt + 0.8 tracking + textMuted,对齐 iOS Reminders 分组标题做法。
+    /// 不挂分隔线 —— 卡片已经毛玻璃 + 圆角 + 阴影自成层级,再加 1px 实线会显得「切割」而非「呼吸」。
+    /// 用户 2026-07-25 真机反馈:横线在柔和视觉语言里违和,改靠留白分组。
     /// 不挂 swipeActions / listRowSeparator 都隐藏 —— 与 card 行视觉解耦,
     /// 不让 List 把它当数据 row 渲染。
     @ViewBuilder
     private func tierLabelRow(_ tier: TodayTier) -> some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Text(tier.localizedLabel)
-                .font(WarmFont.caption(11.5))
-                .tracking(0.8)
-                .foregroundColor(WarmTheme.textMuted)
-            Rectangle()
-                .fill(WarmTheme.sketch.opacity(0.6))
-                .frame(height: 1)
-        }
-        .accessibilityHidden(true)
+        Text(tier.localizedLabel)
+            .font(WarmFont.caption(11))
+            .tracking(0.8)
+            .foregroundColor(WarmTheme.textMuted)
+            .accessibilityHidden(true)
     }
 
     /// 计算 tier 内 occurrence 的全局 running index,用于 warmTodoCard 的 `index` 参数
