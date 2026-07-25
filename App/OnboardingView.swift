@@ -130,7 +130,11 @@ struct OnboardingView: View {
     private var handDrawnPageIndicator: some View {
         HStack(spacing: 12) {
             ForEach(0..<totalSteps, id: \.self) { index in
-                if index == currentStep {
+                // 已付费用户跳过 Pro 介绍页(case 4),进度条也不渲染该位置,
+                // 避免"未完成小点"或"已打勾"误导用户以为漏了一步。
+                if index == 4 && isPro {
+                    EmptyView()
+                } else if index == currentStep {
                     // 当前页面 - 手绘圆圈
                     Circle()
                         .stroke(highlightColor, style: StrokeStyle(lineWidth: 2.5))
@@ -344,10 +348,14 @@ struct OnboardingView: View {
                 Text(title)
                     .font(WarmFont.headline(18))
                     .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
 
                 Text(description)
                     .font(WarmFont.caption(15))
                     .foregroundColor(sketchColor)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
             }
 
             Spacer()
@@ -751,12 +759,16 @@ struct OnboardingView: View {
                 Text(String(localized: "onboarding.pro.title"))
                     .font(WarmFont.title(32))
                     .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
 
                 Text(String(localized: "onboarding.pro.subtitle"))
                     .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
             }
             .offset(y: contentOffset)
             .opacity(contentOpacity)
@@ -995,10 +1007,6 @@ struct OnboardingView: View {
     private var buttonTitle: String {
         if currentStep == totalSteps - 1 {
             return String(localized: "onboarding.button.start")
-        } else if currentStep == 4 {
-            // Pro 介绍页隐藏了 bottomButtons,这个分支不会被命中,
-            // 但仍提供文案以防未来 UI 改回 bottomButtons。
-            return String(localized: "onboarding.pro.cta.trial")
         } else if currentStep == 1 && !permissionManager.micGranted && !permissionManager.isMicPermanentlyDenied {
             return String(localized: "onboarding.button.skip")
         } else if currentStep == 2 && !permissionManager.speechGranted && !permissionManager.isSpeechPermanentlyDenied {

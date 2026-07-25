@@ -104,8 +104,9 @@ final class AppCoordinator: ObservableObject {
         self.voiceInput = voiceInput
         self.store = store
         self.extractor = extractor
-        // nil 兜底:测试调用方不传时,创建轻量实例(无网络调用,纯本地状态)
-        self.entitlement = entitlement ?? EntitlementManager()
+        // nil 兜底:测试调用方不传时,创建不监听 Transaction.updates 的轻量实例,
+        // 避免在测试环境启动常驻 Task 监听 StoreKit2 异步流
+        self.entitlement = entitlement ?? EntitlementManager(enableTransactionListener: false)
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.quotaUsage = quotaUsage
@@ -171,10 +172,10 @@ final class AppCoordinator: ObservableObject {
 
     /// 累计录音成功次数(UserDefaults 持久化,跨启动累积,永不重置)。
     /// 用户答到 5 次后,首次触发付费墙引导。已 Pro 用户不触发。
-    private let recordingSuccessCountKey = "recordingSuccessCount"
+    private let recordingSuccessCountKey = "co.voicetodo.paywall.recordingSuccessCount"
     /// 上次自动弹付费墙的时间戳(timeIntervalSince1970)。0 = 从未弹过。
     /// 用于 14 天冷却——拒绝后 14 天内不再弹。
-    private let lastPaywallAutoShownAtKey = "lastPaywallAutoShownAt"
+    private let lastPaywallAutoShownAtKey = "co.voicetodo.paywall.lastAutoShownAt"
     /// 触发阈值:累计录音成功到这个次数后开始检查是否引导。
     private let paywallTriggerThreshold = 5
     /// 冷却时长:用户拒绝后 14 天内不再主动弹。
@@ -195,6 +196,10 @@ final class AppCoordinator: ObservableObject {
         if lastShown > 0, now - lastShown < paywallCooldown {
             return
         }
+        // paywall 已经在展示(例如配额耗尽刚弹过):不重复弹、不重置冷却,
+        // 否则用户在 sheet 已展示时录第 5 次音会刷新 lastPaywallAutoShownAt,
+        // 导致实际间隔远大于 14 天。
+        guard !showPaywall else { return }
 
         defaults.set(now, forKey: lastPaywallAutoShownAtKey)
         showPaywall = true

@@ -34,9 +34,16 @@ final class EntitlementManager: ObservableObject {
         case success
     }
 
-    init() {
-        // 监听交易更新（购买完成 / 退款 / 过期），实时刷新权益。
-        transactionListener = listenForTransactionUpdates()
+    /// - Parameter enableTransactionListener: 是否监听 `Transaction.updates`(StoreKit 2 异步流)。
+    ///   生产环境传 true(默认)。测试/默认兜底场景传 false 避免:
+    ///   (1) 启动常驻 Task 在测试方法结束后才释放;
+    ///   (2) StoreKit mock 缺失时进入异常分支导致 flakiness。
+    init(enableTransactionListener: Bool = true) {
+        if enableTransactionListener {
+            transactionListener = listenForTransactionUpdates()
+        } else {
+            transactionListener = nil
+        }
     }
 
     deinit {

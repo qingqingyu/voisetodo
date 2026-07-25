@@ -335,8 +335,12 @@ final class VoiceInputManager: VoiceInputProtocol {
                         VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count)")
                         let durationMS = self.recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
                         Telemetry.record(.recordingOutcome(outcome: .success, durationMS: durationMS, transcript: self.transcript))
-                        // 通知外部订阅者:本次录音成功完成(用于付费墙第 N 次引导等累计计数)
-                        self.recordingSuccessSubject.send(())
+                        // 通知外部订阅者:本次录音成功完成(用于付费墙第 N 次引导等累计计数)。
+                        // 必须检查 transcript 非空:纯静音 / 极短噪声场景 SFSpeechRecognizer 也可能
+                        // 以 isFinal + 空串结束,不应计为"成功录音"触发付费墙引导。
+                        if !newTranscript.isEmpty {
+                            self.recordingSuccessSubject.send(())
+                        }
                         self.stopRecording()
                     }
                 }
