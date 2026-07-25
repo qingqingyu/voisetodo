@@ -204,7 +204,9 @@ struct WarmTodoCard: View {
     }()
 
     var body: some View {
-        HStack(spacing: WarmSpacing.sm) {
+        // alignment: .top:checkbox frame 顶部对齐 VStack 顶部(第一行标题顶部),
+        // 避免 .center 时 checkbox 居中对齐整个 VStack(标题行+元数据行)低于第一行标题中心。
+        HStack(alignment: .top, spacing: WarmSpacing.sm) {
             // 砍掉左侧色条——P2 修复：原色条 + 圆圈 checkbox 双重标记冗余。
             // 现在只用圆圈 checkbox 按 category 上色，更接近 Things 3 的极简做法。
             Button(action: onToggle) {
@@ -231,7 +233,12 @@ struct WarmTodoCard: View {
                         .frame(width: WarmSize.icon - 10, height: WarmSize.icon - 10)
                         .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
                 }
-                .frame(width: 44, height: 44)
+                // alignment: .top 让圆环居 44pt frame 顶部,
+                // offset 上移让圆心(原在 +12pt)对齐第一行标题视觉中心(约 +9pt,15pt 字号 × ~1.2 行高)。
+                // 偏移量抽到 HomeLayoutMetrics.checkboxTitleAlignmentOffset,
+                // 与 PendingDateTodoRow 共用同一经验值,改一处同步生效。
+                .frame(width: 44, height: 44, alignment: .top)
+                .offset(y: HomeLayoutMetrics.checkboxTitleAlignmentOffset)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
