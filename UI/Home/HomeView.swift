@@ -363,6 +363,22 @@ struct HomeView<Store: HomeTodoStore>: View {
                     onUpgradePro: { coordinator.showPaywall = true }
                 )
             }
+            // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
+            // 避免「外部 sheet + presenting view 的 NavigationStack」触发 iOS 隐式
+            // navigationBar 占位,把 headerView 推下移(问题 1:header 掉位)。
+            .sheet(isPresented: $coordinator.showConfirmSheet) {
+                ConfirmSheetView(
+                    transcript: coordinator.confirmSheetTranscript,
+                    todos: $coordinator.extractedTodos,
+                    isStreaming: coordinator.isExtracting,
+                    onConfirm: { todos in
+                        coordinator.confirmTodos(todos)
+                    },
+                    onCancel: {
+                        coordinator.cancelTodos()
+                    }
+                )
+            }
             // B3 通知深链:回顾通知点击后弹出 ReviewView
             .sheet(isPresented: Binding(
                 get: { coordinator.showReviewFromNotification },
