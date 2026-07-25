@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// 测量 ConfirmSheet ScrollView 内 VStack 的实际内容高度,
+/// 用于驱动 .presentationDetents([.height(h), .large]) 动态长高。
+private struct SheetContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// 确认弹窗视图 - 温暖友好风格
 /// 语音录入后的确认面板,显示 AI 提取的待办列表。
 ///
@@ -20,6 +29,9 @@ struct ConfirmSheetView: View {
     @State private var showSuccess = false
     @State private var didFinish = false
     @State private var transcriptExpanded = false
+    /// ScrollView 内 VStack 的实际内容高度,由 SheetContentHeightKey 回传,
+    /// 驱动 .presentationDetents([.height(clampedSheetHeight), .large])。
+    @State private var contentHeight: CGFloat = 0
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     var body: some View {
@@ -46,30 +58,32 @@ struct ConfirmSheetView: View {
                 ToolbarItem(placement: .principal) {
                     calendarTarget
                 }
-                // Confirm:珊瑚橙胶囊填充主操作,对齐 HTML .btn-primary
+                // Confirm:珊瑚橙胶囊填充主操作,对齐 HTML .btn-primary。
+                // 数字只走本地化文案 confirm.add_count,不再叠 PopCount 徽章——
+                // 避免「胶囊套胶囊」+ 同一 count 显示两遍。
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: confirmAction) {
-                        HStack(spacing: WarmSpacing.xs) {
-                            Text(String(localized: "confirm.add_count \(todos.count)"))
-                                .font(WarmFont.headline(15))
-                            PopCount(count: todos.count)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, WarmSpacing.md)
-                        .padding(.vertical, WarmSpacing.xs)
-                        .background(
-                            Capsule().fill(confirmButtonBackground)
-                        )
+                        Text(String(localized: "confirm.add_count \(todos.count)"))
+                            .font(WarmFont.headline(15))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, WarmSpacing.md)
+                            .padding(.vertical, WarmSpacing.xs)
+                            .background(
+                                Capsule().fill(confirmButtonBackground)
+                            )
                     }
                     .disabled(todos.isEmpty || isStreaming || didFinish)
                     .accessibilityIdentifier("ConfirmAddButton")
                 }
             }
         }
-        // 弹层升起期间可能 todo=0(流式中),始终保留 .medium + .large 不再随 count 切,
-        // 避免 iOS detent 硬切造成弹层跳动。
-        .presentationDetents([.medium, .large])
+        // 动态高度:随内容增长(每识别一条 todo 往上涨),上限 85% 屏高,
+        // 超上限走 ScrollView 滚动;保留 .large 让用户可手动拖到全屏。
+        // spring 平滑流式期间高度变化,避免硬切跳动。
+        .presentationDetents([.height(clampedSheetHeight), .large])
         .presentationDragIndicator(.visible)
+        .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: contentHeight)
         .accessibilityIdentifier("ConfirmSheet")
         .onDisappear {
             guard !didFinish else { return }
@@ -114,6 +128,11 @@ struct ConfirmSheetView: View {
             .padding(.horizontal, WarmSpacing.md)
             .padding(.top, WarmSpacing.sm)
             .padding(.bottom, WarmSpacing.md)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
+                }
+            )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             operationHintFooter
@@ -237,6 +256,19 @@ struct ConfirmSheetView: View {
     private var confirmButtonBackground: Color {
         let disabled = todos.isEmpty || isStreaming || didFinish
         return disabled ? WarmTheme.textMuted.opacity(0.5) : WarmTheme.primary
+    }
+
+    /// 动态 detent 的实际高度:内容高 + chrome(navigationBar + footer + padding),
+    /// clamp 到 [下限 280pt, 85% 屏高]。chrome 估算 ~120pt(navigationBar inline ~44 +
+    /// safeAreaInset footer ~30 + VStack padding ~24 + 余量),真机微调。
+    /// 超上限后 ScrollView 自动接管滚动;.large 仍可手动拖到全屏。
+    private var clampedSheetHeight: CGFloat {
+        let screenHeight = UIScreen.main.bounds.height
+        let chrome: CGFloat = 120
+        let raw = contentHeight + chrome
+        let lowerBound: CGFloat = 280
+        let upperBound = screenHeight * 0.85
+        return min(max(raw, lowerBound), upperBound)
     }
 
     // MARK: - Success Overlay
