@@ -247,6 +247,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     @State private var selectedTodo: TodoItemData?
+    /// 统计 pill 点击进入 ReviewView(原 NavigationLink push,移除 NavigationStack 后改 sheet)。
+    @State private var showReviewFromStats = false
 
     /// 列表可见性：录音 / 处理 / 抽取中 / 弹层升起时隐藏列表与底部渐隐遮罩。
     /// 集中此条件避免 Group 与遮罩两处重复判断漂移。
@@ -280,7 +282,6 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     var body: some View {
-        NavigationStack {
             ZStack {
                 PaperTextureBackground()
 
@@ -399,9 +400,14 @@ struct HomeView<Store: HomeTodoStore>: View {
             )) {
                 NavigationStack { ReviewView() }
             }
-            .navigationDestination(item: $selectedTodo) { todo in
-                TodoDetailView(store: store, todo: todo)
-                    .environmentObject(coordinator)
+            .sheet(isPresented: $showReviewFromStats) {
+                NavigationStack { ReviewView() }
+            }
+            .fullScreenCover(item: $selectedTodo) { todo in
+                NavigationStack {
+                    TodoDetailView(store: store, todo: todo)
+                        .environmentObject(coordinator)
+                }
             }
             .onChange(of: coordinator.deepLinkTodoId) { _, todoId in
                 guard let todoId else { return }
@@ -486,8 +492,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 keyboardDismissStageTriggered = false
                 isFallbackMode = false
             }
-        }
-        .accessibilityIdentifier("HomeView")
+            .accessibilityIdentifier("HomeView")
     }
 
     // MARK: - Header View
@@ -733,8 +738,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 0/0 时整个按钮隐藏(statsHidden 控制),齿轮横移到右对齐。
     private func statsPillButton(total: Int, completed: Int) -> some View {
         let progress = total > 0 ? Double(completed) / Double(total) : 0
-        return NavigationLink {
-            ReviewView()
+        return Button {
+            showReviewFromStats = true
         } label: {
             HStack(spacing: WarmSpacing.xs) {
                 pillRing(progress: progress)
@@ -747,7 +752,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             .padding(.leading, 9)    // spec: 左内边距比右小,圆形图标视觉"轻"需补偿
             .padding(.trailing, 11)
             // spec: 整高 32pt(规范下限)。显式锁高替代原 .padding(.vertical, 7)——
-            // 后者依赖内容自然撑高,但 NavigationLink 在 .buttonStyle(.plain) 下仍会被
+            // 后者依赖内容自然撑高,但 Button 在 .buttonStyle(.plain) 下仍会被
             // SwiftUI 施加隐式 hit area 扩展,实测渲染接近 44pt。frame 强制约束后,
             // 内部 16pt ring + 13pt 文本(~18pt 自然行高)上下各空 ~7pt,正好 32pt。
             // 内容自然高 < 32pt,不会被压缩;Text "今天 0/3" 短串在 AX5 下也不触发截断/换行。
