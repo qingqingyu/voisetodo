@@ -1935,7 +1935,7 @@ private struct GlossarySuggestionBanner: View {
 /// 长期保留——以后改任何 UI 都能立刻在 Xcode Canvas 切到 AX5 tab 看效果,不用操作手机。
 #Preview("AX5 最大字号") {
     HomeView(store: MockStore.preview)
-        .environment(\.sizeCategory, .accessibility5)
+        .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
         .environmentObject(AppCoordinator.preview)
 }
 
