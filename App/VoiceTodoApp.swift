@@ -52,6 +52,8 @@ struct VoiceTodoApp: App {
             // 同步清除跨启动 paywall 延迟标志,避免上次测试遗留的 pending 状态
             // 污染下次 onboarding 完成流程(意外弹 paywall → 测试 flakiness)。
             UserDefaults.standard.removeObject(forKey: "pendingPaywallAfterOnboarding")
+            // 同步清引导标记:让 UI 测试每次重置后都能验证首次下拉引导动画。
+            UserDefaults.standard.removeObject(forKey: "hasShownExpandMonthHint")
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 

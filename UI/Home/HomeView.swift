@@ -141,6 +141,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 动态效果减弱开关。沿用 OnboardingView 的处理:动画用 motionAnim() 包一层,
     /// 开启时返回 nil 让 SwiftUI 直接跳终值,不播。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 退后台监听:hint trigger task 在非 active 时必须取消,避免 `Task.sleep` 在后台仍计时
+    /// 导致回前台时 hint 已落盘却未展示。
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isProcessing = false
     @State private var showSettingsSheet = false
     // 底部 Tab + FAB + 输入面板状态
@@ -216,6 +219,16 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var gestureAnchorProgress: CGFloat = 0
     /// 是否正在跟手(首次 onChanged=true, onEnded/onCancelled=false)。
     @State private var isCollapseGesturing = false
+
+    // MARK: - 首次下拉展开引导(ExpandMonthHintView)
+    /// 持久化"已展示过"——首次见过折叠态后落盘 true,永不重显。
+    /// 跟随现有 `@AppStorage("hasCompletedOnboarding")` 模式,不引入新命名空间(项目无此惯例)。
+    @AppStorage("hasShownExpandMonthHint") private var hasShownExpandMonthHint = false
+    /// 运行时开关:受 `selectedBottomTab == .calendar && collapseProgress > 0.5 && !hasShownExpandMonthHint` 管控。
+    @State private var showExpandHint = false
+    /// 触发延迟任务:首次进入折叠态后等 0.5s 再显示 hint,让用户先感知"我在折叠态"。
+    /// 切 tab / 离开折叠态时必须 cancel,避免 hint 在不该出现的场景迟到。
+    @State private var hintTriggerTask: Task<Void, Never>?
 
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
@@ -979,18 +992,33 @@ struct HomeView<Store: HomeTodoStore>: View {
                             .opacity(1 - collapseProgress)
                             .allowsHitTesting(collapseProgress <= 0.5)
 
-                        // 折叠态:周条卡片(淡入)
-                        WeekStripCard(
-                            state: state,
-                            onSelectDay: selectDay,
-                            onExpand: {
-                                withAnimation(WarmAnimation.springStandard) {
-                                    collapseProgress = 0
+                        // 折叠态:周条卡片(淡入) + 首次下拉引导动画
+                        ZStack(alignment: .top) {
+                            WeekStripCard(
+                                state: state,
+                                onSelectDay: selectDay,
+                                onExpand: {
+                                    withAnimation(WarmAnimation.springStandard) {
+                                        collapseProgress = 0
+                                    }
                                 }
+                            )
+                            .padding(.horizontal, WarmSpacing.xl)
+                            .padding(.top, WarmSpacing.xxs)
+
+                            // 首次下拉引导:浮在卡片上方,手指下拉动画提示可下拉展开。
+                            // 触发条件由 onChange + hintTriggerTask 管控;maxDisplayDuration 后自动消失(ExpandMonthHintView 内部超时)。
+                            if showExpandHint {
+                                ExpandMonthHintView {
+                                    withAnimation(WarmAnimation.springFast) {
+                                        showExpandHint = false
+                                    }
+                                }
+                                // 引导胶囊底边贴卡片顶边,手指指向卡片"按下"。
+                                .offset(y: ExpandHintMetrics.overlayOffsetY)
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
                             }
-                        )
-                        .padding(.horizontal, WarmSpacing.xl)
-                        .padding(.top, WarmSpacing.xxs)
+                        }
                         .opacity(collapseProgress)
                         .allowsHitTesting(collapseProgress > 0.5)
                     }
@@ -1117,6 +1145,25 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
                 }
             }
+            .onChange(of: collapseProgress) { _ in
+                evaluateExpandHintTrigger()
+            }
+            .onChange(of: selectedBottomTab) { _ in
+                evaluateExpandHintTrigger()
+            }
+            .onChange(of: scenePhase) { phase in
+                // 退后台/ inactive 时立即取消挂起的触发任务:`Task.sleep` 在后台仍计时,
+                // 否则用户回到前台时 hint 已落盘却看不到动画,且永久不再显示。
+                if phase != .active {
+                    hintTriggerTask?.cancel()
+                    hintTriggerTask = nil
+                    if showExpandHint {
+                        withAnimation(WarmAnimation.springFast) {
+                            showExpandHint = false
+                        }
+                    }
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .offset(y: listOffset)
@@ -1158,6 +1205,61 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private func retryCalendarLoad() {
         occurrenceRevision += 1
+    }
+
+    // MARK: - Expand Month Hint(首次下拉展开引导)
+
+    /// 评估下拉引导触发条件。
+    ///
+    /// 触发条件全部满足:calendar tab + collapseProgress > 0.5 + !hasShownExpandMonthHint
+    /// → 等待 0.5s(让用户先感知折叠态)后显示 hint,同步标记 hasShownExpandMonthHint=true,永不重显。
+    ///
+    /// 条件不满足(切 tab / 离开折叠态):立即取消挂起任务,隐藏 hint。
+    ///
+    /// **为什么用 Task 而非 DispatchQueue.main.asyncAfter**:Task 可存入 @State 显式 cancel,
+    /// 切 tab 时能立即停止调度;asyncAfter 不可取消,会延迟触发到不该出现的场景。
+    ///
+    /// **Task 内读 @State 语义**:本方法由 SwiftUI `.onChange` 触发,运行于 MainActor。
+    /// 不带 `detached` 的 `Task { ... }` 继承当前 actor → 整个 Task 都在 MainActor,
+    /// 因此 await 之后对 `selectedBottomTab` / `collapseProgress` / `hasShownExpandMonthHint` 的读取
+    /// 是直接的主线程同步访问,无跨 actor 跳转。`@State` 的 wrappedValue 在 View 重 evaluate 时更新,
+    /// Task 闭包捕获的是最新值——但仍需 `stillEligible` 二次确认,因为 0.5s sleep 窗口内可能已经发生
+    /// 切 tab / 离开折叠态 / 退后台,这些会先 cancel Task(若 cancel 来得及)。
+    private func evaluateExpandHintTrigger() {
+        let conditionsMet = selectedBottomTab == .calendar
+            && collapseProgress > 0.5
+            && !hasShownExpandMonthHint
+
+        if conditionsMet {
+            // 已挂起或已显示:不重复调度
+            guard hintTriggerTask == nil, !showExpandHint else { return }
+            hintTriggerTask = Task {
+                try? await Task.sleep(nanoseconds: ExpandHintMetrics.triggerDelayNano)
+                // 切 tab / 离开折叠态 / 退后台都会 cancel 此 Task。
+                if Task.isCancelled { return }
+                // 二次防护:0.5s 窗口内可能已切 tab / 离开折叠态 / 退后台。
+                // cancel 不保证立即中断 sleep,醒来后必须再次确认所有触发条件,
+                // 否则会出现"切走 tab 后 hint 错误显示并永久落盘"。
+                let stillEligible = selectedBottomTab == .calendar
+                    && collapseProgress > 0.5
+                    && !hasShownExpandMonthHint
+                guard stillEligible else { return }
+                hasShownExpandMonthHint = true
+                withAnimation(WarmAnimation.springFast) {
+                    showExpandHint = true
+                }
+                hintTriggerTask = nil
+            }
+        } else {
+            // 离开触发态:取消挂起 + 隐藏已显示
+            hintTriggerTask?.cancel()
+            hintTriggerTask = nil
+            if showExpandHint {
+                withAnimation(WarmAnimation.springFast) {
+                    showExpandHint = false
+                }
+            }
+        }
     }
 
     private func selectDay(_ day: Date) {
