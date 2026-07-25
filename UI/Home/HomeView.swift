@@ -1129,16 +1129,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
                 }
             }
-            .onChange(of: collapseProgress) { _ in
+            .onChange(of: collapseProgress) { _, _ in
                 evaluateExpandHintTrigger()
             }
-            .onChange(of: selectedBottomTab) { _ in
+            .onChange(of: selectedBottomTab) { _, _ in
                 evaluateExpandHintTrigger()
             }
-            .onChange(of: scenePhase) { phase in
+            .onChange(of: scenePhase) { _, newPhase in
                 // 退后台/ inactive 时立即取消挂起的触发任务:`Task.sleep` 在后台仍计时,
                 // 否则用户回到前台时 hint 已落盘却看不到动画,且永久不再显示。
-                if phase != .active {
+                if newPhase != .active {
                     hintTriggerTask?.cancel()
                     hintTriggerTask = nil
                     if showExpandHint {
@@ -1210,11 +1210,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// Task 闭包捕获的是最新值——但仍需 `stillEligible` 二次确认,因为 0.5s sleep 窗口内可能已经发生
     /// 切 tab / 离开折叠态 / 退后台,这些会先 cancel Task(若 cancel 来得及)。
     private func evaluateExpandHintTrigger() {
-        let conditionsMet = selectedBottomTab == .calendar
-            && collapseProgress > 0.5
-            && !hasShownExpandMonthHint
-
-        if conditionsMet {
+        if isExpandHintEligible {
             // 已挂起或已显示:不重复调度
             guard hintTriggerTask == nil, !showExpandHint else { return }
             hintTriggerTask = Task {
@@ -1224,10 +1220,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 // 二次防护:0.5s 窗口内可能已切 tab / 离开折叠态 / 退后台。
                 // cancel 不保证立即中断 sleep,醒来后必须再次确认所有触发条件,
                 // 否则会出现"切走 tab 后 hint 错误显示并永久落盘"。
-                let stillEligible = selectedBottomTab == .calendar
-                    && collapseProgress > 0.5
-                    && !hasShownExpandMonthHint
-                guard stillEligible else { return }
+                guard isExpandHintEligible else { return }
                 hasShownExpandMonthHint = true
                 withAnimation(WarmAnimation.springFast) {
                     showExpandHint = true
@@ -1244,6 +1237,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                 }
             }
         }
+    }
+
+    /// hint 触发条件:calendar tab + 折叠态 + 未展示过。集中此处避免 evaluateExpandHintTrigger 内重复。
+    private var isExpandHintEligible: Bool {
+        selectedBottomTab == .calendar
+            && collapseProgress > 0.5
+            && !hasShownExpandMonthHint
     }
 
     private func selectDay(_ day: Date) {

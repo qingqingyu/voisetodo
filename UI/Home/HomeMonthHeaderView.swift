@@ -96,7 +96,7 @@ struct HomeMonthHeaderView: View {
         // 相比 8pt 再多 ~4pt 可用宽度(每格 +0.57pt,中文条目约多塞 0.5 个字)。
         // 留 4pt 不归零:防边格被 iPhone 屏幕圆角裁切、避免格子贴屏幕边显得溢出。
         // 格子本身已有白底 + 圆角 + 1px 描边,贴边视觉不会糊在一起。
-        // 上方 headerView 仍保留水平 24pt padding(HomeView.swift:531),形成"上呼吸、下铺满"的层次。
+        // 上方 headerView 仍保留水平 24pt padding(WarmSpacing.xl),形成"上呼吸、下铺满"的层次。
         .padding(.horizontal, HomeLayoutMetrics.monthGridPaddingHorizontal)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
