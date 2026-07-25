@@ -36,7 +36,9 @@ struct PendingDateTodoRow: View {
 
     var body: some View {
         Button(action: onOpen) {
-            HStack(spacing: WarmSpacing.sm) {
+            // alignment: .top:checkbox frame 顶部对齐 VStack 顶部(第一行标题顶部),
+            // 避免 .center 时 checkbox 居中对齐整个 VStack(标题+chip)低于第一行标题中心。
+            HStack(alignment: .top, spacing: WarmSpacing.sm) {
                 Button(action: onToggle) {
                     ZStack {
                         Circle()
@@ -47,7 +49,12 @@ struct PendingDateTodoRow: View {
                             .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
                             .opacity(0)
                     }
-                    .frame(width: 44, height: 44)
+                    // alignment: .top 让 24pt 圆环居 44pt frame 顶部,
+                    // offset 上移让圆心(原在 +12pt)对齐第一行标题视觉中心(约 +9pt)。
+                    // 偏移量抽到 HomeLayoutMetrics.checkboxTitleAlignmentOffset,
+                    // 与 WarmTodoCard 共用同一经验值,改一处同步生效。
+                    .frame(width: 44, height: 44, alignment: .top)
+                    .offset(y: HomeLayoutMetrics.checkboxTitleAlignmentOffset)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -89,6 +96,11 @@ struct PendingDateTodoRow: View {
                         )
                 }
                 .buttonStyle(.plain)
+                // fixedSize 让按钮按 intrinsic 内容宽度参与 layout,不被 HStack 压缩。
+                // 否则标题长时(如 "Finish filing taxes")按钮宽度被压到无法容纳 "Pick date",
+                // 触发字符级换行 + 裁切(用户真机反馈「Pic k / dat e」竖排)。
+                // 按钮稳定等大,标题承担换行(标题已有 .fixedSize(horizontal: false, vertical: true))。
+                .fixedSize(horizontal: true, vertical: false)
                 .accessibilityIdentifier("PendingDatePick_\(index)")
                 .popover(isPresented: $showDatePicker) {
                     VStack(spacing: WarmSpacing.sm) {
