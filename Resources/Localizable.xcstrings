@@ -4531,6 +4531,166 @@
         }
       }
     },
+    "onboarding.pro.bullet.quota.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From 100 to unlimited voice extractions per day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日额度从 100 次提升到无限"
+          }
+        }
+      }
+    },
+    "onboarding.pro.bullet.quota.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higher daily quota"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更高的每日额度"
+          }
+        }
+      }
+    },
+    "onboarding.pro.bullet.support.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your subscription keeps this app ad-free and actively maintained"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的订阅让这款 app 保持无广告、持续迭代"
+          }
+        }
+      }
+    },
+    "onboarding.pro.bullet.support.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Support indie development"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持独立开发"
+          }
+        }
+      }
+    },
+    "onboarding.pro.bullet.trial.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue only if you love it — cancel anytime"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "满意才续费,可随时取消"
+          }
+        }
+      }
+    },
+    "onboarding.pro.bullet.trial.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3-day free trial"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 天免费试用"
+          }
+        }
+      }
+    },
+    "onboarding.pro.cta.later" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maybe later"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以后再说"
+          }
+        }
+      }
+    },
+    "onboarding.pro.cta.trial" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start 3-day free trial"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始 3 天免费试用"
+          }
+        }
+      }
+    },
+    "onboarding.pro.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try Pro free for 3 days, unlock stronger powers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 天免费试用,解锁更强能力"
+          }
+        }
+      }
+    },
+    "onboarding.pro.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "升级 Pro"
+          }
+        }
+      }
+    },
     "onboarding.speech.desc" : {
       "localizations" : {
         "en" : {

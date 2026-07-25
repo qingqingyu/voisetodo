@@ -25,6 +25,11 @@ protocol VoiceInputProtocol: ObservableObject {
     var errorPublisher: AnyPublisher<VoiceTodoError?, Never> { get }
     var didAutoFinishDueToSilencePublisher: AnyPublisher<Bool, Never> { get }
     var audioLevelPublisher: AnyPublisher<Float, Never> { get }
+    /// 录音成功完成(语音识别 isFinal + 有 transcript)时发射一次。
+    /// 用于驱动累计计数器(如"第 5 次录音后引导付费")。
+    /// 与 isRecordingPublisher 区别:后者每次开始/停止都发射,失败也下降;
+    /// recordingSuccessPublisher 只在成功路径发射,语义精准。
+    var recordingSuccessPublisher: AnyPublisher<Void, Never> { get }
 
     /// 开始录音
     func startRecording() async throws

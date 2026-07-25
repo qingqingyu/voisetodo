@@ -171,6 +171,7 @@ struct VoiceTodoApp: App {
             voiceInput: voiceInput,
             extractor: extractor,
             store: store,
+            entitlement: entitlementManager,
             quotaUsage: quotaUsage
         )
         _coordinator = StateObject(wrappedValue: coordinator)
@@ -233,7 +234,12 @@ struct VoiceTodoApp: App {
                     handleOpenURL(url)
                 }
                 .sheet(isPresented: $showOnboarding) {
-                    OnboardingView(permissionManager: permissionManager, hasCompletedOnboarding: $hasCompletedOnboarding)
+                    OnboardingView(
+                        permissionManager: permissionManager,
+                        hasCompletedOnboarding: $hasCompletedOnboarding,
+                        isPro: entitlementManager.isPro,
+                        onTryPro: { coordinator.showPaywall = true }
+                    )
                         .interactiveDismissDisabled()
                 }
                 // 引导完成后主动关闭 sheet，避免它继续盖在主界面之上

@@ -8,6 +8,12 @@ import SwiftUI
 struct OnboardingView: View {
     @ObservedObject var permissionManager: PermissionManager
     @Binding var hasCompletedOnboarding: Bool
+    /// 是否已订阅 Pro。true 时跳过 Pro 介绍页(老用户重装不应再被卖)。
+    var isPro: Bool = false
+    /// 用户点「开始 3 天免费试用」时调用 —— 调用方负责完成 onboarding + 弹 PaywallView。
+    /// 注意:此闭包**不负责**设 hasCompletedOnboarding(本 View 自己设),
+    /// 调用方只管 present paywall。
+    var onTryPro: () -> Void = {}
 
     // 无障碍：尊重「减弱动态效果」设置
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -21,7 +27,7 @@ struct OnboardingView: View {
     @State private var illustrationScale: CGFloat = 0.8
     @State private var illustrationRotation: Double = -5
 
-    private let totalSteps = 5
+    private let totalSteps = 6
 
     // 使用 WarmTheme 统一配色
     private var inkColor: Color { WarmTheme.ink }
@@ -61,6 +67,8 @@ struct OnboardingView: View {
                             case 3:
                                 actionButtonGuideStep
                             case 4:
+                                proIntroductionStep
+                            case 5:
                                 completionStep
                             default:
                                 EmptyView()
@@ -71,8 +79,10 @@ struct OnboardingView: View {
                 }
                 .frame(maxHeight: .infinity)
 
-                // 底部按钮
-                bottomButtons
+                // 底部按钮(Pro 介绍页用自己的 CTA,不显示默认按钮)
+                if currentStep != 4 {
+                    bottomButtons
+                }
             }
         }
         .onAppear {
@@ -718,7 +728,113 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 5: Completion
+    // MARK: - Step 5: Pro Introduction
+
+    /// Pro 介绍页:在 completion 之前插一页,引导用户认知付费墙 + 3 天免费试用。
+    /// - isPro=true 时该页被 nextStep() 跳过(已付费不重复卖)
+    /// - 两个 CTA:主按钮「开始试用」→ onTryPro() + 完成 onboarding;
+    ///   次按钮「以后再说」→ 仅完成 onboarding
+    /// - 内容区自带 CTA,因此该页隐藏默认 bottomButtons
+    private var proIntroductionStep: some View {
+        VStack(spacing: 32) {
+            Spacer()
+                .frame(height: 30)
+
+            // Pro 徽章插图
+            proBadgeIllustration
+                .scaleEffect(illustrationScale)
+                .rotationEffect(.degrees(illustrationRotation))
+                .animation(motionAnim(.spring(response: 0.6, dampingFraction: 0.7)), value: illustrationScale)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 12) {
+                Text(String(localized: "onboarding.pro.title"))
+                    .font(WarmFont.title(32))
+                    .foregroundColor(inkColor)
+
+                Text(String(localized: "onboarding.pro.subtitle"))
+                    .font(WarmFont.body(17))
+                    .foregroundColor(sketchColor)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
+
+            // 3 个 Pro 福利卡片(复用 featureStickyNote)
+            VStack(spacing: 16) {
+                featureStickyNote(
+                    emoji: "🎯",
+                    title: String(localized: "onboarding.pro.bullet.quota.title"),
+                    description: String(localized: "onboarding.pro.bullet.quota.desc")
+                )
+                featureStickyNote(
+                    emoji: "🎁",
+                    title: String(localized: "onboarding.pro.bullet.trial.title"),
+                    description: String(localized: "onboarding.pro.bullet.trial.desc")
+                )
+                featureStickyNote(
+                    emoji: "🌱",
+                    title: String(localized: "onboarding.pro.bullet.support.title"),
+                    description: String(localized: "onboarding.pro.bullet.support.desc")
+                )
+            }
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
+
+            // CTA 按钮组
+            VStack(spacing: 12) {
+                Button {
+                    onTryPro()
+                    hasCompletedOnboarding = true
+                } label: {
+                    Text(String(localized: "onboarding.pro.cta.trial"))
+                        .font(WarmFont.headline(17))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            Capsule()
+                                .fill(highlightColor)
+                                .shadow(color: highlightColor.opacity(0.3), radius: 8, y: 4)
+                        )
+                }
+                .accessibilityIdentifier("ProIntroTrialButton")
+
+                Button {
+                    hasCompletedOnboarding = true
+                } label: {
+                    Text(String(localized: "onboarding.pro.cta.later"))
+                        .font(WarmFont.body(15))
+                        .foregroundColor(sketchColor)
+                        .padding(.vertical, 8)
+                }
+                .accessibilityIdentifier("ProIntroLaterButton")
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+
+            Spacer()
+        }
+    }
+
+    private var proBadgeIllustration: some View {
+        ZStack {
+            Circle()
+                .fill(highlightColor.opacity(0.12))
+                .frame(width: 100, height: 100)
+
+            Circle()
+                .fill(highlightColor)
+                .frame(width: 70, height: 70)
+
+            Text("✨")
+                .font(.system(size: 32))
+        }
+        .frame(height: 140)
+    }
+
+    // MARK: - Step 6: Completion
 
     private var completionStep: some View {
         VStack(spacing: 32) {
@@ -879,6 +995,10 @@ struct OnboardingView: View {
     private var buttonTitle: String {
         if currentStep == totalSteps - 1 {
             return String(localized: "onboarding.button.start")
+        } else if currentStep == 4 {
+            // Pro 介绍页隐藏了 bottomButtons,这个分支不会被命中,
+            // 但仍提供文案以防未来 UI 改回 bottomButtons。
+            return String(localized: "onboarding.pro.cta.trial")
         } else if currentStep == 1 && !permissionManager.micGranted && !permissionManager.isMicPermanentlyDenied {
             return String(localized: "onboarding.button.skip")
         } else if currentStep == 2 && !permissionManager.speechGranted && !permissionManager.isSpeechPermanentlyDenied {
@@ -914,8 +1034,11 @@ struct OnboardingView: View {
         if currentStep == totalSteps - 1 {
             hasCompletedOnboarding = true
         } else {
+            let next = currentStep + 1
+            // 已付费用户跳过 Pro 介绍页(case 4),直接进 completion(case 5)
+            let target = (next == 4 && isPro) ? 5 : next
             withAnimation(motionAnim(.spring(response: 0.4))) {
-                currentStep += 1
+                currentStep = target
             }
         }
     }

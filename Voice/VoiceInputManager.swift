@@ -38,6 +38,12 @@ final class VoiceInputManager: VoiceInputProtocol {
         $audioLevel.eraseToAnyPublisher()
     }
 
+    /// 录音成功发射器(驱动累计计数器,如付费墙第 5 次引导)
+    private let recordingSuccessSubject = PassthroughSubject<Void, Never>()
+    var recordingSuccessPublisher: AnyPublisher<Void, Never> {
+        recordingSuccessSubject.eraseToAnyPublisher()
+    }
+
     // MARK: - Public Properties
 
     /// 当前识别 locale。`private(set)`——外部只读，写入由 `startRecording` 在每次
@@ -329,6 +335,8 @@ final class VoiceInputManager: VoiceInputProtocol {
                         VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count)")
                         let durationMS = self.recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
                         Telemetry.record(.recordingOutcome(outcome: .success, durationMS: durationMS, transcript: self.transcript))
+                        // 通知外部订阅者:本次录音成功完成(用于付费墙第 N 次引导等累计计数)
+                        self.recordingSuccessSubject.send(())
                         self.stopRecording()
                     }
                 }

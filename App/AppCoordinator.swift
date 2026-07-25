@@ -16,6 +16,8 @@ final class AppCoordinator: ObservableObject {
     /// transcriptProcessingFlow / pendingRecoveryFlow 内部各自持有 extractor;
     /// 这里独立保留一个 reference 是因为 reextract 不走那两个 flow 的状态机,而是同步触发单次提取。
     private let extractor: any TodoExtractorProtocol
+    /// 订阅状态(判断 isPro 跳过付费墙自动引导)。@MainActor 注入,init 后只读 isPro。
+    private let entitlement: EntitlementManager
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
     private let correctionTracker = CorrectionTracker.shared
@@ -92,6 +94,7 @@ final class AppCoordinator: ObservableObject {
         voiceInput: any VoiceInputProtocol,
         extractor: any TodoExtractorProtocol,
         store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & CalendarSyncTodoStore,
+        entitlement: EntitlementManager? = nil,
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
@@ -101,6 +104,8 @@ final class AppCoordinator: ObservableObject {
         self.voiceInput = voiceInput
         self.store = store
         self.extractor = extractor
+        // nil 兜底:测试调用方不传时,创建轻量实例(无网络调用,纯本地状态)
+        self.entitlement = entitlement ?? EntitlementManager()
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.quotaUsage = quotaUsage
@@ -153,6 +158,48 @@ final class AppCoordinator: ObservableObject {
         voiceInput.audioLevelPublisher
             .throttle(for: .seconds(1.0 / 30.0), scheduler: DispatchQueue.main, latest: true)
             .assign(to: &$audioLevel)
+
+        // 监听录音成功完成(语音识别 isFinal + 有 transcript),用于"第 5 次录音后引导付费"。
+        // 与 isRecordingPublisher 的下降沿不同:后者失败也会下降,这里只在成功路径发射。
+        voiceInput.recordingSuccessPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.handleRecordingSuccess() }
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Paywall Auto-Trigger
+
+    /// 累计录音成功次数(UserDefaults 持久化,跨启动累积,永不重置)。
+    /// 用户答到 5 次后,首次触发付费墙引导。已 Pro 用户不触发。
+    private let recordingSuccessCountKey = "recordingSuccessCount"
+    /// 上次自动弹付费墙的时间戳(timeIntervalSince1970)。0 = 从未弹过。
+    /// 用于 14 天冷却——拒绝后 14 天内不再弹。
+    private let lastPaywallAutoShownAtKey = "lastPaywallAutoShownAt"
+    /// 触发阈值:累计录音成功到这个次数后开始检查是否引导。
+    private let paywallTriggerThreshold = 5
+    /// 冷却时长:用户拒绝后 14 天内不再主动弹。
+    private let paywallCooldown: TimeInterval = 14 * 24 * 3600
+
+    private func handleRecordingSuccess() {
+        let defaults = UserDefaults.standard
+        let newCount = defaults.integer(forKey: recordingSuccessCountKey) + 1
+        defaults.set(newCount, forKey: recordingSuccessCountKey)
+
+        // 未达阈值:继续累积,不弹
+        guard newCount >= paywallTriggerThreshold else { return }
+        // 已付费:不骚扰
+        guard !entitlement.isPro else { return }
+        // 14 天冷却:上次弹过且未到期,跳过
+        let lastShown = defaults.double(forKey: lastPaywallAutoShownAtKey)
+        let now = Date().timeIntervalSince1970
+        if lastShown > 0, now - lastShown < paywallCooldown {
+            return
+        }
+
+        defaults.set(now, forKey: lastPaywallAutoShownAtKey)
+        showPaywall = true
+        let cooldownDays = Int(paywallCooldown / 86400)
+        VoiceTodoLog.coordinator.info("coordinator.paywall.auto_trigger reason=recording_count count=\(newCount) cooldownDays=\(cooldownDays)")
     }
 
     // MARK: - Public Methods
