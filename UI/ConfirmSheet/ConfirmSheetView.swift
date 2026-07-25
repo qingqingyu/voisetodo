@@ -132,33 +132,48 @@ struct ConfirmSheetView: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: WarmSpacing.sm) {
-                transcriptSection
-                    .padding(.bottom, WarmSpacing.xs)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+                    transcriptSection
+                        .padding(.bottom, WarmSpacing.xs)
 
-                if !todos.isEmpty {
-                    ConfirmGroupedList(todos: $todos, isStreaming: isStreaming)
-                } else if isStreaming {
-                    StreamingFooter()
-                        .padding(.top, WarmSpacing.md)
-                } else {
-                    inlineEmptyState
+                    if !todos.isEmpty {
+                        ConfirmGroupedList(todos: $todos, isStreaming: isStreaming)
+                    } else if isStreaming {
+                        StreamingFooter()
+                            .padding(.top, WarmSpacing.md)
+                    } else {
+                        inlineEmptyState
+                    }
+
+                    // 自动滚动锚点:流式新增 todo 时 scrollTo 这里,让最新条目可见。
+                    Color.clear
+                        .frame(height: 1)
+                        .id("sheetBottom")
+                }
+                .padding(.horizontal, WarmSpacing.md)
+                .padding(.top, WarmSpacing.sm)
+                .padding(.bottom, WarmSpacing.md)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
+                    }
+                )
+            }
+            .onChange(of: todos.count) { _, _ in
+                // 流式新增条目时滚到底部,让最新解析的 todo 可见。
+                // 用 springSlow 跟随 ConfirmGroupedList 的列表插入动画,视觉同步。
+                // 内容未超可视区时 scrollTo 是 no-op(没地方滚),所以前几条 sheet 长高时不会乱跳。
+                withAnimation(WarmAnimation.springSlow) {
+                    proxy.scrollTo("sheetBottom", anchor: .bottom)
                 }
             }
-            .padding(.horizontal, WarmSpacing.md)
-            .padding(.top, WarmSpacing.sm)
-            .padding(.bottom, WarmSpacing.md)
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if hintVisible {
+                    operationHintFooter
+                        .transition(.opacity)
                 }
-            )
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if hintVisible {
-                operationHintFooter
-                    .transition(.opacity)
             }
         }
     }
