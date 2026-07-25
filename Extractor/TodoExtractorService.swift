@@ -99,15 +99,16 @@ final class TodoExtractorService: TodoExtractorProtocol {
                         VoiceTodoLog.extractor.error("extract.non_retryable id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                         throw error
                     case .rateLimited(let retryAfter):
-                        // velocity（1 分钟窗口）类短时限流：有 Retry-After 才按其等待重试；否则不盲目重试以免加剧限流
-                        // 保留 3600s 阈值兜底——若服务端漏带 X-RateLimit-Type 把 ip_daily 误分到这里，
-                        // 长 Retry-After 仍能阻止无意义重试。
-                        let nonRecoverableThreshold: TimeInterval = 3600
-                        guard let retryAfter, retryAfter <= nonRecoverableThreshold, attempt < NetworkConfig.retryCount else {
+                        // 仅当服务端要求的等待时间落在客户端可接受窗口内才重试。
+                        // 例如 velocity 返回 60s 时，不能截成 8s 提前请求；直接交给上层离线兜底。
+                        guard let retryAfter,
+                              retryAfter >= 0,
+                              retryAfter <= NetworkConfig.retryMaxInterval,
+                              attempt < NetworkConfig.retryCount else {
                             VoiceTodoLog.extractor.warning("extract.rate_limited_stop id=\(extractionID, privacy: .public) attempt=\(attempt) retryAfter=\(retryAfter.map { String($0) } ?? "nil")")
                             throw error
                         }
-                        nextDelayOverride = min(retryAfter, NetworkConfig.retryMaxInterval)
+                        nextDelayOverride = retryAfter
                     default:
                         break
                     }

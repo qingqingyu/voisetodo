@@ -92,9 +92,29 @@ final class TranscriptProcessingFlowTests: XCTestCase {
             from: flow.process(text: "save this later", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
         )
 
-        XCTAssertEqual(events.map(\.name), ["networkFallbackSaved"])
+        XCTAssertEqual(events.map(\.name), ["fallbackSaved"])
+        XCTAssertEqual(events.first?.fallbackReason, .networkUnavailable)
         XCTAssertEqual(store.rawTranscripts, ["save this later"])
         XCTAssertEqual(store.rawTranscriptLocales, ["en-US"])
+    }
+
+    func testProcessIPDailyLimitPreservesReasonAfterSavingFallback() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = VoiceTodoError.ipRateLimited(retryAfter: 3_600)
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "save after IP limit", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["fallbackSaved"])
+        XCTAssertEqual(events.first?.fallbackReason, .ipRateLimited(retryAfter: 3_600))
+        XCTAssertEqual(store.rawTranscripts, ["save after IP limit"])
     }
 
     func testProcessOfflineSaveFailureEmitsOfflineSaveFailed() async {
@@ -126,8 +146,10 @@ final class TranscriptProcessingFlowTests: XCTestCase {
 private struct ObservedTranscriptEvent {
     let name: String
     let todoTitles: [String]
+    var fallbackReason: VoiceTodoError?
 
     init(_ event: TranscriptFlowEvent) {
+        fallbackReason = nil
         switch event {
         case .empty:
             name = "empty"
@@ -147,9 +169,10 @@ private struct ObservedTranscriptEvent {
         case .offlineSaveFailed:
             name = "offlineSaveFailed"
             todoTitles = []
-        case .networkFallbackSaved:
-            name = "networkFallbackSaved"
+        case .fallbackSaved(_, let reason):
+            name = "fallbackSaved"
             todoTitles = []
+            fallbackReason = reason
         case .quotaFallbackSaved:
             name = "quotaFallbackSaved"
             todoTitles = []

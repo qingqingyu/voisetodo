@@ -81,10 +81,10 @@ Layered defenses, all enforced **server-side** (client-side limits are bypassabl
 | Input size | reject oversized body / transcript | `MAX_BODY_BYTES` (16KB), `MAX_TRANSCRIPT_CHARS` (4000) in `worker.js` |
 | Output size | hard cap on generated tokens | `max_tokens` in each adapter |
 | Per-device daily | `quota:<date>:<deviceId>` | `DAILY_REQUEST_LIMIT` + `RATE_LIMIT_KV` |
-| Per-IP daily / velocity | `ip-quota:<date>:<ipHash>`, `ip-rate:<minute>:<ipHash>` (independent of device → blocks `X-Device-ID` rotation) | `IP_DAILY_LIMIT`, `IP_RATE_PER_MINUTE` + `RATE_LIMIT_KV` |
+| Per-IP daily / velocity | `ip-quota:<date>:<ipHash>`, `ip-rate:<minute>:<ipHash>` (independent of device → blocks `X-Device-ID` rotation; daily limit should remain well above the per-device quota for shared egress IPs) | `IP_DAILY_LIMIT`, `IP_RATE_PER_MINUTE` + `RATE_LIMIT_KV` |
 | Global budget | `global-quota:<date>` → 503 for everyone when exceeded | `GLOBAL_DAILY_LIMIT` + `RATE_LIMIT_KV` |
 
-**Recommended additional edge layer (configure in Cloudflare dashboard, not code):** add a **Rate Limiting Rule** on path `/v1/todo-extractions` keyed by `ip.src` (e.g. ≤ 10 req/min, ≤ 50 req/day per IP). Cloudflare's native rate limiter handles bursts and IP rotation more efficiently than KV counters and runs before the Worker — use it as the first line, with the Worker-level limits above as defense-in-depth.
+**Recommended additional edge layer (configure in Cloudflare dashboard, not code):** add a **Rate Limiting Rule** on path `/v1/todo-extractions` keyed by `ip.src` (e.g. ≤ 10 req/min, ≤ 500 req/day per IP). Keep the daily IP ceiling well above the per-device quota because VPNs, carrier NAT, and company networks share egress IPs. Cloudflare's native rate limiter handles bursts and IP rotation more efficiently than KV counters and runs before the Worker — use it as the first line, with the Worker-level limits above as defense-in-depth.
 
 Not yet implemented (future): per-tier (free/paid) limits require a verified entitlement signal (StoreKit receipt) the proxy doesn't receive today; App Attest / DeviceCheck to make `X-Device-ID` unforgeable.
 

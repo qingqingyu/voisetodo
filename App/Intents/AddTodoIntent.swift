@@ -24,13 +24,13 @@ struct AddTodoIntent: AppIntent {
             VoiceTodoLog.intent.info("intent.add.empty id=\(intentID, privacy: .public)")
             return .result(
                 dialog: "siri.result.empty",
-                view: AddTodoIntentView(todos: [], isOffline: false)
+                view: AddTodoIntentView(todos: [], fallbackError: nil)
             )
         }
 
         let extractor = TodoExtractorService()
         var extractedTodos: [ExtractedTodo]
-        var isOffline = false
+        var fallbackError: VoiceTodoError?
         let inputLocale = Locale.current
 
         do {
@@ -40,22 +40,22 @@ struct AddTodoIntent: AppIntent {
         } catch let error as VoiceTodoError {
             VoiceTodoLog.intent.error("intent.add.extract_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             switch error {
-            case .networkUnavailable, .apiTimeout, .circuitOpen, .rateLimited, .ipRateLimited:
+            case .networkUnavailable, .apiTimeout, .circuitOpen, .rateLimited, .ipRateLimited, .serviceUnavailable:
                 let fallback = extractor.fallbackExtract(from: trimmed)
                 extractedTodos = Self.todosWithInputLocale(fallback.todos, localeIdentifier: inputLocale.identifier)
-                isOffline = true
-                VoiceTodoLog.intent.warning("intent.add.fallback id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count)")
+                fallbackError = error
+                VoiceTodoLog.intent.warning("intent.add.fallback id=\(intentID, privacy: .public) reason=\(String(describing: error), privacy: .public) todoCount=\(extractedTodos.count)")
             default:
                 return .result(
                     dialog: "siri.result.extract_failed",
-                    view: AddTodoIntentView(todos: [], isOffline: false)
+                    view: AddTodoIntentView(todos: [], fallbackError: nil)
                 )
             }
         } catch {
             VoiceTodoLog.intent.error("intent.add.extract_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return .result(
                 dialog: "siri.result.extract_failed",
-                view: AddTodoIntentView(todos: [], isOffline: false)
+                view: AddTodoIntentView(todos: [], fallbackError: nil)
             )
         }
 
@@ -63,7 +63,7 @@ struct AddTodoIntent: AppIntent {
             VoiceTodoLog.intent.info("intent.add.no_todos id=\(intentID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return .result(
                 dialog: "siri.result.empty",
-                view: AddTodoIntentView(todos: [], isOffline: false)
+                view: AddTodoIntentView(todos: [], fallbackError: nil)
             )
         }
 
@@ -76,7 +76,7 @@ struct AddTodoIntent: AppIntent {
             Telemetry.record(.intentFailed(operation: "add", stage: "container"))
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, isOffline: isOffline)
+                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
             )
         }
 
@@ -87,7 +87,7 @@ struct AddTodoIntent: AppIntent {
             VoiceTodoLog.intent.error("intent.add.fetch_min_sort_order.blocked_save id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, isOffline: isOffline)
+                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
             )
         }
         var baseSortOrder = minSortOrder - 1
@@ -110,18 +110,36 @@ struct AddTodoIntent: AppIntent {
             Telemetry.record(.intentFailed(operation: "add", stage: "save"))
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, isOffline: isOffline)
+                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
             )
         }
 
         let count = extractedTodos.count
-        let dialog: IntentDialog = isOffline
-            ? "siri.result.offline"
-            : "siri.result.added \(count)"
+        let dialog: IntentDialog
+        if let fallbackError {
+            switch fallbackError {
+            case .networkUnavailable:
+                dialog = "siri.result.offline"
+            case .apiTimeout:
+                dialog = "error.api_timeout"
+            case .circuitOpen:
+                dialog = "error.circuit_open"
+            case .rateLimited:
+                dialog = "error.rate_limited"
+            case .ipRateLimited:
+                dialog = "error.ip_rate_limited"
+            case .serviceUnavailable:
+                dialog = "error.service_busy"
+            default:
+                dialog = "siri.result.extract_failed"
+            }
+        } else {
+            dialog = "siri.result.added \(count)"
+        }
 
         return .result(
             dialog: dialog,
-            view: AddTodoIntentView(todos: extractedTodos, isOffline: isOffline)
+            view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
         )
     }
 

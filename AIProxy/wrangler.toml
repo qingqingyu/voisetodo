@@ -1,0 +1,83 @@
+name = "voicetodo-ai-proxy"
+main = "worker.js"
+compatibility_date = "2026-05-26"
+workers_dev = true
+
+# 自定义域名:workers.dev 在国内被 DNS 污染,绑自定义域名走 Cloudflare CDN (104.x.x.x)
+routes = [
+  { pattern = "ai.saydo.org", custom_domain = true }
+]
+
+[vars]
+# 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
+DAILY_REQUEST_LIMIT = "100"
+# 全局每天调用上限：当天全网超过即对所有人返回 503，把分布式刷量的账单锁成可设上限。
+# 估算：5000 次 × (输入 ~1-2k tok + 输出 500 tok) × z.ai 单价 ≈ 日账单天花板
+GLOBAL_DAILY_LIMIT = "5000"
+# 按 IP 限流（独立于设备，挡"单 IP 轮换 X-Device-ID"）
+# 50 → 500：VPN/公司网络共享出口极易撞限。本质缓解要靠订阅按用户配额，此处只是兜底防刷。
+IP_DAILY_LIMIT = "500"
+IP_RATE_PER_MINUTE = "10"
+# 每设备每天遥测事件上限（默认 500）
+TELEMETRY_DAILY_LIMIT = "500"
+# 设备 ID 哈希 salt。生产环境建议配置独立值。
+# LOG_HASH_SALT = "please-generate-a-unique-salt"
+
+# ─── Provider 路由（z.ai Anthropic 兼容端点） ───────────────────────────────
+# 密钥不写在此处，通过 `wrangler secret put PROVIDER_KEY_ZAI_ANTHROPIC` 注入。
+PROVIDERS = '''
+[
+  {
+    "id": "ZAI_ANTHROPIC",
+    "type": "anthropic",
+    "url": "https://api.z.ai/api/anthropic/v1/messages",
+    "model": "claude-sonnet-4-5-20250929",
+    "priority": 1,
+    "weight": 10,
+    "enabled": true,
+    "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC",
+    "timeoutMs": 30000
+  },
+  {
+    "id": "CLAWTO_OPENAI",
+    "type": "openai",
+    "url": "https://api.clawto.link/v1/chat/completions",
+    "model": "gpt-5.4-mini",
+    "priority": 2,
+    "weight": 10,
+    "enabled": true,
+    "secretName": "PROVIDER_KEY_CLAWTO_OPENAI",
+    "timeoutMs": 30000
+  }
+]
+'''
+
+# App 鉴权 token：iOS 客户端通过 X-App-Token 携带，worker 校验。
+# 生成一段随机串后用 `wrangler secret put APP_TOKEN` 注入。
+# APP_TOKEN 通过 secret 注入，不在此处明文。
+
+# 可选：限制每次请求最多尝试多少个 provider（默认 = 过滤后的候选总数）。
+# AI_PROVIDER_MAX_ATTEMPTS = "3"
+
+# ─── KV 命名空间 ────────────────────────────────────────────────────────────
+# RATE_LIMIT_KV：每设备配额 + 全局预算 + IP 限流共用
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "17ea278a008b4599988f1a5882ad252a"
+
+# AI_PROVIDER_STATE_KV：供应商健康状态（熔断器 / EWMA 延迟），跨 isolate 共享
+[[kv_namespaces]]
+binding = "AI_PROVIDER_STATE_KV"
+id = "ef09b0ad898241d5aa33291f406beb7e"
+
+# ─── D1 遥测存储（创建后填入 database_id） ────────────────────────────────
+# 创建：`wrangler d1 create voicetodo-telemetry`
+# 初始化 schema：`wrangler d1 execute voicetodo-telemetry --file=./schema.sql`
+# [[d1_databases]]
+# binding = "TELEMETRY_DB"
+# database_name = "voicetodo-telemetry"
+# database_id = "your-d1-database-id"
+
+# 每天 03:00 UTC 执行遥测事件 GC。
+# [triggers]
+# crons = ["0 3 * * *"]

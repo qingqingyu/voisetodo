@@ -7,9 +7,10 @@ enum TranscriptFlowEvent {
     case noTodos
     case offlineSaved(TodoItemData)
     case offlineSaveFailed(Error)
-    case networkFallbackSaved(TodoItemData)
+    /// 外部调用失败后原始转写已保存。保留失败原因，供 UI 显示准确提示。
+    case fallbackSaved(TodoItemData, reason: VoiceTodoError)
     case networkFallbackSaveFailed(Error)
-    /// 配额耗尽后离线兜底成功。与 `networkFallbackSaved` 等价（pending 保留、稍后重试），
+    /// 配额耗尽后离线兜底成功。与 `fallbackSaved` 等价（pending 保留、稍后重试），
     /// 额外要求上层弹出 paywall 引导升级。
     case quotaFallbackSaved(TodoItemData)
     case failed(Error)
@@ -126,7 +127,7 @@ final class TranscriptProcessingFlow {
                             await saveOffline(
                                 transcript: text,
                                 localeIdentifier: locale.identifier,
-                                success: TranscriptFlowEvent.networkFallbackSaved,
+                                success: { .fallbackSaved($0, reason: voiceError) },
                                 failure: TranscriptFlowEvent.networkFallbackSaveFailed,
                                 continuation: continuation
                             )
@@ -146,7 +147,7 @@ final class TranscriptProcessingFlow {
                             await saveOffline(
                                 transcript: text,
                                 localeIdentifier: locale.identifier,
-                                success: TranscriptFlowEvent.networkFallbackSaved,
+                                success: { .fallbackSaved($0, reason: voiceError) },
                                 failure: TranscriptFlowEvent.networkFallbackSaveFailed,
                                 continuation: continuation
                             )

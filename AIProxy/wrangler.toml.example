@@ -13,7 +13,8 @@ DAILY_REQUEST_LIMIT = "2"
 # 留空则不启用。建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。
 # GLOBAL_DAILY_LIMIT = "5000"
 # 按 IP 限流（独立于设备，挡"单 IP 轮换 X-Device-ID"）。留空则不启用。
-# IP_DAILY_LIMIT = "50"
+# 日上限需显著高于单设备额度，避免 VPN、公司网络等共享出口误伤正常用户。
+# IP_DAILY_LIMIT = "500"
 # IP_RATE_PER_MINUTE = "10"
 # 每设备每天遥测事件上限（默认 500）
 TELEMETRY_DAILY_LIMIT = "500"

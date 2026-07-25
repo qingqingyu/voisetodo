@@ -845,10 +845,10 @@ final class AppCoordinator: ObservableObject {
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             handleError(error)
-        case .networkFallbackSaved:
-            handleOfflineFallbackSaved(triggerPaywall: false)
+        case .fallbackSaved(_, let reason):
+            handleOfflineFallbackSaved(triggerPaywall: false, reason: reason)
         case .quotaFallbackSaved:
-            handleOfflineFallbackSaved(triggerPaywall: true)
+            handleOfflineFallbackSaved(triggerPaywall: true, reason: nil)
         case .networkFallbackSaveFailed(let error):
             clearExtractionPresentation()
             activeInputTranscript = nil
@@ -876,13 +876,21 @@ final class AppCoordinator: ObservableObject {
         showConfirmSheet = false
     }
 
-    /// 网络降级（含配额耗尽）离线兜底成功后的统一处理：清展示、提示已离线保存。
+    /// 外部调用失败（含配额耗尽）后离线兜底成功的统一处理。
+    /// 普通失败保留原始原因并显示准确提示；配额耗尽继续走 paywall。
     /// `triggerPaywall=true` 时额外弹出订阅页（仅配额耗尽场景）。
-    private func handleOfflineFallbackSaved(triggerPaywall: Bool) {
+    private func handleOfflineFallbackSaved(triggerPaywall: Bool, reason: VoiceTodoError?) {
         clearExtractionPresentation()
         activeInputTranscript = nil
         activeInputLocaleIdentifier = nil
-        showToast(message: ErrorMessages.savedOffline, style: .info)
+        if let reason {
+            showToast(
+                message: reason.errorDescription ?? ErrorMessages.unexpectedError,
+                style: .warning
+            )
+        } else {
+            showToast(message: ErrorMessages.savedOffline, style: .info)
+        }
         if triggerPaywall {
             VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted")
             showPaywall = true

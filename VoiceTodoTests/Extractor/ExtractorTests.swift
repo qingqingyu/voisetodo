@@ -597,6 +597,70 @@ extension ExtractorTests {
         XCTAssertEqual(result.todos.count, 0)
     }
 
+    func testRateLimitedBeyondClientWaitBudgetIsNotRetried() async {
+        mockNetworkClient.enqueueHTTPFailure(
+            statusCode: 429,
+            body: #"{"error":"rate_limited","retryAfter":60}"#,
+            headers: ["X-RateLimit-Type": "velocity", "Retry-After": "60"]
+        )
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+
+        do {
+            _ = try await sut.extract(from: "一分钟限流", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("超过客户端等待预算时应直接抛出限流错误")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .rateLimited(retryAfter: 60))
+            XCTAssertEqual(URLProtocolStub.callCount, 1, "不能把 60 秒 Retry-After 截成 8 秒提前重试")
+        } catch {
+            XCTFail("错误类型: \(error)")
+        }
+    }
+
+    func testIPDailyRateLimitIsNotRetriedAndDoesNotOpenBreaker() async throws {
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 1, cooldown: 60)
+        let service = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: []),
+            circuitBreaker: breaker,
+            sleep: { _ in }
+        )
+        mockNetworkClient.enqueueHTTPFailure(
+            statusCode: 429,
+            body: #"{"error":"rate_limited","retryAfter":3600}"#,
+            headers: ["X-RateLimit-Type": "ip_daily", "Retry-After": "3600"]
+        )
+
+        do {
+            _ = try await service.extract(from: "IP 当日限额", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("应抛出 IP 当日限额错误")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .ipRateLimited(retryAfter: 3_600))
+            XCTAssertEqual(URLProtocolStub.callCount, 1, "IP 当日限额不应重试")
+        }
+
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        _ = try await service.extract(from: "限额后探测", locale: Locale(identifier: "zh-Hans"))
+        XCTAssertEqual(URLProtocolStub.callCount, 2, "IP 限额不应打开熔断器")
+    }
+
+    func testStreamingIPDailyRateLimitKeepsDedicatedError() async {
+        mockNetworkClient.enqueueHTTPFailure(
+            statusCode: 429,
+            body: #"{"error":"rate_limited","retryAfter":3600}"#,
+            headers: ["X-RateLimit-Type": "ip_daily", "Retry-After": "3600"]
+        )
+
+        do {
+            for try await _ in sut.extractStreaming(from: "流式 IP 当日限额", locale: Locale(identifier: "zh-Hans")) {}
+            XCTFail("流式请求应抛出 IP 当日限额错误")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .ipRateLimited(retryAfter: 3_600))
+            XCTAssertEqual(URLProtocolStub.callCount, 1)
+        } catch {
+            XCTFail("错误类型: \(error)")
+        }
+    }
+
     func testQuotaExhaustedIsNotRetried() async {
         mockNetworkClient.enqueueHTTPFailure(
             statusCode: 429,

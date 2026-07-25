@@ -433,6 +433,27 @@ final class AppCoordinatorTests: XCTestCase {
         )
     }
 
+    func testIPDailyLimitShowsPreciseToastAfterSavingFallback() async {
+        let extractor = DelayedExtractor()
+        extractor.streamingError = VoiceTodoError.ipRateLimited(retryAfter: 3_600)
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.processManualInput("IP 限额后保存原始输入")
+
+        XCTAssertFalse(coordinator.showConfirmSheet)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.ipRateLimited)
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertEqual(store.todos.first?.rawTranscript, "IP 限额后保存原始输入")
+        XCTAssertTrue(store.todos.first?.needsAIProcessing ?? false)
+    }
+
     func testManualInputKeepsPartialTodosWhenLaterPartialIsEmpty() async {
         let extractor = DelayedExtractor()
         extractor.streamingResults = [

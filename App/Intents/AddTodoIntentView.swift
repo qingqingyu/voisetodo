@@ -5,7 +5,7 @@ import AppIntents
 /// 在 Siri 界面展示已添加的待办列表
 struct AddTodoIntentView: View {
     let todos: [ExtractedTodo]
-    let isOffline: Bool
+    let fallbackError: VoiceTodoError?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -47,11 +47,11 @@ struct AddTodoIntentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if isOffline {
+            if let fallbackError {
                 HStack(spacing: 4) {
-                    Image(systemName: "wifi.slash")
+                    Image(systemName: fallbackError == .networkUnavailable ? "wifi.slash" : "exclamationmark.triangle")
                         .font(.system(size: 12))
-                    Text(String(localized: "siri.result.offline"))
+                    Text(fallbackError.errorDescription ?? ErrorMessages.unexpectedError)
                         .font(.system(size: 13))
                 }
                 .foregroundStyle(.orange)

@@ -1,7 +1,6 @@
 node_modules/
 .wrangler/
 .dev.vars
-# wrangler.toml 本地配置（包含 provider 路由结构；密钥通过 wrangler secret 注入）
-wrangler.toml
+# wrangler.toml 只保存非敏感部署配置并纳入版本控制；密钥继续通过 wrangler secret 注入。
 # .app-token-local 本地 APP_TOKEN 明文备份（用于 wrangler secret 注入）
 .app-token-local
