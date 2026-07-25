@@ -87,6 +87,9 @@ struct ConfirmSheetView: View {
         .presentationDragIndicator(.visible)
         .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: contentHeight)
+        // hintVisible 变化时同步驱动 sheet detent 高度变化,与 footer .easeOut(0.4) 淡出
+        // 共享同一触发源——避免 detent 瞬时跳变、footer 还在淡出过程中造成的视觉撕裂。
+        .animation(.easeOut(duration: 0.4), value: hintVisible)
         .accessibilityIdentifier("ConfirmSheet")
         .task {
             // 升起 1.5s 后淡出底部操作提示 footer。看一眼即懂的操作无需常驻。
