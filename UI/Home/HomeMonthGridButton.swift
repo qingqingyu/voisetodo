@@ -119,9 +119,13 @@ struct HomeMonthGridButton: View {
     /// 已完成态用分类色 40% 透明(非纯白 secondaryBackground):格子底色是 cardBackground(白),
     /// 若已完成条也用白底会完全融入背景不可见。保留分类色相让用户仍能辨认"过去的事属于哪类"。
     ///
-    /// 字体用 `captionFixed` 不响应 Dynamic Type:月历格事件条是"预览类 UI"(用户点开看详情),
-    /// 不是主读内容;固定 9pt 让字号缩放不再影响布局判定,与 Apple Calendar 日期数字一致。
-    /// 取舍:违反 iOS HIG「内容应跟随 Dynamic Type」建议,但与 `headlineFixed`/`mono` 同模式。
+    /// 字体策略:三段都固定字号不响应 Dynamic Type——月历格事件条是"预览类 UI"(用户点开看详情),
+    /// 不是主读内容;固定字号让字号缩放不再影响布局判定,与 Apple Calendar 日期数字一致。
+    /// 取舍:违反 iOS HIG「内容应跟随 Dynamic Type」建议。
+    /// - 标题段用 `.system(size: 9, weight: .regular)`(非 `WarmFont.captionFixed`):
+    ///   `.custom("Avenir Next", size:)` 在中英混排下宽度测量偏大,导致提前 "…" 截断;
+    ///   `.system` 用 CoreText 系统字体测量,中英混排宽度判定更准。详见函数内注释。
+    /// - hour 段与 +N 段用 `WarmFont.mono(8)`(`.system(.monospaced)`),无测量问题。
     ///
     /// **布局**:可选的 hour 前缀 / 必有的标题 / 可选的 +N 尾标通过 `Text + Text`
     /// 合并为单个 `Text`(SwiftUI 原生拼接,iOS 13+ 稳定)。
@@ -149,7 +153,12 @@ struct HomeMonthGridButton: View {
         }
         segments.append(
             Text(verbatim: occurrence.todo.title)
-                .font(WarmFont.captionFixed(9))
+                // 用 .system 而非 WarmFont.captionFixed(.custom("Avenir Next", size:)):
+                // SwiftUI 对 .custom 字体的宽度测量在中英混排下精度差——Avenir Next 是纯拉丁字体,
+                // 中文回退到 PingFang SC,但测量按 Avenir Next 字形 box 算偏大,导致提前 "…" 截断。
+                // .system(size:weight:) 同样固定字号不响应 Dynamic Type,但用 CoreText 系统字体测量,
+                // 中英混排宽度判定更准。取舍:与卡片标题(captionFixed)视觉略不一致,9pt 下基本不可见。
+                .font(.system(size: 9, weight: .regular))
         )
         // +N 尾标:仅最后一条挂,前导空格与标题拉开间距。overflow<=0 时无尾标。
         // 注:`overflow > 0` 防护是行为修复——slicedEvents() 契约未显式保证非零,
