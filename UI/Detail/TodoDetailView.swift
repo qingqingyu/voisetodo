@@ -31,7 +31,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var editedTimeBucket: TimeBucket?
     @State private var editedRecurrenceFrequency: RecurrenceFrequency?
     @State private var editedWeekdays: Set<Int>
-    @State private var editedDayOfMonth: String
+    @State private var editedDayOfMonth: Int
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
     /// 防抖保存 task。用户每次改字段都会 cancel + 重启;800ms 内无新改动才真正写库。
@@ -50,7 +50,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         _editedTimeBucket = State(initialValue: todo.timeBucket)
         _editedRecurrenceFrequency = State(initialValue: todo.recurrenceRule?.frequency)
         _editedWeekdays = State(initialValue: Set(todo.recurrenceRule?.weekdays ?? []))
-        _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
+        // 默认值用当前日:与 recurrenceModeButton 切到 .monthly 时的 fallback 一致。
+        // 模型 dayOfMonth 1...31, Picker 也限制 1...31, 永远合法 —— 不再需要 validation。
+        _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth ?? Calendar.current.component(.day, from: Date()))
     }
 
     private var categoryColor: Color { WarmTheme.color(for: editedCategory) }
@@ -217,29 +219,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
                     recurrenceEditorCard
 
-                    // 标记完成（issue 4：新增）
-                    if !todo.isCompleted {
-                        Button {
-                            coordinator.toggleTodo(todo.id)
-                            dismiss()
-                        } label: {
-                            HStack(spacing: WarmSpacing.xs) {
-                                Image(systemName: "checkmark.circle.fill")
-                                Text(String(localized: "detail.mark_done"))
-                            }
-                            .font(WarmFont.body(16))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, WarmSpacing.md)
-                            .background(
-                                RoundedRectangle(cornerRadius: WarmRadius.section)
-                                    .fill(WarmTheme.primary)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    // 删除:文字链接样式(无背景填充),与「标记完成」拉开距离降低误触。
+                    // 删除:文字链接样式(无背景填充)。
                     // 保留二次确认 alert —— 危险操作必须有,但视觉上弱化避免误点。
                     // 热区:.contentShape(Rectangle()) + .frame(maxWidth: .infinity, minHeight: 44)
                     //   把"透明背景"也纳入点击区,保证 iOS HIG 44pt 触摸目标。
@@ -256,7 +236,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, WarmSpacing.xxl)
+                    .padding(.top, WarmSpacing.xxl) // 跟前面卡片拉开节奏,危险操作不与其他 action 抢视觉重心
 
                     // 元信息（issue 9：降为底部小字，不做卡片）
                     VStack(spacing: WarmSpacing.xxs) {
@@ -319,6 +299,17 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         } message: {
             Text(String(localized: "detail.delete_warning"))
         }
+        // 详情页靠 fullScreenCover 呈现 —— 它是独立窗口层级,VoiceTodoApp.mainView 上的
+        // .toast overlay 被整页盖住,详情页里调 coordinator.showToast 时反馈不可见。
+        // 这里在详情页内再挂一份,复用同一组 coordinator 状态,反馈就能在详情页顶部出现。
+        // dismiss 后若 toast 未消失,主 overlay 接管显示,不会丢反馈。
+        .toast(
+            message: coordinator.toastMessage,
+            style: coordinator.toastStyle,
+            isPresented: $coordinator.showToast,
+            actionTitle: coordinator.toastActionTitle,
+            action: coordinator.toastAction
+        )
     }
 
     // MARK: - Card Wrapper
@@ -368,7 +359,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         } label: {
             HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: icon).font(.system(size: 14, weight: .semibold))
-                Text(label).font(WarmFont.body(15))
+                // 字号统一到 caption(13):跟 categoryChip 同尺寸,chip 类组件视觉一致。
+                Text(label).font(WarmFont.caption(13))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, WarmSpacing.sm)
@@ -536,22 +528,23 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 }
 
                 if editedRecurrenceFrequency == .monthly {
-                    HStack(spacing: WarmSpacing.xs) {
+                    // wheel picker 高度由 .frame 强制 —— 不给 frame 会撑满父容器。
+                    // 80×100:3 行可见,够 iOS HIG wheel 触摸目标,又不喧宾夺主。
+                    // 文字「每月 / 号」放在 picker 同行,垂直居中视觉对齐。
+                    HStack(spacing: WarmSpacing.sm) {
                         Text(String(localized: "recurrence.monthly_day_prefix"))
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textSecondary)
-                        TextField(String(localized: "recurrence.monthly_day_placeholder"), text: $editedDayOfMonth)
-                            .keyboardType(.numberPad)
-                            .font(WarmFont.body(15))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .frame(width: 48)
-                            .padding(.horizontal, WarmSpacing.xs)
-                            .padding(.vertical, WarmSpacing.xs)
-                            .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(WarmTheme.secondaryBackground))
-                            .onChange(of: editedDayOfMonth) { _, _ in checkForChanges() }
+                        Picker(String(localized: "recurrence.monthly_day_placeholder"), selection: $editedDayOfMonth) {
+                            ForEach(1...31, id: \.self) { Text("\($0)").tag($0) }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(width: 80, height: 100)
+                        .onChange(of: editedDayOfMonth) { _, _ in checkForChanges() }
                         Text(String(localized: "recurrence.monthly_day_suffix"))
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textSecondary)
+                        Spacer()
                     }
                 }
 
@@ -572,9 +565,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 if frequency == .weekly && editedWeekdays.isEmpty {
                     editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
                 }
-                if frequency == .monthly && editedDayOfMonth.isEmpty {
-                    editedDayOfMonth = String(Calendar.current.component(.day, from: Date()))
-                }
+                // monthly:editedDayOfMonth 是 Int,init 时已设默认值(当前日或 todo.dayOfMonth),
+                // 切换时无需 fallback —— 用户切换走再切回应保留之前选择,不应被 reset。
                 checkForChanges()
             }
         } label: {
@@ -633,8 +625,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         case .daily: return RecurrenceRule(frequency: .daily)
         case .weekly: return editedWeekdays.isEmpty ? nil : RecurrenceRule(frequency: .weekly, weekdays: Array(editedWeekdays))
         case .monthly:
-            guard let day = Int(editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)), (1...31).contains(day) else { return nil }
-            return RecurrenceRule(frequency: .monthly, dayOfMonth: day)
+            // Picker 1...31 已限制范围,editedDayOfMonth 永远合法,直接构造。
+            return RecurrenceRule(frequency: .monthly, dayOfMonth: editedDayOfMonth)
         case nil: return nil
         }
     }
@@ -642,11 +634,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     private var recurrenceValidationMessage: String? {
         switch editedRecurrenceFrequency {
         case .weekly: return editedWeekdays.isEmpty ? String(localized: "recurrence.validation.weekly_required") : nil
-        case .monthly:
-            let trimmed = editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let day = Int(trimmed), (1...31).contains(day) else { return String(localized: "recurrence.validation.monthly_day") }
-            return nil
-        case .daily, nil: return nil
+        // monthly:Picker 1...31 已限制,无需 validation。
+        case .monthly, .daily, nil: return nil
         }
     }
 
@@ -654,7 +643,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         if editedRecurrenceFrequency != todo.recurrenceRule?.frequency { return true }
         switch editedRecurrenceFrequency {
         case .weekly: return editedWeekdays != Set(todo.recurrenceRule?.weekdays ?? [])
-        case .monthly: return editedDayOfMonth.trimmingCharacters(in: .whitespacesAndNewlines) != (todo.recurrenceRule?.dayOfMonth.map(String.init) ?? "")
+        case .monthly: return editedDayOfMonth != (todo.recurrenceRule?.dayOfMonth ?? 1)
         case .daily, nil: return false
         }
     }
