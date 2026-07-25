@@ -261,7 +261,7 @@ struct ReviewView: View {
     private var heroSection: some View {
         VStack(spacing: WarmSpacing.xs) {
             Text(String(localized: "review.hero.count_\(summary.total)"))
-                .font(WarmFont.display(40))
+                .font(WarmFont.serifDisplay(40))
                 .foregroundColor(WarmTheme.primary)
                 .accessibilityIdentifier("ReviewHeroCount")
 
@@ -384,11 +384,18 @@ struct ReviewView: View {
         let ratio = Double(entry.count) / Double(maxCount)
 
         return HStack(spacing: WarmSpacing.sm) {
-            Text("\(entry.category.emoji) \(entry.category.displayName)")
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.textPrimary)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: 110, alignment: .leading)
+            HStack(spacing: WarmSpacing.xxs) {
+                Image(systemName: entry.category.sfSymbolName)
+                    .font(.system(size: 14))
+                    .foregroundColor(WarmTheme.color(for: entry.category))
+
+                Text(entry.category.displayName)
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+            }
+            .frame(maxWidth: 110, alignment: .leading)
 
             GeometryReader { proxy in
                 let barWidth = proxy.size.width * ratio
