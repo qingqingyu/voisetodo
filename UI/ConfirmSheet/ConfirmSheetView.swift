@@ -15,6 +15,16 @@ private enum ConfirmSheetScrollAnchor: String {
     case sheetBottom
 }
 
+/// 底部操作提示 footer 的布局/时序常量集中管理。
+/// - estimatedHeight: footer 可见时 clampedSheetHeight 的额外估算高度,
+///   约为 caption2 行高 + WarmSpacing.xxs(4pt)bottom padding。
+/// - safeAreaInset 自带的 home indicator 区域不计入 detent。
+/// - visibleDurationNanos: footer 显示时长,sheet 升起后多久自动淡出。
+private enum OperationHintFooter {
+    static let estimatedHeight: CGFloat = 16
+    static let visibleDurationNanos: UInt64 = 800_000_000
+}
+
 /// 确认弹窗视图 - 温暖友好风格
 /// 语音录入后的确认面板,显示 AI 提取的待办列表。
 ///
@@ -38,8 +48,8 @@ struct ConfirmSheetView: View {
     /// ScrollView 内 VStack 的实际内容高度,由 SheetContentHeightKey 回传,
     /// 驱动 .presentationDetents([.height(clampedSheetHeight), .large])。
     @State private var contentHeight: CGFloat = 0
-    /// 底部操作提示 footer 是否可见——sheet 升起后 1.5s 自动淡出消失。
-    /// 操作提示看一眼即懂,无需常驻占用底部视觉空间。
+    /// 底部操作提示 footer 是否可见——sheet 升起后 0.8s 自动淡出消失。
+    /// 操作提示闪现一下即可,无需常驻占用底部视觉空间。
     @State private var hintVisible = true
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
@@ -98,11 +108,11 @@ struct ConfirmSheetView: View {
         .animation(.easeOut(duration: 0.4), value: hintVisible)
         .accessibilityIdentifier("ConfirmSheet")
         .task {
-            // 升起 1.5s 后淡出底部操作提示 footer。看一眼即懂的操作无需常驻。
+            // 升起 0.8s 后淡出底部操作提示 footer。看一眼即懂的操作无需常驻。
             // Task.sleep 只 throw CancellationError(sheet 关闭时 Task 被取消),
             // 显式 catch 符合「错误显式传播」,不掩盖其他错误(sleep 不可能 throw 其他)。
             do {
-                try await Task.sleep(nanoseconds: 1_500_000_000)
+                try await Task.sleep(nanoseconds: OperationHintFooter.visibleDurationNanos)
             } catch is CancellationError {
                 return
             } catch {
@@ -269,6 +279,8 @@ struct ConfirmSheetView: View {
     // MARK: - Operation Hint Footer
 
     /// 移到底部 safeAreaInset,对齐 HTML .sheet-foot 居中灰小字。
+    /// padding 收紧:只留极小底部间距,safeAreaInset 自身会补 home indicator 区域,
+    /// 不再上下撑高度——闪现一下即可,不抢垂直空间。
     private var operationHintFooter: some View {
         HStack(spacing: WarmSpacing.xxs) {
             Image(systemName: "hand.tap")
@@ -278,7 +290,6 @@ struct ConfirmSheetView: View {
         }
         .foregroundColor(WarmTheme.textMuted)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, WarmSpacing.xs)
         .padding(.bottom, WarmSpacing.xxs)
         .background(WarmTheme.background)
         .accessibilityIdentifier("OperationHintLabel")
@@ -307,13 +318,14 @@ struct ConfirmSheetView: View {
 
     /// 动态 detent 的实际高度:内容高 + sheet 框架区域(导航栏 + footer + padding),
     /// clamp 到 [下限 280pt, 85% 屏高]。框架估算:导航栏 inline ~44 + VStack padding
-    /// ~24 + 余量 ~22 = 90;footer 可见时再加 ~30(hintVisible 控制)。
-    /// **footer 淡出时框架同步减 30pt,sheet 高度跟着矮**,避免底部留空白——
+    /// ~24 + 余量 ~22 = 90;footer 可见时再加 estimatedHeight(hintVisible 控制,
+    /// 见 OperationHintFooter.estimatedHeight)。
+    /// **footer 淡出时框架同步减该高度,sheet 高度跟着矮**,避免底部留空白——
     /// 消失就消失,不影响底下 todo 内容区的布局。
     /// 超上限后 ScrollView 自动接管滚动;.large 仍可手动拖到全屏。
     private var clampedSheetHeight: CGFloat {
         let screenHeight = UIScreen.main.bounds.height
-        let footer: CGFloat = hintVisible ? 30 : 0
+        let footer: CGFloat = hintVisible ? OperationHintFooter.estimatedHeight : 0
         let frame: CGFloat = 90 + footer
         let raw = contentHeight + frame
         let lowerBound: CGFloat = 280
