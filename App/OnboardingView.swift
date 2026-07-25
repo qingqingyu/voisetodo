@@ -195,21 +195,21 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 功能卡片 - 手写便签风格
-            VStack(spacing: 16) {
-                featureStickyNote(
+            // 功能卡片 - 手写便签风格(复用 ValuePropCard,与 Paywall 等入口共享设计语言)
+            VStack(spacing: WarmSpacing.md) {
+                ValuePropCard(
                     emoji: "🎙️",
                     title: String(localized: "onboarding.feature1.title"),
                     description: String(localized: "onboarding.feature1.desc")
                 )
 
-                featureStickyNote(
+                ValuePropCard(
                     emoji: "✨",
                     title: String(localized: "onboarding.feature2.title"),
                     description: String(localized: "onboarding.feature2.desc")
                 )
 
-                featureStickyNote(
+                ValuePropCard(
                     emoji: "📱",
                     title: String(localized: "onboarding.feature3.title"),
                     description: String(localized: "onboarding.feature3.desc")
@@ -328,49 +328,6 @@ struct OnboardingView: View {
         }
         .stroke(highlightColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
         .frame(height: 8)
-    }
-
-    // MARK: - Feature Sticky Note
-
-    private func featureStickyNote(emoji: String, title: String, description: String) -> some View {
-        HStack(spacing: 16) {
-            // Emoji 圆圈
-            Text(emoji)
-                .font(.system(size: 28))
-                .frame(width: 52, height: 52)
-                .background(
-                    Circle()
-                        .fill(WarmTheme.cardBackground)
-                        .shadow(color: sketchColor.opacity(0.1), radius: 4, y: 2)
-                )
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(WarmFont.headline(18))
-                    .foregroundColor(inkColor)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                Text(description)
-                    .font(WarmFont.caption(15))
-                    .foregroundColor(sketchColor)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
-            }
-
-            Spacer()
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(WarmTheme.cardBackground)
-                .shadow(color: sketchColor.opacity(0.08), radius: 8, y: 4)
-        )
-        .overlay(
-            // 手绘边框效果
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(sketchColor.opacity(0.15), lineWidth: 1)
-        )
     }
 
     // MARK: - Step 2: Microphone Permission
@@ -773,26 +730,8 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 3 个 Pro 福利卡片(复用 featureStickyNote)
-            VStack(spacing: 16) {
-                featureStickyNote(
-                    emoji: "🎯",
-                    title: String(localized: "onboarding.pro.bullet.quota.title"),
-                    description: String(localized: "onboarding.pro.bullet.quota.desc")
-                )
-                featureStickyNote(
-                    emoji: "🎁",
-                    title: String(localized: "onboarding.pro.bullet.trial.title"),
-                    description: String(localized: "onboarding.pro.bullet.trial.desc")
-                )
-                featureStickyNote(
-                    emoji: "🌱",
-                    title: String(localized: "onboarding.pro.bullet.support.title"),
-                    description: String(localized: "onboarding.pro.bullet.support.desc")
-                )
-            }
-            .offset(y: contentOffset)
-            .opacity(contentOpacity)
+            // 价值主张已迁移至 PaywallView(避免 Onboarding 与 Paywall 双屏重复展示)。
+            // 此处保留 CTA,作为通往 Paywall 的轻量引导。
 
             // CTA 按钮组
             VStack(spacing: 12) {
