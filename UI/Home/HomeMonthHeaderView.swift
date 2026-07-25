@@ -148,11 +148,6 @@ enum HomeLayoutMetrics {
     static let bottomBarHeight: CGFloat = WarmSize.fab + WarmSize.fabHaloOverflow * 2 + WarmSpacing.md
     /// 底部列表渐隐只负责贴近底部浮动操作簇的过渡，不能覆盖到中部 todo 卡片。
     static let bottomListFadeHeight: CGFloat = 40
-    /// 卡片左侧 checkbox 相对第一行标题视觉中心的纵向偏移(2026-07-24 抽出)。
-    /// WarmTodoCard 与 PendingDateTodoRow 共用此值,保证两类卡片 checkbox 圆心对齐一致。
-    /// 经验值:24pt 圆环居 44pt frame 顶部时圆心 +12pt,15pt 字号标题中心约 +9pt,差 3pt。
-    /// 真机若仍偏移可微调到 -2 / -4,改此值两类卡片同步生效。
-    static let checkboxTitleAlignmentOffset: CGFloat = -3
     /// 列表底部滚动留白。
     static let listBottomInset: CGFloat = bottomBarHeight + bottomListFadeHeight + WarmSpacing.xl
     /// 空状态 top inset。

@@ -50,11 +50,11 @@ struct PendingDateTodoRow: View {
                             .opacity(0)
                     }
                     // alignment: .top 让 24pt 圆环居 44pt frame 顶部,
-                    // offset 上移让圆心(原在 +12pt)对齐第一行标题视觉中心(约 +9pt)。
-                    // 偏移量抽到 HomeLayoutMetrics.checkboxTitleAlignmentOffset,
-                    // 与 WarmTodoCard 共用同一经验值,改一处同步生效。
+                    // 圆环顶部 = frame 顶部 = 标题第一行顶部 → 几何上整齐对齐。
+                    // 之前用 offset 上移 3pt 让圆心对齐标题视觉中心,实际效果是
+                    // 圆环几乎贴卡片 padding 边缘(留白仅 1pt),用户反馈"贴卡片顶部不整齐"。
+                    // 去掉 offset 接受圆心稍低于标题视觉中心(3pt),换取圆环跟标题顶部对齐。
                     .frame(width: 44, height: 44, alignment: .top)
-                    .offset(y: HomeLayoutMetrics.checkboxTitleAlignmentOffset)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
