@@ -281,19 +281,6 @@ struct VoiceTodoApp: App {
         } else if hasCompletedOnboarding {
             // 已完成引导，显示主界面
             HomeView(store: todoStore)
-                .sheet(isPresented: $coordinator.showConfirmSheet) {
-                    ConfirmSheetView(
-                        transcript: coordinator.confirmSheetTranscript,
-                        todos: $coordinator.extractedTodos,
-                        isStreaming: coordinator.isExtracting,
-                        onConfirm: { todos in
-                            coordinator.confirmTodos(todos)
-                        },
-                        onCancel: {
-                            coordinator.cancelTodos()
-                        }
-                    )
-                }
                 .accessibilityIdentifier("HomeRootView")
                 // ✅ 当 shouldAutoStartRecording 为 true 时自动开始录音
                 .onChange(of: shouldAutoStartRecording) { _, newValue in
