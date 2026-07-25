@@ -27,9 +27,7 @@ struct HomeSelectedDayListView: View {
     var reextractingTodoIDs: Set<UUID> = []
 
     /// 选中日是否完全无 todo 数据(未完成 + 已完成 + 待处理 bucket 全空)。
-    /// 仅用于决定 Section body 是否走 `emptySelectedDayRow` 空态分支。
-    /// 注意:这与 `hasTodaySectionBody` 不同 —— 今日全完成时本判定为 false
-    /// (因为有已完成数据),body 不走空态,但 header 会因未完成空而隐藏。
+    /// 用于决定 Today Section body 是否走 `emptySelectedDayRow` 空态分支。
     private var isSelectedDayCompletelyEmpty: Bool {
         state.selectedOccurrences.isEmpty
             && state.pendingDateTodos.isEmpty
@@ -37,22 +35,12 @@ struct HomeSelectedDayListView: View {
             && state.unscheduledTodos.isEmpty
     }
 
-    /// Today Section 的 body 是否会渲染出可见行(决定 header 是否显示)。
-    /// todaySectionBody 只渲染未完成的 tier,所以当今日所有任务完成时
-    /// (uncompletedOccurrences 空但 completedOccurrences 非空),body 输出为空,
-    /// 此时挂 "Today" header 会形成空壳 → 隐藏 header。
-    /// 与 isSelectedDayCompletelyEmpty 的区别:这里只看未完成 + 待处理,
-    /// 不算已完成(已完成走独立 Section)。
-    private var hasTodaySectionBody: Bool {
-        guard state.hasTodos else { return false }
-        return !state.uncompletedOccurrences.isEmpty
-            || !state.pendingDateTodos.isEmpty
-            || !state.unparsedTodos.isEmpty
-            || !state.unscheduledTodos.isEmpty
-    }
-
     var body: some View {
         List {
+            // Today Section 无 header —— 顶部 headerView 的大标题已经标明当前是「Today」tab,
+            // list 里再挂 "Today · N" 会与顶部标题重复(用户 2026-07-25 真机反馈)。
+            // 其他 section(待定日期 / 没能识别 / 未定时间 / 已完成)保留 daySectionHeader,
+            // 因为它们的标题信息(分组名 + 数量)无法从顶部推导。
             Section {
                 if !state.hasTodos {
                     homeGlobalEmptyRow
@@ -60,19 +48,6 @@ struct HomeSelectedDayListView: View {
                     emptySelectedDayRow
                 } else {
                     todaySectionBody
-                }
-            } header: {
-                // 顶层 Today 大标题:与其他 section(pendingDate/unparsed/undated/completed)
-                // 用同一套 daySectionHeader 样式,消除「Today 没分组标题」的视觉断层。
-                // 两种空态都不显示 header:
-                // - 全局空状态(hasTodos==false):空状态已有引导,挂 "Today · 0" 干扰。
-                // - 选中日空态(走 emptySelectedDayRow):下方已显示「今天还没有安排」引导,
-                //   header 再挂 "Today" 会与引导文案标题语义重复。
-                if hasTodaySectionBody {
-                    daySectionHeader(
-                        title: String(localized: "home.section.today"),
-                        count: state.uncompletedOccurrences.count
-                    )
                 }
             }
 

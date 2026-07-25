@@ -3367,22 +3367,6 @@
         }
       }
     },
-    "home.section.today" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Today"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "今天"
-          }
-        }
-      }
-    },
     "home.start_recording" : {
       "extractionState" : "stale",
       "localizations" : {
