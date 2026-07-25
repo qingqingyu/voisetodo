@@ -51,7 +51,7 @@ struct ConfirmSheetView: View {
                     Button(String(localized: "confirm.cancel")) {
                         cancelAction()
                     }
-                    .font(WarmFont.body(15))
+                    .font(WarmFont.headline(15))
                     .foregroundStyle(WarmTheme.textSecondary)
                     .accessibilityIdentifier("CancelButton")
                 }
@@ -248,6 +248,8 @@ struct ConfirmSheetView: View {
                  ? String(localized: "confirm.calendar_target.app_and_system")
                  : String(localized: "confirm.calendar_target.app_only"))
                 .font(WarmFont.caption(12))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .foregroundColor(WarmTheme.textSecondary)
         .accessibilityIdentifier("CalendarTargetLabel")
