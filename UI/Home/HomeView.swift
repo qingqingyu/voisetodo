@@ -1927,4 +1927,16 @@ private struct GlossarySuggestionBanner: View {
     }
 }
 
+// MARK: - Previews
+
+/// 默认字号 Preview 在 WarmTodoCard.swift 末尾(避免重复)。
+/// 这里专门挂 AX5 最大字号 Preview,用于验证无障碍场景下的布局:
+/// 卡片是否被字撑爆、Pick date 按钮是否挤压标题、checkbox 圆环是否失衡等。
+/// 长期保留——以后改任何 UI 都能立刻在 Xcode Canvas 切到 AX5 tab 看效果,不用操作手机。
+#Preview("AX5 最大字号") {
+    HomeView(store: MockStore.preview)
+        .environment(\.sizeCategory, .accessibility5)
+        .environmentObject(AppCoordinator.preview)
+}
+
 
