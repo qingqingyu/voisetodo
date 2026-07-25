@@ -32,6 +32,9 @@ struct ConfirmSheetView: View {
     /// ScrollView 内 VStack 的实际内容高度,由 SheetContentHeightKey 回传,
     /// 驱动 .presentationDetents([.height(clampedSheetHeight), .large])。
     @State private var contentHeight: CGFloat = 0
+    /// 底部操作提示 footer 是否可见——sheet 升起后 1.5s 自动淡出消失。
+    /// 操作提示看一眼即懂,无需常驻占用底部视觉空间。
+    @State private var hintVisible = true
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     var body: some View {
@@ -85,6 +88,21 @@ struct ConfirmSheetView: View {
         .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: contentHeight)
         .accessibilityIdentifier("ConfirmSheet")
+        .task {
+            // 升起 1.5s 后淡出底部操作提示 footer。看一眼即懂的操作无需常驻。
+            // Task.sleep 只 throw CancellationError(sheet 关闭时 Task 被取消),
+            // 显式 catch 符合「错误显式传播」,不掩盖其他错误(sleep 不可能 throw 其他)。
+            do {
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            withAnimation(.easeOut(duration: 0.4)) {
+                hintVisible = false
+            }
+        }
         .onDisappear {
             guard !didFinish else { return }
             didFinish = true
@@ -135,7 +153,10 @@ struct ConfirmSheetView: View {
             )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            operationHintFooter
+            if hintVisible {
+                operationHintFooter
+                    .transition(.opacity)
+            }
         }
     }
 
