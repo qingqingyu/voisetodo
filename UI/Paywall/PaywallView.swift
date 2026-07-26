@@ -74,12 +74,17 @@ struct PaywallView: View {
 
     // MARK: - Comparison Card
 
-    /// 用量展示卡:用户当天用量为 0 时显示「免费 100/天 vs Pro 无限」两列对比卡,
+    /// 用量展示卡:用户当天用量为 0 时显示「免费 limit/天 vs Pro 无限」两列对比卡,
     /// 强化付费动机;已用时切回实时计数,提醒配额耗尽进度。
+    ///
+    /// 分流顺序:error → 错误胶囊;Pro 用户 → 实时用量卡(对比卡对已订阅者无意义);
+    /// Free 且 used == 0 → 对比卡;Free 已用 → 实时用量卡。
     @ViewBuilder
     private var comparisonCard: some View {
         if quotaUsage.loadState == .error {
             quotaErrorPill
+        } else if quotaUsage.showsUnlimited {
+            liveUsageCard
         } else if quotaUsage.used == 0 {
             freeVsProComparison
         } else {
@@ -304,6 +309,7 @@ struct PaywallView: View {
                         .stroke(WarmTheme.primary, lineWidth: 1.5)
                 )
             }
+            .disabled(entitlement.productLoadState == .loading)
             .accessibilityIdentifier("PaywallRetryButton")
         }
         .frame(maxWidth: .infinity)

@@ -4536,13 +4536,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "From 100 to unlimited voice extractions per day"
+            "value" : "Unlock unlimited voice extractions every day"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每日额度从 100 次提升到无限"
+            "value" : "解锁无限语音提取,不再受每日额度限制"
           }
         }
       }
@@ -5013,22 +5013,6 @@
         }
       }
     },
-    "paywall.products_empty" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No subscriptions available right now"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂时没有可购买的订阅"
-          }
-        }
-      }
-    },
     "paywall.purchase_failed" : {
       "localizations" : {
         "en" : {
@@ -5137,22 +5121,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "升级 VoiceTodo Pro"
-          }
-        }
-      }
-    },
-    "paywall.trial_hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3-day free trial"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3 天免费试用"
           }
         }
       }
@@ -6313,6 +6281,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置"
+          }
+        }
+      }
+    },
+    "settings.upgrade_pro.header" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upgrade to Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "升级 Pro"
           }
         }
       }
