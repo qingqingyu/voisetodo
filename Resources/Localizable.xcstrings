@@ -4550,13 +4550,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "From 100 to unlimited voice extractions per day"
+            "value" : "Unlock unlimited voice extractions every day"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每日额度从 100 次提升到无限"
+            "value" : "解锁无限语音提取,不再受每日额度限制"
           }
         }
       }
@@ -5027,22 +5027,6 @@
         }
       }
     },
-    "paywall.products_empty" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No subscriptions available right now"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂时没有可购买的订阅"
-          }
-        }
-      }
-    },
     "paywall.purchase_failed" : {
       "localizations" : {
         "en" : {
@@ -5128,13 +5112,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock a higher daily quota"
+            "value" : "Unlimited voice todos, 3-day free trial"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解锁更高每日额度"
+            "value" : "语音待办无限额度,3 天免费试用"
           }
         }
       }
@@ -5151,22 +5135,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "升级 VoiceTodo Pro"
-          }
-        }
-      }
-    },
-    "paywall.trial_hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3-day free trial"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3 天免费试用"
           }
         }
       }
@@ -6328,6 +6296,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置"
+          }
+        }
+      }
+    },
+    "settings.upgrade_pro.header" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upgrade to Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "升级 Pro"
           }
         }
       }
@@ -7542,6 +7526,166 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新失败，请打开 App 同步"
+          }
+        }
+      }
+    },
+    "paywall.products_empty.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load subscription plans"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂时无法加载订阅方案"
+          }
+        }
+      }
+    },
+    "paywall.products_empty.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your connection or try again in a moment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请检查网络或稍后再试"
+          }
+        }
+      }
+    },
+    "paywall.products_empty.retry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "paywall.comparison.free" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免费版"
+          }
+        }
+      }
+    },
+    "paywall.comparison.pro" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 版"
+          }
+        }
+      }
+    },
+    "paywall.comparison.per_day" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "per day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每天"
+          }
+        }
+      }
+    },
+    "paywall.period.month" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "month"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        }
+      }
+    },
+    "paywall.period.year" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "year"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年"
+          }
+        }
+      }
+    },
+    "paywall.card.trial_included" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Includes 3-day free trial"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "含 3 天免费试用"
+          }
+        }
+      }
+    },
+    "paywall.legal.autorenew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trial ends, then auto-renews. Cancel anytime in Settings → Apple ID → Subscriptions."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试用期结束后自动续费。可随时在「系统设置 → Apple ID → 订阅」取消。"
           }
         }
       }

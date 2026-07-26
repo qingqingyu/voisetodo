@@ -50,7 +50,7 @@ struct HomeSettingsSheet: View {
                     }
                     .accessibilityIdentifier("UpgradeProButton")
                 } header: {
-                    Text(String(localized: "paywall.subtitle"))
+                    Text(String(localized: "settings.upgrade_pro.header"))
                 }
 
                 Section(String(localized: "settings.calendar_write.title")) {

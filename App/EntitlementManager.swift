@@ -24,6 +24,10 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
+    /// 商品加载重入守卫:避免用户连点 retry 触发并发 StoreKit 请求。
+    /// `productLoadState == .loading` 已能反映此状态,但 UI 可能在 .empty/.error 时
+    /// 也尝试触发 refresh,此标志提供显式护栏。
+    private var isLoadingProducts = false
 
     private var transactionListener: Task<Void, Never>?
 
@@ -59,7 +63,11 @@ final class EntitlementManager: ObservableObject {
     }
 
     func loadProducts() async {
+        // 重入守卫:已在加载时直接返回,避免并发 StoreKit 请求造成响应乱序。
+        guard !isLoadingProducts else { return }
+        isLoadingProducts = true
         productLoadState = .loading
+        defer { isLoadingProducts = false }
         do {
             let storeProducts = try await Product.products(for: Self.productIDs)
             products = storeProducts.sorted { $0.price < $1.price }

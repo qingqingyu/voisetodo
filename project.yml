@@ -117,11 +117,6 @@ targets:
     dependencies:
       - target: VoiceTodoWidget
         embed: true
-    scheme:
-      testTargets:
-        - VoiceTodoTests
-        - VoiceTodoUITests
-      gatherCoverageData: true
 
   # Widget Extension
   VoiceTodoWidget:
@@ -207,3 +202,27 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.qingqingyu.voicetodo.uitests
         GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  VoiceTodo:
+    build:
+      targets:
+        VoiceTodo: all
+        VoiceTodoWidget: all
+    run:
+      config: Debug
+      storeKitConfiguration: VoiceTodo/Products.storekit
+    test:
+      config: Debug
+      storeKitConfiguration: VoiceTodo/Products.storekit
+      targets:
+        - VoiceTodoTests
+        - VoiceTodoUITests
+      gatherCoverageData: true
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
