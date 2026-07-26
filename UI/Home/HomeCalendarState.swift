@@ -25,7 +25,7 @@ struct HomeCalendarState {
     let unscheduledTodos: [TodoItemData]
     /// 「待定日期」组:`.parsed` outcome + `dueDate==nil` + `recurrenceRule==nil`
     /// + 有时间信号(timeBucket 或 dueHint 非空)。
-    /// 卡片右侧带珊瑚色「选日期」按钮,chip 显示「时段 · 未定哪天」(HTML line 397-439)。
+    /// 卡片右侧带描边「选日期」按钮,chip 显示时段 / dueHint(如「下午」「这周末」)。
     let pendingDateTodos: [TodoItemData]
     /// 「没能识别」组:outcome != .parsed(.rawFallback 或 .unparsed) +
     /// `dueDate==nil` + `recurrenceRule==nil`。

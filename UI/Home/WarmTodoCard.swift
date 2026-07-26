@@ -79,8 +79,9 @@ struct WarmTodoCard: View {
     var onMoveToTomorrow: (() -> Void)? = nil
     /// 时间 chip 点击入口 + popover 提交处理。nil 时 chip 不可点(纯展示,无 dot)。
     /// 接入方:HomeSelectedDayListView 注入 `onChangeTime`,chip 变成可点 button,
-    /// 弹出 `TimeEditPopover`,提交时把新的 (hasDueTime, dueDate, timeBucket) 回调出来写库。
-    var onChangeTime: ((Bool, Date?, TimeBucket?) -> Void)? = nil
+    /// 弹出 `TimeEditPopover`,提交时把新钟点回传调用方写库
+    /// (popover 只改钟点 → 恒为 hasDueTime=true / timeBucket=nil,所以签名收敛为 `(Date) -> Void`)。
+    var onChangeTime: ((Date) -> Void)? = nil
     var showsTimeBucketMetadata = true
     var dueStatusDisplayMode: DueStatusDisplayMode = .full
     /// 标题行是否内联钟点前缀（"09:00 吃药"）。默认 false——
@@ -97,11 +98,9 @@ struct WarmTodoCard: View {
     @ScaledMetric(relativeTo: .body) private var categoryIconFontSize: CGFloat = 12
 
     /// 改时间 popover 状态。chip 点击触发,popover 内部提交时通过 `onChangeTime` 回调。
-    /// 编辑中的 date / period 由 chip 点击时的 `todo` 当前状态初始化。
+    /// 编辑中的 date 由 chip 点击时的 `todo.dueDate ?? Date()` 初始化。
     @State private var showTimeEditor = false
     @State private var editingDate: Date = Date()
-    @State private var editingPeriod: TimeBucket? = nil
-    @State private var editingMode: TimeEditPopover.Mode = .timed
 
     private var categoryColor: Color {
         WarmTheme.color(for: todo.category)
@@ -380,55 +379,35 @@ struct WarmTodoCard: View {
         .accessibilityHint(String(localized: "a11y.view_detail"))
         .popover(isPresented: $showTimeEditor) {
             TimeEditPopover(
-                initialMode: editingMode,
-                date: $editingDate,
-                period: $editingPeriod
-            ) { mode, date, period in
-                commitTimeEdit(mode: mode, date: date, period: period)
+                date: $editingDate
+            ) { date in
+                commitTimeEdit(date: date)
             }
         }
     }
 
-    /// 把 chip 点击事件转成 popover 弹出。编辑态由当前 `todo` 字段推导。
-    /// - hasDueTime → timed 模式,初始钟点 = todo.dueDate
-    /// - timeBucket 非空 → period 模式,初始时段 = todo.timeBucket
-    /// - 否则 → allDay 模式
+    /// 把 chip 点击事件转成 popover 弹出。popover 只编辑钟点,初始 date 取规则:
+    /// - 有 dueDate → 用它(wheel 显示原钟点)
+    /// - 无 dueDate → 用「今天 00:00 + 9h」= 今天 09:00。锚定 startOfDay 避免
+    ///   `Date()` 取「当前瞬间」导致跨日漂移(用户 23:58 打开 popover、00:01 按
+    ///   完成时,wheel 显示 23:58 但 editingDate 的日期分量已变成第二天 → 落库
+    ///   到第二天 23:58)。默认钟点 09:00 是常见上班/晨间任务的合理起点。
     private func startEditingTime() {
-        if todo.hasDueTime, let dueDate = todo.dueDate {
-            editingMode = .timed
+        if let dueDate = todo.dueDate {
             editingDate = dueDate
-            editingPeriod = nil
-        } else if let bucket = todo.timeBucket {
-            editingMode = .period
-            editingPeriod = bucket
-            editingDate = todo.dueDate ?? Date()
         } else {
-            editingMode = .allDay
-            editingPeriod = nil
-            editingDate = todo.dueDate ?? Date()
+            let calendar = Calendar.current
+            let startOfToday = calendar.startOfDay(for: Date())
+            editingDate = calendar.date(byAdding: .hour, value: 9, to: startOfToday) ?? startOfToday
         }
         showTimeEditor = true
     }
 
-    /// popover 提交时:把 mode/date/period 翻译成 `(hasDueTime, dueDate, timeBucket)`,
-    /// 通过 `onChangeTime` 回调给调用方写库。失败的 callback 不该静默吞,但在卡片层
-    /// 没有 error UI,所以让调用方(AppCoordinator)负责 toast/重试。
-    private func commitTimeEdit(mode: TimeEditPopover.Mode, date: Date, period: TimeBucket?) {
-        let calendar = Calendar.current
-        switch mode {
-        case .timed:
-            onChangeTime?(true, date, nil)
-        case .period:
-            // 时段模式下保留原 dueDate(可能是今天),只更新 timeBucket。
-            // 若原 dueDate 为 nil,让调用方在写库时按需补今天(同 TodoScheduleDefaults.effectiveDueDate)。
-            let baseDate = todo.dueDate ?? calendar.startOfDay(for: Date())
-            onChangeTime?(false, baseDate, period)
-        case .allDay:
-            // 整天:保留原 dueDate 的日期部分,剥离钟点。
-            let baseDate = todo.dueDate.map { calendar.startOfDay(for: $0) }
-                ?? calendar.startOfDay(for: Date())
-            onChangeTime?(false, baseDate, nil)
-        }
+    /// popover 提交时:把新钟点回传 `onChangeTime`。popover 提交层不处理错误,
+    /// 失败由调用方(HomeView.changeTodoTime)负责 toast。
+    /// 时段/整天的切换由 contextMenu 的 `onMoveToBucket` 承接,不进 popover。
+    private func commitTimeEdit(date: Date) {
+        onChangeTime?(date)
         showTimeEditor = false
     }
 

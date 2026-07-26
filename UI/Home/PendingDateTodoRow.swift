@@ -3,8 +3,9 @@ import SwiftUI
 /// 「待定日期」分组的卡片:有时间信号(timeBucket 或 dueHint)但没具体日期。
 ///
 /// 与正常 WarmTodoCard 的差异:
-/// - 右侧加珊瑚色实心「选日期」按钮(remedial 强暗示,与今日可点 chip 的 optional 弱暗示形成对比)
-/// - chip 用 `.loose` 样式显示「时段 · 未定哪天」(HTML line 408-413)
+/// - 右侧「选日期」按钮为次级 CTA(sketch 1pt 描边 + textSecondary 文字)。
+///   降级原因详见按钮 label 内注释。
+/// - chip 用 `.loose` 样式显示时段 / dueHint(如「下午」「这个周末」)。
 ///
 /// 选日期 popover 提交后,该 todo 因 `dueDate != nil` 自动离开 `pendingDateTodos`,
 /// 进入 Today 的对应 tier(整天/时段/按时间)。
@@ -19,17 +20,20 @@ struct PendingDateTodoRow: View {
     @State private var showDatePicker = false
     @State private var pickedDate: Date = Date()
 
-    /// chip 文本拼接规则(HTML line 411, 423, 436):
-    /// - 有 timeBucket:「`bucket.localizedTitle` · 未定哪天」(如「下午 · 未定哪天」)
-    /// - 有 dueHint 无 timeBucket:「`dueHint` · 未定哪天」(如「等会儿 · 未定哪天」)
+    /// chip 文本拼接规则:
+    /// - 有 timeBucket:`bucket.localizedTitle`(如「下午」)
+    /// - 有 dueHint 无 timeBucket:`dueHint`(如「等会儿」「这个周末」「月底之前」)
     /// - 都没有:「未定时间」
+    ///
+    /// 之前每条都带「· 未定哪天」后缀,但分组名 + 右侧「选日期」按钮已经把"未定日期"
+    /// 表达清楚,后缀反而冗余。用户 2026-07-26 真机反馈:每行都带显得啰嗦。
     private var looseChipText: String {
         if let bucket = todo.timeBucket {
-            return "\(bucket.localizedTitle) · \(String(localized: "home.chip.undated"))"
+            return bucket.localizedTitle
         }
         let hint = todo.dueHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !hint.isEmpty {
-            return "\(hint) · \(String(localized: "home.chip.undated"))"
+            return hint
         }
         return String(localized: "home.chip.no_time")
     }
@@ -87,18 +91,16 @@ struct PendingDateTodoRow: View {
                 } label: {
                     Text(String(localized: "home.pending_date.pick"))
                         .font(WarmFont.caption(13))
-                        .foregroundColor(.white)
-                        // padding 对齐 ChipView 的密度(horizontal 9 / vertical 3),
-                        // 避免垂直留白过厚让字看起来"浮"在橙色块中间产生断层感。
-                        // 略比 chip 大一档(10/4 vs 9/3)是因为它是 primary CTA,
-                        // 视觉权重需要稍强于纯展示 chip。
-                        // 说明:10 与 ChipView 的 9 一样偏离 WarmSpacing 的「4 借数系统」,
-                        // 是 chip 系视觉一致性的有意破例(WarmSpacing 无 9/10 档位,强行归档会破坏 chip 密度)。
+                        .foregroundColor(WarmTheme.textSecondary)
+                        // 描边次级 CTA:sketch 1pt 描边 + textSecondary 文字 + 透明底。
+                        // 之前是实心 primary 填充,违反 WarmTheme.primary「仅留给麦克风/日期高亮」约束,
+                        // 且四个橙块堆一列视觉重量比任务名还重。用户 2026-07-26 真机反馈要求降级。
+                        // padding 沿用 (10, xxs):跟 .loose chip(9,3) 密度同档,让卡片视觉重量均衡。
                         .padding(.horizontal, 10)
                         .padding(.vertical, WarmSpacing.xxs)
                         .background(
                             RoundedRectangle(cornerRadius: WarmRadius.chip)
-                                .fill(WarmTheme.primary)
+                                .stroke(WarmTheme.sketch, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)

@@ -12,10 +12,9 @@ struct HomeSelectedDayListView: View {
     let onMoveToBucket: (UUID, TimeBucket) -> Void
     /// 长按 context menu:卡片移到明天。
     let onMoveToTomorrow: (UUID) -> Void
-    /// 时间 chip 点击后的改时间入口。(hasDueTime, dueDate, timeBucket) 由 `TimeEditPopover`
-    /// 提交时填好,本回调负责写库。改时间 popover 只用于「今日 Section」的 occurrence,
-    /// 待定日期组走自己的「选日期」按钮(Commit 6)。
-    let onChangeTime: (UUID, Bool, Date?, TimeBucket?) -> Void
+    /// 时间 chip 点击后的改时间入口。`Date` 由 `TimeEditPopover` 提交时填好,本回调负责写库。
+    /// 改时间 popover 只用于「今日 Section」的 occurrence,待定日期组走自己的「选日期」按钮(Commit 6)。
+    let onChangeTime: (UUID, Date) -> Void
     /// 「待定日期」分组「选日期」按钮提交后写库。参数是用户选定的 startOfDay,
     /// 调用方按 hasDueTime=false + timeBucket=nil 写入(剥离时段,只保留日期)。
     let onPickDate: (UUID, Date) -> Void
@@ -52,7 +51,7 @@ struct HomeSelectedDayListView: View {
             }
 
             // 「待定日期」分区:有时间信号(timeBucket 或 dueHint)但没具体日期。
-            // 用 PendingDateTodoRow:右侧珊瑚色「选日期」按钮 + .loose chip 显示「时段 · 未定哪天」。
+            // 用 PendingDateTodoRow:右侧描边「选日期」按钮 + .loose chip 显示时段 / dueHint。
             if !state.pendingDateTodos.isEmpty {
                 Section {
                     ForEach(Array(state.pendingDateTodos.enumerated()), id: \.element.id) { idx, todo in
@@ -391,8 +390,8 @@ struct HomeSelectedDayListView: View {
                 onToggle: { onToggleOccurrence(occurrence) },
                 onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
                 onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
-                onChangeTime: { hasDueTime, dueDate, bucket in
-                    onChangeTime(occurrence.todo.id, hasDueTime, dueDate, bucket)
+                onChangeTime: { date in
+                    onChangeTime(occurrence.todo.id, date)
                 },
                 showsTimeBucketMetadata: false,
                 dueStatusDisplayMode: .overdueOnly,
