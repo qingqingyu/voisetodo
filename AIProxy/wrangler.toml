@@ -81,3 +81,16 @@ id = "ef09b0ad898241d5aa33291f406beb7e"
 # 每天 03:00 UTC 执行遥测事件 GC。
 # [triggers]
 # crons = ["0 3 * * *"]
+
+# ─── Durable Objects ─────────────────────────────────────────────────────────
+# QuotaCounter: 强一致配额计数器,替代 KV 上的 read-modify-write(后者在并发下丢失更新)。
+# Step 2 阶段:binding 已声明,worker.js 入口已 export,但业务路径仍走 KV。
+# Step 3 起按"每设备 → IP-daily → 全局预算"顺序逐步切换读路径到 DO。
+# 部署注意:首次 wrangler deploy 时 [[migrations]] 会创建 DO 类,需要在 Workers Paid 计划。
+[[durable_objects.bindings]]
+name = "QUOTA_COUNTER_DO"
+class_name = "QuotaCounter"
+
+[[migrations]]
+tag = "v1-quota-counter"
+new_sqlite_classes = ["QuotaCounter"]

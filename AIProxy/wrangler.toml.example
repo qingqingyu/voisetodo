@@ -116,3 +116,15 @@ TELEMETRY_DAILY_LIMIT = "500"
 # 必须配置 D1 binding 才生效；未配置时 cron 仍触发但 handler 直接跳过。
 # [triggers]
 # crons = ["0 3 * * *"]
+
+# ─── Durable Objects（强一致配额计数器） ─────────────────────────────────────
+# QuotaCounter 替代 KV 上的 read-modify-write,后者在并发下丢失更新。
+# 部署前提:Workers Paid 计划(DO 不在 Free 计划可用)。
+# 首次 wrangler deploy 会触发 [[migrations]] 创建 DO 类。
+# [[durable_objects.bindings]]
+# name = "QUOTA_COUNTER_DO"
+# class_name = "QuotaCounter"
+#
+# [[migrations]]
+# tag = "v1-quota-counter"
+# new_sqlite_classes = ["QuotaCounter"]

@@ -9,7 +9,7 @@
 //   - choices[].delta.content      -> text chunk
 //   - choices[].finish_reason      -> terminal
 
-import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable } from "./base.js";
+import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // OpenAI error bodies that indicate the model in this provider can't serve the request;
 // failover to a different provider (which may have a different model) is worth trying.
@@ -25,7 +25,7 @@ const OPENAI_MODEL_CONFIG_KEYWORDS = [
 export const openaiAdapter = {
   type: "openai",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "OpenAI key not configured");
     }
@@ -36,7 +36,8 @@ export const openaiAdapter = {
       url: provider.url,
       init: {
         method: "POST",
-        signal: AbortSignal.timeout(provider.timeoutMs),
+        // 合并客户端断连信号 + 单次调用超时
+        signal: mergeSignals(abortSignal, AbortSignal.timeout(provider.timeoutMs)),
         headers: {
           "Authorization": `Bearer ${provider.apiKey}`,
           "Content-Type": "application/json"
