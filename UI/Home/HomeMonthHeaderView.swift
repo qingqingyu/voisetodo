@@ -180,7 +180,8 @@ enum HomeLayoutMetrics {
 
     // MARK: - MonthGrid(展开态月历网格)布局常量
     /// 月历网格容器水平 padding(= WarmSpacing.xxs = 4pt)。
-    /// 刻意小于折叠态 WeekStripCard 的 24pt(xl)——此不对称是设计意图,不要为"对齐"改回 xl。
+    /// 刻意小于折叠态 WeekStripCard 的外层 20pt(HomeView 里 .padding(.horizontal, .lg))——
+    /// 此不对称是设计意图,不要为"对齐"改回 lg。
     /// 4pt 比原来 8pt(xs)再多 ~4pt 可用宽度(每格 +0.57pt,7 列中文条目约多塞 0.5 个字),
     /// 同时仍留极少边距,避免边格被 iPhone 屏幕圆角裁切、不让格子贴屏幕边显得溢出。
     /// 引用 WarmSpacing.xxs 而非裸字面量,design system 调整 xxs 时自动跟随。
@@ -238,20 +239,29 @@ enum HomeLayoutMetrics {
     /// 网格列间距(pt)。
     static let gridColumnSpacing: CGFloat = 2
     /// 单格事件条数的**硬上限**(防极端屏幕尺寸导致 cap 过大)。
-    /// 实际显示上限由下方 `allocateRowHeights` 内的 `dynamicCap` 根据每行物理高度反推,
-    /// 这里只作为天花板。15 对应格子高度 ~408pt(need(15) = 18 + 26*15),
-    /// 仅在超大屏 + 1~2 周的极端月份下被命中。正常月份下 dynamicCap 才是实际生效值。
+    /// 实际显示上限由下方 `allocateRowHeights` 内的 `estimatedCap` 根据每行物理高度反推,
+    /// 这里只作为天花板。15 对应格子高度 408pt(need(15) = gridCellChrome + 15*gridBarHeight + 14*gridBarSpacing
+    /// = 20 + 360 + 28 = 408),仅在超大屏 + 1~2 周的极端月份下被命中。正常月份下 estimatedCap 才是实际生效值。
     static let gridMaxBarsPerCellHardLimit: Int = 15
 
     /// 注水法行高分配(对齐 HTML month-view-allocator.html 的 allocate 函数)。
     ///
     /// 核心思路:忙的周行高更高,空的周更矮,但不会饿死任何一周。
-    /// 1. **动态 cap**:根据每行估算高度反推能容几条事件条(N = (rowH - chrome + gap) / (barH + gap)),
-    ///    4 周的月每行高度大 → cap 大,6 周的月 → cap 小。物理空间不被硬编码浪费。
-    /// 2. 每周 demand = 该周最忙日的事件数(cap dynamicCap)
-    /// 3. 第一轮:给每个非空周分 1 条
-    /// 4. 第二轮:反复提升"当前显示最少条数"的周(tie-break: 隐藏任务数更多优先)
-    /// 5. 第三轮:剩余像素平均分给所有行,网格恰好填满
+    /// 1. **估算 cap**:用平均行高(avail/n)反推能容几条事件条,作为 Pass 1+2 注水的
+    ///    `initialDemand` 上限。用途:防止单周抢光预算(一个 15 条事件的周不该饿死其他周)。
+    /// 2. **真实 demand**:每周最忙日的事件数,只受 `gridMaxBarsPerCellHardLimit` 截断。
+    ///    不被估算 cap 砍——Pass 3a 直接按 realDemand 继续,避免"行高被撑高后却仍卡在估算上限"。
+    /// 3. Pass 1:给每个非空周分 1 条
+    /// 4. Pass 2:注水,受 initialDemand 约束,反复提升"当前显示最少条数"的周
+    ///    (tie-break: 隐藏任务数更多优先)
+    /// 5. Pass 3a (新增):剩余像素优先给还有真实隐藏事件的周继续加条,不受 initialCap 砍
+    /// 6. Pass 3b:Pass 3a 因 slack 不够一条完整 bar 中断时,把剩余 slack 平均分给
+    ///    还有隐藏事件的周(空周不参与,保持自然高度)。所有周都已满足时退化为平均分,保证网格填满屏幕
+    /// 7. Pass 4 (新增):按 Pass 3 最终行高回补 shown——Pass 3b 给的 slack 可能让某周
+    ///    正好多装一条,这里按真实 rows[i] 反推 actualCap 把 shown 拉满
+    ///
+    /// 修复历史:原算法 Pass 3 平均撒 slack,出现"格子高度够装 4 条却只显示 2 条"的视觉 bug
+    /// (估算 cap 把 demand 砍到 2,Pass 3 撑高行高却没回头加条),用户 2026-07-26 反馈。
     static func allocateRowHeights(
         eventsPerDay: [[Int]],   // [周][日] = 事件数
         budgetHeight: CGFloat
@@ -266,21 +276,20 @@ enum HomeLayoutMetrics {
 
         let avail = budgetHeight - rowGap * CGFloat(n - 1)
 
-        // 动态 cap:根据每行估算高度反推能容几条事件条。
+        // 真实需求:每周最忙日的事件数,只受 hardCap 截断(防极端屏幕 15 条以上)。
+        // 这是 Pass 3a / Pass 4 用的 demand——不受估算 cap 砍。
+        let realDemand = eventsPerDay.map { week in
+            min(gridMaxBarsPerCellHardLimit, week.max() ?? 0)
+        }
+
+        // 估算 cap:用平均行高反推,作为 Pass 1+2 注水的 demand 上限。
         // need(N) = chrome + N*barH + (N-1)*gap = (chrome - gap) + N*(barH + gap)
         // 反推 N = (rowHeight - chrome + gap) / (barH + gap)
-        // 4 周的月每行高度大 → cap 大,能显示更多事件;
-        // 6 周的月每行高度小 → cap 小。物理空间不被硬编码浪费。
-        // 用 avail/n 估算 rowHeight 是一次近似——实际 rowHeight 由 Pass 3 按需分配会有微调,
-        // 但 cap 只决定 demand 上限,微小偏差不影响最终布局正确性(只会影响"是否能多塞 1 条")。
+        // 4 周的月每行高度大 → cap 大,6 周的月 → cap 小。
+        // 估算 cap 只用于防止 Pass 2 注水阶段一忙周抢光预算;Pass 3a 之后用 realDemand 不再受此约束。
         let estimatedRowHeight = avail / CGFloat(n)
-        let dynamicCap = max(0, Int((estimatedRowHeight - chrome + gap) / (barH + gap)))
-        let cap = min(gridMaxBarsPerCellHardLimit, dynamicCap)
-
-        // 每周 demand = 最忙日的事件数(上限 cap)
-        let demand = eventsPerDay.map { week in
-            min(cap, week.max() ?? 0)
-        }
+        let estimatedCap = max(0, Int((estimatedRowHeight - chrome + gap) / (barH + gap)))
+        let initialDemand = realDemand.map { min(estimatedCap, $0) }
 
         var shown = Array(repeating: 0, count: n)
 
@@ -296,22 +305,22 @@ enum HomeLayoutMetrics {
 
         var used = need(0) * CGFloat(n)
 
-        // Pass 1: 给每个非空周分 1 条
+        // Pass 1: 给每个非空周分 1 条(受 initialDemand 约束)
         for i in 0..<n {
             let inc = increment(forCurrentShown: shown[i])
-            if demand[i] > 0 && used + inc <= avail {
+            if initialDemand[i] > 0 && used + inc <= avail {
                 shown[i] = 1
                 used += inc
             }
         }
 
-        // Pass 2: 注水——反复提升当前最少条数的周
+        // Pass 2: 注水——反复提升当前最少条数的周(受 initialDemand 约束)
         while true {
             var best = -1
             var bestShown = Int.max
             var bestHidden = -1
             for j in 0..<n {
-                if shown[j] >= demand[j] { continue }
+                if shown[j] >= initialDemand[j] { continue }
                 let inc = increment(forCurrentShown: shown[j])
                 if used + inc > avail { continue }
                 let hidden = eventsPerDay[j].reduce(0) { $0 + max(0, $1 - shown[j]) }
@@ -326,20 +335,82 @@ enum HomeLayoutMetrics {
             shown[best] += 1
         }
 
-        // Pass 3: 剩余像素平均分,填满屏幕
+        // 计算进入 Pass 3 的初始 rows 和 slack
         var rows = shown.map(need)
-        let sum = rows.reduce(0, +)
-        let slack = avail - sum
+        var slack = avail - rows.reduce(0, +)
+
+        // Pass 3a (新增): slack 优先给还有真实隐藏事件的周继续加条。
+        // 这里是「高度够却显示少」bug 的核心修复:Pass 2 因 estimatedCap 估算偏低
+        // 导致 initialDemand 被砍,这里用 realDemand 把条数补回来。
+        // 同时实现「忙的周高、空的周矮」——空周(realDemand=0)没隐藏事件,
+        // 自然不参与加条,它们的 slack 流向忙周。
+        //
+        // 复杂度:O(n × Σ realDemand),n≤6 且 Σ realDemand ≤ 6*hardCap=90 → 最坏 540 步,可接受。
+        //
+        // 两个 break 出口:
+        //   (a) best<0 —— 所有周吃满 realDemand,后续 Pass 3b 的 weeksWithHidden 必为空,走平摊 fallback
+        //   (b) slack<inc —— slack 不够一条完整 bar,但仍有周 realDemand>shown,Pass 3b 的 weeksWithHidden 非空
+        while slack > 0 {
+            // 选当前隐藏事件最多的周;tie-break:shown 最少优先(与 Pass 2 注水哲学一致),
+            // 仍并列时取 index 最小(稳定排序)
+            var best = -1
+            var bestHidden = 0
+            var bestShown = Int.max
+            for j in 0..<n {
+                let hidden = realDemand[j] - shown[j]
+                if hidden <= 0 { continue }
+                if hidden > bestHidden
+                    || (hidden == bestHidden && shown[j] < bestShown) {
+                    bestHidden = hidden
+                    bestShown = shown[j]
+                    best = j
+                }
+            }
+            if best < 0 { break }  // 出口 (a)
+
+            let inc = increment(forCurrentShown: shown[best])
+            guard slack >= inc else { break }  // 出口 (b)
+            shown[best] += 1
+            rows[best] = need(shown[best])
+            slack -= inc
+        }
+
+        // Pass 3b: Pass 3a 出口 (b) 时,把剩余 slack 平均分给还有隐藏事件的周——
+        // 它们行高再补一点,Pass 4 可能正好够多装一条。
+        // 没有隐藏事件的周不参与分配(空周保持 need(shown) 自然高度)。
+        // 极端 fallback(出口 a):所有周都已满足时,slack 平摊到所有周,保证网格仍填满屏幕
+        // (此时多余空间无法转化为条,平摊是最不破坏视觉的选择)。
         if slack > 0 {
-            let per = floor(slack / CGFloat(n))
-            rows = rows.map { $0 + per }
-            var rem = Int((slack - per * CGFloat(n)).rounded())
+            let weeksWithHidden = (0..<n).filter { realDemand[$0] > shown[$0] }
+            let recipients = weeksWithHidden.isEmpty ? Array(0..<n) : weeksWithHidden
+            let per = floor(slack / CGFloat(recipients.count))
+            for i in recipients {
+                rows[i] += per
+            }
+            var rem = Int((slack - per * CGFloat(recipients.count)).rounded())
             var k = 0
             while rem > 0 {
-                rows[k] += 1
+                rows[recipients[k % recipients.count]] += 1
                 rem -= 1
-                k = (k + 1) % n
+                k += 1
             }
+        }
+
+        // Pass 4 (新增): 按真实行高回补 shown。
+        // Pass 3b 给的 slack 可能让某周正好多装一条(实际高度 ≥ need(shown+1)),
+        // 这里按真实 rows[i] 反推 actualCap 把 shown 拉满。
+        // 数学保证安全:need(actualCap) ≤ rows[i] 恒成立。
+        // 证明:actualCap = floor((rows[i] - chrome + gap) / (barH + gap))
+        //      ≤ (rows[i] - chrome + gap) / (barH + gap)
+        //   ⇒ need(actualCap) = chrome + actualCap*barH + (actualCap-1)*gap
+        //                      = (chrome - gap) + actualCap*(barH + gap)
+        //                      ≤ (chrome - gap) + (rows[i] - chrome + gap) = rows[i]  ∎
+        for i in 0..<n where realDemand[i] > shown[i] {
+            let actualCap = max(0, Int((rows[i] - chrome + gap) / (barH + gap)))
+            // precondition(而非 assert):Release build 也守护不变量。
+            // 不变量被破坏 = 算法逻辑错误,应当显式崩溃而非静默错排版本。
+            precondition(need(actualCap) <= rows[i], "Pass 4 invariant violated: need(\(actualCap))=\(need(actualCap)) > rows[\(i)]=\(rows[i])")
+            shown[i] = min(actualCap, realDemand[i])
         }
 
         return (rows, shown)
