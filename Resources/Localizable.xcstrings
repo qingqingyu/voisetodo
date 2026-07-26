@@ -75,9 +75,6 @@
         }
       }
     },
-    "+%lld" : {
-
-    },
     "✨" : {
 
     },
@@ -1814,6 +1811,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标题"
+          }
+        }
+      }
+    },
+    "detail.start_date" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start date"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起始日期"
           }
         }
       }
@@ -5396,38 +5409,6 @@
         }
       }
     },
-    "recurrence.starts_from" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "From %1$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从 %1$@ 起"
-          }
-        }
-      }
-    },
-    "detail.start_date" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start date"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始日期"
-          }
-        }
-      }
-    },
     "recurrence.biweekly_short" : {
       "localizations" : {
         "en" : {
@@ -5572,6 +5553,54 @@
         }
       }
     },
+    "recurrence.starts_from" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 %1$@ 起"
+          }
+        }
+      }
+    },
+    "recurrence.triweekly_short" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 3 weeks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三周"
+          }
+        }
+      }
+    },
+    "recurrence.triweekly_short %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 3 weeks %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三周 %@"
+          }
+        }
+      }
+    },
     "recurrence.validation.monthly_day" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5649,38 +5678,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每%lld周"
-          }
-        }
-      }
-    },
-    "recurrence.triweekly_short" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Every 3 weeks"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "三周"
-          }
-        }
-      }
-    },
-    "recurrence.triweekly_short %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Every 3 weeks %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "三周 %@"
           }
         }
       }
