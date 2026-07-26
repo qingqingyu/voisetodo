@@ -187,7 +187,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
         case .daily:
             return EKRecurrenceRule(
                 recurrenceWith: .daily,
-                interval: 1,
+                interval: rule.interval,
                 end: recurrenceEnd
             )
         case .weekly:
@@ -197,7 +197,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             }
             return EKRecurrenceRule(
                 recurrenceWith: .weekly,
-                interval: 1,
+                interval: rule.interval,
                 daysOfTheWeek: daysOfWeek,
                 daysOfTheMonth: nil,
                 monthsOfTheYear: nil,
@@ -210,7 +210,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             let daysOfMonth = rule.dayOfMonth.map { [NSNumber(value: $0)] }
             return EKRecurrenceRule(
                 recurrenceWith: .monthly,
-                interval: 1,
+                interval: rule.interval,
                 daysOfTheWeek: nil,
                 daysOfTheMonth: daysOfMonth,
                 monthsOfTheYear: nil,

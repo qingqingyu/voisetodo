@@ -146,7 +146,27 @@ struct RecurrenceRule: Codable, Hashable, Sendable {
             return String(localized: "recurrence.daily")
         case .weekly:
             let names = weekdays.map { RecurrenceRule.shortWeekdayName($0) }.joined(separator: " ")
-            return String(localized: "recurrence.weekly \(names)")
+            // interval 分档:
+            // - 1 → "每周 X"
+            // - 2 → "双周" / "双周 X"(详情页 chip 标签共用这组 key,UI 一致)
+            // - 3 → "三周" / "三周 X"
+            // - ≥4 → "每N周" / "每N周 X"(fallback,AI 几乎不会返回)
+            switch interval {
+            case 1:
+                return String(localized: "recurrence.weekly \(names)")
+            case 2:
+                return names.isEmpty
+                    ? String(localized: "recurrence.biweekly_short")
+                    : String(localized: "recurrence.biweekly_short \(names)")
+            case 3:
+                return names.isEmpty
+                    ? String(localized: "recurrence.triweekly_short")
+                    : String(localized: "recurrence.triweekly_short \(names)")
+            default:
+                return names.isEmpty
+                    ? String(localized: "recurrence.weekly_interval_no_weekday \(interval)")
+                    : String(localized: "recurrence.weekly_interval \(interval) \(names)")
+            }
         case .monthly:
             return String(localized: "recurrence.monthly \(dayOfMonth ?? 1)")
         }

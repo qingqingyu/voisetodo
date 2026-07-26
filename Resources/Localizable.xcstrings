@@ -5396,6 +5396,38 @@
         }
       }
     },
+    "recurrence.biweekly_short" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 2 weeks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "双周"
+          }
+        }
+      }
+    },
+    "recurrence.biweekly_short %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 2 weeks %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "双周 %@"
+          }
+        }
+      }
+    },
     "recurrence.daily" : {
       "localizations" : {
         "en" : {
@@ -5553,6 +5585,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每周 %@"
+          }
+        }
+      }
+    },
+    "recurrence.weekly_interval %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every %1$lld weeks %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每%1$lld周 %2$@"
+          }
+        }
+      }
+    },
+    "recurrence.weekly_interval_no_weekday %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every %lld weeks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每%lld周"
+          }
+        }
+      }
+    },
+    "recurrence.triweekly_short" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 3 weeks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三周"
+          }
+        }
+      }
+    },
+    "recurrence.triweekly_short %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 3 weeks %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三周 %@"
           }
         }
       }

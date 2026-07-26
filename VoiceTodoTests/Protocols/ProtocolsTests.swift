@@ -296,6 +296,27 @@ final class ProtocolsTests: XCTestCase {
         )
     }
 
+    /// displayText 三档:interval=1 / interval>1+有 weekdays / interval>1+无 weekdays。
+    /// 不直接断言本地化文本(随系统语言变),改测行为差异:三档输出互不相同,
+    /// 且空 weekdays 档不产生尾空格(回归旧 bug:旧 weekly case 拼接"每周 "+空串)。
+    func testRecurrenceRuleDisplayTextHasThreeWeeklyBranches() {
+        let weeklyMon = RecurrenceRule(frequency: .weekly, weekdays: [2])
+        let biweeklyMon = RecurrenceRule(frequency: .weekly, interval: 2, weekdays: [2])
+        let biweeklyNoDay = RecurrenceRule(frequency: .weekly, interval: 2, weekdays: [])
+
+        let textWeekly = weeklyMon.displayText
+        let textBiweekly = biweeklyMon.displayText
+        let textBiweeklyNoDay = biweeklyNoDay.displayText
+
+        XCTAssertNotEqual(textWeekly, textBiweekly, "interval=1 与 interval>1 应走不同分支")
+        XCTAssertNotEqual(textBiweekly, textBiweeklyNoDay, "interval>1 时 weekdays 有无应走不同分支")
+        XCTAssertEqual(
+            textBiweeklyNoDay,
+            textBiweeklyNoDay.trimmingCharacters(in: .whitespaces),
+            "interval>1 + 空 weekdays 不应产生尾空格"
+        )
+    }
+
     func testRecurrenceRuleResolverParsesBoundedDailyDuration() throws {
         let calendar = Calendar(identifier: .gregorian)
         let reference = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
