@@ -180,7 +180,8 @@ enum HomeLayoutMetrics {
 
     // MARK: - MonthGrid(展开态月历网格)布局常量
     /// 月历网格容器水平 padding(= WarmSpacing.xxs = 4pt)。
-    /// 刻意小于折叠态 WeekStripCard 的 24pt(xl)——此不对称是设计意图,不要为"对齐"改回 xl。
+    /// 刻意小于折叠态 WeekStripCard 的外层 20pt(HomeView 里 .padding(.horizontal, .lg))——
+    /// 此不对称是设计意图,不要为"对齐"改回 lg。
     /// 4pt 比原来 8pt(xs)再多 ~4pt 可用宽度(每格 +0.57pt,7 列中文条目约多塞 0.5 个字),
     /// 同时仍留极少边距,避免边格被 iPhone 屏幕圆角裁切、不让格子贴屏幕边显得溢出。
     /// 引用 WarmSpacing.xxs 而非裸字面量,design system 调整 xxs 时自动跟随。

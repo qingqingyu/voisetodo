@@ -565,7 +565,12 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .frame(height: HomeLayoutMetrics.viewSwitcherRowHeight, alignment: .top)
                 .clipped()
         }
-        .padding(.horizontal, WarmSpacing.xl)
+        // 横向 padding 与周条卡片 / 任务卡 listRowInsets 统一 lg(20pt),
+        // 三层(标题 → 周条 → 任务卡)左右边缘齐平。原 xl(24pt) 让标题独占一段缩进,
+        // 但与下方两层错位 4pt;用户 2026-07-26 反馈视觉不齐。
+        // 影响:header 内容总宽 +8pt,ViewThatFits 竖排回退 / minimumScaleFactor 缩字
+        // 触发阈值均降低(更长英文月份名/星期名才能触发),长文本场景只会更宽松。
+        .padding(.horizontal, WarmSpacing.lg)
         .padding(.top, WarmSpacing.md)
         .padding(.bottom, WarmSpacing.sm)
         .background(
@@ -1012,7 +1017,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                                     }
                                 }
                             )
-                            .padding(.horizontal, WarmSpacing.xl)
+                            // 横向 padding 对齐 HomeSelectedDayListView 任务卡 listRowInsets 的 lg(20pt),
+                            // 让折叠态周条卡片与下方任务卡左右边缘齐平——原先用 xl(24pt) 比任务卡窄 8pt,
+                            // 用户 2026-07-26 反馈「周条卡片比下面 task 方块小,宽度不太合适」。
+                            .padding(.horizontal, WarmSpacing.lg)
                             .padding(.top, WarmSpacing.xxs)
 
                             // 首次下拉引导:浮在卡片上方,手指下拉动画提示可下拉展开。
