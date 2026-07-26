@@ -116,8 +116,10 @@ struct HomeMonthGridButton: View {
 
     /// 单条事件文字条:浅色分类背景 + 深色文字 + 可选时间前缀 + 可选 +N 尾标。
     /// 高度固定 24pt,允许标题显示两行;Overflow +N 嵌入最后一条尾部。
-    /// 已完成态用分类色 40% 透明(非纯白 secondaryBackground):格子底色是 cardBackground(白),
-    /// 若已完成条也用白底会完全融入背景不可见。保留分类色相让用户仍能辨认"过去的事属于哪类"。
+    /// 已完成态:**失去填充背景 + textMuted 文字 + 删除线**(形态 + 形状双通道)。
+    /// 设计取舍:已完成事件放弃分类色身份——"已完成属于哪类"在复盘场景下价值低,
+    /// 而"剩余实心块数量 = 当天未完成数"这一扫视可读的视觉等式是月历视图的核心信息。
+    /// 满足 WCAG 1.4.1「不能仅用颜色传达信息」:删除线对红绿色盲用户依然有效。
     ///
     /// 字体策略:三段都固定字号不响应 Dynamic Type——月历格事件条是"预览类 UI"(用户点开看详情),
     /// 不是主读内容;固定字号让字号缩放不再影响布局判定,与 Apple Calendar 日期数字一致。
@@ -134,8 +136,9 @@ struct HomeMonthGridButton: View {
     private func eventBar(_ occurrence: TodoOccurrenceData, isLast: Bool, overflow: Int?) -> some View {
         let categoryBg = WarmTheme.categoryBackground(for: occurrence.todo.category)
         let categoryTx = WarmTheme.categoryTextColor(for: occurrence.todo.category)
-        // 已完成:背景降透明度到 0.4(保留色相),文字用 textMuted 与未完成区分。
-        let bg = occurrence.isCompleted ? categoryBg.opacity(0.4) : categoryBg
+        // 已完成:失去填充(Color.clear)+ textMuted 文字 + 删除线。
+        // 形态对比(实心 vs 空)在小尺寸 9pt 下比色深对比更稳健,且不依赖色觉。
+        let bg = occurrence.isCompleted ? Color.clear : categoryBg
         let tx = occurrence.isCompleted ? WarmTheme.textMuted : categoryTx
 
         // hour 前缀:只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
@@ -159,7 +162,9 @@ struct HomeMonthGridButton: View {
             overflowText = Text("")
         }
 
+        // 删除线 color 与文字色(textMuted)一致,避免"灰文字 + 其他色线"的不和谐。
         let combined = Text("\(hourText)\(titleText)\(overflowText)")
+            .strikethrough(occurrence.isCompleted, color: WarmTheme.textMuted)
 
         return combined
             .foregroundColor(tx)
