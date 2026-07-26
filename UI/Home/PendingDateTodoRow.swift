@@ -79,7 +79,11 @@ struct PendingDateTodoRow: View {
                     ChipView(
                         text: looseChipText,
                         style: .loose,
-                        accent: WarmTheme.textMuted
+                        accent: WarmTheme.textMuted,
+                        // looseChipText 直接来自 AI 原文(timeBucket.localizedTitle 或 dueHint),
+                        // 长度无界(如 "by the end of this month")。走 marquee 让 chip 宽度可被
+                        // 父压缩,放不下时滚动 —— 不再挤掉标题、不再溢出卡片。
+                        overflow: .marquee
                     )
                 }
 
@@ -168,3 +172,39 @@ struct PendingDateTodoRow: View {
         .accessibilityIdentifier("PendingDateRow_\(index)")
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+
+#Preview("PendingDateTodoRow — 长 hint EN/ZH × default/AX5") {
+    // 复用 MockStore.withLongHints fixture,避免在 Preview 里重复构造相同 TodoItemData。
+    // 这也确保 fixture 不变成死代码 —— 任何 withLongHints 的修改都会反映到本 Preview。
+    VStack(spacing: 8) {
+        ForEach(Array(MockStore.withLongHints.todos.enumerated()), id: \.offset) { idx, todo in
+            PendingDateTodoRow(
+                todo: todo,
+                index: idx,
+                onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+            )
+        }
+    }
+    .padding()
+    .background(WarmTheme.background)
+}
+
+#Preview("PendingDateTodoRow — AX5 字号") {
+    // 取 withLongHints 第一条(长 EN hint)做 AX5 字号下单卡片预览。
+    VStack(spacing: 8) {
+        PendingDateTodoRow(
+            todo: MockStore.withLongHints.todos[0],
+            index: 0,
+            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+        )
+    }
+    .padding()
+    .background(WarmTheme.background)
+    .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
+}
+
+#endif

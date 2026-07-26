@@ -26,6 +26,16 @@ struct ChipView: View {
         case late
     }
 
+    /// 文本溢出时怎么办。
+    enum Overflow {
+        /// 按 intrinsic 宽度占位、永不压缩(默认,保持旧行为)。
+        /// 用于长度可预期的短文本 —— 如 `.solid` 的钟点 "18:00"。
+        case intrinsic
+        /// 宽度可被父压缩;压到放不下时文字跑马灯滚动。
+        /// 用于 AI 原文这类长度无界的文本。
+        case marquee
+    }
+
     let text: String
     var style: Style = .solid
     /// 背景色。nil 时按 style 默认推导。
@@ -36,6 +46,9 @@ struct ChipView: View {
     var onTap: (() -> Void)? = nil
     /// VoiceOver hint,仅在 onTap 非空时使用。
     var accessibilityHintText: String? = nil
+    /// 文本溢出策略。默认 `.intrinsic` 保持现有所有调用点行为不变。
+    /// AI 原文这类长度无界的文本应传 `.marquee`,避免 chip 不可压缩挤掉兄弟元素。
+    var overflow: Overflow = .intrinsic
 
     private var resolvedTint: Color {
         if let tint { return tint }
@@ -98,9 +111,17 @@ struct ChipView: View {
 
     private var label: some View {
         HStack(spacing: 3) {
-            Text(text)
-                .font(labelFont)
-                .fixedSize(horizontal: true, vertical: false)
+            switch overflow {
+            case .intrinsic:
+                Text(text)
+                    .font(labelFont)
+                    .fixedSize(horizontal: true, vertical: false)
+            case .marquee:
+                // 跑马灯:chip 文本宽度可被父压缩,放不下时滚动。
+                // 显式传 resolvedAccent 让 MarqueeText 跟 ChipView 同色,
+                // 避免它默认 .primary 覆盖 chip 的分类色/textMuted 等语义色。
+                MarqueeText(text: text, font: labelFont, foregroundColor: resolvedAccent)
+            }
             if onTap != nil {
                 Circle()
                     .fill(resolvedAccent)
@@ -115,6 +136,10 @@ struct ChipView: View {
                 .fill(resolvedTint)
         )
         .foregroundColor(resolvedAccent)
+        // accessibilityElement(children: .ignore) 把 HStack(Text + dot) 合并成一个
+        // a11y 元素,但之前没补 label —— 等于把 chip 文字对 VoiceOver 完全隐藏。
+        // WarmTodoCard:291 外层的 .combine 也因此收不到钟点。补 .accessibilityLabel(text)。
         .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 }

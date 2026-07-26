@@ -293,12 +293,13 @@ struct WarmTodoCard: View {
                 // 元数据合并行：clock + composedTimeText 一行展示。
                 // P3 修复：原 recurrence 用 primaryDark 红色（与 urgent 警告冲突），
                 // 改为 textSecondary 灰色（与 ConfirmSheet 时间行一致）；字号继续下压到 10pt 进一步压低视觉权重。
+                // composedTimeText 可能很长(TodoTimeDisplayComposer 会拼出"每天 · 至8月5日 · 15:00"),
+                // 用 MarqueeText 替代 Text 避免长串换行撑高卡片、抵消 line 253-255 那次"高度降三分之一"优化。
                 if let timeText = composedTimeText {
                     HStack(spacing: WarmSpacing.xxs) {
                         Image(systemName: "clock")
                             .font(.system(size: 10))
-                        Text(timeText)
-                            .font(WarmFont.caption(10))
+                        MarqueeText(text: timeText, font: WarmFont.caption(10))
                     }
                     .foregroundColor(WarmTheme.textSecondary)
                 }
