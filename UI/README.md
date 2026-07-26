@@ -65,7 +65,7 @@ UI/
   - 从 App Group 读取数据
   - 根据尺寸返回不同数量的待办
 - **TodoWidgetView**:
-  - 支持小/中/大尺寸 + 锁屏 Widget
+  - 支持中/大尺寸 + 锁屏 Widget
   - 水印风格：文字透明度 0.65，阴影确保可读性
   - 空状态：淡色文字 + 勾选图标
 
@@ -89,7 +89,6 @@ UIConfig.toastDuration = 2.0
 UIConfig.deleteAnimationDuration = 0.28
 
 WidgetConfig.refreshInterval = 1800  // 30 分钟
-WidgetConfig.smallItemCount = 1
 WidgetConfig.mediumItemCount = 3
 WidgetConfig.largeItemCount = 6
 WidgetConfig.lockscreenItemCount = 2
@@ -185,7 +184,7 @@ Widget 需要在 Xcode 项目中：
 - [x] HomeView 实现（列表、空状态、录音按钮）
 - [x] TodoWidgetBundle 实现
 - [x] TodoWidgetProvider 实现（30 分钟刷新）
-- [x] TodoWidgetView 实现（小/中/大/锁屏）
+- [x] TodoWidgetView 实现（中/大/锁屏）
 - [x] MockStore 创建（用于开发和预览）
 - [x] 使用 ErrorMessages 常量
 - [x] 使用 TodoItemData 而非 SwiftData

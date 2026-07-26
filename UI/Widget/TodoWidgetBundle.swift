@@ -22,7 +22,6 @@ struct TodoWidget: Widget {
         .configurationDisplayName(String(localized: "widget.display_name"))
         .description(String(localized: "widget.description"))
         .supportedFamilies([
-            .systemSmall,
             .systemMedium,
             .systemLarge,
             .accessoryRectangular,

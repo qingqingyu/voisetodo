@@ -342,14 +342,6 @@ struct WidgetTodoToggleStyle: ToggleStyle {
     ], loadState: .success)
 }
 
-#Preview(as: .systemSmall) {
-    TodoWidget()
-} timeline: {
-    TodoEntry(date: .now, todos: [
-        TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work)
-    ], loadState: .success)
-}
-
 #Preview(as: .accessoryRectangular) {
     TodoWidget()
 } timeline: {
