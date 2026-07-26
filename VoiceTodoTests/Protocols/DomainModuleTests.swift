@@ -605,4 +605,74 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "Buy groceries"))
         XCTAssertFalse(TodoDueDateResolver.hasExplicitTimeCue(in: "准备面试"))
     }
+
+    // MARK: - RecurrenceAnchorPolicy
+
+    /// dateRowMode 三档判定:无重复→.dueDate;weekly+interval>1→.startAnchor;
+    /// daily / weekly(interval==1) / monthly → .hidden。
+    /// interval>=4(AI 几乎不返回的 fallback)也要进 .startAnchor,
+    /// 因为 occurs() 的 weekly + interval>1 + 无 weekdays 分支同样依赖锚点。
+    func testRecurrenceAnchorPolicyDateRowModeBranches() {
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: nil, interval: 1), .dueDate)
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: .daily, interval: 1), .hidden)
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: .weekly, interval: 1), .hidden)
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: .weekly, interval: 2), .startAnchor)
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: .weekly, interval: 3), .startAnchor)
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: .weekly, interval: 4), .startAnchor)
+        XCTAssertEqual(RecurrenceAnchorPolicy.dateRowMode(frequency: .monthly, interval: 1), .hidden)
+    }
+
+    /// canAddClockTime:有 dueDate 或 有重复规则 即可。
+    /// 关键回归点:(nil, .weekly) → true —— 切到双周/三周时 editedDueDate 还没补,
+    /// 但「添加钟点」按钮必须可见,否则用户没法在 interval>1 时设钟点。
+    func testRecurrenceAnchorPolicyCanAddClockTime() {
+        XCTAssertFalse(RecurrenceAnchorPolicy.canAddClockTime(dueDate: nil, frequency: nil))
+        XCTAssertTrue(RecurrenceAnchorPolicy.canAddClockTime(dueDate: Date(), frequency: nil))
+        XCTAssertTrue(RecurrenceAnchorPolicy.canAddClockTime(dueDate: nil, frequency: .weekly))
+        XCTAssertTrue(RecurrenceAnchorPolicy.canAddClockTime(dueDate: nil, frequency: .daily))
+        XCTAssertTrue(RecurrenceAnchorPolicy.canAddClockTime(dueDate: nil, frequency: .monthly))
+    }
+
+    /// showsAnchorPrefix:.startAnchor 恒带;.dueDate 恒不带;
+    /// .hidden 仅当锚点严格在今天之后才带(同日 / 过去 / nil 都不带)。
+    func testRecurrenceAnchorPolicyShowsAnchorPrefix() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 26)))
+        let sameDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 26)))
+        let tomorrow = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 27)))
+        let yesterday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+
+        // .startAnchor 恒带,即使锚点为 nil(实际场景不会发生,但语义上要让前缀占位)
+        XCTAssertTrue(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .startAnchor, anchor: nil, now: now, calendar: calendar))
+        XCTAssertTrue(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .startAnchor, anchor: sameDay, now: now, calendar: calendar))
+
+        // .dueDate 恒不带
+        XCTAssertFalse(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .dueDate, anchor: sameDay, now: now, calendar: calendar))
+
+        // .hidden:锚点在今天/过去/nil → false;严格在未来 → true
+        XCTAssertFalse(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .hidden, anchor: nil, now: now, calendar: calendar))
+        XCTAssertFalse(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .hidden, anchor: sameDay, now: now, calendar: calendar))
+        XCTAssertFalse(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .hidden, anchor: yesterday, now: now, calendar: calendar))
+        XCTAssertTrue(RecurrenceAnchorPolicy.showsAnchorPrefix(mode: .hidden, anchor: tomorrow, now: now, calendar: calendar))
+    }
+
+    /// 回归锁定:双周规则的 occurs(on:startDate:) 在锚点相差一周时结果翻转。
+    /// 证明锚点必须可见可控——否则用户改不到「从哪一周开始」。
+    func testBiweeklyOccursFlipsWhenAnchorShiftsByOneWeek() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let anchorMonday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 27)))   // 周一
+        let nextMonday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 3)))      // 下周一(应为 hit)
+        let twoWeeksLater = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10)))  // 双周后周一
+
+        let rule = RecurrenceRule(frequency: .weekly, interval: 2, weekdays: [2])
+
+        // 锚点 = 7/27:8/3 是一周后(不命中),8/10 是双周后(命中)
+        XCTAssertFalse(rule.occurs(on: nextMonday, startDate: anchorMonday, calendar: calendar))
+        XCTAssertTrue(rule.occurs(on: twoWeeksLater, startDate: anchorMonday, calendar: calendar))
+
+        // 锚点前移一周 = 7/20:翻转 —— 8/3 现在是双周后(命中),8/10 变成三周后(不命中)
+        let shiftedAnchor = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 20)))
+        XCTAssertTrue(rule.occurs(on: nextMonday, startDate: shiftedAnchor, calendar: calendar))
+        XCTAssertFalse(rule.occurs(on: twoWeeksLater, startDate: shiftedAnchor, calendar: calendar))
+    }
 }
