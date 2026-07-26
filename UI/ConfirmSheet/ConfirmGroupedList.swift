@@ -106,9 +106,10 @@ private struct ConfirmGroupSection: View {
         VStack(alignment: .leading, spacing: WarmSpacing.sm) {
             ConfirmGroupHeader(title: section.title)
 
-            // ForEach 的 row 身份用 todo.id(UUID):流式过程 .partial 整体替换 todos,
-            // 但 id 不变——让 SwiftUI 按 UUID 判定 view 重建,触发 EmojiBumpModifier 重播,
-            // 避免「row 内容突变但 view 没换」的身份漂移。
+            // ForEach 的 row 身份用 todo.id(UUID)。
+            // 跨帧 id 稳定由 TodoExtractorService.reassignedIDs 保证(维护 stableIDs 数组,
+            // 按 index 复用 UUID)——避免每个 partial 都触发整批 removal + insertion,
+            // 也就是下面 .transition 定义下的"卡片向右闪出"现象。
             //
             // 越界防御:流式失败 / clearExtractionPresentation 把 todos 置空时,
             // SwiftUI 在 row removal transition 期间仍可能调用本 body;

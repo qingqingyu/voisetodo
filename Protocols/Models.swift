@@ -124,7 +124,10 @@ enum DueDateBasis: String, Codable {
 
 /// 单条提取的待办（AI 返回格式）
 struct ExtractedTodo: Identifiable, Codable {
-    let id: UUID
+    // 用 var 而非 let:流式期间 TodoExtractorService.reassignedIDs 会按 index 覆盖 id,
+    // 保证同一逻辑 todo 跨 partial / final 帧 id 稳定,避免 ForEach 触发整批 removal + insertion
+    // (即 ConfirmGroupedList transition 下的"卡片向右闪出"现象)。
+    var id: UUID
     var title: String
     var detail: String
     /// AI 返回的 ISO 8601 绝对日期（"2026-07-15"），已结合参考日期换算。

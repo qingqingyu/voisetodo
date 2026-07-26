@@ -193,6 +193,11 @@ final class TodoExtractorService: TodoExtractorProtocol {
             let task = Task {
                 var accumulatedText = ""
                 var lastYieldedCount = 0
+                // 跨 partial / final 帧稳定的 id 池。tryParsePartialTodos 与 parseResponse 每次
+                // 都重新 decode → ?? UUID() 兜底生成新 UUID,id 全变 → ForEach 把每个 partial 识别
+                // 为「全删 + 全增」→ 触发 ConfirmGroupedList 的 removal: .move(edge: .trailing)
+                // = 用户看到的「卡片向右闪出」。维护本池按 index 复用 id,见 reassignedIDs。
+                var stableIDs: [UUID] = []
 
                 // 熔断：冷却窗口内直接失败，交由上层（TranscriptProcessingFlow）做离线兜底
                 // 抛 .circuitOpen 而非 .networkUnavailable，让 UI 能区分"熔断自我保护"与"网络不可达"
@@ -221,22 +226,28 @@ final class TodoExtractorService: TodoExtractorProtocol {
                         if let partialTodos = self.tryParsePartialTodos(accumulatedText),
                            partialTodos.count > lastYieldedCount {
                             lastYieldedCount = partialTodos.count
+                            let stabilized = self.reassignedIDs(partialTodos, stableIDs: &stableIDs)
                             VoiceTodoLog.extractor.debug("extract.stream.partial id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count)")
-                            continuation.yield(ExtractionResult(todos: partialTodos, ignored: ""))
+                            continuation.yield(ExtractionResult(todos: stabilized, ignored: ""))
                         }
                     }
 
                     // 流结束后做最终完整解析
                     let finalResult = try self.parseResponse(accumulatedText)
+                    // final 是一次独立的全量 decode,同样会 churn id;用同一份 stableIDs 把 final 的
+                    // id 对齐到 partial 期间用的 id,避免最后一次 partial → final 切换瞬间所有卡片
+                    // 重播 removal + insertion transition(否则用户会看到流结束瞬间整批闪一下)。
+                    let stabilizedFinal = self.reassignedIDs(finalResult.todos, stableIDs: &stableIDs)
                     await self.circuitBreaker.recordSuccess()
-                    continuation.yield(finalResult)
+                    continuation.yield(ExtractionResult(todos: stabilizedFinal, ignored: finalResult.ignored))
                     VoiceTodoLog.extractor.info("extract.stream.success id=\(streamID, privacy: .public) todos=\(finalResult.todos.count) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                     continuation.finish()
                 } catch {
                     // 如果积累了部分文本但最终解析失败，尝试用已解析的部分结果
                     if let partialTodos = self.tryParsePartialTodos(accumulatedText), !partialTodos.isEmpty {
+                        let stabilized = self.reassignedIDs(partialTodos, stableIDs: &stableIDs)
                         VoiceTodoLog.extractor.warning("extract.stream.partial_before_error id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                        continuation.yield(ExtractionResult(todos: partialTodos, ignored: ""))
+                        continuation.yield(ExtractionResult(todos: stabilized, ignored: ""))
                     }
                     // 服务类失败喂熔断器（与 extract() 同一分类口径）
                     if let voiceError = error as? VoiceTodoError, Self.countsAsServiceFailure(voiceError) {
@@ -315,6 +326,32 @@ final class TodoExtractorService: TodoExtractorProtocol {
         }
 
         return todos.isEmpty ? nil : todos
+    }
+
+    /// 流式期间覆盖新 decode 出来的 ExtractedTodo.id,保证同一 index 的 todo 跨帧 id 稳定。
+    ///
+    /// 为什么需要:ForEach 以 id 做身份,稳定 id 避免每个 partial 都触发整批 removal +
+    /// insertion transition(ConfirmGroupedList 的 removal: .move(edge: .trailing) 就是
+    /// 用户看到的「卡片向右闪出」现象的根因)。
+    ///
+    /// 按 index 做 key 安全性证明:
+    /// - tryParsePartialTodos 用括号深度匹配,只吐完整的 {...} 对象——对象一旦闭合,
+    ///   字符范围固定,decode 出来的内容(title/dueDate 等)即最终态,不会随后续 delta 变化
+    /// - 调用点用 partialTodos.count > lastYieldedCount 守卫,保证条目数单调增长
+    /// - parseResponse(流结束后)基于同一份 accumulatedText,产出顺序与 partial 一致
+    /// 故 index N 在所有 partial / final 帧里恒指向同一逻辑 todo,用 stableIDs[N] 复用 id。
+    ///
+    /// stableIDs 只增不减:即使某次 todos.count 缩短(理论上不应发生,守卫已挡),
+    /// 也不清空 stableIDs——下次重新对齐时仍用旧 id,identity 持续稳定。
+    private func reassignedIDs(_ todos: [ExtractedTodo], stableIDs: inout [UUID]) -> [ExtractedTodo] {
+        var result = todos
+        for index in result.indices {
+            while stableIDs.count <= index {
+                stableIDs.append(UUID())
+            }
+            result[index].id = stableIDs[index]
+        }
+        return result
     }
 
     // MARK: - Retry / Circuit Helpers
