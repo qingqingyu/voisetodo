@@ -227,8 +227,8 @@ enum HomeLayoutMetrics {
     }
 
     // MARK: - 注水法行高分配器常量
-    /// 单条事件文字条高度(pt)。
-    static let gridBarHeight: CGFloat = 14
+    /// 单条事件文字条高度(pt),容纳两行 9pt 标题。
+    static let gridBarHeight: CGFloat = 24
     /// 事件条之间的垂直间距(pt)。
     static let gridBarSpacing: CGFloat = 2
     /// 每格固定开销(日数字行 + padding + border ≈ 20pt)。
@@ -239,7 +239,7 @@ enum HomeLayoutMetrics {
     static let gridColumnSpacing: CGFloat = 2
     /// 单格事件条数的**硬上限**(防极端屏幕尺寸导致 cap 过大)。
     /// 实际显示上限由下方 `allocateRowHeights` 内的 `dynamicCap` 根据每行物理高度反推,
-    /// 这里只作为天花板。15 对应格子高度 ~258pt(need(15) ≈ 18 + 16*15),
+    /// 这里只作为天花板。15 对应格子高度 ~408pt(need(15) = 18 + 26*15),
     /// 仅在超大屏 + 1~2 周的极端月份下被命中。正常月份下 dynamicCap 才是实际生效值。
     static let gridMaxBarsPerCellHardLimit: Int = 15
 

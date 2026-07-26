@@ -23,6 +23,16 @@
         }
       }
     },
+    "%@%@%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@%3$@"
+          }
+        }
+      }
+    },
     "%lld" : {
 
     },
@@ -55,6 +65,9 @@
     "+%lld" : {
 
     },
+    "✨" : {
+
+    },
     "a11y.action.expand_month" : {
       "localizations" : {
         "en" : {
@@ -67,22 +80,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "展开整月"
-          }
-        }
-      }
-    },
-    "a11y.week_strip.hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Swipe down on this card to expand the full month."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在卡片上下滑可展开整月。"
           }
         }
       }
@@ -717,6 +714,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "点击查看详情"
+          }
+        }
+      }
+    },
+    "a11y.week_strip.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe down on this card to expand the full month."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在卡片上下滑可展开整月。"
           }
         }
       }
@@ -1515,6 +1528,7 @@
       }
     },
     "detail.mark_done" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5431,6 +5445,7 @@
       }
     },
     "recurrence.validation.monthly_day" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

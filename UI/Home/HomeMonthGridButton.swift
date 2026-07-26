@@ -115,7 +115,7 @@ struct HomeMonthGridButton: View {
     }
 
     /// 单条事件文字条:浅色分类背景 + 深色文字 + 可选时间前缀 + 可选 +N 尾标。
-    /// 高度固定 14pt(对齐 HTML .bar 样式),Overflow +N 嵌入最后一条尾部。
+    /// 高度固定 24pt,允许标题显示两行;Overflow +N 嵌入最后一条尾部。
     /// 已完成态用分类色 40% 透明(非纯白 secondaryBackground):格子底色是 cardBackground(白),
     /// 若已完成条也用白底会完全融入背景不可见。保留分类色相让用户仍能辨认"过去的事属于哪类"。
     ///
@@ -127,13 +127,10 @@ struct HomeMonthGridButton: View {
     ///   `.system` 用 CoreText 系统字体测量,中英混排宽度判定更准。详见函数内注释。
     /// - hour 段与 +N 段用 `WarmFont.mono(8)`(`.system(.monospaced)`),无测量问题。
     ///
-    /// **布局**:可选的 hour 前缀 / 必有的标题 / 可选的 +N 尾标通过 `Text + Text`
-    /// 合并为单个 `Text`(SwiftUI 原生拼接,iOS 13+ 稳定)。
-    /// Why:HStack 对未挂 fixedSize 的 Text 会优先压缩(compression-resistance=250),
-    /// 即使总宽度有余量也会先压标题,产生"标题…" + 空白的伪截断。
-    /// 单 Text 让 SwiftUI 整体测量自然宽度,只在真超宽时末尾截断。
-    /// 字段间间距通过字符串内嵌空格实现(hour 段尾随空格、+N 段前导空格)——为合并 Text 的取舍,
-    /// 调整间距需改字面量。不用 `AttributedString.font` 是因其 run 属性在 iOS 17.0~17.1 有被忽略的反馈。
+    /// **布局**:可选的 hour 前缀 / 必有的标题 / 可选的 +N 尾标通过
+    /// `Text` 插值合并,保留每段的字体。月历单列只有约 52pt,单行省略号本身会再占
+    /// 近一个中文字的宽度;两行布局能在不缩小 9pt 字号的前提下完整显示常见标题。
+    /// 字段间间距由 hour 段尾随空格、+N 段前导空格提供。
     private func eventBar(_ occurrence: TodoOccurrenceData, isLast: Bool, overflow: Int?) -> some View {
         let categoryBg = WarmTheme.categoryBackground(for: occurrence.todo.category)
         let categoryTx = WarmTheme.categoryTextColor(for: occurrence.todo.category)
@@ -142,45 +139,34 @@ struct HomeMonthGridButton: View {
         let tx = occurrence.isCompleted ? WarmTheme.textMuted : categoryTx
 
         // hour 前缀:只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
-        // 各段用 `Text + Text` 拼接,SwiftUI 把结果当作单个 Text 渲染,
-        // 每段独立挂自己的 font —— 避免 AttributedString.font run 属性在某些 iOS 版本被忽略。
-        var segments: [Text] = []
+        let hourText: Text
         if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
-            segments.append(
-                Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
-                    .font(WarmFont.mono(8))
-            )
+            hourText = Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
+                .font(WarmFont.mono(8))
+        } else {
+            hourText = Text("")
         }
-        segments.append(
-            Text(verbatim: occurrence.todo.title)
-                // 用 .system 而非 WarmFont.captionFixed(.custom("Avenir Next", size:)):
-                // SwiftUI 对 .custom 字体的宽度测量在中英混排下精度差——Avenir Next 是纯拉丁字体,
-                // 中文回退到 PingFang SC,但测量按 Avenir Next 字形 box 算偏大,导致提前 "…" 截断。
-                // .system(size:weight:) 同样固定字号不响应 Dynamic Type,但用 CoreText 系统字体测量,
-                // 中英混排宽度判定更准。取舍:与卡片标题(captionFixed)视觉略不一致,9pt 下基本不可见。
-                .font(.system(size: 9, weight: .regular))
-        )
-        // +N 尾标:仅最后一条挂,前导空格与标题拉开间距。overflow<=0 时无尾标。
-        // 注:`overflow > 0` 防护是行为修复——slicedEvents() 契约未显式保证非零,
-        // 旧实现可能渲染 "+0",显式夹紧避免误导。
+        let titleText = Text(verbatim: occurrence.todo.title)
+            // 用 .system 而非 WarmFont.captionFixed(.custom("Avenir Next", size:)):
+            // SwiftUI 对 .custom 字体的宽度测量在中英混排下精度差。
+            .font(.system(size: 9, weight: .regular))
+
+        let overflowText: Text
         if let overflow, isLast, overflow > 0 {
-            segments.append(
-                Text(verbatim: " +\(overflow)")
-                    .font(WarmFont.mono(8))
-            )
+            overflowText = Text(verbatim: " +\(overflow)")
+                .font(WarmFont.mono(8))
+        } else {
+            overflowText = Text("")
         }
 
-        // 拼接所有段为单个 Text;`Text + Text` 是 iOS 13+ 稳定 API,保留每段的 font。
-        // segments 至少含标题段(上方无条件 append),reduce 起点用空 Text 保证非 nil。
-        let combined = segments.reduce(Text(""), +)
+        let combined = Text("\(hourText)\(titleText)\(overflowText)")
 
         return combined
             .foregroundColor(tx)
-            // 单 Text + lineLimit(1) + truncationMode(.tail):SwiftUI 整体测量自然宽度,
-            // 超宽时从末尾截断。不再依赖 HStack 的子视图宽度分配。
-            .lineLimit(1)
+            .lineLimit(2)
             .truncationMode(.tail)
-            .padding(.horizontal, 3)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 1)
             .frame(height: HomeLayoutMetrics.gridBarHeight, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 3).fill(bg))
