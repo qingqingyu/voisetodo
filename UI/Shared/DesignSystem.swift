@@ -62,12 +62,11 @@ enum WarmTheme {
     // 键盘模式文本框背景:跟随 cardBackground 的明暗逻辑。
     static let inputFieldBackground = Color(light: "F8FAFB", dark: "26282B")
 
-    // MARK: - 事件条 / 圆点透明度
-    // 集中管理 HomeMonthGridButton.eventBar / WeekStripCard.dayCell 等处的"已完成 vs 未完成"对比度。
-    // 调整对比度改这里,不散落在各个 View body 里。
-    /// 已完成事件的透明度(保留色相但明显淡于未完成,传达"过去"语义)。
-    static let completedEventOpacity: Double = 0.3
-    /// 未完成事件的透明度(接近不透明,保证分类色识别)。
+    // MARK: - 周条圆点透明度
+    // 仅服务于 HomeMonthHeaderView.WeekStripCard 的未完成圆点 fill。
+    // 月历格 eventBar 的"已完成 vs 未完成"对比已迁移到形态通道(失去填充 + 删除线),
+    // 见 HomeMonthGridButton.eventBar 注释;此处不再"集中管理对比度"。
+    /// 未完成圆点的透明度(接近不透明,保证分类色识别)。
     static let activeEventOpacity: Double = 0.85
 
     /// 根据分类获取对应颜色
