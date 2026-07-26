@@ -31,6 +31,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var editedTimeBucket: TimeBucket?
     @State private var editedRecurrenceFrequency: RecurrenceFrequency?
     @State private var editedWeekdays: Set<Int>
+    /// weekly 重复的 interval:1=每周、2=双周、3=三周、≥4=fallback。
+    /// 跟 frequency/weekdays 同级独立 @State:详情页 chip 暴露"双周/三周"两个独立选项,
+    /// 选中时同时设 frequency=.weekly + interval=N。原来没有这个字段,
+    /// 导致 AI 返回的 interval=2/3 待办进详情页再保存时被静默重置为 1。
+    @State private var editedInterval: Int
     @State private var editedDayOfMonth: Int
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
@@ -50,6 +55,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         _editedTimeBucket = State(initialValue: todo.timeBucket)
         _editedRecurrenceFrequency = State(initialValue: todo.recurrenceRule?.frequency)
         _editedWeekdays = State(initialValue: Set(todo.recurrenceRule?.weekdays ?? []))
+        _editedInterval = State(initialValue: todo.recurrenceRule?.interval ?? 1)
         // 默认值用当前日:与 recurrenceModeButton 切到 .monthly 时的 fallback 一致。
         // 模型 dayOfMonth 1...31, Picker 也限制 1...31, 永远合法 —— 不再需要 validation。
         _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth ?? Calendar.current.component(.day, from: Date()))
@@ -522,7 +528,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 chipRow {
                     recurrenceModeButton(nil, title: String(localized: "recurrence.none"))
                     recurrenceModeButton(.daily, title: String(localized: "recurrence.daily"))
-                    recurrenceModeButton(.weekly, title: String(localized: "recurrence.weekly_short"))
+                    recurrenceModeButton(.weekly, interval: 1, title: String(localized: "recurrence.weekly_short"))
+                    recurrenceModeButton(.weekly, interval: 2, title: String(localized: "recurrence.biweekly_short"))
+                    recurrenceModeButton(.weekly, interval: 3, title: String(localized: "recurrence.triweekly_short"))
                     recurrenceModeButton(.monthly, title: String(localized: "recurrence.monthly_short"))
                 }
 
@@ -564,13 +572,30 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
     }
 
-    private func recurrenceModeButton(_ frequency: RecurrenceFrequency?, title: String) -> some View {
-        let isSelected = editedRecurrenceFrequency == frequency
+    private func recurrenceModeButton(
+        _ frequency: RecurrenceFrequency?,
+        interval: Int = 1,
+        title: String
+    ) -> some View {
+        // weekly 三档(每周/双周/三周)共用 frequency=.weekly,必须再比对 interval
+        // 才能区分 —— 否则三档会被同时判定为选中。
+        // non-weekly(daily/monthly/nil)忽略 interval。
+        let isSelected: Bool = {
+            guard editedRecurrenceFrequency == frequency else { return false }
+            return frequency == .weekly ? editedInterval == interval : true
+        }()
         return Button {
             withAnimation(WarmAnimation.springFast) {
                 editedRecurrenceFrequency = frequency
-                if frequency == .weekly && editedWeekdays.isEmpty {
-                    editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
+                if frequency == .weekly {
+                    editedInterval = interval
+                    // interval==1(每周)强制默认周几,避免触发 weekly_required 校验;
+                    // interval>1(双周/三周)保留已有 weekdays:用户可能从 AI 返回的
+                    // "双周周一"进来,点 chip 确认时不应丢失周几锚定。displayText
+                    // 会显示完整"双周 周一",chip 标签"双周"只表达周期,两者互补。
+                    if interval == 1 && editedWeekdays.isEmpty {
+                        editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
+                    }
                 }
                 // monthly: editedDayOfMonth 是 Int,init 时已设默认值(当前日或 todo.dayOfMonth),
                 // 切换时无需 fallback —— 用户切换走再切回应保留之前选择,不应被 reset。
@@ -630,7 +655,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     private var editedRecurrenceRule: RecurrenceRule? {
         switch editedRecurrenceFrequency {
         case .daily: return RecurrenceRule(frequency: .daily)
-        case .weekly: return editedWeekdays.isEmpty ? nil : RecurrenceRule(frequency: .weekly, weekdays: Array(editedWeekdays))
+        case .weekly:
+            // interval==1(每周)必须有 weekdays 才有效(否则 isValid 会判 false);
+            // interval>1(双周/三周)允许空 weekdays —— 对齐 AI 返回的"每两周"语义。
+            guard editedInterval > 1 || !editedWeekdays.isEmpty else { return nil }
+            return RecurrenceRule(
+                frequency: .weekly,
+                interval: editedInterval,
+                weekdays: Array(editedWeekdays)
+            )
         case .monthly:
             // Picker 1...31 已限制范围,editedDayOfMonth 永远合法,直接构造。
             return RecurrenceRule(frequency: .monthly, dayOfMonth: editedDayOfMonth)
@@ -640,7 +673,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     private var recurrenceValidationMessage: String? {
         switch editedRecurrenceFrequency {
-        case .weekly: return editedWeekdays.isEmpty ? String(localized: "recurrence.validation.weekly_required") : nil
+        case .weekly:
+            // 仅"每周"需要强制选周几;"双周/三周"允许空 weekdays。
+            return (editedInterval == 1 && editedWeekdays.isEmpty)
+                ? String(localized: "recurrence.validation.weekly_required")
+                : nil
         // monthly:Picker 1...31 已限制,无需 validation。
         case .monthly, .daily, nil: return nil
         }
@@ -649,7 +686,12 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     private var recurrenceStateChanged: Bool {
         if editedRecurrenceFrequency != todo.recurrenceRule?.frequency { return true }
         switch editedRecurrenceFrequency {
-        case .weekly: return editedWeekdays != Set(todo.recurrenceRule?.weekdays ?? [])
+        case .weekly:
+            // 同时比对 interval 和 weekdays:interval 变化(每周↔双周↔三周)也算结构变化。
+            // 不比 interval 会导致 AI 返回 interval=2 的待办进详情页随便编辑一下就被静默重置为 1。
+            let oldInterval = todo.recurrenceRule?.interval ?? 1
+            let oldWeekdays = Set(todo.recurrenceRule?.weekdays ?? [])
+            return editedInterval != oldInterval || editedWeekdays != oldWeekdays
         case .monthly:
             // todo 不是 monthly 时,frequency 已变化会先在第一行 return true,
             // 这里的 fallback 实际走不到 —— 用 1 仅作占位,任意值都不影响判定结果。
