@@ -178,51 +178,26 @@ struct PendingDateTodoRow: View {
 #if DEBUG
 
 #Preview("PendingDateTodoRow — 长 hint EN/ZH × default/AX5") {
+    // 复用 MockStore.withLongHints fixture,避免在 Preview 里重复构造相同 TodoItemData。
+    // 这也确保 fixture 不变成死代码 —— 任何 withLongHints 的修改都会反映到本 Preview。
     VStack(spacing: 8) {
-        PendingDateTodoRow(
-            todo: TodoItemData(
-                title: "Finish filing taxes",
-                dueHint: "by the end of this month",
-                priority: .high,
-                category: .finance
-            ),
-            index: 0,
-            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
-        )
-        PendingDateTodoRow(
-            todo: TodoItemData(
-                title: "缴物业管理费",
-                dueHint: "每个月15号下午3点",
-                priority: .normal,
-                category: .finance
-            ),
-            index: 1,
-            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
-        )
-        PendingDateTodoRow(
-            todo: TodoItemData(
-                title: "Schedule dentist appointment",
-                dueHint: "around the middle of the month",
-                priority: .normal,
-                category: .health
-            ),
-            index: 2,
-            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
-        )
+        ForEach(Array(MockStore.withLongHints.todos.enumerated()), id: \.offset) { idx, todo in
+            PendingDateTodoRow(
+                todo: todo,
+                index: idx,
+                onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+            )
+        }
     }
     .padding()
     .background(WarmTheme.background)
 }
 
 #Preview("PendingDateTodoRow — AX5 字号") {
+    // 取 withLongHints 第一条(长 EN hint)做 AX5 字号下单卡片预览。
     VStack(spacing: 8) {
         PendingDateTodoRow(
-            todo: TodoItemData(
-                title: "Finish filing taxes",
-                dueHint: "by the end of this month",
-                priority: .high,
-                category: .finance
-            ),
+            todo: MockStore.withLongHints.todos[0],
             index: 0,
             onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
         )

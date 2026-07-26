@@ -23,6 +23,11 @@ struct MarqueePhase {
     var endPause: Double = 1.0
     /// 周期首末淡入淡出时长(秒)。位移在不可见时归零,fade 必须 > 0 让回跳不可见。
     /// 要求 `startPause`/`endPause` >= `fade`(否则首/末段没有稳定停留时间)。
+    ///
+    /// 此外要求 `cycleDuration >= fade * 2`,否则"首 fade 区间"和"末 fade 区间"
+    /// 会重叠,`opacity(at:)` 在重叠区会同时命中两个分支(实际由 `if` 顺序决定结果),
+    /// 产生不符合预期的非单调 opacity 曲线。默认值 (cycleDuration ≥ 2.5s, fade=0.35s)
+    /// 远满足,但调用方若传极端参数需自检。
     var fade: Double = 0.35
     /// 渐隐遮罩单侧宽度(pt)。两端 stop opacity 按"该侧还剩多少文字没露"连续插值,
     /// 相除时用此常量做分母。Apple Music 渐隐宽度约 12-16pt,这里取 10pt 配合 11pt chip。
@@ -36,6 +41,16 @@ struct MarqueePhase {
     /// 完整周期时长(秒) = 首停 + 滚动 + 末停。
     var cycleDuration: Double {
         startPause + scrollDuration + endPause
+    }
+
+    /// 校验相位参数的内部不变量。供调试/断言用,生产路径不强制调用。
+    /// 违反任一条件会导致 `opacity(at:)` 输出不符合设计预期(但不会 crash)。
+    var isInvariantsSatisfied: Bool {
+        travel > 0
+            && cycleDuration > 0
+            && startPause >= fade
+            && endPause >= fade
+            && cycleDuration >= fade * 2
     }
 
     /// 给定时刻的 x 轴偏移量(负值向左)。
@@ -167,6 +182,13 @@ struct MarqueePhase {
 /// 正对着用户眼睛;取 0.05 则推到卡片几乎完全出屏的位置,肉眼基本抓不到。
 /// 省帧收益差别不大——List 本身早就把远处的 cell 拆掉了,这个 threshold 只
 /// 兜住"贴着边缘还活着"的那一两张。
+///
+/// # 依赖的 iOS 版本
+///
+/// - `onScrollVisibilityChange(threshold:action:)`:iOS 17.0+
+/// - `onGeometryChange(for:of:action:)`:iOS 16.0+ 但稳定使用建议 17.0+
+/// 项目 deployment target 为 iOS 17.0+,均可用。若未来下调 deployment,需先
+/// 替换这两个 API。
 struct MarqueeText: View {
     let text: String
     var font: Font
@@ -178,6 +200,12 @@ struct MarqueeText: View {
     /// 容器最小宽度兜底。AX5 字号下父容器可能给极小宽度,锚层被压到接近 0 时
     /// 测得的"可用宽"失真,导致 marquee 提前启动。36pt 是观察到的"中文 2 字 +
     /// chip padding"下限,够显示首字符 + 渐隐遮罩。
+    ///
+    /// 已知限制:若父 HStack 给 chip 的预算宽度 < `minWidth`,锚层仍会被撑到
+    /// `minWidth` 参与布局,理论上可能轻微挤压兄弟元素。当前所有 chip 调用点
+    /// (ChipView in PendingDateTodoRow / WarmTodoCard)的兄弟元素都是 fixedSize
+    /// 按钮(44pt hit target),不会被这 36pt 兜底挤到不可用。若未来出现极窄列
+    /// 场景(如 split view),需要重审 minWidth 与父预算的关系。
     var minWidth: CGFloat = 36
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -236,7 +264,11 @@ struct MarqueeText: View {
                                 .opacity(opacity)
                         }
                         .clipped()
-                        .mask(edgeMask(leadingOpacity: edges.leading, trailingOpacity: edges.trailing))
+                        .mask(edgeMask(
+                            leadingOpacity: edges.leading,
+                            trailingOpacity: edges.trailing,
+                            fadeWidthPt: phase.fadeWidth
+                        ))
                 }
             } else {
                 // 静态路径:travel==0(短文本) / reduceMotion / 滚出视野。
@@ -250,7 +282,8 @@ struct MarqueeText: View {
                     .clipped()
                     .mask(edgeMask(
                         leadingOpacity: 1,
-                        trailingOpacity: phase.travel > 0 ? 0 : 1
+                        trailingOpacity: phase.travel > 0 ? 0 : 1,
+                        fadeWidthPt: phase.fadeWidth
                     ))
             }
         }
@@ -294,18 +327,27 @@ struct MarqueeText: View {
     }
 
     /// 4 段 stop 的 LinearGradient mask,两端 opacity 连续插值。
-    /// `fadeWidth` 是绝对宽度(单位 pt),通过 GeometryReader 在 mask 内部换算成
-    /// 相对 location(0..1)。`min(0.5, fadeWidth/w)` 防止极窄容器时 fadeLocation
+    /// `fadeWidthPt` 是绝对宽度(单位 pt),通过 GeometryReader 在 mask 内部换算成
+    /// 相对 location(0..1)。`min(0.5, fadeWidthPt/w)` 防止极窄容器时 fadeLocation
     /// 超过 0.5 导致中间不透明段消失。
-    private func edgeMask(leadingOpacity: Double, trailingOpacity: Double) -> some View {
+    ///
+    /// 注意:此处的 `fadeWidthPt` 必须与 `MarqueePhase.fadeWidth` 保持一致——
+    /// mask 渐隐范围要与 edgeOpacities 计算时假设的"渐隐带宽度"匹配,
+    /// 否则视觉渐隐与 opacity 计算错位。调用方应直接传 `phase.fadeWidth`,
+    /// 不要在 mask 内重新硬编码。
+    private func edgeMask(
+        leadingOpacity: Double,
+        trailingOpacity: Double,
+        fadeWidthPt: CGFloat
+    ) -> some View {
         GeometryReader { proxy in
             let w = proxy.size.width
-            let fadeWidth = proxy.size.width > 0 ? min(0.5, 10.0 / w) : 0
+            let fadeLoc = w > 0 ? min(0.5, fadeWidthPt / w) : 0
             LinearGradient(
                 stops: [
                     .init(color: .black.opacity(leadingOpacity), location: 0.0),
-                    .init(color: .black.opacity(1), location: fadeWidth),
-                    .init(color: .black.opacity(1), location: 1.0 - fadeWidth),
+                    .init(color: .black.opacity(1), location: fadeLoc),
+                    .init(color: .black.opacity(1), location: 1.0 - fadeLoc),
                     .init(color: .black.opacity(trailingOpacity), location: 1.0)
                 ],
                 startPoint: .leading,

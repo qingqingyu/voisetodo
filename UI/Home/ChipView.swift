@@ -49,8 +49,6 @@ struct ChipView: View {
     /// 文本溢出策略。默认 `.intrinsic` 保持现有所有调用点行为不变。
     /// AI 原文这类长度无界的文本应传 `.marquee`,避免 chip 不可压缩挤掉兄弟元素。
     var overflow: Overflow = .intrinsic
-    /// UI 测试定位用。默认 nil 不挂 identifier,不影响生产路径。
-    var accessibilityIdentifier: String? = nil
 
     private var resolvedTint: Color {
         if let tint { return tint }
@@ -143,19 +141,5 @@ struct ChipView: View {
         // WarmTodoCard:291 外层的 .combine 也因此收不到钟点。补 .accessibilityLabel(text)。
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
-        .modifier(OptionalIdentifierModifier(identifier: accessibilityIdentifier))
-    }
-
-    /// 仅在 identifier 非空时挂 `.accessibilityIdentifier`,避免 nil/空串被当成有效 ID
-    /// 注册进 a11y 树。与 `OptionalHintModifier` 同模式。
-    private struct OptionalIdentifierModifier: ViewModifier {
-        let identifier: String?
-        func body(content: Content) -> some View {
-            if let identifier, !identifier.isEmpty {
-                content.accessibilityIdentifier(identifier)
-            } else {
-                content
-            }
-        }
     }
 }
