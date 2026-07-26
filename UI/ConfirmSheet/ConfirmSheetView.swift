@@ -147,6 +147,7 @@ struct ConfirmSheetView: View {
             .accessibilityIdentifier("ConfirmAddButton")
         }
         .padding(.horizontal, WarmSpacing.md)
+        .padding(.top, WarmSpacing.sm)
         .accessibilityIdentifier("ConfirmSheetHeader")
     }
 
@@ -323,16 +324,16 @@ struct ConfirmSheetView: View {
     }
 
     /// 动态 detent 的实际高度:内容高 + sheet 框架区域(导航栏 + footer + padding),
-    /// clamp 到 [下限 280pt, 85% 屏高]。框架估算:导航栏 inline ~44 + VStack padding
-    /// ~24 + 余量 ~22 = 90;footer 可见时再加 estimatedHeight(hintVisible 控制,
-    /// 见 OperationHintFooter.estimatedHeight)。
+    /// clamp 到 [下限 280pt, 85% 屏高]。框架估算:导航栏 inline ~44 + sheetHeader
+    /// top padding 12 + VStack padding ~24 + 余量 ~22 = 102;footer 可见时再加
+    /// estimatedHeight(hintVisible 控制,见 OperationHintFooter.estimatedHeight)。
     /// **footer 淡出时框架同步减该高度,sheet 高度跟着矮**,避免底部留空白——
     /// 消失就消失,不影响底下 todo 内容区的布局。
     /// 超上限后 ScrollView 自动接管滚动;.large 仍可手动拖到全屏。
     private var clampedSheetHeight: CGFloat {
         let screenHeight = UIScreen.main.bounds.height
         let footer: CGFloat = hintVisible ? OperationHintFooter.estimatedHeight : 0
-        let frame: CGFloat = 90 + footer
+        let frame: CGFloat = 102 + footer
         let raw = contentHeight + frame
         let lowerBound: CGFloat = 280
         let upperBound = screenHeight * 0.85
