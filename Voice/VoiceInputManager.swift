@@ -215,7 +215,10 @@ final class VoiceInputManager: VoiceInputProtocol {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                self?.cancelRecordingDueToInterruption()
+                // queue: .main 保证闭包在主线程执行,assumeIsolated 让编译器承认 main actor 隔离
+                MainActor.assumeIsolated {
+                    self?.cancelRecordingDueToInterruption()
+                }
             }
 
             // 8. 启动 Live Activity
@@ -492,20 +495,24 @@ final class VoiceInputManager: VoiceInputProtocol {
         stopUpdateTimer()
 
         updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self,
-                  self.isRecording,
-                  let startTime = self.recordingStartTime else { return }
+            // Timer.scheduledTimer 闭包是 @Sendable,但 startUpdateTimer 由 @MainActor 调用,
+            // timer 默认加 main run loop —— assumeIsolated 让编译器承认 main actor 隔离
+            MainActor.assumeIsolated {
+                guard let self = self,
+                      self.isRecording,
+                      let startTime = self.recordingStartTime else { return }
 
-            let duration = Date().timeIntervalSince(startTime)
-            let updatedState = RecordingActivityAttributes.ContentState(
-                isRecording: true,
-                transcript: self.transcript,
-                duration: duration
-            )
+                let duration = Date().timeIntervalSince(startTime)
+                let updatedState = RecordingActivityAttributes.ContentState(
+                    isRecording: true,
+                    transcript: self.transcript,
+                    duration: duration
+                )
 
-            Task { [weak self] in
-                let content = ActivityContent(state: updatedState, staleDate: nil)
-                await self?.liveActivity?.update(content)
+                Task { [weak self] in
+                    let content = ActivityContent(state: updatedState, staleDate: nil)
+                    await self?.liveActivity?.update(content)
+                }
             }
         }
     }
