@@ -1,56 +1,101 @@
-# 修复方案：确认页卡片「向右闪出」
+# 修复方案：确认页卡片流式期间「向右闪出」
 
 > 状态：**待实施**。本文档是排查结论 + 实施方案，实施后请对照「验证」一节逐项确认。
-> 相关文件：`UI/ConfirmSheet/TodoItemRow.swift`、`UI/ConfirmSheet/ConfirmSheetView.swift`
+> 主改动文件：`Extractor/TodoExtractorService.swift`
+> 相关文件（只读参考）：`Protocols/Models.swift`、`UI/ConfirmSheet/ConfirmGroupedList.swift`
+
+> ⚠️ **本文档为修订版（v2）。** 初版（commit 593e4f7）诊断错误，已作废——初版把现象归因到
+> `TodoItemRow` 手写的 `offset = 300` 泄漏。该归因不成立：`offset` 仅在 `performDelete()`
+> 内被写入，流式期间用户并未点击删除，该值恒为 0，不存在泄漏源。错误来源是分析时所在分支
+> 落后 origin/main 二十余个提交，`UI/ConfirmSheet/` 已重构出 `ConfirmGroupedList.swift`，
+> 而初版读的是旧版 `ConfirmSheetView.swift`（其 transition 为 `.move(edge: .top)`，无横向动作）。
 
 ## 现象
 
 流式解析任务时，卡片一条条出现；当内容写满屏幕后，部分卡片不是正常向上排布，而是**向右飞出**消失。
 
-## 排查结论
+## 根因（已逐层核实）
 
-这个「向右飞出 300pt」就是删除动画本身（`TodoItemRow.performDelete()` 里的 `offset = 300`），它泄漏到了没有被删除的卡片上。
+**1. 每次 decode 都生成新 UUID**
 
-根因链：
+`Protocols/Models.swift:259`：
 
-1. `TodoItemRow.swift:14,127,157-167` 用 `@State offset/opacity` + `.offset(x:)` 手写删除动画，并且是**先播 300ms 动画、播完才调 `onDelete()` 真正移除数据**
-2. `@State` 绑定在**视图身份槽位**上而非数据上
-3. `ConfirmSheetView.swift:124` 的 `ForEach(Array($todos.enumerated()), id: \.element.id)` 身份链脆弱：流式追加时数组不断变化，`index` 作为 `let` 传下去会随插入移位
-4. 身份槽位被复用时，新条目继承上一条残留的 `offset = 300` → 一渲染出来就在右侧/已飞出
+```swift
+id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+```
 
-放大器：删除动画的 300ms 空窗期内数组未变但视图已偏移；此时若流式又追加条目，父级 `.animation(springSlow, value: todos.count)`（`ConfirmSheetView.swift:146`）重排整个子树，错配概率显著上升。屏幕写满后 ScrollView 内容高度频繁变化，重排更剧烈，所以「写满时」最容易复现。
+AI 返回的 JSON 中**没有 `id` 字段**（prompt schema 只含 title / detail / due_date / priority / category_hint 等），因此 `decodeIfPresent` 恒为 nil，每次解码都落到 `UUID()` 生成全新 id。
 
-同源问题在 `ConfirmSheetView.swift:237` 的注释里已被记录过（ForEach id 冲突导致「勾 A 影响 B」）。
+**2. 流式解析每轮重解析全部对象**
+
+`Extractor/TodoExtractorService.swift` 的 `tryParsePartialTodos` 在每次 partial yield 时，把累积文本中**所有**已完整的对象重新 decode 一遍。结果：
+
+```
+yield #1: [买菜(uuid-A)]
+yield #2: [买菜(uuid-B) ← id 变了!, 开会(uuid-C)]
+```
+
+**3. UI 层以 id 为 ForEach 身份，并声明了向右移出的 removal transition**
+
+`UI/ConfirmSheet/ConfirmGroupedList.swift:113-129`：
+
+```swift
+ForEach(section.todoIDs, id: \.self) { id in
+    ...
+    .transition(
+        .asymmetric(
+            insertion: .move(edge: .bottom).combined(with: .opacity),
+            removal: .move(edge: .trailing).combined(with: .opacity)   // ← 向右飞出
+        )
+    )
+}
+```
+
+**4. 合流结果**
+
+每次 partial 更新，SwiftUI 判定旧 id 全部「被删除」→ 播放 `removal` 向右飞出；新 id 全部「被插入」→ 播放 `insertion` 从下升起。
+
+这同时解释了现象的两半：「从下往上一个个跳出」= insertion transition；「向右闪出」= removal transition。
+
+**附带发现**：`ConfirmGroupedList.swift` 中的注释声称「流式过程 .partial 整体替换 todos，**但 id 不变**」——该不变量已被解析层违反，注释与实现不符。实施本方案后该注释才真正成立。
 
 ## 改动方案
 
-核心思路：**动画与真实删除绑定，杜绝可泄漏的中间状态**。手写 offset 状态之所以危险，是因为它能在「数据还在、视图已偏移」的窗口里被别的行继承；改用 transition 后，飞出动画只在条目真正从数组移除时播放，物理上不可能落到存活的行上。
+核心：**让流式期间同一个逻辑 todo 在多轮 yield 之间保持同一个 id**。UI 层的 removal transition 是期望行为（真删除时就该向右飞出），不应改动。
 
-### 1. `UI/ConfirmSheet/TodoItemRow.swift`
+### `Extractor/TodoExtractorService.swift`（`extractStream` 内）
 
-- 删除 `@State private var offset` / `@State private var opacity`（14-15 行）及 `.offset(x: offset)` / `.opacity(opacity)`（127-128 行）
-- `performDelete()` 简化为直接调用 `onDelete()`，不再自己播动画、不再 `Task.sleep`
-- `UIConfig.deleteAnimationDuration` 若无其他引用则一并清理；有引用就保留
+1. 在流的作用域内维护稳定 id 列表：`var stableIDs: [UUID] = []`
+2. 增加映射步骤：按 index 取 `stableIDs[i]`，数量不足时追加新 UUID；用它覆盖新 decode 出的 id
+3. **三个 yield 点全部套用，缺一不可**：
+   - partial yield（约 225 行）
+   - 错误兜底 partial yield（约 239 行）
+   - **流结束后的 final yield（约 232 行，`parseResponse(accumulatedText)`）**
 
-### 2. `UI/ConfirmSheet/ConfirmSheetView.swift`
+   第三处最易遗漏：final 是一次全新的完整解析，同样生成新 UUID。只修 partial 会导致「最后一次 partial → final」切换时再整批飞一次右。
 
-- `TodoItemRowWithDelete.onDelete`（282-285 行）保持 `withAnimation { todos.removeAll { ... } }`，删除动画由下面的 transition 表达
-- 行的 `.transition`（130 行）改为**非对称**，用 `.asymmetric(insertion:removal:)`：
-  - 插入：`.opacity.combined(with: .move(edge: .top))`（保持现有"从上落下"观感不变）
-  - 移除：`.opacity.combined(with: .move(edge: .trailing))`（复刻原来"向右飞出"的删除观感）
-- 收紧 ForEach 身份（124 行）：改用 SwiftUI 原生 binding 形式 `ForEach($todos) { $todo in ... }`。`ExtractedTodo` 已符合 `Identifiable`（`Protocols/Models.swift:126`），身份天然稳定，且不再依赖 `enumerated()` 产生的临时元组
-- `index` 目前只用于 `accessibilityIdentifier("TodoRow_\(index)")`（`TodoItemRow.swift:130`）。改为在闭包内用 `todos.firstIndex(where: { $0.id == todo.id })` 派生（列表规模小，O(n) 可接受），**保持该 a11y id 格式不变**
+4. `ExtractedTodo.id` 目前是 `let`，需提供复制改 id 的途径（新增内部 `withID(_:)` 辅助方法，或将 `id` 改为 `var`）
+
+### 为什么按 index 做 key 是安全的
+
+（消解「merge key 选不准可能引入新 bug」这一风险）
+
+- `tryParsePartialTodos` 依靠括号深度匹配，**只吐出完整的 `{...}` 对象**——对象一旦被解析出来，其内容即为最终态，不会在后续轮次中变化
+- `partialTodos.count > lastYieldedCount` 的判定保证条目数**单调增长**，不会中途减少或重排
+- final 解析基于同一份 `accumulatedText`，产出顺序与 partial 一致
+
+因此 index N 恒定指向同一个逻辑 todo，index → 身份的映射天然稳定。
+
+## 不在本次范围
+
+`TodoItemRow` 的手写删除动画（`@State offset` / `opacity` + `deleteTask` + `deleteTaskGeneration` 三个状态互相牵制，而 removal transition 已能表达同样效果）是**独立的代码质量问题，与本 bug 无关**。清理它有价值，但应另开一次改动，不要混入本次修复。
 
 ## 验证
 
 - 构建通过
-- UITest：已 grep 确认 `VoiceTodoUITests/` 无用例依赖 `TodoRow_` 前缀，但 id 格式仍保持不变以防外部依赖；跑 `ScenarioTests` 中确认页相关用例
-- 模拟器手动验证：
-  - 一次说出 8-10 条任务触发流式解析，观察卡片逐条出现、内容超屏后**不再有卡片向右闪出**，滚动位置正常
-  - 删除单条卡片：仍是向右飞出 + 淡出的观感（与改动前一致）
-  - 流式解析进行中删除某条：其余卡片不受影响、不发生错位
-  - 编辑某条标题后删除另一条，确认编辑态（`isEditing`/`editedTitle` 这两个 @State）不串行到别的行
-
-## 备注
-
-`.animation(springSlow, value: todos.count)`（`ConfirmSheetView.swift:146`）保留不动——身份稳定后它不再是风险源。
+- 模拟器：一次说出 8-10 条任务触发流式解析
+  - 卡片应逐条从下方升起，**全程无任何卡片向右飞出**
+  - 流式结束（final yield）瞬间同样不应出现整批闪动
+- 删除单条卡片：仍为向右飞出 + 淡出（该 transition 是期望行为，保持不变）
+- 流式进行中删除某条：其余卡片不受影响、不发生错位
+- 断网 / 中途失败触发错误兜底 partial 分支，确认同样无闪动
