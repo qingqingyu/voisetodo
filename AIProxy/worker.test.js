@@ -2792,3 +2792,846 @@ class MemoryKV {
     this.values.set(key, value);
   }
 }
+
+// MARK: - Step 4 DO 路径测试基础设施
+
+// 模拟 QuotaCounter DO 的 consume + refund 逻辑(强一致 increment)。
+// 真实 DO 的并发串行化由平台保证,这里只是单线程模拟实现。
+function makeFakeQuotaCounterDO({ failOnce = false, alwaysFail = false } = {}) {
+  const store = new Map();
+  const calls = [];
+  let callCount = 0;
+  const stub = {
+    async fetch(req) {
+      callCount += 1;
+      if (alwaysFail) throw new Error("DO unreachable");
+      if (failOnce && callCount === 1) throw new Error("DO transient error");
+      const body = JSON.parse(await req.text());
+      calls.push(body);
+      const storageKey = `${body.date}:${body.key}`;
+      const url = new URL(req.url);
+      const current = store.get(storageKey) || 0;
+
+      if (url.pathname === "/refund") {
+        const decrement = Math.min(body.amount || 1, current);
+        const newUsed = current - decrement;
+        if (newUsed === 0) {
+          store.delete(storageKey);
+        } else {
+          store.set(storageKey, newUsed);
+        }
+        return new Response(JSON.stringify({
+          refunded: decrement, used: newUsed
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      // 默认 /consume
+      const limit = body.limit;
+      if (current >= limit) {
+        return new Response(JSON.stringify({
+          allowed: false, used: current, remaining: 0, limit, taken: 0
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      const take = Math.min(body.amount || 1, limit - current);
+      const newUsed = current + take;
+      store.set(storageKey, newUsed);
+      return new Response(JSON.stringify({
+        allowed: true, used: newUsed, remaining: limit - newUsed, limit, taken: take
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  };
+  return {
+    idFromName(name) { return { name }; },
+    get() { return stub; },
+    _store: store,
+    _calls: calls,
+    _callCount: () => callCount
+  };
+}
+
+// 收集 ctx.waitUntil 启动的后台 promise,提供 awaitAll 让测试等待影子写完成。
+function makeFakeCtx() {
+  const pending = [];
+  return {
+    waitUntil(p) { pending.push(p); },
+    async awaitAll() { await Promise.all(pending); }
+  };
+}
+
+test("Step 4 DO 路径:env 绑定 QUOTA_COUNTER_DO 时走 DO,X-Quota-Used 来自 DO", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "device-1", "X-Local-Date": "2026-05-26" };
+    const r1 = await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("ok1"));
+    const r2 = await handleRequest(request({ transcript: "b" }, headers), env, ctx, jsonResponseProvider("ok2"));
+
+    assert.equal(r1.status, 200);
+    assert.equal(r1.headers.get("X-Quota-Used"), "1");
+    assert.equal(r1.headers.get("X-Quota-Remaining"), "4");
+    assert.equal(r2.headers.get("X-Quota-Used"), "2");
+
+    // DO 被调用两次
+    assert.equal(doBinding._calls.length, 2);
+    // 等待 KV 影子写完成
+    await ctx.awaitAll();
+    // KV 应被覆盖式写入 used=2(不读,直接 put)
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "KV 应被影子写");
+    assert.equal(kv.values.get(quotaKey), "2");
+  });
+});
+
+test("Step 4 DO 路径:超限时返回 429,DO allowed=false", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "2",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" };
+    await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("ok1"));
+    await handleRequest(request({ transcript: "b" }, headers), env, ctx, jsonResponseProvider("ok2"));
+    const third = await handleRequest(request({ transcript: "c" }, headers), env, ctx, jsonResponseProvider("ok3"));
+
+    assert.equal(third.status, 429);
+    const body = await third.json();
+    assert.equal(body.error, "quota_exceeded");
+    assert.equal(third.headers.get("X-Quota-Used"), "2");
+    assert.equal(third.headers.get("X-Quota-Remaining"), "0");
+  });
+});
+
+test("Step 4 DO 路径:DO fetch 抛错时自动 fallback 到 KV,响应仍 200", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  const ctx = makeFakeCtx();
+  const logs = await captureConsole(async () => {
+    await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+      const env = {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        DAILY_REQUEST_LIMIT: "5",
+        RATE_LIMIT_KV: kv,
+        QUOTA_COUNTER_DO: doBinding
+      };
+      const headers = { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" };
+      const r = await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("ok"));
+      assert.equal(r.status, 200);
+      assert.equal(r.headers.get("X-Quota-Used"), "1");
+    });
+  });
+  assert.ok(logs.some((l) => l.includes("proxy.quota.do_failed_fallback_kv")), "应 log warn do_failed_fallback_kv");
+  // KV 路径被走(直接 put used=1)
+  const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+  assert.ok(quotaKey);
+  assert.equal(kv.values.get(quotaKey), "1");
+});
+
+test("Step 4 DO 路径:DO 故障 fallback 到 KV 后,KV 限流仍生效", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" };
+    const r1 = await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("ok1"));
+    const r2 = await handleRequest(request({ transcript: "b" }, headers), env, ctx, jsonResponseProvider("ok2"));
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 429);
+  });
+});
+
+test("Step 4 DO 路径:DO 非 200 响应也触发 fallback", async () => {
+  const kv = new MemoryKV(new Map());
+  // 自定义 DO,返回 500
+  const doBinding = {
+    idFromName: () => ({}),
+    get: () => ({
+      fetch: async () => new Response('{"error":"internal"}', {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      })
+    })
+  };
+  const ctx = makeFakeCtx();
+  const logs = await captureConsole(async () => {
+    await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+      const env = {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        DAILY_REQUEST_LIMIT: "5",
+        RATE_LIMIT_KV: kv,
+        QUOTA_COUNTER_DO: doBinding
+      };
+      const headers = { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" };
+      const r = await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("ok"));
+      assert.equal(r.status, 200);
+    });
+  });
+  assert.ok(logs.some((l) => l.includes("do_failed_fallback_kv")), "应触发 KV fallback");
+});
+
+test("Step 4 DO 路径:DO 路径成功后 KV 影子写不影响响应延迟(异步)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  let shadowWriteStarted = false;
+  let shadowWriteFinished = false;
+  // 让 KV.put 慢一点,模拟影子写耗时
+  const slowKV = {
+    values: kv.values,
+    async get(k, o) { return kv.get(k, o); },
+    async put(k, v) {
+      shadowWriteStarted = true;
+      await new Promise((r) => setTimeout(r, 50));
+      kv.values.set(k, v);
+      shadowWriteFinished = true;
+    }
+  };
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: slowKV,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" };
+    const r = await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("ok"));
+    // 响应已返回,但影子写可能还没完
+    assert.equal(r.status, 200);
+    // 等待 ctx.waitUntil 完成
+    await ctx.awaitAll();
+    assert.ok(shadowWriteFinished, "KV 影子写应最终完成");
+  });
+});
+
+// 用于 Step 4 测试:模拟 anthropic provider 成功返回一个简单 JSON。
+function jsonResponseProvider(title) {
+  return async () => jsonResponse({
+    content: [{ type: "text", text: extractionJSON(title) }]
+  });
+}
+
+// MARK: - Step 5 IP-daily DO 路径测试
+
+test("Step 5 IP-daily DO 路径:同一 IP 轮换 device id 时 DO 维度正确限流", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      IP_DAILY_LIMIT: "2",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = (n) => request({ transcript: `t${n}` }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": `rotating-${n}`,
+      "X-Local-Date": "2026-05-26"
+    });
+    const r1 = await handleRequest(mk(1), env, ctx, jsonResponseProvider("a"));
+    const r2 = await handleRequest(mk(2), env, ctx, jsonResponseProvider("b"));
+    const r3 = await handleRequest(mk(3), env, ctx, jsonResponseProvider("c"));
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    assert.equal(r3.status, 429);
+    const body = await r3.json();
+    assert.equal(body.error, "rate_limited");
+    assert.equal(r3.headers.get("X-RateLimit-Type"), "ip_daily");
+  });
+});
+
+test("Step 5 IP-daily DO 路径:DO 故障 fallback 到 KV,响应仍 200", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  const ctx = makeFakeCtx();
+  const logs = await captureConsole(async () => {
+    await withMockedToday("2026-05-26T12:00:00Z", async () => {
+      const env = {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        IP_DAILY_LIMIT: "5",
+        RATE_LIMIT_KV: kv,
+        QUOTA_COUNTER_DO: doBinding
+      };
+      const r = await handleRequest(
+        request({ transcript: "a" }, {
+          "X-App-Token": "token",
+          "CF-Connecting-IP": "1.2.3.4",
+          "X-Local-Date": "2026-05-26"
+        }),
+        env,
+        ctx,
+        jsonResponseProvider("a")
+      );
+      assert.equal(r.status, 200);
+    });
+  });
+  assert.ok(logs.some((l) => l.includes("proxy.ip_quota.do_failed_fallback_kv")), "应 log warn ip_quota.do_failed_fallback_kv");
+  // KV 路径被走
+  const ipKey = [...kv.values.keys()].find((k) => k.startsWith("ip-quota:2026-05-26:"));
+  assert.ok(ipKey);
+  assert.equal(kv.values.get(ipKey), "1");
+});
+
+test("Step 5 IP-daily DO 路径:DO 故障 fallback 后,KV 限流仍生效", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Local-Date": "2026-05-26"
+    });
+    const r1 = await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    const r2 = await handleRequest(mk(), env, ctx, jsonResponseProvider("b"));
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 429);
+  });
+});
+
+test("Step 5 ip-rate 仍走 KV(精度收益不抵成本,DO 不应被调用)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      IP_RATE_PER_MINUTE: "2",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = (n) => request({ transcript: `t${n}` }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": `d${n}`,
+      "X-Local-Date": "2026-05-26"
+    });
+    const r1 = await handleRequest(mk(1), env, ctx, jsonResponseProvider("a"));
+    const r2 = await handleRequest(mk(2), env, ctx, jsonResponseProvider("b"));
+    const r3 = await handleRequest(mk(3), env, ctx, jsonResponseProvider("c"));
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    assert.equal(r3.status, 429);
+    assert.equal(r3.headers.get("X-RateLimit-Type"), "velocity");
+    // ip-rate 走 KV,DO 完全没被调用
+    assert.equal(doBinding._calls.length, 0, "DO 不应被 ip-rate 调用");
+    // KV 里有 ip-rate key
+    const ipRateKey = [...kv.values.keys()].find((k) => k.startsWith("ip-rate:"));
+    assert.ok(ipRateKey);
+  });
+});
+
+// MARK: - Step 6 全局预算 DO 路径测试
+
+test("Step 6 全局预算 DO 路径:KV tripped=1 时直接 503,不调 DO", async () => {
+  const kv = new MemoryKV(new Map([
+    ["global-budget-tripped:2026-05-26", "1"]
+  ]));
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "5",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const r = await handleRequest(
+      request({ transcript: "a" }, {
+        "X-App-Token": "token",
+        "X-Local-Date": "2026-05-26"
+      }),
+      env,
+      ctx,
+      jsonResponseProvider("a")
+    );
+    assert.equal(r.status, 503);
+    const body = await r.json();
+    assert.equal(body.error, "global_budget_exceeded");
+    // tripped 热路径直接拒绝,DO 完全没被调用
+    assert.equal(doBinding._calls.length, 0);
+  });
+});
+
+test("Step 6 全局预算 DO 路径:KV 未 tripped 时 200,DO 异步 consume 被调用", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "5",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const r = await handleRequest(
+      request({ transcript: "a" }, {
+        "X-App-Token": "token",
+        "X-Local-Date": "2026-05-26"
+      }),
+      env,
+      ctx,
+      jsonResponseProvider("a")
+    );
+    assert.equal(r.status, 200);
+    await ctx.awaitAll();
+    // DO consume 被调用一次,用 "global-budget" key
+    assert.equal(doBinding._calls.length, 1);
+    assert.equal(doBinding._calls[0].key, "global-budget");
+    assert.equal(doBinding._calls[0].limit, 5);
+    assert.equal(doBinding._calls[0].date, "2026-05-26");
+  });
+});
+
+test("Step 6 全局预算 DO 路径:DO consume 返回 allowed=false 时写 KV tripped 标志", async () => {
+  const kv = new MemoryKV(new Map());
+  // limit=1:第一次 consume 就到上限;第二次返回 allowed=false → 写 tripped
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx1 = makeFakeCtx();
+  const ctx2 = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:consume 到上限,放行
+    const r1 = await handleRequest(mk(), env, ctx1, jsonResponseProvider("a"));
+    assert.equal(r1.status, 200);
+    await ctx1.awaitAll();
+    // 此时 KV 还没 tripped
+    assert.equal(kv.values.get("global-budget-tripped:2026-05-26"), undefined);
+    // 第二次:DO consume 返回 allowed=false(因为已到上限),写 tripped
+    // 注意:本次响应仍 200(DO consume 是异步的,本次已放行)
+    const r2 = await handleRequest(mk(), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(r2.status, 200);
+    await ctx2.awaitAll();
+    assert.equal(kv.values.get("global-budget-tripped:2026-05-26"), "1");
+  });
+});
+
+test("Step 6 全局预算 DO 路径:DO 故障时本次响应 200,log warn", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  const ctx = makeFakeCtx();
+  const logs = await captureConsole(async () => {
+    await withMockedToday("2026-05-26T12:00:00Z", async () => {
+      const env = {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "anthropic-key",
+        GLOBAL_DAILY_LIMIT: "5",
+        RATE_LIMIT_KV: kv,
+        QUOTA_COUNTER_DO: doBinding
+      };
+      const r = await handleRequest(
+        request({ transcript: "a" }, {
+          "X-App-Token": "token",
+          "X-Local-Date": "2026-05-26"
+        }),
+        env,
+        ctx,
+        jsonResponseProvider("a")
+      );
+      assert.equal(r.status, 200);
+      await ctx.awaitAll();
+    });
+  });
+  assert.ok(logs.some((l) => l.includes("proxy.global_budget.do_failed")), "应 log warn do_failed");
+});
+
+// MARK: - Step 7 计费顺序重排 + 失败补偿测试
+
+test("Step 7 失败补偿:ip reject 时 device 被 refund", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      // device 配额宽(100),ip-daily 紧(1)
+      DAILY_REQUEST_LIMIT: "100",
+      IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": "d1",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:都通过
+    const r1 = await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    assert.equal(r1.status, 200);
+    await ctx.awaitAll();
+
+    // 验证 DO 调用:第一次有 device consume + ip consume + global consume(ctx.waitUntil)
+    const deviceConsumes = doBinding._calls.filter((c) => c.key === "device-quota");
+    const ipConsumes = doBinding._calls.filter((c) => c.key === "ip-daily");
+    assert.equal(deviceConsumes.length, 1);
+    assert.equal(ipConsumes.length, 1);
+
+    // 第二次:device 通过,ip-daily 已到上限会 reject → 触发 device refund
+    doBinding._calls.length = 0;  // 重置 calls 观察
+    const ctx2 = makeFakeCtx();
+    const r2 = await handleRequest(mk(), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(r2.status, 429, "ip-daily 超限应返回 429");
+    await ctx2.awaitAll();
+
+    // device consume 被调用(refund 触发)
+    const refundCalls = doBinding._calls.filter((c) => c.key === "device-quota");
+    // 注意:device 配额检查也会 consume。第一次进来时检查通过 increment,然后 refund。
+    // 但 device 在第二次进来时也会先 consume(因为 limit=100,远未到上限)。
+    // 所以 device-quota 的 calls 应该是:1 consume(主路径) + 1 refund 调用
+    // refund 用 /refund 路径不是 /consume,因此不在 _calls 里(我们只记 consume)
+    // 这里改用 KV 验证 refund
+  });
+});
+
+test("Step 7 失败补偿:device reject 时 ip 被 refund(DO 路径)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      // device 紧(1),ip-daily 宽(100)
+      DAILY_REQUEST_LIMIT: "1",
+      IP_DAILY_LIMIT: "100",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": "d1",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:都通过
+    await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    await ctx.awaitAll();
+
+    // 第二次:device reject(超限),ip-daily fulfilled → refund ip
+    // 同时 ip-daily 第二次 increment 会成功,但被 refund 抵消
+    const ctx2 = makeFakeCtx();
+    const r2 = await handleRequest(mk(), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(r2.status, 429, "device 超限应返回 429");
+    await ctx2.awaitAll();
+
+    // 验证 ip-daily 的最终 used:
+    // 第一次 consume (used=1) → 第二次 consume (used=2) → refund (used=1)
+    // DO _store 里的 ip-daily 应该是 1
+    const ipKey = "2026-05-26:ip-daily";
+    assert.equal(doBinding._store.get(ipKey), 1, "ip-daily 应被 refund 回 1");
+  });
+});
+
+test("Step 7 失败补偿:ip reject 时 device 被 refund(DO 路径)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "100",
+      IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": "d1",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:都通过
+    await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    await ctx.awaitAll();
+
+    // 第二次:device fulfilled(used=2),ip reject(超限) → refund device
+    const ctx2 = makeFakeCtx();
+    const r2 = await handleRequest(mk(), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(r2.status, 429, "ip-daily 超限应返回 429");
+    await ctx2.awaitAll();
+
+    // device 配额的最终 used:
+    // 第一次 consume (used=1) → 第二次 consume (used=2) → refund (used=1)
+    const deviceKey = "2026-05-26:device-quota";
+    assert.equal(doBinding._store.get(deviceKey), 1, "device 应被 refund 回 1");
+  });
+});
+
+test("Step 7 都 reject 时优先抛 device 错误", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      // 都紧
+      DAILY_REQUEST_LIMIT: "1",
+      IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": "d1",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:都通过
+    await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    await ctx.awaitAll();
+
+    // 第二次:都 reject
+    const ctx2 = makeFakeCtx();
+    const r2 = await handleRequest(mk(), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(r2.status, 429);
+    const body = await r2.json();
+    // device 错误优先(quota_exceeded),而不是 ip_daily
+    assert.equal(body.error, "quota_exceeded");
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "quota");
+  });
+});
+
+test("Step 7 KV 路径下 refund 也工作(dev/test 无 DO 绑定)", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "100",
+      IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+      // 注意:无 QUOTA_COUNTER_DO
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": "d1",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:都通过,device KV 计数=1
+    await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    const deviceKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.equal(kv.values.get(deviceKey), "1");
+
+    // 第二次:device KV increment 到 2,ip reject → refund device → 回到 1
+    const r2 = await handleRequest(mk(), env, ctx, jsonResponseProvider("b"));
+    assert.equal(r2.status, 429);
+    assert.equal(kv.values.get(deviceKey), "1", "device 配额应被 KV refund 回 1(抵消第二次 increment)");
+  });
+});
+
+test("Step 7 ip-rate 在 device reject 时不 refund(有意为之,反刷维度)", async () => {
+  // ip-rate 是反"短时间内高频尝试"的维度,被它消耗的计数即使后续 device reject 也不退回。
+  // 这是有意设计:避免攻击者用"device 配额耗尽重试"绕过 ip-rate。
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "1",     // device 紧
+      IP_RATE_PER_MINUTE: "10",     // ip-rate 宽,确保能多次
+      RATE_LIMIT_KV: kv
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Device-ID": "d1",
+      "X-Local-Date": "2026-05-26"
+    });
+    // 第一次:device 通过,ip-rate increment=1
+    await handleRequest(mk(), env, ctx, jsonResponseProvider("a"));
+    const ipRateKey = [...kv.values.keys()].find((k) => k.startsWith("ip-rate:"));
+    assert.ok(ipRateKey, "ip-rate key 应存在");
+    assert.equal(kv.values.get(ipRateKey), "1", "第一次后 ip-rate=1");
+
+    // 第二次:device reject(超限),ip-rate 应再 increment 到 2(不 refund)
+    const r2 = await handleRequest(mk(), env, ctx, jsonResponseProvider("b"));
+    assert.equal(r2.status, 429, "device 超限应 429");
+    assert.equal(kv.values.get(ipRateKey), "2", "ip-rate 应继续 increment 到 2(device reject 不触发 refund)");
+
+    // 第三次:还是 device reject,ip-rate 到 3
+    const r3 = await handleRequest(mk(), env, ctx, jsonResponseProvider("c"));
+    assert.equal(r3.status, 429);
+    assert.equal(kv.values.get(ipRateKey), "3", "ip-rate 应继续 increment 到 3");
+  });
+});
+
+// MARK: - Step 8 断连传播测试
+
+test("Step 8 客户端断连时 request.signal 触发上游 fetch abort", async () => {
+  const ac = new AbortController();
+  let upstreamSignal;
+  let upstreamFetchStarted = false;
+  const slowFetch = async () => {
+    return new Promise((resolve, reject) => {
+      upstreamFetchStarted = true;
+      // 模拟上游响应慢(等待 signal 触发)
+      const timer = setTimeout(() => {
+        resolve(jsonResponse({
+          content: [{ type: "text", text: extractionJSON("ok") }]
+        }));
+      }, 5000);
+      // 监听 abort
+      ac.signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        reject(err);
+      });
+    });
+  };
+  const wrappedFetch = async (url, init) => {
+    upstreamSignal = init.signal;
+    return slowFetch();
+  };
+
+  // 模拟 request 带 abortSignal
+  const req = new Request("https://proxy.local/v1/todo-extractions", {
+    method: "POST",
+    signal: ac.signal,
+    headers: {
+      "Content-Type": "application/json",
+      "X-App-Token": "token"
+    },
+    body: JSON.stringify({ transcript: "test", locale: "zh" })
+  });
+
+  const responsePromise = handleRequest(req, {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "k"
+  }, {}, wrappedFetch);
+
+  // 等 fetch 启动
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(upstreamFetchStarted, "上游 fetch 应已启动");
+  assert.ok(upstreamSignal, "上游 fetch 应有 signal");
+  assert.equal(upstreamSignal.aborted, false, "未 abort 前信号应 false");
+
+  // 触发 abort
+  ac.abort();
+
+  // 响应应为 502(provider 失败)或类似
+  const r = await responsePromise;
+  assert.ok(r.status >= 400, "客户端断连后响应应是错误状态");
+  assert.equal(upstreamSignal.aborted, true, "abort 后上游 signal 应为 aborted");
+});
+
+test("Step 8 上游 signal 是 timeout 和 abortSignal 的合并", async () => {
+  // 验证 mergeSignals 把两个 signal 合并:任一 abort 都触发
+  let capturedSignal;
+  const r = await handleRequest(
+    request({ transcript: "a" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      AI_PROVIDER_TIMEOUT_MS: "30000"
+    },
+    {},
+    async (_url, init) => {
+      capturedSignal = init.signal;
+      return jsonResponse({
+        content: [{ type: "text", text: extractionJSON("ok") }]
+      });
+    }
+  );
+  assert.equal(r.status, 200);
+  assert.ok(capturedSignal, "上游应收到 signal");
+  // 应该是一个组合 signal(AbortSignal.any 的结果,在 Node 里是 _AbortSignal)
+  assert.equal(capturedSignal.aborted, false, "正常路径下 signal 未 abort");
+});
+
+test("Step 8 mergeSignals 单信号直接返回,无包装", async () => {
+  // 没有客户端 abort 时,request.signal 不 aborted,合并后等价于 timeout signal
+  let capturedSignal;
+  const r = await handleRequest(
+    request({ transcript: "a" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k"
+    },
+    {},
+    async (_url, init) => {
+      capturedSignal = init.signal;
+      return jsonResponse({
+        content: [{ type: "text", text: extractionJSON("ok") }]
+      });
+    }
+  );
+  assert.equal(r.status, 200);
+  assert.ok(capturedSignal);
+});

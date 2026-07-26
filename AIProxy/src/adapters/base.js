@@ -2,7 +2,7 @@
 //
 // Each provider adapter is a plain object implementing:
 //   - type                       : provider type tag (matches ProviderConfig.type)
-//   - buildRequest({transcript, locale, vocabularyHints, stream, provider, today, personalHints}) -> {url, init}
+//   - buildRequest({transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal}) -> {url, init}
 //   - extractText(json)          : pull text from a non-streaming provider response
 //   - parseSSEEvent(rawData)     : convert one upstream SSE payload into {done, text}
 //   - isRetryable({status, bodyText, error}) -> {retryable, errorType}
@@ -13,6 +13,28 @@
 import { ProxyHTTPError } from "../errors.js";
 
 export { ProxyHTTPError };
+
+// 合并多个 AbortSignal:任意一个 abort 时,合并信号也 abort。
+// 用于把"客户端断连信号"和"单次调用超时信号"合并传给上游 fetch。
+// AbortSignal.any 在 Node 20+ 和 Cloudflare Workers 都支持,但为兼容老环境加 fallback。
+export function mergeSignals(...signals) {
+  const valid = signals.filter((s) => s !== null && s !== undefined);
+  if (valid.length === 0) return undefined;
+  if (valid.length === 1) return valid[0];
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any(valid);
+  }
+  // Fallback:手动用 AbortController 桥接。已经 abort 的直接传递 reason。
+  const controller = new AbortController();
+  for (const sig of valid) {
+    if (sig.aborted) {
+      controller.abort(sig.reason);
+      break;
+    }
+    sig.addEventListener("abort", () => controller.abort(sig.reason), { once: true });
+  }
+  return controller.signal;
+}
 
 // Shared retry classification for HTTP-level errors. Adapters may layer their own
 // 400/422 body-keyword checks on top via `modelConfigKeywords`.

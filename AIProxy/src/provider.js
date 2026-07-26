@@ -67,7 +67,7 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
     let responseError = null;
 
     try {
-      const { url, init } = adapter.buildRequest({ ...params, provider });
+      const { url, init } = adapter.buildRequest({ ...params, provider, abortSignal: options.abortSignal || null });
       // Intentionally NOT storing url on the attempt record: Gemini embeds the API
       // key as a query param, and providerAttempts[] is echoed back through the
       // requestContext spread in proxy.request.finished. Keeping the URL out of

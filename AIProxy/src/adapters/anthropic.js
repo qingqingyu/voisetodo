@@ -9,7 +9,7 @@
 //   - content_block_delta  -> { delta: { text } }
 //   - message_stop         -> terminal
 
-import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable } from "./base.js";
+import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // Anthropic error bodies that indicate a model-side fix (just retry against the next
 // provider, whose model may not have this problem). Anything else in 400/422 is treated
@@ -25,7 +25,7 @@ const ANTHROPIC_MODEL_CONFIG_KEYWORDS = [
 export const anthropicAdapter = {
   type: "anthropic",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "Anthropic key not configured");
     }
@@ -33,7 +33,9 @@ export const anthropicAdapter = {
       url: provider.url,
       init: {
         method: "POST",
-        signal: AbortSignal.timeout(provider.timeoutMs),
+        // 合并客户端断连信号 + 单次调用超时。客户端划走时上游 fetch 立刻 abort,
+        // 不再继续烧 token 到 timeoutMs。
+        signal: mergeSignals(abortSignal, AbortSignal.timeout(provider.timeoutMs)),
         headers: {
           "Content-Type": "application/json",
           "anthropic-version": "2023-06-01",

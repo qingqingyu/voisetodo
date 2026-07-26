@@ -7,6 +7,10 @@ import { pickCandidates } from "./src/selector.js";
 import { normalizeProviderStream } from "./src/stream.js";
 import { verifySubscriptionJWS, APPLE_ROOT_CA_G3_SHA256 } from "./src/subscription.js";
 
+// Durable Object 类必须从 worker 入口 export,Cloudflare 运行时才能识别 binding。
+// Step 2:仅声明,业务路径仍走 KV;Step 3 起逐步切换读路径到 DO。
+export { QuotaCounter } from "./src/do/quota-counter.js";
+
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TRANSCRIPT_CHARS = 4000;
 const MAX_VOCABULARY_HINTS = 30;
@@ -92,9 +96,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     requestContext.vocabularyHintCount = vocabularyHints.length;
     logInfo("proxy.payload.accepted", requestContext);
 
-    const quotaState = await enforceDailyLimit(request, env, requestContext);
-    await enforcePerIpLimit(request, env, requestContext);
-    await enforceGlobalBudget(env, requestContext);
+    const quotaState = await enforceAllQuotas(request, env, requestContext, ctx);
 
     // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
     // 直接复用作为 today 注入 prompt，避免重复调用 resolveQuotaDate 产生重复漂移校验日志。
@@ -139,6 +141,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints };
     const result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
       healthStore: sharedHealthStore,
+      // 客户端断连信号:用户划走时上游 fetch 立刻 abort,不再继续烧 token 到 timeoutMs
+      abortSignal: request.signal,
       onResponse: stream
         ? ({ response, provider }) => validateProviderStreamBody(response, provider, requestContext)
         : ({ response, provider, adapter }) => readProviderText(response, provider, adapter, requestContext)
@@ -427,10 +431,181 @@ function validateAppToken(request, env) {
   };
 }
 
+// 计费编排:Step 7 重排后的统一入口。
+//
+// 设计原则:
+//   1. 前置检查先行:global-budget 熔断标志(KV tripped,纯读边缘缓存)+ ip-rate 限流
+//      (KV RMW,会扣计数,故意不补偿 —— 这是反刷维度,被这里拒绝也算消耗一次"尝试机会")
+//   2. device + ip-daily 并行扣减(Promise.allSettled),延迟从 2× 串行往返压到 1×
+//   3. 失败补偿:一个 allow 一个 deny 时,给 allow 的发 refund(DO refund 原子,
+//      KV refund 在 dev/test 单线程下 OK)
+//   4. 全局预算 DO consume 仍异步,不阻塞响应(单例 DO 跨洲往返不可接受)
+//
+// 关键不变量:enforceDailyLimit / enforceIpDailyLimit reject(超限)时**没有扣 quota**
+// (检查在 increment 之前,平台保证原子)。所以 refund 只在"fulfilled + 对方 rejected"
+// 时触发,不会出现"两个都 reject 还要 refund"的情况。
+//
+// 注意:ip-rate 在 Step A 已 increment,即使后续 device reject 也**不 refund** ——
+// 这是有意为之,ip-rate 是反"短时间内高频尝试"的维度,被它拒绝或被它放行后再被其他维度
+// 拒绝,都应消耗一次 ip-rate 配额,避免攻击者用"device 配额耗尽重试"绕过 ip-rate。
+async function enforceAllQuotas(request, env, requestContext, ctx) {
+  // Step A: 前置检查
+  // - global-budget:纯读 KV tripped 标志,真正零成本
+  // - ip-rate:KV RMW,会扣计数(有意不补偿,见上方注释)
+  await enforceGlobalBudgetHotPath(env, requestContext);
+  await enforceIpRateLimit(request, env, requestContext);
+
+  // Step B: device + ip-daily 并行扣减
+  const [deviceResult, ipResult] = await Promise.allSettled([
+    enforceDailyLimit(request, env, requestContext, ctx),
+    enforceIpDailyLimit(request, env, requestContext, ctx)
+  ]);
+
+  // Step C: 失败补偿
+  // 三种 reject 组合:
+  //   - 都 reject → 两者都没扣(超限检查在前) → 抛 device 错误(优先,常是用户最关心的)
+  //   - 仅 device reject → device 没扣,ip 可能已扣 → refund ip
+  //   - 仅 ip reject → ip 没扣,device 可能已扣 → refund device
+  //
+  // 补偿 vs KV 影子写的竞态:enforceDailyLimitViaDO 在 ctx.waitUntil 里覆盖式 put KV,
+  // 这里同步 refund 走 KV fallback 也会 put KV。两个 put 顺序未定,可能导致 KV 最终值
+  // 是 increment 后的(没扣回),破坏 KV-as-rollback-mirror。
+  //
+  // 缓解:refund 成功后,把 KV 的影子值也覆盖到 refund 后的 used(再排队一个 waitUntil)。
+  // 注意:Cloudflare waitUntil **不保证 FIFO 执行顺序**,因此这不是严格修复,
+  // 只是大幅降低错误概率(从"必然错误"降到"网络抖动下偶发错误")。
+  // DO 主路径保证正确(KV 只是镜像);KV 错误的代价是回滚到 KV 时配额偏高 1,
+  // 不会泄漏给用户。若未来需要严格一致,需要让 increment 影子写读 DO 当前值再写,
+  // 或改用 D1 单 SQL 事务做 KV 替代。
+  if (deviceResult.status === "rejected" && ipResult.status === "fulfilled") {
+    await refundIpDaily(request, env, requestContext, ctx).catch((error) => {
+      // outer catch 是补偿失败的刻意吞点:用户已被拒,refund 失败只产生配额泄漏,
+      // 不应再让响应 5xx。需通过日志监控 leak 率。
+      logWarn("proxy.ip_quota.refund_failed", { ...requestContext, ...errorFields(error) });
+    });
+    throw deviceResult.reason;
+  }
+  if (ipResult.status === "rejected" && deviceResult.status === "fulfilled") {
+    await refundDeviceQuota(request, env, requestContext, deviceResult.value, ctx).catch((error) => {
+      logWarn("proxy.quota.refund_failed", { ...requestContext, ...errorFields(error) });
+    });
+    throw ipResult.reason;
+  }
+  if (deviceResult.status === "rejected") {
+    // 两者都 reject,优先抛 device 错误
+    throw deviceResult.reason;
+  }
+
+  // Step D: 都通过,异步递增 global budget(若 DO 未绑则同步 KV 路径)
+  await enforceGlobalBudgetIncrement(env, requestContext, ctx);
+
+  return deviceResult.value;
+}
+
+// 给 device 配额发 refund:DO 路径调 /refund,KV 路径直接 -1(degraded,dev/test 用)。
+// ctx 用于 DO refund 成功后把 KV 影子值也修正到 refund 后的 used(覆盖式 put,
+// 排队到原 increment 影子写之后,作为最终修正)。
+async function refundDeviceQuota(request, env, requestContext, quotaState, ctx) {
+  const { date: quotaDate } = resolveQuotaDate(request, requestContext);
+  if (env.QUOTA_COUNTER_DO) {
+    const result = await refundQuotaCounterDO(env, "device-quota", requestContext.deviceId, quotaDate, "proxy.quota.refunded");
+    // DO refund 成功后,KV 影子值要同步修正(避免和 increment 时的影子写竞争)
+    if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
+      const quotaKey = `quota:${quotaDate}:${requestContext.deviceId}`;
+      ctx.waitUntil(
+        env.RATE_LIMIT_KV.put(quotaKey, String(result.used), { expirationTtl: 36 * 60 * 60 })
+          .catch((error) => {
+            logWarn("proxy.quota.refund_kv_shadow_failed", {
+              ...requestContext,
+              quotaDate,
+              ...errorFields(error)
+            });
+          })
+      );
+    }
+    return;
+  }
+  // KV fallback:dev/test 环境。读改写在并发下不准,但单线程 OK。
+  if (!env.RATE_LIMIT_KV) return;
+  const quotaKey = `quota:${quotaDate}:${requestContext.deviceId}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(quotaKey) || "0");
+  const newValue = Math.max(0, current - 1);
+  if (newValue === 0) {
+    await env.RATE_LIMIT_KV.put(quotaKey, "0", { expirationTtl: 36 * 60 * 60 });
+  } else {
+    await env.RATE_LIMIT_KV.put(quotaKey, String(newValue), { expirationTtl: 36 * 60 * 60 });
+  }
+  logInfo("proxy.quota.refunded", { ...requestContext, quotaDate, used: newValue, source: "kv" });
+}
+
+// 给 ip-daily 配额发 refund:同 device。
+async function refundIpDaily(request, env, requestContext, ctx) {
+  const rawIp = request.headers.get("CF-Connecting-IP") || "anonymous";
+  const ipHash = await safeDeviceId(rawIp, env);
+  const today = new Date().toISOString().slice(0, 10);
+  if (env.QUOTA_COUNTER_DO) {
+    const result = await refundQuotaCounterDO(env, "ip-daily", ipHash, today, "proxy.ip_quota.refunded");
+    if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
+      const key = `ip-quota:${today}:${ipHash}`;
+      ctx.waitUntil(
+        env.RATE_LIMIT_KV.put(key, String(result.used), { expirationTtl: 36 * 60 * 60 })
+          .catch((error) => {
+            logWarn("proxy.ip_quota.refund_kv_shadow_failed", {
+              ...requestContext,
+              ...errorFields(error)
+            });
+          })
+      );
+    }
+    return;
+  }
+  if (!env.RATE_LIMIT_KV) return;
+  const key = `ip-quota:${today}:${ipHash}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  const newValue = Math.max(0, current - 1);
+  if (newValue === 0) {
+    await env.RATE_LIMIT_KV.put(key, "0", { expirationTtl: 36 * 60 * 60 });
+  } else {
+    await env.RATE_LIMIT_KV.put(key, String(newValue), { expirationTtl: 36 * 60 * 60 });
+  }
+  logInfo("proxy.ip_quota.refunded", { ...requestContext, today, used: newValue, source: "kv" });
+}
+
+// 共用 DO refund 调用。失败时抛错,由调用方决定如何处理(CLAUDE.md:错误显式传播)。
+// 日志在调用方写,这里只做 fetch + 状态码校验。
+// logEvent 显式传:不同 subject 在日志里的事件名不同(device-quota→quota, ip-daily→ip_quota),
+// 显式参数避免调用点用三元运算硬编码,新增 subject 不会误归入既有事件。
+async function refundQuotaCounterDO(env, subjectKey, subjectId, date, logEvent) {
+  const doName = `${subjectKey}:${subjectId}`;
+  const id = env.QUOTA_COUNTER_DO.idFromName(doName);
+  const stub = env.QUOTA_COUNTER_DO.get(id);
+  const response = await stub.fetch(new Request("https://quota-counter.local/refund", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key: subjectKey, date, amount: 1 })
+  }));
+  if (!response.ok) {
+    throw new Error(`DO refund returned status ${response.status}`);
+  }
+  const result = await response.json();
+  logInfo(logEvent, {
+    date,
+    subjectId,
+    used: result.used,
+    source: "do"
+  });
+  return result;
+}
+
 // 免费档每日上限（DAILY_REQUEST_LIMIT）与 Pro 档每日上限（PAID_DAILY_LIMIT）。
 // 配额 key 由客户端本地日期 + 设备摘要构成：发起即计数（含后续 AI 调用失败），
 // 避免靠重试绕过计费。代理是唯一可信强制点，客户端只负责展示。
-async function enforceDailyLimit(request, env, requestContext) {
+//
+// Step 4 起:env.QUOTA_COUNTER_DO 绑定时走 DO 强一致主路径(解决 KV 并发丢失更新)。
+// DO 故障(fetch 抛错 / 非 200)自动回退到 KV 路径并 log warn —— KV 虽有丢失更新,
+// 但单线程下仍正确,作为 degraded 模式比纯 fail-open 安全。
+// 测试/dev 环境不绑定 DO 时直接走 KV 路径,行为与 Step 3 前一致。
+async function enforceDailyLimit(request, env, requestContext, ctx) {
   // 即使配额未启用也预先解析 quotaDate，让调用方（today 注入）能复用而无需重复调用
   // resolveQuotaDate（避免重复漂移校验日志）。
   const { date: quotaDate, source } = resolveQuotaDate(request, requestContext);
@@ -445,11 +620,111 @@ async function enforceDailyLimit(request, env, requestContext) {
   }
 
   const { tier, limit, productId } = await resolveSubscriptionTier(request, env, requestContext);
+
+  if (env.QUOTA_COUNTER_DO) {
+    return enforceDailyLimitViaDO(env, requestContext, ctx, { tier, limit, productId, quotaDate, dateSource: source });
+  }
+  return enforceDailyLimitViaKV(env, requestContext, ctx, { tier, limit, productId, quotaDate, dateSource: source });
+}
+
+// DO 主路径:强一致 consume。失败时 fallback 到 KV 路径。
+// 成功后 KV 影子写(覆盖式 put,不读),保留 KV 作为可回滚镜像。
+async function enforceDailyLimitViaDO(env, requestContext, ctx, params) {
+  const { tier, limit, productId, quotaDate, dateSource } = params;
+  const subjectKey = "device-quota";
+  const doName = `${subjectKey}:${requestContext.deviceId}`;
+
+  let result;
+  try {
+    const id = env.QUOTA_COUNTER_DO.idFromName(doName);
+    const stub = env.QUOTA_COUNTER_DO.get(id);
+    const response = await stub.fetch(new Request("https://quota-counter.local/consume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: subjectKey, date: quotaDate, limit, amount: 1 })
+    }));
+    if (!response.ok) {
+      throw new Error(`DO consume returned status ${response.status}`);
+    }
+    result = await response.json();
+  } catch (error) {
+    // DO 故障 → 回退到 KV 路径(degraded mode)。KV 单线程下正确,并发下漏,
+    // 但比纯 fail-open 安全。
+    logWarn("proxy.quota.do_failed_fallback_kv", {
+      ...requestContext,
+      quotaDate,
+      plan: tier,
+      ...errorFields(error)
+    });
+    return enforceDailyLimitViaKV(env, requestContext, ctx, params);
+  }
+
+  if (!result.allowed) {
+    logWarn("proxy.quota.exceeded", {
+      ...requestContext,
+      quotaDate,
+      dateSource,
+      plan: tier,
+      productId,
+      current: result.used,
+      limit,
+      remaining: 0,
+      source: "do"
+    });
+    throw new ProxyHTTPError(429, "Daily quota exceeded", {
+      errorType: "quota_exceeded",
+      rateLimitType: "quota",
+      body: { error: "quota_exceeded", tier, remaining: 0, resetAt: quotaDate },
+      headers: {
+        "X-RateLimit-Type": "quota",
+        "Retry-After": String(secondsUntilNextLocalDay(quotaDate)),
+        ...quotaHeaders({ plan: tier, limit, used: result.used, remaining: 0, resetDate: quotaDate })
+      }
+    });
+  }
+
+  const used = result.used;
+  const remaining = Math.max(0, limit - used);
+  logInfo("proxy.quota.incremented", {
+    ...requestContext,
+    quotaDate,
+    dateSource,
+    plan: tier,
+    productId,
+    limit,
+    used,
+    remaining,
+    source: "do"
+  });
+
+  // KV 影子写:覆盖式 put 当前 used(不读不增)。作为可回滚镜像保留。
+  if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
+    const quotaKey = `quota:${quotaDate}:${requestContext.deviceId}`;
+    ctx.waitUntil(
+      env.RATE_LIMIT_KV.put(quotaKey, String(used), { expirationTtl: 36 * 60 * 60 })
+        .catch((error) => {
+          logWarn("proxy.quota.kv_shadow_write_failed", {
+            ...requestContext,
+            ...errorFields(error)
+          });
+        })
+    );
+  }
+
+  return { skipped: false, plan: tier, limit, used, remaining, resetDate: quotaDate };
+}
+
+// KV 路径(degraded / dev / test)。保留 Step 3 前的 read-modify-write 语义。
+// 注意:此路径在并发下丢失更新,仅作为 fallback。
+// ctx 不被 KV 路径使用,但保留在签名里与 DO 路径对称 —— 上层 enforceDailyLimit
+// 不区分路径,统一传 ctx。
+async function enforceDailyLimitViaKV(env, requestContext, _ctx, params) {
+  const { tier, limit, productId, quotaDate, dateSource } = params;
   // requestContext.deviceId 已加盐 sha256，避免 KV 落明文设备号且与日志口径一致。
   const quotaKey = `quota:${quotaDate}:${requestContext.deviceId}`;
   const current = Number(await env.RATE_LIMIT_KV.get(quotaKey) || "0");
   if (current >= limit) {
-    logWarn("proxy.quota.exceeded", { ...requestContext, quotaKey, quotaDate, dateSource: source, plan: tier, productId, current, limit, remaining: 0 });
+    logWarn("proxy.quota.exceeded", { ...requestContext, quotaKey, quotaDate, dateSource, plan: tier, productId, current, limit, remaining: 0, source: "kv" });
     throw new ProxyHTTPError(429, "Daily quota exceeded", {
       errorType: "quota_exceeded",
       rateLimitType: "quota",
@@ -464,7 +739,7 @@ async function enforceDailyLimit(request, env, requestContext) {
   const used = current + 1;
   await env.RATE_LIMIT_KV.put(quotaKey, String(used), { expirationTtl: 36 * 60 * 60 });
   const remaining = Math.max(0, limit - used);
-  logInfo("proxy.quota.incremented", { ...requestContext, quotaKey, quotaDate, dateSource: source, plan: tier, productId, limit, used, remaining });
+  logInfo("proxy.quota.incremented", { ...requestContext, quotaKey, quotaDate, dateSource, plan: tier, productId, limit, used, remaining, source: "kv" });
   return { skipped: false, plan: tier, limit, used, remaining, resetDate: quotaDate };
 }
 
@@ -580,8 +855,20 @@ function secondsUntilNextLocalDay(quotaDate) {
 }
 
 // 全局每日预算熔断：当天全网调用量超过 GLOBAL_DAILY_LIMIT 即对所有人返回 503，
-// 把"无限身份的分布式刷"的财务风险锁成可设的上限。粗粒度（KV 最终一致），作为预算兜底足够。
-async function enforceGlobalBudget(env, requestContext) {
+// 把"无限身份的分布式刷"的财务风险锁成可设的上限。
+//
+// Step 7 起拆成两个独立函数,enforceAllQuotas 分别编排:
+//   - enforceGlobalBudgetHotPath:零成本前置(KV tripped 标志位)
+//   - enforceGlobalBudgetIncrement:device/ip 通过后异步递增(DO consume + 写 tripped)
+//
+// DO 是单例(全网一个实例),同步调用会被 pin 在一个地理位置跨洲往返(~150ms),
+// 对国内用户不可接受。改成:每个请求只读 KV 标志位(边缘缓存,几乎零成本),
+// DO consume 异步进行(不阻塞响应);DO 检测到超限时写 KV 标志位,后续请求读到就 503。
+// 代价:从"真实越限"到"全网生效"有 KV 传播延迟(~60s),会超发一些 —— 但相比 KV 时代
+// "计数器根本不涨、上限形同虚设",这是从"漏"到"精确到分钟级"的改变。
+
+// 热路径:读 KV tripped 标志位,熔断时立即 503。
+async function enforceGlobalBudgetHotPath(env, requestContext) {
   if (!env.RATE_LIMIT_KV || !env.GLOBAL_DAILY_LIMIT) {
     logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured" });
     return;
@@ -592,62 +879,228 @@ async function enforceGlobalBudget(env, requestContext) {
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
+  const trippedKey = `global-budget-tripped:${today}`;
+  const tripped = await env.RATE_LIMIT_KV.get(trippedKey);
+  if (tripped === "1") {
+    logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit });
+    throw new ProxyHTTPError(503, "Service temporarily unavailable", {
+      errorType: "global_budget_exceeded",
+      body: { error: "global_budget_exceeded" }
+    });
+  }
+}
+
+// 增量路径:device/ip 都通过后调用。DO 异步 consume + 写 tripped(若超限)。
+// KV 路径(degraded)直接同步 increment。
+async function enforceGlobalBudgetIncrement(env, requestContext, ctx) {
+  if (!env.RATE_LIMIT_KV || !env.GLOBAL_DAILY_LIMIT) return;
+  const limit = Number(env.GLOBAL_DAILY_LIMIT);
+  if (!Number.isFinite(limit) || limit <= 0) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (env.QUOTA_COUNTER_DO) {
+    enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, { today, limit });
+    return;
+  }
+  await enforceGlobalBudgetViaKV(env, requestContext, { today, limit });
+}
+
+// DO 异步增量路径:ctx.waitUntil 包好,本次响应不阻塞。
+function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
+  const { today, limit } = params;
+  const trippedKey = `global-budget-tripped:${today}`;
+  if (!ctx?.waitUntil) {
+    // 生产路径 ctx 必然存在;缺失表示调用方契约违反(测试 mock 不全 / 运行时异常)。
+    // 显式 warn 而非静默 —— 否则 global budget 会被无声地跳过。
+    logWarn("proxy.global_budget.wait_until_missing", {
+      ...requestContext,
+      today,
+      limit
+    });
+    return;
+  }
+  ctx.waitUntil(
+    (async () => {
+      try {
+        const id = env.QUOTA_COUNTER_DO.idFromName("global-budget");
+        const stub = env.QUOTA_COUNTER_DO.get(id);
+        const response = await stub.fetch(new Request("https://quota-counter.local/consume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "global-budget", date: today, limit, amount: 1 })
+        }));
+        if (!response.ok) {
+          logWarn("proxy.global_budget.do_http_error", {
+            ...requestContext,
+            status: response.status
+          });
+          return;
+        }
+        const result = await response.json();
+        if (!result.allowed) {
+          await env.RATE_LIMIT_KV.put(trippedKey, "1", { expirationTtl: 36 * 60 * 60 });
+          logWarn("proxy.global_budget.tripped_set", {
+            ...requestContext,
+            today,
+            used: result.used,
+            limit
+          });
+        } else {
+          logInfo("proxy.global_budget.incremented", {
+            ...requestContext,
+            used: result.used,
+            limit,
+            source: "do"
+          });
+        }
+      } catch (error) {
+        logWarn("proxy.global_budget.do_failed", {
+          ...requestContext,
+          ...errorFields(error)
+        });
+      }
+    })()
+  );
+}
+
+// KV 路径(degraded / dev / test):保留 Step 5 前的 read-modify-write 语义。
+async function enforceGlobalBudgetViaKV(env, requestContext, params) {
+  const { today, limit } = params;
   const key = `global-quota:${today}`;
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= limit) {
-    logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit });
+    logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit, source: "kv" });
     throw new ProxyHTTPError(503, "Service temporarily unavailable", {
       errorType: "global_budget_exceeded",
       body: { error: "global_budget_exceeded" }
     });
   }
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
-  logInfo("proxy.global_budget.incremented", { ...requestContext, current: current + 1, limit });
+  logInfo("proxy.global_budget.incremented", { ...requestContext, current: current + 1, limit, source: "kv" });
 }
 
 // 独立于设备的 IP 限流：始终按 CF-Connecting-IP 计，挡"单 IP 轮换 X-Device-ID 刷配额"。
-// 两层均按需开启（未配置对应 env 即跳过）：分钟级突发 IP_RATE_PER_MINUTE + 每日 IP_DAILY_LIMIT。
-async function enforcePerIpLimit(request, env, requestContext) {
-  if (!env.RATE_LIMIT_KV) {
+//
+// Step 7 起拆成两个独立函数,enforceAllQuotas 分别编排:
+//   - enforceIpRateLimit:KV 路径,零成本前置(热路径)
+//   - enforceIpDailyLimit:DO 主路径(DO 故障 fallback KV),与 device 配额并行扣减
+//
+// ip-rate 保留 KV,精度收益不抵成本(每分钟 × 每 IP 一个 DO 实例太多)。
+
+async function enforceIpRateLimit(request, env, requestContext) {
+  if (!env.RATE_LIMIT_KV) return;
+  const perMinute = Number(env.IP_RATE_PER_MINUTE || 0);
+  if (!Number.isFinite(perMinute) || perMinute <= 0) return;
+
+  const rawIp = request.headers.get("CF-Connecting-IP") || "anonymous";
+  const ipHash = await safeDeviceId(rawIp, env);
+  const minuteBucket = new Date().toISOString().slice(0, 16);
+  const key = `ip-rate:${minuteBucket}:${ipHash}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  if (current >= perMinute) {
+    logWarn("proxy.ip_rate.exceeded", { ...requestContext, current, limit: perMinute });
+    throw new ProxyHTTPError(429, "Too many requests", {
+      errorType: "rate_limited",
+      rateLimitType: "velocity",
+      body: { error: "rate_limited", retryAfter: 60 },
+      headers: { "X-RateLimit-Type": "velocity", "Retry-After": "60" }
+    });
+  }
+  await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
+}
+
+async function enforceIpDailyLimit(request, env, requestContext, ctx) {
+  if (!env.RATE_LIMIT_KV) return;
+  const perDay = Number(env.IP_DAILY_LIMIT || 0);
+  if (!Number.isFinite(perDay) || perDay <= 0) return;
+
+  const rawIp = request.headers.get("CF-Connecting-IP") || "anonymous";
+  const ipHash = await safeDeviceId(rawIp, env);
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (env.QUOTA_COUNTER_DO) {
+    await enforceIpDailyLimitViaDO(env, requestContext, ctx, { ipHash, today, perDay });
+  } else {
+    await enforceIpDailyLimitViaKV(env, requestContext, { ipHash, today, perDay });
+  }
+}
+
+// ip-daily 的 DO 主路径。
+async function enforceIpDailyLimitViaDO(env, requestContext, ctx, params) {
+  const { ipHash, today, perDay } = params;
+  const subjectKey = "ip-daily";
+  const doName = `${subjectKey}:${ipHash}`;
+
+  let result;
+  try {
+    const id = env.QUOTA_COUNTER_DO.idFromName(doName);
+    const stub = env.QUOTA_COUNTER_DO.get(id);
+    const response = await stub.fetch(new Request("https://quota-counter.local/consume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: subjectKey, date: today, limit: perDay, amount: 1 })
+    }));
+    if (!response.ok) {
+      throw new Error(`DO consume returned status ${response.status}`);
+    }
+    result = await response.json();
+  } catch (error) {
+    logWarn("proxy.ip_quota.do_failed_fallback_kv", {
+      ...requestContext,
+      ...errorFields(error)
+    });
+    await enforceIpDailyLimitViaKV(env, requestContext, params);
     return;
   }
-  const rawIp = request.headers.get("CF-Connecting-IP") || "anonymous";
-  const ipHash = await safeDeviceId(rawIp, env);  // 复用加盐哈希，KV key 不落明文 IP
-  const now = new Date();
 
-  const perMinute = Number(env.IP_RATE_PER_MINUTE || 0);
-  if (Number.isFinite(perMinute) && perMinute > 0) {
-    const minuteBucket = now.toISOString().slice(0, 16);  // YYYY-MM-DDTHH:MM
-    const key = `ip-rate:${minuteBucket}:${ipHash}`;
-    const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
-    if (current >= perMinute) {
-      logWarn("proxy.ip_rate.exceeded", { ...requestContext, current, limit: perMinute });
-      throw new ProxyHTTPError(429, "Too many requests", {
-        errorType: "rate_limited",
-        rateLimitType: "velocity",
-        body: { error: "rate_limited", retryAfter: 60 },
-        headers: { "X-RateLimit-Type": "velocity", "Retry-After": "60" }
-      });
-    }
-    await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
+  if (!result.allowed) {
+    logWarn("proxy.ip_quota.exceeded", {
+      ...requestContext,
+      current: result.used,
+      limit: perDay,
+      source: "do"
+    });
+    throw new ProxyHTTPError(429, "Too many requests from this IP", {
+      errorType: "rate_limited",
+      rateLimitType: "ip_daily",
+      body: { error: "rate_limited", retryAfter: secondsUntilNextLocalDay(today) },
+      headers: { "X-RateLimit-Type": "ip_daily", "Retry-After": String(secondsUntilNextLocalDay(today)) }
+    });
   }
 
-  const perDay = Number(env.IP_DAILY_LIMIT || 0);
-  if (Number.isFinite(perDay) && perDay > 0) {
-    const today = now.toISOString().slice(0, 10);
+  // KV 影子写
+  if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
     const key = `ip-quota:${today}:${ipHash}`;
-    const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
-    if (current >= perDay) {
-      logWarn("proxy.ip_quota.exceeded", { ...requestContext, current, limit: perDay });
-      throw new ProxyHTTPError(429, "Too many requests from this IP", {
-        errorType: "rate_limited",
-        rateLimitType: "ip_daily",
-        body: { error: "rate_limited", retryAfter: secondsUntilNextLocalDay(today) },
-        headers: { "X-RateLimit-Type": "ip_daily", "Retry-After": String(secondsUntilNextLocalDay(today)) }
-      });
-    }
-    await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
+    ctx.waitUntil(
+      env.RATE_LIMIT_KV.put(key, String(result.used), { expirationTtl: 36 * 60 * 60 })
+        .catch((error) => {
+          logWarn("proxy.ip_quota.kv_shadow_write_failed", {
+            ...requestContext,
+            ...errorFields(error)
+          });
+        })
+    );
   }
+}
+
+// ip-daily 的 KV 路径(degraded / dev / test)。
+// 返回 void —— 调用方(Promise.allSettled)只看 status,不用返回值。
+// 与 enforceDailyLimitViaKV 返回 quota state 不对称,因为 IP 限流不向客户端
+// 暴露 X-Quota-* 头(IP 是反刷维度,非用户配额)。
+async function enforceIpDailyLimitViaKV(env, requestContext, params) {
+  const { ipHash, today, perDay } = params;
+  const key = `ip-quota:${today}:${ipHash}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  if (current >= perDay) {
+    logWarn("proxy.ip_quota.exceeded", { ...requestContext, current, limit: perDay, source: "kv" });
+    throw new ProxyHTTPError(429, "Too many requests from this IP", {
+      errorType: "rate_limited",
+      rateLimitType: "ip_daily",
+      body: { error: "rate_limited", retryAfter: secondsUntilNextLocalDay(today) },
+      headers: { "X-RateLimit-Type": "ip_daily", "Retry-After": String(secondsUntilNextLocalDay(today)) }
+    });
+  }
+  await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
 }
 
 function normalizeLocale(locale) {
