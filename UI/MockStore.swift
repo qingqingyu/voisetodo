@@ -335,6 +335,36 @@ extension MockStore {
             TodoItemData(title: "完成周报", dueHint: "今天", priority: .normal, category: .work)
         ])
     }
+
+    /// 包含长 hint fixture 的 Mock Store —— 用于跑马灯 / 卡片溢出场景的 Preview 与 UI 测试。
+    /// AI 原文逐字保留是 prompt 契约(AIProxy/src/adapters/base.js:125 / :245),
+    /// 长度无界,few-shot 里就有 30-43 字符的例子。原来 MockStore 全用短中文 hint
+    /// ("今天"、"周三前")掩盖了长文本溢出 bug,这里补中英文长 hint 各一。
+    static var withLongHints: MockStore {
+        MockStore(todos: [
+            TodoItemData(
+                title: "Finish filing taxes",
+                detail: nil,
+                dueHint: "by the end of this month",
+                priority: .high,
+                category: .finance
+            ),
+            TodoItemData(
+                title: "缴物业管理费",
+                detail: nil,
+                dueHint: "每个月15号下午3点",
+                priority: .normal,
+                category: .finance
+            ),
+            TodoItemData(
+                title: "Schedule dentist",
+                detail: nil,
+                dueHint: "around the middle of the month",
+                priority: .normal,
+                category: .health
+            )
+        ])
+    }
 }
 
 // MARK: - Mock Services (for Preview)

@@ -79,7 +79,11 @@ struct PendingDateTodoRow: View {
                     ChipView(
                         text: looseChipText,
                         style: .loose,
-                        accent: WarmTheme.textMuted
+                        accent: WarmTheme.textMuted,
+                        // looseChipText 直接来自 AI 原文(timeBucket.localizedTitle 或 dueHint),
+                        // 长度无界(如 "by the end of this month")。走 marquee 让 chip 宽度可被
+                        // 父压缩,放不下时滚动 —— 不再挤掉标题、不再溢出卡片。
+                        overflow: .marquee
                     )
                 }
 
@@ -168,3 +172,64 @@ struct PendingDateTodoRow: View {
         .accessibilityIdentifier("PendingDateRow_\(index)")
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+
+#Preview("PendingDateTodoRow — 长 hint EN/ZH × default/AX5") {
+    VStack(spacing: 8) {
+        PendingDateTodoRow(
+            todo: TodoItemData(
+                title: "Finish filing taxes",
+                dueHint: "by the end of this month",
+                priority: .high,
+                category: .finance
+            ),
+            index: 0,
+            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+        )
+        PendingDateTodoRow(
+            todo: TodoItemData(
+                title: "缴物业管理费",
+                dueHint: "每个月15号下午3点",
+                priority: .normal,
+                category: .finance
+            ),
+            index: 1,
+            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+        )
+        PendingDateTodoRow(
+            todo: TodoItemData(
+                title: "Schedule dentist appointment",
+                dueHint: "around the middle of the month",
+                priority: .normal,
+                category: .health
+            ),
+            index: 2,
+            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+        )
+    }
+    .padding()
+    .background(WarmTheme.background)
+}
+
+#Preview("PendingDateTodoRow — AX5 字号") {
+    VStack(spacing: 8) {
+        PendingDateTodoRow(
+            todo: TodoItemData(
+                title: "Finish filing taxes",
+                dueHint: "by the end of this month",
+                priority: .high,
+                category: .finance
+            ),
+            index: 0,
+            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+        )
+    }
+    .padding()
+    .background(WarmTheme.background)
+    .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
+}
+
+#endif

@@ -170,7 +170,11 @@ struct MarqueePhase {
 struct MarqueeText: View {
     let text: String
     var font: Font
-    var foregroundColor: Color = .primary
+    /// nil(默认)时显示层 Text 不显式设 foregroundColor,跟随父 environment。
+    /// 调用方需要 chip 分类色等语义色时不必显式传 —— 父 HStack.foregroundColor
+    /// 已经在 environment 里。ChipView 走 marquee 分支时显式传 resolvedAccent
+    /// 是因为 ChipView.label 在 marquee 路径下没把 accent 设进 environment。
+    var foregroundColor: Color? = nil
     /// 容器最小宽度兜底。AX5 字号下父容器可能给极小宽度,锚层被压到接近 0 时
     /// 测得的"可用宽"失真,导致 marquee 提前启动。36pt 是观察到的"中文 2 字 +
     /// chip padding"下限,够显示首字符 + 渐隐遮罩。
@@ -203,10 +207,14 @@ struct MarqueeText: View {
 
     @ViewBuilder
     private var displayLabel: some View {
-        Text(text)
+        let base = Text(text)
             .font(font)
-            .foregroundColor(foregroundColor)
             .lineLimit(1)
+        if let foregroundColor {
+            base.foregroundColor(foregroundColor)
+        } else {
+            base
+        }
     }
 
     var body: some View {
@@ -306,3 +314,56 @@ struct MarqueeText: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+
+/// MarqueeText 的预览:覆盖 短/长 × 默认/AX5 四种组合。
+/// Canvas 里观察:
+/// - 短文本("下午")必须完全静止、视觉与改动前一致
+/// - 长文本("by the end of this month")容器宽度固定不变,文字循环滚动,两端动态渐隐
+/// - AX5 字号下没有 ... 伪截断,marquee 仍能滚动
+private struct MarqueePreviewContainer: View {
+    let label: String
+    let text: String
+    let width: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            HStack {
+                MarqueeText(text: text, font: WarmFont.caption(11.5))
+            }
+            .padding(8)
+            .background(WarmTheme.sketch.opacity(0.18))
+            .cornerRadius(7)
+            // 固定宽度模拟 chip 容器在 HStack 中被父给的预算宽度
+            .frame(width: width, alignment: .leading)
+        }
+    }
+}
+
+#Preview("MarqueeText — short/long × default/AX5") {
+    VStack(alignment: .leading, spacing: 16) {
+        MarqueePreviewContainer(label: "短 ZH(应静止)", text: "下午", width: 200)
+        MarqueePreviewContainer(label: "短 EN(应静止)", text: "tonight", width: 200)
+        MarqueePreviewContainer(label: "长 ZH(应滚动)", text: "每个月15号下午3点", width: 200)
+        MarqueePreviewContainer(label: "长 EN(应滚动)", text: "by the end of this month", width: 200)
+    }
+    .padding()
+}
+
+#Preview("MarqueeText — AX5 字号") {
+    VStack(alignment: .leading, spacing: 16) {
+        MarqueePreviewContainer(label: "长 EN AX5(应滚动,无截断)", text: "by the end of this month", width: 200)
+        MarqueePreviewContainer(label: "长 ZH AX5(应滚动,无截断)", text: "每个月15号下午3点", width: 200)
+    }
+    .padding()
+    .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
+}
+
+#endif
+
