@@ -44,46 +44,13 @@ struct ConfirmSheetView: View {
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if showSuccess {
-                    successOverlay
-                } else {
-                    mainContent
-                }
-            }
-            .navigationTitle(String(localized: "confirm.title"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // Cancel:纯文字次要操作,对齐 HTML .btn-ghost
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(String(localized: "confirm.cancel")) {
-                        cancelAction()
-                    }
-                    .font(WarmFont.headline(15))
-                    .foregroundStyle(WarmTheme.textSecondary)
-                    .accessibilityIdentifier("CancelButton")
-                }
-                ToolbarItem(placement: .principal) {
-                    calendarTarget
-                }
-                // Confirm:珊瑚橙胶囊填充主操作,对齐 HTML .btn-primary。
-                // 数字只走本地化文案 confirm.add_count,不再叠 PopCount 徽章——
-                // 避免「胶囊套胶囊」+ 同一 count 显示两遍。
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: confirmAction) {
-                        Text(String(localized: "confirm.add_count \(todos.count)"))
-                            .font(WarmFont.headline(15))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, WarmSpacing.md)
-                            .padding(.vertical, WarmSpacing.xs)
-                            .background(
-                                Capsule().fill(confirmButtonBackground)
-                            )
-                    }
-                    .disabled(todos.isEmpty || isStreaming || didFinish)
-                    .accessibilityIdentifier("ConfirmAddButton")
-                }
+        VStack(spacing: 0) {
+            sheetHeader
+
+            if showSuccess {
+                successOverlay
+            } else {
+                mainContent
             }
         }
         // 动态高度:随内容增长(每识别一条 todo 往上涨),上限 85% 屏高,
@@ -136,6 +103,42 @@ struct ConfirmSheetView: View {
     }
 
     // MARK: - Main Content
+
+    private var sheetHeader: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Button(String(localized: "confirm.cancel")) {
+                cancelAction()
+            }
+            .font(WarmFont.headline(15))
+            .foregroundStyle(WarmTheme.textSecondary)
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: WarmSize.touch, alignment: .leading)
+            .contentShape(Rectangle())
+            .accessibilityIdentifier("CancelButton")
+
+            calendarTarget
+                .frame(maxWidth: .infinity)
+
+            Button(action: confirmAction) {
+                Text(String(localized: "confirm.add_count \(todos.count)"))
+                    .font(WarmFont.headline(15))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, WarmSpacing.md)
+                    .padding(.vertical, WarmSpacing.xs)
+                    .background(
+                        Capsule().fill(confirmButtonBackground)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(!canConfirm)
+            .frame(maxWidth: .infinity, minHeight: WarmSize.touch, alignment: .trailing)
+            .accessibilityIdentifier("ConfirmAddButton")
+        }
+        .padding(.horizontal, WarmSpacing.md)
+        .accessibilityIdentifier("ConfirmSheetHeader")
+    }
 
     private var mainContent: some View {
         ScrollViewReader { proxy in
@@ -300,9 +303,12 @@ struct ConfirmSheetView: View {
         .accessibilityIdentifier("CalendarTargetLabel")
     }
 
+    private var canConfirm: Bool {
+        !todos.isEmpty && !didFinish
+    }
+
     private var confirmButtonBackground: Color {
-        let disabled = todos.isEmpty || isStreaming || didFinish
-        return disabled ? WarmTheme.textMuted.opacity(0.5) : WarmTheme.primary
+        canConfirm ? WarmTheme.primary : WarmTheme.textMuted.opacity(0.5)
     }
 
     /// 动态 detent 的实际高度:内容高 + sheet 框架区域(导航栏 + footer + padding),

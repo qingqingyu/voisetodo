@@ -54,6 +54,8 @@ struct UITestLaunchOptions {
         switch scenario {
         case "multi-todo":
             return "明天去银行办卡，顺便买菜，晚上给老妈打电话"
+        case "streaming-partial":
+            return "先生成第一条待办，再继续生成第二条待办"
         case "no-todo":
             return "最近好累，什么都不想干"
         case "urgent-single":

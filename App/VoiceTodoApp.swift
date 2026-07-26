@@ -163,7 +163,7 @@ struct VoiceTodoApp: App {
         let voiceInput: any VoiceInputProtocol = uiTestOptions.isUITesting ? UITestVoiceInputManager(options: uiTestOptions) : VoiceInputManager()
         let extractor: any TodoExtractorProtocol
         if uiTestOptions.isUITesting {
-            extractor = UITestTodoExtractor()
+            extractor = UITestTodoExtractor(options: uiTestOptions)
         } else {
             // NetworkClient 注入订阅 JWS provider 与额度模型（构造器注入，保持依赖反转）
             let networkClient = NetworkClient(

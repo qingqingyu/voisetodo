@@ -12,7 +12,11 @@ final class ScenarioTests: XCTestCase {
         continueAfterFailure = false
         appHelper = AppLaunchHelper()
 
-        let defaultEnabledScenarios = ["test_S11_homeView_emptyState", "test_S12_firstLaunch_onboarding"]
+        let defaultEnabledScenarios = [
+            "test_confirmSheetKeyboardInputKeepsHeaderAtTopAndEnablesFirstPartial",
+            "test_S11_homeView_emptyState",
+            "test_S12_firstLaunch_onboarding"
+        ]
         let isDefaultEnabledScenario = defaultEnabledScenarios.contains { name.contains($0) }
         let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
         guard isDefaultEnabledScenario || isLegacyScenarioEnabled else {
@@ -23,6 +27,36 @@ final class ScenarioTests: XCTestCase {
     override func tearDownWithError() throws {
         appHelper = nil
         try super.tearDownWithError()
+    }
+
+    func test_confirmSheetKeyboardInputKeepsHeaderAtTopAndEnablesFirstPartial() {
+        appHelper.launchWithCompletedOnboarding(scenario: "streaming-partial")
+        appHelper.waitForAppReady()
+
+        XCTAssertTrue(appHelper.homeHeader.waitForExistence(timeout: 2.0))
+        let initialHeaderMinY = appHelper.homeHeader.frame.minY
+
+        appHelper.startRecording()
+        appHelper.submitKeyboardInput("Create a first todo and keep parsing another todo")
+        appHelper.waitForConfirmSheet()
+
+        XCTAssertFalse(appHelper.confirmButton.isEnabled, "尚无解析结果时 Add 应保持灰色且不可用")
+        XCTAssertTrue(appHelper.confirmButton.waitUntilEnabled(timeout: 4.0), "第一条待办出现后 Add 应立即可用")
+        let identifiedStreamingFooter = appHelper.app.otherElements["ConfirmStreamingFooter"]
+        let visibleStreamingLabel = appHelper.app.staticTexts["还在识别..."]
+        XCTAssertTrue(identifiedStreamingFooter.exists || visibleStreamingLabel.exists, "Add 可用时解析仍应继续")
+        XCTAssertEqual(appHelper.homeHeader.frame.minY, initialHeaderMinY, accuracy: 2.0)
+        XCTAssertTrue(appHelper.cancelButton.exists)
+
+        let screenshot = XCTAttachment(screenshot: appHelper.app.screenshot())
+        screenshot.name = "ConfirmSheet single-capsule controls"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        appHelper.tapConfirmButton()
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+        XCTAssertTrue(appHelper.app.staticTexts["第一条待办"].exists)
+        XCTAssertFalse(appHelper.app.staticTexts["第二条待办"].exists)
     }
 
     // MARK: - S01: 正常录入 → 提取多条 → 确认保存

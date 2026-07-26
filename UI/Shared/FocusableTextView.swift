@@ -54,6 +54,7 @@ struct FocusableTextView: UIViewRepresentable {
         textView.smartDashesType = .yes
         textView.smartQuotesType = .yes
         textView.text = text
+        textView.accessibilityIdentifier = "ManualInputTextView"
         // 同步初始 uiText 到 coordinator，避免首次 updateUIView 误判"用户刚改过未同步"。
         context.coordinator.lastKnownUIText = text
         // autoFocus 在 didMoveToWindow 里触发，无需此处主动 becomeFirstResponder

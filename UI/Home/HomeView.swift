@@ -302,6 +302,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                // isListVisible=false 时 Group 会退化为 EmptyView，不能再靠列表撑满高度。
+                // 主容器始终占满并顶部对齐，避免 ConfirmSheet 出现后只剩 header 被 ZStack 居中。
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 // 底部渐隐遮罩：让列表内容淡出到 Tab 簇下方，而不是被硬切。
                 // 只在列表可见时显示（录音态有全屏 overlay 不需要）。
@@ -571,6 +574,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
         .offset(y: headerOffset)
         .opacity(headerOpacity)
+        .accessibilityIdentifier("HomeHeader")
     }
 
     // MARK: - View Switcher
@@ -2069,5 +2073,4 @@ private struct GlossarySuggestionBanner: View {
         .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
         .environmentObject(AppCoordinator.preview)
 }
-
 

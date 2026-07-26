@@ -55,6 +55,12 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
 }
 
 struct UITestTodoExtractor: TodoExtractorProtocol {
+    private let options: UITestLaunchOptions
+
+    init(options: UITestLaunchOptions = .current) {
+        self.options = options
+    }
+
     func extract(from transcript: String, locale: Locale) async throws -> ExtractionResult {
         let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -112,5 +118,43 @@ struct UITestTodoExtractor: TodoExtractorProtocol {
             ],
             ignored: ""
         )
+    }
+
+    func extractStreaming(from transcript: String, locale: Locale) -> AsyncThrowingStream<ExtractionResult, Error> {
+        guard options.scenario == "streaming-partial" else {
+            return AsyncThrowingStream { continuation in
+                let task = Task {
+                    do {
+                        continuation.yield(try await extract(from: transcript, locale: locale))
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+                continuation.onTermination = { @Sendable _ in task.cancel() }
+            }
+        }
+
+        let first = ExtractedTodo(title: "第一条待办", detail: transcript, priority: .normal, categoryHint: .work)
+        let second = ExtractedTodo(title: "第二条待办", detail: transcript, priority: .normal, categoryHint: .life)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    try Task.checkCancellation()
+                    continuation.yield(ExtractionResult(todos: [first], ignored: ""))
+
+                    try await Task.sleep(nanoseconds: 10_000_000_000)
+                    try Task.checkCancellation()
+                    continuation.yield(ExtractionResult(todos: [first, second], ignored: ""))
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
     }
 }

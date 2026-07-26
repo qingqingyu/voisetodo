@@ -91,7 +91,9 @@ class AppLaunchHelper {
     func waitForAppReady(timeout: TimeInterval = 5.0) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if app.otherElements["HomeRootView"].exists
+            if app.staticTexts["今天"].exists
+                || app.buttons["录音添加待办"].exists
+                || app.otherElements["HomeRootView"].exists
                 || app.otherElements["RootTabView"].exists
                 || app.otherElements["MonthHomeView"].exists
                 || app.tables["TodoList"].exists {
@@ -121,12 +123,34 @@ class AppLaunchHelper {
 extension AppLaunchHelper {
     /// 录音按钮
     var recordButton: XCUIElement {
-        app.buttons["RecordFAB"]
+        let identifiedButton = app.buttons["RecordFAB"]
+        return identifiedButton.exists ? identifiedButton : app.buttons["录音添加待办"]
+    }
+
+    var homeHeader: XCUIElement {
+        let identifiedButton = app.buttons["HomeSettingsButton"]
+        return identifiedButton.exists ? identifiedButton : app.buttons["设置"]
+    }
+
+    var manualInputTextView: XCUIElement {
+        let identifiedTextView = app.textViews["ManualInputTextView"]
+        return identifiedTextView.exists ? identifiedTextView : app.textViews.firstMatch
+    }
+
+    var switchToKeyboardButton: XCUIElement {
+        let identifiedButton = app.buttons["InputSwitchToKeyboard"]
+        return identifiedButton.exists ? identifiedButton : app.buttons["改用键盘"]
+    }
+
+    var inputSendButton: XCUIElement {
+        let identifiedButton = app.buttons["InputSendButton"]
+        return identifiedButton.exists ? identifiedButton : app.buttons["生成"]
     }
 
     /// 确认弹窗
     var confirmSheet: XCUIElement {
-        app.otherElements["ConfirmSheet"]
+        let identifiedSheet = app.otherElements["ConfirmSheet"]
+        return identifiedSheet.exists ? identifiedSheet : cancelButton
     }
 
     /// 语音原文区域
@@ -141,7 +165,9 @@ extension AppLaunchHelper {
 
     /// 确认添加按钮
     var confirmButton: XCUIElement {
-        app.buttons["ConfirmAddButton"]
+        let identifiedButton = app.buttons["ConfirmAddButton"]
+        if identifiedButton.exists { return identifiedButton }
+        return app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "添加 ")).firstMatch
     }
 
     var extractedTodoList: XCUIElement {
@@ -150,7 +176,8 @@ extension AppLaunchHelper {
 
     /// 取消按钮
     var cancelButton: XCUIElement {
-        app.buttons["CancelButton"]
+        let identifiedButton = app.buttons["CancelButton"]
+        return identifiedButton.exists ? identifiedButton : app.buttons["取消"]
     }
 
     /// Toast 提示
@@ -191,9 +218,7 @@ extension AppLaunchHelper {
     /// 点击录音按钮并等待录音状态
     func startRecording() {
         recordButton.tap()
-        // 等待录音指示器出现
-        let recordingIndicator = app.otherElements["RecordingIndicator"]
-        XCTAssertTrue(recordingIndicator.waitForExistence(timeout: 2.0), "录音指示器应该出现")
+        XCTAssertTrue(switchToKeyboardButton.waitForExistence(timeout: 2.0), "录音面板应该出现")
     }
 
     /// 停止录音
@@ -205,6 +230,18 @@ extension AppLaunchHelper {
         // 等待录音指示器消失
         let recordingIndicator = app.otherElements["RecordingIndicator"]
         XCTAssertTrue(recordingIndicator.waitForNonExistence(timeout: 2.0), "录音指示器应该消失")
+    }
+
+    func submitKeyboardInput(_ text: String) {
+        XCTAssertTrue(switchToKeyboardButton.waitForExistence(timeout: 2.0), "键盘切换按钮应该出现")
+        switchToKeyboardButton.tap()
+
+        XCTAssertTrue(manualInputTextView.waitForExistence(timeout: 2.0), "键盘输入框应该出现")
+        manualInputTextView.tap()
+        manualInputTextView.typeText(text)
+
+        XCTAssertTrue(inputSendButton.waitUntilEnabled(timeout: 2.0), "键盘输入完成后发送按钮应该可用")
+        inputSendButton.tap()
     }
 
     /// 等待确认弹窗出现

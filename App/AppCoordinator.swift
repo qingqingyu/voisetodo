@@ -523,7 +523,8 @@ final class AppCoordinator: ObservableObject {
     func confirmTodos(_ todos: [ExtractedTodo]) -> Bool {
         let confirmID = VoiceTodoLog.makeID("confirm")
         let startedAt = Date()
-        VoiceTodoLog.coordinator.info("coordinator.confirm.start id=\(confirmID, privacy: .public) todoCount=\(todos.count) pendingCount=\(self.pendingItemIds.count) calendarMode=\(self.calendarWriteModeProvider().rawValue, privacy: .public)")
+        let wasExtracting = isExtracting || isProcessingTranscript
+        VoiceTodoLog.coordinator.info("coordinator.confirm.start id=\(confirmID, privacy: .public) todoCount=\(todos.count) availableCount=\(self.extractedTodos.count) pendingCount=\(self.pendingItemIds.count) isExtracting=\(self.isExtracting) calendarMode=\(self.calendarWriteModeProvider().rawValue, privacy: .public)")
         do {
             let confirmedIds = Set(todos.map(\.id))
             // 如果有 pending 条目，使用替换逻辑
@@ -542,6 +543,10 @@ final class AppCoordinator: ObservableObject {
                 try store.addBatch(todos, localeIdentifier: activeInputLocaleIdentifier)
                 VoiceTodoLog.coordinator.info("coordinator.confirm.added_batch id=\(confirmID, privacy: .public) todoCount=\(todos.count)")
                 activeInputTranscript = nil
+            }
+
+            if wasExtracting {
+                stopExtractionAfterSuccessfulConfirm(confirmID: confirmID, confirmedCount: todos.count)
             }
 
             let fallbackLearningLocaleIdentifier = activeInputLocaleIdentifier ?? voiceInput.currentLocale.identifier
@@ -598,6 +603,15 @@ final class AppCoordinator: ObservableObject {
             handleError(error)
             return false
         }
+    }
+
+    /// 成功保存流式 partial 后停止剩余解析，但保留当前结果供成功动画和学习逻辑使用。
+    private func stopExtractionAfterSuccessfulConfirm(confirmID: String, confirmedCount: Int) {
+        VoiceTodoLog.coordinator.info("coordinator.confirm.streaming_stopped id=\(confirmID, privacy: .public) confirmedCount=\(confirmedCount) availableCount=\(self.extractedTodos.count) isExtracting=\(self.isExtracting)")
+        extractionTask?.cancel()
+        extractionTask = nil
+        isExtracting = false
+        isProcessingTranscript = false
     }
 
     /// 「没能识别」分组「重新解析」入口:把 todo.rawTranscript 再喂一次 extractor,

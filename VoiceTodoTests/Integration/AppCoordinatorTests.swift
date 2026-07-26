@@ -476,6 +476,67 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["先识别到的待办"])
     }
 
+    func testConfirmDuringStreamingSavesVisibleTodosAndStopsLateResults() async {
+        let first = ExtractedTodo(title: "第一条待办", detail: "第一条待办")
+        let second = ExtractedTodo(title: "第二条待办", detail: "第二条待办")
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(todos: [first], ignored: ""),
+            ExtractionResult(todos: [first, second], ignored: "")
+        ]
+        extractor.streamingResultDelayNanoseconds = 2_000_000_000
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        let processingTask = Task { await coordinator.processManualInput("流式生成两条待办") }
+        await waitForPartialResult(coordinator)
+
+        XCTAssertTrue(coordinator.isExtracting)
+        XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["第一条待办"])
+        XCTAssertTrue(coordinator.confirmTodos(coordinator.extractedTodos))
+
+        await processingTask.value
+        XCTAssertFalse(coordinator.isExtracting)
+        XCTAssertEqual(store.todos.map(\.title), ["第一条待办"])
+        XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["第一条待办"])
+    }
+
+    func testConfirmFailureDuringStreamingKeepsSheetAndExtractionActive() async {
+        let first = ExtractedTodo(title: "第一条待办", detail: "第一条待办")
+        let second = ExtractedTodo(title: "第二条待办", detail: "第二条待办")
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(todos: [first], ignored: ""),
+            ExtractionResult(todos: [first, second], ignored: "")
+        ]
+        extractor.streamingResultDelayNanoseconds = 2_000_000_000
+        let store = CoordinatorTestStore()
+        store.addBatchError = VoiceTodoError.storageWriteFailed("confirm failed")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        let processingTask = Task { await coordinator.processManualInput("保存失败时继续解析") }
+        await waitForPartialResult(coordinator)
+
+        XCTAssertFalse(coordinator.confirmTodos(coordinator.extractedTodos))
+        XCTAssertTrue(coordinator.showConfirmSheet)
+        XCTAssertTrue(coordinator.isExtracting)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
+
+        coordinator.cancelTodos()
+        await processingTask.value
+    }
+
     func testHandleAppForegroundKeepsInvalidPendingWhenDeleteFails() async throws {
         let pendingId = UUID()
         let invalidPending = TodoItemData(
@@ -501,6 +562,14 @@ final class AppCoordinatorTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private func waitForPartialResult(_ coordinator: AppCoordinator) async {
+        for _ in 0..<100 {
+            if !coordinator.extractedTodos.isEmpty { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Expected a streaming partial result")
+    }
 
     private func pendingTodo(id: UUID, transcript: String, localeIdentifier: String? = nil) -> TodoItemData {
         TodoItemData(
@@ -587,6 +656,7 @@ private final class DelayedExtractor: TodoExtractorProtocol {
     var extractionErrors: [String: Error] = [:]
     var streamingResults: [ExtractionResult]?
     var streamingError: Error?
+    var streamingResultDelayNanoseconds: UInt64 = 0
     private let extractedTranscriptsLock = NSLock()
     private var storedExtractedTranscripts: [String] = []
     var extractedTranscripts: [String] {
@@ -640,17 +710,29 @@ private final class DelayedExtractor: TodoExtractorProtocol {
 
         let results = streamingResults ?? []
         let error = streamingError
+        let resultDelay = streamingResultDelayNanoseconds
         return AsyncThrowingStream { continuation in
-            Task {
-                for result in results {
-                    continuation.yield(result)
-                }
-                if let error {
-                    continuation.finish(throwing: error)
-                } else {
+            let task = Task {
+                do {
+                    for (index, result) in results.enumerated() {
+                        if index > 0, resultDelay > 0 {
+                            try await Task.sleep(nanoseconds: resultDelay)
+                        }
+                        try Task.checkCancellation()
+                        continuation.yield(result)
+                    }
+                    if let error {
+                        continuation.finish(throwing: error)
+                    } else {
+                        continuation.finish()
+                    }
+                } catch is CancellationError {
                     continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 }
@@ -662,6 +744,7 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
     var systemCalendarEventIdentifiers: [UUID: String] = [:]
     var onUpdateIdentifier: (() -> Void)?
     var identifierUpdateError: Error?
+    var addBatchError: Error?
     var replaceError: Error?
     var pendingItemsError: Error?
 
@@ -679,6 +762,9 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
     }
 
     func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
+        if let addBatchError {
+            throw addBatchError
+        }
         let fallbackLocaleIdentifier = localeIdentifier ?? Locale.current.identifier
         todos.insert(
             contentsOf: items.map { item in
