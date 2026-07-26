@@ -80,8 +80,6 @@ enum WidgetConfig {
     static let completionAnimationRetention: TimeInterval = 0.5
     /// Widget 交互失败提示保留时长
     static let interactionErrorRetention: TimeInterval = 60
-    /// 小尺寸显示条数
-    static let smallItemCount = 1
     /// 中尺寸显示条数
     static let mediumItemCount = 3
     /// 大尺寸显示条数

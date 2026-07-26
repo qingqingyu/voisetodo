@@ -10,8 +10,6 @@ struct TodoWidgetView: View {
 
     var body: some View {
         switch family {
-        case .systemSmall:
-            SmallWidgetView(todos: entry.todos, loadState: entry.loadState, interactionError: entry.interactionError)
         case .systemMedium:
             MediumWidgetView(todos: entry.todos, loadState: entry.loadState, interactionError: entry.interactionError)
         case .systemLarge, .systemExtraLarge:
@@ -57,6 +55,3 @@ enum WidgetAnimation {
         enabled ? .numericText() : .identity
     }
 }
-
-// MARK: - Small Widget
-

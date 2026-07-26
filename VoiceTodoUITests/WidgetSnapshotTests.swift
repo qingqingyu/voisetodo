@@ -27,24 +27,6 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(entry.todos[2].title, "任务3")
     }
 
-    /// 测试小号 Widget 显示 1 条待办
-    func test_smallWidget_displaysOneTodo() async throws {
-        // Given: 1 条待办数据
-        let todos = [
-            UITestTodoPayload(title: "单个任务", category: .work)
-        ]
-
-        // When: 构建 small 尺寸的 entry
-        let entry = WidgetTestEntry(
-            date: Date(),
-            todos: Array(todos.prefix(1))
-        )
-
-        // Then: 验证 entry 包含 1 条待办
-        XCTAssertEqual(entry.todos.count, 1, "Small Widget 应该显示 1 条待办")
-        XCTAssertEqual(entry.todos[0].title, "单个任务")
-    }
-
     /// 测试大号 Widget 显示 6 条待办
     func test_largeWidget_displaysSixTodos() async throws {
         // Given: 6 条待办数据

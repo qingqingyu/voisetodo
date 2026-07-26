@@ -126,8 +126,6 @@ extension WidgetFamily {
     /// 根据 Widget 尺寸返回显示条数
     var itemCount: Int {
         switch self {
-        case .systemSmall:
-            return WidgetConfig.smallItemCount
         case .systemMedium:
             return WidgetConfig.mediumItemCount
         case .systemLarge, .systemExtraLarge:
