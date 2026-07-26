@@ -5396,6 +5396,38 @@
         }
       }
     },
+    "recurrence.starts_from" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 %1$@ 起"
+          }
+        }
+      }
+    },
+    "detail.start_date" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start date"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起始日期"
+          }
+        }
+      }
+    },
     "recurrence.biweekly_short" : {
       "localizations" : {
         "en" : {

@@ -5,6 +5,17 @@ private func formattedDetailDate(_ date: Date) -> String {
     date.formatted(.dateTime.year().month().day().hour().minute())
 }
 
+/// 「重复卡底部摘要」用的 "HH:mm" 24 小时制 formatter,跟 WarmTodoCard.timeFormatter 同款。
+/// en_US_POSIX locale 锁死格式,避免随系统语言漂移导致详情页跟首页/ConfirmSheet 不一致。
+/// file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties。
+private let detailRecurrenceSummaryTimeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.dateFormat = "HH:mm"
+    return formatter
+}()
+
 /// 待办详情页 - 温暖主题风格
 /// 支持编辑标题、备注、分类、优先级、日期（DatePicker）、重复，以及标记完成/删除
 struct TodoDetailView<Store: TodoListReadable>: View {
@@ -154,9 +165,65 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
 
-                            // 日期区:DatePicker 或「添加日期」按钮 + 清除
-                            if editedDueDate != nil {
-                                HStack {
+                            // 日期区形态由重复档位派生(RecurrenceAnchorPolicy.dateRowMode):
+                            // - .dueDate(无重复):「日期」DatePicker + ✕ / 「添加日期」按钮 —— 原行为不变
+                            // - .startAnchor(双周/三周):「起始日期」DatePicker,无 ✕ —— 锚点决定 occurs() 的
+                            //   weekDiff % interval,清掉会退回 createdAt 让用户看不见也控制不了「从哪一周开始」
+                            // - .hidden(daily/weekly(interval==1)/monthly):整行不渲染 —— 锚点只是下界或
+                            //   靠 dayOfMonth 自锚,暴露出来只会跟重复卡语义打架
+                            let dateRowMode = RecurrenceAnchorPolicy.dateRowMode(
+                                frequency: editedRecurrenceFrequency,
+                                interval: editedInterval
+                            )
+                            if dateRowMode == .dueDate {
+                                if editedDueDate != nil {
+                                    HStack {
+                                        DatePicker(
+                                            "",
+                                            selection: Binding(
+                                                get: { editedDueDate ?? Date() },
+                                                set: { editedDueDate = $0; checkForChanges() }
+                                            ),
+                                            displayedComponents: .date
+                                        )
+                                        .datePickerStyle(.compact)
+                                        .labelsHidden()
+                                        Spacer()
+                                        Button {
+                                            editedDueDate = nil
+                                            editedHasDueTime = false
+                                            checkForChanges()
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 18))
+                                                .foregroundColor(WarmTheme.textMuted)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                } else {
+                                    Button {
+                                        self.editedDueDate = DayClock.startOfUserDay(for: Date())
+                                        checkForChanges()
+                                    } label: {
+                                        HStack(spacing: WarmSpacing.xs) {
+                                            Image(systemName: "calendar")
+                                                .font(.system(size: 15))
+                                            Text(String(localized: "detail.add_date"))
+                                                .font(WarmFont.body(16))
+                                        }
+                                        .foregroundColor(WarmTheme.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            } else if dateRowMode == .startAnchor {
+                                // 双周/三周锚点不可清空 —— 进这个 mode 时 recurrenceModeButton
+                                // action 已在 interval>1 && editedDueDate==nil 时补今天。
+                                // DatePicker 用户的任何 set 都会把 nil → 具体日期,所以 selection
+                                // 的 get 用 ?? Date() 仅作显示兜底;真正的不变式由 set 路径保证。
+                                HStack(spacing: WarmSpacing.xs) {
+                                    Text(String(localized: "detail.start_date"))
+                                        .font(WarmFont.caption(12))
+                                        .foregroundColor(WarmTheme.textSecondary)
                                     DatePicker(
                                         "",
                                         selection: Binding(
@@ -168,32 +235,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                     .datePickerStyle(.compact)
                                     .labelsHidden()
                                     Spacer()
-                                    Button {
-                                        editedDueDate = nil
-                                        editedHasDueTime = false
-                                        checkForChanges()
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 18))
-                                            .foregroundColor(WarmTheme.textMuted)
-                                    }
-                                    .buttonStyle(.plain)
                                 }
-                            } else {
-                                Button {
-                                    self.editedDueDate = DayClock.startOfUserDay(for: Date())
-                                    checkForChanges()
-                                } label: {
-                                    HStack(spacing: WarmSpacing.xs) {
-                                        Image(systemName: "calendar")
-                                            .font(.system(size: 15))
-                                        Text(String(localized: "detail.add_date"))
-                                            .font(WarmFont.body(16))
-                                    }
-                                    .foregroundColor(WarmTheme.primary)
-                                }
-                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("DetailStartDatePicker")
                             }
+                            // .hidden:整行不渲染(EmptyView 在 ViewBuilder 中被忽略)
 
                             // 语音原文备注(保留但不编辑)
                             if let hint = todo.dueHint, !hint.isEmpty {
@@ -202,24 +247,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                     .foregroundColor(WarmTheme.textMuted)
                             }
 
-                            // 时段区:三种状态。
-                            // - 有 dueDate + 有钟点:钟点 picker(可编辑) + TimeBucket 只读派生 + 清除钟点按钮
-                            // - 有 dueDate + 无钟点:"添加钟点"按钮 + TimeBucket 胶囊(可手动选)
-                            // - 无 dueDate:保持原"设计妥协"——TimeBucket 胶囊仍显示,因为
-                            //   TimeBucket 业务上可独立于 dueDate 存在(如"下午"不绑定具体日期)。
+                            // 时段区:任何重复档位下都可用。原 if editedDueDate != nil 分支
+                            // 会把「钟点 / 时段」跟 dueDate 绑死,但引擎层(TodoQueryActor)
+                            // 在 recurrenceRule != nil 时用 dueDate ?? createdAt 作锚点,
+                            // 锚点为 nil 时仍能调度,所以 UI 也应该解耦。
                             //
-                            // 派生 TimeBucket 只用于显示,不写回 editedTimeBucket——避免污染
-                            // 用户的手动选择。清钟点后 editedTimeBucket 保留,自然回到手动模式。
+                            // - hasDueTime=true:钟点 picker + 派生 TimeBucket 只读 + 清除钟点按钮
+                            // - hasDueTime=false:「添加钟点」按钮(canAddClockTime 守门)+ TimeBucket 胶囊恒显示
                             Divider()
-                            if editedDueDate != nil {
-                                timeRowWithDueDate
-                            } else {
-                                chipRow {
-                                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
-                                        timeBucketButton(bucket)
-                                    }
-                                }
-                            }
+                            timeSection
                         }
                     }
 
@@ -405,11 +441,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
     }
 
-    /// 有 dueDate 时的时段区:三种情况由 editedHasDueTime 决定。
+    /// 时段区:任何重复档位下都可用。两种状态由 editedHasDueTime 决定。
     /// - hasDueTime=true: 钟点 DatePicker + 派生 TimeBucket 只读 + 清除钟点按钮
-    /// - hasDueTime=false: "添加钟点"按钮 + TimeBucket 胶囊(手动选)
+    /// - hasDueTime=false: 「添加钟点」按钮(可见性由 canAddClockTime 守门)+ TimeBucket 胶囊恒显示。
+    ///
+    /// **不变式**:editedHasDueTime == true ⇒ editedDueDate != nil —— UI 侧维持,
+    /// TodoDetailUpdate.init 再兜一层归一化(hasDueTime = dueDate != nil && hasDueTime)。
     @ViewBuilder
-    private var timeRowWithDueDate: some View {
+    private var timeSection: some View {
         if editedHasDueTime {
             VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                 HStack {
@@ -461,26 +500,38 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             }
         } else {
             VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                // "添加钟点":首次按下时把钟点设为当前时刻,避免显示 startOfDay 的 00:00。
-                Button {
-                    let calendar = Calendar.current
-                    let now = Date()
-                    var components = calendar.dateComponents([.year, .month, .day], from: editedDueDate ?? now)
-                    components.hour = calendar.component(.hour, from: now)
-                    components.minute = calendar.component(.minute, from: now)
-                    editedDueDate = calendar.date(from: components)
-                    editedHasDueTime = true
-                    checkForChanges()
-                } label: {
-                    HStack(spacing: WarmSpacing.xxs) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 13))
-                        Text(String(localized: "detail.add_time"))
-                            .font(WarmFont.body(15))
+                // 「添加钟点」可见性:有 dueDate 或有重复规则即可。
+                // 原条件 `editedDueDate != nil` 会让「双周/三周但 editedDueDate 还没补」
+                // (理论上不会发生,recurrenceModeButton action 已兜底)以及「无 dueDate 但有 rule」
+                // (引擎层 dueDate ?? createdAt 仍能调度)走不到「添加钟点」分支,语义不对。
+                if RecurrenceAnchorPolicy.canAddClockTime(
+                    dueDate: editedDueDate,
+                    frequency: editedRecurrenceFrequency
+                ) {
+                    // "添加钟点":首次按下时把钟点设为当前时刻,避免显示 startOfDay 的 00:00。
+                    // components(from: editedDueDate ?? now) 天然支持 dueDate == nil → 顺手把
+                    // 今天写成锚点,无需额外改动。
+                    Button {
+                        let calendar = Calendar.current
+                        let now = Date()
+                        var components = calendar.dateComponents([.year, .month, .day], from: editedDueDate ?? now)
+                        components.hour = calendar.component(.hour, from: now)
+                        components.minute = calendar.component(.minute, from: now)
+                        editedDueDate = calendar.date(from: components)
+                        editedHasDueTime = true
+                        checkForChanges()
+                    } label: {
+                        HStack(spacing: WarmSpacing.xxs) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 13))
+                            Text(String(localized: "detail.add_time"))
+                                .font(WarmFont.body(15))
+                        }
+                        .foregroundColor(WarmTheme.primary)
                     }
-                    .foregroundColor(WarmTheme.primary)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("DetailAddTimeButton")
                 }
-                .buttonStyle(.plain)
 
                 chipRow {
                     ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
@@ -567,6 +618,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     Text(recurrenceValidationMessage)
                         .font(WarmFont.caption(12))
                         .foregroundColor(WarmTheme.warning)
+                } else if let recurrenceSummary {
+                    // 重复生效后的完整语义摘要,把「起始锚点 / 周期 / 钟点」拼成一行,
+                    // 让被隐藏的起始锚点(尤其 .startAnchor / .hidden 模式下)不再是黑盒。
+                    // 例:「从 7月30日 起 · 双周 周一 · 10:10」或「每天 · 15:00」。
+                    Text(recurrenceSummary)
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .accessibilityIdentifier("DetailRecurrenceSummary")
                 }
             }
         }
@@ -595,6 +654,20 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     // 会显示完整"双周 周一",chip 标签"双周"只表达周期,两者互补。
                     if interval == 1 && editedWeekdays.isEmpty {
                         editedWeekdays = [Calendar.current.component(.weekday, from: Date())]
+                    }
+                    // 双周/三周靠起始锚点决定「从哪一周开始」(occurs 的 weekDiff % interval);
+                    // 无 dueDate 时补今天,既给 occurs() 确定基准,也让「起始日期」行有值可显示。
+                    // 这跟 .startAnchor 形态强耦合:进 .startAnchor 必须有锚点,否则日期行空白。
+                    if interval > 1 && editedDueDate == nil {
+                        editedDueDate = DayClock.startOfUserDay(for: Date())
+                    }
+                } else if frequency == nil {
+                    // 切回「无重复」时,若 editedDueDate 是切到 startAnchor 模式时被自动补的
+                    // (基准:进入详情页时 todo.dueDate == nil,且用户没设过钟点),
+                    // 把它清掉 —— 否则这个用户从未主动指定的日期会从「锚点」悄悄变成
+                    // 「截止日」,语义错位。用户原本就有 dueDate 的场景不动。
+                    if todo.dueDate == nil && !editedHasDueTime {
+                        editedDueDate = nil
                     }
                 }
                 // monthly: editedDayOfMonth 是 Int,init 时已设默认值(当前日或 todo.dayOfMonth),
@@ -650,6 +723,59 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         case 6: return String(localized: "home.week.fri")
         default: return String(localized: "home.week.sat")
         }
+    }
+
+    /// 重复卡底部摘要文本。把引擎的 dueDate=锚点 语义显式化,让用户看见:
+    /// - 周期(rule.displayTextWithEndDate):每天 / 双周 周一 / 三周 ...
+    /// - 钟点或模糊时段(从 editedDueDate / timeBucket 派生)
+    /// - 必要时拼「从 X 起」前缀(双周/三周锚点恒带,hidden 模式下锚点在未来才带)
+    ///
+    /// 复用 TodoTimeDisplayComposer 拼后半段 —— 它在有 rule 时会主动跳过 relativeDateText,
+    /// 正好把「起始日」的表述让给这里的 detail.recurrence.starts_from 前缀,不会重复。
+    /// 钟点串复用 WarmTodoCard 同款 "HH:mm" / en_US_POSIX formatter。
+    private var recurrenceSummary: String? {
+        guard let rule = editedRecurrenceRule else { return nil }
+        let mode = RecurrenceAnchorPolicy.dateRowMode(
+            frequency: editedRecurrenceFrequency,
+            interval: editedInterval
+        )
+
+        let clockText: String? = {
+            guard editedHasDueTime, let anchor = editedDueDate else { return nil }
+            return detailRecurrenceSummaryTimeFormatter.string(from: anchor)
+        }()
+        let bucketText: String? = clockText == nil ? derivedTimeBucketTextForSummary : nil
+        guard let tail = TodoTimeDisplayComposer.compose(
+            recurrenceRule: rule,
+            relativeDateText: nil,
+            timeText: clockText,
+            dueHint: nil,
+            timeBucketText: bucketText
+        ) else { return nil }
+
+        let showsPrefix = RecurrenceAnchorPolicy.showsAnchorPrefix(
+            mode: mode,
+            anchor: editedDueDate,
+            now: Date(),
+            calendar: .current
+        )
+        guard showsPrefix, let anchor = editedDueDate else {
+            return tail
+        }
+        let formatted = TodoRelativeDateFormatter.format(anchor)
+        return String(format: String(localized: "recurrence.starts_from"), formatted) + " · " + tail
+    }
+
+    /// summary 专用:无钟点时取派生/手动 TimeBucket 的本地化文案。
+    /// 跟 WarmTodoCard.timeBucketText 同语义,但不接受外部开关 —— 摘要恒走这条路径。
+    private var derivedTimeBucketTextForSummary: String? {
+        guard !editedHasDueTime else { return nil }
+        let bucket = TimeBucketResolver.effective(
+            explicitBucket: editedTimeBucket,
+            dueDate: editedDueDate,
+            hasDueTime: editedHasDueTime
+        )
+        return bucket == .anytime ? nil : bucket.localizedTitle
     }
 
     private var editedRecurrenceRule: RecurrenceRule? {
