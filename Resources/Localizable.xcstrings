@@ -3003,22 +3003,6 @@
         }
       }
     },
-    "home.chip.undated" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Undated"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未定哪天"
-          }
-        }
-      }
-    },
     "home.completed_section_title" : {
       "localizations" : {
         "en" : {
@@ -3285,22 +3269,6 @@
         }
       }
     },
-    "home.popover.all_day_hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No specific time — pick a period or precise time if needed."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不挑具体时间 — 需要的话可切换为时段或精确时间。"
-          }
-        }
-      }
-    },
     "home.popover.date_picker" : {
       "localizations" : {
         "en" : {
@@ -3345,54 +3313,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成"
-          }
-        }
-      }
-    },
-    "home.popover.mode" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mode"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "模式"
-          }
-        }
-      }
-    },
-    "home.popover.mode.period" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Period"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "时段"
-          }
-        }
-      }
-    },
-    "home.popover.period_picker" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Period"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "时段"
           }
         }
       }

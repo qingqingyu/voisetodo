@@ -1064,8 +1064,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                             onOpenTodo: { selectedTodo = $0 },
                             onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
                             onMoveToTomorrow: { id in moveTodoToTomorrow(id, baseDate: selectedDate) },
-                            onChangeTime: { id, hasDueTime, dueDate, bucket in
-                                changeTodoTime(id: id, hasDueTime: hasDueTime, dueDate: dueDate, timeBucket: bucket)
+                            onChangeTime: { id, date in
+                                changeTodoTime(id: id, date: date)
                             },
                             onPickDate: { id, date in pickTodoDate(id: id, date: date) },
                             onReextract: { id in coordinator.reextract(todoID: id) },
@@ -1928,14 +1928,11 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     /// 改时间 popover 提交后写库。走 `store.updateTime` 默认实现(读现有 todo → 拼 TodoDetailUpdate → 走 updateFull)。
     /// 失败 toast `storageError`,成功不 toast(卡片刷新即反馈,过多 toast 干扰)。
-    private func changeTodoTime(
-        id: UUID,
-        hasDueTime: Bool,
-        dueDate: Date?,
-        timeBucket: TimeBucket?
-    ) {
+    /// 注:popover 只改钟点 → 恒为 hasDueTime=true / timeBucket=nil,所以 UI 链路签名收敛为 `(id, date)`;
+    /// 底层 `store.updateTime` 仍保留三参签名,因为 `pickTodoDate` 等其它入口还要用。
+    private func changeTodoTime(id: UUID, date: Date) {
         do {
-            try store.updateTime(for: id, hasDueTime: hasDueTime, dueDate: dueDate, timeBucket: timeBucket)
+            try store.updateTime(for: id, hasDueTime: true, dueDate: date, timeBucket: nil)
             occurrenceRevision += 1
         } catch {
             VoiceTodoLog.store.error("home.change_time.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
