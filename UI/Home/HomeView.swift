@@ -311,7 +311,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 // allowsHitTesting(false) 确保不拦截列表滚动 / 点击。
                 if isListVisible {
                     LinearGradient(
-                        colors: [.clear, WarmTheme.background.opacity(0.9)],
+                        colors: [.clear, WarmTheme.background],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -355,11 +355,13 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // 输入面板展开 OR Calendar tab 的 unscheduled drawer 展开 → FAB 完全移除
-                // (drawer 展开时需要释放底部空间——之前用 .opacity(0) 会让 safeAreaInset
-                // 仍保留 FAB 的布局高度,变成「挡板」压缩 drawer 可用区域。
-                // 条件渲染 + .transition(.opacity) 既释放空间又保留淡入淡出动画。)
+            .overlay(alignment: .bottom) {
+                // 悬浮 FAB:挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,
+                // 列表铺满至屏幕底,卡片可从按钮背后穿过(配合上方渐隐带溶解)。
+                // overlay 挂载顺序——FAB 在前、输入面板在后,后挂的更上层,
+                // 所以输入面板出现时会盖住 FAB。VoiceFAB 自带 .padding(.bottom, WarmSpacing.md)
+                // 让按钮浮在 home indicator 上方,无需额外处理。
+                // (drawer 条件因 UnscheduledDrawer 当前为死代码恒为 false,保留以防恢复。)
                 if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
                     VoiceFAB(
                         isDisabled: isInputEntryDisabled,

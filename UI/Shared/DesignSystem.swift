@@ -132,10 +132,11 @@ enum WarmSize {
     /// 配合 VoiceFAB 外发光圈(见 BottomTabBar.swift)提升「主操作锚点」感。
     static let fab: CGFloat = 72
     /// VoiceFAB 外发光圈在按钮单边外溢的半径(2026-07-24 抽出)。
-    /// 光晕总直径 = `fab + fabHaloOverflow * 2`。BottomTabBar 的光晕 frame 与
-    /// HomeMonthMetrics.bottomBarHeight 共用此常量,保证视觉占地与安全区占地一致。
-    /// 改此值需同步真机验证:光晕既不被裁切,也不侵入列表可视区。
-    static let fabHaloOverflow: CGFloat = 28
+    /// 光晕总直径 = `fab + fabHaloOverflow * 2` = 72 + 16*2 = 104。
+    /// 2026-07-27 注:VoiceFAB 已改为悬浮 overlay,光晕不再占 safeAreaInset,
+    /// 卡片可从光晕背后穿过并渐隐溶入背景(见 HomeView.swift 的 overlay 挂载)。
+    /// 改此值需同步真机验证:光晕既不被裁切,也不挤占按钮可点击区。
+    static let fabHaloOverflow: CGFloat = 16
     /// 底部 tab 玻璃胶囊直径（48→52 增大热区）。
     /// 只读计算属性（Swift 计算属性必须用 static var 声明，无 setter 故不可写），
     /// 由 fab - fabTabSizeDelta 推导。

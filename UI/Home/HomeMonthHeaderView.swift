@@ -143,14 +143,21 @@ enum HomeLayoutMetrics {
     static let calendarFixedSectionHeight: CGFloat = 48
     /// 单行日期格最小高度。
     static let dayRowMinHeight: CGFloat = 22
-    /// 底部 VoiceFAB 的可视高度：FAB 直径 + 光晕外溢(WarmSize.fabHaloOverflow * 2) + 底部 padding。
-    /// 2026-07 注:光晕从 .background 改为 ZStack 底层后参与 layout frame,
-    /// safeAreaInset 占地 + listBottomInset 都按此值算,列表被挤到光晕上方不被盖。
-    static let bottomBarHeight: CGFloat = WarmSize.fab + WarmSize.fabHaloOverflow * 2 + WarmSpacing.md
-    /// 底部列表渐隐只负责贴近底部浮动操作簇的过渡，不能覆盖到中部 todo 卡片。
-    static let bottomListFadeHeight: CGFloat = 40
-    /// 列表底部滚动留白。
-    static let listBottomInset: CGFloat = bottomBarHeight + bottomListFadeHeight + WarmSpacing.xl
+    /// 悬浮 FAB 的实心占地(不含柔性光晕)。
+    /// 组成:WarmSize.fab(按钮直径) + WarmSpacing.md * 2
+    ///   - 一份 md = VoiceFAB 自身 .padding(.bottom),让按钮浮在 home indicator 上方
+    ///   - 一份 md = 最后一张卡底边到 FAB 按钮顶边的可读间隙
+    /// 2026-07-27 注:VoiceFAB 改为悬浮 overlay 后,光晕不占 safeAreaInset,
+    /// 此值仅用于:1) List contentMargins 底部留白;2) 渐隐带高度;3) 月网格 expand 态扣减。
+    static let bottomBarHeight: CGFloat = WarmSize.fab + WarmSpacing.md * 2
+    /// 底部列表渐隐高度:独立常量,用于 LinearGradient 遮罩高度。
+    /// 需覆盖整个悬浮 FAB,卡片才能从按钮背后穿过并溶入背景,
+    /// 而不是从按钮左右两侧半露出来。当前与 bottomBarHeight 等值。
+    static let bottomListFadeHeight: CGFloat = bottomBarHeight
+    /// 列表底部滚动留白:静止滚到底时,最后一张卡完整可读,不被 FAB 遮。
+    /// 悬浮改造后此值 = bottomBarHeight(fadeHeight 不再叠加进 inset,
+    /// 渐隐只负责视觉过渡,不负责推高列表最后一项的位置)。
+    static let listBottomInset: CGFloat = bottomBarHeight
     /// 空状态 top inset。
     static let emptyStateTopInset: CGFloat = 80
     /// 网格折叠手势的最小跟踪距离(pt)。低于此值不派发 onChanged,防误触。
@@ -222,9 +229,14 @@ enum HomeLayoutMetrics {
     static let weekStripPaddingBottom: CGFloat = 10
 
     /// 月历展开态高度（容器封顶值）。
+    /// 2026-07-27 注:VoiceFAB 改为悬浮 overlay 后,root ZStack 不再被 safeAreaInset
+    /// 砍掉底部 144pt(旧 bottomBarHeight),传给本函数的 availableHeight 相应变大。
+    /// 需先扣掉 listBottomInset 再取比例,否则月网格底行会伸进 FAB 区域。
+    /// 当 availableHeight ≤ listBottomInset(极小窗口/横屏小高度)时返回 0,
+    /// 月网格让位给列表 —— 由调用方决定是否回退到周视图。
     static func calendarExpandedHeight(availableHeight: CGFloat, selectedTab: BottomTab) -> CGFloat {
-        guard selectedTab == .calendar, availableHeight > 0 else { return 0 }
-        return availableHeight * gridMonthFullHeightRatio
+        guard selectedTab == .calendar, availableHeight > listBottomInset else { return 0 }
+        return (availableHeight - listBottomInset) * gridMonthFullHeightRatio
     }
 
     // MARK: - 注水法行高分配器常量
