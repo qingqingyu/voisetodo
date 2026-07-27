@@ -16,6 +16,19 @@ private let detailRecurrenceSummaryTimeFormatter: DateFormatter = {
     return formatter
 }()
 
+/// 下滑关闭手势阈值(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
+/// 跟 chevron.down 按钮(ToolbarItem)等价的输入通道:从页面顶部区域下滑即 dismiss。
+private enum DismissDragConfig {
+    /// DragGesture 最小位移:低于此值不识别为拖拽,排除点击抖动
+    static let minimumDistance: CGFloat = 40
+    /// startLocation.y 上限占屏高的比例:仅识别从"导航栏 + 第一张卡"区域开始的下滑。
+    /// 用比例而非绝对像素(原硬编码 200),在 SE(667pt)→ 200pt / Pro Max(932pt)→ 280pt,
+    /// 自动随 Dynamic Type 与屏宽缩放,避免 AX5 字号下第一张卡延伸过 200pt 时被错误剔除。
+    static let topZoneHeightRatio: CGFloat = 0.3
+    /// 下滑位移下限:足够大才视为有意图的"关闭手势",排除轻微拖拽
+    static let verticalTranslationLowerBound: CGFloat = 80
+}
+
 /// 待办详情页 - 温暖主题风格
 /// 支持编辑标题、备注、分类、优先级、日期（DatePicker）、重复，以及标记完成/删除
 struct TodoDetailView<Store: TodoListReadable>: View {
@@ -303,6 +316,12 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 .padding(.bottom, 40)
             }
         }
+        // 下滑手势:跟左上角 chevron.down(ToolbarItem)等价 —— 调 dismiss(),由 .onDisappear 兜底 persistChanges。
+        // simultaneousGesture 让 DragGesture 与 ScrollView 滚动同时识别;onEnded 时按阈值判断是否真的关闭(见 handleDismissDrag)。
+        .simultaneousGesture(
+            DragGesture(minimumDistance: DismissDragConfig.minimumDistance)
+                .onEnded(handleDismissDrag)
+        )
         .navigationTitle(String(localized: "detail.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -357,6 +376,25 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             actionTitle: coordinator.toastActionTitle,
             action: coordinator.toastAction
         )
+    }
+
+    // MARK: - Dismiss Drag
+
+    /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值,三条全部满足才 dismiss。
+    private func handleDismissDrag(_ value: DragGesture.Value) {
+        // 用 connectedScenes 而非 UIScreen.main —— iOS 16+ 已弃用,多 window 场景下取值可能错误。
+        // 本 app 单 window,iPhone 等价原行为。
+        let screenHeight = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .map { $0.screen.bounds.height }
+            .max() ?? 0
+        guard screenHeight > 0,
+              value.startLocation.y < screenHeight * DismissDragConfig.topZoneHeightRatio else { return }
+        let translation = value.translation
+        guard translation.height > DismissDragConfig.verticalTranslationLowerBound,
+              abs(translation.height) > abs(translation.width) else { return }
+        dismiss()
     }
 
     // MARK: - Card Wrapper
