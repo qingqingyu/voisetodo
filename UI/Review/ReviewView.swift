@@ -406,7 +406,7 @@ struct ReviewView: View {
             }
             .frame(height: 14)
 
-            Text("\(entry.count)")
+            Text(verbatim: "\(entry.count)")
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
                 .frame(minWidth: 24, alignment: .trailing)

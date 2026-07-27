@@ -200,7 +200,7 @@ struct LockscreenCircularWidget: View {
                             .invalidatableContent()
                     } else {
                         VStack(spacing: 2) {
-                            Text("\(todos.count)")
+                            Text(verbatim: "\(todos.count)")
                                 .font(.system(size: 24, weight: .bold))
                                 .minimumScaleFactor(0.6)
                                 .contentTransition(WidgetAnimation.numericContent(enabled: animationsEnabled))
@@ -233,7 +233,7 @@ struct LockscreenInlineWidget: View {
                 Text(String(localized: LocalizedStringResource(stringLiteral: interactionError.messageKey)))
                     .invalidatableContent()
             } else if let firstTodo = todos.first {
-                Text("\(firstTodo.category.emoji) \(firstTodo.title)")
+                Text(verbatim: "\(firstTodo.category.emoji) \(firstTodo.title)")
             } else {
                 Text(String(localized: "widget.no_todos"))
             }

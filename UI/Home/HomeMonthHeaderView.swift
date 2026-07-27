@@ -541,7 +541,7 @@ struct WeekStripCard: View {
                     } else if dayState.isToday {
                         Circle().fill(WarmTheme.primary.opacity(0.18))
                     }
-                    Text("\(dayState.dayNumber)")
+                    Text(verbatim: "\(dayState.dayNumber)")
                         .font(WarmFont.mono(15))
                         .foregroundColor(
                             dayState.isSelected ? .white :
