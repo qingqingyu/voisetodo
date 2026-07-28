@@ -325,13 +325,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Collapse unscheduled"
+            "value" : "Collapse Someday"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收起未安排"
+            "value" : "收起稍后"
           }
         }
       }
@@ -341,13 +341,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expand unscheduled"
+            "value" : "Expand Someday"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展开未安排"
+            "value" : "展开稍后"
           }
         }
       }
@@ -3285,7 +3285,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To be scheduled"
+            "value" : "Needs a date"
           }
         },
         "zh-Hans" : {
@@ -3610,13 +3610,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "\"%@\" moved to Unscheduled"
+            "value" : "\"%@\" moved to Someday"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "\"%@\" 已移回未安排"
+            "value" : "\"%@\" 已移回稍后"
           }
         }
       }
@@ -3626,13 +3626,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Undated"
+            "value" : "Someday"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未定时间"
+            "value" : "稍后"
           }
         }
       }
@@ -3903,13 +3903,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unscheduled"
+            "value" : "Someday"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未安排"
+            "value" : "稍后"
           }
         }
       }

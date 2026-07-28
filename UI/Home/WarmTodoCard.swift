@@ -89,14 +89,6 @@ struct WarmTodoCard: View {
     /// 避免 UnscheduledDrawer 等其它调用方被动改变外观。
     var showsInlineTimePrefix = false
 
-    /// 分类图标圆背景尺寸。用 @ScaledMetric 跟随 Dynamic Type 缩放,基准 28pt。
-    /// relativeTo: .body 跟卡片标题字号(WarmFont.body(16) → .body textStyle)同步缩放,
-    /// 避免 AX5 下字变大而图标不变导致比例失衡。
-    /// 用户原话:「任务卡片的分类图标用 @ScaledMetric 定尺寸」。
-    @ScaledMetric(relativeTo: .body) private var categoryIconCircleSize: CGFloat = 28
-    /// 分类图标 SF Symbol 字号。基准 12pt,同步跟随 .body 缩放。
-    @ScaledMetric(relativeTo: .body) private var categoryIconFontSize: CGFloat = 12
-
     /// 改时间 popover 状态。chip 点击触发,popover 内部提交时通过 `onChangeTime` 回调。
     /// 编辑中的 date 由 chip 点击时的 `todo.dueDate ?? Date()` 初始化。
     @State private var showTimeEditor = false
@@ -255,15 +247,7 @@ struct WarmTodoCard: View {
             // 现在元数据合并成一行，卡片高度降三分之一。
             VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 HStack(spacing: WarmSpacing.xxs) {
-                    ZStack {
-                        Circle()
-                            .fill(todo.isCompleted ? WarmTheme.textMuted.opacity(0.16) : categoryColor.opacity(0.16))
-                            .frame(width: categoryIconCircleSize, height: categoryIconCircleSize)
-
-                        Image(systemName: todo.category.sfSymbolName)
-                            .font(.system(size: categoryIconFontSize, weight: .semibold))
-                            .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : categoryColor)
-                    }
+                    CategoryIconView(category: todo.category, isCompleted: todo.isCompleted)
 
                     // 标题行内联钟点:hasDueTime 时在 title 前挂 chip(HTML 设计稿 .chip 样式)。
                     // solid 样式 = 精确时刻(彩色底 + 分类色),最强视觉权重;

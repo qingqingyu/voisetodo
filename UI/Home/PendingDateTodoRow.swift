@@ -3,9 +3,11 @@ import SwiftUI
 /// 「待定日期」分组的卡片:有时间信号(timeBucket 或 dueHint)但没具体日期。
 ///
 /// 与正常 WarmTodoCard 的差异:
-/// - 右侧「选日期」按钮为次级 CTA(sketch 1pt 描边 + textSecondary 文字)。
-///   降级原因详见按钮 label 内注释。
+/// - **左侧带 `CategoryIconView`**(跟 WarmTodoCard 一致),分类视觉语言统一。
+/// - 右侧「选日期」按钮为橙描边主级 CTA(primary 1pt 描边 + primary 文字)。
+///   样式沿革详见按钮 label 内注释。
 /// - chip 用 `.loose` 样式显示时段 / dueHint(如「下午」「这个周末」)。
+/// - 标题 `lineLimit(3)`(比 WarmTodoCard 的 nil 紧,因右侧按钮 fixedSize 挤压)。
 ///
 /// 选日期 popover 提交后,该 todo 因 `dueDate != nil` 自动离开 `pendingDateTodos`,
 /// 进入 Today 的对应 tier(整天/时段/按时间)。
@@ -63,17 +65,19 @@ struct PendingDateTodoRow: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("PendingDateCheckbox_\(index)")
 
+                CategoryIconView(category: todo.category)
+
                 VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                     Text(todo.title)
                         .font(WarmFont.body(15))
                         .foregroundColor(WarmTheme.textPrimary)
-                        // lineLimit(2):右侧「选日期」按钮加了 fixedSize 后会按 intrinsic 宽度
-                        // 参与布局,在 AX5 字号 + 长标题场景下挤压标题空间(可用宽可能只剩 50pt,
-                        // 中文 1-2 字/行,长标题会换 5+ 行撑高卡片)。
-                        // 用户决定限 2 行后 tail 截断——卡片高度有界,用户点开详情看完整内容。
+                        // lineLimit(3):右侧「选日期」按钮 fixedSize + 左侧 CategoryIconView
+                        // 双重挤压标题可用宽(AX5 字号下尤其紧张)。原 lineLimit(2) 在加图标后
+                        // 会让长标题过早 tail 截断,放宽到 3 行作为对冲——卡片高度有界,
+                        // 用户点开详情看完整内容。
                         // 详见 feedback memory「文本截断/换行零容忍」的"有按钮挤压"例外条款。
-                        // 与 WarmTodoCard(无按钮挤压)的 lineLimit(nil) 无限换行策略区分。
-                        .lineLimit(2)
+                        // 与 WarmTodoCard(无「选日期」按钮挤压)的 lineLimit(nil) 无限换行策略区分。
+                        .lineLimit(3)
                         .truncationMode(.tail)
 
                     ChipView(
@@ -95,16 +99,18 @@ struct PendingDateTodoRow: View {
                 } label: {
                     Text(String(localized: "home.pending_date.pick"))
                         .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        // 描边次级 CTA:sketch 1pt 描边 + textSecondary 文字 + 透明底。
-                        // 之前是实心 primary 填充,违反 WarmTheme.primary「仅留给麦克风/日期高亮」约束,
-                        // 且四个橙块堆一列视觉重量比任务名还重。用户 2026-07-26 真机反馈要求降级。
+                        .foregroundColor(WarmTheme.primary)
+                        // 橙描边主级 CTA:primary 1pt 描边 + primary 文字 + 透明底。
+                        // 历史:曾用实心 primary 填充(过重),又改成 sketch 灰描边 + textSecondary 文字
+                        // (过弱,视觉上像禁用状态——比 checkbox 灰圈还低)。
+                        // 用户 2026-07-27 反馈:作为卡片最重要的动作却长得像 disabled。
+                        // 橙描边 + 橙文字是中间方案:有 CTA 色彩语义,但不抢眼到压过标题。
                         // padding 沿用 (10, xxs):跟 .loose chip(9,3) 密度同档,让卡片视觉重量均衡。
                         .padding(.horizontal, 10)
                         .padding(.vertical, WarmSpacing.xxs)
                         .background(
                             RoundedRectangle(cornerRadius: WarmRadius.chip)
-                                .stroke(WarmTheme.sketch, lineWidth: 1)
+                                .stroke(WarmTheme.primary, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)

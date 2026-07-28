@@ -54,6 +54,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// onDisappear 时 cancel 并立即静默保存,保证用户离开时一定落盘。
     @State private var saveTask: Task<Void, Never>?
 
+    /// 检测 Dynamic Type 档位。AX1+ 切到 weekday 4+3 两行布局,
+    /// 单格宽度从 ~44pt 涨到 ~89pt,容下 AX5 下撑大的 "Wed" / "周三"。
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     init(store: Store, todo: TodoItemData) {
         self.store = store
         _todo = State(initialValue: todo)
@@ -586,9 +590,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 }
 
                 if editedRecurrenceFrequency == .weekly {
-                    HStack(spacing: WarmSpacing.xs) {
-                        ForEach(1...7, id: \.self) { weekday in weekdayButton(weekday) }
-                    }
+                    weekdayGrid
                 }
 
                 if editedRecurrenceFrequency == .monthly {
@@ -697,6 +699,29 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
     }
 
+    /// weekday 7 button 的容器:默认单行 7 等分;AX 档位(AX1+)切到 4+3 两行,
+    /// 单格宽度从 ~44pt 涨到 ~89pt,容下 AX5 下撑大的 "Wed" / "周三"。
+    /// 用 `dynamicTypeSize.isAccessibilitySize` 硬切,而非 ViewThatFits ——
+    /// 后者对 `frame(maxWidth: .infinity)` 内容判断不可靠(button 永远"装得下")。
+    /// 用户审美要求:两行布局按 4+3 而不是 3+4(7/2≈3.5,4+3 视觉更对称)。
+    @ViewBuilder
+    private var weekdayGrid: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: WarmSpacing.xs) {
+                HStack(spacing: WarmSpacing.xs) {
+                    ForEach(1...4, id: \.self) { weekday in weekdayButton(weekday) }
+                }
+                HStack(spacing: WarmSpacing.xs) {
+                    ForEach(5...7, id: \.self) { weekday in weekdayButton(weekday) }
+                }
+            }
+        } else {
+            HStack(spacing: WarmSpacing.xs) {
+                ForEach(1...7, id: \.self) { weekday in weekdayButton(weekday) }
+            }
+        }
+    }
+
     private func weekdayButton(_ weekday: Int) -> some View {
         let isSelected = editedWeekdays.contains(weekday)
         return Button {
@@ -704,10 +729,20 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             checkForChanges()
         } label: {
             Text(shortWeekdayName(weekday))
-                .font(WarmFont.caption(12))
+                // caption(11) 比 Repeat chip 的 caption(12) 小一档,视觉层级清晰:
+                // Repeat 是主选择,weekday 是次级补选。两者同 textStyle(.caption2),
+                // AX5 缩放系数一致,所以 11 vs 12 的相对差距在所有档位下都保留。
+                .font(WarmFont.caption(11))
                 .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+                // lineLimit(1) + minimumScaleFactor(0.7) 作为兜底:
+                // 默认 7 等分模式下仍可能边缘截断(窄屏 + AX 边界档位),允许 Text 缩到 70%。
+                // 两行模式(AX1+)下单格够宽,通常用不到缩放。
+                // minHeight(非 height)让字号撑高时高度跟随,7 个 button 高度自动一致。
+                // 符合 CLAUDE.md「文本布局规则」第 1 条 + feedback memory「文本截断零容忍」。
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity)
-                .frame(height: WarmSpacing.xxl)
+                .frame(minHeight: WarmSpacing.xxl)
                 .background(RoundedRectangle(cornerRadius: WarmRadius.chip).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
         }
         .buttonStyle(.plain)
