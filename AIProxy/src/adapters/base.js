@@ -157,6 +157,7 @@ due_hint 始终保留用户原文。
 7. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条
 8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」
 9. ignored 字段必填：无可过滤内容时返回空字符串 ""，绝不返回 null
+10. 输出语言：自由文本字段（title、detail、due_hint、ignored）必须使用**与用户输入相同的语言**——用户说日语就用日语，说德语就用德语，不要翻译成中文或英文。⚠️ 但枚举字段是例外，**一律使用本提示词中定义的英文字面量**，绝不本地化：priority（high/normal）、category_hint（work/study/life/health/finance/social/other）、time_bucket（morning/afternoon/evening）、recurrence_rule.frequency（daily/weekly/monthly）、recurrence_end.kind、due_date_basis。这些值由客户端按字面量解码，翻译后会被静默丢弃
 
 只返回 JSON，不要返回解释。格式如下：
 {
@@ -277,6 +278,7 @@ due_hint always preserves the original text.
 7. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc.
 8. Ambiguous intent: pure state descriptions ("I'm so tired") are ignored; implied action ("so tired, need to see a doctor") extracts "see a doctor"
 9. ignored field is required: when nothing is filtered, return empty string "" — never null
+10. Output language: free-text fields (title, detail, due_hint, ignored) MUST use the SAME language as the user's input — if the user speaks Japanese, write Japanese; German input, German output. Never translate them into English. ⚠️ Enum fields are the exception and must ALWAYS use the exact English literals defined in this prompt, never localized: priority (high/normal), category_hint (work/study/life/health/finance/social/other), time_bucket (morning/afternoon/evening), recurrence_rule.frequency (daily/weekly/monthly), recurrence_end.kind, due_date_basis. The client decodes these literally; translated values are silently discarded
 
 Return JSON only, with this shape:
 {
