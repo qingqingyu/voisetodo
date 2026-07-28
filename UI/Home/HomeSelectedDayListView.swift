@@ -38,7 +38,7 @@ struct HomeSelectedDayListView: View {
         List {
             // Today Section 无 header —— 顶部 headerView 的大标题已经标明当前是「Today」tab,
             // list 里再挂 "Today · N" 会与顶部标题重复(用户 2026-07-25 真机反馈)。
-            // 其他 section(待定日期 / 没能识别 / 未定时间 / 已完成)保留 daySectionHeader,
+            // 其他 section(稍后 / 待定日期 / 没能识别 / 已完成)保留 daySectionHeader,
             // 因为它们的标题信息(分组名 + 数量)无法从顶部推导。
             Section {
                 if !state.hasTodos {
@@ -50,14 +50,31 @@ struct HomeSelectedDayListView: View {
                 }
             }
 
+            // 「稍后」分区(原「未定时间」):完全无时间信号的待排期货(原「未安排」,语义收紧后改名)。
+            // 排在 Today 之后——用户主动暂存的待办(类 Inbox 性质),需要快速访问;
+            // 与海外主流 todo app(Things 3 / TickTick 等)把 Inbox 提前的模式一致。
+            if !state.unscheduledTodos.isEmpty {
+                Section {
+                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
+                        todoRow(todo, index: state.selectedOccurrences.count + idx)
+                    }
+                } header: {
+                    daySectionHeader(
+                        title: String(localized: "home.undated.section"),
+                        count: state.unscheduledTodos.count
+                    )
+                }
+            }
+
             // 「待定日期」分区:有时间信号(timeBucket 或 dueHint)但没具体日期。
-            // 用 PendingDateTodoRow:右侧描边「选日期」按钮 + .loose chip 显示时段 / dueHint。
+            // 用 PendingDateTodoRow:橙描边「选日期」按钮 + .loose chip 显示时段 / dueHint。
+            // 半完成态——用户已表达意向但需手动选日期,中段优先级。
             if !state.pendingDateTodos.isEmpty {
                 Section {
                     ForEach(Array(state.pendingDateTodos.enumerated()), id: \.element.id) { idx, todo in
                         PendingDateTodoRow(
                             todo: todo,
-                            index: state.pendingDateTodos.startIndex + idx,
+                            index: state.unscheduledTodos.count + idx,
                             onToggle: { onToggleTodo(todo.id) },
                             onOpen: { onOpenTodo(todo) },
                             onDelete: { onDeleteTodo(todo.id) },
@@ -74,6 +91,7 @@ struct HomeSelectedDayListView: View {
 
             // 「没能识别」分区:outcome != .parsed 的原文兜底条目。
             // 用 UnparsedTodoCard:斜纹背景 + dashed border + 「重新解析 / 删除」按钮。
+            // 系统失败态——靠后,避免干扰主线;对应海外 app 隐藏/角落化失败条目的模式。
             if !state.unparsedTodos.isEmpty {
                 Section {
                     ForEach(Array(state.unparsedTodos.enumerated()), id: \.element.id) { idx, todo in
@@ -100,21 +118,6 @@ struct HomeSelectedDayListView: View {
                 }
             }
 
-            // 「未定时间」分区:完全无时间信号的待排期货(原「未安排」,语义收紧后改名)。
-            // 排在已完成之前——用户关注优先级:未完成(有时间) > 待定日期 > 没能识别 > 未定时间 > 已完成(历史)。
-            if !state.unscheduledTodos.isEmpty {
-                Section {
-                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
-                        todoRow(todo, index: state.selectedOccurrences.count + state.pendingDateTodos.count + state.unparsedTodos.count + idx)
-                    }
-                } header: {
-                    daySectionHeader(
-                        title: String(localized: "home.undated.section"),
-                        count: state.unscheduledTodos.count
-                    )
-                }
-            }
-
             // 「已完成」分区 = 当日 occurrence 的已完成 + 全局无安排任务的已完成。
             // 放最后:已完成是历史信息,优先级最低。
             if !state.completedOccurrences.isEmpty || !state.completedUnscheduledTodos.isEmpty {
@@ -123,12 +126,12 @@ struct HomeSelectedDayListView: View {
                         occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
                     }
                     ForEach(Array(state.completedUnscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
-                        // index 延续「已完成 occurrence」之后,跨过 today / pendingDate / unparsed / unscheduled
-                        // 各 section 的行数,避免 a11y identifier 与前面 section 的行号撞号。
+                        // index 延续「已完成 occurrence」之后,跨过 today / unscheduled / pendingDate / unparsed
+                        // 各 section 的行数(按当前 section 顺序),避免 a11y identifier 与前面 section 的行号撞号。
                         completedTodoRow(todo, index: state.selectedOccurrences.count
+                                        + state.unscheduledTodos.count
                                         + state.pendingDateTodos.count
-                                        + state.unparsedTodos.count
-                                        + state.unscheduledTodos.count + idx)
+                                        + state.unparsedTodos.count + idx)
                     }
                 } header: {
                     let totalCount = state.completedOccurrences.count + state.completedUnscheduledTodos.count

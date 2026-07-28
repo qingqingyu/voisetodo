@@ -650,7 +650,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 提取为单一来源避免两处 font/color/scaleFactor 分叉。
     private var monthTitleText: some View {
         Text(calendarMonthTitle)
-            .font(WarmFont.serifDisplay(30))
+            .font(WarmFont.serifDisplay(24))
             .foregroundColor(WarmTheme.textPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.65)
@@ -695,7 +695,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// `minimumScaleFactor(0.65)` 仅作为极端兜底,与 `monthTitleText` 保持一致。
     private var todayWeekdayText: some View {
         Text(todayWeekdayTitle)
-            .font(WarmFont.serifDisplay(30))
+            .font(WarmFont.serifDisplay(24))
             .foregroundColor(WarmTheme.textPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.65)
