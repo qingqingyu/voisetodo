@@ -361,8 +361,8 @@ final class VoiceInputManager: VoiceInputProtocol {
                         // 而不是弹"录音失败"toast 让用户干瞪眼。
                         // kLSRErrorDomain Code=300 = "Failed to initialize recognizer"
                         let mapped: VoiceTodoError
-                        if let nsError = error as? NSError,
-                           nsError.domain == "kLSRErrorDomain",
+                        let nsError = error as NSError
+                        if nsError.domain == "kLSRErrorDomain",
                            nsError.code == 300 {
                             mapped = .speechRecognitionUnavailable
                         } else {
@@ -534,7 +534,7 @@ final class VoiceInputManager: VoiceInputProtocol {
             } catch {
                 return
             }
-            await self?.handleFinishRecordingWatchdogExpired()
+            self?.handleFinishRecordingWatchdogExpired()
         }
     }
 
@@ -641,7 +641,7 @@ final class VoiceInputManager: VoiceInputProtocol {
 
         // 检查是否支持
         for locale in VoiceConstants.supportedLocales {
-            if preferredLanguage.hasPrefix(locale.languageCode ?? "") {
+            if preferredLanguage.hasPrefix(locale.language.languageCode?.identifier ?? "") {
                 VoiceTodoLog.voice.info("locale.system preferred=\(preferredLanguage, privacy: .public) selected=\(locale.identifier, privacy: .public)")
                 return locale
             }

@@ -757,7 +757,7 @@ final class AppCoordinator: ObservableObject {
                 }
                 return
             }
-            await self.handleCalendarSyncResult(result)
+            self.handleCalendarSyncResult(result)
         }
     }
 

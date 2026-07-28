@@ -126,6 +126,10 @@ extension WidgetFamily {
     /// 根据 Widget 尺寸返回显示条数
     var itemCount: Int {
         switch self {
+        // supportedFamilies 已不含 .systemSmall,此处显式列出仅为满足 exhaustive;
+        // 万一命中(旧用户残留 widget / 系统异常),按 medium 档返回,避免崩溃。
+        case .systemSmall:
+            return WidgetConfig.mediumItemCount
         case .systemMedium:
             return WidgetConfig.mediumItemCount
         case .systemLarge, .systemExtraLarge:

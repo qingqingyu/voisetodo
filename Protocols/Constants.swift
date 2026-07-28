@@ -68,6 +68,13 @@ enum UIConfig {
     static let toastDuration: Double = 2.0
     /// 删除动画时长
     static let deleteAnimationDuration: Double = 0.28
+
+    /// 屏幕尺寸 fallback:仅当 `UIApplication.shared.connectedScenes` 中
+    /// 没有 foregroundActive 的 windowScene 时使用(app 启动早期 / scene 异常)。
+    /// 取 iPhone 17 Pro 高度作为合理保守值。
+    enum UIScreenFallback {
+        static let defaultHeight: CGFloat = 956
+    }
 }
 
 /// Widget 配置

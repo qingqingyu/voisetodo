@@ -331,13 +331,29 @@ struct ConfirmSheetView: View {
     /// 消失就消失,不影响底下 todo 内容区的布局。
     /// 超上限后 ScrollView 自动接管滚动;.large 仍可手动拖到全屏。
     private var clampedSheetHeight: CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
+        let screenHeight = Self.currentScreenHeight()
         let footer: CGFloat = hintVisible ? OperationHintFooter.estimatedHeight : 0
         let frame: CGFloat = 102 + footer
         let raw = contentHeight + frame
         let lowerBound: CGFloat = 280
         let upperBound = screenHeight * 0.85
         return min(max(raw, lowerBound), upperBound)
+    }
+
+    /// iOS 26 起 `UIScreen.main` 被弃用,需通过 context 中的 scene 取屏。
+    /// sheet 是独立 window,GeometryReader 拿到的是 sheet 自己的尺寸,
+    /// 只能从 `UIApplication.shared.connectedScenes` 拿 foregroundActive 的 windowScene。
+    /// 找不到 active scene 属于异常状态(app 启动早期 / scene 被系统回收),
+    /// 此时记 error 日志显式暴露,而不是静默 fallback 掩盖问题。
+    private static func currentScreenHeight() -> CGFloat {
+        let activeScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        guard let height = activeScene?.screen.bounds.height, height > 0 else {
+            VoiceTodoLog.ui.error("confirmsheet.screen_height.unavailable scene_not_found, falling back to default")
+            return UIConfig.UIScreenFallback.defaultHeight
+        }
+        return height
     }
 
     // MARK: - Success Overlay

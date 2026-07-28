@@ -10,7 +10,9 @@ struct TodoWidgetView: View {
 
     var body: some View {
         switch family {
-        case .systemMedium:
+        // supportedFamilies 已不含 .systemSmall,此处与 medium 合并仅为满足 exhaustive;
+        // 万一命中(旧用户残留 widget / 系统异常),复用 medium 视图兜底,避免崩溃。
+        case .systemSmall, .systemMedium:
             MediumWidgetView(todos: entry.todos, loadState: entry.loadState, interactionError: entry.interactionError)
         case .systemLarge, .systemExtraLarge:
             LargeWidgetView(todos: entry.todos, loadState: entry.loadState, interactionError: entry.interactionError)
