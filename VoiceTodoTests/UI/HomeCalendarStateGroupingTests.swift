@@ -117,6 +117,30 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
                        "其他日期不应出现——修复前 bug 是每一天都出现")
     }
 
+    /// 回看历史日:文档第 110 行验收项「次日再打开 App 看昨天 → 确认条目仍在昨天的
+    /// 已完成区」。若把 filter 退化成 `calendar.isDateInToday(completedAt)` 此测试会失败。
+    func testCompletedUnscheduledTodoVisibleOnPastCompletionDay() throws {
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let todo = makeTodo(
+            title: "昨天做完的",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: yesterday
+        )
+
+        let stateLookingAtYesterday = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: yesterday, calendar: calendar
+        )
+        let stateLookingAtToday = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: today, calendar: calendar
+        )
+
+        XCTAssertTrue(stateLookingAtYesterday.completedUnscheduledTodos.contains { $0.id == todo.id },
+                      "回看完成日当天应能看到该条目(历史不断层)")
+        XCTAssertFalse(stateLookingAtToday.completedUnscheduledTodos.contains { $0.id == todo.id },
+                       "完成日的次日不应再看到该条目")
+    }
+
     /// 边界 1:历史数据 `completedAt == nil`(模型字段补全前完成的老条目)
     /// 不显示在任何一天。不兜底塞进今天,避免陈年条目涌入。
     func testCompletedUnscheduledTodoNilCompletedAtShownNowhere() throws {
