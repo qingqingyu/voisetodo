@@ -308,7 +308,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                     .foregroundColor(WarmTheme.warning)
                             }
                         }
-                        Text("\(String(localized: "detail.created_at")) \(formattedDetailDate(todo.createdAt))")
+                        Text(String(localized: "detail.created_at_value \(formattedDetailDate(todo.createdAt))"))
                             .font(WarmFont.caption(12))
                             .foregroundColor(WarmTheme.textMuted)
                     }
@@ -640,7 +640,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             .font(WarmFont.body(15))
                             .foregroundColor(WarmTheme.textSecondary)
                         Picker("", selection: $editedDayOfMonth) {
-                            ForEach(1...31, id: \.self) { Text("\($0)").tag($0) }
+                            ForEach(1...31, id: \.self) { Text(verbatim: "\($0)").tag($0) }
                         }
                         .pickerStyle(.wheel)
                         .frame(width: 80, height: 100)

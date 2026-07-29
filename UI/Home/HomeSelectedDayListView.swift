@@ -274,7 +274,7 @@ struct HomeSelectedDayListView: View {
                 .font(WarmFont.headline(15))
             // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态
             if count > 0 {
-                Text("\(count)")
+                Text(verbatim: "\(count)")
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.primaryDark)
                     .padding(.horizontal, WarmSpacing.xs)

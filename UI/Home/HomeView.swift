@@ -794,7 +794,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             Text(String(localized: "home.today"))
                 .font(WarmFont.caption(13))
                 .foregroundStyle(WarmTheme.textPrimary)
-            Text("\(completed)/\(total)")
+            Text(verbatim: "\(completed)/\(total)")
                 .font(WarmFont.caption(13))
                 .monospacedDigit()
                 .foregroundStyle(WarmTheme.textPrimary)

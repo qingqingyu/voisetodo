@@ -95,7 +95,7 @@ struct HomeMonthGridButton: View {
 
     private var dayNumberView: some View {
         HStack(spacing: 2) {
-            Text("\(dayState.dayNumber)")
+            Text(verbatim: "\(dayState.dayNumber)")
                 .font(WarmFont.mono(11))
                 .foregroundColor(dayNumberColor)
                 // 选中/今天加胶囊背景:选中=primary 实色+白字;今天=浅 primary+primaryDark 字。
@@ -163,7 +163,10 @@ struct HomeMonthGridButton: View {
         }
 
         // 删除线 color 与文字色(textMuted)一致,避免"灰文字 + 其他色线"的不和谐。
-        let combined = Text("\(hourText)\(titleText)\(overflowText)")
+        // Text + Text 拼接(不是 LocalizedStringKey 插值):三段分别带各自的字体/样式,
+        // + 运算符返回 Text 同时保留分段样式;若用 Text("\(t1)\(t2)") 会走本地化系统,
+        // 在伪本地化/多语言下产生破损输出(参见 Localizable.xcstrings 历史垃圾 key %@%@%@)。
+        let combined = (hourText + titleText + overflowText)
             .strikethrough(occurrence.isCompleted, color: WarmTheme.textMuted)
 
         return combined

@@ -192,7 +192,7 @@ struct UnscheduledDrawer: View {
                     .font(WarmFont.headline(15))
                     .foregroundColor(WarmTheme.textPrimary)
 
-                Text("\(todos.count)")
+                Text(verbatim: "\(todos.count)")
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.primaryDark)
                     .padding(.horizontal, WarmSpacing.xs)

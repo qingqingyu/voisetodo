@@ -115,21 +115,21 @@ struct UIDemoView: View {
                     HStack {
                         Text(String(localized: "demo.total_count"))
                         Spacer()
-                        Text("\(store.todos.count)")
+                        Text(verbatim: "\(store.todos.count)")
                             .foregroundColor(.secondary)
                     }
 
                     HStack {
                         Text(String(localized: "demo.uncompleted"))
                         Spacer()
-                        Text("\(store.todos.filter { !$0.isCompleted }.count)")
+                        Text(verbatim: "\(store.todos.filter { !$0.isCompleted }.count)")
                             .foregroundColor(.secondary)
                     }
 
                     HStack {
                         Text(String(localized: "demo.high_priority"))
                         Spacer()
-                        Text("\(store.todos.filter { $0.priority == .high }.count)")
+                        Text(verbatim: "\(store.todos.filter { $0.priority == .high }.count)")
                             .foregroundColor(.red)
                     }
                 }

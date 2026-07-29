@@ -61,7 +61,7 @@ struct PopCount: View {
     @State private var popTask: Task<Void, Error>?
 
     var body: some View {
-        Text("\(count)")
+        Text(verbatim: "\(count)")
             .font(WarmFont.captionFixed(13))
             .monospacedDigit()
             .padding(.horizontal, WarmSpacing.xs)

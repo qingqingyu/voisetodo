@@ -676,7 +676,7 @@ struct OnboardingView: View {
                     .stroke(highlightColor, lineWidth: 2)
                     .frame(width: 32, height: 32)
 
-                Text("\(number)")
+                Text(verbatim: "\(number)")
                     .font(WarmFont.title(16))
                     .foregroundColor(highlightColor)
             }
