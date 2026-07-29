@@ -21,12 +21,33 @@ private let detailRecurrenceSummaryTimeFormatter: DateFormatter = {
 private enum DismissDragConfig {
     /// DragGesture 最小位移:低于此值不识别为拖拽,排除点击抖动
     static let minimumDistance: CGFloat = 40
-    /// startLocation.y 上限占屏高的比例:仅识别从"导航栏 + 第一张卡"区域开始的下滑。
+    /// startLocation.y 占屏高比例的"顶部优先区"阈值。
+    /// 顶部 30%(导航栏 + 第一张卡区域)内起手的下滑,无视 ScrollView 滚动状态都识别 ——
+    /// "从导航栏下拉"的直觉。其他位置起手的下滑,需 ScrollView 已在顶部才识别 ——
+    /// 对齐 iOS sheet "滚到顶继续下滑收起"的语义。
     /// 用比例而非绝对像素(原硬编码 200),在 SE(667pt)→ 200pt / Pro Max(932pt)→ 280pt,
     /// 自动随 Dynamic Type 与屏宽缩放,避免 AX5 字号下第一张卡延伸过 200pt 时被错误剔除。
     static let topZoneHeightRatio: CGFloat = 0.3
     /// 下滑位移下限:足够大才视为有意图的"关闭手势",排除轻微拖拽
     static let verticalTranslationLowerBound: CGFloat = 80
+}
+
+/// ScrollView 偏移量上报通道:VStack 顶部锚点通过 GeometryReader 把 frame.minY 上报给根视图,
+/// 根视图用 `minY >= 0` 判断 ScrollView 是否处于顶部(静止 + bounce 都算)。
+/// 跟 `UI/ConfirmSheet/ConfirmSheetView.swift` 的 `SheetContentHeightKey` 同套路(PreferenceKey + 锚点 +
+/// .onPreferenceChange),区别在 reduce:本 key 当前只有单源(VStack 首项锚点),用直接覆盖;
+/// SheetContentHeightKey 用 max 合并多源。若未来加多源需改 reduce 语义。
+private struct DetailScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        // 单源直接覆盖。多源场景需像 SheetContentHeightKey 那样用 max/value 选择策略。
+        value = nextValue()
+    }
+}
+
+/// ScrollView 命名坐标空间。锚点 GeometryReader 的 frame(in:) 必须用同名空间配对。
+private enum DetailScrollCoordinateSpace {
+    static let name = "detailScroll"
 }
 
 /// 待办详情页 - 温暖主题风格
@@ -67,6 +88,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// onDisappear 时 cancel 并立即静默保存,保证用户离开时一定落盘。
     @State private var saveTask: Task<Void, Never>?
 
+    /// ScrollView 是否处于顶部(静止 + bounce 都算 true)。由根视图 `.onPreferenceChange`
+    /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势用它扩展识别区域:
+    /// 顶部 30% 内无视滚动状态,其他位置起手需 `isScrollViewAtTop == true` 才 dismiss。
+    @State private var isScrollViewAtTop: Bool = true
+
     /// 检测 Dynamic Type 档位。AX1+ 切到 weekday 4+3 两行布局,
     /// 单格宽度从 ~44pt 涨到 ~89pt,容下 AX5 下撑大的 "Wed" / "周三"。
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -97,6 +123,19 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
             ScrollView {
                 VStack(spacing: WarmSpacing.lg) {
+                    // ScrollView 偏移锚点:0 高度不可见,通过 GeometryReader 把 frame.minY 上报给根视图。
+                    // 用 background 而非 overlay,让 GeometryReader 的尺寸跟锚点 Color.clear 一致(0×0),
+                    // frame(in:) 读到的就是锚点在 coordinateSpace 里的真实位置。
+                    Color.clear
+                        .frame(height: 0)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: DetailScrollOffsetKey.self,
+                                    value: proxy.frame(in: .named(DetailScrollCoordinateSpace.name)).minY
+                                )
+                            }
+                        )
                     // 标题
                     VStack(alignment: .leading) {
                         HStack(spacing: WarmSpacing.xs) {
@@ -319,6 +358,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 .padding(.top, WarmSpacing.xl) // issue 6：加大 top padding 防 Title 被导航栏截断
                 .padding(.bottom, 40)
             }
+            .coordinateSpace(name: DetailScrollCoordinateSpace.name)
         }
         // 下滑手势:跟左上角 chevron.down(ToolbarItem)等价 —— 调 dismiss(),由 .onDisappear 兜底 persistChanges。
         // simultaneousGesture 让 DragGesture 与 ScrollView 滚动同时识别;onEnded 时按阈值判断是否真的关闭(见 handleDismissDrag)。
@@ -326,6 +366,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             DragGesture(minimumDistance: DismissDragConfig.minimumDistance)
                 .onEnded(handleDismissDrag)
         )
+        .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
+            isScrollViewAtTop = offset >= 0
+        }
         .navigationTitle(String(localized: "detail.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -384,7 +427,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     // MARK: - Dismiss Drag
 
-    /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值,三条全部满足才 dismiss。
+    /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值 + 当前滚动状态判定。
     private func handleDismissDrag(_ value: DragGesture.Value) {
         // 用 connectedScenes 而非 UIScreen.main —— iOS 16+ 已弃用,多 window 场景下取值可能错误。
         // 本 app 单 window,iPhone 等价原行为。
@@ -393,8 +436,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             .filter { $0.activationState == .foregroundActive }
             .map { $0.screen.bounds.height }
             .max() ?? 0
-        guard screenHeight > 0,
-              value.startLocation.y < screenHeight * DismissDragConfig.topZoneHeightRatio else { return }
+        guard screenHeight > 0 else { return }
+        let inTopZone = value.startLocation.y < screenHeight * DismissDragConfig.topZoneHeightRatio
+        // 顶部 30% 内:维持原行为(任何滚动状态都 dismiss)—— "从导航栏下拉"直觉。
+        // 顶部 30% 外:必须 ScrollView 已在顶部 —— "滚到顶继续下滑收起"直觉,对齐 iOS sheet。
+        // isScrollViewAtTop 由 .onPreferenceChange 在 layout pass 后异步更新, ScrollView 滚动会
+        // 持续触发更新, onEnded 触发时读到的是最近一次 layout 的近似值。极快的"滚到顶立刻松手"
+        // 场景可能滞后一帧(读到 false 而 offset 已 >= 0),表现为需松手后再滑一次, 不影响正确性。
+        guard inTopZone || isScrollViewAtTop else { return }
         let translation = value.translation
         guard translation.height > DismissDragConfig.verticalTranslationLowerBound,
               abs(translation.height) > abs(translation.width) else { return }
