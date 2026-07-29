@@ -73,12 +73,15 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
 
     /// 已完成的 rawFallback 条目进 completedUnscheduledTodos,不进 unparsedTodos。
     /// 已完成 Section 不分原 outcome,统一归档。
+    /// 注:`completedAt: today` 必传——`completedUnscheduledTodos` 自 bug 修复后
+    /// 按「完成日」归档,无 completedAt 的条目不进任何一天(详见下方边界测试)。
     func testCompletedRawFallbackGoesToCompletedSection() throws {
         let todo = makeTodo(
             title: "原文片段",
             dueDate: nil,
             extractionOutcome: .rawFallback,
-            isCompleted: true
+            isCompleted: true,
+            completedAt: today
         )
         let state = HomeCalendarState.makeForTests(
             todos: [todo], selectedDate: today, calendar: calendar
@@ -86,6 +89,80 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
 
         XCTAssertTrue(state.completedUnscheduledTodos.contains { $0.id == todo.id })
         XCTAssertFalse(state.unparsedTodos.contains { $0.id == todo.id })
+    }
+
+    // MARK: - 已完成无日期任务按「完成日」归档
+
+    /// 主 bug 修复:无日期任务完成 → 只出现在「完成那天」的已完成区,
+    /// 不再撒谎成「每一天都有」。回归 docs/completed-unscheduled-todo-placement.md。
+    func testCompletedUnscheduledTodoOnlyShownOnCompletionDay() throws {
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let todo = makeTodo(
+            title: "随手记的事",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: today
+        )
+
+        let stateToday = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: today, calendar: calendar
+        )
+        let stateYesterday = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: yesterday, calendar: calendar
+        )
+
+        XCTAssertTrue(stateToday.completedUnscheduledTodos.contains { $0.id == todo.id },
+                      "完成当天应出现在已完成区")
+        XCTAssertFalse(stateYesterday.completedUnscheduledTodos.contains { $0.id == todo.id },
+                       "其他日期不应出现——修复前 bug 是每一天都出现")
+    }
+
+    /// 边界 1:历史数据 `completedAt == nil`(模型字段补全前完成的老条目)
+    /// 不显示在任何一天。不兜底塞进今天,避免陈年条目涌入。
+    func testCompletedUnscheduledTodoNilCompletedAtShownNowhere() throws {
+        let todo = makeTodo(
+            title: "上古时代完成的",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: nil
+        )
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: today, calendar: calendar
+        )
+
+        XCTAssertFalse(state.completedUnscheduledTodos.contains { $0.id == todo.id },
+                       "completedAt=nil 的历史数据不应进任何一天")
+    }
+
+    /// 边界 2:取消完成(uncheck)→ 自动离开已完成区,回到未完成分区。
+    /// filter 结构上天然成立(未完成组都 !$0.isCompleted),测试兜底验证。
+    func testUncheckRemovesFromCompletedSection() throws {
+        let completed = makeTodo(
+            title: "做完了又取消",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: today
+        )
+        let unchecked = makeTodo(
+            title: "做完了又取消",
+            dueDate: nil,
+            isCompleted: false,
+            completedAt: nil
+        )
+
+        let stateCompleted = HomeCalendarState.makeForTests(
+            todos: [completed], selectedDate: today, calendar: calendar
+        )
+        let stateUnchecked = HomeCalendarState.makeForTests(
+            todos: [unchecked], selectedDate: today, calendar: calendar
+        )
+
+        XCTAssertTrue(stateCompleted.completedUnscheduledTodos.contains { $0.id == completed.id })
+        XCTAssertFalse(stateUnchecked.completedUnscheduledTodos.contains { $0.id == unchecked.id },
+                       "uncheck 后不应再出现在已完成区")
+        XCTAssertTrue(stateUnchecked.unscheduledTodos.contains { $0.id == unchecked.id },
+                      "uncheck 后回到未完成分区(此处无 timeBucket/dueHint → unscheduled)")
     }
 
     // MARK: - 今天内三层 tier 顺序
@@ -204,7 +281,8 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
         dueDate: Date? = nil,
         hasDueTime: Bool = false,
         extractionOutcome: ExtractionOutcome = .parsed,
-        isCompleted: Bool = false
+        isCompleted: Bool = false,
+        completedAt: Date? = nil
     ) -> TodoItemData {
         TodoItemData(
             title: title,
@@ -213,6 +291,7 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
             hasDueTime: hasDueTime,
             timeBucket: timeBucket,
             isCompleted: isCompleted,
+            completedAt: completedAt,
             extractionOutcome: extractionOutcome
         )
     }

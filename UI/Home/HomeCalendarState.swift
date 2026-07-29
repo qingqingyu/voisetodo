@@ -172,7 +172,14 @@ struct HomeCalendarState {
         self.pendingDateTodos = parsedIncomplete.filter(hasTimeSignal)
         self.unscheduledTodos = parsedIncomplete.filter { !hasTimeSignal($0) }
         self.completedUnscheduledTodos = noSchedule
-            .filter { $0.isCompleted }
+            .filter { todo in
+                guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
+                // 无日期任务没有「计划日」可作锚点,改用「完成日」归档(对照:有日期任务
+                // 仍按计划日归档)。`completedAt == nil` 的历史数据(模型字段补全前
+                // 完成的老条目)不显示在任何一天,避免陈年条目突然涌入今日列表。
+                // 详见 docs/completed-unscheduled-todo-placement.md。
+                return calendar.isDate(completedAt, inSameDayAs: selectedDate)
+            }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         self.hasTodos = !todos.isEmpty
         self.calendar = calendar
