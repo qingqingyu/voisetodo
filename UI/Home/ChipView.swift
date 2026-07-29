@@ -55,8 +55,10 @@ struct ChipView: View {
         switch style {
         case .solid:
             return (accent ?? WarmTheme.textSecondary).opacity(0.16)
-        case .soft, .loose:
+        case .soft:
             return WarmTheme.sketch.opacity(0.18)
+        case .loose:
+            return WarmTheme.cardBackground
         case .late:
             return WarmTheme.urgent.opacity(0.15)
         }
