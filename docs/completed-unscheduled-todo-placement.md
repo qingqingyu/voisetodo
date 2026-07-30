@@ -195,18 +195,10 @@ self.completedUnscheduledTodos = noSchedule
 **不包含无日期任务**。因此顶部进度环（`n/m`）与「已完成」分区的计数口径本就不一致。
 这是独立于本 bug 的既有问题，需要时另行处理。
 
-另注（同属既有问题，本次不动）：`HomeView.selectedDate` 的归一化口径**在不同赋值点不一致**——
-`startEntranceAnimation` / `jumpToToday` 用 `DayClock.startOfUserDay`（用户日起点，
-`startHour = 3` 时是 03:00），而 `selectDay:1284` / `changeMonth:1748` 用
-`calendar.startOfDay`（自然日 0 点）。
+另注：核实上面那条时，发现 `HomeView.selectedDate` 的归一化口径在各赋值点之间不一致，
+并已导致两处线上缺陷（其中「移到明天」在 `startHour > 0` 时会原地不动）。
+根因与「设计决策 B」点名的双侧折算是同一个形状，
+但**独立于本次修复**——已单独记录在 **`docs/home-selected-date-normalization.md`**。
 
-后果落在 `selectedDayStats()` 的**兜底分支**（`:731`）：它写的是
-`DayClock.startOfUserDay(for: selectedDate)`，正是「设计决策 B」点名的双侧折算写法。
-`startHour > 0` 且 `selectedDate` 刚被 `selectDay` 设过时，这里会取到**前一个用户日**，
-统计口径整体错开一天。主分支（走 `monthOccurrences` 缓存）不受影响，
-因为 `dayKey` 用的是自然日，两种归一化都落到同一个 key。
-
-本次修复不受这个不一致影响：`HomeCalendarState.make`（`:72`）会把传进来的
-`selectedDate` 统一 `calendar.startOfDay` 一次，state 层拿到的恒为自然日 0 点。
-但将来动 `selectedDayStats` 时应一并按「设计决策 B」的正确姿势修，
-并考虑把 `HomeView.selectedDate` 的归一化收敛到单一口径。
+本次修复不受它影响：`HomeCalendarState.make`（`:72`）会把传进来的 `selectedDate`
+统一 `calendar.startOfDay` 一次，state 层拿到的恒为自然日 0 点。
