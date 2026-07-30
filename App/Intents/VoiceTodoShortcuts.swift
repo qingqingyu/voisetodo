@@ -9,8 +9,25 @@ import AppIntents
 /// - 有默认值的参数(如 QueryTodosIntent.status)可不写进 phrase —— Siri 用默认值调用
 struct VoiceTodoShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        // 开始录音 —— 无参数 + openAppWhenRun,专供 Action Button / 锁屏 / 控制中心。
+        // 放在第一位:Action Button 设置页按 provider 顺序列出 App 快捷指令,
+        // 排在 AddTodoIntent 前面可避免用户误选那个会弹文本框的。
+        AppShortcut(
+            intent: StartRecordingIntent(),
+            phrases: [
+                "用 \(.applicationName) 录音",
+                "打开 \(.applicationName) 录音",
+                "Start recording in \(.applicationName)",
+                "Record with \(.applicationName)"
+            ],
+            shortTitle: "siri.shortcut.record.title",
+            systemImageName: "mic.fill"
+        )
+
         // 记录待办 —— 接收 transcript 字符串,不能用 $(param) placeholder,
         // 用户说"用 VoiceTodo 记录"后 Siri 通过 dialog 追问内容。
+        // 注意:这个 intent 有必填 String 参数,从 Action Button 触发会弹键盘输入框
+        // (非语音会话拿不到参数值)。想「一按就录音」请用上面的 StartRecordingIntent。
         AppShortcut(
             intent: AddTodoIntent(),
             phrases: [

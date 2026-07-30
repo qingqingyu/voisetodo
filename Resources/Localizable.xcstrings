@@ -4121,13 +4121,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose VoiceTodo"
+            "value" : "Choose VoiceTodo → Start Recording"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选「VoiceTodo」"
+            "value" : "选「VoiceTodo」→「开始录音」"
           }
         }
       }
@@ -6795,6 +6795,38 @@
         }
       }
     },
+    "siri.intent.record.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open VoiceTodo and start recording right away"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 VoiceTodo 并立即开始录音"
+          }
+        }
+      }
+    },
+    "siri.intent.record.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Recording"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始录音"
+          }
+        }
+      }
+    },
     "siri.intent.title" : {
       "localizations" : {
         "en" : {
@@ -7163,6 +7195,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "查询待办"
+          }
+        }
+      }
+    },
+    "siri.shortcut.record.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Recording"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始录音"
           }
         }
       }

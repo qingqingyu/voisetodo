@@ -30,6 +30,10 @@ struct VoiceTodoApp: App {
 
     /// 标记是否应该自动开始录音（从 Action Button 启动）
     @State private var shouldAutoStartRecording = false
+
+    /// Action Button / 快捷指令投递的「开始录音」请求。
+    /// intent 的 perform 在 App 进程里跑但够不到 @StateObject，故经单例中转。
+    @ObservedObject private var actionButtonSignal = ActionButtonLaunchSignal.shared
     // MARK: - Environment
 
     @Environment(\.scenePhase) private var scenePhase
@@ -241,9 +245,14 @@ struct VoiceTodoApp: App {
                 .onChange(of: scenePhase) { oldPhase, newPhase in
                     handleScenePhaseChange(newPhase)
                 }
-                // ✅ 处理 URL Scheme（Action Button 触发）
+                // ✅ 处理 URL Scheme（自建快捷指令 voicetodo://record、Widget 深链等）
                 .onOpenURL { url in
                     handleOpenURL(url)
+                }
+                // ✅ StartRecordingIntent（Action Button）投递的录音请求。
+                // 冷启动下 perform 可能早于 onAppear，故 onAppear 也消费一次（见 handleAppLaunch）。
+                .onChange(of: actionButtonSignal.recordingRequestToken) { _, _ in
+                    consumePendingRecordingRequest()
                 }
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView(
@@ -314,6 +323,15 @@ struct VoiceTodoApp: App {
         notificationSync.reconcileNow()
         Task { await entitlementManager.refresh() }
         Task { await ReviewNotificationScheduler.scheduleWeekly() }
+        // 冷启动：StartRecordingIntent.perform 可能已在视图就绪前跑完，这里补消费。
+        consumePendingRecordingRequest()
+    }
+
+    /// 消费 Action Button 投递的录音请求。
+    /// 水位由 `ActionButtonLaunchSignal` 维护，onAppear 与 onChange 双路调用不会重复起录音。
+    private func consumePendingRecordingRequest() {
+        guard actionButtonSignal.consumePendingRecordingRequest() else { return }
+        handleActionButtonLaunch()
     }
 
     /// 处理场景状态变化
