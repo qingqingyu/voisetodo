@@ -13,9 +13,17 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
+        // 保险：清掉共享 startHour，避免上一条用例残留污染本类的 hour=0 前提。
+        DayClock.appGroupDefaults.removeObject(forKey: DayClock.startHourKey)
         today = try XCTUnwrap(
             calendar.date(from: DateComponents(year: 2026, month: 7, day: 24))
         )
+    }
+
+    override func tearDownWithError() throws {
+        // 与 setUp 对称：清掉本类可能 set 过的 startHour，避免影响后续测试类。
+        DayClock.appGroupDefaults.removeObject(forKey: DayClock.startHourKey)
+        try super.tearDownWithError()
     }
 
     // MARK: - 分组不再撒谎
@@ -285,6 +293,92 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
 
         let tiers = state.tieredUncompletedOccurrences.map(\.tier)
         XCTAssertEqual(tiers, [.timed])
+    }
+
+    // MARK: - 已完成无日期任务在 startHour>0 下与回顾页同源
+
+    /// 缺陷 3 回归：startHour=3 时，凌晨 1:30 完成的无日期任务属于前一用户日。
+    /// 修复前 `calendar.isDate(completedAt, inSameDayAs: selectedDate)` 把它归到完成当天的
+    /// 自然日（3/16），与 ReviewAggregator 的用户日归档（3/15）分裂。
+    /// 修复后用 `isSameUserDay(completedAt, userDayStart(onNaturalDay: selectedDate))`，
+    /// 首页应把这条任务归到「3/15 已完成」分区，与回顾页一致。
+    ///
+    /// 时区用 Asia/Shanghai 显式注入，避免本类默认 calendar（无时区设置）在
+    /// bySettingHour 上产生歧义。
+    func testCompletedUnscheduledTodoAt1AMHour3_belongsToPreviousUserDay() throws {
+        DayClock.setStartHour(3)
+        var shanghaiCalendar = Calendar(identifier: .gregorian)
+        shanghaiCalendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+
+        let completedAt = try XCTUnwrap(shanghaiCalendar.date(
+            from: DateComponents(year: 2026, month: 3, day: 16, hour: 1, minute: 30)
+        ))
+        let todo = TodoItemData(
+            title: "凌晨做完的无日期任务",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: completedAt
+        )
+
+        // selectedDate = 3/15 自然日 0 点（用户日 3/15 的自然日锚）。
+        let selectedDay = try XCTUnwrap(shanghaiCalendar.date(from: DateComponents(year: 2026, month: 3, day: 15)))
+        let statePrev = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: selectedDay, calendar: shanghaiCalendar
+        )
+        // selectedDate = 3/16 自然日 0 点（用户日 3/16 的自然日锚）。
+        let selectedDayNext = try XCTUnwrap(shanghaiCalendar.date(from: DateComponents(year: 2026, month: 3, day: 16)))
+        let stateNext = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: selectedDayNext, calendar: shanghaiCalendar
+        )
+
+        XCTAssertTrue(
+            statePrev.completedUnscheduledTodos.contains { $0.id == todo.id },
+            "凌晨 1:30 完成的任务应归到前一用户日 3/15（与回顾页同源）"
+        )
+        XCTAssertFalse(
+            stateNext.completedUnscheduledTodos.contains { $0.id == todo.id },
+            "凌晨 1:30 完成的任务不应归到完成当天的自然日 3/16（修复前的 bug）"
+        )
+
+        // 闸门：与 ReviewAggregator 的归属必须一致。
+        let aggregatorExpected = DayClock.startOfUserDay(for: completedAt, calendar: shanghaiCalendar)
+        let homeAssigned = statePrev.selectedDate // 已归一化的自然日 0 点
+        XCTAssertTrue(
+            DayClock.isSameUserDay(aggregatorExpected, DayClock.userDayStart(onNaturalDay: homeAssigned, calendar: shanghaiCalendar), calendar: shanghaiCalendar),
+            "首页归到的日子必须与 ReviewAggregator 同源"
+        )
+    }
+
+    /// 零回归闸门：startHour=0 时本类原有 13 条用例的口径不变。
+    /// 凌晨 1:30 完成的任务在 hour=0 下仍归到完成当天的自然日（与修复前一致）。
+    func testCompletedUnscheduledTodoAt1AMHour0_belongsToSameNaturalDay() throws {
+        // hour=0 是默认（setUp 已清），不显式 setStartHour。
+        let completedAt = try XCTUnwrap(calendar.date(
+            from: DateComponents(year: 2026, month: 7, day: 24, hour: 1, minute: 30)
+        ))
+        let todo = TodoItemData(
+            title: "凌晨做完的无日期任务",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: completedAt
+        )
+
+        let stateToday = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: today, calendar: calendar
+        )
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let stateYesterday = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: yesterday, calendar: calendar
+        )
+
+        XCTAssertTrue(
+            stateToday.completedUnscheduledTodos.contains { $0.id == todo.id },
+            "hour=0 时凌晨 1:30 完成应归到当自然日（零回归）"
+        )
+        XCTAssertFalse(
+            stateYesterday.completedUnscheduledTodos.contains { $0.id == todo.id },
+            "hour=0 时不应归到昨天"
+        )
     }
 
     // MARK: - Helpers

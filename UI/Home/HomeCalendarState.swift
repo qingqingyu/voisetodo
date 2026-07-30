@@ -171,12 +171,19 @@ struct HomeCalendarState {
         }
         self.pendingDateTodos = parsedIncomplete.filter(hasTimeSignal)
         self.unscheduledTodos = parsedIncomplete.filter { !hasTimeSignal($0) }
+        // 无日期任务按「完成日」归档(对照:有日期任务按计划日)。`completedAt == nil`
+        // 的历史数据不显示在任何一天。详见 docs/completed-unscheduled-todo-placement.md。
+        //
+        // 口径:completedAt 是时刻,必须用 userDay 折算到"哪一天";selectedDate 是
+        // 自然日 0 点(月网格坐标系),用 userDayStart(onNaturalDay:) 抬到同一用户日
+        // 坐标系再比较。这样 startHour>0 时首页"已完成"分区与 ReviewAggregator 同源
+        // ——凌晨完成的任务归到前一用户日(缺陷 3 修复)。startHour=0 时 userDayStart
+        // 等价于 startOfDay,isSameUserDay 退化为自然日比较,零回归。
+        let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
         self.completedUnscheduledTodos = noSchedule
             .filter { todo in
-                // 无日期任务按「完成日」归档(对照:有日期任务按计划日)。`completedAt == nil`
-                // 的历史数据不显示在任何一天。详见 docs/completed-unscheduled-todo-placement.md。
                 guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
-                return calendar.isDate(completedAt, inSameDayAs: selectedDate)
+                return DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
             }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         self.hasTodos = !todos.isEmpty

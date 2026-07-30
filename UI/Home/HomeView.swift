@@ -194,7 +194,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var manualInputTask: Task<Void, Never>?
     /// Deeplink 重试任务（todos 尚未加载时延后重试）。同样需要 onDisappear cancel。
     @State private var deepLinkTask: Task<Void, Never>?
-    @State private var selectedDate = DayClock.startOfUserDay(for: Date())
+    /// 口径：选中日的**自然日 0 点**（月网格 / dayKey / visibleDays 的共同坐标系）。
+    /// 初值用"语义今天"——晚睡用户凌晨打开 App，`startOfUserDay` 会先把 `Date()` 折算到
+    /// 前一用户日（如 03:00 起），再取它的自然日 0 点，于是选中"昨天"——符合 DayClock 心智。
+    /// `startHour = 0` 时 `startOfUserDay` 走 startOfDay 快路径，整表达式等价于 `Date()` 的自然日 0 点。
+    @State private var selectedDate = Calendar.current.startOfDay(for: DayClock.startOfUserDay(for: Date()))
     @State private var visibleMonthAnchor = Calendar.current.startOfDay(for: Date())
     @State private var hasStartedEntranceAnimation = false
     /// 今日进度环入场进度:0→1 驱动底环 trim 与进度弧 trim(顺时针绘制)。
@@ -728,7 +732,9 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         // 兜底：直接遍历 store.todos，覆盖 dueDate 命中 selectedDate 的非重复任务。
         // 重复任务在 monthOccurrences 加载前先不计入（保守，避免重复渲染高估）。
-        let day = DayClock.startOfUserDay(for: selectedDate, calendar: calendar)
+        // selectedDate 已是自然日 0 点，必须用 userDayStart(onNaturalDay:) 抬到用户日坐标系
+        // 再与 due（时刻）通过 isSameUserDay 比较——否则 startHour>0 时统计区间错位一天（缺陷 2）。
+        let day = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
         let onDay = store.todos.filter { todo in
             guard let due = todo.dueDate else { return false }
             return DayClock.isSameUserDay(due, day, calendar: calendar)
@@ -1073,7 +1079,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                             onDeleteTodo: { actions.deleteTodo($0) },
                             onOpenTodo: { selectedTodo = $0 },
                             onMoveToBucket: { id, bucket in assignTodoToBucket(id, bucket: bucket) },
-                            onMoveToTomorrow: { id in moveTodoToTomorrow(id, baseDate: selectedDate) },
+                            // selectedDate 是自然日 0 点（新口径）；shifter 内部会调 startOfUserDay，
+                            // 必须先用 userDayStart(onNaturalDay:) 抬到用户日坐标系，否则 startHour>0
+                            // 时会再次折算到前一个用户日 → "移到明天"原地不动（缺陷 1）。
+                            onMoveToTomorrow: { id in moveTodoToTomorrow(id, baseDate: DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)) },
                             onChangeTime: { id, date in
                                 changeTodoTime(id: id, date: date)
                             },
@@ -1694,7 +1703,9 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private func startEntranceAnimation() {
         if !hasStartedEntranceAnimation {
-            let today = DayClock.startOfUserDay(for: Date(), calendar: calendar)
+            // 语义今天的自然日 0 点——口径与 @State selectedDate 初值一致。
+            // startHour>0 时凌晨属于前一用户日，于是选中"昨天"，符合 DayClock 心智。
+            let today = calendar.startOfDay(for: DayClock.startOfUserDay(for: Date(), calendar: calendar))
             selectedDate = today
             visibleMonthAnchor = today
             hasStartedEntranceAnimation = true
@@ -1753,7 +1764,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private func jumpToToday() {
-        let today = DayClock.startOfUserDay(for: Date(), calendar: calendar)
+        // 语义今天的自然日 0 点——口径与 @State selectedDate 初值一致。
+        let today = calendar.startOfDay(for: DayClock.startOfUserDay(for: Date(), calendar: calendar))
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today

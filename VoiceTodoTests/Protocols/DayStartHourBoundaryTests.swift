@@ -190,4 +190,77 @@ final class DayStartHourBoundaryTests: XCTestCase {
 
         XCTAssertEqual(result.map(\.title), ["今日任务"])
     }
+
+    // MARK: - DayClock.userDayStart(onNaturalDay:)
+
+    /// hour=0 时 userDayStart 等价于 calendar.startOfDay —— 零回归闸门。
+    /// 验算：缺陷 1/2/3 的所有调用点在 hour=0 下退化为原有行为，与改动前逐一一致。
+    func testUserDayStartHour0_equalsCalendarStartOfDay() throws {
+        DayClock.setStartHour(0)
+        let calendar = makeCalendar(timeZone: shanghai)
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15)))
+
+        let result = DayClock.userDayStart(onNaturalDay: day, calendar: calendar)
+
+        XCTAssertEqual(result, calendar.startOfDay(for: day))
+    }
+
+    /// hour=3 时 userDayStart(自然日 3/15 00:00) = 3/15 03:00
+    /// （不掉到前一个用户日，这是与 startOfUserDay(for:) 的关键区别）。
+    func testUserDayStartHour3_returnsSameNaturalDayAtStartHour() throws {
+        DayClock.setStartHour(3)
+        let calendar = makeCalendar(timeZone: shanghai)
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15)))
+
+        let result = DayClock.userDayStart(onNaturalDay: day, calendar: calendar)
+
+        let expected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15, hour: 3)))
+        XCTAssertEqual(result, expected)
+    }
+
+    /// hour=23 时 userDayStart(自然日 3/15 00:00) = 3/15 23:00
+    /// （极端档：几乎整日偏移，仍属同一自然日）。
+    func testUserDayStartHour23_returnsSameNaturalDayAtStartHour() throws {
+        DayClock.setStartHour(23)
+        let calendar = makeCalendar(timeZone: shanghai)
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15)))
+
+        let result = DayClock.userDayStart(onNaturalDay: day, calendar: calendar)
+
+        let expected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15, hour: 23)))
+        XCTAssertEqual(result, expected)
+    }
+
+    /// hour=3 时 userDayStart 在 DST 春令时跳变日（LA，2026-03-08 02:00→03:00）
+    /// 仍返回该自然日 03:00（跳变后时刻）——bySettingHour 在合法时刻上稳定返回。
+    func testUserDayStartHour3_onDSTSpringForward() throws {
+        DayClock.setStartHour(3)
+        let calendar = makeCalendar(timeZone: losAngeles)
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 8)))
+
+        let result = DayClock.userDayStart(onNaturalDay: day, calendar: calendar)
+
+        let expected = try XCTUnwrap(calendar.date(from: DateComponents(
+            timeZone: losAngeles,
+            year: 2026, month: 3, day: 8, hour: 3, minute: 0, second: 0)))
+        XCTAssertEqual(result, expected)
+    }
+
+    /// 缺陷 1/2 修复的核心不变量：对 userDayStart 的结果调用 startOfUserDay 必须幂等。
+    /// 若不幂等，说明把"已归一化的日"再次折算到了前一个用户日（即缺陷本身）。
+    /// hour=3 与 hour=0 两种档位下都应成立。
+    func testStartOfUserOfDayIsIdempotentOnUserDayStart() throws {
+        let calendar = makeCalendar(timeZone: shanghai)
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15)))
+
+        for hour in [0, 3, 23] {
+            DayClock.setStartHour(hour)
+            let userStart = DayClock.userDayStart(onNaturalDay: day, calendar: calendar)
+            XCTAssertEqual(
+                DayClock.startOfUserDay(for: userStart, calendar: calendar),
+                userStart,
+                "startOfUserDay must be idempotent on userDayStart output at hour=\(hour)"
+            )
+        }
+    }
 }

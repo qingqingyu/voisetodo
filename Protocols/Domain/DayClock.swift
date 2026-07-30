@@ -38,6 +38,42 @@ enum DayClock {
         appGroupDefaults.set(clamped, forKey: startHourKey)
     }
 
+    /// 把"自然日 day"映射到该自然日对应"用户日"的起点（day 的 00:00 + startHour）。
+    ///
+    /// 与 `startOfUserDay(for:)` 的区别：那个接收**时刻**并问"它属于哪个用户日"；
+    /// 这个接收**已归一化的日**（自然日 0 点）并问"这一天作为用户日从几点开始"。
+    /// 对一个 00:00 调 `startOfUserDay(for:)` 会掉到前一个用户日——那是 bug，不是本函数。
+    ///
+    /// 调用约定：传入的 `day` 应该是 `calendar.startOfDay(for: ...)` 之类的归一化值；
+    /// 内部不再二次折算（不像 `startOfUserDay` 会判断"是否已进入用户日"）。
+    ///
+    /// `startHour = 0` 时等价于 `calendar.startOfDay(for: day)`——零回归。
+    ///
+    /// 用途：把"日历日"概念（`HomeView.selectedDate`、月网格、`dayKey`）抬到用户日
+    /// 坐标系，再与"时刻"（如 `completedAt`、`dueDate`）通过 `isSameUserDay` 比较。
+    static func userDayStart(onNaturalDay day: Date, calendar: Calendar = .current) -> Date {
+        let hour = startHour
+        // hour=0 走 Calendar.startOfDay 的快路径——避免 bySettingHour 兜底差异
+        if hour == 0 {
+            return calendar.startOfDay(for: day)
+        }
+
+        // day 已是自然日 0 点；在该自然日上把 hour 拼上去，得到该自然日作为用户日的起点。
+        // 与 startOfUserDay(for:) 不同：这里**不需要**判断 moment 与 candidateStart 的先后，
+        // 因为输入就是"日"语义，candidateStart 永远是这一天的用户日起点。
+        let naturalMidnight = calendar.startOfDay(for: day)
+        guard let start = calendar.date(
+            bySettingHour: hour,
+            minute: 0,
+            second: 0,
+            of: naturalMidnight
+        ) else {
+            // bySettingHour 在极端 DST 情况可能返回 nil，兜底回退到自然日 0 点
+            return naturalMidnight
+        }
+        return start
+    }
+
     /// 返回 `moment` 所属"用户日"的起点。
     ///
     /// 例：`startHour = 3`，`moment = 2026-03-15 01:30` → `2026-03-14 03:00`
