@@ -451,6 +451,19 @@ enum HomeLayoutMetrics {
     }
 }
 
+/// 测量 WeekStripCard 的实际渲染高度,上报给父容器(HomeView 的折叠态 ZStack)。
+/// 折叠态容器高度(collapsedHeight)原本按"月网格表头 + 单行图例"预估,固定为
+/// calendarFixedSectionHeight + actualRowHeight。当本周 7 种类型齐全、图例 FlowLayout
+/// 换到第二行时,卡片实际高度会超出该固定值,被外层 .clipped() 裁切——表现为最后一项
+/// ("Other")被盖住、卡片底部圆角被直角框切平。父容器取 max(原值, 实测高度) 即可容纳。
+/// 跟 `UI/ConfirmSheet/ConfirmSheetView.swift` 的 `SheetContentHeightKey` 同套路。
+struct WeekStripHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 // MARK: - Week strip card (折叠态周条)
 
 /// 折叠态的周条卡片:7 天 + 圆点 + 图例。
@@ -531,6 +544,14 @@ struct WeekStripCard: View {
         }
         .accessibilityHint(String(localized: "a11y.week_strip.hint"))
         .accessibilityIdentifier("WeekStripCard")
+        // 测量卡片实际高度上报父容器。放在所有修饰符最外层,
+        // 测的是经过 padding/background/overlay 后的最终渲染高度,
+        // 与父容器 .frame(height:).clipped() 看到的尺寸一致。
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: WeekStripHeightKey.self, value: proxy.size.height)
+            }
+        )
     }
 
     private func dayCell(_ day: Date) -> some View {

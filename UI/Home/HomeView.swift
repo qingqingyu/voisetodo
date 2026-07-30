@@ -223,6 +223,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var gestureAnchorProgress: CGFloat = 0
     /// 是否正在跟手(首次 onChanged=true, onEnded/onCancelled=false)。
     @State private var isCollapseGesturing = false
+    /// WeekStripCard 实际渲染高度(由 WeekStripHeightKey 上报)。
+    /// 折叠态容器 collapsedHeight 取 max(原固定值, 此值 + top padding),
+    /// 确保图例换行(7 种类型全在一周)时卡片不被外层 .clipped() 裁切。
+    @State private var weekStripHeight: CGFloat = 0
 
     // MARK: - 首次下拉展开引导(ExpandMonthHintView)
     /// 持久化"已展示过"——首次见过折叠态后落盘 true,永不重显。
@@ -988,7 +992,13 @@ struct HomeView<Store: HomeTodoStore>: View {
             let rowStride = actualRowHeight + HomeLayoutMetrics.gridRowSpacing
             // 折叠态高度 = 固定段 + 1 行实际行高。不能用 gridMonthMinRowHeight 兜底值——
             // 实际行高(随屏幕变大)会 > 80pt,折叠容器装不下整行就截断。
-            let collapsedHeight = HomeLayoutMetrics.calendarFixedSectionHeight + actualRowHeight
+            // 取 max(原固定值, WeekStripCard 实测高度 + top padding):原值服务于月网格折叠
+            // 动画的终点位置(选中行推到顶部);实测高度保证图例换行(7 种类型)时卡片不被裁切。
+            // weekStripHeight 首次布局前为 0(max 退化为原值,无副作用),PreferenceKey 上报后修正。
+            let collapsedHeight = max(
+                HomeLayoutMetrics.calendarFixedSectionHeight + actualRowHeight,
+                weekStripHeight + WarmSpacing.xxs
+            )
             // today tab 不渲染月网格(if selectedBottomTab == .calendar 守卫),
             // calendarHeight 必须恒为 0——否则 calendar tab 折叠后切回 today 时
             // collapseProgress 残留(=1)会让 calendarHeight 算成 96pt,List 被压缩,
@@ -1030,6 +1040,21 @@ struct HomeView<Store: HomeTodoStore>: View {
                             // 用户 2026-07-26 反馈「周条卡片比下面 task 方块小,宽度不太合适」。
                             .padding(.horizontal, WarmSpacing.lg)
                             .padding(.top, WarmSpacing.xxs)
+                            // 接收卡片实测高度。切周导致图例行数变化时,容器高度跟随平滑过渡,
+                            // 避免 collapsedHeight 跳变让卡片/列表抖一下。
+                            // 手势进行中(isCollapseGesturing=true)不套动画:此时 collapseProgress
+                            // 正随手势逐帧驱动,withAnimation 会与手势帧叠加导致高度抢帧弹跳。
+                            // 首次上报(weekStripHeight==0→实际值)也不套动画:避免首屏可见一次
+                            // 从占位高度到实测高度的过渡动画(视觉抖动)。
+                            .onPreferenceChange(WeekStripHeightKey.self) { newValue in
+                                if isCollapseGesturing || weekStripHeight == 0 {
+                                    weekStripHeight = newValue
+                                } else {
+                                    withAnimation(WarmAnimation.springStandard) {
+                                        weekStripHeight = newValue
+                                    }
+                                }
+                            }
 
                             // 首次下拉引导:浮在卡片上方,手指下拉动画提示可下拉展开。
                             // 触发条件由 onChange + hintTriggerTask 管控;maxDisplayDuration 后自动消失(ExpandMonthHintView 内部超时)。
