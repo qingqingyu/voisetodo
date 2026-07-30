@@ -7,6 +7,11 @@ enum VoiceTodoLog {
 
     @TaskLocal static var extractID: String?
 
+    /// 当前请求来源路径(主流程 / 离线批处理 / Siri / 重新提取)。task-local,默认 "main"。
+    /// NetworkClient 在 transport_failed 日志读它,用于区分 timeout 来源。
+    /// 调用方用 `VoiceTodoLog.$requestPath.withValue("pending_batch") { ... }` 包裹 extract 调用。
+    @TaskLocal static var requestPath: String = "main"
+
     static let app = Logger(subsystem: subsystem, category: "app")
     static let coordinator = Logger(subsystem: subsystem, category: "coordinator")
     static let voice = Logger(subsystem: subsystem, category: "voice")

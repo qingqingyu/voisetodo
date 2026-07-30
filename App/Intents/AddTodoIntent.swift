@@ -46,7 +46,9 @@ struct AddTodoIntent: AppIntent {
         let inputLocale = Locale.current
 
         do {
-            let result = try await extractor.extract(from: trimmed, locale: inputLocale)
+            let result = try await VoiceTodoLog.$requestPath.withValue("siri") {
+                try await extractor.extract(from: trimmed, locale: inputLocale)
+            }
             extractedTodos = Self.todosWithInputLocale(result.todos, localeIdentifier: inputLocale.identifier)
             VoiceTodoLog.intent.info("intent.add.extract_success id=\(intentID, privacy: .public) locale=\(inputLocale.identifier, privacy: .public) todoCount=\(extractedTodos.count)")
         } catch let error as VoiceTodoError {

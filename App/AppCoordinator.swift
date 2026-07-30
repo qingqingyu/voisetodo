@@ -636,7 +636,9 @@ final class AppCoordinator: ObservableObject {
             let localeIdentifier = todo.localeIdentifier ?? voiceInput.currentLocale.identifier
             let locale = Locale(identifier: localeIdentifier)
             do {
-                let result = try await extractor.extract(from: transcript, locale: locale)
+                let result = try await VoiceTodoLog.$requestPath.withValue("reextract") {
+                    try await extractor.extract(from: transcript, locale: locale)
+                }
                 if result.todos.isEmpty {
                     VoiceTodoLog.coordinator.info("coordinator.reextract.empty id=\(reextractID, privacy: .public)")
                     showToast(message: ErrorMessages.reextractStillEmpty, style: .info)

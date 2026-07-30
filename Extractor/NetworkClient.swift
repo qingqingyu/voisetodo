@@ -93,10 +93,10 @@ final class NetworkClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch let urlError as URLError {
-            VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
+            VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) path=\(VoiceTodoLog.requestPath, privacy: .public) stage=\(Self.stageForURLError(urlError), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
             throw mapURLError(urlError)
         } catch {
-            VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) path=\(VoiceTodoLog.requestPath, privacy: .public) stage=unknown_class durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.networkUnavailable
         }
 
@@ -225,10 +225,10 @@ final class NetworkClient {
                     VoiceTodoLog.network.info("proxy.stream.finished id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                     continuation.finish()
                 } catch let urlError as URLError {
-                    VoiceTodoLog.network.error("proxy.stream.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
+                    VoiceTodoLog.network.error("proxy.stream.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) path=\(VoiceTodoLog.requestPath, privacy: .public) stage=\(Self.stageForURLError(urlError), privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
                     continuation.finish(throwing: mapURLError(urlError))
                 } catch {
-                    VoiceTodoLog.network.error("proxy.stream.failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    VoiceTodoLog.network.error("proxy.stream.failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) path=\(VoiceTodoLog.requestPath, privacy: .public) stage=unknown_class deltas=\(deltaCount) totalChars=\(totalChars) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     continuation.finish(throwing: error)
                 }
             }
@@ -365,6 +365,25 @@ final class NetworkClient {
             return .apiTimeout
         default:
             return .networkUnavailable
+        }
+    }
+
+    /// 把 URLError.code 映射成人类可读的 stage 字符串,用于 transport_failed 日志。
+    /// 没 URLSessionTaskMetrics 时,这是唯一能区分"超时发生在哪一段"的线索。
+    /// 命名约定:`<阶段>_<表现>`,如 `timeout_total`(总超时,无法细分)、`offline`、`mid_stream`。
+    /// `_total` 后缀表示 URLSession 没拆细的整段超时;有 metrics 后会被 dns/tcp/tls/ttfb 取代。
+    private static func stageForURLError(_ error: URLError) -> String {
+        switch error.code {
+        case .timedOut: return "timeout_total"
+        case .notConnectedToInternet: return "offline"
+        case .networkConnectionLost: return "mid_stream"
+        case .dnsLookupFailed, .cannotFindHost: return "dns"
+        case .cannotConnectToHost: return "tcp_connect"
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected:
+            return "tls"
+        case .cancelled: return "cancelled"
+        default: return "unknown"
         }
     }
 

@@ -213,7 +213,9 @@ final class PendingRecoveryFlow {
         VoiceTodoLog.coordinator.info("coordinator.pending_item.start id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) locale=\(locale.identifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
         do {
             let result = try await VoiceTodoLog.$extractID.withValue(extractID) {
-                try await extractor.extract(from: transcript, locale: locale)
+                try await VoiceTodoLog.$requestPath.withValue("pending_batch") {
+                    try await extractor.extract(from: transcript, locale: locale)
+                }
             }
             let localizedTodos = result.todos.map { todo in
                 var localized = todo

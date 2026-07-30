@@ -71,7 +71,9 @@ final class TranscriptProcessingFlow {
 
                 do {
                     let stream = VoiceTodoLog.$extractID.withValue(extractID) {
-                        ext.extractStreaming(from: trimmed, locale: locale)
+                        VoiceTodoLog.$requestPath.withValue("main") {
+                            ext.extractStreaming(from: trimmed, locale: locale)
+                        }
                     }
                     for try await partialResult in stream {
                         guard !Task.isCancelled else {
