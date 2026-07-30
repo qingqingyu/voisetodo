@@ -10,7 +10,6 @@
 .build/
 Packages/
 Package.resolved
-*.xcodeproj
 
 # CocoaPods
 Pods/
