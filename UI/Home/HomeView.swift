@@ -1160,6 +1160,36 @@ struct HomeView<Store: HomeTodoStore>: View {
                         withAnimation(WarmAnimation.springStandard) {
                             collapseProgress = target
                         }
+                    },
+                    // 折叠态下「List 已到顶 + 用户下滑」时,允许外层折叠手势与 List pan 共存,
+                    // 让"在 List 区域下拉"也能展开月网格(原仅周条卡片区域下拉可触发)。
+                    // 纯 predicate:不 mutate ScrollView,Coordinator 在返回 true 时同步
+                    // disable bounces + 杀 in-flight bounce/decel 动画,gesture 结束时恢复。
+                    //
+                    // 触发条件(任一不满足则归 List 自己滚):
+                    //   1. atTop:contentOffset.y ≤ 0.5(0.5pt 容差)。
+                    //      SwiftUI List 视觉顶部恒等于 contentOffset.y == 0,不论 List 自身
+                    //      contentInset / 父视图 safe area 如何 —— List 被 headerView + 周条卡片
+                    //      推到 safe area 之外时 adjustedContentInset.top 可能是 0,但 contentOffset.y
+                    //      仍以 0 为「看到第一条」的零点。容差覆盖 List 在 bounce/rubber-band
+                    //      瞬态(此时 contentOffset.y < 0)以及浮点抖动。
+                    //      不用 adjustedContentInset 判定:它在 List 不占 safe area 顶部时为 0,
+                    //      用它做阈值会误判永远到不了顶(实测 bug,曾导致功能完全失效)。
+                    //   2. swipingDown:velocity.y > listTopExpandVelocityThreshold(早期方向判定可靠,
+                    //      translation < 5pt 时 velocity 已能反映意图)
+                    //      || translation.y > listTopExpandTranslationHysteresis(hysteresis,
+                    //      velocity 抖动兜底)。
+                    //
+                    // 不读 collapseProgress:List 仅在 collapseProgress > collapseListVisibleThreshold(0.3)
+                    // 时挂载(见上方 listInteractive 判定),闭包只在 List 已挂载时才会被调用 ——
+                    // 避免闭包捕获 SwiftUI state 的时序问题。
+                    allowSimultaneousWithScrollViewPan: { scrollView, pan in
+                        let atTop = scrollView.contentOffset.y <= 0.5
+                        guard atTop else { return false }
+                        let v = pan.velocity(in: scrollView)
+                        let t = pan.translation(in: scrollView)
+                        return v.y > HomeLayoutMetrics.listTopExpandVelocityThreshold
+                            || t.y > HomeLayoutMetrics.listTopExpandTranslationHysteresis
                     }
                 )
             )

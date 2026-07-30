@@ -75,6 +75,24 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
     /// 必须做的事:复位调用方在 onChanged 里设的临时状态(如 isCollapseGesturing),
     /// 避免下次手势开始时 anchor 捕获基于陈旧状态。
     let onCancelled: (() -> Void)?
+    /// 与 UIScrollView pan 冲突时的纯 predicate(可选)。返回 true 允许同时识别,
+    /// 覆盖默认"ScrollView 内的滑动归 ScrollView"规则。
+    ///
+    /// **纯 predicate 契约**:闭包内**不要** mutate ScrollView(不要碰 bounces /
+    /// contentOffset)。Coordinator 会基于返回值自动管理 bounces lifecycle:
+    ///   - 返回 true 时:记录 `scrollView.bounces` 原值,同步 `bounces = false`
+    ///     + `setContentOffset(_:animated:false)` 杀掉 in-flight bounce/decel
+    ///   - gesture `.ended` / `.cancelled` / `.failed` 时:恢复原值
+    /// 这保证 caller 只写判定逻辑,bookkeeping 由 Coordinator 单一负责,无关注点泄漏。
+    ///
+    /// **单 ScrollView 跟踪限制**:整个手势生命周期内只跟踪**首个**满足条件的 ScrollView。
+    /// 若 view 层级下有多个 ScrollView 同时满足闭包,后续的会被拒绝共存(返回 false)。
+    /// 这是因为 restore 只能恢复一个 bounces,跟踪多个会泄漏。当前调用场景(单个 List)无影响。
+    ///
+    /// 参数:
+    /// - scrollView:冲突的 UIScrollView(从 `otherGestureRecognizer.view` 取得)
+    /// - pan:对方 pan recognizer,可读 translation/velocity 做方向判定
+    let allowSimultaneousWithScrollViewPan: ((UIScrollView, UIPanGestureRecognizer) -> Bool)?
 
     /// 显式 init:把 `onEnded` 放在参数列表最后,trailing closure 才能绑定到它
     /// (Swift 规则:单 trailing closure 绑定到最后一个 closure 参数)。
@@ -85,7 +103,14 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         direction: Direction = .any,
         onEnded: @escaping (DragTranslation) -> Void
     ) {
-        self.init(minimumDistance: minimumDistance, direction: direction, onChanged: nil, onEnded: onEnded)
+        self.init(
+            minimumDistance: minimumDistance,
+            direction: direction,
+            onChanged: nil,
+            onEnded: onEnded,
+            onCancelled: nil,
+            allowSimultaneousWithScrollViewPan: nil
+        )
     }
 
     init(
@@ -93,13 +118,15 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         direction: Direction = .any,
         onChanged: ((DragTranslation) -> Void)? = nil,
         onEnded: @escaping (DragTranslation) -> Void,
-        onCancelled: (() -> Void)? = nil
+        onCancelled: (() -> Void)? = nil,
+        allowSimultaneousWithScrollViewPan: ((UIScrollView, UIPanGestureRecognizer) -> Bool)? = nil
     ) {
         self.minimumDistance = minimumDistance
         self.direction = direction
         self.onChanged = onChanged
         self.onEnded = onEnded
         self.onCancelled = onCancelled
+        self.allowSimultaneousWithScrollViewPan = allowSimultaneousWithScrollViewPan
     }
 
     /// 持有手势识别期间的临时状态与回调闭包。
@@ -113,6 +140,15 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         var onChanged: ((DragTranslation) -> Void)?
         var onEnded: ((DragTranslation) -> Void)?
         var onCancelled: (() -> Void)?
+        var allowSimultaneousWithScrollViewPan: ((UIScrollView, UIPanGestureRecognizer) -> Bool)?
+        /// 已被外层手势"接管"的 ScrollView。weak 是防御性选择:
+        /// 理论上 Coordinator 由 SwiftUI 通过 UIView → gestureRecognizer → delegate 持有,
+        /// 不存在直接的 retain cycle(ScrollView 不强引用 Coordinator);但 view tree 重建时
+        /// 新旧 coordinator 的生命周期交接没有官方文档保证,weak 在 ScrollView 提前 dealloc
+        /// 时让本属性自动 nil,避免悬垂引用。
+        weak var trackedScrollView: UIScrollView?
+        /// 进入手势时记录的原 bounces 值,gesture 结束时恢复。nil = 当前没有要恢复的。
+        var savedBounces: Bool?
 
         /// Recognizer 进入 `.began` 前的方向门控。
         ///
@@ -144,13 +180,22 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
 
         /// 与 Button / List 等内置手势同时识别,避免被它们吞掉。
         ///
-        /// **例外**:UIScrollView 的 pan 手势返回 false —— 打破"ScrollView 滚动 + 外层
-        /// SimultaneousDragGesture 同时触发"的副作用。场景:HomeSelectedDayListView
+        /// **UIScrollView pan 的特殊处理**:默认返回 false —— 打破"ScrollView 滚动 +
+        /// 外层 SimultaneousDragGesture 同时触发"的副作用。场景:HomeSelectedDayListView
         /// 的 List + HomeView.monthHomeView 外层折叠手势;HomeMonthHeaderView 内的
         /// 翻月手势与外层折叠手势共存(方向互斥,不会真同时激活)。
-        /// 改为 false 后:ScrollView 内的滑动归 ScrollView;ScrollView 静止 / 滚到边界时
+        /// 默认 false 后:ScrollView 内的滑动归 ScrollView;ScrollView 静止 / 滚到边界时
         /// (其 pan 进入 fail/began 状态)外层手势才接管。不影响 Button 点击(非 pan),
         /// 不影响无 ScrollView 容器(HomeMonthHeaderView 翻月手势等)。
+        ///
+        /// **caller 可覆盖**:若 `allowSimultaneousWithScrollViewPan` 闭包存在且返回 true,
+        /// 则允许同时识别。这是"List 到顶 + 下滑 → 展开月网格"等边界场景的入口。
+        /// 返回 true 时 Coordinator 同步做 bounce 抑制(详见闭包文档):
+        ///   - 首次进入记录 `savedBounces`
+        ///   - `scrollView.bounces = false` 防 in-flight bounce 继续
+        ///   - `scrollView.setContentOffset(_:animated:false)` 杀掉进行中的 bounce/decel
+        ///     动画(否则前 10-40pt 的位移被 List bounce 吃掉,外层 onChanged 收不到满量位移)
+        /// 恢复在 `handleUIGestureRecognizerAction` 的 `.ended/.cancelled/.failed` 分支。
         ///
         /// 注意:`is UIScrollView` 含 UIScrollView 所有子类:
         /// `UITextView` / `UITableView` / `UICollectionView` / `WKWebView` 内部 scrollView 等。
@@ -160,11 +205,54 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            if otherGestureRecognizer is UIPanGestureRecognizer,
-               otherGestureRecognizer.view is UIScrollView {
+            if let pan = otherGestureRecognizer as? UIPanGestureRecognizer,
+               let scrollView = otherGestureRecognizer.view as? UIScrollView {
+                // caller 声明允许共存 → 同步抑制 bounce 并返回 true。
+                // 注意:本方法可能被 UIKit 多次调用(每次手势状态变化),且可能对 view 层级下
+                // **不同**的 ScrollView 调用(List 内可能嵌套子 ScrollView)。当前实现明确
+                // 只跟踪**单个** ScrollView:首次进入记录并抑制;同一 ScrollView 重复调用
+                // 跳过 mutate(已生效);不同 ScrollView 出现时返回 false 拒绝共存 ——
+                // 因为 restore 只能恢复一个 bounces,跟踪多个会泄漏。
+                // 若未来需要多 ScrollView 支持,需改为 [UIScrollView: Bool] 字典 + 逐个 restore。
+                //
+                // **粘性语义**:一旦 trackedScrollView 被设置,整个手势生命周期内 bounces 保持
+                // false,即使后续闭包对同一 ScrollView 返回 false(如 contentOffset 变化导致
+                // atTop 不再成立)。恢复只在 gesture 终态(.ended/.cancelled/.failed)发生。
+                // 理由:外层手势可能已驱动 collapseProgress,bounces 中途抖动会破坏动画连续性。
+                if let allow = allowSimultaneousWithScrollViewPan, allow(scrollView, pan) {
+                    if let tracked = trackedScrollView {
+                        // 已在跟踪某个 ScrollView:仅当是同一个才允许共存(幂等),否则拒绝。
+                        return tracked === scrollView
+                    }
+                    savedBounces = scrollView.bounces
+                    trackedScrollView = scrollView
+                    scrollView.bounces = false
+                    // 杀 in-flight bounce/decel:用户下滑瞬间 List 可能正在弹性回弹,
+                    // 不打断会让前 10-40pt 位移被 bounce 吃掉,外层收不到满量 onChanged。
+                    scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+                    return true
+                }
                 return false
             }
             return true
+        }
+
+        /// gesture 终态时恢复 ScrollView 的 bounces。必须在派发 `onEnded` / `onCancelled`
+        /// **之前**调用:让 List 回到正常 bounce 行为,然后再让 caller 做 collapseProgress
+        /// snap 等终态处理;否则 List 在 snap 动画期间仍是 bounces=false,视觉不自然。
+        ///
+        /// 幂等:trackedScrollView == nil 时直接返回,允许在 .ended/.cancelled/.failed
+        /// 三个分支都安全调用(其中两个是 cancel 路径,可能本就没 track 过 ScrollView)。
+        ///
+        /// weak 变 nil 的时序保证:ScrollView 被 dealloc 前,其 gestureRecognizers 会被
+        /// 置 nil → recognizer 进入 .cancelled → 本方法在 cancel 分支被调用清空状态。
+        /// 即使极端情况下 dealloc 早于 cancel,savedBounces 末尾仍被置 nil,不会泄漏。
+        func restoreTrackedScrollView() {
+            if let sv = trackedScrollView, let saved = savedBounces {
+                sv.bounces = saved
+            }
+            trackedScrollView = nil
+            savedBounces = nil
         }
     }
 
@@ -185,6 +273,7 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         context.coordinator.onChanged = onChanged
         context.coordinator.onEnded = onEnded
         context.coordinator.onCancelled = onCancelled
+        context.coordinator.allowSimultaneousWithScrollViewPan = allowSimultaneousWithScrollViewPan
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
@@ -211,7 +300,10 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
         case .ended:
             // recognizer.view 在手势激活期间不应为 nil(view 持有 recognizer);
             // 若 nil 则说明状态异常,不派发回调以避免后续产生无意义的数据。
-            guard let view = recognizer.view else { return }
+            guard let view = recognizer.view else {
+                coordinator.restoreTrackedScrollView()
+                return
+            }
             // translation(in:) 返回 CGPoint(.x/.y 是从手指落点到当前点的累计位移);
             // location(in:) 在 .ended 时返回最后触摸位置。
             // 由这两者反推起点,保持 DragTranslation 语义不变。
@@ -226,13 +318,18 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
             // 位移不足则不调用 onEnded,等价于"手势未激活"。
             // 但若 .changed 已派发过(用户中途达到阈值后又挪回起点附近),onCancelled 必须补发,
             // 否则调用方(如 HomeView 折叠手势)在 onChanged 里设的 isCollapseGesturing 泄漏。
+            // 恢复 ScrollView bounces 必须在派发 onCancelled/onEnded 之前:
+            // caller 在 onCancel/onEnded 里会做 collapseProgress snap + withAnimation,
+            // 动画期间 List 不应仍处于 bounces=false 的"接管"态。
             guard abs(translation.x) >= minD || abs(translation.y) >= minD else {
+                coordinator.restoreTrackedScrollView()
                 coordinator.onCancelled?()
                 return
             }
             // velocity(in:) 是 UIPanGestureRecognizer 原生的瞬时速度估算(pt/s),
             // 比手动采样差分更稳。转 CGVector 保持 DragTranslation.velocity 语义。
             let v = recognizer.velocity(in: view)
+            coordinator.restoreTrackedScrollView()
             coordinator.onEnded?(DragTranslation(
                 startLocation: startLocation,
                 location: location,
@@ -244,6 +341,8 @@ struct SimultaneousDragGesture: UIGestureRecognizerRepresentable {
             // 但必须通知调用方清理:否则调用方(如 HomeView 折叠手势)的 isCollapseGesturing
             // 不会被复位,下次拖拽的 anchor 捕获会基于陈旧状态,产生视觉跳跃。
             // 通过 onCancelled 回调显式通知调用方做清理。
+            // 恢复 ScrollView bounces 在前(同 .ended 理由)。
+            coordinator.restoreTrackedScrollView()
             coordinator.onCancelled?()
         default:
             // .began: UIPanGestureRecognizer 位移未达 UIKit 内置阈值(~10pt)时不会进入 .changed;

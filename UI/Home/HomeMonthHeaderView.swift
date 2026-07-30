@@ -180,6 +180,14 @@ enum HomeLayoutMetrics {
     /// 列表即使渲染也基本不可见,提前挂载只浪费内存与初次 layout 开销。
     static let collapseListVisibleThreshold: CGFloat = 0.3
 
+    // MARK: - List 到顶下拉展开阈值
+    /// List 到顶下拉展开月网格的速度阈值(pt/s)。`allowSimultaneousWithScrollViewPan`
+    /// 闭包用 pan.velocity.y > 此值 作为早期方向判定:位移 < 5pt 时 velocity 已能反映意图。
+    static let listTopExpandVelocityThreshold: CGFloat = 50
+    /// List 到顶下拉展开月网格的位移 hysteresis(pt)。velocity 抖动时兜底:
+    /// 即使瞬时速度未达阈值,只要 translation 越过此值也认定用户在下滑。
+    static let listTopExpandTranslationHysteresis: CGFloat = 3
+
     // MARK: - Header 常量
     static let headerTitleRowHeight: CGFloat = 50
     static let viewSwitcherRowHeight: CGFloat = 38
