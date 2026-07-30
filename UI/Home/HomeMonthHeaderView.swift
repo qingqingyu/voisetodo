@@ -56,15 +56,17 @@ struct HomeMonthHeaderView: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            // weekday 标签行
-            // spacing 必须与下方格子行 (gridColumnSpacing=2) 一致：WarmSpacing.xs(8pt) 下
-            // 7 个标签按 8pt 排布、格子按 2pt 排布，中心逐位累积偏移，`Mon` 不在第一格中心。
-            // 统一到 2pt 后 weekday 中心严格对齐格子中心。
+            // weekday 标签行:居中对齐,与下方日期格内居中的日数字对齐(Apple Calendar 式布局:
+            // 日数字居中在格子顶部,事件条左对齐填满宽度)。weekday 中心和日数字中心都在列中心。
+            // spacing 必须与下方格子行 (gridColumnSpacing=2) 一致:7 列等宽分配,
+            // spacing 不同会逐位累积偏移,weekday 不在对应格子正上方。
             HStack(spacing: HomeLayoutMetrics.gridColumnSpacing) {
                 ForEach(state.weekHeaderDays, id: \.self) { day in
                     Text(state.weekdayTitle(for: day))
                         .font(WarmFont.caption(9))
                         .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .frame(maxWidth: .infinity)
                 }
             }

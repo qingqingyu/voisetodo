@@ -86,24 +86,24 @@ struct HomeMonthGridButton: View {
     // MARK: - Subviews
 
     private var dayNumberView: some View {
-        HStack(spacing: 2) {
-            Text(verbatim: "\(dayState.dayNumber)")
-                .font(WarmFont.mono(11))
-                .foregroundColor(dayNumberColor)
-                // 选中/今天加胶囊背景:选中=primary 实色+白字;今天=浅 primary+primaryDark 字。
-                // 不加背景时选中日白字会消失在页面背景上(纯留白方案格子无独立白底)。
-                .padding(.horizontal, dayState.isSelected || dayState.isToday ? 4 : 0)
-                .background(
-                    Capsule().fill(
-                        dayState.isSelected ? WarmTheme.primary :
-                        dayState.isToday ? WarmTheme.primary.opacity(0.15) :
-                        Color.clear
-                    )
+        // 日数字居中在格子顶部:与上方 weekday 居中对齐(Apple Calendar 式布局)。
+        // 下方事件条仍左对齐填满宽度——日数字居中、事件条左对齐是日历视图的标准模式。
+        // 原实现用 HStack { Text; Spacer } 把数字推到左侧,这里改为 frame 居中。
+        Text(verbatim: "\(dayState.dayNumber)")
+            .font(WarmFont.mono(11))
+            .foregroundColor(dayNumberColor)
+            // 选中/今天加胶囊背景:选中=primary 实色+白字;今天=浅 primary+primaryDark 字。
+            // 不加背景时选中日白字会消失在页面背景上(纯留白方案格子无独立白底)。
+            .padding(.horizontal, dayState.isSelected || dayState.isToday ? 4 : 0)
+            .background(
+                Capsule().fill(
+                    dayState.isSelected ? WarmTheme.primary :
+                    dayState.isToday ? WarmTheme.primary.opacity(0.15) :
+                    Color.clear
                 )
-                .fixedSize()
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 2)
+            )
+            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// 单条事件文字条:浅色分类背景 + 深色文字 + 可选时间前缀 + 可选 +N 尾标。
