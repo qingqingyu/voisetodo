@@ -663,10 +663,12 @@ test("enforces daily quota keyed by local date + hashed device id", async () => 
       RATE_LIMIT_KV: kv
     };
     const headers = { "X-App-Token": "token", "X-Device-ID": "device-1", "X-Local-Date": "2026-05-26" };
-    // 前两次发起即计数（后续 provider 失败不回退），第三次命中上限。
-    await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
-    await handleRequest(request({ transcript: "b" }, headers), env, {}, failingFetch);
-    const third = await handleRequest(request({ transcript: "c" }, headers), env, {}, failingFetch);
+    // 必须用**成功**的 provider mock 来累积配额:上游失败会退款
+    // (refundDeviceQuotaOnUpstreamFailure),用 failingFetch 永远撞不到上限。
+    const ok = jsonResponseProvider("x");
+    await handleRequest(request({ transcript: "a" }, headers), env, {}, ok);
+    await handleRequest(request({ transcript: "b" }, headers), env, {}, ok);
+    const third = await handleRequest(request({ transcript: "c" }, headers), env, {}, ok);
 
     assert.equal(third.status, 429);
     const body = await third.json();
@@ -687,22 +689,137 @@ test("enforces daily quota keyed by local date + hashed device id", async () => 
   });
 });
 
-test("quota increments even when AI provider call fails (count on dispatch)", async () => {
+// 上游全失败 → 退设备额度(用户什么都没拿到),但 IP / 全局维度**不退**。
+// 后半句是安全边界:否则故意制造失败就能无限量白烧上游 token 且不计账。
+test("device quota is refunded when all providers fail, but IP/global are not", async () => {
   const kv = new MemoryKV(new Map());
   await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
     const env = {
       APP_TOKEN: "token",
       ANTHROPIC_API_KEY: "anthropic-key",
       DAILY_REQUEST_LIMIT: "5",
+      IP_DAILY_LIMIT: "50",
+      GLOBAL_DAILY_LIMIT: "500",
       RATE_LIMIT_KV: kv
     };
     const headers = { "X-App-Token": "token", "X-Device-ID": "dev-x", "X-Local-Date": "2026-05-26" };
-    // failingFetch → 上游 AI 抛错，但配额已在调用前自增
+    const response = await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
+
+    // 用户拿到的仍是上游失败的错误，不因退款而变化
+    assert.ok(response.status >= 500, `期望 5xx，实际 ${response.status}`);
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "quota key 仍应存在(KV 退款路径归零时写 \"0\"，不删 key)");
+    assert.equal(kv.values.get(quotaKey), "0", "上游失败应把设备额度退回 0");
+
+    const ipKey = [...kv.values.keys()].find((k) => k.startsWith("ip-quota:2026-05-26:"));
+    assert.ok(ipKey, "应已写入 ip-quota key");
+    assert.equal(kv.values.get(ipKey), "1", "IP 日额度是反刷维度，不退款");
+
+    assert.equal(kv.values.get("global-quota:2026-05-26"), "1", "全局预算不退款");
+  });
+});
+
+test("no refund is attempted when quota is not configured (skipped)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      // 故意不配 DAILY_REQUEST_LIMIT → enforceDailyLimit 返回 skipped
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-skip", "X-Local-Date": "2026-05-26" };
     await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:"));
+    assert.equal(quotaKey, undefined, "配额未启用时不该因退款而凭空写出 quota key");
+  });
+});
+
+// 流式失败分两种，退款只覆盖"一个字都没给"的那种。
+test("stream that fails before emitting anything refunds device quota", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    const response = await handleRequest(
+      request(
+        { transcript: "今天复习", locale: "zh-Hans", stream: true },
+        { "X-App-Token": "token", "X-Device-ID": "dev-stream-0", "X-Local-Date": "2026-05-26" }
+      ),
+      env,
+      {},
+      async () => immediatelyErroringSSEStreamResponse()
+    );
+
+    assert.equal(response.status, 200, "流式失败发生在响应头之后，状态仍是 200");
+    // 必须真正消费 body，退款发生在流读取过程中
+    await assert.rejects(() => response.text(), /provider stream failed before output/);
 
     const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
     assert.ok(quotaKey, "应已写入 quota key");
-    assert.equal(kv.values.get(quotaKey), "1", "AI 失败仍应计数为 1");
+    assert.equal(kv.values.get(quotaKey), "0", "一个字都没给 → 应退回设备额度");
+  });
+});
+
+test("stream that fails after emitting partial output does NOT refund", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    const response = await handleRequest(
+      request(
+        { transcript: "今天复习", locale: "zh-Hans", stream: true },
+        { "X-App-Token": "token", "X-Device-ID": "dev-stream-partial", "X-Local-Date": "2026-05-26" }
+      ),
+      env,
+      {},
+      async () => erroringSSEStreamResponse()
+    );
+
+    assert.equal(response.status, 200);
+    await assert.rejects(() => response.text(), /provider stream failed/);
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应已写入 quota key");
+    // 客户端的 partial_fallback 会把已收到的 todo 当成功保留 → 用户拿到了价值，不该退
+    assert.equal(kv.values.get(quotaKey), "1", "已推出部分内容 → 不退款");
+  });
+});
+
+test("refund failure does not change the upstream error status", async () => {
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    // KV 的 get 正常(让 increment 成功)，put 在退款时抛错
+    const kv = new MemoryKV(new Map());
+    let putCalls = 0;
+    const originalPut = kv.put.bind(kv);
+    kv.put = async (...args) => {
+      putCalls += 1;
+      if (putCalls > 1) throw new Error("KV put exploded");
+      return originalPut(...args);
+    };
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-boom", "X-Local-Date": "2026-05-26" };
+    const response = await handleRequest(request({ transcript: "a" }, headers), env, {}, failingFetch);
+
+    // 退款失败只该产生日志，不该把 5xx 变成另一个错误、更不该抛出未捕获异常
+    assert.ok(response.status >= 500, `期望仍是上游失败的 5xx，实际 ${response.status}`);
   });
 });
 
@@ -715,12 +832,15 @@ test("accepts local date within ±1 day drift from server UTC", async () => {
       DAILY_REQUEST_LIMIT: "5",
       RATE_LIMIT_KV: kv
     };
+    // 用成功 mock:上游失败会触发退款，虽然 KV 退款归零时写 "0" 而非删 key
+    // （断言仍会通过），但语义上会让人误以为"失败也计数"。
+    const ok = jsonResponseProvider("x");
     // 前一天（跨时区合法边界）
     await handleRequest(
       request({ transcript: "a" }, { "X-App-Token": "token", "X-Device-ID": "d-prev", "X-Local-Date": "2026-05-25" }),
       env,
       {},
-      failingFetch
+      ok
     );
     assert.ok(
       [...kv.values.keys()].some((k) => k.startsWith("quota:2026-05-25:")),
@@ -731,7 +851,7 @@ test("accepts local date within ±1 day drift from server UTC", async () => {
       request({ transcript: "b" }, { "X-App-Token": "token", "X-Device-ID": "d-next", "X-Local-Date": "2026-05-27" }),
       env,
       {},
-      failingFetch
+      ok
     );
     assert.ok(
       [...kv.values.keys()].some((k) => k.startsWith("quota:2026-05-27:")),
@@ -1155,6 +1275,20 @@ function jsonResponse(body, status = 200) {
 
 function sseResponse(lines) {
   return new Response(`${lines.join("\n\n")}\n\n`, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" }
+  });
+}
+
+// 流在推出任何内容**之前**就失败:响应头已经 200 发出，但用户一个字都没拿到。
+// 与 erroringSSEStreamResponse(先 emit 一段再失败)配对，用于验证退款只发生在前者。
+function immediatelyErroringSSEStreamResponse() {
+  const body = new ReadableStream({
+    pull(controller) {
+      controller.error(new Error("provider stream failed before output"));
+    }
+  });
+  return new Response(body, {
     status: 200,
     headers: { "Content-Type": "text/event-stream" }
   });

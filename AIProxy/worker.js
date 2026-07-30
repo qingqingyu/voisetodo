@@ -139,14 +139,23 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
 
     const personalHints = typeof payload.personalHints === "string" ? payload.personalHints.trim() : null;
     const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints };
-    const result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
-      healthStore: sharedHealthStore,
-      // 客户端断连信号:用户划走时上游 fetch 立刻 abort,不再继续烧 token 到 timeoutMs
-      abortSignal: request.signal,
-      onResponse: stream
-        ? ({ response, provider }) => validateProviderStreamBody(response, provider, requestContext)
-        : ({ response, provider, adapter }) => readProviderText(response, provider, adapter, requestContext)
-    });
+    // executeWithFailover 的所有失败出口都是 throw(候选为空 / 非重试类失败 /
+    // 全部候选耗尽 / invariant_violation),所以这一层 catch 覆盖了全部
+    // "用户一个字都没拿到"的情况 —— 一律退回设备额度后原样上抛。
+    let result;
+    try {
+      result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
+        healthStore: sharedHealthStore,
+        // 客户端断连信号:用户划走时上游 fetch 立刻 abort,不再继续烧 token 到 timeoutMs
+        abortSignal: request.signal,
+        onResponse: stream
+          ? ({ response, provider }) => validateProviderStreamBody(response, provider, requestContext)
+          : ({ response, provider, adapter }) => readProviderText(response, provider, adapter, requestContext)
+      });
+    } catch (error) {
+      await refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, ctx, quotaState, "provider_failed");
+      throw error;
+    }
     requestContext.provider = result.provider.type;
     requestContext.providerId = result.provider.id;
 
@@ -158,7 +167,19 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         requestContext,
         {
           onSuccess: result.confirmSuccess,
-          onFailure: () => result.confirmFailure("stream")
+          // 流已经开始后失败:响应头(含 X-Quota-*)早就发出去了,无法改。
+          // 只有"一个字都没给"才等于用户什么也没拿到 → 退配额。
+          // emittedCount > 0 说明客户端已收到可用 todo,而客户端的 partial_fallback
+          // (TranscriptProcessingFlow)会把它们当成功保留 —— 用户拿到了价值,不退。
+          // 退款不会反映在本次响应头里,客户端下一次成功请求会拿到修正后的数值。
+          onFailure: async (_error, stats) => {
+            await result.confirmFailure("stream");
+            if (stats?.emittedCount === 0) {
+              await refundDeviceQuotaOnUpstreamFailure(
+                request, env, requestContext, ctx, quotaState, "stream_failed_before_any_output"
+              );
+            }
+          }
         }
       ), {
         status: 200,
@@ -486,7 +507,7 @@ async function enforceAllQuotas(request, env, requestContext, ctx) {
     throw deviceResult.reason;
   }
   if (ipResult.status === "rejected" && deviceResult.status === "fulfilled") {
-    await refundDeviceQuota(request, env, requestContext, deviceResult.value, ctx).catch((error) => {
+    await refundDeviceQuota(request, env, requestContext, ctx).catch((error) => {
       logWarn("proxy.quota.refund_failed", { ...requestContext, ...errorFields(error) });
     });
     throw ipResult.reason;
@@ -505,7 +526,10 @@ async function enforceAllQuotas(request, env, requestContext, ctx) {
 // 给 device 配额发 refund:DO 路径调 /refund,KV 路径直接 -1(degraded,dev/test 用)。
 // ctx 用于 DO refund 成功后把 KV 影子值也修正到 refund 后的 used(覆盖式 put,
 // 排队到原 increment 影子写之后,作为最终修正)。
-async function refundDeviceQuota(request, env, requestContext, quotaState, ctx) {
+//
+// 调用方:(1) enforceAllQuotas 的交叉补偿(ip 拒绝但 device 已扣);
+//        (2) refundDeviceQuotaOnUpstreamFailure(上游没给出结果)。
+async function refundDeviceQuota(request, env, requestContext, ctx) {
   const { date: quotaDate } = resolveQuotaDate(request, requestContext);
   if (env.QUOTA_COUNTER_DO) {
     const result = await refundQuotaCounterDO(env, "device-quota", requestContext.deviceId, quotaDate, "proxy.quota.refunded");
@@ -569,6 +593,37 @@ async function refundIpDaily(request, env, requestContext, ctx) {
     await env.RATE_LIMIT_KV.put(key, String(newValue), { expirationTtl: 36 * 60 * 60 });
   }
   logInfo("proxy.ip_quota.refunded", { ...requestContext, today, used: newValue, source: "kv" });
+}
+
+// 上游没能给出结果时把设备额度退回。
+//
+// 为什么要退:配额在调 AI 之前就扣了(见 enforceDailyLimit 上方注释)。那条
+// "发起即计数"是为了防"靠重试绕过计费" —— 但用户什么都没拿到时不存在可绕过的计费,
+// 只剩"付了额度没拿到服务"。引入退款机制的提交(3e53ef2)在 Why 里就把
+// "用户被扣配额却拿不到服务且无回滚"列为待修缺陷,这里是补齐那一半。
+//
+// 客户端 NetworkConfig.retryCount = 2(单次提取最多 3 个请求),不退的话上游抖动一次
+// 就烧掉 3 条额度。免费档只有 2 条时,一次故障就把用户当天打光。
+//
+// **只退 device 额度**:ip-rate / ip-daily / global-budget 一律保持"发起即计数、
+// 永不退款"。这是安全边界 —— 即使有人故意制造失败来白烧上游 token,那三层天花板
+// 照常收紧,不会退化成无限量白嫖。
+//
+// 退款失败只 logWarn,不改变响应状态:用户已经拿到错误了,再叠一个 5xx 没有意义。
+// 代价是配额泄漏(用户少扣一次),需要靠日志监控泄漏率。
+async function refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, ctx, quotaState, reason) {
+  // 配额未启用(KV/limit 没配)时压根没扣过,退了只会产生噪声日志和无意义的 KV 写。
+  if (!quotaState || quotaState.skipped) return;
+  try {
+    await refundDeviceQuota(request, env, requestContext, ctx);
+    logInfo("proxy.quota.refunded_upstream_failure", { ...requestContext, reason });
+  } catch (error) {
+    logWarn("proxy.quota.refund_upstream_failure_failed", {
+      ...requestContext,
+      reason,
+      ...errorFields(error)
+    });
+  }
 }
 
 // 共用 DO refund 调用。失败时抛错,由调用方决定如何处理(CLAUDE.md:错误显式传播)。
