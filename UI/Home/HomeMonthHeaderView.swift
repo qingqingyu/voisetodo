@@ -63,7 +63,7 @@ struct HomeMonthHeaderView: View {
             HStack(spacing: HomeLayoutMetrics.gridColumnSpacing) {
                 ForEach(state.weekHeaderDays, id: \.self) { day in
                     Text(state.weekdayTitle(for: day))
-                        .font(WarmFont.caption(11))
+                        .font(WarmFont.caption(9))
                         .foregroundColor(WarmTheme.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -95,7 +95,7 @@ struct HomeMonthHeaderView: View {
         // 容器每侧 24pt padding 占去 ~12% 屏宽纯属浪费。从 24pt 一路降到 4pt 后,
         // 相比 8pt 再多 ~4pt 可用宽度(每格 +0.57pt,中文条目约多塞 0.5 个字)。
         // 留 4pt 不归零:防边格被 iPhone 屏幕圆角裁切、避免格子贴屏幕边显得溢出。
-        // 格子本身已有白底 + 圆角 + 1px 描边,贴边视觉不会糊在一起。
+        // 纯留白方案:格子无独立白底/描边,贴边靠 4pt 边距 + 事件条自身圆角区分。
         // 上方 headerView 仍保留水平 24pt padding(WarmSpacing.xl),形成"上呼吸、下铺满"的层次。
         .padding(.horizontal, HomeLayoutMetrics.monthGridPaddingHorizontal)
         .padding(.top, WarmSpacing.xxs)
@@ -244,10 +244,13 @@ enum HomeLayoutMetrics {
     static let gridBarHeight: CGFloat = 24
     /// 事件条之间的垂直间距(pt)。
     static let gridBarSpacing: CGFloat = 2
-    /// 每格固定开销(日数字行 + padding + border ≈ 20pt)。
+    /// 每格固定开销(日数字行 + padding ≈ 20pt)。
     static let gridCellChrome: CGFloat = 20
     /// 网格行间距(pt)。
-    static let gridRowSpacing: CGFloat = 2
+    /// 纯留白方案:去卡片描边后唯一分隔手段是间距。8pt(= WarmSpacing.xs)对齐 Notion Calendar
+    /// 周间留白感;再大会吃掉预算导致 barsShown 减少,再小则周与周贴在一起失去层级。
+    /// 列间用 gridColumnSpacing(2pt),不改——列宽紧张(中文事件条),2pt 已够。
+    static let gridRowSpacing: CGFloat = 8
     /// 网格列间距(pt)。
     static let gridColumnSpacing: CGFloat = 2
     /// 单格事件条数的**硬上限**(防极端屏幕尺寸导致 cap 过大)。
@@ -436,7 +439,7 @@ enum HomeLayoutMetrics {
     }
 
     private static func gridSpacing(forRows rows: CGFloat) -> CGFloat {
-        WarmSpacing.xs * max(0, rows - 1)
+        gridRowSpacing * max(0, rows - 1)
     }
 }
 
@@ -531,7 +534,7 @@ struct WeekStripCard: View {
         } label: {
             VStack(spacing: HomeLayoutMetrics.weekStripCellSpacing) {
                 Text(state.weekdayTitle(for: day))
-                    .font(WarmFont.caption(11))
+                    .font(WarmFont.caption(9))
                     .foregroundColor(dayState.isToday ? WarmTheme.primary : WarmTheme.textMuted)
                     .fixedSize()
 

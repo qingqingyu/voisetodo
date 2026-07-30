@@ -1,8 +1,25 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {},
-    "✨" : {},
+    "" : {
+
+    },
+    "%@" : {
+
+    },
+    "%lld / %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "✨" : {
+
+    },
     "a11y.action.expand_month" : {
       "localizations" : {
         "en" : {
@@ -1334,6 +1351,7 @@
       }
     },
     "detail.created_at" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1345,6 +1363,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建时间"
+          }
+        }
+      }
+    },
+    "detail.created_at_value %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建时间 %@"
           }
         }
       }
@@ -4898,7 +4933,25 @@
         }
       }
     },
+    "paywall.comparison.limit_per_day %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / per day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / 每天"
+          }
+        }
+      }
+    },
     "paywall.comparison.per_day" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5706,7 +5759,9 @@
         }
       }
     },
-    "review.chart.mark" : {},
+    "review.chart.mark" : {
+
+    },
     "review.empty.message" : {
       "localizations" : {
         "en" : {
@@ -6573,7 +6628,9 @@
         }
       }
     },
-    "siri.complete.summary ${todo}" : {},
+    "siri.complete.summary ${todo}" : {
+
+    },
     "siri.complete.title" : {
       "localizations" : {
         "en" : {
@@ -6687,7 +6744,9 @@
         }
       }
     },
-    "siri.delete.summary ${todo}" : {},
+    "siri.delete.summary ${todo}" : {
+
+    },
     "siri.delete.title" : {
       "localizations" : {
         "en" : {
@@ -6929,7 +6988,9 @@
         }
       }
     },
-    "siri.query.summary ${status}" : {},
+    "siri.query.summary ${status}" : {
+
+    },
     "siri.query.title" : {
       "localizations" : {
         "en" : {
@@ -7139,7 +7200,9 @@
         }
       }
     },
-    "siri.summary ${transcript}" : {},
+    "siri.summary ${transcript}" : {
+
+    },
     "startup.storage_error.title" : {
       "localizations" : {
         "en" : {
@@ -7413,8 +7476,12 @@
         }
       }
     },
-    "Todo ID" : {},
-    "Toggle Todo" : {},
+    "Todo ID" : {
+
+    },
+    "Toggle Todo" : {
+
+    },
     "ui.added_success" : {
       "localizations" : {
         "en" : {
@@ -7543,8 +7610,12 @@
         }
       }
     },
-    "VoiceTodo" : {},
-    "VT" : {},
+    "VoiceTodo" : {
+
+    },
+    "VT" : {
+
+    },
     "widget.description" : {
       "localizations" : {
         "en" : {
@@ -7654,40 +7725,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新失败，请打开 App 同步"
-          }
-        }
-      }
-    },
-    "detail.created_at_value %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Created %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创建时间 %@"
-          }
-        }
-      }
-    },
-    "paywall.comparison.limit_per_day %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld / per day"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld / 每天"
           }
         }
       }

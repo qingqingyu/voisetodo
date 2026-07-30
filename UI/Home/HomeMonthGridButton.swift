@@ -50,14 +50,6 @@ struct HomeMonthGridButton: View {
             .padding(2)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .frame(height: rowHeight, alignment: .top)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(dayState.isCurrentMonth ? WarmTheme.cardBackground : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(WarmTheme.sketch.opacity(dayState.isCurrentMonth ? 0.12 : 0), lineWidth: 1)
-            )
             .opacity(dayState.isCurrentMonth ? 1 : 0.5)
         }
         .buttonStyle(.plain)
@@ -99,7 +91,7 @@ struct HomeMonthGridButton: View {
                 .font(WarmFont.mono(11))
                 .foregroundColor(dayNumberColor)
                 // 选中/今天加胶囊背景:选中=primary 实色+白字;今天=浅 primary+primaryDark 字。
-                // 不加背景时选中日白字会消失在白色卡片底上。
+                // 不加背景时选中日白字会消失在页面背景上(纯留白方案格子无独立白底)。
                 .padding(.horizontal, dayState.isSelected || dayState.isToday ? 4 : 0)
                 .background(
                     Capsule().fill(

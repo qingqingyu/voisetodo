@@ -977,7 +977,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             // 行高固定用展开态(fullHeight)算:折叠时只靠外层 frame+offset 动作,不改每行 intrinsic 高度。
             // 若用动态 calendarHeight 算,折叠过程每帧 relayout 42 格会掉帧。
             let actualRowHeight = HomeLayoutMetrics.dayRowHeight(availableHeight: fullHeight)
-            // rowStride 必须与 HomeMonthHeaderView 内 VStack 的 spacing 一致(gridRowSpacing=2),
+            // rowStride 必须与 HomeMonthHeaderView 内 VStack 的 spacing 一致(gridRowSpacing=8),
             // 否则折叠 offset 会偏移过多/过少,选中周被推出视口。
             let rowStride = actualRowHeight + HomeLayoutMetrics.gridRowSpacing
             // 折叠态高度 = 固定段 + 1 行实际行高。不能用 gridMonthMinRowHeight 兜底值——
