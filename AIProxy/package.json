@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test worker.test.js src/subscription.test.js src/do/quota-counter.test.js"
+    "test": "node --test worker.test.js wrangler-config.test.js src/subscription.test.js src/do/quota-counter.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.105.0"

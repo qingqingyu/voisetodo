@@ -74,8 +74,10 @@ struct PaywallView: View {
 
     // MARK: - Comparison Card
 
-    /// 用量展示卡:用户当天用量为 0 时显示「免费 limit/天 vs Pro 无限」两列对比卡,
+    /// 用量展示卡:用户当天用量为 0 时显示「免费 N/天 vs Pro M/天」两列对比卡,
     /// 强化付费动机;已用时切回实时计数,提醒配额耗尽进度。
+    ///
+    /// Pro 档是更高的有限额度、不是无限,两列都展示具体条数。
     ///
     /// 分流顺序:error → 错误胶囊;Pro 用户 → 实时用量卡(对比卡对已订阅者无意义);
     /// Free 且 used == 0 → 对比卡;Free 已用 → 实时用量卡。
@@ -83,7 +85,7 @@ struct PaywallView: View {
     private var comparisonCard: some View {
         if quotaUsage.loadState == .error {
             quotaErrorPill
-        } else if quotaUsage.showsUnlimited {
+        } else if quotaUsage.isPro {
             liveUsageCard
         } else if quotaUsage.used == 0 {
             freeVsProComparison
@@ -92,7 +94,7 @@ struct PaywallView: View {
         }
     }
 
-    /// 两列对比卡:Free (limit/day) vs Pro (Unlimited)。
+    /// 两列对比卡:Free (freeLimit/day) vs Pro (proDailyLimit/day)。
     private var freeVsProComparison: some View {
         HStack(spacing: 0) {
             freeColumn
@@ -129,7 +131,7 @@ struct PaywallView: View {
 
     private var proColumn: some View {
         VStack(spacing: WarmSpacing.xxs) {
-            Image(systemName: "infinity")
+            Image(systemName: "bolt.fill")
                 .font(.system(size: 22, weight: .medium))
                 .foregroundColor(WarmTheme.primary)
                 .accessibilityHidden(true)
@@ -138,7 +140,7 @@ struct PaywallView: View {
                 .foregroundColor(WarmTheme.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            Text(String(localized: "quota.unlimited"))
+            Text(String(localized: "paywall.comparison.limit_per_day \(NetworkConfig.proDailyLimit)"))
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundColor(WarmTheme.primary)
                 .lineLimit(1)
@@ -161,7 +163,7 @@ struct PaywallView: View {
     /// 实时用量卡(用户已开始消耗额度时显示)。
     private var liveUsageCard: some View {
         HStack(spacing: WarmSpacing.xs) {
-            Image(systemName: quotaUsage.showsUnlimited ? "infinity" : "bolt.circle")
+            Image(systemName: "bolt.circle")
                 .foregroundColor(WarmTheme.primary)
                 .accessibilityHidden(true)
             Text(liveUsageText)
@@ -185,11 +187,10 @@ struct PaywallView: View {
         .padding(.horizontal, WarmSpacing.lg)
     }
 
+    /// Pro 档也是有限额度，与免费档同样显示「已用 used/limit」。
+    /// `limit` 由代理 `X-Quota-Limit` 提供（Pro 时为 `PAID_DAILY_LIMIT`）。
     private var liveUsageText: String {
-        if quotaUsage.showsUnlimited {
-            return "\(String(localized: "quota.unlimited")) · \(String(format: String(localized: "quota.used_only"), quotaUsage.used))"
-        }
-        return String(format: String(localized: "quota.today_used"), quotaUsage.used, quotaUsage.limit)
+        String(format: String(localized: "quota.today_used"), quotaUsage.used, quotaUsage.limit)
     }
 
     private var quotaErrorPill: some View {
@@ -219,7 +220,7 @@ struct PaywallView: View {
             ValuePropCard(
                 emoji: "🎯",
                 title: String(localized: "onboarding.pro.bullet.quota.title"),
-                description: String(localized: "onboarding.pro.bullet.quota.desc")
+                description: String(localized: "onboarding.pro.bullet.quota.desc \(NetworkConfig.proDailyLimit)")
             )
             ValuePropCard(
                 emoji: "🎁",

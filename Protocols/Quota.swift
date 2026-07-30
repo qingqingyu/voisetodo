@@ -18,6 +18,9 @@ protocol QuotaProviding: AnyObject {
 
 /// 用量额度展示模型。权威数据来自代理 `X-Quota-*` 响应头；无头时回退本地估算并标 `isAuthoritative=false`。
 /// UI 四态：loading（读取中）/ empty（暂无用量）/ error（额度获取失败）/ success（显示用量或 Pro）。
+///
+/// 注意：Pro 档也是**有限**额度（`NetworkConfig.proDailyLimit`，代理 `PAID_DAILY_LIMIT`），
+/// 只是上限更高。UI 一律显示「已用 used/limit」，不得对任何档位宣称「无限」。
 @MainActor
 final class QuotaUsage: ObservableObject, QuotaProviding {
     enum LoadState: Equatable {
@@ -47,9 +50,6 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
     private var localEstimateDate: String
 
     var isPro: Bool { plan == .pro }
-
-    /// Pro 档：UI 显示「无限」，内部仍记 `used` 供诊断。
-    var showsUnlimited: Bool { isPro }
 
     init() {
         localEstimateDate = Self.currentLocalDate()
