@@ -1,25 +1,31 @@
-# `HomeView.selectedDate` 归一化口径不一致
+# 自然日 / 用户日 口径混用（DayClock）—— 三处线上缺陷
 
-> 状态：**待实施**。两项缺陷同一根因，应一并处理。
-> 相关文件：`UI/Home/HomeView.swift`、`Protocols/Domain/DayClock.swift`
-> 行号基准：`8813f07`（= 当前 `origin/main`）。
+> 状态：**待实施**。三项缺陷同一族根因，可用同一个原语一并处理。
+> 相关文件：`UI/Home/HomeView.swift`、`UI/Home/HomeCalendarState.swift`、
+> `Protocols/Domain/DayClock.swift`
+> 行号基准：`4b1eaa6`（= 当前 `origin/main`）。
 > 触发条件：**仅当用户把「一天起始时刻」设为非 0 值时出现**（设置项见 `4d49c44`）。
 
 ---
 
 ## 一句话
 
-`selectedDate` 表达的是「用户选中了哪一个日历日」，但它的归一化口径在 5 个赋值点里
-**分成两派**；而有两个下游消费者把它当「时刻」，又喂给 `DayClock.startOfUserDay`
-做了**二次折算**。`startHour > 0` 时这两处各自错开一天。
+项目里「某个时刻属于哪一天」有两套坐标系——**自然日**（`calendar.startOfDay`）
+和**用户日**（`DayClock`，可配置起始时刻）。三处代码把两者混用了：
 
-其中一处让**长按「移到明天」原地不动**——是持久的数据错误，不是显示问题。
+| # | 缺陷 | 形状 | 严重度 |
+|---|---|---|---|
+| 1 | 长按「移到明天」原地不动 | 对已是「日」的值**二次折算** | **严重**（持久数据错误） |
+| 2 | 顶部进度环瞬态错开一天 | 对已是「日」的值**二次折算** | 轻微（瞬态显示） |
+| 3 | 无日期任务完成归档与回顾页分裂 | 该折算的一侧**漏折算** | 中等（跨页面数据不一致） |
+
+`startHour = 0`（默认）时三处全部不表现——这就是它们一直没被发现的原因。
 
 ---
 
-## 根因
+## 根因 A：`HomeView.selectedDate` 的归一化口径分两派
 
-### 赋值点分两派
+`selectedDate` 表达的是「用户选中了哪一个日历日」，但 5 个赋值点写入的值口径不同：
 
 | 位置 | 写入值 | 口径 |
 |---|---|---|
@@ -33,8 +39,7 @@
 **恰好跨越了用户日边界**——`00:00` 属于前一个用户日。
 
 **`startHour = 0` 时两派完全重合**（`DayClock.startOfUserDay` 在 hour=0 时走
-`calendar.startOfDay` 快路径，见 `DayClock.swift:49-52`）。这就是为什么这个不一致
-一直没被发现：默认配置下它根本不表现出来。
+`calendar.startOfDay` 快路径，见 `DayClock.swift:49-52`）。
 
 ### 消费者敏感度
 
@@ -47,9 +52,9 @@
 | `:969` `visibleDays.firstIndex { isDate(_:inSameDayAs:) }` | 自然日比对 |
 | `:1809` `setTodoHour` | 只取 `[.year, .month, .day]` |
 | `:1855` `assignTodoToBucket` | `calendar.startOfDay(for: selectedDate)` |
-| `HomeMonthHeaderView.swift:458,465` | 消费的是已归一化的 `state.selectedDate` |
+| `HomeMonthHeaderView.swift:461,468` | 消费的是已归一化的 `state.selectedDate` |
 
-**敏感 = 缺陷**（2 处）。两处形状完全相同：**对一个已经是「日」的值再折算一次**。
+**敏感 = 缺陷 1 与缺陷 2。** 两处形状相同：对一个已经是「日」的值再折算一次。
 
 ---
 
@@ -96,7 +101,7 @@ tomorrow = 3/14 03:00 + 1 day = 3/15 03:00
 且这个语义有单测显式锁定——`TodoDueDateShifterTests.swift:163`
 `testCustomDayStartHour_baseDateBeforeHour_belongsToPreviousUserDay`：
 `baseDate = 2026-07-24 01:00` + `startHour=3` → 期望 `07-24 03:00`
-（凌晨 1 点属于用户日 7/23，它的明天是 7/24）。**这条断言是对的**。
+（凌晨 1 点属于用户日 7/23，它的明天是 7/24）。**这条断言是对的。**
 
 问题在于 `HomeView` 传进去的不是「时刻」而是「已归一化的选中日」。
 按时刻语义解读一个 `00:00`，结论必然是「前一个用户日」。
@@ -136,8 +141,53 @@ let onDay = store.todos.filter { todo in
 未命中窗口 = 冷启动 / 跨月切换后 `.task(id:)`（`:1191`）重算完成之前的几十 ms，
 `:719-722` 的注释已自陈这是「已知瞬态」。
 
-注意跨月切换恰好同时满足两个条件——`changeMonth` 写的是自然日 0 点，
-且缓存刚失效——所以这是最容易看到的场景。
+跨月切换恰好同时满足两个条件——`changeMonth` 写的是自然日 0 点，且缓存刚失效——
+所以这是最容易看到的场景。
+
+---
+
+## 缺陷 3：无日期任务完成归档与回顾页分裂（中等，已上线）
+
+### 来源
+
+`abfaa588`（`docs/completed-unscheduled-todo-placement.md` 的实施）。
+那篇文档的设计决策明确写了「与回顾页同源」，但实施时**只对齐了「用哪个字段」
+（`completedAt`），没对齐「怎么把字段折算成某一天」**。
+
+### 现象
+
+`startHour > 0` 时，凌晨完成的无日期任务，**首页和回顾页归到不同的日子**。
+
+### 数字复现
+
+首页，`UI/Home/HomeCalendarState.swift:174-181`：
+
+```swift
+guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
+return calendar.isDate(completedAt, inSameDayAs: selectedDate)   // ← 自然日
+```
+
+回顾页，`Protocols/Domain/ReviewAggregator.swift:81,110`：
+
+```swift
+let day = DayClock.startOfUserDay(for: event.completedAt, calendar: calendar)  // ← 用户日
+```
+
+设 `startHour = 3`，任务在 `3/16 01:00` 被勾完成：
+
+| 页面 | 折算 | 归到 |
+|---|---|---|
+| 首页「已完成」分区 | `isDate(3/16 01:00, inSameDayAs:)` → 自然日 | **3/16** |
+| 回顾页 | `startOfUserDay(3/16 01:00)` = `3/15 03:00` | **3/15** |
+
+同一条任务，两个页面说的不是同一天。对晚睡用户（`DayClock` 的目标人群）来说，
+凌晨 1 点做完的事算「昨天的成果」才符合心智——回顾页对，首页错。
+
+### 形状与缺陷 1/2 相反
+
+缺陷 1/2 是**多折算了一次**（对已是「日」的值再折算），
+缺陷 3 是**漏折算了一次**（`completedAt` 是时刻，该折没折）。
+但根因同族：两套坐标系没有单一入口，靠每个调用点各自记得该用哪套。
 
 ---
 
@@ -146,11 +196,14 @@ let onDay = store.todos.filter { todo in
 - `TodoDueDateShifterTests` 只在 `:163` 一条用例里 `setStartHour(3)`，
   且它验的是**工具本身**的时刻语义（正确的那部分）。其余用例全在 `startHour = 0` 上跑。
 - `DayStartHourBoundaryTests.swift` 的覆盖面写在文件头注释里（`:9-12`）：
-  `TodoDueDateResolver` / `ReviewAggregator` / `WidgetTodoFilter`——**不含 HomeView**。
-- 两个缺陷都在 **HomeView 的调用点**，而 `HomeView` 是个 SwiftUI View，
+  `TodoDueDateResolver` / `ReviewAggregator` / `WidgetTodoFilter`——**不含 HomeView，
+  也不含 `HomeCalendarState`**。
+- `HomeCalendarStateGroupingTests` 的 13 个用例全部在 `startHour = 0` 下跑，
+  缺陷 3 对它们不可见。
+- 缺陷 1/2 都在 **HomeView 的调用点**，而 `HomeView` 是个 SwiftUI View，
   当前没有针对 `selectedDate` 归一化的测试挂点。
 
-⇒ 修复时应把新用例放进 `DayStartHourBoundaryTests`（它已有 `setStartHour` +
+⇒ 修复时新用例应放进 `DayStartHourBoundaryTests`（它已有 `setStartHour` +
 `tearDown` 清理的现成骨架），并把可测逻辑从 View 里抽成纯函数。
 
 ---
@@ -184,8 +237,7 @@ calendar.startOfDay(for: DayClock.startOfUserDay(for: Date(), calendar: calendar
 
 ### 第二步：给 `DayClock` 补一个原语，三处共用
 
-两个缺陷、外加 `completed-unscheduled-todo-placement.md` 待实施的完成归档逻辑，
-需要的都是同一个换算：**「自然日 D」↦「用户日 D 的起点」**。建议加：
+三个缺陷需要的都是同一个换算：**「自然日 D」↦「用户日 D 的起点」**。建议加：
 
 ```swift
 /// 把「自然日 day」映射到该自然日对应「用户日」的起点（day 的 00:00 + startHour）。
@@ -200,22 +252,25 @@ static func userDayStart(onNaturalDay day: Date, calendar: Calendar = .current) 
 
 三个调用点随之收敛（`startHour = 3` 与 `startHour = 0` 两种情形均已验算）：
 
-| 调用点 | 改成 |
-|---|---|
-| `moveTodoToTomorrow`（`:1076`） | `nextDay(baseDate: DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar), …)` → `3/15 03:00` → `tomorrow = 3/16 03:00` ✅，**shifter 与其单测都不用动** |
-| `selectedDayStats` 兜底（`:731-734`） | `DayClock.startOfUserDay(for: due, calendar: calendar) == DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)` |
-| `HomeCalendarState` 完成归档（另一篇文档） | 同上，把 `due` 换成 `completedAt` |
+| 缺陷 | 调用点 | 改成 |
+|---|---|---|
+| 1 | `moveTodoToTomorrow`（`HomeView.swift:1076`） | `nextDay(baseDate: DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar), …)` → `3/15 03:00` → `tomorrow = 3/16 03:00` ✅，**shifter 与其单测都不用动** |
+| 2 | `selectedDayStats` 兜底（`:731-734`） | `DayClock.startOfUserDay(for: due, calendar: calendar) == DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)` |
+| 3 | `HomeCalendarState.swift:174-181` 的 filter | 同上，把 `due` 换成 `completedAt`——一行改动，且自动与 `ReviewAggregator` 对齐 |
 
-### 反面写法（这两个缺陷的共同形状，别再写出来）
+### 反面写法（别再写出来）
 
 ```swift
-// ❌ 对已归一化的「日」二次折算 —— startHour>0 时掉到前一个用户日
+// ❌ 对已归一化的「日」二次折算 —— startHour>0 时掉到前一个用户日（缺陷 1/2）
 DayClock.startOfUserDay(for: selectedDate, calendar: calendar)
 DayClock.isSameUserDay(someMoment, selectedDate, calendar: calendar)
+
+// ❌ 把「时刻」直接当自然日比 —— 漏掉用户日折算（缺陷 3）
+calendar.isDate(completedAt, inSameDayAs: selectedDate)
 ```
 
-正确的姿势永远是：**只折算「时刻」那一侧**，「日」那一侧用 `userDayStart(onNaturalDay:)`
-抬到同一坐标系，或者干脆比自然日。
+正确的姿势永远是：**「时刻」那一侧用 `startOfUserDay` 折算，「日」那一侧用
+`userDayStart(onNaturalDay:)` 抬到同一坐标系**，然后比较。
 
 ---
 
@@ -223,29 +278,30 @@ DayClock.isSameUserDay(someMoment, selectedDate, calendar: calendar)
 
 前置：设置里把「一天起始时刻」设为 **3:00**。
 
-- calendar tab 点 3/15 格 → 长按任务「移到明天」→ 确认落到 **3/16**（不是原地不动）
-- 同上，但任务带钟点（如 14:30）→ 确认落到 **3/16 14:30**，钟点保留
-- Today tab 做同样操作 → 确认行为与改动前一致（本就正常，防回归）
-- 跨月切换的瞬间盯页头进度环 → 确认 `n/m` 不再闪一下前一天的数字
-- 凌晨 1 点（或把系统时间调到凌晨 1 点）冷启动 → 确认选中日是**昨天**、
-  且「移到明天」落到**今天**（语义日链路端到端正确）
-- 把起始时刻改回 **0:00** → 上述全部行为与改动前逐一一致（零回归闸门）
+- 缺陷 1：calendar tab 点 3/15 格 → 长按任务「移到明天」→ 确认落到 **3/16**
+- 缺陷 1：同上但任务带钟点（如 14:30）→ 确认落到 **3/16 14:30**，钟点保留
+- 缺陷 1：Today tab 做同样操作 → 确认行为与改动前一致（本就正常，防回归）
+- 缺陷 2：跨月切换的瞬间盯页头进度环 → 确认 `n/m` 不再闪一下前一天的数字
+- 缺陷 3：凌晨 1 点勾掉一条无日期任务 → 确认首页「已完成」分区把它归到**昨天**，
+  **且与回顾页显示的日期一致**（这条是缺陷 3 的核心闸门）
+- 端到端：凌晨 1 点冷启动 → 确认选中日是**昨天**、且「移到明天」落到**今天**
+- **把起始时刻改回 0:00 → 上述全部行为与改动前逐一一致（零回归闸门）**
 - 新增单测放进 `VoiceTodoTests/Protocols/DayStartHourBoundaryTests.swift`：
-  `userDayStart(onNaturalDay:)` 在 `startHour = 0 / 3 / 23` 三档 + DST 边界
+  `userDayStart(onNaturalDay:)` 在 `startHour = 0 / 3 / 23` 三档 + DST 边界；
+  缺陷 3 另在 `HomeCalendarStateGroupingTests` 补一条 `startHour = 3` 的凌晨用例
 
 ---
 
 ## 与 `completed-unscheduled-todo-placement.md` 的关系
 
-那篇文档的「设计决策 B」踩的是**同一个坑**（它的初版示意代码差点写成
-`isSameUserDay(completedAt, selectedDate)`），并给出了同一个结论：
-只折算 `completedAt` 一侧。
+那篇文档记录的 bug **已经实施完毕**（`abfaa588` + `8b3e3f09`），
+本文的**缺陷 3 就是它留下的那一项**——设计决策写了「与回顾页同源」，
+实施时只对齐了字段、没对齐折算方式。
 
-两者的关系：
+两篇的分工：
 
-- **本文档** = 现存缺陷（`selectedDate` 口径不一致，2 处已在线上）
-- **那篇文档** = 新功能的正确姿势（无日期任务完成归档，尚未实施）
+- **那篇** = 「无日期任务完成后归档到哪一天」的设计决策 + 实施记录（已完成）
+- **本篇** = 「怎么把时刻折算成某一天」的口径缺陷（三处，待实施）
 
-如果 `DayClock.userDayStart(onNaturalDay:)` 先落地，那篇文档的修复落点可以直接
-复用它，示意代码里的 `calendar.isDate(completedDay, inSameDayAs: selectedDate)`
-可简化为一次等值比较。两篇独立可分别实施，无强依赖。
+三个缺陷建议一并修，因为它们共用同一个新原语；分开修会导致
+`userDayStart(onNaturalDay:)` 引入后仍有调用点停在旧写法上。
