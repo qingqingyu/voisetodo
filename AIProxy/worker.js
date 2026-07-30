@@ -24,6 +24,12 @@ const TELEMETRY_RETENTION_DAYS = 90;
 // requiring KV on every read. KV binding is refreshed per-request via updateKv().
 const sharedHealthStore = new HealthStore();
 
+// Isolate 首请求标记:Cloudflare Workers 的 isolate 在首次请求时才真正 lazy-load
+// KV/DO binding,首个 /v1/todo-extractions 请求会承担冷启动开销。本标志在 isolate
+// 生命周期内只对首请求输出一次 `proxy.cold_start.warmup` 日志,后续请求不再打。
+// isolate 回收后状态重置(因为模块级 let 在新 isolate 是初始值 false)。
+let isolateWarmedUp = false;
+
 // Test-only export: allows tests to reset module-level health state between runs.
 export function _testResetHealth() {
   sharedHealthStore.reset();
@@ -110,6 +116,18 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+
+    // Isolate 冷启动诊断:测 updateKv 耗时(KV binding 首次解析可能慢),
+    // 首请求输出一次 warmup 日志,标记本 isolate 已"热身完成"。
+    // 后续请求 isolateWarmedUp=true,跳过本日志。
+    if (!isolateWarmedUp) {
+      isolateWarmedUp = true;
+      logInfo("proxy.cold_start.warmup", {
+        ...requestContext,
+        coldStart: true,
+        totalWarmupMs: Date.now() - requestContext.startedAt
+      });
+    }
 
     let providers;
     try {

@@ -66,12 +66,22 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
     let response = null;
     let responseError = null;
 
+    // fetchStartedAt 在 try 外声明,catch 才能 access;null = 还没进 fetch 阶段
+    // (buildRequest 已抛 invariant_violation 等)。fetch_done 只在 fetchStartedAt!==null 时打。
+    let fetchStartedAt = null;
     try {
       const { url, init } = adapter.buildRequest({ ...params, provider, abortSignal: options.abortSignal || null });
       // Intentionally NOT storing url on the attempt record: Gemini embeds the API
       // key as a query param, and providerAttempts[] is echoed back through the
       // requestContext spread in proxy.request.finished. Keeping the URL out of
       // the persisted attempt keeps secrets out of logs unconditionally.
+      fetchStartedAt = Date.now();
+      logInfo("proxy.provider.fetch_start", {
+        ...requestContext,
+        providerId: provider.id,
+        attempt: attempt.attempt,
+        fetchStartedAt
+      });
       response = await fetchImpl(url, init);
     } catch (error) {
       // 不变量违反（如 buildSystemPrompt 的 today 缺失）不属于 provider 故障，
@@ -81,6 +91,21 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
         throw error;
       }
       responseError = error;
+    }
+
+    // fetch_done 在 try/catch 外打:fetchStartedAt!==null 表示已进入 fetch 阶段
+    // (buildRequest 已成功),此时无论 fetchImpl 成功/超时/网络错都打。失败时
+    // providerStatus=null。本日志 + fetch_start 配对可精确算出上游 fetch 耗时,
+    // 与 call_start/call_success 的总 durationMs 对比即可拆出 Worker 预处理/上游推理/后处理三段。
+    if (fetchStartedAt !== null) {
+      logInfo("proxy.provider.fetch_done", {
+        ...requestContext,
+        providerId: provider.id,
+        attempt: attempt.attempt,
+        fetchStartedAt,
+        fetchMs: Date.now() - fetchStartedAt,
+        providerStatus: response?.status ?? null
+      });
     }
 
     attempt.durationMs = Date.now() - attempt.startedAt;
