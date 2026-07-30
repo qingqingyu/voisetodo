@@ -499,10 +499,9 @@ final class AppCoordinator: ObservableObject {
             // 代理未回额度头：本地估算累加本次补处理条数（标非权威）。
             for _ in 0..<recoveryCount { quotaUsage.recordLocalUsageIncrement(background: true) }
         }
+        // Pro 档也是有限额度，两档统一显示「已用 used/limit」。
         let used = quotaUsage.used
-        var message = quotaUsage.showsUnlimited
-            ? "\(String(localized: "quota.unlimited")) · \(String(format: String(localized: "quota.used_only"), used))"
-            : String(format: String(localized: "quota.today_used"), used, quotaUsage.limit)
+        var message = String(format: String(localized: "quota.today_used"), used, quotaUsage.limit)
         if recoveryCount > 0 {
             message += " " + String(format: String(localized: "quota.including_background"), recoveryCount)
         }

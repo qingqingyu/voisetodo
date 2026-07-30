@@ -4452,18 +4452,19 @@
         }
       }
     },
-    "onboarding.pro.bullet.quota.desc" : {
+    "onboarding.pro.bullet.quota.desc %lld" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock unlimited voice extractions every day"
+            "value" : "Up to %lld voice extractions per day"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解锁无限语音提取,不再受每日额度限制"
+            "value" : "每天最多 %lld 条语音提取"
           }
         }
       }
@@ -5197,13 +5198,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlimited voice todos, 3-day free trial"
+            "value" : "A much higher daily limit, 3-day free trial"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "语音待办无限额度,3 天免费试用"
+            "value" : "更高的每日额度,3 天免费试用"
           }
         }
       }
@@ -5351,38 +5352,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今日已用 %1$d/%2$d"
-          }
-        }
-      }
-    },
-    "quota.unlimited" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unlimited"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无限"
-          }
-        }
-      }
-    },
-    "quota.used_only" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Today: %1$d used"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "今日已用 %1$d"
           }
         }
       }

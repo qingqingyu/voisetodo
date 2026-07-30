@@ -9,8 +9,21 @@ routes = [
 ]
 
 [vars]
+# ─── 每日额度：免费档 / Pro 档 ────────────────────────────────────────────────
+# ⚠️ 这两个值必须成对修改，且 PAID > FREE。wrangler-config.test.js 有断言守着。
+#
+# 当前是【测试阶段】值：
+#   DAILY_REQUEST_LIMIT = "100"   PAID_DAILY_LIMIT = "1000"
+# 【上线时】改成：
+#   DAILY_REQUEST_LIMIT = "2"     PAID_DAILY_LIMIT = "100"
+#   （上线前置条件见 CONFIGURATION_CHECKLIST.md）
+#
 # 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
 DAILY_REQUEST_LIMIT = "100"
+# Pro 档每设备每天调用上限。订阅验签（X-Subscription-JWS）通过后按此值放行。
+# ⚠️ 不配置此项 = Pro 订阅完全无效：resolveSubscriptionTier 的 hasPaidLimit 为 false
+#    时直接返回 free 档，连 JWS 都不验签，付费用户和免费用户拿到完全一样的额度。
+PAID_DAILY_LIMIT = "1000"
 # 全局每天调用上限：当天全网超过即对所有人返回 503，把分布式刷量的账单锁成可设上限。
 # 估算：5000 次 × (输入 ~1-2k tok + 输出 500 tok) × z.ai 单价 ≈ 日账单天花板
 GLOBAL_DAILY_LIMIT = "5000"

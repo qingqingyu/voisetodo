@@ -40,7 +40,12 @@ enum NetworkConfig {
     /// 离线 pending 批量处理最大并发数
     static let pendingBatchConcurrency = 3
     /// 免费档每日上限（UI 占位 / 本地估算后备；代理 `X-Quota-*` 头优先于此值）。
+    /// 与 `AIProxy/wrangler.toml` 的 `DAILY_REQUEST_LIMIT` 对应。
     static let freeDailyLimit: Int = 2
+    /// Pro 档每日上限（paywall 对比卡展示用）。与 `AIProxy/wrangler.toml` 的
+    /// `PAID_DAILY_LIMIT` 对应。Pro **不是无限**，UI 不得宣称无限。
+    /// 订阅后的真实上限以代理返回的 `X-Quota-Limit` 为准。
+    static let proDailyLimit: Int = 100
 
     private static func configuredValue(environmentKey: String, infoPlistKey: String) -> String? {
         if let value = ProcessInfo.processInfo.environment[environmentKey],
