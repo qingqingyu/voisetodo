@@ -77,7 +77,10 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
         }
         sendDone = true;
       } catch (error) {
-        await runLifecycleCallback("failure", lifecycle.onFailure, provider, requestContext, error);
+        await runLifecycleCallback("failure", lifecycle.onFailure, provider, requestContext, error, {
+          emittedCount,
+          emittedChars
+        });
         logError("proxy.provider.stream_failed", {
           ...requestContext,
           provider: provider.type,
@@ -112,10 +115,13 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
   });
 }
 
-async function runLifecycleCallback(kind, callback, provider, requestContext, error) {
+// stats = { emittedCount, emittedChars }:已经推给客户端的 todo 数 / 字符数。
+// 调用方(worker.js 的 onFailure)据此判断"响应头已 200 但一个字都没给" vs
+// "已经给了部分可用结果",前者要退配额、后者不退。
+async function runLifecycleCallback(kind, callback, provider, requestContext, error, stats) {
   if (!callback) return;
   try {
-    await callback(error);
+    await callback(error, stats);
   } catch (callbackError) {
     logWarn("proxy.provider.stream_lifecycle_failed", {
       ...requestContext,
