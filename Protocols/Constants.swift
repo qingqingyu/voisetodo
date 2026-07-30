@@ -2,8 +2,11 @@ import Foundation
 
 /// 网络配置
 enum NetworkConfig {
-    /// API 超时时间（秒）
-    static let apiTimeout: TimeInterval = 15.0
+    /// API 超时时间（秒）。
+    /// 必须 > Worker 上游 timeoutMs（`AIProxy/wrangler.toml` 当前 30s），否则客户端先放弃时
+    /// Worker 仍在烧 token（abort 信号经 `worker.js` 传到上游），客户端只看到自己的 -1001
+    /// 而拿不到 Worker 的真实错误响应。35s = Worker 30s + 5s 余量(冷启动 + 网络往返)。
+    static let apiTimeout: TimeInterval = 35.0
     /// 最大重试次数
     static let retryCount: Int = 2
     /// 指数退避基准间隔（秒）：第 N 次重试等待 base * 2^(N-1) + 抖动
