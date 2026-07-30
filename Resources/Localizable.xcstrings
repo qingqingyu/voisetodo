@@ -267,7 +267,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Collapse Someday"
+            "value" : "Collapse Later"
           }
         },
         "zh-Hans" : {
@@ -283,7 +283,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expand Someday"
+            "value" : "Expand Later"
           }
         },
         "zh-Hans" : {
@@ -3570,7 +3570,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "\"%@\" moved to Someday"
+            "value" : "\"%@\" moved to Later"
           }
         },
         "zh-Hans" : {
@@ -3586,7 +3586,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Someday"
+            "value" : "Later"
           }
         },
         "zh-Hans" : {
@@ -3863,7 +3863,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Someday"
+            "value" : "Later"
           }
         },
         "zh-Hans" : {
