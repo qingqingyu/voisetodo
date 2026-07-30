@@ -1,10 +1,17 @@
 # 自然日 / 用户日 口径混用（DayClock）—— 三处线上缺陷
 
-> 状态：**待实施**。三项缺陷同一族根因，可用同一个原语一并处理。
+> 状态：**已实施**。`8e5758f`（新原语 `userDayStart(onNaturalDay:)` + 三处调用点修复 + 7 条新测），
+> 当前在 `wendang` 分支，**待合并 `main`**。
+> 本文保留为**设计决策 + 实施记录**。
 > 相关文件：`UI/Home/HomeView.swift`、`UI/Home/HomeCalendarState.swift`、
 > `Protocols/Domain/DayClock.swift`
-> 行号基准：`4b1eaa6`（= 当前 `origin/main`）。
+> 行号基准：缺陷引用 = `4b1eaa6`（= 当前 `origin/main`）；实施后引用 = `8e5758f`。
 > 触发条件：**仅当用户把「一天起始时刻」设为非 0 值时出现**（设置项见 `4d49c44`）。
+>
+> ⚠️ **代码已修复，行为正确性待真机人工回归**：见文末「验证清单」（缺陷 1/2/3 + 零回归闸门）。
+> 单测已覆盖：`DayStartHourBoundaryTests` 13/13（含 5 条新原语用例）、
+> `HomeCalendarStateGroupingTests` 15/15（含缺陷 3 回归 + hour=0 零回归）。
+> `TodoDueDateShifter` 与其单测**未动**（baseDate 契约是时刻，问题在调用点）。
 
 ---
 
@@ -301,7 +308,7 @@ calendar.isDate(completedAt, inSameDayAs: selectedDate)
 两篇的分工：
 
 - **那篇** = 「无日期任务完成后归档到哪一天」的设计决策 + 实施记录（已完成）
-- **本篇** = 「怎么把时刻折算成某一天」的口径缺陷（三处，待实施）
+- **本篇** = 「怎么把时刻折算成某一天」的口径缺陷（三处，已实施 `8e5758f`）
 
-三个缺陷建议一并修，因为它们共用同一个新原语；分开修会导致
-`userDayStart(onNaturalDay:)` 引入后仍有调用点停在旧写法上。
+三个缺陷已一并修：共用同一新原语 `userDayStart(onNaturalDay:)`，避免分散修
+导致引入后仍有调用点停在旧写法上。

@@ -5,9 +5,10 @@
 > 落点文件：`UI/Home/HomeCalendarState.swift`
 > 行号基准：现状引用 = `4b1eaa6`；「修复前」代码引用 = `8813f07`（已被 `abfaa588` 取代）。
 >
-> ⚠️ **遗留项**：归档比对用的是自然日，没走 `DayClock`。`startHour > 0` 时
-> 与回顾页的用户日口径分裂——详见
-> **`docs/day-clock-day-boundary-inconsistencies.md` 的「缺陷 3」**。
+> ✅ **遗留项已修**（原归档比对用自然日、未走 `DayClock`，`startHour > 0` 时与回顾页口径分裂）：
+> 已在 `docs/day-clock-day-boundary-inconsistencies.md` 的「缺陷 3」中修复，
+> 实施提交 `8e5758f`（`wendang` 分支，待合并 `main`）。归档比对已改为
+> `isSameUserDay(completedAt, userDayStart(onNaturalDay: selectedDate))`，与 `ReviewAggregator` 同源。
 
 ---
 
@@ -102,8 +103,9 @@ self.completedUnscheduledTodos = noSchedule
 ```
 
 与本文原示意代码的**唯一差异**：日期比对用 `calendar.isDate(_:inSameDayAs:)`（自然日），
-而非 `DayClock` 的用户日。这一条差异就是文首的遗留项，
-已单独记录在 `docs/day-clock-day-boundary-inconsistencies.md`「缺陷 3」。
+而非 `DayClock` 的用户日。这一条差异曾作为文首遗留项，
+记录在 `docs/day-clock-day-boundary-inconsistencies.md`「缺陷 3」—— **现已修复**（`8e5758f`），
+比对改为 `isSameUserDay(completedAt, userDayStart(onNaturalDay: selectedDate))`。
 
 `HomeSelectedDayListView` 的分区计数如预期自动跟着正确，未另改。
 
@@ -177,9 +179,10 @@ self.completedUnscheduledTodos = noSchedule
 这是独立的既有问题，`abfaa588` 的提交说明里也明确留待后续。
 
 另注：核实上面那条时发现 `HomeView.selectedDate` 的归一化口径在各赋值点之间不一致，
-已导致两处线上缺陷（其中「移到明天」在 `startHour > 0` 时会原地不动）。
+曾导致两处线上缺陷（其中「移到明天」在 `startHour > 0` 时会原地不动）。
 与本文遗留项同属「自然日 / 用户日 口径混用」一族，三者合并记录在
-**`docs/day-clock-day-boundary-inconsistencies.md`**。
+**`docs/day-clock-day-boundary-inconsistencies.md`**——**三处缺陷均已修复**
+（`8e5758f`，`wendang` 分支待合并 `main`）。
 
 本次实施不受那个不一致影响：`HomeCalendarState.make`（`:72`）会把传进来的
 `selectedDate` 统一 `calendar.startOfDay` 一次，state 层拿到的恒为自然日 0 点。
