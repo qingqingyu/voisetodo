@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WidgetKit
 
 private func formattedDetailDate(_ date: Date) -> String {
@@ -13,6 +14,16 @@ private let detailRecurrenceSummaryTimeFormatter: DateFormatter = {
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.dateFormat = "HH:mm"
+    return formatter
+}()
+
+/// 日期 popover 入口的日期文本(如 en 下 "Jul 15, 2026"、zh 下 "2026年7月15日")。
+/// 跟随系统 locale —— 日期显示属 UI 文案,跟系统语言一致符合预期(区别于 detailRecurrenceSummaryTimeFormatter
+/// 那种需要跨语言锁格的场景)。file-private 顶层同上 —— 泛型类型内不允许 static stored properties。
+private let detailDateTextFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .none
     return formatter
 }()
 
@@ -84,9 +95,23 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var editedDayOfMonth: Int
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
+    /// 日期 popover 显隐。替代原 .compact DatePicker —— 系统 compact popover 选中日期后不自动收起,
+    /// 改用本状态自控 .popover, 在 datePopoverBinding 的 setter 里 schedulePopoverDismiss 收起。
+    @State private var showDatePickerPopover = false
+    /// popover 打开瞬间捕获的回退锚点(editedDueDate == nil 时用)。避免在 getter / 标签里反复
+    /// 调 Date() —— 每次 SwiftUI body 重建都会读,跨用户日起点停留时 getter 漂移会让选中位置跳动。
+    /// 打开 popover 时设一次,关闭时清空,生命周期严格圈定在 popover 显隐之间。
+    @State private var popoverFallbackAnchor: Date?
+    /// 日期选中触觉反馈生成器。持久化而非每次 set 新建 —— 首击前 prepare() 预热 haptic engine,
+    /// 避免首次 impactOccurred() 因 engine 未就绪延迟/丢失。popover 关闭后重置以便下次重新预热。
+    @State private var selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     /// 防抖保存 task。用户每次改字段都会 cancel + 重启;800ms 内无新改动才真正写库。
     /// onDisappear 时 cancel 并立即静默保存,保证用户离开时一定落盘。
     @State private var saveTask: Task<Void, Never>?
+    /// 日期 popover 选中后的自动收起 task。每次选新日期 cancel 重启 ——
+    /// 用户连续点不同日期时收起推迟到最后一击后 ~0.18s,避免还在挑日期就被收走。
+    /// onDisappear 时一并 cancel,防止 dismiss 后 task 仍触发 showDatePickerPopover 写入。
+    @State private var popoverDismissTask: Task<Void, Never>?
 
     /// ScrollView 是否处于顶部(静止 + bounce 都算 true)。由根视图 `.onPreferenceChange`
     /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势用它扩展识别区域:
@@ -234,16 +259,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             if dateRowMode == .dueDate {
                                 if editedDueDate != nil {
                                     HStack {
-                                        DatePicker(
-                                            "",
-                                            selection: Binding(
-                                                get: { editedDueDate ?? Date() },
-                                                set: { editedDueDate = $0; checkForChanges() }
-                                            ),
-                                            displayedComponents: .date
-                                        )
-                                        .datePickerStyle(.compact)
-                                        .labelsHidden()
+                                        datePopoverTrigger
                                         Spacer()
                                         Button {
                                             editedDueDate = nil
@@ -274,22 +290,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             } else if dateRowMode == .startAnchor {
                                 // 双周/三周锚点不可清空 —— 进这个 mode 时 recurrenceModeButton
                                 // action 已在 interval>1 && editedDueDate==nil 时补今天。
-                                // DatePicker 用户的任何 set 都会把 nil → 具体日期,所以 selection
-                                // 的 get 用 ?? Date() 仅作显示兜底;真正的不变式由 set 路径保证。
+                                // datePopoverTrigger 的任何 set 都会把 nil → 具体日期,所以 binding
+                                // 的 get 用 popoverFallbackAnchor / startOfUserDay 仅作显示兜底;
+                                // 真正的不变式由 set 路径保证。
                                 HStack(spacing: WarmSpacing.xs) {
                                     Text(String(localized: "detail.start_date"))
                                         .font(WarmFont.caption(12))
                                         .foregroundColor(WarmTheme.textSecondary)
-                                    DatePicker(
-                                        "",
-                                        selection: Binding(
-                                            get: { editedDueDate ?? Date() },
-                                            set: { editedDueDate = $0; checkForChanges() }
-                                        ),
-                                        displayedComponents: .date
-                                    )
-                                    .datePickerStyle(.compact)
-                                    .labelsHidden()
+                                    datePopoverTrigger
                                     Spacer()
                                 }
                                 .accessibilityIdentifier("DetailStartDatePicker")
@@ -402,6 +410,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .onDisappear {
             saveTask?.cancel()
             saveTask = nil
+            // 日期 popover 自动收起 task 一并 cancel —— 页面已退出,防止 task 在 dismiss 后
+            // 仍触发 showDatePickerPopover 写入(虽无害,但状态干净更可预测)。
+            popoverDismissTask?.cancel()
+            popoverDismissTask = nil
             if hasChanges {
                 persistChanges(feedback: .none)
             }
@@ -529,6 +541,93 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             }
         } else {
             shape.fill(WarmTheme.secondaryBackground)
+        }
+    }
+
+    /// 日期触发器 + graphical popover(选中即收)。替代原 .compact DatePicker:
+    /// 系统 compact popover 选中日期后不自动收起(iOS 系统行为,SwiftUI 无公开 API 干预),
+    /// 改用 app 自控的 .popover + .graphical + datePopoverBinding, 在 setter 里 schedulePopoverDismiss
+    /// 实现「点中日期 → 等选中黑圈动画播完(~0.18s) → popover 自动收起」的连贯体验。
+    /// 入口外观:一行日期文字 + 小 chevron,颜色沿用 textPrimary 接近原 compact 文字观感。
+    /// 两处复用 —— .dueDate mode(HStack 内,后跟 ✕ 清除) 与 .startAnchor mode(前缀「起始日期」标签) 共用。
+    @ViewBuilder
+    private var datePopoverTrigger: some View {
+        Button {
+            // 打开瞬间捕获回退锚点:之后 popover 内 getter / 标签都用这一份稳定值,
+            // 避免 SwiftUI body 重建时反复调 Date() 导致跨用户日起点漂移。
+            if popoverFallbackAnchor == nil {
+                popoverFallbackAnchor = DayClock.startOfUserDay(for: Date())
+            }
+            showDatePickerPopover = true
+        } label: {
+            HStack(spacing: WarmSpacing.xxs) {
+                Text(detailDateTextFormatter.string(from: editedDueDate ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date())))
+                    .font(WarmFont.body(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(String(localized: "detail.time"))
+        .accessibilityValue(detailDateTextFormatter.string(from: editedDueDate ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date())))
+        .accessibilityIdentifier("DetailDatePopoverTrigger")
+        .popover(isPresented: $showDatePickerPopover) {
+            VStack(spacing: WarmSpacing.sm) {
+                DatePicker(
+                    "",
+                    selection: datePopoverBinding,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+            }
+            .padding(WarmSpacing.md)
+            .frame(width: 320)
+            .onAppear {
+                // 预热 haptic engine —— 首次 impactOccurred() 才不会因 engine 冷启动延迟/丢失。
+                selectionFeedbackGenerator.prepare()
+            }
+        }
+    }
+
+    /// 日期 popover 内 DatePicker 的双向绑定。setter 三件事:
+    /// 1) 写入 editedDueDate + checkForChanges(触发防抖保存);
+    /// 2) 触觉反馈(.light) —— 让"选中"动作更确实,对齐系统 DatePicker 的反馈密度;
+    /// 3) schedulePopoverDismiss —— 留 ~0.18s 给选中黑圈动画,再收 popover。
+    /// 边界:点已选中的同一日期时值不变,setter 不触发,popover 不收 —— 用户可点别处兜底,
+    /// 与原系统 compact 行为一致,不引入新断裂感。
+    private var datePopoverBinding: Binding<Date> {
+        Binding(
+            get: { editedDueDate ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date()) },
+            set: { newValue in
+                editedDueDate = newValue
+                checkForChanges()
+                selectionFeedbackGenerator.impactOccurred()
+                selectionFeedbackGenerator.prepare()
+                schedulePopoverDismiss()
+            }
+        )
+    }
+
+    /// 选完日期后延迟 ~0.18s 收起 popover,留时间让 .graphical 的选中黑圈动画播完。
+    /// 用 Task 而非 DispatchQueue.main.asyncAfter —— 与 scheduleAutosave 同风格,可取消:
+    /// 连续选不同日期时 cancel 上一次,收起推迟到最后一击后,避免用户还在挑就被收走。
+    private func schedulePopoverDismiss() {
+        popoverDismissTask?.cancel()
+        popoverDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                showDatePickerPopover = false
+            }
         }
     }
 
