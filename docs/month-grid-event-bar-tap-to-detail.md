@@ -3,6 +3,13 @@
 > 状态：**未实施**。评估结论：不麻烦，核心约 30 行、半天可完成。
 > 相关文件：`UI/Home/HomeMonthGridButton.swift`、`UI/Home/HomeMonthHeaderView.swift`、
 > `UI/Home/HomeView.swift`、`Resources/Localizable.xcstrings`
+>
+> **基线**：本文所有行号对齐 `818536a`（*Merge branch 'xiahuayue' — 折叠态下 List
+> 到顶下滑也能展开月网格*）。该合并改动了 `HomeView.swift`、`HomeMonthHeaderView.swift`、
+> `SimultaneousDragGesture.swift`，行号已相应校准过一遍。
+> 若实施时 main 又前进了，**先按符号名（函数名 / 属性名 / 注释原文）定位，行号仅作参考**。
+> `HomeMonthGridButton.swift`、`WarmTodoCard.swift`、`HomeSelectedDayListView.swift`
+> 自本方案写成以来未被改动。
 
 ---
 
@@ -15,7 +22,7 @@ Calendar tab 展开态的月历里，每个日期格子会渲染当天的待办�
 ## 为什么值得做
 
 展开态（`collapseProgress == 0`）下月网格占满 95% 高度，**下方任务列表根本不渲染**
-（`HomeView.swift:1053-1066`）。所以用户在展开态看到某条任务时，
+（`HomeView.swift:1059-1072`）。所以用户在展开态看到某条任务时，
 必须「上滑折叠 → 在列表里找到它 → 点开」才能查看/编辑，绕了一大圈。
 
 反过来说，展开态下「选中当天」的**收益本来就低**——列表不渲染，
@@ -36,10 +43,10 @@ Calendar tab 展开态的月历里，每个日期格子会渲染当天的待办�
 ### 2. 展示通道现成
 
 ```swift
-// HomeView.swift:249
+// HomeView.swift:253
 @State private var selectedTodo: TodoItemData?
 
-// HomeView.swift:411-416
+// HomeView.swift:415-420
 .fullScreenCover(item: $selectedTodo) { todo in
     NavigationStack {
         TodoDetailView(store: store, todo: todo)
@@ -48,7 +55,7 @@ Calendar tab 展开态的月历里，每个日期格子会渲染当天的待办�
 }
 ```
 
-新回调只要做 `selectedTodo = $0`，与 `HomeView.swift:1074` 传给
+新回调只要做 `selectedTodo = $0`，与 `HomeView.swift:1080` 传给
 `HomeSelectedDayListView` 的 `onOpenTodo` 完全同构。
 
 ### 3. 嵌套 Button 模式在本仓库已有生产先例
@@ -79,7 +86,7 @@ var onOpenTodo: ((TodoItemData) -> Void)? = nil
 ```
 
 必须放在**最后**——Swift memberwise init 的实参顺序须与声明顺序一致，
-放末尾则 `HomeMonthHeaderView.swift:125-131` 的调用只需追加一行。
+放末尾则 `HomeMonthHeaderView.swift:126-132` 的调用只需追加一行。
 
 **1b. body 的 `ForEach`（45-47 行）改调包装方法**，并在 `eventBar` 上方（128 行前）新增：
 
@@ -115,7 +122,7 @@ private func eventBarRow(_ occurrence: TodoOccurrenceData, idx: Int, isLast: Boo
   这正是 WarmTodoCard 的先例结构。
 
 **1c. 不联动选中日期**：只调 `onOpenTodo`，不调 `onSelect`。
-`HomeView.selectDay`（`HomeView.swift:1284-1293`）在 `withAnimation` 里改
+`HomeView.selectDay`（`HomeView.swift:1323-1332`）在 `withAnimation` 里改
 `selectedDate` / `visibleMonthAnchor` / 折叠 unscheduled drawer，
 与同时 present 的 `fullScreenCover` 叠加会产生无谓动画和 dismiss 时的跳动。
 这也与 `HomeSelectedDayListView.occurrenceRow` 的行为一致（打开时不重选日期）。
@@ -124,10 +131,10 @@ private func eventBarRow(_ occurrence: TodoOccurrenceData, idx: Int, isLast: Boo
 
 | 文件 | 改动 |
 |---|---|
-| `HomeMonthHeaderView.swift` | 第 16 行 `onShiftPeriod` 后加 `var onOpenTodo: ((TodoItemData) -> Void)? = nil`；`dayCell`（121-132 行）的 `HomeMonthGridButton(...)` 追加 `onOpenTodo: onOpenTodo` |
-| `HomeView.swift:944-952` | `HomeMonthHeaderView(...)` 追加 `onOpenTodo: { selectedTodo = $0 }`（放在 `availableHeight` 前，顺序须与声明一致） |
+| `HomeMonthHeaderView.swift` | 第 16 行 `onShiftPeriod` 后加 `var onOpenTodo: ((TodoItemData) -> Void)? = nil`；`dayCell`（122-133 行）的 `HomeMonthGridButton(...)` 追加 `onOpenTodo: onOpenTodo` |
+| `HomeView.swift:950-958` | `HomeMonthHeaderView(...)` 追加 `onOpenTodo: { selectedTodo = $0 }`（放在 `availableHeight` 前，顺序须与声明一致） |
 
-**`WeekStripCard` 不需要改**：它的 `dayCell`（`HomeMonthHeaderView.swift:528-585`）
+**`WeekStripCard` 不需要改**：它的 `dayCell`（`HomeMonthHeaderView.swift:536-593`）
 渲染的是**按分类去重**的 `Circle()` 圆点，一个圆点可能代表 3 条任务，没有 1:1 的 todo 目标。
 且折叠态正是 `HomeSelectedDayListView` 可见可点的状态，那里已有 `onOpenTodo`。
 
@@ -155,7 +162,7 @@ private func eventBarRow(_ occurrence: TodoOccurrenceData, idx: Int, isLast: Boo
 ```
 
 `visible` 已是 body 内的局部 `let`（第 38 行）。`accessibilityActions(_:)` 是 iOS 16+，
-项目 target iOS 17+；仓库已在 `HomeMonthHeaderView.swift:521` 用过单动作形式。
+项目 target iOS 17+；仓库已在 `HomeMonthHeaderView.swift:529` 用过单动作形式。
 
 **为什么选 custom actions，而不是让每条 bar 成为独立 AX 元素**
 
@@ -187,7 +194,7 @@ VoiceOver 会自动追加「有可用操作」。
 
 ## 命中区尺寸：唯一需要留意的真问题
 
-**几何**：`gridBarHeight = 24pt`（`HomeMonthHeaderView.swift:244`），条间距 2pt。
+**几何**：`gridBarHeight = 24pt`（`HomeMonthHeaderView.swift:252`），条间距 2pt。
 393pt 宽的 iPhone 上列宽 `(393 − 2×4 − 6×2) / 7 ≈ 53pt`。
 所以每条约 **53 × 24pt，纵向明显低于 Apple HIG 的 44pt 最小命中区**。
 
@@ -199,7 +206,7 @@ VoiceOver 会自动追加「有可用操作」。
 
 **② 密集格子里「选中当天」几乎点不到（严重）**
 分配器把行高压到 `need(shown) = 20 + shown×24 + (shown−1)×2`
-（`HomeMonthHeaderView.swift:311-313`），其中 `gridCellChrome = 20` 正是日期数字行的预算。
+（`HomeMonthHeaderView.swift:319-321`），其中 `gridCellChrome = 20` 正是日期数字行的预算。
 满额格子里 `Spacer(minLength: 0)`（`HomeMonthGridButton.swift:48`）塌成 ≈0，
 可选中当天的区域只剩 **~14pt 的日期数字行 + 2pt 条间隙**。
 也就是说：**任务最多的格子——恰恰是用户最想选中的格子——点「这一天」会几乎必然打开某条任务。**
@@ -220,7 +227,7 @@ VoiceOver 会自动追加「有可用操作」。
   代价是可发现性和多一次点击。
 - **M2 预留选中条带** / **M6 加高 `gridBarHeight`**：会动到
   `HomeLayoutMetrics.allocateRowHeights` 的 `gridCellChrome`、`need()`
-  和 Pass 4 的 `precondition`（`HomeMonthHeaderView.swift:427`），
+  和 Pass 4 的 `precondition`（`HomeMonthHeaderView.swift:435`），
   并重新打开 `month-grid-known-issues.md` 记录的回归面。
   **这是另一个 1-2 天的独立改动，不建议与本需求捆绑。**
 
@@ -274,14 +281,21 @@ xcodebuild -scheme VoiceTodo -destination 'platform=iOS Simulator,name=iPhone 16
 ### 第 4-7 条的静态分析结论：都不会破，但仍需真机过一遍
 
 - **竖向折叠手势**用的是 `SimultaneousDragGesture`（`UI/Shared/SimultaneousDragGesture.swift:56`），
-  本质是 `UIPanGestureRecognizer` + `shouldRecognizeSimultaneouslyWith → true`（除 `UIScrollView` 外），
-  挂在**祖先视图**上。UIKit 会把子视图上的触摸路由给祖先 recognizer，与命中到哪个子视图无关。
-  且该区域**本来就已经被一个 Button 覆盖**，加内层 Button 不改变这个路由。横向翻月同理
-  （`HomeMonthHeaderView.swift:106-114`）。
+  本质是 `UIPanGestureRecognizer`，挂在**祖先视图**上。UIKit 会把子视图上的触摸路由给
+  祖先 recognizer，**与命中到哪个子视图无关**。而该区域**本来就已经被外层格子 Button 覆盖**，
+  加一个内层 Button 不改变这条路由。横向翻月同理（`HomeMonthHeaderView.swift:106-114`）。
+
+  注意该文件近期被重写过（见下方「基线」）：现在 `shouldBegin` 里有**方向门控**
+  （非匹配方向的触摸直接让本 recognizer `.failed`，把机会让给子视图），
+  且 `shouldRecognizeSimultaneouslyWith` 对 `UIScrollView` 的 pan **默认返回 false**，
+  只有调用方通过 `allowSimultaneousWithScrollViewPan` 显式选择加入才共存。
+  这些都不改变上面的结论——方向门控与「命中到哪个子视图」正交——
+  但让手动验收第 4、5 条更有必要真机过一遍。
 - **`dropDestination`**（`HomeMonthGridButton.swift:62-76`）挂在外层格子上，
   内层 Button 不注册任何 drop interaction，拖拽悬停仍命中格子。
-- **`.allowsHitTesting(collapseProgress <= 0.5)`**（`HomeView.swift:1009`）作用于整个子树，
-  嵌套 Button 自动跟随。1001-1003 行记录的「任意 progress 下有且仅有一层可点击」不变量自动保持。
+- **`.allowsHitTesting(collapseProgress <= 0.5)`**（`HomeView.swift:1015`）作用于整个子树，
+  嵌套 Button 自动跟随。`HomeView.swift:1007-1009` 记录的
+  「任意 progress 下有且仅有一层可点击」不变量自动保持。
 
 ### UI 测试：建议跳过
 
