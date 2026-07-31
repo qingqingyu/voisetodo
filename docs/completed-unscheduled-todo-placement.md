@@ -7,7 +7,7 @@
 >
 > ✅ **遗留项已修**（原归档比对用自然日、未走 `DayClock`，`startHour > 0` 时与回顾页口径分裂）：
 > 已在 `docs/day-clock-day-boundary-inconsistencies.md` 的「缺陷 3」中修复，
-> 实施提交 `8e5758f`（`wendang` 分支，待合并 `main`）。归档比对已改为
+> 实施提交 `8e5758f`（已合并 `main`）。归档比对已改为
 > `isSameUserDay(completedAt, userDayStart(onNaturalDay: selectedDate))`，与 `ReviewAggregator` 同源。
 
 ---
@@ -167,8 +167,8 @@ self.completedUnscheduledTodos = noSchedule
 
 - ⏳ 「已完成」分区的计数徽章数字与实际条目数一致
 - ⏳ 边界情况 3 的体验是否可接受
-- ⏳ **设置「一天起始时刻」= 3:00，凌晨 1 点勾掉一条无日期任务 → 当前会归到「今天」，
-  而回顾页会归到「昨天」**。这是遗留项的手测复现路径，不是回归
+- ✅ **设置「一天起始时刻」= 3:00，凌晨 1 点勾掉一条无日期任务 → 归到「昨天」，与回顾页一致**
+  （原为「归到今天、与回顾页分裂」的遗留项，`8e5758f` 已修；详见 `docs/day-clock-day-boundary-inconsistencies.md` 缺陷 3）。回归闸门：两者必须显示同一天
 
 ---
 
@@ -182,7 +182,7 @@ self.completedUnscheduledTodos = noSchedule
 曾导致两处线上缺陷（其中「移到明天」在 `startHour > 0` 时会原地不动）。
 与本文遗留项同属「自然日 / 用户日 口径混用」一族，三者合并记录在
 **`docs/day-clock-day-boundary-inconsistencies.md`**——**三处缺陷均已修复**
-（`8e5758f`，`wendang` 分支待合并 `main`）。
+（`8e5758f`，已合并 `main`）。
 
 本次实施不受那个不一致影响：`HomeCalendarState.make`（`:72`）会把传进来的
 `selectedDate` 统一 `calendar.startOfDay` 一次，state 层拿到的恒为自然日 0 点。

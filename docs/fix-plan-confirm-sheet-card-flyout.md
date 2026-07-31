@@ -1,6 +1,8 @@
 # 修复方案：确认页卡片流式期间「向右闪出」
 
-> 状态：**待实施**。本文档是排查结论 + 实施方案，实施后请对照「验证」一节逐项确认。
+> 状态：**已实施**。本文档原为排查结论 + 实施方案，现已落地，保留为设计决策 + 实施记录。
+> 实施落点：`Extractor/TodoExtractorService.swift` 的 `reassignedIDs(_:stableIDs:)` 私有方法 + 三个 yield 点（partial / final / 错误兜底）全部套用 + `ExtractedTodo.id` 由 `let` 改为 `var`。
+> 请对照「验证」一节逐项真机 / 模拟器回归。
 > 主改动文件：`Extractor/TodoExtractorService.swift`
 > 相关文件（只读参考）：`Protocols/Models.swift`、`UI/ConfirmSheet/ConfirmGroupedList.swift`
 
