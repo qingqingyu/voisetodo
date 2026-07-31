@@ -302,6 +302,10 @@ extension TodoItem {
     /// 调用方应跳过 `TodoDueDateResolver.resolve` 兜底重算;`false` = 未清空(短路 /
     /// 保留 / 兜底改写),调用方可继续走原本的 ?? resolve 兜底逻辑。
     private static func applyDueDateBasisFilter(_ extracted: inout ExtractedTodo, rawTranscript: String?) -> Bool {
+        // 用户在确认页手动指定的日期是最终判决,不再经 AI basis 白名单过滤——
+        // 该过滤器拦的是「AI 把标题里偶然出现的日期词误识别为 due_date」,
+        // 与「用户自己点了日历」无关。
+        guard !extracted.dueDateUserEdited else { return false }
         // 无 dueDate 时无需过滤
         guard extracted.dueDate != nil else { return false }
 
