@@ -1,6 +1,8 @@
 # 月历格子事件条 → 点击打开待办详情
 
-> 状态：**未实施**。评估结论：不麻烦，核心约 30 行、半天可完成。
+> 状态：**已实施**（`3e6565b`，M1+M5 方案，已合并 `main`）。本文档原为评估 + 实施方案，现保留为设计决策 + 实施记录。
+> 实施落点：`HomeMonthGridButton` 加 `onOpenTodo` 参数 + `eventBarRow` 包装（`Button` + `.contentShape(Rectangle().inset(by: 2))` 缓解误触相邻条）+ `.accessibilityActions` 给 VoiceOver 补「打开 <标题>」custom action（否则 `.accessibilityElement(children: .ignore)` 把嵌套 Button 移出 AX 树）；`HomeMonthHeaderView.dayCell` 透传；`HomeView` 复用既有 `fullScreenCover(item: $selectedTodo)`；`Localizable.xcstrings` 加 `a11y.day.open_todo`（en `Open %@` / zh-Hans `打开%@`）。
+> Review：双 review 循环 1 轮收敛（Three Check 0 问题 + code-review-expert 0 问题），`xcodebuild` BUILD SUCCEEDED。
 > 相关文件：`UI/Home/HomeMonthGridButton.swift`、`UI/Home/HomeMonthHeaderView.swift`、
 > `UI/Home/HomeView.swift`、`Resources/Localizable.xcstrings`
 >
