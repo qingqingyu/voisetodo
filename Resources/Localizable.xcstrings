@@ -4149,6 +4149,7 @@
       }
     },
     "onboarding.authorize" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4421,6 +4422,7 @@
       }
     },
     "onboarding.granted" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4469,6 +4471,7 @@
       }
     },
     "onboarding.mic.desc" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4501,6 +4504,7 @@
       }
     },
     "onboarding.mic.privacy" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4517,6 +4521,7 @@
       }
     },
     "onboarding.mic.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4742,6 +4747,7 @@
       }
     },
     "onboarding.speech.desc" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4774,6 +4780,7 @@
       }
     },
     "onboarding.speech.privacy" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4790,6 +4797,7 @@
       }
     },
     "onboarding.speech.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
