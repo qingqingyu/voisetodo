@@ -77,6 +77,15 @@ final class PermissionManager: ObservableObject {
     @Published var micGranted: Bool = false
     @Published var speechGranted: Bool = false
 
+    /// 用户在 onboarding 权限页主动跳过(点了「Skip for now」)。
+    /// 用于区分「未决定」(系统弹窗未触发)和「主动跳过」(看过说明但拒绝),
+    /// 后者在主界面首次录音前会弹一次更详细的引导 sheet。
+    /// 授权成功后会自动清掉(见 `clearSkippedInOnboarding()`)。
+    /// 持久化到 UserDefaults,避免重启后丢失。
+    @Published private(set) var hasSkippedInOnboarding: Bool
+
+    private let hasSkippedInOnboardingKey = "hasSkippedVoicePermissionsInOnboarding"
+
     // MARK: - Initialization
 
     init(
@@ -85,6 +94,13 @@ final class PermissionManager: ObservableObject {
     ) {
         self.uiTestOptions = uiTestOptions
         self.permissionClient = permissionClient
+        // 初始化时从 UserDefaults 读一次,避免重启后标志丢失导致重复弹引导。
+        // 测试模式下不读 UserDefaults(UI 测试通过 launchArguments 注入状态)。
+        if uiTestOptions.isUITesting {
+            self.hasSkippedInOnboarding = false
+        } else {
+            self.hasSkippedInOnboarding = UserDefaults.standard.bool(forKey: hasSkippedInOnboardingKey)
+        }
         checkCurrentStatus()
     }
 
@@ -143,6 +159,7 @@ final class PermissionManager: ObservableObject {
         }
 
         let readiness: VoicePermissionReadiness = allPermissionsGranted ? .granted : .settingsRequired
+        if readiness == .granted { clearSkippedInOnboarding() }
         VoiceTodoLog.app.info("permissions.ensure.finished readiness=\(String(describing: readiness), privacy: .public)")
         return readiness
     }
@@ -156,12 +173,14 @@ final class PermissionManager: ObservableObject {
             let granted = !uiTestOptions.micPermissionDenied
             micGranted = granted
             VoiceTodoLog.app.info("permissions.request_microphone.ui_test granted=\(granted)")
+            if granted { clearSkippedInOnboarding() }
             return granted
         }
 
         let granted = await permissionClient.requestMicrophone()
         micGranted = granted
         VoiceTodoLog.app.info("permissions.request_microphone.result granted=\(granted)")
+        if granted { clearSkippedInOnboarding() }
         return granted
     }
 
@@ -172,13 +191,35 @@ final class PermissionManager: ObservableObject {
             let granted = !uiTestOptions.speechPermissionDenied
             speechGranted = granted
             VoiceTodoLog.app.info("permissions.request_speech.ui_test granted=\(granted)")
+            if granted { clearSkippedInOnboarding() }
             return granted
         }
 
         let granted = await permissionClient.requestSpeech()
         speechGranted = granted
         VoiceTodoLog.app.info("permissions.request_speech.result granted=\(granted)")
+        if granted { clearSkippedInOnboarding() }
         return granted
+    }
+
+    // MARK: - Onboarding Skip State
+
+    /// 用户在 onboarding 权限页点了「Skip for now」时调用,标记跳过状态。
+    /// 主界面首次录音前会读这个标志,决定是否弹更详细的引导 sheet。
+    func markSkippedInOnboarding() {
+        guard !hasSkippedInOnboarding else { return }
+        hasSkippedInOnboarding = true
+        UserDefaults.standard.set(true, forKey: hasSkippedInOnboardingKey)
+        VoiceTodoLog.app.info("permissions.onboarding.skipped_marked")
+    }
+
+    /// 权限拿到后清掉跳过标志(由 `requestMicPermission` / `requestSpeechPermission`
+    /// 授权成功时调用,以及 `ensureVoicePermissionsBeforeRecording` 已授权时调用)。
+    func clearSkippedInOnboarding() {
+        guard hasSkippedInOnboarding else { return }
+        hasSkippedInOnboarding = false
+        UserDefaults.standard.set(false, forKey: hasSkippedInOnboardingKey)
+        VoiceTodoLog.app.info("permissions.onboarding.skipped_cleared")
     }
 
     // MARK: - System Settings

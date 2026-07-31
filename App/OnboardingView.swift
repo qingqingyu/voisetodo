@@ -3,8 +3,24 @@ import SwiftUI
 // MARK: - 手绘风格 Onboarding
 // 设计理念：温暖手写笔记本风格，仿佛翻开一本精心制作的手账
 
+/// Onboarding 步骤。`visibleSteps` 会根据设备能力(Action Button)
+/// 和订阅状态(Pro)动态过滤,旧机型或已付费用户会跳过对应步骤。
+private enum OnboardingStep: CaseIterable {
+    case welcome
+    case voicePermissions
+    case actionButton
+    case proIntro
+    case completion
+}
+
+/// 标记当前正在请求哪一类权限,只让对应卡片的按钮显示 spinner。
+private enum PermissionRequestType {
+    case mic
+    case speech
+}
+
 /// 首次启动引导视图 - 温暖手写风格
-/// 分步引导用户完成权限配置和 Action Button 设置
+/// 分步引导用户完成权限配置(可选 Action Button 设置)
 struct OnboardingView: View {
     @ObservedObject var permissionManager: PermissionManager
     @Binding var hasCompletedOnboarding: Bool
@@ -18,8 +34,8 @@ struct OnboardingView: View {
     // 无障碍：尊重「减弱动态效果」设置
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var currentStep = 0
-    @State private var isRequestingPermission = false
+    @State private var currentStepIndex = 0
+    @State private var requestingPermissionType: PermissionRequestType?
 
     // 动画状态
     @State private var contentOffset: CGFloat = 30
@@ -27,15 +43,37 @@ struct OnboardingView: View {
     @State private var illustrationScale: CGFloat = 0.8
     @State private var illustrationRotation: Double = -5
 
-    private let totalSteps = 6
-
     // 使用 WarmTheme 统一配色
     private var inkColor: Color { WarmTheme.ink }
     private var paperColor: Color { WarmTheme.paperBackground }
     private var highlightColor: Color { WarmTheme.primary }
     private var sketchColor: Color { WarmTheme.sketch }
 
-    /// 在「减弱动态效果」开启时返回 nil，从而禁用对应动画。
+    /// 当前设备实际要走的步骤序列。Action Button 步骤只在支持的机型上出现;
+    /// Pro 介绍页只对未付费用户出现。
+    private var visibleSteps: [OnboardingStep] {
+        OnboardingStep.allCases.filter { step in
+            switch step {
+            case .actionButton:
+                return ActionButtonCapability.isSupported
+            case .proIntro:
+                return !isPro
+            default:
+                return true
+            }
+        }
+    }
+
+    private var totalSteps: Int { visibleSteps.count }
+
+    private var currentStep: OnboardingStep {
+        guard visibleSteps.indices.contains(currentStepIndex) else {
+            return .welcome
+        }
+        return visibleSteps[currentStepIndex]
+    }
+
+    /// 「减弱动态效果」开启时返回 nil，从而禁用对应动画。
     private func motionAnim(_ animation: Animation) -> Animation? {
         reduceMotion ? nil : animation
     }
@@ -58,20 +96,16 @@ struct OnboardingView: View {
                     VStack(spacing: 0) {
                         Group {
                             switch currentStep {
-                            case 0:
+                            case .welcome:
                                 welcomeStep
-                            case 1:
-                                microphonePermissionStep
-                            case 2:
-                                speechPermissionStep
-                            case 3:
+                            case .voicePermissions:
+                                voicePermissionsStep
+                            case .actionButton:
                                 actionButtonGuideStep
-                            case 4:
+                            case .proIntro:
                                 proIntroductionStep
-                            case 5:
+                            case .completion:
                                 completionStep
-                            default:
-                                EmptyView()
                             }
                         }
                         .padding(.horizontal, 28)
@@ -79,8 +113,10 @@ struct OnboardingView: View {
                 }
                 .frame(maxHeight: .infinity)
 
-                // 底部按钮(Pro 介绍页用自己的 CTA,不显示默认按钮)
-                if currentStep != 4 {
+                // 底部按钮:
+                // - 权限合并页:用 Continue 替代 Next(授权后才亮)
+                // - Pro 介绍页:自带 CTA,不显示底部栏
+                if !shouldHideBottomBar {
                     bottomButtons
                 }
             }
@@ -90,10 +126,15 @@ struct OnboardingView: View {
             permissionManager.checkCurrentStatus()
             animateContentIn()
         }
-        .onChange(of: currentStep) {
+        .onChange(of: currentStepIndex) {
             animateContentIn()
         }
         .accessibilityIdentifier("OnboardingView")
+    }
+
+    /// Pro 介绍页自带 CTA,不渲染底部栏。
+    private var shouldHideBottomBar: Bool {
+        currentStep == .proIntro
     }
 
     // MARK: - Paper Background
@@ -129,12 +170,8 @@ struct OnboardingView: View {
 
     private var handDrawnPageIndicator: some View {
         HStack(spacing: 12) {
-            ForEach(0..<totalSteps, id: \.self) { index in
-                // 已付费用户跳过 Pro 介绍页(case 4),进度条也不渲染该位置,
-                // 避免"未完成小点"或"已打勾"误导用户以为漏了一步。
-                if index == 4 && isPro {
-                    EmptyView()
-                } else if index == currentStep {
+            ForEach(visibleSteps.indices, id: \.self) { index in
+                if index == currentStepIndex {
                     // 当前页面 - 手绘圆圈
                     Circle()
                         .stroke(highlightColor, style: StrokeStyle(lineWidth: 2.5))
@@ -144,9 +181,9 @@ struct OnboardingView: View {
                                 .fill(highlightColor)
                                 .frame(width: 6, height: 6)
                         )
-                        .scaleEffect(index == currentStep ? 1.1 : 1.0)
-                        .animation(motionAnim(.spring(response: 0.3)), value: currentStep)
-                } else if index < currentStep {
+                        .scaleEffect(index == currentStepIndex ? 1.1 : 1.0)
+                        .animation(motionAnim(.spring(response: 0.3)), value: currentStepIndex)
+                } else if index < currentStepIndex {
                     // 已完成 - 打勾
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
@@ -162,7 +199,7 @@ struct OnboardingView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "a11y.onboarding.progress"))
-        .accessibilityValue("\(currentStep + 1) / \(totalSteps)")
+        .accessibilityValue("\(currentStepIndex + 1) / \(totalSteps)")
     }
 
     // MARK: - Step 1: Welcome
@@ -330,213 +367,253 @@ struct OnboardingView: View {
         .frame(height: 8)
     }
 
-    // MARK: - Step 2: Microphone Permission
+    // MARK: - Step: Voice Permissions (microphone + speech merged)
 
-    private var microphonePermissionStep: some View {
-        VStack(spacing: 32) {
+    /// 麦克风和语音识别合并为一页。用户心智里这是同一件事 ——「让 App 听我说话」。
+    /// 两张独立卡片各自带授权按钮,用户可按任意顺序授权;Skip 作为文字链接放在卡片下方,
+    /// 右下角 Continue 在两项都授权后才亮起。
+    private var voicePermissionsStep: some View {
+        VStack(spacing: 22) {
             Spacer()
-                .frame(height: 40)
+                .frame(height: 30)
 
-            // 手绘麦克风插图
-            permissionIllustration(
-                systemName: "mic.fill",
-                isGranted: permissionManager.micGranted,
-                decoration: "🎤"
-            )
+            // 麦克风 + 波形 双图标(纯 SF Symbol,不再混用 emoji)
+            voicePermissionsIllustration
 
-            VStack(spacing: 12) {
-                Text(String(localized: "onboarding.mic.title"))
+            VStack(spacing: 10) {
+                Text(String(localized: "onboarding.voice.title"))
                     .font(WarmFont.title(28))
                     .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
 
-                Text(String(localized: "onboarding.mic.desc"))
+                Text(String(localized: "onboarding.voice.desc"))
                     .font(WarmFont.body(17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
             }
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 权限状态卡片
-            permissionStatusCard(
-                isGranted: permissionManager.micGranted,
-                isDenied: permissionManager.isMicPermanentlyDenied,
-                grantAction: requestMicPermission,
-                deniedMessage: ErrorMessages.micDenied
-            )
-            .padding(.top, 24)
+            // 隐私说明 —— 放在卡片上方,用户点授权按钮之前就读得到
+            privacyNote(String(localized: "onboarding.voice.privacy"))
+                .padding(.top, 4)
+                .offset(y: contentOffset)
+                .opacity(contentOpacity)
+
+            VStack(spacing: 14) {
+                permissionCard(
+                    systemName: "mic.fill",
+                    title: String(localized: "onboarding.mic.card_title"),
+                    desc: String(localized: "onboarding.mic.card_desc"),
+                    isGranted: permissionManager.micGranted,
+                    isDenied: permissionManager.isMicPermanentlyDenied,
+                    isRequesting: requestingPermissionType == .mic,
+                    grantAction: requestMicPermission,
+                    buttonTitle: String(localized: "onboarding.button.allow_mic"),
+                    grantedText: String(localized: "onboarding.mic.granted"),
+                    deniedMessage: ErrorMessages.micDenied,
+                    accessId: "AuthorizeMicButton"
+                )
+
+                permissionCard(
+                    systemName: "waveform",
+                    title: String(localized: "onboarding.speech.card_title"),
+                    desc: String(localized: "onboarding.speech.card_desc"),
+                    isGranted: permissionManager.speechGranted,
+                    isDenied: permissionManager.isSpeechPermanentlyDenied,
+                    isRequesting: requestingPermissionType == .speech,
+                    grantAction: requestSpeechPermission,
+                    buttonTitle: String(localized: "onboarding.button.allow_speech"),
+                    grantedText: String(localized: "onboarding.speech.granted"),
+                    deniedMessage: ErrorMessages.speechDenied,
+                    accessId: "AuthorizeSpeechButton"
+                )
+            }
+            .padding(.top, 14)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 隐私提示
-            privacyNote(String(localized: "onboarding.mic.privacy"))
-                .padding(.top, 16)
+            // Skip 文字链接 —— 灰色小号居中,不抢导航位
+            Button {
+                permissionManager.markSkippedInOnboarding()
+                nextStep()
+            } label: {
+                Text(String(localized: "onboarding.button.skip"))
+                    .font(WarmFont.body(14))
+                    .foregroundColor(sketchColor.opacity(0.6))
+                    .padding(.vertical, 6)
+            }
+            .accessibilityIdentifier("SkipVoicePermissionsButton")
+            .padding(.top, 2)
 
             Spacer()
         }
     }
 
-    // MARK: - Step 3: Speech Recognition Permission
-
-    private var speechPermissionStep: some View {
-        VStack(spacing: 32) {
-            Spacer()
-                .frame(height: 40)
-
-            // 手绘语音识别插图
-            permissionIllustration(
-                systemName: "waveform",
-                isGranted: permissionManager.speechGranted,
-                decoration: "💬"
-            )
-
-            VStack(spacing: 12) {
-                Text(String(localized: "onboarding.speech.title"))
-                    .font(WarmFont.title(28))
-                    .foregroundColor(inkColor)
-
-                Text(String(localized: "onboarding.speech.desc"))
-                    .font(WarmFont.body(17))
-                    .foregroundColor(sketchColor)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-            }
-            .offset(y: contentOffset)
-            .opacity(contentOpacity)
-
-            // 权限状态卡片
-            permissionStatusCard(
-                isGranted: permissionManager.speechGranted,
-                isDenied: permissionManager.isSpeechPermanentlyDenied,
-                grantAction: requestSpeechPermission,
-                deniedMessage: ErrorMessages.speechDenied
-            )
-            .padding(.top, 24)
-            .offset(y: contentOffset)
-            .opacity(contentOpacity)
-
-            // 隐私提示
-            privacyNote(String(localized: "onboarding.speech.privacy"))
-                .padding(.top, 16)
-
-            Spacer()
-        }
-    }
-
-    // MARK: - Permission Illustration
-
-    private func permissionIllustration(systemName: String, isGranted: Bool, decoration: String) -> some View {
+    private var voicePermissionsIllustration: some View {
         ZStack {
-            // 背景圆
             Circle()
-                .fill(isGranted ? WarmTheme.success.opacity(0.15) : highlightColor.opacity(0.1))
+                .fill(highlightColor.opacity(0.1))
                 .frame(width: 120, height: 120)
 
-            // 图标
-            Image(systemName: isGranted ? "checkmark.circle.fill" : systemName)
-                .font(.system(size: 48, weight: .medium))
-                .foregroundColor(isGranted ? WarmTheme.success : inkColor)
+            // 麦克风 + 波形 并列,纯 SF Symbol,统一矢量风格
+            HStack(spacing: 14) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundColor(inkColor)
 
-            // 装饰 emoji
-            Text(decoration)
-                .font(.system(size: 24))
-                .offset(x: 45, y: -45)
+                Image(systemName: "waveform")
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundColor(highlightColor)
+            }
         }
         .scaleEffect(illustrationScale)
         .animation(motionAnim(.spring(response: 0.5)), value: illustrationScale)
+        .accessibilityHidden(true)
     }
 
-    // MARK: - Permission Status Card
+    // MARK: - Permission Card
 
-    private func permissionStatusCard(
+    /// 单张权限卡:图标 + 标题 + 描述 + 行动区(按钮 / 已授权 / 被拒绝三态)。
+    /// Onboarding 权限合并页有两张这样的卡(麦克风、语音识别)。
+    private func permissionCard(
+        systemName: String,
+        title: String,
+        desc: String,
         isGranted: Bool,
         isDenied: Bool,
+        isRequesting: Bool,
         grantAction: @escaping () -> Void,
-        deniedMessage: String
+        buttonTitle: String,
+        grantedText: String,
+        deniedMessage: String,
+        accessId: String
     ) -> some View {
-        VStack(spacing: 16) {
-            if isGranted {
-                // 已授权状态
-                HStack(spacing: 12) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(WarmTheme.success)
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                Image(systemName: isGranted ? "checkmark.circle.fill" : systemName)
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundColor(isGranted ? WarmTheme.success : inkColor)
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
 
-                    Text(String(localized: "onboarding.granted"))
-                        .font(WarmFont.body(17))
-                        .foregroundColor(WarmTheme.success)
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(WarmTheme.success.opacity(0.1))
-                )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(WarmFont.headline(17))
+                        .foregroundColor(inkColor)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
 
-            } else if isDenied {
-                // 被拒绝状态
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(WarmTheme.warning)
-
-                    Text(deniedMessage)
-                        .font(WarmFont.caption(15))
+                    Text(desc)
+                        .font(WarmFont.caption(14))
                         .foregroundColor(sketchColor)
-                        .multilineTextAlignment(.center)
-
-                    Button(action: { permissionManager.openAppSettings() }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "gear")
-                            Text(String(localized: "onboarding.open_settings"))
-                        }
-                        .font(WarmFont.body(16))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(inkColor)
-                        )
-                    }
-                    .accessibilityIdentifier("OpenSettingsButton")
-                    .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                 }
-                .padding(24)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(WarmTheme.cardBackground)
-                        .shadow(color: sketchColor.opacity(0.1), radius: 8, y: 4)
-                )
 
-            } else {
-                // 待授权状态
-                Button(action: grantAction) {
-                    HStack(spacing: 12) {
-                        if isRequestingPermission {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Image(systemName: "hand.raised.fill")
-                                .font(.system(size: 20))
-                            Text(String(localized: "onboarding.authorize"))
-                                .font(WarmFont.headline(17))
-                        }
+                Spacer(minLength: 0)
+            }
+
+            permissionActionArea(
+                isGranted: isGranted,
+                isDenied: isDenied,
+                isRequesting: isRequesting,
+                grantAction: grantAction,
+                buttonTitle: buttonTitle,
+                grantedText: grantedText,
+                deniedMessage: deniedMessage,
+                accessId: accessId
+            )
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(WarmTheme.cardBackground)
+                .shadow(color: sketchColor.opacity(0.08), radius: 8, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(sketchColor.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func permissionActionArea(
+        isGranted: Bool,
+        isDenied: Bool,
+        isRequesting: Bool,
+        grantAction: @escaping () -> Void,
+        buttonTitle: String,
+        grantedText: String,
+        deniedMessage: String,
+        accessId: String
+    ) -> some View {
+        if isGranted {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 16))
+                Text(grantedText)
+                    .font(WarmFont.body(15))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
+            }
+            .foregroundColor(WarmTheme.success)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if isDenied {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(deniedMessage)
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(sketchColor)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+
+                Button(action: { permissionManager.openAppSettings() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 12))
+                        Text(String(localized: "onboarding.open_settings"))
+                            .font(WarmFont.body(14))
                     }
                     .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(highlightColor)
-                            .shadow(color: highlightColor.opacity(0.3), radius: 8, y: 4)
-                    )
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(inkColor))
                 }
-                .disabled(isRequestingPermission)
-                .accessibilityIdentifier(currentStep == 1 ? "AuthorizeMicButton" : "AuthorizeSpeechButton")
-                .accessibilityHint(String(localized: "a11y.onboarding.authorize_hint"))
+                .accessibilityIdentifier("OpenSettingsButton")
+                .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
             }
+        } else {
+            Button(action: grantAction) {
+                HStack(spacing: 8) {
+                    if isRequesting {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text(buttonTitle)
+                            .font(WarmFont.headline(15))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(highlightColor)
+                        .shadow(color: highlightColor.opacity(0.25), radius: 6, y: 3)
+                )
+            }
+            .disabled(isRequesting)
+            .accessibilityIdentifier(accessId)
+            .accessibilityHint(String(localized: "a11y.onboarding.authorize_hint"))
         }
     }
 
@@ -886,16 +963,17 @@ struct OnboardingView: View {
 
     private var bottomButtons: some View {
         HStack(spacing: 16) {
-            // 后退按钮
-            if currentStep > 0 {
+            // 后退按钮(首步隐藏)
+            if currentStepIndex > 0 {
                 Button(action: {
                     withAnimation(motionAnim(.spring(response: 0.4))) {
-                        currentStep -= 1
+                        currentStepIndex -= 1
                     }
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
+                            .flipsForRightToLeftLayoutDirection(true)
                         Text(String(localized: "onboarding.back"))
                             .font(WarmFont.body(16))
                     }
@@ -907,19 +985,23 @@ struct OnboardingView: View {
                             .stroke(sketchColor.opacity(0.3), lineWidth: 1.5)
                     )
                 }
+                .accessibilityIdentifier("BackButton")
             }
 
             Spacer()
 
             // 前进/完成按钮
+            // - 权限合并页:文案「Continue」,两项都授权后才亮(未授权时显示但禁用)
+            // - 其他页:文案「Next」/「Got it」/「Get Started」,始终可用
             Button(action: nextStep) {
                 HStack(spacing: 8) {
                     Text(buttonTitle)
                         .font(WarmFont.headline(17))
 
-                    if currentStep < totalSteps - 1 {
+                    if currentStepIndex < totalSteps - 1 {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .semibold))
+                            .flipsForRightToLeftLayoutDirection(true)
                     }
                 }
                 .foregroundColor(.white)
@@ -934,7 +1016,9 @@ struct OnboardingView: View {
                             y: 4
                         )
                 )
+                .opacity(primaryButtonOpacity)
             }
+            .disabled(isPrimaryButtonDisabled)
             .accessibilityIdentifier("NextButton")
         }
         .padding(.horizontal, 24)
@@ -944,48 +1028,60 @@ struct OnboardingView: View {
     // MARK: - Computed Properties
 
     private var buttonTitle: String {
-        if currentStep == totalSteps - 1 {
+        switch currentStep {
+        case .completion:
             return String(localized: "onboarding.button.start")
-        } else if currentStep == 1 && !permissionManager.micGranted && !permissionManager.isMicPermanentlyDenied {
-            return String(localized: "onboarding.button.skip")
-        } else if currentStep == 2 && !permissionManager.speechGranted && !permissionManager.isSpeechPermanentlyDenied {
-            return String(localized: "onboarding.button.skip")
-        } else if currentStep == 3 {
+        case .actionButton:
             return String(localized: "onboarding.button.got_it")
-        } else {
+        case .voicePermissions:
+            // 合并页右下角的 Continue —— 授权完成后才可点
+            return String(localized: "onboarding.button.continue")
+        default:
             return String(localized: "onboarding.button.next")
         }
+    }
+
+    /// 权限合并页在两项权限都拿到前禁用 Continue(但保持可见,让用户知道下一步在哪)。
+    /// 其他步骤的主按钮永远可用。
+    private var isPrimaryButtonDisabled: Bool {
+        switch currentStep {
+        case .voicePermissions:
+            return !permissionManager.allPermissionsGranted
+        default:
+            return false
+        }
+    }
+
+    private var primaryButtonOpacity: Double {
+        isPrimaryButtonDisabled ? 0.4 : 1.0
     }
 
     // MARK: - Actions
 
     private func requestMicPermission() {
-        isRequestingPermission = true
+        requestingPermissionType = .mic
 
         Task {
             _ = await permissionManager.requestMicPermission()
-            isRequestingPermission = false
+            requestingPermissionType = nil
         }
     }
 
     private func requestSpeechPermission() {
-        isRequestingPermission = true
+        requestingPermissionType = .speech
 
         Task {
             _ = await permissionManager.requestSpeechPermission()
-            isRequestingPermission = false
+            requestingPermissionType = nil
         }
     }
 
     private func nextStep() {
-        if currentStep == totalSteps - 1 {
+        if currentStepIndex == totalSteps - 1 {
             hasCompletedOnboarding = true
         } else {
-            let next = currentStep + 1
-            // 已付费用户跳过 Pro 介绍页(case 4),直接进 completion(case 5)
-            let target = (next == 4 && isPro) ? 5 : next
             withAnimation(motionAnim(.spring(response: 0.4))) {
-                currentStep = target
+                currentStepIndex += 1
             }
         }
     }

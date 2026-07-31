@@ -146,6 +146,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isProcessing = false
     @State private var showSettingsSheet = false
+    /// 用户在 onboarding 跳过权限后,首次按下录音时弹出的二次引导 sheet。
+    /// 仅在 `permissionManager.hasSkippedInOnboarding == true` 且权限未拿到时触发。
+    @State private var showVoicePermissionReprompt = false
     // 底部 Tab + FAB + 输入面板状态
     @State private var selectedBottomTab: BottomTab = .today
     @State private var showInputPanel = false
@@ -415,6 +418,16 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
             .sheet(isPresented: $showReviewFromStats) {
                 NavigationStack { ReviewView() }
+            }
+            // 用户在 onboarding 跳过权限后的二次引导:点录音按钮时拦截,
+            // 弹更详细的说明 sheet,再走系统权限弹窗。
+            .sheet(isPresented: $showVoicePermissionReprompt) {
+                VoicePermissionRepromptSheet(
+                    onAllow: handleRepromptAllow,
+                    onDismiss: handleRepromptDismiss
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
             }
             .fullScreenCover(item: $selectedTodo) { todo in
                 NavigationStack {
@@ -1527,6 +1540,18 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     private func startRecordingForInputPanel() {
+        // 拦截:用户在 onboarding 跳过权限且未拿到授权 → 弹二次引导 sheet。
+        // 不直接抛 toast —— Onboarding 的 Skip 是低门槛出口,这里再给一次挽回机会。
+        if permissionManager.hasSkippedInOnboarding && !permissionManager.allPermissionsGranted {
+            showVoicePermissionReprompt = true
+            return
+        }
+        performRecordingWithPermissionCheck()
+    }
+
+    /// `startRecordingForInputPanel` 和 `handleRepromptAllow` 共用的权限检查 + 录音启动流程。
+    /// 抽出来避免两处复制大段 task body。
+    private func performRecordingWithPermissionCheck() {
         inputPanelPermissionTask?.cancel()
         inputPanelPermissionTask = Task { @MainActor in
             let readiness = await permissionManager.ensureVoicePermissionsBeforeRecording()
@@ -1573,6 +1598,25 @@ struct HomeView<Store: HomeTodoStore>: View {
                 coordinator.showVoicePermissionRequiredToast()
             }
         }
+    }
+
+    /// 用户在二次引导 sheet 点「Allow Access」→ 关 sheet,重走权限检查流程。
+    /// `ensureVoicePermissionsBeforeRecording` 会触发系统权限弹窗;成功后自动清掉
+    /// `hasSkippedInOnboarding`,所以不会再次进入 reprompt 分支。
+    private func handleRepromptAllow() {
+        showVoicePermissionReprompt = false
+        performRecordingWithPermissionCheck()
+    }
+
+    /// 用户在二次引导 sheet 点「Not now」→ 关 sheet,切键盘 fallback + 显示 toast。
+    /// 行为与系统权限被拒绝的路径保持一致。
+    private func handleRepromptDismiss() {
+        showVoicePermissionReprompt = false
+        isFallbackMode = true
+        withAnimation(WarmAnimation.springSmooth) {
+            isKeyboardMode = true
+        }
+        coordinator.showVoicePermissionRequiredToast()
     }
 
     private func switchInputPanelMode(toKeyboard keyboardMode: Bool) {

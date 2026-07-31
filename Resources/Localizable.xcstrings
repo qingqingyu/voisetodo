@@ -4180,6 +4180,54 @@
         }
       }
     },
+    "onboarding.button.allow_mic" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Microphone Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许使用麦克风"
+          }
+        }
+      }
+    },
+    "onboarding.button.allow_speech" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Speech Recognition"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许语音识别"
+          }
+        }
+      }
+    },
+    "onboarding.button.continue" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续"
+          }
+        }
+      }
+    },
     "onboarding.button.got_it" : {
       "localizations" : {
         "en" : {
@@ -4388,6 +4436,38 @@
         }
       }
     },
+    "onboarding.mic.card_desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lets VoiceTodo hear you"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让 VoiceTodo 听清你说的话"
+          }
+        }
+      }
+    },
+    "onboarding.mic.card_title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风"
+          }
+        }
+      }
+    },
     "onboarding.mic.desc" : {
       "localizations" : {
         "en" : {
@@ -4400,6 +4480,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这样才能「听」到你说的话呀"
+          }
+        }
+      }
+    },
+    "onboarding.mic.granted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone enabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风已开启"
           }
         }
       }
@@ -4613,6 +4709,38 @@
         }
       }
     },
+    "onboarding.speech.card_desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns your voice into text"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把你的声音转成文字"
+          }
+        }
+      }
+    },
+    "onboarding.speech.card_title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech Recognition"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音识别"
+          }
+        }
+      }
+    },
     "onboarding.speech.desc" : {
       "localizations" : {
         "en" : {
@@ -4629,18 +4757,34 @@
         }
       }
     },
-    "onboarding.speech.privacy" : {
+    "onboarding.speech.granted" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Speech recognition runs locally on your device — data never leaves your phone"
+            "value" : "Speech recognition enabled"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "语音识别在设备本地进行，数据不会离开你的手机"
+            "value" : "语音识别已开启"
+          }
+        }
+      }
+    },
+    "onboarding.speech.privacy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech-to-text runs on your device. Task parsing sends the text to our server."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音转文字在设备本地完成；任务解析会把文字发到服务器处理"
           }
         }
       }
@@ -4705,6 +4849,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "待办会自动显示在 Widget"
+          }
+        }
+      }
+    },
+    "onboarding.voice.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap once, say it, done."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下，说出来，搞定"
+          }
+        }
+      }
+    },
+    "onboarding.voice.privacy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice transcription runs on your device. Task parsing sends the text to our server."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音转文字在设备本地完成；任务解析会把文字发到服务器处理"
+          }
+        }
+      }
+    },
+    "onboarding.voice.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speak your todos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说出你的待办"
           }
         }
       }
@@ -5657,6 +5849,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ · 至 %2$@"
+          }
+        }
+      }
+    },
+    "reprompt.cta" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许访问"
+          }
+        }
+      }
+    },
+    "reprompt.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To turn your voice into todos, we need to hear you and recognize your speech."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要把你的声音变成待办，我们需要听清并识别你说的话"
+          }
+        }
+      }
+    },
+    "reprompt.mic_benefit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone — to capture your voice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风 — 用来录制你的声音"
+          }
+        }
+      }
+    },
+    "reprompt.skip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂不"
+          }
+        }
+      }
+    },
+    "reprompt.speech_benefit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech Recognition — to convert speech to text"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音识别 — 把声音转成文字"
+          }
+        }
+      }
+    },
+    "reprompt.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo needs microphone access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo 需要麦克风权限"
           }
         }
       }
