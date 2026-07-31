@@ -36,6 +36,8 @@ struct VoicePermissionRepromptSheet: View {
                     .font(WarmFont.body(15))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
                     .padding(.horizontal, 16)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -59,6 +61,8 @@ struct VoicePermissionRepromptSheet: View {
                     Text(String(localized: "reprompt.cta"))
                         .font(WarmFont.headline(17))
                         .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -73,6 +77,8 @@ struct VoicePermissionRepromptSheet: View {
                     Text(String(localized: "reprompt.skip"))
                         .font(WarmFont.body(14))
                         .foregroundColor(sketchColor.opacity(0.7))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .padding(.vertical, 6)
                 }
                 .accessibilityIdentifier("RepromptDismissButton")
@@ -120,6 +126,8 @@ struct VoicePermissionRepromptSheet: View {
             Text(text)
                 .font(WarmFont.body(15))
                 .foregroundColor(inkColor)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
 

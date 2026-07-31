@@ -13,8 +13,11 @@ import Darwin
 /// Onboarding 和后续提示需要据此跳过相关引导,避免用户去设置里找不存在的选项。
 enum ActionButtonCapability {
     /// 当前设备是否支持 Action Button。
-    /// 非 iPhone 设备一律返回 false;无法解析时默认 false(宁可漏显示,不可误导)。
-    static var isSupported: Bool {
+    /// 硬件标识在运行期不变,故用 lazy static 只算一次,避免 Onboarding 每次 body
+    /// 求值都重复跑 sysctl + 字符串解析。
+    static var isSupported: Bool { _isSupported }
+
+    private static let _isSupported: Bool = {
         var systemInfo = utsname()
         let result = Darwin.sysctlbyname("hw.machine", &systemInfo, nil, nil, 0)
         guard result == 0 else {
@@ -43,5 +46,5 @@ enum ActionButtonCapability {
         // iPhone 15 Pro / Pro Max(iPhone16,1 / iPhone16,2)
         if major == 16 && minor <= 2 { return true }
         return false
-    }
+    }()
 }

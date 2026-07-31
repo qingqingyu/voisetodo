@@ -35,7 +35,8 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var currentStepIndex = 0
-    @State private var requestingPermissionType: PermissionRequestType?
+    // 用 Set 而非单个值:两张权限卡可独立授权,各自 spinner 互不覆盖。
+    @State private var requestingPermissionTypes: Set<PermissionRequestType> = []
 
     // 动画状态
     @State private var contentOffset: CGFloat = 30
@@ -411,7 +412,7 @@ struct OnboardingView: View {
                     desc: String(localized: "onboarding.mic.card_desc"),
                     isGranted: permissionManager.micGranted,
                     isDenied: permissionManager.isMicPermanentlyDenied,
-                    isRequesting: requestingPermissionType == .mic,
+                    isRequesting: requestingPermissionTypes.contains(.mic),
                     grantAction: requestMicPermission,
                     buttonTitle: String(localized: "onboarding.button.allow_mic"),
                     grantedText: String(localized: "onboarding.mic.granted"),
@@ -425,7 +426,7 @@ struct OnboardingView: View {
                     desc: String(localized: "onboarding.speech.card_desc"),
                     isGranted: permissionManager.speechGranted,
                     isDenied: permissionManager.isSpeechPermanentlyDenied,
-                    isRequesting: requestingPermissionType == .speech,
+                    isRequesting: requestingPermissionTypes.contains(.speech),
                     grantAction: requestSpeechPermission,
                     buttonTitle: String(localized: "onboarding.button.allow_speech"),
                     grantedText: String(localized: "onboarding.speech.granted"),
@@ -445,6 +446,8 @@ struct OnboardingView: View {
                 Text(String(localized: "onboarding.button.skip"))
                     .font(WarmFont.body(14))
                     .foregroundColor(sketchColor.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .padding(.vertical, 6)
             }
             .accessibilityIdentifier("SkipVoicePermissionsButton")
@@ -512,6 +515,8 @@ struct OnboardingView: View {
                     Text(desc)
                         .font(WarmFont.caption(14))
                         .foregroundColor(sketchColor)
+                        .lineLimit(4)
+                        .minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
                 }
@@ -571,6 +576,8 @@ struct OnboardingView: View {
                     .font(WarmFont.caption(13))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
 
@@ -580,6 +587,8 @@ struct OnboardingView: View {
                             .font(.system(size: 12))
                         Text(String(localized: "onboarding.open_settings"))
                             .font(WarmFont.body(14))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
@@ -967,7 +976,7 @@ struct OnboardingView: View {
             if currentStepIndex > 0 {
                 Button(action: {
                     withAnimation(motionAnim(.spring(response: 0.4))) {
-                        currentStepIndex -= 1
+                        currentStepIndex = max(currentStepIndex - 1, 0)
                     }
                 }) {
                     HStack(spacing: 6) {
@@ -976,6 +985,8 @@ struct OnboardingView: View {
                             .flipsForRightToLeftLayoutDirection(true)
                         Text(String(localized: "onboarding.back"))
                             .font(WarmFont.body(16))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .foregroundColor(sketchColor)
                     .padding(.horizontal, 20)
@@ -997,6 +1008,8 @@ struct OnboardingView: View {
                 HStack(spacing: 8) {
                     Text(buttonTitle)
                         .font(WarmFont.headline(17))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
 
                     if currentStepIndex < totalSteps - 1 {
                         Image(systemName: "chevron.right")
@@ -1059,20 +1072,20 @@ struct OnboardingView: View {
     // MARK: - Actions
 
     private func requestMicPermission() {
-        requestingPermissionType = .mic
+        requestingPermissionTypes.insert(.mic)
 
         Task {
             _ = await permissionManager.requestMicPermission()
-            requestingPermissionType = nil
+            requestingPermissionTypes.remove(.mic)
         }
     }
 
     private func requestSpeechPermission() {
-        requestingPermissionType = .speech
+        requestingPermissionTypes.insert(.speech)
 
         Task {
             _ = await permissionManager.requestSpeechPermission()
-            requestingPermissionType = nil
+            requestingPermissionTypes.remove(.speech)
         }
     }
 
@@ -1081,7 +1094,9 @@ struct OnboardingView: View {
             hasCompletedOnboarding = true
         } else {
             withAnimation(motionAnim(.spring(response: 0.4))) {
-                currentStepIndex += 1
+                // clamp 防御:visibleSteps 在 onboarding 期间收缩(理论上 isPro 变化)
+                // 会导致 currentStepIndex 越界。这里显式 clamp 而非静默 fallback。
+                currentStepIndex = min(currentStepIndex + 1, visibleSteps.count - 1)
             }
         }
     }
