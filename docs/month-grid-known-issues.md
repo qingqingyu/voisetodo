@@ -1,6 +1,8 @@
 # 月网格（grid + 月视图）已知问题
 
-> 状态：**均未实施**。两项独立，可分别处理。
+> 状态：**两项均已实施**。本文档保留为设计决策 + 实施记录。
+> 问题 1 落点：`UI/Home/HomeMonthHeaderView.swift` 的 `allocateRowHeights` 新增 Pass 3a / Pass 3b / Pass 4（slack 优先分给有真实隐藏事件的周 + 按真实行高回补 shown，`:437` 用 `precondition` 守护不变量）。
+> 问题 2 落点：`UI/Home/HomeMonthGridButton.swift:162` 加 `.strikethrough(occurrence.isCompleted, color: WarmTheme.textMuted)`（采用文档「首选：加删除线」方案）。
 > 相关文件：`UI/Home/HomeMonthHeaderView.swift`、`UI/Home/HomeMonthGridButton.swift`
 
 ---

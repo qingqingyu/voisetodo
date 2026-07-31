@@ -14,6 +14,9 @@ struct HomeMonthHeaderView: View {
     /// 外层(HomeView.monthHomeView)必须仅在 `selectedBottomTab == .calendar` 时渲染本视图,
     /// 否则「今日」tab 误挂载时左右滑仍会触发翻月。
     var onShiftPeriod: ((Int) -> Void)? = nil
+    /// 点击月格事件条 → 打开 todo 详情。nil = 事件条不可点。
+    /// 透传给 HomeMonthGridButton.onOpenTodo。
+    var onOpenTodo: ((TodoItemData) -> Void)? = nil
     /// 网格总预算高度(来自 GeometryReader)。0 = 不约束,用默认行高。
     var availableHeight: CGFloat = 0
 
@@ -129,7 +132,8 @@ struct HomeMonthHeaderView: View {
             onSelect: onSelectDay,
             onDropTodo: dropCallback,
             rowHeight: rowHeight,
-            maxVisibleEvents: clampedBars
+            maxVisibleEvents: clampedBars,
+            onOpenTodo: onOpenTodo
         )
     }
 }

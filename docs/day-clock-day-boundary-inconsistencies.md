@@ -1,7 +1,6 @@
 # 自然日 / 用户日 口径混用（DayClock）—— 三处线上缺陷
 
-> 状态：**已实施**。`8e5758f`（新原语 `userDayStart(onNaturalDay:)` + 三处调用点修复 + 7 条新测），
-> 当前在 `wendang` 分支，**待合并 `main`**。
+> 状态：**已实施**。`8e5758f`（新原语 `userDayStart(onNaturalDay:)` + 三处调用点修复 + 7 条新测），已合并 `main`。
 > 本文保留为**设计决策 + 实施记录**。
 > 相关文件：`UI/Home/HomeView.swift`、`UI/Home/HomeCalendarState.swift`、
 > `Protocols/Domain/DayClock.swift`

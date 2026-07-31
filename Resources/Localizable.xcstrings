@@ -133,6 +133,22 @@
         }
       }
     },
+    "a11y.day.open_todo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开%@"
+          }
+        }
+      }
+    },
     "a11y.day.out_of_month" : {
       "localizations" : {
         "en" : {

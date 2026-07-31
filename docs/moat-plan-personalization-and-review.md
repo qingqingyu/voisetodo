@@ -1,6 +1,7 @@
 # 技术方案：② 深层个性化解析 + ③ 沉淀/回顾（两条护城河落地）
 
-> 本文档是交接用的实现方案，供另一位 AI / 开发者据此落地。
+> 状态：**主体已实施**（A1 / A2 / A3 / B1 / B2 / B3 均落地；B4 成就卡分享文档自标「可选 / later」，未实施——不计欠账）。
+> 本文档原为交接用的实现方案，现保留为设计决策 + 实施记录。详细落地点见文末「实施落地记录」。
 > 环境提示：Swift 代码需在 **Xcode 26** 编译验证（iOS 26 部署目标）；AIProxy(Worker) 的 JS 可用 `node --test AIProxy/worker.test.js` 验证。
 > ② 的"自动学习"层严重依赖真机 + 真实用户数据长期迭代，不是一次做完的东西。
 
@@ -90,3 +91,27 @@
 - 服务端用户画像 / 云端个性化模型（坚持本地优先，隐私卖点）。
 - 恢复被删的语音历史 tab（回顾是新的、聚合式的，不是旧历史流水）。
 - 第三方图表 / ML 库（用系统 Swift Charts）。
+
+---
+
+## 实施落地记录
+
+> 2026-07-31 audit：本文档原标「待实施」，实际代码已落地，补此节同步状态。
+
+| 项 | 落地位置 |
+|---|---|
+| A1 个人词库（数据 + 注入） | `Protocols/PersonalGlossary.swift`（`PersonalGlossaryEntry` / `PersonalGlossaryEntryType` / `PersonalGlossaryProviding` / `PersonalGlossaryStore`）；`UI/Home/PersonalGlossaryView.swift`；`Extractor/NetworkClient.swift`（`personalHints: String?`）；`AIProxy/src/adapters/base.js`（`buildSystemPrompt` 末尾拼个人约定段）；`AIProxy/worker.test.js` 正反两条断言（`:262,288`） |
+| A2 自动学习建议 | `Protocols/CorrectionTracker.swift`（频次累计 + 阈值建议）；`UI/Home/HomeView.swift:341,2076`（banner UI + MARK） |
+| A3 透明面板 | 与 A1 合并 —— `PersonalGlossaryView` 即设置页「我的说法」管理页（可编辑/删除，本地存储；`Localizable.xcstrings` 已有「我的说法」本地化） |
+| B1 回顾数据层 | 纯函数在 `Protocols/Domain/ReviewAggregator.swift`（`CompletionEvent` + `ReviewSummary` + `summarize`，仅负责聚合计算）；取数 + 调用在 `UI/Review/ReviewView.swift`（见下方偏离决策）；单测见 `VoiceTodoTests/Protocols/DayStartHourBoundaryTests.swift` 等 |
+| B2 回顾界面 | `UI/Review/ReviewView.swift`（`project.pbxproj` 已注册）；入口在 `UI/Home/HomeSettingsSheet.swift:131` 和 `UI/Home/HomeView.swift:414,417`（统计 pill + 通知深链两路） |
+| B3 周期小结主动触达 | `App/ReviewNotificationScheduler.swift`（每周一 9:00 本地通知）；`App/VoiceTodoApp.swift:325` 调用 `scheduleWeekly()`；`App/AppCoordinator.swift:59` 通知深链接入 |
+| B4 成就卡分享 | **未实施**（文档自标「可选 / later」，不计欠账） |
+
+### ⚠️ 实施时的偏离决策（与原计划不同）
+
+**B1 的 `completedEvents(from:to:)` 没有下沉到 store / `TodoQueryActor`**。
+
+- **原计划**：`store` 加只读查询 `completedEvents(from:to:)`，下沉 `TodoQueryActor` 后台（仿 P1，fetch 失败显式抛）
+- **实际**：聚合逻辑放在 `UI/Review/ReviewView.swift:122-137` 的私有 `completionEvents` 计算属性里（union 已完成 `TodoItem` + 规律任务完成记录）
+- **影响**：功能等价，但如果后续有别的页面也要查完成事件，会变成重复代码。当前只有 ReviewView 一个消费者，暂未成为问题；若日后新增消费者，应下沉回 store。
