@@ -1204,7 +1204,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                     // 纯 predicate:不 mutate ScrollView,Coordinator 在返回 true 时同步
                     // disable bounces + 杀 in-flight bounce/decel 动画,gesture 结束时恢复。
                     //
-                    // 触发条件(任一不满足则归 List 自己滚):
+                    // 判定:
                     //   1. atTop:contentOffset.y ≤ 0.5(0.5pt 容差)。
                     //      SwiftUI List 视觉顶部恒等于 contentOffset.y == 0,不论 List 自身
                     //      contentInset / 父视图 safe area 如何 —— List 被 headerView + 周条卡片
@@ -1213,21 +1213,29 @@ struct HomeView<Store: HomeTodoStore>: View {
                     //      瞬态(此时 contentOffset.y < 0)以及浮点抖动。
                     //      不用 adjustedContentInset 判定:它在 List 不占 safe area 顶部时为 0,
                     //      用它做阈值会误判永远到不了顶(实测 bug,曾导致功能完全失效)。
-                    //   2. swipingDown:velocity.y > listTopExpandVelocityThreshold(早期方向判定可靠,
-                    //      translation < 5pt 时 velocity 已能反映意图)
-                    //      || translation.y > listTopExpandTranslationHysteresis(hysteresis,
-                    //      velocity 抖动兜底)。
+                    //   2. 方向:translation.y ≥ 0 或 velocity.y ≥ 0(下滑或静止)。
+                    //      只有明显上滑(看下方内容)才拒绝,让 List 正常往下滚。
+                    //
+                    // 关键:不看位移/速度阈值。shouldRecognizeSimultaneouslyWith 首次被 UIKit
+                    // 调用时(两个 gesture 都还在 .possible,或 ScrollView pan 刚 .began),
+                    // translation 可能仍 ≈ 0、velocity 也未稳定 —— 加阈值会让首次返回 false,
+                    // UIKit 随即让 List pan 独占,外层 SimultaneousDragGesture 进入 .failed,
+                    // 后续位移再大也救不回来(本 gesture 已死)。这就是「List 可滚动时即使到顶
+                    // 下滑手势也不生效」的根因;「无滚轮(contentSize ≤ bounds)时生效」是因为
+                    // List pan 根本不会 began,没有 simultaneous 询问,外层无竞争者直接接管。
+                    //
+                    // 真正的「下滑幅度」把关交给 SimultaneousDragGesture 自身的 minimumDistance
+                    // (= collapseDragThreshold = 40pt):用户慢速下滑位移不足 40pt 时 onChanged
+                    // 不派发,collapseProgress 不变,手势被视为未激活,List 仍可继续滚动。
                     //
                     // 不读 collapseProgress:List 仅在 collapseProgress > collapseListVisibleThreshold(0.3)
                     // 时挂载(见上方 listInteractive 判定),闭包只在 List 已挂载时才会被调用 ——
                     // 避免闭包捕获 SwiftUI state 的时序问题。
                     allowSimultaneousWithScrollViewPan: { scrollView, pan in
-                        let atTop = scrollView.contentOffset.y <= 0.5
-                        guard atTop else { return false }
-                        let v = pan.velocity(in: scrollView)
+                        guard scrollView.contentOffset.y <= 0.5 else { return false }
                         let t = pan.translation(in: scrollView)
-                        return v.y > HomeLayoutMetrics.listTopExpandVelocityThreshold
-                            || t.y > HomeLayoutMetrics.listTopExpandTranslationHysteresis
+                        let v = pan.velocity(in: scrollView)
+                        return t.y >= 0 || v.y >= 0
                     }
                 )
             )
