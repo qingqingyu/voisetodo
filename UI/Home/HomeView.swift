@@ -957,6 +957,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             onSelectDay: selectDay,
             onDropTodo: { todoId, date in assignTodoToDate(todoId, date: date) },
             onShiftPeriod: { shiftPeriod(by: $0) },
+            onOpenTodo: { selectedTodo = $0 },
             availableHeight: rowHeightBasis
         )
     }

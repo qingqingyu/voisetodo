@@ -26,6 +26,11 @@ struct HomeMonthGridButton: View {
     /// 因此 clamping 责任在调用方(单一来源:HomeMonthHeaderView.dayCell)。
     var maxVisibleEvents: Int = 3
 
+    /// 点击单条事件条 → 打开该 todo 详情。nil = 事件条不可点,整格点击仍走 onSelect。
+    /// 与 WarmTodoCard.contextMenu 同策略(WarmTodoCard.swift:334-336):
+    /// 调用方不注入 callback 时不挂 Button,避免空 action 的 Button 吞掉整格 tap。
+    var onOpenTodo: ((TodoItemData) -> Void)? = nil
+
     @State private var isDropTargeted = false
 
     private var dayNumberColor: Color {
@@ -43,7 +48,7 @@ struct HomeMonthGridButton: View {
             VStack(alignment: .leading, spacing: 2) {
                 dayNumberView
                 ForEach(Array(visible.enumerated()), id: \.element.id) { idx, occurrence in
-                    eventBar(occurrence, isLast: idx == visible.count - 1, overflow: overflow)
+                    eventBarRow(occurrence, idx: idx, isLast: idx == visible.count - 1, overflow: overflow)
                 }
                 Spacer(minLength: 0)
             }
@@ -57,6 +62,19 @@ struct HomeMonthGridButton: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(voiceOverText)
         .accessibilityHint(String(localized: "a11y.day.hint"))
+        // 事件条是嵌套 Button,被 accessibilityElement(children: .ignore) 从 AX 树里吞掉,
+        // VoiceOver / Switch Control 无法直达。用 custom action 补一条等价路径:
+        // 每条可见事件一个「打开 <标题>」动作(与视觉可见条一一对应;
+        // overflow 的 N 条视觉上也点不到,a11y 保持同口径,不额外暴露)。
+        .accessibilityActions {
+            if let onOpenTodo {
+                ForEach(visible, id: \.id) { occurrence in
+                    Button(String(format: String(localized: "a11y.day.open_todo"), occurrence.todo.title)) {
+                        onOpenTodo(occurrence.todo)
+                    }
+                }
+            }
+        }
         .accessibilityAddTraits(dayState.isSelected ? [.isButton, .isSelected] : [.isButton])
         .accessibilityIdentifier("MonthGridCell_\(dayState.date.formatted(.dateTime.year().month().day()))")
         .dropDestination(for: String.self) { items, _ in
@@ -104,6 +122,33 @@ struct HomeMonthGridButton: View {
             )
             .fixedSize()
             .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// 事件条的交互包装。onOpenTodo == nil 时返回裸 eventBar——
+    /// 空 action 的 Button 会吞掉 tap,让整格 onSelect 在事件条区域失效。
+    /// 与 WarmTodoCard 的嵌套 Button 先例同构(WarmTodoCard.swift:330 注释记录了
+    /// 「SwiftUI 把 tap 派发给最内层 Button」+「必须用 Button 不能用 onTapGesture,
+    /// iOS 26 FB18199844:顶层 onTapGesture 吞 List swipeActions 删除按钮」两条结论)。
+    ///
+    /// 命中区:`.contentShape(Rectangle().inset(by: 2))` 把条间死区从 2pt 拓到 6pt,
+    /// 减少误触相邻条(条间距 = gridBarSpacing = 2pt,手指接触面 ~40pt 易偏移到邻条)。
+    /// 仍低于 Apple HIG 44pt 最小命中区(gridBarHeight=24pt),但展开态下「选中当天」
+    /// 收益本就低(下方列表不渲染),事件条打开详情的收益高得多——划得来的取舍。
+    @ViewBuilder
+    private func eventBarRow(_ occurrence: TodoOccurrenceData, idx: Int, isLast: Bool, overflow: Int?) -> some View {
+        if let onOpenTodo {
+            Button {
+                HapticFeedback.light()
+                onOpenTodo(occurrence.todo)
+            } label: {
+                eventBar(occurrence, isLast: isLast, overflow: overflow)
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle().inset(by: 2))
+            .accessibilityIdentifier("MonthGridBar_\(TodoOccurrenceData.dayKey(for: dayState.date, calendar: Self.calendar))_\(idx)")
+        } else {
+            eventBar(occurrence, isLast: isLast, overflow: overflow)
+        }
     }
 
     /// 单条事件文字条:浅色分类背景 + 深色文字 + 可选时间前缀 + 可选 +N 尾标。
