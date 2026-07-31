@@ -85,6 +85,7 @@
 		6BFF373AA52953B34AB9433D /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AB138328A1DD4AF943AEACF /* Constants.swift */; };
 		6C68311A74707D35C02BA473 /* AppGroupConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA980239E357F51EC6EE59B5 /* AppGroupConfig.swift */; };
 		6D48A6592C564335F2062812 /* BottomInputPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A79C26D7A24A1941EC2BE4F /* BottomInputPanelView.swift */; };
+		6E0AF750C463645B40EA6672 /* TodoFieldEditors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94F33F04346AC9AE87AE51E /* TodoFieldEditors.swift */; };
 		6F38A645065012B68EF7A9C1 /* TodoItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB318CD8E5F0584EB9C04A4D /* TodoItemRow.swift */; };
 		7003A1D937643631E99B7085 /* AudioSessionHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E51B798662E8477BAEAC3DB /* AudioSessionHelper.swift */; };
 		7014ED404EF486F01B4ACDD3 /* TodoExtractorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6638C757F3839FD0CF826D1A /* TodoExtractorService.swift */; };
@@ -390,6 +391,7 @@
 		F349C1012E4CB00A2256A2DB /* VoiceTodoShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTodoShortcuts.swift; sourceTree = "<group>"; };
 		F702747C99D7A98923F3C220 /* RecurrenceRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceRule.swift; sourceTree = "<group>"; };
 		F78DB34A64BE991E3FD047AB /* UserVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserVocabulary.swift; sourceTree = "<group>"; };
+		F94F33F04346AC9AE87AE51E /* TodoFieldEditors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoFieldEditors.swift; sourceTree = "<group>"; };
 		FA1892EC44E6D1583C938EDB /* TodoEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoEntity.swift; sourceTree = "<group>"; };
 		FB318CD8E5F0584EB9C04A4D /* TodoItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoItemRow.swift; sourceTree = "<group>"; };
 		FE4F86105DF065B995955FC1 /* UITestModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestModels.swift; sourceTree = "<group>"; };
@@ -492,6 +494,7 @@
 				00E8EAE2393518A62CD0CB54 /* MarqueeText.swift */,
 				17E151F244003A66D9F29EAD /* SimultaneousDragGesture.swift */,
 				73C3CB4E9758E6F652FDA8A9 /* ToastView.swift */,
+				F94F33F04346AC9AE87AE51E /* TodoFieldEditors.swift */,
 				604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */,
 				D3E581A75CB77DE80D7F8AFF /* VoicePermissionRepromptSheet.swift */,
 			);
@@ -1046,6 +1049,7 @@
 				9D7F2574173C14D9EE128E79 /* TodoEntityQuery.swift in Sources */,
 				13E632F84CD27EC7BE755AFC /* TodoExtractorProtocol.swift in Sources */,
 				7014ED404EF486F01B4ACDD3 /* TodoExtractorService.swift in Sources */,
+				6E0AF750C463645B40EA6672 /* TodoFieldEditors.swift in Sources */,
 				6F38A645065012B68EF7A9C1 /* TodoItemRow.swift in Sources */,
 				5525AC26E6147C37BE2C04D8 /* TodoNotificationSync.swift in Sources */,
 				BAABC4674991E043BA856197 /* TodoQueryActor.swift in Sources */,

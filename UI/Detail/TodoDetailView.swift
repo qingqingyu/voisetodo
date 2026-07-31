@@ -17,16 +17,6 @@ private let detailRecurrenceSummaryTimeFormatter: DateFormatter = {
     return formatter
 }()
 
-/// 日期 popover 入口的日期文本(如 en 下 "Jul 15, 2026"、zh 下 "2026年7月15日")。
-/// 跟随系统 locale —— 日期显示属 UI 文案,跟系统语言一致符合预期(区别于 detailRecurrenceSummaryTimeFormatter
-/// 那种需要跨语言锁格的场景)。file-private 顶层同上 —— 泛型类型内不允许 static stored properties。
-private let detailDateTextFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    formatter.timeStyle = .none
-    return formatter
-}()
-
 /// 下滑关闭手势阈值(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
 /// 跟 chevron.down 按钮(ToolbarItem)等价的输入通道:从页面顶部区域下滑即 dismiss。
 private enum DismissDragConfig {
@@ -95,23 +85,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var editedDayOfMonth: Int
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
-    /// 日期 popover 显隐。替代原 .compact DatePicker —— 系统 compact popover 选中日期后不自动收起,
-    /// 改用本状态自控 .popover, 在 datePopoverBinding 的 setter 里 schedulePopoverDismiss 收起。
-    @State private var showDatePickerPopover = false
-    /// popover 打开瞬间捕获的回退锚点(editedDueDate == nil 时用)。避免在 getter / 标签里反复
-    /// 调 Date() —— 每次 SwiftUI body 重建都会读,跨用户日起点停留时 getter 漂移会让选中位置跳动。
-    /// 打开 popover 时设一次,关闭时清空,生命周期严格圈定在 popover 显隐之间。
-    @State private var popoverFallbackAnchor: Date?
-    /// 日期选中触觉反馈生成器。持久化而非每次 set 新建 —— 首击前 prepare() 预热 haptic engine,
-    /// 避免首次 impactOccurred() 因 engine 未就绪延迟/丢失。popover 关闭后重置以便下次重新预热。
-    @State private var selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     /// 防抖保存 task。用户每次改字段都会 cancel + 重启;800ms 内无新改动才真正写库。
     /// onDisappear 时 cancel 并立即静默保存,保证用户离开时一定落盘。
     @State private var saveTask: Task<Void, Never>?
-    /// 日期 popover 选中后的自动收起 task。每次选新日期 cancel 重启 ——
-    /// 用户连续点不同日期时收起推迟到最后一击后 ~0.18s,避免还在挑日期就被收走。
-    /// onDisappear 时一并 cancel,防止 dismiss 后 task 仍触发 showDatePickerPopover 写入。
-    @State private var popoverDismissTask: Task<Void, Never>?
 
     /// ScrollView 是否处于顶部(静止 + bounce 都算 true)。由根视图 `.onPreferenceChange`
     /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势用它扩展识别区域:
@@ -212,14 +188,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             Text(String(localized: "detail.section.category"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
-                            LazyVGrid(
-                                columns: [GridItem(.adaptive(minimum: 64), spacing: WarmSpacing.xs)],
-                                spacing: WarmSpacing.xs
-                            ) {
-                                ForEach(TodoCategory.allCases, id: \.self) { cat in
-                                    categoryChip(cat)
-                                }
-                            }
+                            TodoCategoryGrid(selection: $editedCategory, onEdit: checkForChanges)
                         }
                     }
 
@@ -229,11 +198,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             Text(String(localized: "detail.section.priority"))
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
-                            HStack(spacing: WarmSpacing.sm) {
-                                priorityButton(.low, label: String(localized: "detail.priority.low"), icon: "arrow.down")
-                                priorityButton(.normal, label: String(localized: "detail.priority.normal"), icon: "minus")
-                                priorityButton(.high, label: String(localized: "detail.priority.high"), icon: "exclamationmark")
-                            }
+                            TodoPriorityPicker(selection: $editedPriority, onEdit: checkForChanges)
                         }
                     }
 
@@ -259,7 +224,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             if dateRowMode == .dueDate {
                                 if editedDueDate != nil {
                                     HStack {
-                                        datePopoverTrigger
+                                        TodoDatePopoverTrigger(date: $editedDueDate, onEdit: checkForChanges)
                                         Spacer()
                                         Button {
                                             editedDueDate = nil
@@ -297,7 +262,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                     Text(String(localized: "detail.start_date"))
                                         .font(WarmFont.caption(12))
                                         .foregroundColor(WarmTheme.textSecondary)
-                                    datePopoverTrigger
+                                    TodoDatePopoverTrigger(date: $editedDueDate, onEdit: checkForChanges)
                                     Spacer()
                                 }
                                 .accessibilityIdentifier("DetailStartDatePicker")
@@ -319,7 +284,13 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             // - hasDueTime=true:钟点 picker + 派生 TimeBucket 只读 + 清除钟点按钮
                             // - hasDueTime=false:「添加钟点」按钮(canAddClockTime 守门)+ TimeBucket 胶囊恒显示
                             Divider()
-                            timeSection
+                            TodoClockTimeRow(
+                                dueDate: $editedDueDate,
+                                hasDueTime: $editedHasDueTime,
+                                timeBucket: $editedTimeBucket,
+                                recurrenceFrequency: editedRecurrenceFrequency,
+                                onEdit: checkForChanges
+                            )
                         }
                     }
 
@@ -410,10 +381,6 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .onDisappear {
             saveTask?.cancel()
             saveTask = nil
-            // 日期 popover 自动收起 task 一并 cancel —— 页面已退出,防止 task 在 dismiss 后
-            // 仍触发 showDatePickerPopover 写入(虽无害,但状态干净更可预测)。
-            popoverDismissTask?.cancel()
-            popoverDismissTask = nil
             if hasChanges {
                 persistChanges(feedback: .none)
             }
@@ -473,288 +440,6 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     .fill(Color.white)
                     .shadow(color: WarmTheme.shadowLight, radius: 4, x: 0, y: 2)
             )
-    }
-
-    // MARK: - Chips（自适应网格 + 统一实心填充选中样式）
-
-    private func categoryChip(_ category: TodoCategory) -> some View {
-        let isSelected = editedCategory == category
-        return Button {
-            withAnimation(WarmAnimation.springStandard) { editedCategory = category; checkForChanges() }
-        } label: {
-            Text(category.displayName)
-                .font(WarmFont.caption(13))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, WarmSpacing.sm)
-                .padding(.vertical, WarmSpacing.xs)
-                .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
-                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// 颜色语义跟优先级强度对应(三档都是实心填充,深浅表达强度,不再用描边):
-    /// - High 选中   → 实心 urgent(红) + 白字(强调态,危险/紧急)
-    /// - Normal 选中 → 实心 primary(中珊瑚橙) + 白字(标准强调)
-    /// - Low 选中    → 实心 primaryLight(浅珊瑚) + textPrimary(弱强调,浅底配深字保证可读)
-    /// - 未选中      → 浅灰底 + textSecondary
-    /// 之前 Normal 选中是细描边,跟未选中的浅灰底几乎分不清——统一改实心后
-    /// 三档的"选中/未选中"对比都很强,颜色深浅本身就是强度提示,一眼能看出选的是哪档。
-    private func priorityButton(_ priority: Priority, label: String, icon: String) -> some View {
-        let isSelected = editedPriority == priority
-        return Button {
-            withAnimation(WarmAnimation.springStandard) { editedPriority = priority; checkForChanges() }
-        } label: {
-            HStack(spacing: WarmSpacing.xs) {
-                Image(systemName: icon).font(.system(size: 14, weight: .semibold))
-                // 字号统一到 caption(13):跟 categoryChip 同尺寸,chip 类组件视觉一致。
-                Text(label).font(WarmFont.caption(13))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, WarmSpacing.sm)
-            .background(priorityButtonBackground(isSelected: isSelected, priority: priority))
-            .foregroundColor(
-                isSelected
-                    ? (priority == .low ? WarmTheme.textPrimary : .white)
-                    : WarmTheme.textSecondary
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// priorityButton 的背景 View。抽出为独立 helper 是为了规避 SwiftUI `.background { if/else }`
-    /// ViewBuilder 闭包写法在 type-check 耗时和可读性上的问题,跟同文件其他 chip 的
-    /// `.background(RoundedRectangle(...).fill/stroke(...))` 直链形式保持一致。
-    @ViewBuilder
-    private func priorityButtonBackground(isSelected: Bool, priority: Priority) -> some View {
-        let shape = RoundedRectangle(cornerRadius: WarmRadius.card)
-        if isSelected {
-            switch priority {
-            case .high:
-                shape.fill(WarmTheme.urgent)
-            case .normal:
-                shape.fill(WarmTheme.primary)
-            case .low:
-                shape.fill(WarmTheme.primaryLight)
-            }
-        } else {
-            shape.fill(WarmTheme.secondaryBackground)
-        }
-    }
-
-    /// 日期触发器 + graphical popover(选中即收)。替代原 .compact DatePicker:
-    /// 系统 compact popover 选中日期后不自动收起(iOS 系统行为,SwiftUI 无公开 API 干预),
-    /// 改用 app 自控的 .popover + .graphical + datePopoverBinding, 在 setter 里 schedulePopoverDismiss
-    /// 实现「点中日期 → 等选中黑圈动画播完(~0.18s) → popover 自动收起」的连贯体验。
-    /// 入口外观:一行日期文字 + 小 chevron,颜色沿用 textPrimary 接近原 compact 文字观感。
-    /// 两处复用 —— .dueDate mode(HStack 内,后跟 ✕ 清除) 与 .startAnchor mode(前缀「起始日期」标签) 共用。
-    @ViewBuilder
-    private var datePopoverTrigger: some View {
-        Button {
-            // 打开瞬间捕获回退锚点:之后 popover 内 getter / 标签都用这一份稳定值,
-            // 避免 SwiftUI body 重建时反复调 Date() 导致跨用户日起点漂移。
-            if popoverFallbackAnchor == nil {
-                popoverFallbackAnchor = DayClock.startOfUserDay(for: Date())
-            }
-            showDatePickerPopover = true
-        } label: {
-            HStack(spacing: WarmSpacing.xxs) {
-                Text(detailDateTextFormatter.string(from: editedDueDate ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date())))
-                    .font(WarmFont.body(16))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .layoutPriority(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .accessibilityHidden(true)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(String(localized: "detail.time"))
-        .accessibilityValue(detailDateTextFormatter.string(from: editedDueDate ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date())))
-        .accessibilityIdentifier("DetailDatePopoverTrigger")
-        .popover(isPresented: $showDatePickerPopover) {
-            VStack(spacing: WarmSpacing.sm) {
-                DatePicker(
-                    "",
-                    selection: datePopoverBinding,
-                    displayedComponents: .date
-                )
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-            }
-            .padding(WarmSpacing.md)
-            .frame(width: 320)
-            .onAppear {
-                // 预热 haptic engine —— 首次 impactOccurred() 才不会因 engine 冷启动延迟/丢失。
-                selectionFeedbackGenerator.prepare()
-            }
-        }
-    }
-
-    /// 日期 popover 内 DatePicker 的双向绑定。setter 三件事:
-    /// 1) 写入 editedDueDate + checkForChanges(触发防抖保存);
-    /// 2) 触觉反馈(.light) —— 让"选中"动作更确实,对齐系统 DatePicker 的反馈密度;
-    /// 3) schedulePopoverDismiss —— 留 ~0.18s 给选中黑圈动画,再收 popover。
-    /// 边界:点已选中的同一日期时值不变,setter 不触发,popover 不收 —— 用户可点别处兜底,
-    /// 与原系统 compact 行为一致,不引入新断裂感。
-    private var datePopoverBinding: Binding<Date> {
-        Binding(
-            get: { editedDueDate ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date()) },
-            set: { newValue in
-                editedDueDate = newValue
-                checkForChanges()
-                selectionFeedbackGenerator.impactOccurred()
-                selectionFeedbackGenerator.prepare()
-                schedulePopoverDismiss()
-            }
-        )
-    }
-
-    /// 选完日期后延迟 ~0.18s 收起 popover,留时间让 .graphical 的选中黑圈动画播完。
-    /// 用 Task 而非 DispatchQueue.main.asyncAfter —— 与 scheduleAutosave 同风格,可取消:
-    /// 连续选不同日期时 cancel 上一次,收起推迟到最后一击后,避免用户还在挑就被收走。
-    private func schedulePopoverDismiss() {
-        popoverDismissTask?.cancel()
-        popoverDismissTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) {
-                showDatePickerPopover = false
-            }
-        }
-    }
-
-    /// 时段区:任何重复档位下都可用。两种状态由 editedHasDueTime 决定。
-    /// - hasDueTime=true: 钟点 DatePicker + 派生 TimeBucket 只读 + 清除钟点按钮
-    /// - hasDueTime=false: 「添加钟点」按钮(可见性由 canAddClockTime 守门)+ TimeBucket 胶囊恒显示。
-    ///
-    /// **不变式**:editedHasDueTime == true ⇒ editedDueDate != nil —— UI 侧维持,
-    /// TodoDetailUpdate.init 再兜一层归一化(hasDueTime = dueDate != nil && hasDueTime)。
-    @ViewBuilder
-    private var timeSection: some View {
-        if editedHasDueTime {
-            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                HStack {
-                    DatePicker(
-                        "",
-                        selection: Binding(
-                            get: { editedDueDate ?? Date() },
-                            set: { newTime in
-                                // DatePicker(.hourAndMinute) 的 set 给的是完整 Date,
-                                // 但只有钟点部分有意义——把它合并到 editedDueDate 的日期部分,
-                                // 避免替换掉用户刚选的日期。
-                                let calendar = Calendar.current
-                                var components = calendar.dateComponents([.year, .month, .day], from: editedDueDate ?? Date())
-                                components.hour = calendar.component(.hour, from: newTime)
-                                components.minute = calendar.component(.minute, from: newTime)
-                                editedDueDate = calendar.date(from: components)
-                                checkForChanges()
-                            }
-                        ),
-                        displayedComponents: .hourAndMinute
-                    )
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
-
-                    Spacer()
-
-                    // 清除钟点:保留 editedDueDate(日期部分) 和 editedTimeBucket(手动选择),
-                    // 只切 hasDueTime=false。下次再点"添加钟点"会从当前时刻开始。
-                    Button {
-                        editedHasDueTime = false
-                        checkForChanges()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(WarmTheme.textMuted)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // 派生 TimeBucket 只读显示:不写回 editedTimeBucket,清钟点后会自然回到手动模式。
-                let derived = TimeBucketResolver.effective(
-                    explicitBucket: editedTimeBucket,
-                    dueDate: editedDueDate,
-                    hasDueTime: editedHasDueTime
-                )
-                Text(derived.localizedTitle)
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.textMuted)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                // 「添加钟点」可见性:有 dueDate 或有重复规则即可。
-                // 原条件 `editedDueDate != nil` 会让「双周/三周但 editedDueDate 还没补」
-                // (理论上不会发生,recurrenceModeButton action 已兜底)以及「无 dueDate 但有 rule」
-                // (引擎层 dueDate ?? createdAt 仍能调度)走不到「添加钟点」分支,语义不对。
-                if RecurrenceAnchorPolicy.canAddClockTime(
-                    dueDate: editedDueDate,
-                    frequency: editedRecurrenceFrequency
-                ) {
-                    // "添加钟点":首次按下时把钟点设为当前时刻,避免显示 startOfDay 的 00:00。
-                    // components(from: editedDueDate ?? now) 天然支持 dueDate == nil → 顺手把
-                    // 今天写成锚点,无需额外改动。
-                    Button {
-                        let calendar = Calendar.current
-                        let now = Date()
-                        var components = calendar.dateComponents([.year, .month, .day], from: editedDueDate ?? now)
-                        components.hour = calendar.component(.hour, from: now)
-                        components.minute = calendar.component(.minute, from: now)
-                        editedDueDate = calendar.date(from: components)
-                        editedHasDueTime = true
-                        checkForChanges()
-                    } label: {
-                        HStack(spacing: WarmSpacing.xxs) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 13))
-                            Text(String(localized: "detail.add_time"))
-                                .font(WarmFont.body(15))
-                        }
-                        .foregroundColor(WarmTheme.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("DetailAddTimeButton")
-                }
-
-                chipRow {
-                    ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
-                        timeBucketButton(bucket)
-                    }
-                }
-            }
-        }
-    }
-
-    private func timeBucketButton(_ bucket: TimeBucket) -> some View {
-        let selectedBucket = editedTimeBucket ?? .anytime
-        let isSelected = selectedBucket == bucket
-        return Button {
-            withAnimation(WarmAnimation.springFast) {
-                editedTimeBucket = bucket == .anytime ? nil : bucket
-                checkForChanges()
-            }
-        } label: {
-            // chip 按内容宽度:lineLimit(1) 防换行/断词,fixedSize 让 chip 宽度跟文字走
-            Text(bucket.localizedTitle)
-                .font(WarmFont.caption(12))
-                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, WarmSpacing.sm)
-                .padding(.vertical, WarmSpacing.xs)
-                .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.card)
-                        .fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground)
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Recurrence Editor
