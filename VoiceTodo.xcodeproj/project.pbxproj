@@ -110,6 +110,8 @@
 		8C4623205C5EB5C21E942546 /* RecurrenceEnd.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06C0BFDDA5AF9ECC3272D9B9 /* RecurrenceEnd.swift */; };
 		8D621F310BD49BD77509449F /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFA009138F185ACA9CCDC05 /* Telemetry.swift */; };
 		8F9B053DD5D5852034C9660B /* UnscheduledDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B990F52281014B4F9AED93 /* UnscheduledDrawer.swift */; };
+		902B88B962DCE8379B151B08 /* ActionButtonCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = D24795F4689C91579626B05E /* ActionButtonCapability.swift */; };
+		9131B15FD51643897EA41CEB /* VoicePermissionRepromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E581A75CB77DE80D7F8AFF /* VoicePermissionRepromptSheet.swift */; };
 		94206DCCFA169987EA250B03 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AB138328A1DD4AF943AEACF /* Constants.swift */; };
 		94EE1D3161D3CE84C4579ACF /* VoiceConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DF5EB02A04D23DEE1B6B447 /* VoiceConstants.swift */; };
 		95232680205A8E547E3C4B51 /* TodoWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C27243BFC27974DE4C55FD65 /* TodoWidgetBundle.swift */; };
@@ -363,6 +365,8 @@
 		D10503F26732612C40E41705 /* QueryTodosIntentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryTodosIntentView.swift; sourceTree = "<group>"; };
 		D10F79656D9ED5A820EBC053 /* TranscriptProcessingFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptProcessingFlowTests.swift; sourceTree = "<group>"; };
 		D1C4931B1519F494E94C7C73 /* BottomSafeAreaReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSafeAreaReader.swift; sourceTree = "<group>"; };
+		D24795F4689C91579626B05E /* ActionButtonCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButtonCapability.swift; sourceTree = "<group>"; };
+		D3E581A75CB77DE80D7F8AFF /* VoicePermissionRepromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePermissionRepromptSheet.swift; sourceTree = "<group>"; };
 		D8877696C1E00B4ACC3742D0 /* UserVocabularyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserVocabularyTests.swift; sourceTree = "<group>"; };
 		D8CE2794EFB8BE4A9FEF9260 /* PersonalGlossary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalGlossary.swift; sourceTree = "<group>"; };
 		DA666835F8CA9864517E3A2D /* LocalNotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotificationScheduler.swift; sourceTree = "<group>"; };
@@ -489,6 +493,7 @@
 				17E151F244003A66D9F29EAD /* SimultaneousDragGesture.swift */,
 				73C3CB4E9758E6F652FDA8A9 /* ToastView.swift */,
 				604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */,
+				D3E581A75CB77DE80D7F8AFF /* VoicePermissionRepromptSheet.swift */,
 			);
 			name = Shared;
 			path = UI/Shared;
@@ -585,6 +590,7 @@
 			isa = PBXGroup;
 			children = (
 				C68B9E8D9C285A479DD07033 /* Intents */,
+				D24795F4689C91579626B05E /* ActionButtonCapability.swift */,
 				6CA04499669316BDDE7603DC /* AppCoordinator.swift */,
 				81578DF6D6865F537FD3EBAE /* CalendarSyncService.swift */,
 				0E4BF2A213AB8BD127DAB20B /* EntitlementManager.swift */,
@@ -952,6 +958,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				902B88B962DCE8379B151B08 /* ActionButtonCapability.swift in Sources */,
 				CAD798E81935FFDDAC4621B8 /* ActionButtonLaunchSignal.swift in Sources */,
 				32B910EC56E8BF866097B097 /* AddTodoIntent.swift in Sources */,
 				980222A48774E23E84C1C3E4 /* AddTodoIntentView.swift in Sources */,
@@ -1056,6 +1063,7 @@
 				94EE1D3161D3CE84C4579ACF /* VoiceConstants.swift in Sources */,
 				9A08EAAFE02358A68766DD47 /* VoiceInputManager.swift in Sources */,
 				1A03EA813486F1AAE6F585FD /* VoiceInputProtocol.swift in Sources */,
+				9131B15FD51643897EA41CEB /* VoicePermissionRepromptSheet.swift in Sources */,
 				C10BD0B05CC8493FF3353216 /* VoiceTodoApp.swift in Sources */,
 				7FDB8930DB72123CF477258E /* VoiceTodoError.swift in Sources */,
 				0A72A528956FCA3F35DA5A90 /* VoiceTodoLog.swift in Sources */,

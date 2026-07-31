@@ -31,11 +31,13 @@ struct ValuePropCard: View {
                     .minimumScaleFactor(0.8)
                     .layoutPriority(1)
 
+                // 不限制行数:卡片在 ScrollView 中可纵向自由扩展,
+                // 避免 zh-Hans / ja 等长文本下出现「...」截断(项目零容忍规则)。
                 Text(description)
                     .font(WarmFont.caption(15))
                     .foregroundColor(WarmTheme.sketch)
-                    .lineLimit(3)
                     .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
             }
 
