@@ -38,12 +38,22 @@ struct CalendarImportView: View {
             }
         }
 
-        /// 时间段终点(相对今天 00:00 的偏移)
+        /// 时间段终点(相对起始日的偏移)。
+        /// today/week 用日单位;month 用 `Calendar.date(byAdding: .month...)` 精确加一月,
+        /// 避免把「本月」固定当 30 天(2 月只显 28/29、其他月少 1 天)。
+        /// `loadEvents` 里据此决定调用 dayOffset 还是 monthOffset。
         var dayOffset: Int {
             switch self {
             case .today: return 1
             case .week: return 7
-            case .month: return 30
+            case .month: return 0   // 0 表示走 monthOffset 路径
+            }
+        }
+
+        var monthOffset: Int {
+            switch self {
+            case .month: return 1
+            default: return 0
             }
         }
     }
@@ -216,26 +226,38 @@ struct CalendarImportView: View {
         let now = Date()
         let calendar = Calendar.current
         let from = calendar.startOfDay(for: now)
-        let to = calendar.date(byAdding: .day, value: timeRange.dayOffset, to: from) ?? from.addingTimeInterval(TimeInterval(timeRange.dayOffset * 86_400))
+        let to: Date
+        if timeRange.monthOffset > 0 {
+            to = calendar.date(byAdding: .month, value: timeRange.monthOffset, to: from) ?? from.addingTimeInterval(TimeInterval(30 * 86_400))
+        } else {
+            to = calendar.date(byAdding: .day, value: timeRange.dayOffset, to: from) ?? from.addingTimeInterval(TimeInterval(timeRange.dayOffset * 86_400))
+        }
 
         do {
             let result = try await calendarReader.fetchEvents(from: from, to: to)
             events = result
             selectedIDs = selectedIDs.filter { id in result.contains { $0.id == id } }
             loadState = .loaded
-        } catch let error as VoiceTodoError {
-            // Reader 内部把权限拒绝归一到 storageReadFailed,但单独提示「去设置」更友好。
-            // 这里无法精确区分权限拒绝和真实读失败,统一走 failed 路径(显示通用错误)。
-            // 权限拒绝的精确判定由 Reader 抛 dedicated error 完成,第一版本简化。
-            VoiceTodoLog.ui.warning("calendar_import.load_failed reason=\(String(describing: error), privacy: .public)")
-            loadState = .failed
         } catch {
-            VoiceTodoLog.ui.warning("calendar_import.load_failed reason=\(String(describing: error), privacy: .public)")
-            loadState = .failed
+            // Reader 把权限拒绝包成 storageReadFailed(message = permissionDeniedMessage)。
+            // 这里精确识别该 message,给用户「去设置」引导;其他错误走通用 failed。
+            let isPermissionDenied: Bool
+            if let voiceError = error as? VoiceTodoError,
+               case .storageReadFailed(let message) = voiceError,
+               message == SystemCalendarReadPermissionDeniedMessage {
+                isPermissionDenied = true
+            } else {
+                isPermissionDenied = false
+            }
+            VoiceTodoLog.ui.warning("calendar_import.load_failed reason=\(String(describing: error), privacy: .public) isPermissionDenied=\(isPermissionDenied)")
+            loadState = isPermissionDenied ? .denied : .failed
         }
     }
 
     private func toggleSelection(_ id: String) {
+        // EKEvent.eventIdentifier 理论上必有值,但 `toExternal` 兜底成空串时,
+        // 多条无 id 的事件会共用空串 key 导致选中错乱。空串 id 视为无效不响应。
+        guard !id.isEmpty else { return }
         if selectedIDs.contains(id) {
             selectedIDs.remove(id)
         } else {
@@ -251,16 +273,25 @@ struct CalendarImportView: View {
 
     // MARK: - Formatting
 
+    private static let allDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale.current
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
+    private static let timedFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale.current
+        f.dateStyle = .short
+        f.timeStyle = .short
+        return f
+    }()
+
     private func formattedDate(_ event: ExternalCalendarEvent) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        if event.isAllDay {
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .none
-            return formatter.string(from: event.startDate)
-        }
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return formatter.string(from: event.startDate)
+        event.isAllDay
+            ? Self.allDayFormatter.string(from: event.startDate)
+            : Self.timedFormatter.string(from: event.startDate)
     }
 }

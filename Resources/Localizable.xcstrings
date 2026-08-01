@@ -8250,6 +8250,22 @@
         }
       }
     },
+    "calendar_import.no_valid_events" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected events have no importable titles."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选事件没有可导入的标题。"
+          }
+        }
+      }
+    },
     "calendar_import.success_count" : {
       "localizations" : {
         "en" : {

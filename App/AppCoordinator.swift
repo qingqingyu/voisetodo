@@ -65,6 +65,9 @@ final class AppCoordinator: ObservableObject {
     /// 流式 .success 后由 `detectConflicts()` 异步填充;sheet 关闭/取消时清空。
     /// 第一版本只做"提示",不阻断确认。
     @Published var conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:]
+    /// detectConflicts 的 Task 引用,cancelTodos / confirmTodos 时显式 cancel,
+    /// 避免用户已离开 ConfirmSheet 后台仍在串行 await 日历访问。
+    private var conflictDetectionTask: Task<Void, Never>?
 
     /// 给 CalendarImportView 用的日历读取器。
     /// nil 表示未注入(测试场景),UI 应该不显示导入入口或显示空 sheet。
@@ -682,7 +685,9 @@ final class AppCoordinator: ObservableObject {
 
         let todos = events.compactMap { SystemCalendarEventImporter.todo(from: $0) }
         guard !todos.isEmpty else {
-            VoiceTodoLog.coordinator.warning("coordinator.calendar_import.skipped id=\(importID, privacy: .public) reason=no_valid_events")
+            // 用户选了事件但全部因为空标题被过滤——显式提示,而不是静默什么都不做。
+            VoiceTodoLog.coordinator.warning("coordinator.calendar_import.skipped id=\(importID, privacy: .public) reason=no_valid_events selectedCount=\(events.count)")
+            showToast(message: String(localized: "calendar_import.no_valid_events"), style: .warning)
             return
         }
 
@@ -702,6 +707,9 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.confirm.cancel pendingCount=\(self.pendingItemIds.count) extractedCount=\(self.extractedTodos.count) isExtracting=\(self.isExtracting)")
         extractionTask?.cancel()
         extractionTask = nil
+        // 撞车检测在后台跑时也要取消,避免用户已离开 sheet 后仍在串行 await 日历访问。
+        conflictDetectionTask?.cancel()
+        conflictDetectionTask = nil
 
         // 记录已取消的 pending ID，避免本次 session 重复弹窗
         // 不删除 pending 条目，保留离线转写数据
@@ -779,6 +787,8 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.extraction.cancel isExtracting=\(self.isExtracting) extractedCount=\(self.extractedTodos.count)")
         extractionTask?.cancel()
         extractionTask = nil
+        conflictDetectionTask?.cancel()
+        conflictDetectionTask = nil
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
@@ -881,7 +891,9 @@ final class AppCoordinator: ObservableObject {
             extractedTodos = result.todos
         case .success:
             // 流式稳定后异步触发撞车检测;失败不阻断,只记日志。
-            Task { await detectConflicts() }
+            // 保存 Task 引用,便于 cancelTodos 时显式取消(避免 sheet 关闭后仍在后台跑)。
+            conflictDetectionTask?.cancel()
+            conflictDetectionTask = Task { await detectConflicts() }
         case .noTodos:
             // 弹层已在 processTranscript 开头升起,识别为空必须显式关闭,
             // 否则弹层会卡在「空列表 + 还在识别」永远不消失。
@@ -928,6 +940,8 @@ final class AppCoordinator: ObservableObject {
         if showConfirmSheet || !extractedTodos.isEmpty {
             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.clear_partial_results shown=\(self.showConfirmSheet) partialCount=\(self.extractedTodos.count)")
         }
+        conflictDetectionTask?.cancel()
+        conflictDetectionTask = nil
         extractedTodos = []
         conflictWarnings = [:]
         showConfirmSheet = false
@@ -937,24 +951,48 @@ final class AppCoordinator: ObservableObject {
     /// 结果写入 `conflictWarnings`,ConfirmSheet 据此显示警告 banner。
     /// 失败不抛错——撞车检测是 nice-to-have,不应让用户感知。
     /// reader 未注入(测试场景)时直接跳过。
+    /// 并发:用 TaskGroup 并行查每条 todo 的撞车(避免串行 await N 次 reader)。
+    /// 取消语义:cancelTodos 后新进来的取消会让后续子任务短路、`for await` 也 break,
+    /// 但**已进入 `reader.findConflicts` 的子任务无法中途退出**(EventKit 的
+    /// `eventStore.events(matching:)` 是同步阻塞调用,没有 cancellation point)。
+    /// 结果会被最后的 guard 丢弃,功能上无害,只是后台会跑完那几个查询。
     private func detectConflicts() async {
         guard let reader = calendarReader else { return }
         guard !extractedTodos.isEmpty else { return }
+        // 快照当前 extractedTodos——避免循环中 sheet 被关掉、extractedTodos 清空后
+        // 还在跑已经无意义的检测。
+        let snapshot = extractedTodos
+        let candidates = snapshot.filter { $0.dueDate != nil }
+        guard !candidates.isEmpty else { return }
+
         var newWarnings: [UUID: [ExternalCalendarEvent]] = [:]
-        for todo in extractedTodos {
-            // 无 dueDate 的 todo 无时间锚点,跳过(reader 内部也会跳,这里避免无谓 await)
-            guard todo.dueDate != nil else { continue }
-            do {
-                let conflicts = try await reader.findConflicts(for: todo)
-                if !conflicts.isEmpty {
-                    newWarnings[todo.id] = conflicts
+        // 并发查每条 todo 的撞车;用 task group 把 N 条 reader 调用并行起来。
+        // 取消传播:子任务进入 findConflicts 前查 Task.isCancelled(短路);
+        // 父任务 for await 循环里也查,中途取消就 break。
+        // reader 不加 weak —— 协议非 class-bound 无法 [weak reader];Task 闭包隐式
+        // 捕获 self(@MainActor class),但 cancelTodos/clearExtractionPresentation 都会
+        // 显式 cancel 并置 nil,且 AppCoordinator 是 App 级生命周期,不会真泄漏。
+        await withTaskGroup(of: (UUID, [ExternalCalendarEvent]?).self) { group in
+            for todo in candidates {
+                group.addTask {
+                    // 子任务取消时尽快返回 nil(让父任务 break)。
+                    if Task.isCancelled { return (todo.id, nil) }
+                    do {
+                        let conflicts = try await reader.findConflicts(for: todo)
+                        return (todo.id, conflicts.isEmpty ? nil : conflicts)
+                    } catch {
+                        VoiceTodoLog.coordinator.warning("coordinator.conflict.detect_failed todoId=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        return (todo.id, nil)
+                    }
                 }
-            } catch {
-                VoiceTodoLog.coordinator.warning("coordinator.conflict.detect_failed todoId=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+            for await (todoID, conflicts) in group {
+                if Task.isCancelled { break }
+                if let conflicts { newWarnings[todoID] = conflicts }
             }
         }
-        // 只在 sheet 仍打开时写入,避免覆盖已被 cancel 的状态
-        guard showConfirmSheet else { return }
+        // 只在 sheet 仍打开 + 任务没被取消时写入,避免覆盖已被 cancel 的状态
+        guard !Task.isCancelled, showConfirmSheet else { return }
         conflictWarnings = newWarnings
     }
 
