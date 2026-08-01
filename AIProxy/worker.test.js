@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
-import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig } from "./worker.js";
+import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache } from "./worker.js";
 import { applyPrimaryOverride } from "./src/adminConfig.js";
+import { makeCacheKey } from "./src/extractionCache.js";
 import { HealthStore, configureHealthParams, _testResetHealthParams } from "./src/health.js";
 import { mintTestJWS } from "./src/jws-fixture.js";
 
@@ -15,6 +16,7 @@ import { mintTestJWS } from "./src/jws-fixture.js";
 beforeEach(() => {
   _testResetHealth();
   _testResetAdminConfig();
+  _testResetExtractionCache();
   _testResetHealthParams();
   configureHealthParams({
     CIRCUIT_OPEN_THRESHOLD: "3",
@@ -4068,4 +4070,141 @@ test("configureHealthParams: initialCooldown > maxCooldown 时被 clamp", async 
   const record = await store.load("P");
   // 初始冷却应被 clamp 到 maxCooldown(30s),不是 60s
   assert.equal(record.cooldownMs, 30_000, "initialCooldown 应被 clamp 到 maxCooldown");
+});
+
+// ─── P2: 解析结果 cache ─────────────────────────────────────────────────
+
+test("makeCacheKey: 相同输入产生相同 key", async () => {
+  const a = await makeCacheKey({ transcript: "买牛奶", locale: "zh", vocabularyHints: ["Anki"], today: "2026-08-01" });
+  const b = await makeCacheKey({ transcript: "买牛奶", locale: "zh", vocabularyHints: ["Anki"], today: "2026-08-01" });
+  assert.equal(a, b);
+  assert.ok(a.startsWith("cache:"));
+});
+
+test("makeCacheKey: 任一字段不同则 key 不同", async () => {
+  const base = { transcript: "买牛奶", locale: "zh", vocabularyHints: [], today: "2026-08-01" };
+  const k0 = await makeCacheKey(base);
+  const k1 = await makeCacheKey({ ...base, transcript: "买面包" });
+  const k2 = await makeCacheKey({ ...base, locale: "en" });
+  const k3 = await makeCacheKey({ ...base, vocabularyHints: ["Anki"] });
+  const k4 = await makeCacheKey({ ...base, today: "2026-08-02" });
+  const all = [k1, k2, k3, k4];
+  assert.ok(all.every((k) => k !== k0), "每个字段变化都应产生不同 key");
+  assert.equal(new Set(all).size, 4, "四个变化应产生 4 个不同 key");
+});
+
+test("cache hit: 非流式 + 无 personalHints 第二次请求走 cache", async () => {
+  const kv = makeFakeKV();
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { CACHE_RESULT_KV: kv }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  // 第一次请求:cache miss,调上游,写 cache
+  const r1 = await handleRequest(
+    request({ transcript: "测试cache", locale: "zh" }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  assert.equal(r1.status, 200);
+  assert.equal(upstreamCallCount, 1, "第一次应调上游");
+  // 等待 cache 写完成(waitUntil 是同步 mock,但 set 是 async)
+  await Promise.resolve();
+  // 第二次相同请求:cache hit,不调上游
+  const r2 = await handleRequest(
+    request({ transcript: "测试cache", locale: "zh" }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  assert.equal(r2.status, 200);
+  assert.equal(upstreamCallCount, 1, "第二次应走 cache,不调上游");
+});
+
+test("cache 不命中 personalHints != null 的请求", async () => {
+  const kv = makeFakeKV();
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { CACHE_RESULT_KV: kv }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  // 带 personalHints 的请求:不写 cache
+  await handleRequest(
+    request({ transcript: "test", locale: "zh", personalHints: "老地方=健身房" }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  // 第二次相同请求:因为没有 cache,再次调上游
+  await handleRequest(
+    request({ transcript: "test", locale: "zh", personalHints: "老地方=健身房" }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  assert.equal(upstreamCallCount, 2, "带 personalHints 的请求每次都调上游");
+});
+
+test("cache 不命中流式请求(stream=true)", async () => {
+  const kv = makeFakeKV();
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { CACHE_RESULT_KV: kv }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "{\"todos\":[]}" } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ finish_reason: "stop" }] })}`
+    ]);
+  };
+  // 流式请求:不写 cache
+  await handleRequest(
+    request({ transcript: "test", locale: "zh", stream: true }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  // 第二次相同请求:流式不 cache,再次调上游
+  await handleRequest(
+    request({ transcript: "test", locale: "zh", stream: true }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  assert.equal(upstreamCallCount, 2, "流式请求每次都调上游");
+});
+
+test("cache KV 未绑定时静默不工作(不影响业务)", async () => {
+  let upstreamCallCount = 0;
+  // 注意:没有 CACHE_RESULT_KV binding
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  const r = await handleRequest(
+    request({ transcript: "test", locale: "zh" }, { "X-App-Token": "token" }),
+    env,
+    { waitUntil() {} },
+    fetchImpl
+  );
+  assert.equal(r.status, 200);
+  assert.equal(upstreamCallCount, 1, "无 KV binding 时走真实调用");
 });

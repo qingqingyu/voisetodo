@@ -1,4 +1,5 @@
 import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
+import { ExtractionCacheStore, makeCacheKey } from "./src/extractionCache.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore, configureHealthParams } from "./src/health.js";
@@ -30,6 +31,10 @@ const sharedHealthStore = new HealthStore();
 // key 前缀 config: 区分)。30s 内存缓存,避免每请求都读 KV。
 const sharedAdminConfigStore = new AdminConfigStore();
 
+// Module-level ExtractionCacheStore:解析结果 cache。独立 KV namespace
+// (CACHE_RESULT_KV),1h TTL。只缓存非流式 + 无 personalHints 的请求。
+const sharedExtractionCache = new ExtractionCacheStore();
+
 // Isolate 首请求标记:Cloudflare Workers 的 isolate 在首次请求时才真正 lazy-load
 // KV/DO binding,首个 /v1/todo-extractions 请求会承担冷启动开销。本标志在 isolate
 // 生命周期内只对首请求输出一次 `proxy.cold_start.warmup` 日志,后续请求不再打。
@@ -44,6 +49,11 @@ export function _testResetHealth() {
 // Test-only export: allows tests to reset module-level admin config state between runs.
 export function _testResetAdminConfig() {
   sharedAdminConfigStore.reset();
+}
+
+// Test-only export: allows tests to reset module-level extraction cache state between runs.
+export function _testResetExtractionCache() {
+  sharedExtractionCache.reset();
 }
 
 export default {
@@ -134,6 +144,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
     sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+    sharedExtractionCache.updateKv(env.CACHE_RESULT_KV || null);
     // 从 env 读熔断参数覆盖(每次 request 调,轻量)。未配置时保持代码默认值
     // (threshold=5, initialCooldown=10s, maxCooldown=5min)。
     configureHealthParams(env);
@@ -184,6 +195,31 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       });
     }
 
+    // 提前取 personalHints(原本在 line 197,cache 判断需要)
+    const personalHints = typeof payload.personalHints === "string" ? payload.personalHints.trim() : null;
+
+    // Cache lookup: 非流式 + 无 personalHints 才 cache
+    // - 流式响应是 SSE 多事件序列,序列化复杂度高于纯 JSON,先不缓存
+    // - personalHints 是用户级个人术语表,不同用户不能共享 cache(隐私 + 正确性)
+    // Cache key 含 today(YYYY-MM-DD),跨天后 cache 自动失效;TTL 1h 也是兜底
+    const cacheable = !stream && !personalHints;
+    let cacheKey = null;
+    if (cacheable) {
+      cacheKey = await makeCacheKey({ transcript, locale, vocabularyHints, today: todayDate });
+      const cached = await sharedExtractionCache.get(cacheKey);
+      if (cached) {
+        logInfo("proxy.cache.hit", { ...requestContext, cacheKey, responseChars: cached.length });
+        return finishRequest(new Response(cached, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+            ...quotaHeaders(quotaState)
+          }
+        }), requestContext, { reason: "cache_hit", responseChars: cached.length });
+      }
+    }
+
     const candidates = await pickCandidates(providers, sharedHealthStore, Date.now(), {
       maxAttempts: resolveMaxAttempts(env)
     });
@@ -194,7 +230,6 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     requestContext.candidateCount = candidates.length;
 
-    const personalHints = typeof payload.personalHints === "string" ? payload.personalHints.trim() : null;
     const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints };
     // executeWithFailover 的所有失败出口都是 throw(候选为空 / 非重试类失败 /
     // 全部候选耗尽 / invariant_violation),所以这一层 catch 覆盖了全部
@@ -251,6 +286,15 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
 
     const text = result.bodyResult.text;
+    // Cache write: 非流式 + 成功响应。异步写不阻塞响应(ctx.waitUntil)。
+    // cacheKey 在前面 cache lookup 时计算(只在 cacheable 时非 null)。
+    // ctx 可能没有 waitUntil(单元测试传 {} 兜底),用可选链避免抛错。
+    if (cacheKey && text && typeof ctx?.waitUntil === "function") {
+      ctx.waitUntil(sharedExtractionCache.set(cacheKey, text));
+    } else if (cacheKey && text) {
+      // 测试或老 runtime 没 waitUntil:同步触发但忽略 promise(fire-and-forget)
+      sharedExtractionCache.set(cacheKey, text).catch(() => {});
+    }
     await result.confirmSuccess();
     logInfo("proxy.provider.text_success", { ...requestContext, provider: result.provider.type, responseChars: text.length });
     return finishRequest(new Response(text, {
