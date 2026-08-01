@@ -51,6 +51,9 @@ struct ConfirmSheetView: View {
     /// 底部操作提示 footer 是否可见——sheet 升起后 0.8s 自动淡出消失。
     /// 操作提示闪现一下即可,无需常驻占用底部视觉空间。
     @State private var hintVisible = true
+    /// 当前就地展开编辑面板的 todo id,nil = 无展开。流式期间禁用展开
+    /// (TodoItemRow.onTapGesture guard isStreaming),此状态透传到 row。
+    @State private var expandedTodoID: UUID?
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
 
     var body: some View {
@@ -159,7 +162,7 @@ struct ConfirmSheetView: View {
                         .padding(.bottom, WarmSpacing.xs)
 
                     if !todos.isEmpty {
-                        ConfirmGroupedList(todos: $todos, isStreaming: isStreaming)
+                        ConfirmGroupedList(todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming)
                     } else if isStreaming {
                         StreamingFooter()
                             .padding(.top, WarmSpacing.md)
@@ -180,6 +183,13 @@ struct ConfirmSheetView: View {
                         Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
                     }
                 )
+            }
+            .onChange(of: expandedTodoID) { _, newValue in
+                // 展开卡片时滚到该卡顶部,避免面板撑高后卡片被推出可视区。
+                guard let id = newValue else { return }
+                withAnimation(WarmAnimation.springStandard) {
+                    proxy.scrollTo(id, anchor: .top)
+                }
             }
             .onChange(of: todos.count) { _, _ in
                 // 流式新增条目时滚到底部,让最新解析的 todo 可见。

@@ -58,6 +58,7 @@
 		44BE9A6F18E57A5A1C9287DA /* HomeMonthGridButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDCFD0DAC91451B891F38C6 /* HomeMonthGridButton.swift */; };
 		46FC727E12F322D49590ABA6 /* CardEntranceModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E865543BECF19023D86612D /* CardEntranceModifier.swift */; };
 		48626276A4A7A46FAA008B33 /* TodoDueDateShifter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788A0E6103988FD99A9926A6 /* TodoDueDateShifter.swift */; };
+		4A4D0F28023A0D57EACAE2D5 /* TodoDraftEditorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C092B30F1AA0FAE5610A93D4 /* TodoDraftEditorPanel.swift */; };
 		4AB972DA20B3F39F7CF38936 /* VoiceTodoWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EF2D0CB67DB19BC94E5EDCDF /* VoiceTodoWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4D8FB5E7B426E3264F5508DA /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8AA736F8E3D8D0C5F71A1DA /* PermissionManager.swift */; };
 		5291761FCF494BDEAA7BD23D /* TelemetryUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD69F514ED13C8FE0AA07FB /* TelemetryUploader.swift */; };
@@ -351,6 +352,7 @@
 		B96BB2E9AD6E94FB072CFE9F /* CorrectionTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionTracker.swift; sourceTree = "<group>"; };
 		BA980239E357F51EC6EE59B5 /* AppGroupConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupConfig.swift; sourceTree = "<group>"; };
 		BFA5691B44AEA593B00AAE61 /* HomeSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSettingsSheet.swift; sourceTree = "<group>"; };
+		C092B30F1AA0FAE5610A93D4 /* TodoDraftEditorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoDraftEditorPanel.swift; sourceTree = "<group>"; };
 		C15F96788BBD2CF96E85A40B /* CalendarSyncServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncServiceTests.swift; sourceTree = "<group>"; };
 		C27243BFC27974DE4C55FD65 /* TodoWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetBundle.swift; sourceTree = "<group>"; };
 		C3FF73890A8CCCA090945D1E /* VoiceTodoLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTodoLog.swift; sourceTree = "<group>"; };
@@ -544,6 +546,7 @@
 				3753100085CB7B257087A685 /* ConfirmGroupedList.swift */,
 				A254D50A09BB91CE790D7E22 /* ConfirmSheetAnimations.swift */,
 				9AEF04020D26152A3DF4587F /* ConfirmSheetView.swift */,
+				C092B30F1AA0FAE5610A93D4 /* TodoDraftEditorPanel.swift */,
 				FB318CD8E5F0584EB9C04A4D /* TodoItemRow.swift */,
 			);
 			name = ConfirmSheet;
@@ -1042,6 +1045,7 @@
 				416F7B664EE716A7891E154D /* TimeEditPopover.swift in Sources */,
 				11FCA4DABDA9EEB9ECAA9BAC /* ToastView.swift in Sources */,
 				34B97EDBBEDBA6524C0ABA58 /* TodoDetailView.swift in Sources */,
+				4A4D0F28023A0D57EACAE2D5 /* TodoDraftEditorPanel.swift in Sources */,
 				2FF6DF9FC7155A4FE8860849 /* TodoDueDateResolver.swift in Sources */,
 				48626276A4A7A46FAA008B33 /* TodoDueDateShifter.swift in Sources */,
 				84A2A8244BF866E720D38696 /* TodoDueTimeResolver.swift in Sources */,
