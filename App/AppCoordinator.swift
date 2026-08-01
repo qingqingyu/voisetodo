@@ -66,6 +66,10 @@ final class AppCoordinator: ObservableObject {
     /// 第一版本只做"提示",不阻断确认。
     @Published var conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:]
 
+    /// 给 CalendarImportView 用的日历读取器。
+    /// nil 表示未注入(测试场景),UI 应该不显示导入入口或显示空 sheet。
+    var importReader: (any SystemCalendarReadingProtocol)? { calendarReader }
+
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
         combinedRawTranscript ?? activeInputTranscript ?? transcript
@@ -665,6 +669,31 @@ final class AppCoordinator: ObservableObject {
                 VoiceTodoLog.coordinator.error("coordinator.reextract.failed id=\(reextractID, privacy: .public) todoId=\(todoID.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 handleError(error)
             }
+        }
+    }
+
+    /// 从系统日历事件导入待办(场景 3)。
+    /// 把选中的日历事件转 TodoItemData(source = .calendarImport)后批量入库。
+    /// 失败走通用 handleError。
+    func importCalendarEvents(_ events: [ExternalCalendarEvent]) {
+        let importID = VoiceTodoLog.makeID("cal-import")
+        let startedAt = Date()
+        VoiceTodoLog.coordinator.info("coordinator.calendar_import.start id=\(importID, privacy: .public) eventCount=\(events.count)")
+
+        let todos = events.compactMap { SystemCalendarEventImporter.todo(from: $0) }
+        guard !todos.isEmpty else {
+            VoiceTodoLog.coordinator.warning("coordinator.calendar_import.skipped id=\(importID, privacy: .public) reason=no_valid_events")
+            return
+        }
+
+        do {
+            try store.addImportedBatch(todos)
+            WidgetCenter.shared.reloadAllTimelines()
+            VoiceTodoLog.coordinator.info("coordinator.calendar_import.success id=\(importID, privacy: .public) importedCount=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            showToast(message: String(format: String(localized: "calendar_import.success_count"), todos.count), style: .success)
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.calendar_import.failed id=\(importID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            handleError(error)
         }
     }
 

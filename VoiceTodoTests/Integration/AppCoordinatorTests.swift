@@ -776,6 +776,10 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         )
     }
 
+    func addImportedBatch(_ items: [TodoItemData]) throws {
+        todos.insert(contentsOf: items, at: 0)
+    }
+
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let todo = TodoItemData(
             title: transcript,

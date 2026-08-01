@@ -21,15 +21,18 @@ struct HomeSettingsSheet: View {
 
     private let vocabularyStore: UserVocabularyStore
     private let onUpgradePro: () -> Void
+    private let onImportFromCalendar: () -> Void
 
     init(
         calendarWriteModeRaw: Binding<String>,
         vocabularyStore: UserVocabularyStore = .shared,
-        onUpgradePro: @escaping () -> Void = {}
+        onUpgradePro: @escaping () -> Void = {},
+        onImportFromCalendar: @escaping () -> Void = {}
     ) {
         _calendarWriteModeRaw = calendarWriteModeRaw
         self.vocabularyStore = vocabularyStore
         self.onUpgradePro = onUpgradePro
+        self.onImportFromCalendar = onImportFromCalendar
     }
 
     var body: some View {
@@ -62,6 +65,14 @@ struct HomeSettingsSheet: View {
                     }
                     .pickerStyle(.inline)
                     .accessibilityIdentifier("CalendarWriteModePicker")
+
+                    Button {
+                        onImportFromCalendar()
+                    } label: {
+                        Label(String(localized: "calendar_import.button"), systemImage: "calendar")
+                            .foregroundStyle(WarmTheme.textPrimary)
+                    }
+                    .accessibilityIdentifier("ImportFromCalendarButton")
                 }
 
                 Section {

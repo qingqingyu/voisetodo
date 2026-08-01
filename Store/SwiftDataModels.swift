@@ -300,6 +300,33 @@ extension TodoItem {
         )
     }
 
+    /// 从 TodoItemData 1:1 创建 TodoItem(导入路径用,保留 source / parentCalendarEventIdentifier)。
+    /// 与 `from(_ extracted:rawTranscript:)` 区别:后者从 AI 提取的中间结构构造,
+    /// 走 basisFilter 等 AI 路径;这里直接从已构造好的 DTO 映射,字段无变换。
+    /// 主要用于 `SystemCalendarEventImporter` 转换出的日历事件导入。
+    static func from(_ data: TodoItemData) -> TodoItem {
+        TodoItem(
+            id: data.id,
+            title: data.title,
+            detail: data.detail,
+            dueHint: data.dueHint,
+            dueDate: data.dueDate,
+            hasDueTime: data.hasDueTime,
+            timeBucket: data.timeBucket,
+            recurrenceRule: data.recurrenceRule,
+            priority: data.priority,
+            category: data.category,
+            createdAt: data.createdAt,
+            rawTranscript: data.rawTranscript,
+            needsAIProcessing: data.needsAIProcessing,
+            systemCalendarEventIdentifier: data.systemCalendarEventIdentifier,
+            localeIdentifier: data.localeIdentifier,
+            reminderTimes: data.reminderTimes,
+            source: data.source,
+            parentCalendarEventIdentifier: data.parentCalendarEventIdentifier
+        )
+    }
+
     /// 方案 2 + 3:基于 `dueDateBasis`(AI 自报) + `rawTranscript`(原文时间状语扫描)
     /// 双层过滤 dueDate,拦截"任务标题里偶然出现的日期词被误识别为 due_date"。
     ///

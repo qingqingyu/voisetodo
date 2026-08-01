@@ -146,6 +146,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isProcessing = false
     @State private var showSettingsSheet = false
+    /// 从日历导入事件(场景 3)。由 HomeSettingsSheet 的「从日历导入」按钮触发。
+    /// reader 未注入(测试场景)时 calendarImportSheet 返回 EmptyView,不会真正弹出内容。
+    @State private var showCalendarImport = false
     /// 用户在 onboarding 跳过权限后,首次按下录音时弹出的二次引导 sheet。
     /// 仅在 `permissionManager.hasSkippedInOnboarding == true` 且权限未拿到时触发。
     @State private var showVoicePermissionReprompt = false
@@ -390,7 +393,11 @@ struct HomeView<Store: HomeTodoStore>: View {
             .sheet(isPresented: $showSettingsSheet) {
                 HomeSettingsSheet(
                     calendarWriteModeRaw: $calendarWriteModeRaw,
-                    onUpgradePro: { coordinator.showPaywall = true }
+                    onUpgradePro: { coordinator.showPaywall = true },
+                    onImportFromCalendar: {
+                        showSettingsSheet = false
+                        showCalendarImport = true
+                    }
                 )
             }
             // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
@@ -398,6 +405,10 @@ struct HomeView<Store: HomeTodoStore>: View {
             // navigationBar 占位,把 headerView 推下移(问题 1:header 掉位)。
             .sheet(isPresented: $coordinator.showConfirmSheet) {
                 confirmSheetBody
+            }
+            // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
+            .sheet(isPresented: $showCalendarImport) {
+                calendarImportSheet
             }
             // B3 通知深链:回顾通知点击后弹出 ReviewView
             .sheet(isPresented: Binding(
@@ -524,6 +535,18 @@ struct HomeView<Store: HomeTodoStore>: View {
             onConfirm: { coordinator.confirmTodos($0) },
             onCancel: { coordinator.cancelTodos() }
         )
+    }
+
+    /// 日历导入 sheet。reader 未注入(测试场景)时返回空视图——按钮触发但 sheet 无内容,
+    /// 不会崩。第一版本不在按钮层做 enabled 判断,保持简单。
+    @ViewBuilder
+    private var calendarImportSheet: some View {
+        if let reader = coordinator.importReader {
+            CalendarImportView(
+                calendarReader: reader,
+                onImport: { coordinator.importCalendarEvents($0) }
+            )
+        }
     }
 
     private var headerView: some View {

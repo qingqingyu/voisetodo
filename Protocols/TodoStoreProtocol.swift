@@ -26,6 +26,15 @@ protocol TodoBatchAdding {
 /// 待办创建能力。
 protocol TodoCreating: TodoAdding, TodoBatchAdding {}
 
+/// 已转换好的待办批量导入能力(从系统日历事件、协作同步等来源)。
+/// 与 `TodoBatchAdding` 区别:后者接受 AI 提取的 ExtractedTodo 中间结构(走 from 工厂),
+/// 这里直接接受已构造好的 TodoItemData(来源已 stamp,跳过 AI 路径)。
+/// 主要用于 `SystemCalendarEventImporter` 转换出的日历事件导入(场景 3)。
+protocol TodoImporting {
+    /// 批量导入已构造好的待办(日历事件导入用)
+    func addImportedBatch(_ items: [TodoItemData]) throws
+}
+
 /// 完成状态写入能力。
 protocol TodoCompletionWriting {
     /// 切换完成状态
@@ -178,8 +187,8 @@ protocol TodoRefreshing {
 /// 而不是绕一层 coordinator(避免 HomeView 与 AppCoordinator 的耦合进一步加深)。
 protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating {}
 
-/// AppCoordinator 直接编排待办批量保存、删除、详情更新和 pending 替换。
-protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting {}
+/// AppCoordinator 直接编排待办批量保存、删除、详情更新、pending 替换和日历导入。
+protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting, TodoImporting {}
 
 /// Pending 恢复流程只需要读取 pending 与删除无效 pending。
 protocol PendingRecoveryTodoStore: PendingTranscriptReadable, TodoDeletionWriting {}
