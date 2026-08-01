@@ -776,6 +776,12 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         )
     }
 
+    func addImportedBatch(_ items: [TodoItemData]) throws {
+        // 与 MockStore.addImportedBatch 一致:反转后 insert 到头部,
+        // 保证传入数组的顺序与最终 todos 中的展示顺序一致(逐条 insert 到头部会让顺序倒过来)。
+        todos.insert(contentsOf: items.reversed(), at: 0)
+    }
+
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let todo = TodoItemData(
             title: transcript,

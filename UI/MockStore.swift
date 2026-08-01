@@ -36,6 +36,10 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         )
     }
 
+    func addImportedBatch(_ items: [TodoItemData]) throws {
+        todos.insert(contentsOf: items.reversed(), at: 0)
+    }
+
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         let title = TextUtils.truncateTitle(from: transcript)
         let effectiveLocaleIdentifier = Self.resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)

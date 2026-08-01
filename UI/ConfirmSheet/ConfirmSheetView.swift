@@ -37,8 +37,29 @@ struct ConfirmSheetView: View {
     let transcript: String
     @Binding var todos: [ExtractedTodo]
     let isStreaming: Bool
+    /// 撞车警告:todo.id → 冲突的日历事件列表。空字典表示无冲突或不启用撞车检测。
+    /// 第一版本只在 ConfirmSheet 顶部显示汇总 banner,不细化到卡片层。
+    let conflictWarnings: [UUID: [ExternalCalendarEvent]]
     let onConfirm: ([ExtractedTodo]) -> Bool
     let onCancel: () -> Void
+
+    /// 显式 init:让 conflictWarnings 有默认值 `[:]` 的同时仍出现在参数列表里
+    /// (let + 默认值会让 memberwise init 跳过该参数,导致调用方传不进来)。
+    init(
+        transcript: String,
+        todos: Binding<[ExtractedTodo]>,
+        isStreaming: Bool,
+        conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:],
+        onConfirm: @escaping ([ExtractedTodo]) -> Bool,
+        onCancel: @escaping () -> Void
+    ) {
+        self.transcript = transcript
+        self._todos = todos
+        self.isStreaming = isStreaming
+        self.conflictWarnings = conflictWarnings
+        self.onConfirm = onConfirm
+        self.onCancel = onCancel
+    }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -161,6 +182,11 @@ struct ConfirmSheetView: View {
                     transcriptSection
                         .padding(.bottom, WarmSpacing.xs)
 
+                    if !conflictWarnings.isEmpty {
+                        conflictWarningsBanner
+                            .padding(.bottom, WarmSpacing.sm)
+                    }
+
                     if !todos.isEmpty {
                         ConfirmGroupedList(todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming)
                     } else if isStreaming {
@@ -206,6 +232,29 @@ struct ConfirmSheetView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Conflict Warnings Banner
+
+    /// 撞车警告 banner:汇总提示「N 条待办与日历事件时间冲突」。
+    /// 第一版本只做汇总提示,不展开每条冲突详情(后续可点击展开)。
+    /// 用 .orange 系统警告色 + 半透明底,跟现有 WarmTheme 风格协调。
+    @ViewBuilder
+    private var conflictWarningsBanner: some View {
+        let count = conflictWarnings.count
+        HStack(alignment: .top, spacing: WarmSpacing.xs) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+                .font(.system(size: 13))
+            Text(String(localized: "confirm.conflict.banner \(count)"))
+                .font(WarmFont.caption(13))
+                .foregroundStyle(WarmTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(WarmSpacing.sm)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.chip))
+        .accessibilityIdentifier("ConflictWarningsBanner")
     }
 
     // MARK: - Transcript Section

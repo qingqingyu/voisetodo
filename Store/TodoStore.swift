@@ -111,6 +111,38 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.add_batch.success count=\(newTodos.count) locale=\(fallbackLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
+    /// 批量导入已构造好的待办(系统日历事件导入用)。
+    /// 与 `addBatch(_ items: [ExtractedTodo], localeIdentifier:)` 区别:
+    /// 直接接受已构造好的 TodoItemData(来源已 stamp),走 `TodoItem.from(_ data:)` 工厂,
+    /// 跳过 ExtractedTodo → TodoItem 的 AI 路径(basisFilter 等)。
+    func addImportedBatch(_ items: [TodoItemData]) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.add_imported_batch.start count=\(items.count)")
+        var baseSortOrder = try nextSortOrderForNewItem()
+        var newTodos: [TodoItemData] = []
+        for item in items {
+            // 兜底查重(与 addBatch 同模式):SwiftData @Attribute(.unique) insert 时不查重。
+            if let existing = try existingTodoItem(by: item.id) {
+                VoiceTodoLog.store.warning("store.add_imported_batch.skip_duplicate id=\(item.id.uuidString, privacy: .public) existingTitle=\(existing.title, privacy: .public)")
+                continue
+            }
+            let todoItem = TodoItem.from(item)
+            todoItem.sortOrder = baseSortOrder
+            baseSortOrder -= 1
+            modelContext.insert(todoItem)
+            newTodos.append(todoItem.toData())
+        }
+
+        guard !newTodos.isEmpty else {
+            VoiceTodoLog.store.info("store.add_imported_batch.all_duplicates_skipped requestedCount=\(items.count)")
+            return
+        }
+
+        try saveOrRollback()
+        todos.insert(contentsOf: newTodos.reversed(), at: 0)
+        VoiceTodoLog.store.info("store.add_imported_batch.success count=\(newTodos.count) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
     /// 添加原始转写文本（离线降级用）[v2]
     /// - Parameters:
     ///   - transcript: 原始语音转写文本

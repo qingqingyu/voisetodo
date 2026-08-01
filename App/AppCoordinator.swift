@@ -21,6 +21,9 @@ final class AppCoordinator: ObservableObject {
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
     private let correctionTracker = CorrectionTracker.shared
+    /// 系统日历读取器,用于场景 1「撞车检测」。nil = 当前未注入(测试场景),
+    /// 跳过撞车检测。
+    private let calendarReader: (any SystemCalendarReadingProtocol)?
     private let calendarSyncService: CalendarSyncService
     private let pendingRecoveryFlow: PendingRecoveryFlow
     private let transcriptProcessingFlow: TranscriptProcessingFlow
@@ -58,6 +61,17 @@ final class AppCoordinator: ObservableObject {
     @Published var glossarySuggestion: GlossarySuggestion?
     /// 回顾通知深链:通知点击后设 true,HomeView 监听后弹出 ReviewView。
     @Published var showReviewFromNotification = false
+    /// 撞车警告:todo.id → 同时段冲突的日历事件列表。
+    /// 流式 .success 后由 `detectConflicts()` 异步填充;sheet 关闭/取消时清空。
+    /// 第一版本只做"提示",不阻断确认。
+    @Published var conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:]
+    /// detectConflicts 的 Task 引用,cancelTodos / confirmTodos 时显式 cancel,
+    /// 避免用户已离开 ConfirmSheet 后台仍在串行 await 日历访问。
+    private var conflictDetectionTask: Task<Void, Never>?
+
+    /// 给 CalendarImportView 用的日历读取器。
+    /// nil 表示未注入(测试场景),UI 应该不显示导入入口或显示空 sheet。
+    var importReader: (any SystemCalendarReadingProtocol)? { calendarReader }
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -96,6 +110,7 @@ final class AppCoordinator: ObservableObject {
         store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & CalendarSyncTodoStore,
         entitlement: EntitlementManager? = nil,
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
+        calendarReader: (any SystemCalendarReadingProtocol)? = SystemCalendarReader(),
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
         vocabularyStore: UserVocabularyStore = .shared,
@@ -107,6 +122,7 @@ final class AppCoordinator: ObservableObject {
         // nil 兜底:测试调用方不传时,创建不监听 Transaction.updates 的轻量实例,
         // 避免在测试环境启动常驻 Task 监听 StoreKit2 异步流
         self.entitlement = entitlement ?? EntitlementManager(enableTransactionListener: false)
+        self.calendarReader = calendarReader
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.quotaUsage = quotaUsage
@@ -659,11 +675,41 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// 从系统日历事件导入待办(场景 3)。
+    /// 把选中的日历事件转 TodoItemData(source = .calendarImport)后批量入库。
+    /// 失败走通用 handleError。
+    func importCalendarEvents(_ events: [ExternalCalendarEvent]) {
+        let importID = VoiceTodoLog.makeID("cal-import")
+        let startedAt = Date()
+        VoiceTodoLog.coordinator.info("coordinator.calendar_import.start id=\(importID, privacy: .public) eventCount=\(events.count)")
+
+        let todos = events.compactMap { SystemCalendarEventImporter.todo(from: $0) }
+        guard !todos.isEmpty else {
+            // 用户选了事件但全部因为空标题被过滤——显式提示,而不是静默什么都不做。
+            VoiceTodoLog.coordinator.warning("coordinator.calendar_import.skipped id=\(importID, privacy: .public) reason=no_valid_events selectedCount=\(events.count)")
+            showToast(message: String(localized: "calendar_import.no_valid_events"), style: .warning)
+            return
+        }
+
+        do {
+            try store.addImportedBatch(todos)
+            WidgetCenter.shared.reloadAllTimelines()
+            VoiceTodoLog.coordinator.info("coordinator.calendar_import.success id=\(importID, privacy: .public) importedCount=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            showToast(message: String(format: String(localized: "calendar_import.success_count"), todos.count), style: .success)
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.calendar_import.failed id=\(importID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            handleError(error)
+        }
+    }
+
     /// 取消确认
     func cancelTodos() {
         VoiceTodoLog.coordinator.info("coordinator.confirm.cancel pendingCount=\(self.pendingItemIds.count) extractedCount=\(self.extractedTodos.count) isExtracting=\(self.isExtracting)")
         extractionTask?.cancel()
         extractionTask = nil
+        // 撞车检测在后台跑时也要取消,避免用户已离开 sheet 后仍在串行 await 日历访问。
+        conflictDetectionTask?.cancel()
+        conflictDetectionTask = nil
 
         // 记录已取消的 pending ID，避免本次 session 重复弹窗
         // 不删除 pending 条目，保留离线转写数据
@@ -672,6 +718,7 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
+        conflictWarnings = [:]
         showConfirmSheet = false
         pendingItemIds = []
         pendingGeneratedTodoIdsByPendingId = [:]
@@ -740,9 +787,12 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.extraction.cancel isExtracting=\(self.isExtracting) extractedCount=\(self.extractedTodos.count)")
         extractionTask?.cancel()
         extractionTask = nil
+        conflictDetectionTask?.cancel()
+        conflictDetectionTask = nil
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
+        conflictWarnings = [:]
         showConfirmSheet = false
         pendingGeneratedTodoIdsByPendingId = [:]
         activeInputTranscript = nil
@@ -840,7 +890,10 @@ final class AppCoordinator: ObservableObject {
             }
             extractedTodos = result.todos
         case .success:
-            break
+            // 流式稳定后异步触发撞车检测;失败不阻断,只记日志。
+            // 保存 Task 引用,便于 cancelTodos 时显式取消(避免 sheet 关闭后仍在后台跑)。
+            conflictDetectionTask?.cancel()
+            conflictDetectionTask = Task { await detectConflicts() }
         case .noTodos:
             // 弹层已在 processTranscript 开头升起,识别为空必须显式关闭,
             // 否则弹层会卡在「空列表 + 还在识别」永远不消失。
@@ -887,8 +940,60 @@ final class AppCoordinator: ObservableObject {
         if showConfirmSheet || !extractedTodos.isEmpty {
             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.clear_partial_results shown=\(self.showConfirmSheet) partialCount=\(self.extractedTodos.count)")
         }
+        conflictDetectionTask?.cancel()
+        conflictDetectionTask = nil
         extractedTodos = []
+        conflictWarnings = [:]
         showConfirmSheet = false
+    }
+
+    /// 流式结束后异步检测每条 ExtractedTodo 是否跟系统日历事件撞车。
+    /// 结果写入 `conflictWarnings`,ConfirmSheet 据此显示警告 banner。
+    /// 失败不抛错——撞车检测是 nice-to-have,不应让用户感知。
+    /// reader 未注入(测试场景)时直接跳过。
+    /// 并发:用 TaskGroup 并行查每条 todo 的撞车(避免串行 await N 次 reader)。
+    /// 取消语义:cancelTodos 后新进来的取消会让后续子任务短路、`for await` 也 break,
+    /// 但**已进入 `reader.findConflicts` 的子任务无法中途退出**(EventKit 的
+    /// `eventStore.events(matching:)` 是同步阻塞调用,没有 cancellation point)。
+    /// 结果会被最后的 guard 丢弃,功能上无害,只是后台会跑完那几个查询。
+    private func detectConflicts() async {
+        guard let reader = calendarReader else { return }
+        guard !extractedTodos.isEmpty else { return }
+        // 快照当前 extractedTodos——避免循环中 sheet 被关掉、extractedTodos 清空后
+        // 还在跑已经无意义的检测。
+        let snapshot = extractedTodos
+        let candidates = snapshot.filter { $0.dueDate != nil }
+        guard !candidates.isEmpty else { return }
+
+        var newWarnings: [UUID: [ExternalCalendarEvent]] = [:]
+        // 并发查每条 todo 的撞车;用 task group 把 N 条 reader 调用并行起来。
+        // 取消传播:子任务进入 findConflicts 前查 Task.isCancelled(短路);
+        // 父任务 for await 循环里也查,中途取消就 break。
+        // reader 不加 weak —— 协议非 class-bound 无法 [weak reader];Task 闭包隐式
+        // 捕获 self(@MainActor class),但 cancelTodos/clearExtractionPresentation 都会
+        // 显式 cancel 并置 nil,且 AppCoordinator 是 App 级生命周期,不会真泄漏。
+        await withTaskGroup(of: (UUID, [ExternalCalendarEvent]?).self) { group in
+            for todo in candidates {
+                group.addTask {
+                    // 子任务取消时尽快返回 nil(让父任务 break)。
+                    if Task.isCancelled { return (todo.id, nil) }
+                    do {
+                        let conflicts = try await reader.findConflicts(for: todo)
+                        return (todo.id, conflicts.isEmpty ? nil : conflicts)
+                    } catch {
+                        VoiceTodoLog.coordinator.warning("coordinator.conflict.detect_failed todoId=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        return (todo.id, nil)
+                    }
+                }
+            }
+            for await (todoID, conflicts) in group {
+                if Task.isCancelled { break }
+                if let conflicts { newWarnings[todoID] = conflicts }
+            }
+        }
+        // 只在 sheet 仍打开 + 任务没被取消时写入,避免覆盖已被 cancel 的状态
+        guard !Task.isCancelled, showConfirmSheet else { return }
+        conflictWarnings = newWarnings
     }
 
     /// 外部调用失败（含配额耗尽）后离线兜底成功的统一处理。

@@ -81,7 +81,10 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
         let writeID = VoiceTodoLog.makeID("syscal-write")
         let startedAt = Date()
         let writableTodos = todos.filter {
-            $0.systemCalendarEventIdentifier == nil
+            // 只同步用户语音录入的待办。日历导入(source == .calendarImport)是日历事件的
+            // 镜像,再写入会创建重复事件;collaboration 来源由协作路径自行处理同步。
+            $0.source == .voice
+                && $0.systemCalendarEventIdentifier == nil
                 && SystemCalendarEventMapper.draft(from: $0, calendar: calendar) != nil
         }
         VoiceTodoLog.calendar.info("system_calendar.write.start id=\(writeID, privacy: .public) inputCount=\(todos.count) writableCount=\(writableTodos.count) ids=\(VoiceTodoLog.idsSummary(writableTodos.map(\.id)), privacy: .public)")
@@ -90,7 +93,7 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
             return []
         }
 
-        guard try await requestWriteAccess() else {
+        guard try await requestCalendarAccess() else {
             VoiceTodoLog.calendar.warning("system_calendar.write.denied id=\(writeID, privacy: .public)")
             throw VoiceTodoError.storageWriteFailed("System calendar access denied")
         }
@@ -166,9 +169,9 @@ final class SystemCalendarWriter: SystemCalendarWritingProtocol {
         VoiceTodoLog.calendar.info("system_calendar.remove.success id=\(removeID, privacy: .public) removed=\(removedCount) missing=\(missingCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
-    private func requestWriteAccess() async throws -> Bool {
+    private func requestCalendarAccess() async throws -> Bool {
         try await withCheckedThrowingContinuation { continuation in
-            eventStore.requestWriteOnlyAccessToEvents { granted, error in
+            eventStore.requestFullAccessToEvents { granted, error in
                 if let error {
                     VoiceTodoLog.calendar.error("system_calendar.permission.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     continuation.resume(throwing: Self.storageWriteFailure(error))
