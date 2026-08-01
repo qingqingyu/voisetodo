@@ -69,6 +69,12 @@ PROVIDERS = '''
 # 生成一段随机串后用 `wrangler secret put APP_TOKEN` 注入。
 # APP_TOKEN 通过 secret 注入，不在此处明文。
 
+# Admin 鉴权 token：用于 /v1/admin/* endpoint(动态切换 provider 主力等运维操作)。
+# 跟 APP_TOKEN 分离,避免普通客户端能调 admin endpoint 改 provider 配置。
+# 生成随机串后用 `wrangler secret put ADMIN_TOKEN` 注入(建议用 openssl rand -hex 32)。
+# 客户端通过 X-Admin-Token header 携带,worker 在 handleAdminRequest 里校验。
+# ADMIN_TOKEN 通过 secret 注入,不在此处明文。
+
 # 可选：限制每次请求最多尝试多少个 provider（默认 = 过滤后的候选总数）。
 # AI_PROVIDER_MAX_ATTEMPTS = "3"
 

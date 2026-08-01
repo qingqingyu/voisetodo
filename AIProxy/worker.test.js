@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
-import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth } from "./worker.js";
+import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig } from "./worker.js";
+import { applyPrimaryOverride } from "./src/adminConfig.js";
 import { mintTestJWS } from "./src/jws-fixture.js";
 
-// Reset module-level HealthStore between tests so circuit-breaker / latency state
-// from one test doesn't leak into another.
-beforeEach(() => _testResetHealth());
+// Reset module-level HealthStore + AdminConfigStore between tests so circuit-breaker
+// / latency state / admin override from one test doesn't leak into another.
+beforeEach(() => {
+  _testResetHealth();
+  _testResetAdminConfig();
+});
 import { anthropicAdapter, openaiAdapter, geminiAdapter } from "./src/adapters/index.js";
 import { HealthStore } from "./src/health.js";
 import { pickCandidates } from "./src/selector.js";
@@ -1395,6 +1399,9 @@ function makeFakeKV(initial = {}) {
     },
     async put(key, value) {
       store[key] = String(value);
+    },
+    async delete(key) {
+      delete store[key];
     }
   };
 }
@@ -3768,4 +3775,223 @@ test("Step 8 mergeSignals 单信号直接返回,无包装", async () => {
   );
   assert.equal(r.status, 200);
   assert.ok(capturedSignal);
+});
+
+// ─── Admin endpoint: 动态切换 provider 主力 ─────────────────────────────
+
+test("applyPrimaryOverride: 空 providers 或空 primaryId 返回原数组", () => {
+  const empty = [];
+  assert.equal(applyPrimaryOverride(empty, "X"), empty);
+  assert.deepEqual(applyPrimaryOverride([{ id: "A", priority: 1 }], ""), [{ id: "A", priority: 1 }]);
+});
+
+test("applyPrimaryOverride: primaryId 不存在返回原数组", () => {
+  const providers = [{ id: "A", priority: 1 }, { id: "B", priority: 2 }];
+  const result = applyPrimaryOverride(providers, "NONEXISTENT");
+  assert.equal(result, providers, "应返回同一引用(让 caller 决定报错)");
+});
+
+test("applyPrimaryOverride: primaryId 存在时 priority 变 1,其他 priority<=1 的降为 2", () => {
+  const providers = [
+    { id: "A", priority: 1 },
+    { id: "B", priority: 2 },
+    { id: "C", priority: 1 }
+  ];
+  const result = applyPrimaryOverride(providers, "B");
+  assert.deepEqual(result, [
+    { id: "A", priority: 2 },
+    { id: "B", priority: 1 },
+    { id: "C", priority: 2 }
+  ]);
+});
+
+test("applyPrimaryOverride: 不修改入参(纯函数)", () => {
+  const providers = [{ id: "A", priority: 1 }];
+  applyPrimaryOverride(providers, "A");
+  assert.equal(providers[0].priority, 1, "入参数组元素 priority 未变");
+});
+
+test("admin endpoint: 无 X-Admin-Token 返回 401", async () => {
+  const kv = makeFakeKV();
+  const env = { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv };
+  const req = new Request("https://proxy.test/v1/admin/providers", { method: "GET" });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 401);
+});
+
+test("admin endpoint: 错的 X-Admin-Token 返回 401", async () => {
+  const kv = makeFakeKV();
+  const env = { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv };
+  const req = new Request("https://proxy.test/v1/admin/providers", {
+    method: "GET",
+    headers: { "X-Admin-Token": "wrong" }
+  });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 401);
+});
+
+test("admin endpoint: ADMIN_TOKEN 未配置返回 500(不静默开放)", async () => {
+  const req = new Request("https://proxy.test/v1/admin/providers", {
+    method: "GET",
+    headers: { "X-Admin-Token": "anything" }
+  });
+  const response = await handleRequest(req, {}, {});
+  assert.equal(response.status, 500);
+});
+
+test("admin GET /v1/admin/providers: 无 override 返回 toml 默认 + override=null", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" },
+     { id: "B", type: "openai",   url: "https://b.example/v1/chat",      model: "m2", priority: 2, secretName: "K2" }],
+    { K1: "k1", K2: "k2" },
+    { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv }
+  );
+  const req = new Request("https://proxy.test/v1/admin/providers", {
+    method: "GET",
+    headers: { "X-Admin-Token": "admin-secret" }
+  });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.override, null);
+  assert.equal(data.providers.length, 2);
+  assert.deepEqual(data.providers.map((p) => p.id), ["A", "B"]);
+  assert.equal(data.providers[0].priority, 1);
+  // 确认敏感字段被脱敏
+  assert.equal("apiKey" in data.providers[0], false);
+  assert.equal("secretName" in data.providers[0], false);
+  assert.equal(data.providers[0].hasApiKey, true);
+});
+
+test("admin POST primary: 有效 primaryId 写 KV override", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" },
+     { id: "B", type: "openai",   url: "https://b.example/v1/chat",      model: "m2", priority: 2, secretName: "K2" }],
+    { K1: "k1", K2: "k2" },
+    { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv }
+  );
+  const req = new Request("https://proxy.test/v1/admin/providers/primary", {
+    method: "POST",
+    headers: { "X-Admin-Token": "admin-secret", "Content-Type": "application/json" },
+    body: JSON.stringify({ primaryId: "B" })
+  });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.override.primaryId, "B");
+  // 验证 KV 已写入
+  const stored = JSON.parse(kv.store["config:providers_primary"]);
+  assert.equal(stored.primaryId, "B");
+});
+
+test("admin POST primary: 无效 primaryId 返回 400 + availableIds", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv }
+  );
+  const req = new Request("https://proxy.test/v1/admin/providers/primary", {
+    method: "POST",
+    headers: { "X-Admin-Token": "admin-secret", "Content-Type": "application/json" },
+    body: JSON.stringify({ primaryId: "NONEXISTENT" })
+  });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 400);
+  const data = await response.json();
+  assert.equal(data.error, "unknown_provider_id");
+  assert.deepEqual(data.availableIds, ["A"]);
+});
+
+test("admin POST primary: 小写 primaryId 自动转大写", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv }
+  );
+  const req = new Request("https://proxy.test/v1/admin/providers/primary", {
+    method: "POST",
+    headers: { "X-Admin-Token": "admin-secret", "Content-Type": "application/json" },
+    body: JSON.stringify({ primaryId: "a" })
+  });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.override.primaryId, "A");
+});
+
+test("admin DELETE primary: 清除 override 回到 toml 默认", async () => {
+  const kv = makeFakeKV({
+    "config:providers_primary": JSON.stringify({ primaryId: "B", updatedAt: 1, updatedBy: null })
+  });
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" },
+     { id: "B", type: "openai",   url: "https://b.example/v1/chat",      model: "m2", priority: 2, secretName: "K2" }],
+    { K1: "k1", K2: "k2" },
+    { ADMIN_TOKEN: "admin-secret", AI_PROVIDER_STATE_KV: kv }
+  );
+  const req = new Request("https://proxy.test/v1/admin/providers/primary", {
+    method: "DELETE",
+    headers: { "X-Admin-Token": "admin-secret" }
+  });
+  const response = await handleRequest(req, env, {});
+  assert.equal(response.status, 200);
+  assert.equal(kv.store["config:providers_primary"], undefined, "KV key 应已删除");
+});
+
+test("admin override 影响实际 todo-extractions 请求:primaryId 排第一", async () => {
+  const kv = makeFakeKV({
+    "config:providers_primary": JSON.stringify({ primaryId: "B", updatedAt: 1, updatedBy: null })
+  });
+  let calledProviderUrl;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" },
+     { id: "B", type: "openai",   url: "https://b.example/v1/chat",      model: "m2", priority: 2, secretName: "K2" }],
+    { K1: "k1", K2: "k2" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const response = await handleRequest(
+    request({ transcript: "测试", locale: "zh" }, { "X-App-Token": "token" }),
+    env,
+    {},
+    async (url) => {
+      calledProviderUrl = url;
+      // OpenAI 兼容响应
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ todos: [{ id: "t1", title: "测试" }] }) } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  );
+  assert.equal(response.status, 200);
+  // primaryId="B"(原 priority=2)被 override 为 priority=1,应优先被调用
+  assert.equal(calledProviderUrl, "https://b.example/v1/chat");
+});
+
+test("admin override 不存在 primaryId 时静默 noop(走 toml 默认)", async () => {
+  // KV 里有一个不存在的 primaryId(toml 改过但 KV override 没清)
+  const kv = makeFakeKV({
+    "config:providers_primary": JSON.stringify({ primaryId: "DELETED_PROVIDER", updatedAt: 1, updatedBy: null })
+  });
+  let calledProviderUrl;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m1", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const response = await handleRequest(
+    request({ transcript: "测试", locale: "zh" }, { "X-App-Token": "token" }),
+    env,
+    {},
+    async (url) => {
+      calledProviderUrl = url;
+      return jsonResponse({ content: [{ type: "text", text: extractionJSON("测试") }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  // applyPrimaryOverride 找不到 primaryId,返回原数组,走默认 A
+  assert.equal(calledProviderUrl, "https://a.example/v1/messages");
 });

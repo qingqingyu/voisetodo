@@ -1,3 +1,4 @@
+import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore } from "./src/health.js";
@@ -24,6 +25,11 @@ const TELEMETRY_RETENTION_DAYS = 90;
 // requiring KV on every read. KV binding is refreshed per-request via updateKv().
 const sharedHealthStore = new HealthStore();
 
+// Module-level AdminConfigStore:缓存 admin 通过 /v1/admin/providers/primary 设置的
+// primary provider override。复用 AI_PROVIDER_STATE_KV(跟 health state 同 namespace,
+// key 前缀 config: 区分)。30s 内存缓存,避免每请求都读 KV。
+const sharedAdminConfigStore = new AdminConfigStore();
+
 // Isolate 首请求标记:Cloudflare Workers 的 isolate 在首次请求时才真正 lazy-load
 // KV/DO binding,首个 /v1/todo-extractions 请求会承担冷启动开销。本标志在 isolate
 // 生命周期内只对首请求输出一次 `proxy.cold_start.warmup` 日志,后续请求不再打。
@@ -33,6 +39,11 @@ let isolateWarmedUp = false;
 // Test-only export: allows tests to reset module-level health state between runs.
 export function _testResetHealth() {
   sharedHealthStore.reset();
+}
+
+// Test-only export: allows tests to reset module-level admin config state between runs.
+export function _testResetAdminConfig() {
+  sharedAdminConfigStore.reset();
 }
 
 export default {
@@ -53,6 +64,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // Telemetry 路由：批量上报匿名事件到 D1
     if (url.pathname === "/v1/telemetry/events") {
       return await handleTelemetryBatch(request, env, requestContext);
+    }
+
+    // Admin 路由:动态切换 provider 主力等运维操作。
+    // 必须在 todo-extractions 主流程之前分发,避免被配额检查 / payload 解析挡住。
+    if (url.pathname.startsWith("/v1/admin/")) {
+      return await handleAdminRequest(request, env, requestContext, url);
     }
 
     if (url.pathname !== "/v1/todo-extractions") {
@@ -116,6 +133,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+    sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
 
     // Isolate 冷启动诊断:测 updateKv 耗时(KV binding 首次解析可能慢),
     // 首请求输出一次 warmup 日志,标记本 isolate 已"热身完成"。
@@ -143,6 +161,24 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     if (providers.length === 0) {
       logError("proxy.providers.empty", { ...requestContext });
       return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_empty" });
+    }
+
+    // 应用 admin runtime override:如果 admin 通过 /v1/admin/providers/primary
+    // 设置了 primaryId,把对应 provider 的 priority 改为 1,让 selector 优先选它。
+    // 30s 内存缓存,KV 读失败时静默回退到 toml 默认(不阻塞业务请求)。
+    const primaryOverride = await sharedAdminConfigStore.getPrimaryOverride();
+    if (primaryOverride?.primaryId) {
+      const before = providers.map((p) => ({ id: p.id, priority: p.priority }));
+      providers = applyPrimaryOverride(providers, primaryOverride.primaryId);
+      requestContext.primaryOverride = {
+        primaryId: primaryOverride.primaryId,
+        updatedAt: primaryOverride.updatedAt
+      };
+      logInfo("proxy.providers.primary_override_applied", {
+        ...requestContext,
+        before,
+        after: providers.map((p) => ({ id: p.id, priority: p.priority }))
+      });
     }
 
     const candidates = await pickCandidates(providers, sharedHealthStore, Date.now(), {
@@ -387,6 +423,194 @@ async function readPayloadWithLimit(request, maxBytes) {
     }
     throw new ProxyHTTPError(400, "Invalid JSON", { cause: error });
   }
+}
+
+// MARK: - Admin handler (runtime provider override)
+//
+// /v1/admin/providers          GET     返回当前 providers(合并 override 后)+ override 状态
+// /v1/admin/providers/primary  POST    { primaryId } 写 KV override,立即切主力
+// /v1/admin/providers/primary  DELETE  清 KV override,回到 toml 默认
+//
+// 鉴权:必须带 X-Admin-Token header,值 = env.ADMIN_TOKEN(secret 注入)。
+// 跟 APP_TOKEN 分离,普通客户端无法调用。
+
+const ADMIN_TOKEN_HEADER = "X-Admin-Token";
+const ADMIN_PAYLOAD_MAX_BYTES = 4 * 1024;
+
+export async function handleAdminRequest(request, env, requestContext, url) {
+  const authError = validateAdminToken(request, env);
+  if (authError) {
+    logWarn("proxy.admin.auth_failed", {
+      ...requestContext,
+      status: authError.response.status,
+      reason: authError.reason
+    });
+    return finishRequest(authError.response, requestContext, { reason: authError.reason });
+  }
+
+  if (url.pathname === "/v1/admin/providers" && request.method === "GET") {
+    return await handleAdminGetProviders(env, requestContext);
+  }
+  if (url.pathname === "/v1/admin/providers/primary" && request.method === "POST") {
+    return await handleAdminSetPrimary(request, env, requestContext);
+  }
+  if (url.pathname === "/v1/admin/providers/primary" && request.method === "DELETE") {
+    return await handleAdminClearPrimary(env, requestContext);
+  }
+  return finishRequest(new Response("Not Found", { status: 404 }), requestContext, { reason: "admin_route_not_found" });
+}
+
+async function handleAdminGetProviders(env, requestContext) {
+  sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+
+  let providers;
+  try {
+    providers = loadProviders(env, {
+      onSecretMissing: ({ id, secretName }) => {
+        logWarn("proxy.admin.provider.secret_missing", { ...requestContext, providerId: id, secretName });
+      }
+    });
+  } catch (error) {
+    logError("proxy.admin.providers.config_failed", { ...requestContext, ...errorFields(error) });
+    return finishRequest(
+      jsonResponse(500, { error: "providers_config_invalid", detail: error.message }),
+      requestContext,
+      { reason: "providers_config_invalid" }
+    );
+  }
+
+  const override = await sharedAdminConfigStore.getPrimaryOverride();
+  // 应用 override 让 caller 看到实际生效的 priority(而非 toml 默认)
+  const effective = override?.primaryId ? applyPrimaryOverride(providers, override.primaryId) : providers;
+
+  // 返回精简视图:去掉 secretName / apiKey,只留 hasApiKey 布尔
+  const publicProviders = effective.map((p) => ({
+    id: p.id,
+    type: p.type,
+    model: p.model,
+    priority: p.priority,
+    weight: p.weight,
+    enabled: p.enabled,
+    timeoutMs: p.timeoutMs,
+    hasApiKey: Boolean(p.apiKey)
+  }));
+
+  return finishRequest(
+    jsonResponse(200, { providers: publicProviders, override }),
+    requestContext,
+    { reason: "admin_providers_listed" }
+  );
+}
+
+async function handleAdminSetPrimary(request, env, requestContext) {
+  sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+
+  let payload;
+  try {
+    payload = await readAdminPayload(request);
+  } catch (error) {
+    return finishRequest(
+      jsonResponse(400, { error: "invalid_json" }),
+      requestContext,
+      { reason: "admin_invalid_json" }
+    );
+  }
+
+  const primaryId = String(payload?.primaryId || "").toUpperCase();
+  if (!primaryId) {
+    return finishRequest(
+      jsonResponse(400, { error: "missing_primary_id" }),
+      requestContext,
+      { reason: "admin_missing_primary_id" }
+    );
+  }
+
+  // 校验 primaryId 在当前 toml 配置里存在(防止 admin 把不存在的 id 写进 KV,
+  // 导致 applyPrimaryOverride 静默 noop 后 selector 行为不变却看起来"已切换")
+  let providers;
+  try {
+    providers = loadProviders(env, { onSecretMissing: () => {} });
+  } catch (error) {
+    return finishRequest(
+      jsonResponse(500, { error: "providers_config_invalid" }),
+      requestContext,
+      { reason: "providers_config_invalid" }
+    );
+  }
+  const exists = providers.some((p) => p.id === primaryId);
+  if (!exists) {
+    logWarn("proxy.admin.primary_not_found", {
+      ...requestContext,
+      requestedId: primaryId,
+      availableIds: providers.map((p) => p.id)
+    });
+    return finishRequest(
+      jsonResponse(400, {
+        error: "unknown_provider_id",
+        primaryId,
+        availableIds: providers.map((p) => p.id)
+      }),
+      requestContext,
+      { reason: "admin_unknown_provider_id" }
+    );
+  }
+
+  // updatedBy 用 requestContext.deviceId(已是 sha256 hash)作为审计标识
+  const updatedBy = requestContext.deviceId || null;
+  const override = await sharedAdminConfigStore.setPrimaryOverride(primaryId, updatedBy);
+  logInfo("proxy.admin.providers_primary_set", {
+    ...requestContext,
+    primaryId,
+    updatedAt: override.updatedAt
+  });
+  return finishRequest(
+    jsonResponse(200, { ok: true, override }),
+    requestContext,
+    { reason: "admin_primary_set" }
+  );
+}
+
+async function handleAdminClearPrimary(env, requestContext) {
+  sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+  await sharedAdminConfigStore.clearPrimaryOverride();
+  logInfo("proxy.admin.providers_primary_cleared", { ...requestContext });
+  return finishRequest(
+    jsonResponse(200, { ok: true, cleared: true }),
+    requestContext,
+    { reason: "admin_primary_cleared" }
+  );
+}
+
+function validateAdminToken(request, env) {
+  // ADMIN_TOKEN 必须配置;没配置直接 500,避免 admin endpoint 被误开放为无鉴权
+  if (!env.ADMIN_TOKEN) {
+    return {
+      response: jsonResponse(500, { error: "admin_token_not_configured" }),
+      reason: "admin_token_not_configured"
+    };
+  }
+  const provided = request.headers.get(ADMIN_TOKEN_HEADER) || "";
+  const expected = String(env.ADMIN_TOKEN);
+  // 跟 APP_TOKEN 一致:支持明文或 `Bearer ${token}` 两种格式
+  if (provided === expected || provided === `Bearer ${expected}`) {
+    return null;
+  }
+  return {
+    response: jsonResponse(401, { error: "unauthorized" }),
+    reason: "unauthorized"
+  };
+}
+
+async function readAdminPayload(request) {
+  const text = await readRequestTextWithLimit(request, ADMIN_PAYLOAD_MAX_BYTES);
+  return text ? JSON.parse(text) : {};
+}
+
+function jsonResponse(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
 }
 
 // MARK: - Scheduled handler (90 天 GC)
