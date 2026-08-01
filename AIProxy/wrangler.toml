@@ -110,12 +110,12 @@ id = "ef09b0ad898241d5aa33291f406beb7e"
 [triggers]
 crons = ["*/30 * * * *"]
 
-# ─── Extraction Cache KV(解析结果缓存,可选启用)──────────────────────────
-# 部署前先创建:npx wrangler kv namespace create CACHE_RESULT_KV
-# 然后把返回的 id 填到下面,取消注释。不配置时 cache 静默不工作(代码用 || null 兜底)。
-# [[kv_namespaces]]
-# binding = "CACHE_RESULT_KV"
-# id = "<填入创建后的 namespace id>"
+# ─── Extraction Cache KV(解析结果缓存)─────────────────────────────────────
+# 用于 P2:同一 transcript 1h TTL 缓存,省上游 AI 调用。
+# 创建命令:npx wrangler kv namespace create CACHE_RESULT_KV
+[[kv_namespaces]]
+binding = "CACHE_RESULT_KV"
+id = "f241a8c418c74c92bcd19d8fb2a7c42f"
 
 # ─── Durable Objects ─────────────────────────────────────────────────────────
 # QuotaCounter: 强一致配额计数器,替代 KV 上的 read-modify-write(后者在并发下丢失更新)。
