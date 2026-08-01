@@ -148,6 +148,12 @@ struct ExtractedTodo: Identifiable, Codable {
     var dueDateBasis: DueDateBasis?
     /// 本地附加的输入语言标识；AI 响应不会提供，离线恢复用于保留原 pending locale。
     var localeIdentifier: String?
+    /// 用户在确认页编辑面板里手动改过 dueDate 的标记。
+    /// 为 true 时 `applyDueDateBasisFilter` 直接放行,不再按 AI basis 白名单过滤——
+    /// 该过滤器拦的是「AI 把标题里偶然出现的日期词误识别为 due_date」,
+    /// 与「用户自己点了日历」无关。本地字段,不进 CodingKeys、不参与 encode
+    /// (与 localeIdentifier 同待遇)。
+    var dueDateUserEdited: Bool = false
 
     private enum CodingKeys: String, CodingKey {
         case id

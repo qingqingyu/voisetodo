@@ -153,6 +153,81 @@ final class TodoItemFromBasisFilterTests: XCTestCase {
         XCTAssertEqual(item.extractionOutcome, .parsed)
     }
 
+    // MARK: - dueDateUserEdited(确认页手动编辑保护)
+
+    /// 头号坑回归:确认页 addBatch 不传 rawTranscript,basis=nil 时原本会被清空。
+    /// 用户手动选了日期(dueDateUserEdited=true)后,过滤器必须放行。
+    func testUserEditedRetainsManualDueDateWhenBasisNilAndNoTranscript() throws {
+        let manualDate = try makeDate(year: 2026, month: 8, day: 1)
+        var extracted = ExtractedTodo(
+            title: "买牛奶",
+            dueDate: manualDate,
+            dueDateBasis: nil
+        )
+        extracted.dueDateUserEdited = true
+        let item = TodoItem.from(extracted, rawTranscript: nil)
+        XCTAssertEqual(item.dueDate, manualDate)
+    }
+
+    /// basis=inferred + transcript 有 cue:正常会兜底重算成"明天",
+    /// 但用户手选优先于兜底重算(决策点 3)。
+    func testUserEditedOverridesInferredBasisTranscriptFallback() throws {
+        let manualDate = try makeDate(year: 2026, month: 8, day: 1)
+        var extracted = ExtractedTodo(
+            title: "买牛奶",
+            detail: "明天买牛奶",
+            dueDate: manualDate,
+            dueHint: "明天",
+            dueDateBasis: .inferred
+        )
+        extracted.dueDateUserEdited = true
+        let item = TodoItem.from(extracted, rawTranscript: "明天买牛奶")
+        XCTAssertEqual(item.dueDate, manualDate)
+    }
+
+    /// basis=titleMention + transcript 无 cue:正常会清空,userEdited 保留。
+    func testUserEditedRetainsManualDueDateWhenBasisTitleMentionWithoutCue() throws {
+        let manualDate = try makeDate(year: 2026, month: 8, day: 1)
+        var extracted = ExtractedTodo(
+            title: "Prepare for Sunday",
+            dueDate: manualDate,
+            dueDateBasis: .titleMention
+        )
+        extracted.dueDateUserEdited = true
+        let item = TodoItem.from(extracted, rawTranscript: "prepare for Sunday")
+        XCTAssertEqual(item.dueDate, manualDate)
+    }
+
+    /// basis=userExplicit + transcript 无 cue:正常会清空(AI 错标兜底),userEdited 保留。
+    func testUserEditedRetainsManualDueDateWhenBasisUserExplicitWithoutCue() throws {
+        let manualDate = try makeDate(year: 2026, month: 8, day: 1)
+        var extracted = ExtractedTodo(
+            title: "Prepare for Sunday",
+            detail: "Prepare for Sunday",
+            dueDate: manualDate,
+            dueHint: "for Sunday",
+            dueDateBasis: .userExplicit
+        )
+        extracted.dueDateUserEdited = true
+        let item = TodoItem.from(extracted, rawTranscript: "prepare for Sunday")
+        XCTAssertEqual(item.dueDate, manualDate)
+    }
+
+    /// 回归保护:dueDateUserEdited 默认 false。现有 8 组测试在此基础上验证原过滤行为不变。
+    func testDueDateUserEditedDefaultsToFalse() {
+        let extracted = ExtractedTodo(title: "x")
+        XCTAssertFalse(extracted.dueDateUserEdited)
+    }
+
+    /// 本地字段不参与编码:JSON 序列化后不应出现(与 localeIdentifier 同待遇)。
+    func testDueDateUserEditedNotEncoded() throws {
+        var extracted = ExtractedTodo(title: "x")
+        extracted.dueDateUserEdited = true
+        let data = try JSONEncoder().encode(extracted)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertFalse(json.contains("dueDateUserEdited"))
+    }
+
     // MARK: - Helpers
 
     private func makeDate(year: Int, month: Int, day: Int) throws -> Date {

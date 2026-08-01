@@ -9,12 +9,18 @@ import SwiftUI
 /// 「待定」组,排在最前(避免它们被日期排序推到末尾看不见)。
 struct ConfirmGroupedList: View {
     @Binding var todos: [ExtractedTodo]
+    @Binding var expandedTodoID: UUID?
     let isStreaming: Bool
+
+    /// 展开态分组冻结:expandedTodoID != nil 时沿用上一帧的分组结果,
+    /// 避免用户在面板改日期 → 卡片当场换组 → 展开的面板跳到别的 section。
+    /// 收起时清空,回到实时分组。
+    @State private var frozenSections: [GroupedSection]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.md) {
-            ForEach(Array(groupedSections.enumerated()), id: \.element.key) { _, section in
-                ConfirmGroupSection(section: section, todos: $todos)
+            ForEach(Array(effectiveSections.enumerated()), id: \.element.key) { _, section in
+                ConfirmGroupSection(section: section, todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming)
             }
 
             if isStreaming {
@@ -26,6 +32,28 @@ struct ConfirmGroupedList: View {
         // `.animation(value: todos)` 编译不过。count 变化是流式插入/删除的主要触发场景,
         // 内容编辑(标题/timeBucket)的反馈由具体 control 自己处理(Menu/TextField 已有动画)。
         .animation(WarmAnimation.springSlow, value: todos.count)
+        .onChange(of: expandedTodoID) { _, newValue in
+            if newValue != nil {
+                // 进入展开态:冻结当前分组,面板改日期不会当场重排
+                if frozenSections == nil {
+                    frozenSections = groupedSections
+                }
+            } else {
+                // 收起:解冻,回到实时分组(归位到新分组由上层 animation 播放)
+                frozenSections = nil
+            }
+        }
+        .onChange(of: todos.count) { _, _ in
+            // 展开态下若有卡片被删除,frozenSections 会保留已删除 id 所属的空 section
+            // (row 本身因 firstIndex 找不到会被跳过,但组 header 仍会渲染成空组)。
+            // 这里在 count 变化时重建冻结快照——只同步删除,不重排日期
+            // (改日期不改 count,不触发本回调,冻结初衷不破)。
+            if expandedTodoID != nil {
+                frozenSections = groupedSections.filter { section in
+                    section.todoIDs.contains { id in todos.contains { $0.id == id } }
+                }
+            }
+        }
         .accessibilityIdentifier("ExtractedTodoList")
     }
 
@@ -94,6 +122,14 @@ struct ConfirmGroupedList: View {
                 }
             }
     }
+
+    /// 展开态用冻结分组,正常态用实时分组。
+    private var effectiveSections: [GroupedSection] {
+        if expandedTodoID != nil, let frozen = frozenSections {
+            return frozen
+        }
+        return groupedSections
+    }
 }
 
 // MARK: - Group Section
@@ -101,6 +137,8 @@ struct ConfirmGroupedList: View {
 private struct ConfirmGroupSection: View {
     let section: ConfirmGroupedList.GroupedSection
     @Binding var todos: [ExtractedTodo]
+    @Binding var expandedTodoID: UUID?
+    let isStreaming: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.sm) {
@@ -119,7 +157,9 @@ private struct ConfirmGroupSection: View {
                     TodoItemRowWithDelete(
                         index: index,
                         todo: $todos[index],
-                        todos: $todos
+                        todos: $todos,
+                        expandedTodoID: $expandedTodoID,
+                        isStreaming: isStreaming
                     )
                     .id(id)
                     .transition(
