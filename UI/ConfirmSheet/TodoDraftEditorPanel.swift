@@ -62,6 +62,8 @@ struct TodoDraftEditorPanel: View {
                 Text(String(localized: "confirm.collapse"))
                     .font(WarmFont.body(14))
                     .foregroundColor(WarmTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .buttonStyle(.plain)
 
@@ -112,6 +114,9 @@ struct TodoDraftEditorPanel: View {
                         .font(.system(size: 15))
                     Text(String(localized: "detail.add_date"))
                         .font(WarmFont.body(16))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
                 }
                 .foregroundColor(WarmTheme.primary)
             }

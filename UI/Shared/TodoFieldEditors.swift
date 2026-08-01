@@ -97,7 +97,11 @@ struct TodoPriorityPicker: View {
         } label: {
             HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: icon).font(.system(size: 14, weight: .semibold))
-                Text(label).font(WarmFont.caption(13))
+                Text(label)
+                    .font(WarmFont.caption(13))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, WarmSpacing.sm)
@@ -366,6 +370,8 @@ struct TodoClockTimeRow: View {
                 Text(derived.localizedTitle)
                     .font(WarmFont.caption(12))
                     .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
         } else {
             VStack(alignment: .leading, spacing: WarmSpacing.xs) {
@@ -390,6 +396,9 @@ struct TodoClockTimeRow: View {
                                 .font(.system(size: 13))
                             Text(String(localized: "detail.add_time"))
                                 .font(WarmFont.body(15))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .layoutPriority(1)
                         }
                         .foregroundColor(WarmTheme.primary)
                     }
