@@ -118,33 +118,6 @@ struct TodoItemRow: View {
                             )
                             .accessibilityIdentifier("TodoTimeText_\(index)")
                         }
-
-                        // 模糊时段 Menu:展开时隐藏(面板内已有完整时段 chip),
-                        // 仅 dueTime==nil 且未展开时显示。
-                        if todo.dueTime == nil && !isExpanded {
-                            Menu {
-                                ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
-                                    Button {
-                                        todo.timeBucket = bucket == .anytime ? nil : bucket
-                                    } label: {
-                                        if todo.timeBucket == bucket || (todo.timeBucket == nil && bucket == .anytime) {
-                                            Label(bucket.localizedTitle, systemImage: "checkmark")
-                                        } else {
-                                            Text(bucket.localizedTitle)
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Label(
-                                    (todo.timeBucket ?? .anytime).localizedTitle,
-                                    systemImage: "sun.max"
-                                )
-                                .font(WarmFont.caption(12))
-                                .foregroundColor(WarmTheme.primaryDark)
-                            }
-                            .accessibilityIdentifier("TodoTimeBucketPicker_\(index)")
-                            .accessibilityLabel(String(localized: "time_bucket.accessibility_label"))
-                        }
                     }
 
                     Spacer(minLength: WarmSpacing.xs)
