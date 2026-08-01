@@ -1058,6 +1058,22 @@
         }
       }
     },
+    "confirm.editor.more_in_detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes and recurrence can be edited in detail page after adding"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备注 / 重复规则加入列表后,在详情页修改"
+          }
+        }
+      }
+    },
     "confirm.group.pending" : {
       "localizations" : {
         "en" : {
@@ -1086,22 +1102,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "点击卡片编辑 · ✕ 删除"
-          }
-        }
-      }
-    },
-    "confirm.streaming_cannot_edit" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Still parsing — can't edit yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解析中，暂时不能编辑"
           }
         }
       }
@@ -1135,6 +1135,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在识别更多待办..."
+          }
+        }
+      }
+    },
+    "confirm.streaming_cannot_edit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still parsing — can't edit yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析中，暂时不能编辑"
           }
         }
       }
@@ -7760,6 +7776,7 @@
       }
     },
     "time_bucket.accessibility_label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

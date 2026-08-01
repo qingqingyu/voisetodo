@@ -64,6 +64,22 @@ struct TodoDraftEditorPanel: View {
                     .foregroundColor(WarmTheme.primary)
             }
             .buttonStyle(.plain)
+
+            // 7. 友善提示:面板只覆盖最高频字段(标题/日期/时间/分类/优先级),
+            // 备注(detail)和重复规则(recurrenceRule)需要先 Add 进列表,
+            // 从 HomeView 点卡片进详情页才能改——避免用户在面板里找不着这两个字段。
+            // 放最底部、textMuted,作为补充信息出现,不抢主操作焦点。
+            HStack(spacing: WarmSpacing.xs) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 12))
+                Text(String(localized: "confirm.editor.more_in_detail"))
+                    .font(WarmFont.caption(12))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundColor(WarmTheme.textMuted)
         }
         .onAppear { titleFocused = true }
     }
