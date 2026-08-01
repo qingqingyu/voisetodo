@@ -2,16 +2,27 @@ import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
 import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig } from "./worker.js";
 import { applyPrimaryOverride } from "./src/adminConfig.js";
+import { HealthStore, configureHealthParams, _testResetHealthParams } from "./src/health.js";
 import { mintTestJWS } from "./src/jws-fixture.js";
 
-// Reset module-level HealthStore + AdminConfigStore between tests so circuit-breaker
-// / latency state / admin override from one test doesn't leak into another.
+// Reset module-level HealthStore + AdminConfigStore + health params between tests so
+// circuit-breaker / latency state / admin override / configured params from one test
+// doesn't leak into another.
+//
+// 现有测试大多假设老默认值(threshold=3, cooldown=30s),代码新默认值是 5/10s。
+// 这里全局设回老默认值,让现有测试不改也跑得过。新测试验证新默认值时,在测试体内
+// 显式调 _testResetHealthParams() 清回代码默认。
 beforeEach(() => {
   _testResetHealth();
   _testResetAdminConfig();
+  _testResetHealthParams();
+  configureHealthParams({
+    CIRCUIT_OPEN_THRESHOLD: "3",
+    CIRCUIT_INITIAL_COOLDOWN_MS: "30000",
+    CIRCUIT_MAX_COOLDOWN_MS: "300000"
+  });
 });
 import { anthropicAdapter, openaiAdapter, geminiAdapter } from "./src/adapters/index.js";
-import { HealthStore } from "./src/health.js";
 import { pickCandidates } from "./src/selector.js";
 
 test("rejects missing app token when APP_TOKEN is configured", async () => {
@@ -3994,4 +4005,67 @@ test("admin override 不存在 primaryId 时静默 noop(走 toml 默认)", async
   assert.equal(response.status, 200);
   // applyPrimaryOverride 找不到 primaryId,返回原数组,走默认 A
   assert.equal(calledProviderUrl, "https://a.example/v1/messages");
+});
+
+// ─── P4: 熔断参数 env var 注入 ──────────────────────────────────────────
+
+test("configureHealthParams: 代码默认值为 threshold=5 / initialCooldown=10s / maxCooldown=5min", async () => {
+  // beforeEach 会设老默认值(3/30s)让现有测试跑;这里重置回代码默认值验证
+  _testResetHealthParams();
+  const kv = makeFakeKV();
+  const store = new HealthStore({ kv });
+  // 连续失败 4 次还不熔断(老默认 3 会熔断,新默认 5 不会)
+  for (let i = 0; i < 4; i++) {
+    await store.recordFailure("P", "timeout");
+  }
+  let snapshot = await store.snapshot("P");
+  assert.equal(snapshot.state, "closed", "4 次失败应仍 closed(代码默认阈值 5)");
+  // 第 5 次失败触发熔断
+  await store.recordFailure("P", "timeout");
+  snapshot = await store.snapshot("P");
+  assert.equal(snapshot.state, "open", "5 次失败应触发 open");
+});
+
+test("configureHealthParams: env 覆盖 threshold", async () => {
+  _testResetHealthParams();
+  configureHealthParams({ CIRCUIT_OPEN_THRESHOLD: "10" });
+  const kv = makeFakeKV();
+  const store = new HealthStore({ kv });
+  for (let i = 0; i < 9; i++) {
+    await store.recordFailure("P", "timeout");
+  }
+  let snapshot = await store.snapshot("P");
+  assert.equal(snapshot.state, "closed", "9 次失败应仍 closed(覆盖阈值 10)");
+  await store.recordFailure("P", "timeout");
+  snapshot = await store.snapshot("P");
+  assert.equal(snapshot.state, "open", "10 次失败触发 open");
+});
+
+test("configureHealthParams: 非法值被忽略(不抛错)", () => {
+  _testResetHealthParams();
+  // 这些都不应该让代码抛错或改变默认行为
+  configureHealthParams({ CIRCUIT_OPEN_THRESHOLD: "not_a_number" });
+  configureHealthParams({ CIRCUIT_INITIAL_COOLDOWN_MS: "-1000" });
+  configureHealthParams({ CIRCUIT_MAX_COOLDOWN_MS: "0" });
+  configureHealthParams({}); // 空对象
+  configureHealthParams(null); // null env
+  // 如果代码到这里没抛,说明非法值被静默处理
+  assert.ok(true);
+});
+
+test("configureHealthParams: initialCooldown > maxCooldown 时被 clamp", async () => {
+  _testResetHealthParams();
+  configureHealthParams({
+    CIRCUIT_INITIAL_COOLDOWN_MS: "60000",  // 60s
+    CIRCUIT_MAX_COOLDOWN_MS: "30000"       // 30s
+  });
+  const kv = makeFakeKV();
+  const store = new HealthStore({ kv });
+  // 触发熔断看冷却时间(通过 recordFailure 后 nextCooldown 计算)
+  for (let i = 0; i < 5; i++) {
+    await store.recordFailure("P", "timeout");
+  }
+  const record = await store.load("P");
+  // 初始冷却应被 clamp 到 maxCooldown(30s),不是 60s
+  assert.equal(record.cooldownMs, 30_000, "initialCooldown 应被 clamp 到 maxCooldown");
 });

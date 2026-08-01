@@ -7,11 +7,15 @@
 //
 // Circuit breaker (state machine):
 //   - state="closed"    → healthy; failure count tracked
-//   - consecutiveFailures >= 3 (retryable)        → state="open" + cooldownMs
-//   - now >= openedAt + cooldownMs (read-time)    → reported as "half-open"
-//   - half-open trial success                     → state="closed" (reset)
-//   - half-open trial failure                     → state="open", cooldownMs *= 2 (cap 5m)
-//   - non-retryable 4xx (request_body)            → NOT counted
+//   - consecutiveFailures >= threshold (default 5, retryable) → state="open" + cooldownMs
+//   - now >= openedAt + cooldownMs (read-time)                → reported as "half-open"
+//   - half-open trial success                                 → state="closed" (reset)
+//   - half-open trial failure                                 → state="open", cooldownMs *= 2 (cap maxCooldownMs)
+//   - non-retryable 4xx (request_body)                        → NOT counted
+//
+// Threshold / cooldown defaults can be overridden at runtime via env vars
+// (CIRCUIT_OPEN_THRESHOLD / CIRCUIT_INITIAL_COOLDOWN_MS / CIRCUIT_MAX_COOLDOWN_MS)
+// by calling configureHealthParams(env) at request entry. See worker.js handleRequest.
 //
 // Explicit `state` field (rather than encoding via openedAt=0) avoids the ambiguity
 // between "never opened" and "opened at epoch zero" that breaks time-mocked tests.
@@ -22,9 +26,45 @@
 
 import { logInfo, logWarn, errorFields } from "./log.js";
 
-const CIRCUIT_OPEN_THRESHOLD = 3;
-const CIRCUIT_INITIAL_COOLDOWN_MS = 30_000;
-const CIRCUIT_MAX_COOLDOWN_MS = 5 * 60_000;
+// 默认值。AI 上游(z.ai / clawto)偶发 5xx / 超时是常态,3 次失败熔断太激进,
+// 改成 5 次给上游更多缓冲;冷却 30s 改 10s 让 half-open 试探更频繁,加速恢复。
+// 如需覆盖,通过 env var + configureHealthParams(env) 调整,不用改代码 redeploy。
+const DEFAULT_THRESHOLD = 5;
+const DEFAULT_INITIAL_COOLDOWN_MS = 10_000;
+const DEFAULT_MAX_COOLDOWN_MS = 5 * 60_000;
+
+let configuredThreshold = DEFAULT_THRESHOLD;
+let configuredInitialCooldownMs = DEFAULT_INITIAL_COOLDOWN_MS;
+let configuredMaxCooldownMs = DEFAULT_MAX_COOLDOWN_MS;
+
+/// 从 env 读熔断参数覆盖默认值。每次 request entry 调用(轻量,只 Number parse + 赋值)。
+/// 非法值(负数 / NaN / 0)静默忽略,保持上一次配置或默认值。
+export function configureHealthParams(env) {
+  if (!env) return;
+  const t = Number(env.CIRCUIT_OPEN_THRESHOLD);
+  if (Number.isFinite(t) && t > 0) {
+    configuredThreshold = Math.max(1, Math.floor(t));
+  }
+  const ic = Number(env.CIRCUIT_INITIAL_COOLDOWN_MS);
+  if (Number.isFinite(ic) && ic > 0) {
+    configuredInitialCooldownMs = Math.min(ic, configuredMaxCooldownMs);
+  }
+  const mc = Number(env.CIRCUIT_MAX_COOLDOWN_MS);
+  if (Number.isFinite(mc) && mc > 0) {
+    configuredMaxCooldownMs = mc;
+    if (configuredInitialCooldownMs > configuredMaxCooldownMs) {
+      configuredInitialCooldownMs = configuredMaxCooldownMs;
+    }
+  }
+}
+
+/// 测试专用:重置到默认值。生产代码不调用。
+export function _testResetHealthParams() {
+  configuredThreshold = DEFAULT_THRESHOLD;
+  configuredInitialCooldownMs = DEFAULT_INITIAL_COOLDOWN_MS;
+  configuredMaxCooldownMs = DEFAULT_MAX_COOLDOWN_MS;
+}
+
 const SUCCESS_WRITE_INTERVAL = 10;
 const RECORD_TTL_SECONDS = 24 * 3600;
 const LATENCY_EWMA_ALPHA = 0.3;
@@ -127,7 +167,7 @@ export class HealthStore {
         errorType: record.lastErrorType,
         cooldownMs: record.cooldownMs
       });
-    } else if (previousState === "closed" && record.consecutiveFailures >= CIRCUIT_OPEN_THRESHOLD) {
+    } else if (previousState === "closed" && record.consecutiveFailures >= configuredThreshold) {
       record.state = "open";
       record.openedAt = now;
       record.cooldownMs = nextCooldown(record.cooldownMs || 0);
@@ -229,15 +269,15 @@ function classifyState(record, now) {
     return record.state === "half-open" ? "half-open" : "closed";
   }
   // state === "open": check whether cooldown has elapsed.
-  const cooldown = record.cooldownMs > 0 ? record.cooldownMs : CIRCUIT_INITIAL_COOLDOWN_MS;
+  const cooldown = record.cooldownMs > 0 ? record.cooldownMs : configuredInitialCooldownMs;
   return now - record.openedAt >= cooldown ? "half-open" : "open";
 }
 
 function nextCooldown(current) {
   if (!current || current <= 0) {
-    return CIRCUIT_INITIAL_COOLDOWN_MS;
+    return configuredInitialCooldownMs;
   }
-  return Math.min(current * 2, CIRCUIT_MAX_COOLDOWN_MS);
+  return Math.min(current * 2, configuredMaxCooldownMs);
 }
 
 function recordFreshness(record) {

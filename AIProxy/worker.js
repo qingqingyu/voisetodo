@@ -1,7 +1,7 @@
 import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
-import { HealthStore } from "./src/health.js";
+import { HealthStore, configureHealthParams } from "./src/health.js";
 import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
 import { executeWithFailover } from "./src/provider.js";
 import { pickCandidates } from "./src/selector.js";
@@ -134,6 +134,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
     sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+    // 从 env 读熔断参数覆盖(每次 request 调,轻量)。未配置时保持代码默认值
+    // (threshold=5, initialCooldown=10s, maxCooldown=5min)。
+    configureHealthParams(env);
 
     // Isolate 冷启动诊断:测 updateKv 耗时(KV binding 首次解析可能慢),
     // 首请求输出一次 warmup 日志,标记本 isolate 已"热身完成"。

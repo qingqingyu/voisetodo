@@ -78,6 +78,12 @@ PROVIDERS = '''
 # 可选：限制每次请求最多尝试多少个 provider（默认 = 过滤后的候选总数）。
 # AI_PROVIDER_MAX_ATTEMPTS = "3"
 
+# 可选：熔断参数覆盖。不配置时用代码默认值(threshold=5, initialCooldown=10s, maxCooldown=5min)。
+# configureHealthParams(env) 在每次 request entry 读取,改 env 后下次 deploy 即生效。
+# CIRCUIT_OPEN_THRESHOLD = "5"
+# CIRCUIT_INITIAL_COOLDOWN_MS = "10000"
+# CIRCUIT_MAX_COOLDOWN_MS = "300000"
+
 # ─── KV 命名空间 ────────────────────────────────────────────────────────────
 # RATE_LIMIT_KV：每设备配额 + 全局预算 + IP 限流共用
 [[kv_namespaces]]
