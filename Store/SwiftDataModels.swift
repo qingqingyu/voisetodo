@@ -46,6 +46,14 @@ final class TodoItem {
     ///   注册的仍是同一个 `TodoItem` 类,无需追加。
     var extractionOutcomeRaw: String = ExtractionOutcome.parsed.rawValue
 
+    /// todo 数据来源(原始字符串)。默认 `.voice` → SwiftData 轻量迁移,
+    /// 旧数据自动补 `.voice`(等同「过去所有 todo 都是语音/手动输入」语义)。
+    /// 通过 computed `source` 类型安全访问。与 `extractionOutcomeRaw` 同模式。
+    var sourceRaw: String = TodoSource.voice.rawValue
+    /// 关联的系统日历事件 ID(场景 2「事件当父节点挂子任务」用)。
+    /// Optional 字段,旧数据为 nil。第一版本只预留,UI 不写入。
+    var parentCalendarEventIdentifier: String?
+
     // MARK: - Computed Properties
 
     /// 优先级（类型安全访问）
@@ -73,6 +81,12 @@ final class TodoItem {
         set { extractionOutcomeRaw = newValue.rawValue }
     }
 
+    /// todo 数据来源(类型安全)。Raw 写入失败时回退到 `.voice`。
+    var source: TodoSource {
+        get { TodoSource(rawValue: sourceRaw) ?? .voice }
+        set { sourceRaw = newValue.rawValue }
+    }
+
     // MARK: - Initialization
 
     init(
@@ -94,7 +108,9 @@ final class TodoItem {
         sortOrder: Int = 0,
         systemCalendarEventIdentifier: String? = nil,
         localeIdentifier: String? = nil,
-        reminderTimes: [String]? = nil
+        reminderTimes: [String]? = nil,
+        source: TodoSource = .voice,
+        parentCalendarEventIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -126,6 +142,8 @@ final class TodoItem {
         } else {
             self.reminderTimesRaw = nil
         }
+        self.sourceRaw = source.rawValue
+        self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
     }
 
     // MARK: - Conversion
@@ -153,7 +171,9 @@ final class TodoItem {
             sortOrder: sortOrder,
             systemCalendarEventIdentifier: systemCalendarEventIdentifier,
             localeIdentifier: localeIdentifier,
-            extractionOutcome: extractionOutcome
+            extractionOutcome: extractionOutcome,
+            source: source,
+            parentCalendarEventIdentifier: parentCalendarEventIdentifier
         )
     }
 

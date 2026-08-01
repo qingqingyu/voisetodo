@@ -471,6 +471,12 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     /// AI 提取结果来源标签。`.rawFallback / .unparsed` 的条目在 Today 页应进「没能识别」分组。
     /// 详见 `ExtractionOutcome`。
     var extractionOutcome: ExtractionOutcome
+    /// todo 的数据来源(语音/日历导入/协作)。详见 `TodoSource`。
+    /// 第一版本撞车检测只对 `.voice` 触发;`.calendarImport` 是日历镜像,不再撞车检测。
+    var source: TodoSource
+    /// 关联的系统日历事件 ID(场景 2「事件当父节点挂子任务」用)。
+    /// 第一版本只预留字段,UI 不写入。
+    var parentCalendarEventIdentifier: String?
 
     init(
         id: UUID = UUID(),
@@ -492,7 +498,9 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         sortOrder: Int = 0,
         systemCalendarEventIdentifier: String? = nil,
         localeIdentifier: String? = nil,
-        extractionOutcome: ExtractionOutcome = .parsed
+        extractionOutcome: ExtractionOutcome = .parsed,
+        source: TodoSource = .voice,
+        parentCalendarEventIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -515,6 +523,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
         self.localeIdentifier = localeIdentifier
         self.extractionOutcome = extractionOutcome
+        self.source = source
+        self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -553,5 +563,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.systemCalendarEventIdentifier = nil
         self.localeIdentifier = extracted.localeIdentifier
         self.extractionOutcome = .parsed
+        self.source = .voice
+        self.parentCalendarEventIdentifier = nil
     }
 }

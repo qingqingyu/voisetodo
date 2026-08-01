@@ -21,6 +21,9 @@ final class AppCoordinator: ObservableObject {
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
     private let correctionTracker = CorrectionTracker.shared
+    /// 系统日历读取器,用于场景 1「撞车检测」。nil = 当前未注入(测试场景),
+    /// 跳过撞车检测。
+    private let calendarReader: (any SystemCalendarReadingProtocol)?
     private let calendarSyncService: CalendarSyncService
     private let pendingRecoveryFlow: PendingRecoveryFlow
     private let transcriptProcessingFlow: TranscriptProcessingFlow
@@ -58,6 +61,10 @@ final class AppCoordinator: ObservableObject {
     @Published var glossarySuggestion: GlossarySuggestion?
     /// 回顾通知深链:通知点击后设 true,HomeView 监听后弹出 ReviewView。
     @Published var showReviewFromNotification = false
+    /// 撞车警告:todo.id → 同时段冲突的日历事件列表。
+    /// 流式 .success 后由 `detectConflicts()` 异步填充;sheet 关闭/取消时清空。
+    /// 第一版本只做"提示",不阻断确认。
+    @Published var conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:]
 
     /// 确认页应显示的语音原文（pending 场景使用合并的原始转写）
     var confirmSheetTranscript: String {
@@ -96,6 +103,7 @@ final class AppCoordinator: ObservableObject {
         store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & CalendarSyncTodoStore,
         entitlement: EntitlementManager? = nil,
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
+        calendarReader: (any SystemCalendarReadingProtocol)? = SystemCalendarReader(),
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
         vocabularyStore: UserVocabularyStore = .shared,
@@ -107,6 +115,7 @@ final class AppCoordinator: ObservableObject {
         // nil 兜底:测试调用方不传时,创建不监听 Transaction.updates 的轻量实例,
         // 避免在测试环境启动常驻 Task 监听 StoreKit2 异步流
         self.entitlement = entitlement ?? EntitlementManager(enableTransactionListener: false)
+        self.calendarReader = calendarReader
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.quotaUsage = quotaUsage
@@ -672,6 +681,7 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
+        conflictWarnings = [:]
         showConfirmSheet = false
         pendingItemIds = []
         pendingGeneratedTodoIdsByPendingId = [:]
@@ -743,6 +753,7 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
+        conflictWarnings = [:]
         showConfirmSheet = false
         pendingGeneratedTodoIdsByPendingId = [:]
         activeInputTranscript = nil
@@ -840,7 +851,8 @@ final class AppCoordinator: ObservableObject {
             }
             extractedTodos = result.todos
         case .success:
-            break
+            // 流式稳定后异步触发撞车检测;失败不阻断,只记日志。
+            Task { await detectConflicts() }
         case .noTodos:
             // 弹层已在 processTranscript 开头升起,识别为空必须显式关闭,
             // 否则弹层会卡在「空列表 + 还在识别」永远不消失。
@@ -888,7 +900,33 @@ final class AppCoordinator: ObservableObject {
             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.clear_partial_results shown=\(self.showConfirmSheet) partialCount=\(self.extractedTodos.count)")
         }
         extractedTodos = []
+        conflictWarnings = [:]
         showConfirmSheet = false
+    }
+
+    /// 流式结束后异步检测每条 ExtractedTodo 是否跟系统日历事件撞车。
+    /// 结果写入 `conflictWarnings`,ConfirmSheet 据此显示警告 banner。
+    /// 失败不抛错——撞车检测是 nice-to-have,不应让用户感知。
+    /// reader 未注入(测试场景)时直接跳过。
+    private func detectConflicts() async {
+        guard let reader = calendarReader else { return }
+        guard !extractedTodos.isEmpty else { return }
+        var newWarnings: [UUID: [ExternalCalendarEvent]] = [:]
+        for todo in extractedTodos {
+            // 无 dueDate 的 todo 无时间锚点,跳过(reader 内部也会跳,这里避免无谓 await)
+            guard todo.dueDate != nil else { continue }
+            do {
+                let conflicts = try await reader.findConflicts(for: todo)
+                if !conflicts.isEmpty {
+                    newWarnings[todo.id] = conflicts
+                }
+            } catch {
+                VoiceTodoLog.coordinator.warning("coordinator.conflict.detect_failed todoId=\(todo.id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+        }
+        // 只在 sheet 仍打开时写入,避免覆盖已被 cancel 的状态
+        guard showConfirmSheet else { return }
+        conflictWarnings = newWarnings
     }
 
     /// 外部调用失败（含配额耗尽）后离线兜底成功的统一处理。

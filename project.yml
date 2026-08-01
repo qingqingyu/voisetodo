@@ -109,7 +109,7 @@ targets:
           UISceneConfigurations: {}
         NSSpeechRecognitionUsageDescription: "VoiceTodo needs speech recognition access to understand your voice commands."
         NSMicrophoneUsageDescription: "VoiceTodo needs microphone access to record your voice."
-        NSCalendarsWriteOnlyAccessUsageDescription: "VoiceTodo needs access to add your todos to the system calendar."
+        NSCalendarsUsageDescription: "VoiceTodo needs calendar access to add your todos, read events, and detect scheduling conflicts."
         UIBackgroundModes:
           - audio
         BGTaskSchedulerPermittedIdentifiers:
@@ -133,6 +133,7 @@ targets:
       - path: Protocols/Models.swift
       - path: Protocols/Domain/CodingUserInfoKey+Recurrence.swift
       - path: Protocols/Domain/ExtractionOutcome.swift
+      - path: Protocols/Domain/TodoSource.swift
       - path: Protocols/Domain/RecurrenceRule.swift
       - path: Protocols/Domain/TodoDueDateResolver.swift
       - path: Protocols/Domain/RecurrenceRuleResolver.swift

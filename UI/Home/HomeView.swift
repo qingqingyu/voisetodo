@@ -397,17 +397,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             // 避免「外部 sheet + presenting view 的 NavigationStack」触发 iOS 隐式
             // navigationBar 占位,把 headerView 推下移(问题 1:header 掉位)。
             .sheet(isPresented: $coordinator.showConfirmSheet) {
-                ConfirmSheetView(
-                    transcript: coordinator.confirmSheetTranscript,
-                    todos: $coordinator.extractedTodos,
-                    isStreaming: coordinator.isExtracting,
-                    onConfirm: { todos in
-                        coordinator.confirmTodos(todos)
-                    },
-                    onCancel: {
-                        coordinator.cancelTodos()
-                    }
-                )
+                confirmSheetBody
             }
             // B3 通知深链:回顾通知点击后弹出 ReviewView
             .sheet(isPresented: Binding(
@@ -522,6 +512,19 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     // MARK: - Header View
+
+    /// 确认弹窗内容单独提取——把 ConfirmSheetView 调用从 .sheet 闭包挪到 computed property,
+    /// 避免在 body 主链上叠太多参数让 SwiftUI type-check 超时。
+    private var confirmSheetBody: some View {
+        ConfirmSheetView(
+            transcript: coordinator.confirmSheetTranscript,
+            todos: $coordinator.extractedTodos,
+            isStreaming: coordinator.isExtracting,
+            conflictWarnings: coordinator.conflictWarnings,
+            onConfirm: { coordinator.confirmTodos($0) },
+            onCancel: { coordinator.cancelTodos() }
+        )
+    }
 
     private var headerView: some View {
         // 单次计算当日统计,避免 statsHidden / statsPillButton 各调一遍。

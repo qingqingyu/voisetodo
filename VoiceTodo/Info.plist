@@ -37,8 +37,8 @@
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-	<string>VoiceTodo needs access to add your todos to the system calendar.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>VoiceTodo needs calendar access to add your todos, read events, and detect scheduling conflicts.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VoiceTodo needs microphone access to record your voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
