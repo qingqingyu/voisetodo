@@ -103,9 +103,12 @@ id = "ef09b0ad898241d5aa33291f406beb7e"
 # database_name = "voicetodo-telemetry"
 # database_id = "your-d1-database-id"
 
-# 每天 03:00 UTC 执行遥测事件 GC。
-# [triggers]
-# crons = ["0 3 * * *"]
+# Cron triggers:每 30 分钟跑一次 handleScheduled,做两件事:
+#   1. telemetry GC(90 天保留,需 TELEMETRY_DB binding)
+#   2. provider 主动健康检查(P3):并行 ping 所有 provider,更新 HealthStore 状态
+# 成本估算:每 30min × N provider = N*48 次/天,2 provider ≈ 96 次/天 ≈ $1/天
+[triggers]
+crons = ["*/30 * * * *"]
 
 # ─── Extraction Cache KV(解析结果缓存,可选启用)──────────────────────────
 # 部署前先创建:npx wrangler kv namespace create CACHE_RESULT_KV

@@ -4208,3 +4208,107 @@ test("cache KV 未绑定时静默不工作(不影响业务)", async () => {
   assert.equal(r.status, 200);
   assert.equal(upstreamCallCount, 1, "无 KV binding 时走真实调用");
 });
+
+// ─── P3: scheduled health check ────────────────────────────────────────
+
+test("handleScheduled: 上游 200 时调 recordSuccess", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  let calledUrl = null;
+  const fetchImpl = async (url) => {
+    calledUrl = url;
+    return jsonResponse({ content: [{ type: "text", text: "{}" }] });
+  };
+  await handleScheduled(env, fetchImpl);
+  assert.equal(calledUrl, "https://a.example/v1/messages");
+  // HealthStore 应该记录 A 的成功
+  const store = new HealthStore({ kv });
+  const snapshot = await store.snapshot("A");
+  assert.equal(snapshot.state, "closed");
+  assert.ok(snapshot.sampleCount > 0, "sampleCount 应 > 0(成功被记录)");
+});
+
+test("handleScheduled: 上游 500 时调 recordFailure", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const fetchImpl = async () => new Response("upstream error", { status: 500 });
+  await handleScheduled(env, fetchImpl);
+  // 失败应被记录(连续失败到阈值才熔断,这里只 1 次,仍 closed 但 lastErrorType 应有值)
+  const store = new HealthStore({ kv });
+  const record = await store.load("A");
+  assert.equal(record.lastErrorType, "http_500");
+});
+
+test("handleScheduled: fetch 抛 timeout 时 recordFailure + errorType=timeout", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const fetchImpl = async () => {
+    const err = new Error("timed out");
+    err.name = "TimeoutError";
+    throw err;
+  };
+  await handleScheduled(env, fetchImpl);
+  const store = new HealthStore({ kv });
+  const record = await store.load("A");
+  assert.equal(record.lastErrorType, "timeout");
+});
+
+test("handleScheduled: 多 provider 并行 ping,单个失败不影响其他", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2, secretName: "K2" }
+    ],
+    { K1: "k1", K2: "k2" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const calledIds = [];
+  const fetchImpl = async (url, init) => {
+    // A 失败,B 成功
+    if (url.includes("a.example")) {
+      calledIds.push("A");
+      return new Response("err", { status: 500 });
+    }
+    calledIds.push("B");
+    return jsonResponse({ choices: [{ message: { content: "{}" } }] });
+  };
+  await handleScheduled(env, fetchImpl);
+  // 两个都被调了(并行,互不影响)
+  assert.deepEqual(calledIds.sort(), ["A", "B"]);
+});
+
+test("handleScheduled: AI_PROVIDER_STATE_KV 未绑定时静默跳过", async () => {
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" }
+    // 注意:没 AI_PROVIDER_STATE_KV
+  );
+  let called = false;
+  const fetchImpl = async () => { called = true; return jsonResponse({}); };
+  await handleScheduled(env, fetchImpl);
+  assert.equal(called, false, "KV 未绑定时不应调上游");
+});
+
+test("handleScheduled: providers 配置失败时不抛(只 log)", async () => {
+  const kv = makeFakeKV();
+  // PROVIDERS 是非法 JSON
+  const env = { PROVIDERS: "not-json", AI_PROVIDER_STATE_KV: kv };
+  let called = false;
+  const fetchImpl = async () => { called = true; return jsonResponse({}); };
+  // 不应抛错
+  await handleScheduled(env, fetchImpl);
+  assert.equal(called, false);
+});

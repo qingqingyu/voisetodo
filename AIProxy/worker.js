@@ -1,5 +1,6 @@
 import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
 import { ExtractionCacheStore, makeCacheKey } from "./src/extractionCache.js";
+import { getAdapter } from "./src/adapters/index.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore, configureHealthParams } from "./src/health.js";
@@ -662,20 +663,98 @@ function jsonResponse(status, body) {
 
 // MARK: - Scheduled handler (90 天 GC)
 
-export async function handleScheduled(env) {
-  if (!env.TELEMETRY_DB) {
-    logInfo("telemetry.cron.skipped", { reason: "db_not_configured" });
+export async function handleScheduled(env, fetchImpl = fetch) {
+  // 现有:telemetry GC(90 天保留)
+  if (env.TELEMETRY_DB) {
+    const cutoff = Date.now() - TELEMETRY_RETENTION_DAYS * 24 * 3600 * 1000;
+    try {
+      const result = await env.TELEMETRY_DB.prepare("DELETE FROM telemetry_events WHERE received_at < ?")
+        .bind(cutoff)
+        .run();
+      logInfo("telemetry.cron.gc_done", { cutoff, deleted: result.meta?.changes ?? "unknown" });
+    } catch (error) {
+      logError("telemetry.cron.gc_failed", errorFields(error));
+    }
+  }
+
+  // 新加(P3):主动健康检查。每 30 分钟 cron 触发,并行 ping 所有 provider,
+  // 成功调 recordSuccess(更新 EWMA),失败调 recordFailure(可能触发熔断)。
+  // 跟真实请求共享 HealthStore 状态机,故障时 selector 提前避开不健康 provider。
+  await runProviderHealthCheck(env, fetchImpl);
+}
+
+/// 主动健康检查:用最短 transcript "test" 省 token,并行 ping 所有 provider。
+/// 复用 HealthStore 状态机 — 成功更新 EWMA,失败累计(达到阈值会进 open)。
+/// 单个 provider 失败不影响其他(Promise.allSettled)。
+async function runProviderHealthCheck(env, fetchImpl) {
+  if (!env.AI_PROVIDER_STATE_KV) {
+    logInfo("health_check.skipped", { reason: "kv_not_bound" });
     return;
   }
-  const cutoff = Date.now() - TELEMETRY_RETENTION_DAYS * 24 * 3600 * 1000;
+  sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV);
+  configureHealthParams(env);
+
+  let providers;
   try {
-    const result = await env.TELEMETRY_DB.prepare("DELETE FROM telemetry_events WHERE received_at < ?")
-      .bind(cutoff)
-      .run();
-    logInfo("telemetry.cron.gc_done", { cutoff, deleted: result.meta?.changes ?? "unknown" });
+    providers = loadProviders(env, { onSecretMissing: () => {} });
   } catch (error) {
-    logError("telemetry.cron.gc_failed", errorFields(error));
+    logError("health_check.providers_failed", errorFields(error));
+    return;
   }
+
+  const probeTranscript = "test";
+  const probeLocale = "en";
+  const probeTimeoutMs = 10_000;
+  // buildSystemPrompt 需要 today 字段(YYYY-MM-DD),health check 无 quota 流程,
+  // 用 UTC 当天日期兜底。probe 只测连通性,不关心相对日期解析准确。
+  const probeToday = new Date().toISOString().slice(0, 10);
+
+  const results = await Promise.allSettled(providers.map(async (provider) => {
+    if (!provider.apiKey) {
+      logWarn("health_check.skip_no_key", { providerId: provider.id });
+      return { providerId: provider.id, ok: false, reason: "no_key" };
+    }
+    const adapter = getAdapter(provider.type);
+    if (!adapter) {
+      logWarn("health_check.skip_no_adapter", { providerId: provider.id, type: provider.type });
+      return { providerId: provider.id, ok: false, reason: "no_adapter" };
+    }
+
+    const startedAt = Date.now();
+    try {
+      const { url, init } = adapter.buildRequest({
+        transcript: probeTranscript,
+        locale: probeLocale,
+        stream: false,
+        provider,
+        today: probeToday,
+        abortSignal: null
+      });
+      const response = await fetchImpl(url, {
+        ...init,
+        signal: AbortSignal.timeout(probeTimeoutMs)
+      });
+      const durationMs = Date.now() - startedAt;
+
+      if (response.ok) {
+        await sharedHealthStore.recordSuccess(provider.id, durationMs);
+        logInfo("health_check.success", { providerId: provider.id, durationMs });
+        return { providerId: provider.id, ok: true, durationMs };
+      }
+      await sharedHealthStore.recordFailure(provider.id, `http_${response.status}`);
+      logWarn("health_check.http_failed", { providerId: provider.id, status: response.status });
+      return { providerId: provider.id, ok: false, status: response.status };
+    } catch (error) {
+      const errorType = error?.name === "TimeoutError" ? "timeout" : "network";
+      await sharedHealthStore.recordFailure(provider.id, errorType);
+      logWarn("health_check.failed", { providerId: provider.id, errorType, message: error?.message });
+      return { providerId: provider.id, ok: false, errorType };
+    }
+  }));
+
+  const succeeded = results.filter((r) => r.status === "fulfilled" && r.value?.ok).length;
+  const total = providers.length;
+  logInfo("health_check.completed", { total, succeeded });
 }
 
 async function readPayload(request) {
