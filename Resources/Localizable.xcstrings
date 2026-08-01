@@ -1192,13 +1192,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Still parsing — can't edit yet"
+            "value" : "Recognizing — editable when done"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解析中，暂时不能编辑"
+            "value" : "正在解析，完成后可编辑"
           }
         }
       }
