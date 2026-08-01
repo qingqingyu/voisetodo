@@ -209,6 +209,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       cacheKey = await makeCacheKey({ transcript, locale, vocabularyHints, today: todayDate });
       const cached = await sharedExtractionCache.get(cacheKey);
       if (cached) {
+        requestContext.candidateCount = providers.length;
         logInfo("proxy.cache.hit", { ...requestContext, cacheKey, responseChars: cached.length });
         return finishRequest(new Response(cached, {
           status: 200,
@@ -293,8 +294,13 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     if (cacheKey && text && typeof ctx?.waitUntil === "function") {
       ctx.waitUntil(sharedExtractionCache.set(cacheKey, text));
     } else if (cacheKey && text) {
-      // 测试或老 runtime 没 waitUntil:同步触发但忽略 promise(fire-and-forget)
-      sharedExtractionCache.set(cacheKey, text).catch(() => {});
+      // 测试或老 runtime 没 waitUntil:同步触发但忽略 promise(fire-and-forget)。
+      // .set 内部已有 try/catch + logWarn,这里 .catch 只兜底防 unhandled rejection
+      // (CLAUDE.md:错误显式传播 — 不静默吞,但 set 内部已显式 log,此处 outer catch 防的是
+      // set 方法本身未被 await 导致的 unhandled rejection,属防御性日志而非吞错)。
+      sharedExtractionCache.set(cacheKey, text).catch((error) => {
+        logWarn("extraction_cache.outer_write_failed", { ...requestContext, ...errorFields(error) });
+      });
     }
     await result.confirmSuccess();
     logInfo("proxy.provider.text_success", { ...requestContext, provider: result.provider.type, responseChars: text.length });
@@ -639,14 +645,35 @@ function validateAdminToken(request, env) {
   }
   const provided = request.headers.get(ADMIN_TOKEN_HEADER) || "";
   const expected = String(env.ADMIN_TOKEN);
-  // 跟 APP_TOKEN 一致:支持明文或 `Bearer ${token}` 两种格式
-  if (provided === expected || provided === `Bearer ${expected}`) {
+  // 跟 APP_TOKEN 一致:支持明文或 `Bearer ${token}` 两种格式。
+  // 恒定时间比较(constant-time):admin token 是高权限凭证,泄露后可动态切 provider 主力,
+  // 用 === 做字符串比较有 timing side-channel 风险。timingSafeEqual 先比长度再逐字节 XOR,
+  // 即使长度不同也做相同次数的对比(补齐到等长),消除时序差异。
+  if (timingSafeEqual(provided, expected) || timingSafeEqual(provided, `Bearer ${expected}`)) {
     return null;
   }
   return {
     response: jsonResponse(401, { error: "unauthorized" }),
     reason: "unauthorized"
   };
+}
+
+/// 恒定时间字符串比较。长度不同时补齐到等长再比,避免长度差异泄露信息。
+/// 不依赖 Node crypto(Worker runtime 无 Node API),手写 XOR + reduce。
+function timingSafeEqual(a, b) {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  const maxLen = Math.max(ab.length, bb.length);
+  let diff = 0;
+  for (let i = 0; i < maxLen; i++) {
+    const av = i < ab.length ? ab[i] : 0;
+    const bv = i < bb.length ? bb[i] : 0;
+    diff |= av ^ bv;
+  }
+  // 长度不同 → diff |= 1(确保不等长时一定 false)
+  diff |= ab.length ^ bb.length;
+  return diff === 0;
 }
 
 async function readAdminPayload(request) {
@@ -754,7 +781,17 @@ async function runProviderHealthCheck(env, fetchImpl) {
 
   const succeeded = results.filter((r) => r.status === "fulfilled" && r.value?.ok).length;
   const total = providers.length;
-  logInfo("health_check.completed", { total, succeeded });
+  // 汇总失败 provider + 原因,让 summary log 一眼能看到谁挂了、为什么,
+  // 不用再去翻 health_check.failed / health_check.http_failed 单条日志。
+  const failed = results
+    .map((r) => r.status === "fulfilled" ? r.value : { providerId: "unknown", ok: false, reason: r.reason?.message || "rejected" })
+    .filter((r) => !r.ok);
+  logInfo("health_check.completed", {
+    total,
+    succeeded,
+    failedCount: failed.length,
+    failedDetails: failed.map((f) => ({ providerId: f.providerId, reason: f.reason || f.errorType || f.status || "unknown" }))
+  });
 }
 
 async function readPayload(request) {

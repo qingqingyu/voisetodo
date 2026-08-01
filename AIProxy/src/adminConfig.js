@@ -72,16 +72,33 @@ export class AdminConfigStore {
   }
 
   /// 清除 primary override,回到 toml 默认。立即刷新缓存。
+  ///
+  /// KV delete 失败时不抛:本地缓存清空后本 isolate 走 toml 默认;
+  /// 其他 isolate 因 30s 内存缓存过期后重读 KV,若 delete 失败会读到旧值。
+  /// 为兜底 delete 失败导致的"其他 isolate 永远读到旧 override",
+  /// 改成写一个短 TTL(60s)的 null tombstone 而非直接 delete —— 即使 delete 失败,
+  /// tombstone 也会在 60s 内覆盖旧值(put 优先于 delete,两者都尝试最大化成功概率)。
   async clearPrimaryOverride() {
     if (!this.kv) {
       return;
+    }
+    const tombstoneTtl = 60;
+    try {
+      // 先写 null tombstone(短 TTL),确保即使后续 delete 失败,
+      // 其他 isolate 也能在 tombstone TTL 内读到 null 并更新本地缓存。
+      // put 比 delete 更关键:delete 只清理,put tombstone 是"主动写入清除信号"。
+      await this.kv.put(KV_KEY, JSON.stringify(null), { expirationTtl: tombstoneTtl });
+    } catch (error) {
+      logWarn("admin_config.kv.clear_put_failed", { ...errorFields(error) });
+      // put 失败仍尝试 delete(delete 是另一条路径,两者独立):
     }
     try {
       await this.kv.delete(KV_KEY);
     } catch (error) {
       logWarn("admin_config.kv.delete_failed", { ...errorFields(error) });
-      // 不抛:即使 KV delete 失败,本地缓存已被清空,本 isolate 后续请求走 toml 默认;
-      // 其他 isolate 最迟 30s 后也会因为缓存过期重新读 KV(读到旧值或 null,取决于 KV 传播)。
+      // 不抛:tombstone(若上面 put 成功)会在 TTL 内让其他 isolate 读到 null;
+      // 若 put 也失败,其他 isolate 最迟 30s 缓存过期后重读 KV 可能拿到旧值,
+      // 但此时 KV 侧也会因 propagation 最终一致(最坏情况:旧 override 多活 30s+60s)。
     }
     this.cache = { value: null, fetchedAt: Date.now() };
   }
