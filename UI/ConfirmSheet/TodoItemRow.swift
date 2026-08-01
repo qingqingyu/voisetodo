@@ -179,8 +179,11 @@ struct TodoItemRow: View {
                 }
             }
 
-            // 展开态:卡片下方就地挂编辑面板(accordion),与卡片共用圆角背景。
+            // 展开态:卡片下方就地挂编辑面板(accordion)。
             // 面板改动直接写回 @Binding todo,点 Add N 时一并提交。
+            //
+            // 两卡关系:头部卡片与编辑面板是两张独立的卡(各自圆角 + 阴影 + 背景),
+            // 不拼接成一张纸。顶部留 12pt 让背景在两卡之间露出,边界清楚。
             if isExpanded {
                 TodoDraftEditorPanel(
                     todo: $todo,
@@ -191,14 +194,13 @@ struct TodoItemRow: View {
                         }
                     }
                 )
+                .padding(.top, WarmSpacing.sm)
                 .padding(.leading, WarmSpacing.xs)
                 .padding(.trailing, WarmSpacing.md)
                 .padding(.bottom, WarmSpacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: WarmRadius.card)
                         .fill(WarmTheme.cardBackground)
-                        // 与卡片同 shadow:展开态卡片 + 面板视觉上拼接成一张抬升的纸面,
-                        // 若只卡片有 shadow 而面板没有,拼接处会出现阴影断层。
                         .shadow(color: WarmTheme.shadowLight, radius: 2, y: 1)
                 )
                 .transition(.opacity)

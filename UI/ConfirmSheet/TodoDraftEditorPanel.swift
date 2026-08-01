@@ -31,8 +31,13 @@ struct TodoDraftEditorPanel: View {
             // 让 UI 测试(AppLaunchHelper.editTodoInSheet:点 TodoTitleText 后查 TodoTitle_)
             // 在新「展开面板」流程下仍可命中——点 staticText 触发卡片展开,
             // 面板内此 TextField 带同 index id,helper 第二步直接定位到。
+            //
+            // 字号刻意放大到 22pt(基准 14 + 8):面板里只有任务名是大字号,
+            // 强化「这是主内容」的视觉锚点,与下方属性控件(14pt)形成层级差。
+            // 注:头部卡片(收起态)任务名是 16pt,展开后跳到 22pt 是有意识的设计 ——
+            // 面板打开后任务名变成"正在被编辑的主对象",字号加大强化焦点感。
             TextField("", text: $todo.title)
-                .font(WarmFont.body(16))
+                .font(WarmFont.headline(22))
                 .foregroundColor(WarmTheme.textPrimary)
                 .focused($titleFocused)
                 .accessibilityIdentifier("TodoTitle_\(index)")
@@ -42,7 +47,8 @@ struct TodoDraftEditorPanel: View {
 
             Divider()
 
-            // 3. 钟点 + 时段(两分支由 TodoClockTimeRow 按 hasDueTime 自管)
+            // 3. 钟点 + 时段 —— 「时间」分组
+            sectionHeader("confirm.editor.section.time")
             TodoClockTimeRow(
                 dueDate: clockDueDate,
                 hasDueTime: clockHasDueTime,
@@ -51,16 +57,19 @@ struct TodoDraftEditorPanel: View {
                 onEdit: { }
             )
 
-            // 4. 分类
+            // 4. 分类 —— 「分类」分组
+            sectionHeader("confirm.editor.section.category")
             TodoCategoryGrid(selection: $todo.categoryHint, onEdit: { })
 
-            // 5. 优先级
+            // 5. 优先级 —— 「优先级」分组
+            sectionHeader("confirm.editor.section.priority")
             TodoPriorityPicker(selection: $todo.priority, onEdit: { })
 
-            // 6. 收起
+            // 6. 收起 —— 收起是面板主操作(等同于"完成"),比 14pt 控件大一级(16pt semibold)
+            // 让用户能一眼找到。比任务名(22pt)小,不抢主内容焦点。
             Button(action: onCollapse) {
                 Text(String(localized: "confirm.collapse"))
-                    .font(WarmFont.body(14))
+                    .font(WarmFont.headline(16))
                     .foregroundColor(WarmTheme.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -73,9 +82,9 @@ struct TodoDraftEditorPanel: View {
             // 放最底部、textMuted,作为补充信息出现,不抢主操作焦点。
             HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                 Text(String(localized: "confirm.editor.more_in_detail"))
-                    .font(WarmFont.caption(12))
+                    .font(WarmFont.caption(13))
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .layoutPriority(1)
@@ -84,6 +93,23 @@ struct TodoDraftEditorPanel: View {
             .foregroundColor(WarmTheme.textMuted)
         }
         .onAppear { titleFocused = true }
+    }
+
+    // MARK: - 分组小标题
+
+    /// 分组标题(「时间 / 分类 / 优先级」)。
+    ///
+    /// 字号 12pt、semibold、textMuted 灰色 —— 比属性控件(14pt)低一级,
+    /// 视觉重量刻意轻:它是导航锚点不是内容,不能抢属性控件的焦点。
+    /// 三组共用同一样式保持一致,但下方控件形态各异(segmented/chips/实心),
+    /// 避免用户误判为同一组控件。
+    @ViewBuilder
+    private func sectionHeader(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(WarmFont.headline(12))
+            .foregroundColor(WarmTheme.textMuted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 
     // MARK: - 日期行
