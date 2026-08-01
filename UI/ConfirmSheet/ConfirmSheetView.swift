@@ -76,6 +76,15 @@ struct ConfirmSheetView: View {
     /// (TodoItemRow.onTapGesture guard isStreaming),此状态透传到 row。
     @State private var expandedTodoID: UUID?
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+    /// 流式期间点击卡片的底部 toast 是否可见。
+    /// 点卡片 → TodoItemRow.onStreamingTap → 这里置 true → ToastModifier 2s 后自动 false。
+    /// 用底部 toast 替代原卡片 overlay:不遮卡片内容,且与列表末尾的 StreamingFooter
+    /// (常驻状态指示)职责分开 —— toast 是「响应用户操作的临时反馈」,Footer 是常驻状态。
+    @State private var streamingToastVisible: Bool = false
+    /// streaming toast 的重展示令牌:每次 handleStreamingTap 递增。
+    /// 绕开"isPresented 已 true → true→true 不触发 onChange"的去重,
+    /// 让连点不同卡片都能重置 dismiss 计时,后续触发的 toast 享完整 duration。
+    @State private var streamingToastToken: Int = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -87,6 +96,17 @@ struct ConfirmSheetView: View {
                 mainContent
             }
         }
+        // 流式点击反馈:底部 toast(safe area 上方居中,不遮卡片)。
+        // 文案带状态 + 下一步("正在解析,完成后可编辑"),不是单说"不能编辑"。
+        // 挂 sheet 根层而非 mainContent,让 toast 浮在整个 sheet 之上(包括 header 区下方)。
+        // presentationToken 让连点不同卡片都能重置 2s dismiss 计时(见 handleStreamingTap)。
+        .toast(
+            message: String(localized: "confirm.streaming_cannot_edit"),
+            style: .info,
+            isPresented: $streamingToastVisible,
+            position: .bottom,
+            presentationToken: streamingToastToken
+        )
         // 动态高度:随内容增长(每识别一条 todo 往上涨),上限 85% 屏高,
         // 超上限走 ScrollView 滚动;保留 .large 让用户可手动拖到全屏。
         // spring 平滑流式期间高度变化,避免硬切跳动。
@@ -188,7 +208,7 @@ struct ConfirmSheetView: View {
                     }
 
                     if !todos.isEmpty {
-                        ConfirmGroupedList(todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming)
+                        ConfirmGroupedList(todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming, onStreamingTap: handleStreamingTap)
                     } else if isStreaming {
                         StreamingFooter()
                             .padding(.top, WarmSpacing.md)
@@ -447,6 +467,17 @@ struct ConfirmSheetView: View {
     }
 
     // MARK: - Actions
+
+    /// 流式期间点击卡片:显示底部 toast + 递增 token 强制重置 dismiss 计时。
+    /// 不在此处包 withAnimation —— ToastModifier.body 已挂
+    /// `.animation(WarmAnimation.springSlow, value: isPresented)`,再包一层会让两个 spring
+    /// 叠加插入/移除 transition,产生抖动。
+    /// token 递增解决"isPresented 已 true → true→true 被 SwiftUI 同帧合并 → onChange 不发"
+    /// 的去重问题:ToastModifier 监听 token,每次递增都重新 scheduleDismiss。
+    private func handleStreamingTap() {
+        streamingToastToken += 1
+        streamingToastVisible = true
+    }
 
     private func confirmAction() {
         guard !didFinish else { return }

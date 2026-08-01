@@ -11,6 +11,8 @@ struct ConfirmGroupedList: View {
     @Binding var todos: [ExtractedTodo]
     @Binding var expandedTodoID: UUID?
     let isStreaming: Bool
+    /// 流式期间卡片被点击时触发(透传到每行,由 ConfirmSheetView 显示底部 toast)。
+    let onStreamingTap: () -> Void
 
     /// 展开态分组冻结:expandedTodoID != nil 时沿用上一帧的分组结果,
     /// 避免用户在面板改日期 → 卡片当场换组 → 展开的面板跳到别的 section。
@@ -20,7 +22,7 @@ struct ConfirmGroupedList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.md) {
             ForEach(Array(effectiveSections.enumerated()), id: \.element.key) { _, section in
-                ConfirmGroupSection(section: section, todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming)
+                ConfirmGroupSection(section: section, todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming, onStreamingTap: onStreamingTap)
             }
 
             if isStreaming {
@@ -139,6 +141,7 @@ private struct ConfirmGroupSection: View {
     @Binding var todos: [ExtractedTodo]
     @Binding var expandedTodoID: UUID?
     let isStreaming: Bool
+    let onStreamingTap: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.sm) {
@@ -159,7 +162,8 @@ private struct ConfirmGroupSection: View {
                         todo: $todos[index],
                         todos: $todos,
                         expandedTodoID: $expandedTodoID,
-                        isStreaming: isStreaming
+                        isStreaming: isStreaming,
+                        onStreamingTap: onStreamingTap
                     )
                     .id(id)
                     .transition(

@@ -13,13 +13,6 @@ private struct ShakeEffect: GeometryEffect {
     }
 }
 
-/// 流式期间「暂时不能编辑」提示的显示时长常量(本文件内复用)。
-/// 与 ConfirmSheetView.OperationHintFooter.visibleDurationNanos 同性质,
-/// 但作用域仅本行视图,不外提至 UIConfig。
-private enum StreamingHintDisplay {
-    static let durationNanos: UInt64 = 1_500_000_000
-}
-
 /// 待办条目行视图。
 /// 用于 ConfirmSheetView 中显示单个待办。
 ///
@@ -37,6 +30,12 @@ struct TodoItemRow: View {
     @Binding var expandedTodoID: UUID?
     let isStreaming: Bool
     let onDelete: () -> Void
+    /// 流式期间点击卡片的反馈:抖动 + 通知父级(由父级决定怎么显示提示)。
+    /// 提示文案/位置/样式不在本行视图管 —— 父级 ConfirmSheetView 用底部 toast 呈现,
+    /// 不在卡片上挂 overlay(避免遮挡 + 视觉重)。
+    /// 抽到父级的原因:toast 状态(streamingToastVisible)归 ConfirmSheetView 持有,
+    /// 与 row 的 @State 解耦,row 重建(流式帧覆盖)不会丢 toast 状态。
+    let onStreamingTap: () -> Void
 
     @State private var offset: CGFloat = 0
     @State private var opacity: Double = 1.0
@@ -53,10 +52,6 @@ struct TodoItemRow: View {
     @State private var deleteTaskGeneration: Int = 0
     /// 流式期间点击卡片的抖动反馈:递增触发 ShakeEffect。
     @State private var shakeAttempt: Int = 0
-    /// 流式期间点击后短暂显示「解析中暂时不能编辑」提示。
-    @State private var showStreamingHint: Bool = false
-    /// 提示自动隐藏 task。重复点击时 cancel 重启。
-    @State private var hintHideTask: Task<Void, Never>?
 
     private var isExpanded: Bool { expandedTodoID == todo.id }
 
@@ -147,6 +142,12 @@ struct TodoItemRow: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    // 流式期间禁用 + 变淡(同一层级):与编辑入口禁用一致,
+                    // 传达「这条先别操作」。不隐藏 —— 隐藏会让用户误以为
+                    // 「这条不能删 = 没这条」。opacity 与 disabled 同挂 Button,
+                    // 保持「视觉反馈」与「行为禁用」在同一修饰层级,后续维护一处改一处。
+                    .disabled(isStreaming)
+                    .opacity(isStreaming ? 0.5 : 1.0)
                     .accessibilityIdentifier("DeleteTodo_\(index)")
                     .accessibilityLabel(String(localized: "a11y.delete"))
                     .accessibilityHint(String(localized: "a11y.delete_todo"))
@@ -163,21 +164,6 @@ struct TodoItemRow: View {
             // 抖动只作用于卡片头部,不连带下方展开面板。
             // 流式禁用展开,两条路径互斥,但语义上 ShakeEffect 应只管「卡片」本身。
             .modifier(ShakeEffect(attempt: shakeAttempt))
-            // 提示 overlay 也挂卡片头部底部,不漂到面板下方。
-            .overlay(alignment: .bottom) {
-                if showStreamingHint {
-                    Text(String(localized: "confirm.streaming_cannot_edit"))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, WarmSpacing.sm)
-                        .padding(.vertical, WarmSpacing.xxs)
-                        .background(
-                            RoundedRectangle(cornerRadius: WarmRadius.chip)
-                                .fill(WarmTheme.textMuted)
-                        )
-                        .transition(.opacity)
-                }
-            }
 
             // 展开态:卡片下方就地挂编辑面板(accordion)。
             // 面板改动直接写回 @Binding todo,点 Add N 时一并提交。
@@ -214,30 +200,13 @@ struct TodoItemRow: View {
         .onTapGesture {
             // 流式未结束禁用展开:ExtractedTodo 实例会被流式帧覆盖,
             // 此时展开的编辑会被吃掉(决策:流式禁用而非 carry over)。
-            // 反馈:抖一下 + 短暂提示,让用户知道点到了但当前不可操作。
+            // 反馈:抖一下 + 通知父级显示底部 toast,让用户知道点到了但当前不可操作。
+            // 提示不在卡片上挂 overlay —— 遮挡内容 + 视觉重(参见 onStreamingTap 注释)。
             guard !isStreaming else {
                 withAnimation(WarmAnimation.springFast) {
                     shakeAttempt += 1
-                    showStreamingHint = true
                 }
-                hintHideTask?.cancel()
-                hintHideTask = Task { @MainActor in
-                    do {
-                        try await Task.sleep(nanoseconds: StreamingHintDisplay.durationNanos)
-                    } catch is CancellationError {
-                        // 重复点击或视图销毁时 cancel 重启——预期路径,直接返回。
-                        // 与本文件 deleteTask 的 catch is CancellationError 模式一致,
-                        // 不用 try? 吞 CancellationError(符合 CLAUDE.md 错误显式传播)。
-                        return
-                    } catch {
-                        // 不可达:Task.sleep 只 throw CancellationError。但 Task<Void, Never>
-                        // 闭包签名 non-throwing,do/catch 需穷尽否则整体 throws 编译失败。
-                        return
-                    }
-                    withAnimation(WarmAnimation.springFast) {
-                        showStreamingHint = false
-                    }
-                }
+                onStreamingTap()
                 return
             }
             withAnimation(WarmAnimation.springStandard) {
@@ -246,7 +215,6 @@ struct TodoItemRow: View {
         }
         .onDisappear {
             deleteTask?.cancel()
-            hintHideTask?.cancel()
         }
     }
 
@@ -299,6 +267,8 @@ struct TodoItemRowWithDelete: View {
     @Binding var todos: [ExtractedTodo]
     @Binding var expandedTodoID: UUID?
     let isStreaming: Bool
+    /// 流式期间被点击时触发(透传给 TodoItemRow,由 ConfirmSheetView 显示底部 toast)。
+    let onStreamingTap: () -> Void
 
     var body: some View {
         TodoItemRow(
@@ -315,7 +285,8 @@ struct TodoItemRowWithDelete: View {
                 withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
                     todos.removeAll { $0.id == todo.id }
                 }
-            }
+            },
+            onStreamingTap: onStreamingTap
         )
     }
 }
@@ -342,8 +313,8 @@ struct TodoItemRowWithDelete: View {
 
         var body: some View {
             VStack(spacing: 12) {
-                TodoItemRow(index: 0, todo: $todo1, expandedTodoID: $expandedTodoID, isStreaming: false, onDelete: {})
-                TodoItemRow(index: 1, todo: $todo2, expandedTodoID: $expandedTodoID, isStreaming: false, onDelete: {})
+                TodoItemRow(index: 0, todo: $todo1, expandedTodoID: $expandedTodoID, isStreaming: false, onDelete: {}, onStreamingTap: {})
+                TodoItemRow(index: 1, todo: $todo2, expandedTodoID: $expandedTodoID, isStreaming: false, onDelete: {}, onStreamingTap: {})
             }
             .padding()
             .background(WarmTheme.background)
