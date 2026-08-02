@@ -72,6 +72,9 @@ struct TodoItemRow: View {
     }
 
     var body: some View {
+        // 单卡容器:头部(显示区) + 编辑面板(展开时) 共用同一个圆角 + 阴影 + 边框,
+        // 中间 1pt 横线(WarmTheme.divider)分隔。视觉关系明确为「这个条目被展开编辑」,
+        // 而非「两张卡拼接」。
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 // 左侧分类色条:4pt 宽,圆角小条,对齐 HTML .item::before
@@ -88,8 +91,10 @@ struct TodoItemRow: View {
                         .frame(width: 32, height: 32)
 
                     VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                        // 收起态任务名 15pt(.system):比展开态 20pt 小一级,保持"展开=主对象"层级;
+                        // .system 而非 WarmFont — 与编辑面板字体策略一致(中文走苹方混排更稳)。
                         Text(todo.title)
-                            .font(WarmFont.headline(16))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(WarmTheme.textPrimary)
                             // 主内容不允许截断:用户在校对 AI 提取的内容,看全是关键。
                             // 长标题靠自然换行承接,sheet 内容可滚动。
@@ -102,7 +107,7 @@ struct TodoItemRow: View {
                                 Image(systemName: "clock")
                                     .font(.system(size: 10))
                                 Text(timeText)
-                                    .font(WarmFont.caption(12))
+                                    .font(.system(size: 12))
                             }
                             .foregroundColor(categoryColor)
                             .padding(.horizontal, WarmSpacing.xs)
@@ -119,7 +124,9 @@ struct TodoItemRow: View {
 
                     if todo.priority == .high {
                         Text(String(localized: "confirm.urgent"))
-                            .font(WarmFont.caption(11))
+                            // 12pt(四档下限):徽标虽是 UI 装饰,但本次视觉重设计要求字号四档化,
+                            // 不引入四档外的尺寸。比旧 11pt 大 1pt,徽标略更可读。
+                            .font(.system(size: 12, weight: .regular))
                             .foregroundColor(.white)
                             .padding(.horizontal, WarmSpacing.xs)
                             .padding(.vertical, 2)
@@ -152,25 +159,25 @@ struct TodoItemRow: View {
                     .accessibilityLabel(String(localized: "a11y.delete"))
                     .accessibilityHint(String(localized: "a11y.delete_todo"))
                 }
-                .padding(.leading, WarmSpacing.xs)
+                // 内容左右对称 16pt:leading=12 因为左侧色条已占 4pt(4+12=16=trailing)。
+                // 历史:原 leading=8/trailing=16 不对称,让内容偏左;改对称强化「独立卡」感。
+                .padding(.leading, WarmSpacing.sm)
                 .padding(.trailing, WarmSpacing.md)
                 .padding(.vertical, WarmSpacing.sm)
             }
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.card)
-                    .fill(WarmTheme.cardBackground)
-                    .shadow(color: WarmTheme.shadowLight, radius: 2, y: 1)
-            )
             // 抖动只作用于卡片头部,不连带下方展开面板。
             // 流式禁用展开,两条路径互斥,但语义上 ShakeEffect 应只管「卡片」本身。
             .modifier(ShakeEffect(attempt: shakeAttempt))
 
-            // 展开态:卡片下方就地挂编辑面板(accordion)。
-            // 面板改动直接写回 @Binding todo,点 Add N 时一并提交。
-            //
-            // 两卡关系:头部卡片与编辑面板是两张独立的卡(各自圆角 + 阴影 + 背景),
-            // 不拼接成一张纸。顶部留 12pt 让背景在两卡之间露出,边界清楚。
+            // 展开态:1pt 横线分隔显示区 / 编辑区,编辑面板就地嵌入同一张卡。
+            // 用 Rectangle+WarmTheme.divider 而非 Divider:Divider 自身渲染系统灰,
+            // .background(WarmTheme.divider) 不会改变它的线条色,需直接 fill。
             if isExpanded {
+                Rectangle()
+                    .fill(WarmTheme.divider)
+                    .frame(height: 1)
+                    .transition(.opacity)
+
                 TodoDraftEditorPanel(
                     todo: $todo,
                     index: index,
@@ -180,18 +187,27 @@ struct TodoItemRow: View {
                         }
                     }
                 )
-                .padding(.top, WarmSpacing.sm)
-                .padding(.leading, WarmSpacing.xs)
+                // 编辑面板 padding 对称 16,与头部内容左右对齐(同属一张卡)。
+                .padding(.leading, WarmSpacing.md)
                 .padding(.trailing, WarmSpacing.md)
                 .padding(.bottom, WarmSpacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.card)
-                        .fill(WarmTheme.cardBackground)
-                        .shadow(color: WarmTheme.shadowLight, radius: 2, y: 1)
-                )
+                .padding(.top, WarmSpacing.sm)
                 .transition(.opacity)
             }
         }
+        // 单卡统一背景:圆角 12 + 扩散阴影(radius=8 y=2)+ 浅描边(防脏边)。
+        // 历史:旧 radius=2 y=1 阴影太贴近卡片形成一圈脏边,改 radius=8 让阴影更柔和;
+        // 浅描边 0.06 opacity 放在 shadow 之后,确保不被阴影模糊吃掉 ——
+        // 描边是「卡轮廓的最后一道边界」,必须在阴影之外可见。
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.card)
+                .fill(WarmTheme.cardBackground)
+        )
+        .shadow(color: WarmTheme.shadowLight, radius: 8, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: WarmRadius.card)
+                .strokeBorder(WarmTheme.textPrimary.opacity(0.06), lineWidth: 1)
+        )
         .offset(x: offset)
         .opacity(opacity)
         .contentShape(Rectangle())

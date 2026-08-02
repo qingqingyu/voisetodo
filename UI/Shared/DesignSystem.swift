@@ -9,6 +9,13 @@ enum WarmTheme {
     static let primary = Color(hex: "FF8A6B")
     static let primaryLight = Color(hex: "FFB5A0")
     static let primaryDark = Color(hex: "E56B4F")
+    /// 浅色背景上的橙字(用 primary 直接做小字号文字对比度偏低)。
+    /// 调用场景:时间/分类/优先级等选中态的橙字(背景是 primarySurface 浅橙底)。
+    /// dark mode 反向:浅橙底配深字反而看不清,沿用 primaryLight 让字仍暖且够亮。
+    static let primaryText = Color(light: "C44F35", dark: "FFB5A0")
+    /// 浅色背景上的红字(优先级 high 选中态)。
+    /// 与 urgent(实心红)区分:urgent 用于强调底色,urgentText 用于浅红底上的深红字。
+    static let urgentText = Color(light: "C43B40", dark: "FFB3B5")
 
     // 背景色 - 中性冷灰白。冷化让白卡靠对比浮起。
     static let background = Color(light: "F4F5F7", dark: "1A1C1E")
@@ -48,8 +55,10 @@ enum WarmTheme {
     // 分组分隔线 - 用于 ConfirmSheet 分组 header 后的细线(对齐 HTML --line #E7E4DE)。
     // 浅色模式下接近 paperBackground 的暖灰;深色模式用 secondaryBackground 同色系。
     static let divider = Color(light: "E7E4DE", dark: "3A3D42")
-    // ConfirmSheet 删除按钮的浅灰圆底(对齐 HTML #F0EDE8)。
-    static let subtleControlBackground = Color(light: "F0EDE8", dark: "2A2D31")
+    // 控件底色(未选态):中性冷灰,与冷色系文字(textPrimary/Secondary/Muted 均偏墨蓝)同色温。
+    // 历史:原 #F0EDE8 米灰偏暖,与墨蓝文字混搭显"旧式 App"观感 → 改中性 #F3F4F6,
+    // 暖感全部交给 primary 珊瑚橙承担,不让灰色背景也跟着暖。
+    static let subtleControlBackground = Color(light: "F3F4F6", dark: "32353A")
 
     // 输入面板:键盘模式下「发送」按钮的深色。
     // 刻意保留暖棕:发送按钮是高频主操作,暖色作为"温度锚点"与冷背景形成对比,
@@ -110,10 +119,12 @@ enum WarmSpacing {
 // MARK: - 圆角
 
 enum WarmRadius {
-    static let chip: CGFloat = 8       // 小标签、徽标
-    static let card: CGFloat = 12      // 卡片
-    static let section: CGFloat = 16   // 区块容器
-    static let sheet: CGFloat = 20     // 弹窗、大装饰
+    static let segmentedThumb: CGFloat = 7   // segmented 选中滑块(比 chip 小一级,呼应外圆角)
+    static let chip: CGFloat = 8             // 小标签、徽标、分类 chip、优先级选项
+    static let segmentedTrack: CGFloat = 10  // segmented 外容器(比 card 小一级,层级清晰)
+    static let card: CGFloat = 12            // 卡片
+    static let section: CGFloat = 16         // 区块容器
+    static let sheet: CGFloat = 20           // 弹窗、大装饰
 }
 
 // MARK: - 尺寸
