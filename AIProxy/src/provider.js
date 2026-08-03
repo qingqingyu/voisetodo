@@ -144,10 +144,15 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
         await healthStore.recordFailure(provider.id, classification.errorType);
       }
       if (classification.errorType === "auth") {
+        // authReason 指向具体该做哪件事:换密钥 / 充值 / 换出口 / 开通模型权限。
+        // 挂到 attempt 上是为了让它随 providerAttempts[] 一起被 proxy.request.finished
+        // 回显,能按 requestId 把整条失败链串起来看。
+        attempt.authReason = classification.authReason || "unknown";
         logWarn("proxy.provider.auth_failed_alert", {
           ...requestContext,
           providerId: provider.id,
-          provider: provider.type
+          provider: provider.type,
+          authReason: attempt.authReason
         });
       }
       if (!classification.retryable) {
@@ -189,10 +194,15 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
         await healthStore.recordFailure(provider.id, classification.errorType);
       }
       if (classification.errorType === "auth") {
+        // authReason 指向具体该做哪件事:换密钥 / 充值 / 换出口 / 开通模型权限。
+        // 挂到 attempt 上是为了让它随 providerAttempts[] 一起被 proxy.request.finished
+        // 回显,能按 requestId 把整条失败链串起来看。
+        attempt.authReason = classification.authReason || "unknown";
         logWarn("proxy.provider.auth_failed_alert", {
           ...requestContext,
           providerId: provider.id,
-          provider: provider.type
+          provider: provider.type,
+          authReason: attempt.authReason
         });
       }
       if (!classification.retryable) {

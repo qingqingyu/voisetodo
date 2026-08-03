@@ -25,6 +25,7 @@ beforeEach(() => {
   });
 });
 import { anthropicAdapter, openaiAdapter, geminiAdapter } from "./src/adapters/index.js";
+import { classifyAuthReason } from "./src/adapters/base.js";
 import { pickCandidates } from "./src/selector.js";
 
 test("rejects missing app token when APP_TOKEN is configured", async () => {
@@ -4567,4 +4568,174 @@ test("admin providers endpoint exposes live circuit state", async () => {
   // 「远端 AI 现在到底通不通」应该一条 curl 就能回答,不必靠重启 Worker 碰运气。
   assert.equal(data.providers[0].health.state, "closed");
   assert.equal(data.providers[0].health.consecutiveFailures, 0);
+});
+
+// MARK: - 401/403:诊断分类,以及「绝不能改成 non-retryable」的守卫
+//
+// provider.js 的非重试分支是 `throw 502` 且**完全不 failover**。所以把 401/403 判成
+// non-retryable 会让单个 provider 的密钥问题拖垮整个服务 —— 即使另一个 provider 的
+// 密钥完全正常。failover 恰恰是 auth 故障的正确响应:下一个 provider 用的是另一把密钥。
+
+test("classifyAuthReason maps vendor phrasing to an actionable reason", () => {
+  const cases = [
+    ["expired", ["Your token has expired", "API key expired", "凭证已过期"]],
+    ["insufficient_balance", [
+      "You exceeded your current quota, please check your plan and billing details",
+      "insufficient_quota",
+      "账户余额不足,请充值"
+    ]],
+    ["region_blocked", [
+      "unsupported_country_region_territory",
+      "This model is not available in your country"
+    ]],
+    ["no_model_access", [
+      "You do not have access to this model",
+      "model_not_allowed",
+      "当前密钥无权限调用该模型"
+    ]],
+    ["invalid_key", [
+      "Invalid API key provided",
+      "invalid_api_key",
+      "Unauthorized"
+    ]]
+  ];
+
+  for (const [expected, bodies] of cases) {
+    for (const body of bodies) {
+      assert.equal(
+        classifyAuthReason(body),
+        expected,
+        `"${body}" 应归类为 ${expected}`
+      );
+    }
+  }
+
+  // 认不出来就说认不出来,不猜。
+  assert.equal(classifyAuthReason(""), "unknown");
+  assert.equal(classifyAuthReason("something went wrong"), "unknown");
+});
+
+test("insufficient_balance wins over the broader invalid_key keywords", () => {
+  // 真实措辞经常同时出现 "unauthorized" 和余额信息。笼统的 invalid_key 若排在前面
+  // 会盖掉「去充值」这个更有行动价值的判定 —— 表的顺序就是为此设计的。
+  assert.equal(
+    classifyAuthReason("Unauthorized: insufficient balance, please recharge"),
+    "insufficient_balance"
+  );
+});
+
+test("401/403 stay retryable and keep errorType auth", () => {
+  // 这条守着上面那段注释里的结论。改动重试语义 = 让一个坏密钥拖垮整个服务。
+  for (const adapter of [anthropicAdapter, openaiAdapter, geminiAdapter]) {
+    for (const status of [401, 403]) {
+      const result = adapter.isRetryable({ status, bodyText: "Invalid API key provided" });
+      assert.equal(result.retryable, true, `${adapter.type} ${status} 必须可重试(否则不会 failover)`);
+      assert.equal(result.errorType, "auth", `${adapter.type} ${status} 的 errorType 必须保持 auth`);
+      assert.equal(result.authReason, "invalid_key");
+    }
+  }
+});
+
+test("an expired key on the primary provider still fails over to the secondary", async () => {
+  const calls = [];
+  const env = providersEnv(
+    [
+      {
+        id: "PRIMARY",
+        type: "anthropic",
+        url: "https://a.example/v1/messages",
+        model: "m-a",
+        priority: 1,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_A"
+      },
+      {
+        id: "SECONDARY",
+        type: "anthropic",
+        url: "https://b.example/v1/messages",
+        model: "m-b",
+        priority: 2,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_B"
+      }
+    ],
+    { KEY_A: "stale-key", KEY_B: "good-key" }
+  );
+
+  let response;
+  const logs = await captureConsole(async () => {
+    response = await handleRequest(
+      request({ transcript: "今天复习", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+      env,
+      {},
+      async (url) => {
+        calls.push(url);
+        if (url.includes("a.example")) {
+          return jsonResponse({ error: { message: "Invalid API key provided" } }, 401);
+        }
+        return jsonResponse({ content: [{ type: "text", text: extractionJSON("复习") }] });
+      }
+    );
+  });
+
+  assert.equal(response.status, 200, "主 provider 密钥失效不该影响整体可用性");
+  assert.equal(calls.length, 2, "必须 failover 到备用 provider —— 它用的是另一把密钥");
+
+  const alert = logs
+    .map((line) => JSON.parse(line))
+    .find((entry) => entry.event === "proxy.provider.auth_failed_alert");
+  assert.ok(alert, "auth 失败必须告警");
+  assert.equal(alert.providerId, "PRIMARY");
+  assert.equal(alert.authReason, "invalid_key", "运维据此知道该去 wrangler secret put,而不是充值");
+});
+
+test("both providers with dead keys surface 503 and record auth in the health snapshot", async () => {
+  const healthKv = new MemoryKV(new Map());
+  const calls = [];
+  const env = providersEnv(
+    [
+      {
+        id: "PRIMARY",
+        type: "anthropic",
+        url: "https://a.example/v1/messages",
+        model: "m-a",
+        priority: 1,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_A"
+      },
+      {
+        id: "SECONDARY",
+        type: "anthropic",
+        url: "https://b.example/v1/messages",
+        model: "m-b",
+        priority: 2,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_B"
+      }
+    ],
+    { KEY_A: "dead-a", KEY_B: "dead-b" },
+    { AI_PROVIDER_STATE_KV: healthKv }
+  );
+
+  const response = await handleRequest(
+    request({ transcript: "今天复习", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+    env,
+    {},
+    async (url) => {
+      calls.push(url);
+      return jsonResponse({ error: { message: "账户余额不足,请充值" } }, 403);
+    }
+  );
+
+  // 两把密钥同时失效时 503 本来就是正确答案 —— 关键是它必须可诊断。
+  assert.equal(response.status, 503);
+  assert.equal(calls.length, 2, "两个都试过才放弃");
+  for (const id of ["PRIMARY", "SECONDARY"]) {
+    const record = JSON.parse(healthKv.values.get(`health:${id}`));
+    assert.equal(record.lastErrorType, "auth", `${id} 的健康记录应标明是 auth 问题`);
+  }
 });

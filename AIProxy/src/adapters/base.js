@@ -36,14 +36,61 @@ export function mergeSignals(...signals) {
   return controller.signal;
 }
 
+// 401/403 的成因分类。四种成因对应完全不同的处置动作:换密钥 / 充值 / 换出口 /
+// 开通模型权限 —— 只知道「是 auth 类」不足以决定做哪件事。
+//
+// 只输出封闭枚举值,**不输出 body 原文**:log.js 顶部的 PII 规则禁止把上游响应体
+// 写进日志(4xx body 可能回显用户转写)。输出枚举可以完全绕开这个风险,无需开特例。
+//
+// 表按 adapter 共享而非拆分:classifyHttpRetryable 本身就是三个 adapter 共用的,
+// auth 报错措辞跨供应商重合度高。model-config 关键词按 adapter 拆是因为那与具体
+// 模型能力绑定,auth 不是。
+//
+// 顺序即优先级,具体在前、笼统在后。invalid_key 必须放最后 —— "unauthorized"
+// 太宽,放前面会盖掉 insufficient_balance 这类更有行动价值的判定。
+const AUTH_REASON_PATTERNS = [
+  ["expired", ["expired", "token has expired", "已过期"]],
+  ["insufficient_balance", [
+    "insufficient balance", "insufficient_quota", "exceeded your current quota",
+    "billing", "arrearage", "余额不足", "欠费"
+  ]],
+  ["region_blocked", [
+    "unsupported_country_region_territory", "not available in your", "region", "country", "地区"
+  ]],
+  ["no_model_access", [
+    "do not have access", "not allowed to access", "model_not_allowed", "permission", "无权限"
+  ]],
+  ["invalid_key", [
+    "invalid api key", "invalid_api_key", "incorrect api key",
+    "authentication_error", "invalid authentication", "unauthorized", "密钥"
+  ]]
+];
+
+/// 从 401/403 的响应体里判断成因。认不出来返回 "unknown"(不猜)。
+export function classifyAuthReason(bodyText) {
+  // 中文不受 toLowerCase 影响,英文关键词全部以小写书写。
+  const lower = String(bodyText || "").toLowerCase();
+  if (!lower) return "unknown";
+  for (const [reason, keywords] of AUTH_REASON_PATTERNS) {
+    if (keywords.some((keyword) => lower.includes(keyword))) {
+      return reason;
+    }
+  }
+  return "unknown";
+}
+
 // Shared retry classification for HTTP-level errors. Adapters may layer their own
 // 400/422 body-keyword checks on top via `modelConfigKeywords`.
 export function classifyHttpRetryable({ status, bodyText, errorType }, modelConfigKeywords = []) {
   if (errorType === "network" || errorType === "abort" || errorType === "timeout") {
     return { retryable: true, errorType };
   }
+  // ⚠️ 401/403 必须保持 retryable。provider.js 的非重试分支是 `throw 502` 且**完全不
+  // failover** —— 改成 non-retryable 会让单个 provider 的密钥问题拖垮整个服务,
+  // 即使另一个 provider 的密钥完全正常。failover 恰恰是 auth 故障的正确响应:
+  // 下一个 provider 用的是另一把密钥。authReason 只是诊断附加项,不参与重试决策。
   if (status === 401 || status === 403) {
-    return { retryable: true, errorType: "auth" };
+    return { retryable: true, errorType: "auth", authReason: classifyAuthReason(bodyText) };
   }
   if (status === 408 || status === 429) {
     return { retryable: true, errorType: `status_${status}` };
