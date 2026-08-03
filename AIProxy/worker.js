@@ -226,7 +226,16 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       maxAttempts: resolveMaxAttempts(env)
     });
     if (candidates.length === 0) {
-      logError("proxy.selector.no_candidates", { ...requestContext });
+      // 带上每个 provider 的熔断快照。旧日志只说「没有候选」,却不说是谁被摘了、
+      // 为什么、还要多久 —— 而这正是「503 → 客户端 .serviceUnavailable → 客户端也熔断」
+      // 这条级联的起点,没有快照根本无法从日志复盘。
+      const snapshots = await Promise.all(providers.map(async (p) => ({
+        id: p.id,
+        enabled: p.enabled !== false,
+        hasKey: Boolean(p.apiKey),
+        ...(await sharedHealthStore.snapshot(p.id, Date.now()))
+      })));
+      logError("proxy.selector.no_candidates", { ...requestContext, providers: snapshots });
       // All filtered out (missing keys or disabled) — distinct from config-invalid.
       return finishRequest(new Response("AI proxy failed", { status: 503 }), requestContext, { error: "no_providers_available" });
     }
@@ -247,7 +256,11 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
           : ({ response, provider, adapter }) => readProviderText(response, provider, adapter, requestContext)
       });
     } catch (error) {
-      await refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, ctx, quotaState, "provider_failed");
+      // 客户端断连也要退配额(用户什么都没拿到),但 reason 区分开:
+      // 上线后 DAILY_REQUEST_LIMIT = 2,划走两次弹层就烧光当天额度 —— 那同样是一种
+      // 「远端服务不生效」。ip_daily / 全局预算三层不退,防刷上限不受影响。
+      const reason = error?.errorType === "client_disconnected" ? "client_disconnected" : "provider_failed";
+      await refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, ctx, quotaState, reason);
       throw error;
     }
     requestContext.provider = result.provider.type;
@@ -267,6 +280,27 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
           // (TranscriptProcessingFlow)会把它们当成功保留 —— 用户拿到了价值,不退。
           // 退款不会反映在本次响应头里,客户端下一次成功请求会拿到修正后的数值。
           onFailure: async (_error, stats) => {
+            // 先区分「客户端走了」和「上游真的挂了」。用户划走确认弹层 / 开始新一次录音
+            // 都会 abort request.signal,进而 abort 上游 fetch —— 那不是 provider 不健康,
+            // 记进 HealthStore 会把用户自己的取消变成一次熔断计数。
+            // 误判方向也是安全的:把真故障当断连只是晚一点熔断,把断连当真故障才是本 bug。
+            if (request.signal?.aborted) {
+              logInfo("proxy.client.disconnected", {
+                ...requestContext,
+                providerId: result.provider.id,
+                phase: "mid_stream",
+                emittedCount: stats?.emittedCount ?? 0,
+                emittedChars: stats?.emittedChars ?? 0
+              });
+              // 配额仍按「一个字都没给 = 用户什么也没拿到」退,与下面的规则一致;
+              // 只是 reason 区分开,方便在日志里把取消和真故障分开统计。
+              if (stats?.emittedCount === 0) {
+                await refundDeviceQuotaOnUpstreamFailure(
+                  request, env, requestContext, ctx, quotaState, "client_disconnected"
+                );
+              }
+              return;
+            }
             await result.confirmFailure("stream");
             if (stats?.emittedCount === 0) {
               await refundDeviceQuotaOnUpstreamFailure(
@@ -516,6 +550,9 @@ export async function handleAdminRequest(request, env, requestContext, url) {
 
 async function handleAdminGetProviders(env, requestContext) {
   sharedAdminConfigStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+  // 熔断状态也要能读:这是「远端 AI 现在到底通不通」的唯一权威答案。
+  // 一条 authenticated curl 就能回答,不用再靠重启 Worker 碰运气。
+  sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
 
   let providers;
   try {
@@ -537,8 +574,10 @@ async function handleAdminGetProviders(env, requestContext) {
   // 应用 override 让 caller 看到实际生效的 priority(而非 toml 默认)
   const effective = override?.primaryId ? applyPrimaryOverride(providers, override.primaryId) : providers;
 
-  // 返回精简视图:去掉 secretName / apiKey,只留 hasApiKey 布尔
-  const publicProviders = effective.map((p) => ({
+  // 返回精简视图:去掉 secretName / apiKey,只留 hasApiKey 布尔。
+  // health 是实时熔断快照(state / consecutiveFailures / cooldownMs / lastErrorType)。
+  const now = Date.now();
+  const publicProviders = await Promise.all(effective.map(async (p) => ({
     id: p.id,
     type: p.type,
     model: p.model,
@@ -546,8 +585,9 @@ async function handleAdminGetProviders(env, requestContext) {
     weight: p.weight,
     enabled: p.enabled,
     timeoutMs: p.timeoutMs,
-    hasApiKey: Boolean(p.apiKey)
-  }));
+    hasApiKey: Boolean(p.apiKey),
+    health: await sharedHealthStore.snapshot(p.id, now)
+  })));
 
   return finishRequest(
     jsonResponse(200, { providers: publicProviders, override }),

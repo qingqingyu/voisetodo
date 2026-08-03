@@ -71,7 +71,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 // 解析 JSON
                 let result = try parseResponse(responseText)
 
-                await circuitBreaker.recordSuccess()
+                await noteSuccess(id: extractionID)
                 VoiceTodoLog.extractor.info("extract.success id=\(extractionID, privacy: .public) attempt=\(attempt) todos=\(result.todos.count) ignoredChars=\(result.ignored.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 Telemetry.record(.extractOutcome(
                     outcome: .success,
@@ -83,12 +83,27 @@ final class TodoExtractorService: TodoExtractorProtocol {
 
             } catch {
                 lastError = error
+
+                // 取消：立刻退出重试循环，不计熔断、不上报失败。
+                // 若不在这里拦截，CancellationError 会一路落到下面的
+                // `if attempt == retryCount { break }`，导致用户取消后还继续重试。
+                if Self.isCancellation(error) {
+                    VoiceTodoLog.extractor.info("extract.cancelled id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                    Telemetry.record(.extractOutcome(
+                        outcome: .cancelled,
+                        todosCount: 0,
+                        durationMS: VoiceTodoLog.durationMS(since: startedAt),
+                        attempts: attempt + 1
+                    ))
+                    throw error
+                }
+
                 VoiceTodoLog.extractor.error("extract.attempt.failed id=\(extractionID, privacy: .public) attempt=\(attempt) durationMS=\(VoiceTodoLog.durationMS(since: attemptStart)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
 
                 if let voiceError = error as? VoiceTodoError {
                     // 仅服务类故障计入熔断（解析类错误不代表代理不健康）
                     if Self.countsAsServiceFailure(voiceError) {
-                        await circuitBreaker.recordFailure()
+                        await noteFailure(id: extractionID, reason: Telemetry.reason(for: voiceError))
                     }
 
                     switch voiceError {
@@ -203,6 +218,9 @@ final class TodoExtractorService: TodoExtractorProtocol {
                 // 抛 .circuitOpen 而非 .networkUnavailable，让 UI 能区分"熔断自我保护"与"网络不可达"
                 if await self.circuitBreaker.shouldShortCircuit() {
                     VoiceTodoLog.extractor.warning("extract.stream.circuit_open id=\(streamID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                    // 主路径（streamingEnabled = true）此前完全没有遥测，而这里正是
+                    // 「远端 AI 不生效」的症状本身。没有它就无从证明修复后降到了 0。
+                    Telemetry.record(.extractFailed(reason: "circuitOpen", attempt: 0))
                     continuation.finish(throwing: VoiceTodoError.circuitOpen)
                     return
                 }
@@ -238,11 +256,29 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     // id 对齐到 partial 期间用的 id,避免最后一次 partial → final 切换瞬间所有卡片
                     // 重播 removal + insertion transition(否则用户会看到流结束瞬间整批闪一下)。
                     let stabilizedFinal = self.reassignedIDs(finalResult.todos, stableIDs: &stableIDs)
-                    await self.circuitBreaker.recordSuccess()
+                    await self.noteSuccess(id: streamID)
                     continuation.yield(ExtractionResult(todos: stabilizedFinal, ignored: finalResult.ignored))
                     VoiceTodoLog.extractor.info("extract.stream.success id=\(streamID, privacy: .public) todos=\(finalResult.todos.count) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                     continuation.finish()
                 } catch {
+                    // 取消优先于一切,必须放在 partial fallback 之前:
+                    //   - 不 yield partial —— 用户已经离开弹层,再推结果只会让下一次录音闪现旧数据
+                    //     (AppCoordinator 的 stale_extracted_cleared 兜底就是为此存在的)
+                    //   - 不喂熔断器 —— 取消不是 provider 故障
+                    //   - 不抛错 —— 上层 TranscriptProcessingFlow / AppCoordinator 各自有
+                    //     Task.isCancelled 守卫,静默 finish 即可,不该弹错也不该走离线兜底
+                    if Self.isCancellation(error) {
+                        VoiceTodoLog.extractor.info("extract.stream.cancelled id=\(streamID, privacy: .public) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                        Telemetry.record(.extractOutcome(
+                            outcome: .cancelled,
+                            todosCount: lastYieldedCount,
+                            durationMS: VoiceTodoLog.durationMS(since: startedAt),
+                            attempts: 1
+                        ))
+                        continuation.finish()
+                        return
+                    }
+
                     // 如果积累了部分文本但最终解析失败，尝试用已解析的部分结果
                     if let partialTodos = self.tryParsePartialTodos(accumulatedText), !partialTodos.isEmpty {
                         let stabilized = self.reassignedIDs(partialTodos, stableIDs: &stableIDs)
@@ -251,7 +287,7 @@ final class TodoExtractorService: TodoExtractorProtocol {
                     }
                     // 服务类失败喂熔断器（与 extract() 同一分类口径）
                     if let voiceError = error as? VoiceTodoError, Self.countsAsServiceFailure(voiceError) {
-                        await self.circuitBreaker.recordFailure()
+                        await self.noteFailure(id: streamID, reason: Telemetry.reason(for: voiceError))
                     }
                     VoiceTodoLog.extractor.error("extract.stream.failed id=\(streamID, privacy: .public) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                     continuation.finish(throwing: error)
@@ -362,6 +398,39 @@ final class TodoExtractorService: TodoExtractorProtocol {
         let capped = min(exponential, NetworkConfig.retryMaxInterval)
         let jitter = Double.random(in: 0...(capped * 0.3))
         return capped + jitter
+    }
+
+    /// 记录一次成功并把熔断器的状态迁移落到日志 + 遥测。
+    private func noteSuccess(id: String) async {
+        let transition = await circuitBreaker.recordSuccess()
+        guard transition == .closed else { return }
+        VoiceTodoLog.extractor.info("extract.circuit.closed id=\(id, privacy: .public)")
+        Telemetry.record(.extractorCircuitChanged(state: "closed", reason: "success"))
+    }
+
+    /// 记录一次服务类失败并把熔断器的状态迁移落到日志 + 遥测。
+    /// 只有 `.opened` 值得上报——它等价于「接下来一段时间远端 AI 会被静默降级」。
+    private func noteFailure(id: String, reason: String) async {
+        let transition = await circuitBreaker.recordFailure()
+        guard case .opened(let until) = transition else { return }
+        let cooldown = Int(until.timeIntervalSinceNow.rounded())
+        VoiceTodoLog.extractor.error("extract.circuit.opened id=\(id, privacy: .public) cooldownSeconds=\(cooldown) reason=\(reason, privacy: .public)")
+        Telemetry.record(.extractorCircuitChanged(state: "opened", reason: reason))
+    }
+
+    /// 是否为「取消」而非「故障」。
+    ///
+    /// 取消永远由用户发起（关闭确认弹层、开始新一次录音、确认成功后主动收流——见
+    /// `AppCoordinator.cancelExtraction` / `stopExtractionAfterSuccessfulConfirm`），
+    /// 绝不能计入熔断：一次取消若被记成一次 provider 故障，攒够阈值就把远端 AI 静默熔断掉。
+    ///
+    /// 三个来源都要认：`NetworkClient.mapURLError` 抛的 `CancellationError`、退避
+    /// `Task.sleep` 抛的 `CancellationError`、以及 URLSession 直接冒上来的 `URLError.cancelled`。
+    private static func isCancellation(_ error: Error) -> Bool {
+        if Task.isCancelled { return true }
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
     }
 
     /// 是否计入熔断的「服务类」故障：网络不可用 / 超时 / 服务端错误。

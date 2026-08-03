@@ -768,6 +768,211 @@ extension ExtractorTests {
     }
 }
 
+// MARK: - 取消 ≠ 故障
+
+/// 本组守着「远端 AI 间歇性不生效」的客户端根因。
+///
+/// 旧链路：用户关掉确认弹层 / 开始新一次录音 → AppCoordinator.cancelExtraction →
+/// URLSession task 取消 → `URLError.cancelled` → mapURLError 的 `default:` 落成
+/// `.networkUnavailable` → countsAsServiceFailure 为 true → 喂进熔断器。
+/// 划走几次弹层就能把远端 AI 静默熔断掉，而熔断是纯内存态，只能等冷却或重启 App。
+extension ExtractorTests {
+    /// 取消不该重试：CancellationError 必须立刻退出重试循环。
+    func testCancelledRequestIsNotRetried() async {
+        mockNetworkClient.enqueueFailure(URLError(.cancelled))
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+
+        do {
+            _ = try await sut.extract(from: "取消", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("取消应向上抛出")
+        } catch is CancellationError {
+            XCTAssertEqual(URLProtocolStub.callCount, 1, "用户已经取消了，不该再重试")
+        } catch {
+            XCTFail("应为 CancellationError，实际 \(error)")
+        }
+    }
+
+    /// 取消不该计入熔断。阈值设为 1：只要取消被误算成一次服务故障，熔断就会打开，
+    /// 第二次请求会被短路（callCount 停在 1）。
+    func testCancelledRequestDoesNotOpenCircuitBreaker() async {
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 1, cooldown: 600)
+        let service = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: []),
+            circuitBreaker: breaker,
+            sleep: { _ in }
+        )
+
+        mockNetworkClient.enqueueFailure(URLError(.cancelled))
+        do {
+            _ = try await service.extract(from: "取消", locale: Locale(identifier: "zh-Hans"))
+            XCTFail("取消应向上抛出")
+        } catch is CancellationError {
+            // 预期
+        } catch {
+            XCTFail("应为 CancellationError，实际 \(error)")
+        }
+
+        // 本测试里 Task.isCancelled 为 false，所以它精确地钉住 mapURLError 的映射，
+        // 而不是 isCancellation 里的 Task.isCancelled 兜底分支。
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        let result = try? await service.extract(from: "取消后再来一次", locale: Locale(identifier: "zh-Hans"))
+        XCTAssertNotNil(result, "取消不该熔断，下一次请求必须照常发出")
+        XCTAssertEqual(URLProtocolStub.callCount, 2)
+    }
+
+    /// 流式路径取消：已经推出的 partial 保留（那是正常流式行为），
+    /// 但不得在 catch 里再补一次 partial、不得抛错、不得计入熔断。
+    func testStreamingCancellationDoesNotYieldExtraPartialOrThrow() async throws {
+        let partialJSON = "{\"todos\":[{\"title\":\"买牛奶\",\"detail\":\"\",\"priority\":\"normal\",\"category_hint\":\"life\"}"
+        let eventData = try JSONSerialization.data(withJSONObject: ["delta": partialJSON])
+        let eventText = try XCTUnwrap(String(data: eventData, encoding: .utf8))
+
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 1, cooldown: 600)
+        let service = TodoExtractorService(
+            networkClient: mockNetworkClient.networkClient,
+            vocabularyProvider: StaticExtractorVocabularyProvider(hints: []),
+            circuitBreaker: breaker,
+            sleep: { _ in }
+        )
+
+        mockNetworkClient.enqueueBodyThenFailure(
+            body: "data: \(eventText)\n\n",
+            error: URLError(.cancelled)
+        )
+
+        var results: [ExtractionResult] = []
+        do {
+            for try await result in service.extractStreaming(from: "买牛奶", locale: Locale(identifier: "zh-Hans")) {
+                results.append(result)
+            }
+        } catch {
+            XCTFail("取消应静默结束，不该抛错：\(error)")
+        }
+
+        // body 与 didFailWithError 的投递顺序由 URLSession 决定，所以 in-loop 的那次
+        // partial 可能来得及、也可能来不及（0 或 1）。关键是 catch 里不再补第二次 ——
+        // 修复前这里必然是「抛错 + 多一次 yield」。
+        XCTAssertLessThanOrEqual(results.count, 1, "catch 里不该再补一次 partial")
+
+        // 熔断没打开 → 下一次请求照常发出。
+        mockNetworkClient.enqueueSuccess(text: "{\"todos\":[],\"ignored\":\"\"}")
+        _ = try await service.extract(from: "取消后再来一次", locale: Locale(identifier: "zh-Hans"))
+        XCTAssertEqual(URLProtocolStub.callCount, 2, "取消不该熔断")
+    }
+}
+
+// MARK: - 熔断器状态机
+
+extension ExtractorTests {
+    private func makeClock(_ start: TimeInterval = 0) -> (clock: ExtractorTestClock, now: () -> Date) {
+        let clock = ExtractorTestClock(now: Date(timeIntervalSince1970: start))
+        return (clock, { clock.now })
+    }
+
+    /// 跳闸时必须清零计数：否则计数永远 >= threshold，熔断器退化成只能靠成功或重启复位的单向阀。
+    func testFailureCountRestartsFromZeroAfterOpening() async {
+        let (clock, now) = makeClock()
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 3, cooldown: 30, now: now)
+
+        var transition = await breaker.recordFailure()
+        XCTAssertEqual(transition, .counted(consecutiveFailures: 1))
+        transition = await breaker.recordFailure()
+        XCTAssertEqual(transition, .counted(consecutiveFailures: 2))
+        transition = await breaker.recordFailure()
+        guard case .opened = transition else {
+            return XCTFail("第三次失败应跳闸，实际 \(transition)")
+        }
+
+        // 冷却到期 → 半开 → 探测成功 → 闭合
+        clock.now = Date(timeIntervalSince1970: 31)
+        _ = await breaker.shouldShortCircuit()
+        let recovery = await breaker.recordSuccess()
+        XCTAssertEqual(recovery, .closed)
+
+        // 计数必须从 1 重新开始，而不是接着之前的 3 往上加。
+        transition = await breaker.recordFailure()
+        XCTAssertEqual(transition, .counted(consecutiveFailures: 1))
+    }
+
+    /// 冷却窗口内的额外失败不得叠加冷却。
+    /// 旧代码里计数已饱和（>= threshold），窗口内每来一次失败就把 until 往后推一个完整周期，
+    /// PendingRecoveryFlow 的并发批处理能把一个 30s 窗口推成 N 个串行窗口。
+    func testFailuresInsideCooldownDoNotExtendIt() async {
+        let (clock, now) = makeClock()
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 1, cooldown: 30, now: now)
+
+        guard case .opened = await breaker.recordFailure() else {
+            return XCTFail("阈值 1 时首次失败即应跳闸")
+        }
+
+        clock.now = Date(timeIntervalSince1970: 1)
+        var transition = await breaker.recordFailure()
+        XCTAssertEqual(transition, .alreadyOpen)
+        clock.now = Date(timeIntervalSince1970: 2)
+        transition = await breaker.recordFailure()
+        XCTAssertEqual(transition, .alreadyOpen)
+
+        clock.now = Date(timeIntervalSince1970: 31)
+        let shorted = await breaker.shouldShortCircuit()
+        XCTAssertFalse(shorted, "冷却应在 t=30 到期，不该被窗口内的失败推后")
+    }
+
+    /// 反向守卫：清零不能矫枉过正成「半开还要再攒满阈值才重新打开」。
+    /// 半开探测失败必须立刻重开一个完整窗口。
+    func testHalfOpenProbeFailureReopensImmediately() async {
+        let (clock, now) = makeClock()
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 3, cooldown: 30, now: now)
+
+        for _ in 0..<3 { _ = await breaker.recordFailure() }
+        clock.now = Date(timeIntervalSince1970: 31)
+        var shorted = await breaker.shouldShortCircuit()
+        XCTAssertFalse(shorted, "冷却到期应转半开放行")
+
+        let transition = await breaker.recordFailure()
+        guard case .opened = transition else {
+            return XCTFail("半开探测失败应立刻重开，而不是重新攒阈值")
+        }
+        clock.now = Date(timeIntervalSince1970: 45)
+        shorted = await breaker.shouldShortCircuit()
+        XCTAssertTrue(shorted, "重开后应继续短路")
+    }
+
+    /// reset() 让「只能重启 App 才恢复」变成可编程的复位点。
+    func testResetClosesOpenBreaker() async {
+        let breaker = ExtractorCircuitBreaker(failureThreshold: 1, cooldown: 600)
+        _ = await breaker.recordFailure()
+        var shorted = await breaker.shouldShortCircuit()
+        XCTAssertTrue(shorted)
+
+        await breaker.reset()
+        shorted = await breaker.shouldShortCircuit()
+        XCTAssertFalse(shorted, "reset 后应立即闭合")
+    }
+
+    /// 客户端等待窗口必须装得下 Worker 最坏的串行 failover 耗时。
+    /// 失配会造成最隐蔽的一种失效：Worker 正切到第二个 provider 且注定会成功，
+    /// 客户端却已经放弃，并把 .apiTimeout 当成一次服务故障喂进熔断器。
+    /// 服务端同侧断言见 `AIProxy/wrangler-config.test.js`。
+    func testTimeoutBudgetCoversWorkerFailoverWorstCase() {
+        let worstCase = Double(NetworkConfig.workerMaxAttempts - 1) * NetworkConfig.workerProviderTimeout
+            + NetworkConfig.workerTailAllowance
+        XCTAssertGreaterThanOrEqual(
+            NetworkConfig.apiTimeout,
+            worstCase,
+            "apiTimeout=\(NetworkConfig.apiTimeout)s 装不下 Worker 最坏耗时 \(worstCase)s"
+        )
+    }
+}
+
+private final class ExtractorTestClock: @unchecked Sendable {
+    var now: Date
+
+    init(now: Date) {
+        self.now = now
+    }
+}
+
 // MARK: - Mock Network Client
 
 private struct StaticExtractorVocabularyProvider: UserVocabularyProviding {
@@ -805,12 +1010,19 @@ private final class MockNetworkClient {
     func enqueueHTTPFailure(statusCode: Int, body: String, headers: [String: String] = [:]) {
         URLProtocolStub.responses.append(.success(statusCode: statusCode, body: body, headers: headers))
     }
+
+    func enqueueBodyThenFailure(body: String, error: Error) {
+        URLProtocolStub.responses.append(.bodyThenFailure(statusCode: 200, body: body, error: error))
+    }
 }
 
 private final class URLProtocolStub: URLProtocol {
     enum StubResponse {
         case success(statusCode: Int, body: String, headers: [String: String])
         case failure(Error)
+        /// 先把响应头 + body 发出去，再让连接失败。
+        /// 用于模拟「流已经推了一部分，然后客户端取消 / 上游断开」。
+        case bodyThenFailure(statusCode: Int, body: String, error: Error)
     }
 
     static var responses: [StubResponse] = []
@@ -856,6 +1068,16 @@ private final class URLProtocolStub: URLProtocol {
             client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocolDidFinishLoading(self)
         case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
+        case .bodyThenFailure(let statusCode, let body, let error):
+            let httpResponse = HTTPURLResponse(
+                url: request.url!,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocol(self, didFailWithError: error)
         }
     }

@@ -72,6 +72,10 @@ enum TelemetryEvent {
     case widgetLoadFailed(reason: String)
     /// B4: AppIntent 失败
     case intentFailed(operation: String, stage: String)
+    /// B5: 客户端熔断器状态迁移（opened / closed / reset）。
+    /// 「远端 AI 静默失效」的直接观测点：opened 说明后续请求会被短路成本地降级，
+    /// closed 说明恢复。没有这条事件时，熔断打开与恢复在遥测里完全不可见。
+    case extractorCircuitChanged(state: String, reason: String)
 
     /// 事件名，对应 D1 `event_name` 列。
     var name: String {
@@ -85,6 +89,7 @@ enum TelemetryEvent {
         case .extractFailed: return "extract_failed"
         case .widgetLoadFailed: return "widget_load_failed"
         case .intentFailed: return "intent_failed"
+        case .extractorCircuitChanged: return "extractor_circuit_changed"
         }
     }
 
@@ -133,6 +138,11 @@ enum TelemetryEvent {
                 "operation": operation,
                 "stage": stage
             ]
+        case let .extractorCircuitChanged(state, reason):
+            return [
+                "state": state,
+                "reason": reason
+            ]
         }
     }
 }
@@ -161,6 +171,9 @@ enum ExtractOutcome: String {
     case failed = "failed"
     case offlineFallback = "offline_fallback"
     case streamPartial = "stream_partial"
+    /// 用户主动取消（关弹层 / 开始新录音）。**必须与 failed 分开统计**：
+    /// 取消不是故障，混进分母会让「静默降级率」这个指标失真。
+    case cancelled = "cancelled"
 }
 
 /// Todo 保存来源。

@@ -75,8 +75,13 @@ PROVIDERS = '''
 # 客户端通过 X-Admin-Token header 携带,worker 在 handleAdminRequest 里校验。
 # ADMIN_TOKEN 通过 secret 注入,不在此处明文。
 
-# 可选：限制每次请求最多尝试多少个 provider（默认 = 过滤后的候选总数）。
-# AI_PROVIDER_MAX_ATTEMPTS = "3"
+# 每次请求最多尝试多少个 provider。
+# ⚠️ 必须显式设置,不能依赖默认值(= 过滤后的候选总数)。iOS 端 NetworkConfig.apiTimeout
+#    是按 (MAX_ATTEMPTS - 1) × timeoutMs + 余量 推算的;不写死这里的话,以后新增第三个
+#    provider 会让 Worker 最坏耗时从 40s 涨到 70s,而客户端仍在 55s 放弃 —— 客户端会在
+#    Worker 还在 failover 时就断线,并把这次放弃记成一次服务故障喂给自己的熔断器。
+#    wrangler-config.test.js 有断言守着这个不变量。
+AI_PROVIDER_MAX_ATTEMPTS = "2"
 
 # 可选：熔断参数覆盖。不配置时用代码默认值(threshold=5, initialCooldown=10s, maxCooldown=5min)。
 # configureHealthParams(env) 在每次 request entry 读取,改 env 后下次 deploy 即生效。

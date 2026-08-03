@@ -105,7 +105,13 @@ export class HealthStore {
       state: classifyState(record, atNow),
       ewmaLatencyMs: record.ewmaLatencyMs || 0,
       sampleCount: record.sampleCount || 0,
-      lastSuccessAt: record.lastSuccessAt || 0
+      lastSuccessAt: record.lastSuccessAt || 0,
+      // 以下三项 selector 用不到,是给诊断用的:出 503 时能一眼看出是谁被摘了、
+      // 因为什么错、还要多久恢复,不用再靠重启碰运气。
+      consecutiveFailures: record.consecutiveFailures || 0,
+      cooldownMs: record.cooldownMs || 0,
+      openedAt: record.openedAt || 0,
+      lastErrorType: record.lastErrorType || ""
     };
   }
 

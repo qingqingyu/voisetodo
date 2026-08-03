@@ -107,6 +107,19 @@ final class TranscriptProcessingFlow {
                         continuation.finish()
                         return
                     }
+                    // 取消不是失败。必须放在下面 partial fallback 之前:否则「取消时已收到
+                    // partial」会被重新提升成 .success,把用户刚关掉的确认弹层再填满。
+                    // 也绝不能走 saveOffline —— 用户主动取消却在库里多出一条 pending 转写,
+                    // 下次启动会被 PendingRecoveryFlow 认领并再扣一次配额。
+                    //
+                    // 内层 task 被取消而本 flow 未被取消是真实存在的(见
+                    // AppCoordinator.stopExtractionAfterSuccessfulConfirm),所以上面的
+                    // Task.isCancelled 守卫覆盖不到,需要这条按错误类型的判断。
+                    if error is CancellationError {
+                        VoiceTodoLog.coordinator.info("coordinator.process_transcript.cancelled id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                        continuation.finish()
+                        return
+                    }
                     // Partial fallback:流被截断(超时/网络抖动/服务 5xx)但已收到 ≥1 条
                     // partial 时,把已收到的当成功结果上抛,而不是丢弃。
                     // 用户输入 13 条解析出 11 条后被流断 → 给用户 11 条比清空让用户重来更友好,

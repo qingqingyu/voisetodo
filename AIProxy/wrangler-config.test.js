@@ -102,6 +102,61 @@ for (const { label, path } of CONFIGS) {
   });
 }
 
+// MARK: - 超时预算:Worker 最坏 failover 耗时必须装得进 iOS 客户端的等待窗口
+
+// `Protocols/Constants.swift` 的 NetworkConfig.apiTimeout。改那边必须改这里。
+const IOS_API_TIMEOUT_SECONDS = 55;
+// 同文件的 NetworkConfig.workerTailAllowance:最后一跳 TTFB + Worker 自身开销
+// (KV / DO 往返、JWS 验签、isolate 冷启动)。
+const TAIL_ALLOWANCE_SECONDS = 15;
+
+// parseVars 会跳过 ''' 多行块,所以 PROVIDERS 需要单独读。
+export function parseProviders(text) {
+  const match = text.match(/^\s*PROVIDERS\s*=\s*'''\s*\n([\s\S]*?)\n\s*'''/m);
+  if (!match) return null;
+  return JSON.parse(match[1]);
+}
+
+// 只校验真正部署的 wrangler.toml:wrangler.toml.example 里 PROVIDERS 和
+// AI_PROVIDER_MAX_ATTEMPTS 都是注释掉的模板,没有可校验的实际值。
+const DEPLOYED = new URL("./wrangler.toml", import.meta.url);
+
+test("wrangler.toml: AI_PROVIDER_MAX_ATTEMPTS is explicitly configured", () => {
+  const vars = readVars(DEPLOYED);
+
+  assert.ok(
+    vars.AI_PROVIDER_MAX_ATTEMPTS !== undefined,
+    "不显式配置时 resolveMaxAttempts 返回 undefined → 尝试全部候选。"
+      + "新增第三个 provider 会让 Worker 最坏耗时静默增长,而 iOS 端的 apiTimeout 不会跟着变,"
+      + "客户端会在 Worker 还在 failover 时断线,并把这次放弃当成一次服务故障喂给自己的熔断器"
+  );
+  const value = Number(vars.AI_PROVIDER_MAX_ATTEMPTS);
+  assert.ok(Number.isInteger(value) && value > 0, `AI_PROVIDER_MAX_ATTEMPTS="${vars.AI_PROVIDER_MAX_ATTEMPTS}" 不是正整数`);
+});
+
+test("wrangler.toml: provider failover worst case fits inside the iOS client timeout budget", () => {
+  const text = readFileSync(DEPLOYED, "utf8");
+  const vars = parseVars(text);
+  const providers = parseProviders(text);
+
+  assert.ok(providers?.length, "PROVIDERS 解析失败");
+
+  const maxAttempts = Math.min(Number(vars.AI_PROVIDER_MAX_ATTEMPTS), providers.length);
+  // timeoutMs 选填,worker 侧默认 15_000。
+  const maxTimeoutSeconds = Math.max(...providers.map((p) => Number(p.timeoutMs) || 15000)) / 1000;
+  // executeWithFailover 串行走候选:前 (maxAttempts - 1) 个各自耗满 timeout 才轮到最后一个。
+  const worstCase = (maxAttempts - 1) * maxTimeoutSeconds + TAIL_ALLOWANCE_SECONDS;
+
+  assert.ok(
+    worstCase <= IOS_API_TIMEOUT_SECONDS,
+    `Worker 最坏 failover 耗时 ${worstCase}s 超过 iOS apiTimeout ${IOS_API_TIMEOUT_SECONDS}s。`
+      + "失配会产生最隐蔽的一种失效:provider 1 挂满 timeout、Worker 正切到 provider 2 且注定"
+      + "会成功,而客户端已经放弃并把 .apiTimeout 当成一次服务故障喂进熔断器 —— "
+      + "用户看到降级,服务端日志里却是一次成功的 failover。"
+      + "要么调小 timeoutMs / AI_PROVIDER_MAX_ATTEMPTS,要么同步调大 Protocols/Constants.swift 的 apiTimeout"
+  );
+});
+
 // MARK: - 解析器自身的回归测试
 
 test("parseVars keeps vars that follow a ''' multiline block", () => {

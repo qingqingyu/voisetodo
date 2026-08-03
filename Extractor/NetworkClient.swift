@@ -356,15 +356,28 @@ final class NetworkClient {
         return seconds
     }
 
-    /// 将 URLError 映射为 VoiceTodoError
-    private func mapURLError(_ error: URLError) -> VoiceTodoError {
+    /// 将 URLError 映射为调用方能分类的 Error。
+    ///
+    /// `.cancelled` 单独抽出来映射成 Swift 原生 `CancellationError`，**不是** VoiceTodoError：
+    /// 取消由用户发起（关掉确认弹层 / 开始新一次录音 / 确认成功后主动收流），不是服务故障。
+    /// 旧代码让它落进 `default:` → `.networkUnavailable` → `countsAsServiceFailure` 为 true
+    /// → 喂进熔断器。三次划走弹层就能把远端 AI 静默熔断掉，这是「远端服务间歇性不生效」
+    /// 的客户端主因。
+    ///
+    /// 用 `CancellationError` 而不是新增 VoiceTodoError case，是为了让所有
+    /// `error as? VoiceTodoError` 的分支自然不匹配——不需要新增本地化文案
+    /// （一条永远不该展示给用户的文案），也不会漏改某个 switch。
+    /// 注意 `stageForURLError` 早就把 `.cancelled` 记成 `stage=cancelled`，日志和错误分类现在一致了。
+    private func mapURLError(_ error: URLError) -> Error {
         switch error.code {
+        case .cancelled:
+            return CancellationError()
         case .notConnectedToInternet, .networkConnectionLost:
-            return .networkUnavailable
+            return VoiceTodoError.networkUnavailable
         case .timedOut:
-            return .apiTimeout
+            return VoiceTodoError.apiTimeout
         default:
-            return .networkUnavailable
+            return VoiceTodoError.networkUnavailable
         }
     }
 

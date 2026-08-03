@@ -225,6 +225,13 @@ final class PendingRecoveryFlow {
             VoiceTodoLog.coordinator.info("coordinator.pending_item.success id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) todos=\(result.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return PendingProcessResult(index: index, id: id, todos: localizedTodos, rawTranscript: transcript, succeeded: true, error: nil)
         } catch {
+            // 取消不是失败:error 传 nil,让 failedPendingRecoveries 的 compactMap 直接丢掉它,
+            // 不弹「解析失败」toast。pending 条目本身不会被删(succeeded = false),
+            // 下次回到前台自然重试。
+            if error is CancellationError || Task.isCancelled {
+                VoiceTodoLog.coordinator.info("coordinator.pending_item.cancelled id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                return PendingProcessResult(index: index, id: id, todos: [], rawTranscript: transcript, succeeded: false, error: nil)
+            }
             VoiceTodoLog.coordinator.error("coordinator.pending_item.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) index=\(index) pendingID=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return PendingProcessResult(
                 index: index,

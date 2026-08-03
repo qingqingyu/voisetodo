@@ -134,6 +134,54 @@ final class TranscriptProcessingFlowTests: XCTestCase {
         XCTAssertEqual(store.rawTranscripts, ["offline note"])
     }
 
+    /// 取消不是失败：不发事件，也**绝不能**离线兜底。
+    ///
+    /// 旧链路里取消经 `mapURLError` 的 `default:` 变成 `.networkUnavailable`，落到
+    /// `.networkUnavailable` 分支走 saveOffline —— 用户主动取消却在库里多出一条 pending 转写，
+    /// 下次回到前台被 PendingRecoveryFlow 认领、再扣一次配额。
+    /// 本测试的 extractor 是同步 yield 的，`Task.isCancelled` 为 false，
+    /// 因此它精确地钉住按错误类型的判断分支，而不是 Task.isCancelled 兜底。
+    func testProcessCancellationEmitsNothingAndSavesNothing() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = CancellationError()
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "user cancelled this", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), [], "取消不该产生任何事件")
+        XCTAssertTrue(store.rawTranscripts.isEmpty, "取消不该留下 pending 转写")
+    }
+
+    /// 取消发生在已收到 partial 之后：不得被 partial fallback 重新提升成 success，
+    /// 否则用户刚关掉的确认弹层会被重新填满。
+    func testProcessCancellationAfterPartialDoesNotEmitSuccess() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(todos: [ExtractedTodo(title: "买牛奶")], ignored: "")
+        ]
+        extractor.streamingError = CancellationError()
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "cancel after partial", locale: Locale(identifier: "zh-Hans"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertFalse(events.map(\.name).contains("success"), "取消后不该再补一个 success")
+        XCTAssertTrue(store.rawTranscripts.isEmpty, "取消不该留下 pending 转写")
+    }
+
     private func collectEvents(from stream: AsyncStream<TranscriptFlowEvent>) async -> [ObservedTranscriptEvent] {
         var events: [ObservedTranscriptEvent] = []
         for await event in stream {

@@ -111,6 +111,28 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
     attempt.durationMs = Date.now() - attempt.startedAt;
 
     if (responseError) {
+      // 客户端断连:上游 fetch 是被 request.signal abort 掉的,不是 provider 故障。
+      // 旧行为在这里做了两件错事 —— 给当前 provider 记一次 health failure,然后 failover
+      // 到下一个 provider(它同样立刻被 abort,再记一次)。一次「用户划走弹层」= 两个
+      // provider 各记一次假故障,threshold=5 时三次取消就能把两个 provider 全部熔断,
+      // pickCandidates 返回空 → 503。这是「远端服务间歇性不生效」的服务端主因。
+      //
+      // 判据用 options.abortSignal.aborted 而不是 error.name === "AbortError":
+      // mergeSignals 把客户端信号和 AbortSignal.timeout(timeoutMs) 合并后传给上游,
+      // 两者冒出来的 error.name 在不同 runtime 下并不稳定(AbortError / TimeoutError),
+      // 而 abortSignal.aborted 是对「客户端是否已经走了」的直接读数。
+      if (options.abortSignal?.aborted) {
+        logInfo("proxy.client.disconnected", {
+          ...requestContext,
+          providerId: provider.id,
+          attempt: attempt.attempt,
+          phase: "pre_response",
+          elapsedMs: attempt.durationMs
+        });
+        // 499 = nginx 惯例「客户端主动断开」。没人在听这个响应,但它让
+        // proxy.request.finished 记成 499 而不是 503,错误看板不再把用户取消算成故障。
+        throw new ProxyHTTPError(499, "Client disconnected", { errorType: "client_disconnected" });
+      }
       const errorType = classifyFetchError(responseError);
       const classification = adapter.isRetryable({ status: null, bodyText: "", errorType });
       attempt.errorType = classification.errorType;

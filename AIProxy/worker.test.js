@@ -4312,3 +4312,259 @@ test("handleScheduled: providers 配置失败时不抛(只 log)", async () => {
   await handleScheduled(env, fetchImpl);
   assert.equal(called, false);
 });
+
+// MARK: - 客户端断连 ≠ provider 故障
+//
+// 本组测试守着「远端服务间歇性不生效」的服务端根因:用户划走确认弹层 / 开始新一次录音
+// 会 abort request.signal,进而 abort 上游 fetch。旧代码把它当成 provider 故障记进
+// HealthStore,攒够 threshold 就把 provider 摘掉;两个 provider 都被摘掉时
+// pickCandidates 返回空 → 503,而熔断状态持久化在 KV,只能等冷却(最长 5 分钟)自行到期。
+
+/// 构造一个「读到一半客户端就断开」的上游 SSE 流。
+/// emitFirstChunk = false 时模拟「响应头 200 但一个字都没推出去就断」。
+function clientAbortingSSEStreamResponse(abortController, { emitFirstChunk = true } = {}) {
+  const encoder = new TextEncoder();
+  let sentFirstChunk = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (emitFirstChunk && !sentFirstChunk) {
+        sentFirstChunk = true;
+        controller.enqueue(encoder.encode(
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: "{\"todos\":[" } })}\n\n`
+        ));
+        return;
+      }
+      abortController.abort();
+      controller.error(new Error("client disconnected"));
+    }
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" }
+  });
+}
+
+function requestWithSignal(body, headers, signal) {
+  return new Request("https://proxy.test/v1/todo-extractions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+    signal
+  });
+}
+
+function healthRecord(kv, providerId) {
+  const raw = kv.values.get(`health:${providerId}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+test("client disconnect mid-stream does not record a provider health failure", async () => {
+  const healthKv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  const env = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "anthropic-key",
+    AI_PROVIDER_STATE_KV: healthKv
+  };
+
+  const response = await handleRequest(
+    requestWithSignal(
+      { transcript: "今天复习", locale: "zh-Hans", stream: true },
+      { "X-App-Token": "token", "X-Device-ID": "dev-abort-1" },
+      abortController.signal
+    ),
+    env,
+    {},
+    async () => clientAbortingSSEStreamResponse(abortController)
+  );
+
+  assert.equal(response.status, 200);
+  await assert.rejects(() => response.text());
+
+  // 直接断言 KV:失败写是 force 的,只要 recordFailure 被调过就一定留痕。
+  assert.equal(
+    healthRecord(healthKv, "ANTHROPIC_LEGACY"),
+    null,
+    "客户端断连不该给 provider 记任何健康失败"
+  );
+});
+
+test("genuine mid-stream provider error still records a failure when the client is connected", async () => {
+  const healthKv = new MemoryKV(new Map());
+  const env = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "anthropic-key",
+    AI_PROVIDER_STATE_KV: healthKv
+  };
+
+  const response = await handleRequest(
+    request(
+      { transcript: "今天复习", locale: "zh-Hans", stream: true },
+      { "X-App-Token": "token", "X-Device-ID": "dev-abort-2" }
+    ),
+    env,
+    {},
+    async () => erroringSSEStreamResponse()
+  );
+
+  await assert.rejects(() => response.text());
+
+  const record = healthRecord(healthKv, "ANTHROPIC_LEGACY");
+  assert.ok(record, "真实上游中断仍必须记故障 —— 别把断连判据放得太宽");
+  assert.equal(record.consecutiveFailures, 1);
+});
+
+test("client disconnect before the first upstream byte does not fail over to the next provider", async () => {
+  const healthKv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  const calls = [];
+  const env = providersEnv(
+    [
+      {
+        id: "PRIMARY",
+        type: "anthropic",
+        url: "https://a.example/v1/messages",
+        model: "m-a",
+        priority: 1,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_A"
+      },
+      {
+        id: "SECONDARY",
+        type: "anthropic",
+        url: "https://b.example/v1/messages",
+        model: "m-b",
+        priority: 2,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_B"
+      }
+    ],
+    { KEY_A: "key-a", KEY_B: "key-b" },
+    { AI_PROVIDER_STATE_KV: healthKv }
+  );
+
+  const response = await handleRequest(
+    requestWithSignal(
+      { transcript: "今天复习", locale: "zh-Hans", stream: true },
+      { "X-App-Token": "token", "X-Device-ID": "dev-abort-3" },
+      abortController.signal
+    ),
+    env,
+    {},
+    async (url) => {
+      calls.push(url);
+      abortController.abort();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    }
+  );
+
+  // 旧行为:PRIMARY 记一次假故障 → failover 到 SECONDARY → 同样立刻被 abort → 再记一次。
+  // 一次取消 = 两个 provider 各一次假故障。
+  assert.equal(calls.length, 1, "客户端已经走了,不该再打下一个 provider 白烧 token");
+  assert.equal(healthRecord(healthKv, "PRIMARY"), null);
+  assert.equal(healthRecord(healthKv, "SECONDARY"), null);
+  assert.equal(response.status, 499, "客户端断连应记 499 而非 503,别让错误看板把取消算成故障");
+});
+
+test("client disconnect refunds device quota when nothing was emitted", async () => {
+  const kv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    const response = await handleRequest(
+      requestWithSignal(
+        { transcript: "今天复习", locale: "zh-Hans", stream: true },
+        { "X-App-Token": "token", "X-Device-ID": "dev-abort-4", "X-Local-Date": "2026-05-26" },
+        abortController.signal
+      ),
+      env,
+      {},
+      async () => clientAbortingSSEStreamResponse(abortController, { emitFirstChunk: false })
+    );
+
+    await assert.rejects(() => response.text());
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey);
+    assert.equal(
+      kv.values.get(quotaKey),
+      "0",
+      "上线后免费档每天只有 2 次,划走两次弹层就烧光额度 —— 那同样是一种「不生效」"
+    );
+  });
+});
+
+test("client disconnect after partial output does NOT refund device quota", async () => {
+  const kv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv
+    };
+    const response = await handleRequest(
+      requestWithSignal(
+        { transcript: "今天复习", locale: "zh-Hans", stream: true },
+        { "X-App-Token": "token", "X-Device-ID": "dev-abort-5", "X-Local-Date": "2026-05-26" },
+        abortController.signal
+      ),
+      env,
+      {},
+      async () => clientAbortingSSEStreamResponse(abortController, { emitFirstChunk: true })
+    );
+
+    await assert.rejects(() => response.text());
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "1", "已经推出内容就不退款,否则等于按需白嫖额度");
+  });
+});
+
+test("admin providers endpoint exposes live circuit state", async () => {
+  const healthKv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      {
+        id: "PRIMARY",
+        type: "anthropic",
+        url: "https://a.example/v1/messages",
+        model: "m-a",
+        priority: 1,
+        weight: 10,
+        enabled: true,
+        secretName: "KEY_A"
+      }
+    ],
+    { KEY_A: "key-a" },
+    { ADMIN_TOKEN: "admin-token", AI_PROVIDER_STATE_KV: healthKv }
+  );
+
+  const response = await handleRequest(
+    new Request("https://proxy.test/v1/admin/providers", {
+      method: "GET",
+      headers: { "X-Admin-Token": "admin-token" }
+    }),
+    env,
+    {},
+    async () => jsonResponse({})
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  // 「远端 AI 现在到底通不通」应该一条 curl 就能回答,不必靠重启 Worker 碰运气。
+  assert.equal(data.providers[0].health.state, "closed");
+  assert.equal(data.providers[0].health.consecutiveFailures, 0);
+});
