@@ -293,14 +293,16 @@ struct TodoItemRowWithDelete: View {
             expandedTodoID: $expandedTodoID,
             isStreaming: isStreaming,
             onDelete: {
+                // 不用 withAnimation 包裹 expandedTodoID / todos 变化:
+                // ConfirmGroupedList 已挂 `.animation(springSlow, value: todos.count)`
+                // 独占驱动列表动画;此处再嵌套 withAnimation(.easeOut) 会让两套动画系统
+                // 与 ForEach row 的 .transition(.asymmetric) 三方冲突,SwiftUI 在父级
+                // if/else 切换 + 子 transition 未完成时可能保留幽灵副本拦截 hit-test,
+                // 表现为「删空后所有按钮按不动」(详见 ConfirmSheetView.mainContent 注释)。
                 if expandedTodoID == todo.id {
-                    withAnimation(WarmAnimation.springStandard) {
-                        expandedTodoID = nil
-                    }
+                    expandedTodoID = nil
                 }
-                withAnimation(.easeOut(duration: UIConfig.deleteAnimationDuration)) {
-                    todos.removeAll { $0.id == todo.id }
-                }
+                todos.removeAll { $0.id == todo.id }
             },
             onStreamingTap: onStreamingTap
         )

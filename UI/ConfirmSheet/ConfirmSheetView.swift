@@ -209,11 +209,14 @@ struct ConfirmSheetView: View {
 
                     if !todos.isEmpty {
                         ConfirmGroupedList(todos: $todos, expandedTodoID: $expandedTodoID, isStreaming: isStreaming, onStreamingTap: handleStreamingTap)
+                            .transition(.opacity)
                     } else if isStreaming {
                         StreamingFooter()
                             .padding(.top, WarmSpacing.md)
+                            .transition(.opacity)
                     } else {
                         inlineEmptyState
+                            .transition(.opacity)
                     }
 
                     // 自动滚动锚点:流式新增 todo 时 scrollTo 这里,让最新条目可见。
