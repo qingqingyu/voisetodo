@@ -47,27 +47,31 @@ struct TodoCategoryGrid: View {
             }
         } label: {
             Text(category.displayName)
-                .font(WarmFont.body(14))
+                // .system 而非 WarmFont(Avenir Next 无中文字形,中文回退苹方造成混排基线不一致)。
+                // 编辑面板以中文为主,统一走 iOS 系统字体让中文走苹方、英文数字走系统匹配。
+                .font(.system(size: 14, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, WarmSpacing.sm)
                 .padding(.vertical, WarmSpacing.xs)
-                .foregroundColor(isSelected ? WarmTheme.primary : WarmTheme.textSecondary)
-                // 选中态形态:浅橙底 + 橙色描边(background + overlay 配对实现)。
-                // 与时间 segmented 的"实心浅橙"区分(chips = 浅橙+描边;segmented = 浅橙无描边)。
-                // overlay 用 if 而非 lineWidth: 0 —— 后者在高 DPI 仍会画极细子像素线。
+                // 选中字色用 primaryText 而非 primary:后者 #FF8A6B 在白底对比度偏低,
+                // primaryText #C44F35 是为浅底文字专门调的深橙。
+                .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
+                // 选中态:浅橙底 + 深橙描边;未选态:无填充 + 浅墨描边。
+                // 历史:原未选用 subtleControlBackground 灰填充,在白卡上对比度低又显浑
+                // (用户反馈"脏")→ 改成透明底 + 1pt sketch 描边,跟白卡背景几乎融合,
+                // 仅靠描边线框勾形状,视觉密度立刻降一档。
                 .background(
-                    // 未选态用 subtleControlBackground(米灰)与优先级未选一致;
-                    // 不用 secondaryBackground(light=白),否则未选 chip 消失在 cardBackground 里。
-                    RoundedRectangle(cornerRadius: WarmRadius.card)
-                        .fill(isSelected ? WarmTheme.primary.opacity(0.15) : WarmTheme.subtleControlBackground)
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
+                        .fill(isSelected ? WarmTheme.primary.opacity(0.12) : Color.clear)
                 )
                 .overlay {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: WarmRadius.card)
-                            .strokeBorder(WarmTheme.primary, lineWidth: 1)
-                    }
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
+                        .strokeBorder(
+                            isSelected ? WarmTheme.primaryText : WarmTheme.sketch.opacity(0.4),
+                            lineWidth: 1
+                        )
                 }
         }
         .buttonStyle(.plain)
@@ -79,8 +83,15 @@ struct TodoCategoryGrid: View {
 /// 优先级三档选择器(HStack:低/普通/高)。
 ///
 /// 从 `TodoDetailView.priorityButton` + `priorityButtonBackground` + body 的 `HStack` 抽出。
-/// 颜色语义:High 选中→实心 urgent(红)+白字;Normal 选中→实心 primary +白字;
-/// Low 选中→实心 primaryLight + textPrimary;未选中→subtleControlBackground(浅米灰)+ textMuted。
+///
+/// 视觉重设计(2026-08):去实心色块,改"浅底 + 深字 + 图标"。
+/// - High 选中:浅红底 + urgentText 深红字 + `!`
+/// - Normal 选中:浅橙底 + primaryText 深橙字 + `−`
+/// - Low 选中:浅灰底 + textSecondary 灰字 + `↓`(low 不强调,跟未选近似)
+/// - 未选:Color.clear 透明底 + sketch 浅墨描边 + textMuted
+/// 理由:实心色块(尤其红色 high)会跟主操作按钮(实心橙)抢焦点;
+/// 浅底方案让「优先级 = 状态指示」跟「主操作 = 实心橙」视觉层级分开,
+/// 而且不只靠颜色——图标(! / − / ↓)承担主要语义。
 struct TodoPriorityPicker: View {
     @Binding private var selection: Priority
     private let onEdit: () -> Void
@@ -91,7 +102,7 @@ struct TodoPriorityPicker: View {
     }
 
     var body: some View {
-        // spacing 用 sm(12):优先级是独立按钮组(各自实心填充),段间留明显缝;
+        // spacing 用 sm(12):优先级是独立按钮组(各自底色填充),段间留明显缝;
         // 区别于时间 segmented 的 xxs(4)——后者靠轨道容器统一,段本身不需要大缝。
         HStack(spacing: WarmSpacing.sm) {
             button(.low, label: String(localized: "detail.priority.low"), icon: "arrow.down")
@@ -111,7 +122,7 @@ struct TodoPriorityPicker: View {
             HStack(spacing: WarmSpacing.xs) {
                 Image(systemName: icon).font(.system(size: 14, weight: .semibold))
                 Text(label)
-                    .font(WarmFont.body(14))
+                    .font(.system(size: 14, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .layoutPriority(1)
@@ -119,33 +130,61 @@ struct TodoPriorityPicker: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, WarmSpacing.sm)
             .background(background(isSelected: isSelected, priority: priority))
-            .foregroundColor(
-                isSelected
-                    ? (priority == .low ? WarmTheme.textPrimary : .white)
-                    : WarmTheme.textMuted
+            // 描边统一在 overlay 层:未选用 sketch 浅墨(替代原灰填充,见 background 注释),
+            // 选中沿用对应深字色。low 选中跟未选描边色一致,仅靠 ↓ 图标区分(原设计意图)。
+            .overlay(
+                RoundedRectangle(cornerRadius: WarmRadius.chip)
+                    .strokeBorder(borderColor(isSelected: isSelected, priority: priority), lineWidth: 1)
             )
+            .foregroundColor(foregroundLabel(isSelected: isSelected, priority: priority))
         }
         .buttonStyle(.plain)
     }
 
+    /// 选中/未选的背景色:浅底 + 深字方案(替代原实心)。
+    /// 未选态不再用 subtleControlBackground 灰填充(在白卡上"显浑")→ 改成 Color.clear,
+    /// 描边在 button 的 overlay 层处理。low 选中保留 subtleControlBackground 浅底:
+    /// 让 low 至少有一点视觉差异(否则跟未选完全一样,反馈太弱)。
     @ViewBuilder
     private func background(isSelected: Bool, priority: Priority) -> some View {
-        let shape = RoundedRectangle(cornerRadius: WarmRadius.card)
+        let shape = RoundedRectangle(cornerRadius: WarmRadius.chip)
         if isSelected {
-            // 选中态保持实心(强状态):high=红 / normal=橙 / low=浅橙
-            // 优先级是"提交属性",用实心是合适的——与时间 segmented(浅橙)/分类 chip(描边)形态区分
             switch priority {
             case .high:
-                shape.fill(WarmTheme.urgent)
+                shape.fill(WarmTheme.urgent.opacity(0.12))
             case .normal:
-                shape.fill(WarmTheme.primary)
+                shape.fill(WarmTheme.primary.opacity(0.12))
             case .low:
-                shape.fill(WarmTheme.primaryLight)
+                shape.fill(WarmTheme.subtleControlBackground)
             }
         } else {
-            // 未选"非常轻":subtleControlBackground(浅米灰)+ textMuted 字
-            // 避免未选项像按钮组那样抢视觉重量
-            shape.fill(WarmTheme.subtleControlBackground)
+            shape.fill(Color.clear)
+        }
+    }
+
+    /// 描边色:未选 = sketch 浅墨(0.4 opacity);选中 = 同色系深字色。
+    private func borderColor(isSelected: Bool, priority: Priority) -> Color {
+        if isSelected {
+            switch priority {
+            case .high:   return WarmTheme.urgentText
+            case .normal: return WarmTheme.primaryText
+            case .low:    return WarmTheme.sketch.opacity(0.5)
+            }
+        } else {
+            return WarmTheme.sketch.opacity(0.4)
+        }
+    }
+
+    /// 选中/未选的字色:浅底配深字,提升可读对比度。
+    private func foregroundLabel(isSelected: Bool, priority: Priority) -> Color {
+        if isSelected {
+            switch priority {
+            case .high:   return WarmTheme.urgentText
+            case .normal: return WarmTheme.primaryText
+            case .low:    return WarmTheme.textSecondary
+            }
+        } else {
+            return WarmTheme.textMuted
         }
     }
 }
@@ -170,21 +209,23 @@ struct TodoTimeBucketSegmented: View {
     }
 
     var body: some View {
-        // spacing 用 xxs(4):段间留缝,让选中段的圆角(chip=8)完整呈现,
+        // spacing 用 xxs(4):段间留缝,让选中段的圆角(segmentedThumb=7)完整呈现,
         // 不被相邻未选段的 clear 背景切平成"压扁的圆角"。
         HStack(spacing: WarmSpacing.xxs) {
             ForEach(TimeBucket.chronologicalOrder, id: \.self) { bucket in
                 segment(bucket)
             }
         }
-        // segmented 轨道:浅米灰底 + 圆角。用 subtleControlBackground(light F0EDE8)
-        // 而非 secondaryBackground(=FFFFFF):后者在 light mode 与 cardBackground 同色,
-        // 轨道会"消失"。padding 用 xs(8):外圆角 card(12) - 内圆角 chip(8) = 4,
+        // segmented 轨道:无填充 + 1pt sketch 描边 + 圆角 segmentedTrack(10)。
+        // 历史:原 subtleControlBackground 灰底在白卡上"显浑"(用户反馈"脏")→ 改成
+        // 透明底 + 描边,视觉密度立刻降一档。选中段在 segment 内自带浅橙底,边界仍清晰,
+        // 轨道只需勾形状不必铺色。
+        // padding 用 xs(8):外圆角 segmentedTrack(10) - 内圆角 segmentedThumb(7) = 3,
         // padding 必须 ≥ 差值才不切角,留 8 给 anti-aliasing 缓冲。
         .padding(WarmSpacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: WarmRadius.card)
-                .fill(WarmTheme.subtleControlBackground)
+            RoundedRectangle(cornerRadius: WarmRadius.segmentedTrack)
+                .strokeBorder(WarmTheme.sketch.opacity(0.4), lineWidth: 1)
         )
     }
 
@@ -198,8 +239,9 @@ struct TodoTimeBucketSegmented: View {
             }
         } label: {
             Text(bucket.localizedTitle)
-                .font(WarmFont.body(14))
-                .foregroundColor(isSelected ? WarmTheme.primary : WarmTheme.textSecondary)
+                .font(.system(size: 14, weight: .medium))
+                // 选中用 primaryText(深橙)而非 primary:后者白底对比度偏低
+                .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
                 .lineLimit(1)
                 // 0.7 而非 0.8:en locale "Evening" 7 字符在 AX5 下 ×2~3 字号,
                 // 等宽段内 0.8 缩放仍可能溢出,放宽到 MEMORY 规则下限 0.7。
@@ -208,8 +250,8 @@ struct TodoTimeBucketSegmented: View {
                 .layoutPriority(1)
                 .padding(.vertical, WarmSpacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.chip)
-                        .fill(isSelected ? WarmTheme.primary.opacity(0.15) : Color.clear)
+                    RoundedRectangle(cornerRadius: WarmRadius.segmentedThumb)
+                        .fill(isSelected ? WarmTheme.primary.opacity(0.12) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
@@ -252,7 +294,7 @@ struct TodoDatePopoverTrigger: View {
         } label: {
             HStack(spacing: WarmSpacing.xxs) {
                 Text(todoFieldEditorDateFormatter.string(from: date ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date())))
-                    .font(WarmFont.body(16))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundColor(WarmTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -403,7 +445,7 @@ struct TodoClockTimeRow: View {
                     hasDueTime: hasDueTime
                 )
                 Text(derived.localizedTitle)
-                    .font(WarmFont.caption(12))
+                    .font(.system(size: 12))
                     .foregroundColor(WarmTheme.textMuted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -430,12 +472,15 @@ struct TodoClockTimeRow: View {
                             Image(systemName: "clock")
                                 .font(.system(size: 13))
                             Text(String(localized: "detail.add_time"))
-                                .font(WarmFont.body(15))
+                                // 14pt(比"添加日期"15pt 小一级):钟点是次要操作,
+                                // 日期是主操作 —— 字号差承担主次表达。
+                                .font(.system(size: 14, weight: .medium))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                                 .layoutPriority(1)
                         }
-                        .foregroundColor(WarmTheme.primary)
+                        // primaryText 深橙(浅底文字对比度优于直接 primary)
+                        .foregroundColor(WarmTheme.primaryText)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("DetailAddTimeButton")
