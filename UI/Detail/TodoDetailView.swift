@@ -6,17 +6,6 @@ private func formattedDetailDate(_ date: Date) -> String {
     date.formatted(.dateTime.year().month().day().hour().minute())
 }
 
-/// 「重复卡底部摘要」用的 "HH:mm" 24 小时制 formatter,跟 WarmTodoCard.timeFormatter 同款。
-/// en_US_POSIX locale 锁死格式,避免随系统语言漂移导致详情页跟首页/ConfirmSheet 不一致。
-/// file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties。
-private let detailRecurrenceSummaryTimeFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.dateFormat = "HH:mm"
-    return formatter
-}()
-
 /// 下滑关闭手势阈值(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
 /// 跟 chevron.down 按钮(ToolbarItem)等价的输入通道:从页面顶部区域下滑即 dismiss。
 private enum DismissDragConfig {
@@ -93,10 +82,6 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势用它扩展识别区域:
     /// 顶部 30% 内无视滚动状态,其他位置起手需 `isScrollViewAtTop == true` 才 dismiss。
     @State private var isScrollViewAtTop: Bool = true
-
-    /// 检测 Dynamic Type 档位。AX1+ 切到 weekday 4+3 两行布局,
-    /// 单格宽度从 ~44pt 涨到 ~89pt,容下 AX5 下撑大的 "Wed" / "周三"。
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(store: Store, todo: TodoItemData) {
         self.store = store
@@ -487,17 +472,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     }
                 }
 
-                if let recurrenceValidationMessage {
-                    Text(recurrenceValidationMessage)
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.warning)
-                } else if let recurrenceSummary {
+                if let recurrenceSummary {
                     // 重复生效后的完整语义摘要,把「起始锚点 / 周期 / 钟点」拼成一行,
                     // 让被隐藏的起始锚点(尤其 .startAnchor / .hidden 模式下)不再是黑盒。
-                    // 例:「从 7月30日 起 · 双周 周一 · 10:10」或「每天 · 15:00」。
+                    // 校验失败时(每周未选星期)也在这里显示,内嵌"这条规则不会生效"提示。
+                    // 改设计(2026-08):12pt 灰色脚注 → 14pt 主文字色,变量加粗主色。
+                    // AttributedString markdown 解析不会注入 font run 属性,
+                    // Text 上的 .font 修饰作为整体应用,styledSummary 只改 foregroundColor。
                     Text(recurrenceSummary)
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.textMuted)
+                        .font(WarmFont.body(14))
                         .accessibilityIdentifier("DetailRecurrenceSummary")
                 }
             }
@@ -548,15 +531,35 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 checkForChanges()
             }
         } label: {
-            // 同 timeBucketButton:chip 按内容宽度,同一套修饰符保证视觉一致
+            // 选中态:无描边 + 浅底 + 主色字 weight 500。
+            //  - 非默认值(每天/每周/双周/三周/每月):primary.opacity(0.11) 浅底 + primaryText 深橙字
+            //  - 默认值(「不重复」frequency==nil):subtleControlBackground 中性灰底 + textPrimary 黑字
+            //    —— 「默认值安静,改过的值才发亮」(设计规范)。
+            // 未选态:透明底 + 1px sketch 描边 + textSecondary 灰字。
+            // 圆角 WarmRadius.chipEmphasis(9pt):介于 chip(8)和 segmentedTrack(10),
+            // 选中态视觉重量略升但不超过 card。
+            //
+            // 历史:原实心 primary + 白字视觉重量过高,跟页面其他选中态(时段 segmented 浅底)
+            // 打架。改浅底方案统一设计语言。
             Text(title)
-                .font(WarmFont.caption(12))
-                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
+                .font(WarmFont.caption(12).weight(isSelected && frequency != nil ? .medium : .regular))
+                .foregroundColor(isSelected
+                    ? (frequency == nil ? WarmTheme.textPrimary : WarmTheme.primaryText)
+                    : WarmTheme.textSecondary)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, WarmSpacing.sm)
                 .padding(.vertical, WarmSpacing.xs)
-                .background(RoundedRectangle(cornerRadius: WarmRadius.card).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: WarmRadius.chipEmphasis)
+                    if isSelected {
+                        shape.fill(frequency == nil
+                            ? WarmTheme.subtleControlBackground
+                            : WarmTheme.primary.opacity(0.11))
+                    } else {
+                        shape.strokeBorder(WarmTheme.sketch.opacity(0.4), lineWidth: 1)
+                    }
+                }
         }
         .buttonStyle(.plain)
     }
@@ -570,26 +573,13 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
     }
 
-    /// weekday 7 button 的容器:默认单行 7 等分;AX 档位(AX1+)切到 4+3 两行,
-    /// 单格宽度从 ~44pt 涨到 ~89pt,容下 AX5 下撑大的 "Wed" / "周三"。
-    /// 用 `dynamicTypeSize.isAccessibilitySize` 硬切,而非 ViewThatFits ——
-    /// 后者对 `frame(maxWidth: .infinity)` 内容判断不可靠(button 永远"装得下")。
-    /// 用户审美要求:两行布局按 4+3 而不是 3+4(7/2≈3.5,4+3 视觉更对称)。
-    @ViewBuilder
+    /// weekday 7 button 的容器:强制单行 7 等分,列间距 6pt,永远不换行。
+    /// 历史:原 AX1+ 切 4+3 两行布局,但违反规范"一行七列"语义 → 删 dynamicTypeSize
+    /// 分支,统一单行。AX5 大字号下靠 weekdayButton 内的 `minimumScaleFactor(0.7)`
+    /// 允许字号缩放兜底(用户已确认接受)。
     private var weekdayGrid: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: WarmSpacing.xs) {
-                HStack(spacing: WarmSpacing.xs) {
-                    ForEach(1...4, id: \.self) { weekday in weekdayButton(weekday) }
-                }
-                HStack(spacing: WarmSpacing.xs) {
-                    ForEach(5...7, id: \.self) { weekday in weekdayButton(weekday) }
-                }
-            }
-        } else {
-            HStack(spacing: WarmSpacing.xs) {
-                ForEach(1...7, id: \.self) { weekday in weekdayButton(weekday) }
-            }
+        HStack(spacing: 6) {
+            ForEach(1...7, id: \.self) { weekday in weekdayButton(weekday) }
         }
     }
 
@@ -601,20 +591,26 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         } label: {
             Text(shortWeekdayName(weekday))
                 // caption(11) 比 Repeat chip 的 caption(12) 小一档,视觉层级清晰:
-                // Repeat 是主选择,weekday 是次级补选。两者同 textStyle(.caption2),
-                // AX5 缩放系数一致,所以 11 vs 12 的相对差距在所有档位下都保留。
-                .font(WarmFont.caption(11))
-                .foregroundColor(isSelected ? .white : WarmTheme.textSecondary)
-                // lineLimit(1) + minimumScaleFactor(0.7) 作为兜底:
-                // 默认 7 等分模式下仍可能边缘截断(窄屏 + AX 边界档位),允许 Text 缩到 70%。
-                // 两行模式(AX1+)下单格够宽,通常用不到缩放。
-                // minHeight(非 height)让字号撑高时高度跟随,7 个 button 高度自动一致。
-                // 符合 CLAUDE.md「文本布局规则」第 1 条 + feedback memory「文本截断零容忍」。
+                // Repeat 是主选择,weekday 是次级补选。
+                // 选中加 weight medium(跟 Repeat chip 选中态同步)。
+                .font(WarmFont.caption(11).weight(isSelected ? .medium : .regular))
+                .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
+                // lineLimit(1) + minimumScaleFactor(0.7):AX5 大字号下"周三"/"Wed"
+                // 单行装不下,允许缩到 70% 字号兜底,不截断(用户决策,见 weekdayGrid 注释)。
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: WarmSpacing.xxl)
-                .background(RoundedRectangle(cornerRadius: WarmRadius.chip).fill(isSelected ? WarmTheme.primary : WarmTheme.secondaryBackground))
+                // 选中态:无描边 + primary 浅底 + primaryText(跟 Repeat chip 选中态一致)。
+                // 未选态:透明底 + 1px sketch 描边。
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: WarmRadius.chip)
+                    if isSelected {
+                        shape.fill(WarmTheme.primary.opacity(0.11))
+                    } else {
+                        shape.strokeBorder(WarmTheme.sketch.opacity(0.4), lineWidth: 1)
+                    }
+                }
         }
         .buttonStyle(.plain)
     }
@@ -631,57 +627,79 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
     }
 
-    /// 重复卡底部摘要文本。把引擎的 dueDate=锚点 语义显式化,让用户看见:
-    /// - 周期(rule.displayTextWithEndDate):每天 / 双周 周一 / 三周 ...
-    /// - 钟点或模糊时段(从 editedDueDate / timeBucket 派生)
-    /// - 必要时拼「从 X 起」前缀(双周/三周锚点恒带,hidden 模式下锚点在未来才带)
+    /// 重复卡底部摘要文本(AttributedString,变量加粗主色)。
     ///
-    /// 复用 TodoTimeDisplayComposer 拼后半段 —— 它在有 rule 时会主动跳过 relativeDateText,
-    /// 正好把「起始日」的表述让给这里的 detail.recurrence.starts_from 前缀,不会重复。
-    /// 钟点串复用 WarmTodoCard 同款 "HH:mm" / en_US_POSIX formatter。
-    private var recurrenceSummary: String? {
-        guard let rule = editedRecurrenceRule else { return nil }
-        let mode = RecurrenceAnchorPolicy.dateRowMode(
-            frequency: editedRecurrenceFrequency,
-            interval: editedInterval
-        )
-
-        let clockText: String? = {
-            guard editedHasDueTime, let anchor = editedDueDate else { return nil }
-            return detailRecurrenceSummaryTimeFormatter.string(from: anchor)
-        }()
-        let bucketText: String? = clockText == nil ? derivedTimeBucketTextForSummary : nil
-        guard let tail = TodoTimeDisplayComposer.compose(
-            recurrenceRule: rule,
-            relativeDateText: nil,
-            timeText: clockText,
-            dueHint: nil,
-            timeBucketText: bucketText
-        ) else { return nil }
-
-        let showsPrefix = RecurrenceAnchorPolicy.showsAnchorPrefix(
-            mode: mode,
-            anchor: editedDueDate,
-            now: Date(),
-            calendar: .current
-        )
-        guard showsPrefix, let anchor = editedDueDate else {
-            return tail
+    /// 视觉重设计(2026-08):从 12pt 灰色脚注升级到 14pt 主文字色 + 变量加粗主色。
+    /// 句式按 frequency 变(不套模板),让用户真的知道自己设了什么。
+    /// 校验失败(.weekly interval=1 + 无 weekdays)也在这里显示,不再用独立 Text。
+    ///
+    /// 模板用 markdown `**...**` 标记加粗段,`styledSummary` 解析后扫 run 把
+    /// stronglyEmphasized 部分上色为 primaryText(加粗由 markdown 解析的
+    /// inlinePresentationIntent 自然携带,不需要 styledSummary 复设 font weight)。
+    ///
+    /// 句式:
+    /// - nil(不重复):  只在 **{date}** 这一天
+    /// - .daily:        从 **{date}** 起,**每天**
+    /// - .monthly:      从 **{date}** 起,**每月 {N} 号**
+    /// - .weekly:       从 **{date}** 起,每 {周期词} **{周一、周二}**
+    /// - .weekly(校验失败): 还没选星期,**这条规则不会生效**
+    private var recurrenceSummary: AttributedString? {
+        // 校验失败优先(.weekly interval=1 + 无 weekdays)——
+        // 不静默:让用户看到"这条规则不会生效",承担行内校验职责。
+        if editedRecurrenceFrequency == .weekly,
+           editedInterval == 1,
+           editedWeekdays.isEmpty {
+            return styledSummary(String(localized: "recurrence.summary.invalid"))
         }
-        let formatted = TodoRelativeDateFormatter.format(anchor)
-        return String(format: String(localized: "recurrence.starts_from"), formatted) + " · " + tail
+
+        guard let anchor = editedDueDate else { return nil }
+        let dateText = TodoRelativeDateFormatter.format(anchor)
+
+        let raw: String
+        switch editedRecurrenceFrequency {
+        case nil:
+            raw = String(format: String(localized: "recurrence.summary.none"), dateText)
+        case .daily:
+            raw = String(format: String(localized: "recurrence.summary.daily"), dateText)
+        case .monthly:
+            raw = String(format: String(localized: "recurrence.summary.monthly"),
+                         dateText,
+                         editedDayOfMonth)
+        case .weekly:
+            let intervalWord: String
+            switch editedInterval {
+            case 2:  intervalWord = String(localized: "recurrence.summary.weekly_interval_bi")
+            case 3:  intervalWord = String(localized: "recurrence.summary.weekly_interval_tri")
+            default: intervalWord = String(localized: "recurrence.summary.weekly_interval_single")
+            }
+            let weekdaysText = editedWeekdays
+                .sorted()
+                .map { shortWeekdayName($0) }
+                .joined(separator: String(localized: "recurrence.summary.weekday_separator"))
+            raw = String(format: String(localized: "recurrence.summary.weekly"),
+                         dateText, intervalWord, weekdaysText)
+        }
+        return styledSummary(raw)
     }
 
-    /// summary 专用:无钟点时取派生/手动 TimeBucket 的本地化文案。
-    /// 跟 WarmTodoCard.timeBucketText 同语义,但不接受外部开关 —— 摘要恒走这条路径。
-    private var derivedTimeBucketTextForSummary: String? {
-        guard !editedHasDueTime else { return nil }
-        let bucket = TimeBucketResolver.effective(
-            explicitBucket: editedTimeBucket,
-            dueDate: editedDueDate,
-            hasDueTime: editedHasDueTime
-        )
-        return bucket == .anytime ? nil : bucket.localizedTitle
+    /// 把带 markdown `**...**` 标记的本地化字符串解析成 AttributedString,
+    /// 扫描 stronglyEmphasized run 上色为 primaryText(规范:变量加粗主色)。
+    /// 加粗由 markdown 解析的 inlinePresentationIntent 自然带;字号由 Text 上的
+    /// `.font(WarmFont.body(14))` 统一设置,不在这里复设(避免 AttributedString 内部
+    /// font 属性覆盖 Text 修饰)。
+    /// markdown 解析失败时降级为普通 AttributedString(保持文本可见,不静默吞)。
+    private func styledSummary(_ raw: String) -> AttributedString {
+        var parsed: AttributedString
+        do {
+            parsed = try AttributedString(markdown: raw)
+        } catch {
+            parsed = AttributedString(raw)
+        }
+        for run in parsed.runs {
+            let isBold = run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+            parsed[run.range].foregroundColor = isBold ? WarmTheme.primaryText : WarmTheme.textPrimary
+        }
+        return parsed
     }
 
     private var editedRecurrenceRule: RecurrenceRule? {
