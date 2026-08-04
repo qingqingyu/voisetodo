@@ -69,6 +69,28 @@
         }
       }
     },
+    "a11y.clear_inferred_date" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear inferred date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推測日付を削除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除推断日期"
+          }
+        }
+      }
+    },
     "a11y.completed" : {
       "localizations" : {
         "en" : {
@@ -1092,6 +1114,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分类"
+          }
+        }
+      }
+    },
+    "confirm.editor.inferred" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inferred"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推測"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推断"
           }
         }
       }
