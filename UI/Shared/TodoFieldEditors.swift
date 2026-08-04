@@ -58,20 +58,20 @@ struct TodoCategoryGrid: View {
                 // 选中字色用 primaryText 而非 primary:后者 #FF8A6B 在白底对比度偏低,
                 // primaryText #C44F35 是为浅底文字专门调的深橙。
                 .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
-                // 选中态形态:浅橙底 + 橙色描边(background + overlay 配对实现)。
-                // 与时间 segmented 的"实心浅橙"区分(chips = 浅橙+描边;segmented = 浅橙无描边)。
-                // overlay 用 if 而非 lineWidth: 0 —— 后者在高 DPI 仍会画极细子像素线。
+                // 选中态:浅橙底 + 深橙描边;未选态:无填充 + 浅墨描边。
+                // 历史:原未选用 subtleControlBackground 灰填充,在白卡上对比度低又显浑
+                // (用户反馈"脏")→ 改成透明底 + 1pt sketch 描边,跟白卡背景几乎融合,
+                // 仅靠描边线框勾形状,视觉密度立刻降一档。
                 .background(
-                    // 未选态用 subtleControlBackground(中性冷灰)与优先级未选一致;
-                    // 不用 secondaryBackground(light=白),否则未选 chip 消失在 cardBackground 里。
                     RoundedRectangle(cornerRadius: WarmRadius.chip)
-                        .fill(isSelected ? WarmTheme.primary.opacity(0.12) : WarmTheme.subtleControlBackground)
+                        .fill(isSelected ? WarmTheme.primary.opacity(0.12) : Color.clear)
                 )
                 .overlay {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: WarmRadius.chip)
-                            .strokeBorder(WarmTheme.primaryText, lineWidth: 1)
-                    }
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
+                        .strokeBorder(
+                            isSelected ? WarmTheme.primaryText : WarmTheme.sketch.opacity(0.4),
+                            lineWidth: 1
+                        )
                 }
         }
         .buttonStyle(.plain)
@@ -88,7 +88,7 @@ struct TodoCategoryGrid: View {
 /// - High 选中:浅红底 + urgentText 深红字 + `!`
 /// - Normal 选中:浅橙底 + primaryText 深橙字 + `−`
 /// - Low 选中:浅灰底 + textSecondary 灰字 + `↓`(low 不强调,跟未选近似)
-/// - 未选:subtleControlBackground + textMuted
+/// - 未选:Color.clear 透明底 + sketch 浅墨描边 + textMuted
 /// 理由:实心色块(尤其红色 high)会跟主操作按钮(实心橙)抢焦点;
 /// 浅底方案让「优先级 = 状态指示」跟「主操作 = 实心橙」视觉层级分开,
 /// 而且不只靠颜色——图标(! / − / ↓)承担主要语义。
@@ -130,12 +130,21 @@ struct TodoPriorityPicker: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, WarmSpacing.sm)
             .background(background(isSelected: isSelected, priority: priority))
+            // 描边统一在 overlay 层:未选用 sketch 浅墨(替代原灰填充,见 background 注释),
+            // 选中沿用对应深字色。low 选中跟未选描边色一致,仅靠 ↓ 图标区分(原设计意图)。
+            .overlay(
+                RoundedRectangle(cornerRadius: WarmRadius.chip)
+                    .strokeBorder(borderColor(isSelected: isSelected, priority: priority), lineWidth: 1)
+            )
             .foregroundColor(foregroundLabel(isSelected: isSelected, priority: priority))
         }
         .buttonStyle(.plain)
     }
 
     /// 选中/未选的背景色:浅底 + 深字方案(替代原实心)。
+    /// 未选态不再用 subtleControlBackground 灰填充(在白卡上"显浑")→ 改成 Color.clear,
+    /// 描边在 button 的 overlay 层处理。low 选中保留 subtleControlBackground 浅底:
+    /// 让 low 至少有一点视觉差异(否则跟未选完全一样,反馈太弱)。
     @ViewBuilder
     private func background(isSelected: Bool, priority: Priority) -> some View {
         let shape = RoundedRectangle(cornerRadius: WarmRadius.chip)
@@ -146,11 +155,23 @@ struct TodoPriorityPicker: View {
             case .normal:
                 shape.fill(WarmTheme.primary.opacity(0.12))
             case .low:
-                // low 不强调:用 subtleControlBackground 跟未选近似,仅靠图标 ↓ 区分
                 shape.fill(WarmTheme.subtleControlBackground)
             }
         } else {
-            shape.fill(WarmTheme.subtleControlBackground)
+            shape.fill(Color.clear)
+        }
+    }
+
+    /// 描边色:未选 = sketch 浅墨(0.4 opacity);选中 = 同色系深字色。
+    private func borderColor(isSelected: Bool, priority: Priority) -> Color {
+        if isSelected {
+            switch priority {
+            case .high:   return WarmTheme.urgentText
+            case .normal: return WarmTheme.primaryText
+            case .low:    return WarmTheme.sketch.opacity(0.5)
+            }
+        } else {
+            return WarmTheme.sketch.opacity(0.4)
         }
     }
 
@@ -195,15 +216,16 @@ struct TodoTimeBucketSegmented: View {
                 segment(bucket)
             }
         }
-        // segmented 轨道:中性冷灰底 + 圆角 segmentedTrack(10)。
-        // 用 subtleControlBackground 而非 secondaryBackground(=FFFFFF):
-        // 后者在 light mode 与 cardBackground 同色,轨道会"消失"。
+        // segmented 轨道:无填充 + 1pt sketch 描边 + 圆角 segmentedTrack(10)。
+        // 历史:原 subtleControlBackground 灰底在白卡上"显浑"(用户反馈"脏")→ 改成
+        // 透明底 + 描边,视觉密度立刻降一档。选中段在 segment 内自带浅橙底,边界仍清晰,
+        // 轨道只需勾形状不必铺色。
         // padding 用 xs(8):外圆角 segmentedTrack(10) - 内圆角 segmentedThumb(7) = 3,
         // padding 必须 ≥ 差值才不切角,留 8 给 anti-aliasing 缓冲。
         .padding(WarmSpacing.xs)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.segmentedTrack)
-                .fill(WarmTheme.subtleControlBackground)
+                .strokeBorder(WarmTheme.sketch.opacity(0.4), lineWidth: 1)
         )
     }
 
