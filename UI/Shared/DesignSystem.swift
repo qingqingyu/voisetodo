@@ -121,6 +121,7 @@ enum WarmSpacing {
 enum WarmRadius {
     static let segmentedThumb: CGFloat = 7   // segmented 选中滑块(比 chip 小一级,呼应外圆角)
     static let chip: CGFloat = 8             // 小标签、徽标、分类 chip、优先级选项
+    static let chipEmphasis: CGFloat = 9     // 详情页频率选项 chip(介于 chip 和 segmentedTrack 之间,选中态视觉重量略升)
     static let segmentedTrack: CGFloat = 10  // segmented 外容器(比 card 小一级,层级清晰)
     static let card: CGFloat = 12            // 卡片
     static let section: CGFloat = 16         // 区块容器
