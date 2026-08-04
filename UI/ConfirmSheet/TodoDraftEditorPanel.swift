@@ -122,9 +122,22 @@ struct TodoDraftEditorPanel: View {
 
     // MARK: - 日期行
 
+    /// 日期行三态:
+    /// 1. `todo.dueDate != nil`(用户已确认 / AI 直接给了 ISO 日期) → 显示日期 popover + ✕
+    /// 2. `todo.dueDate == nil` 但 dueHint 可解析 → 显示「AI 推断」日期 + ✕(清推断)
+    /// 3. 全空 → 「添加日期」按钮
+    ///
+    /// 路径 2 解决的 bug:AI 经常只返回 `due_hint="下周三"` 不给 ISO `due_date`,
+    /// `TodoItemRow` 列表卡片用 dueHint 兜底显示"下周三"(看似对),
+    /// 但编辑面板原判断 `todo.dueDate != nil` 走路径 3 → 显示「添加日期」(看似空)。
+    /// 用户点 Add 后,`TodoItem.from` 才用 `TodoDueDateResolver.resolve` 把 dueHint
+    /// 换算成 Date → 写入日历正确 → 用户困惑「列表对、面板空、日历又对」。
+    /// 路径 2 让面板跟列表/最终落库一致:展示换算后的日期,标注「AI 推断」让用户知道
+    /// 这是 AI 算的、可以改/可以否。
     @ViewBuilder
     private var dateRow: some View {
         if todo.dueDate != nil {
+            // 路径 1:已确认日期
             HStack {
                 TodoDatePopoverTrigger(date: dateRowDate, onEdit: { })
                 Spacer()
@@ -138,7 +151,36 @@ struct TodoDraftEditorPanel: View {
                 }
                 .buttonStyle(.plain)
             }
+        } else if inferredDueDate != nil {
+            // 路径 2:dueDate=nil 但 dueHint 可解析 → 显示「AI 推断」日期
+            HStack(spacing: WarmSpacing.xs) {
+                TodoDatePopoverTrigger(date: inferredDateBinding, onEdit: { })
+                // 「AI 推断」徽标:跟紧急徽标同档(12pt regular),色用 textMuted
+                // (派生信息层,跟 sectionHeader / ℹ 提示一致),不抢主操作焦点。
+                Text(String(localized: "confirm.editor.inferred"))
+                    .font(.system(size: 12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, WarmSpacing.xs)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(WarmTheme.subtleControlBackground)
+                    )
+                Spacer()
+                // ✕ 清 dueHint(让推断的源头消失),dueDate 仍保持 nil
+                Button {
+                    todo.dueHint = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(WarmTheme.textMuted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "a11y.clear_inferred_date"))
+            }
         } else {
+            // 路径 3:无日期无 dueHint → 「添加日期」
             Button {
                 todo.dueDate = DayClock.startOfUserDay(for: Date())
                 todo.dueDateUserEdited = true
@@ -159,6 +201,32 @@ struct TodoDraftEditorPanel: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    /// 当 dueDate=nil 但 dueHint 可解析时,实时换算出的日期(只读展示用)。
+    /// 不写入 todo.dueDate —— 避免污染 ExtractedTodo 状态(用户没改也算他改了)。
+    /// 用户在 popover 里选日期时,setter 才把值真正落到 todo.dueDate。
+    private var inferredDueDate: Date? {
+        guard todo.dueDate == nil,
+              let hint = todo.dueHint, !hint.isEmpty else { return nil }
+        return TodoDueDateResolver.resolve(dueHint: hint, title: todo.title, detail: todo.detail)
+    }
+
+    /// AI 推断日期的 Binding:
+    /// - get: 复用 `inferredDueDate`(单一换算入口,避免两处各算一份)
+    /// - set: 用户改日期 → 直接赋给 todo.dueDate + 标记 userEdited,从此走路径 1
+    ///
+    /// setter 只处理 newValue 非空:popover 里的 DatePicker 只选日期不清日期,
+    /// 清日期走旁边的 ✕ 按钮(对应清 dueHint)。
+    private var inferredDateBinding: Binding<Date?> {
+        Binding(
+            get: { inferredDueDate },
+            set: { newValue in
+                guard let newValue else { return }
+                todo.dueDate = newValue
+                todo.dueDateUserEdited = true
+            }
+        )
     }
 
     private var dateRowDate: Binding<Date?> {
