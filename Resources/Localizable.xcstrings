@@ -1016,38 +1016,6 @@
         }
       }
     },
-    "confirm.calendar_target.app_and_system" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save to app and system Calendar"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存到 App，并写入系统日历"
-          }
-        }
-      }
-    },
-    "confirm.calendar_target.app_only" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save to app calendar"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存到 App 日历"
-          }
-        }
-      }
-    },
     "confirm.cancel" : {
       "localizations" : {
         "en" : {
