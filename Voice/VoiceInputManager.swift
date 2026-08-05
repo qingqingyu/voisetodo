@@ -394,12 +394,20 @@ final class VoiceInputManager: VoiceInputProtocol {
     ) -> SFSpeechAudioBufferRecognitionRequest {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        let hints = vocabularyProvider.vocabularyHints(
+        let userHints = vocabularyProvider.vocabularyHints(
             localeIdentifier: localeIdentifier,
             limit: UserVocabularyConfig.speechContextualStringsLimit
         )
-        request.contextualStrings = hints
-        VoiceTodoLog.voice.info("recording.recognition.request_configured locale=\(localeIdentifier, privacy: .public) contextualStrings=\(hints.count)")
+        // 中文 locale 注入 baseline 时间词("X点半"模式),防 STT 把"十点半"识别成别的字。
+        // baseline 在用户词汇前,合并去重后取前 N 项(N = speechContextualStringsLimit)。
+        let baseline: [String] = localeIdentifier.hasPrefix("zh")
+            ? VoiceConstants.chineseTimeExpressionHints
+            : []
+        var seen = Set<String>()
+        let merged = (baseline + userHints).filter { seen.insert($0).inserted }
+        let contextualStrings = Array(merged.prefix(UserVocabularyConfig.speechContextualStringsLimit))
+        request.contextualStrings = contextualStrings
+        VoiceTodoLog.voice.info("recording.recognition.request_configured locale=\(localeIdentifier, privacy: .public) baseline=\(baseline.count, privacy: .public) user=\(userHints.count, privacy: .public) contextualStrings=\(contextualStrings.count, privacy: .public)")
         return request
     }
 

@@ -27,4 +27,21 @@ enum VoiceConstants {
         Locale(identifier: "zh-Hans"),
         Locale(identifier: "en-US")
     ]
+
+    /// 中文 STT baseline 时间词("X点半"模式)。
+    ///
+    /// **Why**: 用户反馈"设置十点半的任务"被识别成"随时"。两种可能根因:
+    ///   - AI prompt 缺"X点半" few-shot(已在 AIProxy base.js 示例 16/17 补上)
+    ///   - STT 把"十点半"识别成别的字(如"是点半"),prompt 怎么改都没用
+    ///
+    /// 这里是 STT 层的兜底:把"X点半"模式词塞进 contextualStrings,
+    /// 让 SFSpeechRecognizer 优先匹配这些字面量。仅中文 locale 注入。
+    ///
+    /// **How to apply**: 由 VoiceInputManager.makeRecognitionRequest 在
+    /// 用户词汇前 prepend,合并去重后取前 N 项(N = UserVocabularyConfig.speechContextualStringsLimit)。
+    /// baseline 占 12 个名额,剩 88 个给用户高频词——影响可接受(用户词汇是辅助识别)。
+    static let chineseTimeExpressionHints: [String] = [
+        "一点半", "两点半", "三点半", "四点半", "五点半", "六点半",
+        "七点半", "八点半", "九点半", "十点半", "十一点半", "十二点半"
+    ]
 }

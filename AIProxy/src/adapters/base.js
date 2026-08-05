@@ -291,7 +291,15 @@ due_hint 始终保留用户原文。
 
 示例 15（对照：同样的「周日」词，作为截止日 → user_explicit；参考日期 2026-07-15 周三）：
 输入："周日之前交报告"
-输出：{"todos":[{"title":"交报告","detail":"周日之前交报告","due_date":"2026-07-19","due_hint":"周日之前","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
+输出：{"todos":[{"title":"交报告","detail":"周日之前交报告","due_date":"2026-07-19","due_hint":"周日之前","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+示例 16（⚠️ "X点半" 钟点换算 → due_time "HH:30"；无时段前缀按 12 小时制上午；参考日期 2026-07-15 周三）：
+输入："明天十点半开会"
+输出：{"todos":[{"title":"开会","detail":"明天十点半","due_date":"2026-07-16","due_hint":"明天十点半","due_time":"10:30","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+示例 17（"晚上X点半" → 12 小时制 + 30 分 → "HH:30"；参考日期 2026-07-15 周三）：
+输入："晚上十点半睡觉"
+输出：{"todos":[{"title":"睡觉","detail":"晚上十点半","due_date":"2026-07-15","due_hint":"晚上十点半","due_time":"22:30","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
 
 const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
 
