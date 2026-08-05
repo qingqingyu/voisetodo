@@ -83,6 +83,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// 导致 AI 返回的 interval=2/3 待办进详情页再保存时被静默重置为 1。
     @State private var editedInterval: Int
     @State private var editedDayOfMonth: Int
+    /// 重复任务结束日期(nil = 无限循环)。对应 RecurrenceRule.endDate 持久化字段。
+    /// AI 走 RecurrenceEnd 归一化分类(5 种 kind)经 RecurrenceEndResolver 算出具体 Date 写入此字段;
+    /// 用户编辑走绝对日期(Toggle + DatePicker),不归一化。
+    @State private var editedEndDate: Date?
     @State private var hasChanges = false
     @State private var showDeleteConfirmation = false
     /// 防抖保存 task。用户每次改字段都会 cancel + 重启;800ms 内无新改动才真正写库。
@@ -114,6 +118,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         // 默认值用当前日:与 recurrenceModeButton 切到 .monthly 时的 fallback 一致。
         // 模型 dayOfMonth 1...31, Picker 也限制 1...31, 永远合法 —— 不再需要 validation。
         _editedDayOfMonth = State(initialValue: todo.recurrenceRule?.dayOfMonth ?? Calendar.current.component(.day, from: Date()))
+        // endDate 跟 AI 提取的 recurrence_end 解析后写入的字段对齐(RecurrenceEnd.swift 注释:
+        // "解析后写入 RecurrenceRule.endDate 这一单一真相")。详情页让用户改 endDate 是绝对日期,
+        // 不走 RecurrenceEnd 归一化分类(那是 AI 自动设置的语义路径)。
+        _editedEndDate = State(initialValue: todo.recurrenceRule?.endDate)
     }
 
     private var categoryColor: Color { WarmTheme.color(for: editedCategory) }
@@ -500,6 +508,55 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                         .foregroundColor(WarmTheme.textMuted)
                         .accessibilityIdentifier("DetailRecurrenceSummary")
                 }
+
+                if editedRecurrenceFrequency != nil {
+                    recurrenceEndDateEditor
+                }
+            }
+        }
+    }
+
+    /// 重复任务结束日期编辑器。Toggle 控制「无限循环 vs 有截止」,on 时显示 DatePicker。
+    /// 默认 +1 月(跟 AI「未来一个月」语义对齐),用户可任意改。
+    /// 不强制阻止 endDate 早于 today/startDate —— 允许用户表达「这个重复已经结束」。
+    private var recurrenceEndDateEditor: some View {
+        VStack(spacing: WarmSpacing.xs) {
+            Toggle(isOn: Binding(
+                get: { editedEndDate != nil },
+                set: { isOn in
+                    if isOn {
+                        // 优先恢复原 endDate(todo 初值),避免手滑关再开丢失自定义日期;
+                        // 原值为 nil(无限循环)时才 fallback +1 月(对齐 AI 语义)。
+                        editedEndDate = todo.recurrenceRule?.endDate
+                            ?? Calendar.current.date(byAdding: .month, value: 1, to: Date())
+                    } else {
+                        editedEndDate = nil
+                    }
+                    checkForChanges()
+                }
+            )) {
+                Text(String(localized: "recurrence.end_date.toggle"))
+                    .font(WarmFont.body(15))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            if editedEndDate != nil {
+                DatePicker(
+                    String(localized: "recurrence.end_date.label"),
+                    selection: Binding(
+                        get: { editedEndDate ?? Date() },
+                        set: { newDate in
+                            editedEndDate = Calendar.current.startOfDay(for: newDate)
+                            checkForChanges()
+                        }
+                    ),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .accessibilityLabel(String(localized: "recurrence.end_date.label"))
             }
         }
     }
@@ -686,7 +743,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     private var editedRecurrenceRule: RecurrenceRule? {
         switch editedRecurrenceFrequency {
-        case .daily: return RecurrenceRule(frequency: .daily)
+        case .daily: return RecurrenceRule(frequency: .daily, endDate: editedEndDate)
         case .weekly:
             // interval==1(每周)必须有 weekdays 才有效(否则 isValid 会判 false);
             // interval>1(双周/三周)允许空 weekdays —— 对齐 AI 返回的"每两周"语义。
@@ -694,11 +751,12 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             return RecurrenceRule(
                 frequency: .weekly,
                 interval: editedInterval,
-                weekdays: Array(editedWeekdays)
+                weekdays: Array(editedWeekdays),
+                endDate: editedEndDate
             )
         case .monthly:
             // Picker 1...31 已限制范围,editedDayOfMonth 永远合法,直接构造。
-            return RecurrenceRule(frequency: .monthly, dayOfMonth: editedDayOfMonth)
+            return RecurrenceRule(frequency: .monthly, dayOfMonth: editedDayOfMonth, endDate: editedEndDate)
         case nil: return nil
         }
     }
@@ -717,6 +775,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     private var recurrenceStateChanged: Bool {
         if editedRecurrenceFrequency != todo.recurrenceRule?.frequency { return true }
+        // endDate 变化独立于 frequency —— 用户开/关 Toggle 或改 DatePicker 都要触发保存。
+        if editedEndDate != todo.recurrenceRule?.endDate { return true }
         switch editedRecurrenceFrequency {
         case .weekly:
             // 同时比对 interval 和 weekdays:interval 变化(每周↔双周↔三周)也算结构变化。

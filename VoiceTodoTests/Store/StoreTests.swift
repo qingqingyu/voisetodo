@@ -842,6 +842,44 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>()).isEmpty)
     }
 
+    /// 详情页加的「重复结束日期编辑器」(s15) 写入 endDate 后,store.updateFull 能正确持久化。
+    /// 验证 RecurrenceRule.init 的 startOfDay normalize 也生效。
+    func testUpdateFullPersistsRecurrenceEndDate() throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let item = TodoItemData(
+            title: "带结束日的重复",
+            dueDate: today,
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            createdAt: today,
+            sortOrder: -1
+        )
+        try sut.seedForUITests([item])
+        let todo = try XCTUnwrap(sut.todos.first)
+
+        // +1 个月,带些非零时分量(模拟 DatePicker 任选时刻) —— init 应 startOfDay normalize。
+        let endDateRaw = Calendar.current.date(byAdding: .month, value: 1, to: today)!
+            .addingTimeInterval(3600 * 13 + 60 * 37)
+        let expectedNormalized = Calendar.current.startOfDay(for: endDateRaw)
+
+        try sut.updateFull(
+            todo.id,
+            update: TodoDetailUpdate(
+                title: todo.title,
+                detail: todo.detail,
+                category: nil,
+                priority: nil,
+                dueDate: todo.dueDate,
+                hasDueTime: todo.hasDueTime,
+                timeBucket: todo.timeBucket,
+                dueHint: nil,
+                recurrenceRule: RecurrenceRule(frequency: .daily, endDate: endDateRaw)
+            )
+        )
+
+        let saved = try XCTUnwrap(sut.todos.first)
+        XCTAssertEqual(saved.recurrenceRule?.endDate, expectedNormalized, "endDate 应被持久化并 startOfDay normalize")
+    }
+
     func testUpdateFullClearsDetailWhenCommandDetailIsNil() throws {
         let item = TodoItemData(title: "清空备注", detail: "旧备注", sortOrder: -1)
         try sut.seedForUITests([item])
