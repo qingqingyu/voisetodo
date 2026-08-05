@@ -572,11 +572,22 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.calendar_identifier.update_success todoID=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
-    /// 重新排序未完成待办（拖拽排序后调用）
-    /// - Parameter ids: 按新顺序排列的待办 ID 数组
+    /// 重新排序（拖拽排序后调用）。
+    ///
+    /// `ids` 可以是任意未完成待办子集（例如「稍后」section 单独排序）。
+    /// 按子集当前最小 sortOrder 作为 base 局部重排，赋值 `base+0, base+1, ...`；
+    /// 未在 `ids` 中的 todo 不动 —— 避免子集重排挤压其他 section 顺序。
+    /// 全量传入时（`ids` 覆盖所有未完成 todo）等价于重写为 `0..<N`，零回归。
+    ///
+    /// - Parameter ids: 按新顺序排列的待办 ID 数组（子集或全集）
     func reorder(ids: [UUID]) throws {
         let startedAt = Date()
         VoiceTodoLog.store.info("store.reorder.start ids=\(VoiceTodoLog.idsSummary(ids), privacy: .public)")
+        // 空数组 early return:避免无谓的 fetch / saveOrRollback / widget reload。
+        guard !ids.isEmpty else {
+            VoiceTodoLog.store.info("store.reorder.noop empty ids durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return
+        }
         let descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { !$0.isCompleted }
         )
@@ -589,22 +600,24 @@ final class TodoStore:
         }
         let itemMap = Dictionary(uniqueKeysWithValues: allUncompleted.map { ($0.id, $0) })
 
-        var itemsToUpdate = [(TodoItem, Int)]()
+        var itemsToUpdate = [(item: TodoItem, index: Int)]()
         for (index, id) in ids.enumerated() {
             guard let item = itemMap[id] else {
                 VoiceTodoLog.store.error("store.reorder.missing_id id=\(id.uuidString, privacy: .public)")
                 throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
             }
-            itemsToUpdate.append((item, index))
+            itemsToUpdate.append((item: item, index: index))
         }
-
-        for (item, order) in itemsToUpdate {
-            item.sortOrder = order
+        // 局部重排 base：取这组 ids 当前最小 sortOrder，避免子集重排污染其他 section。
+        // 不动其他 todo 的 sortOrder，确保 Today section / 待定日期 section 的相对顺序保持。
+        let baseSortOrder = itemsToUpdate.map(\.item.sortOrder).min() ?? 0
+        for (item, index) in itemsToUpdate {
+            item.sortOrder = baseSortOrder + index
         }
 
         try saveOrRollback()
         refreshTodos()
-        VoiceTodoLog.store.info("store.reorder.success count=\(ids.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        VoiceTodoLog.store.info("store.reorder.success count=\(ids.count) base=\(baseSortOrder) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     // MARK: - Internal Methods

@@ -1066,6 +1066,84 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(sut.todos.map { $0.id }, snapshotBefore, "读方法不应改变 todos 的顺序或数量")
         XCTAssertEqual(sut.todos.map(\.isCompleted), snapshotCompletedBefore, "读方法不应改变 todos 的完成状态")
     }
+
+    // MARK: - 拖拽排序（局部重排）
+
+    /// 工具:添加一个未完成 todo 并返回其 id。
+    private func addReorderTarget(_ title: String) throws -> UUID {
+        try sut.add(ExtractedTodo(title: title, categoryHint: .work))
+        return try XCTUnwrap(sut.todos.last { $0.title == title }?.id)
+    }
+
+    /// 全量重排:行为是"按 ids 顺序赋值 base+0, base+1, ..., base+N-1"。
+    /// base = 子集当前最小 sortOrder(nextSortOrderForNewItem 用 min-1 策略,通常是负数)。
+    func testReorderFullSetAppliesBasePlusIndex() throws {
+        let a = try addReorderTarget("A")
+        let b = try addReorderTarget("B")
+        let c = try addReorderTarget("C")
+
+        let before = Dictionary(uniqueKeysWithValues: sut.todos.map { ($0.id, $0.sortOrder) })
+
+        try sut.reorder(ids: [c, b, a])
+
+        let expectedBase = min(before[a]!, before[b]!, before[c]!)
+        let byId = Dictionary(uniqueKeysWithValues: sut.todos.map { ($0.id, $0.sortOrder) })
+        XCTAssertEqual(byId[c], expectedBase + 0)
+        XCTAssertEqual(byId[b], expectedBase + 1)
+        XCTAssertEqual(byId[a], expectedBase + 2)
+    }
+
+    /// 局部重排:只动传入 ids 的 sortOrder(按 base+index),其他 todo 不变。
+    /// 对应「稍后」section 拖拽——子集重排不能污染其他 section 的相对顺序。
+    func testReorderSubsetKeepsOthersUnchanged() throws {
+        let a = try addReorderTarget("A")
+        let b = try addReorderTarget("B")
+        let c = try addReorderTarget("C")
+
+        let before = Dictionary(uniqueKeysWithValues: sut.todos.map { ($0.id, $0.sortOrder) })
+
+        // 只重排 A 和 C,反序
+        try sut.reorder(ids: [c, a])
+
+        let expectedBase = min(before[a]!, before[c]!)
+        let byId = Dictionary(uniqueKeysWithValues: sut.todos.map { ($0.id, $0.sortOrder) })
+        XCTAssertEqual(byId[c], expectedBase + 0)
+        XCTAssertEqual(byId[a], expectedBase + 1)
+        XCTAssertEqual(byId[b], before[b]!, "B 的 sortOrder 不应被改")
+    }
+
+    /// 不存在的 id 必须显式抛错,不静默吞掉(遵循 CLAUDE.md 错误显式传播规则)。
+    func testReorderThrowsOnUnknownId() throws {
+        _ = try addReorderTarget("A")
+        XCTAssertThrowsError(try sut.reorder(ids: [UUID()])) { error in
+            guard case VoiceTodoError.storageReadFailed = error else {
+                return XCTFail("期望 storageReadFailed,实际 \(error)")
+            }
+        }
+    }
+
+    /// 已完成 todo 不参与 reorder —— fetch 已过滤,传入其 id 应抛错。
+    func testReorderThrowsOnCompletedId() throws {
+        let a = try addReorderTarget("A")
+        try sut.toggleComplete(a)
+
+        XCTAssertThrowsError(try sut.reorder(ids: [a])) { error in
+            guard case VoiceTodoError.storageReadFailed = error else {
+                return XCTFail("期望 storageReadFailed,实际 \(error)")
+            }
+        }
+    }
+
+    /// 空数组是合法 no-op,不抛错也不改任何 sortOrder。
+    func testReorderEmptyIdsIsNoOp() throws {
+        let a = try addReorderTarget("A")
+        let before = sut.todos.first { $0.id == a }!.sortOrder
+
+        try sut.reorder(ids: [])
+
+        let after = sut.todos.first { $0.id == a }!.sortOrder
+        XCTAssertEqual(before, after)
+    }
 }
 
 /// 测试辅助：从已有 todo 构造 TodoDetailUpdate，避免每个测试都写一长串字段。

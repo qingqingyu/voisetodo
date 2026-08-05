@@ -188,7 +188,7 @@ protocol TodoRefreshing {
 protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating {}
 
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新、pending 替换和日历导入。
-protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting, TodoImporting {}
+protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting, TodoImporting, TodoOrderingWriting {}
 
 /// Pending 恢复流程只需要读取 pending 与删除无效 pending。
 protocol PendingRecoveryTodoStore: PendingTranscriptReadable, TodoDeletionWriting {}

@@ -280,16 +280,19 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
     }
 
     func reorder(ids: [UUID]) throws {
+        // 与 TodoStore.reorder 行为对齐：局部重排 sortOrder，不动其他 todo。
         let idSet = Set(ids)
-        var reordered = [TodoItemData]()
-        let lookup = Dictionary(uniqueKeysWithValues: todos.map { ($0.id, $0) })
-        for id in ids {
-            if let item = lookup[id] {
-                reordered.append(item)
+        let subset = todos.filter { idSet.contains($0.id) }
+        guard subset.count == ids.count else {
+            throw VoiceTodoError.storageReadFailed("MockStore.reorder: some ids not found")
+        }
+        let base = subset.map(\.sortOrder).min() ?? 0
+        for (index, id) in ids.enumerated() {
+            if let i = todos.firstIndex(where: { $0.id == id }) {
+                todos[i].sortOrder = base + index
             }
         }
-        let rest = todos.filter { !idSet.contains($0.id) }
-        todos = reordered + rest
+        todos.sort { $0.sortOrder < $1.sortOrder }
     }
 
     func refreshTodos() {}

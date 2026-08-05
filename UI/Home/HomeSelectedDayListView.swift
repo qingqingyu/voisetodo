@@ -21,6 +21,9 @@ struct HomeSelectedDayListView: View {
     /// 「没能识别」分组「重新解析」按钮入口。把 rawTranscript 再喂一遍 extractor,
     /// 成功 → 替换原 todo 为 .parsed;失败 → 保留原 todo + toast。
     let onReextract: (UUID) -> Void
+    /// 「稍后」section 拖拽排序回调。参数为用户拖完后该 section 的新顺序 todo id 数组,
+    /// 调用方走 store.reorder 做局部重排(只动这组 sortOrder,不影响其他 section)。
+    let onReorder: ([UUID]) -> Void
     /// 正在重新解析的 todo id 集合(来自 AppCoordinator.reextractingTodoIDs)。
     /// 用于驱动 UnparsedTodoCard 的按钮 disabled + ProgressView,防连点。
     var reextractingTodoIDs: Set<UUID> = []
@@ -53,10 +56,22 @@ struct HomeSelectedDayListView: View {
             // 「稍后」分区(原「未定时间」):完全无时间信号的待排期货(原「未安排」,语义收紧后改名)。
             // 排在 Today 之后——用户主动暂存的待办(类 Inbox 性质),需要快速访问;
             // 与海外主流 todo app(Things 3 / TickTick 等)把 Inbox 提前的模式一致。
+            // 本分区启用 `.onMove`:长按 row 进入拖拽模式,松手后回调 onReorder 走 store.reorder。
+            // 对应 s17/s20 用户反馈(未设时任务想自由排序,不想为排序逐项设时间)。
             if !state.unscheduledTodos.isEmpty {
                 Section {
-                    ForEach(Array(state.unscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
+                    // 不用 enumerated —— `.onMove` 要求 ForEach 直接对 Identifiable 集合迭代,
+                    // 元组数组会破坏 List 内置 reorder 手势识别。
+                    // index 改用 firstIndex 取(列表通常 < 20 项,O(n²) 可接受),
+                    // 数值与原 enumerated 一致,WarmTodoCard staggered 动画不变。
+                    ForEach(state.unscheduledTodos) { todo in
+                        let idx = state.unscheduledTodos.firstIndex(where: { $0.id == todo.id }) ?? 0
                         todoRow(todo, index: state.selectedOccurrences.count + idx)
+                    }
+                    .onMove { offsets, target in
+                        var arr = state.unscheduledTodos
+                        arr.move(fromOffsets: offsets, toOffset: target)
+                        onReorder(arr.map(\.id))
                     }
                 } header: {
                     daySectionHeader(

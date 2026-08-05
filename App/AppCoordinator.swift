@@ -759,6 +759,17 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// 重新排序（拖拽排序后调用）。委托给 store.reorder 做局部重排，
+    /// 错误向上抛由调用方 catch + toast。
+    /// - Parameter ids: 按新顺序排列的待办 ID 数组（子集或全集）
+    func reorderTodos(ids: [UUID]) throws {
+        let startedAt = Date()
+        VoiceTodoLog.coordinator.info("coordinator.todo.reorder.start count=\(ids.count, privacy: .public)")
+        try store.reorder(ids: ids)
+        WidgetCenter.shared.reloadAllTimelines()
+        VoiceTodoLog.coordinator.info("coordinator.todo.reorder.success count=\(ids.count, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
     /// 详情页完整更新——支持 dueDate、模糊时段和 detail。
     func updateTodoDetail(_ id: UUID, update: TodoDetailUpdate) throws {
         let startedAt = Date()

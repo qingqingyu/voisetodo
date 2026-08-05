@@ -809,6 +809,12 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         todos[index].isCompleted.toggle()
     }
 
+    /// 拖拽排序调用记录（AppCoordinator.reorderTodos 集成测试用）。
+    var reorderCalls: [[UUID]] = []
+    func reorder(ids: [UUID]) throws {
+        reorderCalls.append(ids)
+    }
+
     func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")

@@ -126,6 +126,23 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         }
     }
 
+    /// 拖拽排序回调（「稍后」section 长按拖动后触发）。
+    /// 走 coordinator.reorderTodos 做 store 层局部重排 + widget reload。
+    func reorderTodos(_ ids: [UUID]) {
+        do {
+            try withAnimation(WarmAnimation.springSmooth) {
+                try coordinator.reorderTodos(ids: ids)
+                VoiceTodoLog.store.info("ui.home.reorder.success count=\(ids.count, privacy: .public)")
+            }
+        } catch {
+            VoiceTodoLog.store.error("ui.home.reorder.failed count=\(ids.count, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(
+                message: ErrorMessages.storageError,
+                style: .warning
+            )
+        }
+    }
+
     private func updateProcessing(_ isProcessing: Bool) {
         withAnimation(.easeInOut(duration: 0.3)) {
             setProcessing(isProcessing)
@@ -1153,6 +1170,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             },
                             onPickDate: { id, date in pickTodoDate(id: id, date: date) },
                             onReextract: { id in coordinator.reextract(todoID: id) },
+                            onReorder: { ids in actions.reorderTodos(ids) },
                             reextractingTodoIDs: coordinator.reextractingTodoIDs
                         )
                         .frame(height: listHeight)
