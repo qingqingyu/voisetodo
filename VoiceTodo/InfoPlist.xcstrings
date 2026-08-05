@@ -35,8 +35,27 @@
         }
       }
     },
+    "NSCalendarsUsageDescription" : {
+      "comment" : "Privacy - Calendars Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo needs calendar access to add your todos, read events, and detect scheduling conflicts."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo 需要日历访问权限，以便添加待办、读取日程并检测时间冲突。"
+          }
+        }
+      }
+    },
     "NSCalendarsWriteOnlyAccessUsageDescription" : {
       "comment" : "Privacy - Calendars Write Only Usage Description",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
