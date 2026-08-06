@@ -799,23 +799,48 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 不计 recurrenceRule 重复展开），数字会从"含重复任务的真实计数"暂时回落到
     /// "仅原始 dueDate 计数"，几十 ms 后缓存加载完成即恢复。这是可接受的瞬态——
     /// 比闪 "0/0" 更友好（用户至少能看到当天有任务）。
+    ///
+    /// 口径:除了有日期的 occurrence,还要算上「今日完成的无日期任务」
+    /// (dueDate==nil && recurrenceRule==nil && isCompleted && completedAt 命中今天)。
+    /// 否则用户在「稍后 / 待定日期 / 没能识别」勾掉一条,圆环不动,
+    /// 但底部「已完成」分区里会出现该条 → 列表-圆环口径分裂。本修复合上这条缝。
+    /// 口径与 `HomeCalendarState.completedUnscheduledTodos` 同源(用 DayClock.isSameUserDay),
+    /// 所以圆环里 +1 与「已完成」section 里多出来那一行是同一条任务。
+    /// 详见 docs/completed-unscheduled-todo-placement.md 文末「附带记录」。
     private func selectedDayStats() -> (total: Int, completed: Int) {
         let dayKey = TodoOccurrenceData.dayKey(for: selectedDate, calendar: calendar)
+        var total: Int
+        var completed: Int
         if let cached = monthOccurrences[dayKey] {
-            let completed = cached.filter { $0.isCompleted }.count
-            return (cached.count, completed)
+            completed = cached.filter { $0.isCompleted }.count
+            total = cached.count
+        } else {
+            // 兜底：直接遍历 store.todos，覆盖 dueDate 命中 selectedDate 的非重复任务。
+            // 重复任务在 monthOccurrences 加载前先不计入（保守，避免重复渲染高估）。
+            // selectedDate 已是自然日 0 点，必须用 userDayStart(onNaturalDay:) 抬到用户日坐标系
+            // 再与 due（时刻）通过 isSameUserDay 比较——否则 startHour>0 时统计区间错位一天（缺陷 2）。
+            let day = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
+            let onDay = store.todos.filter { todo in
+                guard let due = todo.dueDate else { return false }
+                return DayClock.isSameUserDay(due, day, calendar: calendar)
+            }
+            completed = onDay.filter { $0.isCompleted }.count
+            total = onDay.count
         }
-        // 兜底：直接遍历 store.todos，覆盖 dueDate 命中 selectedDate 的非重复任务。
-        // 重复任务在 monthOccurrences 加载前先不计入（保守，避免重复渲染高估）。
-        // selectedDate 已是自然日 0 点，必须用 userDayStart(onNaturalDay:) 抬到用户日坐标系
-        // 再与 due（时刻）通过 isSameUserDay 比较——否则 startHour>0 时统计区间错位一天（缺陷 2）。
-        let day = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
-        let onDay = store.todos.filter { todo in
-            guard let due = todo.dueDate else { return false }
-            return DayClock.isSameUserDay(due, day, calendar: calendar)
-        }
-        let completed = onDay.filter { $0.isCompleted }.count
-        return (onDay.count, completed)
+        // 把「今日完成的无日期任务」算进圆环。口径与 HomeCalendarState.completedUnscheduledTodos
+        // 同源(同一个 DayClock.isSameUserDay 判断),所以圆环 +1 与「已完成」section 里多出来
+        // 的那一条是同一个 todo。total 和 completed 同步 +1,避免 completed > total 的负进度。
+        let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
+        let completedUnscheduledToday = store.todos.filter { todo in
+            guard todo.dueDate == nil,
+                  todo.recurrenceRule == nil,
+                  todo.isCompleted,
+                  let completedAt = todo.completedAt else { return false }
+            return DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
+        }.count
+        total += completedUnscheduledToday
+        completed += completedUnscheduledToday
+        return (total, completed)
     }
 
     /// 今日总数,仅用于 playRingEntranceIfNeeded 的 gate 检查(不在 body 中调用,
