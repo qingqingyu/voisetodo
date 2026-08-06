@@ -37,7 +37,6 @@
     },
     "NSCalendarsUsageDescription" : {
       "comment" : "Privacy - Calendars Usage Description",
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
