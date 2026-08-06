@@ -65,6 +65,9 @@ final class AppCoordinator: ObservableObject {
     /// 流式 .success 后由 `detectConflicts()` 异步填充;sheet 关闭/取消时清空。
     /// 第一版本只做"提示",不阻断确认。
     @Published var conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:]
+    /// Intent (Spotlight/Action Button) 触发录音时,HomeView 需要先展开 BottomInputPanel 再启动录音。
+    /// 由 VoiceTodoApp.handleActionButtonLaunch 设 true,HomeView onChange 消费后清回 false。
+    @Published var pendingIntentRecordingLaunch = false
     /// detectConflicts 的 Task 引用,cancelTodos / confirmTodos 时显式 cancel,
     /// 避免用户已离开 ConfirmSheet 后台仍在串行 await 日历访问。
     private var conflictDetectionTask: Task<Void, Never>?

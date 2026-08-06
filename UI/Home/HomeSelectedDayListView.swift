@@ -76,7 +76,8 @@ struct HomeSelectedDayListView: View {
                 } header: {
                     daySectionHeader(
                         title: String(localized: "home.undated.section"),
-                        count: state.unscheduledTodos.count
+                        count: state.unscheduledTodos.count,
+                        subtitle: String(localized: "home.undated.section.hint")
                     )
                 }
             }
@@ -283,18 +284,30 @@ struct HomeSelectedDayListView: View {
         .listRowBackground(Color.clear)
     }
 
-    private func daySectionHeader(title: String, count: Int) -> some View {
-        HStack(spacing: WarmSpacing.xs) {
-            Text(title)
-                .font(WarmFont.headline(15))
-            // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态
-            if count > 0 {
-                Text(verbatim: "\(count)")
-                    .font(WarmFont.caption(13))
-                    .foregroundColor(WarmTheme.primaryDark)
-                    .padding(.horizontal, WarmSpacing.xs)
-                    .padding(.vertical, WarmSpacing.xxs)
-                    .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+    /// section header。可选 `subtitle` 给副标题(如「稍后」分区下方的说明),
+    /// 副标题用小字 muted 色,紧跟在标题/count 行下方。其他分区不传 subtitle 即不渲染。
+    private func daySectionHeader(title: String, count: Int, subtitle: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            HStack(spacing: WarmSpacing.xs) {
+                Text(title)
+                    .font(WarmFont.headline(15))
+                // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态
+                if count > 0 {
+                    Text(verbatim: "\(count)")
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(WarmTheme.primaryDark)
+                        .padding(.horizontal, WarmSpacing.xs)
+                        .padding(.vertical, WarmSpacing.xxs)
+                        .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+                }
+            }
+            if let subtitle {
+                Text(subtitle)
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .foregroundColor(WarmTheme.textSecondary)

@@ -389,14 +389,19 @@ struct TodoTimeBucketSegmented: View {
 struct TodoDatePopoverTrigger: View {
     @Binding private var date: Date?
     private let onEdit: () -> Void
+    /// 外部覆盖的 a11y label(组件已 `.accessibilityElement(children: .ignore)` 合并成单 element,
+    /// label 必须在内部设置才生效;外层再贴 `.accessibilityLabel` 会被 ignore 子树挡住不朗读)。
+    /// nil 时默认"detail.time"(Time 卡片场景);detail EndDate 场景传"recurrence.end_date.label"。
+    private let accessibilityLabelOverride: String?
 
     @State private var showDatePickerPopover = false
     @State private var popoverFallbackAnchor: Date?
     @State private var popoverDismissTask: Task<Void, Never>?
     @State private var selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
 
-    init(date: Binding<Date?>, onEdit: @escaping () -> Void) {
+    init(date: Binding<Date?>, accessibilityLabel: String? = nil, onEdit: @escaping () -> Void) {
         self._date = date
+        self.accessibilityLabelOverride = accessibilityLabel
         self.onEdit = onEdit
     }
 
@@ -429,7 +434,7 @@ struct TodoDatePopoverTrigger: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(String(localized: "detail.time"))
+        .accessibilityLabel(accessibilityLabelOverride ?? String(localized: "detail.time"))
         .accessibilityValue(todoFieldEditorDateFormatter.string(from: date ?? popoverFallbackAnchor ?? DayClock.startOfUserDay(for: Date())))
         .accessibilityIdentifier("DetailDatePopoverTrigger")
         .popover(isPresented: $showDatePickerPopover) {

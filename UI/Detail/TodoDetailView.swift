@@ -500,9 +500,13 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
     }
 
-    /// 重复任务结束日期编辑器。Toggle 控制「无限循环 vs 有截止」,on 时显示 DatePicker。
+    /// 重复任务结束日期编辑器。Toggle 控制「无限循环 vs 有截止」,on 时显示日期 popover trigger。
+    /// 复用 `TodoDatePopoverTrigger`(与 Time 卡片「日期」入口一致):点文本弹 `.graphical` 日历,
+    /// 选定后 ~0.18s 自动收起 popover,带 haptic 反馈。
     /// 默认 +1 月(跟 AI「未来一个月」语义对齐),用户可任意改。
     /// 不强制阻止 endDate 早于 today/startDate —— 允许用户表达「这个重复已经结束」。
+    /// startOfDay 归一化交给 `RecurrenceRule.init`(`Protocols/Domain/RecurrenceRule.swift`),
+    /// trigger 内 `DatePicker(.graphical)` 写回的"中午 12:00"会在落盘时被统一归零,UI 不重复处理。
     private var recurrenceEndDateEditor: some View {
         VStack(spacing: WarmSpacing.xs) {
             Toggle(isOn: Binding(
@@ -527,20 +531,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             }
 
             if editedEndDate != nil {
-                DatePicker(
-                    String(localized: "recurrence.end_date.label"),
-                    selection: Binding(
-                        get: { editedEndDate ?? Date() },
-                        set: { newDate in
-                            editedEndDate = Calendar.current.startOfDay(for: newDate)
-                            checkForChanges()
-                        }
-                    ),
-                    displayedComponents: .date
+                // 复用 Time 卡片的日期 trigger —— 视觉/交互与"Time 区日期"完全一致。
+                // a11y label 通过入参传给组件(trigger 已 `.accessibilityElement(children: .ignore)`
+                // 合并成单 element,label 必须在内部贴才生效),让 VoiceOver 读出"结束日期"语义。
+                TodoDatePopoverTrigger(
+                    date: $editedEndDate,
+                    accessibilityLabel: String(localized: "recurrence.end_date.label"),
+                    onEdit: checkForChanges
                 )
-                .datePickerStyle(.compact)
-                .labelsHidden()
-                .accessibilityLabel(String(localized: "recurrence.end_date.label"))
             }
         }
     }
