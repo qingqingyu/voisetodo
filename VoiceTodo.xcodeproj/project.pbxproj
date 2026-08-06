@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		010449ABF1720531F8CED5F6 /* SimultaneousDragGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E151F244003A66D9F29EAD /* SimultaneousDragGesture.swift */; };
+		02B7DC7A5517AF12E9C09BAA /* NumberPopModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A53173B55EBC043C9CDCD1B /* NumberPopModifier.swift */; };
 		06C106EDFC0BD1DBD4A656C8 /* ReviewNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF5820B1E3978DDE95D48ED /* ReviewNotificationScheduler.swift */; };
 		08A6FBBD1BE37D9F1D7B78A2 /* ExtractorCircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1167DFCC2D46703F8A7053E6 /* ExtractorCircuitBreaker.swift */; };
 		09212237F75E4A9D5546B0CF /* TodoEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1892EC44E6D1583C938EDB /* TodoEntity.swift */; };
@@ -62,6 +63,7 @@
 		4A4D0F28023A0D57EACAE2D5 /* TodoDraftEditorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C092B30F1AA0FAE5610A93D4 /* TodoDraftEditorPanel.swift */; };
 		4AB972DA20B3F39F7CF38936 /* VoiceTodoWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EF2D0CB67DB19BC94E5EDCDF /* VoiceTodoWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4D8FB5E7B426E3264F5508DA /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8AA736F8E3D8D0C5F71A1DA /* PermissionManager.swift */; };
+		4DC24AC70E94C8FE2D2572F3 /* CorrectionTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86009E84057260ABF2FC2C59 /* CorrectionTrackerTests.swift */; };
 		5291761FCF494BDEAA7BD23D /* TelemetryUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD69F514ED13C8FE0AA07FB /* TelemetryUploader.swift */; };
 		52BEC6B149B928AB3B0A6027 /* IMPLEMENTATION_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 180D44F636BC72F7283BB347 /* IMPLEMENTATION_SUMMARY.md */; };
 		5339F1253CE23AD9B4791F03 /* ModelContainerStartupPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5A807BC7FED524BD0E4030 /* ModelContainerStartupPolicyTests.swift */; };
@@ -326,6 +328,7 @@
 		84892A23980F5F52BA6E9B84 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		852A146F479BCBE404E803CD /* ExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractorTests.swift; sourceTree = "<group>"; };
 		85DD2833CF75F09D3B176BA0 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
+		86009E84057260ABF2FC2C59 /* CorrectionTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionTrackerTests.swift; sourceTree = "<group>"; };
 		874CB6C60B98DFFC0A7002B1 /* VoiceTodo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VoiceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A0E0525C6409142574087FD /* AddTodoIntentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTodoIntentView.swift; sourceTree = "<group>"; };
 		8A720C2996ED32733C7C1F5A /* RecordingLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivity.swift; sourceTree = "<group>"; };
@@ -337,6 +340,7 @@
 		9334F835FFE9BE2A6EC35CB2 /* TodoStoreProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStoreProtocol.swift; sourceTree = "<group>"; };
 		942DA719D392449E8E9E2C96 /* TodoDueDateResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoDueDateResolver.swift; sourceTree = "<group>"; };
 		947C63A1377F2827A65730A8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		9A53173B55EBC043C9CDCD1B /* NumberPopModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberPopModifier.swift; sourceTree = "<group>"; };
 		9A6C457D156E732EA0BDFA9F /* ActionButtonLaunchSignalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButtonLaunchSignalTests.swift; sourceTree = "<group>"; };
 		9AEF04020D26152A3DF4587F /* ConfirmSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSheetView.swift; sourceTree = "<group>"; };
 		9D985A942F5AEF1211D9C329 /* UITestLaunchOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestLaunchOptions.swift; sourceTree = "<group>"; };
@@ -505,6 +509,7 @@
 				9E83FF0531EA6338B74E67EA /* FocusableTextView.swift */,
 				F10DE2C3D42323F4BC2A3384 /* Haptics.swift */,
 				00E8EAE2393518A62CD0CB54 /* MarqueeText.swift */,
+				9A53173B55EBC043C9CDCD1B /* NumberPopModifier.swift */,
 				17E151F244003A66D9F29EAD /* SimultaneousDragGesture.swift */,
 				73C3CB4E9758E6F652FDA8A9 /* ToastView.swift */,
 				F94F33F04346AC9AE87AE51E /* TodoFieldEditors.swift */,
@@ -592,6 +597,7 @@
 		6E542C6D71DAD73CBE047C41 /* Protocols */ = {
 			isa = PBXGroup;
 			children = (
+				86009E84057260ABF2FC2C59 /* CorrectionTrackerTests.swift */,
 				62D88AFE0345B2D1856DD67E /* DayClockTests.swift */,
 				74CA78E0BA5ACAB2A9AFF1CB /* DayStartHourBoundaryTests.swift */,
 				A684F8B191DD96ADDC917305 /* DomainModuleTests.swift */,
@@ -1030,6 +1036,7 @@
 				80788BB9C1D63283212A6AA8 /* NetworkClient.swift in Sources */,
 				2355FBB6A15F8CC5939CDDBF /* NetworkMonitor.swift in Sources */,
 				D65278FEE8EBC87126B5D426 /* NotificationPlanner.swift in Sources */,
+				02B7DC7A5517AF12E9C09BAA /* NumberPopModifier.swift in Sources */,
 				35692E679C1A43B18A8CE5E6 /* OnboardingView.swift in Sources */,
 				228A792319476808CB6AE1DC /* PaywallView.swift in Sources */,
 				6B25B010C62B4E1E26224981 /* PendingDateTodoRow.swift in Sources */,
@@ -1110,6 +1117,7 @@
 				0FF71D1C4327A4D39D3201AD /* ActionButtonLaunchSignalTests.swift in Sources */,
 				A7F3A2465B40845B413F39CD /* AppCoordinatorTests.swift in Sources */,
 				D0E67B5D585A79FBEAF86701 /* CalendarSyncServiceTests.swift in Sources */,
+				4DC24AC70E94C8FE2D2572F3 /* CorrectionTrackerTests.swift in Sources */,
 				6506446641B07817D2E774F7 /* DayClockTests.swift in Sources */,
 				5590329FDF43555F8A35D6B6 /* DayStartHourBoundaryTests.swift in Sources */,
 				FBDA5851BB7475AA14A6FBC4 /* DomainModuleTests.swift in Sources */,

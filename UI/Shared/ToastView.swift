@@ -182,6 +182,7 @@ struct ToastView: View {
                 .shadow(color: WarmTheme.shadowMedium, radius: 16, x: 0, y: 8)
         )
         .padding(.horizontal, WarmSpacing.md)
+        .accessibilityIdentifier("Toast")
     }
 }
 

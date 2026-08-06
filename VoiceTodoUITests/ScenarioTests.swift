@@ -95,16 +95,15 @@ final class ScenarioTests: XCTestCase {
         // Step 7: 点击确认添加
         appHelper.tapConfirmButton()
 
-        // 验证: 成功动画播放
-        let successAnimation = appHelper.app.otherElements["SuccessAnimation"]
-        XCTAssertTrue(successAnimation.waitForExistence(timeout: 2.0))
-
         // Step 8: 等待 Sheet 关闭
         XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
 
         // Step 9: 检查 HomeView
         let homeTodoList = appHelper.todoList
         XCTAssertEqual(homeTodoList.cells.count, 3, "HomeView 应该有 3 条待办")
+
+        // Step 10: 验证成功反馈 toast 出现(底部「已添加 N 条」)
+        XCTAssertTrue(appHelper.app.otherElements["Toast"].waitForExistence(timeout: 2.0))
     }
 
     // MARK: - S02: 纯感受输入 → 空结果 Toast
