@@ -11,6 +11,28 @@ private let todoFieldEditorDateFormatter: DateFormatter = {
     return formatter
 }()
 
+/// 字段编辑器的视觉上下文。默认值保持详情页现有样式，确认页仅切换外观，
+/// 不改变任何 Binding、回调或字段写回行为。
+enum TodoFieldEditorAppearance {
+    case standard
+    case confirmation
+}
+
+/// 确认页编辑面板专用的清新配色。
+/// 青绿负责“正在整理 / 已选中”的积极反馈，暖色只留给高优先级等提醒语义。
+enum ConfirmEditorTheme {
+    static let accent = Color(light: "16785F", dark: "70DEBA")
+    static let accentFill = Color(light: "17866A", dark: "58D4AC")
+    static let selectedText = Color(light: "FFFFFF", dark: "102B24")
+    static let accentSurface = Color(light: "EFF9F5", dark: "20352F")
+    static let neutralSurface = Color(light: "F4F7F8", dark: "2B3033")
+    static let warmSurface = Color(light: "FFF6F1", dark: "392D29")
+    static let raisedSurface = Color(light: "FFFFFF", dark: "30443E")
+    static let lowFill = Color(light: "647184", dark: "A9B5C5")
+    static let lowSelectedText = Color(light: "FFFFFF", dark: "1E2A3A")
+    static let categorySelectedText = Color(light: "172536", dark: "FFFFFF")
+}
+
 // MARK: - 分类网格
 
 /// 分类选择网格(自适应 LazyVGrid,7 个分类按屏宽换行)。
@@ -21,9 +43,15 @@ private let todoFieldEditorDateFormatter: DateFormatter = {
 struct TodoCategoryGrid: View {
     @Binding private var selection: TodoCategory
     private let onEdit: () -> Void
+    private let appearance: TodoFieldEditorAppearance
 
-    init(selection: Binding<TodoCategory>, onEdit: @escaping () -> Void) {
+    init(
+        selection: Binding<TodoCategory>,
+        appearance: TodoFieldEditorAppearance = .standard,
+        onEdit: @escaping () -> Void
+    ) {
         self._selection = selection
+        self.appearance = appearance
         self.onEdit = onEdit
     }
 
@@ -55,26 +83,49 @@ struct TodoCategoryGrid: View {
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, WarmSpacing.sm)
                 .padding(.vertical, WarmSpacing.xs)
-                // 选中字色用 primaryText 而非 primary:后者 #FF8A6B 在白底对比度偏低,
-                // primaryText #C44F35 是为浅底文字专门调的深橙。
-                .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
-                // 选中态:浅橙底 + 深橙描边;未选态:无填充 + 浅墨描边。
-                // 历史:原未选用 subtleControlBackground 灰填充,在白卡上对比度低又显浑
-                // (用户反馈"脏")→ 改成透明底 + 1pt sketch 描边,跟白卡背景几乎融合,
-                // 仅靠描边线框勾形状,视觉密度立刻降一档。
+                .foregroundColor(categoryForeground(isSelected: isSelected))
                 .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.chip)
-                        .fill(isSelected ? WarmTheme.primary.opacity(0.12) : Color.clear)
+                    RoundedRectangle(cornerRadius: categoryCornerRadius)
+                        .fill(categoryBackground(category, isSelected: isSelected))
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: WarmRadius.chip)
-                        .strokeBorder(
-                            isSelected ? WarmTheme.primaryText : WarmTheme.sketch.opacity(0.4),
-                            lineWidth: 1
-                        )
+                    if appearance == .standard {
+                        RoundedRectangle(cornerRadius: WarmRadius.chip)
+                            .strokeBorder(
+                                isSelected ? WarmTheme.primaryText : WarmTheme.sketch.opacity(0.4),
+                                lineWidth: 1
+                            )
+                    }
                 }
+                .shadow(
+                    color: appearance == .confirmation && isSelected
+                        ? WarmTheme.color(for: category).opacity(0.22)
+                        : .clear,
+                    radius: 5,
+                    y: 2
+                )
         }
         .buttonStyle(.plain)
+    }
+
+    private var categoryCornerRadius: CGFloat {
+        appearance == .confirmation ? WarmRadius.segmentedTrack : WarmRadius.chip
+    }
+
+    private func categoryForeground(isSelected: Bool) -> Color {
+        guard appearance == .confirmation else {
+            return isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary
+        }
+        return isSelected ? ConfirmEditorTheme.categorySelectedText : WarmTheme.textSecondary
+    }
+
+    private func categoryBackground(_ category: TodoCategory, isSelected: Bool) -> Color {
+        guard appearance == .confirmation else {
+            return isSelected ? WarmTheme.primary.opacity(0.12) : .clear
+        }
+        return isSelected
+            ? WarmTheme.color(for: category)
+            : WarmTheme.color(for: category).opacity(0.10)
     }
 }
 
@@ -95,9 +146,15 @@ struct TodoCategoryGrid: View {
 struct TodoPriorityPicker: View {
     @Binding private var selection: Priority
     private let onEdit: () -> Void
+    private let appearance: TodoFieldEditorAppearance
 
-    init(selection: Binding<Priority>, onEdit: @escaping () -> Void) {
+    init(
+        selection: Binding<Priority>,
+        appearance: TodoFieldEditorAppearance = .standard,
+        onEdit: @escaping () -> Void
+    ) {
         self._selection = selection
+        self.appearance = appearance
         self.onEdit = onEdit
     }
 
@@ -130,13 +187,23 @@ struct TodoPriorityPicker: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, WarmSpacing.sm)
             .background(background(isSelected: isSelected, priority: priority))
-            // 描边统一在 overlay 层:未选用 sketch 浅墨(替代原灰填充,见 background 注释),
-            // 选中沿用对应深字色。low 选中跟未选描边色一致,仅靠 ↓ 图标区分(原设计意图)。
-            .overlay(
-                RoundedRectangle(cornerRadius: WarmRadius.chip)
-                    .strokeBorder(borderColor(isSelected: isSelected, priority: priority), lineWidth: 1)
-            )
+            .overlay {
+                if appearance == .standard {
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
+                        .strokeBorder(
+                            borderColor(isSelected: isSelected, priority: priority),
+                            lineWidth: 1
+                        )
+                }
+            }
             .foregroundColor(foregroundLabel(isSelected: isSelected, priority: priority))
+            .shadow(
+                color: appearance == .confirmation && isSelected
+                    ? selectedFill(priority).opacity(0.20)
+                    : .clear,
+                radius: 5,
+                y: 2
+            )
         }
         .buttonStyle(.plain)
     }
@@ -147,8 +214,12 @@ struct TodoPriorityPicker: View {
     /// 让 low 至少有一点视觉差异(否则跟未选完全一样,反馈太弱)。
     @ViewBuilder
     private func background(isSelected: Bool, priority: Priority) -> some View {
-        let shape = RoundedRectangle(cornerRadius: WarmRadius.chip)
-        if isSelected {
+        let shape = RoundedRectangle(
+            cornerRadius: appearance == .confirmation ? WarmRadius.segmentedTrack : WarmRadius.chip
+        )
+        if appearance == .confirmation {
+            shape.fill(isSelected ? selectedFill(priority) : ConfirmEditorTheme.neutralSurface)
+        } else if isSelected {
             switch priority {
             case .high:
                 shape.fill(WarmTheme.urgent.opacity(0.12))
@@ -177,6 +248,14 @@ struct TodoPriorityPicker: View {
 
     /// 选中/未选的字色:浅底配深字,提升可读对比度。
     private func foregroundLabel(isSelected: Bool, priority: Priority) -> Color {
+        if appearance == .confirmation {
+            guard isSelected else { return WarmTheme.textSecondary }
+            switch priority {
+            case .low: return ConfirmEditorTheme.lowSelectedText
+            case .normal: return ConfirmEditorTheme.selectedText
+            case .high: return .white
+            }
+        }
         if isSelected {
             switch priority {
             case .high:   return WarmTheme.urgentText
@@ -185,6 +264,14 @@ struct TodoPriorityPicker: View {
             }
         } else {
             return WarmTheme.textMuted
+        }
+    }
+
+    private func selectedFill(_ priority: Priority) -> Color {
+        switch priority {
+        case .low: return ConfirmEditorTheme.lowFill
+        case .normal: return ConfirmEditorTheme.accentFill
+        case .high: return WarmTheme.urgent
         }
     }
 }
@@ -202,9 +289,15 @@ struct TodoPriorityPicker: View {
 struct TodoTimeBucketSegmented: View {
     @Binding private var selection: TimeBucket?
     private let onEdit: () -> Void
+    private let appearance: TodoFieldEditorAppearance
 
-    init(selection: Binding<TimeBucket?>, onEdit: @escaping () -> Void) {
+    init(
+        selection: Binding<TimeBucket?>,
+        appearance: TodoFieldEditorAppearance = .standard,
+        onEdit: @escaping () -> Void
+    ) {
         self._selection = selection
+        self.appearance = appearance
         self.onEdit = onEdit
     }
 
@@ -222,11 +315,18 @@ struct TodoTimeBucketSegmented: View {
         // 轨道只需勾形状不必铺色。
         // padding 用 xs(8):外圆角 segmentedTrack(10) - 内圆角 segmentedThumb(7) = 3,
         // padding 必须 ≥ 差值才不切角,留 8 给 anti-aliasing 缓冲。
-        .padding(WarmSpacing.xs)
+        // confirmation 模式轨道自带 raisedSurface 填充,内段间距收到 xxs(4)。
+        .padding(appearance == .confirmation ? WarmSpacing.xxs : WarmSpacing.xs)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.segmentedTrack)
-                .strokeBorder(WarmTheme.sketch.opacity(0.4), lineWidth: 1)
+                .fill(appearance == .confirmation ? ConfirmEditorTheme.raisedSurface : Color.clear)
         )
+        .overlay {
+            if appearance == .standard {
+                RoundedRectangle(cornerRadius: WarmRadius.segmentedTrack)
+                    .strokeBorder(WarmTheme.sketch.opacity(0.4), lineWidth: 1)
+            }
+        }
     }
 
     private func segment(_ bucket: TimeBucket) -> some View {
@@ -240,8 +340,8 @@ struct TodoTimeBucketSegmented: View {
         } label: {
             Text(bucket.localizedTitle)
                 .font(.system(size: 14, weight: .medium))
-                // 选中用 primaryText(深橙)而非 primary:后者白底对比度偏低
-                .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
+                // standard 选中用 primaryText(深橙),confirmation 选中用 selectedText(白/深青)
+                .foregroundColor(timeBucketForeground(isSelected: isSelected))
                 .lineLimit(1)
                 // 0.7 而非 0.8:en locale "Evening" 7 字符在 AX5 下 ×2~3 字号,
                 // 等宽段内 0.8 缩放仍可能溢出,放宽到 MEMORY 规则下限 0.7。
@@ -251,10 +351,31 @@ struct TodoTimeBucketSegmented: View {
                 .padding(.vertical, WarmSpacing.xs)
                 .background(
                     RoundedRectangle(cornerRadius: WarmRadius.segmentedThumb)
-                        .fill(isSelected ? WarmTheme.primary.opacity(0.12) : Color.clear)
+                        .fill(timeBucketBackground(isSelected: isSelected))
+                )
+                .shadow(
+                    color: appearance == .confirmation && isSelected
+                        ? ConfirmEditorTheme.accentFill.opacity(0.18)
+                        : .clear,
+                    radius: 4,
+                    y: 2
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    private func timeBucketForeground(isSelected: Bool) -> Color {
+        guard appearance == .confirmation else {
+            return isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary
+        }
+        return isSelected ? ConfirmEditorTheme.selectedText : WarmTheme.textSecondary
+    }
+
+    private func timeBucketBackground(isSelected: Bool) -> Color {
+        guard appearance == .confirmation else {
+            return isSelected ? WarmTheme.primary.opacity(0.12) : .clear
+        }
+        return isSelected ? ConfirmEditorTheme.accentFill : .clear
     }
 }
 
@@ -384,18 +505,21 @@ struct TodoClockTimeRow: View {
     @Binding private var timeBucket: TimeBucket?
     private let recurrenceFrequency: RecurrenceFrequency?
     private let onEdit: () -> Void
+    private let appearance: TodoFieldEditorAppearance
 
     init(
         dueDate: Binding<Date?>,
         hasDueTime: Binding<Bool>,
         timeBucket: Binding<TimeBucket?>,
         recurrenceFrequency: RecurrenceFrequency?,
+        appearance: TodoFieldEditorAppearance = .standard,
         onEdit: @escaping () -> Void
     ) {
         self._dueDate = dueDate
         self._hasDueTime = hasDueTime
         self._timeBucket = timeBucket
         self.recurrenceFrequency = recurrenceFrequency
+        self.appearance = appearance
         self.onEdit = onEdit
     }
 
@@ -446,7 +570,9 @@ struct TodoClockTimeRow: View {
                 )
                 Text(derived.localizedTitle)
                     .font(.system(size: 12))
-                    .foregroundColor(WarmTheme.textMuted)
+                    .foregroundColor(
+                        appearance == .confirmation ? ConfirmEditorTheme.accent : WarmTheme.textMuted
+                    )
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -480,13 +606,19 @@ struct TodoClockTimeRow: View {
                                 .layoutPriority(1)
                         }
                         // primaryText 深橙(浅底文字对比度优于直接 primary)
-                        .foregroundColor(WarmTheme.primaryText)
+                        .foregroundColor(
+                            appearance == .confirmation ? ConfirmEditorTheme.accent : WarmTheme.primaryText
+                        )
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("DetailAddTimeButton")
                 }
 
-                TodoTimeBucketSegmented(selection: $timeBucket, onEdit: onEdit)
+                TodoTimeBucketSegmented(
+                    selection: $timeBucket,
+                    appearance: appearance,
+                    onEdit: onEdit
+                )
             }
         }
     }

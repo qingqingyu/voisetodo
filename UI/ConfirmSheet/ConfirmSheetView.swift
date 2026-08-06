@@ -75,7 +75,6 @@ struct ConfirmSheetView: View {
     /// 当前就地展开编辑面板的 todo id,nil = 无展开。流式期间禁用展开
     /// (TodoItemRow.onTapGesture guard isStreaming),此状态透传到 row。
     @State private var expandedTodoID: UUID?
-    @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
     /// 流式期间点击卡片的底部 toast 是否可见。
     /// 点卡片 → TodoItemRow.onStreamingTap → 这里置 true → ToastModifier 2s 后自动 false。
     /// 用底部 toast 替代原卡片 overlay:不遮卡片内容,且与列表末尾的 StreamingFooter
@@ -169,9 +168,6 @@ struct ConfirmSheetView: View {
             .frame(maxWidth: .infinity, minHeight: WarmSize.touch, alignment: .leading)
             .contentShape(Rectangle())
             .accessibilityIdentifier("CancelButton")
-
-            calendarTarget
-                .frame(maxWidth: .infinity)
 
             Button(action: confirmAction) {
                 Text(String(localized: "confirm.add_count \(todos.count)"))
@@ -379,22 +375,6 @@ struct ConfirmSheetView: View {
         .padding(.bottom, WarmSpacing.xxs)
         .background(WarmTheme.background)
         .accessibilityIdentifier("OperationHintLabel")
-    }
-
-    private var calendarTarget: some View {
-        let mode = CalendarWriteMode(rawValue: calendarWriteModeRaw) ?? .appOnly
-        return HStack(spacing: WarmSpacing.xxs) {
-            Image(systemName: mode == .appAndSystemCalendar ? "calendar.badge.plus" : "calendar")
-                .font(.system(size: 11))
-            Text(mode == .appAndSystemCalendar
-                 ? String(localized: "confirm.calendar_target.app_and_system")
-                 : String(localized: "confirm.calendar_target.app_only"))
-                .font(WarmFont.caption(12))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .foregroundColor(WarmTheme.textSecondary)
-        .accessibilityIdentifier("CalendarTargetLabel")
     }
 
     private var canConfirm: Bool {
