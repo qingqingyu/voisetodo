@@ -93,6 +93,43 @@ final class VoiceInputTests: XCTestCase {
         XCTAssertTrue(request.contextualStrings.isEmpty)
     }
 
+    func testRecognitionRequestInjectsChineseBaselineMergedWithUserVocabulary() async {
+        let baseline = VoiceConstants.chineseTimeExpressionHints
+        XCTAssertFalse(baseline.isEmpty, "chineseTimeExpressionHints 常量应该非空(防常量被误删)")
+
+        var userHints: [String] = []
+        if let firstBaseline = baseline.first {
+            userHints.append(firstBaseline)
+        }
+        userHints.append(contentsOf: (1...120).map { "用户词\($0)" })
+        let provider = StaticVocabularyProvider(hints: userHints)
+
+        let request = await MainActor.run {
+            VoiceInputManager.makeRecognitionRequest(
+                localeIdentifier: "zh-Hans",
+                vocabularyProvider: provider
+            )
+        }
+
+        XCTAssertEqual(
+            Array(request.contextualStrings.prefix(baseline.count)),
+            baseline,
+            "中文 locale 应该把 baseline 完整排在 contextualStrings 前面"
+        )
+
+        if let firstBaseline = baseline.first {
+            let occurrences = request.contextualStrings.filter { $0 == firstBaseline }.count
+            XCTAssertEqual(occurrences, 1, "baseline 和用户词重合的项应该只保留一次")
+        }
+
+        let uniqueTotal = Set(baseline).union(Set(userHints)).count
+        XCTAssertEqual(
+            request.contextualStrings.count,
+            min(UserVocabularyConfig.speechContextualStringsLimit, uniqueTotal),
+            "总数应该 = min(100, 去重后总数)"
+        )
+    }
+
     // MARK: - 权限测试
 
     func testMicrophonePermissionRequestMethod() throws {
