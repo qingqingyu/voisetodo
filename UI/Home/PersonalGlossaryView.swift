@@ -70,6 +70,7 @@ private struct GlossaryEntryRow: View {
                 Image(systemName: entry.type == .alias ? "arrow.right" : "clock")
                     .font(.system(size: 11))
                     .foregroundColor(WarmTheme.textMuted)
+                    .flipsForRightToLeftLayoutDirection(true)
                 Text(entry.type == .alias ? (entry.expansion ?? "") : (entry.defaultTimeHint ?? ""))
                     .font(WarmFont.body(14))
                     .foregroundColor(WarmTheme.textSecondary)

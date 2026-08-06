@@ -739,6 +739,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(WarmTheme.primary)
+                    .flipsForRightToLeftLayoutDirection(true)
             }
             .frame(minHeight: WarmSize.touch, alignment: .center)
             .contentShape(Rectangle())
@@ -825,6 +826,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(WarmTheme.textMuted)
+                    .flipsForRightToLeftLayoutDirection(true)
             }
             .padding(.leading, 9)    // spec: 左内边距比右小,圆形图标视觉"轻"需补偿
             .padding(.trailing, 11)
@@ -987,7 +989,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                         .padding(.vertical, WarmSpacing.md)
                         .background(
                             RoundedRectangle(cornerRadius: WarmRadius.section)
-                                .fill(Color.white.opacity(0.8))
+                                .fill(WarmTheme.cardBackground.opacity(0.8))
                                 .shadow(color: WarmTheme.shadowLight, radius: 4, y: 2)
                         )
                         .padding(.horizontal, WarmSpacing.xl)

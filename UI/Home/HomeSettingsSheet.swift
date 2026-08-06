@@ -49,6 +49,7 @@ struct HomeSettingsSheet: View {
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
+                                .flipsForRightToLeftLayoutDirection(true)
                         }
                     }
                     .accessibilityIdentifier("UpgradeProButton")
