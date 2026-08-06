@@ -4031,6 +4031,22 @@
         }
       }
     },
+    "home.undated.section.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not tied to a day — shown every day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不绑定任何一天，每天可见"
+          }
+        }
+      }
+    },
     "home.unparsed.hint" : {
       "extractionState" : "stale",
       "localizations" : {
