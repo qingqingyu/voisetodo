@@ -1207,23 +1207,6 @@
         }
       }
     },
-    "confirm.add %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confirm (%lld)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认添加 (%lld)"
-          }
-        }
-      }
-    },
     "confirm.add_count %lld" : {
       "localizations" : {
         "en" : {
@@ -1236,40 +1219,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加 %lld"
-          }
-        }
-      }
-    },
-    "confirm.calendar_target.app_and_system" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save to app and system Calendar"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存到 App，并写入系统日历"
-          }
-        }
-      }
-    },
-    "confirm.calendar_target.app_only" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save to app calendar"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存到 App 日历"
           }
         }
       }
@@ -3291,6 +3240,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "我的说法"
+          }
+        }
+      }
+    },
+    "home.added_toast %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 %lld 条"
+          }
+        }
+      }
+    },
+    "home.added_toast.elsewhere %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added %lld · %lld on other dates"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 %lld 条 · %lld 条在其他日期"
           }
         }
       }

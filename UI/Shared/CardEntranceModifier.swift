@@ -17,12 +17,17 @@ struct CardEntranceModifier: ViewModifier {
     let id: UUID
     let index: Int
     @Binding var cardAppeared: Set<UUID>
+    /// 是否抑制自动入场。true 时 `.onAppear` 不再 insert 到 `cardAppeared`,
+    /// 行保持 opacity 0,等待调用方在外部统一放动画(用于 ConfirmSheet 成功反馈:
+    /// 抑制 sheet 后面的自动入场,sheet dismiss 后由 HomeView 按 rank 揭晓)。
+    var suppressed: Bool = false
 
     func body(content: Content) -> some View {
         content
             .opacity(cardAppeared.contains(id) ? 1 : 0)
             .offset(y: cardAppeared.contains(id) ? 0 : 20)
             .onAppear {
+                guard !suppressed else { return }
                 withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                     _ = cardAppeared.insert(id)
                 }
@@ -36,11 +41,13 @@ struct CardEntranceModifier: ViewModifier {
 
 extension View {
     /// 套用 `CardEntranceModifier`。`id` 用于去重,`index` 用于 stagger delay。
+    /// `suppressed` 默认 false;true 时跳过自动入场,留给调用方外部驱动动画。
     func cardEntrance(
         id: UUID,
         index: Int,
-        cardAppeared: Binding<Set<UUID>>
+        cardAppeared: Binding<Set<UUID>>,
+        suppressed: Bool = false
     ) -> some View {
-        modifier(CardEntranceModifier(id: id, index: index, cardAppeared: cardAppeared))
+        modifier(CardEntranceModifier(id: id, index: index, cardAppeared: cardAppeared, suppressed: suppressed))
     }
 }

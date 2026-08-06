@@ -27,6 +27,11 @@ struct HomeSelectedDayListView: View {
     /// 正在重新解析的 todo id 集合(来自 AppCoordinator.reextractingTodoIDs)。
     /// 用于驱动 UnparsedTodoCard 的按钮 disabled + ProgressView,防连点。
     var reextractingTodoIDs: Set<UUID> = []
+    /// 待揭晓的新增条目 id(来自 AppCoordinator.pendingRevealTodoIDs)。
+    /// 这些条目已写库但还没在 UI 上播过入场动画——`onAppear` 必须跳过自动 insert,
+    /// 等 HomeView 在 ConfirmSheet `onDismiss` 后按 rank 依次放动画。否则动画会在
+    /// sheet 背后播完,用户看到一堆静止的行。详见 docs/confirm-sheet-success-feedback-to-list-entrance.md。
+    var pendingRevealIDs: Set<UUID> = []
 
     /// 选中日是否完全无 todo 数据(未完成 + 已完成 + 待处理 bucket 全空)。
     /// 用于决定 Today Section body 是否走 `emptySelectedDayRow` 空态分支。
@@ -403,6 +408,9 @@ struct HomeSelectedDayListView: View {
         // 纯 .opacity 不移动 frame,命中区恒定 → swipeActions 稳定。
         .opacity(cardAppeared.contains(todo.id) ? 1 : 0)
         .onAppear {
+            // 待揭晓的新增条目交给 HomeView 在 sheet dismiss 后统一放动画,
+            // 否则动画会在 ConfirmSheet 背后播完(见 plan「根因 3」)。
+            guard !pendingRevealIDs.contains(todo.id) else { return }
             withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(todo.id)
             }
@@ -442,6 +450,9 @@ struct HomeSelectedDayListView: View {
         }
         .opacity(cardAppeared.contains(occurrence.todo.id) ? 1 : 0)
         .onAppear {
+            // 待揭晓的新增条目交给 HomeView 在 sheet dismiss 后统一放动画,
+            // 否则动画会在 ConfirmSheet 背后播完(见 plan「根因 3」)。
+            guard !pendingRevealIDs.contains(occurrence.todo.id) else { return }
             withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
                 _ = cardAppeared.insert(occurrence.todo.id)
             }

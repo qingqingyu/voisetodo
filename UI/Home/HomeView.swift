@@ -306,6 +306,16 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 默认折叠(unscheduled 多时视觉干净);Today tab 不用 drawer,此状态无意义。
     @State private var unscheduledDrawerExpanded: Bool = false
 
+    /// ConfirmSheet 成功后底部 toast 局部状态。**不走 `coordinator.showToast`**:
+    /// 根部 toast 是默认 `.top` 位置(`App/VoiceTodoApp.swift`),正好盖住我们要做
+    /// pop 动画的 `Today x/y` 计数器。HomeView 局部 `.bottom` toast 是项目先例
+    /// (`ConfirmSheetView` 流式点击反馈同样做法)。
+    /// `addedToastToken` 递增用于连续添加时重置 dismiss 计时(ToastModifier 通过
+    /// token 绕开 isPresented 同帧合并的去重)。
+    @State private var addedToastVisible = false
+    @State private var addedToastMessage = ""
+    @State private var addedToastToken = 0
+
     private var actions: HomeViewActions<Store> {
         HomeViewActions(
             store: store,
@@ -424,9 +434,19 @@ struct HomeView<Store: HomeTodoStore>: View {
             // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
             // 避免「外部 sheet + presenting view 的 NavigationStack」触发 iOS 隐式
             // navigationBar 占位,把 headerView 推下移(问题 1:header 掉位)。
-            .sheet(isPresented: $coordinator.showConfirmSheet) {
+            .sheet(isPresented: $coordinator.showConfirmSheet, onDismiss: revealConfirmedTodos) {
                 confirmSheetBody
             }
+            // 成功添加底部 toast:position=.bottom,不遮顶部 Today 计数器(pill 在做 pop)。
+            // addedToastVisible/Token 由 presentAddedToast(for:) 控制;revealConfirmedTodos
+            // 调用 presentAddedToast。Token 递增用于连续添加时重置 dismiss 计时。
+            .toast(
+                message: addedToastMessage,
+                style: .success,
+                isPresented: $addedToastVisible,
+                position: .bottom,
+                presentationToken: addedToastToken
+            )
             // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
             .sheet(isPresented: $showCalendarImport) {
                 calendarImportSheet
@@ -843,6 +863,58 @@ struct HomeView<Store: HomeTodoStore>: View {
         return (total, completed)
     }
 
+    /// ConfirmSheet dismiss 后统一揭晓新加的待办条目。
+    /// 由 `.sheet(..., onDismiss:)` 触发,从 coordinator 拿到有序 reveal 队列,
+    /// 按 rank 0/1/2/3... 依次 insert 到 `cardAppeared`,触发 HomeSelectedDayListView
+    /// 内 `todoRow` / `occurrenceRow` 的 opacity 数据变化(0→1)走 spring 动画。
+    /// stagger delay 步长与既有内联入场一致(0.06s),封顶 8 防止长批次拖尾过久。
+    ///
+    /// 为什么不在 row 的 `.onAppear` 自动入场:`store.addBatch` 在 `confirmAction` 内
+    /// 同步执行 → 新行 `.onAppear` 立即触发 → 此时 sheet 还盖着 → 动画在背后播完,
+    /// 用户看到一堆静止的行。本函数在 sheet `onDismiss` 后才执行,动画时机正确。
+    /// `HomeSelectedDayListView` 内的 guard `!pendingRevealIDs.contains(id)` 负责抑制
+    /// 自动入场,等本函数外部驱动。
+    private func revealConfirmedTodos() {
+        let ids = coordinator.consumePendingReveal()
+        guard !ids.isEmpty else { return }
+
+        for (rank, id) in ids.enumerated() {
+            let delay = Double(min(rank, 8)) * 0.06
+            withAnimation(motionAnim(WarmAnimation.springCard.delay(delay))) {
+                _ = cardAppeared.insert(id)
+            }
+        }
+        presentAddedToast(for: ids)
+    }
+
+    /// 成功添加后的底部 toast。统计落别处的条目数,选「已添加 N 条」或分流版「N 条 + M 条在其他日期」。
+    /// 跨天条目 / Reduce Motion / Calendar tab 不可见三种静默失败场景都靠 toast 兜底反馈。
+    private func presentAddedToast(for ids: [UUID]) {
+        let dayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
+        // 「别处」= 不在当前 selectedDate 的条目:有 dueDate 但落在别日,或无 dueDate(「稍后」「待定日期」)
+        let elsewhere = ids.filter { id in
+            guard let todo = store.todos.first(where: { $0.id == id }) else { return true }
+            guard let due = todo.dueDate else { return true }
+            return !DayClock.isSameUserDay(due, dayStart, calendar: calendar)
+        }.count
+        let onSelectedDay = ids.count - elsewhere
+
+        if elsewhere > 0 {
+            addedToastMessage = String(
+                format: String(localized: "home.added_toast.elsewhere %lld %lld"),
+                onSelectedDay, elsewhere
+            )
+        } else {
+            addedToastMessage = String(
+                format: String(localized: "home.added_toast %lld"),
+                ids.count
+            )
+        }
+        // 递增 token 让 ToastModifier 重置 dismiss 计时,连续添加时每条都享完整 duration。
+        addedToastToken += 1
+        addedToastVisible = true
+    }
+
     /// 今日总数,仅用于 playRingEntranceIfNeeded 的 gate 检查(不在 body 中调用,
     /// 避免 .onChange 热路径上重复跑 filter 遍历)。headerView 里的 dayStats 单算一次。
     private var todayTotalCount: Int {
@@ -895,6 +967,9 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     /// 胶囊内的文案 "今天 0/3"(无括号,统一 textPrimary 色——按 spec)。
     /// monospacedDigit 防数字字宽变化抖动;fixedSize 防外层 frame 压榨宽度。
+    /// 数字 Text 挂 `.numberPop(trigger: total)`:用户从 ConfirmSheet 加了一批今日任务后,
+    /// total 增加 → 数字弹一下,作为「东西落进列表」的反馈之一。
+    /// 0→正数不弹(modifier 内 gate),避免与 pill opacity 入场动画打架。
     private func pillLabel(total: Int, completed: Int) -> some View {
         HStack(spacing: WarmSpacing.xxs) {
             Text(String(localized: "home.today"))
@@ -904,6 +979,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .font(WarmFont.caption(13))
                 .monospacedDigit()
                 .foregroundStyle(WarmTheme.textPrimary)
+                .numberPop(trigger: total)
         }
         .fixedSize()
     }
@@ -1211,7 +1287,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                             onPickDate: { id, date in pickTodoDate(id: id, date: date) },
                             onReextract: { id in coordinator.reextract(todoID: id) },
                             onReorder: { ids in actions.reorderTodos(ids) },
-                            reextractingTodoIDs: coordinator.reextractingTodoIDs
+                            reextractingTodoIDs: coordinator.reextractingTodoIDs,
+                            pendingRevealIDs: Set(coordinator.pendingRevealTodoIDs)
                         )
                         .frame(height: listHeight)
                         .opacity(isCalendarList ? collapseProgress : 1)

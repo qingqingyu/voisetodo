@@ -65,6 +65,13 @@ final class AppCoordinator: ObservableObject {
     /// 流式 .success 后由 `detectConflicts()` 异步填充;sheet 关闭/取消时清空。
     /// 第一版本只做"提示",不阻断确认。
     @Published var conflictWarnings: [UUID: [ExternalCalendarEvent]] = [:]
+    /// 已确认、待 HomeView 在 ConfirmSheet dismiss 后统一揭晓动画的 todo id 队列。
+    /// **有序数组而非 Set**:序号即 stagger 的 rank(0/1/2/3 → delay 0/0.06/0.12/0.18s)。
+    /// 由 `confirmTodos(_:)` 成功路径写入,`consumePendingReveal()` 一次性消费后清空。
+    /// 设计动机:ConfirmSheet dismiss 期间若由 SwiftUI 自然 diff 入场,新行 `.onAppear`
+    /// 会在 sheet 还盖着时立即触发、动画在背后播完。本队列让 HomeView 抑制自动入场,
+    /// 等 sheet `onDismiss` 后由 `revealConfirmedTodos()` 按 rank 依次放动画。
+    @Published private(set) var pendingRevealTodoIDs: [UUID] = []
     /// Intent (Spotlight/Action Button) 触发录音时,HomeView 需要先展开 BottomInputPanel 再启动录音。
     /// 由 VoiceTodoApp.handleActionButtonLaunch 设 true,HomeView onChange 消费后清回 false。
     @Published var pendingIntentRecordingLaunch = false
@@ -614,6 +621,10 @@ final class AppCoordinator: ObservableObject {
             }
 
             WidgetCenter.shared.reloadAllTimelines()
+            // 写入待揭晓队列,让 HomeView 在 sheet dismiss 后按 rank 依次放 stagger 动画。
+            // 必须在 return true 之前赋值:confirmAction 紧接着 dismiss() → onDismiss
+            // → consumePendingReveal 读到这批 id。失败路径直接 return false,不写队列。
+            pendingRevealTodoIDs = todos.map(\.id)
             VoiceTodoLog.coordinator.info("coordinator.confirm.success id=\(confirmID, privacy: .public) todoCount=\(todos.count) shouldSyncCalendar=\(shouldSyncSystemCalendar) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return true
         } catch {
@@ -621,6 +632,15 @@ final class AppCoordinator: ObservableObject {
             handleError(error)
             return false
         }
+    }
+
+    /// 消费并清空待揭晓队列。HomeView 在 ConfirmSheet `onDismiss` 时调用一次,
+    /// 按 rank 依次放 stagger 入场动画。返回空数组表示无待揭晓条目(应跳过动画逻辑)。
+    /// 一次性消费:防止 sheet 反复 present/dismiss 时同一批 id 被重放动画。
+    func consumePendingReveal() -> [UUID] {
+        let ids = pendingRevealTodoIDs
+        pendingRevealTodoIDs = []
+        return ids
     }
 
     /// 成功保存流式 partial 后停止剩余解析，但保留当前结果供成功动画和学习逻辑使用。

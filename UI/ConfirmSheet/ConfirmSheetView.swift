@@ -63,7 +63,6 @@ struct ConfirmSheetView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showSuccess = false
     @State private var didFinish = false
     @State private var transcriptExpanded = false
     /// ScrollView 内 VStack 的实际内容高度,由 SheetContentHeightKey 回传,
@@ -88,12 +87,7 @@ struct ConfirmSheetView: View {
     var body: some View {
         VStack(spacing: 0) {
             sheetHeader
-
-            if showSuccess {
-                successOverlay
-            } else {
-                mainContent
-            }
+            mainContent
         }
         // 流式点击反馈:底部 toast(safe area 上方居中,不遮卡片)。
         // 文案带状态 + 下一步("正在解析,完成后可编辑"),不是单说"不能编辑"。
@@ -136,22 +130,6 @@ struct ConfirmSheetView: View {
             guard !didFinish else { return }
             didFinish = true
             onCancel()
-        }
-        .task(id: showSuccess) {
-            guard showSuccess else { return }
-            // .task 闭包签名是 non-throwing,用 do/catch 显式吞 CancellationError
-            // (Task.sleep 只 throw CancellationError),符合「错误显式传播」:
-            // 被取消是预期无操作路径,且此处不可能有其他错误。
-            do {
-                try await Task.sleep(nanoseconds: 1_500_000_000)
-            } catch is CancellationError {
-                return
-            } catch {
-                // 不可达:Task.sleep 只 throw CancellationError。但 do/catch 语义上
-                // 要求 catch 穷尽,否则闭包整体 throws,与 .task 签名冲突。
-                return
-            }
-            dismiss()
         }
     }
 
@@ -418,37 +396,6 @@ struct ConfirmSheetView: View {
         return height
     }
 
-    // MARK: - Success Overlay
-
-    private var successOverlay: some View {
-        VStack(spacing: WarmSpacing.md) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(WarmTheme.success)
-                    .frame(width: WarmSize.hero, height: WarmSize.hero)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 40, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            .scaleEffect(showSuccess ? 1.0 : 0.5)
-            .animation(WarmAnimation.springBouncy, value: showSuccess)
-
-            Text(ErrorMessages.addedSuccess)
-                .font(WarmFont.headline(18))
-                .foregroundColor(WarmTheme.textPrimary)
-                .opacity(showSuccess ? 1.0 : 0.0)
-                .animation(.easeIn(duration: 0.2).delay(0.2), value: showSuccess)
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(WarmTheme.background)
-        .accessibilityIdentifier("SuccessAnimation")
-    }
-
     // MARK: - Actions
 
     /// 流式期间点击卡片:显示底部 toast + 递增 token 强制重置 dismiss 计时。
@@ -475,9 +422,13 @@ struct ConfirmSheetView: View {
         }
 
         Telemetry.record(.todoSaved(source: .confirm, count: todos.count))
-        withAnimation(WarmAnimation.springBouncy) {
-            showSuccess = true
-        }
+        // 不再切到成功页:删除 successOverlay + 1.5s 延时 dismiss。成功反馈改为
+        // 「sheet 立即收起 → 列表 stagger 弹入 → Today 计数 pop → 触觉」,见 HomeView。
+        // 触觉在 dismiss 之前触发:用户点 Add 的瞬间就能感到震动反馈。
+        // store.addBatch 已在 onConfirm 内同步完成,dismiss 启动时 HomeView 已有新数据,
+        // 待揭晓队列(coordinator.pendingRevealTodoIDs)也已被 confirmTodos 写好。
+        HapticFeedback.success()
+        dismiss()
     }
 
     private func cancelAction() {
