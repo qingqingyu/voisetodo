@@ -47,6 +47,7 @@ struct ProductEmptyStateView: View {
                     .foregroundColor(WarmTheme.textPrimary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.8)
 
                 if let message {
                     Text(message)
@@ -95,7 +96,7 @@ struct ProductEmptyStateView: View {
                             .frame(height: WarmSize.touch)
                             .background(
                                 Capsule()
-                                    .fill(Color.white.opacity(0.9))
+                                    .fill(WarmTheme.cardBackground.opacity(0.9))
                                     .overlay(
                                         Capsule()
                                             .stroke(WarmTheme.primary.opacity(0.22), lineWidth: 1)
@@ -128,7 +129,7 @@ struct ProductEmptyStateView: View {
 
     private var background: some View {
         RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
-            .fill(Color.white.opacity(0.93))
+            .fill(WarmTheme.cardBackground.opacity(0.93))
             .overlay(
                 RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
                     .stroke(WarmTheme.primary.opacity(0.12), lineWidth: 1)
@@ -177,11 +178,11 @@ struct EmptyStateView: View {
             }
 
             Text(message)
-                .font(.custom("Avenir Next", size: 17))
-                .fontWeight(.medium)
+                .font(WarmFont.body(17))
                 .foregroundColor(WarmTheme.textPrimary.opacity(opacity))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

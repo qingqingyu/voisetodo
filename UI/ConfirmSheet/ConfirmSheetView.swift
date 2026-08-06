@@ -159,11 +159,13 @@ struct ConfirmSheetView: View {
 
     private var sheetHeader: some View {
         HStack(spacing: WarmSpacing.xs) {
-            Button(String(localized: "confirm.cancel")) {
-                cancelAction()
+            Button(action: cancelAction) {
+                Text(String(localized: "confirm.cancel"))
+                    .font(WarmFont.headline(15))
+                    .foregroundStyle(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .font(WarmFont.headline(15))
-            .foregroundStyle(WarmTheme.textSecondary)
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, minHeight: WarmSize.touch, alignment: .leading)
             .contentShape(Rectangle())
@@ -257,13 +259,13 @@ struct ConfirmSheetView: View {
 
     /// 撞车警告 banner:汇总提示「N 条待办与日历事件时间冲突」。
     /// 第一版本只做汇总提示,不展开每条冲突详情(后续可点击展开)。
-    /// 用 .orange 系统警告色 + 半透明底,跟现有 WarmTheme 风格协调。
+    /// 用 WarmTheme.warning 系列色,跟现有主题风格协调(浅色暖米橙 / 深色深棕)。
     @ViewBuilder
     private var conflictWarningsBanner: some View {
         let count = conflictWarnings.count
         HStack(alignment: .top, spacing: WarmSpacing.xs) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundColor(WarmTheme.warningText)
                 .font(.system(size: 13))
             Text(String(localized: "confirm.conflict.banner \(count)"))
                 .font(WarmFont.caption(13))
@@ -271,7 +273,7 @@ struct ConfirmSheetView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(WarmSpacing.sm)
-        .background(Color.orange.opacity(0.08))
+        .background(WarmTheme.warningSurface)
         .clipShape(RoundedRectangle(cornerRadius: WarmRadius.chip))
         .accessibilityIdentifier("ConflictWarningsBanner")
     }

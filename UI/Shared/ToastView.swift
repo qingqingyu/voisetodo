@@ -153,8 +153,7 @@ struct ToastView: View {
             }
 
             Text(message)
-                .font(.custom("Avenir Next", size: 15))
-                .fontWeight(.medium)
+                .font(WarmFont.body(15))
                 .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
@@ -164,8 +163,7 @@ struct ToastView: View {
             if let actionTitle, let action {
                 Button(action: action) {
                     Text(actionTitle)
-                        .font(.custom("Avenir Next", size: 13))
-                        .fontWeight(.semibold)
+                        .font(WarmFont.headline(13))
                         .foregroundColor(style.iconColor)
                         .padding(.horizontal, WarmSpacing.sm)
                         .padding(.vertical, WarmSpacing.xs)

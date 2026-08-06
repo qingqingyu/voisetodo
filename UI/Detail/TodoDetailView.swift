@@ -489,6 +489,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     // Text 上的 .font 修饰作为整体应用,styledSummary 只改 foregroundColor。
                     Text(recurrenceSummary)
                         .font(WarmFont.body(14))
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("DetailRecurrenceSummary")
                 }
 

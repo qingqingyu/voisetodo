@@ -68,6 +68,11 @@ enum WarmTheme {
     // 警告 banner 文字色:深棕橙(浅)/ 浅米色(深),保证在 warning.opacity(0.1) 背景上可读。
     // 保留暖色:warning 背景本身是暖橙 opacity,文字同色系保证色相和谐 + 可读对比度。
     static let warningText = Color(light: "92600A", dark: "F0D9A8")
+    // 警告 banner 浅色底(浅色暖米橙 / 深色深棕)。
+    // 与 warningText 配对使用:背景承担「这是提示」的色相暗示,文字承担可读对比度。
+    // 之前 ConfirmSheet 冲突 banner 用系统 .orange + opacity(0.08) 拼凑,色相偏离主题、
+    // 深色模式下泛红像错误警告 —— 改用 token 后跟随主题整体暖灰系。
+    static let warningSurface = Color(light: "FFF3E0", dark: "3A2E1F")
     // 键盘模式文本框背景:跟随 cardBackground 的明暗逻辑。
     static let inputFieldBackground = Color(light: "F8FAFB", dark: "26282B")
 
