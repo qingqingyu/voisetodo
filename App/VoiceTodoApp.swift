@@ -28,9 +28,6 @@ struct VoiceTodoApp: App {
     @AppStorage("pendingPaywallAfterOnboarding") private var pendingPaywallAfterOnboarding = false
     @State private var showOnboarding = false
 
-    /// 标记是否应该自动开始录音（从 Action Button 启动）
-    @State private var shouldAutoStartRecording = false
-
     /// Action Button / 快捷指令投递的「开始录音」请求。
     /// intent 的 perform 在 App 进程里跑但够不到 @StateObject，故经单例中转。
     @ObservedObject private var actionButtonSignal = ActionButtonLaunchSignal.shared
@@ -291,17 +288,11 @@ struct VoiceTodoApp: App {
                 .accessibilityIdentifier("StartupStorageErrorView")
         } else if hasCompletedOnboarding {
             // 已完成引导，显示主界面
+            // Intent (Spotlight/Action Button) 录音信号由 HomeView 自己消费
+            // (coordinator.pendingIntentRecordingLaunch),展开 BottomInputPanel 后再调
+            // coordinator.handleActionButtonLaunch —— 不再走 @State 中转。
             HomeView(store: todoStore)
                 .accessibilityIdentifier("HomeRootView")
-                // ✅ 当 shouldAutoStartRecording 为 true 时自动开始录音
-                .onChange(of: shouldAutoStartRecording) { _, newValue in
-                    if newValue {
-                        shouldAutoStartRecording = false
-                        Task {
-                            await coordinator.handleActionButtonLaunch()
-                        }
-                    }
-                }
         } else {
             // 未完成引导，显示占位（引导会通过 sheet 显示）
             Color.clear
@@ -423,11 +414,12 @@ struct VoiceTodoApp: App {
                 return
             }
 
-            // 设置标记，触发自动录音
-            // 使用 DispatchQueue 延迟一帧，确保 UI 已准备就绪
+            // 通知 HomeView 展开 BottomInputPanel,展开完成后由 HomeView 调
+            // coordinator.handleActionButtonLaunch 启动录音。
+            // 用 DispatchQueue 延迟一帧,确保 HomeView 的 .onChange 已注册(冷启动场景)。
             DispatchQueue.main.async {
                 VoiceTodoLog.app.info("app.action_button.ready_to_start")
-                shouldAutoStartRecording = true
+                coordinator.pendingIntentRecordingLaunch = true
             }
         }
     }

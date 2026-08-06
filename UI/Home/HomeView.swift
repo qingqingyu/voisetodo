@@ -217,6 +217,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var manualInputTask: Task<Void, Never>?
     /// Deeplink 重试任务（todos 尚未加载时延后重试）。同样需要 onDisappear cancel。
     @State private var deepLinkTask: Task<Void, Never>?
+    /// Intent (Spotlight/Action Button) 触发录音时的 panel 展开 → 录音启动任务。
+    /// 与 inputPanelPermissionTask 等同,需在视图销毁时 cancel,否则 450ms 后会在
+    /// view 已销毁的前提下继续调 coordinator.handleActionButtonLaunch 启动静默录音。
+    @State private var intentRecordingLaunchTask: Task<Void, Never>?
     /// 口径：选中日的**自然日 0 点**（月网格 / dayKey / visibleDays 的共同坐标系）。
     /// 初值用"语义今天"——晚睡用户凌晨打开 App，`startOfUserDay` 会先把 `Date()` 折算到
     /// 前一用户日（如 03:00 起），再取它的自然日 0 点，于是选中"昨天"——符合 DayClock 心智。
@@ -515,6 +519,15 @@ struct HomeView<Store: HomeTodoStore>: View {
                 coordinator.didAutoFinishDueToSilence = false
                 handlePanelSend(text: "")
             }
+            .onChange(of: coordinator.pendingIntentRecordingLaunch) { _, newValue in
+                // Intent (Spotlight/Action Button) 触发录音:VoiceTodoApp 已做完权限检查,
+                // 这里负责展开 BottomInputPanel,等展开动画完成后再启动录音。
+                // 与圆形按钮路径(openVoiceInputPanel)的差异:不走 isInputEntryDisabled 守卫,
+                // 也不做二次权限检查 —— intent 是用户主动行为,VoiceTodoApp 已处理。
+                guard newValue else { return }
+                coordinator.pendingIntentRecordingLaunch = false
+                expandPanelForIntentRecording()
+            }
             .onDisappear {
                 // 视图销毁时主动收尾异步 Task，避免它们继续访问已销毁的 @State。
                 // cancel 后统一 nil 清空，让 ARC 尽早回收（与已 nil 的 task 一致）。
@@ -530,6 +543,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 manualInputTask = nil
                 deepLinkTask?.cancel()
                 deepLinkTask = nil
+                intentRecordingLaunchTask?.cancel()
+                intentRecordingLaunchTask = nil
                 // 复位两阶段标志 + fallback 标志：scheduleDeferredPanelStateReset 只在 closeInputPanel
                 // 后 400ms 触发，若 view 在此之前销毁（tab 切换 / sheet dismiss），复位就漏了。
                 // 与 openVoiceInputPanel 已做的复位动作对齐，保证"销毁→重建"与"open→close"状态等价。
@@ -1590,6 +1605,65 @@ struct HomeView<Store: HomeTodoStore>: View {
             isKeyboardMode = false
         }
         startRecordingForInputPanel()
+    }
+
+    /// Intent (Spotlight/Action Button) 触发录音时的 panel 展开 + 录音启动。
+    ///
+    /// 与 `openVoiceInputPanel`(圆形按钮路径)的差异:
+    /// - 不调 `startRecordingForInputPanel` 的二次权限检查(VoiceTodoApp.handleActionButtonLaunch 已检查过)
+    /// - 不走 `isInputEntryDisabled` 守卫(intent 是用户主动行为,不应被 processing 状态阻塞)
+    /// - 等 panel 展开动画完成后再调 coordinator.handleActionButtonLaunch,
+    ///   避免录音 UI 抖动(BottomInputPanel 还在展开过程中就开始录音,会让波形/停止按钮闪现)
+    ///
+    /// coordinator.handleActionButtonLaunch 内部的保护:
+    /// - ConfirmSheet 已开时不重启录音(`guard !showConfirmSheet`)
+    /// - 60 秒静默录音全程 await,期间用户手动点停止会令 isAutoProcessing=false,
+    ///   `handleActionButtonLaunch` 在 await 完成后据此早退。
+    /// - 权限在 ~466ms 窗口内被撤销(VoiceTodoApp 已检查过 → 这里 sleep → 这里再调):
+    ///   `coordinator.startRecording` 会捕获 `voiceInput.startRecording()` 抛出的错误并返回 false,
+    ///   `handleActionButtonLaunch` 据 `didStart == false` 早退,不会静默吞失败。
+    ///
+    /// 本方法的 Task 存入 `intentRecordingLaunchTask`,在 onDisappear / 重新触发时 cancel,
+    /// 防止 view 销毁后仍启动录音(对齐 inputPanelPermissionTask 等其他 Task 的生命周期)。
+    private func expandPanelForIntentRecording() {
+        // 取消上一次未完成的 intent 启动 Task(连续两次 Action Button 触发的竞态)。
+        intentRecordingLaunchTask?.cancel()
+        // 复位动作与 openVoiceInputPanel 完全对齐,确保「销毁→重建」与「open→close」状态等价。
+        inputPanelResetTask?.cancel()
+        keyboardDismissFallbackTask?.cancel()
+        // 自增 epoch:让上一会话残留的 fallback 比对 task 识别「已进入新会话」并短路退出。
+        panelSessionEpoch += 1
+        panelInputText = ""
+        // 复位两阶段标志 + keyboardHeight:上次会话非正常退出可能残留非零值,
+        // 让本次首点误走「键盘弹起」分支浪费一次 tap。
+        keyboardDismissStageTriggered = false
+        keyboardHeight = 0
+        // 复位 fallback 标志 + 录音失败 fallback 信号,与 openVoiceInputPanel 完全一致。
+        isFallbackMode = false
+        coordinator.voiceInputFallbackToKeyboard = false
+        withAnimation(WarmAnimation.springSmooth) {
+            showInputPanel = true
+            isKeyboardMode = false
+        }
+        intentRecordingLaunchTask = Task { @MainActor in
+            // Spring 动画 ≈ 350ms,留 450ms 余量保证 BottomInputPanel 完全展开后再起录音。
+            // 此 Task 存到 intentRecordingLaunchTask,被 cancel 时(进入新会话 / 页面离场)
+            // Task.sleep 抛 CancellationError,直接退出,不再调 handleActionButtonLaunch。
+            do {
+                try await Task.sleep(nanoseconds: 450_000_000)
+            } catch {
+                VoiceTodoLog.ui.warning("home.intent_panel_expand.cancelled")
+                return
+            }
+            // sleep 后再次校验 view 仍可见且 panel 仍是展开的语音模式,
+            // 防止极端场景(用户在 450ms 内手动关面板 / 切到键盘模式)下仍启动录音。
+            // 用 info 而非 warning —— 用户主动切换键盘属于正常操作,不是异常。
+            guard !Task.isCancelled, showInputPanel, !isKeyboardMode else {
+                VoiceTodoLog.ui.info("home.intent_panel_expand.aborted reason=panel_state_changed")
+                return
+            }
+            await coordinator.handleActionButtonLaunch()
+        }
     }
 
     private func startRecordingForInputPanel() {
