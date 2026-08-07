@@ -125,9 +125,10 @@ struct LockscreenRectangularWidget: View {
                         Toggle(isOn: todo.isCompleted, intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
                             HStack(spacing: WarmSpacing.xs) {
                                 Text(todo.title)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(.system(size: 14, weight: .medium))
                                     .strikethrough(todo.isCompleted)
                                     .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                                     .contentTransition(WidgetAnimation.opacityContent(enabled: animationsEnabled))
                                     .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: todo.isCompleted)
                                     .invalidatableContent()
@@ -137,7 +138,7 @@ struct LockscreenRectangularWidget: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                         }
-                        .toggleStyle(WidgetTodoToggleStyle(iconSize: 13, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled))
+                        .toggleStyle(WidgetTodoToggleStyle(iconSize: 13, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled, hitTarget: nil))
                         .id(todo)
                         .transition(WidgetAnimation.rowTransition(enabled: animationsEnabled))
                     }
@@ -301,6 +302,10 @@ struct WidgetTodoToggleStyle: ToggleStyle {
     var iconSize: CGFloat = 20
     var uncheckedOpacity: Double = 0.4
     var animationsEnabled = true
+    /// 圆圈图标的最小 hit target。nil 表示不强制(锁屏矩形组件等空间紧张的容器);
+    /// 默认 WarmSize.touch(44pt)用于桌面 widget,保证 HIG 触控热区。
+    /// 注意:Toggle 整行可点击(label + 圆圈),缩小圆圈的 min frame 不影响触控可用性。
+    var hitTarget: CGFloat? = WarmSize.touch
 
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: WarmSpacing.xs) {
@@ -313,7 +318,7 @@ struct WidgetTodoToggleStyle: ToggleStyle {
                         .transition(WidgetAnimation.toggleTransition(enabled: animationsEnabled))
                 }
             }
-                .frame(minWidth: WarmSize.touch, minHeight: WarmSize.touch)
+                .frame(minWidth: hitTarget, minHeight: hitTarget)
                 .contentShape(Rectangle())
                 .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: configuration.isOn)
                 .invalidatableContent()
