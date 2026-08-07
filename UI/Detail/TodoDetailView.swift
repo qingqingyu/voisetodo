@@ -698,6 +698,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// - .daily:        从 **{date}** 起,**每天**
     /// - .monthly:      从 **{date}** 起,**每月 {N} 号**
     /// - .weekly:       从 **{date}** 起,每 {周期词} **{周一、周二}**
+    /// - .weekly(interval>1 + 空 weekdays): 从 **{date}** 起,每 {周期词}(无"on 哪几天"语义)
     /// - .weekly(校验失败): 还没选星期,**这条规则不会生效**
     private var recurrenceSummary: AttributedString? {
         // 校验失败优先(.weekly interval=1 + 无 weekdays)——
@@ -728,12 +729,19 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             case 3:  intervalWord = String(localized: "recurrence.summary.weekly_interval_tri")
             default: intervalWord = String(localized: "recurrence.summary.weekly_interval_single")
             }
-            let weekdaysText = editedWeekdays
-                .sorted()
-                .map { shortWeekdayName($0) }
-                .joined(separator: String(localized: "recurrence.summary.weekday_separator"))
-            raw = String(format: String(localized: "recurrence.summary.weekly"),
-                         dateText, intervalWord, weekdaysText)
+            // interval>1(双周/三周)允许空 weekdays —— 语义是"从起始日每 interval*7 天一次",
+            // 没有"on 哪几天"这个概念。空 weekdays 走另一条模板,避免主模板空 %3$@ 渲染成 ****。
+            if editedWeekdays.isEmpty {
+                raw = String(format: String(localized: "recurrence.summary.weekly_no_weekday"),
+                             dateText, intervalWord)
+            } else {
+                let weekdaysText = editedWeekdays
+                    .sorted()
+                    .map { shortWeekdayName($0) }
+                    .joined(separator: String(localized: "recurrence.summary.weekday_separator"))
+                raw = String(format: String(localized: "recurrence.summary.weekly"),
+                             dateText, intervalWord, weekdaysText)
+            }
         }
         return styledSummary(raw)
     }

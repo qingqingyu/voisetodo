@@ -6394,6 +6394,28 @@
         }
       }
     },
+    "recurrence.summary.weekly_no_weekday" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From **%1$@**, every %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "**%1$@**から、%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 **%1$@** 起,每 %2$@"
+          }
+        }
+      }
+    },
     "recurrence.triweekly_short" : {
       "localizations" : {
         "en" : {
