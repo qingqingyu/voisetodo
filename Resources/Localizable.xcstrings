@@ -3671,6 +3671,22 @@
         }
       }
     },
+    "home.pending_date.section.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You mentioned a time, but not a day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说了大概时间，但还没定具体哪天"
+          }
+        }
+      }
+    },
     "home.popover.date_picker" : {
       "localizations" : {
         "en" : {
@@ -4017,13 +4033,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not tied to a day — shown every day"
+            "value" : "Rolls over to tomorrow if not done"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不绑定任何一天，每天可见"
+            "value" : "没做完会自动顺延到明天"
           }
         }
       }
