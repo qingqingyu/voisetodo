@@ -604,11 +604,11 @@ struct WeekStripCard: View {
                                    height: HomeLayoutMetrics.weekStripDotDiameter)
                     }
                 }
-                // 必须显式 maxWidth:.infinity —— VStack 对自定义 Layout 的 sizing 试探
-                // 可能给 FlowLayout 一个 nil/0 宽度的 proposal,FlowLayout 在 0 宽度下会
-                // 把每个圆点都换行(neededWidth > 0 永远成立),视觉上退化成竖排。
-                // 同文件图例(行 504)用同样写法撑满宽度;详情页 chip(TodoDetailView.swift:628)
-                // 不需要,因为 chip 有 fixedSize 暴露 intrinsic 宽度。
+                // 双层防御竖排回归 —— FlowLayout 内部已对 < 1pt / nil 宽度 proposal 做兜底
+                // (sizeThatFits 把 < 1pt 视为 .infinity;placeSubviews 检测 cache 与 bounds
+                // 不一致时重算),不需要外层撑宽。此处 .frame(maxWidth: .infinity) 仍保留
+                // 作为冗余:SwiftUI Layout 协议在不同 iOS 版本下 cache 复用行为不稳定,
+                // 任何一层失效时另一层兜底,避免再次回归(commit 6a3564b 单层修法已回归过)。
                 .frame(height: HomeLayoutMetrics.weekStripDotsAreaHeight)
                 .frame(maxWidth: .infinity)
             }
