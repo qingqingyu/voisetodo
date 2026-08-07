@@ -105,7 +105,8 @@ struct HomeSelectedDayListView: View {
                 } header: {
                     daySectionHeader(
                         title: String(localized: "home.pending_date.section"),
-                        count: state.pendingDateTodos.count
+                        count: state.pendingDateTodos.count,
+                        subtitle: String(localized: "home.pending_date.section.hint")
                     )
                 }
             }
@@ -308,7 +309,7 @@ struct HomeSelectedDayListView: View {
             }
             if let subtitle {
                 Text(subtitle)
-                    .font(WarmFont.caption(12))
+                    .font(WarmFont.caption(11))
                     .foregroundColor(WarmTheme.textMuted)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
