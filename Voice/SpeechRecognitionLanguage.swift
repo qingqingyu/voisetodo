@@ -13,6 +13,8 @@ enum SpeechRecognitionLanguage: String, CaseIterable, Identifiable {
     case auto = "auto"
     /// 简体中文（对中英混说容忍度高，双语用户首选）
     case zhHans = "zh-Hans"
+    /// 日本語
+    case jaJP = "ja-JP"
     /// English
     case enUS = "en-US"
 
@@ -23,6 +25,7 @@ enum SpeechRecognitionLanguage: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return String(localized: "settings.speech_language.auto")
         case .zhHans: return String(localized: "settings.speech_language.zh-Hans")
+        case .jaJP:   return String(localized: "settings.speech_language.ja-JP")
         case .enUS:   return String(localized: "settings.speech_language.en-US")
         }
     }
@@ -32,6 +35,7 @@ enum SpeechRecognitionLanguage: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return nil
         case .zhHans: return Locale(identifier: "zh-Hans")
+        case .jaJP:   return Locale(identifier: "ja-JP")
         case .enUS:   return Locale(identifier: "en-US")
         }
     }

@@ -104,24 +104,40 @@ final class PersonalGlossaryStore: PersonalGlossaryProviding {
         }
         guard !entries.isEmpty else { return nil }
 
+        let isZh = localeIdentifier.hasPrefix("zh")
+        let isJa = localeIdentifier.hasPrefix("ja")
+
         let lines = entries.map { entry -> String in
             switch entry.type {
             case .alias:
                 let exp = entry.expansion ?? ""
-                return localeIdentifier.hasPrefix("zh")
-                    ? "• \"\(entry.phrase)\" 指 \"\(exp)\""
-                    : "• \"\(entry.phrase)\" means \"\(exp)\""
+                if isZh {
+                    return "• \"\(entry.phrase)\" 指 \"\(exp)\""
+                } else if isJa {
+                    return "• \"\(entry.phrase)\" は \"\(exp)\" を指す"
+                } else {
+                    return "• \"\(entry.phrase)\" means \"\(exp)\""
+                }
             case .convention:
                 let hint = entry.defaultTimeHint ?? ""
-                return localeIdentifier.hasPrefix("zh")
-                    ? "• \"\(entry.phrase)\" 通常安排在 \(hint)"
-                    : "• \"\(entry.phrase)\" is usually scheduled \(hint)"
+                if isZh {
+                    return "• \"\(entry.phrase)\" 通常安排在 \(hint)"
+                } else if isJa {
+                    return "• \"\(entry.phrase)\" は通常 \(hint) に予定される"
+                } else {
+                    return "• \"\(entry.phrase)\" is usually scheduled \(hint)"
+                }
             }
         }
 
-        let header = localeIdentifier.hasPrefix("zh")
-            ? "用户个人约定(请展开别名并套用默认时间):"
-            : "User personal conventions (expand aliases and apply default times):"
+        let header: String
+        if isZh {
+            header = "用户个人约定(请展开别名并套用默认时间):"
+        } else if isJa {
+            header = "ユーザーの個人的な約束事(エイリアスを展開し、デフォルト時刻を適用してください):"
+        } else {
+            header = "User personal conventions (expand aliases and apply default times):"
+        }
         return "\(header)\n\(lines.joined(separator: "\n"))"
     }
 

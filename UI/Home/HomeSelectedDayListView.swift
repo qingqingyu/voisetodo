@@ -3,6 +3,12 @@ import SwiftUI
 struct HomeSelectedDayListView: View {
     let state: HomeCalendarState
     let selectedBottomTab: BottomTab
+    // 用于 daySectionHeader 副标题布局切换:Accessibility 档位下副标题横排会撑爆,
+    // 回退到下方 VStack;普通档位下放右侧 HStack。读 dynamicTypeSize 是因为
+    // `isAccessibilitySize` 是 SwiftUI 推荐的 a11y 阈值判定;`sizeCategory` 的枚举没有
+    // 等价属性,且 `sizeCategory` 与 `dynamicTypeSize` 由 SwiftUI 自动同步,preview 里
+    // 用 `.environment(\.sizeCategory, .accessibilityXXXL)` 仍能驱动本判断。
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var cardAppeared: Set<UUID>
     let onToggleTodo: (UUID) -> Void
     let onToggleOccurrence: (TodoOccurrenceData) -> Void
@@ -351,29 +357,45 @@ struct HomeSelectedDayListView: View {
         .listRowBackground(Color.clear)
     }
 
-    /// section header。可选 `subtitle` 给副标题(如「稍后」分区下方的说明),
-    /// 副标题用小字 muted 色,紧跟在标题/count 行下方。其他分区不传 subtitle 即不渲染。
+    /// section header。可选 `subtitle` 给副标题(如「稍后」「待定日期」分区的说明)。
+    ///
+    /// 布局:
+    /// - 普通/Medium~ExtraExtraLarge 字号:副标题横放到标题/count 行的**右侧**,10pt + lineLimit(1),
+    ///   用 `minimumScaleFactor(0.7)` 兜底英文长文本(如 "You mentioned a time, but not a day")。
+    ///   副标题本就是辅助提示,设计稿把它放右侧与卡片内容做水平分隔,比压在标题下方更省垂直空间。
+    /// - Accessibility 档位(AX1~AX5):caption 11pt 跟随 Dynamic Type 缩放到 ~30pt+,横排必然溢出,
+    ///   回退到下方 VStack + 11pt + lineLimit(2)。a11y 用户优先要可读,不能靠 scaleFactor 硬挤。
+    ///
+    /// 其他分区(已完成 / 没能识别)不传 subtitle 即不渲染。
     private func daySectionHeader(title: String, count: Int, subtitle: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-            HStack(spacing: WarmSpacing.xs) {
-                Text(title)
-                    .font(WarmFont.headline(15))
-                // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态。
-                // 橙色胶囊徽章改成朴素灰数字:分区合并成整齐的白卡之后，每个 header 上再顶一个
-                // 橙胶囊，颜色重量压过了卡片内容本身（对齐设计稿的「随时做 6」写法）。
-                if count > 0 {
-                    Text(verbatim: "\(count)")
-                        .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.textMuted)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    titleCountHStack(title: title, count: count)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(WarmFont.caption(11))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-            }
-            if let subtitle {
-                Text(subtitle)
-                    .font(WarmFont.caption(11))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    titleCountHStack(title: title, count: count)
+                    Spacer(minLength: WarmSpacing.sm)
+                    if let subtitle {
+                        Text(subtitle)
+                            // 10pt:比正文小一档,作为「次要提示」的视觉权重;minimumScaleFactor(0.7)
+                            // 遵守 CLAUDE.md 文本布局规则(≥0.7),与全文件其他 Text 统一,
+                            // 英文 36 字符在 SE 上可缩到 7pt 仍可读。
+                            .font(WarmFont.caption(10))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
             }
         }
         .foregroundColor(WarmTheme.textSecondary)
@@ -382,6 +404,26 @@ struct HomeSelectedDayListView: View {
         // 现在分区合成整块白卡,4pt 的错位会在 header 和卡片左沿之间露出来。
         // top 从 sm(12) 提到 lg(20):行间距归零后,两张分区卡之间的呼吸感全靠 header 顶距撑。
         .listRowInsets(EdgeInsets(top: WarmSpacing.lg, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
+    }
+
+    /// daySectionHeader 内部复用的「标题 + count」行。count=0 时不显示数字徽章——
+    /// 空状态已有引导文案,"0"是冗余信息且看着像错误状态。橙色胶囊徽章改成朴素灰数字:
+    /// 分区合并成整齐的白卡之后,每个 header 上再顶一个橙胶囊,颜色重量压过了卡片内容本身
+    /// (对齐设计稿的「随时做 6」写法)。
+    @ViewBuilder
+    private func titleCountHStack(title: String, count: Int) -> some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Text(title)
+                .font(WarmFont.headline(15))
+                // 标题给 layoutPriority(1):副标题用 minimumScaleFactor 缩放时,
+                // SwiftUI 优先保标题完整,副标题承担压缩。
+                .layoutPriority(1)
+            if count > 0 {
+                Text(verbatim: "\(count)")
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.textMuted)
+            }
+        }
     }
 
     /// 未完成 unscheduled 行。Calendar tab 挂 `draggable`——长按拖到月历某天/时间线排程；
