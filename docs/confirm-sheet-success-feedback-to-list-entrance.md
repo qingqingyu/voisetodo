@@ -1,11 +1,12 @@
 # 方案：确认页成功反馈改为「落进列表」
 
-> 状态：**待实施**。本文档为设计决策 + 实施方案，尚未落地。
+> 状态：**已实施**（`75645aa feat(confirm-sheet): 删成功页改为「列表 stagger + toast」反馈`）。
+> 「现象 / 根因 / 改动方案」保留为设计决策记录；**实施后评审发现 7 项待修复，见文末新增章节**。
 > 核心结论：删掉 ConfirmSheet 的满屏绿勾成功页，改为「sheet 立刻收起 → 新增待办在首页列表依次弹入 → 顶部计数器缩放 → success 触觉 → 底部 toast 兜底」。
 > 主改动文件：`UI/ConfirmSheet/ConfirmSheetView.swift`、`UI/Home/HomeView.swift`、`UI/Home/HomeSelectedDayListView.swift`、`App/AppCoordinator.swift`
 > 新增文件：`UI/Shared/NumberPopModifier.swift`
 > 相关文件（连带小改）：`UI/Shared/CardEntranceModifier.swift`、`UI/Shared/ToastView.swift`、`Resources/Localizable.xcstrings`、`VoiceTodoUITests/ScenarioTests.swift`
-> 行号基线：`a28fb83`
+> 行号基线：**「现象 / 根因 / 改动方案」三节为 `a28fb83`（实施前）；「实施后评审」一节为 `6d5b989`（实施后）。**
 
 ---
 
@@ -248,6 +249,8 @@ private func revealConfirmedTodos() {
 
 `presentAddedToast(for:)` 用 `DayClock.isSameUserDay` 统计有多少条**不在**当前 `selectedDate`（含 `dueDate == nil` 的「稍后」「待定日期」条目），据此选串：
 
+> ⚠️ **本段有误，已在实施后评审中订正。** 把 `dueDate == nil` 归为「别处」是错的：「稍后」「待定日期」「没能识别」三个分区都渲染在 Today tab 的同一个 `HomeSelectedDayListView` 里，是**可见**的。照此实现会让整批无日期的待办弹出「已添加 0 条 · N 条在其他日期」。详见「实施后评审」P1-3。
+
 | 情况 | key | zh-Hans | en |
 |---|---|---|---|
 | 全部落在当前可见日 | `home.added_toast %lld` | 已添加 %lld 条 | Added %lld |
@@ -321,3 +324,192 @@ toast 同时还是 Undo 的正确落点（见下）——它出现时列表已�
 - **确认失败路径**（`confirmTodos` 抛错返回 `false`）→ sheet 不关、不揭晓、不出 toast
 - **成功后立刻上滑关 sheet** → 不重复揭晓、不触发 `onCancel()`
 - **中英双语**各看一遍 toast 文案不截断（`ToastView` 的 `Text` 是 `.lineLimit(2)`）
+
+---
+
+# 实施后评审：7 项待修复
+
+> 针对 `75645aa` 的实施评审。行号基线 `e2738f2`。
+> 注：`e2738f2` 把右上角 Today 胶囊重构成了标题行下方的细进度条（`pillLabel` → `progressBarRow`），本节行号与命名已对齐该次重构；7 项结论本身不受影响。
+> 实现忠实于上文方案，**核心「先抑制、后揭晓」时序是对的**（见文末「已核查、判定为非问题」）。以下 7 项按优先级排列，其中 P0 两项建议发版前处理。
+
+## P0-1 Toast 挡住录音 FAB 整整 2 秒
+
+**落点**：`UI/Home/HomeView.swift:437`（toast 挂载处）、`UI/Shared/ToastView.swift:84-90`（修复处）
+
+几何已核实：
+
+| | 范围（距容器底部） |
+|---|---|
+| VoiceFAB | `WarmSize.fab = 72` + 自带 `.padding(.bottom, WarmSpacing.md = 16)` → **16–88pt**，圆心 52pt |
+| 成功 toast | `.padding(position.edgeInsets, WarmSpacing.xxxl = 48)`（`ToastView.swift:89`），本体约 64pt → **48–112pt** |
+
+FAB 圆心落在 toast 的覆盖区内。且 toast 的 `.overlay` 挂在 `HomeView.swift:437`，晚于 FAB 的 `.overlay`（`:397`）→ 渲染在上层；`ToastView` 有不透明 `RoundedRectangle` 背景，可命中。
+
+结果：**刚添加完待办、最可能想立刻再录一条的时刻，麦克风按钮被自己弹出的成功提示挡住 2 秒。**
+
+修复（`ToastView.swift:84-90`，加一行）：
+
+```swift
+    .padding(position.edgeInsets, WarmSpacing.xxxl)
+    // 无操作按钮的 toast 纯展示,不该拦截点击 —— 底部 toast 与 HomeView 的
+    // VoiceFAB(16–88pt)在 48–112pt 重叠,不放行会让麦克风在 toast 存活的
+    // 2s 内点不动。有按钮的 toast 必须可命中,故按 action 分流。
+    .allowsHitTesting(action != nil)
+    .zIndex(1)
+```
+
+波及 4 个调用方：`App/VoiceTodoApp.swift:232`、`UI/Detail/TodoDetailView.swift:391`（都透传 `coordinator.toastAction`，非 nil 时照常可点）；`UI/ConfirmSheet/ConfirmSheetView.swift:96`、`UI/UIDemoView.swift:155`（无 action，变为点击穿透——纯提示，正是期望行为）。
+
+## P0-2 stagger 可能整体塌成一次动画
+
+**落点**：`UI/Home/HomeView.swift:865-876`
+
+```swift
+for (rank, id) in ids.enumerated() {
+    let delay = Double(min(rank, 8)) * 0.06
+    withAnimation(motionAnim(WarmAnimation.springCard.delay(delay))) {
+        _ = cardAppeared.insert(id)
+    }
+}
+```
+
+N 次 `withAnimation` 在**同一个 runloop tick** 内连续修改同一个 `@State cardAppeared`。SwiftUI 会把同 tick 内对同一状态的多次改动合并成一次更新，各档 `.delay` 是否还分别生效并不确定。
+
+**这与既有的内联 stagger 不是一回事**：`HomeSelectedDayListView:410-416` / `:452-458` 那两处是各行 `.onAppear` 在 List 懒加载时分别触发，天然分散在不同 tick；这里是一个紧凑同步循环。
+
+危害在于失败是**静默**的：真塌了就是「所有行同时淡入」，仍然有反馈，冒烟测试发现不了，只有专门去看有没有瀑布才察觉。
+
+修复：改成按 tick 串行推进，让每次 insert 各占一次事务，**结构上**保证级联，而不依赖事务合并语义。同时并入 P1-5 的可见性过滤：
+
+```swift
+/// stagger 步长 60ms,与既有内联入场一致;封顶 8 档防长批次拖尾。
+private static let revealStaggerStepNanos: UInt64 = 60_000_000
+private static let revealStaggerCap = 8
+
+@State private var revealTask: Task<Void, Error>?
+
+private func revealConfirmedTodos() {
+    let ids = coordinator.consumePendingReveal()
+    guard !ids.isEmpty else { return }
+    presentAddedToast(for: ids)
+
+    // 只揭晓当前 List 真的会渲染的行,其余留给它们自己的 .onAppear(见 P1-5)。
+    let visible = ids.filter { landsInCurrentList($0) }
+    guard !visible.isEmpty else { return }
+
+    revealTask?.cancel()
+    guard !reduceMotion else {
+        cardAppeared.formUnion(visible)   // 动效减弱:一次插完,不动画
+        return
+    }
+    revealTask = Task { @MainActor in
+        for (rank, id) in visible.enumerated() {
+            if rank > 0 && rank <= Self.revealStaggerCap {
+                do { try await Task.sleep(nanoseconds: Self.revealStaggerStepNanos) }
+                catch is CancellationError { return }
+                catch { return }
+            }
+            withAnimation(WarmAnimation.springCard) {
+                _ = cardAppeared.insert(id)
+            }
+        }
+    }
+}
+```
+
+`reduceMotion` 已有（`HomeView.swift:160`）。`Task` + `Task.sleep` + 显式 catch 是项目既有风格（`ConfirmSheetAnimations.PopCount`）。
+
+## P1-3 全是无日期任务时 toast 说「已添加 0 条」
+
+**落点**：`UI/Home/HomeView.swift:885`
+
+```swift
+guard let due = todo.dueDate else { return true }   // ← 无日期一律算「别处」
+```
+
+「稍后」分区走的就是 `todoRow`（`HomeSelectedDayListView.swift:74`），同样吃 `pendingRevealIDs` 抑制 + 揭晓，**渲染在 Today tab 的同一个 List 里**；「待定日期」「没能识别」也在同一个 List。把它们说成「在其他日期」不成立。一批全是无日期的待办 → `onSelectedDay = 0` → 文案变成「已添加 0 条 · 3 条在其他日期」。
+
+> 这条的根源在上文「改动方案 §5 文案分流」——原方案明确写了把 `dueDate == nil` 归为别处。是**方案本身考虑错了**，实现是照做的。该处已加勘误标注。
+
+修复两步：
+
+1. `return true` → `return false`（无日期 = 可见，不算别处）。「别处」严格收窄为「有 `dueDate` 但落在别的日子」。
+2. 仍可能出现 `onSelectedDay == 0`（整批都定在明天），需要第三条文案。新增 key `home.added_toast.all_elsewhere %lld` → zh「已添加 %lld 条 · 都在其他日期」/ en「Added %lld · all on other dates」，在 `onSelectedDay == 0 && elsewhere > 0` 时使用。
+
+同时把这条判定抽成 `private func landsInCurrentList(_ id: UUID) -> Bool`，供 `presentAddedToast` 与 P0-2 的 reveal 过滤共用，避免两份规则各写一遍。
+
+## P1-4 切换日期时计数器也会弹
+
+**落点**：`UI/Shared/NumberPopModifier.swift:46`、`UI/Home/HomeView.swift:939`
+
+`.numberPop(trigger: total)`（`HomeView.swift:939`）监听的是任意 `total` 变化，只 gate 了 `oldValue == 0`。左右滑切到别的日期时 `total` 就变了 → 数字弹一下。这个 pop 本意是「东西落进列表」的反馈，现在变成了日常导航噪音。
+
+修复：改成 token 驱动，只有真的添加了当天条目才弹。
+
+- `NumberPopModifier.swift:46` 删掉 `guard oldValue > 0 else { return }`（gate 上移到调用方），同步修改文件头注释里「gate `oldValue == 0`」那段说明
+- `HomeView` 加 `@State private var pillPopToken = 0`
+- `presentAddedToast` 内，当 `onSelectedDay > 0` **且**该日原本已有条目（`selectedDayStats().total > onSelectedDay`，避免与进度条行的 opacity 入场动画打架，见 `:646` 的 `if !statsHidden` 与 `:655` 的 `.animation(..., value: statsHidden)`）时 `pillPopToken += 1`
+- `progressBarRow`（`:913-950`）改为 `.numberPop(trigger: pillPopToken)`
+
+## P1-5 跨天条目从此永久失去入场动画
+
+**落点**：`UI/Home/HomeView.swift:865-876`
+
+`revealConfirmedTodos` 把**所有** id 都插进了 `cardAppeared`，包括落在别的日期、当前根本没渲染的行。`.onChange(of: store.todos.count)`（`:479-482`）的清理只跟 store 做交集，这些 todo 确实存在，所以会一直留着。等用户以后翻到那天，行已经在 `cardAppeared` 里 → 直接 opacity 1 显示，没有入场动画。改动前它们会在那天正常播入场。
+
+影响很小（toast 已兜住反馈），但属于轻微回退。修复已并入 P0-2 的 `landsInCurrentList` 过滤：不可见的条目不插 `cardAppeared`，留给它们自己的 `.onAppear` 走既有路径。
+
+## P2-6 S01 用例现在是竞态的
+
+**落点**：`VoiceTodoUITests/ScenarioTests.swift:103,106`
+
+两个问题叠加：
+
+- `XCTAssertEqual(cells.count, 3)` 是不等待的瞬时快照，而新行现在被刻意压在 opacity 0 直到 `onDismiss` + stagger 跑完——原来那个 1.5s 成功页恰好保证了断言时行早就在了
+- 紧接着的 `Toast` 断言给了 2.0s 超时，而 toast 寿命本身就是 2.0s（`UIConfig.toastDuration`，`Protocols/Constants.swift:101`），前面那次 cells 遍历可能吃掉不少
+
+修复：先断言有时限的 toast，再等行。
+
+```swift
+XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+// toast 只活 2s,先断言它,再做耗时的 cells 遍历
+XCTAssertTrue(appHelper.app.otherElements["Toast"].waitForExistence(timeout: 2.0))
+// 行是 stagger 揭晓的,先等第 3 行出现再断总数
+XCTAssertTrue(appHelper.todoList.cells.element(boundBy: 2).waitForExistence(timeout: 3.0))
+XCTAssertEqual(appHelper.todoList.cells.count, 3, "HomeView 应该有 3 条待办")
+```
+
+`:339` / `:366` 的 `cells.count` 走 `launchWithPresetTodos`，不经确认流程，不受影响。
+
+## P3-7 `CardEntranceModifier.suppressed` 是给 follow-up 埋的坑
+
+**落点**：`UI/Shared/CardEntranceModifier.swift:30`
+
+只在 `.onAppear` 里 guard，没有 `.onChange(of: suppressed)`。当前无调用方传 `true`，所以现在无害；但其注释说明它是为 UnscheduledDrawer 的 follow-up 准备的——真那么用的时候，抑制解除后卡片会永久停在 opacity 0，因为没有任何东西会再把它插进 `cardAppeared`。
+
+修复（4 行）：
+
+```swift
+.onChange(of: suppressed) { _, isSuppressed in
+    guard !isSuppressed, !cardAppeared.contains(id) else { return }
+    withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
+        _ = cardAppeared.insert(id)
+    }
+}
+```
+
+## 已核查、判定为非问题
+
+- **`NumberPopModifier.onDisappear` 不重置 `popping`**：进度条行是 `if !statsHidden` 条件渲染，移出视图树时 `@State` 销毁重建、重新初始化为 `false`，缩放卡不住。
+- **抑制名单与新行的先后**：`store.addBatch`（`AppCoordinator.swift:568`）与 `pendingRevealTodoIDs = todos.map(\.id)`（`:627`）同在 `confirmTodos` 的同步段内、`return true` 之前，中间没有 await，SwiftUI 不可能在两者之间渲染。抑制名单一定先于新行就位。
+- **失败 / 取消路径**不写队列；`consumePendingReveal()` 一次性消费防重放；`didFinish` 仍挡住 `onDisappear → onCancel`。
+
+## 修复后的回归清单（Mac / 真机）
+
+- 加 8 条今日任务，确认是**瀑布**而非齐刷刷（P0-2 的核心验证点）
+- toast 存活期间点麦克风 FAB 可用（P0-1）
+- 整批无日期 → 「已添加 N 条」；整批明天 → 「已添加 N 条 · 都在其他日期」（P1-3）
+- 左右切日期，计数器不弹（P1-4）
+- 翻到明天看新加的条目，仍有入场动画（P1-5）
+- `ScenarioTests` S01 连跑 10 次不 flake（P2-6）
