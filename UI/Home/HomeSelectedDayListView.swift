@@ -71,7 +71,11 @@ struct HomeSelectedDayListView: View {
                     // 数值与原 enumerated 一致,WarmTodoCard staggered 动画不变。
                     ForEach(state.unscheduledTodos) { todo in
                         let idx = state.unscheduledTodos.firstIndex(where: { $0.id == todo.id }) ?? 0
-                        todoRow(todo, index: state.selectedOccurrences.count + idx)
+                        todoRow(
+                            todo,
+                            index: state.selectedOccurrences.count + idx,
+                            position: GroupedRowPosition(index: idx, count: state.unscheduledTodos.count)
+                        )
                     }
                     .onMove { offsets, target in
                         var arr = state.unscheduledTodos
@@ -100,6 +104,11 @@ struct HomeSelectedDayListView: View {
                             onOpen: { onOpenTodo(todo) },
                             onDelete: { onDeleteTodo(todo.id) },
                             onPickDate: { date in onPickDate(todo.id, date) }
+                        )
+                        // 「待定日期」恒有第二行(时段/dueHint chip + 「选日期」按钮),固定走 76pt 档。
+                        .groupedCardRow(
+                            GroupedRowPosition(index: idx, count: state.pendingDateTodos.count),
+                            height: .tall
                         )
                     }
                 } header: {
@@ -131,6 +140,10 @@ struct HomeSelectedDayListView: View {
                                 Label(String(localized: "home.delete"), systemImage: "trash")
                             }
                         }
+                        // 「没能识别」刻意**不**走分组卡片:UnparsedTodoCard 自带斜纹底 +
+                        // dashed 描边,本来就是一张独立的"失败态"卡。再套一层白卡会变成
+                        // 卡中卡,而且失败态混进整齐的分组卡里反而弱化了"这条没解析成功"的提示。
+                        // 它的 listRowInsets / listRowBackground 仍由组件自己管。
                     }
                 } header: {
                     daySectionHeader(
@@ -144,16 +157,32 @@ struct HomeSelectedDayListView: View {
             // 放最后:已完成是历史信息,优先级最低。
             if !state.completedOccurrences.isEmpty || !state.completedUnscheduledTodos.isEmpty {
                 Section {
+                    // 已完成分区由两段拼成(当日 occurrence + 全局无安排任务),但视觉上是**一张**卡,
+                    // 所以圆角位置要按两段的总数算,不能各自从 0 数起。
+                    let completedTotal = state.completedOccurrences.count + state.completedUnscheduledTodos.count
+
                     ForEach(Array(zip(state.completedOccurrences.indices, state.completedOccurrences)), id: \.1.id) { idx, occurrence in
-                        occurrenceRow(occurrence, index: state.uncompletedOccurrences.count + idx)
+                        occurrenceRow(
+                            occurrence,
+                            index: state.uncompletedOccurrences.count + idx,
+                            position: GroupedRowPosition(index: idx, count: completedTotal)
+                        )
                     }
                     ForEach(Array(state.completedUnscheduledTodos.enumerated()), id: \.element.id) { idx, todo in
                         // index 延续「已完成 occurrence」之后,跨过 today / unscheduled / pendingDate / unparsed
                         // 各 section 的行数(按当前 section 顺序),避免 a11y identifier 与前面 section 的行号撞号。
-                        completedTodoRow(todo, index: state.selectedOccurrences.count
-                                        + state.unscheduledTodos.count
-                                        + state.pendingDateTodos.count
-                                        + state.unparsedTodos.count + idx)
+                        completedTodoRow(
+                            todo,
+                            index: state.selectedOccurrences.count
+                                + state.unscheduledTodos.count
+                                + state.pendingDateTodos.count
+                                + state.unparsedTodos.count + idx,
+                            // position 用「已完成 occurrence 段之后」的连续下标,与上一个 ForEach 接上。
+                            position: GroupedRowPosition(
+                                index: state.completedOccurrences.count + idx,
+                                count: completedTotal
+                            )
+                        )
                     }
                 } header: {
                     let totalCount = state.completedOccurrences.count + state.completedUnscheduledTodos.count
@@ -169,62 +198,93 @@ struct HomeSelectedDayListView: View {
         .accessibilityIdentifier("TodoList")
     }
 
-    /// 今天 Section 的内部 body:按时间确定度递增渲染三层 tier。
-    /// 每个 tier 先吐一行 tierLabelRow(细分隔线 + 小标签),再吐该 tier 的 occurrence。
-    /// tierLabelRow 不挂 `.swipeActions` —— 与 card 行互不干扰,与 iOS Reminders 分组同模式。
+    /// Today Section 拍平后的一行。tier 标签和 occurrence 混在同一个序列里,
+    /// 是为了让「整个 Today 是一张卡」这件事成立 —— 圆角只能落在**拍平后**的
+    /// 第一行和最后一行上,分开两层 ForEach 就算不出这个位置。
+    private enum TodayRowEntry {
+        /// 卡内 tier 小标题条(整天 / 上午 / 下午 / 晚上 / 按时间)。
+        case subhead(tier: TodayTier, tierIndex: Int)
+        /// 一条未完成 occurrence。`index` 是全局 running index,
+        /// a11y identifier(`TodoCheckbox_\(index)` 等)依赖它稳定。
+        case occurrence(TodoOccurrenceData, index: Int)
+
+        var id: String {
+            switch self {
+            case .subhead(_, let tierIndex): return "tier-\(tierIndex)"
+            // TodoOccurrenceData.id 已经是 "todoUUID-yyyy-MM-dd" 形式的 String,
+            // 直接用它,和其它 ForEach 的 `id: \.element.id` 保持同一套身份。
+            case .occurrence(let occurrence, _): return occurrence.id
+            }
+        }
+
+        var isSubhead: Bool {
+            if case .subhead = self { return true }
+            return false
+        }
+    }
+
+    /// 把 `tieredUncompletedOccurrences` 的两层结构拍平成一维行序列。
+    /// occurrence 的 running index 在这里一次性算好 —— 原来靠 `occurrenceRunningCounter`
+    /// 单独算一遍前缀和,拍平之后顺手累加即可,少一处会和渲染顺序失配的状态。
+    private var todayRowEntries: [TodayRowEntry] {
+        var entries: [TodayRowEntry] = []
+        var occurrenceIndex = 0
+        for (tierIndex, group) in state.tieredUncompletedOccurrences.enumerated() {
+            entries.append(.subhead(tier: group.tier, tierIndex: tierIndex))
+            for occurrence in group.items {
+                entries.append(.occurrence(occurrence, index: occurrenceIndex))
+                occurrenceIndex += 1
+            }
+        }
+        return entries
+    }
+
+    /// 今天 Section 的内部 body:整个 Section 合成一张白卡,
+    /// tier 标签是卡内的浅灰小标题条(设计稿 HTML 的 `.subhead`),条目之间画发丝线。
+    ///
+    /// 历史:tier 标签原来是卡片外的独立文字行,靠「上空白大 / 下空白小」的非对称留白分组
+    /// (2026-07-25 的做法)。卡片合并之后那套留白会把一张卡切成几段,所以标签收进卡内。
     @ViewBuilder
     private var todaySectionBody: some View {
-        let tiered = state.tieredUncompletedOccurrences
-        let occurrenceCountSoFar = occurrenceRunningCounter(within: tiered)
-        ForEach(Array(tiered.enumerated()), id: \.offset) { tierIndex, group in
-            tierLabelRow(group.tier)
-                .listRowSeparator(.hidden)
-                // 留白分组(苹果 Reminders / Calendar 模式):
-                // - tierIndex==0:第一个 tier,上面紧贴 Today Section 顶,留 xs(8) 不挤压
-                // - 后续 tier:加大顶距到 lg(20),靠呼吸感把上一个 tier 的卡片群与下一个 tier 标题切开
-                // - bottom 永远 xxs(4):标签和它管的第一张卡片贴近,让「标题—卡片群」是一个视觉块
-                // 用户 2026-07-25 真机反馈:之前用 1px 横线切割,在毛玻璃 + 圆角卡片语言里违和;
-                // 去线后靠「上空白大 / 下空白小」的非对称留白做层级,更贴合系统视觉。
-                .listRowInsets(EdgeInsets(top: tierIndex == 0 ? WarmSpacing.xs : WarmSpacing.lg,
-                                          leading: WarmSpacing.lg,
-                                          bottom: WarmSpacing.xxs,
-                                          trailing: WarmSpacing.lg))
-                .listRowBackground(Color.clear)
+        let entries = todayRowEntries
+        ForEach(Array(entries.enumerated()), id: \.element.id) { idx, entry in
+            let position = GroupedRowPosition(index: idx, count: entries.count)
+            // 下一行是灰条时不画发丝线:灰条本身就是分隔带,再叠一条线显脏。
+            let nextIsSubhead = idx + 1 < entries.count && entries[idx + 1].isSubhead
 
-            ForEach(Array(group.items.enumerated()), id: \.element.id) { inTierIndex, occurrence in
-                occurrenceRow(occurrence, index: occurrenceCountSoFar(tierIndex) + inTierIndex)
+            switch entry {
+            case .subhead(let tier, _):
+                GroupedCardSubheadRow(text: tier.localizedLabel)
+                    .groupedCardRow(
+                        position,
+                        height: .subhead,
+                        fill: WarmTheme.subheadBackground,
+                        showsHairline: false
+                    )
+
+            case .occurrence(let occurrence, let index):
+                occurrenceRow(
+                    occurrence,
+                    index: index,
+                    position: position,
+                    showsHairline: !nextIsSubhead
+                )
             }
         }
     }
 
-    /// tier-label 行:纯灰小字标题(整天 / 上午 / 下午 / 晚上 / 按时间)。
-    /// 字号 11pt + 0.8 tracking + textMuted,对齐 iOS Reminders 分组标题做法。
-    /// 不挂分隔线 —— 卡片已经毛玻璃 + 圆角 + 阴影自成层级,再加 1px 实线会显得「切割」而非「呼吸」。
-    /// 用户 2026-07-25 真机反馈:横线在柔和视觉语言里违和,改靠留白分组。
-    /// 不挂 swipeActions / listRowSeparator 都隐藏 —— 与 card 行视觉解耦,
-    /// 不让 List 把它当数据 row 渲染。
-    @ViewBuilder
-    private func tierLabelRow(_ tier: TodayTier) -> some View {
-        Text(tier.localizedLabel)
-            .font(WarmFont.caption(11))
-            .tracking(0.8)
-            .foregroundColor(WarmTheme.textMuted)
-            .accessibilityHidden(true)
-    }
-
-    /// 计算 tier 内 occurrence 的全局 running index,用于 warmTodoCard 的 `index` 参数
-    /// (a11y identifier `TodoCheckbox_\(index)` 需要全局稳定)。
-    /// 返回 closure: (tierIndex) -> 起始 index
-    private func occurrenceRunningCounter(
-        within tiered: [(tier: TodayTier, items: [TodoOccurrenceData])]
-    ) -> (Int) -> Int {
-        var runningSums = [Int]()
-        var accumulator = 0
-        for group in tiered {
-            runningSums.append(accumulator)
-            accumulator += group.items.count
-        }
-        return { tierIndex in tierIndex < runningSums.count ? runningSums[tierIndex] : 0 }
+    /// 这张卡会不会有第二行元数据 → 决定 56 / 76 两档行高里取哪一档。
+    /// 判断委托给 `WarmTodoCard.hasMetadataLine`,与卡片内部实际渲不渲染第二行同源。
+    private func rowHeight(
+        for todo: TodoItemData,
+        showsTimeBucketMetadata: Bool,
+        showsInlineTimePrefix: Bool
+    ) -> GroupedRowHeight {
+        WarmTodoCard.hasMetadataLine(
+            todo: todo,
+            showsTimeBucketMetadata: showsTimeBucketMetadata,
+            showsInlineTimePrefix: showsInlineTimePrefix
+        ) ? .tall : .compact
     }
 
     private var homeGlobalEmptyRow: some View {
@@ -297,14 +357,13 @@ struct HomeSelectedDayListView: View {
             HStack(spacing: WarmSpacing.xs) {
                 Text(title)
                     .font(WarmFont.headline(15))
-                // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态
+                // count=0 时不显示数字徽章——空状态已有引导文案，"0"是冗余信息且看着像错误状态。
+                // 橙色胶囊徽章改成朴素灰数字:分区合并成整齐的白卡之后，每个 header 上再顶一个
+                // 橙胶囊，颜色重量压过了卡片内容本身（对齐设计稿的「随时做 6」写法）。
                 if count > 0 {
                     Text(verbatim: "\(count)")
                         .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.primaryDark)
-                        .padding(.horizontal, WarmSpacing.xs)
-                        .padding(.vertical, WarmSpacing.xxs)
-                        .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
+                        .foregroundColor(WarmTheme.textMuted)
                 }
             }
             if let subtitle {
@@ -318,17 +377,21 @@ struct HomeSelectedDayListView: View {
         }
         .foregroundColor(WarmTheme.textSecondary)
         .textCase(nil)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.sm, leading: WarmSpacing.xl, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
+        // leading 与卡片左边缘对齐(都是 lg=20)。原来是 xl=24,卡片自带 lg 页边距时看不出来,
+        // 现在分区合成整块白卡,4pt 的错位会在 header 和卡片左沿之间露出来。
+        // top 从 sm(12) 提到 lg(20):行间距归零后,两张分区卡之间的呼吸感全靠 header 顶距撑。
+        .listRowInsets(EdgeInsets(top: WarmSpacing.lg, leading: WarmSpacing.lg, bottom: WarmSpacing.xs, trailing: WarmSpacing.lg))
     }
 
     /// 未完成 unscheduled 行。Calendar tab 挂 `draggable`——长按拖到月历某天/时间线排程；
     /// Today tab 无月历可落点，不挂。
     /// 完成态样式（绿勾/删除线）由 WarmTodoCard 根据 `todo.isCompleted` 自行渲染。
     @ViewBuilder
-    private func todoRow(_ todo: TodoItemData, index: Int) -> some View {
+    private func todoRow(_ todo: TodoItemData, index: Int, position: GroupedRowPosition) -> some View {
         let base = unscheduledTodoCardBase(
             todo: todo,
             index: index,
+            position: position,
             onToggle: { onToggleTodo(todo.id) },
             onTap: { onOpenTodo(todo) },
             onDelete: { onDeleteTodo(todo.id) }
@@ -356,10 +419,11 @@ struct HomeSelectedDayListView: View {
     /// 取消完成时 onToggle 会把 isCompleted 翻回 false → 下次重渲染时该行离开「已完成」、
     /// 回到「未安排」分区（unscheduledTodos 重新含它）。
     @ViewBuilder
-    private func completedTodoRow(_ todo: TodoItemData, index: Int) -> some View {
+    private func completedTodoRow(_ todo: TodoItemData, index: Int, position: GroupedRowPosition) -> some View {
         unscheduledTodoCardBase(
             todo: todo,
             index: index,
+            position: position,
             onToggle: { onToggleTodo(todo.id) },
             onTap: { onOpenTodo(todo) },
             onDelete: { onDeleteTodo(todo.id) }
@@ -379,6 +443,7 @@ struct HomeSelectedDayListView: View {
     private func unscheduledTodoCardBase(
         todo: TodoItemData,
         index: Int,
+        position: GroupedRowPosition,
         onToggle: @escaping () -> Void,
         onTap: @escaping () -> Void,
         onDelete: @escaping () -> Void
@@ -389,13 +454,15 @@ struct HomeSelectedDayListView: View {
                 todo: todo,
                 onToggle: onToggle,
                 onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
-                onMoveToTomorrow: { onMoveToTomorrow(todo.id) }
+                onMoveToTomorrow: { onMoveToTomorrow(todo.id) },
+                showsCardBackground: false
             )
         }
         .buttonStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
+        .groupedCardRow(
+            position,
+            height: rowHeight(for: todo, showsTimeBucketMetadata: true, showsInlineTimePrefix: false)
+        )
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 onDelete()
@@ -422,7 +489,12 @@ struct HomeSelectedDayListView: View {
         ))
     }
 
-    private func occurrenceRow(_ occurrence: TodoOccurrenceData, index: Int) -> some View {
+    private func occurrenceRow(
+        _ occurrence: TodoOccurrenceData,
+        index: Int,
+        position: GroupedRowPosition,
+        showsHairline: Bool = true
+    ) -> some View {
         Button(action: { onOpenTodo(occurrence.todo) }) {
             WarmTodoCard(
                 index: index,
@@ -435,13 +507,20 @@ struct HomeSelectedDayListView: View {
                 },
                 showsTimeBucketMetadata: false,
                 dueStatusDisplayMode: .overdueOnly,
-                showsInlineTimePrefix: true
+                showsInlineTimePrefix: true,
+                showsCardBackground: false
             )
         }
         .buttonStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs, leading: WarmSpacing.lg, bottom: WarmSpacing.xxs, trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
+        .groupedCardRow(
+            position,
+            height: rowHeight(
+                for: occurrence.todo,
+                showsTimeBucketMetadata: false,
+                showsInlineTimePrefix: true
+            ),
+            showsHairline: showsHairline
+        )
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 onDeleteTodo(occurrence.todo.id)

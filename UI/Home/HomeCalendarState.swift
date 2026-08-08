@@ -231,7 +231,8 @@ struct HomeCalendarState {
     ///
     /// 设计意图:时间标签本身是入口——整天的卡片完全不动(无 chip 无按钮),
     /// 时段用 `.soft` chip(灰底),精确时刻用 `.solid` chip(彩色底)。
-    /// 三层之间用细分隔线 + 小标签(`tierLabelRow`)区分,不抢外层「今天 / 待定日期 / 没能识别」的层级。
+    /// 三层之间用分组卡片内的浅灰小标题条(`GroupedCardSubheadRow`)区分,
+    /// 不抢外层「今天 / 待定日期 / 没能识别」的层级。
     var tieredUncompletedOccurrences: [(tier: TodayTier, items: [TodoOccurrenceData])] {
         var allDay: [TodoOccurrenceData] = []
         var byBucket: [TimeBucket: [TodoOccurrenceData]] = [:]

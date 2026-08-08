@@ -88,6 +88,11 @@ struct WarmTodoCard: View {
     /// 只有明确把外层时间标签删掉的调用方（HomeSelectedDayListView）才打开，
     /// 避免 UnscheduledDrawer 等其它调用方被动改变外观。
     var showsInlineTimePrefix = false
+    /// 是否自带白色圆角卡片底。默认 true（`UnscheduledDrawer` 里每条仍是独立卡片）。
+    /// Today 列表传 false —— 那里整个分区合成一张卡，底色与圆角由
+    /// `groupedCardRow` 在 List 的 `listRowBackground` 上统一画，
+    /// 每行再自带一个白底会在行接缝处叠出边框。
+    var showsCardBackground = true
 
     /// 改时间 popover 状态。chip 点击触发,popover 内部提交时通过 `onChangeTime` 回调。
     /// 编辑中的 date 由 chip 点击时的 `todo.dueDate ?? Date()` 初始化。
@@ -114,17 +119,50 @@ struct WarmTodoCard: View {
     /// 只有 showsInlineTimePrefix=true 的调用方（HomeSelectedDayListView）才保留
     /// recurrence / bucket —— 因为这些卡片不再有外层时间标签，需要补全规律语义。
     private var composedTimeText: String? {
+        Self.composedTimeText(
+            todo: todo,
+            showsTimeBucketMetadata: showsTimeBucketMetadata,
+            showsInlineTimePrefix: showsInlineTimePrefix
+        )
+    }
+
+    /// `composedTimeText` 的 static 版本。抽出来是给分组卡片的调用方用的:
+    /// Today 列表要在**构造卡片之前**知道这张卡会不会有第二行,好决定行高档位
+    /// （56 单行 / 76 带副行，见 `WarmSize.rowCompact` / `rowTall`）。
+    /// 与实例属性同源，避免"要不要给 76pt"和"实际渲不渲染第二行"两处判断分叉。
+    static func composedTimeText(
+        todo: TodoItemData,
+        showsTimeBucketMetadata: Bool,
+        showsInlineTimePrefix: Bool
+    ) -> String? {
         if todo.isCompleted, !showsInlineTimePrefix { return nil }
         return TodoTimeDisplayComposer.compose(
             recurrenceRule: todo.recurrenceRule,
             relativeDateText: nil,
             timeText: nil,
             dueHint: todo.dueDate == nil ? todo.dueHint : nil,
-            timeBucketText: timeBucketText
+            timeBucketText: timeBucketText(todo: todo, showsTimeBucketMetadata: showsTimeBucketMetadata)
         )
     }
 
+    /// 这张卡会不会渲染第二行元数据 —— 分组卡片据此在 56 / 76 两档行高之间选一档。
+    static func hasMetadataLine(
+        todo: TodoItemData,
+        showsTimeBucketMetadata: Bool,
+        showsInlineTimePrefix: Bool
+    ) -> Bool {
+        composedTimeText(
+            todo: todo,
+            showsTimeBucketMetadata: showsTimeBucketMetadata,
+            showsInlineTimePrefix: showsInlineTimePrefix
+        ) != nil
+    }
+
     private var timeBucketText: String? {
+        Self.timeBucketText(todo: todo, showsTimeBucketMetadata: showsTimeBucketMetadata)
+    }
+
+    private static func timeBucketText(todo: TodoItemData, showsTimeBucketMetadata: Bool) -> String? {
         guard showsTimeBucketMetadata, !todo.hasDueTime else {
             return nil
         }
@@ -318,11 +356,21 @@ struct WarmTodoCard: View {
         // 卡片底色:纯白 cardBackground + 阴影分层。
         // 背景冷化后 cardBackground 与 background 都偏中性,
         // 改靠阴影 + 圆角建立层次,不再依赖色相对比。
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.chip)
-                .fill(WarmTheme.cardBackground)
-                .shadow(color: WarmTheme.shadowLight, radius: 4, x: 0, y: 2)
-        )
+        // showsCardBackground=false(Today 分组卡片)时整段跳过——底色与圆角由
+        // 外层 `groupedCardRow` 统一画。
+        .background {
+            if showsCardBackground {
+                RoundedRectangle(cornerRadius: WarmRadius.chip)
+                    .fill(WarmTheme.cardBackground)
+                    .shadow(color: WarmTheme.shadowLight, radius: 4, x: 0, y: 2)
+            }
+        }
+        // 去掉自带底色后整行是透明的,空白处(标题右边、第二行下方)不再参与 hit test,
+        // 外层包裹的「点开详情」Button 会漏点。补一个 contentShape 把整行框回命中区。
+        .contentShape(Rectangle())
+        // 长按 context menu 的预览平台单独收圆角:分组模式下行本身没有背景,
+        // 不给形状的话系统会按整个矩形行抠图,预览是个直角块,和圆角卡片语言不搭。
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: WarmRadius.chip))
         // iOS 26 FB18199844: 顶层 .onTapGesture 会吞掉 List swipeActions delete 按钮 tap。
         // 之前的 workaround 是把 onTapGesture 挂到 .background(Color.clear) 层,但背景层在
         // z 序是下层,iOS 26 List 中前景 Text/HStack/padding 拦截 hit testing,背景层
