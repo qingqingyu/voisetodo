@@ -87,6 +87,10 @@ struct ToastModifier: ViewModifier {
                             removal: .move(edge: position.edge).combined(with: .opacity)
                         ))
                         .padding(position.edgeInsets, WarmSpacing.xxxl)
+                        // 无 action 的 toast 不需要接收点击,关掉 hit testing
+                        // 避免底部 toast 期间遮住悬浮 FAB(成功 toast 寿命 2s,
+                        // 恰好是用户最可能想立刻再录一条的时刻)。
+                        .allowsHitTesting(action != nil)
                         .zIndex(1)
                 }
             }

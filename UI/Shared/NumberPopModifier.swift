@@ -10,8 +10,9 @@ import SwiftUI
 /// - PopCount 缩放 1.42 + light haptic(emoji pop 风格,要有触觉);
 ///   NumberPopModifier 缩放 1.08(数字小弹,触觉由调用方在更高层统筹——
 ///   ConfirmSheet 的 confirmAction 已触发 `.success` 触觉,数字 pop 不再重复)。
-/// - PopCount 不 gate 0 值;NumberPopModifier gate `oldValue == 0`(避免与进度条行 opacity
-///   入场动画打架:total 从 0 变正数时整行在做 opacity 入场,再叠 pop 会撕裂)。
+/// - PopCount 不 gate;NumberPopModifier 仅在 trigger **递增**时弹(避免左右滑切日
+///   total 变化、删除导致 total 减少等场景误触发)。当前调用方传单调递增的 token,
+///   行为与旧 `oldValue > 0` gate 等价但语义更通用。
 ///
 /// **Follow-up**:后续可与 PopCount 统一为同一个 modifier(给 trigger/animation/scale
 /// 都做参数化)。本次拆开避免影响 PopCount 的现有调用。
@@ -40,10 +41,12 @@ struct NumberPopModifier: ViewModifier {
                 .spring(response: 0.3, dampingFraction: 0.6),
                 value: popping
             )
-            .onChange(of: trigger) { oldValue, _ in
-                // 0 → 正数不 pop:此时整行在做 opacity 入场(statsHidden 切换),
-                // 再叠 pop 会与入场动画打架,出现「先放大再淡入」的撕裂感。
-                guard oldValue > 0 else { return }
+            .onChange(of: trigger) { oldValue, newValue in
+                // 仅递增才 pop。当前调用方传单调递增的 confirm token,
+                // 每次成功添加 → 弹一下;切日 / 删除等减少场景不会触发。
+                // 不再用旧 `oldValue > 0` gate:token 首次 0→1 也该弹
+                // (进度条行入场动画在 app 启动时早已播完,不存在撕裂)。
+                guard newValue > oldValue else { return }
                 triggerPop()
             }
             // 兜底:modifier 所在 view 被移出树(条件分支切换、id() 变化)时,
@@ -86,7 +89,8 @@ struct NumberPopModifier: ViewModifier {
 }
 
 extension View {
-    /// 数字弹一下。`trigger` 变化(且 oldValue > 0)时,scale 从 1.0 弹到 1.08 再回 1.0。
+    /// 数字弹一下。`trigger` **递增**时,scale 从 1.0 弹到 1.08 再回 1.0;
+    /// trigger 减少 / 不变时不触发(避免切日、删除等场景误弹)。
     func numberPop(trigger: Int) -> some View {
         modifier(NumberPopModifier(trigger: trigger))
     }
