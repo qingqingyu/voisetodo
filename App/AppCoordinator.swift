@@ -437,7 +437,7 @@ final class AppCoordinator: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         VoiceTodoLog.coordinator.info("coordinator.manual_input.start \(VoiceTodoLog.textSummary(trimmed), privacy: .public)")
         activeInputTranscript = trimmed
-        await processTranscript(trimmed, locale: .current)
+        await processTranscript(trimmed, locale: voiceInput.currentLocale)
     }
 
     /// App 进入前台时处理待处理项（并发）

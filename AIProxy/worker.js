@@ -1604,8 +1604,10 @@ async function enforceIpDailyLimitViaKV(env, requestContext, params) {
 }
 
 function normalizeLocale(locale) {
-  const raw = String(locale || "en");
-  return raw.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const raw = String(locale || "en").toLowerCase();
+  if (raw.startsWith("zh")) return "zh";
+  if (raw.startsWith("ja")) return "ja";
+  return "en";
 }
 
 function normalizeVocabularyHints(value) {

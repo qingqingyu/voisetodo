@@ -23,8 +23,10 @@ enum VoiceConstants {
     static let audioBufferSize: AVAudioFrameCount = 1024
 
     /// 支持的语言
+    /// 顺序也决定 Picker 显示顺序:auto → 中文 → 日本語 → English
     static let supportedLocales: [Locale] = [
         Locale(identifier: "zh-Hans"),
+        Locale(identifier: "ja-JP"),
         Locale(identifier: "en-US")
     ]
 

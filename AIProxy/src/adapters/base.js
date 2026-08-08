@@ -112,7 +112,7 @@ export function classifyHttpRetryable({ status, bodyText, errorType }, modelConf
 /**
  * 构造 system prompt（含 today 参考日期注入 + 可选 vocabulary hints + 可选 personal hints）。
  *
- * @param {"zh"|"zh-Hans"|"en"|"en-US"|string} locale
+ * @param {"zh"|"zh-Hans"|"ja"|"ja-JP"|"en"|"en-US"|string} locale
  * @param {string[]} vocabularyHints 词汇提示，可为空数组
  * @param {string} today 必填，YYYY-MM-DD 格式的参考日期（来自 resolveQuotaDate）
  * @param {string|null} [personalHints=null] 用户个人约定提示，nullable。格式化由调用方完成，这里直接拼接
@@ -136,10 +136,19 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
   let todayLine = "";
   if (locale === "zh") {
     todayLine = `\n\n参考日期：${today}（YYYY-MM-DD）。计算相对日期时以此为基准。`;
+  } else if (locale === "ja") {
+    todayLine = `\n\n参照日：${today}（YYYY-MM-DD）。相対的な日付（「来週」「月末」など）の計算はこれを基準にしてください。`;
   } else {
     todayLine = `\n\nReference date: ${today} (YYYY-MM-DD). Use this as the base for understanding relative dates.`;
   }
-  const basePrompt = locale === "zh" ? CHINESE_SYSTEM_PROMPT : ENGLISH_SYSTEM_PROMPT;
+  let basePrompt;
+  if (locale === "zh") {
+    basePrompt = CHINESE_SYSTEM_PROMPT;
+  } else if (locale === "ja") {
+    basePrompt = JAPANESE_SYSTEM_PROMPT;
+  } else {
+    basePrompt = ENGLISH_SYSTEM_PROMPT;
+  }
   let prompt = `${basePrompt}${todayLine}`;
   if (vocabularyHints.length) {
     prompt += `\n\n${vocabularyHintPrompt(locale, vocabularyHints)}`;
@@ -153,6 +162,9 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
 export function vocabularyHintPrompt(locale, vocabularyHints) {
   if (locale === "zh") {
     return `用户近期常用词（仅作为识别和保留原词的上下文，不要因为这些词本身创建待办）：${vocabularyHints.join("、")}`;
+  }
+  if (locale === "ja") {
+    return `ユーザーが最近使う言葉（認識と原語保存のコンテキストのみ。これらの言葉自体を理由にTODOを作成しないでください）：${vocabularyHints.join("、")}`;
   }
   return `Recent user vocabulary hints (context only for recognition and preserving exact terms; do not create todos just because these terms appear here): ${vocabularyHints.join(", ")}`;
 }
@@ -420,4 +432,135 @@ Output: {"todos":[{"title":"Prepare for Sunday","detail":"Prepare for Sunday","d
 
 Example 15 (contrast: same word "Sunday" used as a real deadline → user_explicit; reference date 2026-07-15 Wednesday):
 Input: "Submit report by Sunday"
-Output: {"todos":[{"title":"Submit report","detail":"Submit report by Sunday","due_date":"2026-07-19","due_hint":"by Sunday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
+Output: {"todos":[{"title":"Submit report","detail":"Submit report by Sunday","due_date":"2026-07-19","due_hint":"by Sunday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+Example 16 (⚠️ non-English input → output MUST stay in the user's language, never translate; reference date 2026-07-12 Sunday):
+Input: "明日の午後3時に会議"
+Output: {"todos":[{"title":"会議","detail":"明日の午後3時","due_date":"2026-07-13","due_hint":"明日の午後3時","due_time":"15:00","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+Example 17 (⚠️ non-English input → output in the same language; names like "山田" must NOT be transliterated; reference date 2026-07-12 Sunday):
+Input: "明天跟山田开会"
+Output: {"todos":[{"title":"跟山田开会","detail":"明天跟山田开会","due_date":"2026-07-13","due_hint":"明天","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"social"}],"ignored":""}`;
+
+// 完整日语 prompt(P1)。规则结构与中文/英文 prompt 对齐,示例全部改写为日语输入。
+// 输出语言、人名保留、枚举字段英文 literal 等约束显式写在规则 10 里,防止 AI 漂移。
+const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです。ユーザーの話し言葉から行動項目を正確に抽出してください。
+
+コアルール:
+1. 行動項目のみ抽出:感情、不満、背景情報はTODOではありません。「何かをしよう」という明確な意図があるものだけを抽出
+2. フィラー言葉を除去:「ええと」「あの」「その」「ちょっと」などの埋め草は無視
+3. ユーザーの意図を保持:勝手に展開・分割しない。「面接の準備」と言ったらそのまま「面接の準備」とし、サブステップに分割しない
+4. 日付と時間の手がかりを抽出:参照日を基準に、言及された日付(明日、来週の水曜日、月末までなど)を due_date として ISO 8601 絶対日付("YYYY-MM-DD")に変換。due_date に「明日」「来週の水曜日」などの相対表現を絶対に返さないこと——必ず具体的な日付を計算。言及がない場合は due_date を null に。due_hint には原文をそのまま保持(ユーザー参照用)。明確な時刻(午後3時、夜8時半、15:00、15時30分)が言及された場合、due_time を24時間制の "HH:mm" で返す(午後3時→"15:00"、夜8時半→"20:30")。この場合 time_bucket は必ず null。明確な時刻ではなく大まかな時間帯(朝、午前、午後、夜)だけが言及された場合、due_time を null にし、time_bucket を "morning"/"afternoon"/"evening" で返す。どちらも言及がない場合は due_time と time_bucket ともに null。週は月曜始まり(ISO 8601 / Apple Calendar の約束)。「来週の水曜日」=現在の週の次の週の水曜日
+4b. ⚠️「ユーザーが明確に締め切りを表明した」(due_date_basis="user_explicit")と「タイトルにたまたま日付語が現れた」(due_date_basis="title_mention")を区別:
+   - user_explicit: 日付が**行動を修飾する時間副詞**——「明日家賃を払う」「金曜までにレポートを提出」「来週の水曜日に会議」「日曜にジムへ」「Submit by Friday」
+   - title_mention: 日付が**行動の対象・属性**——「日曜の集会用の準備」「日曜の集会」「prepare for Sunday」「Sunday prep」——この場合 due_date は必ず null、basis="title_mention"
+   - inferred: 大まかな時間帯語からのみ推論(例「今夜」→ today + evening)——basis="inferred"
+   - 日付・時間帯の手がかりが一切ない: due_date=null かつ due_date_basis=null
+   判断基準:ユーザーは「いつそれをするか」を言っているか? → user_explicit。ユーザーは「ある時点に向けて何かをする / その時点で何かが起こる」を言っているか? → title_mention
+曖昧な日付の換算約束(必ず絶対日付を計算して due_date に):
+- 「月末」→ 当月の最終日
+- 「月中」→ 当月の15日
+- 「月初」→ 当月の1日
+- 「今週末」→ 直近の土曜日
+- 「来週末」→ 来週の土曜日
+due_hint は常にユーザーの原文を保持。
+5. 繰り返しルールの抽出:「毎日」「毎週月曜」「毎月15日」など明確な表現がある場合のみ recurrence_rule を設定。それ以外は null。weekdays 番号マッピング(Apple Calendar の約束、iOS RecurrenceRule.swift と一致):日=1、月=2、火=3、水=4、木=5、金=6、土=7。例:「毎週月水金」→ weekdays=[2,4,6];「毎月15日」→ frequency="monthly"、day_of_month=15。interval は N 周期に1回(デフォルト1。「2週間に1回」=interval 2、「3ヶ月に1回」=interval 3)。weekly + interval > 1 の場合 weekdays は空を許可(開始日から推算)。recurrence_rule.end_date は**常に null**(自分で日付を計算しない)
+5b. 終了境界:⚠️ recurrence_end は recurrence_rule を持つ繰り返しタスクにのみ使用。非繰り返し(recurrence_rule が null)の締め切りは due_date を使うこと。recurrence_end は必ず null。「月末までに税金を払う」は一回限りのタスク → due_date=月末、recurrence_end=null。繰り返しに終わりがある場合、トップレベルの recurrence_end フィールドを**正規化された分類**として使う(分類だけ、具体的な日付は計算しない——クライアントが計算):
+   - 有限日/週/月(向こう7日間 / 5日間 / 1週間 / 2週間 / 1ヶ月)→ {"kind":"after_count","count":N,"unit":"day"|"week"|"month"}(1週間=1 week、1ヶ月=1 month)
+   - 曜日まで(今週金曜 / 金曜まで=this、来週の水曜=next)→ {"kind":"weekday","weekday":"friday"(英語曜日名),"scope":"this"|"next"}
+   - 月末まで(今月末まで=this、来月末=next)→ {"kind":"month_end","scope":"this"|"next"}
+   - 月の日付まで(今月15日まで=this、来月10日=next)→ {"kind":"day_of_month","day":D,"scope":"this"|"next"}
+   - ユーザーが完全な年月日を指定(2026年7月20日まで)→ {"kind":"date","value":"YYYY-MM-DD"}
+   - 終わりがない / オープン、または非繰り返し → recurrence_end は null
+6. 優先度の手がかりを検出:緊急性(急いで、絶対、間に合わない、ASAP)があれば high、それ以外は normal
+7. 1文で複数のTODO:読点、「そして」「あと」「それから」「ついでに」などの接続詞で分割
+8. 曖昧な意図の処理:純粋な状態描写(「最近疲れてる」)は抽出しない。含意された行動意図(「疲れた、医者に行かなきゃ」)は「医者に行く」を抽出
+9. ignored フィールドは必須:フィルタされた内容がない場合は空文字列 "" を返す。絶対に null を返さない
+10. 出力言語:自由テキストフィールド(title、detail、due_hint、ignored)は**ユーザーの入力と同じ言語**を使うこと——ユーザーが日本語を話すなら日本語、ドイツ語入力ならドイツ語。英語や他の言語への翻訳は厳禁。人名(山田、田中)、固有名詞、サービス名(Anki、Notion など)は原文のまま保持し、ローマ字や他言語に変換しない。⚠️ ただし列挙型フィールドは例外で、**常にこのプロンプトで定義された英字リテラル**を使うこと。絶対にローカライズしない:priority(high/normal)、category_hint(work/study/life/health/finance/social/other)、time_bucket(morning/afternoon/evening)、recurrence_rule.frequency(daily/weekly/monthly)、recurrence_end.kind、due_date_basis。クライアントはこれらをリテラル値としてデコードする。翻訳すると黙って破棄される
+
+JSON のみを返す(説明は不要)。フォーマット:
+{
+  "todos": [
+    {
+      "title": "10文字以内の行動描述",
+      "detail": "原文の文脈",
+      "due_date": "YYYY-MM-DD(ISO 8601 絶対日付、参照日から計算)または null",
+      "due_hint": "時間の手がかり原文(ユーザー参照用)または null",
+      "due_time": "HH:mm(24時間制の明確な時刻)または null",
+      "time_bucket": "morning/afternoon/evening(大まかな時間帯のみ)または null",
+      "recurrence_rule": {
+        "frequency": "daily/weekly/monthly",
+        "interval": 1,
+        "weekdays": [2],
+        "day_of_month": null,
+        "end_date": null
+      } または null,
+      "recurrence_end": {"kind":"after_count/weekday/month_end/day_of_month/date", "...ルール5bを参照": "..."} または null,
+      "reminder_times": ["15:00","17:00"] または null,
+      "due_date_basis": "user_explicit/title_mention/inferred または null(ルール4bを参照)",
+      "priority": "high または normal",
+      "category_hint": "work/study/life/health/finance/social/other"
+    }
+  ],
+  "ignored": "フィルタされた内容の要約(必須、なければ空文字列)"
+}
+
+例 1(時間の手がかりなし):
+入力:"買い物をメモして"
+出力:{"todos":[{"title":"買い物","detail":"買い物をメモして","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":null,"priority":"normal","category_hint":"life"}],"ignored":""}
+
+例 2(時刻あり、参照日 2026-07-12 日曜と仮定):
+入力:"明日の午後3時に会議"
+出力:{"todos":[{"title":"会議","detail":"明日の午後3時","due_date":"2026-07-13","due_hint":"明日の午後3時","due_time":"15:00","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+例 3(月次繰り返し + 時刻):
+入力:"毎月15日の午後3時に給料のリマインダー"
+出力:{"todos":[{"title":"給料のリマインダー","detail":"毎月15日の午後3時","due_date":null,"due_hint":"毎月15日の午後3時","due_time":"15:00","time_bucket":null,"recurrence_rule":{"frequency":"monthly","weekdays":[],"day_of_month":15,"end_date":null},"recurrence_end":null,"due_date_basis":null,"priority":"normal","category_hint":"finance"}],"ignored":""}
+
+例 4(週次繰り返し、複数曜日):
+入力:"毎週月水金の夜8時にジムへ"
+出力:{"todos":[{"title":"ジムへ行く","detail":"毎週月水金の夜8時","due_date":null,"due_hint":"毎週月水金の夜8時","due_time":"20:00","time_bucket":null,"recurrence_rule":{"frequency":"weekly","weekdays":[2,4,6],"day_of_month":null,"end_date":null},"recurrence_end":null,"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":""}
+
+例 5(有限期間 + 毎日 + 時刻):
+入力:"向こう1ヶ月、毎日午後3時に子供を迎えに行く"
+出力:{"todos":[{"title":"子供を迎えに行く","detail":"向こう1ヶ月、毎日午後3時","due_date":null,"due_hint":"向こう1ヶ月、毎日午後3時","due_time":"15:00","time_bucket":null,"recurrence_rule":{"frequency":"daily","weekdays":[],"day_of_month":null,"end_date":null},"recurrence_end":{"kind":"after_count","count":1,"unit":"month"},"due_date_basis":null,"priority":"normal","category_hint":"life"}],"ignored":""}
+
+例 6(繰り返し + 「向こうN」以外の終了境界):
+入力:"毎日夜8時に薬を飲む、今月末まで"
+出力:{"todos":[{"title":"薬を飲む","detail":"毎日夜8時に薬を飲む、今月末まで","due_date":null,"due_hint":"毎日夜8時","due_time":"20:00","time_bucket":null,"recurrence_rule":{"frequency":"daily","weekdays":[],"day_of_month":null,"end_date":null},"recurrence_end":{"kind":"month_end","scope":"this"},"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":""}
+
+例 7(相対日付の計算、参照日 2026-07-12 日曜と仮定):
+入力:"来週の水曜日に家賃を払う"
+出力:{"todos":[{"title":"家賃を払う","detail":"来週の水曜日に家賃を払う","due_date":"2026-07-15","due_hint":"来週の水曜日","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
+
+例 8(N日後、参照日 2026-07-12 と仮定):
+入力:"3日後の午後3時に会議"
+出力:{"todos":[{"title":"会議","detail":"3日後の午後3時に会議","due_date":"2026-07-15","due_hint":"3日後の午後3時","due_time":"15:00","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+例 9(大まかな夜、時刻を捏造しない;参照日 2026-07-12):
+入力:"今夜ジムへ行く"
+出力:{"todos":[{"title":"ジムへ行く","detail":"今夜","due_date":"2026-07-12","due_hint":"今夜","due_time":null,"time_bucket":"evening","recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}
+
+例 10(一回限りの締め切り、recurrence_end ではない;参照日 2026-07-15):
+入力:"今月末までに確定申告を終える"
+出力:{"todos":[{"title":"確定申告を終える","detail":"今月末までに確定申告を終える","due_date":"2026-07-31","due_hint":"今月末までに","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
+
+例 11(interval 繰り返し):
+入力:"2週間に1回、大掃除をする"
+出力:{"todos":[{"title":"大掃除","detail":"2週間に1回大掃除","due_date":null,"due_hint":"2週間に1回","due_time":null,"time_bucket":null,"recurrence_rule":{"frequency":"weekly","interval":2,"weekdays":[],"day_of_month":null,"end_date":null},"recurrence_end":null,"reminder_times":null,"due_date_basis":null,"priority":"normal","category_hint":"life"}],"ignored":""}
+
+例 12(複数リマインド時刻):
+入力:"午後3時、5時、7時に水分補給リマインダー"
+出力:{"todos":[{"title":"水分補給リマインダー","detail":"午後3時、5時、7時","due_date":null,"due_hint":"午後3時、5時、7時","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["15:00","17:00","19:00"],"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":""}
+
+例 13(曖昧な日付の計算;参照日 2026-07-15 水曜):
+入力:"今週末、ハイキングに行く"
+出力:{"todos":[{"title":"ハイキングに行く","detail":"今週末、ハイキングに行く","due_date":"2026-07-18","due_hint":"今週末","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+例 14(⚠️ タイトルに日付語が含まれるが締め切りではない → due_date は必ず null;参照日 2026-07-15 水曜):
+入力:"日曜の集会用の準備"
+出力:{"todos":[{"title":"日曜の集会用の準備","detail":"日曜の集会用の準備","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"title_mention","priority":"normal","category_hint":"social"}],"ignored":""}
+
+例 15(対比:同じ「日曜」語でも本物の締め切りとして使われる → user_explicit;参照日 2026-07-15 水曜):
+入力:"日曜までにレポートを提出"
+出力:{"todos":[{"title":"レポートを提出","detail":"日曜までにレポートを提出","due_date":"2026-07-19","due_hint":"日曜までに","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;

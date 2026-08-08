@@ -225,7 +225,7 @@ test("system prompt injects today date from X-Local-Date header (zh + en)", asyn
   //   - 不再 mutate 全局 Date.prototype（withMockedToday 会污染并发中的其它用例，
   //     曾导致本用例偶发 flake——mock 泄漏时 today 回退成真实日期，断言落空）。
   const today = new Date().toISOString().slice(0, 10);
-  for (const [locale, expectedSnippet] of [["zh-Hans", `参考日期：${today}`], ["en-US", `Reference date: ${today}`]]) {
+  for (const [locale, expectedSnippet] of [["zh-Hans", `参考日期：${today}`], ["en-US", `Reference date: ${today}`], ["ja-JP", `参照日：${today}`]]) {
     let upstreamRequest;
     const response = await handleRequest(
       request({ transcript: "未来一个月每天下午3点接孩子", locale }, {
@@ -325,6 +325,54 @@ test("system prompt omits personal conventions when personalHints absent", async
     !upstreamRequest.body.messages[0].content.includes("个人约定"),
     "无 personalHints 时不应出现个人约定段"
   );
+});
+
+test("system prompt uses complete Japanese prompt for ja locale", async () => {
+  // P1:ja locale 使用独立完整的 JAPANESE_SYSTEM_PROMPT(规则 + 15 个日语示例),
+  // 不再是「日语前置指令 + 英文 prompt」的过渡组合。本测试验证:
+  //   1. system prompt 包含日语规则主体(コアルール、曜日マッピング等)
+  //   2. 包含日语示例(入力 / 出力)
+  //   3. 不包含英文 prompt 的标志词(You are a todo extraction assistant)
+  //   4. today 注入用日语「参照日」
+  //   5. vocabularyHints 用日语文案
+  //   6. 人名 / 服务名保留原文
+  const today = new Date().toISOString().slice(0, 10);
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({
+      transcript: "明日の午後3時に会議",
+      locale: "ja-JP",
+      vocabularyHints: ["Anki", "山田"]
+    }, {
+      "X-App-Token": "token",
+      "X-Local-Date": today
+    }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_MODEL: "test-model"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { body: JSON.parse(init.body) };
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("会議") } }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  const systemMessage = upstreamRequest.body.messages[0].content;
+  // 日语 prompt 主体关键词(规则标题 + 示例标记)
+  assert.ok(systemMessage.includes("あなたはTODO抽出アシスタントです"), "ja locale 应使用日语 prompt 开头");
+  assert.ok(systemMessage.includes("コアルール"), "ja locale 应包含「コアルール」");
+  assert.ok(systemMessage.includes("例 1(時間の手がかりなし)"), "ja locale 应包含日语示例");
+  assert.ok(systemMessage.includes("毎週月水金"), "ja locale 示例应覆盖日语重复表达");
+  // 不应包含英文 prompt 主体(完整日语 prompt 独立,不需要 wrapper)
+  assert.ok(!systemMessage.includes("You are a todo extraction assistant"), "ja locale 不应再回退到英文 prompt 主体");
+  // today 注入用日语
+  assert.ok(systemMessage.includes(`参照日：${today}`), "ja locale today 注入应为日语「参照日」");
+  // vocabularyHints 用日语文案 + 保留人名
+  assert.ok(systemMessage.includes("ユーザーが最近使う言葉"), "ja locale vocabularyHints 应为日语文案");
+  assert.ok(systemMessage.includes("山田"), "ja locale vocabularyHints 应保留人名原文");
 });
 
 test("system prompt falls back to server UTC date when X-Local-Date missing", async () => {
