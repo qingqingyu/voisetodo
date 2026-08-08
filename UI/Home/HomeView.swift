@@ -2279,12 +2279,21 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
     }
 
-    /// 「待定日期」分组「选日期」按钮提交后写库。剥离时段(timeBucket=nil),
-    /// 只保留日期(让任务进入 Today 的「整天」tier);用户在 Today 内可以用时间 chip
-    /// 再细化为时段/钟点,流程对齐设计稿 HTML line 537-543。
+    /// 「待定日期」分组「选日期」按钮提交后写库。**保留原 `timeBucket`**：
+    /// 原本带「上午/下午/晚上」chip 的任务选完日期后落到 Today 对应时段 tier，
+    /// 原本只有 dueHint（timeBucket=nil）的落到 Today 的「整天」tier。
+    ///
+    /// 历史设计曾「剥离时段」(timeBucket=nil) 把所有任务一律压到「整天」tier，
+    /// 与卡片注释「进入 Today 的对应 tier(整天/时段/按时间)」自相矛盾，且把用户已经表达的
+    /// 时段意图擦掉了。2026-08 修复回归「保留原值」，与 `assignTodoToBucket` /
+    /// `moveTodoToTomorrow` 的保留语义对齐。
     private func pickTodoDate(id: UUID, date: Date) {
+        guard let todo = store.todos.first(where: { $0.id == id }) else {
+            VoiceTodoLog.ui.warning("home.pick_date.todo_not_found id=\(id.uuidString, privacy: .public)")
+            return
+        }
         do {
-            try store.updateTime(for: id, hasDueTime: false, dueDate: date, timeBucket: nil)
+            try store.updateTime(for: id, hasDueTime: false, dueDate: date, timeBucket: todo.timeBucket)
             occurrenceRevision += 1
         } catch {
             VoiceTodoLog.store.error("home.pick_date.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")

@@ -10,7 +10,8 @@ import SwiftUI
 /// - 标题 `lineLimit(3)`(比 WarmTodoCard 的 nil 紧,因右侧按钮 fixedSize 挤压)。
 ///
 /// 选日期 popover 提交后,该 todo 因 `dueDate != nil` 自动离开 `pendingDateTodos`,
-/// 进入 Today 的对应 tier(整天/时段/按时间)。
+/// 进入 Today 的对应 tier(整天/时段/按时间)。`onPickDate` 回调保留原 `timeBucket`,
+/// 所以「下午」chip 的任务选完日期后落到 Today 的「下午」tier,而不是被压到「整天」。
 struct PendingDateTodoRow: View {
     let todo: TodoItemData
     let index: Int

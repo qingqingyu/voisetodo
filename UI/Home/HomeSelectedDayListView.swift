@@ -16,7 +16,8 @@ struct HomeSelectedDayListView: View {
     /// 改时间 popover 只用于「今日 Section」的 occurrence,待定日期组走自己的「选日期」按钮(Commit 6)。
     let onChangeTime: (UUID, Date) -> Void
     /// 「待定日期」分组「选日期」按钮提交后写库。参数是用户选定的 startOfDay,
-    /// 调用方按 hasDueTime=false + timeBucket=nil 写入(剥离时段,只保留日期)。
+    /// 调用方按 hasDueTime=false + 保留原 timeBucket 写入 —— 原本带时段 chip 的任务
+    /// 落到 Today 对应时段 tier，原本只有 dueHint 的落到「整天」tier。
     let onPickDate: (UUID, Date) -> Void
     /// 「没能识别」分组「重新解析」按钮入口。把 rawTranscript 再喂一遍 extractor,
     /// 成功 → 替换原 todo 为 .parsed;失败 → 保留原 todo + toast。
