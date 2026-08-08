@@ -184,13 +184,13 @@ const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户�
    - title_mention: 日期是**动作的目标/属性**——「为周日聚会做准备」「周日聚会」「prepare for Sunday」「Sunday prep」——此时 due_date 必须为 null, basis="title_mention"
    - inferred: 仅从模糊时段词推断具体日期(如「今晚」→ today + evening)——basis="inferred"
    - 无任何日期/时段线索: due_date=null 且 due_date_basis=null
+   - ⚠️ 用户明确表达了截止意图但日期本身模糊到无法算出具体值(如「这周末」「下周末」): due_date=null, basis="user_explicit"(意图明确,只是日期待客户端让用户补选)
    判断口径:用户是否在「什么时候做这件事」? 是 → user_explicit;用户在「为某个时间点准备某事/某事发生在这个时间」? 是 → title_mention
-模糊日期换算约定（必须算出绝对日期填入 due_date）：
-- "月底/月末" → 当月最后一天
-- "月中" → 当月 15 号
-- "月初" → 当月 1 号
-- "这周末/本周末" → 即将到来的周六
-- "下周末" → 下周六
+模糊日期换算约定：
+- "月底/月末" → 当月最后一天（算出 due_date）
+- "月中" → 当月 15 号（算出 due_date）
+- "月初" → 当月 1 号（算出 due_date）
+- ⚠️ "这周末/本周末/下周末" → **due_date 必须为 null**（模糊日期，客户端让用户自己选周六或周日），due_hint 保留用户原文
 due_hint 始终保留用户原文。
 5. 提取重复规则：只有明确出现「每天/每日/每周X/每月X号」时才设置 recurrence_rule；否则为 null。weekdays 编号映射表（Apple Calendar 约定，与 iOS RecurrenceRule.swift 一致）：周日=1、周一=2、周二=3、周三=4、周四=5、周五=6、周六=7。例如「每周一三五」→ weekdays=[2,4,6]；「每月15号」→ frequency="monthly", day_of_month=15。interval 表示每 N 个周期重复一次，默认 1（「每两周」=interval 2、「每三个月」=interval 3）。weekly + interval > 1 时 weekdays 可以为空（从起始日推算）。recurrence_rule.end_date **一律留 null**（不要自己算日期，日期由程序算）
 5b. 截止边界：⚠️ recurrence_end 仅用于有 recurrence_rule 的重复任务。非重复任务（recurrence_rule 为 null）的截止日期一律用 due_date，recurrence_end 必须为 null。「月底前交税」是一次性任务 → due_date=当月最后一天，不是 recurrence_end。如果重复有终点，用顶层 recurrence_end 做「归一化分类」（你只分类，绝不要自己算具体日期）：
@@ -281,9 +281,9 @@ due_hint 始终保留用户原文。
 输入："下午3点、5点、7点喝水提醒"
 输出：{"todos":[{"title":"喝水提醒","detail":"下午3点、5点、7点","due_date":null,"due_hint":"下午3点、5点、7点","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["15:00","17:00","19:00"],"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":""}
 
-示例 13（模糊日期换算；参考日期 2026-07-15 周三）：
+示例 13（⚠️ "这周末"是模糊日期 → due_date 必须为 null，客户端让用户自己选周六或周日；参考日期 2026-07-15 周三）：
 输入："这周末去爬山"
-输出：{"todos":[{"title":"去爬山","detail":"这周末去爬山","due_date":"2026-07-18","due_hint":"这周末","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+输出：{"todos":[{"title":"去爬山","detail":"这周末去爬山","due_date":null,"due_hint":"这周末","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
 
 示例 14（⚠️ 标题含日期词但非截止日 → due_date 必须为 null；参考日期 2026-07-15 周三）：
 输入："为周日聚会做准备"
@@ -322,13 +322,13 @@ Core rules:
    - title_mention: the date is the TARGET/ATTRIBUTE of the action — "prepare for Sunday", "Sunday prep", "Sunday party setup" — in these cases due_date MUST be null and basis="title_mention"
    - inferred: only inferred from fuzzy period words (e.g. "tonight" → today + evening) — basis="inferred"
    - no date/period cue at all: due_date=null AND due_date_basis=null
+   - ⚠️ User expresses a clear deadline intent but the date is too fuzzy to compute (e.g. "this weekend", "next weekend"): due_date=null, basis="user_explicit" (intent is explicit; the client lets the user pick the concrete day)
    Test: is the user saying "WHEN to do this"? → user_explicit. Is the user saying "do something FOR/FORWARD TO a time point"? → title_mention
-Fuzzy date conventions (MUST compute absolute date into due_date):
-- "end of month" → last day of current month
-- "middle of month" → 15th of current month
-- "start of month" → 1st of current month
-- "this weekend" → upcoming Saturday
-- "next weekend" → Saturday of next week
+Fuzzy date conventions:
+- "end of month" → last day of current month (compute due_date)
+- "middle of month" → 15th of current month (compute due_date)
+- "start of month" → 1st of current month (compute due_date)
+- ⚠️ "this weekend" / "next weekend" → **due_date MUST be null** (fuzzy date; the client lets the user pick Saturday or Sunday); keep the original phrase in due_hint
 due_hint always preserves the original text.
 5. Extract recurrence only for explicit phrases like "every day", "daily", "every Monday", "weekly", or "monthly on the 1st"; otherwise recurrence_rule must be null. weekdays numbering map (Apple Calendar convention, matches iOS RecurrenceRule.swift): Sunday=1, Monday=2, Tuesday=3, Wednesday=4, Thursday=5, Friday=6, Saturday=7. E.g. "every Mon/Wed/Fri" → weekdays=[2,4,6]; "monthly on the 15th" → frequency="monthly", day_of_month=15. interval = every N periods (default 1; "every two weeks" = interval 2, "every three months" = interval 3). weekly + interval > 1 allows empty weekdays (computed from start date). Always leave recurrence_rule.end_date null (do NOT compute dates yourself)
 5b. End boundary: ⚠️ recurrence_end is ONLY for recurring tasks that have a recurrence_rule. Non-recurring tasks (recurrence_rule is null) must use due_date for deadlines, NOT recurrence_end. "Finish taxes by end of month" is a one-time task → due_date = last day of month, recurrence_end = null. If the recurrence has an end, use the top-level recurrence_end field as a NORMALIZED CLASSIFICATION (only classify; never compute the concrete date — the client computes it):
@@ -419,9 +419,9 @@ Example 12 (multiple reminder times):
 Input: "Remind me to drink water at 3 p.m., 5 p.m., and 7 p.m."
 Output: {"todos":[{"title":"Drink water","detail":"at 3 p.m., 5 p.m., and 7 p.m.","due_date":null,"due_hint":"at 3 p.m., 5 p.m., and 7 p.m.","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["15:00","17:00","19:00"],"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":""}
 
-Example 13 (fuzzy date computation; reference date 2026-07-15 Wednesday):
+Example 13 (⚠️ "this weekend" is a fuzzy date → due_date MUST be null; the client lets the user pick the day; reference date 2026-07-15 Wednesday):
 Input: "If it doesn't rain this weekend, I'll go hiking"
-Output: {"todos":[{"title":"Go hiking","detail":"this weekend","due_date":"2026-07-18","due_hint":"this weekend","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+Output: {"todos":[{"title":"Go hiking","detail":"this weekend","due_date":null,"due_hint":"this weekend","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
 
 Example 14 (⚠️ title contains a date word that is NOT a due date → due_date must be null; reference date 2026-07-15 Wednesday):
 Input: "Prepare for Sunday"
@@ -431,7 +431,15 @@ Example 15 (contrast: same word "Sunday" used as a real deadline → user_explic
 Input: "Submit report by Sunday"
 Output: {"todos":[{"title":"Submit report","detail":"Submit report by Sunday","due_date":"2026-07-19","due_hint":"by Sunday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
 
-Example 16 (⚠️ Batch input with multiple sentences/lines: split by actionable intent, NOT by line breaks. One line may yield multiple todos; multiple lines may yield one todo. reminder_times are NEVER split into multiple todos):
+Example 16 (⚠️ "half past X" clock time → due_time "HH:30"; without AM/PM marker defaults to morning; reference date 2026-07-15 Wednesday):
+Input: "Meeting tomorrow at half past ten"
+Output: {"todos":[{"title":"Meeting","detail":"tomorrow at half past ten","due_date":"2026-07-16","due_hint":"tomorrow at half past ten","due_time":"10:30","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+Example 17 ("half past X tonight" → 12-hour + 30 min → "HH:30"; reference date 2026-07-15 Wednesday):
+Input: "Go to bed tonight at half past ten"
+Output: {"todos":[{"title":"Go to bed","detail":"tonight at half past ten","due_date":"2026-07-15","due_hint":"tonight at half past ten","due_time":"22:30","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+Example 18 (⚠️ Batch input with multiple sentences/lines: split by actionable intent, NOT by line breaks. One line may yield multiple todos; multiple lines may yield one todo. reminder_times are NEVER split into multiple todos):
 Input (reference date 2026-07-15 Wednesday):
 Meeting tomorrow at 10am
 Submit quarterly report by Friday, also pick up the package
