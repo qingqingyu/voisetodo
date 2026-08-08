@@ -22,9 +22,9 @@ struct TimeEditPopover: View {
     }
 
     var body: some View {
-        VStack(spacing: WarmSpacing.sm) {
+        VStack(spacing: WarmSpacing.lg) {
             Text(String(localized: "home.popover.time_title"))
-                .font(WarmFont.headline(14))
+                .font(WarmFont.headline(16))
                 .foregroundColor(WarmTheme.textPrimary)
 
             DatePicker(
