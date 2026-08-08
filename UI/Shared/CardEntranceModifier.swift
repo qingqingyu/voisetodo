@@ -32,6 +32,16 @@ struct CardEntranceModifier: ViewModifier {
                     _ = cardAppeared.insert(id)
                 }
             }
+            // suppressed 从 true→false 时(suppressed 启用时 .onAppear 已被 guard 拦掉,
+            // 没有别的路径会把 id insert 到 cardAppeared)主动补入场,避免卡片永久 opacity 0。
+            // 当前唯一调用方 UnscheduledDrawer 不传 suppressed(默认 false),此分支暂不触发;
+            // 为后续 UnscheduledDrawer follow-up 复用本 modifier 时预留兜底。
+            .onChange(of: suppressed) { _, isSuppressed in
+                guard !isSuppressed, !cardAppeared.contains(id) else { return }
+                withAnimation(WarmAnimation.springCard.delay(Double(index) * 0.06)) {
+                    _ = cardAppeared.insert(id)
+                }
+            }
             .transition(.asymmetric(
                 insertion: .scale(scale: 0.9).combined(with: .opacity),
                 removal: .scale(scale: 0.95).combined(with: .opacity)

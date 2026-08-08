@@ -315,6 +315,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var addedToastVisible = false
     @State private var addedToastMessage = ""
     @State private var addedToastToken = 0
+    /// pill 数字 pop 的驱动 token。仅在 `revealConfirmedTodos`(ConfirmSheet 成功后)
+    /// 递增,避免原来用 `total` 做 trigger 时左右滑切日 total 变化也触发 pop。
+    @State private var pillPopToken = 0
 
     private var actions: HomeViewActions<Store> {
         HomeViewActions(
@@ -875,27 +878,92 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 用户看到一堆静止的行。本函数在 sheet `onDismiss` 后才执行,动画时机正确。
     /// `HomeSelectedDayListView` 内的 guard `!pendingRevealIDs.contains(id)` 负责抑制
     /// 自动入场,等本函数外部驱动。
+    ///
+    /// **分帧驱动 stagger**:先前用紧凑同步循环 `withAnimation(...delay)` N 次改同一个
+    /// @State Set,SwiftUI 可能在同一 runloop tick 内合并成一次更新,届时每档 .delay 是否
+    /// 各自生效无法保证(塌了就是齐刷刷淡入而非瀑布)。改用 Task.sleep 把每次 insert 强行
+    /// 分散到不同 tick,保证 stagger 一定瀑布展开。
+    ///
+    /// **可见性过滤**:跨天条目(有 dueDate 但落在别日)当前不渲染,提前 insert 到
+    /// `cardAppeared` 会让用户日后翻到那天时该行已在 set 中 → 直接 opacity 1 显示,丢掉
+    /// 入场动画。这里只对当前可见的 id(onDay + unscheduled)做主动入场,跨天 id
+    /// 留给 row 的 `.onAppear` 自然播(consumePendingReveal 已清空队列,guard 不会再拦)。
+    ///
+    /// **切日竞态守卫**:Task.sleep 醒来后比对 `selectedDate == triggerDay`,
+    /// 防止用户 confirm 后立即切日时把旧日 id 写入共享的 `cardAppeared`(会导致
+    /// 切回旧日时丢入场动画)。cardAppeared 是 HomeView @State,跨日共享同一实例。
     private func revealConfirmedTodos() {
         let ids = coordinator.consumePendingReveal()
         guard !ids.isEmpty else { return }
 
-        for (rank, id) in ids.enumerated() {
-            let delay = Double(min(rank, 8)) * 0.06
-            withAnimation(motionAnim(WarmAnimation.springCard.delay(delay))) {
-                _ = cardAppeared.insert(id)
+        let dayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
+        // 一次性按 id 查找 todo,避免 visibleIds / hasOnDayItem / presentAddedToast 各遍历一次。
+        // 找不到的 id(已被删除等)在后续 filter 中被各分类的 guard 隐式排除,不单独归类。
+        let todosById: [UUID: TodoItem] = Dictionary(
+            uniqueKeysWithValues: ids.compactMap { id in
+                guard let todo = store.todos.first(where: { $0.id == id }) else { return nil }
+                return (id, todo)
+            }
+        )
+        // 分类口径(三处共用同一份,避免 visibleIds 与 hasOnDayItem 对"无日期"判断不一致):
+        // - onDay:有 dueDate 且落在 selectedDate 当天 → stagger 入场 + pill pop
+        // - unscheduled:无 dueDate → 「稍后」分区同屏可见 → stagger 入场,但不进 pill total
+        // - elsewhere:有 dueDate 但落别日 → 不在本日视图,留给别日 row 的 .onAppear 自然播
+        let onDayIds: [UUID] = ids.filter { id in
+            guard let todo = todosById[id], let due = todo.dueDate else { return false }
+            return DayClock.isSameUserDay(due, dayStart, calendar: calendar)
+        }
+        let unscheduledIds: [UUID] = ids.filter { id in
+            guard let todo = todosById[id] else { return false }
+            return todo.dueDate == nil
+        }
+        let visibleIds = onDayIds + unscheduledIds
+        let triggerDay = selectedDate // 捕获当前 selectedDate,sleep 醒来后比对防切日竞态
+
+        for (rank, id) in visibleIds.enumerated() {
+            let delayNs = UInt64(min(rank, 8)) * 60_000_000 // 0.06s 步长,封顶 rank 8
+            Task { @MainActor in
+                do {
+                    try await Task.sleep(nanoseconds: delayNs)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    return // 不可达:Task.sleep 只 throw CancellationError
+                }
+                // 切日竞态守卫:Task.sleep 期间用户可能切到别日,此时把旧日 id
+                // insert 到共享的 cardAppeared 会让用户切回时丢入场动画。
+                // @State 的存储位置由 SwiftUI 管理,Task 闭包通过 @State 的 location
+                // box 间接读取,醒来时拿到的是当前最新值(非捕获时的快照)。
+                guard selectedDate == triggerDay else { return }
+                withAnimation(motionAnim(WarmAnimation.springCard)) {
+                    _ = cardAppeared.insert(id)
+                }
             }
         }
-        presentAddedToast(for: ids)
+
+        presentAddedToast(for: ids, todosById: todosById, dayStart: dayStart)
+
+        // 仅当确实有落在 selectedDay 的条目(pill 的 total 真正增加)才递增 token 触发 pop,
+        // 避免纯跨天 / 纯无日期批次误弹(无日期 / 跨天条目都不进 pill total)。
+        if !onDayIds.isEmpty {
+            pillPopToken += 1
+        }
     }
 
     /// 成功添加后的底部 toast。统计落别处的条目数,选「已添加 N 条」或分流版「N 条 + M 条在其他日期」。
     /// 跨天条目 / Reduce Motion / Calendar tab 不可见三种静默失败场景都靠 toast 兜底反馈。
-    private func presentAddedToast(for ids: [UUID]) {
-        let dayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
-        // 「别处」= 不在当前 selectedDate 的条目:有 dueDate 但落在别日,或无 dueDate(「稍后」「待定日期」)
+    /// - Parameter todosById: 由 `revealConfirmedTodos` 预先构造的 id→todo 映射,
+    ///   避免本函数再遍历 `store.todos`(N=ids.count 小数据,但保持单一数据源)。
+    private func presentAddedToast(
+        for ids: [UUID],
+        todosById: [UUID: TodoItem],
+        dayStart: Date
+    ) {
+        // 「别处」= 有 dueDate 但落在别日的条目。
+        // 无 dueDate 的条目(「稍后」「待定日期」)不计入别处:它们在 Today tab 同屏可见,
+        // 说成"在其他日期"既不准确也误导(全无日期批次会显示"已添加 0 条")。
         let elsewhere = ids.filter { id in
-            guard let todo = store.todos.first(where: { $0.id == id }) else { return true }
-            guard let due = todo.dueDate else { return true }
+            guard let todo = todosById[id], let due = todo.dueDate else { return false }
             return !DayClock.isSameUserDay(due, dayStart, calendar: calendar)
         }.count
         let onSelectedDay = ids.count - elsewhere
@@ -969,9 +1037,9 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     /// 胶囊内的文案 "今天 0/3"(无括号,统一 textPrimary 色——按 spec)。
     /// monospacedDigit 防数字字宽变化抖动;fixedSize 防外层 frame 压榨宽度。
-    /// 数字 Text 挂 `.numberPop(trigger: total)`:用户从 ConfirmSheet 加了一批今日任务后,
-    /// total 增加 → 数字弹一下,作为「东西落进列表」的反馈之一。
-    /// 0→正数不弹(modifier 内 gate),避免与 pill opacity 入场动画打架。
+    /// 数字 Text 挂 `.numberPop(trigger: pillPopToken)`:只在 `revealConfirmedTodos`
+    /// (ConfirmSheet 成功)时递增,作为「东西落进列表」的反馈之一。
+    /// 不再用 `total` 做 trigger —— 左右滑切日 total 也变,会让日常导航弹出假反馈。
     private func pillLabel(total: Int, completed: Int) -> some View {
         HStack(spacing: WarmSpacing.xxs) {
             Text(String(localized: "home.today"))
@@ -981,7 +1049,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .font(WarmFont.caption(13))
                 .monospacedDigit()
                 .foregroundStyle(WarmTheme.textPrimary)
-                .numberPop(trigger: total)
+                .numberPop(trigger: pillPopToken)
         }
         .fixedSize()
     }

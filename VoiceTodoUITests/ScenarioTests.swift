@@ -98,12 +98,26 @@ final class ScenarioTests: XCTestCase {
         // Step 8: 等待 Sheet 关闭
         XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
 
-        // Step 9: 检查 HomeView
-        let homeTodoList = appHelper.todoList
-        XCTAssertEqual(homeTodoList.cells.count, 3, "HomeView 应该有 3 条待办")
+        // Step 9: 验证成功反馈 toast 出现(底部「已添加 N 条」)。
+        // 注意:Toast identifier 在 S02 / 流式反馈 / 根部 toast 多处复用,
+        // 此断言主要保证"成功反馈确实渲染了",真正的 stagger/cells 揭晓 gate 由 Step 10 兜底。
+        // 超时 3s 给余量(toast 寿命本身 2s,前置 cells.count 遍历会吃掉部分时间)。
+        XCTAssertTrue(appHelper.app.otherElements["Toast"].waitForExistence(timeout: 3.0))
 
-        // Step 10: 验证成功反馈 toast 出现(底部「已添加 N 条」)
-        XCTAssertTrue(appHelper.app.otherElements["Toast"].waitForExistence(timeout: 2.0))
+        // Step 10: 检查 HomeView。新行被压在 opacity 0 直到 revealConfirmedTodos +
+        // stagger 跑完,瞬时快照可能读到 0 个 cell。改用 predicate 等待 cells.count == 3。
+        let homeTodoList = appHelper.todoList
+        let cellsCountPredicate = NSPredicate(format: "cells.count == 3")
+        let cellsCountExpectation = XCTNSPredicateExpectation(
+            predicate: cellsCountPredicate,
+            object: homeTodoList
+        )
+        let cellsCountResult = XCTWaiter().wait(for: [cellsCountExpectation], timeout: 3.0)
+        XCTAssertEqual(
+            cellsCountResult,
+            .completed,
+            "HomeView 应该有 3 条待办(实际 cells.count=\(homeTodoList.cells.count))"
+        )
     }
 
     // MARK: - S02: 纯感受输入 → 空结果 Toast
