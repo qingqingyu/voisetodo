@@ -34,9 +34,17 @@ struct HomeMonthGridButton: View {
     @State private var isDropTargeted = false
 
     private var dayNumberColor: Color {
-        dayState.isSelected ? .white :
-        (dayState.isToday ? WarmTheme.primaryDark :
-        (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted))
+        // v2 配色稿:「今天」橙胶囊(primary.opacity(0.15) + primaryDark 字)完全舍弃,
+        // 与「选中」视觉合并——两者都是实色品牌橙底 + 白字(对齐 HTML/spec 56 行)。
+        // 这是 Apple Calendar 风格:今日默认被选中,两个状态视觉一致。
+        // 如未来需要「今天非选中」用圆环等额外标记区分,需要新一次设计决策。
+        isHighlighted ? .white :
+        (dayState.isCurrentMonth ? WarmTheme.textPrimary : WarmTheme.textMuted)
+    }
+
+    /// 今日或选中态都需要实色品牌橙底 + 白字高亮(v2 配色稿:今日胶囊舍弃,与选中合并)。
+    private var isHighlighted: Bool {
+        dayState.isSelected || dayState.isToday
     }
 
     var body: some View {
@@ -110,15 +118,11 @@ struct HomeMonthGridButton: View {
         Text(verbatim: "\(dayState.dayNumber)")
             .font(WarmFont.mono(11))
             .foregroundColor(dayNumberColor)
-            // 选中/今天加胶囊背景:选中=primary 实色+白字;今天=浅 primary+primaryDark 字。
-            // 不加背景时选中日白字会消失在页面背景上(纯留白方案格子无独立白底)。
-            .padding(.horizontal, dayState.isSelected || dayState.isToday ? 4 : 0)
+            // 选中/今日加胶囊背景:实色 primary + 白字(v2 配色稿:今日与选中合并)。
+            // 不加背景时白字会消失在页面背景上(纯留白方案格子无独立白底)。
+            .padding(.horizontal, isHighlighted ? 4 : 0)
             .background(
-                Capsule().fill(
-                    dayState.isSelected ? WarmTheme.primary :
-                    dayState.isToday ? WarmTheme.primary.opacity(0.15) :
-                    Color.clear
-                )
+                Capsule().fill(isHighlighted ? WarmTheme.primary : Color.clear)
             )
             .fixedSize()
             .frame(maxWidth: .infinity, alignment: .center)
@@ -153,9 +157,10 @@ struct HomeMonthGridButton: View {
 
     /// 单条事件文字条:浅色分类背景 + 深色文字 + 可选时间前缀 + 可选 +N 尾标。
     /// 高度固定 24pt,允许标题显示两行;Overflow +N 嵌入最后一条尾部。
-    /// 已完成态:**失去填充背景 + textMuted 文字 + 删除线**(形态 + 形状双通道)。
-    /// 设计取舍:已完成事件放弃分类色身份——"已完成属于哪类"在复盘场景下价值低,
-    /// 而"剩余实心块数量 = 当天未完成数"这一扫视可读的视觉等式是月历视图的核心信息。
+    /// 已完成态:**中性灰底 + 灰字 + 删除线**(v2 配色稿 calendar-color-spec.md 第 5 条)。
+    /// 推翻了旧设计「失去填充 Color.clear + textMuted」——旧版依赖形态对比(实心 vs 空)
+    /// 在小尺寸 9pt 下不够稳健;新版用「明确但低饱和」的灰底,让已完成成为整屏最不显眼一档。
+    /// 中性灰脱钩分类色相,传达"已完成属于哪类在复盘场景下价值低"。
     /// 满足 WCAG 1.4.1「不能仅用颜色传达信息」:删除线对红绿色盲用户依然有效。
     ///
     /// 字体策略:三段都固定字号不响应 Dynamic Type——月历格事件条是"预览类 UI"(用户点开看详情),
@@ -171,18 +176,27 @@ struct HomeMonthGridButton: View {
     /// 近一个中文字的宽度;两行布局能在不缩小 9pt 字号的前提下完整显示常见标题。
     /// 字段间间距由 hour 段尾随空格、+N 段前导空格提供。
     private func eventBar(_ occurrence: TodoOccurrenceData, isLast: Bool, overflow: Int?) -> some View {
-        let categoryBg = WarmTheme.categoryBackground(for: occurrence.todo.category)
-        let categoryTx = WarmTheme.categoryTextColor(for: occurrence.todo.category)
-        // 已完成:失去填充(Color.clear)+ textMuted 文字 + 删除线。
-        // 形态对比(实心 vs 空)在小尺寸 9pt 下比色深对比更稳健,且不依赖色觉。
-        let bg = occurrence.isCompleted ? Color.clear : categoryBg
-        let tx = occurrence.isCompleted ? WarmTheme.textMuted : categoryTx
+        // v2 配色:背景 + 文字色用独立 hex,不再由主色 opacity 派生。
+        // 见 WarmTheme.monthGridBackground / monthGridText 注释。
+        let categoryBg = WarmTheme.monthGridBackground(for: occurrence.todo.category)
+        let categoryTx = WarmTheme.monthGridText(for: occurrence.todo.category)
+        // 已完成:中性灰底 + 灰字 + 删除线(spec 第 5 条)。
+        let bg = occurrence.isCompleted ? WarmTheme.monthGridDoneBackground : categoryBg
+        let tx = occurrence.isCompleted ? WarmTheme.monthGridDoneText : categoryTx
 
         // hour 前缀:只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
+        // 颜色策略:
+        // - 未完成:沿用 tx(分类深字)但 opacity 0.62(spec 第 42 行)——任务名是主信息,时间是次要信息。
+        // - 已完成:不叠 opacity。已完成态 tx 已经是中性灰 #B4BCC7,再叠 0.62 会让 hour 几乎不可见
+        //   (灰色文字+灰色背景+删除线 + 6 折透明度 = 对比度过低)。spec 第 42 行的 opacity 分级
+        //   明确针对「分类色文字」场景,已完成态文字全部统一为 #B4BCC7 已经够弱,无需再分级。
+        // Text+Text 拼接时段内 foregroundColor 优先,外层 combined.foregroundColor(tx) 不会覆盖。
+        let hourOpacity: Double = occurrence.isCompleted ? 1.0 : WarmTheme.monthGridHourOpacity
         let hourText: Text
         if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
             hourText = Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
                 .font(WarmFont.mono(8))
+                .foregroundColor(tx.opacity(hourOpacity))
         } else {
             hourText = Text("")
         }
@@ -199,12 +213,12 @@ struct HomeMonthGridButton: View {
             overflowText = Text("")
         }
 
-        // 删除线 color 与文字色(textMuted)一致,避免"灰文字 + 其他色线"的不和谐。
+        // 删除线 color 与已完成文字色同色系但略深一档(spec 第 49 行),避免"灰文字 + 异色线"。
         // Text + Text 拼接(不是 LocalizedStringKey 插值):三段分别带各自的字体/样式,
         // + 运算符返回 Text 同时保留分段样式;若用 Text("\(t1)\(t2)") 会走本地化系统,
         // 在伪本地化/多语言下产生破损输出(参见 Localizable.xcstrings 历史垃圾 key %@%@%@)。
         let combined = (hourText + titleText + overflowText)
-            .strikethrough(occurrence.isCompleted, color: WarmTheme.textMuted)
+            .strikethrough(occurrence.isCompleted, color: WarmTheme.monthGridDoneStrikethrough)
 
         return combined
             .foregroundColor(tx)

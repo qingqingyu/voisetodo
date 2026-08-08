@@ -113,6 +113,60 @@ enum WarmTheme {
     static func categoryTextColor(for category: TodoCategory) -> Color {
         color(for: category).opacity(0.85)
     }
+
+    // MARK: - 月历格子专属分类色 (v2 配色稿)
+    // 来源:/Users/TWJ/Downloads/calendar-color-spec.md
+    //
+    // 与上方 color(for:) / categoryBackground(for:) / categoryTextColor(for:) 解耦:
+    // - 旧路径(派生自主色 opacity)继续服务于 ConfirmSheet TodoItemRow 的小圆点 hint
+    //   和 WeekStripCard 的圆点 / 图例 —— 它们的视觉口径与本次月历改动无关。
+    // - 新路径用独立 hex(浅底饱和 49%~73%/明度 90%~92% + 同色相深字明度 20%~35%),
+    //   既保留色相氛围又拿回对比度(spec 第二节「直接替换」表)。
+    //
+    // spec 只覆盖 work/life/finance/health 四类。study/social/other 三类按 spec 色相策略
+    // 自补(study 紫、social 偏紫粉、other 极淡冷蓝灰),与已完成态 #EDEFF2 中性灰拉开。
+
+    /// 月历事件条分类背景色(spec 第二节 + 自补三类)。
+    static func monthGridBackground(for category: TodoCategory) -> Color {
+        switch category {
+        case .work:     return Color(hex: "DFE6FB")
+        case .life:     return Color(hex: "D6F0E4")
+        case .finance:  return Color(hex: "FCEBCF")
+        case .health:   return Color(hex: "FADDE6")
+        case .study:    return Color(hex: "E8E3F5")
+        case .social:   return Color(hex: "F4DCEF")
+        case .other:    return Color(hex: "E5E8F0")
+        }
+    }
+
+    /// 月历事件条分类文字色:每类跟随自己底色色相,明度压到极低(spec 同相深字方案)。
+    static func monthGridText(for category: TodoCategory) -> Color {
+        switch category {
+        case .work:     return Color(hex: "25368C")
+        case .life:     return Color(hex: "0A5B43")
+        case .finance:  return Color(hex: "7A4A05")
+        case .health:   return Color(hex: "8A1F44")
+        case .study:    return Color(hex: "3A1F7E")
+        case .social:   return Color(hex: "7A1A6E")
+        case .other:    return Color(hex: "47505E")
+        }
+    }
+
+    /// 月历已完成事件条背景:中性灰,不带分类色相(spec 第 5 条)。
+    /// 推翻旧设计「已完成失去填充 Color.clear + textMuted 文字」——见 HomeMonthGridButton.eventBar 注释。
+    static let monthGridDoneBackground = Color(hex: "EDEFF2")
+    /// 月历已完成事件条文字色。
+    static let monthGridDoneText = Color(hex: "B4BCC7")
+    /// 月历已完成事件条删除线色:比文字略深一档,与文字同色系(spec 第 49 行)。
+    static let monthGridDoneStrikethrough = Color(hex: "C7CDD5")
+    /// 月历事件条时间前缀(07/14)opacity:沿用文字色,透明度 0.62(spec 第 42 行)。
+    /// 任务名是主信息、时间是次要信息,通过 opacity 拉开层级。
+    ///
+    /// **适用范围**:仅未完成态。已完成态 tx 已是中性灰 #B4BCC7,再叠 0.62 会让 hour
+    /// 对比度过低(灰色文字 + 灰色背景 + 删除线 + 6 折透明度);eventBar 里通过
+    /// `isCompleted ? 1.0 : monthGridHourOpacity` 显式跳过。未来若新增别处使用此常量,
+    /// 同样需要对已完成态做例外处理。
+    static let monthGridHourOpacity: Double = 0.62
 }
 
 // MARK: - 间距（严格 4 借数系统）
