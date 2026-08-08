@@ -155,19 +155,12 @@ struct PendingDateTodoRow: View {
             }
             .padding(.horizontal, WarmSpacing.md)
             .padding(.vertical, WarmSpacing.xxs)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.chip)
-                    .fill(WarmTheme.cardBackground)
-                    .shadow(color: WarmTheme.shadowLight, radius: 4, x: 0, y: 2)
-            )
+            // 不再自带白色圆角卡底 —— 「待定日期」整个分区现在合成一张卡,
+            // 底色/圆角/条目间发丝线由调用方的 `groupedCardRow` 统一画。
+            // 底透明后空白处不参与 hit test,补 contentShape 让整行都能点开详情。
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: WarmSpacing.xxs,
-                                  leading: WarmSpacing.lg,
-                                  bottom: WarmSpacing.xxs,
-                                  trailing: WarmSpacing.lg))
-        .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 onDelete()
@@ -183,34 +176,44 @@ struct PendingDateTodoRow: View {
 
 #if DEBUG
 
-#Preview("PendingDateTodoRow — 长 hint EN/ZH × default/AX5") {
+/// 行本身已不自带卡底(由 `groupedCardRow` 统一画),所以 Preview 必须放进 `List`
+/// 才能看到真实外观 —— `listRowBackground` 在 List 之外是 no-op。
+private struct PendingDateRowPreviewList: View {
+    let todos: [TodoItemData]
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(Array(todos.enumerated()), id: \.offset) { idx, todo in
+                    PendingDateTodoRow(
+                        todo: todo,
+                        index: idx,
+                        onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
+                    )
+                    .groupedCardRow(
+                        GroupedRowPosition(index: idx, count: todos.count),
+                        height: .tall
+                    )
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(WarmTheme.background)
+    }
+}
+
+#Preview("PendingDateTodoRow — 长 hint EN/ZH") {
     // 复用 MockStore.withLongHints fixture,避免在 Preview 里重复构造相同 TodoItemData。
     // 这也确保 fixture 不变成死代码 —— 任何 withLongHints 的修改都会反映到本 Preview。
-    VStack(spacing: 8) {
-        ForEach(Array(MockStore.withLongHints.todos.enumerated()), id: \.offset) { idx, todo in
-            PendingDateTodoRow(
-                todo: todo,
-                index: idx,
-                onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
-            )
-        }
-    }
-    .padding()
-    .background(WarmTheme.background)
+    PendingDateRowPreviewList(todos: MockStore.withLongHints.todos)
 }
 
 #Preview("PendingDateTodoRow — AX5 字号") {
-    // 取 withLongHints 第一条(长 EN hint)做 AX5 字号下单卡片预览。
-    VStack(spacing: 8) {
-        PendingDateTodoRow(
-            todo: MockStore.withLongHints.todos[0],
-            index: 0,
-            onToggle: {}, onOpen: {}, onDelete: {}, onPickDate: { _ in }
-        )
-    }
-    .padding()
-    .background(WarmTheme.background)
-    .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
+    // 取 withLongHints 第一条(长 EN hint)做 AX5 字号下单行预览。
+    // 单行时 position 是 .only —— 四角全圆、不画发丝线。
+    PendingDateRowPreviewList(todos: Array(MockStore.withLongHints.todos.prefix(1)))
+        .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
 }
 
 #endif

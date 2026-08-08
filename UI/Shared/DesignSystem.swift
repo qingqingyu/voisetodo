@@ -55,6 +55,13 @@ enum WarmTheme {
     // 分组分隔线 - 用于 ConfirmSheet 分组 header 后的细线(对齐 HTML --line #E7E4DE)。
     // 浅色模式下接近 paperBackground 的暖灰;深色模式用 secondaryBackground 同色系。
     static let divider = Color(light: "E7E4DE", dark: "3A3D42")
+    // 分组卡片内、条目之间的发丝线(对齐 HTML 设计稿 --hair #EAECEF)。
+    // 与 divider 分开:divider 偏暖(#E7E4DE),画在纯白卡片上会透出一点米色,
+    // 与冷化后的 cardBackground / textPrimary 不同色温;这里用中性冷灰。
+    static let rowHairline = Color(light: "EAECEF", dark: "34373C")
+    // 分组卡片内的小标题条底色(Today 卡里的「整天 / 上午 / 下午 / 按时间」灰条)。
+    // 比 cardBackground 低一档,让它读起来是"卡片内部的分隔带"而不是一条内容。
+    static let subheadBackground = Color(light: "F7F8FA", dark: "2C2F33")
     // 控件底色(未选态):中性冷灰,与冷色系文字(textPrimary/Secondary/Muted 均偏墨蓝)同色温。
     // 历史:原 #F0EDE8 米灰偏暖,与墨蓝文字混搭显"旧式 App"观感 → 改中性 #F3F4F6,
     // 暖感全部交给 primary 珊瑚橙承担,不让灰色背景也跟着暖。
@@ -138,6 +145,22 @@ enum WarmRadius {
 enum WarmSize {
     static let icon: CGFloat = 28      // 内嵌图标 badge
     static let touch: CGFloat = 44     // iOS HIG hit target（保留 44，不归 4 借数）
+
+    // MARK: - 分组卡片行高（Today 列表）
+    // 设计稿只允许两档行高：单行标题 56，带副行（钟点 / 重复规则 / 「选日期」）76。
+    // 这两个值是**最小高度**——长中文标题、AX5 字号下该行照常换行撑高，不截断
+    // （见 CLAUDE.md「文本截断零容忍」）。视觉上绝大多数行仍落在这两档上。
+    /// 单行标题行的最小高度。
+    static let rowCompact: CGFloat = 56
+    /// 带副行（第二行元数据 / 「选日期」按钮）的行的最小高度。
+    static let rowTall: CGFloat = 76
+    /// 卡内 tier 小标题条（「整天」/「上午」/「按时间」）的最小高度。
+    static let rowSubhead: CGFloat = 28
+    /// 行内容左边缘到分类图标左边缘的距离，= 卡内水平 padding(md 16) + checkbox 命中框(44)
+    /// + HStack 间距(sm 12)。条目之间的发丝线用它做 leading inset，让线的左端与图标对齐，
+    /// 而不是顶到卡片左边——这是设计稿里「分组卡看起来是一整块」的关键。
+    /// 改 `WarmTodoCard` / `PendingDateTodoRow` 的 checkbox 命中框或水平 padding 时要同步改这里。
+    static let rowContentLeading: CGFloat = WarmSpacing.md + 44 + WarmSpacing.sm
     /// 次要入口的视觉尺寸（如 header 齿轮按钮）：低于 HIG 44 是有意识取舍——
     /// 实际 hit target 通过外层 frame 扩展到 `touch`(44)，视觉只占 36。
     static let secondaryHit: CGFloat = 36

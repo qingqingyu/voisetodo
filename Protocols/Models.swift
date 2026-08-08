@@ -66,6 +66,21 @@ enum TodoCategory: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// 列表行用的线性(非 fill)变体。与 `sfSymbolName` 分开维护:
+    /// App Intents 的实体图标、Review 页的小尺寸统计图标都要靠实心色块撑辨识度,
+    /// 而 Today 列表的行图标要的是「不抢标题」的细描边——两种诉求不该共用一个映射。
+    var outlineSymbolName: String {
+        switch self {
+        case .work: return "briefcase"
+        case .study: return "book"
+        case .life: return "house"
+        case .health: return "heart"
+        case .finance: return "yensign"
+        case .social: return "person.2"
+        case .other: return "tag"
+        }
+    }
+
     var displayName: String {
         switch self {
         case .work: return String(localized: "category.work")

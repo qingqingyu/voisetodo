@@ -149,6 +149,7 @@
 		B66A6F9E7262A019BCA450DE /* CalendarHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 923052D2F0F2BD6AB9CBF6B5 /* CalendarHomeUITests.swift */; };
 		B7F26721234EAC3BF0554BDB /* TelemetryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E00281D082A7AFAB67384E /* TelemetryQueue.swift */; };
 		B8891E39392BC8B86F2759BD /* CategoryIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FA0BC0E641C92B6086C486 /* CategoryIconView.swift */; };
+		A1C4F70D2E9B41586D0C33A1 /* GroupedCardRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C4F70E2E9B41586D0C33A2 /* GroupedCardRow.swift */; };
 		B94FE0657C00F56511634E40 /* PendingRecoveryFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4E94B4A99727B8DE4E1BBD /* PendingRecoveryFlow.swift */; };
 		B9CC25E785755AB4C6DDC05F /* RecordingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED82541E8857CCCA962339FC /* RecordingActivityAttributes.swift */; };
 		BA963C9069E96D64C1F8EA2F /* ErrorMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29390992AF40866937223582 /* ErrorMessages.swift */; };
@@ -273,6 +274,7 @@
 		3753100085CB7B257087A685 /* ConfirmGroupedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmGroupedList.swift; sourceTree = "<group>"; };
 		377ECE045102EA0F8A0A4CFB /* TranscriptProcessingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptProcessingFlow.swift; sourceTree = "<group>"; };
 		38FA0BC0E641C92B6086C486 /* CategoryIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryIconView.swift; sourceTree = "<group>"; };
+		A1C4F70E2E9B41586D0C33A2 /* GroupedCardRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedCardRow.swift; sourceTree = "<group>"; };
 		39AD6842D3BBACDD857AF356 /* HomeCalendarState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCalendarState.swift; sourceTree = "<group>"; };
 		3A79C26D7A24A1941EC2BE4F /* BottomInputPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomInputPanelView.swift; sourceTree = "<group>"; };
 		3DBBE53FF4A5FFA27BCF5C78 /* CalendarWriteMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriteMode.swift; sourceTree = "<group>"; };
@@ -503,6 +505,7 @@
 			children = (
 				2E865543BECF19023D86612D /* CardEntranceModifier.swift */,
 				38FA0BC0E641C92B6086C486 /* CategoryIconView.swift */,
+				A1C4F70E2E9B41586D0C33A2 /* GroupedCardRow.swift */,
 				553880D7569474DB9E18EB87 /* DesignSystem.swift */,
 				37124752250C86FE8C1A7B73 /* EmptyStateView.swift */,
 				35F68F661953DC7B90440FB5 /* FlowLayout.swift */,
@@ -1002,6 +1005,7 @@
 				5BB975AF610B720187248CD4 /* CalendarWriteMode.swift in Sources */,
 				46FC727E12F322D49590ABA6 /* CardEntranceModifier.swift in Sources */,
 				B8891E39392BC8B86F2759BD /* CategoryIconView.swift in Sources */,
+				A1C4F70D2E9B41586D0C33A1 /* GroupedCardRow.swift in Sources */,
 				B392DDDCC687AE55AE0CB1F7 /* ChipView.swift in Sources */,
 				56C5A38A64EE33C4269775CE /* CodingUserInfoKey+Recurrence.swift in Sources */,
 				EF935E725AEA0FD041FAC839 /* CompleteTodoIntent.swift in Sources */,
