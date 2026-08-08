@@ -3964,6 +3964,7 @@
       }
     },
     "home.today" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

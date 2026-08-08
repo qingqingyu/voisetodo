@@ -6,12 +6,12 @@ import SwiftUI
 ///
 /// **与 PopCount 的差异**:
 /// - PopCount 是「View」,只在 ConfirmSheet 按钮里渲染一个独立 Text;
-///   NumberPopModifier 是「ViewModifier」,挂到任意 View 上(这里是 pillLabel 的数字 Text)。
+///   NumberPopModifier 是「ViewModifier」,挂到任意 View 上(这里是 progressBarRow 的数字 Text)。
 /// - PopCount 缩放 1.42 + light haptic(emoji pop 风格,要有触觉);
 ///   NumberPopModifier 缩放 1.08(数字小弹,触觉由调用方在更高层统筹——
-///   ConfirmSheet 的 confirmAction 已触发 `.success` 触觉,pill pop 不再重复)。
-/// - PopCount 不 gate 0 值;NumberPopModifier gate `oldValue == 0`(避免与 pill opacity
-///   入场动画打架:total 从 0 变正数时整个 pill 在做 opacity 入场,再叠 pop 会撕裂)。
+///   ConfirmSheet 的 confirmAction 已触发 `.success` 触觉,数字 pop 不再重复)。
+/// - PopCount 不 gate 0 值;NumberPopModifier gate `oldValue == 0`(避免与进度条行 opacity
+///   入场动画打架:total 从 0 变正数时整行在做 opacity 入场,再叠 pop 会撕裂)。
 ///
 /// **Follow-up**:后续可与 PopCount 统一为同一个 modifier(给 trigger/animation/scale
 /// 都做参数化)。本次拆开避免影响 PopCount 的现有调用。
@@ -41,14 +41,14 @@ struct NumberPopModifier: ViewModifier {
                 value: popping
             )
             .onChange(of: trigger) { oldValue, _ in
-                // 0 → 正数不 pop:此时整个 pill 在做 opacity 入场(statsHidden 切换),
+                // 0 → 正数不 pop:此时整行在做 opacity 入场(statsHidden 切换),
                 // 再叠 pop 会与入场动画打架,出现「先放大再淡入」的撕裂感。
                 guard oldValue > 0 else { return }
                 triggerPop()
             }
             // 兜底:modifier 所在 view 被移出树(条件分支切换、id() 变化)时,
             // 显式 cancel 挂起的复位 Task,避免旧 Task 醒来后尝试写已销毁 view 的 @State。
-            // 当前 pillLabel 是固定位置挂 modifier,不会触发;此处为防御性写法。
+            // 当前 progressBarRow 是固定位置挂 modifier,不会触发;此处为防御性写法。
             // 注:ConfirmSheetAnimations.PopCount 当前未做 onDisappear cancel,
             // 因为 PopCount 在 ConfirmSheet 单一稳定位置渲染;NumberPopModifier 是
             // 通用 modifier,可能套到任意位置,故此处比 PopCount 更严。

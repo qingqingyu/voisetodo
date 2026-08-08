@@ -221,11 +221,11 @@ private func revealConfirmedTodos() {
 - `motionAnim(_:)`（`:1981-1983`）在 Reduce Motion 下返回 `nil` → 直接显示不做动画。
 - `cardAppeared` 是 `@State`（`:303`），`.onChange(of: store.todos.count)` 的 `intersection` 清理（`:465-468`）只做交集，不会误删新 ID。
 
-**(c) 计数器数字 pop**：`pillLabel(total:completed:)`（`:900-911`）中的 `Text(verbatim: "\(completed)/\(total)")` 加缩放。
+**(c) 计数器数字 pop**：`progressBarRow(total:completed:)`（`:913`）中的 `Text(verbatim: "\(completed) / \(total)")` 加缩放。
 
 新建 `UI/Shared/NumberPopModifier.swift`，照抄 `UI/ConfirmSheet/ConfirmSheetAnimations.swift:48-105` 中 `PopCount` 的双阶段写法（`@State popping` + `Task.sleep` 复位 + generation 比对防并发竞写）。用法 `.numberPop(trigger: total)`。
 
-- **只在 `oldTotal > 0` 时 pop**：total 从 0 变正数时，pill 整体正在做 opacity 入场（`:638` 的 `.transition(.opacity)` + `:643` 的 `.animation(motionAnim(...), value: statsHidden)`），再叠一个 pop 会打架。
+- **只在 `oldTotal > 0` 时 pop**：total 从 0 变正数时，进度条行整体正在做 opacity 入场（`:648` 的 `.transition(.opacity)` + `:655` 的 `.animation(motionAnim(...), value: statsHidden)`），再叠一个 pop 会打架。
 - 不动 `PopCount` 本体——它还带 haptic 和胶囊底色，职责不同，且其 doc 明确写了「只在 ConfirmSheet 视图树用，不污染 `UI/Shared` 的通用 modifier 库」。两者可留 follow-up 统一。
 
 **(d) 底部 toast（HomeView 局部状态）**：
@@ -238,7 +238,7 @@ private func revealConfirmedTodos() {
 
 挂 `.toast(message: addedToastMessage, style: .success, isPresented: $addedToastVisible, position: .bottom, presentationToken: addedToastToken)`。
 
-- **不要走 `AppCoordinator.showToast`**：根部那个 toast 是默认 `.top` 位置（`App/VoiceTodoApp.swift:232-238`），会正好盖住我们要做 pop 动画的 `Today x/y` 计数器。
+- **不要走 `AppCoordinator.showToast`**：根部那个 toast 是默认 `.top` 位置（`App/VoiceTodoApp.swift:232-238`），会正好盖住我们要做 pop 动画的 `X / Y` 计数器。
 - HomeView 局部 bottom toast 是本项目已有的先例——`ConfirmSheetView.swift:102-108` 的流式点击反馈就是这么做的。
 - `presentationToken` 递增用于连续添加时重置计时（`UIConfig.toastDuration = 2.0`，`Protocols/Constants.swift:101`）。
 - 需检查底部避让：`.bottom` 走 safe area，而首页底部有输入面板 / tab bar，参考 `UI/Home/HomeMonthHeaderView.swift` 的 `HomeLayoutMetrics.bottomBarHeight` 补 padding。
