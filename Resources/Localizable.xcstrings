@@ -3679,6 +3679,12 @@
             "value" : "You mentioned a time, but not a day"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間は決まったが、日付は未定"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4035,6 +4041,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rolls over to tomorrow if not done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了の場合は翌日に繰り越す"
           }
         },
         "zh-Hans" : {
