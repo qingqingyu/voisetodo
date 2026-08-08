@@ -280,7 +280,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             TodoClockTimeRow(
                                 dueDate: $editedDueDate,
                                 hasDueTime: $editedHasDueTime,
-                                timeBucket: $editedTimeBucket,
+                                timeBucket: timeBucketBinding,
                                 recurrenceFrequency: editedRecurrenceFrequency,
                                 onEdit: checkForChanges
                             )
@@ -820,6 +820,29 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     }
 
     // MARK: - Actions
+
+    /// 时段选择的双向绑定，套一层协同逻辑：
+    /// 选了非 `.anytime` 时段 + 当前没有任何日期/钟点 → 把 `editedDueDate` 补成今天。
+    ///
+    /// 与 `TodoScheduleDefaults.effectiveDueDate` 同源（"时段⇒今天"），但原逻辑只在 todo 创建时
+    /// 生效（`TodoItemData.init` / `SwiftDataModels`），编辑路径不走它。这里把同一规则补到编辑路径。
+    /// 不补的后果：用户在「稍后」分组点开 todo 选「上午」，写库后 `timeBucket=.morning + dueDate=nil`，
+    /// 被 `HomeCalendarState` 的 `hasTimeSignal` 过滤扔进「待定日期」分组 —— 与用户意图不符。
+    ///
+    /// **反向不清**：从「上午」切回「随时」时不擦 `editedDueDate`。语义上「随时」是「不挑时段」，
+    /// 不是「不要日期」；用户可能就是想把任务保留在某天但不卡时段。同源规则也只补不清。
+    private var timeBucketBinding: Binding<TimeBucket?> {
+        Binding(
+            get: { editedTimeBucket },
+            set: { newValue in
+                editedTimeBucket = newValue
+                if let bucket = newValue, bucket != .anytime,
+                   editedDueDate == nil, !editedHasDueTime {
+                    editedDueDate = Calendar.current.startOfDay(for: Date())
+                }
+            }
+        )
+    }
 
     /// 计算 `hasChanges` 并在检测到改动时触发防抖保存。
     ///
