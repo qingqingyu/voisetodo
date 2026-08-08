@@ -482,13 +482,13 @@ const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです�
    - title_mention: 日付が**行動の対象・属性**——「日曜の集会用の準備」「日曜の集会」「prepare for Sunday」「Sunday prep」——この場合 due_date は必ず null、basis="title_mention"
    - inferred: 大まかな時間帯語からのみ推論(例「今夜」→ today + evening)——basis="inferred"
    - 日付・時間帯の手がかりが一切ない: due_date=null かつ due_date_basis=null
+   - ⚠️ ユーザーが締め切り意図を明確に表明しているが、日付自体が曖昧で計算できない(例:「今週末」「来週末」): due_date=null、basis="user_explicit"(意図は明確、日付はクライアント側でユーザーに補選させる)
    判断基準:ユーザーは「いつそれをするか」を言っているか? → user_explicit。ユーザーは「ある時点に向けて何かをする / その時点で何かが起こる」を言っているか? → title_mention
-曖昧な日付の換算約束(必ず絶対日付を計算して due_date に):
-- 「月末」→ 当月の最終日
-- 「月中」→ 当月の15日
-- 「月初」→ 当月の1日
-- 「今週末」→ 直近の土曜日
-- 「来週末」→ 来週の土曜日
+曖昧な日付の換算約束:
+- 「月末」→ 当月の最終日(due_date を計算)
+- 「月中」→ 当月の15日(due_date を計算)
+- 「月初」→ 当月の1日(due_date を計算)
+- ⚠️ 「今週末」「来週末」→ **due_date は必ず null**(曖昧な日付、クライアント側でユーザーが土曜日か日曜日を選ぶ)、due_hint に原文を保持
 due_hint は常にユーザーの原文を保持。
 5. 繰り返しルールの抽出:「毎日」「毎週月曜」「毎月15日」など明確な表現がある場合のみ recurrence_rule を設定。それ以外は null。weekdays 番号マッピング(Apple Calendar の約束、iOS RecurrenceRule.swift と一致):日=1、月=2、火=3、水=4、木=5、金=6、土=7。例:「毎週月水金」→ weekdays=[2,4,6];「毎月15日」→ frequency="monthly"、day_of_month=15。interval は N 周期に1回(デフォルト1。「2週間に1回」=interval 2、「3ヶ月に1回」=interval 3)。weekly + interval > 1 の場合 weekdays は空を許可(開始日から推算)。recurrence_rule.end_date は**常に null**(自分で日付を計算しない)
 5b. 終了境界:⚠️ recurrence_end は recurrence_rule を持つ繰り返しタスクにのみ使用。非繰り返し(recurrence_rule が null)の締め切りは due_date を使うこと。recurrence_end は必ず null。「月末までに税金を払う」は一回限りのタスク → due_date=月末、recurrence_end=null。繰り返しに終わりがある場合、トップレベルの recurrence_end フィールドを**正規化された分類**として使う(分類だけ、具体的な日付は計算しない——クライアントが計算):
@@ -579,9 +579,9 @@ JSON のみを返す(説明は不要)。フォーマット:
 入力:"午後3時、5時、7時に水分補給リマインダー"
 出力:{"todos":[{"title":"水分補給リマインダー","detail":"午後3時、5時、7時","due_date":null,"due_hint":"午後3時、5時、7時","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["15:00","17:00","19:00"],"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":""}
 
-例 13(曖昧な日付の計算;参照日 2026-07-15 水曜):
+例 13(⚠️「今週末」は曖昧な日付 → due_date は必ず null、クライアント側でユーザーが土曜日か日曜日を選ぶ;参照日 2026-07-15 水曜):
 入力:"今週末、ハイキングに行く"
-出力:{"todos":[{"title":"ハイキングに行く","detail":"今週末、ハイキングに行く","due_date":"2026-07-18","due_hint":"今週末","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+出力:{"todos":[{"title":"ハイキングに行く","detail":"今週末、ハイキングに行く","due_date":null,"due_hint":"今週末","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
 
 例 14(⚠️ タイトルに日付語が含まれるが締め切りではない → due_date は必ず null;参照日 2026-07-15 水曜):
 入力:"日曜の集会用の準備"
