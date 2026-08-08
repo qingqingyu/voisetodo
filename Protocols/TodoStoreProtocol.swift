@@ -6,6 +6,17 @@ import Combine
 protocol TodoListReadable: ObservableObject {
     /// 所有待办（按 sortOrder 升序排列）
     var todos: [TodoItemData] { get }
+
+    /// todos 的变更代数。给 SwiftUI `.task(id:)` / `.onChange(id:)` 当 id 用,
+    /// 避免拿整个 `[TodoItemData]` 做 Hashable(合成 hash 会遍历 rawTranscript 等全部字符串字段,
+    /// 每帧 body 求值都跑一次,详见 docs/completed-todos-performance.md Step 4a)。
+    var todosRevision: Int { get }
+
+    /// 按 ID 单条查库,返回 DTO 形式。
+    /// 用于 `refreshTodos` 窗口化后,调用方需要访问工作集外(完成于 `completedWindowDays` 之外)
+    /// todo 的场景,避免 `store.todos.first(where:)` 漏掉窗口外的项。
+    /// - Returns: 找到则返回 TodoItemData;库里无此 id 或读取失败均返回 nil(失败有 error 日志)。
+    func findTodo(by id: UUID) -> TodoItemData?
 }
 
 /// 单条待办创建能力。
@@ -112,6 +123,12 @@ protocol CalendarOccurrenceStore {
     /// 获取日期区间内实际出现的待办
     /// - Important: 读查询在后台 `@ModelActor` 执行；fetch 失败显式抛出，不静默回退。
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData]
+
+    /// 区间内完成的「无安排」任务(供首页「已完成」分区按需加载工作集外的历史)。
+    /// 口径与 `HomeCalendarState.completedUnscheduledTodos` 严格一致,详见
+    /// `TodoQueryActor.completedUnscheduled(from:to:)` 的文档注释。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;fetch 失败显式抛出。
+    func completedUnscheduled(from startDate: Date, to endDate: Date) async throws -> [TodoItemData]
 
     /// 切换某一天的完成状态；重复任务只影响当天 occurrence
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws

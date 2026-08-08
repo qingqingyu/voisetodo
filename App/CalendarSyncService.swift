@@ -167,7 +167,8 @@ final class CalendarSyncService {
             return oldEventIdentifier == nil ? .skipped(.replace) : .success(.replace)
         }
 
-        guard let updated = store.todos.first(where: { $0.id == todoID }) else {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项(见 docs/completed-todos-performance.md Step 2)
+        guard let updated = store.findTodo(by: todoID) else {
             VoiceTodoLog.calendar.warning("calendar.update.write_skipped todoID=\(todoID.uuidString, privacy: .public) reason=todo_missing sourceID=\(sourceID, privacy: .public)")
             return .skipped(.replace)
         }

@@ -24,7 +24,28 @@ final class TodoStore:
     private let queryActor: TodoQueryActor
 
     /// 所有待办（按 sortOrder 升序排列）
-    @Published var todos: [TodoItemData] = []
+    @Published var todos: [TodoItemData] = [] {
+        didSet { todosRevision &+= 1 }
+    }
+
+    /// todos 的变更代数。`@Published` 让 SwiftUI 观察,`private(set)` 限制只读。
+    /// 一处 `didSet` 覆盖全部 11 条变更路径(refreshTodos / add / addBatch /
+    /// addImportedBatch / addRawTranscript / toggleComplete / delete / updateFull /
+    /// updateRecurrence / updateSystemCalendarEventIdentifier / replacePendingBatchWithExtracted)。
+    /// 用 `&+=` 溢出加法避免理论上的 Int 溢出崩溃。
+    @Published private(set) var todosRevision: Int = 0
+
+    /// 内存工作集里保留的已完成项时间窗(天)。
+    /// v1 取保守值可调,窗口外的已完成项仍在库里,由 `TodoQueryActor` 按需查询
+    /// (见 docs/completed-todos-performance.md Step 3)。改这个数字不需要数据迁移。
+    static let completedWindowDays = 90
+
+    /// 当前 migration 版本。每次给 init 的 migration 序列追加新 migration 时,把此常量 +1。
+    /// 已存在库的旧 App 升级到带新 migration 的版本时,init 会跑追加的 migration 然后推进版本号。
+    /// - 重要:三个 migration(`purgeLegacyVoiceCaptureRecords` / `migrateOldSortOrder` /
+    ///   `migrateDueDatesFromHints`)都是一次性的:详见 docs/completed-todos-performance.md Step 6
+    ///   的"为什么是一次性的"表。复核新条目创建入口仍走 `TodoItem.from` 后,门闩是安全的。
+    private static let currentMigrationVersion = 1
 
     /// P6: 上次同步到的外部变更版本（Widget/AppIntent 跨进程写入标记），用于按需失效内存缓存。
     private var lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
@@ -32,18 +53,29 @@ final class TodoStore:
     // MARK: - Initialization
 
     /// 初始化 TodoStore
-    /// - Parameter modelContext: SwiftData 模型上下文
+    /// - Parameters:
+    ///   - modelContext: SwiftData 模型上下文
+    ///   - saveAction: 自定义保存动作(默认 `context.save()`)
+    ///   - forceMigration: 测试用 —— 强制跑全部 migration,无视 AppGroupConfig 门闩。
+    ///     生产代码不传(默认 false),让门闩正常生效。测试要传 true,因为 in-memory DB
+    ///     是新的但 AppGroupConfig 的 UserDefaults 跨测试持久,门闩会跳过 migration。
     init(
         modelContext: ModelContext,
-        saveAction: @escaping (ModelContext) throws -> Void = { try $0.save() }
+        saveAction: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        forceMigration: Bool = false
     ) {
         self.modelContext = modelContext
         self.saveAction = saveAction
         self.queryActor = TodoQueryActor(modelContainer: modelContext.container)
-        VoiceTodoLog.store.info("store.init.start")
-        purgeLegacyVoiceCaptureRecords()
-        migrateOldSortOrder()
-        migrateDueDatesFromHints()
+        let previousMigrationVersion = AppGroupConfig.currentStoreMigrationVersion()
+        VoiceTodoLog.store.info("store.init.start previousMigration=\(previousMigrationVersion) target=\(Self.currentMigrationVersion) forceMigration=\(forceMigration)")
+        if forceMigration || previousMigrationVersion < Self.currentMigrationVersion {
+            purgeLegacyVoiceCaptureRecords()
+            migrateOldSortOrder()
+            migrateDueDatesFromHints()
+            AppGroupConfig.markStoreMigrationCompleted(version: Self.currentMigrationVersion)
+            VoiceTodoLog.store.info("store.init.migration.completed version=\(Self.currentMigrationVersion)")
+        }
         refreshTodos()
         VoiceTodoLog.store.info("store.init.finished todoCount=\(self.todos.count)")
     }
@@ -243,6 +275,10 @@ final class TodoStore:
             todoItem.isCompleted = false
             todoItem.completedAt = nil
         }
+        // 跨天事件终点:TodoDetailUpdate.init 已跑 TodoSpan.normalized 归一化。
+        // M6(详情页编辑入口)未落地前,所有调用方传 nil,此处写入等价于写 nil,零回归;
+        // 补这一行是为了闭合字段写入路径,避免「init 归一化了但 updateFull 没落地」的死路径。
+        todoItem.eventEndDate = update.eventEndDate
 
         try saveOrRollback()
         if let index = todos.firstIndex(where: { $0.id == id }) {
@@ -354,6 +390,12 @@ final class TodoStore:
     /// - Note: 读查询下沉到 `queryActor` 后台执行；失败显式抛出。
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] {
         try await queryActor.calendarOccurrences(from: startDate, to: endDate)
+    }
+
+    /// 区间内完成的「无安排」任务(供首页「已完成」分区按需加载工作集外的历史数据)。
+    /// - Note: 读查询下沉到 `queryActor`;失败显式抛出。口径见 `TodoQueryActor.completedUnscheduled`。
+    func completedUnscheduled(from startDate: Date, to endDate: Date) async throws -> [TodoItemData] {
+        try await queryActor.completedUnscheduled(from: startDate, to: endDate)
     }
 
     /// 切换某一天的完成状态；重复任务只影响当天 occurrence。
@@ -540,6 +582,7 @@ final class TodoStore:
                 priority: item.priority,
                 category: item.category,
                 isCompleted: item.isCompleted,
+                completedAt: item.completedAt,
                 createdAt: item.createdAt,
                 rawTranscript: item.rawTranscript,
                 needsAIProcessing: item.needsAIProcessing,
@@ -622,20 +665,38 @@ final class TodoStore:
 
     // MARK: - Internal Methods
 
-    /// 全量刷新 todos 属性（从数据库重新加载）
-    /// 初始化时及 app 回前台时调用（同步 Widget 在 Extension 进程中的修改）
+    /// 刷新 todos 工作集(从数据库重新加载)。
+    /// 工作集 = 全部未完成 + 近 `completedWindowDays` 天的已完成。
+    /// 初始化时及 app 回前台时调用(同步 Widget 在 Extension 进程中的修改)。
+    /// 窗口外的已完成项仍在库里,由 `TodoQueryActor` 按需查询(见
+    /// docs/completed-todos-performance.md Step 3)。
     func refreshTodos() {
         let startedAt = Date()
-        let descriptor = FetchDescriptor<TodoItem>(
+        let cutoff = DayClock.startOfUserDay(for: Date())
+            .addingTimeInterval(-Double(Self.completedWindowDays) * 86_400)
+        // SwiftData #Predicate 不支持 ForcedUnwrap(`!`) 和 inline 静态成员(如 `.distantPast`);
+        // 必须把常量提到闭包外作为局部 let,才能在谓词里用 `??` 兜底 Optional。
+        // 详见 docs/completed-todos-performance.md Step 2「兜底 2」。
+        let distantPast = Date.distantPast
+
+        let pending = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { !$0.isCompleted },
+            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
+        )
+        let recentDone = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.isCompleted && ($0.completedAt ?? distantPast) >= cutoff },
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
 
         do {
-            let items = try modelContext.fetch(descriptor)
-            todos = items.map { $0.toData() }
-            // 仅在 fetch 成功后同步版本号；失败时不推进，保证下次 refreshIfStale 仍会重试
+            // 拆两次 fetch 而非 ||  复合谓词:让 SQLite 各自命中 isCompleted / completedAt 索引,
+            // 复合 OR 谓词通常退化成全表扫描。
+            let items = try modelContext.fetch(pending) + modelContext.fetch(recentDone)
+            // 两批各自有序,合并后按 sortOrder 重排,保持与原实现一致的全局顺序
+            todos = items.sorted { $0.sortOrder < $1.sortOrder }.map { $0.toData() }
+            // 仅在 fetch 成功后同步版本号;失败时不推进,保证下次 refreshIfStale 仍会重试
             lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
-            VoiceTodoLog.store.debug("store.refresh.success count=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            VoiceTodoLog.store.debug("store.refresh.success count=\(self.todos.count) windowDays=\(Self.completedWindowDays) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
             VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
@@ -654,6 +715,45 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.refresh_if_stale.refresh force=\(force) old=\(self.lastSyncedExternalChangeVersion) new=\(version)")
         refreshTodos()
         return true
+    }
+
+    // MARK: - Lookup
+
+    /// 按 ID 单条查库,返回 DTO 形式。
+    /// 用于 `refreshTodos` 窗口化后,调用方需要访问工作集外(完成于 `completedWindowDays` 之外)
+    /// todo 的场景,避免 `store.todos.first(where:)` 漏掉窗口外的项。
+    /// - Parameter id: 待办 ID
+    /// - Returns: 找到则返回 TodoItemData;库里无此 id 或读取失败均返回 nil。
+    ///   读取失败会打 error 日志(显式记录,不静默吞);返回 nil 是因为调用方通常用
+    ///   `guard let` / `if let` 处理,无法合理恢复数据库读取错误,降级为"找不到"
+    ///   比强制 throw 让用户操作整体失败更合理。
+    func findTodo(by id: UUID) -> TodoItemData? {
+        var descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        do {
+            return try modelContext.fetch(descriptor).first?.toData()
+        } catch {
+            VoiceTodoLog.store.error("store.find_todo.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return nil
+        }
+    }
+
+    /// 库里是否存在任意已完成项(用于空态判定,避免窗口外全完成时误判为空)。
+    /// 走 SQL COUNT(`isCompleted` 索引兜底),不 materialize 任何行。
+    /// 读取错误时返回 false,代价是空态误判,优于崩溃;错误已打日志。
+    func hasAnyCompletedInDb() -> Bool {
+        var descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.isCompleted }
+        )
+        descriptor.fetchLimit = 1
+        do {
+            return try modelContext.fetchCount(descriptor) > 0
+        } catch {
+            VoiceTodoLog.store.error("store.has_any_completed.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return false
+        }
     }
 
     // MARK: - Private Methods

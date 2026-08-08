@@ -610,6 +610,7 @@ final class AppCoordinator: ObservableObject {
 
             let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
             if shouldSyncSystemCalendar {
+                // confirmedIds 来自刚 confirm 的新 todo,不会落在工作集窗口外,可直接用 store.todos
                 let current = store.todos.filter { confirmedIds.contains($0.id) }
                 if current.isEmpty {
                     VoiceTodoLog.coordinator.warning("coordinator.confirm.calendar_skipped id=\(confirmID, privacy: .public) reason=confirmed_items_missing")
@@ -667,7 +668,9 @@ final class AppCoordinator: ObservableObject {
         reextractingTodoIDs.insert(todoID)
         Task {
             defer { reextractingTodoIDs.remove(todoID) }
-            guard let todo = store.todos.first(where: { $0.id == todoID }),
+            // 工作集窗口化后(见 docs/completed-todos-performance.md Step 2),
+            // 用 findTodo 查库才能命中窗口外(完成于 90 天前之外)的项
+            guard let todo = store.findTodo(by: todoID),
                   let transcript = todo.rawTranscript else {
                 VoiceTodoLog.coordinator.warning("coordinator.reextract.skipped id=\(reextractID, privacy: .public) reason=no_raw_transcript todoId=\(todoID.uuidString, privacy: .public)")
                 return
@@ -758,7 +761,8 @@ final class AppCoordinator: ObservableObject {
     func deleteTodo(_ id: UUID) throws {
         let startedAt = Date()
         VoiceTodoLog.coordinator.info("coordinator.todo.delete.start id=\(id.uuidString, privacy: .public)")
-        let todo = store.todos.first { $0.id == id }
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        let todo = store.findTodo(by: id)
         try store.delete(id)
 
         if let eventIdentifier = todo?.systemCalendarEventIdentifier {
@@ -796,7 +800,8 @@ final class AppCoordinator: ObservableObject {
     /// 详情页完整更新——支持 dueDate、模糊时段和 detail。
     func updateTodoDetail(_ id: UUID, update: TodoDetailUpdate) throws {
         let startedAt = Date()
-        let oldTodo = store.todos.first { $0.id == id }
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        let oldTodo = store.findTodo(by: id)
         try store.updateFull(id, update: update)
         VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(update.dueDate != nil) explicitTimeBucket=\(update.timeBucket?.rawValue ?? "nil", privacy: .public) hasDetail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 

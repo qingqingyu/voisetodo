@@ -51,7 +51,9 @@ enum WidgetTodoFilter {
                 unscheduled.append(data)
                 continue
             }
-            if calendar.isDate(data.dueDate ?? day, inSameDayAs: day) {
+            // 跨天事件:用 TodoSpan.covers 判断该天是否落在事件覆盖区间内
+            if let dueDate = data.dueDate,
+               TodoSpan.covers(day: day, dueDate: dueDate, eventEndDate: data.eventEndDate, calendar: calendar) {
                 scheduled.append(data)
             }
         }

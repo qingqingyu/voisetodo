@@ -192,13 +192,21 @@ struct HomeMonthGridButton: View {
         //   明确针对「分类色文字」场景,已完成态文字全部统一为 #B4BCC7 已经够弱,无需再分级。
         // Text+Text 拼接时段内 foregroundColor 优先,外层 combined.foregroundColor(tx) 不会覆盖。
         let hourOpacity: Double = occurrence.isCompleted ? 1.0 : WarmTheme.monthGridHourOpacity
+        // 跨天事件:起始日保留钟点前缀;非起始日改用"N/M "纯数字标记
+        // (避开 RTL 方向符号,M9 把"第 N/M 天"包装文案加进 Localizable.xcstrings)。
         let hourText: Text
-        if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
-            hourText = Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
+        if occurrence.isSpanStart {
+            if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
+                hourText = Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
+                    .font(WarmFont.mono(8))
+                    .foregroundColor(tx.opacity(hourOpacity))
+            } else {
+                hourText = Text("")
+            }
+        } else {
+            hourText = Text(verbatim: "\(occurrence.spanIndex + 1)/\(occurrence.spanCount) ")
                 .font(WarmFont.mono(8))
                 .foregroundColor(tx.opacity(hourOpacity))
-        } else {
-            hourText = Text("")
         }
         let titleText = Text(verbatim: occurrence.todo.title)
             // 用 .system 而非 WarmFont.captionFixed(.custom("Avenir Next", size:)):

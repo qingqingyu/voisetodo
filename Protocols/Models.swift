@@ -99,6 +99,11 @@ struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
     let todo: TodoItemData
     let occurrenceDate: Date
     var isCompleted: Bool
+    /// 跨天事件的位置元数据(单天事件恒为 0/1)。详见 docs/multi-day-span-events.md。
+    /// - spanIndex: 该 occurrence 在事件覆盖的所有自然日中的 0-based 索引
+    /// - spanCount: 事件总天数(单天 = 1)
+    let spanIndex: Int
+    let spanCount: Int
 
     var id: String {
         "\(todo.id.uuidString)-\(Self.dayKey(for: occurrenceDate))"
@@ -109,6 +114,25 @@ struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
     /// 让 WarmTodoCard 等多处判定保持单一来源。
     var isRecurring: Bool {
         todo.recurrenceRule != nil
+    }
+
+    /// 跨天事件位置判定(单天事件:isSpanning=false / isSpanStart=true / isSpanEnd=true,语义安全)。
+    var isSpanning: Bool { spanCount > 1 }
+    var isSpanStart: Bool { spanIndex == 0 }
+    var isSpanEnd: Bool { spanIndex == spanCount - 1 }
+
+    init(
+        todo: TodoItemData,
+        occurrenceDate: Date,
+        isCompleted: Bool,
+        spanIndex: Int = 0,
+        spanCount: Int = 1
+    ) {
+        self.todo = todo
+        self.occurrenceDate = occurrenceDate
+        self.isCompleted = isCompleted
+        self.spanIndex = spanIndex
+        self.spanCount = spanCount
     }
 
     static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
@@ -435,6 +459,9 @@ struct TodoDetailUpdate: Sendable {
     let timeBucket: TimeBucket?
     let dueHint: String?
     let recurrenceRule: RecurrenceRule?
+    /// 跨天事件闭区间结束时刻。nil = 清除跨天(单天语义)。
+    /// 在 init 里调 `TodoSpan.normalized` 应用 4 条不变式,详见 docs/multi-day-span-events.md Step 2。
+    let eventEndDate: Date?
 
     init(
         title: String,
@@ -445,7 +472,8 @@ struct TodoDetailUpdate: Sendable {
         hasDueTime: Bool,
         timeBucket: TimeBucket?,
         dueHint: String?,
-        recurrenceRule: RecurrenceRule?
+        recurrenceRule: RecurrenceRule?,
+        eventEndDate: Date? = nil
     ) {
         self.title = title
         self.detail = detail
@@ -458,7 +486,16 @@ struct TodoDetailUpdate: Sendable {
         // 在此处归零可避免持久化一个与钟点矛盾的 timeBucket。
         self.timeBucket = normalizedHasDueTime || timeBucket == .anytime ? nil : timeBucket
         self.dueHint = dueHint
-        self.recurrenceRule = recurrenceRule?.isValid == true ? recurrenceRule : nil
+        let normalizedRecurrence = recurrenceRule?.isValid == true ? recurrenceRule : nil
+        self.recurrenceRule = normalizedRecurrence
+        // 跨天事件归一化:应用 4 条不变式(dueDate == nil / hasRecurrence / 退化 / 截断)。
+        // 用 Calendar.current 与 RecurrenceRule.occurs(on:) 等既有路径口径一致。
+        self.eventEndDate = TodoSpan.normalized(
+            eventEndDate: eventEndDate,
+            dueDate: dueDate,
+            hasRecurrence: normalizedRecurrence != nil,
+            calendar: .current
+        )
     }
 }
 
@@ -499,6 +536,14 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     /// 第一版本只预留字段,UI 不写入。
     var parentCalendarEventIdentifier: String?
 
+    /// 跨天事件的闭区间结束时刻。nil = 单天事件(绝大多数)。
+    /// 命名避开 endDate:本类型已有 `recurrenceRule.endDate`(重复系列的终点),
+    /// 三者语义完全不同,必须靠名字区分。
+    /// 覆盖天数 = [startOfDay(dueDate) ... startOfDay(eventEndDate)]。
+    /// 因此"周四 22:00 → 周五 02:00 通宵"天然覆盖周四 + 周五两天。
+    /// 详见 docs/multi-day-span-events.md。
+    var eventEndDate: Date?
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -521,7 +566,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         localeIdentifier: String? = nil,
         extractionOutcome: ExtractionOutcome = .parsed,
         source: TodoSource = .voice,
-        parentCalendarEventIdentifier: String? = nil
+        parentCalendarEventIdentifier: String? = nil,
+        eventEndDate: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -546,6 +592,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.extractionOutcome = extractionOutcome
         self.source = source
         self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
+        self.eventEndDate = eventEndDate
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -586,5 +633,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.extractionOutcome = .parsed
         self.source = .voice
         self.parentCalendarEventIdentifier = nil
+        // AI 不产出跨天(v1 不动 prompt),走 init(from:) 的 DTO 永远是单天
+        self.eventEndDate = nil
     }
 }

@@ -738,7 +738,10 @@ private final class DelayedExtractor: TodoExtractorProtocol {
 }
 
 private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecoveryTodoStore, PendingTranscriptCreating, CalendarSyncTodoStore {
-    @Published var todos: [TodoItemData]
+    @Published var todos: [TodoItemData] {
+        didSet { todosRevision &+= 1 }
+    }
+    @Published private(set) var todosRevision: Int = 0
     var deletedIds: [UUID] = []
     var deleteErrorIds: Set<UUID> = []
     var systemCalendarEventIdentifiers: [UUID: String] = [:]
@@ -755,6 +758,10 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
                 todo.systemCalendarEventIdentifier.map { (todo.id, $0) }
             }
         )
+    }
+
+    func findTodo(by id: UUID) -> TodoItemData? {
+        todos.first { $0.id == id }
     }
 
     func addBatch(_ items: [ExtractedTodo]) throws {

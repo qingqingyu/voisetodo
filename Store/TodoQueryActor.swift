@@ -111,14 +111,26 @@ actor TodoQueryActor {
                             isCompleted: completionKeys.contains(key)
                         ))
                     }
-                } else if let dueDate = todo.dueDate,
-                          days.contains(where: { calendar.isDate($0, inSameDayAs: dueDate) }) {
-                    let day = calendar.startOfDay(for: dueDate)
-                    occurrences.append(TodoOccurrenceData(
-                        todo: todo,
-                        occurrenceDate: day,
-                        isCompleted: todo.isCompleted
-                    ))
+                } else if let dueDate = todo.dueDate {
+                    // 跨天事件:用 TodoSpan.coveredDays 展开为 per-day occurrence,
+                    // 与查询窗口 days 求交后逐日 append,带上 spanIndex/spanCount。
+                    // ⚠️ spanCount 是事件总天数(不是窗口内天数),跨月时"第 2/4 天"才不会算错。
+                    let covered = TodoSpan.coveredDays(
+                        dueDate: dueDate,
+                        eventEndDate: todo.eventEndDate,
+                        calendar: calendar
+                    )
+                    let spanCount = covered.count
+                    for (spanIndex, spanDay) in covered.enumerated() {
+                        guard days.contains(where: { calendar.isDate($0, inSameDayAs: spanDay) }) else { continue }
+                        occurrences.append(TodoOccurrenceData(
+                            todo: todo,
+                            occurrenceDate: spanDay,
+                            isCompleted: todo.isCompleted,
+                            spanIndex: spanIndex,
+                            spanCount: spanCount
+                        ))
+                    }
                 }
             }
 
@@ -130,6 +142,45 @@ actor TodoQueryActor {
             }
         } catch {
             VoiceTodoLog.store.error("query_actor.calendar.fetch_failed start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
+    /// 区间内完成的「无安排」任务(dueDate == nil && recurrenceRule == nil),按 completedAt 倒序。
+    /// 供首页「已完成」分区按需加载工作集(近 `TodoStore.completedWindowDays` 天)之外的历史数据,
+    /// 口径与 `HomeCalendarState.completedUnscheduledTodos` 严格一致:
+    ///   - 过滤:`isCompleted && dueDate == nil && recurrenceRule == nil`
+    ///   - 排序:`completedAt` 倒序(`.distantPast` 兜底 nil,与 HomeCalendarState.swift:188 一致)
+    /// - Parameters:
+    ///   - startDate: 区间开始(闭区间,通常为月初用户日起点)
+    ///   - endDate: 区间结束(开区间,通常为下月初用户日起点)
+    /// - Returns: 区间内匹配的 TodoItemData(按 completedAt 倒序)
+    /// - Throws: `VoiceTodoError.storageReadFailed` 数据库读取错误
+    /// - Note: 谓词 `isCompleted && completedAt >= startDate && completedAt < endDate` 命中
+    ///   Step 1 加的 `isCompleted` / `completedAt` 索引,代价与工作集大小无关。
+    func completedUnscheduled(from startDate: Date, to endDate: Date) throws -> [TodoItemData] {
+        let startedAt = Date()
+        // SwiftData #Predicate 不支持 ForcedUnwrap(`!`) 和 inline 静态成员(如 `.distantPast`);
+        // 必须把常量提到闭包外作为局部 let,才能在谓词里用 `??` 兜底 Optional。
+        let distantPast = Date.distantPast
+        let distantFuture = Date.distantFuture
+        let descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate {
+                $0.isCompleted
+                && ($0.completedAt ?? distantPast) >= startDate
+                && ($0.completedAt ?? distantFuture) < endDate
+            }
+        )
+        do {
+            let items = try modelContext.fetch(descriptor)
+            let filtered = items
+                .filter { $0.dueDate == nil && $0.recurrenceRule == nil }
+                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+                .map { $0.toData() }
+            VoiceTodoLog.store.debug("query_actor.completed_unscheduled.fetch_success range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) raw=\(items.count) filtered=\(filtered.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return filtered
+        } catch {
+            VoiceTodoLog.store.error("query_actor.completed_unscheduled.fetch_failed range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }

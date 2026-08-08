@@ -66,6 +66,7 @@ struct HomeCalendarState {
         selectedDate: Date,
         visibleMonthAnchor: Date,
         occurrencesByDay: [String: [TodoOccurrenceData]],
+        completedUnscheduledByDay: [String: [TodoItemData]],
         calendar: Calendar,
         now: Date = Date()
     ) -> HomeCalendarState {
@@ -80,6 +81,7 @@ struct HomeCalendarState {
             visibleDays: visibleDays,
             weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
             occurrencesByDay: occurrencesByDay,
+            completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar
         )
     }
@@ -91,6 +93,7 @@ struct HomeCalendarState {
         selectedDate: Date,
         visibleMonthAnchor: Date? = nil,
         occurrencesByDay: [String: [TodoOccurrenceData]] = [:],
+        completedUnscheduledByDay: [String: [TodoItemData]]? = nil,
         calendar: Calendar = Calendar(identifier: .gregorian),
         now: Date = Date()
     ) -> HomeCalendarState {
@@ -105,6 +108,7 @@ struct HomeCalendarState {
             visibleDays: visibleDays,
             weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
             occurrencesByDay: occurrencesByDay,
+            completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar
         )
     }
@@ -145,6 +149,7 @@ struct HomeCalendarState {
         visibleDays: [Date],
         weekHeaderDays: [Date],
         occurrencesByDay: [String: [TodoOccurrenceData]],
+        completedUnscheduledByDay: [String: [TodoItemData]]? = nil,
         calendar: Calendar
     ) {
         self.selectedDate = selectedDate
@@ -179,13 +184,22 @@ struct HomeCalendarState {
         // 坐标系再比较。这样 startHour>0 时首页"已完成"分区与 ReviewAggregator 同源
         // ——凌晨完成的任务归到前一用户日(缺陷 3 修复)。startHour=0 时 userDayStart
         // 等价于 startOfDay,isSameUserDay 退化为自然日比较,零回归。
+        // 已完成的无安排任务:生产路径从 completedUnscheduledByDay 查表(HomeView 在 .task 里
+        // 按用户日分桶预加载),nil 走 fallback(测试场景用旧 filter+sort)。
+        // 见 docs/completed-todos-performance.md Step 3c-d。
         let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
-        self.completedUnscheduledTodos = noSchedule
-            .filter { todo in
-                guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
-                return DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
-            }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        if let completedUnscheduledByDay {
+            let completedDayKey = TodoOccurrenceData.dayKey(for: completedDayStart, calendar: calendar)
+            self.completedUnscheduledTodos = completedUnscheduledByDay[completedDayKey] ?? []
+        } else {
+            // Fallback:nil 时走旧 filter+sort(测试 / 未升级的调用方)。
+            self.completedUnscheduledTodos = noSchedule
+                .filter { todo in
+                    guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
+                    return DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
+                }
+                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        }
         self.hasTodos = !todos.isEmpty
         self.calendar = calendar
 
@@ -346,6 +360,6 @@ enum HomeCalendarLoadState {
 
 struct CalendarRefreshKey: Hashable {
     let anchor: Date
-    let todos: [TodoItemData]
+    let todosRevision: Int
     let revision: Int
 }

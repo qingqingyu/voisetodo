@@ -231,6 +231,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 月历 occurrence 缓存：由后台 `queryActor` 异步加载，主线程不再做 SwiftData fetch/展开。
     /// `.task(id:)` 在 visibleMonthAnchor / store.todos / occurrenceRevision 变化时刷新。
     @State private var monthOccurrences: [String: [TodoOccurrenceData]] = [:]
+    /// 已完成的无安排任务,按用户日 dayKey 分桶(供 HomeCalendarState.completedUnscheduledTodos 查表)。
+    /// 由 `.task(id:)` 跟 `groupedCalendarOccurrences` 一起加载,覆盖整月范围(两端放宽 1 天,
+    /// 防 `VoiceTodoDayStartHour > 0` 时边界天漏掉)。详见 docs/completed-todos-performance.md Step 3c。
+    @State private var completedUnscheduledByDay: [String: [TodoItemData]] = [:]
     @State private var calendarLoadState: HomeCalendarLoadState = .loading
     /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
     @State private var occurrenceRevision = 0
@@ -830,12 +834,11 @@ struct HomeView<Store: HomeTodoStore>: View {
         } else {
             // 兜底：直接遍历 store.todos，覆盖 dueDate 命中 selectedDate 的非重复任务。
             // 重复任务在 monthOccurrences 加载前先不计入（保守，避免重复渲染高估）。
-            // selectedDate 已是自然日 0 点，必须用 userDayStart(onNaturalDay:) 抬到用户日坐标系
-            // 再与 due（时刻）通过 isSameUserDay 比较——否则 startHour>0 时统计区间错位一天（缺陷 2）。
-            let day = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
+            // 跨天事件用 TodoSpan.covers 判断当天是否落在覆盖区间,
+            // 中间日也被计入(与缓存命中分支同源,见 docs/multi-day-span-events.md Step 4)。
             let onDay = store.todos.filter { todo in
                 guard let due = todo.dueDate else { return false }
-                return DayClock.isSameUserDay(due, day, calendar: calendar)
+                return TodoSpan.covers(day: selectedDate, dueDate: due, eventEndDate: todo.eventEndDate, calendar: calendar)
             }
             completed = onDay.filter { $0.isCompleted }.count
             total = onDay.count
@@ -844,13 +847,11 @@ struct HomeView<Store: HomeTodoStore>: View {
         // 同源(同一个 DayClock.isSameUserDay 判断),所以圆环 +1 与「已完成」section 里多出来
         // 的那一条是同一个 todo。total 和 completed 同步 +1,避免 completed > total 的负进度。
         let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
-        let completedUnscheduledToday = store.todos.filter { todo in
-            guard todo.dueDate == nil,
-                  todo.recurrenceRule == nil,
-                  todo.isCompleted,
-                  let completedAt = todo.completedAt else { return false }
-            return DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
-        }.count
+        // 用 completedUnscheduledByDay 查表(O(1)),取代原 store.todos 全量 filter。
+        // 字面上就是 HomeCalendarState.completedUnscheduledTodos 的同源数据,
+        // 不再是两处各自维护的等价判断。详见 docs/completed-todos-performance.md Step 3e。
+        let completedDayKey = TodoOccurrenceData.dayKey(for: completedDayStart, calendar: calendar)
+        let completedUnscheduledToday = completedUnscheduledByDay[completedDayKey]?.count ?? 0
         total += completedUnscheduledToday
         completed += completedUnscheduledToday
         return (total, completed)
@@ -1153,6 +1154,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             selectedDate: selectedDate,
             visibleMonthAnchor: visibleMonthAnchor,
             occurrencesByDay: monthOccurrences,
+            completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar
         )
         // 选中日在 42 格里的行索引(0-5),折叠时把选中周推到顶部。
@@ -1448,7 +1450,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         .offset(y: listOffset)
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
-        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todos: store.todos, revision: occurrenceRevision)) {
+        .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todosRevision: store.todosRevision, revision: occurrenceRevision)) {
             let startedAt = Date()
             if calendarLoadState == .error {
                 calendarLoadState = .loading
@@ -1456,6 +1458,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             let rangeDays = HomeCalendarState.monthDays(for: visibleMonthAnchor, calendar: calendar)
             guard let firstDay = rangeDays.first, let lastDay = rangeDays.last else {
                 monthOccurrences = [:]
+                completedUnscheduledByDay = [:]
                 calendarLoadState = store.todos.isEmpty ? .empty : .success
                 VoiceTodoLog.store.warning("home.month_occurrences.load_skipped reason=no_month_days anchor=\(visibleMonthAnchor.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 return
@@ -1471,8 +1474,34 @@ struct HomeView<Store: HomeTodoStore>: View {
                     return
                 }
                 monthOccurrences = groupedOccurrences
-                calendarLoadState = store.todos.isEmpty ? .empty : .success
-                VoiceTodoLog.store.debug("home.month_occurrences.load_success start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) dayBuckets=\(monthOccurrences.count) todoCount=\(store.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                // 同时加载窗口外(完成于近 90 天之外)的已完成无安排任务,按用户日 dayKey 分桶。
+                // 与 monthOccurrences 独立查询,失败只降级为空,不阻断月历渲染(详见
+                // docs/completed-todos-performance.md Step 3c)。
+                // 范围比月网格 firstDay..lastDay 两端各放宽 1 天,防 VoiceTodoDayStartHour > 0
+                // 时用户日跨自然日导致边界天漏掉。
+                let completedRangeStart = firstDay.addingTimeInterval(-86_400)
+                let completedRangeEnd = lastDay.addingTimeInterval(86_400 * 2)
+                do {
+                    let completed = try await store.completedUnscheduled(
+                        from: completedRangeStart,
+                        to: completedRangeEnd
+                    )
+                    if Task.isCancelled { throw CancellationError() }
+                    completedUnscheduledByDay = Dictionary(grouping: completed) { todo -> String in
+                        let userDayStart = DayClock.startOfUserDay(
+                            for: todo.completedAt ?? .distantPast,
+                            calendar: calendar
+                        )
+                        return TodoOccurrenceData.dayKey(for: userDayStart, calendar: calendar)
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    VoiceTodoLog.store.error("home.completed_unscheduled.load_failed range_start=\(completedRangeStart.ISO8601Format(), privacy: .public) range_end=\(completedRangeEnd.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    completedUnscheduledByDay = [:]
+                }
+                calendarLoadState = (store.todos.isEmpty && completedUnscheduledByDay.isEmpty) ? .empty : .success
+                VoiceTodoLog.store.debug("home.month_occurrences.load_success start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) dayBuckets=\(monthOccurrences.count) completedBuckets=\(completedUnscheduledByDay.count) todoCount=\(store.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             } catch is CancellationError {
                 VoiceTodoLog.store.debug("home.month_occurrences.load_cancelled start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             } catch {

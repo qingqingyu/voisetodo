@@ -155,7 +155,10 @@ final class CalendarSyncServiceTests: XCTestCase {
 
 @MainActor
 private final class CalendarSyncTestStore: CalendarSyncTodoStore {
-    @Published var todos: [TodoItemData]
+    @Published var todos: [TodoItemData] {
+        didSet { todosRevision &+= 1 }
+    }
+    @Published private(set) var todosRevision: Int = 0
     var systemCalendarEventIdentifiers: [UUID: String] = [:]
     var identifierUpdateError: Error?
 
@@ -166,6 +169,10 @@ private final class CalendarSyncTestStore: CalendarSyncTodoStore {
                 todo.systemCalendarEventIdentifier.map { (todo.id, $0) }
             }
         )
+    }
+
+    func findTodo(by id: UUID) -> TodoItemData? {
+        todos.first { $0.id == id }
     }
 
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws {

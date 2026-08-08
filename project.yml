@@ -144,6 +144,7 @@ targets:
       - path: Protocols/Domain/RecurrenceEndResolver.swift
       - path: Protocols/Domain/DayClock.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift
+      - path: Protocols/Domain/TodoSpan.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift
       - path: Protocols/Constants.swift

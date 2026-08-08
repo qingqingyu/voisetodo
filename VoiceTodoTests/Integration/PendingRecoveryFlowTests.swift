@@ -334,6 +334,8 @@ private final class PendingRecoveryTestStore: PendingRecoveryTodoStore {
 
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] { [] }
+    func completedUnscheduled(from startDate: Date, to endDate: Date) async throws -> [TodoItemData] { [] }
+    func findTodo(by id: UUID) -> TodoItemData? { todos.first { $0.id == id } }
     func toggleOccurrenceComplete(_ id: UUID, on date: Date) throws {}
     func pendingItems() async throws -> [TodoItemData] { todos.filter(\.needsAIProcessing) }
     func recentUncompleted(limit: Int) async throws -> [TodoItemData] { [] }

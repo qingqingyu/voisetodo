@@ -54,6 +54,24 @@ final class TodoItem {
     /// Optional 字段,旧数据为 nil。第一版本只预留,UI 不写入。
     var parentCalendarEventIdentifier: String?
 
+    /// 跨天事件的闭区间结束时刻。nil = 单天事件(绝大多数)。
+    /// Optional + SwiftData 轻量迁移:旧数据自动补 nil(与 hasDueTime / extractionOutcomeRaw 同模式)。
+    /// 命名避开 endDate:本类已有 `recurrenceEndDate`(重复系列的终点),
+    /// RecurrenceRule 也有 `endDate` —— 三者语义完全不同,必须靠名字区分。
+    /// 覆盖天数 = [startOfDay(dueDate) ... startOfDay(eventEndDate)]。
+    /// 因此"周四 22:00 → 周五 02:00 通宵"天然覆盖周四 + 周五两天。
+    /// 详见 docs/multi-day-span-events.md。
+    var eventEndDate: Date?
+
+    // MARK: - Indexes
+
+    /// 热查询排序/过滤用字段的索引。纯 additive,走 SwiftData 轻量迁移
+    /// (与 `hasDueTime` / `extractionOutcomeRaw` / `sourceRaw` 同模式,
+    /// `VoiceTodoSchema.schema` 无需改动)。部署目标 iOS 26,远超 #Index 要求的 iOS 18。
+    /// ⚠️ 升级风险:Widget 的 `readOnly()` 容器首次打开旧库时要构建索引,可能失败。
+    /// 需用已有数据的旧库实测(见 docs/completed-todos-performance.md §6.4)。
+    #Index<TodoItem>([\.sortOrder], [\.isCompleted], [\.completedAt], [\.dueDate], [\.needsAIProcessing])
+
     // MARK: - Computed Properties
 
     /// 优先级（类型安全访问）
@@ -110,7 +128,8 @@ final class TodoItem {
         localeIdentifier: String? = nil,
         reminderTimes: [String]? = nil,
         source: TodoSource = .voice,
-        parentCalendarEventIdentifier: String? = nil
+        parentCalendarEventIdentifier: String? = nil,
+        eventEndDate: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -144,6 +163,7 @@ final class TodoItem {
         }
         self.sourceRaw = source.rawValue
         self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
+        self.eventEndDate = eventEndDate
     }
 
     // MARK: - Conversion
@@ -173,7 +193,8 @@ final class TodoItem {
             localeIdentifier: localeIdentifier,
             extractionOutcome: extractionOutcome,
             source: source,
-            parentCalendarEventIdentifier: parentCalendarEventIdentifier
+            parentCalendarEventIdentifier: parentCalendarEventIdentifier,
+            eventEndDate: eventEndDate
         )
     }
 
@@ -323,7 +344,8 @@ extension TodoItem {
             localeIdentifier: data.localeIdentifier,
             reminderTimes: data.reminderTimes,
             source: data.source,
-            parentCalendarEventIdentifier: data.parentCalendarEventIdentifier
+            parentCalendarEventIdentifier: data.parentCalendarEventIdentifier,
+            eventEndDate: data.eventEndDate
         )
     }
 
@@ -430,6 +452,11 @@ final class TodoOccurrenceCompletion {
     static func key(todoId: UUID, occurrenceDate: Date, calendar: Calendar = .current) -> String {
         "\(todoId.uuidString)-\(TodoOccurrenceData.dayKey(for: occurrenceDate, calendar: calendar))"
     }
+
+    // MARK: - Indexes
+
+    /// 区间查询与按 ID 反查的索引。纯 additive,走 SwiftData 轻量迁移。
+    #Index<TodoOccurrenceCompletion>([\.completedAt], [\.occurrenceDate], [\.todoId])
 }
 
 /// Legacy voice capture records retained only so stores created by older app

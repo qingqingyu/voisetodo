@@ -332,7 +332,10 @@ struct VoiceTodoApp: App {
         case .active:
             guard startupStorageError == nil else { return }
             // App 进入前台，同步 Widget Extension 可能做的修改（如打勾完成）
-            refreshStoreIfNeededFromExternalChanges(force: true)
+            // force: false 让 refreshIfStale 的版本号门闩生效(Widget/AppIntent 写回会调
+            // markExternalDataChanged 推进版本号)。force: true 会让每次回前台都全表 fetch,
+            // 与 refreshTodos 窗口化冲突。详见 docs/completed-todos-performance.md Step 2。
+            refreshStoreIfNeededFromExternalChanges(force: false)
             // 回前台补账本地通知（清过期、权限刚授予后补排、外部改动同步）
             notificationSync.reconcileNow()
             NetworkMonitor.shared.restartIfNeeded()

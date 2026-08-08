@@ -7,6 +7,11 @@ enum AppGroupConfig {
 
     /// Widget/AppIntent 写入后用于提示主 App 刷新的共享版本号
     static let externalChangeVersionKey = "VoiceTodoExternalChangeVersion"
+
+    /// 启动 migration 已执行到的版本号(供 `TodoStore.init` 门闩用)。
+    /// 每完成一组 migration 就推进,避免每次冷启动都全表扫描(详见
+    /// docs/completed-todos-performance.md Step 6)。
+    static let storeMigrationVersionKey = "VoiceTodoStoreMigrationVersion"
     private static let widgetInteractionErrorTimestampKey = "VoiceTodoWidgetInteractionErrorTimestamp"
     private static let widgetInteractionErrorOperationKey = "VoiceTodoWidgetInteractionErrorOperation"
     private static let widgetInteractionErrorTodoIDKey = "VoiceTodoWidgetInteractionErrorTodoID"
@@ -27,6 +32,20 @@ enum AppGroupConfig {
     /// 当前外部写入版本号
     static func currentExternalChangeVersion() -> Double {
         sharedDefaults()?.double(forKey: externalChangeVersionKey) ?? 0
+    }
+
+    /// 当前启动 migration 已执行到的版本号(0 = 从未跑过)。
+    static func currentStoreMigrationVersion() -> Int {
+        sharedDefaults()?.integer(forKey: storeMigrationVersionKey) ?? 0
+    }
+
+    /// 标记一组 migration 已完成,推进版本号。
+    static func markStoreMigrationCompleted(version: Int) {
+        guard let defaults = sharedDefaults() else {
+            VoiceTodoLog.widget.warning("app_group.defaults_unavailable kind=markStoreMigrationCompleted identifier=\(identifier, privacy: .public)")
+            return
+        }
+        defaults.set(version, forKey: storeMigrationVersionKey)
     }
 
     /// 标记 Widget/AppIntent 已修改共享数据

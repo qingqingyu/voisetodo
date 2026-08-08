@@ -4,8 +4,15 @@ import Combine
 /// Mock Store（Agent D 使用）
 /// 用于 UI 开发和预览，不依赖 SwiftData
 class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStore, PendingTranscriptCreating, CalendarSyncTodoStore, TodoMutationWriting, WidgetTodoReadable, TodoRefreshing {
-    @Published var todos: [TodoItemData]
+    @Published var todos: [TodoItemData] {
+        didSet { todosRevision &+= 1 }
+    }
+    @Published private(set) var todosRevision: Int = 0
     private var completedOccurrences = Set<String>()
+
+    func findTodo(by id: UUID) -> TodoItemData? {
+        todos.first { $0.id == id }
+    }
 
     init(todos: [TodoItemData] = []) {
         self.todos = todos
@@ -147,6 +154,16 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
                 todos[index].isCompleted = false
             }
         }
+    }
+
+    func completedUnscheduled(from startDate: Date, to endDate: Date) async throws -> [TodoItemData] {
+        todos
+            .filter { $0.isCompleted && $0.dueDate == nil && $0.recurrenceRule == nil }
+            .filter {
+                guard let completedAt = $0.completedAt else { return false }
+                return completedAt >= startDate && completedAt < endDate
+            }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
     }
 
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] {

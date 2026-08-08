@@ -30,7 +30,9 @@ final class StoreTests: XCTestCase {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         modelContainer = try ModelContainer(for: VoiceTodoSchema.schema, configurations: config)
         modelContext = modelContainer.mainContext
-        sut = TodoStore(modelContext: modelContext)
+        // forceMigration: true 让门闩在测试里强制跑 migration(in-memory DB 每次都是新的,
+        // 但 AppGroupConfig 的版本号是全局 UserDefaults,跨测试持久,会跳过 migration)。
+        sut = TodoStore(modelContext: modelContext, forceMigration: true)
     }
 
     override func tearDown() {
@@ -791,6 +793,7 @@ final class StoreTests: XCTestCase {
             title: "完成后改成规律任务",
             dueDate: today,
             isCompleted: true,
+            completedAt: today,
             createdAt: today,
             sortOrder: -1
         )
@@ -1017,7 +1020,8 @@ final class StoreTests: XCTestCase {
         try modelContext.save()
 
         // When: 重新初始化 Store 触发迁移
-        sut = TodoStore(modelContext: modelContext)
+        // forceMigration: true 绕过门闩,因为这个测试就是要验证 migration 跑过后 dueDate 被填上
+        sut = TodoStore(modelContext: modelContext, forceMigration: true)
 
         // Then: dueDate 按旧待办创建日解析，不会落入每天的未安排区
         let migrated = try XCTUnwrap(sut.todos.first)
@@ -1036,7 +1040,7 @@ final class StoreTests: XCTestCase {
         try modelContext.save()
         XCTAssertEqual(try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>()).count, 1)
 
-        sut = TodoStore(modelContext: modelContext)
+        sut = TodoStore(modelContext: modelContext, forceMigration: true)
 
         XCTAssertTrue(try modelContext.fetch(FetchDescriptor<VoiceCaptureRecord>()).isEmpty)
     }
