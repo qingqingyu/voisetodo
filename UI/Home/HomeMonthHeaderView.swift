@@ -474,6 +474,11 @@ struct WeekStripCard: View {
     let state: HomeCalendarState
     let onSelectDay: (Date) -> Void
     let onExpand: () -> Void
+    /// 左右滑切周回调。+1 = 下一周, -1 = 上一周。
+    /// 父容器(HomeView.monthHomeView)接通到 shiftWeek(by:),selectedDate 移 7 天,
+    /// 跨月时同步 visibleMonthAnchor,保证下拉展开月网格看到新周所在月。
+    /// 与月网格翻月手势语义/阈值对齐,复用同一套 SimultaneousDragGesture 基础设施。
+    let onShiftWeek: (Int) -> Void
 
     /// 本周的 7 天(周一起始)。委托给 HomeCalendarState.weekDays 静态方法,单一来源。
     private var weekDays: [Date] {
@@ -548,6 +553,21 @@ struct WeekStripCard: View {
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: WeekStripHeightKey.self, value: proxy.size.height)
+            }
+        )
+        // 左右滑切周:仅在折叠态(WeekStripCard 可见)时此卡片接收命中,
+        // 展开态下网格 allowsHitTesting(true) 独占交互,本手势不参与。
+        // 水平主导 + 阈值门控,与月网格翻月手势(HomeMonthHeaderView 顶层)同款实现。
+        // 垂直方向交给 monthHomeView 外层折叠手势(direction=.vertical,方向互斥不会同时激活)。
+        // 阈值复用 periodDragThreshold/periodSwipeThreshold:与翻月一致的跟手阈值与触发距离,
+        // 让用户在月历展开态和折叠态下做"水平滑动切换时间区间"的体验连贯。
+        .gesture(
+            SimultaneousDragGesture(minimumDistance: HomeLayoutMetrics.periodDragThreshold) { drag in
+                let vertical = abs(drag.translation.height)
+                let horizontal = abs(drag.translation.width)
+                guard horizontal > vertical,
+                      horizontal > HomeLayoutMetrics.periodSwipeThreshold else { return }
+                onShiftWeek(drag.translation.width < 0 ? 1 : -1)
             }
         )
     }
