@@ -44,7 +44,7 @@ export const openaiAdapter = {
         },
         body: JSON.stringify({
           model: provider.model,
-          temperature: 0.1,
+          temperature: 0,
           stream,
           response_format: { type: "json_object" },
           messages: [

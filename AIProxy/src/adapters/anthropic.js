@@ -47,7 +47,7 @@ export const anthropicAdapter = {
           // 又留一半余量防极端 case 溢出。旧值 500 在中文 JSON 下只够 ~10 个待办就被强制截断,
           // 导致下游 JSON 解析失败(见 iOS 端 jsonParsingFailed 报错)。
           max_tokens: 4096,
-          temperature: 0.1,
+          temperature: 0,
           stream,
           system: buildSystemPrompt(locale, vocabularyHints, today, personalHints),
           messages: [{ role: "user", content: transcript }]

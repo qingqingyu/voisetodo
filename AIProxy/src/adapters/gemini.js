@@ -50,8 +50,10 @@ export const geminiAdapter = {
           systemInstruction: { parts: [{ text: buildSystemPrompt(locale, vocabularyHints, today, personalHints) }] },
           contents: [{ role: "user", parts: [{ text: transcript }] }],
           generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 500,
+            temperature: 0,
+            // 与 anthropic.js max_tokens:4096 保持一致。旧值 500 在中文 JSON 下
+            // 只够 ~10 个待办就被强制截断,导致下游 JSON 解析失败。
+            maxOutputTokens: 4096,
             responseMimeType: "application/json"
           }
         })

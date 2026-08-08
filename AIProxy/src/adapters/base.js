@@ -299,7 +299,16 @@ due_hint 始终保留用户原文。
 
 示例 17（"晚上X点半" → 12 小时制 + 30 分 → "HH:30"；参考日期 2026-07-15 周三）：
 输入："晚上十点半睡觉"
-输出：{"todos":[{"title":"睡觉","detail":"晚上十点半","due_date":"2026-07-15","due_hint":"晚上十点半","due_time":"22:30","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
+输出：{"todos":[{"title":"睡觉","detail":"晚上十点半","due_date":"2026-07-15","due_hint":"晚上十点半","due_time":"22:30","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+示例 18（⚠️ 多句/多行批量输入：按可执行行动项切分，**与换行无关**。一行可拆多条，多行也可只产 1 条；reminder_times 的时间点绝不拆成多条 todo）：
+输入（参考日期 2026-07-15 周三）：
+明天上午 10 点开会
+周五前交季度报告，另外还要取快递
+每个月 1 号交房租
+提醒我下午 3 点、5 点和 7 点各喝一次水
+最近太忙了
+输出：{"todos":[{"title":"开会","detail":"明天上午 10 点","due_date":"2026-07-16","due_hint":"明天上午 10 点","due_time":"10:00","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"交季度报告","detail":"周五前交季度报告","due_date":"2026-07-17","due_hint":"周五前","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"取快递","detail":"另外还要取快递","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":null,"priority":"normal","category_hint":"life"},{"title":"交房租","detail":"每个月 1 号","due_date":null,"due_hint":"每个月 1 号","due_time":null,"time_bucket":null,"recurrence_rule":{"frequency":"monthly","interval":1,"weekdays":[],"day_of_month":1,"end_date":null},"recurrence_end":null,"reminder_times":null,"due_date_basis":null,"priority":"normal","category_hint":"finance"},{"title":"喝水提醒","detail":"下午 3 点、5 点和 7 点","due_date":null,"due_hint":"下午 3 点、5 点和 7 点","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["15:00","17:00","19:00"],"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":"最近太忙了（状态描述，无可执行行动项）"}`;
 
 const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
 
@@ -420,4 +429,13 @@ Output: {"todos":[{"title":"Prepare for Sunday","detail":"Prepare for Sunday","d
 
 Example 15 (contrast: same word "Sunday" used as a real deadline → user_explicit; reference date 2026-07-15 Wednesday):
 Input: "Submit report by Sunday"
-Output: {"todos":[{"title":"Submit report","detail":"Submit report by Sunday","due_date":"2026-07-19","due_hint":"by Sunday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
+Output: {"todos":[{"title":"Submit report","detail":"Submit report by Sunday","due_date":"2026-07-19","due_hint":"by Sunday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+Example 16 (⚠️ Batch input with multiple sentences/lines: split by actionable intent, NOT by line breaks. One line may yield multiple todos; multiple lines may yield one todo. reminder_times are NEVER split into multiple todos):
+Input (reference date 2026-07-15 Wednesday):
+Meeting tomorrow at 10am
+Submit quarterly report by Friday, also pick up the package
+Pay rent on the 1st of every month
+Remind me to drink water at 3pm, 5pm, and 7pm
+I've been so busy lately
+Output: {"todos":[{"title":"Meeting","detail":"tomorrow at 10am","due_date":"2026-07-16","due_hint":"tomorrow at 10am","due_time":"10:00","time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"Submit quarterly report","detail":"Submit quarterly report by Friday","due_date":"2026-07-17","due_hint":"by Friday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"Pick up package","detail":"also pick up the package","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"due_date_basis":null,"priority":"normal","category_hint":"life"},{"title":"Pay rent","detail":"on the 1st of every month","due_date":null,"due_hint":"on the 1st of every month","due_time":null,"time_bucket":null,"recurrence_rule":{"frequency":"monthly","interval":1,"weekdays":[],"day_of_month":1,"end_date":null},"recurrence_end":null,"reminder_times":null,"due_date_basis":null,"priority":"normal","category_hint":"finance"},{"title":"Drink water","detail":"at 3pm, 5pm, and 7pm","due_date":null,"due_hint":"at 3pm, 5pm, and 7pm","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["15:00","17:00","19:00"],"due_date_basis":null,"priority":"normal","category_hint":"health"}],"ignored":"I've been so busy lately (state description, no actionable item)"}`;
