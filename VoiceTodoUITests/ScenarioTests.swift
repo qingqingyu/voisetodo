@@ -419,41 +419,57 @@ final class ScenarioTests: XCTestCase {
     // MARK: - S12: 首次启动引导流程
 
     /// 场景 S12: 首次启动引导流程
-    /// 验证首次启动时显示引导流程
+    /// 验证首次启动时显示引导流程,包括第三屏 Pro 付费墙的降级路径
+    /// (UI 测试环境无 StoreKit mock,商品加载失败时「以后再说」仍可点)。
     func test_S12_firstLaunch_onboarding() {
-        // Step 1: App 首次启动（不注入 --skip-onboarding，应显示引导）
+        // Step 1: App 首次启动(不注入 --skip-onboarding,应显示引导)
         appHelper.launch()
 
         // Step 2: 验证显示 OnboardingView 及欢迎页
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
         XCTAssertTrue(appHelper.app.staticTexts["VoiceTodo"].waitForExistence(timeout: 2.0), "应显示欢迎页")
 
-        // Step 3: 逐屏走完 5 步引导。
-        // UI 测试下权限默认 mock 为「已授权」，故权限页不显示授权按钮，直接「下一步」即可。
+        // Step 3: 欢迎页 → 权限合并页(麦克风 + 语音识别)。
+        // UI 测试下权限默认 mock 为「已授权」,合并页不显示授权按钮,直接「下一步」即可。
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.staticTexts["需要你的麦克风"].waitForExistence(timeout: 2.0), "应进入麦克风权限页")
+        XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
 
+        // Step 4: 权限页 → Pro 付费墙。
+        // 某些模拟器机型(iPhone 15 Pro+)存在 Action Button 步骤,中间会多一跳 ——
+        // 循环 nextButton 直到 Pro 付费墙出现,兼容两类机型。
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.staticTexts["还需要语音识别"].waitForExistence(timeout: 2.0), "应进入语音识别权限页")
+        let laterButton = appHelper.app.buttons["ProIntroLaterButton"]
+        var attempts = 0
+        while !laterButton.exists && attempts < 3 {
+            if appHelper.nextButton.exists {
+                appHelper.nextButton.tap()
+            }
+            _ = laterButton.waitForExistence(timeout: 1.5)
+            attempts += 1
+        }
 
-        appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.staticTexts["设置一键录音"].waitForExistence(timeout: 2.0), "应进入 Action Button 引导页")
+        // Step 5: Pro 付费墙应出现,且「以后再说」可点 —— 这是降级路径的核心验收点。
+        // UI 测试环境无 StoreKit mock,Product.products(for:) 返回空 → 付费墙落到 .empty 状态,
+        // 显示「暂时无法加载订阅方案」+ 重试按钮。但「以后再说」在外层,始终可点。
+        XCTAssertTrue(laterButton.exists, "Pro 付费墙应出现(允许跨过可选的 Action Button 步骤)")
+        XCTAssertTrue(laterButton.isEnabled, "「以后再说」始终可点 —— onboarding 不能被 StoreKit 加载失败卡死")
 
-        appHelper.nextButton.tap()
+        // Step 6: Pro 付费墙 → 完成页
+        laterButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["搞定啦！"].waitForExistence(timeout: 2.0), "应进入完成页")
 
-        // Step 4: 点击「开始使用」结束引导
+        // Step 7: 点击「开始使用」结束引导
         appHelper.nextButton.tap()
 
-        // Step 5: 引导关闭并进入主界面
+        // Step 8: 引导关闭并进入主界面
         appHelper.waitForAppReady(timeout: 5.0)
         XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 2.0), "引导 sheet 应已关闭")
 
-        // Step 6: 重新启动 App（保留数据，不重置 UserDefaults）
+        // Step 9: 重新启动 App(保留数据,不重置 UserDefaults)
         appHelper.app.terminate()
         appHelper.relaunchPreservingData()
 
-        // Step 7: 验证直接进入主界面，不再显示引导
+        // Step 10: 验证直接进入主界面,不再显示引导
         appHelper.waitForAppReady(timeout: 5.0)
         XCTAssertFalse(appHelper.onboardingView.waitForExistence(timeout: 2.0), "重启后不应再显示引导")
     }

@@ -24,6 +24,16 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
+    /// 当前 Apple ID 是否还能享受该订阅组的介绍性优惠（免费试用）。
+    /// 老用户退订后重订将为 false —— 此时必须隐藏试用文案（App Store 审核要求）。
+    @Published private(set) var isEligibleForIntroOffer = false
+    /// 介绍性优惠时长（如 3 天）。nil 表示商品未配置试用或当前无资格。
+    /// 取第一个带 introductoryOffer 的商品的试用周期 —— 月付/年付配置可能不同。
+    @Published private(set) var introOfferPeriod: Product.SubscriptionPeriod?
+    /// intro offer 资格查询的加载态。true 期间 CTA 显示 spinner、不渲染文案，
+    /// 避免资格查询完成前后文案抖动造成「先承诺再变脸」（详见 docs/onboarding-paywall-merge.md 3.1 C 点）。
+    /// 商品加载失败（.empty/.error）时此值翻为 false —— CTA 那时不渲染，spinner 也不需要转。
+    @Published private(set) var isCheckingIntroOffer = true
     /// 商品加载重入守卫:避免用户连点 retry 触发并发 StoreKit 请求。
     /// `productLoadState == .loading` 已能反映此状态,但 UI 可能在 .empty/.error 时
     /// 也尝试触发 refresh,此标志提供显式护栏。
@@ -75,14 +85,55 @@ final class EntitlementManager: ObservableObject {
             if storeProducts.isEmpty {
                 VoiceTodoLog.app.warning("entitlement.products_empty ids=\(Self.productIDs, privacy: .public)")
                 productLoadState = .empty
+                await resetIntroOfferState()
             } else {
                 productLoadState = .success
+                await checkIntroOffer()
             }
         } catch {
             VoiceTodoLog.app.error("entitlement.products_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             lastError = ErrorMessages.paywallPurchaseFailed
             productLoadState = .error
+            await resetIntroOfferState()
         }
+    }
+
+    /// 重置 intro offer 状态。商品加载失败时调用,让 CTA 不依赖过期的资格判断。
+    /// isCheckingIntroOffer 翻 false —— CTA 在 .empty/.error 下根本不渲染,spinner 不需要继续转。
+    private func resetIntroOfferState() {
+        isEligibleForIntroOffer = false
+        introOfferPeriod = nil
+        isCheckingIntroOffer = false
+    }
+
+    /// 查询订阅组的介绍性优惠（免费试用）资格和时长。
+    /// 失败保守处理（无 subscription 信息 / groupID 缺失 / 抛错 → 一律当无资格）,
+    /// 宁可少承诺不可多承诺 —— 老用户重订场景下"承诺试用再变脸"是 App Store 审核硬伤。
+    private func checkIntroOffer() async {
+        isCheckingIntroOffer = true
+        defer { isCheckingIntroOffer = false }
+
+        // introductoryOffer 可能只在部分商品上配置(如年付有试用、月付没有)。
+        // 取第一个带 introductoryOffer 的商品的试用周期;都没配则 nil。
+        guard let productWithOffer = products.first(where: { $0.subscription?.introductoryOffer != nil }),
+              let subscription = productWithOffer.subscription else {
+            VoiceTodoLog.app.info("entitlement.intro_offer eligible=false hasPeriod=false reason=no_subscription")
+            isEligibleForIntroOffer = false
+            introOfferPeriod = nil
+            return
+        }
+
+        introOfferPeriod = subscription.introductoryOffer?.period
+
+        do {
+            let eligible = try await Product.SubscriptionInfo.isEligibleForIntroOffer(for: subscription.subscriptionGroupID)
+            isEligibleForIntroOffer = eligible
+        } catch {
+            VoiceTodoLog.app.error("entitlement.intro_offer_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            isEligibleForIntroOffer = false
+        }
+
+        VoiceTodoLog.app.info("entitlement.intro_offer eligible=\(self.isEligibleForIntroOffer) hasPeriod=\(self.introOfferPeriod != nil)")
     }
 
     /// 重读当前生效订阅。返回权益是否发生变化。

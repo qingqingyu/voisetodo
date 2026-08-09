@@ -160,6 +160,26 @@ welcome → voicePermissions → [actionButton] → proPaywall → completion �
 VoiceTodoLog.app.info("entitlement.intro_offer eligible=\(self.isEligibleForIntroOffer) hasPeriod=\(self.introOfferPeriod != nil)")
 ```
 
+**加载期间的状态（C 点，重要）**
+
+`Product.SubscriptionInfo.isEligibleForIntroOffer(for:)` 是 async API，在 `loadProducts()` 返回之后还要单独查一次。从「商品加载完成」到「资格查询完成」之间有一个短暂窗口：
+
+- 如果 CTA 此刻按 `isEligibleForIntroOffer = false` 渲染「订阅 Pro」，资格查完翻成 true 后会抖成「开始 N 天免费试用」；
+- 反过来也成立。
+
+老用户退订后重订场景尤其刺眼——先变相承诺试用、再变脸，正是 1.4 节想修的那类欺骗。
+
+加一个第三态：
+
+```swift
+/// intro offer 资格查询的加载态。true 期间 CTA 显示 spinner、不渲染文案，
+/// 避免资格查询完成前后文案抖动造成「先承诺再变脸」。
+/// 商品加载失败（.empty/.error）时此值无意义——CTA 那时不渲染。
+@Published private(set) var isCheckingIntroOffer = true
+```
+
+`loadProducts()` 成功后把 `isCheckingIntroOffer` 置 true，再 await 资格查询，查完置 false；`loadProducts()` 失败分支里也置 false（CTA 不渲染，没必要让 spinner 一直转）。`PaywallContent` 的 CTA 在 `isCheckingIntroOffer == true` 时显示 spinner、不渲染文案；只有 false 后才决定显示「订阅 Pro」还是「开始 N 天免费试用」。
+
 ### 3.2 `UI/Paywall/PaywallView.swift` — 抽出可复用内容 + 改为「选择 + 单一 CTA」
 
 把文件拆成三块：
@@ -210,6 +230,12 @@ struct PaywallView: View {
   `RoundedRectangle(cornerRadius: WarmRadius.card)` 的 `.stroke`）。
 - `action` 改为只设 `selectedProductID`，不再触发购买。
 - 卡内那行「含 3 天免费试用」（第 409-413 行）改为**仅在 `entitlement.isEligibleForIntroOffer` 为 true 时渲染**。
+
+**购买中的视觉态（A 点，重要）**
+
+`entitlement.isPurchasing == true` 时，所有 ProductCard 都要 `disabled` + `opacity(0.5)`，**不只是主 CTA 显 spinner**。否则用户在 StoreKit 系统弹窗出现前的几百毫秒里还能切换商品，让 `selectedProductID` 在飞行中漂移，下次再点 CTA 时购买的就是漂移后的商品。
+
+当前 `ProductCard` 把 `isPurchasing` 仅用于把价格替换成内嵌 spinner（第 417-419 行）。改为选择语义后，**这个内嵌 spinner 一并移除**——spinner 只在主 CTA 上，卡片一律 disable + 弱化。价格保持显示（弱化后），让用户知道在买什么。
 
 **`PaywallContent` 的新状态与主 CTA**
 
@@ -328,6 +354,29 @@ private var proPaywallStep: some View {
 - 本页现在内容较高，注意它渲染在 `body` 的 `ScrollView` 里（第 96-114 行），
   内嵌 `PaywallContent` 时**不要再套一层 ScrollView**，会造成嵌套滚动。
   `PaywallContent` 本身应只提供 `VStack` 内容，由调用方决定滚动容器。
+
+**视觉层级（B 点，重要）**
+
+`PaywallContent` 内部本身就有 `legalText` 和 `restoreButton`，「以后再说」是 onboarding 独有的外层按钮。两层叠在一起容易乱。预期顺序（自上而下）：
+
+```
+┌──────────────────────────────────┐
+│  header（sparkles + 副标题）      │
+│  comparisonCard（Free vs Pro 对比）│
+│  valuePropsList（3 张价值卡）     │
+│  productList（月付/年付选择）     │
+│  [CTA] 开始 N 天免费试用          │  ← PaywallContent 内
+│  legalText                       │  ← PaywallContent 内
+│  restoreButton                   │  ← PaywallContent 内
+└──────────────────────────────────┘
+   「以后再说」（onboarding 独有）   ← proPaywallStep 外层
+```
+
+要点：
+
+- 「以后再说」是兜底逃生舱，视觉上弱（小号灰色文字按钮）、位置在最末。**别让它夹在 legal 和 restore 之间**，也别紧跟 CTA——后者会让用户误以为是次等价的购买选项。
+- `context: .onboarding` 时 PaywallContent 内部 padding 适当收紧：原 sheet 有 NavigationStack + toolbar 占位，onboarding 内嵌没有，header 上方留白可以减小，让外层「以后再说」与 PaywallContent 在视觉上仍是同一组。
+- 商品加载失败（`.empty`/`.error`）落到 `stateMessage` 时，「以后再说」仍要可点——它在 PaywallContent 外层，不受 stateMessage 影响。
 
 **购买成功后自动前进**
 
@@ -494,3 +543,41 @@ UI 测试环境没有 StoreKit mock，`Product.products(for:)` 会返回空 →
   StoreKit 不可用时，用户仍要能走完 onboarding。
 - **试用文案一律以 `isEligibleForIntroOffer` 为准。** 全局搜一遍「3 天」/「3-day」/「3 days」，
   确认没有漏网的硬编码。
+
+---
+
+## 6. 实施补充：A/B/C 三处易踩坑点
+
+3.1 / 3.2 / 3.3 已分别埋了细节，这里集中列一遍，实施时按此清单逐项 check，避免遗漏。
+
+### A. ProductCard 购买中的视觉态（对应 3.2）
+
+卡片从「点击即购买」改为「点击即选中」后，**购买期间（`entitlement.isPurchasing == true`）所有 ProductCard 一律 `disabled` + `opacity(0.5)`**，不只是主 CTA 显 spinner。
+
+- **原因**：StoreKit 系统弹窗出现前的几百毫秒里用户仍能切商品，会让 `selectedProductID` 在飞行中漂移——下次点 CTA 购买的可能是漂移后的商品。
+- **顺带清理**：`ProductCard` 现有内嵌 spinner（`PaywallView.swift:417-419`，把价格替换成 ProgressView）随语义变更一并移除。spinner 只在主 CTA 上，卡片保持显示价格（弱化后），让用户知道在买什么。
+- **验收**：点了 CTA 之后到系统弹窗出现之前，所有商品卡都不再响应点击。
+
+### B. 「以后再说」与 PaywallContent 内 legal / restore 的视觉层级（对应 3.3）
+
+PaywallContent 内部已有 `legalText` + `restoreButton`，「以后再说」是 onboarding 独有的外层按钮。两层叠在一起容易乱。
+
+- **固定顺序**：`商品卡 → CTA → legal → restore → 以后再说`。
+- **不要做**：把「以后再说」夹在 legal 和 restore 之间；把「以后再说」紧跟 CTA（会让用户误以为是次等价的购买选项）。
+- **样式**：「以后再说」是小号灰色文字按钮（沿用现有 `ProIntroLaterButton` 样式），视觉权重最弱，位置在最末。
+- **`context: .onboarding` 时收紧 padding**：原 sheet 有 NavigationStack + toolbar 占位，onboarding 内嵌没有，header 上方留白可减小，让「以后再说」与 PaywallContent 在视觉上仍是同一组。
+- **降级**：商品加载失败（`.empty`/`.error`）时 PaywallContent 落到 stateMessage，外层「以后再说」仍要可点——这是「onboarding 不能被网络/StoreKit 卡死」的最后一道保险。
+
+### C. isEligibleForIntroOffer 的加载态（对应 3.1）
+
+`Product.SubscriptionInfo.isEligibleForIntroOffer(for:)` 是 async。商品加载完成到资格查询完成之间有短暂窗口：
+
+- 按 false 显示「订阅 Pro」、查完变 true 抖成「开始 N 天免费试用」；
+- 反过来也成立。
+
+老用户退订后重订场景尤其刺眼——先变相承诺试用、再变脸，正是 1.4 节想修的那类欺骗。
+
+- **加第三态** `@Published private(set) var isCheckingIntroOffer = true`。
+- **时机**：`loadProducts()` 成功前置 true，await 资格查询完成后置 false；失败分支也置 false（CTA 不渲染，spinner 不需要转）。
+- **CTA 渲染**：`isCheckingIntroOffer == true` → spinner 不显文案；`false` + eligible → 「开始 N 天免费试用」；`false` + ineligible → 「订阅 Pro」。
+- **验收**：模拟器断网/StoreKit 不可用时，第三态最终会落到 false（因为商品都没加载成功），不会卡在永久 spinner。
