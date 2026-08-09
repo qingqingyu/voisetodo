@@ -102,6 +102,7 @@ targets:
         UIUserInterfaceStyle: Light
         VoiceTodoProxyEndpoint: "$(VOICETODO_AI_PROXY_ENDPOINT)"
         VoiceTodoProxyAppToken: "$(VOICETODO_AI_PROXY_APP_TOKEN)"
+        VoiceTodoFeedbackEndpoint: "$(VOICETODO_FEEDBACK_ENDPOINT)"
         UILaunchScreen:
           UIColorName: AccentColor
         UIApplicationSceneManifest:

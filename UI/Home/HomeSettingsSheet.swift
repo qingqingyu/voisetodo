@@ -18,6 +18,7 @@ struct HomeSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showClearConfirmation = false
     @State private var didClearLearningData = false
+    @State private var showFeedbackSheet = false
 
     private let vocabularyStore: UserVocabularyStore
     private let onUpgradePro: () -> Void
@@ -159,6 +160,22 @@ struct HomeSettingsSheet: View {
                 } header: {
                     Text(String(localized: "settings.personalization.title"))
                 }
+
+                Section {
+                    Button {
+                        showFeedbackSheet = true
+                    } label: {
+                        Label(String(localized: "settings.feedback"), systemImage: "envelope.fill")
+                    }
+                    .accessibilityIdentifier("FeedbackButton")
+                } header: {
+                    Text(String(localized: "settings.feedback.header"))
+                } footer: {
+                    Text(String(localized: "settings.feedback.footer"))
+                }
+            }
+            .sheet(isPresented: $showFeedbackSheet) {
+                FeedbackSheet()
             }
             .navigationTitle(String(localized: "settings.title"))
             .navigationBarTitleDisplayMode(.inline)

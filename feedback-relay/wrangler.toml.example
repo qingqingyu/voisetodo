@@ -1,0 +1,30 @@
+# 复制为 wrangler.toml 后填入 D1 database_id。
+# 不要把 secrets 写在这里 —— 用 `wrangler secret put` 注入。
+
+name = "voicetodo-feedback"
+main = "worker.js"
+compatibility_date = "2026-05-26"
+workers_dev = true
+
+# 自定义域名(可选,与 AIProxy 同域,反查方便):
+# routes = [
+#   { pattern = "feedback.saydo.org", custom_domain = true }
+# ]
+
+[vars]
+# 这里不存放任何敏感值。客户端通过 X-App-Token 携带的 token,
+# 必须与 AIProxy 用的 APP_TOKEN 完全一致(同一个 App 的客户端身份)。
+# 用 `wrangler secret put APP_TOKEN` 注入。
+
+# ─── D1 反馈归档 ────────────────────────────────────────────────────────────
+# 创建:`wrangler d1 create voicetodo-feedback`
+# 初始化 schema:`wrangler d1 execute voicetodo-feedback --file=./schema.sql`
+[[d1_databases]]
+binding = "FEEDBACK_DB"
+database_name = "voicetodo-feedback"
+database_id = "your-d1-database-id-here"
+
+# ─── Secrets(必须用 wrangler secret put 注入,不写在此处)─────────────────
+# wrangler secret put TELEGRAM_BOT_TOKEN     # 形如 1234567890:AAFf...
+# wrangler secret put TELEGRAM_CHAT_ID       # 形如 1234567890(纯数字)
+# wrangler secret put APP_TOKEN              # 与 AIProxy 的 APP_TOKEN 一致

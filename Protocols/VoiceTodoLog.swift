@@ -23,6 +23,7 @@ enum VoiceTodoLog {
     static let calendar = Logger(subsystem: subsystem, category: "calendar")
     static let notification = Logger(subsystem: subsystem, category: "notification")
     static let ui = Logger(subsystem: subsystem, category: "ui")
+    static let feedback = Logger(subsystem: subsystem, category: "feedback")
 
     static func makeID(_ prefix: String) -> String {
         "\(prefix)-\(UUID().uuidString.prefix(8))"

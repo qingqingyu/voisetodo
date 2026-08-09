@@ -93,6 +93,44 @@ enum NetworkConfig {
     }
 }
 
+/// feedback-relay Worker 配置。与 AIProxy 同一个 App,客户端身份校验靠 X-App-Token,
+/// 复用 `NetworkConfig.proxyAppToken`,不另开 token。
+enum FeedbackConfig {
+    /// feedback-relay Worker 的公开端点(不含路径,Worker 自带 `/v1/feedback`)。
+    /// 通过 Xcode build setting `VOICETODO_FEEDBACK_ENDPOINT` → Info.plist 注入。
+    /// 判空逻辑与 `NetworkConfig.isConfigured` 同源(trim 后判空 + `$(` 占位过滤),
+    /// 避免空白字符端点漏过导致 URL 构造成功但请求失败。
+    static let endpoint: String = {
+        if let env = ProcessInfo.processInfo.environment["VOICETODO_FEEDBACK_ENDPOINT"],
+           isConfiguredValue(env) {
+            return env
+        }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "VoiceTodoFeedbackEndpoint") as? String,
+           isConfiguredValue(plist) {
+            return plist
+        }
+        return ""
+    }()
+
+    private static func isConfiguredValue(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !trimmed.contains("$(")
+    }
+    /// 客户端身份校验 token。沿用 AIProxy 的 APP_TOKEN(同一个 App,同一个客户端)。
+    static var appToken: String? { NetworkConfig.proxyAppToken }
+    /// 单张截图字节上限。镜像 `feedback-relay/worker.js` 的 MAX_SCREENSHOT_BYTES,
+    /// 客户端预先压缩避免 base64 后 body 超限。
+    static let maxScreenshotBytes: Int = 3 * 1024 * 1024
+    /// transcript 截断字符数。镜像 worker.js 的 MAX_TRANSCRIPT_CHARS,
+    /// 客户端预先截断避免 base64 后 body 超限。
+    static let maxTranscriptChars: Int = 1000
+    /// extractedTodoTitle 截断字符数。镜像 worker.js 的 MAX_TITLE_CHARS。
+    static let maxTitleChars: Int = 200
+    /// 反馈上传请求超时(秒)。反馈是 best-effort,不需要 AI 提取那样长 failover 预算;
+    /// 30s 足够覆盖带 3MB 截图的慢网,也避免用户卡在 ProgressView 旁。
+    static let requestTimeout: TimeInterval = 30.0
+}
+
 /// UI 配置
 enum UIConfig {
     /// 成功动画时长
