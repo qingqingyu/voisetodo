@@ -450,7 +450,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                 style: .success,
                 isPresented: $addedToastVisible,
                 position: .bottom,
-                presentationToken: addedToastToken
+                presentationToken: addedToastToken,
+                // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
+                // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
+                bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm
             )
             // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
             .sheet(isPresented: $showCalendarImport) {
@@ -1223,7 +1226,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                                     withAnimation(WarmAnimation.springStandard) {
                                         collapseProgress = 0
                                     }
-                                }
+                                },
+                                onShiftWeek: { shiftWeek(by: $0) }
                             )
                             // 横向 padding 对齐 HomeSelectedDayListView 任务卡 listRowInsets 的 lg(20pt),
                             // 让折叠态周条卡片与下方任务卡左右边缘齐平——原先用 xl(24pt) 比任务卡窄 8pt,
@@ -2108,6 +2112,24 @@ struct HomeView<Store: HomeTodoStore>: View {
         withAnimation(WarmAnimation.springStandard) {
             visibleMonthAnchor = normalizedAnchor
             selectedDate = normalizedAnchor
+        }
+    }
+
+    /// 翻周:折叠态(WeekStripCard 可见)下左右滑触发。
+    /// selectedDate 移 7 天;若跨月,同步 visibleMonthAnchor 到新周所在月,
+    /// 让下拉展开月网格时看到新周所在月(避免 selectedDate 已到 9 月但网格仍显示 8 月)。
+    /// 同月内切周不动 visibleMonthAnchor:月网格 42 格不重 layout,视觉更稳。
+    /// 与 shiftPeriod 共用 WarmAnimation.springStandard,左右滑切换时间区间的动效一致。
+    private func shiftWeek(by value: Int) {
+        guard let newDate = calendar.date(byAdding: .day, value: value * 7, to: selectedDate) else {
+            return
+        }
+        let newMonthAnchor = HomeCalendarState.startOfMonth(for: newDate, calendar: calendar)
+        withAnimation(WarmAnimation.springStandard) {
+            selectedDate = newDate
+            if !calendar.isDate(newMonthAnchor, equalTo: visibleMonthAnchor, toGranularity: .month) {
+                visibleMonthAnchor = newMonthAnchor
+            }
         }
     }
 
