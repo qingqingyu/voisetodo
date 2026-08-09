@@ -73,6 +73,10 @@ struct ToastModifier: ViewModifier {
     /// (SwiftUI @State 同帧合并 → 只保留终值 → onChange 不发)。
     /// 用独立 token 绕开 isPresented 的去重,保证连点连触发都能重置定时器。
     var presentationToken: Int = 0
+    /// 底部 toast 距容器底的额外间距(覆盖默认 `WarmSpacing.xxxl`)。
+    /// 仅 `.bottom` 位置需要避让 VoiceFAB 等 overlay 控件时由调用方传入;
+    /// 默认 nil → 沿用 `WarmSpacing.xxxl`,现有调用方零影响。
+    var bottomPadding: CGFloat? = nil
 
     /// 当前自动隐藏的定时器
     @State private var dismissTask: DispatchWorkItem?
@@ -86,7 +90,7 @@ struct ToastModifier: ViewModifier {
                             insertion: .move(edge: position.edge).combined(with: .scale(scale: 0.9)),
                             removal: .move(edge: position.edge).combined(with: .opacity)
                         ))
-                        .padding(position.edgeInsets, WarmSpacing.xxxl)
+                        .padding(position.edgeInsets, bottomPadding ?? WarmSpacing.xxxl)
                         // 无 action 的 toast 不需要接收点击,关掉 hit testing
                         // 避免底部 toast 期间遮住悬浮 FAB(成功 toast 寿命 2s,
                         // 恰好是用户最可能想立刻再录一条的时刻)。
@@ -205,6 +209,7 @@ extension View {
         isPresented: Binding<Bool>,
         position: ToastModifier.Position = .top,
         presentationToken: Int = 0,
+        bottomPadding: CGFloat? = nil,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil
     ) -> some View {
@@ -215,7 +220,8 @@ extension View {
             position: position,
             actionTitle: actionTitle,
             action: action,
-            presentationToken: presentationToken
+            presentationToken: presentationToken,
+            bottomPadding: bottomPadding
         ))
     }
 }

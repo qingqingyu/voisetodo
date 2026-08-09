@@ -444,7 +444,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                 style: .success,
                 isPresented: $addedToastVisible,
                 position: .bottom,
-                presentationToken: addedToastToken
+                presentationToken: addedToastToken,
+                // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
+                // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
+                bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm
             )
             // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
             .sheet(isPresented: $showCalendarImport) {
