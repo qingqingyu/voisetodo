@@ -36,7 +36,8 @@ private struct HomeViewActions<Store: HomeTodoStore> {
     /// 与 submitManualInput 同样需要调用方持有，视图销毁时 cancel。
     @discardableResult
     func navigateToDeepLinkedTodo(id: UUID) -> Task<Void, Never> {
-        if let todo = store.todos.first(where: { $0.id == id }) {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项(Deep Link 可能指向任意 todo)
+        if let todo = store.findTodo(by: id) {
             selectTodo(todo)
             coordinator.deepLinkTodoId = nil
             return Task { } // 同步命中，返回已完成 Task 保持签名一致
@@ -45,7 +46,8 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         return Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled, coordinator.deepLinkTodoId == id else { return }
-            if let todo = store.todos.first(where: { $0.id == id }) {
+            // 工作集窗口化后用 findTodo 查库,以命中窗口外的项(Deep Link 可能指向任意 todo)
+            if let todo = store.findTodo(by: id) {
                 selectTodo(todo)
             }
             coordinator.deepLinkTodoId = nil
@@ -2160,7 +2162,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 写 `hasDueTime=true + timeBucket=nil`(TimeBucketResolver 走钟点派生分支)。
     /// `hourMinute` 的日期部分被丢弃,只取 hour/minute;选 0:00 也能写入(夜班场景)。
     private func setTodoHour(_ todoId: UUID, hourMinute: Date) {
-        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        guard let todo = store.findTodo(by: todoId) else {
             VoiceTodoLog.ui.warning("home.set_hour.todo_not_found id=\(todoId.uuidString, privacy: .public)")
             return
         }
@@ -2206,7 +2209,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// `TimeBucketResolver` 走 explicitBucket 分支派生(覆盖原 bucket)。
     /// 跟 `assignTodoToDate`(用原 timeBucket)语义不同,不能共用。
     private func assignTodoToBucket(_ todoId: UUID, bucket: TimeBucket) {
-        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        guard let todo = store.findTodo(by: todoId) else {
             VoiceTodoLog.ui.warning("home.assign_bucket.todo_not_found id=\(todoId.uuidString, privacy: .public)")
             return
         }
@@ -2256,7 +2260,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// recurrenceRule)显式重传 —— 为了只让 dueDate 变化,其他字段传回原值。
     /// 若 TodoDetailUpdate 的语义将来改成「nil = 清空」,这里需同步改用 nil 表示不更新。
     private func moveTodoToTomorrow(_ todoId: UUID, baseDate: Date) {
-        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        guard let todo = store.findTodo(by: todoId) else {
             VoiceTodoLog.ui.warning("home.move_to_tomorrow.todo_not_found id=\(todoId.uuidString, privacy: .public)")
             return
         }
@@ -2317,7 +2322,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 时段意图擦掉了。2026-08 修复回归「保留原值」，与 `assignTodoToBucket` /
     /// `moveTodoToTomorrow` 的保留语义对齐。
     private func pickTodoDate(id: UUID, date: Date) {
-        guard let todo = store.todos.first(where: { $0.id == id }) else {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        guard let todo = store.findTodo(by: id) else {
             VoiceTodoLog.ui.warning("home.pick_date.todo_not_found id=\(id.uuidString, privacy: .public)")
             return
         }
@@ -2333,7 +2339,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// timeline → drawer 反向拖拽落点:清 dueDate 让任务回 unscheduled。
     /// 保留原 `timeBucket`,下次拖回同 bucket 仍按用户原意图分组(避免被 reset 到 anytime)。
     private func unassignTodoFromDay(_ todoId: UUID) {
-        guard let todo = store.todos.first(where: { $0.id == todoId }) else {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        guard let todo = store.findTodo(by: todoId) else {
             VoiceTodoLog.ui.warning("home.unassign.todo_not_found id=\(todoId.uuidString, privacy: .public)")
             return
         }
