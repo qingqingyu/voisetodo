@@ -11,6 +11,15 @@ private let todoFieldEditorDateFormatter: DateFormatter = {
     return formatter
 }()
 
+/// 钟点 popover 入口文本 formatter(跟随系统 locale,12/24h 制由系统决定)。
+/// 与 `todoFieldEditorDateFormatter` 同样的 file-private 顶层套路,供 `TodoTimePopoverTrigger` 使用。
+private let todoFieldEditorTimeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .none
+    formatter.timeStyle = .short
+    return formatter
+}()
+
 /// 字段编辑器的视觉上下文。默认值保持详情页现有样式，确认页仅切换外观，
 /// 不改变任何 Binding、回调或字段写回行为。
 enum TodoFieldEditorAppearance {
@@ -494,6 +503,145 @@ struct TodoDatePopoverTrigger: View {
     }
 }
 
+// MARK: - 钟点 popover 触发器
+
+/// 钟点触发器(与 `TodoDatePopoverTrigger` 对称的 popover + .wheel 方案)。
+///
+/// 替代原 `TodoClockTimeRow.hasDueTime == true` 分支里内联的 `DatePicker.compact` ——
+/// `.compact` 在 iPhone 上点击后内联展开成滚轮,SwiftUI 不给"折叠"钩子,只能靠点外面收
+/// (用户报告的 bug:选好时间后没有"完成"按钮,也不自动关闭,行为跟日期 popover 不一致)。
+/// 这里改成自控 popover:文本按钮显示当前钟点 + chevron.down,点击弹 `.wheel` 滚轮,
+/// 滚轮最后一次变动后 ~0.8s 自动收起(留出连续滚动窗口,避免边滚边关),
+/// 与日期 popover 的"选好即收"行为对齐。
+///
+/// 不变式:`hasDueTime == true ⇒ dueDate != nil`(`TodoClockTimeRow` 的"添加钟点"按钮保证),
+/// 但 binding 仍以 `Date?` 入参,防御性处理 nil —— 显示用 anchor 兜底,写回时合并到 anchor 的日期部分。
+///
+/// **为什么需要 `popoverFallbackAnchor`**:与 `TodoDatePopoverTrigger` 同一原因 ——
+/// SwiftUI 在 popover 打开期间可能反复重建 body,每次 `Date()` 都重新求值。
+/// 时间场景下虽然只取 hour/minute,但 set 分支要拿"日期部分"做合并(nil 路径下),
+/// 若不锚定,跨午夜停留 popover 时 anchor 会从打开那一天漂到次日,合并出错误的年月日。
+struct TodoTimePopoverTrigger: View {
+    @Binding private var date: Date?
+    private let onEdit: () -> Void
+
+    @State private var showTimePickerPopover = false
+    /// 打开 popover 瞬间捕获的 nil 兜底锚点(只在 date == nil 时生效)。
+    /// 一旦捕获不再更新,避免 body 重建时反复 `Date()` 求值导致跨午夜漂移。
+    @State private var popoverFallbackAnchor: Date?
+    @State private var popoverDismissTask: Task<Void, Never>?
+    @State private var selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+
+    init(date: Binding<Date?>, onEdit: @escaping () -> Void) {
+        self._date = date
+        self.onEdit = onEdit
+    }
+
+    var body: some View {
+        trigger
+    }
+
+    private var trigger: some View {
+        Button {
+            // 打开瞬间捕获回退锚点:之后 nil 路径下的兜底都用这一份稳定值,
+            // 避免 SwiftUI body 重建时反复调 Date() 导致跨午夜漂移到次日。
+            if popoverFallbackAnchor == nil {
+                popoverFallbackAnchor = Date()
+            }
+            showTimePickerPopover = true
+        } label: {
+            HStack(spacing: WarmSpacing.xxs) {
+                Text(todoFieldEditorTimeFormatter.string(from: anchorDate))
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(String(localized: "detail.clock_time"))
+        .accessibilityValue(todoFieldEditorTimeFormatter.string(from: anchorDate))
+        .accessibilityIdentifier("DetailTimePopoverTrigger")
+        .popover(isPresented: $showTimePickerPopover) {
+            VStack(spacing: WarmSpacing.sm) {
+                DatePicker(
+                    "",
+                    selection: popoverBinding,
+                    displayedComponents: .hourAndMinute
+                )
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+            }
+            .padding(WarmSpacing.md)
+            .frame(width: 280)
+            .onAppear {
+                // 预热 haptic engine —— 首次 impactOccurred() 才不会因 engine 冷启动延迟/丢失。
+                selectionFeedbackGenerator.prepare()
+            }
+        }
+        .onDisappear {
+            // 钟点 popover 自动收起 task 一并 cancel —— 组件已退出,防止 task 在 dismiss 后
+            // 仍触发 showTimePickerPopover 写入(虽无害,但状态干净更可预测)。
+            // 与 TodoDatePopoverTrigger.onDisappear 行为对齐。
+            popoverDismissTask?.cancel()
+            popoverDismissTask = nil
+        }
+    }
+
+    /// nil 兜底锚点:date 优先,fallback 到 popover 打开时捕获的 anchor,再兜到当下。
+    /// 三段式与 `TodoDatePopoverTrigger.anchorDate` 同构(那边多包一层 `DayClock.startOfUserDay`,
+    /// 这里不需要 —— 时间场景只关心 hour/minute,日起点偏移不影响显示)。
+    private var anchorDate: Date {
+        date ?? popoverFallbackAnchor ?? Date()
+    }
+
+    /// 钟点 popover 内 DatePicker 的双向绑定。setter 四件事:
+    /// 1) 取 wheel 给的 newTime 的 hour/minute,合并到现有 date 的年月日(没有则用 anchor 的日期);
+    /// 2) onEdit 上报;3) 触觉反馈;4) schedulePopoverDismiss。
+    ///
+    /// **为什么合并日期而不是直接写 newTime**:wheel 给的 newTime 是完整 Date(以"现在"为基准),
+    /// 直接写回会让 dueDate 的年月日被今天的日期覆盖,跟用户原本选的"哪一天 什么时间"语义打架。
+    private var popoverBinding: Binding<Date> {
+        Binding(
+            get: { anchorDate },
+            set: { newTime in
+                let calendar = Calendar.current
+                var components = calendar.dateComponents([.year, .month, .day], from: anchorDate)
+                components.hour = calendar.component(.hour, from: newTime)
+                components.minute = calendar.component(.minute, from: newTime)
+                date = calendar.date(from: components)
+                onEdit()
+                selectionFeedbackGenerator.impactOccurred()
+                selectionFeedbackGenerator.prepare()
+                schedulePopoverDismiss()
+            }
+        )
+    }
+
+    /// 滚轮最后一次变动后 ~0.8s 收起 popover。
+    ///
+    /// **为什么 800ms 而非日期的 180ms**:日期 `.graphical` 是离散点击,180ms 足够;
+    /// 滚轮是连续滑动,用户可能边滚边停顿看,800ms 才能确认"真停下了",避免边滚边关。
+    /// 用 Task 而非 DispatchQueue.main.asyncAfter —— 可取消:连续滚动时 cancel 上一次。
+    private func schedulePopoverDismiss() {
+        popoverDismissTask?.cancel()
+        popoverDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                showTimePickerPopover = false
+            }
+        }
+    }
+}
+
 // MARK: - 钟点 + 时段行
 
 /// 钟点 + 时段合并行。
@@ -532,25 +680,10 @@ struct TodoClockTimeRow: View {
         if hasDueTime {
             VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                 HStack {
-                    DatePicker(
-                        "",
-                        selection: Binding(
-                            get: { dueDate ?? Date() },
-                            set: { newTime in
-                                // DatePicker(.hourAndMinute) 的 set 给的是完整 Date,
-                                // 但只有钟点部分有意义——把它合并到 dueDate 的日期部分。
-                                let calendar = Calendar.current
-                                var components = calendar.dateComponents([.year, .month, .day], from: dueDate ?? Date())
-                                components.hour = calendar.component(.hour, from: newTime)
-                                components.minute = calendar.component(.minute, from: newTime)
-                                dueDate = calendar.date(from: components)
-                                onEdit()
-                            }
-                        ),
-                        displayedComponents: .hourAndMinute
-                    )
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
+                    // 钟点编辑入口:popover + .wheel + 800ms 自动收起(替代原内联 .compact)。
+                    // 原 .compact 在 iPhone 上点击后内联展开成滚轮,SwiftUI 不给"折叠"钩子,
+                    // 用户必须点外面才能收 —— 跟日期 popover 的"选好即收"不一致。
+                    TodoTimePopoverTrigger(date: $dueDate, onEdit: onEdit)
 
                     Spacer()
 
