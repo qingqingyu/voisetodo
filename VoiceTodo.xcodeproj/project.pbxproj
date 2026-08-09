@@ -146,6 +146,7 @@
 		AD9E8C4E0A7E696FF2BF873A /* BottomTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62DBD06A9F0879BAA041D2E1 /* BottomTabBar.swift */; };
 		ADF8DA079B27B1F1D4F1F902 /* AppGroupConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA980239E357F51EC6EE59B5 /* AppGroupConfig.swift */; };
 		B0BF0CB8B48FBA279735ECB1 /* TodoSpan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34323022C7F0609A2B65B174 /* TodoSpan.swift */; };
+		B1680828A1DEBF5846D3A0A3 /* TodoDetailUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D799E5C2E379EA61F6671251 /* TodoDetailUpdateTests.swift */; };
 		B1E3FC7CFA283CF502389501 /* PermissionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5DE4C3511E13DAD7A2DEAC /* PermissionManagerTests.swift */; };
 		B392DDDCC687AE55AE0CB1F7 /* ChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299BCD42E1E0B76E14054E8 /* ChipView.swift */; };
 		B66A6F9E7262A019BCA450DE /* CalendarHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 923052D2F0F2BD6AB9CBF6B5 /* CalendarHomeUITests.swift */; };
@@ -391,6 +392,7 @@
 		D240169FCFEEABE325D822BB /* TodoSpanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoSpanTests.swift; sourceTree = "<group>"; };
 		D24795F4689C91579626B05E /* ActionButtonCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButtonCapability.swift; sourceTree = "<group>"; };
 		D3E581A75CB77DE80D7F8AFF /* VoicePermissionRepromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePermissionRepromptSheet.swift; sourceTree = "<group>"; };
+		D799E5C2E379EA61F6671251 /* TodoDetailUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoDetailUpdateTests.swift; sourceTree = "<group>"; };
 		D8877696C1E00B4ACC3742D0 /* UserVocabularyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserVocabularyTests.swift; sourceTree = "<group>"; };
 		D8CE2794EFB8BE4A9FEF9260 /* PersonalGlossary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalGlossary.swift; sourceTree = "<group>"; };
 		DA666835F8CA9864517E3A2D /* LocalNotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotificationScheduler.swift; sourceTree = "<group>"; };
@@ -613,6 +615,7 @@
 				59C85D0615B2A028EDF81062 /* ProtocolsTests.swift */,
 				15010497ACE41C7CAC621B27 /* QuotaUsageTests.swift */,
 				1FFDA727BBA626601B661A71 /* TelemetryTests.swift */,
+				D799E5C2E379EA61F6671251 /* TodoDetailUpdateTests.swift */,
 				EE2E0D5B7203590266FBBFDF /* TodoDueDateShifterTests.swift */,
 				D240169FCFEEABE325D822BB /* TodoSpanTests.swift */,
 				D8877696C1E00B4ACC3742D0 /* UserVocabularyTests.swift */,
@@ -1146,6 +1149,7 @@
 				88969B486DF1975119DC1283 /* SystemCalendarWriterTests.swift in Sources */,
 				F71FA1D9BFAA31113B549F0F /* TelemetryTests.swift in Sources */,
 				E7040FF2B2956F18F0D0B042 /* TelemetryUploaderTests.swift in Sources */,
+				B1680828A1DEBF5846D3A0A3 /* TodoDetailUpdateTests.swift in Sources */,
 				DBF35E8DA439263497CCF0F2 /* TodoDueDateShifterTests.swift in Sources */,
 				FA51C592BEC7E694F2E2BDFC /* TodoItemFromBasisFilterTests.swift in Sources */,
 				D571348415B7377B7C5E80F1 /* TodoSpanTests.swift in Sources */,

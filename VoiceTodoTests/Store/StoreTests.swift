@@ -1186,6 +1186,76 @@ final class StoreTests: XCTestCase {
         let after = sut.todos.first { $0.id == a }!.sortOrder
         XCTAssertEqual(before, after)
     }
+
+    // MARK: - 跨天事件(Multi-day span,详见 docs/multi-day-span-events.md)
+    // 时区口径:occurrence 查询走 TodoQueryActor(用 Calendar.current,见 TodoQueryActor.swift:88),
+    // 这里测试也用 Calendar(identifier: .gregorian)(继承 .current 时区)对齐。
+    // 与 TodoDetailUpdateTests(锁 UTC,测纯归一化逻辑)的区别:那边测的是 TodoSpan.normalized
+    // 的纯函数行为,这边测的是 Store 端到端 occurrence 展开,必须跟实现同口径。
+
+    func testCalendarOccurrences_multiDayEvent_producesOnePerDayWithSpanMetadata() async throws {
+        // 跨 3 天的事件(8/14 → 8/16),应产生 3 个 occurrence,每个带正确的 spanIndex/spanCount
+        let calendar = Calendar(identifier: .gregorian)
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 14)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 16)))
+        let item = TodoItemData(title: "周末出游", dueDate: start, eventEndDate: end)
+        try sut.seedForUITests([item])
+
+        let occurrences = try await sut.calendarOccurrences(from: start, to: end)
+
+        XCTAssertEqual(occurrences.count, 3)
+        XCTAssertEqual(occurrences[0].occurrenceDate, start)
+        XCTAssertTrue(occurrences[0].isSpanStart)
+        XCTAssertFalse(occurrences[0].isSpanEnd)
+        XCTAssertEqual(occurrences[0].spanCount, 3)
+        XCTAssertEqual(occurrences[0].spanIndex, 0)
+        XCTAssertEqual(occurrences[1].spanIndex, 1)
+        XCTAssertEqual(occurrences[1].spanCount, 3)
+        XCTAssertFalse(occurrences[1].isSpanStart)
+        XCTAssertFalse(occurrences[1].isSpanEnd)
+        XCTAssertEqual(occurrences[2].spanIndex, 2)
+        XCTAssertTrue(occurrences[2].isSpanEnd)
+    }
+
+    func testCalendarOccurrences_multiDayEvent_crossMonth_spanCountStaysTotal() async throws {
+        // 跨月事件 8/30 → 9/2(共 4 天),查 8 月只覆盖 8/30 + 8/31,但 spanCount 仍是 4
+        let calendar = Calendar(identifier: .gregorian)
+        let aug30 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+        let sep2 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2)))
+        let augStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)))
+        let augEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 31)))
+
+        let item = TodoItemData(title: "跨月会议", dueDate: aug30, eventEndDate: sep2)
+        try sut.seedForUITests([item])
+
+        let occurrences = try await sut.calendarOccurrences(from: augStart, to: augEnd)
+
+        XCTAssertEqual(occurrences.count, 2)
+        // 关键断言:窗口内只看到 2 天,但事件总天数仍是 4
+        XCTAssertEqual(occurrences[0].spanCount, 4)
+        XCTAssertEqual(occurrences[0].spanIndex, 0)
+        XCTAssertEqual(occurrences[1].spanIndex, 1)
+    }
+
+    func testToggleOccurrence_onMultiDayEvent_marksWholeItemCompletedAndNoOccurrenceRecord() async throws {
+        // 跨天事件在中间日打勾 → 整体标记完成(recurrenceRule == nil 走 toggleComplete 短路),
+        // 不产生 TodoOccurrenceCompletion 记录。跨天事件无"逐日完成"概念,完成是整体标记。
+        let calendar = Calendar(identifier: .gregorian)
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 14)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 16)))
+        let item = TodoItemData(title: "周末出游", dueDate: start, eventEndDate: end)
+        try sut.seedForUITests([item])
+        let todoId = try XCTUnwrap(sut.todos.first?.id)
+
+        let midDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 15)))
+        try sut.toggleOccurrenceComplete(todoId, on: midDay)
+
+        let updated = try XCTUnwrap(sut.todos.first)
+        XCTAssertTrue(updated.isCompleted)
+
+        let completions = try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>())
+        XCTAssertTrue(completions.isEmpty, "跨天事件(recurrenceRule == nil)走 toggleComplete 短路,不应产生 occurrence completion 记录")
+    }
 }
 
 /// 测试辅助：从已有 todo 构造 TodoDetailUpdate，避免每个测试都写一长串字段。

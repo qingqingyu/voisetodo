@@ -588,7 +588,8 @@ final class TodoStore:
                 needsAIProcessing: item.needsAIProcessing,
                 sortOrder: item.sortOrder,
                 systemCalendarEventIdentifier: item.systemCalendarEventIdentifier,
-                localeIdentifier: item.localeIdentifier
+                localeIdentifier: item.localeIdentifier,
+                eventEndDate: item.eventEndDate
             )
             modelContext.insert(todoItem)
         }
