@@ -1457,6 +1457,13 @@ struct HomeView<Store: HomeTodoStore>: View {
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
         .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todosRevision: store.todosRevision, revision: occurrenceRevision)) {
+            // id 变化(todosRevision / occurrenceRevision / anchor 任一)→ 旧缓存已过期,先清空。
+            // 否则 selectedDayStats() 会命中旧缓存,在 await 完成前一直返回过期数据
+            // (例:删除当天唯一一条 todo,进度条仍卡 0/1 直到 await 返回;若 task 被取消则永久卡死)。
+            // 清空后走 selectedDayStats() 的 fallback 分支,直接从 store.todos 读最新值。
+            monthOccurrences = [:]
+            completedUnscheduledByDay = [:]
+
             let startedAt = Date()
             if calendarLoadState == .error {
                 calendarLoadState = .loading
