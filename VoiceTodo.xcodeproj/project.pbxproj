@@ -133,6 +133,7 @@
 		9CBE0C1CE330DA35BD8CFE36 /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC981BF525760D925DDE5884 /* WaveformView.swift */; };
 		9D7F2574173C14D9EE128E79 /* TodoEntityQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761363CDEA3C2E6749ED94A4 /* TodoEntityQuery.swift */; };
 		9E85428D6867C0A1C58EB615 /* ReviewAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118F9CBFB082C7C28CF837C9 /* ReviewAggregator.swift */; };
+		A1C4F70D2E9B41586D0C33A1 /* GroupedCardRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C4F70E2E9B41586D0C33A2 /* GroupedCardRow.swift */; };
 		A2037F0570F3E95ABFB14393 /* TodoWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8139C012D57AB42C26331270 /* TodoWidgetView.swift */; };
 		A4690AF940DA8DC273FCF293 /* StoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF15A5145BE507157378E89D /* StoreTests.swift */; };
 		A7148EA757F1A52848A38DD1 /* RecurrenceEndResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77211AEB04E569C566392E9F /* RecurrenceEndResolver.swift */; };
@@ -254,7 +255,7 @@
 		071416DF494EE930B122B90D /* SystemCalendarWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarWriter.swift; sourceTree = "<group>"; };
 		0E4BF2A213AB8BD127DAB20B /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
 		0F91ACDCA48C0FD1301D8CEE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		0FE4099B3B3B721CC2F2EF9C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0FE4099B3B3B721CC2F2EF9C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		103B9A6AF24AD2F57CB2DDC2 /* TodoNotificationSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoNotificationSync.swift; sourceTree = "<group>"; };
 		112A986D9241DCBA3FCA7D5D /* SystemCalendarReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarReader.swift; sourceTree = "<group>"; };
 		1167DFCC2D46703F8A7053E6 /* ExtractorCircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractorCircuitBreaker.swift; sourceTree = "<group>"; };
@@ -289,7 +290,7 @@
 		49F3CFF162D9AAA4C9FF64D0 /* SystemCalendarWriterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarWriterTests.swift; sourceTree = "<group>"; };
 		4C3D64CBFC24F44D961A39C1 /* CodingUserInfoKey+Recurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodingUserInfoKey+Recurrence.swift"; sourceTree = "<group>"; };
 		4D3691D04079A01909A525E1 /* StartRecordingIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartRecordingIntent.swift; sourceTree = "<group>"; };
-		50AA9B07AB8F292FF8C44520 /* Products.storekit */ = {isa = PBXFileReference; path = Products.storekit; sourceTree = "<group>"; };
+		50AA9B07AB8F292FF8C44520 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
 		51ADD45CE40DA4A4B7B9AA0A /* UnparsedTodoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnparsedTodoCard.swift; sourceTree = "<group>"; };
 		527F7029B37ADF22950ACE4B /* VoiceTodoUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VoiceTodoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		52E4E1B928CA49D1A33174EB /* AddTodoIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTodoIntent.swift; sourceTree = "<group>"; };
@@ -335,7 +336,7 @@
 		852A146F479BCBE404E803CD /* ExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractorTests.swift; sourceTree = "<group>"; };
 		85DD2833CF75F09D3B176BA0 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 		86009E84057260ABF2FC2C59 /* CorrectionTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionTrackerTests.swift; sourceTree = "<group>"; };
-		874CB6C60B98DFFC0A7002B1 /* VoiceTodo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VoiceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		874CB6C60B98DFFC0A7002B1 /* VoiceTodo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A0E0525C6409142574087FD /* AddTodoIntentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTodoIntentView.swift; sourceTree = "<group>"; };
 		8A720C2996ED32733C7C1F5A /* RecordingLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivity.swift; sourceTree = "<group>"; };
 		8C44C5E09135B38054D5B5B3 /* VoiceInputProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputProtocol.swift; sourceTree = "<group>"; };
@@ -352,6 +353,7 @@
 		9D985A942F5AEF1211D9C329 /* UITestLaunchOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestLaunchOptions.swift; sourceTree = "<group>"; };
 		9E83FF0531EA6338B74E67EA /* FocusableTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusableTextView.swift; sourceTree = "<group>"; };
 		9FCC7CF9C78E37CFC3E7565A /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		A1C4F70E2E9B41586D0C33A2 /* GroupedCardRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedCardRow.swift; sourceTree = "<group>"; };
 		A1E8EF2B7568BBD7DE8AA6D9 /* VoiceTodoTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VoiceTodoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A254D50A09BB91CE790D7E22 /* ConfirmSheetAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSheetAnimations.swift; sourceTree = "<group>"; };
 		A256A46D624FE82D6C3ED3CB /* RecurrenceRuleResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceRuleResolver.swift; sourceTree = "<group>"; };
@@ -415,6 +417,7 @@
 		F10DE2C3D42323F4BC2A3384 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		F161F8D107C553CE98B6B7B6 /* WidgetTodoFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTodoFilterTests.swift; sourceTree = "<group>"; };
 		F349C1012E4CB00A2256A2DB /* VoiceTodoShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTodoShortcuts.swift; sourceTree = "<group>"; };
+		F56D32993028681D0067A08B /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Products.storekit; path = ../../VoiceTodo/Products.storekit; sourceTree = "<group>"; };
 		F702747C99D7A98923F3C220 /* RecurrenceRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceRule.swift; sourceTree = "<group>"; };
 		F78DB34A64BE991E3FD047AB /* UserVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserVocabulary.swift; sourceTree = "<group>"; };
 		F94F33F04346AC9AE87AE51E /* TodoFieldEditors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoFieldEditors.swift; sourceTree = "<group>"; };
@@ -681,6 +684,7 @@
 		9B6C7BF58D44098DCECC3D5B = {
 			isa = PBXGroup;
 			children = (
+				F56D32993028681D0067A08B /* Products.storekit */,
 				77E40F9570DD2A84ACE365A4 /* App */,
 				546356C58E5B0FF530F29357 /* Config */,
 				5FA08603966EDD0E9C8C6CC3 /* ConfirmSheet */,

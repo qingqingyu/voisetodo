@@ -19,13 +19,6 @@ struct VoiceTodoApp: App {
     @StateObject private var quotaUsage: QuotaUsage
     @StateObject private var notificationSync: TodoNotificationSync
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    /// 用户在 onboarding Pro 介绍页点了「开始 3 天免费试用」后置 true。
-    /// onboarding sheet dismiss 完成后(见 onChange),VoiceTodoApp 据此延迟弹 paywall。
-    /// 直接同时设 showOnboarding=false + showPaywall=true 会丢 sheet(SwiftUI 同时只允许一个 modal)。
-    ///
-    /// 用 `@AppStorage` 持久化,所以 `resetUserData` 分支(UI 测试)必须同步清除,
-    /// 防止上次测试遗留 true 污染下次 onboarding 完成流程(意外弹 paywall)。
-    @AppStorage("pendingPaywallAfterOnboarding") private var pendingPaywallAfterOnboarding = false
     @State private var showOnboarding = false
 
     /// Action Button / 快捷指令投递的「开始录音」请求。
@@ -50,8 +43,9 @@ struct VoiceTodoApp: App {
 
         if uiTestOptions.resetUserData {
             UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-            // 同步清除跨启动 paywall 延迟标志,避免上次测试遗留的 pending 状态
-            // 污染下次 onboarding 完成流程(意外弹 paywall → 测试 flakiness)。
+            // 一次性迁移:v2 起 onboarding 内嵌付费墙,不再需要跨 modal 的 pending 标志。
+            // 老版本残留的 true 不清除会让 onboarding 完成后多停留 600ms 等 dismiss 动画,
+            // 但不会真正弹 paywall(代码已删)—— 清掉避免 plist 一直留着这个孤儿键。
             UserDefaults.standard.removeObject(forKey: "pendingPaywallAfterOnboarding")
             // 同步清引导标记:让 UI 测试每次重置后都能验证首次下拉引导动画。
             UserDefaults.standard.removeObject(forKey: "hasShownExpandMonthHint")
@@ -255,25 +249,17 @@ struct VoiceTodoApp: App {
                     OnboardingView(
                         permissionManager: permissionManager,
                         hasCompletedOnboarding: $hasCompletedOnboarding,
-                        isPro: entitlementManager.isPro,
-                        // 只设标志,真正的 showPaywall 由 onChange(of: hasCompletedOnboarding) 延迟触发。
-                        // 这里立刻设 showPaywall=true 会和 showOnboarding=false 同帧,SwiftUI 同时只允许一个 modal,会丢。
-                        onTryPro: { pendingPaywallAfterOnboarding = true }
+                        entitlement: entitlementManager
                     )
+                        // sheet 不自动继承父视图的 environmentObject,显式注入 —— 与 PaywallView sheet 一致。
+                        .environmentObject(entitlementManager)
+                        .environmentObject(quotaUsage)
                         .interactiveDismissDisabled()
                 }
-                // 引导完成后主动关闭 sheet + 若有 pending paywall 延迟弹(等 onboarding dismiss 动画结束)
+                // 引导完成后关闭 sheet。Pro 付费墙已内嵌在 onboarding 第三屏,无需跨 modal 延迟弹 paywall。
                 .onChange(of: hasCompletedOnboarding) { _, completed in
                     guard completed else { return }
                     showOnboarding = false
-                    guard pendingPaywallAfterOnboarding else { return }
-                    pendingPaywallAfterOnboarding = false
-                    // onboarding sheet spring dismiss ≈ 350ms,留 600ms 余量保证完全消失再 present paywall
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 600_000_000)
-                        guard hasCompletedOnboarding else { return }  // 防用户中途又触发别的状态
-                        coordinator.showPaywall = true
-                    }
                 }
         }
         .modelContainer(modelContainer)

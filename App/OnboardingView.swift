@@ -9,7 +9,7 @@ private enum OnboardingStep: CaseIterable {
     case welcome
     case voicePermissions
     case actionButton
-    case proIntro
+    case proPaywall
     case completion
 }
 
@@ -24,15 +24,17 @@ private enum PermissionRequestType {
 struct OnboardingView: View {
     @ObservedObject var permissionManager: PermissionManager
     @Binding var hasCompletedOnboarding: Bool
-    /// 是否已订阅 Pro。true 时跳过 Pro 介绍页(老用户重装不应再被卖)。
-    var isPro: Bool = false
-    /// 用户点「开始 3 天免费试用」时调用 —— 调用方负责完成 onboarding + 弹 PaywallView。
-    /// 注意:此闭包**不负责**设 hasCompletedOnboarding(本 View 自己设),
-    /// 调用方只管 present paywall。
-    var onTryPro: () -> Void = {}
+    /// Onboarding 开始时的订阅状态快照。用户在 proPaywall 页订阅成功会翻转 entitlement.isPro,
+    /// 若 visibleSteps 跟着实时变化会导致步骤索引错位,故整个 onboarding 期间固定这份快照。
+    /// isPro=true 的老用户重装不应再被卖 → showsProStep=false → 跳过 proPaywall 步骤。
+    private let showsProStep: Bool
 
     // 无障碍：尊重「减弱动态效果」设置
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// EntitlementManager 通过 environmentObject 注入(VoiceTodoApp 的 sheet 显式传入)。
+    /// 监听 isPro 翻转,在 proPaywall 步骤订阅成功后自动前进到 completionStep。
+    @EnvironmentObject private var entitlement: EntitlementManager
 
     @State private var currentStepIndex = 0
     // 用 Set 而非单个值:两张权限卡可独立授权,各自 spinner 互不覆盖。
@@ -44,6 +46,16 @@ struct OnboardingView: View {
     @State private var illustrationScale: CGFloat = 0.8
     @State private var illustrationRotation: Double = -5
 
+    init(
+        permissionManager: PermissionManager,
+        hasCompletedOnboarding: Binding<Bool>,
+        entitlement: EntitlementManager
+    ) {
+        self.permissionManager = permissionManager
+        self._hasCompletedOnboarding = hasCompletedOnboarding
+        self.showsProStep = !entitlement.isPro
+    }
+
     // 使用 WarmTheme 统一配色
     private var inkColor: Color { WarmTheme.ink }
     private var paperColor: Color { WarmTheme.paperBackground }
@@ -51,14 +63,14 @@ struct OnboardingView: View {
     private var sketchColor: Color { WarmTheme.sketch }
 
     /// 当前设备实际要走的步骤序列。Action Button 步骤只在支持的机型上出现;
-    /// Pro 介绍页只对未付费用户出现。
+    /// Pro 付费墙步骤只对未付费用户出现(用 init 时的 isPro 快照,不实时跟随)。
     private var visibleSteps: [OnboardingStep] {
         OnboardingStep.allCases.filter { step in
             switch step {
             case .actionButton:
                 return ActionButtonCapability.isSupported
-            case .proIntro:
-                return !isPro
+            case .proPaywall:
+                return showsProStep
             default:
                 return true
             }
@@ -103,8 +115,8 @@ struct OnboardingView: View {
                                 voicePermissionsStep
                             case .actionButton:
                                 actionButtonGuideStep
-                            case .proIntro:
-                                proIntroductionStep
+                            case .proPaywall:
+                                proPaywallStep
                             case .completion:
                                 completionStep
                             }
@@ -116,7 +128,7 @@ struct OnboardingView: View {
 
                 // 底部按钮:
                 // - 权限合并页:用 Continue 替代 Next(授权后才亮)
-                // - Pro 介绍页:自带 CTA,不显示底部栏
+                // - Pro 付费墙:自带 CTA(PaywallContent 内) + 外层「以后再说」,不显示底部栏
                 if !shouldHideBottomBar {
                     bottomButtons
                 }
@@ -130,12 +142,18 @@ struct OnboardingView: View {
         .onChange(of: currentStepIndex) {
             animateContentIn()
         }
+        // 订阅成功(isPro 翻转)后自动前进到 completionStep。
+        // 用 currentStep == .proPaywall 守卫,避免 isPro 在其他步骤变化时误触。
+        .onChange(of: entitlement.isPro) { _, becamePro in
+            guard becamePro, currentStep == .proPaywall else { return }
+            nextStep()
+        }
         .accessibilityIdentifier("OnboardingView")
     }
 
-    /// Pro 介绍页自带 CTA,不渲染底部栏。
+    /// Pro 付费墙自带 CTA(PaywallContent 内)+ 外层「以后再说」,不渲染底部栏。
     private var shouldHideBottomBar: Bool {
-        currentStep == .proIntro
+        currentStep == .proPaywall
     }
 
     // MARK: - Paper Background
@@ -779,96 +797,29 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 5: Pro Introduction
+    // MARK: - Step 5: Pro Paywall
 
-    /// Pro 介绍页:在 completion 之前插一页,引导用户认知付费墙 + 3 天免费试用。
-    /// - isPro=true 时该页被 nextStep() 跳过(已付费不重复卖)
-    /// - 两个 CTA:主按钮「开始试用」→ onTryPro() + 完成 onboarding;
-    ///   次按钮「以后再说」→ 仅完成 onboarding
-    /// - 内容区自带 CTA,因此该页隐藏默认 bottomButtons
-    private var proIntroductionStep: some View {
-        VStack(spacing: 32) {
-            Spacer()
-                .frame(height: 30)
+    /// Pro 付费墙:onboarding 内嵌的真实订阅页。
+    /// 与 sheet 版 PaywallView 共用 PaywallContent —— 价格、试用资格判断、购买调用完全同源。
+    /// 「以后再说」始终可见,商品加载失败也一样:onboarding 绝不能被网络或 StoreKit 问题卡死。
+    ///
+    /// 视觉层级(B 点,详见 docs/onboarding-paywall-merge.md 3.3):
+    /// 商品卡 → CTA(PaywallContent 内) → legal → restore → 「以后再说」(本视图外层)。
+    /// 「以后再说」是小号灰色文字按钮,位置在最末,不抢 CTA 视觉位。
+    private var proPaywallStep: some View {
+        VStack(spacing: 16) {
+            PaywallContent(context: .onboarding)
 
-            // Pro 徽章插图
-            proBadgeIllustration
-                .scaleEffect(illustrationScale)
-                .rotationEffect(.degrees(illustrationRotation))
-                .animation(motionAnim(.spring(response: 0.6, dampingFraction: 0.7)), value: illustrationScale)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 12) {
-                Text(String(localized: "onboarding.pro.title"))
-                    .font(WarmFont.title(32))
-                    .foregroundColor(inkColor)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-
-                Text(String(localized: "onboarding.pro.subtitle"))
-                    .font(WarmFont.body(17))
+            Button {
+                nextStep()
+            } label: {
+                Text(String(localized: "onboarding.pro.cta.later"))
+                    .font(WarmFont.body(15))
                     .foregroundColor(sketchColor)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
+                    .padding(.vertical, 8)
             }
-            .offset(y: contentOffset)
-            .opacity(contentOpacity)
-
-            // 价值主张已迁移至 PaywallView(避免 Onboarding 与 Paywall 双屏重复展示)。
-            // 此处保留 CTA,作为通往 Paywall 的轻量引导。
-
-            // CTA 按钮组
-            VStack(spacing: 12) {
-                Button {
-                    onTryPro()
-                    hasCompletedOnboarding = true
-                } label: {
-                    Text(String(localized: "onboarding.pro.cta.trial"))
-                        .font(WarmFont.headline(17))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            Capsule()
-                                .fill(highlightColor)
-                                .shadow(color: highlightColor.opacity(0.3), radius: 8, y: 4)
-                        )
-                }
-                .accessibilityIdentifier("ProIntroTrialButton")
-
-                Button {
-                    hasCompletedOnboarding = true
-                } label: {
-                    Text(String(localized: "onboarding.pro.cta.later"))
-                        .font(WarmFont.body(15))
-                        .foregroundColor(sketchColor)
-                        .padding(.vertical, 8)
-                }
-                .accessibilityIdentifier("ProIntroLaterButton")
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-
-            Spacer()
+            .accessibilityIdentifier("ProIntroLaterButton")
         }
-    }
-
-    private var proBadgeIllustration: some View {
-        ZStack {
-            Circle()
-                .fill(highlightColor.opacity(0.12))
-                .frame(width: 100, height: 100)
-
-            Circle()
-                .fill(highlightColor)
-                .frame(width: 70, height: 70)
-
-            Text("✨")
-                .font(.system(size: 32))
-        }
-        .frame(height: 140)
     }
 
     // MARK: - Step 6: Completion
@@ -891,6 +842,16 @@ struct OnboardingView: View {
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+
+                // 已订阅用户额外显示感谢文案;未订阅则维持现状。
+                // 注意读实时 isPro 而非 showsProStep —— 后者是 init 快照,
+                // 用户在 proPaywall 步骤刚订阅成功时 isPro 已翻转但 showsProStep 仍为 true。
+                if entitlement.isPro {
+                    Text(String(localized: "onboarding.done.pro_thanks"))
+                        .font(WarmFont.body(15))
+                        .foregroundColor(highlightColor)
+                        .padding(.top, 4)
+                }
             }
             .offset(y: contentOffset)
             .opacity(contentOpacity)
@@ -1138,9 +1099,16 @@ struct OnboardingView: View {
     struct PreviewWrapper: View {
         @State var completed = false
         @StateObject var permissionManager = PermissionManager()
+        @StateObject var entitlement = EntitlementManager()
 
         var body: some View {
-            OnboardingView(permissionManager: permissionManager, hasCompletedOnboarding: $completed)
+            OnboardingView(
+                permissionManager: permissionManager,
+                hasCompletedOnboarding: $completed,
+                entitlement: entitlement
+            )
+            .environmentObject(entitlement)
+            .environmentObject(QuotaUsage())
         }
     }
 
