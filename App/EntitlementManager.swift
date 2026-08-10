@@ -11,8 +11,10 @@ import Combine
 @MainActor
 final class EntitlementManager: ObservableObject {
     /// App Store Connect 中的自动续费订阅产品 ID（月付 / 年付，同一订阅组）。
-    static let monthlyProductID = "com.voicetodo.pro.monthly"
-    static let yearlyProductID = "com.voicetodo.pro.yearly"
+    /// 前缀必须与 App bundle ID 一致（com.qingqingyu.voicetodo）—— App Store Connect 强制要求,
+    /// 新版 Xcode 本地 StoreKit Configuration 也会校验,不匹配会让商品加载返回空。
+    static let monthlyProductID = "com.qingqingyu.voicetodo.pro.monthly"
+    static let yearlyProductID = "com.qingqingyu.voicetodo.pro.yearly"
     static let productIDs: Set<String> = [monthlyProductID, yearlyProductID]
 
     @Published private(set) var isPro: Bool = false

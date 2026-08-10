@@ -26,7 +26,7 @@
           "displayPrice" : "12",
           "familySharable" : false,
           "subscriptionPeriod" : "P1M",
-          "id" : "com.voicetodo.pro.monthly",
+          "id" : "com.qingqingyu.voicetodo.pro.monthly",
           "introductoryOffer" : {
             "displayPrice" : "0",
             "internal" : false,
@@ -61,7 +61,7 @@
           "displayPrice" : "98",
           "familySharable" : false,
           "subscriptionPeriod" : "P1Y",
-          "id" : "com.voicetodo.pro.yearly",
+          "id" : "com.qingqingyu.voicetodo.pro.yearly",
           "introductoryOffer" : {
             "displayPrice" : "0",
             "internal" : false,
