@@ -83,6 +83,9 @@ struct ConfirmSheetView: View {
     /// 绕开"isPresented 已 true → true→true 不触发 onChange"的去重,
     /// 让连点不同卡片都能重置 dismiss 计时,后续触发的 toast 享完整 duration。
     @State private var streamingToastToken: Int = 0
+    /// 是否展开反馈 sheet。撞到烂 AI 输出当下,用户在 ConfirmSheet 就能反馈,
+    /// 比事后到 Settings 找反馈入口转化率高得多(plan.md D7 推荐 B)。
+    @State private var showFeedbackSheet: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -105,6 +108,15 @@ struct ConfirmSheetView: View {
         // spring 平滑流式期间高度变化,避免硬切跳动。
         .presentationDetents([.height(clampedSheetHeight), .large])
         .presentationDragIndicator(.visible)
+        .sheet(isPresented: $showFeedbackSheet) {
+            // ConfirmSheet 入口预填 type=aiOutput + 附 transcript/title 上下文,
+            // 让反馈直接关联到具体待办,无需用户额外描述。
+            FeedbackSheet(
+                prefillType: .aiOutput,
+                transcript: transcript,
+                extractedTodoTitle: todos.first?.title
+            )
+        }
         .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: contentHeight)
         // hintVisible 变化时同步驱动 sheet detent 高度变化,与 footer .easeOut(0.4) 淡出
@@ -148,6 +160,21 @@ struct ConfirmSheetView: View {
             .frame(maxWidth: .infinity, minHeight: WarmSize.touch, alignment: .leading)
             .contentShape(Rectangle())
             .accessibilityIdentifier("CancelButton")
+
+            // 反馈按钮(中间,minWidth):撞到烂 AI 输出当下入口。
+            // 对话气泡图标方向敏感,RTL 下需镜像。
+            Button {
+                showFeedbackSheet = true
+            } label: {
+                Image(systemName: "exclamationmark.bubble")
+                    .font(WarmFont.headline(15))
+                    .foregroundStyle(WarmTheme.textSecondary)
+                    .flipsForRightToLeftLayoutDirection(true)
+                    .frame(minWidth: WarmSize.touch, minHeight: WarmSize.touch)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ConfirmSheetFeedbackButton")
 
             Button(action: confirmAction) {
                 Text(String(localized: "confirm.add_count \(todos.count)"))

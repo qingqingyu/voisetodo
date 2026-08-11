@@ -55,6 +55,11 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
     /// 不再藏在 storageReadFailed("todo not found: ...") 字符串里。
     case todoNotFound(UUID)
 
+    // Feedback 模块
+    /// 反馈提交失败。detail 仅入日志(UI 走通用文案);客户端不应让用户重试
+    /// (反馈已进 Worker 端 D1 归档,补推由 Worker 端处理)。
+    case feedbackSubmitFailed(String)
+
     var errorDescription: String? {
         switch self {
         case .microphonePermissionDenied:
@@ -100,6 +105,8 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             // 用户层不应见到这条(改时间 popover 失败时调用方会 fallback 到通用 toast)。
             // 仍提供文案以备测试 / 调试。
             return ErrorMessages.storageError
+        case .feedbackSubmitFailed:
+            return ErrorMessages.feedbackFailed
         }
     }
 }

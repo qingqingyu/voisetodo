@@ -74,6 +74,11 @@ enum ErrorMessages {
         String(localized: "ui.pending_processed \(count)")
     }
 
+    // Feedback 相关
+    /// 反馈提交失败通用文案。worker.js 收到反馈后 Telegram 推送若失败,
+    /// 仍返 200(已落 D1),所以这条文案触发的频率应该不高(仅客户端 → Worker 这一段网络故障)。
+    static let feedbackFailed = String(localized: "error.feedback_failed")
+
     // Paywall / 订阅相关
     static let paywallPurchaseFailed = String(localized: "paywall.purchase_failed")
     /// 加载订阅方案失败(未发生购买,与 `paywallPurchaseFailed` 区分,避免误导用户)。
