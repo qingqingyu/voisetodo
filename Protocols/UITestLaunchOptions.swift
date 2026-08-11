@@ -7,6 +7,7 @@ struct UITestLaunchOptions {
     let forceOffline: Bool
     let micPermissionDenied: Bool
     let speechPermissionDenied: Bool
+    let calendarPermissionDenied: Bool
     let enableAccessibilityIdentifiers: Bool
     let scenario: String?
     let presetTodos: [TodoItemData]
@@ -21,6 +22,7 @@ struct UITestLaunchOptions {
         forceOffline = arguments.contains("--network-off")
         micPermissionDenied = arguments.contains("--mic-permission-denied")
         speechPermissionDenied = arguments.contains("--speech-permission-denied")
+        calendarPermissionDenied = arguments.contains("--calendar-permission-denied")
         enableAccessibilityIdentifiers = arguments.contains("--enable-accessibility-identifiers")
 
         scenario = arguments.first(where: { $0.hasPrefix("--scenario=") })

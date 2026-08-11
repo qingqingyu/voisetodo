@@ -16,7 +16,7 @@ final class PermissionManagerTests: XCTestCase {
 
         let manager = PermissionManager(
             uiTestOptions: UITestLaunchOptions(arguments: []),
-            permissionClient: VoicePermissionClient(
+            voicePermissionClient: VoicePermissionClient(
                 microphoneStatus: { probe.micStatus },
                 speechStatus: { probe.speechStatus },
                 requestMicrophone: { () async -> Bool in
@@ -45,7 +45,7 @@ final class PermissionManagerTests: XCTestCase {
 
         let manager = PermissionManager(
             uiTestOptions: UITestLaunchOptions(arguments: []),
-            permissionClient: VoicePermissionClient(
+            voicePermissionClient: VoicePermissionClient(
                 microphoneStatus: { probe.micStatus },
                 speechStatus: { probe.speechStatus },
                 requestMicrophone: { () async -> Bool in
@@ -75,7 +75,7 @@ final class PermissionManagerTests: XCTestCase {
 
         let manager = PermissionManager(
             uiTestOptions: UITestLaunchOptions(arguments: []),
-            permissionClient: VoicePermissionClient(
+            voicePermissionClient: VoicePermissionClient(
                 microphoneStatus: { probe.micStatus },
                 speechStatus: { probe.speechStatus },
                 requestMicrophone: { () async -> Bool in
@@ -100,7 +100,7 @@ final class PermissionManagerTests: XCTestCase {
     func testEnsureVoicePermissionsReturnsRequestableDeniedWhenUserDeclinesNewPrompt() async {
         let manager = PermissionManager(
             uiTestOptions: UITestLaunchOptions(arguments: []),
-            permissionClient: VoicePermissionClient(
+            voicePermissionClient: VoicePermissionClient(
                 microphoneStatus: { .undetermined },
                 speechStatus: { .authorized },
                 requestMicrophone: { () async -> Bool in false },

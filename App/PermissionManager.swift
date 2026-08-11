@@ -3,6 +3,7 @@ import UIKit
 import Combine
 import AVFoundation
 import Speech
+import EventKit
 
 enum VoicePermissionReadiness: Equatable {
     case granted
@@ -65,17 +66,73 @@ struct VoicePermissionClient {
     )
 }
 
+enum CalendarPermissionStatus {
+    case notDetermined
+    case denied
+    case granted
+}
+
+/// 日历权限的可注入 seam。与 `VoicePermissionClient` 对称 —— UI 测试必须能 mock,
+/// 否则会被系统权限弹窗挂死。
+struct CalendarPermissionClient {
+    var status: @MainActor () -> CalendarPermissionStatus
+    var requestAccess: @MainActor () async -> Bool
+
+    static let live: CalendarPermissionClient = {
+        // 用闭包捕获的 EKEventStore 复用实例,避免每次 requestAccess 新建(EventKit 内部状态更稳)。
+        // 注意:authorizationStatus(for: .event) 是静态方法,不依赖实例;这里复用纯粹为 requestAccess 调用。
+        // SystemCalendarWriter / SystemCalendarReader 各自持有独立 EKEventStore —— 这没问题,
+        // EKEventStore 的授权和操作跨实例一致。
+        let eventStore = EKEventStore()
+        return CalendarPermissionClient(
+            status: {
+                switch EKEventStore.authorizationStatus(for: .event) {
+                case .notDetermined:            return .notDetermined
+                // writeOnly 对写入场景已经够用,按 granted 处理。
+                // ⚠️ 不要往这里加 .authorized —— 它与 .fullAccess rawValue 相同
+                //   (都是 3),但 Swift 里是独立 case,同列不会编译失败只会触发
+                //   deprecated warning。iOS 17+ 的 authorizationStatus(for: .event) 永远
+                //   不返回 .authorized(已废弃),加上是死代码且制造混淆。
+                case .fullAccess, .writeOnly:   return .granted
+                case .denied, .restricted:      return .denied
+                @unknown default:               return .denied
+                }
+            },
+            requestAccess: {
+                // 必须是 requestFullAccessToEvents —— 与 SystemCalendarWriter.requestCalendarAccess()
+                // (SystemCalendarWriter.swift:174) 请求同一档权限,否则首次写日历时会二次弹窗。
+                //
+                // error 刻意降级为 granted=false(与 mic/speech 的 `async -> Bool` seam 对称):
+                // UI 只需知道「是否拿到权限」来决定回滚还是继续,error 已在 warning 级别留痕。
+                // SystemCalendarWriter 那边用 throws 是因为写入路径需要区分「权限被拒」和「系统故障」。
+                await withCheckedContinuation { continuation in
+                    eventStore.requestFullAccessToEvents { granted, error in
+                        if let error {
+                            VoiceTodoLog.calendar.warning("permissions.calendar.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public) granted=\(granted)")
+                        }
+                        continuation.resume(returning: granted)
+                    }
+                }
+            }
+        )
+    }()
+}
+
 /// 权限管理器 [v2 新增]
 /// 负责管理和请求麦克风、语音识别权限
 @MainActor
 final class PermissionManager: ObservableObject {
     private let uiTestOptions: UITestLaunchOptions
-    private let permissionClient: VoicePermissionClient
+    private let voicePermissionClient: VoicePermissionClient
+    private let calendarPermissionClient: CalendarPermissionClient
 
     // MARK: - Published Properties
 
     @Published var micGranted: Bool = false
     @Published var speechGranted: Bool = false
+    /// 日历写入权限。onboarding 日历同步开关打开时按需请求;拒绝后开关视觉回滚、
+    /// 持久化保持 `.appOnly` —— 不变量见 `OnboardingView.calendarSyncBinding` 文档。
+    @Published private(set) var calendarGranted: Bool = false
 
     /// 用户在 onboarding 权限页主动跳过(点了「Skip for now」)。
     /// 用于区分「未决定」(系统弹窗未触发)和「主动跳过」(看过说明但拒绝),
@@ -90,10 +147,12 @@ final class PermissionManager: ObservableObject {
 
     init(
         uiTestOptions: UITestLaunchOptions = .current,
-        permissionClient: VoicePermissionClient = .live
+        voicePermissionClient: VoicePermissionClient = .live,
+        calendarPermissionClient: CalendarPermissionClient = .live
     ) {
         self.uiTestOptions = uiTestOptions
-        self.permissionClient = permissionClient
+        self.voicePermissionClient = voicePermissionClient
+        self.calendarPermissionClient = calendarPermissionClient
         // 初始化时从 UserDefaults 读一次,避免重启后标志丢失导致重复弹引导。
         // 测试模式下不读 UserDefaults(UI 测试通过 launchArguments 注入状态)。
         if uiTestOptions.isUITesting {
@@ -111,13 +170,15 @@ final class PermissionManager: ObservableObject {
         if uiTestOptions.isUITesting {
             micGranted = !uiTestOptions.micPermissionDenied
             speechGranted = !uiTestOptions.speechPermissionDenied
-            VoiceTodoLog.app.info("permissions.status.ui_test micGranted=\(self.micGranted) speechGranted=\(self.speechGranted)")
+            calendarGranted = !uiTestOptions.calendarPermissionDenied
+            VoiceTodoLog.app.info("permissions.status.ui_test micGranted=\(self.micGranted) speechGranted=\(self.speechGranted) calendarGranted=\(self.calendarGranted)")
             return
         }
 
-        micGranted = (permissionClient.microphoneStatus() == .granted)
-        speechGranted = (permissionClient.speechStatus() == .authorized)
-        VoiceTodoLog.app.info("permissions.status micGranted=\(self.micGranted) speechGranted=\(self.speechGranted)")
+        micGranted = (voicePermissionClient.microphoneStatus() == .granted)
+        speechGranted = (voicePermissionClient.speechStatus() == .authorized)
+        calendarGranted = (calendarPermissionClient.status() == .granted)
+        VoiceTodoLog.app.info("permissions.status micGranted=\(self.micGranted) speechGranted=\(self.speechGranted) calendarGranted=\(self.calendarGranted)")
     }
 
     /// 开始录音前统一确认权限。notDetermined 会拉起系统授权；已拒绝或受限则要求去设置。
@@ -130,7 +191,7 @@ final class PermissionManager: ObservableObject {
             return allPermissionsGranted ? .granted : .settingsRequired
         }
 
-        switch permissionClient.microphoneStatus() {
+        switch voicePermissionClient.microphoneStatus() {
         case .granted:
             micGranted = true
             VoiceTodoLog.app.info("permissions.ensure.microphone already_granted=true")
@@ -144,7 +205,7 @@ final class PermissionManager: ObservableObject {
             return .settingsRequired
         }
 
-        switch permissionClient.speechStatus() {
+        switch voicePermissionClient.speechStatus() {
         case .authorized:
             speechGranted = true
             VoiceTodoLog.app.info("permissions.ensure.speech already_authorized=true")
@@ -177,7 +238,7 @@ final class PermissionManager: ObservableObject {
             return granted
         }
 
-        let granted = await permissionClient.requestMicrophone()
+        let granted = await voicePermissionClient.requestMicrophone()
         micGranted = granted
         VoiceTodoLog.app.info("permissions.request_microphone.result granted=\(granted)")
         if granted { clearSkippedInOnboarding() }
@@ -195,10 +256,28 @@ final class PermissionManager: ObservableObject {
             return granted
         }
 
-        let granted = await permissionClient.requestSpeech()
+        let granted = await voicePermissionClient.requestSpeech()
         speechGranted = granted
         VoiceTodoLog.app.info("permissions.request_speech.result granted=\(granted)")
         if granted { clearSkippedInOnboarding() }
+        return granted
+    }
+
+    /// 请求日历写入权限。onboarding 日历同步开关打开时调用。
+    /// 与 mic/speech 不同:日历权限不参与 onboarding 「跳过」语义,不调 clearSkippedInOnboarding。
+    /// 失败时由调用方(OnboardingView.calendarSyncBinding)负责视觉回滚 + 显示「去设置开启」。
+    @MainActor
+    func requestCalendarPermission() async -> Bool {
+        if uiTestOptions.isUITesting {
+            let granted = !uiTestOptions.calendarPermissionDenied
+            calendarGranted = granted
+            VoiceTodoLog.app.info("permissions.request_calendar.ui_test granted=\(granted)")
+            return granted
+        }
+
+        let granted = await calendarPermissionClient.requestAccess()
+        calendarGranted = granted
+        VoiceTodoLog.app.info("permissions.request_calendar.result granted=\(granted)")
         return granted
     }
 
@@ -257,7 +336,7 @@ final class PermissionManager: ObservableObject {
             return uiTestOptions.micPermissionDenied
         }
 
-        return permissionClient.microphoneStatus() == .denied
+        return voicePermissionClient.microphoneStatus() == .denied
     }
 
     /// 检查语音识别权限是否被永久拒绝
@@ -266,6 +345,15 @@ final class PermissionManager: ObservableObject {
             return uiTestOptions.speechPermissionDenied
         }
 
-        return permissionClient.speechStatus() == .denied
+        return voicePermissionClient.speechStatus() == .denied
+    }
+
+    /// 检查日历权限是否被永久拒绝(用户在系统设置里关掉,只能去系统设置开启)
+    var isCalendarPermanentlyDenied: Bool {
+        if uiTestOptions.isUITesting {
+            return uiTestOptions.calendarPermissionDenied
+        }
+
+        return calendarPermissionClient.status() == .denied
     }
 }
