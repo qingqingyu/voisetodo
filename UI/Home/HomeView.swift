@@ -736,14 +736,32 @@ struct HomeView<Store: HomeTodoStore>: View {
         return visibleMonthAnchor.formatted(.dateTime.year().month(.abbreviated))
     }
 
-    /// 当前浏览的月（周视图为周）是否就是今天所在的月/周。
-    /// 设计稿规则：只按月/周判断，不看选中的具体某天——停在本月就不渲染「回到今天」胶囊。
+    /// 当前浏览的时段是否就是今天所在的时段。
+    /// 折叠成周条时按「周」判断，展开成月网格时按「月」判断——
+    /// 两种形态下都不看选中的具体某天。判断逻辑见
+    /// `HomeCalendarState.isViewingCurrentPeriod`（纯函数，可单测）。
     private var isViewingCurrentPeriod: Bool {
-        calendar.isDate(
-            visibleMonthAnchor,
-            equalTo: Date(),
-            toGranularity: .month
+        HomeCalendarState.isViewingCurrentPeriod(
+            selectedDate: selectedDate,
+            visibleMonthAnchor: visibleMonthAnchor,
+            isWeekStrip: isWeekStripActive,
+            today: semanticToday,
+            calendar: calendar
         )
+    }
+
+    /// 「语义今天」的自然日 0 点：`startHour > 0` 时凌晨归前一用户日。
+    /// `selectedDate` 初值（见 @State 声明）/ `startEntranceAnimation` /
+    /// `jumpToToday` / `isViewingCurrentPeriod` 共用同一口径。
+    private var semanticToday: Date {
+        calendar.startOfDay(for: DayClock.startOfUserDay(for: Date(), calendar: calendar))
+    }
+
+    /// 日历区当前是否呈现为周条（而非整月网格）。
+    /// 0.5 阈值是本文件既有约定：命中层切换（月网格 / 周条 `allowsHitTesting`）
+    /// 与首次下拉引导的触发条件都用它。
+    private var isWeekStripActive: Bool {
+        selectedBottomTab == .calendar && collapseProgress > 0.5
     }
 
     /// 日历 tab 月份标题的共享样式（当前月 Text 与 `backToTodayTitleButton` 内的 Text 共用）。
@@ -782,7 +800,11 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("TodayMonthButton")
-        .accessibilityLabel(String(localized: "a11y.today_month"))
+        .accessibilityLabel(
+            isWeekStripActive
+                ? String(localized: "a11y.today_week")
+                : String(localized: "a11y.today_month")
+        )
     }
 
     private var todayWeekdayTitle: String {
@@ -1424,11 +1446,25 @@ struct HomeView<Store: HomeTodoStore>: View {
             )
             .accessibilityActions {
                 if selectedBottomTab == .calendar {
-                    Button(String(localized: "a11y.previous_month")) {
-                        shiftPeriod(by: -1)
-                    }
-                    Button(String(localized: "a11y.next_month")) {
-                        shiftPeriod(by: 1)
+                    if isWeekStripActive {
+                        Button(String(localized: "a11y.previous_week")) {
+                            shiftWeek(by: -1)
+                        }
+                        Button(String(localized: "a11y.next_week")) {
+                            shiftWeek(by: 1)
+                        }
+                        if !isViewingCurrentPeriod {
+                            Button(String(localized: "a11y.today_week")) {
+                                jumpToToday()
+                            }
+                        }
+                    } else {
+                        Button(String(localized: "a11y.previous_month")) {
+                            shiftPeriod(by: -1)
+                        }
+                        Button(String(localized: "a11y.next_month")) {
+                            shiftPeriod(by: 1)
+                        }
                     }
                 }
             }
@@ -2088,7 +2124,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         if !hasStartedEntranceAnimation {
             // 语义今天的自然日 0 点——口径与 @State selectedDate 初值一致。
             // startHour>0 时凌晨属于前一用户日，于是选中"昨天"，符合 DayClock 心智。
-            let today = calendar.startOfDay(for: DayClock.startOfUserDay(for: Date(), calendar: calendar))
+            let today = semanticToday
             selectedDate = today
             visibleMonthAnchor = today
             hasStartedEntranceAnimation = true
@@ -2142,7 +2178,7 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     private func jumpToToday() {
         // 语义今天的自然日 0 点——口径与 @State selectedDate 初值一致。
-        let today = calendar.startOfDay(for: DayClock.startOfUserDay(for: Date(), calendar: calendar))
+        let today = semanticToday
         withAnimation(WarmAnimation.springStandard) {
             selectedDate = today
             visibleMonthAnchor = today

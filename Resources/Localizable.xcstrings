@@ -477,6 +477,22 @@
         }
       }
     },
+    "a11y.next_week" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next week"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一周"
+          }
+        }
+      }
+    },
     "a11y.not_completed" : {
       "localizations" : {
         "en" : {
@@ -585,6 +601,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上个月"
+          }
+        }
+      }
+    },
+    "a11y.previous_week" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous week"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一周"
           }
         }
       }
@@ -718,6 +750,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "回到今天所在月份"
+          }
+        }
+      }
+    },
+    "a11y.today_week" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to this week"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到今天所在的周"
           }
         }
       }
