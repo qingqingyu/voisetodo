@@ -644,20 +644,13 @@ final class VoiceInputManager: VoiceInputProtocol {
     }
 
     /// `auto` 模式下的系统首选语言匹配。
+    /// 匹配规则统一由 `SpeechRecognitionLanguage.systemResolved` 持有——
+    /// onboarding 语言页要显示「auto 当前等于哪个语言」,两边必须同源,否则会漂出两套规则。
     private static func resolveSystemLocale() -> Locale {
-        let preferredLanguage = Locale.preferredLanguages.first ?? "en-US"
-
-        // 检查是否支持
-        for locale in VoiceConstants.supportedLocales {
-            if preferredLanguage.hasPrefix(locale.language.languageCode?.identifier ?? "") {
-                VoiceTodoLog.voice.info("locale.system preferred=\(preferredLanguage, privacy: .public) selected=\(locale.identifier, privacy: .public)")
-                return locale
-            }
-        }
-
-        // 非中文/英文系统回退到英文（国际通用）
-        VoiceTodoLog.voice.info("locale.fallback preferred=\(preferredLanguage, privacy: .public) selected=en-US")
-        return Locale(identifier: "en-US")
+        let resolved = SpeechRecognitionLanguage.systemResolved
+        let locale = resolved.fixedLocale ?? Locale(identifier: "en-US")
+        VoiceTodoLog.voice.info("locale.system preferred=\(Locale.preferredLanguages.first ?? "nil", privacy: .public) selected=\(locale.identifier, privacy: .public)")
+        return locale
     }
 
     /// 检查权限

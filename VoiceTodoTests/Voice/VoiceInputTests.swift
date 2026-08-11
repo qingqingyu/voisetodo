@@ -64,6 +64,28 @@ final class VoiceInputTests: XCTestCase {
         XCTAssertTrue(localeIdentifiers.contains("en-US"))
     }
 
+    /// 守住 §3.1/§3.2 的重构等价性:`SpeechRecognitionLanguage.systemResolved`
+    /// 永不返回 `.auto`、必落在 `supportedLocales` 内;非 auto case 集合与
+    /// `supportedLocales` 集合一一对应。
+    ///
+    /// 不加「顺序守护」(如 `allCases.last == .enUS`):前缀 "zh"/"ja"/"en"
+    /// 两两互不包含,遍历顺序对匹配无影响;而 allCases 顺序同时决定 Picker
+    /// 显示顺序,钉死会让纯 UI 调整撞在声称守护匹配规则的测试上。
+    func testSpeechRecognitionLanguageSystemResolvedInvariants() {
+        let resolved = SpeechRecognitionLanguage.systemResolved
+        XCTAssertNotEqual(resolved, .auto, "systemResolved 永不返回 .auto")
+        XCTAssertTrue(
+            VoiceConstants.supportedLocales.contains { $0.identifier == resolved.fixedLocale?.identifier },
+            "systemResolved 必落在 supportedLocales 内"
+        )
+
+        XCTAssertEqual(
+            Set(SpeechRecognitionLanguage.allCases.compactMap { $0.fixedLocale?.identifier }),
+            Set(VoiceConstants.supportedLocales.map(\.identifier)),
+            "非 auto case 集合必须与 supportedLocales 集合一一对应"
+        )
+    }
+
     func testRecognitionRequestUsesContextualStringsFromVocabularyProvider() async {
         let hints = (1...120).map { "Term\($0)" }
         let provider = StaticVocabularyProvider(hints: hints)

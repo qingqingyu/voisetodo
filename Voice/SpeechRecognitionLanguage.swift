@@ -42,4 +42,31 @@ enum SpeechRecognitionLanguage: String, CaseIterable, Identifiable {
 
     /// 持久化到 UserDefaults 的 key。
     static let storageKey = "speechRecognitionLanguage"
+
+    /// `.auto` 当前会解析到的具体语言。onboarding 用它把「跟随系统」展开成
+    /// 「跟随系统 · 中文」,让用户第一眼就知道 auto 意味着什么。
+    ///
+    /// 匹配规则与原 `VoiceInputManager.resolveSystemLocale()` 完全一致
+    /// (后者已改为调用此处):按 `Locale.preferredLanguages.first` 的 languageCode
+    /// 前缀依次匹配非 auto 的各 case,未命中回退 `.enUS`(非中日英系统走英文,国际通用)。
+    ///
+    /// 返回值永不为 `.auto`。
+    ///
+    /// 三个 languageCode 前缀 `"zh"` / `"ja"` / `"en"` 两两互不包含,任一
+    /// `preferredLanguages.first` 最多命中其一,遍历顺序不影响结果。
+    /// `allCases` 的顺序只决定 Picker 的显示顺序,可以自由调整。
+    ///
+    /// 繁中 / 粤语的已知限制(原逻辑既有,本次不修):`"zh-Hant-TW"` 和 `"zh-HK"`
+    /// 都 `hasPrefix("zh")`,会落到 `.zhHans`。繁中普通话用户影响有限(识别引擎
+    /// 都是普通话,只是输出简体字形),粤语用户会被塞进普通话识别器。MVP 不支持
+    /// 繁中/粤语,接受现状。后续若要支持,匹配规则需细化到 `languageCode + script`
+    /// (区分 `zh-Hans` / `zh-Hant`),而不是只比 `zh` 前缀。
+    static var systemResolved: SpeechRecognitionLanguage {
+        let preferredLanguage = Locale.preferredLanguages.first ?? "en-US"
+        for candidate in allCases where candidate != .auto {
+            guard let code = candidate.fixedLocale?.language.languageCode?.identifier else { continue }
+            if preferredLanguage.hasPrefix(code) { return candidate }
+        }
+        return .enUS
+    }
 }
