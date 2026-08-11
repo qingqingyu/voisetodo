@@ -125,9 +125,21 @@ static var systemResolved: SpeechRecognitionLanguage {
 }
 ```
 
-注意：`allCases` 中非 `auto` 的顺序是 `.zhHans / .jaJP / .enUS`（第 15-19 行），
-与 `Voice/VoiceConstants.swift:27-31` 的 `supportedLocales` 同序同内容——
-这是重构等价的前提，**不要改动枚举 case 的声明顺序**。
+注意：`allCases` 中非 `auto` 的 case 必须与 `Voice/VoiceConstants.swift:27-31` 的
+`supportedLocales` **保持集合一一对应**（当前都是 `zh-Hans / ja-JP / en-US`）。
+两边任一侧单方面增删，auto 匹配和 Picker 选项就会漂出两套语言集——
+§3.9 的测试守护的正是这条。
+
+**顺序无关，不用管**：三个 languageCode 前缀 `"zh"` / `"ja"` / `"en"` 两两互不包含，
+任一 `preferredLanguages.first` 最多命中其中一个，遍历顺序不影响结果。
+`allCases` 的顺序只决定 Picker 的显示顺序，可以自由调整。
+
+**繁中 / 粤语的已知限制（原逻辑既有，本次不修）**：`"zh-Hant-TW"` 和 `"zh-HK"`
+都 `hasPrefix("zh")`，会落到 `.zhHans`。繁中普通话用户影响有限（识别引擎都是普通话，
+只是输出简体字形），粤语用户会被塞进普通话识别器。MVP 不支持繁中/粤语，接受现状。
+**请把这段作为注释写进 `systemResolved` 的文档注释里**——下次有人排查
+「为什么繁中用户被识别成简体」时能直接看到答案。后续若要支持，匹配规则需细化到
+`languageCode + script`（区分 `zh-Hans` / `zh-Hant`），而不是只比 `zh` 前缀。
 
 ### 3.2 `Voice/VoiceInputManager.swift:647-661` — 改为委托
 
@@ -170,7 +182,9 @@ struct CalendarPermissionClient {
             status: {
                 switch EKEventStore.authorizationStatus(for: .event) {
                 case .notDetermined:            return .notDetermined
-                // writeOnly 对写入场景已经够用，按 granted 处理
+                // writeOnly 对写入场景已经够用，按 granted 处理。
+                // ⚠️ 不要往这里加 .authorized —— 它是 .fullAccess 的废弃别名，
+                // rawValue 相同，一起列会 duplicate case 直接编译失败。
                 case .fullAccess, .writeOnly:   return .granted
                 case .denied, .restricted:      return .denied
                 @unknown default:               return .denied
@@ -204,6 +218,13 @@ var isCalendarPermanentlyDenied: Bool { ... }            // 同 isMicPermanently
 
 并在 `checkCurrentStatus()`（:110-121）里一并刷新 `calendarGranted`。
 `init` 需要多接一个 `calendarPermissionClient: CalendarPermissionClient = .live` 参数。
+
+**顺手把旧参数改名**：现有的 `permissionClient: VoicePermissionClient`（:73 声明、
+:93 init 参数、:96 赋值，以及 :118/:119/:133/:147/:180/:198/:260/:269 的调用）
+改为 `voicePermissionClient`——加了日历客户端之后，一个带 voice 语义、一个不带，
+读起来会持续困惑。引用面很浅：`PermissionManager.swift` 内 9 处 +
+`VoiceTodoTests/App/PermissionManagerTests.swift` 的 4 处带标签 init 调用
+（:19 / :48 / :78 / :103）。一次改干净。
 
 > ⚠️ **`allPermissionsGranted`（:250-252）保持 `micGranted && speechGranted` 不变。**
 > 它是语音权限页 Continue 按钮的开关（`OnboardingView.swift:1022-1023`），
@@ -291,8 +312,26 @@ Spacer().frame(height: 30)
 @AppStorage(CalendarWriteMode.storageKey)
 private var calendarWriteModeRaw: String = CalendarWriteMode.appOnly.rawValue
 
+/// Toggle 的视觉状态，与持久化状态刻意分开。
+///
+/// 不直接绑 @AppStorage：授权是异步的，setter 里不立刻改 getter 读的值，
+/// SwiftUI 重绘时开关会先弹回 off、拿到授权后再跳回 on，用户能直接看到抖动。
+///
+/// 也不能「乐观地先写 @AppStorage 再失败回滚」：系统弹窗期间 App 若被杀
+/// （用户上划、系统回收），持久化的值会停在 .appAndSystemCalendar 而权限从未拿到——
+/// 正是 §1.4 那个「开着但不工作」的状态换条路径重现。
+///
+/// 不变量：**持久化为 .appAndSystemCalendar ⟹ 权限确实拿到过。**
+@State private var calendarSyncOn = false
+
 @State private var isRequestingCalendarPermission = false
 @State private var showCalendarDeniedNote = false
+```
+
+step 的 `.onAppear` 里做一次初始化（重装用户可能已是开启状态）：
+
+```swift
+calendarSyncOn = (calendarWriteModeRaw == CalendarWriteMode.appAndSystemCalendar.rawValue)
 ```
 
 主体是一张卡（chrome 同 3.5.2），卡内一个 `Toggle`，`isOn` 用自定义 Binding：
@@ -300,8 +339,9 @@ private var calendarWriteModeRaw: String = CalendarWriteMode.appOnly.rawValue
 ```swift
 private var calendarSyncBinding: Binding<Bool> {
     Binding(
-        get: { calendarWriteModeRaw == CalendarWriteMode.appAndSystemCalendar.rawValue },
+        get: { calendarSyncOn },
         set: { wantsOn in
+            calendarSyncOn = wantsOn          // 视觉立即跟手，不弹回
             guard wantsOn else {
                 calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
                 showCalendarDeniedNote = false
@@ -319,8 +359,8 @@ private var calendarSyncBinding: Binding<Bool> {
                 if granted {
                     calendarWriteModeRaw = CalendarWriteMode.appAndSystemCalendar.rawValue
                 } else {
-                    // 保持 .appOnly —— 开关自然回弹到关，不出现「开着但不工作」的状态
-                    calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+                    // 只回滚视觉；calendarWriteModeRaw 全程没被写过，不存在写脏的窗口
+                    calendarSyncOn = false
                     showCalendarDeniedNote = true
                 }
             }
@@ -333,6 +373,8 @@ private var calendarSyncBinding: Binding<Bool> {
 
 - `isRequestingCalendarPermission` 期间给 `Toggle` 加 `.disabled(true)`，
   避免系统弹窗出现前的几百毫秒里被反复切换。
+- 失败回滚那次 `calendarSyncOn = false` 包一层 `withAnimation`，让开关滑回去
+  而不是硬跳。
 - `showCalendarDeniedNote` 为真时，在卡片下方渲染拒绝提示——
   **复用 `permissionActionArea` 的 denied 分支样式**（:591-618）：
   `onboarding.calendar.denied` 说明文字 + `onboarding.open_settings` 胶囊按钮调
@@ -404,10 +446,20 @@ while !laterButton.exists && attempts < 3 {   // :443-449
 }
 ```
 
-新流程从权限页到付费墙恰好需要 4 次点击（语言 → 日历 → Action Button → 付费墙），
-**刚好用满 1 + 3、毫无余量**。改法：
+点击次数构成（改后，从权限页数起）：
 
-- 把上限提到 `attempts < 6`。
+| 机型 | 路径 | 总点击 | 第 440 行占 1 次后，循环还需 |
+|---|---|---|---|
+| 无 Action Button | 权限页 → 语言页 → 日历页 → 付费墙 | 3 | **2** |
+| 有 Action Button | 权限页 → 语言页 → 日历页 → AB 页 → 付费墙 | 4 | **3** |
+
+现有的 `attempts < 3` 恰好等于有 AB 机型的需求量——**零余量**，动画时序稍有抖动
+就会红。（注意别把第 440 行那次当成额外的一次：它就是上表 3-4 次里的第一次。）
+
+改法：
+
+- 把上限提到 `attempts < 6`，留 3 次余量。**把上表的次数构成写进注释**，
+  下次再插步骤的人才知道 6 是怎么来的、还剩多少额度。
 - 在循环之前显式断言两个新步骤依次出现
   （`OnboardingSpeechLanguageStep` → 点下一步 → `OnboardingCalendarSyncStep`），
   让失败信息直接指向具体哪一步，而不是笼统的「付费墙没出现」。
@@ -426,15 +478,28 @@ while !laterButton.exists && attempts < 3 {   // :443-449
 
 ### 3.9 `VoiceTodoTests/Voice/VoiceInputTests.swift` — 守住 3.1/3.2 的重构等价性
 
-现有 :62-64 已断言 `VoiceConstants.supportedLocales`。补一条：
+现有 :62-64 已断言 `VoiceConstants.supportedLocales`。补两条：
 
 ```swift
-// systemResolved 永不返回 auto，且必落在受支持的 locale 内 ——
-// 守住 resolveSystemLocale() 委托重构后的行为等价。
+// ① systemResolved 永不返回 auto，且必落在受支持的 locale 内 ——
+//    守住 resolveSystemLocale() 委托重构后的行为等价。
 let resolved = SpeechRecognitionLanguage.systemResolved
 XCTAssertNotEqual(resolved, .auto)
 XCTAssertTrue(VoiceConstants.supportedLocales.contains { $0.identifier == resolved.fixedLocale?.identifier })
+
+// ② 非 auto 的 case 必须与 supportedLocales 集合一一对应。
+//    两边任一侧单方面增删（比如加了 .koKR 却忘了 supportedLocales），
+//    auto 匹配和 Picker 选项就会漂出两套语言集 —— 这是真正的漂移风险。
+XCTAssertEqual(
+    Set(SpeechRecognitionLanguage.allCases.compactMap { $0.fixedLocale?.identifier }),
+    Set(VoiceConstants.supportedLocales.map(\.identifier))
+)
 ```
+
+> **不要加「顺序守护」断言**（如 `allCases.last == .enUS`）。前缀 `"zh"` / `"ja"` / `"en"`
+> 两两互不包含，遍历顺序对匹配结果没有影响；而 `allCases` 的顺序同时决定设置页和
+> 引导页 Picker 的**显示顺序**。钉死它会让「把 English 挪到前面」这类纯 UI 调整
+> 撞在一个声称守护匹配规则的测试上——测试钉错了对象。
 
 ---
 
@@ -443,14 +508,15 @@ XCTAssertTrue(VoiceConstants.supportedLocales.contains { $0.identifier == resolv
 | 文件 | 改动 |
 |---|---|
 | `App/OnboardingView.swift` | 枚举 +2 case、switch +2 分支、两个 step view、`languageOptionRow` builder、scenePhase 刷新 |
-| `App/PermissionManager.swift` | `CalendarPermissionClient` + 日历权限状态 / 请求 / 永久拒绝判断 |
+| `App/PermissionManager.swift` | `CalendarPermissionClient` + 日历权限状态 / 请求 / 永久拒绝判断；`permissionClient` → `voicePermissionClient` |
 | `Voice/SpeechRecognitionLanguage.swift` | `static var systemResolved` |
 | `Voice/VoiceInputManager.swift` | `resolveSystemLocale()` 改为委托（保留日志字段） |
 | `Protocols/UITestLaunchOptions.swift` | `--calendar-permission-denied` |
 | `Resources/Localizable.xcstrings` | 新增 10 个 key（en + zh-Hans） |
 | `VoiceTodoUITests/ScenarioTests.swift` | 修 S12 容错 + 新增 S14 |
 | `VoiceTodoUITests/AppLaunchHelper.swift` | `launchWithCalendarPermissionDenied()` |
-| `VoiceTodoTests/Voice/VoiceInputTests.swift` | `systemResolved` 断言 |
+| `VoiceTodoTests/Voice/VoiceInputTests.swift` | `systemResolved` + 语言集合相等断言 |
+| `VoiceTodoTests/App/PermissionManagerTests.swift` | 跟随 `voicePermissionClient` 改名（4 处 init 调用） |
 
 **明确不改**：
 
@@ -526,103 +592,105 @@ XCTAssertTrue(VoiceConstants.supportedLocales.contains { $0.identifier == resolv
   设置页与引导页共享同一份真相。
 - **UI 测试路径绝不能触发真的 EventKit 授权**，否则测试会被系统弹窗永久挂起。
   `PermissionManager` 的 `isUITesting` 分支要在**调用 client 之前**短路。
+- **日历开关的视觉状态和持久化状态必须分开**（§3.5.3）。既不能直接绑
+  `@AppStorage`（开关会抖），也不能乐观地先写 `@AppStorage` 再回滚
+  （弹窗期间 App 被杀会留下「开着但没权限」的脏值）。
+- **`EKAuthorizationStatus` 的 switch 里不要写 `.authorized`**，它是 `.fullAccess`
+  的废弃别名，rawValue 相同，一起列会 duplicate case 编译失败。
 
 ---
 
-## 7. 实施前需确认的开放问题
+## 7. 评审意见与处置记录
 
-以下 5 点在本方案起草时识别但未完全解决,实施前需逐一确认。
+第一轮评审提了 5 条。**结论已全部合并进 §1–§6，实施时按正文执行即可**，
+本节只保留处置理由，供后续接手者理解「为什么是这样」，不必再单独执行一遍。
 
-### 7.1 P1 — §3.5.3 Toggle setter 时序反模式(必须修)
+| # | 评审意见 | 处置 | 已合并到 |
+|---|---|---|---|
+| 7.1 | Toggle setter 时序会导致开关抖动 | **认问题，换修法** | §3.5.3、§6 |
+| 7.2 | 补 `allCases` 顺序守护测试 | **不采纳**，改为集合相等测试 | §3.1、§3.9 |
+| 7.3 | 繁中系统落到 `.zhHans` | **采纳**，标注为已知限制 | §3.1 |
+| 7.4 | `permissionClient` 命名不对称 | **采纳**，一并改名 | §3.3、§4 |
+| 7.5 | `attempts < 6` 缺论证 | **采纳**，但原文数字算错，已修正 | §3.8 |
+| 7.6 | （新）`.authorized` 是 `.fullAccess` 废弃别名 | 两轮都漏了，补上 | §3.3、§6 |
 
-§3.5.3 的 `calendarSyncBinding` setter 时序:
+---
 
-1. 用户拨 Toggle 到 on → setter 被调用,`wantsOn=true`
-2. setter 进 `Task` 异步分支,**但 raw 值没改**(还是 `appOnly`)
-3. SwiftUI 重读 getter → `calendarWriteModeRaw` 仍是 `appOnly` → 返回 `false`
-4. Toggle 视觉**立即弹回 off**
-5. 几百毫秒后授权成功 → 改 raw → Toggle 变 on
+### 7.1 Toggle 时序：问题成立，但「乐观更新」是错误的修法
 
-用户感知:「拨到 on → 弹回 off → 又变 on」,体验突兀。这是 iOS 设置类 Toggle 的反模式。
+**问题描述是对的**：自定义 `Binding` 的 setter 里不改 getter 读的值，
+SwiftUI 重绘时 Toggle 会先弹回 off、拿到授权后再跳回 on，用户能直接看到抖动。
+原方案（§3.5.3 初版）确实有这个疏漏。
 
-**实施约束**:改成「乐观更新 + 失败回滚」:
+**但评审提的「乐观更新 + 失败回滚」不能用**：它把 `.appAndSystemCalendar`
+写进了 UserDefaults，而权限还没拿到。系统弹窗期间 App 若被杀（用户上划、系统回收），
+持久化的值就停在「开着」而权限从未给过——**正是 §1.4 说「不能重蹈覆辙」的
+那个「开着但不工作」状态，只是换了条路径产生**。
 
-```swift
-set: { wantsOn in
-    guard wantsOn else {
-        calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
-        showCalendarDeniedNote = false
-        return
-    }
-    // 乐观更新:Toggle 立即显示 on,失败再回滚
-    calendarWriteModeRaw = CalendarWriteMode.appAndSystemCalendar.rawValue
-    if permissionManager.calendarGranted { return }
-    isRequestingCalendarPermission = true
-    Task {
-        let granted = await permissionManager.requestCalendarPermission()
-        isRequestingCalendarPermission = false
-        if !granted {
-            calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue  // 回滚
-            showCalendarDeniedNote = true
-        }
-    }
-}
-```
+正确的做法是让**视觉状态和持久化状态分开**：Toggle 绑本地 `@State`，
+`@AppStorage` 只在授权成功后才写。失败路径的视觉表现与「乐观更新」完全一样，
+但没有写脏持久化的窗口。不变量：**持久化为 `.appAndSystemCalendar` ⟹ 权限确实拿到过。**
 
-回滚路径里 `showCalendarDeniedNote = true` 跟原方案语义一致(拒绝 → 显「去设置开启」),只是 Toggle 视觉走「先 on,失败再弹回」而不是「先弹回,成功再变 on」。
+→ 代码见 §3.5.3。
 
-### 7.2 P2 — §3.9 测试不守护「匹配规则等价」(应补)
+### 7.2 顺序守护测试：前提不成立，不加
 
-§3.1 把「匹配规则与原 `resolveSystemLocale()` 完全一致」作为重构等价的前提,但 §3.9 补的测试只守护两条不变量(`systemResolved ≠ .auto` + 返回值在 `supportedLocales` 内),**不守护优先级顺序**。
+评审称「改了 `allCases` 顺序，中文/中英混说系统的匹配会变」。**这个推断是错的。**
 
-如果未来有人改了 `allCases` 顺序(比如把 `.enUS` 提到第一),中文/中英混说系统的匹配会变,§3.9 测试不会失败 —— 重构等价的前提静默失效。
+三个 case 的 languageCode 是 `"zh"` / `"ja"` / `"en"`，两两之间谁也不是谁的前缀。
+对任意 `Locale.preferredLanguages.first`，`hasPrefix` 最多命中一个——命中哪个与
+遍历顺序无关。把 `.enUS` 提到第一位，`"zh-Hans-CN"` 仍然只会匹配到 `.zhHans`。
+**顺序在当前语言集下可证明无关。**
 
-**实施约束**:在 §3.9 补隐式顺序守护:
+而且评审提议的 `allCases.last == .enUS` 会把枚举顺序钉死，
+而这个顺序同时决定**设置页和引导页 Picker 的显示顺序**。将来想把 English
+挪到前面这种纯 UI 调整，会撞在一个声称守护「匹配规则」的测试上——测试钉错了对象。
+（另：那段代码里的 `XCTEqual` 不是 XCTest 的 API，照抄会编译失败。）
 
-```swift
-// CaseIterable 顺序决定 systemResolved 的匹配优先级。
-// 改顺序会让中英混说系统的解析结果变化 —— 这是 §3.1 等价重构的隐含约束。
-XCTEqual(SpeechRecognitionLanguage.allCases.first { $0 != .auto }, .zhHans)
-XCTEqual(SpeechRecognitionLanguage.allCases.last, .enUS)
-```
+**真正值得守护的是集合相等**：非 `auto` 的 case 集合必须等于
+`VoiceConstants.supportedLocales`。有人给枚举加了 `.koKR` 却忘了同步
+`supportedLocales`（或反过来），auto 匹配和 Picker 就会各说各话——这才是真实的漂移风险。
 
-### 7.3 P2 — 繁中系统匹配到 `.zhHans`(既有 bug,标注为已知限制)
+→ 测试见 §3.9 的 ②。
 
-`"zh-Hant-TW".hasPrefix("zh")` = true → 返回 `.zhHans`(简体)。**原逻辑就有这个行为**,本方案作为等价重构没引入新问题,但应在文档里标注,避免下次有人排查「为什么繁中用户被识别成简体」时走弯路。
+**连带修正**：§3.1 初版写的「不要改动枚举 case 的声明顺序」是过度约束，
+评审是顺着这句错误推下去的。该句已改为「集合一一对应，顺序无关」。
 
-**实施约束**:MVP 不支持繁中,接受现状。后续若加繁中支持,匹配规则要细化(用 `languageCode + script` 区分 `zh-Hans` / `zh-Hant`,而不是仅 prefix `zh`)。本次实施保持原匹配逻辑。
+### 7.3 繁中 / 粤语落到 `.zhHans`：采纳，标注为已知限制
 
-### 7.4 P3 — `permissionClient` vs `calendarPermissionClient` 命名不对称
+`"zh-Hant-TW".hasPrefix("zh")` 为 true，确实落到 `.zhHans`。原逻辑就是这样，
+§3.2 的委托重构没引入新问题。
 
-§3.3 加 `CalendarPermissionClient` 后,旧的 `permissionClient: VoicePermissionClient` 跟新命名不对称 —— 一个有 voice 前缀语义、一个没有。不是 bug,但读起来不一致。
+补一点评审没提的边界：受影响最明显的其实不是繁中普通话用户（识别引擎都是普通话，
+只是输出简体字形），而是**粤语用户**——`zh-HK` 同样命中 `zh` 前缀，
+会被塞进普通话识别器。
 
-**实施约束**:可选。要修就一起改:`permissionClient` → `voicePermissionClient`,并更新所有引用点(`init` 参数、`checkCurrentStatus` / `ensureVoicePermissionsBeforeRecording` / `requestMicPermission` / `requestSpeechPermission` 内的 `permissionClient.xxx` 调用)。不修不影响功能,但会让后续读者困惑一次。
+→ 已写入 §3.1，要求作为注释落到 `systemResolved` 的文档注释里。
 
-### 7.5 P3 — §3.8 `attempts < 6` 缺论证
+### 7.4 `permissionClient` 改名：采纳
 
-§3.8 说「上限提到 6」但没列实际需要几次点击,实施者无法判断 6 是不是真的够。
+引用面很浅：`App/PermissionManager.swift` 内 9 处（:73 声明、:93 init 参数、
+:96 赋值，以及 :118/:119/:133/:147/:180/:198/:260/:269 的调用）+
+`VoiceTodoTests/App/PermissionManagerTests.swift` 的 4 处带标签 init 调用
+（:19 / :48 / :78 / :103）。一次改干净比留个永久 papercut 划算。
 
-**实施约束**:在 §3.8 的注释里显式列出点击次数构成:
+→ 已写入 §3.3，`VoiceTodoTests/App/PermissionManagerTests.swift` 已补进 §4 文件表。
 
-- 不支持 Action Button 的设备:`权限页→语言页→日历页→付费墙` = 3 次点击
-- 支持 Action Button:`权限页→语言页→日历页→AB页→付费墙` = 4 次点击
-- 加上 S12 现有的「先点一次」(`ScenarioTests.swift:440`)共 4 或 5 次
-- `attempts < 6` 给 6 次循环,2 次余量应对动画时序抖动
+### 7.5 点击次数论证：采纳，但评审的数字算错了
 
-### 7.6 小结
+要求补论证是对的。但评审列的「加上 S12 现有的『先点一次』共 4 或 5 次」
+把同一次点击数了两遍——`ScenarioTests.swift:440` 那次点击**就是**
+3-4 次总量里的第一次，不是额外一次。
 
-5 个开放问题归为 3 类:
+正确构成：无 AB 机型 3 次、有 AB 机型 4 次；第 440 行占 1 次，
+循环还需 2 次或 3 次。现有 `attempts < 3` 恰好等于有 AB 机型的需求量，零余量。
 
-| 类别 | 涉及 | 共同主题 |
-|---|---|---|
-| UX 时序 | §7.1 | Toggle 异步 setter 必须乐观更新,否则视觉抖动会被用户直接感知 |
-| 测试守护 | §7.2、§7.3 | 「等价重构」的隐含约束(顺序、边界输入)必须转化为可执行测试,否则未来会静默失效 |
-| 表达精度 | §7.4、§7.5 | 命名不对称、魔法数字缺注释 —— 不影响功能,但影响下一次接手者的判断速度 |
+→ 修正后的次数表见 §3.8，并要求把它写进测试注释。
 
-实施前的最小 checklist:
+### 7.6 `.authorized` 是 `.fullAccess` 的废弃别名（两轮评审都漏了）
 
-1. **§3.5.3 Toggle setter 改乐观更新 + 失败回滚**(覆盖 §7.1)—— 上线前必修
-2. **§3.9 补 CaseIterable 顺序守护测试**(覆盖 §7.2)—— 上线前必修
-3. **§3.1 注释里标注「繁中系统会落到简中,MVP 已知限制」**(覆盖 §7.3)
-4. **§3.3 视精力同步改名 `voicePermissionClient`,或显式注明「保持现状,有意不对称」**(覆盖 §7.4)
-5. **§3.8 注释里列出点击次数构成**(覆盖 §7.5)
+`EKAuthorizationStatus.authorized` 与 `.fullAccess` rawValue 相同，
+在同一个 `switch` 里一起列会 duplicate case 直接编译失败。
+实施者看到 `.authorized` 出现在补全列表里很容易顺手加上。
+
+→ 已写入 §3.3 的代码注释与 §6。
