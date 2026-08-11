@@ -40,107 +40,21 @@ struct FeedbackSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker(String(localized: "feedback.type.label"), selection: $type) {
-                        ForEach(FeedbackType.allCases, id: \.self) { t in
-                            Text(t.displayText).tag(t)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accessibilityIdentifier("FeedbackTypePicker")
-                }
-
-                Section {
-                    TextEditor(text: $description)
-                        .frame(minHeight: 120)
-                        .accessibilityIdentifier("FeedbackDescriptionEditor")
-                        .overlay(alignment: .topLeading) {
-                            if description.isEmpty {
-                                Text(String(localized: "feedback.description.placeholder"))
-                                    .foregroundStyle(.secondary)
-                                    .font(.body)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 4)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                } header: {
-                    Text(String(localized: "feedback.description.title"))
-                }
-
-                Section {
-                    PhotosPicker(
-                        selection: $screenshotItem,
-                        matching: .images,
-                        photoLibrary: .shared()
-                    ) {
-                        Label(String(localized: "feedback.screenshot.pick"), systemImage: "photo.on.rectangle")
-                    }
-                    .accessibilityIdentifier("FeedbackScreenshotPicker")
-
-                    if let screenshotImage {
-                        Image(uiImage: screenshotImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                        Button(role: .destructive) {
-                            screenshotItem = nil
-                            screenshotImage = nil
-                            screenshotData = nil
-                        } label: {
-                            Text(String(localized: "feedback.screenshot.remove"))
-                        }
-                        .accessibilityIdentifier("FeedbackScreenshotRemoveButton")
-                    }
-
-                    // 截图加载失败的内联提示(独立于提交 alert)。
-                    // loadFailed 文案明确,不与"发送失败"标题混淆。
-                    if let screenshotError {
-                        Text(screenshotError)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.85)
-                    }
-                } header: {
-                    Text(String(localized: "feedback.screenshot.title"))
-                } footer: {
-                    Text(String(localized: "feedback.screenshot.footer"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
+                typePickerSection
+                descriptionEditorSection
+                screenshotSection
                 if transcript != nil || extractedTodoTitle != nil {
-                    Section {
-                        Text(String(localized: "feedback.context.include"))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                    contextIncludedSection
                 }
             }
             .navigationTitle(String(localized: "feedback.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "feedback.cancel")) {
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("FeedbackCancelButton")
+                    cancelButton
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(action: submit) {
-                        if isSubmitting {
-                            ProgressView()
-                        } else {
-                            Text(String(localized: "feedback.submit"))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                    }
-                    .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
-                    .accessibilityIdentifier("FeedbackSubmitButton")
+                    submitButton
                 }
             }
             .alert(
@@ -162,6 +76,131 @@ struct FeedbackSheet: View {
             .onChange(of: didSubmit) { _, submitted in
                 if submitted { dismiss() }
             }
+        }
+    }
+
+    // MARK: - Subviews
+
+    // body 内 SwiftUI 闭包链过长会触发 "the compiler is unable to type-check this expression
+    // in reasonable time"。每个 Section / Button 抽成独立 @ViewBuilder 计算属性,让编译器分块处理。
+
+    @ViewBuilder
+    private var typePickerSection: some View {
+        Section {
+            Picker(String(localized: "feedback.type.label"), selection: $type) {
+                ForEach(FeedbackType.allCases, id: \.self) { t in
+                    Text(t.displayText).tag(t)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("FeedbackTypePicker")
+        }
+    }
+
+    @ViewBuilder
+    private var descriptionEditorSection: some View {
+        Section {
+            TextEditor(text: $description)
+                .frame(minHeight: 120)
+                .accessibilityIdentifier("FeedbackDescriptionEditor")
+                .overlay(alignment: .topLeading) {
+                    descriptionPlaceholder
+                }
+        } header: {
+            Text(String(localized: "feedback.description.title"))
+        }
+    }
+
+    @ViewBuilder
+    private var screenshotSection: some View {
+        Section {
+            PhotosPicker(
+                selection: $screenshotItem,
+                matching: .images,
+                photoLibrary: .shared()
+            ) {
+                Label(String(localized: "feedback.screenshot.pick"), systemImage: "photo.on.rectangle")
+            }
+            .accessibilityIdentifier("FeedbackScreenshotPicker")
+
+            if let screenshotImage {
+                Image(uiImage: screenshotImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Button(role: .destructive) {
+                    // 显式 self.:if let screenshotImage 把同名属性 shadow 成 let,
+                    // 不加 self. 时编译器优先解析到 shadow 的 let(不可写),报 "cannot assign to value"。
+                    self.screenshotItem = nil
+                    self.screenshotImage = nil
+                    self.screenshotData = nil
+                } label: {
+                    Text(String(localized: "feedback.screenshot.remove"))
+                }
+                .accessibilityIdentifier("FeedbackScreenshotRemoveButton")
+            }
+
+            // 截图加载失败的内联提示(独立于提交 alert)。
+            // loadFailed 文案明确,不与"发送失败"标题混淆。
+            if let screenshotError {
+                Text(screenshotError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+            }
+        } header: {
+            Text(String(localized: "feedback.screenshot.title"))
+        } footer: {
+            Text(String(localized: "feedback.screenshot.footer"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var contextIncludedSection: some View {
+        Section {
+            Text(String(localized: "feedback.context.include"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var cancelButton: some View {
+        Button(String(localized: "feedback.cancel")) {
+            dismiss()
+        }
+        .accessibilityIdentifier("FeedbackCancelButton")
+    }
+
+    @ViewBuilder
+    private var submitButton: some View {
+        Button(action: submit) {
+            if isSubmitting {
+                ProgressView()
+            } else {
+                Text(String(localized: "feedback.submit"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+        .accessibilityIdentifier("FeedbackSubmitButton")
+    }
+
+    @ViewBuilder
+    private var descriptionPlaceholder: some View {
+        if description.isEmpty {
+            Text(String(localized: "feedback.description.placeholder"))
+                .foregroundStyle(.secondary)
+                .font(.body)
+                .padding(.top, 8)
+                .padding(.leading, 4)
+                .allowsHitTesting(false)
         }
     }
 

@@ -90,7 +90,7 @@ final class EntitlementManager: ObservableObject {
             if storeProducts.isEmpty {
                 VoiceTodoLog.app.warning("entitlement.products_empty ids=\(Self.productIDs, privacy: .public)")
                 productLoadState = .empty
-                await resetIntroOfferState()
+                resetIntroOfferState()
             } else {
                 productLoadState = .success
                 await checkIntroOffer()
@@ -99,7 +99,7 @@ final class EntitlementManager: ObservableObject {
             VoiceTodoLog.app.error("entitlement.products_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             lastError = ErrorMessages.paywallProductsLoadFailed
             productLoadState = .error
-            await resetIntroOfferState()
+            resetIntroOfferState()
         }
     }
 
@@ -112,8 +112,9 @@ final class EntitlementManager: ObservableObject {
     }
 
     /// 查询订阅组的介绍性优惠（免费试用）资格和时长。
-    /// 失败保守处理（无 subscription 信息 / groupID 缺失 / 抛错 → 一律当无资格）,
+    /// 失败保守处理（无 subscription 信息 / groupID 缺失 → 一律当无资格）,
     /// 宁可少承诺不可多承诺 —— 老用户重订场景下"承诺试用再变脸"是 App Store 审核硬伤。
+    /// 注:iOS 26 SDK 起 isEligibleForIntroOffer(for:) 为非 throwing async,不再有异常路径。
     private func checkIntroOffer() async {
         isCheckingIntroOffer = true
         defer { isCheckingIntroOffer = false }
@@ -130,13 +131,10 @@ final class EntitlementManager: ObservableObject {
 
         introOfferPeriod = subscription.introductoryOffer?.period
 
-        do {
-            let eligible = try await Product.SubscriptionInfo.isEligibleForIntroOffer(for: subscription.subscriptionGroupID)
-            isEligibleForIntroOffer = eligible
-        } catch {
-            VoiceTodoLog.app.error("entitlement.intro_offer_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            isEligibleForIntroOffer = false
-        }
+        // iOS 26 SDK: Product.SubscriptionInfo.isEligibleForIntroOffer(for:) 已是非 throwing async。
+        // 若未来 SDK 改回 throws,编译器会重新报错提醒恢复 do/try/catch。
+        let eligible = await Product.SubscriptionInfo.isEligibleForIntroOffer(for: subscription.subscriptionGroupID)
+        isEligibleForIntroOffer = eligible
 
         VoiceTodoLog.app.info("entitlement.intro_offer eligible=\(self.isEligibleForIntroOffer) hasPeriod=\(self.introOfferPeriod != nil)")
     }

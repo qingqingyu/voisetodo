@@ -59,13 +59,19 @@
 		<key>UIColorName</key>
 		<string>AccentColor</string>
 	</dict>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>
+	<key>VoiceTodoFeedbackEndpoint</key>
+	<string>$(VOICETODO_FEEDBACK_ENDPOINT)</string>
 	<key>VoiceTodoProxyAppToken</key>
 	<string>$(VOICETODO_AI_PROXY_APP_TOKEN)</string>
 	<key>VoiceTodoProxyEndpoint</key>
 	<string>$(VOICETODO_AI_PROXY_ENDPOINT)</string>
-	<key>VoiceTodoFeedbackEndpoint</key>
-	<string>$(VOICETODO_FEEDBACK_ENDPOINT)</string>
 </dict>
 </plist>
