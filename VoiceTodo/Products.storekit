@@ -1,12 +1,19 @@
 {
-  "identifier" : "F4A2C9D8-1B5E-4F7A-9C3E-voicetodo-products",
-  "type" : "subscriptions",
-  "version" : 3,
-  "name" : "Products",
+  "identifier" : "F4A2C9D8",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN"
+  },
   "subscriptionGroups" : [
     {
-      "id" : "B1C2D3E4-0001-4000-8000-000000000001",
-      "name" : "Pro",
+      "id" : "B1C2D3E4",
       "localizations" : [
         {
           "description" : "VoiceTodo Pro：更高的每日语音整理额度",
@@ -19,58 +26,25 @@
           "locale" : "en_US"
         }
       ],
+      "name" : "Pro",
       "subscriptions" : [
         {
-          "adHocOffers" : [],
-          "codeOffers" : [],
-          "displayPrice" : "12",
-          "familySharable" : false,
-          "subscriptionPeriod" : "P1M",
-          "id" : "com.qingqingyu.voicetodo.pro.monthly",
-          "introductoryOffer" : {
-            "displayPrice" : "0",
-            "internal" : false,
-            "paymentMode" : "freeTrial",
-            "subscriptionPeriod" : "P3D",
-            "referenceName" : "3 天免费试用"
-          },
-          "internal" : false,
-          "levels" : [],
-          "localizations" : [
-            {
-              "description" : "每月自动续费，可随时取消",
-              "displayName" : "Pro 月付",
-              "locale" : "zh_CN"
-            },
-            {
-              "description" : "Billed monthly. Cancel anytime.",
-              "displayName" : "Pro Monthly",
-              "locale" : "en_US"
-            }
+          "adHocOffers" : [
+
           ],
-          "name" : "Pro Monthly",
-          "offerCode" : null,
-          "recurringPrice" : 12,
-          "referenceName" : "Pro Monthly",
-          "subscriptionGroupID" : "B1C2D3E4-0001-4000-8000-000000000001",
-          "winbackOffers" : []
-        },
-        {
-          "adHocOffers" : [],
-          "codeOffers" : [],
-          "displayPrice" : "98",
-          "familySharable" : false,
-          "subscriptionPeriod" : "P1Y",
-          "id" : "com.qingqingyu.voicetodo.pro.yearly",
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "98.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1000002",
           "introductoryOffer" : {
-            "displayPrice" : "0",
-            "internal" : false,
+            "displayPrice" : "0.00",
+            "internalID" : "A1000012",
             "paymentMode" : "freeTrial",
-            "subscriptionPeriod" : "P3D",
-            "referenceName" : "3 天免费试用"
+            "subscriptionPeriod" : "P3D"
           },
-          "internal" : false,
-          "levels" : [],
           "localizations" : [
             {
               "description" : "每年自动续费，比月付省约 32%",
@@ -83,14 +57,58 @@
               "locale" : "en_US"
             }
           ],
-          "name" : "Pro Yearly",
-          "offerCode" : null,
-          "recurringPrice" : 98,
+          "productID" : "com.qingqingyu.voicetodo.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Pro Yearly",
-          "subscriptionGroupID" : "B1C2D3E4-0001-4000-8000-000000000001",
-          "winbackOffers" : []
+          "subscriptionGroupID" : "B1C2D3E4",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "12.00",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "A1000001",
+          "introductoryOffer" : {
+            "displayPrice" : "0.00",
+            "internalID" : "A1000011",
+            "paymentMode" : "freeTrial",
+            "subscriptionPeriod" : "P3D"
+          },
+          "localizations" : [
+            {
+              "description" : "每月自动续费，可随时取消",
+              "displayName" : "Pro 月付",
+              "locale" : "zh_CN"
+            },
+            {
+              "description" : "Billed monthly. Cancel anytime.",
+              "displayName" : "Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.qingqingyu.voicetodo.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "B1C2D3E4",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         }
       ]
     }
-  ]
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
 }

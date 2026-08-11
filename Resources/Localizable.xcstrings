@@ -5808,6 +5808,22 @@
         }
       }
     },
+    "paywall.products_load_failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong. Please try again later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载订阅方案失败，请稍后重试"
+          }
+        }
+      }
+    },
     "paywall.purchase_failed" : {
       "localizations" : {
         "en" : {

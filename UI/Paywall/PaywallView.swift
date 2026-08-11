@@ -49,7 +49,6 @@ struct PaywallView: View {
                 }
             }
         }
-        .task { await entitlement.refresh() }
         .onChange(of: entitlement.isPro) { _, becamePro in
             if becamePro { dismiss() }
         }
@@ -89,6 +88,7 @@ struct PaywallContent: View {
             restoreButton
             Spacer(minLength: WarmSpacing.xs)
         }
+        .task { await entitlement.refresh() }
         .onChange(of: entitlement.products) { _, newProducts in
             // 购买飞行中不重置选中 —— refresh 可能由 transaction listener 触发,
             // 此时改 selectedProductID 会让用户感知到选中漂移。
@@ -323,7 +323,7 @@ struct PaywallContent: View {
             stateMessage(
                 icon: "exclamationmark.triangle",
                 title: String(localized: "paywall.products_empty.title"),
-                subtitle: entitlement.lastError ?? ErrorMessages.paywallPurchaseFailed,
+                subtitle: entitlement.lastError ?? ErrorMessages.paywallProductsLoadFailed,
                 retryAction: { Task { await entitlement.refresh() } }
             )
         case .success:

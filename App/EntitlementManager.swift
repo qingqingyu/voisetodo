@@ -11,8 +11,9 @@ import Combine
 @MainActor
 final class EntitlementManager: ObservableObject {
     /// App Store Connect 中的自动续费订阅产品 ID（月付 / 年付，同一订阅组）。
-    /// 前缀必须与 App bundle ID 一致（com.qingqingyu.voicetodo）—— App Store Connect 强制要求,
-    /// 新版 Xcode 本地 StoreKit Configuration 也会校验,不匹配会让商品加载返回空。
+    /// 这两个 ID 必须与 VoiceTodo/Products.storekit（本地调试）以及 App Store Connect 上注册的
+    /// 订阅（上架后）**逐字一致**,否则 Product.products(for:) 返回空数组。
+    /// 注:IAP product ID 只要求全局唯一,并不要求以 bundle ID 为前缀 —— 这里对齐前缀纯属命名约定。
     static let monthlyProductID = "com.qingqingyu.voicetodo.pro.monthly"
     static let yearlyProductID = "com.qingqingyu.voicetodo.pro.yearly"
     static let productIDs: Set<String> = [monthlyProductID, yearlyProductID]
@@ -21,7 +22,9 @@ final class EntitlementManager: ObservableObject {
     /// 当前生效订阅的 JWS 字符串（发给代理做 Pro 档验签）。无生效订阅时为 nil。
     @Published private(set) var jwsString: String?
     @Published private(set) var products: [Product] = []
-    @Published private(set) var productLoadState: ProductLoadState = .empty
+    /// 初始为 .loading —— 首帧应显示 spinner 而不是「加载失败」卡片。
+    /// 真正的空/错误态由 loadProducts() 落定。
+    @Published private(set) var productLoadState: ProductLoadState = .loading
     /// 最近一次购买/恢复/加载错误（用于 UI error 态）。nil 表示无错误。
     @Published private(set) var lastError: String?
     @Published private(set) var isPurchasing = false
@@ -94,7 +97,7 @@ final class EntitlementManager: ObservableObject {
             }
         } catch {
             VoiceTodoLog.app.error("entitlement.products_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            lastError = ErrorMessages.paywallPurchaseFailed
+            lastError = ErrorMessages.paywallProductsLoadFailed
             productLoadState = .error
             await resetIntroOfferState()
         }
