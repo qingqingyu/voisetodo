@@ -53,18 +53,28 @@ case .empty:
 ### 2.3 根因:`VoiceTodo/Products.storekit` 不是 Xcode 的 schema
 
 该文件从 `1edf205`(首次纳入)起就是手写的,键名与 Xcode 生成的 `.storekit` 完全对不上。
-对照基准:[RevenueCat/storekit2-demo-app / Step10Configuration.storekit](https://github.com/RevenueCat/storekit2-demo-app/blob/main/StepByStepExamples/Step10/Step10Configuration.storekit)(Xcode 自己写出来的文件)。
+
+对照基准(两份都是 Xcode 自己写出来的真实文件):
+
+- **v4(主基准,含 `introductoryOffer` / `winbackOffers` / `adHocOffers` 实例)**:
+  [flutter/packages · in_app_purchase_storekit example Configuration.storekit](https://github.com/flutter/packages/blob/main/packages/in_app_purchase/in_app_purchase_storekit/example/ios/Runner/Configuration.storekit)
+- v2(结构更简,交叉印证):
+  [RevenueCat/storekit2-demo-app · Step10Configuration.storekit](https://github.com/RevenueCat/storekit2-demo-app/blob/main/StepByStepExamples/Step10/Step10Configuration.storekit)
 
 | 位置 | 仓库现状(错) | Xcode 真实 schema |
 |---|---|---|
 | 顶层 | `"type": "subscriptions"`、`"name": "Products"` | 无这两个键 |
-| 顶层 | 缺失 | `"products": []`、`"nonRenewingSubscriptions": []`、`"settings": {}` |
-| 顶层 | `"version": 3`(标量) | `"version": {"major": 2, "minor": 0}`(对象) |
-| 商品 ID | `"id"` | `"productID"` |
+| 顶层 | 缺失 | `"products": []`、`"nonRenewingSubscriptions": []`、`"settings": {…}`(v4 还有 `"appPolicies"`) |
+| 顶层 | `"version": 3`(标量) | `"version": {"major": 4, "minor": 0}`(对象) |
+| 商品 ID | `"id"` | **`"productID"`**(单这一条就足以让加载返回空) |
 | 续订周期 | `"subscriptionPeriod"` | `"recurringSubscriptionPeriod"`(仅商品层;`introductoryOffer` 内的 `"subscriptionPeriod"` 键名不变) |
 | 家庭共享 | `"familySharable"` | `"familyShareable"` |
 | 商品 | 缺失 | `"internalID"`、`"groupNumber"`、`"type": "RecurringSubscription"` |
-| 商品 | 多余非 schema 键 | `"levels"`、`"internal"`、`"recurringPrice"`、`"offerCode"`、`"name"`、`"winbackOffers"`(见 §6.5 备注) |
+| 商品 | 多余非 schema 键 | `"levels"`、`"internal"`、`"recurringPrice"`、`"offerCode"`、`"name"` |
+| 试用 | `introductoryOffer.referenceName` | 无此键(只有 `adHocOffers` / `winbackOffers` 的条目才有 `referenceName` 和 `offerID`) |
+
+现状文件里**写对了**的部分(不要在重写时改掉):`"winbackOffers": []` 是 v4 schema 的合法键;
+`introductoryOffer.paymentMode` 的取值 `"freeTrial"` 也是对的(见 §3.1 要点)。
 
 Xcode 解析不了这个文件 → 本地商店里一个商品都没有 → `Product.products(for:)` 返回 `[]` → `.empty`。
 
@@ -113,7 +123,9 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
 
   ],
   "settings" : {
-
+    "_failTransactionsEnabled" : false,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN"
   },
   "subscriptionGroups" : [
     {
@@ -144,8 +156,9 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
           "groupNumber" : 1,
           "internalID" : "A1000002",
           "introductoryOffer" : {
+            "displayPrice" : "0.00",
             "internalID" : "A1000012",
-            "paymentMode" : "free",
+            "paymentMode" : "freeTrial",
             "subscriptionPeriod" : "P3D"
           },
           "localizations" : [
@@ -164,7 +177,10 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Pro Yearly",
           "subscriptionGroupID" : "B1C2D3E4",
-          "type" : "RecurringSubscription"
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         },
         {
           "adHocOffers" : [
@@ -178,8 +194,9 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
           "groupNumber" : 2,
           "internalID" : "A1000001",
           "introductoryOffer" : {
+            "displayPrice" : "0.00",
             "internalID" : "A1000011",
-            "paymentMode" : "free",
+            "paymentMode" : "freeTrial",
             "subscriptionPeriod" : "P3D"
           },
           "localizations" : [
@@ -198,13 +215,16 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Pro Monthly",
           "subscriptionGroupID" : "B1C2D3E4",
-          "type" : "RecurringSubscription"
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         }
       ]
     }
   ],
   "version" : {
-    "major" : 2,
+    "major" : 4,
     "minor" : 0
   }
 }
@@ -214,9 +234,15 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
 
 - `internalID` 和组 `id` 用 8 位十六进制(Xcode 的约定),**不要**用 UUID。顶层 `identifier` 同样按 8 位 hex 写(当前文件的伪 UUID 格式 `F4A2C9D8-1B5E-...` 非标准)。
 - `groupNumber` 是组内档位排序,年付给 1(更高档),月付给 2。
-- `version` 写 `{major: 2, minor: 0}`;Xcode 打开后如需要会自行升级格式,不用手动猜最新版本号。
-- 试用写 `"paymentMode": "free"` —— 这是 `.storekit` JSON 里的写法(StoreKit API 侧的枚举才叫
-  `.freeTrial`,别混)。**这是全套改动里唯一无法靠静态检查确认的字段,必须走 §4 验证第 1 步。**
+- `version` 写 `{major: 4, minor: 0}`,与 v4 基准样本一致。Xcode 打开后如需要会自行调整。
+- 试用写 **`"paymentMode": "freeTrial"`**。v4 基准样本里另外两种模式的取值是 `"payAsYouGo"` /
+  `"payUpFront"`,即 JSON 直接用 StoreKit API 枚举(`Product.SubscriptionOffer.PaymentMode`)的
+  rawValue,所以免费试用就是 `"freeTrial"`。**现状文件这一处本来是对的,重写时别改坏。**
+- `introductoryOffer` 里带 `displayPrice`(免费试用写 `"0.00"`)和 `internalID`,但**没有**
+  `referenceName` —— `referenceName` / `offerID` 只属于 `adHocOffers` 和 `winbackOffers` 的条目。
+- `winbackOffers` 是 v4 schema 的合法键,每个商品都要有(没有 win-back offer 就给空数组)。
+- `settings` 里的 `_locale` / `_storefront` 决定本地调试时价格显示的货币。设成 `zh_CN` / `CHN`,
+  `displayPrice` 的 12 / 98 才会渲染成 ¥12 / ¥98;不设则跟随 Xcode 默认(通常是 USA/美元)。
 
 ### 3.2 `UI/Paywall/PaywallView.swift`:让 `PaywallContent` 自己负责加载
 
@@ -353,6 +379,10 @@ TestFlight / App Store 构建取的是 App Store Connect 上的真实商品数�
 
 以下 5 点在本方案起草时识别但未完全解决,实施前需逐一确认。
 
+> **已逐条查证,结论见 §7。** 摘要:6.1 / 6.5 已解决(拿到 Xcode 真实产出的 v4 样本,
+> §3.1 已据此修正,其中 `paymentMode` 原来写错了);6.4 成立,保留;
+> **6.2 和 6.3 的前提不成立**,按 §7 的结论执行,不要按 §6 的处方改。
+
 ### 6.1 §3.1 替换 JSON 不是金标准
 
 §3.1 给出的完整 JSON 是按 RevenueCat 示例对齐手写的,**不是 Xcode 自己写出来的**。其中
@@ -431,3 +461,117 @@ Xcode 较新版本是否已把 `winbackOffers` 纳入 schema —— 若已纳入
 2. **§3.2 `.task` 下移后补 force-refresh 路径**:看到 `.empty`/`.error` 时绕过守卫重拉(覆盖 §6.2)
 3. **§3.5 两处改原子提交**:`PaywallView.swift:326` + `EntitlementManager.swift:97`(覆盖 §6.4)
 4. **§3.6 删 pbxproj 前先看 `project.yml`**:源头不在 pbxproj(覆盖 §6.3)
+
+---
+
+## 7. 对 §6 开放问题的查证结论
+
+### 7.1 → §6.1「§3.1 不是金标准」:**成立,已解决**
+
+质疑正确,而且抓到了一个真错误。已找到 Xcode 自己写出的 **version 4** 配置文件
+([flutter/packages · Configuration.storekit](https://github.com/flutter/packages/blob/main/packages/in_app_purchase/in_app_purchase_storekit/example/ios/Runner/Configuration.storekit)),
+里面同时含 `introductoryOffer`、`adHocOffers`、`winbackOffers` 的真实实例:
+
+```json
+"introductoryOffer" : {
+  "displayPrice" : "0.99",
+  "internalID" : "62DAF06C",
+  "paymentMode" : "payUpFront",
+  "subscriptionPeriod" : "P1M"
+}
+```
+
+同一文件里 `adHocOffers` / `winbackOffers` 的 `paymentMode` 取值是 `"payAsYouGo"` —— 说明 JSON 直接用
+StoreKit API 枚举 `Product.SubscriptionOffer.PaymentMode` 的 rawValue。因此免费试用是 **`"freeTrial"`**,
+**不是**我原来写的 `"free"`。§3.1 已改正,并补上 `displayPrice` / `winbackOffers`,`version` 改为
+`{major: 4, minor: 0}`,`settings` 补 `_locale`/`_storefront`。
+
+讽刺的是,现状文件的 `"paymentMode": "freeTrial"` 本来就是对的 —— 这条别在重写时改坏。
+
+「以 Xcode 重新保存的结果为准」这条实施约束仍然保留:手写 JSON 再准也只是骨架。
+
+### 7.2 → §6.2「`.task` 下移的自愈是部分的」:**前提不成立,不要按此处方改**
+
+§6.2 说「如果启动 refresh 已经落 `.empty`,第三屏 `.task` 触发的 refresh 会被守卫挡掉、立即返回」。
+这个描述与代码不符。看 `EntitlementManager.loadProducts()`:
+
+```swift
+guard !isLoadingProducts else { return }
+isLoadingProducts = true
+productLoadState = .loading
+defer { isLoadingProducts = false }        // ← 函数返回时释放
+do { let storeProducts = try await Product.products(for: Self.productIDs) ... }
+```
+
+`isLoadingProducts` 由 `defer` 在 `loadProducts()` 返回时释放。「启动 refresh **已经落** `.empty`」
+意味着它已经返回、守卫已经释放 —— 此时第三屏 `.task` 的 refresh **能正常穿过守卫并发起真实请求**。
+守卫只挡**并发**调用,不挡后续调用。
+
+唯一真被挡掉的情况是:启动 refresh **仍在飞行中**时第三屏正好出现。但那次在飞的请求本来就会
+publish 结果到同一个 `@Published productLoadState`,UI 照样会更新,不存在「卡在旧的 `.empty`」。
+
+时序上也够宽裕:`switch currentStep` 外包了 `Group`(`OnboardingView.swift:110-122`),
+`proPaywallStep` 只在用户走到第三屏时才创建,`.task` 那一刻触发;而用户要先过 welcome 页和权限页
+(含系统弹窗),距冷启动通常已数秒。
+
+**结论**:不要加 force 参数绕过守卫。那样只会在第三屏出现的瞬间打出一个重复的并发 StoreKit 请求,
+正好是守卫存在的理由。§3.2 按原样实施即可。
+
+(顺带一个 §6.2 没提但真实存在的小缺口:用户在第三屏把 App 切后台再回来,不会重新拉取 ——
+`handleScenePhaseChange` 不调 `handleAppLaunch`,`.task` 也不会因 scenePhase 重跑。
+影响很小,有 Retry 兜底,本次不处理。)
+
+### 7.3 → §6.3「删 pbxproj 会被 xcodegen 写回」:**方向反了**
+
+§6.3 认为源头在 `project.yml`、跑 `xcodegen generate` 会把失效项写回来。实际相反。
+
+`project.pbxproj` 里 `Products.storekit` 有**两条**引用:
+
+| 行 | 内容 | 出处 |
+|---|---|---|
+| `:293` + `:801` | `path = Products.storekit`,挂在 `C98DBDBB /* VoiceTodo */` group(该 group `path = VoiceTodo`) | **XcodeGen 从 `project.yml:71` 生成的,正确** |
+| `:420` + `:687` | `name = Products.storekit; path = ../../VoiceTodo/Products.storekit`,挂在**根 group** `9B6C7BF5`(无 path,基准即工程根目录)→ 解析到仓库外两级 | **Xcode 自己加的重复项**,`29603ec` 的 commit message 也明说是「Xcode 操作副作用」 |
+
+XcodeGen 不会为同一个 source path 生成两条引用,所以 `xcodegen generate` 是**清掉**失效项,不是写回。
+`project.yml` 里的 `VoiceTodo/Products.storekit`(target sources)和
+`storeKitConfiguration: VoiceTodo/Products.storekit`(scheme)都是对的,**不需要改 `project.yml`**。
+
+失效项的真正来源:Xcode 打开工程、解析 scheme 里的 `StoreKitConfigurationFileReference` 时,会照那个
+字符串在导航器里建一条引用。scheme 的 `identifier = "../../VoiceTodo/Products.storekit"` 本身是对的
+(Xcode 的约定是固定 `../../` 前缀 + 相对工程根目录的路径,已对照真实工程验证);但 Xcode 把同一字符串
+当 group 相对路径建 `PBXFileReference`,基准不同就成了坏路径。
+
+**结论**:§3.6 仍然是纯清理、可选。删了之后 Xcode 下次打开工程可能再加回来 —— 这是打地鼠,不影响功能,
+也可以干脆不删。**不要为它去改 `project.yml`。**
+
+### 7.4 → §6.4「§3.5 两处容易漏改」:**成立,保留**
+
+`EntitlementManager.swift:97` 和 `PaywallView.swift:326` 必须同改,原子提交。
+
+补一点 §6.4 没提的:`.error` 分支写的是
+`subtitle: entitlement.lastError ?? ErrorMessages.paywallProductsLoadFailed`,
+但 `lastError` 在 catch 里**一定**被赋值,所以 `??` 右边其实是死代码。这不是 bug,
+但它意味着**真正生效的是 `EntitlementManager.swift:97` 那一处**——正好是最容易被漏掉的那处。
+实施时以它为准。
+
+### 7.5 → §6.5「`introductoryOffer.internalID` + `winbackOffers` 不确定」:**已解决**
+
+v4 基准样本给出了确定答案:
+
+- `introductoryOffer.internalID` 是 schema 的正式键(样本值 `"62DAF06C"`,8 位 hex),手填合法。
+- `winbackOffers` **属于**当前 schema(iOS 18 / Xcode 16 引入 win-back offer),样本里每个订阅都有,
+  无 offer 时为空数组。所以它不该被列进「多余非 schema 键」——§2.3 表格已更正,§3.1 已补回。
+- 反过来,`introductoryOffer` 里**没有** `referenceName`(现状文件写了「3 天免费试用」),
+  `referenceName` / `offerID` 只属于 `adHocOffers` / `winbackOffers` 条目。
+
+至于「Xcode 会不会重新分配 internalID」:样本无法证伪,但这不影响正确性 —— internalID 是 Xcode 本地
+标识,重排不影响 `productID` 匹配。手填值只用于让 Xcode 首次能解析通过,之后以 Xcode 的输出为准。
+
+### 7.6 修订后的实施 checklist
+
+1. **§3.1 已按 v4 样本修正**(`paymentMode: "freeTrial"`、补 `displayPrice`/`winbackOffers`、
+   `version` 4、`settings` 补 locale/storefront)。仍然:落盘后先用 Xcode 打开并保存一次,
+   以 Xcode 输出覆盖 §3.1。
+2. **§3.2 按原样实施,不要加 force-refresh**(§7.2)。
+3. **§3.5 两处原子改**,重点是 `EntitlementManager.swift:97`(§7.4)。
+4. **§3.6 保持可选,不要改 `project.yml`**(§7.3)。
