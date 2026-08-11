@@ -15,7 +15,8 @@ final class ScenarioTests: XCTestCase {
         let defaultEnabledScenarios = [
             "test_confirmSheetKeyboardInputKeepsHeaderAtTopAndEnablesFirstPartial",
             "test_S11_homeView_emptyState",
-            "test_S12_firstLaunch_onboarding"
+            "test_S12_firstLaunch_onboarding",
+            "test_S16_calendarPermissionDenied_revertsToggle"
         ]
         let isDefaultEnabledScenario = defaultEnabledScenarios.contains { name.contains($0) }
         let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
@@ -435,12 +436,24 @@ final class ScenarioTests: XCTestCase {
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
 
         // Step 4: 权限页 → Pro 付费墙。
-        // 某些模拟器机型(iPhone 15 Pro+)存在 Action Button 步骤,中间会多一跳 ——
-        // 循环 nextButton 直到 Pro 付费墙出现,兼容两类机型。
+        // 新流程从权限页到付费墙经过 speechLanguage → calendarSync → [actionButton]:
+        //   - 无 Action Button 机型:权限页 → 语言 → 日历 → 付费墙(3 次点击)
+        //   - 有 Action Button 机型:权限页 → 语言 → 日历 → AB → 付费墙(4 次点击)
+        // 上面那次 nextButton.tap()(:440)是序列中的第一次(权限页 → 语言页),
+        // 不是额外一次。attempts < 6 给 6 次循环,对最多 4 次点击留 2 次余量应对动画抖动。
         appHelper.nextButton.tap()
+
+        // 显式断言两个新步骤依次出现 —— 失败时直接指向具体哪一步,
+        // 而不是笼统的「付费墙没出现」。
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
+                      "应进入语音识别语言页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
+                      "应进入日历同步页")
+
         let laterButton = appHelper.app.buttons["ProIntroLaterButton"]
         var attempts = 0
-        while !laterButton.exists && attempts < 3 {
+        while !laterButton.exists && attempts < 6 {
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
@@ -566,5 +579,68 @@ final class ScenarioTests: XCTestCase {
 
         // 由于 Widget 测试需要特殊的测试环境，这里标记为 pending
         print("Widget 测试需要在 Widget Extension target 中单独执行")
+    }
+
+    // MARK: - S16: 日历权限被拒后开关视觉回弹
+
+    /// 场景 S16: 日历权限被拒后开关视觉回弹
+    /// 验证 onboarding 日历同步页在权限被拒时:
+    ///   1. 开关视觉回弹到关(持久化保持 .appOnly,不变量成立)
+    ///   2. 出现「去设置开启」按钮
+    ///   3. 「下一步」始终可点,引导不被权限拒绝卡死
+    ///   4. 能继续走完引导进入主界面
+    func test_S16_calendarPermissionDenied_revertsToggle() {
+        // Step 1: 启动 App(--calendar-permission-denied 模拟日历权限被拒)
+        appHelper.launchWithCalendarPermissionDenied()
+        XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+
+        // Step 2: 走到日历同步页(欢迎 → 权限 → 语言 → 日历,3 次 nextButton)
+        appHelper.nextButton.tap()  // 欢迎页 → 权限合并页
+        XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0),
+                      "应进入权限合并页")
+
+        appHelper.nextButton.tap()  // 权限页 → 语言页
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
+                      "应进入语音识别语言页")
+
+        appHelper.nextButton.tap()  // 语言页 → 日历页
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
+                      "应进入日历同步页")
+
+        // Step 3: 打开日历开关(Mock 必返回 denied)
+        let toggle = appHelper.app.switches["CalendarSyncToggle"]
+        XCTAssertTrue(toggle.exists, "日历同步开关应存在")
+        toggle.tap()
+
+        // Step 4: 权限被拒后应显示「去设置开启」按钮
+        let openSettingsButton = appHelper.app.buttons["OnboardingCalendarOpenSettingsButton"]
+        XCTAssertTrue(openSettingsButton.waitForExistence(timeout: 2.0),
+                      "权限被拒后应显示「去设置开启」")
+
+        // Step 5: 开关视觉应回弹到 off(持久化 calendarWriteModeRaw 全程没被写过,保持 .appOnly)
+        XCTAssertEqual(toggle.value as? String, "0", "权限被拒后开关应回弹到关")
+
+        // Step 6: 「下一步」仍可点 —— onboarding 不被权限拒绝卡死
+        XCTAssertTrue(appHelper.nextButton.isEnabled, "「下一步」始终可点")
+
+        // Step 7: 走完引导进入主界面
+        appHelper.nextButton.tap()
+        // 跳过 [Action Button] + Pro 付费墙(若存在)
+        let laterButton = appHelper.app.buttons["ProIntroLaterButton"]
+        var attempts = 0
+        while !laterButton.exists && appHelper.onboardingView.exists && attempts < 6 {
+            if appHelper.nextButton.exists {
+                appHelper.nextButton.tap()
+            }
+            _ = laterButton.waitForExistence(timeout: 1.5)
+            attempts += 1
+        }
+        if laterButton.exists {
+            laterButton.tap()
+            appHelper.nextButton.tap()
+        }
+        appHelper.waitForAppReady(timeout: 5.0)
+        XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 3.0),
+                      "权限被拒不应卡死引导,应能进入主界面")
     }
 }

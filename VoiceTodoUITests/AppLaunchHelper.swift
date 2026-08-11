@@ -59,6 +59,12 @@ class AppLaunchHelper {
         app.launch()
     }
 
+    /// 启动 App 并模拟日历权限被拒绝
+    func launchWithCalendarPermissionDenied() {
+        configureLaunchArguments(["--calendar-permission-denied", "--reset-user-data"])
+        app.launch()
+    }
+
     /// 启动 App 并预置待办数据
     /// - Parameter todos: 预置的待办数据
     func launchWithPresetTodos(_ todos: [UITestTodoPayload]) {
