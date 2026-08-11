@@ -315,11 +315,41 @@ struct HomeCalendarState {
         return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: monday) }
     }
 
-    private static func startOfWeek(for date: Date, calendar: Calendar) -> Date {
+    static func startOfWeek(for date: Date, calendar: Calendar) -> Date {
         let startOfDay = calendar.startOfDay(for: date)
         let weekday = calendar.component(.weekday, from: startOfDay)
         let daysFromMonday = (weekday + 5) % 7
         return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
+    }
+
+    /// 标题区是否停在「当前时段」——true 渲染纯月份标题，false 渲染「回到今天」箭头按钮。
+    ///
+    /// 粒度随日历形态切换：
+    /// - 折叠成周条（`isWeekStrip == true`）：比较 `selectedDate` 所在周 与 `today` 所在周。
+    ///   周条里 `selectedDate` 才是「正在浏览的周」的唯一来源（`shiftWeek` 移的是它），
+    ///   而 `visibleMonthAnchor` 同月内翻周时不动，用它判断会永远认为「还在当前时段」。
+    /// - 展开成月网格（`isWeekStrip == false`）：比较 `visibleMonthAnchor` 与 `today` 的月。
+    ///   刻意不看 `selectedDate`——月网格里点选本月某一天不算「离开了当前时段」。
+    ///
+    /// 同周判断必须走 `startOfWeek`（周一起始，硬编码）而不是
+    /// `toGranularity: .weekOfYear`：后者读 `calendar.firstWeekday`，
+    /// 在周日起始的 locale（zh_CN / en_US 默认）下与周条实际显示的 7 天不一致。
+    ///
+    /// `today` 必须传「语义今天」（`DayClock.startOfUserDay` 折算后的自然日 0 点），
+    /// 与 `HomeView.jumpToToday` 同源；否则 `startHour > 0` 的凌晨场景下
+    /// 点了按钮谓词也不翻转，箭头永远挂着。
+    static func isViewingCurrentPeriod(
+        selectedDate: Date,
+        visibleMonthAnchor: Date,
+        isWeekStrip: Bool,
+        today: Date,
+        calendar: Calendar
+    ) -> Bool {
+        if isWeekStrip {
+            return startOfWeek(for: selectedDate, calendar: calendar)
+                == startOfWeek(for: today, calendar: calendar)
+        }
+        return calendar.isDate(visibleMonthAnchor, equalTo: today, toGranularity: .month)
     }
 }
 
