@@ -509,6 +509,22 @@
         }
       }
     },
+    "a11y.onboarding.calendar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendar sync setting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日历同步设置"
+          }
+        }
+      }
+    },
     "a11y.onboarding.open_settings_hint" : {
       "localizations" : {
         "en" : {
@@ -537,6 +553,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "引导进度"
+          }
+        }
+      }
+    },
+    "a11y.onboarding.speech_language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognition language selection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别语言选择"
           }
         }
       }
@@ -5032,6 +5064,86 @@
         }
       }
     },
+    "onboarding.calendar.denied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendar access was declined, so todos will stay in the app. You can turn it on later in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未获得日历权限，待办将只保存在 App 内。你可以稍后在系统设置里开启。"
+          }
+        }
+      }
+    },
+    "onboarding.calendar.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos with a date can also appear in the iOS Calendar app, alongside your other events."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "带日期的待办可以同时出现在 iOS 日历里，和其他日程排在一起。"
+          }
+        }
+      }
+    },
+    "onboarding.calendar.privacy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Events are written to your default calendar on this device only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "事件只写入本机的默认日历，不上传。"
+          }
+        }
+      }
+    },
+    "onboarding.calendar.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync to your Calendar?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要同步到系统日历吗？"
+          }
+        }
+      }
+    },
+    "onboarding.calendar.toggle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write to iOS Calendar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入 iOS 日历"
+          }
+        }
+      }
+    },
     "onboarding.open_settings" : {
       "localizations" : {
         "en" : {
@@ -5304,6 +5416,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "待办会自动显示在 Widget"
+          }
+        }
+      }
+    },
+    "onboarding.speech_language.auto_resolved %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currently: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前为 %@"
+          }
+        }
+      }
+    },
+    "onboarding.speech_language.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick the language you'll record todos in. You can change it anytime in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择你录入待办时说的语言，之后可随时在设置里修改。"
+          }
+        }
+      }
+    },
+    "onboarding.speech_language.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How will you speak?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你习惯用什么语言说？"
           }
         }
       }

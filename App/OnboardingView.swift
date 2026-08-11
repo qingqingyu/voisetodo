@@ -8,6 +8,8 @@ import SwiftUI
 private enum OnboardingStep: CaseIterable {
     case welcome
     case voicePermissions
+    case speechLanguage
+    case calendarSync
     case actionButton
     case proPaywall
     case completion
@@ -31,6 +33,25 @@ struct OnboardingView: View {
 
     // 无障碍：尊重「减弱动态效果」设置
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // 从系统设置切回 App 时刷新权限态(mic/speech/calendar 共用)。
+    // .onAppear 管 sheet 首次出现,.onChange(of: scenePhase) 管后续回前台。
+    @Environment(\.scenePhase) private var scenePhase
+
+    // 语音识别语言:与 HomeSettingsSheet 共享同一个 UserDefaults key,设置页无需改动。
+    @AppStorage(SpeechRecognitionLanguage.storageKey)
+    private var speechLanguageRaw = SpeechRecognitionLanguage.auto.rawValue
+
+    // 日历写入模式:与 HomeView 共享同一个 UserDefaults key。
+    @AppStorage(CalendarWriteMode.storageKey)
+    private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+
+    /// Toggle 的视觉状态,与持久化状态刻意分开。不变量:
+    /// 持久化为 .appAndSystemCalendar ⟹ 权限确实拿到过。
+    /// 详见 calendarSyncBinding 的实现。
+    @State private var calendarSyncOn = false
+    @State private var isRequestingCalendarPermission = false
+    @State private var showCalendarDeniedNote = false
 
     /// EntitlementManager 通过 environmentObject 注入(VoiceTodoApp 的 sheet 显式传入)。
     /// 监听 isPro 翻转,在 proPaywall 步骤订阅成功后自动前进到 completionStep。
@@ -113,6 +134,10 @@ struct OnboardingView: View {
                                 welcomeStep
                             case .voicePermissions:
                                 voicePermissionsStep
+                            case .speechLanguage:
+                                speechLanguageStep
+                            case .calendarSync:
+                                calendarSyncStep
                             case .actionButton:
                                 actionButtonGuideStep
                             case .proPaywall:
@@ -135,9 +160,15 @@ struct OnboardingView: View {
             }
         }
         .onAppear {
-            // 每次页面显示时重新检查权限状态（用户可能从系统设置返回）
+            // sheet 首次出现时检查权限状态(整个 onboarding 期间 sheet 只 appear 一次)。
             permissionManager.checkCurrentStatus()
             animateContentIn()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // 后续回前台:用户跳到系统设置授权日历/麦克风后切回 App,sheet 不会重新 appear,
+            // 必须靠 scenePhase 刷新。与 .onAppear 互补,不重复(appear 只触发一次)。
+            guard phase == .active else { return }
+            permissionManager.checkCurrentStatus()
         }
         .onChange(of: currentStepIndex) {
             animateContentIn()
@@ -473,6 +504,296 @@ struct OnboardingView: View {
 
             Spacer()
         }
+    }
+
+    // MARK: - Step 2.5: Speech Language
+
+    /// 语音识别语言选择。与 HomeSettingsSheet 共享 storageKey,设置页无需任何改动。
+    /// `.auto` 默认选中并展开成「跟随系统 · 中文」(systemResolved),让用户第一眼就知道
+    /// auto 意味着什么。任何状态下「下一步」都可点 —— 这是个性化设置,不是 gate。
+    private var speechLanguageStep: some View {
+        VStack(spacing: 22) {
+            Spacer()
+                .frame(height: 30)
+
+            ZStack {
+                Circle()
+                    .fill(highlightColor.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                HStack(spacing: 14) {
+                    Image(systemName: "globe.asia.australia")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundColor(inkColor)
+                    Image(systemName: "waveform")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundColor(highlightColor)
+                }
+            }
+            .scaleEffect(illustrationScale)
+            .animation(motionAnim(.spring(response: 0.5)), value: illustrationScale)
+            .accessibilityHidden(true)
+
+            VStack(spacing: 10) {
+                Text(String(localized: "onboarding.speech_language.title"))
+                    .font(WarmFont.title(28))
+                    .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+
+                Text(String(localized: "onboarding.speech_language.desc"))
+                    .font(WarmFont.body(17))
+                    .foregroundColor(sketchColor)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
+            }
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
+
+            VStack(spacing: 14) {
+                ForEach(SpeechRecognitionLanguage.allCases) { lang in
+                    languageOptionRow(lang, isSelected: speechLanguageRaw == lang.rawValue)
+                }
+            }
+            .padding(.top, 14)
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
+
+            Spacer()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "a11y.onboarding.speech_language"))
+        .accessibilityIdentifier("OnboardingSpeechLanguageStep")
+    }
+
+    /// 语言选项卡:chrome 复用 permissionCard(RoundedRectangle + cardBackground + shadow + 描边)。
+    /// 选中态:描边换 highlightColor + 右侧 checkmark.circle.fill —— 与 PaywallView.ProductCard 一致。
+    @ViewBuilder
+    private func languageOptionRow(_ lang: SpeechRecognitionLanguage, isSelected: Bool) -> some View {
+        Button {
+            speechLanguageRaw = lang.rawValue
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "globe")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(inkColor)
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lang.displayName)
+                        .font(WarmFont.headline(17))
+                        .foregroundColor(inkColor)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
+
+                    if lang == .auto {
+                        // 把「跟随系统」展开成「跟随系统 · 中文」,
+                        // systemResolved 让 auto 不再是黑箱。
+                        Text(String(localized: "onboarding.speech_language.auto_resolved \(SpeechRecognitionLanguage.systemResolved.displayName)"))
+                            .font(WarmFont.caption(14))
+                            .foregroundColor(sketchColor)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                            .layoutPriority(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(isSelected ? highlightColor : .clear)
+                    .accessibilityHidden(true)
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(WarmTheme.cardBackground)
+                    .shadow(color: sketchColor.opacity(0.08), radius: 8, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isSelected ? highlightColor : sketchColor.opacity(0.15),
+                            lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("SpeechLanguageOption_\(lang.rawValue)")
+    }
+
+    // MARK: - Step 2.6: Calendar Sync
+
+    /// 日历同步开关。Toggle 视觉状态(@State)与持久化状态(@AppStorage)刻意分开:
+    /// 持久化只在拿到权限后写。不变量:`.appAndSystemCalendar ⟹ 权限已拿到`。
+    /// 详见 `calendarSyncBinding`。
+    private var calendarSyncStep: some View {
+        VStack(spacing: 22) {
+            Spacer()
+                .frame(height: 30)
+
+            ZStack {
+                Circle()
+                    .fill(highlightColor.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                HStack(spacing: 14) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundColor(inkColor)
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundColor(highlightColor)
+                }
+            }
+            .scaleEffect(illustrationScale)
+            .animation(motionAnim(.spring(response: 0.5)), value: illustrationScale)
+            .accessibilityHidden(true)
+
+            VStack(spacing: 10) {
+                Text(String(localized: "onboarding.calendar.title"))
+                    .font(WarmFont.title(28))
+                    .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+
+                Text(String(localized: "onboarding.calendar.desc"))
+                    .font(WarmFont.body(17))
+                    .foregroundColor(sketchColor)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
+            }
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
+
+            privacyNote(String(localized: "onboarding.calendar.privacy"))
+                .padding(.top, 4)
+                .offset(y: contentOffset)
+                .opacity(contentOpacity)
+
+            VStack(spacing: 14) {
+                HStack(spacing: 14) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundColor(inkColor)
+                        .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
+
+                    Text(String(localized: "onboarding.calendar.toggle"))
+                        .font(WarmFont.headline(17))
+                        .foregroundColor(inkColor)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
+
+                    Spacer(minLength: 0)
+
+                    Toggle("", isOn: calendarSyncBinding)
+                        .labelsHidden()
+                        .tint(highlightColor)
+                        .disabled(isRequestingCalendarPermission)
+                        .accessibilityIdentifier("CalendarSyncToggle")
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(WarmTheme.cardBackground)
+                    .shadow(color: sketchColor.opacity(0.08), radius: 8, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(sketchColor.opacity(0.15), lineWidth: 1)
+            )
+            .padding(.top, 14)
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
+
+            if showCalendarDeniedNote {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(String(localized: "onboarding.calendar.denied"))
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(sketchColor)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+
+                    Button(action: { permissionManager.openAppSettings() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "gear")
+                                .font(.system(size: 12))
+                            Text(String(localized: "onboarding.open_settings"))
+                                .font(WarmFont.body(14))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(inkColor))
+                    }
+                    // 用独立 id,不要沿用权限页的 "OpenSettingsButton" —— onboarding 期间
+                    // 两页可能前后出现,UI 测试若按 id 查找会跨页匹配到歧义节点。
+                    .accessibilityIdentifier("OnboardingCalendarOpenSettingsButton")
+                    .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
+                }
+                .padding(.horizontal, 4)
+                .transition(.opacity)
+            }
+
+            Spacer()
+        }
+        .onAppear {
+            // 重装用户可能已是开启状态 —— 视觉 toggle 对齐持久化值
+            calendarSyncOn = (calendarWriteModeRaw == CalendarWriteMode.appAndSystemCalendar.rawValue)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "a11y.onboarding.calendar"))
+        .accessibilityIdentifier("OnboardingCalendarSyncStep")
+    }
+
+    /// Toggle 的双向 Binding。视觉(@State calendarSyncOn)立即跟手;持久化
+    /// (@AppStorage calendarWriteModeRaw)只在拿到权限后写。
+    ///
+    /// 不变量:**持久化为 .appAndSystemCalendar ⟹ 权限确实拿到过。**
+    /// 失败只回滚视觉 —— 系统弹窗期间 App 被杀也不会留下脏持久化值
+    /// (正是 §1.4 那个「开着但不工作」状态的反面)。
+    private var calendarSyncBinding: Binding<Bool> {
+        Binding(
+            get: { calendarSyncOn },
+            set: { wantsOn in
+                calendarSyncOn = wantsOn          // 视觉立即跟手,不弹回
+                guard wantsOn else {
+                    calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+                    showCalendarDeniedNote = false
+                    return
+                }
+                // 已授权(比如重装用户)直接开,不再多弹一次系统窗
+                if permissionManager.calendarGranted {
+                    calendarWriteModeRaw = CalendarWriteMode.appAndSystemCalendar.rawValue
+                    return
+                }
+                isRequestingCalendarPermission = true
+                Task {
+                    let granted = await permissionManager.requestCalendarPermission()
+                    isRequestingCalendarPermission = false
+                    if granted {
+                        calendarWriteModeRaw = CalendarWriteMode.appAndSystemCalendar.rawValue
+                    } else {
+                        // 只回滚视觉;calendarWriteModeRaw 全程没被写过,不存在写脏的窗口
+                        withAnimation(motionAnim(.spring(response: 0.3))) {
+                            calendarSyncOn = false
+                        }
+                        showCalendarDeniedNote = true
+                    }
+                }
+            }
+        )
     }
 
     private var voicePermissionsIllustration: some View {
