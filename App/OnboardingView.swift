@@ -420,8 +420,9 @@ struct OnboardingView: View {
     // MARK: - Step: Voice Permissions (microphone + speech merged)
 
     /// 麦克风和语音识别合并为一页。用户心智里这是同一件事 ——「让 App 听我说话」。
-    /// 两张独立卡片各自带授权按钮,用户可按任意顺序授权;Skip 作为文字链接放在卡片下方,
-    /// 右下角 Continue 在两项都授权后才亮起。
+    /// 两张独立卡片各自带授权按钮,用户可按任意顺序授权;即便一项都不授权,右下角 Continue
+    /// 也可点(被拒权限之后能在「设置 - 语音权限」里跳系统设置重新开启)。Skip 作为更轻量
+    /// 的文字链接保留,语义和 Continue 一致 —— 不授权就标记为主动跳过,首次录音前会给引导。
     private var voicePermissionsStep: some View {
         VStack(spacing: 22) {
             Spacer()
@@ -1283,9 +1284,8 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // 前进/完成按钮
-            // - 权限合并页:文案「Continue」,两项都授权后才亮(未授权时显示但禁用)
-            // - 其他页:文案「Next」/「Got it」/「Get Started」,始终可用
+            // 前进/完成按钮。所有步骤(包括权限页)始终可用 —— 权限被拒不该卡住 onboarding,
+            // 用户随时能在「设置 - 语音权限」里重新开启(跳转系统设置)。
             Button(action: nextStep) {
                 HStack(spacing: 8) {
                     Text(buttonTitle)
@@ -1311,9 +1311,7 @@ struct OnboardingView: View {
                             y: 4
                         )
                 )
-                .opacity(primaryButtonOpacity)
             }
-            .disabled(isPrimaryButtonDisabled)
             .accessibilityIdentifier("NextButton")
         }
         .padding(.horizontal, 24)
@@ -1329,26 +1327,11 @@ struct OnboardingView: View {
         case .actionButton:
             return String(localized: "onboarding.button.got_it")
         case .voicePermissions:
-            // 合并页右下角的 Continue —— 授权完成后才可点
+            // 合并页右下角的 Continue —— 始终可点,不授权也能继续
             return String(localized: "onboarding.button.continue")
         default:
             return String(localized: "onboarding.button.next")
         }
-    }
-
-    /// 权限合并页在两项权限都拿到前禁用 Continue(但保持可见,让用户知道下一步在哪)。
-    /// 其他步骤的主按钮永远可用。
-    private var isPrimaryButtonDisabled: Bool {
-        switch currentStep {
-        case .voicePermissions:
-            return !permissionManager.allPermissionsGranted
-        default:
-            return false
-        }
-    }
-
-    private var primaryButtonOpacity: Double {
-        isPrimaryButtonDisabled ? 0.4 : 1.0
     }
 
     // MARK: - Actions
@@ -1372,6 +1355,12 @@ struct OnboardingView: View {
     }
 
     private func nextStep() {
+        // 离开权限页时若用户没把两项权限都拿到,视同主动跳过 —— 标志位会被首次录音前的
+        // 引导 sheet 读到,给出更详细的开启说明。Skip 按钮已经独立调过 markSkippedInOnboarding,
+        // 这里再调一次是幂等的(PermissionManager 内部 guard 了重复写)。
+        if currentStep == .voicePermissions && !permissionManager.allPermissionsGranted {
+            permissionManager.markSkippedInOnboarding()
+        }
         if currentStepIndex == totalSteps - 1 {
             hasCompletedOnboarding = true
         } else {

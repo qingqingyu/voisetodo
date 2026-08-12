@@ -16,6 +16,8 @@ struct HomeSettingsSheet: View {
     @AppStorage(DayClock.startHourKey, store: DayClock.appGroupDefaults)
     private var dayStartHour: Int = 0
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var permissionManager: PermissionManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showClearConfirmation = false
     @State private var didClearLearningData = false
     @State private var showFeedbackSheet = false
@@ -56,6 +58,45 @@ struct HomeSettingsSheet: View {
                     .accessibilityIdentifier("UpgradeProButton")
                 } header: {
                     Text(String(localized: "settings.upgrade_pro.header"))
+                }
+
+                // 麦克风 + 语音识别权限入口。iOS 上权限一旦在系统弹窗里被拒,App 内无法再
+                // 拉起系统弹窗,只能引导用户去系统设置 —— 这里就是那个引导入口。
+                // 状态文案在 scenePhase=.active 时刷新:用户从系统设置切回来能立刻看到结果。
+                Section {
+                    Button {
+                        permissionManager.openAppSettings()
+                    } label: {
+                        HStack {
+                            Label {
+                                Text(String(localized: "settings.permissions.voice"))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                                    .layoutPriority(1)
+                            } icon: {
+                                Image(systemName: "mic.fill")
+                            }
+                            Spacer()
+                            Text(permissionManager.allPermissionsGranted
+                                 ? String(localized: "settings.permissions.granted")
+                                 : String(localized: "settings.permissions.denied"))
+                                .foregroundStyle(permissionManager.allPermissionsGranted
+                                                 ? .secondary
+                                                 : WarmTheme.warning)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                                .flipsForRightToLeftLayoutDirection(true)
+                        }
+                    }
+                    .accessibilityIdentifier("VoicePermissionsSettingsButton")
+                } header: {
+                    Text(String(localized: "settings.permissions.title"))
+                } footer: {
+                    Text(String(localized: "settings.permissions.footer"))
                 }
 
                 Section(String(localized: "settings.calendar_write.title")) {
@@ -205,6 +246,11 @@ struct HomeSettingsSheet: View {
             .onChange(of: dayStartHour) { _, _ in
                 WidgetCenter.shared.reloadAllTimelines()
             }
+            // 用户从系统设置改完麦克风/语音识别权限切回来,刷新状态文案。
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                permissionManager.checkCurrentStatus()
+            }
         }
     }
 
@@ -215,4 +261,5 @@ struct HomeSettingsSheet: View {
 
 #Preview {
     HomeSettingsSheet(calendarWriteModeRaw: .constant(CalendarWriteMode.appOnly.rawValue))
+        .environmentObject(PermissionManager())
 }

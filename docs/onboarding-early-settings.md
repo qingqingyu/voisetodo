@@ -263,8 +263,7 @@ private enum OnboardingStep: CaseIterable {
 两个新步骤都走 `default: return true`，始终显示。
 页码指示器（:190-222）遍历 `visibleSteps.indices`，自动适配新长度。
 
-`buttonTitle`（:1004-1016）、`isPrimaryButtonDisabled`（:1020-1027）、
-`shouldHideBottomBar`（:155-157）**都不用改**：两个新步骤都走 `default`——
+`buttonTitle`（:1004-1016）、`shouldHideBottomBar`（:155-157）**都不用改**：两个新步骤都走 `default`——
 底栏显示「下一步」，始终可点。这是有意的：两项都是可选的个性化设置，
 任何状态下都不能卡住引导。
 
