@@ -75,9 +75,17 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var saveTask: Task<Void, Never>?
 
     /// ScrollView 是否处于顶部(静止 + bounce 都算 true)。由根视图 `.onPreferenceChange`
-    /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势把它作为唯一守卫:
-    /// 只有滚到顶之后再下滑才关闭页面,对齐 iOS sheet「滚到顶继续下滑收起」语义。
+    /// 根据 VStack 顶部锚点的 frame.minY 更新。
     @State private var isScrollViewAtTop: Bool = true
+
+    /// DragGesture 起手时的 `isScrollViewAtTop` 快照。`nil` = 当前没有进行中的手势。
+    /// 第一次 onChanged 时锁定,整个手势生命周期内 onEnded 都读这个锁定值。
+    ///
+    /// 解决 bug:用户在中段起手下滑,ScrollView 滚动过程把 `isScrollViewAtTop` 异步翻转为 true,
+    /// onEnded 读到 true 误触发 dismiss。锁定后,起手 not-at-top 的手势整段都不 dismiss ——
+    /// 用户必须松手后再下滑一次(此时内容已稳定在顶,起手读 true)才关闭,对齐
+    /// 「第一次滚到顶、第二次再下滑才关闭」的二次确认心智模型。
+    @State private var dragStartedAtTop: Bool?
 
     init(store: Store, todo: TodoItemData) {
         self.store = store
@@ -325,10 +333,21 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             .coordinateSpace(name: DetailScrollCoordinateSpace.name)
         }
         // 下滑手势:跟左上角 chevron.down(ToolbarItem)等价 —— 调 dismiss(),由 .onDisappear 兜底 persistChanges。
-        // simultaneousGesture 让 DragGesture 与 ScrollView 滚动同时识别;onEnded 时按阈值判断是否真的关闭(见 handleDismissDrag)。
+        // simultaneousGesture 让 DragGesture 与 ScrollView 滚动同时识别;onChanged 第一次触发时锁定起手状态,
+        // onEnded 读锁定值按阈值判断是否真的关闭(见 handleDismissDrag)。
         .simultaneousGesture(
             DragGesture(minimumDistance: DismissDragConfig.minimumDistance)
-                .onEnded(handleDismissDrag)
+                .onChanged { _ in
+                    // 锁定起手时的 isScrollViewAtTop(只记一次,后续 onChanged 不覆盖)。
+                    if dragStartedAtTop == nil {
+                        dragStartedAtTop = isScrollViewAtTop
+                    }
+                }
+                .onEnded { value in
+                    let startedAtTop = dragStartedAtTop ?? false
+                    dragStartedAtTop = nil
+                    handleDismissDrag(value, startedAtTop: startedAtTop)
+                }
         )
         .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
             isScrollViewAtTop = offset >= 0
@@ -391,16 +410,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     // MARK: - Dismiss Drag
 
-    /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值 + 当前滚动状态判定。
-    private func handleDismissDrag(_ value: DragGesture.Value) {
-        // 必须 ScrollView 已在顶部才识别为关闭手势 —— 对齐 iOS sheet「滚到顶继续下滑收起」语义。
-        // 历史:曾有「顶部 30% 起手豁免」(导航栏下拉直觉),但用户反馈:页面已滚到中段时
-        // 从顶部起手下滑,期望是滚动回顶部而非关闭,豁免会误触发 → 移除。
-        //
-        // isScrollViewAtTop 由 .onPreferenceChange 在 layout pass 后异步更新, ScrollView 滚动会
-        // 持续触发更新, onEnded 触发时读到的是最近一次 layout 的近似值。极快的「滚到顶立刻松手」
-        // 场景可能滞后一帧(读到 false 而 offset 已 >= 0),表现为需松手后再滑一次, 不影响正确性。
-        guard isScrollViewAtTop else { return }
+    /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值 + 起手时滚动状态判定。
+    /// - Parameter startedAtTop: 手势起手时(onChanged 第一次触发)锁定的 `isScrollViewAtTop`。
+    ///   不读 onEnded 时的当前值 —— ScrollView 在手势过程中可能滚到顶导致 isScrollViewAtTop
+    ///   异步翻转为 true,读当前值会误触发 dismiss。
+    private func handleDismissDrag(_ value: DragGesture.Value, startedAtTop: Bool) {
+        // 必须**起手时** ScrollView 已在顶部才识别为关闭手势。
+        // 用户工作流:第一次下滑(内容在中段)把内容滚到顶,松手不关闭;第二次下滑(内容已稳定在顶)
+        // 才关闭 —— 起手锁定值正好对齐这个二次确认心智模型。
+        guard startedAtTop else { return }
         let translation = value.translation
         guard translation.height > DismissDragConfig.verticalTranslationLowerBound,
               abs(translation.height) > abs(translation.width) else { return }
