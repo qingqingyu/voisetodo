@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import WidgetKit
 
 private func formattedDetailDate(_ date: Date) -> String {
@@ -7,17 +6,10 @@ private func formattedDetailDate(_ date: Date) -> String {
 }
 
 /// 下滑关闭手势阈值(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
-/// 跟 chevron.down 按钮(ToolbarItem)等价的输入通道:从页面顶部区域下滑即 dismiss。
+/// 跟 chevron.down 按钮(ToolbarItem)等价的输入通道:ScrollView 滚到顶后再下滑才 dismiss。
 private enum DismissDragConfig {
     /// DragGesture 最小位移:低于此值不识别为拖拽,排除点击抖动
     static let minimumDistance: CGFloat = 40
-    /// startLocation.y 占屏高比例的"顶部优先区"阈值。
-    /// 顶部 30%(导航栏 + 第一张卡区域)内起手的下滑,无视 ScrollView 滚动状态都识别 ——
-    /// "从导航栏下拉"的直觉。其他位置起手的下滑,需 ScrollView 已在顶部才识别 ——
-    /// 对齐 iOS sheet "滚到顶继续下滑收起"的语义。
-    /// 用比例而非绝对像素(原硬编码 200),在 SE(667pt)→ 200pt / Pro Max(932pt)→ 280pt,
-    /// 自动随 Dynamic Type 与屏宽缩放,避免 AX5 字号下第一张卡延伸过 200pt 时被错误剔除。
-    static let topZoneHeightRatio: CGFloat = 0.3
     /// 下滑位移下限:足够大才视为有意图的"关闭手势",排除轻微拖拽
     static let verticalTranslationLowerBound: CGFloat = 80
 }
@@ -83,8 +75,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var saveTask: Task<Void, Never>?
 
     /// ScrollView 是否处于顶部(静止 + bounce 都算 true)。由根视图 `.onPreferenceChange`
-    /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势用它扩展识别区域:
-    /// 顶部 30% 内无视滚动状态,其他位置起手需 `isScrollViewAtTop == true` 才 dismiss。
+    /// 根据 VStack 顶部锚点的 frame.minY 更新。下滑 dismiss 手势把它作为唯一守卫:
+    /// 只有滚到顶之后再下滑才关闭页面,对齐 iOS sheet「滚到顶继续下滑收起」语义。
     @State private var isScrollViewAtTop: Bool = true
 
     init(store: Store, todo: TodoItemData) {
@@ -169,29 +161,6 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .foregroundColor(WarmTheme.textPrimary)
                                 .lineLimit(1...3)
                                 .onChange(of: editedDetail) { _, _ in checkForChanges() }
-                        }
-                    }
-
-                    // 分类（自适应网格：7 个分类按屏宽换行，避免横向滚动藏起「其他」）
-                    // minimum 64pt：去掉 emoji 后每列只需容纳文字本身宽度，
-                    // 64pt 足够放下 13pt 字体的 "Finance"/"Social"，
-                    // 配合 chip 内 lineLimit(1) + minimumScaleFactor 兜底 Dynamic Type 最大档。
-                    detailCard {
-                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                            Text(String(localized: "detail.section.category"))
-                                .font(WarmFont.caption(13))
-                                .foregroundColor(WarmTheme.textSecondary)
-                            TodoCategoryGrid(selection: $editedCategory, onEdit: checkForChanges)
-                        }
-                    }
-
-                    // 优先级（issue 7：绿色改橙色系；issue 8：统一实心填充）
-                    detailCard {
-                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                            Text(String(localized: "detail.section.priority"))
-                                .font(WarmFont.caption(13))
-                                .foregroundColor(WarmTheme.textSecondary)
-                            TodoPriorityPicker(selection: $editedPriority, onEdit: checkForChanges)
                         }
                     }
 
@@ -288,6 +257,29 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     }
 
                     recurrenceEditorCard
+
+                    // 分类（自适应网格：7 个分类按屏宽换行，避免横向滚动藏起「其他」）
+                    // minimum 64pt：去掉 emoji 后每列只需容纳文字本身宽度，
+                    // 64pt 足够放下 13pt 字体的 "Finance"/"Social"，
+                    // 配合 chip 内 lineLimit(1) + minimumScaleFactor 兜底 Dynamic Type 最大档。
+                    detailCard {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                            Text(String(localized: "detail.section.category"))
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
+                            TodoCategoryGrid(selection: $editedCategory, onEdit: checkForChanges)
+                        }
+                    }
+
+                    // 优先级（issue 7：绿色改橙色系；issue 8：统一实心填充）
+                    detailCard {
+                        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                            Text(String(localized: "detail.section.priority"))
+                                .font(WarmFont.caption(13))
+                                .foregroundColor(WarmTheme.textSecondary)
+                            TodoPriorityPicker(selection: $editedPriority, onEdit: checkForChanges)
+                        }
+                    }
 
                     // 删除:文字链接样式(无背景填充)。
                     // 保留二次确认 alert —— 危险操作必须有,但视觉上弱化避免误点。
@@ -401,21 +393,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
     /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值 + 当前滚动状态判定。
     private func handleDismissDrag(_ value: DragGesture.Value) {
-        // 用 connectedScenes 而非 UIScreen.main —— iOS 16+ 已弃用,多 window 场景下取值可能错误。
-        // 本 app 单 window,iPhone 等价原行为。
-        let screenHeight = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .filter { $0.activationState == .foregroundActive }
-            .map { $0.screen.bounds.height }
-            .max() ?? 0
-        guard screenHeight > 0 else { return }
-        let inTopZone = value.startLocation.y < screenHeight * DismissDragConfig.topZoneHeightRatio
-        // 顶部 30% 内:维持原行为(任何滚动状态都 dismiss)—— "从导航栏下拉"直觉。
-        // 顶部 30% 外:必须 ScrollView 已在顶部 —— "滚到顶继续下滑收起"直觉,对齐 iOS sheet。
+        // 必须 ScrollView 已在顶部才识别为关闭手势 —— 对齐 iOS sheet「滚到顶继续下滑收起」语义。
+        // 历史:曾有「顶部 30% 起手豁免」(导航栏下拉直觉),但用户反馈:页面已滚到中段时
+        // 从顶部起手下滑,期望是滚动回顶部而非关闭,豁免会误触发 → 移除。
+        //
         // isScrollViewAtTop 由 .onPreferenceChange 在 layout pass 后异步更新, ScrollView 滚动会
-        // 持续触发更新, onEnded 触发时读到的是最近一次 layout 的近似值。极快的"滚到顶立刻松手"
+        // 持续触发更新, onEnded 触发时读到的是最近一次 layout 的近似值。极快的「滚到顶立刻松手」
         // 场景可能滞后一帧(读到 false 而 offset 已 >= 0),表现为需松手后再滑一次, 不影响正确性。
-        guard inTopZone || isScrollViewAtTop else { return }
+        guard isScrollViewAtTop else { return }
         let translation = value.translation
         guard translation.height > DismissDragConfig.verticalTranslationLowerBound,
               abs(translation.height) > abs(translation.width) else { return }
