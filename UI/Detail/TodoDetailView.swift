@@ -614,7 +614,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             // 历史:原实心 primary + 白字视觉重量过高,跟页面其他选中态(时段 segmented 浅底)
             // 打架。改浅底方案统一设计语言。
             Text(title)
-                .font(WarmFont.caption(12).weight(isSelected && frequency != nil ? .medium : .regular))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(isSelected
                     ? (frequency == nil ? WarmTheme.textPrimary : WarmTheme.primaryText)
                     : WarmTheme.textSecondary)
@@ -662,10 +662,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             checkForChanges()
         } label: {
             Text(shortWeekdayName(weekday))
-                // caption(11) 比 Repeat chip 的 caption(12) 小一档,视觉层级清晰:
-                // Repeat 是主选择,weekday 是次级补选。
-                // 选中加 weight medium(跟 Repeat chip 选中态同步)。
-                .font(WarmFont.caption(11).weight(isSelected ? .medium : .regular))
+                // system 12pt 比 Repeat chip 的 14pt 小两档,视觉层级清晰:
+                // Repeat 是主选择,weekday 是次级补选。字重统一 .medium(跟分类 chip 一致)。
+                .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isSelected ? WarmTheme.primaryText : WarmTheme.textSecondary)
                 // lineLimit(1) + minimumScaleFactor(0.7):AX5 大字号下"周三"/"Wed"
                 // 单行装不下,允许缩到 70% 字号兜底,不截断(用户决策,见 weekdayGrid 注释)。
