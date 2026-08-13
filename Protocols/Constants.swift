@@ -163,5 +163,5 @@ enum WidgetConfig {
     /// 大尺寸显示条数
     static let largeItemCount = 6
     /// 锁屏显示条数
-    static let lockscreenItemCount = 2
+    static let lockscreenItemCount = 3
 }

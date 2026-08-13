@@ -116,7 +116,7 @@ struct LockscreenRectangularWidget: View {
             case .error:
                 lockscreenState(systemName: "exclamationmark.triangle", title: String(localized: "widget.load_failed"))
             case .success:
-                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                VStack(alignment: .leading, spacing: 0) {
                     if let interactionError {
                         WidgetInteractionErrorView(error: interactionError, compact: true)
                     }
@@ -125,7 +125,7 @@ struct LockscreenRectangularWidget: View {
                         Toggle(isOn: todo.isCompleted, intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
                             HStack(spacing: WarmSpacing.xs) {
                                 Text(todo.title)
-                                    .font(.system(size: 14, weight: .medium))
+                                    .font(.system(size: 15, weight: .medium))
                                     .strikethrough(todo.isCompleted)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
