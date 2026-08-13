@@ -77,6 +77,15 @@ struct ToastModifier: ViewModifier {
     /// 仅 `.bottom` 位置需要避让 VoiceFAB 等 overlay 控件时由调用方传入;
     /// 默认 nil → 沿用 `WarmSpacing.xxxl`,现有调用方零影响。
     var bottomPadding: CGFloat? = nil
+    /// 顶部 toast 距容器顶的额外间距(覆盖默认 `WarmSpacing.xxxl`)。
+    /// 仅 `.top` 位置需要把 toast 顶到更贴近导航栏下沿时由调用方传入
+    /// (详情页自动保存反馈:默认 48pt 会让 toast 压住标题卡片,需缩小到 8pt);
+    /// 默认 nil → 沿用 `WarmSpacing.xxxl`,现有调用方零影响。
+    var topPadding: CGFloat? = nil
+    /// 紧凑变体:缩小 icon/字号/内边距,整体高度从 ~64pt 降到 ~36pt。
+    /// 详情页自动保存反馈用,避免大尺寸 toast 在导航栏下方喧宾夺主;
+    /// 默认 false,现有调用方零影响。
+    var compact: Bool = false
 
     /// 当前自动隐藏的定时器
     @State private var dismissTask: DispatchWorkItem?
@@ -85,12 +94,12 @@ struct ToastModifier: ViewModifier {
         content
             .overlay(alignment: position.alignment) {
                 if isPresented {
-                    ToastView(message: message, style: style, actionTitle: actionTitle, action: action)
+                    ToastView(message: message, style: style, compact: compact, actionTitle: actionTitle, action: action)
                         .transition(.asymmetric(
                             insertion: .move(edge: position.edge).combined(with: .scale(scale: 0.9)),
                             removal: .move(edge: position.edge).combined(with: .opacity)
                         ))
-                        .padding(position.edgeInsets, bottomPadding ?? WarmSpacing.xxxl)
+                        .padding(position.edgeInsets, resolvedEdgePadding)
                         // 无 action 的 toast 不需要接收点击,关掉 hit testing
                         // 避免底部 toast 期间遮住悬浮 FAB(成功 toast 寿命 2s,
                         // 恰好是用户最可能想立刻再录一条的时刻)。
@@ -126,6 +135,15 @@ struct ToastModifier: ViewModifier {
             }
     }
 
+    /// overlay 容器边距按 position 解析:`.top` 用 topPadding,`.bottom` 用 bottomPadding,
+    /// 都没传则回落到 `WarmSpacing.xxxl`(=48pt,历史默认值,保证现有调用方零影响)。
+    var resolvedEdgePadding: CGFloat {
+        switch position {
+        case .top:    return topPadding ?? WarmSpacing.xxxl
+        case .bottom: return bottomPadding ?? WarmSpacing.xxxl
+        }
+    }
+
     /// 调度自动隐藏（取消旧定时器，启动新定时器）
     private func scheduleDismiss() {
         dismissTask?.cancel()
@@ -145,25 +163,35 @@ struct ToastModifier: ViewModifier {
 struct ToastView: View {
     let message: String
     let style: ToastStyle
+    /// 紧凑变体:详情页自动保存反馈用。
+    /// 默认(false):icon 32pt / 字 15pt / 内边距 md(16) → 整体 ~64pt 高
+    /// compact(true):icon 20pt / 字 13pt / 内边距 xs(8) → 整体 ~36pt 高
+    /// —— 让 toast 能装进导航栏下方与标题卡片之间的空隙,不遮内容。
+    var compact: Bool = false
     var actionTitle: String?
     var action: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: WarmSpacing.sm) {
+        HStack(spacing: compact ? WarmSpacing.xs : WarmSpacing.sm) {
             ZStack {
                 Circle()
                     .fill(style.iconColor.opacity(0.15))
-                    .frame(width: 32, height: 32)
+                    .frame(width: compact ? 20 : 32, height: compact ? 20 : 32)
 
                 Image(systemName: style.iconName)
                     .foregroundColor(style.iconColor)
-                    .font(.system(size: 18))
+                    .font(.system(size: compact ? 13 : 18))
             }
 
             Text(message)
-                .font(WarmFont.body(15))
+                .font(WarmFont.body(compact ? 13 : 15))
                 .foregroundColor(WarmTheme.textPrimary)
-                .lineLimit(2)
+                .lineLimit(compact ? 1 : 2)
+                // compact 单行变体必须加 minimumScaleFactor 兜底:
+                // 详情页这个 toast 复用 coordinator.toastMessage,会承载校验失败等
+                // 较长文案("请先选择星期"),lineLimit(1) 无缩放会截断成 ...,
+                // 违反"文本截断零容忍"。允许缩到 70% 字号兜底完整显示。
+                .minimumScaleFactor(compact ? 0.7 : 1.0)
                 .multilineTextAlignment(.leading)
 
             Spacer(minLength: 0)
@@ -171,7 +199,7 @@ struct ToastView: View {
             if let actionTitle, let action {
                 Button(action: action) {
                     Text(actionTitle)
-                        .font(WarmFont.headline(13))
+                        .font(WarmFont.headline(compact ? 12 : 13))
                         .foregroundColor(style.iconColor)
                         .padding(.horizontal, WarmSpacing.sm)
                         .padding(.vertical, WarmSpacing.xs)
@@ -182,12 +210,12 @@ struct ToastView: View {
                 }
             }
         }
-        .padding(.horizontal, WarmSpacing.md)
-        .padding(.vertical, WarmSpacing.md)
+        .padding(.horizontal, compact ? WarmSpacing.sm : WarmSpacing.md)
+        .padding(.vertical, compact ? WarmSpacing.xs : WarmSpacing.md)
         .background(
-            RoundedRectangle(cornerRadius: WarmRadius.sheet)
+            RoundedRectangle(cornerRadius: compact ? WarmRadius.card : WarmRadius.sheet)
                 .fill(Color.white)
-                .shadow(color: WarmTheme.shadowMedium, radius: 16, x: 0, y: 8)
+                .shadow(color: WarmTheme.shadowMedium, radius: compact ? 8 : 16, x: 0, y: compact ? 4 : 8)
         )
         .padding(.horizontal, WarmSpacing.md)
         .accessibilityIdentifier("Toast")
@@ -203,6 +231,9 @@ extension View {
     ///     (流式点击反馈等"响应用户操作的临时提示",不遮卡片内容)。
     ///   - presentationToken: 调用方递增此值可在 isPresented 已为 true 时强制重置 dismiss 计时,
     ///     用于"连续点击不同卡片但 toast 文案相同"的场景。默认 0 = 不参与重置。
+    ///   - bottomPadding: `.bottom` 位置距容器底的额外间距(避让 FAB 等 overlay),默认 nil = `WarmSpacing.xxxl`。
+    ///   - topPadding: `.top` 位置距容器顶的额外间距(详情页缩到导航栏下沿 8pt 避遮标题),默认 nil = `WarmSpacing.xxxl`。
+    ///   - compact: 紧凑变体(icon 20pt / 字 13pt / 高 ~36pt),详情页自动保存反馈用,默认 false。
     func toast(
         message: String,
         style: ToastStyle = .info,
@@ -210,6 +241,8 @@ extension View {
         position: ToastModifier.Position = .top,
         presentationToken: Int = 0,
         bottomPadding: CGFloat? = nil,
+        topPadding: CGFloat? = nil,
+        compact: Bool = false,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil
     ) -> some View {
@@ -221,7 +254,9 @@ extension View {
             actionTitle: actionTitle,
             action: action,
             presentationToken: presentationToken,
-            bottomPadding: bottomPadding
+            bottomPadding: bottomPadding,
+            topPadding: topPadding,
+            compact: compact
         ))
     }
 }

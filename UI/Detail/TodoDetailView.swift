@@ -327,7 +327,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     .padding(.top, WarmSpacing.sm)
                 }
                 .padding(.horizontal, WarmSpacing.xl)
-                .padding(.top, WarmSpacing.xl) // issue 6：加大 top padding 防 Title 被导航栏截断
+                // 顶部 padding = 48pt(xxxl):既防 Title 被导航栏视觉截断(issue 6 原意),
+                // 又给详情页专用的 compact toast(高 ~36pt + topPadding 8pt = 占 +8~44pt 区段)
+                // 让出导航栏下方的完整空间。标题卡片顶部落在 +48pt,与 toast 底部(+44pt)
+                // 之间留 4pt 呼吸距离,完全不遮挡。改自原 WarmSpacing.xl(24pt)。
+                .padding(.top, WarmSpacing.xxxl)
                 .padding(.bottom, 40)
             }
             .coordinateSpace(name: DetailScrollCoordinateSpace.name)
@@ -399,10 +403,19 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         // .toast overlay 被整页盖住,详情页里调 coordinator.showToast 时反馈不可见。
         // 这里在详情页内再挂一份,复用同一组 coordinator 状态,反馈就能在详情页顶部出现。
         // dismiss 后若 toast 未消失,主 overlay 接管显示,不会丢反馈。
+        //
+        // compact + topPadding(8):详情页专用优化。
+        // 默认 `.top` 用 48pt 顶部间距 + 64pt 高度的大 toast,在详情页里会压住第一张标题卡片
+        // (标题卡片顶部在导航栏下沿 + 24pt 处,toast 占据 +48~112pt 区段,完全覆盖标题)。
+        // compact 把 toast 缩到 ~36pt 高,topPadding 收到 8pt,toast 占据 +8~44pt 区段;
+        // 配合下面 ScrollView 顶部 padding 从 24 提到 48,标题卡片顶部下移到 +48pt,
+        // toast 完整装在导航栏与标题卡片之间的空隙,不再遮挡内容。
         .toast(
             message: coordinator.toastMessage,
             style: coordinator.toastStyle,
             isPresented: $coordinator.showToast,
+            topPadding: WarmSpacing.xs,
+            compact: true,
             actionTitle: coordinator.toastActionTitle,
             action: coordinator.toastAction
         )
