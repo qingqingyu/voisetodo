@@ -1,5 +1,15 @@
 {
-  "identifier" : "F4A2C9D8",
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "50B266F4",
   "nonRenewingSubscriptions" : [
 
   ],
@@ -7,24 +17,24 @@
 
   ],
   "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_locale" : "zh_CN",
-    "_storefront" : "CHN"
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
   },
   "subscriptionGroups" : [
     {
-      "id" : "B1C2D3E4",
+      "id" : "6D7BF482",
       "localizations" : [
-        {
-          "description" : "VoiceTodo Pro：更高的每日语音整理额度",
-          "displayName" : "VoiceTodo Pro",
-          "locale" : "zh_CN"
-        },
-        {
-          "description" : "VoiceTodo Pro: higher daily voice quota",
-          "displayName" : "VoiceTodo Pro",
-          "locale" : "en_US"
-        }
+
       ],
       "name" : "Pro",
       "subscriptions" : [
@@ -32,35 +42,49 @@
           "adHocOffers" : [
 
           ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "98",
+              "displayPrice" : "98",
+              "internalID" : "526865EF",
+              "isEnabled" : true
+            }
+          ],
           "codeOffers" : [
 
           ],
-          "displayPrice" : "98.00",
+          "displayPrice" : "98",
           "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "A1000002",
+          "internalID" : "3797C977",
           "introductoryOffer" : {
-            "displayPrice" : "0.00",
-            "internalID" : "A1000012",
-            "paymentMode" : "freeTrial",
+            "billingPlanType" : "BILLED_UPFRONT",
+            "internalID" : "A720F8C6",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "free",
             "subscriptionPeriod" : "P3D"
           },
+          "introductoryOffers" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "internalID" : "A720F8C6",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P3D"
+            }
+          ],
           "localizations" : [
             {
-              "description" : "每年自动续费，比月付省约 32%",
-              "displayName" : "Pro 年付",
-              "locale" : "zh_CN"
-            },
-            {
-              "description" : "Billed annually. Save ~32% vs monthly.",
-              "displayName" : "Pro Yearly",
+              "description" : "",
+              "displayName" : "",
               "locale" : "en_US"
             }
           ],
           "productID" : "com.qingqingyu.voicetodo.pro.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Pro Yearly",
-          "subscriptionGroupID" : "B1C2D3E4",
+          "subscriptionGroupID" : "6D7BF482",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
 
@@ -70,35 +94,49 @@
           "adHocOffers" : [
 
           ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "12.99",
+              "displayPrice" : "12.99",
+              "internalID" : "40903196",
+              "isEnabled" : true
+            }
+          ],
           "codeOffers" : [
 
           ],
-          "displayPrice" : "12.00",
+          "displayPrice" : "12.99",
           "familyShareable" : false,
-          "groupNumber" : 2,
-          "internalID" : "A1000001",
+          "groupNumber" : 1,
+          "internalID" : "0EEEC643",
           "introductoryOffer" : {
-            "displayPrice" : "0.00",
-            "internalID" : "A1000011",
-            "paymentMode" : "freeTrial",
+            "billingPlanType" : "BILLED_UPFRONT",
+            "internalID" : "CE77B620",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "free",
             "subscriptionPeriod" : "P3D"
           },
+          "introductoryOffers" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "internalID" : "CE77B620",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P3D"
+            }
+          ],
           "localizations" : [
             {
-              "description" : "每月自动续费，可随时取消",
-              "displayName" : "Pro 月付",
-              "locale" : "zh_CN"
-            },
-            {
-              "description" : "Billed monthly. Cancel anytime.",
-              "displayName" : "Pro Monthly",
+              "description" : "",
+              "displayName" : "",
               "locale" : "en_US"
             }
           ],
           "productID" : "com.qingqingyu.voicetodo.pro.monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Pro Monthly",
-          "subscriptionGroupID" : "B1C2D3E4",
+          "subscriptionGroupID" : "6D7BF482",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
 
@@ -108,7 +146,7 @@
     }
   ],
   "version" : {
-    "major" : 4,
+    "major" : 5,
     "minor" : 0
   }
 }
