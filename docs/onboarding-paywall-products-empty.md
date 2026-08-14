@@ -39,6 +39,12 @@ case .empty:
 **不是** `.error` —— 也就是说 `Product.products(for:)` 没有抛错,而是成功返回了**空数组**
 (`App/EntitlementManager.swift:87-90`,同时打 `entitlement.products_empty` 警告)。
 
+> **后续变更**:上面引用的是本文档撰写时的旧代码。`.empty` 分支现已按
+> `NetworkMonitor.shared.isConnected` 分流 —— 无网显示 `paywall.products_empty.offline`
+> (保留 `wifi.exclamationmark`),有网但商品空显示中性文案
+> `paywall.products_empty.store_unavailable`(`cart.badge.exclamationmark`)。
+> 旧 key `paywall.products_empty.subtitle` 已删除。
+
 订阅按钮消失是连带结果 —— `purchaseCTA` 只在 `.success` 下渲染(`PaywallView.swift:82`)。
 
 ### 2.2 排除掉的几个方向

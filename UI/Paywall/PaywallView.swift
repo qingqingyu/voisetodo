@@ -313,10 +313,15 @@ struct PaywallContent: View {
         case .loading:
             loadingPlaceholder
         case .empty:
+            // StoreKit 返回空数组时静默无原因(模拟器 storekitd 抽风 / 商品未上架 / 真断网 都走这里)。
+            // 用当前网络状态间接归因:无网 → 提示网络(归因正确);
+            // 有网但空 → 中性"无法连接 App Store",不误导用户去查一个没坏的网络。
+            // 归因在渲染时点读取,网络后续变化不主动刷新 —— Retry 会驱动状态变化并重新归因。
             stateMessage(
-                icon: "wifi.exclamationmark",
+                icon: NetworkMonitor.shared.isConnected
+                    ? "cart.badge.exclamationmark" : "wifi.exclamationmark",
                 title: String(localized: "paywall.products_empty.title"),
-                subtitle: String(localized: "paywall.products_empty.subtitle"),
+                subtitle: String(localized: productsEmptySubtitleKey),
                 retryAction: { Task { await entitlement.refresh() } }
             )
         case .error:
@@ -340,6 +345,13 @@ struct PaywallContent: View {
             }
             .padding(.horizontal, WarmSpacing.lg)
         }
+    }
+
+    /// `.empty` 态副文案:有网但商品空 → 中性"无法连接 App Store";无网 → 提示检查网络。
+    /// StoreKit 空数组不携带失败原因,只能用当前网络状态间接归因(见 productList `.empty` 注释)。
+    private var productsEmptySubtitleKey: String.LocalizationValue {
+        NetworkMonitor.shared.isConnected
+            ? "paywall.products_empty.store_unavailable" : "paywall.products_empty.offline"
     }
 
     private func stateMessage(

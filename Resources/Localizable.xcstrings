@@ -6386,6 +6386,22 @@
         }
       }
     },
+    "paywall.products_empty.offline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're offline. Check your connection and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络未连接，请检查网络后重试"
+          }
+        }
+      }
+    },
     "paywall.products_empty.retry" : {
       "localizations" : {
         "en" : {
@@ -6402,18 +6418,18 @@
         }
       }
     },
-    "paywall.products_empty.subtitle" : {
+    "paywall.products_empty.store_unavailable" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check your connection or try again in a moment"
+            "value" : "Can't reach the App Store right now. Please try again in a moment."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请检查网络或稍后再试"
+            "value" : "暂时无法连接 App Store，请稍后重试"
           }
         }
       }
