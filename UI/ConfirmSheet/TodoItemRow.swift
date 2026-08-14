@@ -55,7 +55,7 @@ struct TodoItemRow: View {
 
     private var isExpanded: Bool { expandedTodoID == todo.id }
 
-    /// 卡片内的时间串:不传 relativeDateText(分组标题已带日期,避免冗余),
+    /// 卡片内的时间串:不传 relativeDateText(日期已单独做成 chip,见 composedDateText),
     /// 让 composer 只拼「钟点 / 模糊时段 / dueHint 兜底」。
     private var composedTimeText: String? {
         TodoTimeDisplayComposer.compose(
@@ -67,8 +67,49 @@ struct TodoItemRow: View {
         )
     }
 
+    /// 卡片内的日期串:dueDate 实时换算成相对日期(今天/明天/周三/8月17日),
+    /// 与时间 chip 并排显示。组标题虽已带日期,但用户要求卡片上直接可见
+    /// (语音说"大后天下午15点"时,卡片只有 15:00 看不出是哪天)。
+    /// 重复规则的时间 chip 自带日期范围展示(每天 · 至 8月5日),不重复加日期 chip。
+    ///
+    /// 已知取舍:当时间 chip 走 dueHint 原文兜底(如"大后天下午3点"自带日期)时,
+    /// 日期信息会与日期 chip 重复甚至表面不一致 —— dueDate 是结构化权威字段,
+    /// 日期 chip 以它为准,dueHint 原文只作参考展示,不做冲突消解。
+    private var composedDateText: String? {
+        guard todo.recurrenceRule == nil, let due = todo.dueDate else { return nil }
+        return TodoRelativeDateFormatter.format(due)
+    }
+
     private var categoryColor: Color {
         WarmTheme.color(for: todo.categoryHint)
+    }
+
+    /// 卡片信息胶囊 chip:icon + 12pt 文本,前景分类色 + 分类底色胶囊。
+    /// 日期 chip 与时间 chip 共用同一份样式,避免两处重复定义后各自漂移。
+    ///
+    /// 文本修饰组合说明:`fixedSize(horizontal: true)` 保证 chip 按理想宽度渲染、
+    /// 永不截断(零截断容忍);fixedSize 向 Text 提议 nil 宽度,因此
+    /// `minimumScaleFactor(0.7)` 实际不会触发 —— 保留它是防御性写法:
+    /// 若日后移除 fixedSize 改为弹性布局,缩放兜底仍然在场(字体为固定 12pt,
+    /// 不随 Dynamic Type 缩放,chip 文本宽度有界,当前组合不会溢出行宽)。
+    private func infoChip(systemImage: String, text: String, identifier: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10))
+            Text(text)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .foregroundColor(categoryColor)
+        .padding(.horizontal, WarmSpacing.xs)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(WarmTheme.categoryBackground(for: todo.categoryHint))
+        )
+        .accessibilityIdentifier(identifier)
     }
 
     var body: some View {
@@ -100,23 +141,29 @@ struct TodoItemRow: View {
                             // 长标题靠自然换行承接,sheet 内容可滚动。
                             .accessibilityIdentifier("TodoTitleText_\(index)")
 
-                        // 时间行:钟点 / 模糊时段 / dueHint 兜底。
-                        // 拼装逻辑抽到 TodoTimeDisplayComposer,这里只渲染。
-                        if let timeText = composedTimeText {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock")
-                                    .font(.system(size: 10))
-                                Text(timeText)
-                                    .font(.system(size: 12))
+                        // 日期 + 时间行:日期 chip(dueDate 换算)+ 时间 chip(钟点/模糊时段/dueHint 兜底),
+                        // 两个独立位置并排,时间写在日期旁边。
+                        // 时间拼装逻辑抽到 TodoTimeDisplayComposer,这里只渲染;
+                        // chip 样式(icon + 12pt 文本 + 分类色胶囊)统一在 infoChip,两处共用。
+                        let dateText = composedDateText
+                        let timeText = composedTimeText
+                        if dateText != nil || timeText != nil {
+                            HStack(spacing: WarmSpacing.xxs) {
+                                if let dateText {
+                                    infoChip(
+                                        systemImage: "calendar",
+                                        text: dateText,
+                                        identifier: "TodoDateText_\(index)"
+                                    )
+                                }
+                                if let timeText {
+                                    infoChip(
+                                        systemImage: "clock",
+                                        text: timeText,
+                                        identifier: "TodoTimeText_\(index)"
+                                    )
+                                }
                             }
-                            .foregroundColor(categoryColor)
-                            .padding(.horizontal, WarmSpacing.xs)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 7)
-                                    .fill(WarmTheme.categoryBackground(for: todo.categoryHint))
-                            )
-                            .accessibilityIdentifier("TodoTimeText_\(index)")
                         }
                     }
 
