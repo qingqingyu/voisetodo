@@ -1,5 +1,9 @@
 import XCTest
+#if canImport(VoiceTodoProtocols)
+@testable import VoiceTodoProtocols
+#else
 @testable import VoiceTodo
+#endif
 
 /// 额度展示模型的档位语义测试。
 ///
