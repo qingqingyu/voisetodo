@@ -26,6 +26,8 @@
 
 ## 2. 上线前必做清单(Gating — 没做完不上线)
 
+> 提审硬性材料(隐私政策 / 服务条款 / 审核备注 / 隐私标签答案 / IAP 配置清单)见 **`APPSTORE_REVIEW_KIT.md`**,政策源文件为 `PRIVACY_POLICY.md` / `TERMS_OF_USE.md`。§2.3 各项按该文档执行。
+
 ### 2.1 产品(工程)
 
 - [ ] **Onboarding 改造**:现状「权限 → 语言 → 付费页」必须改为「权限 → 语言 → **首次录音 demo → wow** → 第 2 次撞墙 → trial → paywall」。付费页前置是战略 bug,不是优化项
