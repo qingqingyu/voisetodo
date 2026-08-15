@@ -5638,7 +5638,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每天最多 %lld 条语音提取"
+            "value" : "每天最多 %lld 次语音提取"
           }
         }
       }
@@ -6219,7 +6219,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld / 每天"
+            "value" : "%lld 次 / 每天"
           }
         }
       }
