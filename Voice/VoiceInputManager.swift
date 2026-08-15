@@ -193,9 +193,13 @@ final class VoiceInputManager: VoiceInputProtocol {
             // 必须在 tap 回调线程直接 append——SFSpeechAudioBufferRecognitionRequest
             // 靠这个拿音频数据，不 append 识别器永远拿不到音频，转写为空。
             request?.append(buffer)
-            // max-duration + 静音检测派发到主线程，避免与 stopRecording 竞态
+            // RMS/dB 计算留在 tap 回调线程（audioMetrics 无分配、有界工作量，
+            // 满足实时音频线程约束）；只把两个 Sendable Float 派发回主线程做
+            // 状态判定——否则录音期间主线程每 buffer（约 21ms）跑一遍全帧循环，
+            // 与 SwiftUI 渲染、@MainActor Store 争抢主线程。
+            let metrics = Self.audioMetrics(of: buffer)
             DispatchQueue.main.async {
-                self?.processAudioBuffer(buffer)
+                self?.processAudioMetrics(metrics)
             }
         }
 
@@ -332,7 +336,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                     self.updateLiveActivity(transcript: newTranscript)
                 }
 
-                // 如果是最终结果，停止录音（派发到主线程避免与 processAudioBuffer 竞态）
+                // 如果是最终结果，停止录音（派发到主线程避免与 processAudioMetrics 竞态）
                 if result.isFinal {
                     DispatchQueue.main.async {
                         VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count)")
@@ -676,9 +680,28 @@ final class VoiceInputManager: VoiceInputProtocol {
         }
     }
 
-    /// 处理音频缓冲区：max-duration 检查 + 静音自动提交检测。
+    /// 纯 DSP：RMS → dB → 归一化电平。在 tap 回调（音频实时）线程执行——
+    /// 无内存分配、遍历有界帧数，满足实时音频线程约束。
+    /// 返回 nil 表示无法计算（无通道数据 / 零帧 / 零能量），调用方按无数据跳过。
+    nonisolated private static func audioMetrics(of buffer: AVAudioPCMBuffer) -> (avgPowerDB: Float, normalizedLevel: Float)? {
+        guard let channelData = buffer.floatChannelData?[0] else { return nil }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return nil }
+        var sum: Float = 0
+        for i in 0..<frameLength {
+            sum += channelData[i] * channelData[i]
+        }
+        let rms = sqrt(sum / Float(frameLength))
+        guard rms > 0 else { return nil }
+        let avgPower = 20 * log10(rms)
+        // 归一化音频电平 (-40dB...0dB → 0...1) 驱动波形动画
+        let normalized = max(0, min(1, (avgPower + 40) / 40))
+        return (avgPower, normalized)
+    }
+
+    /// 处理 tap 线程算好的音频指标：max-duration 检查 + 电平发布 + 静音自动提交检测。
     /// 注意：此方法通过 DispatchQueue.main.async 调用，已在主线程执行。
-    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+    private func processAudioMetrics(_ metrics: (avgPowerDB: Float, normalizedLevel: Float)?) {
         // 只在录音状态下处理，避免 stopRecording 后的延迟回调
         guard isRecording else { return }
 
@@ -694,20 +717,11 @@ final class VoiceInputManager: VoiceInputProtocol {
             return
         }
 
-        // RMS 音量计算——用于静音检测
-        guard let channelData = buffer.floatChannelData?[0] else { return }
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength > 0 else { return }
-        var sum: Float = 0
-        for i in 0..<frameLength {
-            sum += channelData[i] * channelData[i]
-        }
-        let rms = sqrt(sum / Float(frameLength))
-        guard rms > 0 else { return }
-        let avgPower = 20 * log10(rms)
+        guard let metrics else { return }
+        let avgPower = metrics.avgPowerDB
 
-        // 归一化音频电平 (-40dB...0dB → 0...1) 驱动波形动画
-        audioLevel = max(0, min(1, (avgPower + 40) / 40))
+        // 归一化音频电平驱动波形动画
+        audioLevel = metrics.normalizedLevel
 
         // 静音自动提交：基于音频电平检测静音，超时后仅在已有转写内容时触发提交。
         // 静音计时器只受音频电平控制——不受 transcript 是否为空影响。
