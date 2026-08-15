@@ -43,6 +43,10 @@
 	<string>VoiceTodo needs microphone access to record your voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>VoiceTodo needs speech recognition access to understand your voice commands.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

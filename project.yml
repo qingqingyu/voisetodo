@@ -121,6 +121,12 @@ targets:
           - audio
         BGTaskSchedulerPermittedIdentifiers:
           - com.qingqingyu.voicetodo.telemetry-upload
+        # Live Activity(录音实时转写/时长)必需:缺此键 areActivitiesEnabled 恒为 false,
+        # VoiceInputManager.startLiveActivity 会静默跳过,功能全灭。
+        # Frequent updates:录音期间每 1s 推送一次 content 更新(VoiceInputManager.startUpdateTimer),
+        # 不声明会被系统更新预算节流,时长显示冻结。录音会话短,电量影响可忽略。
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
     dependencies:
       - target: VoiceTodoWidget
         embed: true
