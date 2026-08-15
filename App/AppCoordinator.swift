@@ -10,7 +10,9 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Dependencies
 
     private let voiceInput: any VoiceInputProtocol
-    private let store: any AppCoordinatorTodoStore
+    /// 协议交集与 init 参数一致:除常规编排外,还直接落 pending(录音错误部分转写兜底)
+    /// 与转持手动卡片(前台恢复的确定性失败/noTodos 止损)。
+    private let store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & PendingTranscriptHolding & CalendarSyncTodoStore
     /// 用于「没能识别」分组的「重新解析」入口(`reextract(todoID:)`)。
     /// transcriptProcessingFlow / pendingRecoveryFlow 内部各自持有 extractor;
     /// 这里独立保留一个 reference 是因为 reextract 不走那两个 flow 的状态机,而是同步触发单次提取。
@@ -116,7 +118,7 @@ final class AppCoordinator: ObservableObject {
     init(
         voiceInput: any VoiceInputProtocol,
         extractor: any TodoExtractorProtocol,
-        store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & CalendarSyncTodoStore,
+        store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & PendingTranscriptHolding & CalendarSyncTodoStore,
         entitlement: EntitlementManager? = nil,
         systemCalendarWriter: any SystemCalendarWritingProtocol = SystemCalendarWriter(),
         calendarReader: (any SystemCalendarReadingProtocol)? = SystemCalendarReader(),
@@ -167,8 +169,12 @@ final class AppCoordinator: ObservableObject {
         voiceInput.errorPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] error in
-                if let error = error {
-                    self?.handleError(error)
+                guard let self, let error else { return }
+                let didSaveTranscript = self.savePartialTranscriptIfAny(for: error)
+                self.handleError(error)
+                if didSaveTranscript {
+                    // 在错误文案后追加原文去向提示,让用户知道不用重说。
+                    self.toastMessage += " " + ErrorMessages.partialTranscriptSaved
                 }
             }
             .store(in: &cancellables)
@@ -314,6 +320,13 @@ final class AppCoordinator: ObservableObject {
             voiceInput.stopRecording()
         }
 
+        // 录音以错误收场(中断/识别失败/看门狗超时):部分转写已由 errorPublisher 兜底保存,
+        // 此处不再送解析——否则同一段转写会双份处理(库中多一条 pending + 弹出确认页)。
+        guard voiceInput.error == nil else {
+            VoiceTodoLog.coordinator.warning("coordinator.stop_and_process.skipped reason=voice_error id=\(flowID, privacy: .public)")
+            return
+        }
+
         // 处理转写结果
         await processTranscript(voiceInput.transcript)
         VoiceTodoLog.coordinator.info("coordinator.stop_and_process.finished id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) finalTranscriptChars=\(self.transcript.count)")
@@ -414,12 +427,20 @@ final class AppCoordinator: ObservableObject {
             voiceInput.stopRecording()
         }
 
-        // 检查是否被手动停止取消
+        // 检查是否被手动停止取消;录音以错误收场时转写已由 errorPublisher 兜底保存,
+        // 跳过解析防双份处理(与 stopRecordingAndProcess 的 voiceInput.error 守卫同构)。
+        // isAutoProcessing 必须在 error 分支返回前复位——否则录音出错的 action-button
+        // 流程会把 isAutoProcessing=true 留在内存里,阻塞后续 processManualInput /
+        // handleAppForeground(它们的守卫都含 !isAutoProcessing)。
         guard isAutoProcessing else {
             VoiceTodoLog.coordinator.info("coordinator.action_button.cancelled id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return
         }
         isAutoProcessing = false
+        guard voiceInput.error == nil else {
+            VoiceTodoLog.coordinator.info("coordinator.action_button.skipped reason=voice_error id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return
+        }
 
         // 自动处理转写结果
         await processTranscript(voiceInput.transcript)
@@ -460,8 +481,15 @@ final class AppCoordinator: ObservableObject {
             locale: voiceInput.currentLocale,
             flowID: flowID
         )
+        var heldPendingCount = 0
         for failure in result.failedPendingRecoveries {
             handleError(failure.error)
+            // 确定性解析失败:同一输入重试必败且每次烧一次模型额度,转持为手动卡片止损
+            // (原文保留在「没能识别」分组,用户可手动重新解析)。
+            // 判定清单收敛在 VoiceTodoError.isDeterministicParseFailure(与 TranscriptProcessingFlow 同口径)。
+            if failure.error.isDeterministicParseFailure, holdPendingAsUnparsed(failure.pendingId) {
+                heldPendingCount += 1
+            }
         }
         result.deletionErrors.forEach(handleError)
         if let pendingReadError = result.pendingReadError {
@@ -485,7 +513,11 @@ final class AppCoordinator: ObservableObject {
         }
         guard result.hasPending else { return }
 
-        completeNoTodoPendingRecoveries(result.processedWithoutTodosIds)
+        // AI 看过但解析出 0 条待办的 pending:不再删除(旧行为会丢原文),转持为手动卡片。
+        heldPendingCount += holdNoTodoPendingRecoveries(result.processedWithoutTodosIds)
+        if heldPendingCount > 0 {
+            WidgetReloadCoalescer.scheduleReload()
+        }
 
         if !result.extractedTodos.isEmpty {
             guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else {
@@ -536,10 +568,31 @@ final class AppCoordinator: ObservableObject {
         showToast(message: message, style: .info)
     }
 
-    private func completeNoTodoPendingRecoveries(_ pendingIds: [UUID]) {
-        for pendingId in pendingIds {
-            _ = deleteProcessedPending(id: pendingId)
+    /// 把 pending 条目转持为手动卡片。失败时透出错误(条目保留为 pending,下次仍会重试)。
+    /// - Returns: 是否转持成功。
+    @discardableResult
+    private func holdPendingAsUnparsed(_ pendingId: UUID) -> Bool {
+        do {
+            try store.holdPendingAsUnparsed(id: pendingId)
+            VoiceTodoLog.coordinator.info("coordinator.pending.held_as_unparsed id=\(pendingId.uuidString, privacy: .public)")
+            return true
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.pending.hold_failed id=\(pendingId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            handleError(error)
+            return false
         }
+    }
+
+    /// 恢复流程解析出 0 条待办的 pending 转持为手动卡片(原文永不丢)。
+    /// - Returns: 成功转持的条数。
+    private func holdNoTodoPendingRecoveries(_ pendingIds: [UUID]) -> Int {
+        var heldCount = 0
+        for pendingId in pendingIds {
+            if holdPendingAsUnparsed(pendingId) {
+                heldCount += 1
+            }
+        }
+        return heldCount
     }
 
     /// 确认添加待办
@@ -874,7 +927,8 @@ final class AppCoordinator: ObservableObject {
 
         // 弹层录音结束即升起:transcript 已就绪,弹层带着空列表 + 「还在识别...」出现,
         // todo 一条条流式插入。避免「全屏 loading → 弹层 loading」双转圈。
-        // 失败兜底由 .noTodos / .failed case 调 clearExtractionPresentation() 关闭弹层。
+        // 失败兜底由 .empty / .offlineSaved / .manualSaved 等 case 调
+        // clearExtractionPresentation() 关闭弹层(所有错误路径均落库保存,无纯失败分支)。
         //
         // 这里同时清空 extractedTodos:防御 cancel 与 partial 竞态——上一次录音被用户快速
         // cancel 后,若 cancel 信号送达前已有 .partial 到达并写了 extractedTodos,
@@ -932,13 +986,6 @@ final class AppCoordinator: ObservableObject {
             // 保存 Task 引用,便于 cancelTodos 时显式取消(避免 sheet 关闭后仍在后台跑)。
             conflictDetectionTask?.cancel()
             conflictDetectionTask = Task { await detectConflicts() }
-        case .noTodos:
-            // 弹层已在 processTranscript 开头升起,识别为空必须显式关闭,
-            // 否则弹层会卡在「空列表 + 还在识别」永远不消失。
-            clearExtractionPresentation()
-            activeInputTranscript = nil
-            activeInputLocaleIdentifier = nil
-            showToast(message: ErrorMessages.noTodosFound, style: .info)
         case .offlineSaved:
             // 弹层已升起,离线短路必须显式关闭,否则卡死。
             clearExtractionPresentation()
@@ -960,11 +1007,31 @@ final class AppCoordinator: ObservableObject {
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
             handleError(error)
-        case .failed(let error):
+        case .manualSaved(_, let reason):
+            handleManualSaved(reason: reason)
+        case .manualSaveFailed(let error):
+            // 弹层已在 processTranscript 开头升起,手动卡片保存失败也必须关闭,否则卡死。
+            clearExtractionPresentation()
             activeInputTranscript = nil
             activeInputLocaleIdentifier = nil
-            clearExtractionPresentation()
             handleError(error)
+        }
+    }
+
+    /// 确定性解析失败后手动卡片保存成功的统一处理:
+    /// 关闭提前升起的确认弹层、刷新 Widget(新卡片会出现在未完成列表)、按 reason 选 toast。
+    private func handleManualSaved(reason: VoiceTodoError?) {
+        clearExtractionPresentation()
+        activeInputTranscript = nil
+        activeInputLocaleIdentifier = nil
+        WidgetReloadCoalescer.scheduleReload()
+        if let reason {
+            // 有明确失败原因(超长/响应异常等):原因文案 + 原文去向,用户知道不用重说。
+            let reasonText = reason.errorDescription ?? ErrorMessages.unexpectedError
+            showToast(message: "\(reasonText) \(ErrorMessages.manualCardSaved)", style: .warning)
+        } else {
+            // noTodos:AI 看过原文但没识别出待办。
+            showToast(message: ErrorMessages.noTodosCardSaved, style: .info)
         }
     }
 
@@ -1083,6 +1150,33 @@ final class AppCoordinator: ObservableObject {
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.pending.delete_processed_failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             handleError(error)
+            return false
+        }
+    }
+
+    /// 录音阶段错误(中断/识别失败/看门狗超时)的「永不丢话」兜底:
+    /// 已有部分转写时先落库为 pending(与离线语义一致,下次进前台自动补解析),再走常规错误提示。
+    ///
+    /// 守卫条件:
+    /// - transcript 非空:权限类错误发生时 transcript 已被 `startRecording` 清空,天然排除;
+    /// - `!isProcessingTranscript && !showConfirmSheet`:解析/确认流程已接管转写时不重复保存。
+    ///
+    /// 注意守卫**不含** `!isAutoProcessing`:action-button 看门狗场景由本方法负责保存,
+    /// `handleActionButtonLaunch` 会因 `voiceInput.error != nil` 跳过 processTranscript(防双处理)。
+    /// 直接读 `voiceInput.transcript`——`self.transcript` 经 Combine assign 晚一拍,错误到达瞬间可能尚未同步。
+    /// - Returns: 是否实际保存了转写(供调用方决定是否在 toast 上追加原文去向提示)。
+    private func savePartialTranscriptIfAny(for error: VoiceTodoError) -> Bool {
+        let rawTranscript = voiceInput.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawTranscript.isEmpty,
+              !isProcessingTranscript,
+              !showConfirmSheet else { return false }
+        do {
+            _ = try store.addRawTranscript(rawTranscript, localeIdentifier: voiceInput.currentLocale.identifier)
+            VoiceTodoLog.coordinator.warning("coordinator.voice_error_transcript_saved error=\(VoiceTodoLog.errorSummary(error), privacy: .public) transcriptChars=\(rawTranscript.count, privacy: .public)")
+            return true
+        } catch let saveError {
+            // 存储故障:错误本身照常透出;存储已坏时保存兜底确无能为力,但入库失败必须入日志。
+            VoiceTodoLog.coordinator.error("coordinator.voice_error_transcript_save_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public) saveError=\(VoiceTodoLog.errorSummary(saveError), privacy: .public)")
             return false
         }
     }

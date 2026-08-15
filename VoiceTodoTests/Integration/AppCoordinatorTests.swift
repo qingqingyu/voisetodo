@@ -404,7 +404,7 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(voiceInput.cancelByInterruptionCallCount, 0, "不应误用中断路径")
     }
 
-    func testStreamingFailureAfterPartialResultsClearsConfirmSheet() async {
+    func testStreamingFailureAfterPartialResultsKeepsPartialTodos() async {
         let extractor = DelayedExtractor()
         extractor.streamingResults = [
             ExtractionResult(
@@ -413,24 +413,223 @@ final class AppCoordinatorTests: XCTestCase {
             )
         ]
         extractor.streamingError = VoiceTodoError.apiResponseInvalid("broken stream")
+        let store = CoordinatorTestStore()
         let coordinator = AppCoordinator(
             voiceInput: CoordinatorTestVoiceInput(),
             extractor: extractor,
-            store: CoordinatorTestStore(),
+            store: store,
             networkIsConnectedProvider: { true }
         )
 
         await coordinator.processManualInput("记录一个会在流式结束时报错的待办")
 
+        // partial fallback(77adaf1):流断前已收到的 partial 当成功保留,不清弹层、
+        // 不弹错误 toast——给用户 11/13 条比清空让用户重来更友好。
+        XCTAssertTrue(coordinator.showConfirmSheet)
+        XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["部分结果"])
+        XCTAssertFalse(coordinator.showToast)
+        XCTAssertTrue(store.todos.isEmpty, "拿到 partial 结果时不再额外落兜底条目")
+    }
+
+    func testTranscriptTooLongSavesUnparsedCardAndClearsSheet() async {
+        let extractor = DelayedExtractor()
+        extractor.streamingError = VoiceTodoError.transcriptTooLong
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.processManualInput("一口气说了太多条待办")
+
+        // 确定性失败:原文存手动卡片(不进自动恢复队列),弹层关闭,toast 告知原文去向。
         XCTAssertFalse(coordinator.showConfirmSheet)
-        XCTAssertTrue(coordinator.extractedTodos.isEmpty)
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertEqual(store.todos.first?.rawTranscript, "一口气说了太多条待办")
+        XCTAssertFalse(store.todos.first?.needsAIProcessing ?? true, "手动卡片不进 pending 自动恢复")
+        XCTAssertEqual(store.todos.first?.extractionOutcome, .unparsed)
         XCTAssertTrue(coordinator.showToast)
-        // detail 不再暴露给 UI(errorDescription 走"问题+建议"格式)——
-        // toast 必须等于通用文案而非"broken stream"——后者只入 log。
         XCTAssertEqual(
             coordinator.toastMessage,
-            ErrorMessages.apiResponseInvalidMessage
+            "\(ErrorMessages.transcriptTooLong) \(ErrorMessages.manualCardSaved)"
         )
+    }
+
+    func testNoTodosSavesUnparsedCard() async {
+        let extractor = DelayedExtractor()
+        extractor.streamingResults = [
+            ExtractionResult(todos: [], ignored: "just chatting")
+        ]
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.processManualInput("就是闲聊没有待办")
+
+        XCTAssertFalse(coordinator.showConfirmSheet)
+        XCTAssertEqual(store.todos.count, 1, "没识别出待办也绝不丢原文")
+        XCTAssertEqual(store.todos.first?.rawTranscript, "就是闲聊没有待办")
+        XCTAssertFalse(store.todos.first?.needsAIProcessing ?? true)
+        XCTAssertEqual(store.todos.first?.extractionOutcome, .unparsed)
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(coordinator.toastMessage, ErrorMessages.noTodosCardSaved)
+    }
+
+    func testVoiceErrorWithPartialTranscriptSavesPending() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "说了一半被中断"
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: store
+        )
+
+        // 录音中途来电/识别失败:errorPublisher 触发,部分转写必须落库
+        voiceInput.error = .audioSessionInterrupted
+        await Task.yield()
+
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertEqual(store.todos.first?.rawTranscript, "说了一半被中断")
+        XCTAssertTrue(store.todos.first?.needsAIProcessing ?? false, "部分转写走 pending,下次前台自动补解析")
+        XCTAssertTrue(coordinator.showToast)
+        XCTAssertEqual(
+            coordinator.toastMessage,
+            "\(ErrorMessages.audioSessionInterrupted) \(ErrorMessages.partialTranscriptSaved)"
+        )
+    }
+
+    func testVoiceErrorWithEmptyTranscriptSavesNothing() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = ""
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: DelayedExtractor(),
+            store: store
+        )
+
+        voiceInput.error = .speechRecognitionUnavailable
+        await Task.yield()
+
+        XCTAssertTrue(store.todos.isEmpty, "没有转写内容时不应保存空 pending")
+        XCTAssertTrue(coordinator.showToast)
+    }
+
+    func testStopAndProcessSkipsParsingWhenRecordingEndedWithError() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.isRecording = true
+        voiceInput.transcript = "识别中途出错的部分转写"
+        let extractor = DelayedExtractor()
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: extractor,
+            store: store
+        )
+
+        // 手动停止流程中错误先到:sink 已保存部分转写
+        voiceInput.error = .recordingFailed("识别超时")
+        await Task.yield()
+        await coordinator.stopRecordingAndProcess()
+
+        // 错误后不得再送解析:同一段转写只落一份 pending,不重复弹确认页
+        XCTAssertTrue(extractor.extractedTranscripts.isEmpty, "错误路径不应再触发解析")
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertFalse(coordinator.showConfirmSheet)
+    }
+
+    func testActionButtonVoiceErrorDoesNotLeakAutoProcessingState() async {
+        let voiceInput = CoordinatorTestVoiceInput()
+        voiceInput.transcript = "action button 录音中途被来电中断"
+        let extractor = DelayedExtractor()
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: voiceInput,
+            extractor: extractor,
+            store: store,
+            networkIsConnectedProvider: { true }
+        )
+
+        // action-button 流程在后台跑;等 startRecording 置位 isRecording 后再模拟中断,
+        // 让 waitForAutoStop 的 isRecording 监听立即返回而不是吃满 60s 超时。
+        // 自旋设上限:未来若 handleActionButtonLaunch 因守卫提前 return,这里应失败而非挂死。
+        let launchTask = Task { await coordinator.handleActionButtonLaunch() }
+        var spinCount = 0
+        while !voiceInput.isRecording {
+            spinCount += 1
+            if spinCount > 10_000 {
+                XCTFail("startRecording 未在合理时间内置位 isRecording,handleActionButtonLaunch 可能被守卫提前短路")
+                return
+            }
+            await Task.yield()
+        }
+        voiceInput.error = .audioSessionInterrupted
+        voiceInput.isRecording = false
+        await launchTask.value
+        await Task.yield()
+
+        // 中断的部分转写由 errorPublisher sink 兜底为 pending
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertTrue(store.todos.first?.needsAIProcessing ?? false)
+
+        // isAutoProcessing 不得泄漏:错误流程返回后手动输入仍可用
+        // (泄漏会永久阻塞 processManualInput / handleAppForeground 的 !isAutoProcessing 守卫)
+        await coordinator.processManualInput("中断后改用键盘继续输入")
+        XCTAssertTrue(coordinator.showConfirmSheet, "isAutoProcessing 泄漏会永久阻塞手动输入")
+        XCTAssertEqual(coordinator.extractedTodos.map(\.title), ["extracted 中断后改用键盘继续输入"])
+    }
+
+    func testForegroundHoldsNoTodoPendingAsUnparsedInsteadOfDeleting() async {
+        let pendingId = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: pendingId, transcript: "闲聊无待办")
+        ])
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["闲聊无待办"] = ExtractionResult(todos: [], ignored: "chat")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store
+        )
+
+        await coordinator.handleAppForeground()
+
+        // 原文不丢:解析出 0 条待办的 pending 转持为手动卡片,而不是删除
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertEqual(store.todos.first?.id, pendingId)
+        XCTAssertFalse(store.todos.first?.needsAIProcessing ?? true)
+        XCTAssertEqual(store.todos.first?.extractionOutcome, .unparsed)
+        XCTAssertFalse(coordinator.showConfirmSheet)
+    }
+
+    func testForegroundHoldsDeterministicallyFailedPending() async {
+        let pendingId = UUID()
+        let store = CoordinatorTestStore(todos: [
+            pendingTodo(id: pendingId, transcript: "超长转写")
+        ])
+        let extractor = DelayedExtractor()
+        extractor.extractionErrors["超长转写"] = VoiceTodoError.transcriptTooLong
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store
+        )
+
+        await coordinator.handleAppForeground()
+
+        // 确定性失败转持:停止每次前台自动重试烧额度,原文保留为手动卡片
+        XCTAssertEqual(store.todos.count, 1)
+        XCTAssertEqual(store.todos.first?.id, pendingId)
+        XCTAssertFalse(store.todos.first?.needsAIProcessing ?? true)
+        XCTAssertEqual(store.todos.first?.extractionOutcome, .unparsed)
+        XCTAssertTrue(coordinator.showToast, "失败原因照常透出")
     }
 
     func testIPDailyLimitShowsPreciseToastAfterSavingFallback() async {
@@ -799,6 +998,27 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         )
         todos.insert(todo, at: 0)
         return todo
+    }
+
+    func addManualUnparsedTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
+        var todo = TodoItemData(
+            title: transcript,
+            detail: transcript,
+            rawTranscript: transcript,
+            needsAIProcessing: false,
+            localeIdentifier: localeIdentifier
+        )
+        todo.extractionOutcome = .unparsed
+        todos.insert(todo, at: 0)
+        return todo
+    }
+
+    func holdPendingAsUnparsed(id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].needsAIProcessing = false
+        todos[index].extractionOutcome = .unparsed
     }
 
     func delete(_ id: UUID) throws {

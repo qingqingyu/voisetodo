@@ -2889,6 +2889,54 @@
         }
       }
     },
+    "error.manual_card_saved" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your original words are saved under Couldn't parse — no need to repeat them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你说过的话已存入「没能识别」，无需重说。"
+          }
+        }
+      }
+    },
+    "error.no_todos_card_saved" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No todos were detected. Your original words are saved under Couldn't parse."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没识别出待办。你说过的话已存入「没能识别」。"
+          }
+        }
+      }
+    },
+    "error.partial_transcript_saved" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The transcript so far has been saved for later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已说完的部分会保留，稍后自动解析。"
+          }
+        }
+      }
+    },
     "error.mic_denied" : {
       "localizations" : {
         "en" : {

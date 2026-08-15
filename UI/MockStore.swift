@@ -61,6 +61,29 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         return todo
     }
 
+    func addManualUnparsedTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
+        let title = TextUtils.truncateTitle(from: transcript)
+        let effectiveLocaleIdentifier = Self.resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
+        var todo = TodoItemData(
+            title: title,
+            detail: transcript,
+            rawTranscript: transcript,
+            needsAIProcessing: false,
+            localeIdentifier: effectiveLocaleIdentifier
+        )
+        todo.extractionOutcome = .unparsed
+        todos.insert(todo, at: 0)
+        return todo
+    }
+
+    func holdPendingAsUnparsed(id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].needsAIProcessing = false
+        todos[index].extractionOutcome = .unparsed
+    }
+
     func toggleComplete(_ id: UUID) throws {
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index].isCompleted.toggle()
@@ -73,7 +96,7 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
 
     func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
-            throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+            throw VoiceTodoError.todoNotFound(id)
         }
 
         let hadRecurrence = todos[index].recurrenceRule != nil
@@ -301,7 +324,9 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         let idSet = Set(ids)
         let subset = todos.filter { idSet.contains($0.id) }
         guard subset.count == ids.count else {
-            throw VoiceTodoError.storageReadFailed("MockStore.reorder: some ids not found")
+            // 与 TodoStore.reorder 同口径:条目缺失抛 .todoNotFound。
+            let missingId = ids.first { id in !subset.contains(where: { $0.id == id }) } ?? ids[0]
+            throw VoiceTodoError.todoNotFound(missingId)
         }
         let base = subset.map(\.sortOrder).min() ?? 0
         for (index, id) in ids.enumerated() {

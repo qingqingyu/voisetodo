@@ -19,13 +19,14 @@ final class TranscriptProcessingFlowTests: XCTestCase {
         XCTAssertTrue(store.rawTranscripts.isEmpty)
     }
 
-    func testProcessNoTodosEmitsNoTodos() async {
+    func testProcessNoTodosSavesManualCard() async {
+        let store = TranscriptFlowTestStore()
         let extractor = TranscriptFlowTestExtractor()
         extractor.streamingResults = [
             ExtractionResult(todos: [], ignored: "nothing")
         ]
         let flow = TranscriptProcessingFlow(
-            store: TranscriptFlowTestStore(),
+            store: store,
             extractor: extractor,
             networkIsConnectedProvider: { true }
         )
@@ -34,10 +35,14 @@ final class TranscriptProcessingFlowTests: XCTestCase {
             from: flow.process(text: "just chatting", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
         )
 
-        XCTAssertEqual(events.map(\.name), ["partial", "noTodos"])
+        XCTAssertEqual(events.map(\.name), ["partial", "manualSaved"])
+        XCTAssertNil(events.last?.manualReason, "noTodos 非 error 场景 reason 为 nil")
+        XCTAssertEqual(store.manualTranscripts, ["just chatting"], "原文必须存为手动卡片,不丢话")
+        XCTAssertEqual(store.manualTranscriptLocales, ["en-US"])
+        XCTAssertTrue(store.rawTranscripts.isEmpty, "手动卡片不进 pending 自动恢复队列")
     }
 
-    func testProcessPartialThenFailureEmitsFailedAfterPartial() async {
+    func testProcessPartialThenFailureFallsBackToPartialSuccess() async {
         let extractor = TranscriptFlowTestExtractor()
         extractor.streamingResults = [
             ExtractionResult(todos: [ExtractedTodo(title: "partial todo")], ignored: "")
@@ -53,8 +58,122 @@ final class TranscriptProcessingFlowTests: XCTestCase {
             from: flow.process(text: "partial then fail", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
         )
 
-        XCTAssertEqual(events.map(\.name), ["partial", "failed"])
-        XCTAssertEqual(events.first?.todoTitles, ["partial todo"])
+        XCTAssertEqual(events.map(\.name), ["partial", "success"])
+        XCTAssertEqual(events.last?.todoTitles, ["partial todo"])
+    }
+
+    func testProcessTranscriptTooLongSavesManualCard() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = VoiceTodoError.transcriptTooLong
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "way too many todos at once", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["manualSaved"])
+        XCTAssertEqual(events.first?.manualReason, .transcriptTooLong)
+        XCTAssertEqual(store.manualTranscripts, ["way too many todos at once"], "确定性错误原文必须保留")
+        XCTAssertTrue(store.rawTranscripts.isEmpty, "transcriptTooLong 重试必败,不进 pending 烧额度")
+    }
+
+    func testProcessApiResponseInvalidWithoutPartialSavesManualCard() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = VoiceTodoError.apiResponseInvalid("bad payload")
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "invalid response input", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["manualSaved"])
+        XCTAssertEqual(events.first?.manualReason, .apiResponseInvalid("bad payload"))
+        XCTAssertEqual(store.manualTranscripts, ["invalid response input"])
+    }
+
+    func testProcessJsonParsingFailedSavesManualCard() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = VoiceTodoError.jsonParsingFailed("schema mismatch")
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "json parse fail input", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["manualSaved"])
+        XCTAssertEqual(store.manualTranscripts, ["json parse fail input"])
+    }
+
+    func testProcessApiServerErrorSavesPendingFallback() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = VoiceTodoError.apiServerError(statusCode: 500)
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "server hiccup input", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["fallbackSaved"])
+        XCTAssertEqual(events.first?.fallbackReason, .apiServerError(statusCode: 500))
+        XCTAssertEqual(store.rawTranscripts, ["server hiccup input"], "5xx 是瞬时故障,走 pending 自动恢复")
+        XCTAssertTrue(store.manualTranscripts.isEmpty)
+    }
+
+    func testProcessUnknownErrorSavesManualCard() async {
+        let store = TranscriptFlowTestStore()
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = URLError(.badServerResponse)
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "unknown failure input", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["manualSaved"])
+        XCTAssertNil(events.first?.manualReason, "非 VoiceTodoError 无归类原因")
+        XCTAssertEqual(store.manualTranscripts, ["unknown failure input"], "未知错误同样不丢话")
+    }
+
+    func testProcessManualSaveFailureEmitsManualSaveFailed() async {
+        let store = TranscriptFlowTestStore()
+        store.manualAddError = VoiceTodoError.storageWriteFailed("disk full")
+        let extractor = TranscriptFlowTestExtractor()
+        extractor.streamingError = VoiceTodoError.transcriptTooLong
+        let flow = TranscriptProcessingFlow(
+            store: store,
+            extractor: extractor,
+            networkIsConnectedProvider: { true }
+        )
+
+        let events = await collectEvents(
+            from: flow.process(text: "manual save fails", locale: Locale(identifier: "en-US"), flowID: "flow", extractID: "extract")
+        )
+
+        XCTAssertEqual(events.map(\.name), ["manualSaveFailed"])
     }
 
     func testProcessKeepsReceivedAnyWhenLaterPartialIsEmpty() async {
@@ -195,9 +314,11 @@ private struct ObservedTranscriptEvent {
     let name: String
     let todoTitles: [String]
     var fallbackReason: VoiceTodoError?
+    var manualReason: VoiceTodoError?
 
     init(_ event: TranscriptFlowEvent) {
         fallbackReason = nil
+        manualReason = nil
         switch event {
         case .empty:
             name = "empty"
@@ -208,9 +329,6 @@ private struct ObservedTranscriptEvent {
         case .success(let finalTodos):
             name = "success"
             todoTitles = finalTodos.map(\.title)
-        case .noTodos:
-            name = "noTodos"
-            todoTitles = []
         case .offlineSaved:
             name = "offlineSaved"
             todoTitles = []
@@ -227,8 +345,12 @@ private struct ObservedTranscriptEvent {
         case .networkFallbackSaveFailed:
             name = "networkFallbackSaveFailed"
             todoTitles = []
-        case .failed:
-            name = "failed"
+        case .manualSaved(_, let reason):
+            name = "manualSaved"
+            todoTitles = []
+            manualReason = reason
+        case .manualSaveFailed:
+            name = "manualSaveFailed"
             todoTitles = []
         }
     }
@@ -269,6 +391,9 @@ private final class TranscriptFlowTestStore: PendingTranscriptCreating {
     var rawTranscripts: [String] = []
     var rawTranscriptLocales: [String?] = []
     var addRawError: Error?
+    var manualTranscripts: [String] = []
+    var manualTranscriptLocales: [String?] = []
+    var manualAddError: Error?
 
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         rawTranscripts.append(transcript)
@@ -283,5 +408,22 @@ private final class TranscriptFlowTestStore: PendingTranscriptCreating {
             needsAIProcessing: true,
             localeIdentifier: localeIdentifier
         )
+    }
+
+    func addManualUnparsedTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
+        manualTranscripts.append(transcript)
+        manualTranscriptLocales.append(localeIdentifier)
+        if let manualAddError {
+            throw manualAddError
+        }
+        var todo = TodoItemData(
+            title: transcript,
+            detail: transcript,
+            rawTranscript: transcript,
+            needsAIProcessing: false,
+            localeIdentifier: localeIdentifier
+        )
+        todo.extractionOutcome = .unparsed
+        return todo
     }
 }

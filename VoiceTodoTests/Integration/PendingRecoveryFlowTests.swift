@@ -332,6 +332,14 @@ private final class PendingRecoveryTestStore: PendingRecoveryTodoStore {
         todos.removeAll { $0.id == id }
     }
 
+    func holdPendingAsUnparsed(id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].needsAIProcessing = false
+        todos[index].extractionOutcome = .unparsed
+    }
+
     func updateRecurrence(_ id: UUID, recurrenceRule: RecurrenceRule?) throws {}
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] { [] }
     func completedUnscheduled(from startDate: Date, to endDate: Date) async throws -> [TodoItemData] { [] }

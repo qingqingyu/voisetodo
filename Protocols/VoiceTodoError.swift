@@ -134,4 +134,19 @@ extension VoiceTodoError {
         case read
         case write
     }
+
+    /// 是否为「确定性解析失败」:这类错误对同一输入重试必败(temperature=0,输出由输入决定),
+    /// 自动重试只烧一次模型额度、不解决问题。
+    ///
+    /// 唯一权威清单——`TranscriptProcessingFlow` 据此路由 saveManual(原文存手动卡片),
+    /// `AppCoordinator` 据此决定前台恢复失败的 pending 是否转持(`holdPendingAsUnparsed`)。
+    /// 两处必须同口径:漏改任一侧会导致用户拿不到手动卡片或前台无限重试烧额度。
+    var isDeterministicParseFailure: Bool {
+        switch self {
+        case .transcriptTooLong, .apiResponseInvalid, .jsonParsingFailed:
+            return true
+        default:
+            return false
+        }
+    }
 }

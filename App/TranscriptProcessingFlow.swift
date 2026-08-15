@@ -4,7 +4,6 @@ enum TranscriptFlowEvent {
     case empty
     case partial(ExtractionResult)
     case success(finalTodos: [ExtractedTodo])
-    case noTodos
     case offlineSaved(TodoItemData)
     case offlineSaveFailed(Error)
     /// 外部调用失败后原始转写已保存。保留失败原因，供 UI 显示准确提示。
@@ -13,7 +12,13 @@ enum TranscriptFlowEvent {
     /// 配额耗尽后离线兜底成功。与 `fallbackSaved` 等价（pending 保留、稍后重试），
     /// 额外要求上层弹出 paywall 引导升级。
     case quotaFallbackSaved(TodoItemData)
-    case failed(Error)
+    /// 确定性失败(noTodos / transcriptTooLong / apiResponseInvalid / jsonParsingFailed 等)
+    /// 后原文已存为**手动卡片**(needsAIProcessing=false + .unparsed):不参与前台自动重试
+    /// (这类错误对同一输入重试必败且烧额度),用户可在「没能识别」分组手动重新解析。
+    /// reason 保留失败原因供 UI 显示准确提示;noTodos 非 error 场景传 nil。
+    case manualSaved(TodoItemData, reason: VoiceTodoError?)
+    /// 手动卡片保存失败(存储故障)。
+    case manualSaveFailed(Error)
 }
 
 @MainActor
@@ -95,8 +100,14 @@ final class TranscriptProcessingFlow {
 
                     if !receivedAny {
                         VoiceTodoLog.coordinator.info("coordinator.process_transcript.no_todos id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-                        continuation.yield(.noTodos)
-                        continuation.finish()
+                        // AI 看过原文但没识别出任何待办:原文不丢,存为手动卡片,
+                        // 用户可在「没能识别」分组查看/重新解析/编辑(用户拍板的「永不丢话」口径)。
+                        await saveManual(
+                            transcript: text,
+                            localeIdentifier: locale.identifier,
+                            reason: nil,
+                            continuation: continuation
+                        )
                     } else {
                         VoiceTodoLog.coordinator.info("coordinator.process_transcript.success id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) finalTodos=\(finalTodos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                         continuation.yield(.success(finalTodos: finalTodos))
@@ -137,7 +148,9 @@ final class TranscriptProcessingFlow {
                     }
                     if let voiceError = error as? VoiceTodoError {
                         switch voiceError {
-                        case .networkUnavailable, .apiTimeout, .circuitOpen:
+                        case .networkUnavailable, .apiTimeout, .circuitOpen, .apiServerError:
+                            // apiServerError(5xx 非 503)与 serviceUnavailable 同为瞬时服务故障
+                            // (TodoExtractorService.countsAsServiceFailure 同口径):pending 自动恢复,重试有意义。
                             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.network_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                             await saveOffline(
                                 transcript: text,
@@ -166,15 +179,37 @@ final class TranscriptProcessingFlow {
                                 failure: TranscriptFlowEvent.networkFallbackSaveFailed,
                                 continuation: continuation
                             )
+                        case let deterministicError where deterministicError.isDeterministicParseFailure:
+                            // 确定性解析失败:同一输入重试必败且每次烧一次模型额度
+                            // (temperature=0,输出长度由输入决定)。原文存手动卡片,
+                            // 用户可在「没能识别」分组手动重新解析(提额后的重试通常能过)。
+                            // 判定清单收敛在 VoiceTodoError.isDeterministicParseFailure。
+                            VoiceTodoLog.coordinator.warning("coordinator.process_transcript.manual_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            await saveManual(
+                                transcript: text,
+                                localeIdentifier: locale.identifier,
+                                reason: voiceError,
+                                continuation: continuation
+                            )
                         default:
-                            VoiceTodoLog.coordinator.error("coordinator.process_transcript.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                            continuation.yield(.failed(error))
-                            continuation.finish()
+                            // 未归类的 VoiceTodoError:同样不丢话,手动卡片兜底。
+                            VoiceTodoLog.coordinator.error("coordinator.process_transcript.manual_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                            await saveManual(
+                                transcript: text,
+                                localeIdentifier: locale.identifier,
+                                reason: voiceError,
+                                continuation: continuation
+                            )
                         }
                     } else {
-                        VoiceTodoLog.coordinator.error("coordinator.process_transcript.failed id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                        continuation.yield(.failed(error))
-                        continuation.finish()
+                        // 非 VoiceTodoError 的未知错误:原文同样不丢,手动卡片兜底。
+                        VoiceTodoLog.coordinator.error("coordinator.process_transcript.manual_fallback id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                        await saveManual(
+                            transcript: text,
+                            localeIdentifier: locale.identifier,
+                            reason: nil,
+                            continuation: continuation
+                        )
                     }
                 }
             }
@@ -201,6 +236,29 @@ final class TranscriptProcessingFlow {
         } catch {
             VoiceTodoLog.coordinator.error("coordinator.offline_save.failed id=\(offlineID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             continuation.yield(failure(error))
+        }
+        continuation.finish()
+    }
+
+    /// 确定性失败兜底:原文存为手动卡片(needsAIProcessing=false + .unparsed)。
+    /// 与 `saveOffline` 的差别:产物不进 pending 自动恢复队列——确定性错误自动重试
+    /// 必败且每次烧一次模型额度,改为用户在「没能识别」卡片上手动触发重新解析。
+    private func saveManual(
+        transcript: String,
+        localeIdentifier: String,
+        reason: VoiceTodoError?,
+        continuation: AsyncStream<TranscriptFlowEvent>.Continuation
+    ) async {
+        let manualID = VoiceTodoLog.makeID("manual-save")
+        let startedAt = Date()
+        VoiceTodoLog.coordinator.info("coordinator.manual_save.start id=\(manualID, privacy: .public) locale=\(localeIdentifier, privacy: .public) reason=\(reason.map(VoiceTodoLog.errorSummary) ?? "no_todos", privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        do {
+            let manualTodo = try store.addManualUnparsedTranscript(transcript, localeIdentifier: localeIdentifier)
+            VoiceTodoLog.coordinator.info("coordinator.manual_save.success id=\(manualID, privacy: .public) todoID=\(manualTodo.id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            continuation.yield(.manualSaved(manualTodo, reason: reason))
+        } catch {
+            VoiceTodoLog.coordinator.error("coordinator.manual_save.failed id=\(manualID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            continuation.yield(.manualSaveFailed(error))
         }
         continuation.finish()
     }

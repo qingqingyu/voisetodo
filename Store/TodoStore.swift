@@ -195,6 +195,47 @@ final class TodoStore:
         return data
     }
 
+    /// 添加「手动卡片」转写（确定性解析失败兜底用）。
+    ///
+    /// 产物不参与 PendingRecoveryFlow 自动重试（needsAIProcessing=false）,
+    /// 在「没能识别」分组可见（extractionOutcome=.unparsed），用户可手动重新解析。
+    /// - Parameters:
+    ///   - transcript: 原始语音转写文本
+    ///   - localeIdentifier: 录音/输入时的语言标识，nil 时回退到当前系统 locale。
+    func addManualUnparsedTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
+        let startedAt = Date()
+        let effectiveLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
+        VoiceTodoLog.store.info("store.add_manual_unparsed.start extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(effectiveLocaleIdentifier, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public)")
+        let todoItem = TodoItem.manualUnparsedTranscript(transcript)
+        todoItem.localeIdentifier = effectiveLocaleIdentifier
+        todoItem.sortOrder = try nextSortOrderForNewItem()
+        modelContext.insert(todoItem)
+
+        try saveOrRollback()
+        let data = todoItem.toData()
+        todos.insert(data, at: 0)
+        VoiceTodoLog.store.info("store.add_manual_unparsed.success id=\(todoItem.id.uuidString, privacy: .public) locale=\(effectiveLocaleIdentifier, privacy: .public) total=\(self.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        return data
+    }
+
+    /// 把 pending 条目转持为手动卡片：停止自动重试、原文保留为「没能识别」条目。
+    /// - Parameter id: pending 待办 ID
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`。
+    func holdPendingAsUnparsed(id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.hold_pending.start id=\(id.uuidString, privacy: .public)")
+        let todoItem = try findTodoItem(by: id)
+
+        todoItem.needsAIProcessing = false
+        todoItem.extractionOutcome = .unparsed
+
+        try saveOrRollback()
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
+        }
+        VoiceTodoLog.store.info("store.hold_pending.success id=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
     /// 切换完成状态
     /// - Parameter id: 待办 ID
     func toggleComplete(_ id: UUID) throws {
@@ -662,7 +703,9 @@ final class TodoStore:
         for (index, id) in ids.enumerated() {
             guard let item = itemMap[id] else {
                 VoiceTodoLog.store.error("store.reorder.missing_id id=\(id.uuidString, privacy: .public)")
-                throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+                // 与 findTodoItem 同口径:条目缺失抛 .todoNotFound(可被精准捕获断言),
+                // UI 文案与 storageReadFailed 同走 ErrorMessages.storageError,用户无感。
+                throw VoiceTodoError.todoNotFound(id)
             }
             itemsToUpdate.append((item: item, index: index))
         }
@@ -891,7 +934,11 @@ final class TodoStore:
             let items = try modelContext.fetch(descriptor)
             guard let item = items.first else {
                 VoiceTodoLog.store.error("store.find.failed reason=not_found id=\(id.uuidString, privacy: .public)")
-                throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
+                // .todoNotFound 的设计目的(VoiceTodoError 文档):让"条目不存在"可被精准
+                // 断言与捕获(reextract 的 catch、replaceTodo 的 Throws 声明),不再藏在
+                // storageReadFailed("todo not found: ...") 字符串里。UI 文案两者同走
+                // ErrorMessages.storageError,用户可见行为不变。
+                throw VoiceTodoError.todoNotFound(id)
             }
             return item
         } catch {

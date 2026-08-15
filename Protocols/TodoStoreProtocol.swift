@@ -160,6 +160,24 @@ protocol PendingTranscriptCreating {
     /// 添加原始转写文本（离线降级用）[v2]
     /// - Returns: 创建出的待处理待办，用于外部记录 pending 关联。
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData
+
+    /// 添加「手动卡片」转写（确定性解析失败兜底用）。
+    ///
+    /// 与 `addRawTranscript` 的区别:产物 `needsAIProcessing = false` + `extractionOutcome = .unparsed`,
+    /// 不被 PendingRecoveryFlow 自动认领重试(确定性错误自动重试必败且烧额度),
+    /// 但在「没能识别」分组可见,用户可手动「重新解析」或编辑。
+    /// - Returns: 创建出的手动卡片待办。
+    func addManualUnparsedTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData
+}
+
+/// Pending 转写转持能力:把已存在的 pending 条目翻转为手动卡片。
+///
+/// 用于 PendingRecoveryFlow 恢复失败 / 恢复产出 0 条待办的场景——原文保留为
+/// 手动卡片,停止自动重试,避免「每次前台必败 + 烧一次额度」的死循环。
+protocol PendingTranscriptHolding {
+    /// 把 pending 条目转持为手动卡片(needsAIProcessing=false + .unparsed)。
+    /// - Throws: 条目不存在时抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func holdPendingAsUnparsed(id: UUID) throws
 }
 
 /// Widget 待办读取能力。
@@ -207,8 +225,8 @@ protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurre
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新、pending 替换和日历导入。
 protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting, TodoImporting, TodoOrderingWriting {}
 
-/// Pending 恢复流程只需要读取 pending 与删除无效 pending。
-protocol PendingRecoveryTodoStore: PendingTranscriptReadable, TodoDeletionWriting {}
+/// Pending 恢复流程只需要读取 pending、删除无效 pending、把无产出/确定性失败的 pending 转持为手动卡片。
+protocol PendingRecoveryTodoStore: PendingTranscriptReadable, TodoDeletionWriting, PendingTranscriptHolding {}
 
 /// 系统日历同步只需要读取当前待办并持久化系统日历事件 ID。
 protocol CalendarSyncTodoStore: TodoListReadable, SystemCalendarEventIdentifierWriting {}

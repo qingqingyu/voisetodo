@@ -531,6 +531,57 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(sut.todos[0].extractionOutcome, .rawFallback)
     }
 
+    // MARK: - Test AddManualUnparsedTranscript
+
+    func testAddManualUnparsedTranscriptDoesNotEnterPendingQueue() async throws {
+        // Given: 确定性解析失败的原文
+        let transcript = "一口气说了二十几条待办导致 AI 输出被截断"
+
+        // When: 存为手动卡片
+        let created = try sut.addManualUnparsedTranscript(transcript, localeIdentifier: "zh-Hans")
+
+        // Then: 不进 pending 自动恢复队列(needsAIProcessing=false),
+        // 但原文完整保留,且路由到「没能识别」组(.unparsed)。
+        XCTAssertEqual(sut.todos.count, 1)
+        XCTAssertEqual(created.id, sut.todos[0].id)
+        XCTAssertFalse(sut.todos[0].needsAIProcessing)
+        XCTAssertEqual(sut.todos[0].rawTranscript, transcript)
+        XCTAssertEqual(sut.todos[0].detail, transcript)
+        XCTAssertEqual(sut.todos[0].extractionOutcome, .unparsed)
+        XCTAssertEqual(sut.todos[0].localeIdentifier, "zh-Hans")
+        let pending = try await sut.pendingItems()
+        XCTAssertTrue(pending.isEmpty, "手动卡片不得被 PendingRecoveryFlow 自动认领")
+    }
+
+    // MARK: - Test HoldPendingAsUnparsed
+
+    func testHoldPendingAsUnparsedStopsAutoRecoveryAndKeepsTranscript() async throws {
+        // Given: 一条 pending(如 AddTodoIntent 离线写入的超长转写)
+        try sut.addRawTranscript("会被确定性截断的超长转写")
+        let pendingId = sut.todos[0].id
+        let pendingBefore = try await sut.pendingItems()
+        XCTAssertEqual(pendingBefore.count, 1)
+
+        // When: 转持为手动卡片
+        try sut.holdPendingAsUnparsed(id: pendingId)
+
+        // Then: 退出 pending 队列但条目仍在,原文保留、路由到「没能识别」组
+        let pendingAfter = try await sut.pendingItems()
+        XCTAssertTrue(pendingAfter.isEmpty)
+        XCTAssertEqual(sut.todos.count, 1)
+        XCTAssertEqual(sut.todos[0].id, pendingId)
+        XCTAssertEqual(sut.todos[0].extractionOutcome, .unparsed)
+        XCTAssertEqual(sut.todos[0].rawTranscript, "会被确定性截断的超长转写")
+    }
+
+    func testHoldPendingAsUnparsedThrowsForMissingTodo() throws {
+        let missingId = UUID()
+
+        XCTAssertThrowsError(try sut.holdPendingAsUnparsed(id: missingId)) { error in
+            XCTAssertEqual(error as? VoiceTodoError, .todoNotFound(missingId))
+        }
+    }
+
     // MARK: - Test ReplacePendingWithExtracted [v2]
 
     func testReplacePendingWithExtracted() throws {
@@ -1155,11 +1206,12 @@ final class StoreTests: XCTestCase {
     }
 
     /// 不存在的 id 必须显式抛错,不静默吞掉(遵循 CLAUDE.md 错误显式传播规则)。
+    /// 条目缺失按 .todoNotFound 精准断言(VoiceTodoError 文档:取代字符串式 storageReadFailed)。
     func testReorderThrowsOnUnknownId() throws {
         _ = try addReorderTarget("A")
         XCTAssertThrowsError(try sut.reorder(ids: [UUID()])) { error in
-            guard case VoiceTodoError.storageReadFailed = error else {
-                return XCTFail("期望 storageReadFailed,实际 \(error)")
+            guard case VoiceTodoError.todoNotFound = error else {
+                return XCTFail("期望 todoNotFound,实际 \(error)")
             }
         }
     }
@@ -1170,8 +1222,8 @@ final class StoreTests: XCTestCase {
         try sut.toggleComplete(a)
 
         XCTAssertThrowsError(try sut.reorder(ids: [a])) { error in
-            guard case VoiceTodoError.storageReadFailed = error else {
-                return XCTFail("期望 storageReadFailed,实际 \(error)")
+            guard case VoiceTodoError.todoNotFound = error else {
+                return XCTFail("期望 todoNotFound,实际 \(error)")
             }
         }
     }
