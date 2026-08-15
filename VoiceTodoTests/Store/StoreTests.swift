@@ -1256,6 +1256,55 @@ final class StoreTests: XCTestCase {
         let completions = try modelContext.fetch(FetchDescriptor<TodoOccurrenceCompletion>())
         XCTAssertTrue(completions.isEmpty, "跨天事件(recurrenceRule == nil)走 toggleComplete 短路,不应产生 occurrence completion 记录")
     }
+
+    // MARK: - 提前提醒偏移三态(TodoDetailUpdate.reminderOffsetMinutes)
+
+    /// 契约:nil = 保留原值(HomeView 快捷改时间等 partial-update 路径不误清)、
+    /// 0 = 清除(准时)、正数 = 设置(钳 1440 上限)、无钟点时强制清除。
+    func testUpdateFullReminderOffsetTriState() throws {
+        let calendar = Calendar.current
+        let tomorrow = calendar.startOfDay(for: Date()).addingTimeInterval(86_400)
+        let due = try XCTUnwrap(calendar.date(bySettingHour: 15, minute: 0, second: 0, of: tomorrow))
+        try sut.add(ExtractedTodo(id: UUID(), title: "开会", dueDate: tomorrow, dueTime: "15:00"))
+        let id = try XCTUnwrap(sut.todos.first?.id)
+
+        func update(offset: Int?, hasDueTime: Bool = true, title: String = "开会") throws {
+            try sut.updateFull(id, update: TodoDetailUpdate(
+                title: title, detail: nil, category: nil, priority: nil,
+                dueDate: due, hasDueTime: hasDueTime, timeBucket: nil,
+                dueHint: nil, recurrenceRule: nil,
+                reminderOffsetMinutes: offset
+            ))
+        }
+
+        // 正数 → 设置
+        try update(offset: 30)
+        XCTAssertEqual(sut.todos[0].reminderOffsetMinutes, 30)
+
+        // nil → 保留原值:只改其他字段的调用方不会把用户的提前提醒静默清掉
+        try update(offset: nil, title: "开会(改名)")
+        XCTAssertEqual(sut.todos[0].title, "开会(改名)")
+        XCTAssertEqual(sut.todos[0].reminderOffsetMinutes, 30, "nil 应保留原值")
+
+        // 0 → 清除(准时)
+        try update(offset: 0)
+        XCTAssertNil(sut.todos[0].reminderOffsetMinutes)
+
+        // 超上限 → 钳到 1440(提前 1 天)
+        try update(offset: 99_999)
+        XCTAssertEqual(sut.todos[0].reminderOffsetMinutes, 1440)
+
+        // 应用后无钟点 → 强制清除(不带钟点的待办提醒无意义)
+        try update(offset: 30, hasDueTime: false)
+        XCTAssertNil(sut.todos[0].reminderOffsetMinutes)
+
+        // 无钟点 + nil 偏移(partial-update 拖拽清钟点路径)→ 也不留脏值:
+        // 先恢复带钟点 + 偏移,再走 nil 偏移 + 无钟点,行内 offset 必须被清。
+        try update(offset: 30, hasDueTime: true)
+        XCTAssertEqual(sut.todos[0].reminderOffsetMinutes, 30)
+        try update(offset: nil, hasDueTime: false)
+        XCTAssertNil(sut.todos[0].reminderOffsetMinutes, "无钟点时即使传 nil(保留语义)也强制清")
+    }
 }
 
 /// 测试辅助：从已有 todo 构造 TodoDetailUpdate，避免每个测试都写一长串字段。

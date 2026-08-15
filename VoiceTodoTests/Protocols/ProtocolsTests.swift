@@ -111,6 +111,34 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertEqual(result.todos[0].categoryHint, .other)
     }
 
+    /// reminder_offset_minutes 消毒:合法区间 1...1440 保留,0/负数/超界/缺失一律归 nil(准时)。
+    func testExtractedTodoSanitizesReminderOffsetMinutes() throws {
+        func decode(_ raw: String) throws -> Int? {
+            let json = """
+            {"todos":[{"id":"00000000-0000-0000-0000-000000000021","title":"开会","due_time":"15:00","reminder_offset_minutes":\(raw)}],"ignored":""}
+            """
+            let data = try XCTUnwrap(json.data(using: .utf8))
+            return try JSONDecoder().decode(ExtractionResult.self, from: data).todos[0].reminderOffsetMinutes
+        }
+        try XCTAssertEqual(decode("30"), 30)
+        try XCTAssertEqual(decode("1440"), 1440)
+        try XCTAssertNil(decode("0"))       // 0 = 准时,用 nil 表达
+        try XCTAssertNil(decode("-5"))
+        try XCTAssertNil(decode("2000"))    // 超 1 天上限
+
+        // 字段缺失 → nil(AI 没说提前)
+        let missing = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000022","title":"开会","due_time":"15:00"}],"ignored":""}
+        """
+        let result = try JSONDecoder().decode(ExtractionResult.self, from: XCTUnwrap(missing.data(using: .utf8)))
+        XCTAssertNil(result.todos[0].reminderOffsetMinutes)
+
+        // memberwise init 同样过消毒
+        XCTAssertEqual(ExtractedTodo(title: "开会", reminderOffsetMinutes: 30).reminderOffsetMinutes, 30)
+        XCTAssertNil(ExtractedTodo(title: "开会", reminderOffsetMinutes: 0).reminderOffsetMinutes)
+        XCTAssertNil(ExtractedTodo(title: "开会", reminderOffsetMinutes: 9999).reminderOffsetMinutes)
+    }
+
     func testExtractedTodoDecodesExplicitTimeBucketAndIgnoresUnknownValue() throws {
         let validJSON = """
         {"todos":[{"id":"00000000-0000-0000-0000-000000000011","title":"去健身","time_bucket":"evening"}],"ignored":""}

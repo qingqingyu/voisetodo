@@ -48,6 +48,19 @@ struct TodoDraftEditorPanel: View {
                     appearance: .confirmation,
                     onEdit: { }
                 )
+
+                // 提前提醒行:只在带钟点时出现,与日期行同款分隔线。
+                if todo.dueTime != nil {
+                    Rectangle()
+                        .fill(ConfirmEditorTheme.accent.opacity(0.12))
+                        .frame(height: 1)
+
+                    TodoReminderOffsetRow(
+                        offsetMinutes: $todo.reminderOffsetMinutes,
+                        appearance: .confirmation,
+                        onEdit: { }
+                    )
+                }
             }
 
             editorSection(

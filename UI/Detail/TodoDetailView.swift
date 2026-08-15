@@ -56,6 +56,8 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var editedDueDate: Date?
     @State private var editedHasDueTime: Bool
     @State private var editedTimeBucket: TimeBucket?
+    /// 提醒提前量(nil = 准时)。仅带钟点时有意义;清钟点时 persistChanges 会一并清掉。
+    @State private var editedReminderOffsetMinutes: Int?
     @State private var editedRecurrenceFrequency: RecurrenceFrequency?
     @State private var editedWeekdays: Set<Int>
     /// weekly 重复的 interval:1=每周、2=双周、3=三周、≥4=fallback。
@@ -97,6 +99,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         _editedDueDate = State(initialValue: todo.dueDate)
         _editedHasDueTime = State(initialValue: todo.hasDueTime)
         _editedTimeBucket = State(initialValue: todo.timeBucket)
+        _editedReminderOffsetMinutes = State(initialValue: todo.reminderOffsetMinutes)
         _editedRecurrenceFrequency = State(initialValue: todo.recurrenceRule?.frequency)
         _editedWeekdays = State(initialValue: Set(todo.recurrenceRule?.weekdays ?? []))
         _editedInterval = State(initialValue: todo.recurrenceRule?.interval ?? 1)
@@ -261,6 +264,22 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 recurrenceFrequency: editedRecurrenceFrequency,
                                 onEdit: checkForChanges
                             )
+                            // 清钟点时同步清 edited 态的提前量:persistChanges 会把库里
+                            // 偏移清成 nil,若 @State 仍留旧值,hasChanges 的
+                            // `editedReminderOffsetMinutes != todo.reminderOffsetMinutes`
+                            // 从此恒为 true——之后任意编辑都触发一次 no-op 全量写库 + toast。
+                            .onChange(of: editedHasDueTime) { _, hasTime in
+                                if !hasTime { editedReminderOffsetMinutes = nil }
+                            }
+
+                            // 提前提醒行:只在带钟点时出现(无钟点无到点提醒可言)。
+                            if editedHasDueTime {
+                                Divider()
+                                TodoReminderOffsetRow(
+                                    offsetMinutes: $editedReminderOffsetMinutes,
+                                    onEdit: checkForChanges
+                                )
+                            }
                         }
                     }
 
@@ -873,6 +892,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                      editedDueDate != todo.dueDate ||
                      editedHasDueTime != todo.hasDueTime ||
                      editedTimeBucket != todo.timeBucket ||
+                     editedReminderOffsetMinutes != todo.reminderOffsetMinutes ||
                      recurrenceStateChanged
         // 有改动就 schedule 防抖保存:用户停 800ms 不动 → 自动写库 + 显示 toast。
         // 防抖避免每次 keystroke 都触发 SwiftData 写入。
@@ -948,7 +968,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     hasDueTime: editedHasDueTime,
                     timeBucket: editedTimeBucket,
                     dueHint: timeMetadataChanged ? "" : nil,
-                    recurrenceRule: editedRecurrenceRule
+                    recurrenceRule: editedRecurrenceRule,
+                    // 三态契约:有钟点时 nil(准时)显式传 0 清除;清钟点则一并清提醒偏移。
+                    reminderOffsetMinutes: editedHasDueTime ? (editedReminderOffsetMinutes ?? 0) : 0
                 )
             )
             // 同步基准:把 edited* 写回 todo,下次 checkForChanges 以新基准比对。
@@ -961,6 +983,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             todo.dueDate = editedDueDate
             todo.hasDueTime = editedHasDueTime
             todo.timeBucket = editedTimeBucket
+            todo.reminderOffsetMinutes = editedHasDueTime ? editedReminderOffsetMinutes : nil
             todo.recurrenceRule = editedRecurrenceRule
             if timeMetadataChanged {
                 todo.dueHint = ""

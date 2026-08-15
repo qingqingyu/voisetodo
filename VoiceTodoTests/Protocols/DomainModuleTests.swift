@@ -155,6 +155,127 @@ final class DomainModuleTests: XCTestCase {
         ).isEmpty)
     }
 
+    /// 提前提醒偏移:一次性/无界重复/有界展开三类触发器的偏移修正。
+    /// ⚠️ 用 Calendar.current 构造与传参,与 `RecurrenceRule.init` 归一化 endDate 的日历一致
+    /// (RecurrenceRule.swift:38 用 Calendar.current.startOfDay;测试若用 UTC 会把 endDate
+    /// 在 +0800 下回拨 8 小时,有界展开少一天)。
+    func testNotificationPlannerAdvanceOffset() throws {
+        let cal = Calendar.current
+        // 2026-08-15 是周六。锚定一个稳定的 now。
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 8, day: 15, hour: 12)))
+
+        func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int) throws -> Date {
+            try XCTUnwrap(cal.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min)))
+        }
+        func plan(_ todo: TodoItemData) -> [PlannedNotification] {
+            NotificationPlanner.plannedNotifications(from: [todo], now: now, calendar: cal)
+        }
+        /// 与实现同构的 body 前缀期望值:SPM 测试 bundle 无 xcstrings 时回落 key,两边口径一致。
+        func advancePrefix(_ minutes: Int) -> String {
+            if minutes >= 1440 { return String(localized: "notification.advance.day") }
+            if minutes == 60 { return String(localized: "notification.advance.hour") }
+            return String.localizedStringWithFormat(String(localized: "notification.advance.minutes"), minutes)
+        }
+
+        // MARK: 一次性:触发时刻 = due - offset
+
+        // 1. 明天 15:00 开会,提前 30 分钟 → 触发 14:30,sortKey = 触发时刻
+        let meeting = TodoItemData(
+            title: "开会", detail: "3楼会议室", dueDate: try date(2026, 8, 16, 15, 0),
+            hasDueTime: true, reminderOffsetMinutes: 30
+        )
+        let shifted = try XCTUnwrap(plan(meeting).first)
+        let fireComps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: shifted.sortKey)
+        XCTAssertEqual([fireComps.year, fireComps.month, fireComps.day, fireComps.hour, fireComps.minute],
+                       [2026, 8, 16, 14, 30])
+        XCTAssertEqual(shifted.body, "\(advancePrefix(30)) · 3楼会议室")
+
+        // 2. 偏移后已过期 → 跳过(due 本身在未来也不补发)
+        let imminent = TodoItemData(
+            title: "马上", dueDate: now.addingTimeInterval(10 * 60),
+            hasDueTime: true, reminderOffsetMinutes: 30
+        )
+        XCTAssertTrue(plan(imminent).isEmpty)
+
+        // 3. 无备注 → body 只有前缀;准时 → body 保持 nil
+        let noDetail = TodoItemData(
+            title: "吃药", dueDate: try date(2026, 8, 16, 8, 0), hasDueTime: true, reminderOffsetMinutes: 60
+        )
+        XCTAssertEqual(try XCTUnwrap(plan(noDetail).first).body, advancePrefix(60))
+        let onTime = TodoItemData(title: "准时", dueDate: try date(2026, 8, 16, 8, 0), hasDueTime: true)
+        XCTAssertNil(try XCTUnwrap(plan(onTime).first).body)
+
+        // MARK: 无界 daily:00:15 提前 30 → 每天 23:45
+
+        let dailyPastMidnight = TodoItemData(
+            title: "日报", dueDate: try date(2026, 8, 16, 0, 15),
+            hasDueTime: true,
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            reminderOffsetMinutes: 30
+        )
+        let daily = try XCTUnwrap(plan(dailyPastMidnight).first)
+        XCTAssertTrue(daily.repeats)
+        XCTAssertEqual(daily.dateComponents.hour, 23)
+        XCTAssertEqual(daily.dateComponents.minute, 45)
+
+        // MARK: 无界 weekly:周一 00:15 提前 30 → 周日 23:45(weekday 2 → 1)
+
+        let weeklyTodo = TodoItemData(
+            title: "周会", dueDate: try date(2026, 8, 17, 0, 15),
+            hasDueTime: true,
+            recurrenceRule: RecurrenceRule(frequency: .weekly, weekdays: [2]),
+            reminderOffsetMinutes: 30
+        )
+        let weekly = try XCTUnwrap(plan(weeklyTodo).first)
+        XCTAssertEqual(weekly.dateComponents.weekday, 1)  // 周日
+        XCTAssertEqual(weekly.dateComponents.hour, 23)
+        XCTAssertEqual(weekly.dateComponents.minute, 45)
+
+        // MARK: 无界 monthly
+
+        // 5 号 10:00 提前 1 天 → 4 号 10:00(同月回退,day 确定性)
+        let monthlyTodo = TodoItemData(
+            title: "月报", dueDate: try date(2026, 8, 5, 10, 0),
+            hasDueTime: true,
+            recurrenceRule: RecurrenceRule(frequency: .monthly, dayOfMonth: 5),
+            reminderOffsetMinutes: 1440
+        )
+        let monthly = try XCTUnwrap(plan(monthlyTodo).first)
+        XCTAssertEqual(monthly.dateComponents.day, 4)
+        XCTAssertEqual(monthly.dateComponents.hour, 10)
+
+        // 1 号 00:15 提前 30 → 钳制为 1 号 00:00(上月末天数不定,重复触发器表达不了)
+        let firstDayTodo = TodoItemData(
+            title: "交房租", dueDate: try date(2026, 9, 1, 0, 15),
+            hasDueTime: true,
+            recurrenceRule: RecurrenceRule(frequency: .monthly, dayOfMonth: 1),
+            reminderOffsetMinutes: 30
+        )
+        let clamped = try XCTUnwrap(plan(firstDayTodo).first)
+        XCTAssertEqual(clamped.dateComponents.day, 1)
+        XCTAssertEqual(clamped.dateComponents.hour, 0)
+        XCTAssertEqual(clamped.dateComponents.minute, 0)
+
+        // MARK: 有界展开:逐 occurrence 减偏移,跨日偏移落到前一天
+
+        let end = try date(2026, 8, 18, 0, 0)
+        let boundedTodo = TodoItemData(
+            title: "接孩子", dueDate: try date(2026, 8, 16, 0, 15),
+            hasDueTime: true,
+            recurrenceRule: RecurrenceRule(frequency: .daily, endDate: end),
+            reminderOffsetMinutes: 30
+        )
+        let bounded = plan(boundedTodo)
+        // 发生日 16/17/18 各 00:15 → 触发前一晚 23:45
+        XCTAssertEqual(bounded.count, 3)
+        for (i, notification) in bounded.enumerated() {
+            XCTAssertFalse(notification.repeats)
+            let comps = cal.dateComponents([.month, .day, .hour, .minute], from: notification.sortKey)
+            XCTAssertEqual([comps.month, comps.day, comps.hour, comps.minute],
+                           [8, 15 + i, 23, 45], "第 \(i) 个 occurrence 应在前一晚 23:45 触发")
+        }
+    }
+
     func testRecurrenceEndResolverComputesExactDates() throws {
         let cal = Calendar(identifier: .gregorian)
         func d(_ y: Int, _ m: Int, _ day: Int) throws -> Date {

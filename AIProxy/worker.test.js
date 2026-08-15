@@ -375,6 +375,40 @@ test("system prompt uses complete Japanese prompt for ja locale", async () => {
   assert.ok(systemMessage.includes("山田"), "ja locale vocabularyHints 应保留人名原文");
 });
 
+// 提前提醒(reminder_offset_minutes)三语 prompt 覆盖:
+// 每个语言的 prompt 都必须含 schema 字段、规则 4c 和示例输出,缺一不可——
+// 只加 schema 不加规则/示例时模型容易忽略该字段。
+test("system prompt includes reminder_offset_minutes rule and example for all locales", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const locales = [
+    { locale: "zh-Hans", transcript: "明天下午3点开会，提前半小时提醒我", ruleMarker: "4c. 提前提醒" },
+    { locale: "en-US", transcript: "Meeting tomorrow at 3pm, remind me half an hour early", ruleMarker: "4c. Advance reminder" },
+    { locale: "ja-JP", transcript: "明日の午後3時に会議、30分前にリマインドして", ruleMarker: "4c. 事前リマインド" }
+  ];
+  for (const { locale, transcript, ruleMarker } of locales) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token", "X-Local-Date": today }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("开会") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    assert.ok(systemMessage.includes(ruleMarker), `${locale} prompt 应包含规则 4c`);
+    assert.ok(systemMessage.includes('"reminder_offset_minutes"'), `${locale} prompt schema 应含字段名`);
+    assert.ok(systemMessage.includes('"reminder_offset_minutes":30'), `${locale} prompt 示例应输出偏移值 30`);
+  }
+});
+
 test("system prompt falls back to server UTC date when X-Local-Date missing", async () => {
   // X-Local-Date 缺失时 resolveQuotaDate 回退到服务端 UTC 日期（同样注入 prompt，
   // 不静默丢弃），AI 仍能拿到一个参考日期，只是可能与用户真实"今天"差 1 天。
@@ -1281,6 +1315,46 @@ test("passes through due_date_basis field from provider response unchanged", asy
   const data = await response.json();
   assert.equal(data.todos[0].due_date_basis, "user_explicit");
   assert.equal(data.todos[0].due_date, "2026-07-20");
+});
+
+// 与 due_date_basis 透传测试同款守卫:客户端按字面解码 reminder_offset_minutes,
+// worker 中间层丢弃该字段会让"提前半小时提醒我"静默退化为准时提醒。
+test("passes through reminder_offset_minutes field from provider response unchanged", async () => {
+  const providerResponse = {
+    todos: [{
+      title: "开会",
+      detail: "明天下午3点开会，提前半小时提醒我",
+      due_date: "2026-07-16",
+      due_hint: "明天下午3点",
+      due_time: "15:00",
+      time_bucket: null,
+      recurrence_rule: null,
+      recurrence_end: null,
+      reminder_times: null,
+      reminder_offset_minutes: 30,
+      due_date_basis: "user_explicit",
+      priority: "normal",
+      category_hint: "work"
+    }],
+    ignored: ""
+  };
+  const response = await handleRequest(
+    request({ transcript: "明天下午3点开会，提前半小时提醒我", locale: "zh-Hans" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key"
+    },
+    {},
+    async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify(providerResponse) }]
+    })
+  );
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.todos[0].reminder_offset_minutes, 30);
+  assert.equal(data.todos[0].due_time, "15:00");
 });
 
 test("passes through title_mention basis when AI flags title-borne date word", async () => {

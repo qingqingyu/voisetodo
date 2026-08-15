@@ -761,3 +761,85 @@ struct TodoClockTimeRow: View {
         }
     }
 }
+
+// MARK: - 提醒提前量行
+
+/// 单条待办的提醒提前量选择行(Menu 档位制)。调用方只在待办**带钟点**时渲染。
+///
+/// 档位:准时(nil) / 提前 5、15、30、60 分钟 / 提前 1 天(1440)。v1 不做自定义分钟数。
+/// 绑定值语义与 `reminderOffsetMinutes` 字段一致(nil = 准时)。
+/// 样式对齐 `TodoClockTimeRow` 的"添加钟点"行(13pt 图标 + 14pt 文本,字号差承担主次),
+/// appearance 切换详情页 / 确认页配色。
+struct TodoReminderOffsetRow: View {
+    @Binding private var offsetMinutes: Int?
+    private let appearance: TodoFieldEditorAppearance
+    private let onEdit: () -> Void
+
+    /// 档位表:数组顺序即菜单顺序。nil = 准时。自定义分钟数刻意不做(YAGNI)。
+    private static let presets: [Int?] = [nil, 5, 15, 30, 60, ReminderOffsetConfig.maxMinutes]
+
+    init(
+        offsetMinutes: Binding<Int?>,
+        appearance: TodoFieldEditorAppearance = .standard,
+        onEdit: @escaping () -> Void
+    ) {
+        self._offsetMinutes = offsetMinutes
+        self.appearance = appearance
+        self.onEdit = onEdit
+    }
+
+    var body: some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "bell")
+                .font(.system(size: 13))
+
+            Text(String(localized: "detail.reminder.label"))
+                .font(.system(size: 14, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+
+            Spacer(minLength: WarmSpacing.xs)
+
+            Menu {
+                ForEach(Self.presets, id: \.self) { preset in
+                    Button {
+                        offsetMinutes = preset
+                        onEdit()
+                    } label: {
+                        if preset == offsetMinutes {
+                            Label(presetLabel(preset), systemImage: "checkmark")
+                        } else {
+                            Text(presetLabel(preset))
+                        }
+                    }
+                }
+            } label: {
+                Text(presetLabel(offsetMinutes))
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .accessibilityIdentifier("DetailReminderOffsetMenu")
+        }
+        .foregroundColor(
+            appearance == .confirmation ? ConfirmEditorTheme.accent : WarmTheme.primaryText
+        )
+    }
+
+    /// 档位显示文本。60/1440 用整段文案(不是"提前 60 分钟"),跟 iOS 系统提醒事项口径一致。
+    private func presetLabel(_ preset: Int?) -> String {
+        switch preset {
+        case nil:
+            return String(localized: "reminder.on_time")
+        case 60:
+            return String(localized: "reminder.hour_ahead")
+        case ReminderOffsetConfig.maxMinutes:
+            return String(localized: "reminder.day_ahead")
+        case let minutes?:
+            return String.localizedStringWithFormat(
+                String(localized: "reminder.minutes_ahead"), minutes
+            )
+        }
+    }
+}

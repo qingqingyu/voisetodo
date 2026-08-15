@@ -131,6 +131,16 @@ enum FeedbackConfig {
     static let requestTimeout: TimeInterval = 30.0
 }
 
+/// 提醒提前量(单条待办"提前 X 分钟提醒")配置。
+/// 上限是**跨模块契约**:消毒(Models)、调度钳制(NotificationPlanner)、
+/// 落库钳制(TodoStore)、UI 档位(TodoReminderOffsetRow)四层共用。
+/// 收敛为单一常量前该值以字面量散落 6 处,调整上限极易漏改造成层间不一致;
+/// 现在只改这一处,各层禁止重写字面量。
+enum ReminderOffsetConfig {
+    /// 最大提前分钟数(= 1 天)。0/负数/超界一律按"准时"(nil)处理。
+    static let maxMinutes = 1440
+}
+
 /// UI 配置
 enum UIConfig {
     /// 成功动画时长

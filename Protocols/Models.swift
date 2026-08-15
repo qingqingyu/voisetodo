@@ -183,6 +183,9 @@ struct ExtractedTodo: Identifiable, Codable {
     var categoryHint: TodoCategory
     /// 多个提醒时间点(["15:00","17:00","19:00"]),AI schema 新增。nil = 无多时间提醒。
     var reminderTimes: [String]?
+    /// 提前提醒的偏移分钟数(1...1440,最大提前 1 天)。nil = 准时提醒。
+    /// AI 从"提前半小时提醒我"等表述抽取;解码时消毒,范围外一律归 nil。
+    var reminderOffsetMinutes: Int?
     /// AI 自报的 due_date 来源(见 DueDateBasis)。nil = 旧响应/未提供,客户端走保守路径。
     var dueDateBasis: DueDateBasis?
     /// 本地附加的输入语言标识；AI 响应不会提供，离线恢复用于保留原 pending locale。
@@ -205,6 +208,7 @@ struct ExtractedTodo: Identifiable, Codable {
         case recurrenceRule
         case recurrenceEnd  // 仅用于 init(from:) 解码 AI 返回的结构化截止边界
         case reminderTimes = "reminder_times"
+        case reminderOffsetMinutes = "reminder_offset_minutes"
         case dueDateBasis = "due_date_basis"
         case priority
         case categoryHint
@@ -226,6 +230,7 @@ struct ExtractedTodo: Identifiable, Codable {
         try container.encodeIfPresent(timeBucket, forKey: .timeBucket)
         try container.encodeIfPresent(recurrenceRule, forKey: .recurrenceRule)
         try container.encodeIfPresent(reminderTimes, forKey: .reminderTimes)
+        try container.encodeIfPresent(reminderOffsetMinutes, forKey: .reminderOffsetMinutes)
         try container.encodeIfPresent(dueDateBasis, forKey: .dueDateBasis)
         try container.encode(priority, forKey: .priority)
         try container.encode(categoryHint, forKey: .categoryHint)
@@ -245,6 +250,7 @@ struct ExtractedTodo: Identifiable, Codable {
         priority: Priority = .normal,
         categoryHint: TodoCategory = .other,
         reminderTimes: [String]? = nil,
+        reminderOffsetMinutes: Int? = nil,
         dueDateBasis: DueDateBasis? = nil,
         localeIdentifier: String? = nil
     ) {
@@ -268,6 +274,7 @@ struct ExtractedTodo: Identifiable, Codable {
         // reminderTimes: 逐条过 sanitizeDueTime(校验 "HH:mm" 格式),非法值过滤掉
         self.reminderTimes = reminderTimes?.compactMap { Self.sanitizeDueTime($0) }
         self.reminderTimes = self.reminderTimes?.isEmpty == false ? self.reminderTimes : nil
+        self.reminderOffsetMinutes = Self.sanitizeReminderOffset(reminderOffsetMinutes)
         self.dueDateBasis = dueDateBasis
         self.localeIdentifier = localeIdentifier
     }
@@ -298,6 +305,13 @@ struct ExtractedTodo: Identifiable, Codable {
             return nil
         }
         return normalized
+    }
+
+    /// 提醒提前量消毒:合法区间 1...1440(最大提前 1 天)。0、负数、超界、nil 一律视为"准时"。
+    /// 归 nil 而非钳制——0 本身无意义(准时用 nil 表达),脏值按"AI 没说"处理。
+    private static func sanitizeReminderOffset(_ minutes: Int?) -> Int? {
+        guard let minutes, (1...ReminderOffsetConfig.maxMinutes).contains(minutes) else { return nil }
+        return minutes
     }
 
     init(from decoder: Decoder) throws {
@@ -378,6 +392,10 @@ struct ExtractedTodo: Identifiable, Codable {
         // 容错解码：AI 返回表外的 priority/category 值时回落默认值，而非让整次解码失败
         // reminder_times: 多个提醒时间点(schema 新增),malformed 一律吞成 nil
         reminderTimes = (try? container.decodeIfPresent([String].self, forKey: .reminderTimes)) ?? nil
+        // reminder_offset_minutes: 提前提醒偏移;类型错/范围外归 nil(准时)
+        reminderOffsetMinutes = Self.sanitizeReminderOffset(
+            (try? container.decodeIfPresent(Int.self, forKey: .reminderOffsetMinutes)) ?? nil
+        )
         priority = Priority.tolerant(try container.decodeIfPresent(String.self, forKey: .priority))
         categoryHint = TodoCategory.tolerant(try container.decodeIfPresent(String.self, forKey: .categoryHint))
         localeIdentifier = nil
@@ -449,6 +467,10 @@ enum TextUtils {
 /// - `recurrenceRule`：nil = 清除重复规则（会删除已记录的完成），非 nil = 设置规则（重置完成状态）。
 /// - `category`、`priority`：nil = 保留原值，非 nil = 替换。
 /// - `dueHint`：nil = 保留原值，空字符串 = 清除，非空 = 替换。
+/// - `reminderOffsetMinutes`：nil = 保留原值，0 = 清除(准时)，1...1440 = 设置提前量。
+///   三态设计防误清：HomeView 快捷改时间 / updateTime 等只改其他字段的调用点
+///   不传该字段(默认 nil)，不会把用户已设的提前提醒静默清掉——与 category/priority 契约对齐。
+///   清除/设置仅在有钟点时有意义，应用层(updateFull)在 hasDueTime == false 时强制清 nil。
 struct TodoDetailUpdate: Sendable {
     let title: String
     let detail: String?
@@ -459,6 +481,8 @@ struct TodoDetailUpdate: Sendable {
     let timeBucket: TimeBucket?
     let dueHint: String?
     let recurrenceRule: RecurrenceRule?
+    /// 提醒提前量(三态,见上)。应用与钳制逻辑在 TodoStore.updateFull。
+    let reminderOffsetMinutes: Int?
     /// 跨天事件闭区间结束时刻。nil = 清除跨天(单天语义)。
     /// 在 init 里调 `TodoSpan.normalized` 应用 4 条不变式,详见 docs/multi-day-span-events.md Step 2。
     let eventEndDate: Date?
@@ -473,6 +497,7 @@ struct TodoDetailUpdate: Sendable {
         timeBucket: TimeBucket?,
         dueHint: String?,
         recurrenceRule: RecurrenceRule?,
+        reminderOffsetMinutes: Int? = nil,
         eventEndDate: Date? = nil
     ) {
         self.title = title
@@ -486,6 +511,7 @@ struct TodoDetailUpdate: Sendable {
         // 在此处归零可避免持久化一个与钟点矛盾的 timeBucket。
         self.timeBucket = normalizedHasDueTime || timeBucket == .anytime ? nil : timeBucket
         self.dueHint = dueHint
+        self.reminderOffsetMinutes = reminderOffsetMinutes
         let normalizedRecurrence = recurrenceRule?.isValid == true ? recurrenceRule : nil
         self.recurrenceRule = normalizedRecurrence
         // 跨天事件归一化:应用 4 条不变式(dueDate == nil / hasRecurrence / 退化 / 截断)。
@@ -516,6 +542,9 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     var category: TodoCategory
     /// 多个提醒时间点(["15:00","17:00"]),nil = 无。
     var reminderTimes: [String]?
+    /// 提前提醒的偏移分钟数(1...1440)。nil = 准时提醒(在 dueDate 时刻触发)。
+    /// 通知调度层负责减偏移;只在 hasDueTime == true 时有意义。
+    var reminderOffsetMinutes: Int?
     var isCompleted: Bool
     var completedAt: Date?
     var createdAt: Date
@@ -556,6 +585,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         priority: Priority = .normal,
         category: TodoCategory = .other,
         reminderTimes: [String]? = nil,
+        reminderOffsetMinutes: Int? = nil,
         isCompleted: Bool = false,
         completedAt: Date? = nil,
         createdAt: Date = Date(),
@@ -581,6 +611,7 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.priority = priority
         self.category = category
         self.reminderTimes = reminderTimes
+        self.reminderOffsetMinutes = reminderOffsetMinutes
         self.isCompleted = isCompleted
         self.completedAt = completedAt
         self.createdAt = createdAt
@@ -622,6 +653,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.priority = extracted.priority
         self.category = extracted.categoryHint
         self.reminderTimes = extracted.reminderTimes
+        // 无钟点时提前量无意义,不落 DTO(与 TodoItem.from(extracted:) 的门控一致)
+        self.reminderOffsetMinutes = timed.hasTime ? extracted.reminderOffsetMinutes : nil
         self.isCompleted = false
         self.completedAt = nil
         self.createdAt = Date()

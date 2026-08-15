@@ -24,6 +24,9 @@ final class TodoItem {
     var recurrenceInterval: Int = 1
     /// 多个提醒时间点(JSON 数组字符串,如 "[\"15:00\",\"17:00\"]")。nil = 无多时间提醒。
     var reminderTimesRaw: String?
+    /// 提前提醒的偏移分钟数(1...1440,nil = 准时)。纯 Int optional,SwiftData 原生存储,
+    /// 轻量迁移旧数据自动补 nil(与 eventEndDate 同模式)。
+    var reminderOffsetMinutes: Int?
     /// `reminderTimes` 的内存缓存:首次解码后复用,避免每次属性访问都重建
     /// JSONDecoder 解码——`refreshTodos()` 全量 `toData()` 时会被放大成
     /// O(条数 × 访问次数) 的主线程 JSON 开销。不参与持久化。
@@ -132,6 +135,7 @@ final class TodoItem {
         systemCalendarEventIdentifier: String? = nil,
         localeIdentifier: String? = nil,
         reminderTimes: [String]? = nil,
+        reminderOffsetMinutes: Int? = nil,
         source: TodoSource = .voice,
         parentCalendarEventIdentifier: String? = nil,
         eventEndDate: Date? = nil
@@ -161,6 +165,7 @@ final class TodoItem {
         // reminderTimes → JSON 字符串存储。编码集中到 encodeReminderTimes(显式报错,不吞)。
         self.reminderTimesRaw = Self.encodeReminderTimes(reminderTimes)
         self.reminderTimesCache = reminderTimes ?? []
+        self.reminderOffsetMinutes = reminderOffsetMinutes
         self.sourceRaw = source.rawValue
         self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
         self.eventEndDate = eventEndDate
@@ -183,6 +188,7 @@ final class TodoItem {
             priority: Priority(rawValue: priorityRaw) ?? .normal,
             category: TodoCategory(rawValue: categoryRaw) ?? .other,
             reminderTimes: reminderTimes,
+            reminderOffsetMinutes: reminderOffsetMinutes,
             isCompleted: isCompleted,
             completedAt: completedAt,
             createdAt: createdAt,
@@ -341,7 +347,9 @@ extension TodoItem {
             needsAIProcessing: false,
             systemCalendarEventIdentifier: nil,
             localeIdentifier: effective.localeIdentifier,
-            reminderTimes: effective.reminderTimes
+            reminderTimes: effective.reminderTimes,
+            // 无钟点时提前量无意义,不落库(与 updateFull 的不变式一致)
+            reminderOffsetMinutes: timed.hasTime ? effective.reminderOffsetMinutes : nil
         )
     }
 
@@ -367,6 +375,7 @@ extension TodoItem {
             systemCalendarEventIdentifier: data.systemCalendarEventIdentifier,
             localeIdentifier: data.localeIdentifier,
             reminderTimes: data.reminderTimes,
+            reminderOffsetMinutes: data.hasDueTime ? data.reminderOffsetMinutes : nil,
             source: data.source,
             parentCalendarEventIdentifier: data.parentCalendarEventIdentifier,
             eventEndDate: data.eventEndDate

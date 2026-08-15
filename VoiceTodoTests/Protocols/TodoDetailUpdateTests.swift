@@ -194,4 +194,24 @@ final class TodoDetailUpdateTests: XCTestCase {
         )
         XCTAssertEqual(update.eventEndDate, try day("2026-08-09"))
     }
+
+    /// `reminderOffsetMinutes` 三态契约的 struct 侧守卫:
+    /// init 不做归一化(应用/钳制在 TodoStore.updateFull),只验证默认 nil 与原样透传。
+    /// 行为级测试(保留/清除/钳制/无钟点清除)见 StoreTests.testUpdateFullReminderOffsetTriState。
+    func testReminderOffsetMinutesDefaultsNilAndPassesThrough() throws {
+        let omitted = TodoDetailUpdate(
+            title: "开会", detail: nil, category: nil, priority: nil,
+            dueDate: try day("2026-08-08"), hasDueTime: true,
+            timeBucket: nil, dueHint: nil, recurrenceRule: nil
+        )
+        XCTAssertNil(omitted.reminderOffsetMinutes, "不传 = nil(保留原值语义的默认档)")
+
+        let explicit = TodoDetailUpdate(
+            title: "开会", detail: nil, category: nil, priority: nil,
+            dueDate: try day("2026-08-08"), hasDueTime: true,
+            timeBucket: nil, dueHint: nil, recurrenceRule: nil,
+            reminderOffsetMinutes: 0
+        )
+        XCTAssertEqual(explicit.reminderOffsetMinutes, 0, "0 = 清除档,init 原样透传")
+    }
 }

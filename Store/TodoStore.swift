@@ -266,6 +266,18 @@ final class TodoStore:
         todoItem.dueDate = update.dueDate
         todoItem.hasDueTime = update.hasDueTime
         todoItem.timeBucket = update.timeBucket
+        // 提醒提前量三态应用(TodoDetailUpdate doc 注释契约):
+        // nil = 保留原值(HomeView 快捷改时间等 partial-update 路径不误清),
+        // 0 = 清除(准时),正数 = 设置(钳到 1440 = 提前 1 天上限)。
+        // 应用后 hasDueTime == false 时无条件清 nil(含 partial-update 传 nil 的路径:
+        // 拖拽清钟点/回 unscheduled)——不带钟点的待办提醒无意义,不留脏值给 toData()。
+        if update.hasDueTime {
+            if let offset = update.reminderOffsetMinutes {
+                todoItem.reminderOffsetMinutes = offset > 0 ? min(offset, ReminderOffsetConfig.maxMinutes) : nil
+            }
+        } else {
+            todoItem.reminderOffsetMinutes = nil
+        }
         if let dueHint = update.dueHint {
             let normalized = dueHint.trimmingCharacters(in: .whitespacesAndNewlines)
             todoItem.dueHint = normalized.isEmpty ? nil : normalized
@@ -320,7 +332,9 @@ final class TodoStore:
             hasDueTime: firstTodoItem.hasDueTime,
             timeBucket: firstTodoItem.timeBucket,
             dueHint: firstTodoItem.dueHint,
-            recurrenceRule: firstTodoItem.recurrenceRule
+            recurrenceRule: firstTodoItem.recurrenceRule,
+            // 重新解析是整体替换语义:AI 新抽的偏移落库,AI 没抽到(准时)则显式清 0。
+            reminderOffsetMinutes: firstTodoItem.reminderOffsetMinutes ?? 0
         ))
         // 保留 sortOrder / createdAt / locale:updateFull 没动这些字段,但显式重设防止边缘 case。
         // 显式 try —— updateFull 成功后查不到条目 = 数据一致性异常,不能静默吞(错误显式传播)。
