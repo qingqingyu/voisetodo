@@ -21,6 +21,13 @@ private enum PermissionRequestType {
     case speech
 }
 
+/// Onboarding 小屏适配常量(项目约定:常量用 enum namespace 收敛)。
+private enum OnboardingLayout {
+    /// 视口高度低于此值启用紧凑规格:所有 iPhone 视口都 < 800,
+    /// iPad(≥ 1000)保留宽松排版。
+    static let compactViewportThreshold: CGFloat = 800
+}
+
 /// 首次启动引导视图 - 温暖手写风格
 /// 分步引导用户完成权限配置(可选 Action Button 设置)
 struct OnboardingView: View {
@@ -60,6 +67,48 @@ struct OnboardingView: View {
     @State private var currentStepIndex = 0
     // 用 Set 而非单个值:两张权限卡可独立授权,各自 spinner 互不覆盖。
     @State private var requestingPermissionTypes: Set<PermissionRequestType> = []
+
+    // 小屏适配:ScrollView 视口高度。初值 .infinity 表示「尚未测得」——
+    // 拿到真值前不施加 minHeight(否则首帧 frame(minHeight: .infinity) 会把
+    // ScrollView 内容撑成无限高),也不参与 isCompact / contentFits 判定。
+    @State private var viewportHeight: CGFloat = .infinity
+    // 当前步骤内容的自然高度(在 frame(minHeight:) 撑开之前测量),
+    // 与视口比较即得「内容是否一屏装下」。
+    @State private var contentHeight: CGFloat = 0
+
+    /// 紧凑布局判定:视口 < 800pt 启用。原「宽松」规格(欢迎页自然高 ~880pt)在
+    /// 任何 iPhone 上都装不下 —— SE 视口 ~521,iPhone 17 Pro Max 也只有 ~780,
+    /// 全部需要滚动(正是本次要修的问题)。因此所有手机走紧凑规格,iPad
+    /// (视口 ≥ 1000)保留宽松排版。测得真值前视为非紧凑。
+    private var isCompact: Bool {
+        viewportHeight.isFinite && viewportHeight < OnboardingLayout.compactViewportThreshold
+    }
+
+    /// 内容区 minHeight:proPaywall 长内容保持顶对齐滚动;视口未测得时返回 nil
+    /// (首帧不干预布局)。
+    private var minContentHeight: CGFloat? {
+        guard currentStep != .proPaywall, viewportHeight.isFinite else { return nil }
+        return viewportHeight
+    }
+
+    /// 当前步骤内容是否一屏装下(不滚动)。DEBUG 下经隐藏元素暴露给 UI 测试断言,
+    /// 视口未测得时报告 "pending",测试等待其收敛到 "0"/"1"。
+    /// DEBUG 构建 +1:流内 a11y 钩子占 1pt,也算滚动内容,不计入会出现
+    /// 「fits 报 1 但实际多 1pt 可滚」的假阳性。
+    private var contentFits: Bool {
+        guard viewportHeight.isFinite else { return false }
+        #if DEBUG
+        return contentHeight + 1 <= viewportHeight + 0.5
+        #else
+        return contentHeight <= viewportHeight + 0.5
+        #endif
+    }
+    private var contentFitsRawValue: String {
+        guard viewportHeight.isFinite else { return "pending" }
+        let prefix = contentFits ? "1" : "0"
+        // 附上实测数值,溢出时 UI 测试失败信息直接显示差多少,免得反复加日志排查
+        return "\(prefix)|content=\(Int(contentHeight))|viewport=\(Int(viewportHeight))|compact=\(isCompact ? 1 : 0)"
+    }
 
     // 动画状态
     @State private var contentOffset: CGFloat = 30
@@ -123,9 +172,10 @@ struct OnboardingView: View {
 
                 // 页面指示器 - 手绘圆点风格
                 handDrawnPageIndicator
-                    .padding(.top, 20)
+                    .padding(.top, isCompact ? 8 : 20)
 
-                // 内容区
+                // 内容区。保留 ScrollView:内容一屏装下时 frame(minHeight:) 让它垂直居中;
+                // 内容超高(AX 大字号)时正常从顶部滚动 —— ScrollView 是无障碍回退,不删。
                 ScrollView {
                     VStack(spacing: 0) {
                         Group {
@@ -147,9 +197,39 @@ struct OnboardingView: View {
                             }
                         }
                         .padding(.horizontal, 28)
+                        // 测量自然内容高:必须挂在 frame(minHeight:) 之前,否则量到的是
+                        // 撑开后的高度(恒等于视口,断言失效)。
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { _, newHeight in
+                            contentHeight = newHeight
+                        }
+                        // proPaywall 自带长内容,保持顶对齐滚动;其余六步撑到视口高度,
+                        // 内容装得下时垂直居中(比顶对齐更稳,避免底部大片空白)。
+                        .frame(minHeight: minContentHeight)
+
+                        #if DEBUG
+                        // UI 测试钩子:暴露「当前步骤内容是否一屏装下」,截图只能人看,
+                        // 这个值让 test_S17 能做确定性断言。试过挂 overlay 零占位,
+                        // 但 overlay 里的元素进不了 XCUI 可见的 a11y 树,只能放回流内;
+                        // 它的 1pt 已计入 contentFits 判定(见上方属性区的 DEBUG +1)。
+                        // (0×0 元素会被 SwiftUI 从 a11y 树剪掉,必须给一点尺寸。)
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .accessibilityElement()
+                            .accessibilityIdentifier("OnboardingContentFits")
+                            .accessibilityValue(contentFitsRawValue)
+                        #endif
                     }
                 }
                 .frame(maxHeight: .infinity)
+                // 挂在 ScrollView 自身测视口:高度由外层 maxHeight 决定,与内容无关,
+                // 不会与内容侧的 frame(minHeight:) 形成布局反馈环。
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { _, newHeight in
+                    viewportHeight = newHeight
+                }
 
                 // 底部按钮:
                 // - 权限合并页:用 Continue 替代 Next(授权后才亮)
@@ -255,12 +335,16 @@ struct OnboardingView: View {
     // MARK: - Step 1: Welcome
 
     private var welcomeStep: some View {
-        VStack(spacing: 32) {
-            Spacer()
-                .frame(height: 20)
+        VStack(spacing: isCompact ? 20 : 32) {
 
-            // 手绘麦克风插图
+            // 手绘麦克风插图。紧凑屏用 scaleEffect 缩小后再用 frame 锁布局盒:
+            // scaleEffect 本身不改布局尺寸,不补 frame 的话占位仍是 140pt。
             handDrawnMicIllustration
+                .scaleEffect(isCompact ? 0.63 : 1)
+                .frame(
+                    width: isCompact ? 88 : nil,
+                    height: isCompact ? 88 : nil
+                )
                 .scaleEffect(illustrationScale)
                 .rotationEffect(.degrees(illustrationRotation))
                 .animation(motionAnim(.spring(response: 0.6, dampingFraction: 0.7)), value: illustrationScale)
@@ -269,12 +353,16 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 // 手写风格标题
                 Text(String(localized: "onboarding.welcome"))
-                    .font(WarmFont.body(18))
+                    .font(WarmFont.body(isCompact ? 15 : 18))
                     .foregroundColor(sketchColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
                 Text("VoiceTodo")
-                    .font(WarmFont.title(36))
+                    .font(WarmFont.title(isCompact ? 28 : 36))
                     .foregroundColor(inkColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
                 // 手绘下划线
                 underlineDoodle
@@ -283,30 +371,31 @@ struct OnboardingView: View {
             .opacity(contentOpacity)
 
             // 功能卡片 - 手写便签风格(复用 ValuePropCard,与 Paywall 等入口共享设计语言)
-            VStack(spacing: WarmSpacing.md) {
+            VStack(spacing: isCompact ? WarmSpacing.sm : WarmSpacing.md) {
                 ValuePropCard(
                     emoji: "🎙️",
                     title: String(localized: "onboarding.feature1.title"),
-                    description: String(localized: "onboarding.feature1.desc")
+                    description: String(localized: "onboarding.feature1.desc"),
+                    compact: isCompact
                 )
 
                 ValuePropCard(
                     emoji: "✨",
                     title: String(localized: "onboarding.feature2.title"),
-                    description: String(localized: "onboarding.feature2.desc")
+                    description: String(localized: "onboarding.feature2.desc"),
+                    compact: isCompact
                 )
 
                 ValuePropCard(
                     emoji: "📱",
                     title: String(localized: "onboarding.feature3.title"),
-                    description: String(localized: "onboarding.feature3.desc")
+                    description: String(localized: "onboarding.feature3.desc"),
+                    compact: isCompact
                 )
             }
-            .padding(.top, 24)
+            .padding(.top, isCompact ? 0 : 24)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
-
-            Spacer()
         }
     }
 
@@ -424,22 +513,20 @@ struct OnboardingView: View {
     /// 也可点(被拒权限之后能在「设置 - 语音权限」里跳系统设置重新开启)。Skip 作为更轻量
     /// 的文字链接保留,语义和 Continue 一致 —— 不授权就标记为主动跳过,首次录音前会给引导。
     private var voicePermissionsStep: some View {
-        VStack(spacing: 22) {
-            Spacer()
-                .frame(height: 30)
+        VStack(spacing: isCompact ? 12 : 22) {
 
             // 麦克风 + 波形 双图标(纯 SF Symbol,不再混用 emoji)
             voicePermissionsIllustration
 
             VStack(spacing: 10) {
                 Text(String(localized: "onboarding.voice.title"))
-                    .font(WarmFont.title(28))
+                    .font(WarmFont.title(isCompact ? 24 : 28))
                     .foregroundColor(inkColor)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
 
                 Text(String(localized: "onboarding.voice.desc"))
-                    .font(WarmFont.body(17))
+                    .font(WarmFont.body(isCompact ? 15 : 17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -451,11 +538,11 @@ struct OnboardingView: View {
 
             // 隐私说明 —— 放在卡片上方,用户点授权按钮之前就读得到
             privacyNote(String(localized: "onboarding.voice.privacy"))
-                .padding(.top, 4)
+                .padding(.top, isCompact ? 0 : 4)
                 .offset(y: contentOffset)
                 .opacity(contentOpacity)
 
-            VStack(spacing: 14) {
+            VStack(spacing: isCompact ? 12 : 14) {
                 permissionCard(
                     systemName: "mic.fill",
                     title: String(localized: "onboarding.mic.card_title"),
@@ -484,7 +571,7 @@ struct OnboardingView: View {
                     accessId: "AuthorizeSpeechButton"
                 )
             }
-            .padding(.top, 14)
+            .padding(.top, isCompact ? 0 : 14)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
@@ -502,8 +589,6 @@ struct OnboardingView: View {
             }
             .accessibilityIdentifier("SkipVoicePermissionsButton")
             .padding(.top, 2)
-
-            Spacer()
         }
     }
 
@@ -513,20 +598,18 @@ struct OnboardingView: View {
     /// `.auto` 默认选中并展开成「跟随系统 · 中文」(systemResolved),让用户第一眼就知道
     /// auto 意味着什么。任何状态下「下一步」都可点 —— 这是个性化设置,不是 gate。
     private var speechLanguageStep: some View {
-        VStack(spacing: 22) {
-            Spacer()
-                .frame(height: 30)
+        VStack(spacing: isCompact ? 14 : 22) {
 
             ZStack {
                 Circle()
                     .fill(highlightColor.opacity(0.1))
-                    .frame(width: 120, height: 120)
+                    .frame(width: isCompact ? 80 : 120, height: isCompact ? 80 : 120)
                 HStack(spacing: 14) {
                     Image(systemName: "globe.asia.australia")
-                        .font(.system(size: 34, weight: .medium))
+                        .font(.system(size: isCompact ? 26 : 34, weight: .medium))
                         .foregroundColor(inkColor)
                     Image(systemName: "waveform")
-                        .font(.system(size: 34, weight: .medium))
+                        .font(.system(size: isCompact ? 26 : 34, weight: .medium))
                         .foregroundColor(highlightColor)
                 }
             }
@@ -536,13 +619,13 @@ struct OnboardingView: View {
 
             VStack(spacing: 10) {
                 Text(String(localized: "onboarding.speech_language.title"))
-                    .font(WarmFont.title(28))
+                    .font(WarmFont.title(isCompact ? 24 : 28))
                     .foregroundColor(inkColor)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
 
                 Text(String(localized: "onboarding.speech_language.desc"))
-                    .font(WarmFont.body(17))
+                    .font(WarmFont.body(isCompact ? 15 : 17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -552,16 +635,14 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            VStack(spacing: 14) {
+            VStack(spacing: isCompact ? 12 : 14) {
                 ForEach(SpeechRecognitionLanguage.allCases) { lang in
                     languageOptionRow(lang, isSelected: speechLanguageRaw == lang.rawValue)
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, isCompact ? 0 : 14)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
-
-            Spacer()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String(localized: "a11y.onboarding.speech_language"))
@@ -575,16 +656,16 @@ struct OnboardingView: View {
         Button {
             speechLanguageRaw = lang.rawValue
         } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: isCompact ? 10 : 14) {
                 Image(systemName: "globe")
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: isCompact ? 20 : 24, weight: .medium))
                     .foregroundColor(inkColor)
-                    .frame(width: 44, height: 44)
+                    .frame(width: isCompact ? 36 : 44, height: isCompact ? 36 : 44)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(lang.displayName)
-                        .font(WarmFont.headline(17))
+                        .font(WarmFont.headline(isCompact ? 15 : 17))
                         .foregroundColor(inkColor)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
@@ -594,7 +675,7 @@ struct OnboardingView: View {
                         // 把「跟随系统」展开成「跟随系统 · 中文」,
                         // systemResolved 让 auto 不再是黑箱。
                         Text(String(localized: "onboarding.speech_language.auto_resolved \(SpeechRecognitionLanguage.systemResolved.displayName)"))
-                            .font(WarmFont.caption(14))
+                            .font(WarmFont.caption(isCompact ? 13 : 14))
                             .foregroundColor(sketchColor)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
@@ -605,11 +686,11 @@ struct OnboardingView: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: isCompact ? 20 : 22))
                     .foregroundColor(isSelected ? highlightColor : .clear)
                     .accessibilityHidden(true)
             }
-            .padding(20)
+            .padding(isCompact ? 14 : 20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(WarmTheme.cardBackground)
@@ -631,20 +712,18 @@ struct OnboardingView: View {
     /// 持久化只在拿到权限后写。不变量:`.appAndSystemCalendar ⟹ 权限已拿到`。
     /// 详见 `calendarSyncBinding`。
     private var calendarSyncStep: some View {
-        VStack(spacing: 22) {
-            Spacer()
-                .frame(height: 30)
+        VStack(spacing: isCompact ? 14 : 22) {
 
             ZStack {
                 Circle()
                     .fill(highlightColor.opacity(0.1))
-                    .frame(width: 120, height: 120)
+                    .frame(width: isCompact ? 80 : 120, height: isCompact ? 80 : 120)
                 HStack(spacing: 14) {
                     Image(systemName: "calendar")
-                        .font(.system(size: 34, weight: .medium))
+                        .font(.system(size: isCompact ? 26 : 34, weight: .medium))
                         .foregroundColor(inkColor)
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 30, weight: .medium))
+                        .font(.system(size: isCompact ? 24 : 30, weight: .medium))
                         .foregroundColor(highlightColor)
                 }
             }
@@ -654,13 +733,13 @@ struct OnboardingView: View {
 
             VStack(spacing: 10) {
                 Text(String(localized: "onboarding.calendar.title"))
-                    .font(WarmFont.title(28))
+                    .font(WarmFont.title(isCompact ? 24 : 28))
                     .foregroundColor(inkColor)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
 
                 Text(String(localized: "onboarding.calendar.desc"))
-                    .font(WarmFont.body(17))
+                    .font(WarmFont.body(isCompact ? 15 : 17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -671,20 +750,20 @@ struct OnboardingView: View {
             .opacity(contentOpacity)
 
             privacyNote(String(localized: "onboarding.calendar.privacy"))
-                .padding(.top, 4)
+                .padding(.top, isCompact ? 0 : 4)
                 .offset(y: contentOffset)
                 .opacity(contentOpacity)
 
             VStack(spacing: 14) {
-                HStack(spacing: 14) {
+                HStack(spacing: isCompact ? 10 : 14) {
                     Image(systemName: "calendar.badge.plus")
-                        .font(.system(size: 28, weight: .medium))
+                        .font(.system(size: isCompact ? 22 : 28, weight: .medium))
                         .foregroundColor(inkColor)
-                        .frame(width: 44, height: 44)
+                        .frame(width: isCompact ? 36 : 44, height: isCompact ? 36 : 44)
                         .accessibilityHidden(true)
 
                     Text(String(localized: "onboarding.calendar.toggle"))
-                        .font(WarmFont.headline(17))
+                        .font(WarmFont.headline(isCompact ? 15 : 17))
                         .foregroundColor(inkColor)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
@@ -699,7 +778,7 @@ struct OnboardingView: View {
                         .accessibilityIdentifier("CalendarSyncToggle")
                 }
             }
-            .padding(20)
+            .padding(isCompact ? 14 : 20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(WarmTheme.cardBackground)
@@ -709,45 +788,52 @@ struct OnboardingView: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(sketchColor.opacity(0.15), lineWidth: 1)
             )
-            .padding(.top, 14)
+            .padding(.top, isCompact ? 0 : 14)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
             if showCalendarDeniedNote {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(String(localized: "onboarding.calendar.denied"))
-                        .font(WarmFont.caption(13))
-                        .foregroundColor(sketchColor)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.8)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
+                if isCompact {
+                    // 紧凑屏:被拒附注内联单行,同权限页 denied 分支的理由
+                    compactDeniedNote(
+                        message: String(localized: "onboarding.calendar.denied"),
+                        accessId: "OnboardingCalendarOpenSettingsButton"
+                    )
+                    .transition(.opacity)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(String(localized: "onboarding.calendar.denied"))
+                            .font(WarmFont.caption(13))
+                            .foregroundColor(sketchColor)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.8)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
 
-                    Button(action: { permissionManager.openAppSettings() }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "gear")
-                                .font(.system(size: 12))
-                            Text(String(localized: "onboarding.open_settings"))
-                                .font(WarmFont.body(14))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
+                        Button(action: { permissionManager.openAppSettings() }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "gear")
+                                    .font(.system(size: 12))
+                                Text(String(localized: "onboarding.open_settings"))
+                                    .font(WarmFont.body(14))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(inkColor))
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(inkColor))
+                        // 用独立 id,不要沿用权限页的 "OpenSettingsButton" —— onboarding 期间
+                        // 两页可能前后出现,UI 测试若按 id 查找会跨页匹配到歧义节点。
+                        .accessibilityIdentifier("OnboardingCalendarOpenSettingsButton")
+                        .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
                     }
-                    // 用独立 id,不要沿用权限页的 "OpenSettingsButton" —— onboarding 期间
-                    // 两页可能前后出现,UI 测试若按 id 查找会跨页匹配到歧义节点。
-                    .accessibilityIdentifier("OnboardingCalendarOpenSettingsButton")
-                    .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
+                    .padding(.horizontal, 4)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 4)
-                .transition(.opacity)
             }
-
-            Spacer()
         }
         .onAppear {
             // 重装用户可能已是开启状态 —— 视觉 toggle 对齐持久化值
@@ -801,16 +887,16 @@ struct OnboardingView: View {
         ZStack {
             Circle()
                 .fill(highlightColor.opacity(0.1))
-                .frame(width: 120, height: 120)
+                .frame(width: isCompact ? 64 : 120, height: isCompact ? 64 : 120)
 
             // 麦克风 + 波形 并列,纯 SF Symbol,统一矢量风格
             HStack(spacing: 14) {
                 Image(systemName: "mic.fill")
-                    .font(.system(size: 34, weight: .medium))
+                    .font(.system(size: isCompact ? 22 : 34, weight: .medium))
                     .foregroundColor(inkColor)
 
                 Image(systemName: "waveform")
-                    .font(.system(size: 34, weight: .medium))
+                    .font(.system(size: isCompact ? 22 : 34, weight: .medium))
                     .foregroundColor(highlightColor)
             }
         }
@@ -836,24 +922,24 @@ struct OnboardingView: View {
         deniedMessage: String,
         accessId: String
     ) -> some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 14) {
+        VStack(spacing: isCompact ? 10 : 14) {
+            HStack(spacing: isCompact ? 10 : 14) {
                 Image(systemName: isGranted ? "checkmark.circle.fill" : systemName)
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: isCompact ? 22 : 28, weight: .medium))
                     .foregroundColor(isGranted ? WarmTheme.success : inkColor)
-                    .frame(width: 44, height: 44)
+                    .frame(width: isCompact ? 36 : 44, height: isCompact ? 36 : 44)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(WarmFont.headline(17))
+                        .font(WarmFont.headline(isCompact ? 15 : 17))
                         .foregroundColor(inkColor)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
                         .layoutPriority(1)
 
                     Text(desc)
-                        .font(WarmFont.caption(14))
+                        .font(WarmFont.caption(isCompact ? 13 : 14))
                         .foregroundColor(sketchColor)
                         .lineLimit(4)
                         .minimumScaleFactor(0.8)
@@ -875,7 +961,7 @@ struct OnboardingView: View {
                 accessId: accessId
             )
         }
-        .padding(20)
+        .padding(isCompact ? 14 : 20)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(WarmTheme.cardBackground)
@@ -885,6 +971,40 @@ struct OnboardingView: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(sketchColor.opacity(0.15), lineWidth: 1)
         )
+    }
+
+    /// 紧凑屏被拒附注:消息 + 右侧小胶囊「打开设置」按钮内联单行,权限页与日历页共用,
+    /// 仅 accessId 不同(独立 id 避免两页前后出现时 UI 测试跨页歧义匹配)。
+    /// 常规的上下排 VStack 在两卡全被拒时比授权态高 ~38pt,会撑破 SE 预算;
+    /// 内联后高度反而低于授权按钮态。
+    private func compactDeniedNote(message: String, accessId: String) -> some View {
+        HStack(spacing: 10) {
+            Text(message)
+                .font(WarmFont.caption(12))
+                .foregroundColor(sketchColor)
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .layoutPriority(1)
+
+            Button(action: { permissionManager.openAppSettings() }) {
+                Label {
+                    Text(String(localized: "onboarding.open_settings"))
+                        .font(WarmFont.caption(12))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                } icon: {
+                    Image(systemName: "gear")
+                        .font(.system(size: 10))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(inkColor))
+            }
+            .accessibilityIdentifier(accessId)
+            .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
+        }
     }
 
     @ViewBuilder
@@ -911,32 +1031,36 @@ struct OnboardingView: View {
             .foregroundColor(WarmTheme.success)
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if isDenied {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(deniedMessage)
-                    .font(WarmFont.caption(13))
-                    .foregroundColor(sketchColor)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
+            if isCompact {
+                compactDeniedNote(message: deniedMessage, accessId: "OpenSettingsButton")
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(deniedMessage)
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(sketchColor)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
 
-                Button(action: { permissionManager.openAppSettings() }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "gear")
-                            .font(.system(size: 12))
-                        Text(String(localized: "onboarding.open_settings"))
-                            .font(WarmFont.body(14))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                    Button(action: { permissionManager.openAppSettings() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "gear")
+                                .font(.system(size: 12))
+                            Text(String(localized: "onboarding.open_settings"))
+                                .font(WarmFont.body(14))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(inkColor))
                     }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(inkColor))
+                    .accessibilityIdentifier("OpenSettingsButton")
+                    .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
                 }
-                .accessibilityIdentifier("OpenSettingsButton")
-                .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
             }
         } else {
             Button(action: grantAction) {
@@ -953,7 +1077,8 @@ struct OnboardingView: View {
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                // 紧凑屏 vertical 12:12×2 + 文本 ~20 ≈ 44pt,守住 HIG 最小命中区
+                .padding(.vertical, isCompact ? 12 : 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(highlightColor)
@@ -971,15 +1096,20 @@ struct OnboardingView: View {
     private func privacyNote(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "lock.shield")
-                .font(.system(size: 14))
+                .font(.system(size: isCompact ? 12 : 14))
                 .foregroundColor(sketchColor.opacity(0.6))
 
             Text(text)
                 .font(WarmFont.caption(13))
                 .foregroundColor(sketchColor.opacity(0.8))
+                // 紧凑屏锁 2 行:en 长文案(语音隐私说明 ~100 字符)3 行会撑破 SE 预算,
+                // 用最小缩放换行数,符合项目「lineLimit + minimumScaleFactor ≥0.7」规则。
+                .lineLimit(isCompact ? 2 : nil)
+                .minimumScaleFactor(isCompact ? 0.7 : 1)
+                .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, isCompact ? 7 : 10)
         .background(
             Capsule()
                 .fill(sketchColor.opacity(0.06))
@@ -989,23 +1119,27 @@ struct OnboardingView: View {
     // MARK: - Step 4: Action Button Guide
 
     private var actionButtonGuideStep: some View {
-        VStack(spacing: 28) {
-            Spacer()
-                .frame(height: 30)
+        VStack(spacing: isCompact ? 16 : 28) {
 
-            // Action Button 插图
+            // Action Button 插图。紧凑屏 scaleEffect + frame 锁布局盒(同欢迎页麦克风插图)。
             actionButtonIllustration
+                .scaleEffect(isCompact ? 0.75 : 1)
+                .frame(height: isCompact ? 120 : nil)
 
             VStack(spacing: 12) {
                 Text(String(localized: "onboarding.action_button.title"))
-                    .font(WarmFont.title(28))
+                    .font(WarmFont.title(isCompact ? 24 : 28))
                     .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
 
                 Text(String(localized: "onboarding.action_button.desc"))
-                    .font(WarmFont.body(17))
+                    .font(WarmFont.body(isCompact ? 15 : 17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
             }
             .offset(y: contentOffset)
             .opacity(contentOpacity)
@@ -1017,13 +1151,13 @@ struct OnboardingView: View {
                 instructionStep(number: 3, text: String(localized: "onboarding.action_button.step3"), icon: "bolt")
                 instructionStep(number: 4, text: String(localized: "onboarding.action_button.step4"), icon: "checkmark")
             }
-            .padding(20)
+            .padding(isCompact ? 14 : 20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(WarmTheme.cardBackground)
                     .shadow(color: sketchColor.opacity(0.08), radius: 12, y: 6)
             )
-            .padding(.top, 16)
+            .padding(.top, isCompact ? 8 : 16)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
@@ -1032,8 +1166,8 @@ struct OnboardingView: View {
                 .foregroundColor(sketchColor.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
-
-            Spacer()
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
     }
 
@@ -1061,6 +1195,8 @@ struct OnboardingView: View {
             Text(String(localized: "onboarding.action_button.press_here"))
                 .font(WarmFont.body(12))
                 .foregroundColor(highlightColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .offset(x: 65, y: -95)
 
             // 屏幕内容
@@ -1100,16 +1236,19 @@ struct OnboardingView: View {
             ZStack {
                 Circle()
                     .stroke(highlightColor, lineWidth: 2)
-                    .frame(width: 32, height: 32)
+                    .frame(width: isCompact ? 26 : 32, height: isCompact ? 26 : 32)
 
                 Text(verbatim: "\(number)")
-                    .font(WarmFont.title(16))
+                    .font(WarmFont.title(isCompact ? 14 : 16))
                     .foregroundColor(highlightColor)
             }
 
             Text(text)
-                .font(WarmFont.body(16))
+                .font(WarmFont.body(isCompact ? 15 : 16))
                 .foregroundColor(inkColor)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
 
             Spacer()
 
@@ -1147,23 +1286,25 @@ struct OnboardingView: View {
     // MARK: - Step 6: Completion
 
     private var completionStep: some View {
-        VStack(spacing: 32) {
-            Spacer()
-                .frame(height: 30)
+        VStack(spacing: isCompact ? 24 : 32) {
 
             // 成功庆祝插图
             celebrationIllustration
 
             VStack(spacing: 12) {
                 Text(String(localized: "onboarding.done.title"))
-                    .font(WarmFont.title(32))
+                    .font(WarmFont.title(isCompact ? 28 : 32))
                     .foregroundColor(inkColor)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
 
                 Text(String(localized: "onboarding.done.desc"))
-                    .font(WarmFont.body(18))
+                    .font(WarmFont.body(isCompact ? 15 : 18))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
 
                 // 已订阅用户额外显示感谢文案;未订阅则维持现状。
                 // 注意读实时 isPro 而非 showsProStep —— 后者是 init 快照,
@@ -1173,6 +1314,8 @@ struct OnboardingView: View {
                         .font(WarmFont.body(15))
                         .foregroundColor(highlightColor)
                         .padding(.top, 4)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                 }
             }
             .offset(y: contentOffset)
@@ -1184,17 +1327,15 @@ struct OnboardingView: View {
                 tipRow(icon: "✏️", text: String(localized: "onboarding.tip2"))
                 tipRow(icon: "📋", text: String(localized: "onboarding.tip3"))
             }
-            .padding(20)
+            .padding(isCompact ? 14 : 20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(WarmTheme.cardBackground)
                     .shadow(color: sketchColor.opacity(0.08), radius: 12, y: 6)
             )
-            .padding(.top, 20)
+            .padding(.top, isCompact ? 12 : 20)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
-
-            Spacer()
         }
     }
 
@@ -1222,7 +1363,9 @@ struct OnboardingView: View {
             .scaleEffect(illustrationScale)
             .animation(motionAnim(.spring(response: 0.5, dampingFraction: 0.6)), value: illustrationScale)
         }
-        .frame(height: 140)
+        // 紧凑屏整体缩小庆祝插图(scaleEffect + frame 锁布局盒)
+        .scaleEffect(isCompact ? 0.78 : 1)
+        .frame(height: isCompact ? 110 : 140)
     }
 
     private func confettiPiece(rotation: Double) -> some View {
@@ -1241,11 +1384,14 @@ struct OnboardingView: View {
     private func tipRow(icon: String, text: String) -> some View {
         HStack(spacing: 14) {
             Text(icon)
-                .font(.system(size: 22))
+                .font(.system(size: isCompact ? 20 : 22))
 
             Text(text)
-                .font(WarmFont.body(16))
+                .font(WarmFont.body(isCompact ? 15 : 16))
                 .foregroundColor(inkColor)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
 
             Spacer()
         }
@@ -1315,7 +1461,7 @@ struct OnboardingView: View {
             .accessibilityIdentifier("NextButton")
         }
         .padding(.horizontal, 24)
-        .padding(.bottom, 24)
+        .padding(.bottom, isCompact ? 16 : 24)
     }
 
     // MARK: - Computed Properties

@@ -209,7 +209,7 @@ extension AppLaunchHelper {
         }
 
         // 合并权限页 label 是「继续」(onboarding.button.continue),也加入匹配集合。
-        let labels = ["下一步", "跳过", "知道了", "开始使用", "继续", "Next", "Skip", "Got it", "Get started", "Continue"]
+        let labels = ["下一步", "跳过", "知道了", "开始使用", "继续", "Next", "Skip", "Got it", "Get Started", "Get started", "Continue"]
         return app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
     }
 

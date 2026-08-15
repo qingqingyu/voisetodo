@@ -9,13 +9,16 @@ struct ValuePropCard: View {
     let emoji: String
     let title: String
     let description: String
+    /// 紧凑变体:onboarding 欢迎页在小屏(iPhone SE 一屏不滚动)时传 true,
+    /// 缩小 emoji 圆/字号/内边距。默认 false —— Paywall 等既有调用方视觉零改动。
+    var compact: Bool = false
 
     var body: some View {
-        HStack(spacing: WarmSpacing.md) {
+        HStack(spacing: compact ? WarmSpacing.sm : WarmSpacing.md) {
             // Emoji 圆圈
             Text(emoji)
-                .font(.system(size: 28))
-                .frame(width: 52, height: 52)
+                .font(.system(size: compact ? 22 : 28))
+                .frame(width: compact ? 40 : 52, height: compact ? 40 : 52)
                 .background(
                     Circle()
                         .fill(WarmTheme.cardBackground)
@@ -25,7 +28,7 @@ struct ValuePropCard: View {
 
             VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                 Text(title)
-                    .font(WarmFont.headline(18))
+                    .font(WarmFont.headline(compact ? 16 : 18))
                     .foregroundColor(WarmTheme.ink)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -34,7 +37,7 @@ struct ValuePropCard: View {
                 // 不限制行数:卡片在 ScrollView 中可纵向自由扩展,
                 // 避免 zh-Hans / ja 等长文本下出现「...」截断(项目零容忍规则)。
                 Text(description)
-                    .font(WarmFont.caption(15))
+                    .font(WarmFont.caption(compact ? 13 : 15))
                     .foregroundColor(WarmTheme.sketch)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
@@ -43,7 +46,7 @@ struct ValuePropCard: View {
 
             Spacer(minLength: 0)
         }
-        .padding(WarmSpacing.md)
+        .padding(compact ? WarmSpacing.sm : WarmSpacing.md)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.section)
                 .fill(WarmTheme.cardBackground)
