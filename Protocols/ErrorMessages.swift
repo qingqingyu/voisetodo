@@ -33,6 +33,14 @@ enum ErrorMessages {
     /// 输入待办过多导致 AI 输出被 max_tokens 截断。用户可解决(分批输入),文案必须给具体建议。
     static let transcriptTooLong = String(localized: "error.transcript_too_long")
 
+    // 「永不丢话」兜底提示:确定性解析失败后原文存为手动卡片
+    /// 确定性解析失败(超长/响应异常等)后,追加在错误文案后的原文去向提示。
+    static let manualCardSaved = String(localized: "error.manual_card_saved")
+    /// AI 看过原文但没识别出待办(noTodos)时的原文去向提示。
+    static let noTodosCardSaved = String(localized: "error.no_todos_card_saved")
+    /// 录音阶段错误(中断/识别失败)已保存部分转写后,追加在错误文案后的提示。
+    static let partialTranscriptSaved = String(localized: "error.partial_transcript_saved")
+
     // 存储相关
     static let storageError = String(localized: "error.storage")
     static let sharedStorageUnavailable = String(localized: "error.shared_storage_unavailable")

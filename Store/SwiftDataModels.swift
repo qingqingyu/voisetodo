@@ -423,6 +423,32 @@ extension TodoItem {
         item.extractionOutcome = .rawFallback
         return item
     }
+
+    /// 创建「手动卡片」:AI 看过原文但没能产出结构化结果(transcriptTooLong /
+    /// apiResponseInvalid / jsonParsingFailed / noTodos),原文必须保留、绝不丢话。
+    ///
+    /// 与 `rawTranscript(_:)` 的关键差别是 `needsAIProcessing = false`:
+    /// - rawTranscript 条目会被 PendingRecoveryFlow 在前台自动认领重解析(pending);
+    /// - 手动卡片**不参与自动重试**——上述错误对同一输入是确定性的,自动重试必败且
+    ///   每次烧一次模型额度。用户通过「没能识别」卡片的「重新解析」按钮手动触发
+    ///   (`reextract` 只要求 rawTranscript 非空,与 needsAIProcessing 无关)。
+    ///
+    /// 标 `extractionOutcome = .unparsed`(「AI 看过但解析不出结构」),UI 据此路由到
+    /// 「没能识别」分组(HomeCalendarState.unparsedTodos 过滤 `outcome != .parsed`)。
+    static func manualUnparsedTranscript(_ transcript: String) -> TodoItem {
+        let title = TextUtils.truncateTitle(from: transcript)
+        let item = TodoItem(
+            title: title,
+            detail: transcript,
+            dueHint: nil,
+            priority: .normal,
+            category: .other,
+            rawTranscript: transcript,
+            needsAIProcessing: false
+        )
+        item.extractionOutcome = .unparsed
+        return item
+    }
 }
 
 /// 重复任务某一天的完成记录。
