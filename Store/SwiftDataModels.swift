@@ -24,6 +24,11 @@ final class TodoItem {
     var recurrenceInterval: Int = 1
     /// 多个提醒时间点(JSON 数组字符串,如 "[\"15:00\",\"17:00\"]")。nil = 无多时间提醒。
     var reminderTimesRaw: String?
+    /// `reminderTimes` 的内存缓存:首次解码后复用,避免每次属性访问都重建
+    /// JSONDecoder 解码——`refreshTodos()` 全量 `toData()` 时会被放大成
+    /// O(条数 × 访问次数) 的主线程 JSON 开销。不参与持久化。
+    /// nil = 尚未解码;空数组 = 已解码但为空或解码失败(两者对外都呈现 nil)。
+    @Transient private var reminderTimesCache: [String]? = nil
     var priorityRaw: String
     var categoryRaw: String
     var isCompleted: Bool
@@ -153,14 +158,9 @@ final class TodoItem {
         self.sortOrder = sortOrder
         self.systemCalendarEventIdentifier = systemCalendarEventIdentifier
         self.localeIdentifier = localeIdentifier
-        // reminderTimes → JSON 字符串存储
-        if let reminderTimes, !reminderTimes.isEmpty,
-           let data = try? JSONEncoder().encode(reminderTimes),
-           let raw = String(data: data, encoding: .utf8) {
-            self.reminderTimesRaw = raw
-        } else {
-            self.reminderTimesRaw = nil
-        }
+        // reminderTimes → JSON 字符串存储。编码集中到 encodeReminderTimes(显式报错,不吞)。
+        self.reminderTimesRaw = Self.encodeReminderTimes(reminderTimes)
+        self.reminderTimesCache = reminderTimes ?? []
         self.sourceRaw = source.rawValue
         self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
         self.eventEndDate = eventEndDate
@@ -223,23 +223,47 @@ final class TodoItem {
     }
 
     /// 多个提醒时间点(["15:00","17:00","19:00"])。nil = 无多时间提醒。
+    /// 读写都走 `reminderTimesCache`;解码失败显式记日志并按无提醒处理(不再 try? 静默吞)。
     var reminderTimes: [String]? {
         get {
+            if let cached = reminderTimesCache {
+                return cached.isEmpty ? nil : cached
+            }
             guard let raw = reminderTimesRaw,
-                  let data = raw.data(using: .utf8),
-                  let times = try? JSONDecoder().decode([String].self, from: data) else {
+                  let data = raw.data(using: .utf8) else {
+                reminderTimesCache = []
                 return nil
             }
-            return times.isEmpty ? nil : times
+            do {
+                let times = try Self.reminderTimesDecoder.decode([String].self, from: data)
+                reminderTimesCache = times
+                return times.isEmpty ? nil : times
+            } catch {
+                VoiceTodoLog.store.error("store.reminder_times.decode_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                reminderTimesCache = []
+                return nil
+            }
         }
         set {
-            guard let newValue, !newValue.isEmpty,
-                  let data = try? JSONEncoder().encode(newValue),
-                  let raw = String(data: data, encoding: .utf8) else {
-                reminderTimesRaw = nil
-                return
-            }
-            reminderTimesRaw = raw
+            reminderTimesRaw = Self.encodeReminderTimes(newValue)
+            reminderTimesCache = newValue ?? []
+        }
+    }
+
+    /// reminderTimes 编解码复用同一实例(JSONDecoder/JSONEncoder 无状态,可复用)。
+    private static let reminderTimesDecoder = JSONDecoder()
+    private static let reminderTimesEncoder = JSONEncoder()
+
+    /// 编码 reminderTimes 为 JSON 字符串。空/nil → nil(不存空数组);
+    /// 编码失败记日志后返回 nil(按无提醒降级,显式报错不静默吞)。
+    private static func encodeReminderTimes(_ times: [String]?) -> String? {
+        guard let times, !times.isEmpty else { return nil }
+        do {
+            let data = try reminderTimesEncoder.encode(times)
+            return String(data: data, encoding: .utf8)
+        } catch {
+            VoiceTodoLog.store.error("store.reminder_times.encode_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return nil
         }
     }
 

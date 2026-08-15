@@ -152,6 +152,7 @@
 		AED9494EB47AAC70893B66D8 /* FeedbackSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C1D879B3D83F5B8CC01996 /* FeedbackSubmitter.swift */; };
 		B0BF0CB8B48FBA279735ECB1 /* TodoSpan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34323022C7F0609A2B65B174 /* TodoSpan.swift */; };
 		B1680828A1DEBF5846D3A0A3 /* TodoDetailUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D799E5C2E379EA61F6671251 /* TodoDetailUpdateTests.swift */; };
+		B1D936E0475C10D73004F39B /* TodoItemReminderTimesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146CB1C71B58BA447C811552 /* TodoItemReminderTimesTests.swift */; };
 		B1E3FC7CFA283CF502389501 /* PermissionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5DE4C3511E13DAD7A2DEAC /* PermissionManagerTests.swift */; };
 		B392DDDCC687AE55AE0CB1F7 /* ChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299BCD42E1E0B76E14054E8 /* ChipView.swift */; };
 		B66A6F9E7262A019BCA450DE /* CalendarHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 923052D2F0F2BD6AB9CBF6B5 /* CalendarHomeUITests.swift */; };
@@ -264,6 +265,7 @@
 		112A986D9241DCBA3FCA7D5D /* SystemCalendarReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarReader.swift; sourceTree = "<group>"; };
 		1167DFCC2D46703F8A7053E6 /* ExtractorCircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractorCircuitBreaker.swift; sourceTree = "<group>"; };
 		118F9CBFB082C7C28CF837C9 /* ReviewAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewAggregator.swift; sourceTree = "<group>"; };
+		146CB1C71B58BA447C811552 /* TodoItemReminderTimesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoItemReminderTimesTests.swift; sourceTree = "<group>"; };
 		15010497ACE41C7CAC621B27 /* QuotaUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaUsageTests.swift; sourceTree = "<group>"; };
 		16666C5F1503023697E609E7 /* PendingRecoveryFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRecoveryFlowTests.swift; sourceTree = "<group>"; };
 		17E151F244003A66D9F29EAD /* SimultaneousDragGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimultaneousDragGesture.swift; sourceTree = "<group>"; };
@@ -559,6 +561,7 @@
 			children = (
 				EF15A5145BE507157378E89D /* StoreTests.swift */,
 				ADA9B1DC522D3039EB104860 /* TodoItemFromBasisFilterTests.swift */,
+				146CB1C71B58BA447C811552 /* TodoItemReminderTimesTests.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -1171,6 +1174,7 @@
 				B1680828A1DEBF5846D3A0A3 /* TodoDetailUpdateTests.swift in Sources */,
 				DBF35E8DA439263497CCF0F2 /* TodoDueDateShifterTests.swift in Sources */,
 				FA51C592BEC7E694F2E2BDFC /* TodoItemFromBasisFilterTests.swift in Sources */,
+				B1D936E0475C10D73004F39B /* TodoItemReminderTimesTests.swift in Sources */,
 				D571348415B7377B7C5E80F1 /* TodoSpanTests.swift in Sources */,
 				233A2E9DA5BE4C4019A1380B /* TranscriptProcessingFlowTests.swift in Sources */,
 				0B7B35C97C4D8278856A8F69 /* UserVocabularyTests.swift in Sources */,
