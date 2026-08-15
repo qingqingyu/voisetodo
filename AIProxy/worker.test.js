@@ -1570,9 +1570,26 @@ test("telemetry accepts valid events and writes to D1", async () => {
   assert.equal(data.dropped, 0);
 
   assert.equal(db.insertedRows.length, 2);
-  // args 顺序：received_at, event_name, event_timestamp, session_id, device_id, app_version, ios_version, params
+  // args 顺序：received_at, event_name, event_timestamp, session_id, device_id, app_version, ios_version, params, extract_id
   assert.equal(db.insertedRows[0].args[1], "recording_started");
   assert.equal(db.insertedRows[1].args[1], "todo_saved");
+  // 事件未携带 extractID 时落 "none"
+  assert.equal(db.insertedRows[0].args[8], "none");
+});
+
+test("telemetry persists extractID for per-extraction correlation", async () => {
+  const db = makeFakeD1();
+  const response = await handleTelemetryBatch(
+    telemetryRequest(
+      [makeTelemetryEvent({ extractID: "extract-abc12345" })],
+      { "X-App-Token": "token" }
+    ),
+    { APP_TOKEN: "token", TELEMETRY_DB: db },
+    baseTelemetryContext
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(db.insertedRows[0].args[8], "extract-abc12345");
 });
 
 test("telemetry uses requestContext device ID, not client-submitted", async () => {

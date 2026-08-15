@@ -9,6 +9,50 @@ struct TelemetryPayload: Codable, Equatable {
     let appVersion: String
     let iosVersion: String
     let params: [String: String]
+    /// 一次 AI 提取的关联 ID——与 `X-Extract-ID` header / `VoiceTodoLog.extractID` 同源，
+    /// 让服务端遥测能与客户端日志、代理日志按「单次提取」精确 join
+    /// (sessionID 只能到会话粒度，无法区分同一会话内的多次提取)。
+    /// 无提取上下文的事件(录音、widget 等)为 "none"。
+    let extractID: String
+
+    init(
+        name: String,
+        timestamp: Date,
+        sessionID: String,
+        deviceID: String,
+        appVersion: String,
+        iosVersion: String,
+        params: [String: String],
+        extractID: String = "none"
+    ) {
+        self.name = name
+        self.timestamp = timestamp
+        self.sessionID = sessionID
+        self.deviceID = deviceID
+        self.appVersion = appVersion
+        self.iosVersion = iosVersion
+        self.params = params
+        self.extractID = extractID
+    }
+
+    /// 兼容旧持久化数据：升级前入队的 payload 没有 extractID 字段，
+    /// 解码为 "none" 而不是整批失败——`TelemetryQueue.load` 的 `try?`
+    /// 会把解码失败吞成空队列，静默丢掉整个待上报队列。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        deviceID = try container.decode(String.self, forKey: .deviceID)
+        appVersion = try container.decode(String.self, forKey: .appVersion)
+        iosVersion = try container.decode(String.self, forKey: .iosVersion)
+        params = try container.decode([String: String].self, forKey: .params)
+        extractID = try container.decodeIfPresent(String.self, forKey: .extractID) ?? "none"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, timestamp, sessionID, deviceID, appVersion, iosVersion, params, extractID
+    }
 }
 
 /// 遥测事件队列。存储在 App Group UserDefaults 中，跨主 App / Widget Extension / AppIntent 共享。

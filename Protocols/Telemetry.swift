@@ -35,7 +35,9 @@ enum Telemetry {
             deviceID: deviceID,
             appVersion: appVersion,
             iosVersion: iOSVersion,
-            params: event.params
+            params: event.params,
+            // 提取链路内的事件带 extractID，与服务端 X-Extract-ID / 客户端日志可精确关联
+            extractID: VoiceTodoLog.extractID ?? "none"
         )
         TelemetryQueue.enqueue(payload, now: now)
         VoiceTodoLog.app.debug("telemetry.enqueue name=\(event.name, privacy: .public) queueSize=\(TelemetryQueue.count())")

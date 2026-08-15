@@ -11,13 +11,19 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
     device_id TEXT NOT NULL,              -- sha256 哈希后的设备标识
     app_version TEXT,                     -- 客户端 App 版本
     ios_version TEXT,                     -- iOS 系统版本
-    params TEXT                           -- 事件参数 JSON（已脱敏）
+    params TEXT,                          -- 事件参数 JSON（已脱敏）
+    extract_id TEXT                       -- 客户端 AI 提取关联 ID（X-Extract-ID 同源；"none" = 无提取上下文）
 );
 
 CREATE INDEX IF NOT EXISTS idx_device ON telemetry_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_event ON telemetry_events(event_name);
 CREATE INDEX IF NOT EXISTS idx_received ON telemetry_events(received_at);
 CREATE INDEX IF NOT EXISTS idx_session ON telemetry_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_extract ON telemetry_events(extract_id);
+
+-- 迁移（已部署的存量库执行一次；SQLite 无 ADD COLUMN IF NOT EXISTS，重复执行会报 duplicate column）：
+--   ALTER TABLE telemetry_events ADD COLUMN extract_id TEXT;
+--   CREATE INDEX IF NOT EXISTS idx_extract ON telemetry_events(extract_id);
 
 -- 常用查询示例：
 --

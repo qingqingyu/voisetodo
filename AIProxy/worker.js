@@ -424,8 +424,8 @@ export async function handleTelemetryBatch(request, env, requestContext) {
   const receivedAt = Date.now();
   const stmt = env.TELEMETRY_DB.prepare(
     `INSERT INTO telemetry_events
-       (received_at, event_name, event_timestamp, session_id, device_id, app_version, ios_version, params)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       (received_at, event_name, event_timestamp, session_id, device_id, app_version, ios_version, params, extract_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const statements = acceptedEvents.map((event) => stmt.bind(
     receivedAt,
@@ -435,7 +435,8 @@ export async function handleTelemetryBatch(request, env, requestContext) {
     requestContext.deviceId,  // 用 requestContext 的 sha256 hash，不信任 client 提交的 deviceID
     String(event.appVersion || "unknown"),
     String(event.iosVersion || "unknown"),
-    JSON.stringify(event.params || {})
+    JSON.stringify(event.params || {}),
+    String(event.extractID || "none")
   ));
   await env.TELEMETRY_DB.batch(statements);
 

@@ -26,6 +26,37 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(payload, decoded)
     }
 
+    /// 升级前入队的旧 payload 没有 extractID 字段——必须能解码为 "none"，
+    /// 否则 TelemetryQueue.load 的 try? 会把整个待上报队列静默丢弃。
+    func testPayloadDecodesLegacyJSONWithoutExtractID() throws {
+        let legacyJSON = """
+        {"name":"test_event","timestamp":700000000,"sessionID":"session-abc","deviceID":"sha256:deadbeef","appVersion":"1.2.3","iosVersion":"17.0","params":{"count":"42"}}
+        """
+        let decoded = try JSONDecoder().decode(TelemetryPayload.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertEqual(decoded.extractID, "none")
+        XCTAssertEqual(decoded.name, "test_event")
+        XCTAssertEqual(decoded.params["count"], "42")
+    }
+
+    func testPayloadExtractIDRoundTrip() throws {
+        let payload = TelemetryPayload(
+            name: "extract_outcome",
+            timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+            sessionID: "session-abc",
+            deviceID: "sha256:deadbeef",
+            appVersion: "1.2.3",
+            iosVersion: "17.0",
+            params: [:],
+            extractID: "extract-1234abcd"
+        )
+
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(TelemetryPayload.self, from: data)
+
+        XCTAssertEqual(decoded.extractID, "extract-1234abcd")
+    }
+
     // MARK: - TelemetryEvent.name
 
     func testEventNamesMatchSpec() {
