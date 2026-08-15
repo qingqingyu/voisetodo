@@ -3,7 +3,7 @@
   Placeholders in [BRACKETS] are resolved at deploy time — see APPSTORE_REVIEW_KIT.md §0.
   Consistency red lines (must match the live product, see PROMOTION_COPY.md §6):
   - never write "unlimited" — Pro is a fair-use daily allowance (PAID_DAILY_LIMIT is finite)
-  - [TRIAL_DAYS] must equal the intro offer configured in App Store Connect (see APPSTORE_REVIEW_KIT.md §3)
+  - [TRIAL_DAYS] must equal the intro offer configured in App Store Connect (see APPSTORE_REVIEW_KIT.md §3) — resolved to 7 on 2026-08-15 per PROMOTION_PLAN decision #7
   - free tier number must equal DAILY_REQUEST_LIMIT at submission time
 -->
 
@@ -32,7 +32,7 @@ To-do structuring is generated automatically by an AI model. It is usually right
 **VoiceTodo Pro.** Pro is an auto-renewable subscription that increases the daily AI extraction allowance to a high fair-use cap and removes ads (the app has no ads to begin with).
 
 - Pricing: US$4.99/month or US$39.99/year (local prices may vary per App Store region)
-- [TRIAL_DAYS]-day free trial where offered; if you cancel before the trial ends, you are not charged
+- 7-day free trial where offered; if you cancel before the trial ends, you are not charged
 - Payment is charged to your Apple ID account at confirmation of purchase
 - The subscription renews automatically unless cancelled at least 24 hours before the end of the current period
 - You can manage or cancel your subscription anytime in your App Store account settings (Settings → Apple ID → Subscriptions)

@@ -43,7 +43,7 @@
             "displayPrice" : "0.00",
             "internalID" : "A1000012",
             "paymentMode" : "freeTrial",
-            "subscriptionPeriod" : "P3D"
+            "subscriptionPeriod" : "P7D"
           },
           "localizations" : [
             {
@@ -81,7 +81,7 @@
             "displayPrice" : "0.00",
             "internalID" : "A1000011",
             "paymentMode" : "freeTrial",
-            "subscriptionPeriod" : "P3D"
+            "subscriptionPeriod" : "P7D"
           },
           "localizations" : [
             {

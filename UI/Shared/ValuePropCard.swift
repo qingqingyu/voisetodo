@@ -69,7 +69,7 @@ struct ValuePropCard: View {
         )
         ValuePropCard(
             emoji: "🎁",
-            title: "3-day free trial",
+            title: "7-day free trial",
             description: "Continue only if you love it — cancel anytime"
         )
     }
