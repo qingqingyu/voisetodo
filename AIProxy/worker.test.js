@@ -420,17 +420,17 @@ test("system prompt includes multi-date disambiguation and title completeness ru
     {
       locale: "zh-Hans",
       transcript: "我今天要想一想明天去哪里玩",
-      markers: ["多个日期词", "想明天去哪里玩", "给程希璐制定方案", "15字以内"]
+      markers: ["多个日期词", "想明天去哪里玩", "给程希璐制定方案", "去公司跟李明开会", "去哪做的地点", "15字以内"]
     },
     {
       locale: "en-US",
       transcript: "Today I want to think about where to go tomorrow",
-      markers: ["multiple date words", "Think about where to go tomorrow", "Prepare proposal for Cheng Xilu", "under 15 words"]
+      markers: ["multiple date words", "Think about where to go tomorrow", "Prepare proposal for Cheng Xilu", "Meet Li Ming at the office", "(person names, what/for whom, where)", "under 15 words"]
     },
     {
       locale: "ja-JP",
       transcript: "今日、明日どこへ遊びに行くか考えよう",
-      markers: ["複数の日付語", "明日どこへ行くか考える", "田中の企画書を作る", "15文字以内"]
+      markers: ["複数の日付語", "明日どこへ行くか考える", "田中の企画書を作る", "会社で佐藤と打ち合わせ", "どこで", "15文字以内"]
     }
   ];
   for (const { locale, transcript, markers } of locales) {
