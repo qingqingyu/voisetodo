@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import WidgetKit
 
 private enum HomeKeyboardAnimation {
     /// 当通知 userInfo 缺失 duration 时的兜底值（iOS 默认键盘动画 0.25s）。
@@ -84,7 +83,7 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         withAnimation(WarmAnimation.springSmooth) {
             do {
                 try store.toggleComplete(id)
-                WidgetCenter.shared.reloadAllTimelines()
+                WidgetReloadCoalescer.scheduleReload()
                 VoiceTodoLog.store.info("ui.home.toggle.success id=\(id.uuidString, privacy: .public)")
             } catch {
                 VoiceTodoLog.store.error("ui.home.toggle.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -100,7 +99,7 @@ private struct HomeViewActions<Store: HomeTodoStore> {
         withAnimation(WarmAnimation.springSmooth) {
             do {
                 try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
-                WidgetCenter.shared.reloadAllTimelines()
+                WidgetReloadCoalescer.scheduleReload()
                 markCalendarDataChanged()
                 VoiceTodoLog.store.info("ui.home.toggle_occurrence.success id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public)")
             } catch {

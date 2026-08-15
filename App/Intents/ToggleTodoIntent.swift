@@ -42,6 +42,8 @@ struct ToggleTodoIntent: AppIntent {
             case let .toggled(recurrence, isCompleted):
                 AppGroupConfig.clearWidgetInteractionError()
                 AppGroupConfig.markExternalDataChanged()
+                // 直调而非 WidgetReloadCoalescer：Widget 进程 perform 返回后可能立刻挂起，
+                // 去抖窗口内的 pending reload 会随进程丢失。
                 WidgetCenter.shared.reloadAllTimelines()
                 VoiceTodoLog.intent.info("intent.toggle.save_success id=\(intentID, privacy: .public) todoID=\(uuid.uuidString, privacy: .public) recurrence=\(recurrence) isCompleted=\(isCompleted) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             case .notFound:

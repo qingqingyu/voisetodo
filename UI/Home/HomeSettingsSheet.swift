@@ -1,5 +1,4 @@
 import SwiftUI
-import WidgetKit
 
 struct HomeSettingsSheet: View {
     @Binding var calendarWriteModeRaw: String
@@ -244,7 +243,7 @@ struct HomeSettingsSheet: View {
                 didClearLearningData = false
             }
             .onChange(of: dayStartHour) { _, _ in
-                WidgetCenter.shared.reloadAllTimelines()
+                WidgetReloadCoalescer.scheduleReload()
             }
             // 用户从系统设置改完麦克风/语音识别权限切回来,刷新状态文案。
             .onChange(of: scenePhase) { _, phase in

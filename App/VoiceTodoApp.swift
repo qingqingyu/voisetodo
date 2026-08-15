@@ -332,6 +332,8 @@ struct VoiceTodoApp: App {
             break
         case .background:
             coordinator.cancelRecordingDueToInterruption()
+            // 冲掉去抖窗口内 pending 的 widget reload，防止进程挂起吞请求
+            WidgetReloadCoalescer.flushPendingReloads()
             // 调度遥测批量上报（系统会在「充电 + 网络」满足时触发）
             TelemetryUploader.shared.scheduleNextRun()
         @unknown default:

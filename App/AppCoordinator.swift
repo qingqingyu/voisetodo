@@ -1,7 +1,6 @@
 import SwiftUI
 import Foundation
 import Combine
-import WidgetKit
 
 /// App 协调器
 /// 负责编排完整的语音录入流程
@@ -621,7 +620,7 @@ final class AppCoordinator: ObservableObject {
                 }
             }
 
-            WidgetCenter.shared.reloadAllTimelines()
+            WidgetReloadCoalescer.scheduleReload()
             // 写入待揭晓队列,让 HomeView 在 sheet dismiss 后按 rank 依次放 stagger 动画。
             // 必须在 return true 之前赋值:confirmAction 紧接着 dismiss() → onDismiss
             // → consumePendingReveal 读到这批 id。失败路径直接 return false,不写队列。
@@ -687,7 +686,7 @@ final class AppCoordinator: ObservableObject {
                     return
                 }
                 try store.replaceTodo(id: todoID, with: result.todos, rawTranscript: transcript)
-                WidgetCenter.shared.reloadAllTimelines()
+                WidgetReloadCoalescer.scheduleReload()
                 VoiceTodoLog.coordinator.info("coordinator.reextract.success id=\(reextractID, privacy: .public) todoId=\(todoID.uuidString, privacy: .public) newCount=\(result.todos.count)")
             } catch VoiceTodoError.todoNotFound {
                 // 重新提取期间原 todo 被并发删除(用户在别处删了)。
@@ -719,7 +718,7 @@ final class AppCoordinator: ObservableObject {
 
         do {
             try store.addImportedBatch(todos)
-            WidgetCenter.shared.reloadAllTimelines()
+            WidgetReloadCoalescer.scheduleReload()
             VoiceTodoLog.coordinator.info("coordinator.calendar_import.success id=\(importID, privacy: .public) importedCount=\(todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             showToast(message: String(format: String(localized: "calendar_import.success_count"), todos.count), style: .success)
         } catch {
@@ -771,7 +770,7 @@ final class AppCoordinator: ObservableObject {
             )
         }
 
-        WidgetCenter.shared.reloadAllTimelines()
+        WidgetReloadCoalescer.scheduleReload()
         VoiceTodoLog.coordinator.info("coordinator.todo.delete.success id=\(id.uuidString, privacy: .public) hadCalendarEvent=\(todo?.systemCalendarEventIdentifier != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
@@ -779,7 +778,7 @@ final class AppCoordinator: ObservableObject {
     func toggleTodo(_ id: UUID) {
         do {
             try store.toggleComplete(id)
-            WidgetCenter.shared.reloadAllTimelines()
+            WidgetReloadCoalescer.scheduleReload()
         } catch {
             VoiceTodoLog.store.error("coordinator.toggle_failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             showToast(message: ErrorMessages.storageError, style: .warning)
@@ -793,7 +792,7 @@ final class AppCoordinator: ObservableObject {
         let startedAt = Date()
         VoiceTodoLog.coordinator.info("coordinator.todo.reorder.start count=\(ids.count, privacy: .public)")
         try store.reorder(ids: ids)
-        WidgetCenter.shared.reloadAllTimelines()
+        WidgetReloadCoalescer.scheduleReload()
         VoiceTodoLog.coordinator.info("coordinator.todo.reorder.success count=\(ids.count, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
@@ -816,7 +815,7 @@ final class AppCoordinator: ObservableObject {
                 )
             )
         }
-        WidgetCenter.shared.reloadAllTimelines()
+        WidgetReloadCoalescer.scheduleReload()
     }
 
     // MARK: - Private Methods
