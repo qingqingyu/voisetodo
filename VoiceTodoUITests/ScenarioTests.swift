@@ -16,7 +16,8 @@ final class ScenarioTests: XCTestCase {
             "test_confirmSheetKeyboardInputKeepsHeaderAtTopAndEnablesFirstPartial",
             "test_S11_homeView_emptyState",
             "test_S12_firstLaunch_onboarding",
-            "test_S16_calendarPermissionDenied_revertsToggle"
+            "test_S16_calendarPermissionDenied_revertsToggle",
+            "test_S17_onboarding_fitsWithoutScrolling"
         ]
         let isDefaultEnabledScenario = defaultEnabledScenarios.contains { name.contains($0) }
         let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
@@ -642,5 +643,120 @@ final class ScenarioTests: XCTestCase {
         appHelper.waitForAppReady(timeout: 5.0)
         XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 3.0),
                       "权限被拒不应卡死引导,应能进入主界面")
+    }
+
+    // MARK: - S17: Onboarding 小屏一屏装下
+
+    /// 场景 S17: onboarding 每一步(付费墙除外)在 iPhone SE 上不需要滚动。
+    /// 依赖 App 侧 DEBUG 构建暴露的隐藏元素 OnboardingContentFits(value "1"/"0"),
+    /// 对每一步做确定性断言,并附截图供人工核对布局(截断/居中/间距)。
+    /// 覆盖 zh-Hans 与 en 两语言:每轮整体重建 launchArguments 指定语言
+    /// (AppLaunchHelper 的默认语言参数不复用,避免拼接残留)。
+    func test_S17_onboarding_fitsWithoutScrolling() {
+        runOnboardingFitCheck(languageTag: "zh-Hans", appleLocale: "zh_Hans", suffix: "zh")
+        runOnboardingFitCheck(languageTag: "en", appleLocale: "en_US", suffix: "en")
+    }
+
+    private func runOnboardingFitCheck(languageTag: String, appleLocale: String, suffix: String) {
+        let app = appHelper.app
+        // 每轮整体重建 launchArguments,不在上一轮残留参数上做增删 ——
+        // 增删式拼接会留下裸 "-AppleLanguages"/"-AppleLocale" 键和重复 flag,
+        // 语言归属依赖参数解析器的未定义行为。
+        app.launchArguments = [
+            "-AppleLanguages", "(\(languageTag))",
+            "-AppleLocale", appleLocale,
+            "--ui-testing",
+            "--enable-accessibility-identifiers",
+            "--reset-user-data"
+        ]
+        app.launch()
+
+        XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+
+        // 逐步前进。proPaywall 长内容允许滚动(设计如此),不做 fits 断言;
+        // 其余每一步断言 contentFits == "1" 并截图。
+        //
+        // 循环存续判定用内容钩子 OnboardingContentFits(它在每一步的 a11y 树里,
+        // 实测稳定可查),不用 NextButton —— sheet 的 a11y 树中按钮 identifier 会被
+        // 外层 accessibilityIdentifier("OnboardingView") 污染(identifier 查不到,
+        // 只剩 label 可匹配),appHelper.nextButton 的 label 兜底又可能跨页面误匹配。
+        // sheet 关闭时钩子随树一起消失,天然是可靠的「引导还在」信号。
+        var stepIndex = 0
+        var fittedStepCount = 0
+        // 步数上限:模拟器 6 步(无 Action Button),真机最多 7 步,取 8 留一步余量。
+        // 超过说明引导没按预期推进,由循环后的「引导应关闭」断言兜底报错。
+        let maxStepCount = 8
+        let laterButton = app.buttons["ProIntroLaterButton"]
+        let fitsHook = app.otherElements["OnboardingContentFits"]
+        while stepIndex < maxStepCount {
+            guard fitsHook.waitForExistence(timeout: 2.0) else { break }
+            // paywall 判定只能用 exists:「以后再说」在长内容底部,未滚动到时 isHittable
+            // 为 false,误判成普通步骤会导致对允许滚动的页面做 fits 断言。
+            let isPaywall = laterButton.exists
+            if !isPaywall {
+                // 钩子值有三个过渡态需要等收敛:视口未测得时报 "pending";
+                // 视口测得后 isCompact 翻转,内容高度还需一帧布局才落到位
+                // (首帧非紧凑的 "0" 是过渡值);content=0 说明内容高度还没测到,
+                // 此时的 "1" 是初值假阳性,不能放行。轮询至稳定 1,或确认持续为 0。
+                // 总尝试上限 12 次(≈3s)兜底:视口测量万一不触发,
+                // "pending"/"nil" 分支不能无上限轮询,否则测试挂死。
+                var fits = (fitsHook.value as? String) ?? "nil"
+                var settleAttempts = 0
+                while settleAttempts < 12,
+                      fits == "pending" || fits == "nil"
+                          || Self.contentHeight(from: fits) <= 0
+                          || (String(fits.prefix(1)) == "0" && settleAttempts < 6) {
+                    Thread.sleep(forTimeInterval: 0.25)
+                    fits = (fitsHook.value as? String) ?? "nil"
+                    settleAttempts += 1
+                }
+                // 钩子值形如 "0|content=560|viewport=543",判定只看首字符
+                let fitsFlag = String(fits.prefix(1))
+                attachScreenshot(named: "onboarding-\(suffix)-step\(stepIndex)-fits\(fits)")
+                XCTAssertEqual(fitsFlag, "1",
+                               "[\(suffix)] 步骤 \(stepIndex) 内容溢出一屏(需要滚动),value=\(fits)")
+                fittedStepCount += 1
+            } else {
+                attachScreenshot(named: "onboarding-\(suffix)-step\(stepIndex)-paywall(scroll-ok)")
+                laterButton.tap()
+                stepIndex += 1
+                continue
+            }
+
+            guard appHelper.nextButton.waitForExistence(timeout: 2.0) else { break }
+            appHelper.nextButton.tap()
+            // 等步骤切换稳定,避免下一轮读到上一步的钩子值
+            Thread.sleep(forTimeInterval: 0.4)
+            stepIndex += 1
+        }
+
+        // 防静默通过:循环若因钩子/按钮提前丢失而 break,可能一步都没断言就走到这;
+        // 模拟器 5 步做 fits 断言(6 步去掉 paywall),真机 6 步,下限取 5。
+        XCTAssertGreaterThanOrEqual(fittedStepCount, 5,
+                                    "[\(suffix)] 实际做过 fits 断言的步骤只有 \(fittedStepCount),引导未按预期推进")
+
+        // 不用 appHelper.waitForAppReady:它只认中文首页标记(「今天」等),
+        // en 轮次首页是英文文案必然超时;引导 sheet 消失即为本测试的完成判据。
+        XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 3.0),
+                      "[\(suffix)] 走完所有步骤后引导应关闭")
+        app.terminate()
+    }
+
+    /// 截图并作为永久附件挂到当前测试(供人工核对布局:截断/居中/间距)。
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    /// 解析 OnboardingContentFits 钩子值里的 content 高度("1|content=543|viewport=521|compact=1")。
+    /// 解析不出(过渡态 "pending"/"nil")返回 -1,调用方据此继续轮询。
+    private static func contentHeight(from rawValue: String) -> Int {
+        guard let contentPart = rawValue.split(separator: "|")
+            .first(where: { $0.hasPrefix("content=") }),
+              let value = Int(contentPart.dropFirst("content=".count))
+        else { return -1 }
+        return value
     }
 }
