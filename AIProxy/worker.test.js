@@ -409,6 +409,54 @@ test("system prompt includes reminder_offset_minutes rule and example for all lo
   }
 });
 
+// 两个真实用户报告的识别偏差,靠「规则文本 + few-shot 示例」双锚定修复:
+//   1. 「我今天要想一想明天去哪里玩」被归到明天 —— 应取主动作「想」的时间状语「今天」
+//   2. 「今天要给程希璐制定方案」标题被压成「定方案」 —— 丢了人名对象
+// 与 reminder_offset_minutes 测试同款守卫:每个语言的 prompt 都必须同时含
+// 规则标记、示例标记和 schema 字数约束,缺一不可——只加规则不加示例时模型容易忽略。
+test("system prompt includes multi-date disambiguation and title completeness rules for all locales", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const locales = [
+    {
+      locale: "zh-Hans",
+      transcript: "我今天要想一想明天去哪里玩",
+      markers: ["多个日期词", "想明天去哪里玩", "给程希璐制定方案", "15字以内"]
+    },
+    {
+      locale: "en-US",
+      transcript: "Today I want to think about where to go tomorrow",
+      markers: ["multiple date words", "Think about where to go tomorrow", "Prepare proposal for Cheng Xilu", "under 15 words"]
+    },
+    {
+      locale: "ja-JP",
+      transcript: "今日、明日どこへ遊びに行くか考えよう",
+      markers: ["複数の日付語", "明日どこへ行くか考える", "田中の企画書を作る", "15文字以内"]
+    }
+  ];
+  for (const { locale, transcript, markers } of locales) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token", "X-Local-Date": today }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("开会") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    for (const marker of markers) {
+      assert.ok(systemMessage.includes(marker), `${locale} prompt 应包含「${marker}」`);
+    }
+  }
+});
+
 test("system prompt falls back to server UTC date when X-Local-Date missing", async () => {
   // X-Local-Date 缺失时 resolveQuotaDate 回退到服务端 UTC 日期（同样注入 prompt，
   // 不静默丢弃），AI 仍能拿到一个参考日期，只是可能与用户真实"今天"差 1 天。
