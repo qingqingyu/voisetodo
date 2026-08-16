@@ -177,7 +177,7 @@ export function stripMarkdownFence(text) {
     .trim();
 }
 
-// System prompts below carry 6 few-shot examples each to anchor weekday
+// System prompts below carry numbered few-shot examples each to anchor weekday
 // numbering, the required-ignored rule, and structured recurrence_end
 // classification (the model only classifies the end boundary; the iOS
 // RecurrenceEndResolver computes the concrete date). Only one locale is sent
@@ -198,7 +198,7 @@ const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户�
    - 无任何日期/时段线索: due_date=null 且 due_date_basis=null
    - ⚠️ 用户明确表达了截止意图但日期本身模糊到无法算出具体值(如「这周末」「下周末」): due_date=null, basis="user_explicit"(意图明确,只是日期待客户端让用户补选)
    判断口径:用户是否在「什么时候做这件事」? 是 → user_explicit;用户在「为某个时间点准备某事/某事发生在这个时间」? 是 → title_mention
-   ⚠️ 一句中出现多个日期词时，due_date 对应修饰主动作（谓语动词）的时间状语。动作内容/宾语从句里的日期属于 title_mention（保留在 title 里，不作为 due_date）：「我今天要想一想明天去哪里玩」→ 动作是「想」，发生在今天 → due_date=今天，「明天」保留在 title
+   ⚠️ 一句中出现多个日期词时，due_date 对应修饰主动作（谓语动词）的时间状语，due_date_basis 由它决定。动作内容/宾语从句里的日期保留在 title 里，不作为 due_date，也不影响 due_date_basis：「我今天要想一想明天去哪里玩」→ 动作是「想」，发生在今天 → due_date=今天、basis="user_explicit"，「明天」保留在 title
 模糊日期换算约定：
 - "月底/月末" → 当月最后一天（算出 due_date）
 - "月中" → 当月 15 号（算出 due_date）
@@ -355,7 +355,7 @@ Core rules:
    - no date/period cue at all: due_date=null AND due_date_basis=null
    - ⚠️ User expresses a clear deadline intent but the date is too fuzzy to compute (e.g. "this weekend", "next weekend"): due_date=null, basis="user_explicit" (intent is explicit; the client lets the user pick the concrete day)
    Test: is the user saying "WHEN to do this"? → user_explicit. Is the user saying "do something FOR/FORWARD TO a time point"? → title_mention
-   ⚠️ When multiple date words appear in one sentence, due_date binds to the time adverbial of the MAIN action verb. Dates inside the action's content/object clause are title mentions (keep them in the title, NOT in due_date): "Today I want to think about where to go tomorrow" → the action is "think", happening today → due_date=today; "tomorrow" stays in the title
+   ⚠️ When multiple date words appear in one sentence, due_date binds to the time adverbial of the MAIN action verb, and due_date_basis follows it. Dates inside the action's content/object clause stay in the title — they are NOT used as due_date and do not affect due_date_basis: "Today I want to think about where to go tomorrow" → the action is "think", happening today → due_date=today, basis="user_explicit"; "tomorrow" stays in the title
 Fuzzy date conventions:
 - "end of month" → last day of current month (compute due_date)
 - "middle of month" → 15th of current month (compute due_date)
@@ -522,7 +522,7 @@ const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです�
    - 日付・時間帯の手がかりが一切ない: due_date=null かつ due_date_basis=null
    - ⚠️ ユーザーが締め切り意図を明確に表明しているが、日付自体が曖昧で計算できない(例:「今週末」「来週末」): due_date=null、basis="user_explicit"(意図は明確、日付はクライアント側でユーザーに補選させる)
    判断基準:ユーザーは「いつそれをするか」を言っているか? → user_explicit。ユーザーは「ある時点に向けて何かをする / その時点で何かが起こる」を言っているか? → title_mention
-   ⚠️ 文中に複数の日付語がある場合、due_date は主要動作（述語動詞）を修飾する時間副詞に対応。動作の内容・目的語節の中の日付は title_mention（title に保持し、due_date にはしない）：「今日、明日どこへ遊びに行くか考えよう」→ 動作は「考える」、今日行う → due_date=今日、「明日」は title に保持
+   ⚠️ 文中に複数の日付語がある場合、due_date は主要動作（述語動詞）を修飾する時間副詞に対応し、due_date_basis もそれに従う。動作の内容・目的語節の中の日付は title に保持し、due_date にも due_date_basis にも使わない：「今日、明日どこへ遊びに行くか考えよう」→ 動作は「考える」、今日行う → due_date=今日、basis="user_explicit"、「明日」は title に保持
 曖昧な日付の換算約束:
 - 「月末」→ 当月の最終日(due_date を計算)
 - 「月中」→ 当月の15日(due_date を計算)

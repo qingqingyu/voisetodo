@@ -328,7 +328,7 @@ test("system prompt omits personal conventions when personalHints absent", async
 });
 
 test("system prompt uses complete Japanese prompt for ja locale", async () => {
-  // P1:ja locale 使用独立完整的 JAPANESE_SYSTEM_PROMPT(规则 + 15 个日语示例),
+  // P1:ja locale 使用独立完整的 JAPANESE_SYSTEM_PROMPT(规则 + 编号的日语 few-shot 示例),
   // 不再是「日语前置指令 + 英文 prompt」的过渡组合。本测试验证:
   //   1. system prompt 包含日语规则主体(コアルール、曜日マッピング等)
   //   2. 包含日语示例(入力 / 出力)
