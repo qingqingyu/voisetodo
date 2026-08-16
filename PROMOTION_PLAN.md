@@ -36,6 +36,7 @@
   - 方案 A: 主力换 gpt-4o-mini / gemini-flash(成本降 ~99%,质量需 A/B 验证)
   - 方案 B: PAID_DAILY_LIMIT 100 → 30-50/day
   - 方案 C: 提价(与 Todoist 锚定冲突,不推荐)
+  - **评测工具已就绪**:`AIProxy/eval/`(72 条 golden 数据集 en30/zh24/ja18 + 零依赖 runner + 评分器)。候选定为 Z.AI 系便宜模型(零新 key)。过关线与决策规则见 `AIProxy/eval/README.md` §4;待办:跑 Sonnet 基线 + 候选各一轮,填成本表后按 §4.2 拍板
 - [ ] **免费档调整**: DAILY_REQUEST_LIMIT 2 → 3(与定价决策对齐)
 - [ ] **崩溃监控接入**:差评第一来源是崩溃
 - [ ] 英文 copy 过类母语审(App 内所有英文文案)

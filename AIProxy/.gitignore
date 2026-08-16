@@ -4,3 +4,5 @@ node_modules/
 # wrangler.toml 只保存非敏感部署配置并纳入版本控制；密钥继续通过 wrangler secret 注入。
 # .app-token-local 本地 APP_TOKEN 明文备份（用于 wrangler secret 注入）
 .app-token-local
+# eval 期间的单 provider 临时配置（eval/README.md §1.1 指导创建，含候选模型选择）
+wrangler.eval.toml
