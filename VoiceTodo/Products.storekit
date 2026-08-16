@@ -45,8 +45,8 @@
           "billingPlans" : [
             {
               "billingPlanType" : "BILLED_UPFRONT",
-              "commitmentDisplayPrice" : "98",
-              "displayPrice" : "98",
+              "commitmentDisplayPrice" : "39.99",
+              "displayPrice" : "39.99",
               "internalID" : "526865EF",
               "isEnabled" : true
             }
@@ -54,7 +54,7 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "98",
+          "displayPrice" : "39.99",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "3797C977",
@@ -97,8 +97,8 @@
           "billingPlans" : [
             {
               "billingPlanType" : "BILLED_UPFRONT",
-              "commitmentDisplayPrice" : "12.99",
-              "displayPrice" : "12.99",
+              "commitmentDisplayPrice" : "4.99",
+              "displayPrice" : "4.99",
               "internalID" : "40903196",
               "isEnabled" : true
             }
@@ -106,7 +106,7 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "12.99",
+          "displayPrice" : "4.99",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "0EEEC643",
