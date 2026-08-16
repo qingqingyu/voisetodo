@@ -5848,13 +5848,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "3-day free trial"
+            "value" : "7-day free trial"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "3 天免费试用"
+            "value" : "7 天免费试用"
           }
         }
       }
@@ -6300,13 +6300,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Includes 3-day free trial"
+            "value" : "Includes 7-day free trial"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "含 3 天免费试用"
+            "value" : "含 7 天免费试用"
           }
         }
       }
@@ -6719,13 +6719,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A much higher daily limit, 3-day free trial"
+            "value" : "A much higher daily limit, 7-day free trial"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更高的每日额度,3 天免费试用"
+            "value" : "更高的每日额度,7 天免费试用"
           }
         }
       }

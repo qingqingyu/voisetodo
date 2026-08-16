@@ -481,7 +481,7 @@ struct PaywallContent: View {
     }
 
     /// CTA 文案:有试用资格时用「开始 N 天免费试用」(N 来自 StoreKit 的 SubscriptionPeriod
-    /// 转成本地化时长字符串),无资格时用「订阅 Pro」。N 永远从 StoreKit 取,不手写「3 天」。
+    /// 转成本地化时长字符串),无资格时用「订阅 Pro」。N 永远从 StoreKit 取,不手写「7 天」。
     private var ctaTitle: String {
         if entitlement.isEligibleForIntroOffer, let period = entitlement.introOfferPeriod {
             let periodStr = period.formattedLocalizedPeriod()
@@ -647,7 +647,7 @@ private struct ProductCard: View {
 // MARK: - SubscriptionPeriod 本地化
 
 private extension Product.SubscriptionPeriod {
-    /// 把 SubscriptionPeriod 转成本地化的时长字符串(如 "3 days" / "3 天")。
+    /// 把 SubscriptionPeriod 转成本地化的时长字符串(如 "7 days" / "7 天")。
     /// StoreKit 没有现成的 FormatStyle,借用 Foundation 的 DateComponentsFormatter
     /// 处理 day/week/month/year 四种单位 —— 跟随系统语言自动本地化。
     func formattedLocalizedPeriod() -> String {
@@ -664,7 +664,7 @@ private extension Product.SubscriptionPeriod {
         @unknown default: components = DateComponents(day: value)
         }
         // formatter.string(from:) 失败时返回 nil,fallback 到「N + 裸单位英文」——
-        // 不静默吞,留可识别的退化值(至少不产生「开始 3 免费试用」这种缺单位的语病)。
+        // 不静默吞,留可识别的退化值(至少不产生「开始 7 免费试用」这种缺单位的语病)。
         guard let str = formatter.string(from: components) else {
             let unitName: String
             switch unit {

@@ -13,12 +13,67 @@
     <key>NSPrivacyTrackingDomains</key>
     <array/>
     <!--
-        VoiceTodo 不收集任何可识别用户的个人数据。所有遥测事件都是
-        匿名诊断数据（事件名 + 时间戳 + 计数 + 时长 + 脱敏文本摘要），
-        用于 App 改进。
+        按 Apple 口径（数据离开设备且被保留即算 collected），VoiceTodo 声明 4 类：
+        - Device ID：sha256 单向哈希，用于每日配额 / 防滥用 / 订阅权益校验
+          （App Functionality）+ 遥测 DAU / 故障率分析（Analytics，D1 90 天 GC）
+        - Purchase History：StoreKit 2 JWS 服务端验签后仅存 productId + 到期时间
+        - Other User Content：转写文本（实时处理，结构化结果 KV 缓存 ≤1h）+ 用户反馈
+        - Other Usage Data（ASC 类目 Usage Data）：匿名诊断遥测（D1，90 天 GC）
+        全部用途为 App Functionality / Analytics，不关联身份、不追踪。
+        逐项依据与 ASC 问卷答案见 APPSTORE_REVIEW_KIT.md §2。
     -->
     <key>NSPrivacyCollectedDataTypes</key>
-    <array/>
+    <array>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeDeviceID</string>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+            <key>NSPrivacyCollectedDataTypeIsLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeIsTracking</key>
+            <false/>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePurchaseHistory</string>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+            <key>NSPrivacyCollectedDataTypeIsLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeIsTracking</key>
+            <false/>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+            <key>NSPrivacyCollectedDataTypeIsLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeIsTracking</key>
+            <false/>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUsageData</string>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+            <key>NSPrivacyCollectedDataTypeIsLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeIsTracking</key>
+            <false/>
+        </dict>
+    </array>
     <!--
         Required Reason APIs（iOS 17+）。VoiceTodo 用了：
         - UserDefaults（CA92.1）：仅用于读写本 App 自己的数据

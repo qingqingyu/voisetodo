@@ -70,9 +70,11 @@ BGProcessingTask                          ↓
 ## App Store Connect 隐私问卷
 
 - 「追踪用户」：**否**
-- 数据类型：**匿名诊断数据，用于 App 改进**
-- 不勾选 Identifiers（device ID 是 sha256 哈希，不可逆）
-- 关联文件：`VoiceTodo/PrivacyInfo.xcprivacy`
+- 数据类型：按 Apple 口径（离开设备且被保留即算 collected）声明 4 类 ——
+  Device ID（哈希）/ Purchase History / Other User Content / Other Usage Data，
+  全部 App Functionality 或 Analytics 用途、不关联身份、不追踪。
+  逐项答案与依据见 `APPSTORE_REVIEW_KIT.md` §2
+- 关联文件：`VoiceTodo/PrivacyInfo.xcprivacy`（已按上述口径声明）
 
 ## 部署步骤（AIProxy）
 

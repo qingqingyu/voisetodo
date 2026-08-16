@@ -32,7 +32,7 @@ final class EntitlementManager: ObservableObject {
     /// 当前 Apple ID 是否还能享受该订阅组的介绍性优惠（免费试用）。
     /// 老用户退订后重订将为 false —— 此时必须隐藏试用文案（App Store 审核要求）。
     @Published private(set) var isEligibleForIntroOffer = false
-    /// 介绍性优惠时长（如 3 天）。nil 表示商品未配置试用或当前无资格。
+    /// 介绍性优惠时长（如 7 天）。nil 表示商品未配置试用或当前无资格。
     /// 取第一个带 introductoryOffer 的商品的试用周期 —— 月付/年付配置可能不同。
     @Published private(set) var introOfferPeriod: Product.SubscriptionPeriod?
     /// intro offer 资格查询的加载态。true 期间 CTA 显示 spinner、不渲染文案，

@@ -63,7 +63,7 @@
             "internalID" : "A720F8C6",
             "numberOfPeriods" : 1,
             "paymentMode" : "free",
-            "subscriptionPeriod" : "P3D"
+            "subscriptionPeriod" : "P7D"
           },
           "introductoryOffers" : [
             {
@@ -71,7 +71,7 @@
               "internalID" : "A720F8C6",
               "numberOfPeriods" : 1,
               "paymentMode" : "free",
-              "subscriptionPeriod" : "P3D"
+              "subscriptionPeriod" : "P7D"
             }
           ],
           "localizations" : [
@@ -115,7 +115,7 @@
             "internalID" : "CE77B620",
             "numberOfPeriods" : 1,
             "paymentMode" : "free",
-            "subscriptionPeriod" : "P3D"
+            "subscriptionPeriod" : "P7D"
           },
           "introductoryOffers" : [
             {
@@ -123,7 +123,7 @@
               "internalID" : "CE77B620",
               "numberOfPeriods" : 1,
               "paymentMode" : "free",
-              "subscriptionPeriod" : "P3D"
+              "subscriptionPeriod" : "P7D"
             }
           ],
           "localizations" : [
