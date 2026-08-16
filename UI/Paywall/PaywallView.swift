@@ -10,6 +10,17 @@ enum PaywallPresentationContext {
     case onboarding  // onboarding 第三屏内嵌
 }
 
+/// 付费墙法务链接常量。3.1.2 要求隐私政策 + 使用条款均可点。
+/// 使用条款用 Apple 标准最终用户许可协议(未自定义时默认适用于本 app);
+/// 隐私政策为 GitHub Pages 公开页,与 App Store Connect 提审表单填的是同一地址。
+enum PaywallLegal {
+    /// 隐私政策公开页。内容变更直接改 qingqingyu/voicetodo-privacy 仓库并更新页内日期。
+    static let privacyPolicyURL = URL(string: "https://qingqingyu.github.io/voicetodo-privacy/")!
+
+    /// Apple 标准最终用户许可协议 (EULA)。
+    static let termsOfUseURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+}
+
 // MARK: - PaywallView (sheet 入口)
 
 /// 订阅页 Paywall (sheet 形态)。
@@ -59,7 +70,7 @@ struct PaywallView: View {
 
 /// 付费墙主体内容,sheet 和 onboarding 内嵌两处共用。
 ///
-/// 渲染顺序(自上而下):`header → comparisonCard → valuePropsList → productList → [purchaseCTA + legalText] → restoreButton`
+/// 渲染顺序(自上而下):`header → comparisonCard → valuePropsList → productList → [purchaseCTA + legalText] → legalLinks → restoreButton`
 /// Onboarding 内嵌时,外层 `proPaywallStep` 在本视图之后追加「以后再说」按钮 —— 视觉层级
 /// 详见 docs/onboarding-paywall-merge.md 3.3 B 点。
 struct PaywallContent: View {
@@ -85,6 +96,8 @@ struct PaywallContent: View {
                     legalText
                 }
             }
+            // 3.1.2 要求两链接不依赖商品加载结果 —— 商品加载失败时付费墙仍可见,链接也必须可点。
+            legalLinks
             restoreButton
             Spacer(minLength: WarmSpacing.xs)
         }
@@ -494,6 +507,27 @@ struct PaywallContent: View {
 
     private var legalKey: String.LocalizationValue {
         entitlement.isEligibleForIntroOffer ? "paywall.legal.autorenew" : "paywall.legal.autorenew_no_trial"
+    }
+
+    /// App Store 审核指南 3.1.2:自动续订订阅的付费墙必须提供隐私政策与使用条款的可点链接。
+    /// 两链接在 restoreButton 之上、与 legalText 同级展示,不依赖商品加载结果。
+    private var legalLinks: some View {
+        HStack(spacing: WarmSpacing.sm) {
+            Link(String(localized: "paywall.legal.privacy_link"), destination: PaywallLegal.privacyPolicyURL)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+            Text("·")
+                .foregroundColor(WarmTheme.textMuted)
+                .accessibilityHidden(true)
+            Link(String(localized: "paywall.legal.terms_link"), destination: PaywallLegal.termsOfUseURL)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+        }
+        .font(.system(size: 11, weight: .regular, design: .rounded))
+        .tint(WarmTheme.textSecondary)
+        .padding(.top, WarmSpacing.xxs)
     }
 
     // MARK: - Restore
