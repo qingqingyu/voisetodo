@@ -1366,7 +1366,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.qingqingyu.voicetodo.widget;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -1386,7 +1386,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.qingqingyu.voicetodo.widget;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -1408,7 +1408,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.qingqingyu.voicetodo;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -1447,7 +1447,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.qingqingyu.voicetodo;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};

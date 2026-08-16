@@ -60,12 +60,9 @@ App Store Connect → 我的 App → ➕ 新建 App：
 
 ## 3. 版本信息（1.0）
 
-### 3.1 截图 —— 先做一个决策
+### 3.1 截图 —— 已决策：仅 iPhone（方案 A，2026-08-16 拍板）
 
-`project.yml` 未设 `TARGETED_DEVICE_FAMILY`，默认 **1,2（iPhone + iPad）**：
-
-- **方案 A（推荐）**：只上 iPhone。改 `project.yml` 加 `TARGETED_DEVICE_FAMILY: "1"` → `xcodegen generate` 重新出包。只需 iPhone 截图。
-- **方案 B**：保留 iPad。UI 未按 iPad 适配过（竖屏全屏、UIRequiresFullScreen），审核有被挑布局的风险，且需额外 13" iPad 截图 + 真机/模拟器过一遍。
+`project.yml` 已设 `TARGETED_DEVICE_FAMILY: "1"`（app + widget 两 target），app 声明仅支持 iPhone。**无需 iPad 截图**。iPad 支持留作后续版本的有计划适配（UI 适配 + 13" 截图 + 真机验证）。
 
 **iPhone 必需截图**（6.9"，1320×2868 或 1290×2796，3~10 张）：
 

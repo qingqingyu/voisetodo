@@ -83,6 +83,9 @@ targets:
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # v1.0 仅 iPhone:UI 未做 iPad 适配,通用声明会要求 13" iPad 截图且审核
+        # 可能挑 iPad 布局问题。iPad 支持留作后续版本的有计划适配。
+        TARGETED_DEVICE_FAMILY: "1"
     entitlements:
       path: VoiceTodo/VoiceTodo.entitlements
       properties:
@@ -174,6 +177,8 @@ targets:
         DEVELOPMENT_TEAM: W63YS53777
         CODE_SIGN_IDENTITY: Apple Development
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # 与主 app 一致:v1.0 仅 iPhone。
+        TARGETED_DEVICE_FAMILY: "1"
     entitlements:
       path: VoiceTodoWidget/VoiceTodoWidget.entitlements
       properties:
