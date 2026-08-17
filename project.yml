@@ -103,10 +103,8 @@ targets:
               - voicetodo
         ITSAppUsesNonExemptEncryption: false
         UIUserInterfaceStyle: Light
-        # 声明仅全屏运行:App 不支持横屏 / 竖屏倒置,系统不再要求"必须支持全部方向"。
-        # 与 Apple HIG 一致:仅竖屏的 todo 类 app 可以走 UIRequiresFullScreen 路径,
-        # 而不是逐个反向加 UISupportedInterfaceOrientations 白名单。
-        UIRequiresFullScreen: true
+        # 仅竖屏由 UISupportedInterfaceOrientations 白名单控制即可
+        # (UIRequiresFullScreen 自 iOS 26 弃用,且 app 已限定仅 iPhone,该键是空操作,已移除)。
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         VoiceTodoProxyEndpoint: "$(VOICETODO_AI_PROXY_ENDPOINT)"

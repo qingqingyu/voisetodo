@@ -52,24 +52,6 @@
         }
       }
     },
-    "NSCalendarsWriteOnlyAccessUsageDescription" : {
-      "comment" : "Privacy - Calendars Write Only Usage Description",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "VoiceTodo needs access to add your todos to the system calendar."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "VoiceTodo 需要日历写入权限，以便把确认后的待办同步到系统日历"
-          }
-        }
-      }
-    },
     "NSMicrophoneUsageDescription" : {
       "comment" : "Privacy - Microphone Usage Description",
       "localizations" : {
