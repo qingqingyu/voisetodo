@@ -4,6 +4,11 @@
 > 分支：`claude/onboarding-paywall-ux-9kvq3i`
 > 本文档是可直接执行的实施说明，行号基于本文档写作时的代码状态（`b09f850`）。
 > 实施前请先核对行号是否漂移；文件路径和逻辑描述以实际代码为准。
+>
+> ⚠️ **2026-08-18 起本文部分作废**：onboarding 内嵌付费墙步（`proPaywallStep`）已被
+> `docs/onboarding-first-voice-trial.md` §3.5 **移出 onboarding**——paywall 改为首次 wow
+> 之后弹 app 级 sheet。本文 §3 的「内嵌第三屏」结论不再适用；其关于
+> `pendingPaywallAfterOnboarding` 旧方案为何被删的历史记录（§1/§2）仍然有效，勿重蹈覆辙。
 
 ---
 

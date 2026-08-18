@@ -4,6 +4,182 @@
     "" : {
 
     },
+    "a11y.first_trial.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "First voice trial: tap the mic button and say something to create a to-do"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次语音试用:点麦克风按钮说一句话,即可创建待办"
+          }
+        }
+      }
+    },
+    "home.added_toast.first_trial" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amazing! It's on today's list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太棒了!已经记在你今天的清单里"
+          }
+        }
+      }
+    },
+    "home.added_toast.first_trial_elsewhere %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amazing! %1$lld saved, %2$lld on other days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太棒了!已记好 %1$lld 条,%2$lld 条在其他日期"
+          }
+        }
+      }
+    },
+    "home.added_toast.first_trial_generic" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amazing! It's on your list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太棒了!已经记在你的清单里"
+          }
+        }
+      }
+    },
+    "home.added_toast.go_look" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take a Look"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "去看看"
+          }
+        }
+      }
+    },
+    "home.first_trial.example" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Call Mom tonight at eight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今晚八点给妈妈打电话"
+          }
+        }
+      }
+    },
+    "home.first_trial.got_it" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Got it"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知道了"
+          }
+        }
+      }
+    },
+    "home.first_trial.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap the mic button below and just say it"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点下面的麦克风按钮,试着说一句"
+          }
+        }
+      }
+    },
+    "onboarding.button.try_voice" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try a Sentence"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "去试一句"
+          }
+        }
+      }
+    },
+    "onboarding.done.trial_desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Head to your list, tap the mic button, and just say it"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到清单,点右下角的麦克风,说一句话试试"
+          }
+        }
+      }
+    },
+    "onboarding.done.trial_title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One Last Thing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最后一步"
+          }
+        }
+      }
+    },
     "·" : {
 
     },
@@ -5393,22 +5569,6 @@
         }
       }
     },
-    "onboarding.button.start" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Get Started"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开始使用"
-          }
-        }
-      }
-    },
     "onboarding.calendar.denied" : {
       "localizations" : {
         "en" : {
@@ -5489,22 +5649,6 @@
         }
       }
     },
-    "onboarding.done.desc" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can now press the Action Button\nto start recording todos with your voice"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "现在你可以按下 Action Button\n开始用语音记录待办了"
-          }
-        }
-      }
-    },
     "onboarding.done.pro_thanks" : {
       "localizations" : {
         "en" : {
@@ -5517,22 +5661,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已解锁 Pro，感谢支持！"
-          }
-        }
-      }
-    },
-    "onboarding.done.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All Set!"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搞定啦！"
           }
         }
       }
@@ -5862,22 +5990,6 @@
         }
       }
     },
-    "onboarding.pro.cta.later" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maybe later"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以后再说"
-          }
-        }
-      }
-    },
     "onboarding.speech_language.auto_resolved %@" : {
       "localizations" : {
         "en" : {
@@ -6021,54 +6133,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还需要语音识别"
-          }
-        }
-      }
-    },
-    "onboarding.tip1" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can also tap the record button in the app"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "也可以在 App 里点录音按钮"
-          }
-        }
-      }
-    },
-    "onboarding.tip2" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap a todo to edit or delete it"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点待办可以编辑或删除"
-          }
-        }
-      }
-    },
-    "onboarding.tip3" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todos automatically appear in the Widget"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "待办会自动显示在 Widget"
           }
         }
       }
@@ -7705,9 +7769,7 @@
         }
       }
     },
-    "review.chart.mark" : {
-
-    },
+    "review.chart.mark" : {},
     "review.empty.message" : {
       "localizations" : {
         "en" : {
@@ -8742,9 +8804,7 @@
         }
       }
     },
-    "siri.complete.summary ${todo}" : {
-
-    },
+    "siri.complete.summary ${todo}" : {},
     "siri.complete.title" : {
       "localizations" : {
         "en" : {
@@ -8858,9 +8918,7 @@
         }
       }
     },
-    "siri.delete.summary ${todo}" : {
-
-    },
+    "siri.delete.summary ${todo}" : {},
     "siri.delete.title" : {
       "localizations" : {
         "en" : {
@@ -9134,9 +9192,7 @@
         }
       }
     },
-    "siri.query.summary ${status}" : {
-
-    },
+    "siri.query.summary ${status}" : {},
     "siri.query.title" : {
       "localizations" : {
         "en" : {
@@ -9362,9 +9418,7 @@
         }
       }
     },
-    "siri.summary ${transcript}" : {
-
-    },
+    "siri.summary ${transcript}" : {},
     "startup.storage_error.title" : {
       "localizations" : {
         "en" : {
@@ -9639,12 +9693,8 @@
         }
       }
     },
-    "Todo ID" : {
-
-    },
-    "Toggle Todo" : {
-
-    },
+    "Todo ID" : {},
+    "Toggle Todo" : {},
     "ui.added_success" : {
       "localizations" : {
         "en" : {
@@ -9773,12 +9823,8 @@
         }
       }
     },
-    "VoiceTodo" : {
-
-    },
-    "VT" : {
-
-    },
+    "VoiceTodo" : {},
+    "VT" : {},
     "widget.description" : {
       "localizations" : {
         "en" : {

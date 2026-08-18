@@ -476,3 +476,4 @@ Beta 标签上的「フィードバックを送る」按钮指向哪?
 | 2026-08-02 | 初版,基于 `/grill-me` 9 轮访谈后整理 |
 | 2026-08-03 | 扩展 §8 为完整决策清单(D1-D7),每条带默认值,允许延后决策;顶部加实施前必读 callout |
 | 2026-08-15 | 语言范围拍板:v1.0 只上 zh + en,本计划(含 ja)推迟到 v1.1;状态改为「v1.1 执行」,更新 §0 范围行 |
+| 2026-08-18 | **挂账**:首次语音试用引导新增 11 个 key(`onboarding.button.try_voice` / `onboarding.done.trial_title` / `onboarding.done.trial_desc` / `home.first_trial.hint` / `home.first_trial.example` / `home.first_trial.got_it` / `home.added_toast.first_trial` / `home.added_toast.first_trial_generic` / `home.added_toast.first_trial_elsewhere %lld %lld` / `home.added_toast.go_look` / `a11y.first_trial.hint`)目前只有 zh-Hans + en,是首启体验文案,ja 补齐时**必须覆盖**(见 docs/onboarding-first-voice-trial.md §3.7) |

@@ -79,6 +79,16 @@ enum TelemetryEvent {
     /// closed 说明恢复。没有这条事件时，熔断打开与恢复在遥测里完全不可见。
     case extractorCircuitChanged(state: String, reason: String)
 
+    /// A6: 首次语音试用引导进度。onboarding→激活的转化漏斗，
+    /// 也是 PROMOTION_PLAN.md 漏斗里 wow_shown 的数据来源。
+    /// stage 取值见 FirstVoiceTrialStage；口径限制见 TELEMETRY.md。
+    case firstVoiceTrial(stage: String)
+    /// A7: paywall 曝光。四来源可区分（first_wow / recording_count /
+    /// quota_exhausted / manual），是「wow 后立即弹 vs 撞墙后弹」
+    /// （PROMOTION_PLAN.md :33 偏差决策）的度量基础——没有来源维度，
+    /// A/B 弹点效果永远测不出来。
+    case paywallShown(source: PaywallSource)
+
     /// 事件名，对应 D1 `event_name` 列。
     var name: String {
         switch self {
@@ -92,6 +102,8 @@ enum TelemetryEvent {
         case .widgetLoadFailed: return "widget_load_failed"
         case .intentFailed: return "intent_failed"
         case .extractorCircuitChanged: return "extractor_circuit_changed"
+        case .firstVoiceTrial: return "first_voice_trial"
+        case .paywallShown: return "paywall_shown"
         }
     }
 
@@ -145,6 +157,10 @@ enum TelemetryEvent {
                 "state": state,
                 "reason": reason
             ]
+        case let .firstVoiceTrial(stage):
+            return ["stage": stage]
+        case let .paywallShown(source):
+            return ["source": source.rawValue]
         }
     }
 }
@@ -183,6 +199,33 @@ enum SaveSource: String {
     case confirm = "confirm"
     case siriAdd = "siri_add"
     case widgetToggle = "widget_toggle"
+}
+
+/// Paywall 曝光来源。四个自动/手动入口各记一枚，收口在
+/// `AppCoordinator.presentPaywall(source:)`——新增入口时不许直接写
+/// `showPaywall = true`，必须走该方法，否则来源维度漏记。
+enum PaywallSource: String {
+    /// 首次 wow（引导下第一条待办落库）之后——本方案的 day-1 曝光点。
+    case firstWow = "first_wow"
+    /// 累计 5 次录音成功阈值（`handleRecordingSuccess`）。
+    case recordingCount = "recording_count"
+    /// 配额耗尽（含离线兜底后的补弹）。
+    case quotaExhausted = "quota_exhausted"
+    /// 设置页「升级 Pro」手动入口。
+    case manual = "manual"
+}
+
+/// `firstVoiceTrial` 事件的 stage 取值。集中成常量避免调用方手拼字符串漂移。
+enum FirstVoiceTrialStage {
+    /// onboarding 完成时 arm。权限未齐直接落 `.dismissed` 的路径也记 armed——
+    /// 漏斗分母 = 全部完成 onboarding 的用户;该子集的特征是永不出现 hint_shown。
+    static let armed = "armed"
+    /// hint 首次展示（会话级去重后；同一会话重复展示不重复记）。
+    static let hintShown = "hint_shown"
+    /// 用户点「知道了」主动关闭。
+    static let dismissed = "dismissed"
+    /// 首次语音待办已落库（wow 发生）。
+    static let completed = "completed"
 }
 
 // MARK: - Bundle 辅助

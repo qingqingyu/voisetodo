@@ -203,39 +203,75 @@ final class AppCoordinator: ObservableObject {
 
     /// 累计录音成功次数(UserDefaults 持久化,跨启动累积,永不重置)。
     /// 用户答到 5 次后,首次触发付费墙引导。已 Pro 用户不触发。
-    private let recordingSuccessCountKey = "co.voicetodo.paywall.recordingSuccessCount"
+    /// static + internal:VoiceTodoApp 的 resetUserData 需要引用它做 UI 测试重置。
+    static let recordingSuccessCountKey = "co.voicetodo.paywall.recordingSuccessCount"
     /// 上次自动弹付费墙的时间戳(timeIntervalSince1970)。0 = 从未弹过。
     /// 用于 14 天冷却——拒绝后 14 天内不再弹。
-    private let lastPaywallAutoShownAtKey = "co.voicetodo.paywall.lastAutoShownAt"
+    static let lastPaywallAutoShownAtKey = "co.voicetodo.paywall.lastAutoShownAt"
     /// 触发阈值:累计录音成功到这个次数后开始检查是否引导。
     private let paywallTriggerThreshold = 5
     /// 冷却时长:用户拒绝后 14 天内不再主动弹。
     private let paywallCooldown: TimeInterval = 14 * 24 * 3600
 
-    private func handleRecordingSuccess() {
-        let defaults = UserDefaults.standard
-        let newCount = defaults.integer(forKey: recordingSuccessCountKey) + 1
-        defaults.set(newCount, forKey: recordingSuccessCountKey)
+    /// 所有 paywall 曝光的唯一入口。来源统一进遥测(`paywall_shown`),
+    /// 四来源可区分——这是「wow 后立即弹 vs 撞墙后弹」弹点决策
+    /// (docs/onboarding-first-voice-trial.md §1.5.1)的度量基础。
+    /// 新增曝光入口时**不许**直接写 `showPaywall = true`,必须走本方法,
+    /// 否则来源维度漏记。`showPaywall` 本身保持可写:VoiceTodoApp 的
+    /// sheet binding 需要写 false 关闭。
+    func presentPaywall(source: PaywallSource) {
+        Telemetry.record(.paywallShown(source: source))
+        showPaywall = true
+    }
 
-        // 未达阈值:继续累积,不弹
-        guard newCount >= paywallTriggerThreshold else { return }
+    /// 自动弹付费墙的公共守卫:已付费 / 14 天冷却内 / 已在展示,任一即拦截。
+    /// 通过则写入冷却起始时间戳(拦截时不写,避免把「配额耗尽刚弹过」误记为冷却起点)。
+    private func canAutoTriggerPaywall(now: TimeInterval) -> Bool {
         // 已付费:不骚扰
-        guard !entitlement.isPro else { return }
+        guard !entitlement.isPro else { return false }
         // 14 天冷却:上次弹过且未到期,跳过
-        let lastShown = defaults.double(forKey: lastPaywallAutoShownAtKey)
-        let now = Date().timeIntervalSince1970
+        let defaults = UserDefaults.standard
+        let lastShown = defaults.double(forKey: Self.lastPaywallAutoShownAtKey)
         if lastShown > 0, now - lastShown < paywallCooldown {
-            return
+            return false
         }
         // paywall 已经在展示(例如配额耗尽刚弹过):不重复弹、不重置冷却,
         // 否则用户在 sheet 已展示时录第 5 次音会刷新 lastPaywallAutoShownAt,
         // 导致实际间隔远大于 14 天。
-        guard !showPaywall else { return }
+        guard !showPaywall else { return false }
 
-        defaults.set(now, forKey: lastPaywallAutoShownAtKey)
-        showPaywall = true
+        defaults.set(now, forKey: Self.lastPaywallAutoShownAtKey)
+        return true
+    }
+
+    private func handleRecordingSuccess() {
+        let defaults = UserDefaults.standard
+        let newCount = defaults.integer(forKey: Self.recordingSuccessCountKey) + 1
+        defaults.set(newCount, forKey: Self.recordingSuccessCountKey)
+
+        // 未达阈值:继续累积,不弹
+        guard newCount >= paywallTriggerThreshold else { return }
+        guard canAutoTriggerPaywall(now: Date().timeIntervalSince1970) else { return }
+
         let cooldownDays = Int(paywallCooldown / 86400)
         VoiceTodoLog.coordinator.info("coordinator.paywall.auto_trigger reason=recording_count count=\(newCount) cooldownDays=\(cooldownDays)")
+        presentPaywall(source: .recordingCount)
+    }
+
+    /// 首次 wow(引导下第一条待办落进清单)之后引导升级。
+    ///
+    /// 与 `handleRecordingSuccess` 的 5 次阈值路径**共用冷却簿记**——弹过一次后
+    /// 14 天内不再弹,避免新用户前两天被连弹两次。守卫被拦截时静默返回:
+    /// wow 本身已经发生,不打扰用户。调用方(HomeView)须等庆祝 toast 播完再调,
+    /// 否则 paywall sheet 会盖住入场动画(见方案 §3.5d 的时序陷阱)。
+    func showPaywallAfterFirstWow() {
+        guard canAutoTriggerPaywall(now: Date().timeIntervalSince1970) else {
+            VoiceTodoLog.coordinator.debug("coordinator.paywall.first_wow_skipped reason=guard")
+            return
+        }
+        let cooldownDays = Int(paywallCooldown / 86400)
+        VoiceTodoLog.coordinator.info("coordinator.paywall.auto_trigger reason=first_wow cooldownDays=\(cooldownDays)")
+        presentPaywall(source: .firstWow)
     }
 
     // MARK: - Public Methods
@@ -1118,7 +1154,7 @@ final class AppCoordinator: ObservableObject {
         }
         if triggerPaywall {
             VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted")
-            showPaywall = true
+            presentPaywall(source: .quotaExhausted)
         }
     }
 
@@ -1222,7 +1258,7 @@ final class AppCoordinator: ObservableObject {
             case .quotaExhausted:
                 // 配额耗尽：开 paywall 引导升级，不弹普通失败 toast。
                 VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted_handled")
-                showPaywall = true
+                presentPaywall(source: .quotaExhausted)
             case .rateLimited:
                 showToast(message: ErrorMessages.rateLimited, style: .warning)
             case .ipRateLimited:

@@ -49,6 +49,13 @@ struct VoiceTodoApp: App {
             UserDefaults.standard.removeObject(forKey: "pendingPaywallAfterOnboarding")
             // 同步清引导标记:让 UI 测试每次重置后都能验证首次下拉引导动画。
             UserDefaults.standard.removeObject(forKey: "hasShownExpandMonthHint")
+            // 首次语音试用状态一并清:重置后走完 onboarding 应重新 arm(§3.8a)。
+            UserDefaults.standard.removeObject(forKey: FirstVoiceTrial.storageKey)
+            // paywall 簿记一并清:数据容器跨测试运行保留,录音成功计数会累积到 5 次
+            // 阈值,提前写冷却时间戳,把 first_wow 路径挡在 14 天冷却外(S18 的教训)。
+            // 重置语义 = 全新安装,计数与冷却都应是零。
+            UserDefaults.standard.removeObject(forKey: AppCoordinator.recordingSuccessCountKey)
+            UserDefaults.standard.removeObject(forKey: AppCoordinator.lastPaywallAutoShownAtKey)
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 
@@ -248,8 +255,7 @@ struct VoiceTodoApp: App {
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView(
                         permissionManager: permissionManager,
-                        hasCompletedOnboarding: $hasCompletedOnboarding,
-                        entitlement: entitlementManager
+                        hasCompletedOnboarding: $hasCompletedOnboarding
                     )
                         // sheet 不自动继承父视图的 environmentObject,显式注入 —— 与 PaywallView sheet 一致。
                         .environmentObject(entitlementManager)

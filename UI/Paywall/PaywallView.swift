@@ -3,11 +3,11 @@ import StoreKit
 
 // MARK: - Presentation Context
 
-/// 付费墙的两处呈现形态。两处共用 `PaywallContent`,只用 context 微调外观差异
-/// (header 上方 padding 等),**内容和购买逻辑完全同源**。
+/// 付费墙呈现形态。历史上有 sheet / onboarding 内嵌两种;onboarding 步骤已被移除
+/// (paywall 改为首次 wow 后弹 sheet,见 docs/onboarding-first-voice-trial.md §3.5),
+/// 仅剩 sheet 形态。保留 enum 以免连带改 `PaywallContent` 的调用签名。
 enum PaywallPresentationContext {
-    case sheet       // AppCoordinator.showPaywall / 设置页入口
-    case onboarding  // onboarding 第三屏内嵌
+    case sheet       // AppCoordinator.presentPaywall(四来源) / 设置页入口
 }
 
 /// 付费墙法务链接常量。3.1.2 要求隐私政策 + 使用条款均可点。
@@ -25,11 +25,11 @@ enum PaywallLegal {
 
 /// 订阅页 Paywall (sheet 形态)。
 ///
-/// 入口:
-/// ① `AppCoordinator.showPaywall` (配额耗尽时)
-/// ② 设置页手动入口
-///
-/// Onboarding 第三屏不再走 sheet 路径 —— 直接内嵌 `PaywallContent`,见 `OnboardingView.proPaywallStep`。
+/// 入口(全部经 `AppCoordinator.presentPaywall(source:)` 收口):
+/// ① 首次 wow 之后(自动)
+/// ② 累计 5 次录音成功阈值(自动)
+/// ③ 配额耗尽(自动)
+/// ④ 设置页手动入口
 ///
 /// Pro 仅提高每日额度,不改核心工作流。恢复购买为 App Store 审核必需入口。
 struct PaywallView: View {
@@ -66,13 +66,11 @@ struct PaywallView: View {
     }
 }
 
-// MARK: - PaywallContent (sheet + onboarding 共用)
+// MARK: - PaywallContent
 
-/// 付费墙主体内容,sheet 和 onboarding 内嵌两处共用。
+/// 付费墙主体内容(现仅 sheet 形态使用;历史上有 onboarding 内嵌,已删)。
 ///
 /// 渲染顺序(自上而下):`header → comparisonCard → valuePropsList → productList → [purchaseCTA + legalText] → legalLinks → restoreButton`
-/// Onboarding 内嵌时,外层 `proPaywallStep` 在本视图之后追加「以后再说」按钮 —— 视觉层级
-/// 详见 docs/onboarding-paywall-merge.md 3.3 B 点。
 struct PaywallContent: View {
     let context: PaywallPresentationContext
 
@@ -138,10 +136,10 @@ struct PaywallContent: View {
         .padding(.top, headerTopPadding)
     }
 
-    /// sheet 有 NavigationStack + toolbar 占位,onboarding 内嵌没有 —— 后者上方留白收紧,
-    /// 让外层「以后再说」与 PaywallContent 视觉上仍是同一组(B 点)。
+    /// sheet 有 NavigationStack + toolbar 占位,header 上方需要相应留白。
+    /// (原 onboarding 内嵌分支用更紧的 xs,该形态已删除。)
     private var headerTopPadding: CGFloat {
-        context == .sheet ? WarmSpacing.sm : WarmSpacing.xs
+        WarmSpacing.sm
     }
 
     /// 无试用资格时改用只讲额度的 subtitle,避免对老用户撒谎。
