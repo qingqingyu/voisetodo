@@ -1,7 +1,8 @@
 # Onboarding 首次语音试用引导（First Voice Trial）
 
-> 状态：待实现
+> 状态：待实现（**动工前须先按 §6.1 / §6.2 修订 3.4d / 3.4g**）
 > 分支：`claude/todo-voice-transcription-onboarding-qhuyx3`
+> 评审：2026-08-18 完成，质疑与判定见 §6
 > 本文档是可直接执行的实施说明，行号基于本文档写作时的代码状态（`3a7e225`）。
 > 实施前请先核对行号是否漂移；文件路径和逻辑描述以实际代码为准。
 
@@ -452,3 +453,114 @@ SE 是 onboarding 高度预算最紧的机型，test_S17 必须过。
 | 4 | 引导中开始录音后取消（不确认） | hint 仍在，状态仍是 `.pending` |
 | 5 | 老用户（已 `hasCompletedOnboarding`）升级安装 | 状态是 `.notArmed`，**不出现** hint |
 | 6 | 引导中切到 calendar tab | hint 隐藏；切回 today tab 后重新出现 |
+
+---
+
+## 6. 评审质疑与判定（2026-08-18）
+
+> 实施前评审记录。原文引用的行号/事实已逐一复核，全部属实：`revealConfirmedTodos`
+> （HomeView.swift:911）、`presentAddedToast`（:973）、`isInputEntryDisabled`（:273）、
+> `evaluateExpandHintTrigger`（:1584）、Toast `actionTitle/action`（ToastView.swift:246-247）、
+> `resetUserData`（VoiceTodoApp.swift:44-53）、`mockTranscript`（UITestLaunchOptions.swift:55）、
+> test_S17 / `OnboardingContentFits` 钩子均存在且语义一致。
+>
+> 分级：**P1 = 照原文实施必出问题，先修文档再动工**；P2 = 产品口径需拍板或补说明；
+> P3 = 低成本补丁。§1-§5 原文保持不动，修订以本节「判定」为准。
+
+### 6.1 [P1·必修] 3.4d 调度触发点不完整——hint 可能永远不出现
+
+**质疑**：方案说「沿用 `evaluateExpandHintTrigger()` 那套写法」，但那套的 evaluate
+只挂在 `.onChange(collapseProgress)` / `.onChange(selectedBottomTab)`
+（HomeView.swift:1470-1475），**没有 `.onAppear`**。ExpandHint 无妨——它要
+calendar tab + 折叠态才 eligible；而 FirstTrial hint 在 HomeView 挂载那一刻
+eligible 即为真（today tab / 无面板 / 无 confirm sheet），照搬写法不补自己的调用点，
+挂载后没有任何事件会触发它。且验收反例 4（「录音后取消 → hint 仍在」）依赖
+`onChange(showInputPanel)` 重新评估，而现有该钩子（HomeView.swift:505-515）
+只清 keyboardHeight，不碰任何 hint 状态。
+
+**判定（修订 3.4d）**：必须明确列出 FirstTrial 自己的触发集，不能只写「沿用」：
+
+- `.onAppear`（onboarding sheet 关闭 → HomeView 首次挂载）
+- `.onChange(selectedBottomTab)`（反例 6：切回 today 重现）
+- `.onChange(showInputPanel)`（反例 4：面板取消后重现）
+- `.onChange(coordinator.showConfirmSheet)`（confirm sheet 关闭且未确认时重现）
+- `scenePhase` 退后台仿 :1476-1487 取消挂起任务；本 hint **不在展示时落盘**，
+  回前台重新评估即可重现，与 ExpandHint 的「展示即永久消失」语义不同。
+
+### 6.2 [P1·必修] 3.4g 庆祝分支把三分类落点压扁成两类
+
+**质疑**：`presentAddedToast` 现有逻辑（HomeView.swift:987-997）对 mixed batch 有
+分流文案「N 条 + M 条在其他日期」。`celebrate == true && onSelectedDay > 0` 会整段
+替换它——首次试用说「明早九点开会，下周三去银行」，落别日那条**没有任何反馈**，
+而新用户恰恰最不懂「落别日」是什么。另有口径瑕疵：无 dueDate 的「稍后」条目计入
+`onSelectedDay`（:985），toast 却说「记在你今天的清单里」，语义不符。
+
+**判定（修订 3.4g）**：celebrate 分支不替换分流逻辑，而是在其上叠加：
+
+- 落今天 + 无别日条目 → `home.added_toast.first_trial`（纯庆祝）
+- 含别日条目 → 庆祝语义保留 + 分流信息保留（扩展 `first_trial_elsewhere`
+  的占位符或追加第二行，不吞「M 条在其他日期」）
+- 含「稍后」（无 dueDate）条目 → 庆祝文案不指认「今天」（「已经记在你的清单里」），
+  或 celebrate 判定先排除无日期条目
+
+### 6.3 [P2·待拍板] paywall 仍在 wow 之前
+
+**质疑**：onboarding 顺序 `… → proPaywall → completion →（关 sheet）→ 首次语音`，
+付费墙在用户第一次体验「说一句话变待办」之前，与 GTM 软启动「wow 必须在
+paywall 前」的既定原则相悖。本方案未触碰该结构，还把 completion 页从终点变成
+「再走一步」的漏斗，paywall 转化更依赖文案而非体验。
+
+**判定（建议）**：结构性重排（试用提前到 paywall 步之前）牵动 HomeView 挂载时序，
+超出本方案「不碰链路」的边界，**本期不做**；但 A6 遥测必须可与 paywall 步转化
+交叉分析——`firstVoiceTrial` 各 stage 的时间戳要能对上 paywall 步的展示/跳过行为，
+否则无法评估「paywall 提前造成的流失」。是否重排留待软启动数据决策。
+
+### 6.4 [P2·补观察项] `dismissed` 终态的吞激活风险
+
+**质疑**：「知道了」一点即永不重提（终态）。若 dismissed 率高，说明显式出口
+在吞激活，需要二次 arm 策略（如 N 天后重新 pending）。
+
+**判定**：不改终态语义（已拍板），但把 dismissed 率列为本功能上线后的**必盯指标**
+（`first_voice_trial(stage=dismissed)` / `stage=armed` 的比值），写入 5.2 验收
+与 TELEMETRY.md 的观察项。
+
+### 6.5 [P2·补口径] `completed` 混入键盘输入，遥测口径没写破
+
+**质疑**：完成钩子不区分语音/键盘（3.4f 口径说明），而 `todoSaved(source:)` 已有
+source 维度，`firstVoiceTrial(stage: completed)` 不带——漏斗会高估「语音激活」。
+
+**判定**：接受不为边界拉 source 判定链路的拍板，但 TELEMETRY.md 事件表须写明
+口径限制：分析侧靠 `todo_saved(source:)` 与 `first_voice_trial(stage=completed)`
+的时序关联还原真实语音激活率，不能直接拿 completed 当语音激活数。
+
+### 6.6 [P3·补反例] eligible 不查当前权限
+
+**质疑**：arm 后用户去系统设置关掉麦克风，hint 照弹；点 FAB 走
+`performRecordingWithPermissionCheck()`——reprompt 分支的条件是
+`hasSkippedInOnboarding && !allPermissionsGranted`
+（HomeView.swift:1864，startRecordingForInputPanel），此场景 `hasSkippedInOnboarding`
+为 false，不会弹二次引导。反例清单未覆盖。
+
+**判定**：不加 eligible 权限检查（低频场景，reprompt 语义是「onboarding 跳过者」
+专属，不扩大），但 5.2 反例表补一行：「arm 后到系统设置关闭麦克风 → 重启 app →
+hint 仍出现，点 FAB 走系统权限失败路径，行为与无引导时一致、不引入新状态」。
+
+### 6.7 [P3·补规格] 小屏遮挡无验收项；3.3 缺文本布局硬规则
+
+**质疑**：hint（两行文本 + 按钮）比先例 ExpandMonthHint（纯 icon 动画）遮挡大，
+挂在 FAB 上方会盖住列表末行操作区。3.3 没像 3.2 那样显式要求 `lineLimit` +
+`minimumScaleFactor(≥0.7)`——这是仓库级文本布局硬规则（见根 CLAUDE.md）；
+手工冒烟无 SE 检查项。
+
+**判定**：3.3 补硬规则——hint 内所有 `Text` 必须 `lineLimit` +
+`minimumScaleFactor(≥0.7)`，按 AX 大字号 + 中英长文本双验证；5.2 手工冒烟补
+「SE 上 hint 不遮列表末行可操作区、长文本不截断不意外换行」。
+
+### 6.8 [P3·挂账] 新 key 无 ja 本地化
+
+**质疑**：xcstrings 现状 en 592 / zh-Hans 591 / ja 仅 48 键。新 10 个 key 只做
+zh+en 与全库现状一致，但 MVP 语言范围拍板是 zh+en+ja——这批 key 是首启体验
+文案，ja 上线时是最显眼的英文 fallback 区。
+
+**判定**：本方案维持 zh+en（与全库现状一致，不单独拔高），在 MVP 日文上线
+checklist 挂账：`onboarding.button.try_voice` 等 10 个新 key 必须补 ja。
