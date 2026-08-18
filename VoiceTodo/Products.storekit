@@ -22,9 +22,9 @@
     "_billingIssuesEnabled" : false,
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_locale" : "en_US",
+    "_locale" : "zh_CN",
     "_renewalBillingIssuesEnabled" : false,
-    "_storefront" : "USA",
+    "_storefront" : "CHN",
     "_storeKitErrors" : [
 
     ],
@@ -34,7 +34,16 @@
     {
       "id" : "6D7BF482",
       "localizations" : [
-
+        {
+          "description" : "VoiceTodo Pro：更高的每日语音整理额度",
+          "displayName" : "VoiceTodo Pro",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "VoiceTodo Pro: higher daily voice quota",
+          "displayName" : "VoiceTodo Pro",
+          "locale" : "en_US"
+        }
       ],
       "name" : "Pro",
       "subscriptions" : [
@@ -62,7 +71,7 @@
             "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "A720F8C6",
             "numberOfPeriods" : 1,
-            "paymentMode" : "free",
+            "paymentMode" : "freeTrial",
             "subscriptionPeriod" : "P7D"
           },
           "introductoryOffers" : [
@@ -70,14 +79,19 @@
               "billingPlanType" : "BILLED_UPFRONT",
               "internalID" : "A720F8C6",
               "numberOfPeriods" : 1,
-              "paymentMode" : "free",
+              "paymentMode" : "freeTrial",
               "subscriptionPeriod" : "P7D"
             }
           ],
           "localizations" : [
             {
-              "description" : "",
-              "displayName" : "",
+              "description" : "每年自动续费，比月付省约 33%",
+              "displayName" : "Pro 年付",
+              "locale" : "zh_CN"
+            },
+            {
+              "description" : "Billed annually. Save ~33% vs monthly.",
+              "displayName" : "Pro Yearly",
               "locale" : "en_US"
             }
           ],
@@ -108,13 +122,13 @@
           ],
           "displayPrice" : "4.99",
           "familyShareable" : false,
-          "groupNumber" : 1,
+          "groupNumber" : 2,
           "internalID" : "0EEEC643",
           "introductoryOffer" : {
             "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "CE77B620",
             "numberOfPeriods" : 1,
-            "paymentMode" : "free",
+            "paymentMode" : "freeTrial",
             "subscriptionPeriod" : "P7D"
           },
           "introductoryOffers" : [
@@ -122,14 +136,19 @@
               "billingPlanType" : "BILLED_UPFRONT",
               "internalID" : "CE77B620",
               "numberOfPeriods" : 1,
-              "paymentMode" : "free",
+              "paymentMode" : "freeTrial",
               "subscriptionPeriod" : "P7D"
             }
           ],
           "localizations" : [
             {
-              "description" : "",
-              "displayName" : "",
+              "description" : "每月自动续费，可随时取消",
+              "displayName" : "Pro 月付",
+              "locale" : "zh_CN"
+            },
+            {
+              "description" : "Billed monthly. Cancel anytime.",
+              "displayName" : "Pro Monthly",
               "locale" : "en_US"
             }
           ],

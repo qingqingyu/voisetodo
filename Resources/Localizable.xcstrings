@@ -6787,13 +6787,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save 17%"
+            "value" : "Save 33%"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "省 17%"
+            "value" : "省 33%"
           }
         }
       }
