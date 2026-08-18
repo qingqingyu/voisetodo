@@ -352,180 +352,180 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// ZStack + 全部 sheet/overlay/toast 挂载。与 body 拆成两层:首次语音试用接线
     /// 增补 onChange 后,单条表达式让编译器类型检查超时,拆层是最小侵入的解法。
     private var homeRootAndOverlays: some View {
-            ZStack {
-                PaperTextureBackground()
+        ZStack {
+            PaperTextureBackground()
 
-                VStack(spacing: 0) {
-                    headerView
+            VStack(spacing: 0) {
+                headerView
 
-                    // recordingOverlay 仅在弹层未升起时显示。弹层一旦出现,
-                    // 由弹层接管「识别中」反馈(底部三个点 blink),底层不再叠 loading。
-                    if (coordinator.isRecording || isProcessing || coordinator.isExtracting)
-                        && !coordinator.showConfirmSheet {
-                        recordingOverlay
+                // recordingOverlay 仅在弹层未升起时显示。弹层一旦出现,
+                // 由弹层接管「识别中」反馈(底部三个点 blink),底层不再叠 loading。
+                if (coordinator.isRecording || isProcessing || coordinator.isExtracting)
+                    && !coordinator.showConfirmSheet {
+                    recordingOverlay
+                }
+
+                Group {
+                    if isListVisible {
+                        monthHomeView
                     }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // isListVisible=false 时 Group 会退化为 EmptyView，不能再靠列表撑满高度。
+            // 主容器始终占满并顶部对齐，避免 ConfirmSheet 出现后只剩 header 被 ZStack 居中。
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                    Group {
-                        if isListVisible {
-                            monthHomeView
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                // isListVisible=false 时 Group 会退化为 EmptyView，不能再靠列表撑满高度。
-                // 主容器始终占满并顶部对齐，避免 ConfirmSheet 出现后只剩 header 被 ZStack 居中。
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                // 底部渐隐遮罩：让列表内容淡出到 Tab 簇下方，而不是被硬切。
-                // 只在列表可见时显示（录音态有全屏 overlay 不需要）。
-                // allowsHitTesting(false) 确保不拦截列表滚动 / 点击。
-                if isListVisible {
-                    LinearGradient(
-                        colors: [.clear, WarmTheme.background],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: HomeLayoutMetrics.bottomListFadeHeight)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .allowsHitTesting(false)
-                }
+            // 底部渐隐遮罩：让列表内容淡出到 Tab 簇下方，而不是被硬切。
+            // 只在列表可见时显示（录音态有全屏 overlay 不需要）。
+            // allowsHitTesting(false) 确保不拦截列表滚动 / 点击。
+            if isListVisible {
+                LinearGradient(
+                    colors: [.clear, WarmTheme.background],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: HomeLayoutMetrics.bottomListFadeHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
             }
-            .onAppear {
-                startEntranceAnimation()
-                // 首次语音试用 hint 的主触发路径:onboarding sheet 关闭 → HomeView 首挂。
-                evaluateFirstTrialHintTrigger()
+        }
+        .onAppear {
+            startEntranceAnimation()
+            // 首次语音试用 hint 的主触发路径:onboarding sheet 关闭 → HomeView 首挂。
+            evaluateFirstTrialHintTrigger()
+        }
+        .overlay {
+            if coordinator.isRecording {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityIdentifier("RecordingIndicator")
             }
-            .overlay {
-                if coordinator.isRecording {
-                    Color.clear
-                        .frame(width: 1, height: 1)
-                        .accessibilityIdentifier("RecordingIndicator")
-                }
-            }
-            // A2 自动学习建议 banner
-            .overlay(alignment: .top) {
-                if let suggestion = coordinator.glossarySuggestion {
-                    GlossarySuggestionBanner(
-                        suggestion: suggestion,
-                        onAccept: {
-                            PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
-                                type: .alias,
-                                phrase: suggestion.correction.originalTitle,
-                                expansion: suggestion.correction.confirmedTitle,
-                                localeIdentifier: suggestion.correction.localeIdentifier
-                            ))
-                            CorrectionTracker.shared.remove(id: suggestion.correction.id)
-                            withAnimation { coordinator.glossarySuggestion = nil }
-                        },
-                        onDismiss: {
-                            CorrectionTracker.shared.remove(id: suggestion.correction.id)
-                            withAnimation { coordinator.glossarySuggestion = nil }
-                        }
-                    )
-                    .padding(.horizontal, WarmSpacing.lg)
-                    .padding(.top, WarmSpacing.xs)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .overlay(alignment: .bottom) {
-                // 悬浮 FAB:挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,
-                // 列表铺满至屏幕底,卡片可从按钮背后穿过(配合上方渐隐带溶解)。
-                // overlay 挂载顺序——FAB 在前、hint/输入面板在后,后挂的更上层,
-                // 所以输入面板出现时会盖住 FAB。VoiceFAB 自带 .padding(.bottom, WarmSpacing.md)
-                // 让按钮浮在 home indicator 上方,无需额外处理。
-                // (drawer 条件因 UnscheduledDrawer 当前为死代码恒为 false,保留以防恢复。)
-                if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
-                    VoiceFAB(
-                        isDisabled: isInputEntryDisabled,
-                        onTap: { openVoiceInputPanel() }
-                    )
-                    .transition(.opacity)
-                }
-            }
-            // 首次语音试用 hint(§3.4b):独立 overlay,offset 抬到 FAB 上方。
-            // 不能和 FAB 共用同一个 overlay——两个子视图会形成 TupleView 包装,
-            // 改变 a11y 布局,把 FAB 的可点击区域撑成全屏(tap 命中屏幕中心而非按钮)。
-            // 面板打开时 eligible 已含 !showInputPanel;且 inputPanelOverlay(后挂)
-            // 层级更高,面板出现时天然盖住——无需额外处理。
-            .overlay(alignment: .bottom) {
-                if showFirstTrialHint {
-                    FirstVoiceTrialHintView(onDismiss: handleFirstTrialGotIt)
-                        .offset(y: FirstVoiceTrialHintMetrics.overlayOffsetY)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-            }
-            // 底部输入面板（从底部滑出 + 遮罩）
-            .overlay(alignment: .bottom) {
-                if showInputPanel {
-                    inputPanelOverlay
-                }
-            }
-            .sheet(isPresented: $showSettingsSheet) {
-                HomeSettingsSheet(
-                    calendarWriteModeRaw: $calendarWriteModeRaw,
-                    onUpgradePro: { coordinator.presentPaywall(source: .manual) },
-                    onImportFromCalendar: {
-                        showSettingsSheet = false
-                        showCalendarImport = true
+        }
+        // A2 自动学习建议 banner
+        .overlay(alignment: .top) {
+            if let suggestion = coordinator.glossarySuggestion {
+                GlossarySuggestionBanner(
+                    suggestion: suggestion,
+                    onAccept: {
+                        PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
+                            type: .alias,
+                            phrase: suggestion.correction.originalTitle,
+                            expansion: suggestion.correction.confirmedTitle,
+                            localeIdentifier: suggestion.correction.localeIdentifier
+                        ))
+                        CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                        withAnimation { coordinator.glossarySuggestion = nil }
+                    },
+                    onDismiss: {
+                        CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                        withAnimation { coordinator.glossarySuggestion = nil }
                     }
                 )
+                .padding(.horizontal, WarmSpacing.lg)
+                .padding(.top, WarmSpacing.xs)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
-            // 避免「外部 sheet + presenting view 的 NavigationStack」触发 iOS 隐式
-            // navigationBar 占位,把 headerView 推下移(问题 1:header 掉位)。
-            .sheet(isPresented: $coordinator.showConfirmSheet, onDismiss: revealConfirmedTodos) {
-                confirmSheetBody
+        }
+        .overlay(alignment: .bottom) {
+            // 悬浮 FAB:挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,
+            // 列表铺满至屏幕底,卡片可从按钮背后穿过(配合上方渐隐带溶解)。
+            // overlay 挂载顺序——FAB 在前、hint/输入面板在后,后挂的更上层,
+            // 所以输入面板出现时会盖住 FAB。VoiceFAB 自带 .padding(.bottom, WarmSpacing.md)
+            // 让按钮浮在 home indicator 上方,无需额外处理。
+            // (drawer 条件因 UnscheduledDrawer 当前为死代码恒为 false,保留以防恢复。)
+            if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
+                VoiceFAB(
+                    isDisabled: isInputEntryDisabled,
+                    onTap: { openVoiceInputPanel() }
+                )
+                .transition(.opacity)
             }
-            // ConfirmSheet 关闭但未确认(反例 6 配套):取消路径下状态仍是 .pending,
-            // sheet 消失后 hint 需重新评估出现。
-            .onChange(of: coordinator.showConfirmSheet) { _, _ in
-                evaluateFirstTrialHintTrigger()
+        }
+        // 首次语音试用 hint(§3.4b):独立 overlay,offset 抬到 FAB 上方。
+        // 不能和 FAB 共用同一个 overlay——两个子视图会形成 TupleView 包装,
+        // 改变 a11y 布局,把 FAB 的可点击区域撑成全屏(tap 命中屏幕中心而非按钮)。
+        // 面板打开时 eligible 已含 !showInputPanel;且 inputPanelOverlay(后挂)
+        // 层级更高,面板出现时天然盖住——无需额外处理。
+        .overlay(alignment: .bottom) {
+            if showFirstTrialHint {
+                FirstVoiceTrialHintView(onDismiss: handleFirstTrialGotIt)
+                    .offset(y: FirstVoiceTrialHintMetrics.overlayOffsetY)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            // 成功添加底部 toast:position=.bottom,不遮顶部 Today 计数器(pill 在做 pop)。
-            // addedToastVisible/Token 由 presentAddedToast(for:) 控制;revealConfirmedTodos
-            // 调用 presentAddedToast。Token 递增用于连续添加时重置 dismiss 计时。
-            .toast(
-                message: addedToastMessage,
-                style: .success,
-                isPresented: $addedToastVisible,
-                position: .bottom,
-                presentationToken: addedToastToken,
-                // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
-                // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
-                bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm,
-                actionTitle: addedToastActionTitle,
-                action: addedToastAction
+        }
+        // 底部输入面板（从底部滑出 + 遮罩）
+        .overlay(alignment: .bottom) {
+            if showInputPanel {
+                inputPanelOverlay
+            }
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            HomeSettingsSheet(
+                calendarWriteModeRaw: $calendarWriteModeRaw,
+                onUpgradePro: { coordinator.presentPaywall(source: .manual) },
+                onImportFromCalendar: {
+                    showSettingsSheet = false
+                    showCalendarImport = true
+                }
             )
-            // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
-            .sheet(isPresented: $showCalendarImport) {
-                calendarImportSheet
+        }
+        // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
+        // 避免「外部 sheet + presenting view 的 NavigationStack」触发 iOS 隐式
+        // navigationBar 占位,把 headerView 推下移(问题 1:header 掉位)。
+        .sheet(isPresented: $coordinator.showConfirmSheet, onDismiss: revealConfirmedTodos) {
+            confirmSheetBody
+        }
+        // ConfirmSheet 关闭但未确认(反例 6 配套):取消路径下状态仍是 .pending,
+        // sheet 消失后 hint 需重新评估出现。
+        .onChange(of: coordinator.showConfirmSheet) { _, _ in
+            evaluateFirstTrialHintTrigger()
+        }
+        // 成功添加底部 toast:position=.bottom,不遮顶部 Today 计数器(pill 在做 pop)。
+        // addedToastVisible/Token 由 presentAddedToast(for:) 控制;revealConfirmedTodos
+        // 调用 presentAddedToast。Token 递增用于连续添加时重置 dismiss 计时。
+        .toast(
+            message: addedToastMessage,
+            style: .success,
+            isPresented: $addedToastVisible,
+            position: .bottom,
+            presentationToken: addedToastToken,
+            // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
+            // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
+            bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm,
+            actionTitle: addedToastActionTitle,
+            action: addedToastAction
+        )
+        // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
+        .sheet(isPresented: $showCalendarImport) {
+            calendarImportSheet
+        }
+        // B3 通知深链:回顾通知点击后弹出 ReviewView
+        .sheet(isPresented: Binding(
+            get: { coordinator.showReviewFromNotification },
+            set: { coordinator.showReviewFromNotification = $0 }
+        )) {
+            NavigationStack { ReviewView() }
+        }
+        .sheet(isPresented: $showReviewFromStats) {
+            NavigationStack { ReviewView() }
+        }
+        // 用户在 onboarding 跳过权限后的二次引导:点录音按钮时拦截,
+        // 弹更详细的说明 sheet,再走系统权限弹窗。
+        .sheet(isPresented: $showVoicePermissionReprompt) {
+            VoicePermissionRepromptSheet(
+                onAllow: handleRepromptAllow,
+                onDismiss: handleRepromptDismiss
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $selectedTodo) { todo in
+            NavigationStack {
+                TodoDetailView(store: store, todo: todo)
+                    .environmentObject(coordinator)
             }
-            // B3 通知深链:回顾通知点击后弹出 ReviewView
-            .sheet(isPresented: Binding(
-                get: { coordinator.showReviewFromNotification },
-                set: { coordinator.showReviewFromNotification = $0 }
-            )) {
-                NavigationStack { ReviewView() }
-            }
-            .sheet(isPresented: $showReviewFromStats) {
-                NavigationStack { ReviewView() }
-            }
-            // 用户在 onboarding 跳过权限后的二次引导:点录音按钮时拦截,
-            // 弹更详细的说明 sheet,再走系统权限弹窗。
-            .sheet(isPresented: $showVoicePermissionReprompt) {
-                VoicePermissionRepromptSheet(
-                    onAllow: handleRepromptAllow,
-                    onDismiss: handleRepromptDismiss
-                )
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-            }
-            .fullScreenCover(item: $selectedTodo) { todo in
-                NavigationStack {
-                    TodoDetailView(store: store, todo: todo)
-                        .environmentObject(coordinator)
-                }
-            }
+        }
     }
 
     /// onChange 生命周期处理器链(见 homeRootAndOverlays 的拆层说明)。
@@ -1838,13 +1838,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         let toastDuration = UIConfig.toastDuration * (addedToastAction != nil ? 2 : 1)
         let delaySeconds = toastDuration + 0.3
         firstWowPaywallTask = Task { @MainActor in
-            do {
-                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-            } catch is CancellationError {
-                return
-            } catch {
-                return // 不可达:Task.sleep 只 throw CancellationError
-            }
+            // 同 evaluateFirstTrialHintTrigger 的惯用写法:try? 吞掉的只可能是
+            // CancellationError,由下一行 isCancelled 显式处理。
+            try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            if Task.isCancelled { return }
             // 二次守卫:延迟期间用户可能已点进详情页 / 重新开面板 / 再起 ConfirmSheet。
             guard !showInputPanel, !coordinator.showConfirmSheet, selectedTodo == nil else { return }
             coordinator.showPaywallAfterFirstWow()
