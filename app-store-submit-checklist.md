@@ -121,13 +121,13 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 | 项 | 值 |
 |---|---|
 | 订阅组名称 | `Pro` |
-| 商品 1 | `com.qingqingyu.voicetodo.pro.monthly` · $12.99 · 1 个月 |
-| 商品 2 | `com.qingqingyu.voicetodo.pro.yearly` · $98 · 1 年 |
+| 商品 1 | `com.qingqingyu.voicetodo.pro.monthly` · **$4.99** · 1 个月 |
+| 商品 2 | `com.qingqingyu.voicetodo.pro.yearly` · **$39.99** · 1 年 |
 | **介绍优惠（两个商品都要）** | **免费试用 7 天**（storekit: `free ×1 P7D`，与 PROMOTION_PLAN 决策 7 一致）。不配的话，线上永远不显示"开始 7 天免费试用"CTA |
 | 商品本地化 | zh-Hans：`Pro 月度` / `Pro 年度` + 一句描述；en：`Pro Monthly` / `Pro Yearly` |
 | 商品审核截图 | 每个商品 1 张付费墙截图（就用 3.1 里的 Paywall 截图） |
 
-注意：ASC 价格按**销售地区税前/税后**展示，$12.99/$98 是美区基准价，其他地区 ASC 自动生成本地价（可再手动微调）。
+注意：ASC 价格按**销售地区税前/税后**展示，$4.99/$39.99 是美区基准价（2026-08-18 用户确认的真实定价，与 Products.storekit 一致），其他地区 ASC 自动生成本地价（可再手动微调）。
 
 ---
 
