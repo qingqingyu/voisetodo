@@ -264,6 +264,21 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 切 tab / 离开折叠态时必须 cancel,避免 hint 在不该出现的场景迟到。
     @State private var hintTriggerTask: Task<Void, Never>?
 
+    // MARK: - 首次语音试用引导(FirstVoiceTrialHintView)
+    /// 持久化状态机:onboarding 结束时 arm,首次语音待办落库(revealConfirmedTodos)终结。
+    @AppStorage(FirstVoiceTrial.storageKey)
+    private var firstVoiceTrialRaw = FirstVoiceTrial.notArmed.rawValue
+    /// 运行时开关:由 evaluateFirstTrialHintTrigger() 按 eligible 条件调度(§3.4d)。
+    @State private var showFirstTrialHint = false
+    /// 触发延迟任务:挂载/切 tab/关面板后等 0.4s 再显示,可取消——同 hintTriggerTask 模式,
+    /// 不用 DispatchQueue.main.asyncAfter(不可取消,会迟到到不该出现的场景)。
+    @State private var firstTrialHintTask: Task<Void, Never>?
+    /// hint_shown 遥测的会话内去重闸门:触发集有 5 个入口,同一会话会多次展示,
+    /// 不去重会让漏斗分母失真(§3.6 口径限制 1)。
+    @State private var didRecordHintShownThisSession = false
+    /// wow 后置 paywall 的延迟任务:等庆祝 toast 播完再弹(§3.5d,同步弹会盖住 wow)。
+    @State private var firstWowPaywallTask: Task<Void, Never>?
+
     private let waveformHeights: [CGFloat] = [12, 24, 20, 32, 16]
     private let calendar = Calendar.current
     private var isInputEntryBlockedByProcessing: Bool {
@@ -314,6 +329,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var addedToastVisible = false
     @State private var addedToastMessage = ""
     @State private var addedToastToken = 0
+    /// 庆祝 toast 的可选 action(「去看看」跳别日)。nil = 无 action;时长翻倍逻辑见
+    /// ToastView(scheduleDismiss:带 action 的 toast 显示 2×toastDuration)。
+    @State private var addedToastActionTitle: String?
+    @State private var addedToastAction: (() -> Void)?
     /// 进度条数字 pop 的驱动 token。仅在 `revealConfirmedTodos`(ConfirmSheet 成功后)
     /// 递增,避免原来用 `total` 做 trigger 时左右滑切日 total 变化也触发 pop。
     /// (today-card-layout-redesign 把右上角 pill 换成了标题行下方进度条行,
@@ -330,7 +349,9 @@ struct HomeView<Store: HomeTodoStore>: View {
         )
     }
 
-    var body: some View {
+    /// ZStack + 全部 sheet/overlay/toast 挂载。与 body 拆成两层:首次语音试用接线
+    /// 增补 onChange 后,单条表达式让编译器类型检查超时,拆层是最小侵入的解法。
+    private var homeRootAndOverlays: some View {
             ZStack {
                 PaperTextureBackground()
 
@@ -371,6 +392,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
             .onAppear {
                 startEntranceAnimation()
+                // 首次语音试用 hint 的主触发路径:onboarding sheet 关闭 → HomeView 首挂。
+                evaluateFirstTrialHintTrigger()
             }
             .overlay {
                 if coordinator.isRecording {
@@ -407,7 +430,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             .overlay(alignment: .bottom) {
                 // 悬浮 FAB:挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,
                 // 列表铺满至屏幕底,卡片可从按钮背后穿过(配合上方渐隐带溶解)。
-                // overlay 挂载顺序——FAB 在前、输入面板在后,后挂的更上层,
+                // overlay 挂载顺序——FAB 在前、hint/输入面板在后,后挂的更上层,
                 // 所以输入面板出现时会盖住 FAB。VoiceFAB 自带 .padding(.bottom, WarmSpacing.md)
                 // 让按钮浮在 home indicator 上方,无需额外处理。
                 // (drawer 条件因 UnscheduledDrawer 当前为死代码恒为 false,保留以防恢复。)
@@ -419,6 +442,18 @@ struct HomeView<Store: HomeTodoStore>: View {
                     .transition(.opacity)
                 }
             }
+            // 首次语音试用 hint(§3.4b):独立 overlay,offset 抬到 FAB 上方。
+            // 不能和 FAB 共用同一个 overlay——两个子视图会形成 TupleView 包装,
+            // 改变 a11y 布局,把 FAB 的可点击区域撑成全屏(tap 命中屏幕中心而非按钮)。
+            // 面板打开时 eligible 已含 !showInputPanel;且 inputPanelOverlay(后挂)
+            // 层级更高,面板出现时天然盖住——无需额外处理。
+            .overlay(alignment: .bottom) {
+                if showFirstTrialHint {
+                    FirstVoiceTrialHintView(onDismiss: handleFirstTrialGotIt)
+                        .offset(y: FirstVoiceTrialHintMetrics.overlayOffsetY)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
             // 底部输入面板（从底部滑出 + 遮罩）
             .overlay(alignment: .bottom) {
                 if showInputPanel {
@@ -428,7 +463,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             .sheet(isPresented: $showSettingsSheet) {
                 HomeSettingsSheet(
                     calendarWriteModeRaw: $calendarWriteModeRaw,
-                    onUpgradePro: { coordinator.showPaywall = true },
+                    onUpgradePro: { coordinator.presentPaywall(source: .manual) },
                     onImportFromCalendar: {
                         showSettingsSheet = false
                         showCalendarImport = true
@@ -441,6 +476,11 @@ struct HomeView<Store: HomeTodoStore>: View {
             .sheet(isPresented: $coordinator.showConfirmSheet, onDismiss: revealConfirmedTodos) {
                 confirmSheetBody
             }
+            // ConfirmSheet 关闭但未确认(反例 6 配套):取消路径下状态仍是 .pending,
+            // sheet 消失后 hint 需重新评估出现。
+            .onChange(of: coordinator.showConfirmSheet) { _, _ in
+                evaluateFirstTrialHintTrigger()
+            }
             // 成功添加底部 toast:position=.bottom,不遮顶部 Today 计数器(pill 在做 pop)。
             // addedToastVisible/Token 由 presentAddedToast(for:) 控制;revealConfirmedTodos
             // 调用 presentAddedToast。Token 递增用于连续添加时重置 dismiss 计时。
@@ -452,7 +492,9 @@ struct HomeView<Store: HomeTodoStore>: View {
                 presentationToken: addedToastToken,
                 // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
                 // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
-                bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm
+                bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm,
+                actionTitle: addedToastActionTitle,
+                action: addedToastAction
             )
             // 场景 3:从系统日历导入事件。reader 未注入时返回 EmptyView,UI 无感知。
             .sheet(isPresented: $showCalendarImport) {
@@ -484,6 +526,11 @@ struct HomeView<Store: HomeTodoStore>: View {
                         .environmentObject(coordinator)
                 }
             }
+    }
+
+    /// onChange 生命周期处理器链(见 homeRootAndOverlays 的拆层说明)。
+    var body: some View {
+        homeRootAndOverlays
             .onChange(of: coordinator.deepLinkTodoId) { _, todoId in
                 guard let todoId else { return }
                 deepLinkTask?.cancel()
@@ -497,12 +544,17 @@ struct HomeView<Store: HomeTodoStore>: View {
                 if tab == .today {
                     jumpToToday()
                 }
+                // 反例 8:切走隐藏 hint,切回 today 重新评估出现。
+                evaluateFirstTrialHintTrigger()
             }
             // 面板关闭时显式归零 keyboardHeight 作为兜底——onReceive 订阅挂在 inputPanelOverlay
             // 的 ZStack 上，showInputPanel=false 后整个 overlay 会被移除，可能错过
             // keyboardWillHide 通知导致 keyboardHeight 残留非零。集中在此处理比每个 close/send
             // 路径内联归零更可靠（不会因新增路径漏改）。
             .onChange(of: showInputPanel) { _, isVisible in
+                // 反例 6:面板取消(录音后不确认)后 hint 要重新出现——
+                // 现有钩子只清 keyboardHeight,hint 的重现靠这里的显式评估。
+                evaluateFirstTrialHintTrigger()
                 if !isVisible {
                     // 面板关闭：归零 keyboardHeight 兜底（避免非正常退出残留）
                     if keyboardHeight != 0 {
@@ -562,6 +614,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                 deepLinkTask = nil
                 intentRecordingLaunchTask?.cancel()
                 intentRecordingLaunchTask = nil
+                firstTrialHintTask?.cancel()
+                firstTrialHintTask = nil
+                firstWowPaywallTask?.cancel()
+                firstWowPaywallTask = nil
                 // 复位两阶段标志 + fallback 标志：scheduleDeferredPanelStateReset 只在 closeInputPanel
                 // 后 400ms 触发，若 view 在此之前销毁（tab 切换 / sheet dismiss），复位就漏了。
                 // 与 openVoiceInputPanel 已做的复位动作对齐，保证"销毁→重建"与"open→close"状态等价。
@@ -912,6 +968,29 @@ struct HomeView<Store: HomeTodoStore>: View {
         let ids = coordinator.consumePendingReveal()
         guard !ids.isEmpty else { return }
 
+        // 首次语音试用完成钩子(§3.4f):pending → completed(wow 发生)。
+        // 口径 1:不区分语音/键盘——键盘完成也算通过引导,遥测侧靠
+        //   todo_saved(source:) 时序关联还原真实语音激活率。
+        // 口径 2:离线恢复旁路(PendingRecoveryFlow)同样走到这里,判定为可接受。
+        let wasFirstTrial = (firstVoiceTrialRaw == FirstVoiceTrial.pending.rawValue)
+        if wasFirstTrial {
+            firstVoiceTrialRaw = FirstVoiceTrial.nextState(
+                current: FirstVoiceTrial(rawValue: firstVoiceTrialRaw) ?? .notArmed,
+                didConfirmTodos: !ids.isEmpty
+            ).rawValue
+            Telemetry.record(.firstVoiceTrial(stage: FirstVoiceTrialStage.completed))
+            // 状态终结后立即收起 hint。`onChange(showConfirmSheet)` 的评估发生在
+            // dismiss 起始(状态仍为 pending,eligible 为真),状态推进后没有后续
+            // onChange 会再触发 evaluate——不主动收起的话 hint 会永久残留。
+            firstTrialHintTask?.cancel()
+            firstTrialHintTask = nil
+            if showFirstTrialHint {
+                withAnimation(WarmAnimation.springFast) {
+                    showFirstTrialHint = false
+                }
+            }
+        }
+
         let dayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
         // 一次性按 id 查找 todo,避免 visibleIds / hasOnDayItem / presentAddedToast 各遍历一次。
         // 找不到的 id(已被删除等)在后续 filter 中被各分类的 guard 隐式排除,不单独归类。
@@ -957,7 +1036,12 @@ struct HomeView<Store: HomeTodoStore>: View {
             }
         }
 
-        presentAddedToast(for: ids, todosById: todosById, dayStart: dayStart)
+        presentAddedToast(for: ids, todosById: todosById, dayStart: dayStart, celebrate: wasFirstTrial)
+        // wow 后置 paywall:必须在 presentAddedToast 之后调度——延迟时长取决于
+        // 本次 toast 是否带 action(「去看看」),而 action 是刚刚才设置的(§3.5d)。
+        if wasFirstTrial {
+            scheduleFirstWowPaywall()
+        }
 
         // 仅当确实有落在 selectedDay 的条目(进度条 total 真正增加)才递增 token 触发 pop,
         // 避免纯跨天 / 纯无日期批次误弹(无日期 / 跨天条目都不进 total)。
@@ -968,32 +1052,80 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     /// 成功添加后的底部 toast。统计落别处的条目数,选「已添加 N 条」或分流版「N 条 + M 条在其他日期」。
     /// 跨天条目 / Reduce Motion / Calendar tab 不可见三种静默失败场景都靠 toast 兜底反馈。
+    ///
+    /// `celebrate == true`(首次 wow,§3.4g)时在通用文案之上**叠加**庆祝语义,
+    /// 不替换分流逻辑——mixed batch 里落别日那条的「M 条在其他日期」不能被吞掉:
+    ///
+    /// | 条件 | 文案 | action |
+    /// |---|---|---|
+    /// | 含别日条目 | `first_trial_elsewhere`(庆祝 + 保留分流) | 「去看看」跳别日 |
+    /// | 无别日、含无日期条目 | `first_trial_generic`(不点名「今天」) | 无 |
+    /// | 全部落今天 | `first_trial`(纯庆祝) | 无 |
+    ///
+    /// 无日期条目计入 `onSelectedDay`(沿用现有口径),但庆祝文案一旦点名「今天」
+    /// 对它们就说不通(它们落「稍后」分区)——所以单独给 generic 分支。
     /// - Parameter todosById: 由 `revealConfirmedTodos` 预先构造的 id→todo 映射,
     ///   避免本函数再遍历 `store.todos`(N=ids.count 小数据,但保持单一数据源)。
     private func presentAddedToast(
         for ids: [UUID],
         todosById: [UUID: TodoItemData],
-        dayStart: Date
+        dayStart: Date,
+        celebrate: Bool = false
     ) {
         // 「别处」= 有 dueDate 但落在别日的条目。
         // 无 dueDate 的条目(「稍后」「待定日期」)不计入别处:它们在 Today tab 同屏可见,
         // 说成"在其他日期"既不准确也误导(全无日期批次会显示"已添加 0 条")。
-        let elsewhere = ids.filter { id in
+        let elsewhereIds = ids.filter { id in
             guard let todo = todosById[id], let due = todo.dueDate else { return false }
             return !DayClock.isSameUserDay(due, dayStart, calendar: calendar)
-        }.count
+        }
+        let elsewhere = elsewhereIds.count
+        let hasUnscheduled = ids.contains { id in
+            guard let todo = todosById[id] else { return false }
+            return todo.dueDate == nil
+        }
         let onSelectedDay = ids.count - elsewhere
+        // 「去看看」的跳转目标:第一条落别日的 dueDate(selectDay 会归一到当天零点)。
+        let firstElsewhereDueDate = elsewhereIds.compactMap { todosById[$0]?.dueDate }.first
 
-        if elsewhere > 0 {
-            addedToastMessage = String(
-                format: String(localized: "home.added_toast.elsewhere %lld %lld"),
-                onSelectedDay, elsewhere
-            )
+        if celebrate {
+            if elsewhere > 0 {
+                addedToastMessage = String(
+                    format: String(localized: "home.added_toast.first_trial_elsewhere %lld %lld"),
+                    onSelectedDay, elsewhere
+                )
+                addedToastActionTitle = String(localized: "home.added_toast.go_look")
+                if let jumpTarget = firstElsewhereDueDate {
+                    addedToastAction = {
+                        // 必须切到 calendar tab:today tab 的 onChange 会 jumpToToday()
+                        // 把日期拽回今天,跨日跳转在 today tab 站不住。
+                        selectedBottomTab = .calendar
+                        selectDay(jumpTarget)
+                    }
+                }
+            } else if hasUnscheduled {
+                addedToastMessage = String(localized: "home.added_toast.first_trial_generic")
+                addedToastActionTitle = nil
+                addedToastAction = nil
+            } else {
+                addedToastMessage = String(localized: "home.added_toast.first_trial")
+                addedToastActionTitle = nil
+                addedToastAction = nil
+            }
         } else {
-            addedToastMessage = String(
-                format: String(localized: "home.added_toast %lld"),
-                ids.count
-            )
+            addedToastActionTitle = nil
+            addedToastAction = nil
+            if elsewhere > 0 {
+                addedToastMessage = String(
+                    format: String(localized: "home.added_toast.elsewhere %lld %lld"),
+                    onSelectedDay, elsewhere
+                )
+            } else {
+                addedToastMessage = String(
+                    format: String(localized: "home.added_toast %lld"),
+                    ids.count
+                )
+            }
         }
         // 递增 token 让 ToastModifier 重置 dismiss 计时,连续添加时每条都享完整 duration。
         addedToastToken += 1
@@ -1484,6 +1616,19 @@ struct HomeView<Store: HomeTodoStore>: View {
                             showExpandHint = false
                         }
                     }
+                    // 首次语音试用 hint 同样取消;区别在它**不在展示时落盘**
+                    // (§3.4d),回前台重新评估即可重现,与 ExpandHint 的
+                    // 「展示即永久消失」语义不同。
+                    firstTrialHintTask?.cancel()
+                    firstTrialHintTask = nil
+                    if showFirstTrialHint {
+                        withAnimation(WarmAnimation.springFast) {
+                            showFirstTrialHint = false
+                        }
+                    }
+                } else {
+                    // 回前台:反例 9,hint 重现。
+                    evaluateFirstTrialHintTrigger()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1616,6 +1761,94 @@ struct HomeView<Store: HomeTodoStore>: View {
         selectedBottomTab == .calendar
             && collapseProgress > 0.5
             && !hasShownExpandMonthHint
+    }
+
+    // MARK: - First Voice Trial Hint(首次语音试用引导)
+
+    /// hint 触发条件(§3.4c):pending 状态 + today tab + 无面板/弹层 + 输入入口可用。
+    private var isFirstTrialHintEligible: Bool {
+        firstVoiceTrialRaw == FirstVoiceTrial.pending.rawValue
+            && selectedBottomTab == .today
+            && !showInputPanel
+            && !coordinator.showConfirmSheet
+            && !isInputEntryDisabled
+    }
+
+    /// 评估首次语音试用 hint 触发(§3.4d)。结构同 evaluateExpandHintTrigger:
+    /// 可取消 Task + 延迟后二次 guard。触发入口共 5 个,缺一条就有对应失效场景:
+    /// `.onAppear`(主路径:onboarding sheet 关闭后 HomeView 首挂)/
+    /// `onChange(selectedBottomTab)`(反例 8)/ `onChange(showInputPanel)`(反例 6)/
+    /// `onChange(showConfirmSheet)`(确认 sheet 关闭但未确认)/
+    /// `onChange(scenePhase)` 回前台(反例 9)。
+    ///
+    /// 与 ExpandHint 的关键差异:**不在展示时落盘**——落盘只发生在「完成」
+    /// (revealConfirmedTodos)或「知道了」(handleFirstTrialGotIt)两个终点,
+    /// 所以离开触发态只是隐藏,条件回来自动重现。
+    private func evaluateFirstTrialHintTrigger() {
+        if isFirstTrialHintEligible {
+            // 已挂起或已显示:不重复调度
+            guard firstTrialHintTask == nil, !showFirstTrialHint else { return }
+            firstTrialHintTask = Task {
+                try? await Task.sleep(nanoseconds: FirstVoiceTrialHintMetrics.triggerDelayNano)
+                if Task.isCancelled { return }
+                // 二次防护:0.4s 窗口内可能已切 tab / 开面板 / 起弹层 / 开始录音。
+                guard isFirstTrialHintEligible else {
+                    firstTrialHintTask = nil
+                    return
+                }
+                withAnimation(WarmAnimation.springFast) {
+                    showFirstTrialHint = true
+                }
+                firstTrialHintTask = nil
+                // 会话级去重:5 入口会反复展示,漏斗分母只要会话级曝光(§3.6 口径 1)。
+                if !didRecordHintShownThisSession {
+                    didRecordHintShownThisSession = true
+                    Telemetry.record(.firstVoiceTrial(stage: FirstVoiceTrialStage.hintShown))
+                }
+            }
+        } else {
+            // 离开触发态:取消挂起 + 隐藏已显示(不落盘,条件回来会重现)
+            firstTrialHintTask?.cancel()
+            firstTrialHintTask = nil
+            if showFirstTrialHint {
+                withAnimation(WarmAnimation.springFast) {
+                    showFirstTrialHint = false
+                }
+            }
+        }
+    }
+
+    /// 「知道了」:写 `.dismissed` 终态(永不重显)并收起 hint。
+    private func handleFirstTrialGotIt() {
+        firstVoiceTrialRaw = FirstVoiceTrial.dismissed.rawValue
+        Telemetry.record(.firstVoiceTrial(stage: FirstVoiceTrialStage.dismissed))
+        withAnimation(WarmAnimation.springFast) {
+            showFirstTrialHint = false
+        }
+    }
+
+    /// wow 后置 paywall(§3.5d):等庆祝 toast **播完**再弹。
+    ///
+    /// 延迟从 `UIConfig.toastDuration` 推导,不硬编码——带 action(「去看看」)的
+    /// toast 时长翻倍(`ToastView.scheduleDismiss`),硬编码 2.0s 会在第 2 秒盖掉
+    /// toast,用户根本来不及点「去看看」。必须在 `presentAddedToast` **之后**调用:
+    /// `addedToastAction` 是那边才设置的。
+    private func scheduleFirstWowPaywall() {
+        firstWowPaywallTask?.cancel()
+        let toastDuration = UIConfig.toastDuration * (addedToastAction != nil ? 2 : 1)
+        let delaySeconds = toastDuration + 0.3
+        firstWowPaywallTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            } catch is CancellationError {
+                return
+            } catch {
+                return // 不可达:Task.sleep 只 throw CancellationError
+            }
+            // 二次守卫:延迟期间用户可能已点进详情页 / 重新开面板 / 再起 ConfirmSheet。
+            guard !showInputPanel, !coordinator.showConfirmSheet, selectedTodo == nil else { return }
+            coordinator.showPaywallAfterFirstWow()
+        }
     }
 
     private func selectDay(_ day: Date) {

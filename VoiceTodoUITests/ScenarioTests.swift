@@ -17,7 +17,9 @@ final class ScenarioTests: XCTestCase {
             "test_S11_homeView_emptyState",
             "test_S12_firstLaunch_onboarding",
             "test_S16_calendarPermissionDenied_revertsToggle",
-            "test_S17_onboarding_fitsWithoutScrolling"
+            "test_S17_onboarding_fitsWithoutScrolling",
+            "test_S18_firstVoiceTrial_hintToWowPaywall",
+            "test_S19_firstVoiceTrial_micDenied_noHint"
         ]
         let isDefaultEnabledScenario = defaultEnabledScenarios.contains { name.contains($0) }
         let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
@@ -421,8 +423,9 @@ final class ScenarioTests: XCTestCase {
     // MARK: - S12: 首次启动引导流程
 
     /// 场景 S12: 首次启动引导流程
-    /// 验证首次启动时显示引导流程,包括第三屏 Pro 付费墙的降级路径
-    /// (UI 测试环境无 StoreKit mock,商品加载失败时「以后再说」仍可点)。
+    /// 验证首次启动时显示引导流程并走到完成页;Pro 付费墙已移出 onboarding
+    /// (后置到首次 wow,见 docs/onboarding-first-voice-trial.md §3.5),
+    /// 引导内不再出现付费墙,走完后首次语音试用 hint 浮出。
     func test_S12_firstLaunch_onboarding() {
         // Step 1: App 首次启动(不注入 --skip-onboarding,应显示引导)
         appHelper.launch()
@@ -436,48 +439,43 @@ final class ScenarioTests: XCTestCase {
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
 
-        // Step 4: 权限页 → Pro 付费墙。
-        // 新流程从权限页到付费墙经过 speechLanguage → calendarSync → [actionButton]:
-        //   - 无 Action Button 机型:权限页 → 语言 → 日历 → 付费墙(3 次点击)
-        //   - 有 Action Button 机型:权限页 → 语言 → 日历 → AB → 付费墙(4 次点击)
-        // 上面那次 nextButton.tap()(:440)是序列中的第一次(权限页 → 语言页),
-        // 不是额外一次。attempts < 6 给 6 次循环,对最多 4 次点击留 2 次余量应对动画抖动。
+        // Step 4: 权限页 → 完成页(Pro 付费墙已移出 onboarding,改为首次 wow 后弹,方案 §3.5)。
+        // 从权限页到完成页经过 speechLanguage → calendarSync → [actionButton] → completion。
         appHelper.nextButton.tap()
 
         // 显式断言两个新步骤依次出现 —— 失败时直接指向具体哪一步,
-        // 而不是笼统的「付费墙没出现」。
+        // 而不是笼统的「完成页没出现」。
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
                       "应进入日历同步页")
 
-        let laterButton = appHelper.app.buttons["ProIntroLaterButton"]
+        let completionTitle = appHelper.app.staticTexts["最后一步"]
         var attempts = 0
-        while !laterButton.exists && attempts < 6 {
+        while !completionTitle.exists && attempts < 6 {
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
-            _ = laterButton.waitForExistence(timeout: 1.5)
+            _ = completionTitle.waitForExistence(timeout: 1.5)
             attempts += 1
         }
 
-        // Step 5: Pro 付费墙应出现,且「以后再说」可点 —— 这是降级路径的核心验收点。
-        // UI 测试环境无 StoreKit mock,Product.products(for:) 返回空 → 付费墙落到 .empty 状态,
-        // 显示「暂时无法加载订阅方案」+ 重试按钮。但「以后再说」在外层,始终可点。
-        XCTAssertTrue(laterButton.exists, "Pro 付费墙应出现(允许跨过可选的 Action Button 步骤)")
-        XCTAssertTrue(laterButton.isEnabled, "「以后再说」始终可点 —— onboarding 不能被 StoreKit 加载失败卡死")
+        // Step 5: 完成页应出现(允许跨过可选的 Action Button 步骤)。
+        // onboarding 内不应再出现付费墙 —— 它已后置到首次 wow。
+        XCTAssertTrue(completionTitle.exists, "完成页应出现")
+        XCTAssertFalse(appHelper.app.buttons["ProIntroLaterButton"].exists,
+                       "onboarding 内不应再有 Pro 付费墙")
 
-        // Step 6: Pro 付费墙 → 完成页
-        laterButton.tap()
-        XCTAssertTrue(appHelper.app.staticTexts["搞定啦！"].waitForExistence(timeout: 2.0), "应进入完成页")
-
-        // Step 7: 点击「开始使用」结束引导
+        // Step 6: 点击「去试一句」结束引导
         appHelper.nextButton.tap()
 
-        // Step 8: 引导关闭并进入主界面
+        // Step 8: 引导关闭并进入主界面;权限已 mock 授权,首次语音试用 hint 应浮出
+        // (hint 容器 children:.contain 不作为可查询元素,用「知道了」按钮作存在信号)
         appHelper.waitForAppReady(timeout: 5.0)
         XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 2.0), "引导 sheet 应已关闭")
+        XCTAssertTrue(appHelper.app.buttons["FirstVoiceTrialGotItButton"].waitForExistence(timeout: 3.0),
+                      "走完 onboarding(含授权)后应显示首次语音试用 hint")
 
         // Step 9: 重新启动 App(保留数据,不重置 UserDefaults)
         appHelper.app.terminate()
@@ -515,6 +513,119 @@ final class ScenarioTests: XCTestCase {
             skipButton.tap()
             // 应该能进入下一步
         }
+    }
+
+    // MARK: - S18: 首次语音试用引导(正例)
+
+    /// 场景 S18: 走完 onboarding(含授权)→ hint 浮出 → 引导下录第一条 → wow → 后置 paywall。
+    /// 方案 docs/onboarding-first-voice-trial.md §3.8c 正例。
+    /// mock 转写默认「明天去银行」落别日 → 庆祝 toast 带「去看看」(4.0s),
+    /// paywall 延迟 = 4.0 + 0.3 = 4.3s,断言超时给足余量。
+    func test_S18_firstVoiceTrial_hintToWowPaywall() {
+        // Step 1: 全新启动,走完 onboarding(权限 mock 已授权)
+        appHelper.launch()
+        XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
+                      "应进入语音识别语言页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
+                      "应进入日历同步页")
+
+        let completionTitle = appHelper.app.staticTexts["最后一步"]
+        var attempts = 0
+        while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
+            if appHelper.nextButton.exists {
+                appHelper.nextButton.tap()
+            }
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            attempts += 1
+        }
+        XCTAssertTrue(completionTitle.exists, "应走到完成页")
+        appHelper.nextButton.tap()  // 「去试一句」→ 关闭引导
+
+        // Step 2: hint 浮出(HomeView 挂载 + 0.4s 延迟)
+        appHelper.waitForAppReady()
+        // hint 容器(children: .contain)不作为可查询元素暴露,用「知道了」按钮作存在信号
+        // (a11y id: FirstVoiceTrialGotItButton,树中已验证可达)。
+        let hint = appHelper.app.buttons["FirstVoiceTrialGotItButton"]
+        XCTAssertTrue(hint.waitForExistence(timeout: 3.0), "走完 onboarding(含授权)后 hint 应浮出")
+
+        // Step 3: 点 FAB 录音(mock 转写)→ 确认保存。
+        // FAB 用坐标点击:hint 展示时其 a11y 元素被容器污染撑成全屏,tap 会落屏幕中心。
+        appHelper.tapRecordFABByCoordinate()
+        XCTAssertTrue(appHelper.switchToKeyboardButton.waitForExistence(timeout: 2.0), "录音面板应该出现")
+        appHelper.stopRecording()
+        appHelper.waitForConfirmSheet()
+        appHelper.tapConfirmButton()
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+
+        // Step 4: hint 消失(状态已 .completed)
+        XCTAssertTrue(hint.waitForNonExistence(timeout: 3.0), "首次语音待办落库后 hint 应消失")
+
+        // Step 5: 庆祝 toast → wow 播完后后置 paywall 弹出(§3.5d)。
+        // toast 的 a11y identifier 受容器污染,用庆祝文案匹配(测试强制 zh)。
+        let celebrateToast = appHelper.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "太棒了")
+        ).firstMatch
+        XCTAssertTrue(celebrateToast.waitForExistence(timeout: 3.0), "庆祝 toast 应出现")
+        let paywallNavBar = appHelper.app.navigationBars["升级 VoiceTodo Pro"]
+        let paywallClose = appHelper.app.buttons["关闭"]
+        let paywallShown = paywallNavBar.waitForExistence(timeout: 10.0)
+            || paywallClose.waitForExistence(timeout: 1.0)
+            || appHelper.app.navigationBars.firstMatch.waitForExistence(timeout: 1.0)
+        if !paywallShown {
+            print("===PAYWALL-DEBUG-BEGIN===\n\(appHelper.app.debugDescription)\n===PAYWALL-DEBUG-END===")
+        }
+        XCTAssertTrue(paywallShown,
+                      "wow 播完后付费墙应弹出(延迟 2.3~4.3s,取决于 toast 是否带「去看看」)")
+    }
+
+    // MARK: - S19: 首次语音试用引导(反例:权限未授予)
+
+    /// 场景 S19: onboarding 里麦克风权限被拒 → arm 直接 .dismissed,不显示 hint;
+    /// 点 FAB 走原有 VoicePermissionRepromptSheet 路径(§3.8c 反例)。
+    func test_S19_firstVoiceTrial_micDenied_noHint() {
+        appHelper.launchWithMicPermissionDenied()
+        XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0))
+
+        // 欢迎页 → 权限页;权限 mock 拒绝,「继续」不授权也能走
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
+                      "应进入语音识别语言页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
+                      "应进入日历同步页")
+
+        // 走到完成页,点「去试一句」关闭引导
+        let completionTitle = appHelper.app.staticTexts["最后一步"]
+        var attempts = 0
+        while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
+            if appHelper.nextButton.exists {
+                appHelper.nextButton.tap()
+            }
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            attempts += 1
+        }
+        XCTAssertTrue(completionTitle.exists, "应走到完成页")
+        appHelper.nextButton.tap()
+
+        // 权限未授予 → 不出现 hint(arm 即 .dismissed);hint 容器不可查,用「知道了」按钮反查
+        appHelper.waitForAppReady()
+        XCTAssertFalse(appHelper.app.buttons["FirstVoiceTrialGotItButton"].waitForExistence(timeout: 2.5),
+                      "权限未授予时不应出现首次语音试用 hint")
+
+        // 点 FAB → 原有 VoicePermissionRepromptSheet 接管(坐标点击,理由同 S18)
+        appHelper.tapRecordFABByCoordinate()
+        // identifier 在 sheet 内可能被污染,label 兜底
+        let repromptAllow = appHelper.app.buttons["RepromptAllowButton"]
+        let repromptByLabel = appHelper.app.buttons["允许访问"]
+        XCTAssertTrue(repromptAllow.waitForExistence(timeout: 3.0) || repromptByLabel.exists,
+                      "应走原有权限二次引导 sheet(RepromptAllowButton / 允许访问)")
     }
 
     // MARK: - S14: 紧急单条待办
@@ -626,18 +737,18 @@ final class ScenarioTests: XCTestCase {
 
         // Step 7: 走完引导进入主界面
         appHelper.nextButton.tap()
-        // 跳过 [Action Button] + Pro 付费墙(若存在)
-        let laterButton = appHelper.app.buttons["ProIntroLaterButton"]
+        // 跳过 [Action Button](若存在)直至完成页,点「去试一句」结束引导。
+        // 付费墙已不在 onboarding 内(移到首次 wow 后,方案 §3.5)。
+        let completionTitle = appHelper.app.staticTexts["最后一步"]
         var attempts = 0
-        while !laterButton.exists && appHelper.onboardingView.exists && attempts < 6 {
+        while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
-            _ = laterButton.waitForExistence(timeout: 1.5)
+            _ = completionTitle.waitForExistence(timeout: 1.5)
             attempts += 1
         }
-        if laterButton.exists {
-            laterButton.tap()
+        if completionTitle.exists {
             appHelper.nextButton.tap()
         }
         appHelper.waitForAppReady(timeout: 5.0)
@@ -647,7 +758,7 @@ final class ScenarioTests: XCTestCase {
 
     // MARK: - S17: Onboarding 小屏一屏装下
 
-    /// 场景 S17: onboarding 每一步(付费墙除外)在 iPhone SE 上不需要滚动。
+    /// 场景 S17: onboarding 每一步在 iPhone SE 上不需要滚动。
     /// 依赖 App 侧 DEBUG 构建暴露的隐藏元素 OnboardingContentFits(value "1"/"0"),
     /// 对每一步做确定性断言,并附截图供人工核对布局(截断/居中/间距)。
     /// 覆盖 zh-Hans 与 en 两语言:每轮整体重建 launchArguments 指定语言
@@ -673,8 +784,8 @@ final class ScenarioTests: XCTestCase {
 
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
 
-        // 逐步前进。proPaywall 长内容允许滚动(设计如此),不做 fits 断言;
-        // 其余每一步断言 contentFits == "1" 并截图。
+        // 逐步前进。每一步(共 5–6 步,proPaywall 已移出 onboarding)都断言
+        // contentFits == "1" 并截图。
         //
         // 循环存续判定用内容钩子 OnboardingContentFits(它在每一步的 a11y 树里,
         // 实测稳定可查),不用 NextButton —— sheet 的 a11y 树中按钮 identifier 会被
@@ -683,45 +794,35 @@ final class ScenarioTests: XCTestCase {
         // sheet 关闭时钩子随树一起消失,天然是可靠的「引导还在」信号。
         var stepIndex = 0
         var fittedStepCount = 0
-        // 步数上限:模拟器 6 步(无 Action Button),真机最多 7 步,取 8 留一步余量。
-        // 超过说明引导没按预期推进,由循环后的「引导应关闭」断言兜底报错。
+        // 步数上限:模拟器 5 步(无 Action Button:welcome/权限/语言/日历/完成),
+        // 真机最多 6 步,取 8 留余量。超过说明引导没按预期推进,
+        // 由循环后的「引导应关闭」断言兜底报错。
         let maxStepCount = 8
-        let laterButton = app.buttons["ProIntroLaterButton"]
         let fitsHook = app.otherElements["OnboardingContentFits"]
         while stepIndex < maxStepCount {
             guard fitsHook.waitForExistence(timeout: 2.0) else { break }
-            // paywall 判定只能用 exists:「以后再说」在长内容底部,未滚动到时 isHittable
-            // 为 false,误判成普通步骤会导致对允许滚动的页面做 fits 断言。
-            let isPaywall = laterButton.exists
-            if !isPaywall {
-                // 钩子值有三个过渡态需要等收敛:视口未测得时报 "pending";
-                // 视口测得后 isCompact 翻转,内容高度还需一帧布局才落到位
-                // (首帧非紧凑的 "0" 是过渡值);content=0 说明内容高度还没测到,
-                // 此时的 "1" 是初值假阳性,不能放行。轮询至稳定 1,或确认持续为 0。
-                // 总尝试上限 12 次(≈3s)兜底:视口测量万一不触发,
-                // "pending"/"nil" 分支不能无上限轮询,否则测试挂死。
-                var fits = (fitsHook.value as? String) ?? "nil"
-                var settleAttempts = 0
-                while settleAttempts < 12,
-                      fits == "pending" || fits == "nil"
-                          || Self.contentHeight(from: fits) <= 0
-                          || (String(fits.prefix(1)) == "0" && settleAttempts < 6) {
-                    Thread.sleep(forTimeInterval: 0.25)
-                    fits = (fitsHook.value as? String) ?? "nil"
-                    settleAttempts += 1
-                }
-                // 钩子值形如 "0|content=560|viewport=543",判定只看首字符
-                let fitsFlag = String(fits.prefix(1))
-                attachScreenshot(named: "onboarding-\(suffix)-step\(stepIndex)-fits\(fits)")
-                XCTAssertEqual(fitsFlag, "1",
-                               "[\(suffix)] 步骤 \(stepIndex) 内容溢出一屏(需要滚动),value=\(fits)")
-                fittedStepCount += 1
-            } else {
-                attachScreenshot(named: "onboarding-\(suffix)-step\(stepIndex)-paywall(scroll-ok)")
-                laterButton.tap()
-                stepIndex += 1
-                continue
+            // 钩子值有三个过渡态需要等收敛:视口未测得时报 "pending";
+            // 视口测得后 isCompact 翻转,内容高度还需一帧布局才落到位
+            // (首帧非紧凑的 "0" 是过渡值);content=0 说明内容高度还没测到,
+            // 此时的 "1" 是初值假阳性,不能放行。轮询至稳定 1,或确认持续为 0。
+            // 总尝试上限 12 次(≈3s)兜底:视口测量万一不触发,
+            // "pending"/"nil" 分支不能无上限轮询,否则测试挂死。
+            var fits = (fitsHook.value as? String) ?? "nil"
+            var settleAttempts = 0
+            while settleAttempts < 12,
+                  fits == "pending" || fits == "nil"
+                      || Self.contentHeight(from: fits) <= 0
+                      || (String(fits.prefix(1)) == "0" && settleAttempts < 6) {
+                Thread.sleep(forTimeInterval: 0.25)
+                fits = (fitsHook.value as? String) ?? "nil"
+                settleAttempts += 1
             }
+            // 钩子值形如 "0|content=560|viewport=543",判定只看首字符
+            let fitsFlag = String(fits.prefix(1))
+            attachScreenshot(named: "onboarding-\(suffix)-step\(stepIndex)-fits\(fits)")
+            XCTAssertEqual(fitsFlag, "1",
+                           "[\(suffix)] 步骤 \(stepIndex) 内容溢出一屏(需要滚动),value=\(fits)")
+            fittedStepCount += 1
 
             guard appHelper.nextButton.waitForExistence(timeout: 2.0) else { break }
             appHelper.nextButton.tap()
@@ -731,7 +832,7 @@ final class ScenarioTests: XCTestCase {
         }
 
         // 防静默通过:循环若因钩子/按钮提前丢失而 break,可能一步都没断言就走到这;
-        // 模拟器 5 步做 fits 断言(6 步去掉 paywall),真机 6 步,下限取 5。
+        // 模拟器 5 步、真机 6 步(proPaywall 已移出),下限取 5。
         XCTAssertGreaterThanOrEqual(fittedStepCount, 5,
                                     "[\(suffix)] 实际做过 fits 断言的步骤只有 \(fittedStepCount),引导未按预期推进")
 

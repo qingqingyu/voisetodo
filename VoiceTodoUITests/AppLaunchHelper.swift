@@ -208,8 +208,9 @@ extension AppLaunchHelper {
             return identifierMatch
         }
 
-        // 合并权限页 label 是「继续」(onboarding.button.continue),也加入匹配集合。
-        let labels = ["下一步", "跳过", "知道了", "开始使用", "继续", "Next", "Skip", "Got it", "Get Started", "Get started", "Continue"]
+        // 合并权限页 label 是「继续」(onboarding.button.continue)、完成页是「去试一句」
+        // (onboarding.button.try_voice),都加入匹配集合。
+        let labels = ["下一步", "跳过", "知道了", "去试一句", "继续", "Next", "Skip", "Got it", "Try a Sentence", "Continue"]
         return app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
     }
 
@@ -228,10 +229,32 @@ extension AppLaunchHelper {
         XCTAssertTrue(switchToKeyboardButton.waitForExistence(timeout: 2.0), "录音面板应该出现")
     }
 
-    /// 停止录音
+    /// 按窗口坐标点击 FAB。
+    ///
+    /// FAB 的 a11y 元素受容器 identifier 污染会被撑成全屏帧,identifier/label 查询
+    /// 命中的巨型元素 tap 落在屏幕中心而非按钮(走完 onboarding 后的 a11y 树尤其如此,
+    /// 见 S18/S19)。FAB 视觉位置是确定的:底部中央,72pt,距底 padding 16 →
+    /// 中心 y = 窗口 maxY - 52。坐标按 SE 测试机型校准(无 home indicator 安全 inset)。
+    func tapRecordFABByCoordinate() {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        origin.withOffset(CGVector(dx: window.frame.midX, dy: window.frame.maxY - 52)).tap()
+    }
+
+    /// 停止录音。录音态按钮 label 是「停止录音」(a11y.stop_recording),
+    /// 键盘态是「生成」——identifier 优先,两种 label 都兜底。
     func stopRecording() {
-        let sendButton = app.buttons["InputSendButton"]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 2.0), "录音面板发送按钮应该出现")
+        let identified = app.buttons["InputSendButton"]
+        let sendButton: XCUIElement
+        if identified.waitForExistence(timeout: 2.0) {
+            sendButton = identified
+        } else {
+            let byLabel = app.buttons.matching(
+                NSPredicate(format: "label IN %@", ["停止录音", "生成", "Stop Recording", "Generate"])
+            ).firstMatch
+            XCTAssertTrue(byLabel.waitForExistence(timeout: 2.0), "录音面板发送按钮应该出现")
+            sendButton = byLabel
+        }
         XCTAssertTrue(sendButton.waitUntilEnabled(timeout: 2.0), "录音面板发送按钮应该可用")
         sendButton.tap()
         // 等待录音指示器消失

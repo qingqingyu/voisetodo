@@ -30,7 +30,8 @@
 
 ### 2.1 产品(工程)
 
-- [ ] **Onboarding 改造**:现状「权限 → 语言 → 付费页」必须改为「权限 → 语言 → **首次录音 demo → wow** → 第 2 次撞墙 → trial → paywall」。付费页前置是战略 bug,不是优化项
+- [x] **Onboarding 改造**(2026-08-18 实施,docs/onboarding-first-voice-trial.md):现状「权限 → 语言 → 付费页」已改为「权限 → 语言 → 首次录音 demo → wow → trial → paywall」。
+  **与本文原目标序列的偏差(有意选择,已拍板)**:paywall 弹点在 **wow 播完后立即**(~2.3s),不等「第 2 次撞墙」——理由:free 3/day 配额下新用户首日只录 1–2 条,「第 2 次撞墙」在 day-1 不可达,而软启动只有 4 周度量窗口;且现状配额路径是首撞即弹(`quota_exhausted`),「第 2 次才弹」的触发点并不存在。弹点效果靠 `paywall_shown(source: first_wow / quota_exhausted)` 两列对照度量。付费页前置曾是战略 bug,本次已消除
 - [ ] **AI 成本控制**(unit economics,必须解决):
   - 风险: Pro 100/day × Sonnet ≈ $15/月成本 vs $4.99 收入 = **每 Pro 用户月亏 $10**
   - 方案 A: 主力换 gpt-4o-mini / gemini-flash(成本降 ~99%,质量需 A/B 验证)

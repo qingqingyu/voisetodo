@@ -38,6 +38,27 @@ BGProcessingTask                          ↓
 | `recording_outcome` | 录音结束 | `outcome: success / interrupted / silence_timeout / watchdog_expired`, `durationMS: Int`, `transcript: textSummary` |
 | `extract_outcome` | AI 抽取结束 | `outcome: success / failed / offline_fallback`, `todosCount`, `durationMS`, `attempts` |
 | `todo_saved` | Todo 保存 | `source: confirm / siri_add`, `count` |
+| `first_voice_trial` | 首次语音试用引导进度 | `stage: armed / hint_shown / dismissed / completed` |
+| `paywall_shown` | paywall 曝光 | `source: first_wow / recording_count / quota_exhausted / manual` |
+
+#### `first_voice_trial` 口径限制（分析必读）
+
+1. **`hint_shown` 是会话级曝光，不是展示次数**。hint 触发集有 5 个入口
+   （挂载/切 tab/关面板/关 confirm sheet/回前台），同一会话会反复展示；
+   事件已做会话内去重（每次启动最多一条）。
+2. **`completed` 混入键盘输入，不能直接当语音激活数**。完成钩子不区分
+   语音/键盘来源；还原真实语音激活率需用 `todo_saved(source:)` 与本事件的
+   时序关联。权限未齐直接落 `.dismissed` 的路径也记 `armed`（其特征是
+   永不出现 `hint_shown`）。
+3. **`dismissed` 率是本功能的必盯指标**（`dismissed / armed`）。「知道了」
+   一点即永不重提；若该比值偏高，说明显式出口在吞激活，需要二次 arm 策略。
+
+#### `paywall_shown` 与弹点决策
+
+四来源由 `AppCoordinator.presentPaywall(source:)` 统一收口——新增曝光入口
+必须走该方法，否则来源维度漏记。它是「wow 后立即弹 vs 撞墙后弹」
+（docs/onboarding-first-voice-trial.md §1.5.1，PROMOTION_PLAN 漏斗偏差决策）
+的度量基础：`first_wow` 与 `quota_exhausted` 两列对比即 A/B 弹点的对照组。
 
 ### B 类：线上质量
 

@@ -3,15 +3,15 @@ import SwiftUI
 // MARK: - 手绘风格 Onboarding
 // 设计理念：温暖手写笔记本风格，仿佛翻开一本精心制作的手账
 
-/// Onboarding 步骤。`visibleSteps` 会根据设备能力(Action Button)
-/// 和订阅状态(Pro)动态过滤,旧机型或已付费用户会跳过对应步骤。
+/// Onboarding 步骤。`visibleSteps` 会根据设备能力(Action Button)动态过滤,
+/// 旧机型会跳过对应步骤。Pro 付费墙已移出 onboarding——改为首次 wow 之后弹
+/// app 级 sheet(docs/onboarding-first-voice-trial.md §3.5)。
 private enum OnboardingStep: CaseIterable {
     case welcome
     case voicePermissions
     case speechLanguage
     case calendarSync
     case actionButton
-    case proPaywall
     case completion
 }
 
@@ -33,10 +33,10 @@ private enum OnboardingLayout {
 struct OnboardingView: View {
     @ObservedObject var permissionManager: PermissionManager
     @Binding var hasCompletedOnboarding: Bool
-    /// Onboarding 开始时的订阅状态快照。用户在 proPaywall 页订阅成功会翻转 entitlement.isPro,
-    /// 若 visibleSteps 跟着实时变化会导致步骤索引错位,故整个 onboarding 期间固定这份快照。
-    /// isPro=true 的老用户重装不应再被卖 → showsProStep=false → 跳过 proPaywall 步骤。
-    private let showsProStep: Bool
+    /// 首次语音试用引导状态:completion 页按钮点下时 arm(权限齐 → pending)。
+    /// 台词/时机见 docs/onboarding-first-voice-trial.md §3.2c。
+    @AppStorage(FirstVoiceTrial.storageKey)
+    private var firstVoiceTrialRaw = FirstVoiceTrial.notArmed.rawValue
 
     // 无障碍：尊重「减弱动态效果」设置
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -61,7 +61,7 @@ struct OnboardingView: View {
     @State private var showCalendarDeniedNote = false
 
     /// EntitlementManager 通过 environmentObject 注入(VoiceTodoApp 的 sheet 显式传入)。
-    /// 监听 isPro 翻转,在 proPaywall 步骤订阅成功后自动前进到 completionStep。
+    /// completion 页用 isPro 显示已订阅用户的感谢文案(实时读,非快照)。
     @EnvironmentObject private var entitlement: EntitlementManager
 
     @State private var currentStepIndex = 0
@@ -84,10 +84,10 @@ struct OnboardingView: View {
         viewportHeight.isFinite && viewportHeight < OnboardingLayout.compactViewportThreshold
     }
 
-    /// 内容区 minHeight:proPaywall 长内容保持顶对齐滚动;视口未测得时返回 nil
-    /// (首帧不干预布局)。
+    /// 内容区 minHeight:每一步都撑到视口高度,内容装得下时垂直居中;
+    /// 视口未测得时返回 nil(首帧不干预布局)。
     private var minContentHeight: CGFloat? {
-        guard currentStep != .proPaywall, viewportHeight.isFinite else { return nil }
+        guard viewportHeight.isFinite else { return nil }
         return viewportHeight
     }
 
@@ -118,12 +118,10 @@ struct OnboardingView: View {
 
     init(
         permissionManager: PermissionManager,
-        hasCompletedOnboarding: Binding<Bool>,
-        entitlement: EntitlementManager
+        hasCompletedOnboarding: Binding<Bool>
     ) {
         self.permissionManager = permissionManager
         self._hasCompletedOnboarding = hasCompletedOnboarding
-        self.showsProStep = !entitlement.isPro
     }
 
     // 使用 WarmTheme 统一配色
@@ -132,15 +130,12 @@ struct OnboardingView: View {
     private var highlightColor: Color { WarmTheme.primary }
     private var sketchColor: Color { WarmTheme.sketch }
 
-    /// 当前设备实际要走的步骤序列。Action Button 步骤只在支持的机型上出现;
-    /// Pro 付费墙步骤只对未付费用户出现(用 init 时的 isPro 快照,不实时跟随)。
+    /// 当前设备实际要走的步骤序列。Action Button 步骤只在支持的机型上出现。
     private var visibleSteps: [OnboardingStep] {
         OnboardingStep.allCases.filter { step in
             switch step {
             case .actionButton:
                 return ActionButtonCapability.isSupported
-            case .proPaywall:
-                return showsProStep
             default:
                 return true
             }
@@ -190,8 +185,6 @@ struct OnboardingView: View {
                                 calendarSyncStep
                             case .actionButton:
                                 actionButtonGuideStep
-                            case .proPaywall:
-                                proPaywallStep
                             case .completion:
                                 completionStep
                             }
@@ -204,8 +197,8 @@ struct OnboardingView: View {
                         } action: { _, newHeight in
                             contentHeight = newHeight
                         }
-                        // proPaywall 自带长内容,保持顶对齐滚动;其余六步撑到视口高度,
-                        // 内容装得下时垂直居中(比顶对齐更稳,避免底部大片空白)。
+                        // 每步内容撑到视口高度,装得下时垂直居中
+                        // (比顶对齐更稳,避免底部大片空白);超高(AX 大字号)时正常滚动。
                         .frame(minHeight: minContentHeight)
 
                         #if DEBUG
@@ -233,10 +226,7 @@ struct OnboardingView: View {
 
                 // 底部按钮:
                 // - 权限合并页:用 Continue 替代 Next(授权后才亮)
-                // - Pro 付费墙:自带 CTA(PaywallContent 内) + 外层「以后再说」,不显示底部栏
-                if !shouldHideBottomBar {
-                    bottomButtons
-                }
+                bottomButtons
             }
         }
         .onAppear {
@@ -253,18 +243,7 @@ struct OnboardingView: View {
         .onChange(of: currentStepIndex) {
             animateContentIn()
         }
-        // 订阅成功(isPro 翻转)后自动前进到 completionStep。
-        // 用 currentStep == .proPaywall 守卫,避免 isPro 在其他步骤变化时误触。
-        .onChange(of: entitlement.isPro) { _, becamePro in
-            guard becamePro, currentStep == .proPaywall else { return }
-            nextStep()
-        }
         .accessibilityIdentifier("OnboardingView")
-    }
-
-    /// Pro 付费墙自带 CTA(PaywallContent 内)+ 外层「以后再说」,不渲染底部栏。
-    private var shouldHideBottomBar: Bool {
-        currentStep == .proPaywall
     }
 
     // MARK: - Paper Background
@@ -1258,33 +1237,12 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 5: Pro Paywall
+    // MARK: - Step 5: Completion
 
-    /// Pro 付费墙:onboarding 内嵌的真实订阅页。
-    /// 与 sheet 版 PaywallView 共用 PaywallContent —— 价格、试用资格判断、购买调用完全同源。
-    /// 「以后再说」始终可见,商品加载失败也一样:onboarding 绝不能被网络或 StoreKit 问题卡死。
-    ///
-    /// 视觉层级(B 点,详见 docs/onboarding-paywall-merge.md 3.3):
-    /// 商品卡 → CTA(PaywallContent 内) → legal → restore → 「以后再说」(本视图外层)。
-    /// 「以后再说」是小号灰色文字按钮,位置在最末,不抢 CTA 视觉位。
-    private var proPaywallStep: some View {
-        VStack(spacing: 16) {
-            PaywallContent(context: .onboarding)
-
-            Button {
-                nextStep()
-            } label: {
-                Text(String(localized: "onboarding.pro.cta.later"))
-                    .font(WarmFont.body(15))
-                    .foregroundColor(sketchColor)
-                    .padding(.vertical, 8)
-            }
-            .accessibilityIdentifier("ProIntroLaterButton")
-        }
-    }
-
-    // MARK: - Step 6: Completion
-
+    /// Completion 页 = 首次语音试用的交棒点:不再放静态 tip,
+    /// 而是给一句可直接照着说的示例台词,把用户推向主页的第一次录音。
+    /// 台词与主页 FirstVoiceTrialHintView 的 `home.first_trial.example` 同源——
+    /// 用户在这里看到的句子,关掉 sheet 后 hint 里还是这一句,认知连续。
     private var completionStep: some View {
         VStack(spacing: isCompact ? 24 : 32) {
 
@@ -1292,13 +1250,13 @@ struct OnboardingView: View {
             celebrationIllustration
 
             VStack(spacing: 12) {
-                Text(String(localized: "onboarding.done.title"))
+                Text(String(localized: "onboarding.done.trial_title"))
                     .font(WarmFont.title(isCompact ? 28 : 32))
                     .foregroundColor(inkColor)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
 
-                Text(String(localized: "onboarding.done.desc"))
+                Text(String(localized: "onboarding.done.trial_desc"))
                     .font(WarmFont.body(isCompact ? 15 : 18))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
@@ -1306,9 +1264,7 @@ struct OnboardingView: View {
                     .lineLimit(3)
                     .minimumScaleFactor(0.8)
 
-                // 已订阅用户额外显示感谢文案;未订阅则维持现状。
-                // 注意读实时 isPro 而非 showsProStep —— 后者是 init 快照,
-                // 用户在 proPaywall 步骤刚订阅成功时 isPro 已翻转但 showsProStep 仍为 true。
+                // 已订阅用户额外显示感谢文案(实时读 isPro)。
                 if entitlement.isPro {
                     Text(String(localized: "onboarding.done.pro_thanks"))
                         .font(WarmFont.body(15))
@@ -1321,12 +1277,28 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 使用提示卡片
-            VStack(spacing: 16) {
-                tipRow(icon: "🎤", text: String(localized: "onboarding.tip1"))
-                tipRow(icon: "✏️", text: String(localized: "onboarding.tip2"))
-                tipRow(icon: "📋", text: String(localized: "onboarding.tip3"))
+            // 示例台词卡片:原三条 tipRow 收敛而来,只留一个动作指引。
+            VStack(spacing: isCompact ? 8 : 12) {
+                Label {
+                    Text(String(localized: "home.first_trial.hint"))
+                        .font(WarmFont.body(isCompact ? 13 : 15))
+                        .foregroundColor(sketchColor)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                } icon: {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 15))
+                        .foregroundColor(highlightColor)
+                }
+
+                Text("「\(String(localized: "home.first_trial.example"))」")
+                    .font(WarmFont.body(isCompact ? 17 : 20).weight(.medium))
+                    .foregroundColor(inkColor)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
             }
+            .frame(maxWidth: .infinity)
             .padding(isCompact ? 14 : 20)
             .background(
                 RoundedRectangle(cornerRadius: 20)
@@ -1379,22 +1351,6 @@ struct OnboardingView: View {
             .offset(x: 50, y: 0)
             .rotationEffect(.degrees(rotation))
             .opacity(0.7)
-    }
-
-    private func tipRow(icon: String, text: String) -> some View {
-        HStack(spacing: 14) {
-            Text(icon)
-                .font(.system(size: isCompact ? 20 : 22))
-
-            Text(text)
-                .font(WarmFont.body(isCompact ? 15 : 16))
-                .foregroundColor(inkColor)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .layoutPriority(1)
-
-            Spacer()
-        }
     }
 
     // MARK: - Bottom Buttons
@@ -1469,7 +1425,8 @@ struct OnboardingView: View {
     private var buttonTitle: String {
         switch currentStep {
         case .completion:
-            return String(localized: "onboarding.button.start")
+            // completion 页按钮即交棒动作:关 sheet → 主页 arm 首次语音试用 hint
+            return String(localized: "onboarding.button.try_voice")
         case .actionButton:
             return String(localized: "onboarding.button.got_it")
         case .voicePermissions:
@@ -1508,6 +1465,14 @@ struct OnboardingView: View {
             permissionManager.markSkippedInOnboarding()
         }
         if currentStepIndex == totalSteps - 1 {
+            // 首次语音试用 arm:权限齐 → .pending(主页显示 hint 等首次录音);
+            // 不齐 → .dismissed(由 VoicePermissionRepromptSheet 接管,不叠加两层引导)。
+            // 口径见 docs/onboarding-first-voice-trial.md §3.2c。
+            firstVoiceTrialRaw = FirstVoiceTrial
+                .armedState(allPermissionsGranted: permissionManager.allPermissionsGranted)
+                .rawValue
+            // 权限未齐直接 dismissed 的路径也记 armed:漏斗分母包含全部完成 onboarding 的用户。
+            Telemetry.record(.firstVoiceTrial(stage: FirstVoiceTrialStage.armed))
             hasCompletedOnboarding = true
         } else {
             withAnimation(motionAnim(.spring(response: 0.4))) {
@@ -1560,8 +1525,7 @@ struct OnboardingView: View {
         var body: some View {
             OnboardingView(
                 permissionManager: permissionManager,
-                hasCompletedOnboarding: $completed,
-                entitlement: entitlement
+                hasCompletedOnboarding: $completed
             )
             .environmentObject(entitlement)
             .environmentObject(QuotaUsage())
