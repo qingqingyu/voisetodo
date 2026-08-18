@@ -219,7 +219,11 @@ final class AppCoordinator: ObservableObject {
     /// 新增曝光入口时**不许**直接写 `showPaywall = true`,必须走本方法,
     /// 否则来源维度漏记。`showPaywall` 本身保持可写:VoiceTodoApp 的
     /// sheet binding 需要写 false 关闭。
+    /// 已在展示时直接返回、不记遥测:sheet 已可见不是一次新曝光,
+    /// 重复计数会污染 paywall_shown 的来源维度度量(配额耗尽的错误处理
+    /// 路径没有 `canAutoTriggerPaywall` 的 `!showPaywall` 守卫)。
     func presentPaywall(source: PaywallSource) {
+        guard !showPaywall else { return }
         Telemetry.record(.paywallShown(source: source))
         showPaywall = true
     }
