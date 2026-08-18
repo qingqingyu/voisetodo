@@ -1,18 +1,22 @@
 # Onboarding 首次语音试用引导（First Voice Trial）+ 付费墙后置
 
-> 状态：待实现（§7.1 已拍板选 A，实施须带上其三条必办；§7.2–7.4 待方案分支处置）
-> 分支：`claude/todo-voice-transcription-onboarding-qhuyx3`
-> 版本：v2（2026-08-18）。v1 的评审 8 项已全部并入正文，逐条处理记录见 §6；
-> 第二轮评审（针对 v2）见 §7。
+> 状态：**待实现，两轮评审已全部闭环，可动工**——但须先看 §3.10 的跨分支合并顺序
+> 分支：v1–v2 走 `claude/todo-voice-transcription-onboarding-qhuyx3`；v3 起直接落 `main`
+> 版本：v3（2026-08-18）。历史：v1 评审 8 项 → §6；v2 评审 4 项 → §7。
 > 本文档是可直接执行的实施说明，行号基于代码状态 `3a7e225`。
 > 实施前请先核对行号是否漂移；文件路径和逻辑描述以实际代码为准。
 
-**v2 相对 v1 的三处实质变化**（v1 已实施的话需要回看）：
+**v3 相对 v2 的变化**（全部来自第二轮评审 §7 的闭环，正文即最终规格）：
 
-1. **范围扩大**：新增「把 `proPaywall` 步移出 onboarding、改到首次 wow 之后」——
-   见 §1.5 与 §3.5。这是 `PROMOTION_PLAN.md:33` 挂了很久的待办项，本方案是它的天然载体。
-2. **§3.4d 调度触发点改为自列**（v1 写「沿用 `evaluateExpandHintTrigger`」会导致 hint 永不出现）。
-3. **§3.4g 庆祝 toast 改为三分类叠加**（v1 会吞掉 mixed batch 的分流文案）。
+1. **§1.5 新增「与 `:33` 的偏差承认」** —— 弹点选 A（wow 后立即弹），
+   与 `PROMOTION_PLAN.md:33` 写的「第 2 次撞墙后弹」不一致，理由写明。
+2. **§3.5c 新增 paywall 曝光遥测**，四来源可区分。评审提三种，实际代码有
+   **四个** `showPaywall = true` 站点，逐一列出。
+3. **§3.5d 延迟改为从 `UIConfig.toastDuration` 推导**，不再硬编码 2.0s——
+   带 action 的庆祝 toast 时长会翻倍到 4.0s，硬编码会拦腰截断「去看看」。
+4. **§3.2d 文本布局规则改双出处**（父仓库 CLAUDE.md + 代码注释）。
+5. **新增 §3.10 跨分支合并顺序**——`subscribe-button` 分支是本方案的**前置依赖**，
+   不只是「改同一个文件需要定顺序」。
 
 ---
 
@@ -106,6 +110,27 @@ onboarding 是挂在 `Color.clear` 之上的 sheet（`VoiceTodoApp.swift:248`）
 paywall 不再内嵌在 onboarding，改为首次 wow 成功后弹 app 级 sheet
 （`coordinator.showPaywall`，`VoiceTodoApp.swift:221` 已存在）。
 
+#### 1.5.1 与 `:33` 目标序列的偏差（必须承认，不能装作一致）
+
+`:33` 写的完整序列是「首次录音 demo → wow → **第 2 次撞墙** → trial → paywall」。
+本方案实现的是「wow → 等庆祝 toast 播完 → paywall」，**跳过了「第 2 次撞墙」这一层**。
+`:57` 的漏斗事件清单（`install → first_record → wow_shown → quota_hit → trial_start → …`）
+也把 paywall 曝光绑在 `quota_hit` 上。所以本方案自称是 `:33` 的载体，但落点不一致——
+这个偏差是**有意选择**，理由如下。
+
+| 方案 | 漏斗位置 | 得 | 失 |
+|---|---|---|---|
+| **A（本方案）** | wow → toast 播完 → paywall | day-1 必然曝光；情绪峰值转化；`:167` 硬约束满足 | 用户尚未感知配额稀缺，付费理由纯靠一次 wow 的情绪；首会话打断感最强 |
+| B（`:33` 原文） | wow → 第 2 次撞墙 → paywall | 价值给足 + 动机具体（额度不够用） | **quota 触发通路目前不存在**——现状只有 5 次阈值（`handleRecordingSuccess`）、配额耗尽（`AppCoordinator:1121/:1225`）和设置页手动三条路；且 free 3/day 下首日根本撞不到墙，day-1 曝光≈0，软启动 4 周 ≥5% 的度量窗口内曝光量显著缩水 |
+
+**已拍板：选 A**（2026-08-18，需求方）。决定性理由是 **day-1 曝光**：
+free 3/day 的配额下，新用户第一天通常只录 1–2 条，「第 2 次撞墙」在 day-1 不可达，
+而软启动只有 4 周度量窗口。wow 后立即弹是当前唯一的 day-1 曝光点，
+且 `:167` 的硬禁令（paywall 不得早于首次 demo）完全满足。
+
+**A 不是终局，是可度量的起点**——所以 §3.5c 的四来源遥测是这个决定的配套条件，
+不是可选项：没有它，A 与 B 孰优永远测不出来，这个偏差就只是个未经检验的赌注。
+
 > ⚠️ **不要退回被删掉的老实现。** `docs/onboarding-paywall-merge.md` 记录了一次历史：
 > 早期版本用 `pendingPaywallAfterOnboarding` 标志 + 600ms 盲延迟弹 paywall sheet，
 > 这个方案已被判定为「被卖了两次，第一次是假的」并删除，残留 key 也在
@@ -131,7 +156,7 @@ FAB 上方浮出 FirstVoiceTrialHintView
   ↓  onDismiss → revealConfirmedTodos()
   ↓  firstVoiceTrialState → .completed，hint 消失
 【wow】待办错峰入场 + 庆祝 toast（三分类，见 3.4g）
-  ↓  wow 播完后延迟 ~2.0s
+  ↓  等 toast 播完(2.0s 或 4.0s,见 3.5d)+0.3s
 paywall sheet（非 Pro 用户；写入同一份 14 天冷却簿记）
 ```
 
@@ -232,10 +257,16 @@ hasCompletedOnboarding = true
 新增/改写的**每一个 `Text`** 必须带 `lineLimit(...)` + `minimumScaleFactor(≥0.7)`，
 并按 `isCompact` 分支给紧凑规格。
 
-> 这条规则在仓库里**没有 CLAUDE.md 之类的成文出处**（根目录不存在该文件），
-> 唯一的书面证据是 `OnboardingView.swift:1106` 的注释——
-> 「用最小缩放换行数，符合项目「lineLimit + minimumScaleFactor ≥0.7」规则」——
-> 以及 `HomeSelectedDayListView.swift:320` 的同款做法。照着这两处写即可，别去找不存在的文件。
+> **出处有两处，取决于你在哪个目录树下工作：**
+> 1. 父仓库 `doflow/CLAUDE.md` 的「文本布局规则」一节——在 doflow 目录树下用
+>    Claude Code 工作时会自动加载。
+> 2. 本仓库内的代码证据：`OnboardingView.swift:1106` 的注释
+>    「用最小缩放换行数，符合项目「lineLimit + minimumScaleFactor ≥0.7」规则」，
+>    以及 `HomeSelectedDayListView.swift:320` 的同款做法。
+>
+> ⚠️ **`voisetodo/` 根目录下没有 `CLAUDE.md`**（v2 据此误判「该规则无成文出处」）。
+> 如果你的工作目录是单独 clone 出来的 `voisetodo`（非 doflow 子树），
+> 找不到那个文件是正常的——照第 2 条的代码证据写即可，不要以为规则不存在。
 
 > ⚠️ **小屏高度预算是硬约束。** 该文件有一整套 `contentFits` 机制
 > （`OnboardingView.swift:98-111`）和 DEBUG 下暴露给 UI 测试的 a11y 钩子
@@ -458,25 +489,80 @@ paywall 的触发策略目前集中在 `handleRecordingSuccess()`（`:214-240`�
 func showPaywallAfterFirstWow() { … }
 ```
 
-日志沿用现有格式但换 reason，便于区分两条路径：
-`coordinator.paywall.auto_trigger reason=first_wow`
+日志沿用现有格式但换 reason：`coordinator.paywall.auto_trigger reason=first_wow`
 （对照现有 `reason=recording_count`，`:238`）。
+
+**但只有 OSLog 不够——paywall 曝光必须进遥测，且四来源可区分。**
+这是 §1.5.1 选 A 的配套条件。现状代码有**四个** `showPaywall = true` 站点：
+
+| 站点 | 来源 | 语义 |
+|---|---|---|
+| `AppCoordinator:236` | `recording_count` | 累计 5 次录音成功阈值 |
+| `AppCoordinator:1121` | `quota_exhausted` | 配额耗尽 + 离线兜底后 |
+| `AppCoordinator:1225` | `quota_exhausted` | `handleError` 里的配额耗尽分支 |
+| `HomeView:431` | `manual` | 设置页「升级 Pro」 |
+| **新增** | `first_wow` | 本方案 |
+
+> 评审只提了三种来源，实际是四种。`quota_exhausted` 尤其不能漏——
+> **它正是选项 B 说的「撞墙」**。不把它单独记出来，A vs B 的对比就没有对照组。
+
+**实现方式**：把这四处 + 新增的一处全部收口到一个方法，避免以后新增入口漏埋点：
+
+```swift
+/// 所有 paywall 曝光的唯一入口。四来源统一埋点，便于分析 A/B 弹点效果。
+/// showPaywall 保持可写 —— VoiceTodoApp.swift:221 的 sheet binding 需要写 false 关闭。
+func presentPaywall(source: PaywallSource) {
+    Telemetry.record(.paywallShown(source: source.rawValue))
+    showPaywall = true
+}
+```
+
+`PaywallSource: String` 放 `Protocols/Telemetry.swift`，与既有的 `RecordingSource` /
+`SaveSource` 并列（`Telemetry.swift:152-186` 的同款模式）。
+`showPaywallAfterFirstWow()` 内部走 `presentPaywall(source: .firstWow)`。
 
 **d) `UI/Home/HomeView.swift` 触发时机**
 
 在 `revealConfirmedTodos()` 里 `wasFirstTrial == true` 时，起一个可取消 Task，
-**等 wow 播完再弹**：卡片 stagger 最长 8×0.06 ≈ 0.48s，加上 toast 的可读时间，
-延迟取 **~2.0s**。醒来后二次守卫：`!showInputPanel && !coordinator.showConfirmSheet
+**等 wow 播完再弹**。醒来后二次守卫：`!showInputPanel && !coordinator.showConfirmSheet
 && selectedTodo == nil`（用户可能已经点进详情页），再调 `coordinator.showPaywallAfterFirstWow()`。
 Task 存 `@State` 并在 `.onDisappear` cancel，与本文档其它 Task 一致。
+
+**延迟必须从 `UIConfig.toastDuration` 推导，不要硬编码 2.0s。**
+v2 写死 2.0s 是个真 bug：`ToastView.swift:150` 是
+
+```swift
+let duration = action != nil ? UIConfig.toastDuration * 2 : UIConfig.toastDuration
+```
+
+而 `UIConfig.toastDuration = 2.0`（`Protocols/Constants.swift:149`）。所以：
+
+| 庆祝 toast 分支（见 3.4g） | 有无 action | toast 实际时长 | 硬编码 2.0s 的后果 |
+|---|---|---|---|
+| 全落今天 / 含无日期条目 | 无 | 2.0s | 勉强踩点，paywall 恰在 toast 消失时弹 |
+| **含别日条目** | 有「去看看」 | **4.0s** | **paywall 在第 2s 盖住 toast，用户根本来不及点「去看看」** |
+
+正确做法：延迟 = 该次 toast 的实际时长 + 一点余量。卡片 stagger 最长
+8×0.06 ≈ 0.48s，被 toast 时长覆盖，不用另算。
+
+```swift
+let toastDuration = UIConfig.toastDuration * (addedToastAction != nil ? 2 : 1)
+let paywallDelay = toastDuration + 0.3
+```
 
 > **绝不要**在 `revealConfirmedTodos` 里同步弹 paywall——那会让 paywall sheet 盖住
 > 正在播的入场动画，wow 直接归零，等于白改。
 
 **e) `PROMOTION_PLAN.md`**
 
-实施完成后勾掉 `:33` 的「Onboarding 改造」checkbox，并把 `:57` 漏斗事件清单里的
-`wow_shown` 对应到本方案的 `first_voice_trial(stage=completed)`。
+实施完成后：
+
+1. 勾掉 `:33` 的「Onboarding 改造」checkbox；
+2. **同步改写 `:33` 的目标序列表述**，把「wow → 第 2 次撞墙 → trial → paywall」
+   改成实际实现的「wow → paywall」，并注明选 A 的理由与 `:57` 漏斗的对应关系。
+   别让战略文档和实现长期互相矛盾——下一个读 `:33` 的人会以为还有一层没做。
+3. `:57` 漏斗事件清单里的 `wow_shown` 对应到 `first_voice_trial(stage=completed)`；
+   `quota_hit` 之后的 paywall 曝光对应到 `paywall_shown(source=quota_exhausted)`。
 
 ### 3.6 遥测 `Protocols/Telemetry.swift` + `TELEMETRY.md`
 
@@ -581,6 +667,37 @@ onboarding 布局测试 test_S17（断言 `OnboardingContentFits`）——步骤
 （`.xcode_main_app_files.txt` 是一份**已经过期**的说明清单——它里面还列着并不存在的
 `App/ServiceContainer+VoiceTodo.swift`——不是构建输入，不用改。）
 
+### 3.10 跨分支合并顺序（动工前必读）
+
+`claude/onboarding-screen-3-subscribe-button-06o1za`（`ed47088`，文档
+`docs/onboarding-paywall-products-empty.md`）与本方案都改
+`UI/Paywall/PaywallView.swift`。第二轮评审把这件事定性为「需要定合并顺序」，
+**但实际关系更强：那支是本方案的前置依赖。**
+
+**为什么是依赖而不只是冲突：**
+
+1. 本方案把 paywall 从 onboarding 内嵌改成 wow 之后弹的 sheet。
+   商品加载不出来时，**wow 的结尾就是一张「无法加载订阅方案」错误卡**——
+   比原来在 onboarding 第三屏出错更糟，因为它紧跟在情绪峰值后面。
+2. `Products.storekit` 只是本地 StoreKit 测试文件（不影响生产），
+   但 §5.2 正例第 5 步「wow 播完后付费墙弹出」**正是靠它验证的**。
+   不先修，验收时只能看到错误卡，测不出本方案对不对。
+
+**合并顺序：subscribe-button 先，本方案后。**
+
+- 前者是在现有结构上修 bug（`PaywallContent` 自己负责商品加载 + 重写
+  `Products.storekit`）；后者只是删掉一个调用点（`PaywallPresentationContext.onboarding`）。
+  本方案 rebase 到前者之上，成本几乎为零。
+- 反过来则是给一个**已被删除的「第三屏」**修 bug，那份文档的叙述得整个重写。
+
+**反向中继给 subscribe-button 分支的两件事：**
+
+1. 那份文档通篇以「onboarding 第三屏」为叙事主体，而本方案会**删掉第三屏**。
+   需要在其头部加一行说明：修复对象已改为「wow 之后弹出的 paywall sheet」，
+   根因与改法不变（`PaywallContent` 是同一个）。
+2. 该文档 §3.1 的三处过期（`P3D` / 价格 12·98 / 「现状文件这一处本来就是对的」），
+   见 §7 表中 7.4 行及其下方验证表——我已逐条比对现状文件确认属实，**修正在那支分支做，本方案不动它**。
+
 ---
 
 ## 4. 改动文件清单
@@ -590,11 +707,11 @@ onboarding 布局测试 test_S17（断言 `OnboardingContentFits`）——步骤
 | `Protocols/Domain/FirstVoiceTrial.swift` | 新增 | 状态机 + 纯函数判定 |
 | `UI/Home/FirstVoiceTrialHintView.swift` | 新增 | coach-mark 视图 |
 | `App/OnboardingView.swift` | 改 | completion 页文案/按钮/落盘 arm；**删除 `proPaywall` 步及其 7 处牵连** |
-| `UI/Home/HomeView.swift` | 改 | state / 挂载 / 触发集(5 入口) / 完成钩子 / 三分类庆祝 toast / wow 后置 paywall 触发 |
-| `App/AppCoordinator.swift` | 改 | `showPaywallAfterFirstWow()` + 抽出共用冷却簿记 |
-| `UI/Paywall/PaywallView.swift` | 改 | 删 `PaywallPresentationContext.onboarding` + 过期注释 |
+| `UI/Home/HomeView.swift` | 改 | state / 挂载 / 触发集(5 入口) / 完成钩子 / 三分类庆祝 toast / wow 后置 paywall 触发；`:431` 改走 `presentPaywall(source: .manual)` |
+| `App/AppCoordinator.swift` | 改 | `showPaywallAfterFirstWow()` + 抽出共用冷却簿记；**新增 `presentPaywall(source:)` 并把现有三处 `showPaywall = true`（`:236` / `:1121` / `:1225`）收口进去** |
+| `UI/Paywall/PaywallView.swift` | 改 | 删 `PaywallPresentationContext.onboarding` + 过期注释。**注意 §3.10 的合并顺序** |
 | `App/VoiceTodoApp.swift` | 改 | `resetUserData` 清新 key；`OnboardingView` 调用点去掉 `entitlement` 参数 |
-| `Protocols/Telemetry.swift` | 改 | `firstVoiceTrial(stage:)` 事件 |
+| `Protocols/Telemetry.swift` | 改 | `firstVoiceTrial(stage:)` + `paywallShown(source:)` 两个事件 + `PaywallSource` enum |
 | `Resources/Localizable.xcstrings` | 改 | 11 个新 key，清理 5 个死键 |
 | `TELEMETRY.md` | 改 | 事件表 + 三条口径限制 |
 | `PROMOTION_PLAN.md` | 改 | 勾掉 `:33` 的 onboarding 改造项；`wow_shown` 对应到新事件 |
@@ -602,9 +719,13 @@ onboarding 布局测试 test_S17（断言 `OnboardingContentFits`）——步骤
 | `docs/onboarding-paywall-merge.md` | 改 | 头部加一行：内嵌 paywall 步已被本方案移出，该文档的 §3 结论部分作废 |
 | `VoiceTodoUITests/ScenarioTests.swift` | 改 | 修 `ProIntroLaterButton` ×3 + test_S17 步数/特例；新增正例 + 反例 |
 | `VoiceTodoTests/...` | 新增 | 状态机单测 |
+| *（跨分支）* `docs/onboarding-paywall-products-empty.md` | **不在本方案改** | 前置依赖 + 反向中继两件事，见 §3.10 与 §7 的 7.4 行 |
 
 **不改动**：`Voice/`、`Extractor/`、`Store/`、`App/TranscriptProcessingFlow.swift`、
 `UI/ConfirmSheet/`、`UI/Shared/ToastView.swift`。
+
+> `ToastView.swift` 仍然不改——§3.5d 只是**读** `UIConfig.toastDuration` 来推导延迟，
+> 没有改 toast 的任何行为。
 
 ---
 
@@ -631,8 +752,13 @@ SE 是 onboarding 高度预算最紧的机型，test_S17 必须过。
 2. sheet 关闭后，主页 FAB 上方浮出 hint
 3. 点 FAB → 说「今晚八点给妈妈打电话」→ 确认
 4. 待办错峰入场到今天分组，庆祝 toast 弹出，hint 消失
-5. wow 播完约 2s 后，付费墙 sheet 弹出
+5. wow 播完后（**2.0s 或 4.0s，取决于 toast 有没有「去看看」**，见 §3.5d）
+   付费墙 sheet 弹出，且商品卡正常渲染
 6. 杀掉 App 重启 → hint 不再出现、付费墙不再自动弹（14 天冷却）
+
+> ⚠️ **第 5 步依赖 `claude/onboarding-screen-3-subscribe-button-06o1za` 的
+> `Products.storekit` 修复先合入**（见 §3.10）。否则本地 StoreKit 环境下商品加载
+> 不出来，这一步只能看到「无法加载订阅方案」错误卡，验证不了本方案。
 
 **反例：**
 
@@ -649,6 +775,8 @@ SE 是 onboarding 高度预算最紧的机型，test_S17 必须过。
 | 9 | 引导中退后台再回前台 | hint 重现（本 hint 不在展示时落盘，与 ExpandHint 不同） |
 | 10 | arm 后到系统设置关掉麦克风 → 重启 app | hint 仍出现；点 FAB 走系统权限失败路径，行为与无引导时一致、**不引入新状态**（见 §6 第 6.6 条） |
 | 11 | 已是 Pro 的用户完成首次 wow | 庆祝 toast 正常，**不弹付费墙** |
+| 12 | 引导中说「下周三去银行」（庆祝 toast 带「去看看」） | **付费墙必须等满 4.0s**，用户来得及点到「去看看」；不得在第 2s 把 toast 盖掉（验证 §3.5d 的延迟推导，这是 v2 硬编码 2.0s 的原始 bug） |
+| 13 | 四条 paywall 路径各走一次（wow / 第 5 次录音 / 配额耗尽 / 设置页升级） | 各自发出 `paywall_shown` 且 `source` 互不相同（验证 §3.5c 的收口没漏站点） |
 
 **布局专项（SE + AX 大字号）：**
 
@@ -672,7 +800,7 @@ SE 是 onboarding 高度预算最紧的机型，test_S17 必须过。
 | 6.4 | P2 `dismissed` 率需列必盯指标 | 属实，采纳 | 并入 **§3.6** 口径限制第 3 条 |
 | 6.5 | P2 `completed` 混键盘，遥测口径需写破 | 属实，采纳 | 并入 **§3.6** 口径限制第 2 条 + §3.4f 口径说明 1 |
 | 6.6 | P3 eligible 不查当前权限 | **属实。**已核 `:1864` 的 reprompt 条件是 `hasSkippedInOnboarding && !allPermissionsGranted`，「授权后又去设置里关掉」的用户确实进不了 reprompt 分支。同意不加 eligible 权限检查（低频，且 reprompt 语义是「onboarding 跳过者」专属） | 并入 **§5.2 反例 10** |
-| 6.7 | P3 SE 遮挡无验收项 + §3.3 缺文本布局硬规则 | 问题属实，**但证据引错**：评审写「见根 CLAUDE.md」，而仓库根目录**不存在 CLAUDE.md**。该规则唯一的书面出处是 `OnboardingView.swift:1106` 的注释（另见 `HomeSelectedDayListView.swift:320`）。照原文去找会扑空 | 并入 **§3.2d**（升格为 3.2/3.3 共用的规则，附正确出处）+ §3.3 遮挡预算 + §5.2 布局专项 |
+| 6.7 | P3 SE 遮挡无验收项 + §3.3 缺文本布局硬规则 | 问题属实。~~证据引错~~ **我的这条反驳只对了一半，已被 §7 表中 7.2 行更正**：`voisetodo/` 根目录确实没有 CLAUDE.md，但规则在**父仓库 `doflow/CLAUDE.md`** 里是成文的 | 并入 **§3.2d**（升格为 3.2/3.3 共用的规则，v3 已改为**双出处**）+ §3.3 遮挡预算 + §5.2 布局专项 |
 | 6.8 | P3 新 key 无 ja | 属实。已核：共 603 键，en 592 / zh-Hans 591 / ja 48 | 并入 **§3.7** ja 挂账段 |
 
 **评审未覆盖、本次补上的三项：**
@@ -687,84 +815,51 @@ SE 是 onboarding 高度预算最紧的机型，test_S17 必须过。
 
 ---
 
-## 7. 第二轮评审（针对 v2 `bcd1da9`，2026-08-18）
+## 7. 第二轮评审 4 项的处理记录
 
-> 评审范围：v2 相对 v1 的新增内容（§1.5 / §3.5 付费墙后置、§6 处理表）。
-> **核验结论先行**：v2 新引用的代码事实——`handleRecordingSuccess` 的阈值 5 +
-> 14 天冷却簿记（AppCoordinator.swift:215-240）、`VoiceTodoApp.swift:221` app 级
-> paywall sheet、删 `proPaywall` 步的 7 处牵连、PaywallView 的 context/注释/
-> bullet keys、ScenarioTests `:455/:630/:689`、`PendingRecoveryFlow`、`sessionID`
-> 会话语义——**已逐项复核，全部属实**。v2 自己补的三项（hint_shown 会话去重、
-> 离线恢复旁路、2s 延迟时序陷阱）都是真问题且处置合理。本节只列待拍板项与待更正项。
+> 第二轮评审（`2b39a69`）针对 v2 `bcd1da9`，需求方随后就 7.1 拍板选 A（`e2d0174`）。
+> 该轮先给出了核验结论：v2 引用的代码事实（`handleRecordingSuccess` 阈值 5 +
+> 14 天冷却簿记、`VoiceTodoApp.swift:221` app 级 sheet、删 `proPaywall` 的 7 处牵连、
+> PaywallView 的 context/注释/bullet keys、ScenarioTests `:455/:630/:689`、
+> `PendingRecoveryFlow`、`sessionID` 会话语义）**逐项复核全部属实**。
+>
+> 本节记录 v3 对这 4 项的处置。正文以 §1–§5 为准。
 
-### 7.1 [已拍板·选 A] paywall 弹点偏离 PROMOTION_PLAN:33 的目标序列
-
-**质疑**：§1.5 引 `PROMOTION_PLAN.md:33` 原文是「首次录音 demo → wow →
-**第 2 次撞墙** → trial → paywall」，但 §2/§3.5d 实现的是 **wow 后 ~2s 立即弹**，
-跳过了「第 2 次撞墙」这层；`:57` 的漏斗事件清单（`install → first_record →
-wow_shown → quota_hit → trial_start → …`）也把 paywall 曝光绑在 `quota_hit`。
-`:167` 的硬禁令（paywall 不得早于首次 demo）确实没违反，但 v2 自称是 `:33` 的
-「天然载体」，落点却和 `:33` 写的序列不一致，且**文档没有承认这个偏差**。
-
-**两个选项与代价**：
-
-| 选项 | 漏斗位置 | 得 | 失 |
+| # | 评审意见 | 我的复核 | 落点 |
 |---|---|---|---|
-| A（v2 现方案） | wow → ~2s → paywall | day-1 必然曝光；情绪峰值转化；`:167` 满足 | 用户尚未感知配额稀缺（free 3/day，首日只录 1 条），付费理由纯靠一次 wow 的情绪；首会话打断感最强 |
-| B（`:33` 原文） | wow → 第 2 次撞墙 → paywall | 价值给足 + 动机具体（额度不够用） | **目前不存在 quota 触发通路**——现状只有 5 次阈值路径（`handleRecordingSuccess`）和设置页手动入口，「第 2 次撞墙自动弹」需要新规格新实现；首日配额 3/day 用不完，day-1 曝光基本为零，软启动 4 周 ≥5% 的度量窗口内曝光量显著缩水 |
+| 7.1 | 弹点偏离 `:33` 的目标序列，且文档没承认偏差 | **属实。**`:33` 写的是「wow → 第 2 次撞墙 → trial → paywall」，本方案是「wow → 立即弹」，确实不一致；v2 自称 `:33` 载体却没说破 | 需求方拍板**选 A**。四条必办全部落地：偏差承认 → **§1.5.1**；四来源遥测 → **§3.5c**；延迟校准 → **§3.5d**；改写 `:33` 表述 → **§3.5e** |
+| 7.2 | v2 说「无成文出处」只对一半，父仓库 `doflow/CLAUDE.md` 有 | **评审对，我 v2 错了。**但需说明：本容器里 `find / -name CLAUDE.md` 无结果、无 `.gitmodules`，voisetodo 是独立 clone，**我无法亲自验证父仓库那份文件**，按评审所述采信 | **§3.2d** 改为双出处并列，并写明「独立 clone 场景下找不到是正常的」——对两种工作目录都成立。§6 的 6.7 行已标注被本条更正 |
+| 7.3 | 两支分支都改 `PaywallView.swift`，需定合并顺序 | **属实，但定性偏轻**——见下方「本轮我的加码」 | **§3.10**（新增），升级为前置依赖 + 明确顺序 + 反向中继 |
+| 7.4 | 中继：paywall-products-empty 文档三处过期 | **三处全部属实，已逐条比对现状文件**（详见下表） | 转 `subscribe-button` 分支处理，**本方案不改那份文档**；§3.10 反向中继第 2 条已记录 |
 
-**我的建议：选 A**，但必须补三件事，否则就是「引着 :33 却实现别的」：
+**7.4 三处过期的逐条验证**（我比对了 `VoiceTodo/Products.storekit` 现状）：
 
-1. §1.5 显式写明与 `:33` 的偏差及理由（首日配额 3/day 使「第 2 次撞墙」在
-   day-1 不可达；wow 后立即弹是唯一 day-1 曝光点；`:167` 硬约束满足）。
-2. `reason=first_wow` 目前只有 OSLog（§3.5c），**必须进遥测漏斗**——
-   `paywall` 曝光事件要能区分 `first_wow` / `recording_count` / 手动入口三种
-   来源，否则 A vs B 的效果永远测不出来。
-3. 完工勾 `:33` checkbox 时**同步改写 `:33` 的目标序列表述**，别让战略文档
-   和实现长期互相矛盾。
+| 该文档写的 | 现状文件实际 | 结论 |
+|---|---|---|
+| 试用周期 `P3D` | `P7D`（`:66` / `:74` / `:118` / `:126`） | 过期属实。另 `a8c7914` 已拍板 trial 7 天口径 |
+| 价格 12 / 98 | `4.99` / `39.99`（`:49` / `:57` / `:101` / `:109`） | 过期属实（`7ca89ca` 调过价） |
+| 「现状文件这一处本来就是对的」 | 现状 `paymentMode: "free"`（`:65` / `:117`），而该文档论证的正确值是 `"freeTrial"` | **自相矛盾属实**——现状文件这处本来就是错的，重写时正是要改它。修正方向（`freeTrial`）是对的，错的是那句话 |
 
-另：2.0s 延迟要对着庆祝 toast 的默认展示时长校一下，sheet 弹起会盖住还在
-展示的 toast——可接受，但要有意识，别让「太棒了」被价格卡截断成负体验。
+### 本轮我的加码
 
-**已拍板（2026-08-18，需求方）：选 A。** §3.5 按 v2 原案动工，但下列事项必须
-并入实施方案（下一版）：
+**1. 7.3 的定性要升级：那支分支是前置依赖，不只是「改了同一个文件」。**
 
-1. §1.5 补上与 `:33` 的偏差承认与理由（首日配额 3/day 使「第 2 次撞墙」在
-   day-1 不可达；wow 后立即弹是唯一 day-1 曝光点；`:167` 硬约束满足）。
-2. paywall 曝光**遥测**事件区分 `first_wow` / `recording_count` / 手动入口
-   三种来源——现 §3.5c 只有 OSLog `reason=first_wow`，遥测侧缺位，A vs B
-   的效果将无法度量。
-3. 完工勾 `:33` checkbox 时同步改写 `:33` 的目标序列表述，消除战略文档与
-   实现的矛盾。
-4. 2.0s 延迟对着庆祝 toast 的默认展示时长校准，避免「太棒了」被价格卡截断。
+理由写在 §3.10：本方案把 paywall 挪到 wow 之后，商品加载失败时
+**wow 的结尾就是一张错误卡**；而 §5.2 正例第 5 步正是靠 `Products.storekit`
+验证的，不先修就测不出本方案对错。顺序必须是 subscribe-button 先、本方案后。
 
-### 7.2 [更正] §6 6.7 的反更正只对了一半
+**2. 评审说「三种来源」，实际是四种。**
 
-v2 称「仓库根目录不存在 CLAUDE.md」——对本（子模块）仓库成立。但文本布局
-规则**有成文出处**：父仓库 `doflow/CLAUDE.md` 的「文本布局规则」一节
-（checked in；在 doflow 目录树下用 Claude Code 工作时会自动加载，本评审
-第一轮引用的正是它）。§3.2d 的「别去找不存在的文件」会误导在父仓库上下文里
-工作的实施者。建议 §3.2d 双出处并列：父仓库 CLAUDE.md「文本布局规则」节 +
-`OnboardingView.swift:1106` 注释。
+现状代码有**四个** `showPaywall = true` 站点（`AppCoordinator:236` /
+`:1121` / `:1225`，`HomeView:431`）。其中 `quota_exhausted`（`:1121` / `:1225`）
+**正是选项 B 说的「撞墙」**——不把它单独记出来，A vs B 就没有对照组，
+而「A 是可度量的起点」正是选 A 的立论基础。§3.5c 已按四来源写，
+并收口到单一 `presentPaywall(source:)` 避免以后新增入口漏埋点。
 
-### 7.3 [跨分支·需定顺序] 两支分支同时改 `UI/Paywall/PaywallView.swift`
+**3. 「2.0s 延迟对着 toast 时长校一下」是个真 bug，不只是「要有意识」。**
 
-- 本分支 §3.5b：删 `PaywallPresentationContext.onboarding`、清理两处过期注释；
-- `claude/onboarding-screen-3-subscribe-button-06o1za`（`ed47088`）§3.2：
-  让 `PaywallContent` 自己负责商品加载。
-
-两支都动 PaywallView，先合哪支、后合的那支按谁的结构 rebase，必须在其中
-一份文档里声明依赖顺序，否则两边各自改完合并必打架。
-
-### 7.4 [中继] paywall-products-empty 分支的三处过期（转给
-`claude/onboarding-screen-3-subscribe-button-06o1za` 处理）
-
-1. §3.1 示例 intro 周期 `P3D` 过期——实际 `Products.storekit` 已是 `P7D`
-   （`:66`），且 `a8c7914` 已拍板 trial 7 天口径。
-2. 「displayPrice 的 12 / 98 才会渲染成 ¥12/¥98」过期——实际价格已是
-   4.99 / 39.99（`7ca89a`）。
-3. 「现状文件这一处本来是对的」自相矛盾——现状文件 `paymentMode` 写的是
-   `"free"`（`:65/:117`），而该文档论证的正确值是 `"freeTrial"`。修正方向
-   经外部实证是对的（真实 Xcode v4 世代文件 introductoryOffer 确用
-   `paymentMode: "freeTrial"` + `displayPrice`，如 RSSNext/Folo、BurnBar），
-   错的是那句话——现状文件这处本来就是错的，重写时就是要改。
+评审只在 7.1 末尾附了一句提醒。实测：`UIConfig.toastDuration = 2.0`
+（`Constants.swift:149`），而 `ToastView.swift:150` 对带 action 的 toast **时长翻倍**。
+所以跨日分支的庆祝 toast 是 **4.0s**，硬编码 2.0s 会在第 2 秒用 paywall 盖掉它，
+**用户根本点不到「去看看」**——而「去看看」正是 §1.4 第三条决策的全部意义。
+§3.5d 已改为从 `UIConfig.toastDuration` 推导，§5.2 新增反例 12 专测这一条。
