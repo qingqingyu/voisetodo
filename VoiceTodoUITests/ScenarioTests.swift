@@ -20,6 +20,9 @@ final class ScenarioTests: XCTestCase {
             "test_S17_onboarding_fitsWithoutScrolling",
             "test_S18_firstVoiceTrial_hintToWowPaywall",
             "test_S19_firstVoiceTrial_micDenied_noHint"
+            // S20 不进默认列表:CLI xcodebuild 不给被测进程注入 scheme 的 StoreKit
+            // 配置(商品恒为空,购买按钮不渲染),只能在 Xcode GUI 里跑
+            // (TestAction 已手挂 Products.storekit,见 scheme)。RUN_LEGACY_SCENARIOS=1 可启用。
         ]
         let isDefaultEnabledScenario = defaultEnabledScenarios.contains { name.contains($0) }
         let isLegacyScenarioEnabled = ProcessInfo.processInfo.environment["RUN_LEGACY_SCENARIOS"] == "1"
@@ -689,6 +692,90 @@ final class ScenarioTests: XCTestCase {
         let repromptByLabel = appHelper.app.buttons["允许访问"]
         XCTAssertTrue(repromptAllow.waitForExistence(timeout: 3.0) || repromptByLabel.exists,
                       "应走原有权限二次引导 sheet(RepromptAllowButton / 允许访问)")
+    }
+
+    // MARK: - S20: 试用购买后 onboarding 不得重现(回归:用户报告 bug)
+
+    /// 场景 S20: 走完 onboarding → 首次录音 wow → paywall → 点「开始 7 天免费试用」
+    /// 并确认 StoreKit 系统弹窗 → 购买成功 paywall 关闭后,**onboarding 第一页不得重新出现**。
+    ///
+    /// 用户报告的 bug:点完试用后 onboarding 欢迎页又播了一遍。复现链路依赖真实
+    /// StoreKit 交易(isPro 翻转 → PaywallView dismiss),mock 路径覆盖不到,
+    /// 故用 scheme 的 Products.storekit 配置走完整购买。
+    func test_S20_trialPurchase_onboardingMustNotReappear() {
+        // Step 1: 全新启动,走完 onboarding(与 S18 相同的六步流程)
+        appHelper.launch()
+        XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
+                      "应进入语音识别语言页")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
+                      "应进入日历同步页")
+
+        let completionTitle = appHelper.app.staticTexts["最后一步"]
+        var attempts = 0
+        while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
+            if appHelper.nextButton.exists {
+                appHelper.nextButton.tap()
+            }
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            attempts += 1
+        }
+        XCTAssertTrue(completionTitle.exists, "应走到完成页")
+        appHelper.nextButton.tap()  // 「去试一句」→ 关闭引导
+
+        // Step 2: 首次录音 wow(与 S18 相同:FAB 坐标点击 + mock 转写 + 确认)
+        appHelper.waitForAppReady()
+        appHelper.tapRecordFABByCoordinate()
+        XCTAssertTrue(appHelper.switchToKeyboardButton.waitForExistence(timeout: 2.0), "录音面板应该出现")
+        appHelper.stopRecording()
+        appHelper.waitForConfirmSheet()
+        appHelper.tapConfirmButton()
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+
+        // Step 3: wow 播完后 paywall 弹出
+        let paywallNavBar = appHelper.app.navigationBars["升级 VoiceTodo Pro"]
+        XCTAssertTrue(paywallNavBar.waitForExistence(timeout: 10.0), "wow 播完后付费墙应弹出")
+
+        // Step 4: 等购买 CTA 可用(商品加载 + intro offer 资格查询完成,期间 CTA 为 spinner)
+        let purchaseButton = appHelper.app.buttons["PaywallPurchaseButton"]
+        XCTAssertTrue(purchaseButton.waitForExistence(timeout: 10.0), "购买按钮应该出现")
+        XCTAssertTrue(purchaseButton.waitUntilEnabled(timeout: 10.0), "购买按钮应该变为可用")
+        purchaseButton.tap()
+
+        // Step 5: 确认 StoreKit 系统购买弹窗(scheme 挂 Products.storekit,弹窗在 app 进程内)。
+        // 弹窗按钮文案跟随系统语言,zh/en 都兜底。
+        let confirmLabels = ["订阅", "确认订阅", "购买", "Subscribe", "Confirm Subscription", "Purchase"]
+        let storeKitDialog = appHelper.app.alerts.firstMatch
+        var confirmed = false
+        if storeKitDialog.waitForExistence(timeout: 8.0) {
+            for label in confirmLabels {
+                let button = appHelper.app.alerts.buttons[label]
+                if button.exists {
+                    button.tap()
+                    confirmed = true
+                    break
+                }
+            }
+        }
+        XCTAssertTrue(confirmed, "应出现并可确认 StoreKit 购买弹窗(实际弹窗: \(appHelper.app.alerts.debugDescription))")
+
+        // Step 6: 购买成功 → isPro 翻转 → PaywallView 自动 dismiss。
+        XCTAssertTrue(paywallNavBar.waitForNonExistence(timeout: 10.0), "购买成功后付费墙应关闭")
+
+        // Step 7: 回归断言——onboarding 不得重新出现(用户报告:欢迎页又播了一遍)。
+        // 观察窗口放宽到 6s,覆盖 sheet 重呈现动画与延迟弹层。
+        let onboardingReappeared = appHelper.onboardingView.waitForExistence(timeout: 6.0)
+            || appHelper.app.buttons["NextButton"].waitForExistence(timeout: 1.0)
+        if onboardingReappeared {
+            let attachment = XCTAttachment(string: appHelper.app.debugDescription)
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        XCTAssertFalse(onboardingReappeared, "BUG 复现:购买试用后 onboarding 第一页重新出现")
     }
 
     // MARK: - S14: 紧急单条待办
