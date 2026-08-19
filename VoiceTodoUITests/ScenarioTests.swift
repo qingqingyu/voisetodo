@@ -581,6 +581,69 @@ final class ScenarioTests: XCTestCase {
         }
         XCTAssertTrue(paywallShown,
                       "wow 播完后付费墙应弹出(延迟 2.3~4.3s,取决于 toast 是否带「去看看」)")
+
+        // Step 6: 一屏化断言 —— 付费墙全部内容(含「开始 7 天免费试用」CTA + 法务三件套)
+        // 不滚动即可见。依赖 DEBUG 钩子 PaywallContentFits(value "1|content=|viewport=|state="),
+        // 轮询/判定逻辑与 S17 的 OnboardingContentFits 同款。
+        let fitsHook = appHelper.app.otherElements["PaywallContentFits"]
+        XCTAssertTrue(fitsHook.waitForExistence(timeout: 5.0), "付费墙应暴露 PaywallContentFits 钩子")
+
+        // 前置 ①:等商品加载落定到稳定态(success/empty/error),empty/error 时点
+        // 重试按钮恢复(storekitd 偶发抽风,见 PaywallView productList `.empty` 注释)。
+        // 注意:CLI `xcodebuild test` 不给被测进程注入 StoreKit 配置,商品恒 empty
+        // (既有结论,S20 购买类测试因此只能 Xcode GUI 跑)——重试后仍非 success
+        // 不是失败,下方的 fits 断言对实际到达的稳定态生效;success 最坏态
+        // (商品卡+CTA+试用卡全渲染)由 GUI 跑法覆盖。
+        var fits = (fitsHook.value as? String) ?? "nil"
+        let retryButton = appHelper.app.buttons["PaywallRetryButton"]
+        var retryRounds = 0
+        while !fits.contains("state=success") && retryRounds < 2 {
+            // 单轮最多等 2s 让 refresh 落定(loading → success/empty/error)
+            var waited = 0.0
+            while waited < 2.0,
+                  !fits.contains("state=success"),
+                  !fits.contains("state=empty"),
+                  !fits.contains("state=error") {
+                Thread.sleep(forTimeInterval: 0.25)
+                waited += 0.25
+                fits = (fitsHook.value as? String) ?? "nil"
+            }
+            if fits.contains("state=success") { break }
+            guard retryButton.waitForExistence(timeout: 2.0) else { break }
+            retryButton.tap()
+            retryRounds += 1
+            fits = (fitsHook.value as? String) ?? "nil"
+        }
+
+        // 前置 ②(仅 success 态):intro 资格查询落定 —— 内容才是「最坏正常态」
+        // (试用价值卡 + trial_included + 法务文案全渲染)。legalText 恰在 success
+        // 且查询落定时渲染;CTA 在 success 时就出现(查询期间显 spinner),不能作信号。
+        // 测试强制 zh,匹配中文「自动续费」。
+        if fits.contains("state=success") {
+            let legalText = appHelper.app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "自动续费")
+            ).firstMatch
+            if !legalText.waitForExistence(timeout: 10.0) {
+                print("===PAYWALL-FITS-DEBUG-BEGIN===\nvalue=\(fits)\n\(appHelper.app.debugDescription)\n===PAYWALL-FITS-DEBUG-END===")
+            }
+            XCTAssertTrue(legalText.exists,
+                          "付费墙(success)应渲染法务文案(最坏正常态,含试用卡),value=\(fits)")
+        }
+
+        // 钩子值过渡态等收敛:视口未测得报 "pending";content=0 是初值假阳性;
+        // 试用卡渲染等后续布局变化会让 0→1,给短暂轮询窗口(同 S17)。
+        var settleAttempts = 0
+        while settleAttempts < 12,
+              fits == "pending" || fits == "nil"
+              || Self.contentHeight(from: fits) <= 0
+              || (String(fits.prefix(1)) == "0" && settleAttempts < 6) {
+            Thread.sleep(forTimeInterval: 0.25)
+            fits = (fitsHook.value as? String) ?? "nil"
+            settleAttempts += 1
+        }
+        attachScreenshot(named: "paywall-fits\(fits)")
+        XCTAssertEqual(String(fits.prefix(1)), "1",
+                       "付费墙内容溢出一屏(需要滚动才能看到 CTA),value=\(fits)")
     }
 
     // MARK: - S19: 首次语音试用引导(反例:权限未授予)

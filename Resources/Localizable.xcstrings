@@ -5893,39 +5893,6 @@
         }
       }
     },
-    "onboarding.pro.bullet.quota.desc %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Up to %lld voice extractions per day"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每天最多 %lld 次语音提取"
-          }
-        }
-      }
-    },
-    "onboarding.pro.bullet.quota.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Higher daily quota"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更高的每日额度"
-          }
-        }
-      }
-    },
     "onboarding.pro.bullet.support.desc" : {
       "localizations" : {
         "en" : {
@@ -6777,38 +6744,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在恢复…"
-          }
-        }
-      }
-    },
-    "paywall.subtitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A much higher daily limit, 7-day free trial"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更高的每日额度,7 天免费试用"
-          }
-        }
-      }
-    },
-    "paywall.subtitle_no_trial" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A much higher daily limit"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更高的每日额度"
           }
         }
       }
