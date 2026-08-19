@@ -10,7 +10,7 @@ struct ValuePropCard: View {
     let title: String
     let description: String
     /// 紧凑变体:onboarding 欢迎页在小屏(iPhone SE 一屏不滚动)时传 true,
-    /// 缩小 emoji 圆/字号/内边距。默认 false —— Paywall 等既有调用方视觉零改动。
+    /// Paywall 一屏化后也固定传 true。缩小 emoji 圆/字号/内边距。
     var compact: Bool = false
 
     var body: some View {

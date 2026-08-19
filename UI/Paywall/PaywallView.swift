@@ -37,13 +37,74 @@ struct PaywallView: View {
     @EnvironmentObject private var quotaUsage: QuotaUsage
     @Environment(\.dismiss) private var dismiss
 
+    /// 一屏化:ScrollView 视口高度。初值 .infinity 表示「尚未测得」,
+    /// 拿到真值前不参与 contentFits 判定。挂在 ScrollView 自身测,
+    /// 高度由容器决定、与内容无关,不会形成布局反馈环。
+    @State private var viewportHeight: CGFloat = .infinity
+    /// 全部可滚动内容的自然高(PaywallContent + 上下外边距)。
+    @State private var contentHeight: CGFloat = 0
+
+    /// 内容是否一屏装下(不滚动)。DEBUG 下经隐藏元素暴露给 UI 测试断言(S18)。
+    /// DEBUG 构建 +1:流内 a11y 钩子占 1pt,也算滚动内容,不计入会出现
+    /// 「fits 报 1 但实际多 1pt 可滚」的假阳性(与 OnboardingView.contentFits 同款)。
+    private var contentFits: Bool {
+        guard viewportHeight.isFinite else { return false }
+        #if DEBUG
+        return contentHeight + 1 <= viewportHeight + 0.5
+        #else
+        return contentHeight <= viewportHeight + 0.5
+        #endif
+    }
+
+    /// 值形如 "1|content=560|viewport=740|state=success";
+    /// state 附带商品加载态,断言失败时可判断卡在哪个分支。
+    private var contentFitsRawValue: String {
+        guard viewportHeight.isFinite else { return "pending" }
+        let prefix = contentFits ? "1" : "0"
+        return "\(prefix)|content=\(Int(contentHeight))|viewport=\(Int(viewportHeight))|state=\(productStateLabel)"
+    }
+
+    private var productStateLabel: String {
+        switch entitlement.productLoadState {
+        case .loading: return "loading"
+        case .empty: return "empty"
+        case .error: return "error"
+        case .success: return "success"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                PaywallContent(context: .sheet)
-                    .padding(.vertical, WarmSpacing.lg)
+                VStack(spacing: 0) {
+                    PaywallContent(context: .sheet)
+                        .padding(.vertical, WarmSpacing.xs)
+                        // 测自然内容高(含上下外边距,在钩子之前):一屏化改造的回归哨兵,
+                        // 超预算时 S18 读 PaywallContentFits 断言失败并显示差值。
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { _, newHeight in
+                            contentHeight = newHeight
+                        }
+
+                    #if DEBUG
+                    // UI 测试钩子(照 OnboardingView 的 OnboardingContentFits 范式):
+                    // overlay 里的元素进不了 XCUI a11y 树,只能放回流内;
+                    // 0×0 会被剪掉,给 1×1 占位,其高度已计入 contentFits 的 DEBUG +1。
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityElement()
+                        .accessibilityIdentifier("PaywallContentFits")
+                        .accessibilityValue(contentFitsRawValue)
+                    #endif
+                }
             }
             .background(WarmTheme.background.ignoresSafeArea())
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { _, newHeight in
+                viewportHeight = newHeight
+            }
             .navigationTitle(Text(String(localized: "paywall.title")))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -70,7 +131,10 @@ struct PaywallView: View {
 
 /// 付费墙主体内容(现仅 sheet 形态使用;历史上有 onboarding 内嵌,已删)。
 ///
-/// 渲染顺序(自上而下):`header → comparisonCard → valuePropsList → productList → [purchaseCTA + legalText] → legalLinks → restoreButton`
+/// 渲染顺序(自上而下):`comparisonCard → valuePropsList → productList → [purchaseCTA] → legalBlock`
+///
+/// 一屏化(2026-08):删掉 header(副标题与导航标题/CTA 信息重复)与 quota 价值卡
+/// (额度信息由对比胶囊表达),区块间距 lg→sm,保证 SE 级视口下 CTA 无需滚动即可见。
 struct PaywallContent: View {
     let context: PaywallPresentationContext
 
@@ -82,22 +146,15 @@ struct PaywallContent: View {
     @State private var selectedProductID: String?
 
     var body: some View {
-        VStack(spacing: WarmSpacing.lg) {
-            header
+        VStack(spacing: WarmSpacing.sm) {
             comparisonCard
             valuePropsList
             productList
             if entitlement.productLoadState == .success {
                 purchaseCTA
-                // legalText 依赖 isEligibleForIntroOffer 分流,查询期间不渲染避免抖动 (C 点)。
-                if !entitlement.isCheckingIntroOffer {
-                    legalText
-                }
             }
-            // 3.1.2 要求两链接不依赖商品加载结果 —— 商品加载失败时付费墙仍可见,链接也必须可点。
-            legalLinks
-            restoreButton
-            Spacer(minLength: WarmSpacing.xs)
+            legalBlock
+            Spacer(minLength: WarmSpacing.xxs)
         }
         .task { await entitlement.refresh() }
         .onChange(of: entitlement.products) { _, newProducts in
@@ -113,43 +170,9 @@ struct PaywallContent: View {
         }
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(spacing: WarmSpacing.sm) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 40, weight: .semibold))
-                .foregroundColor(WarmTheme.primary)
-                .accessibilityHidden(true)
-            // intro offer 资格查询期间不渲染 subtitle —— 避免查完前后「无试用 ↔ 有试用」抖动 (C 点)。
-            // CTA 在此期间显 spinner;subtitle 从无到有不算「先承诺再变脸」。
-            if !entitlement.isCheckingIntroOffer {
-                Text(String(localized: subtitleKey))
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .padding(.horizontal, WarmSpacing.lg)
-            }
-        }
-        .padding(.top, headerTopPadding)
-    }
-
-    /// sheet 有 NavigationStack + toolbar 占位,header 上方需要相应留白。
-    /// (原 onboarding 内嵌分支用更紧的 xs,该形态已删除。)
-    private var headerTopPadding: CGFloat {
-        WarmSpacing.sm
-    }
-
-    /// 无试用资格时改用只讲额度的 subtitle,避免对老用户撒谎。
-    private var subtitleKey: String.LocalizationValue {
-        entitlement.isEligibleForIntroOffer ? "paywall.subtitle" : "paywall.subtitle_no_trial"
-    }
-
     // MARK: - Comparison Card
 
-    /// 用量展示卡:用户当天用量为 0 时显示「免费 N/天 vs Pro M/天」两列对比卡,
+    /// 用量展示卡:用户当天用量为 0 时显示「免费 N/天 vs Pro M/天」对比胶囊,
     /// 强化付费动机;已用时切回实时计数,提醒配额耗尽进度。
     ///
     /// Pro 档是更高的有限额度、不是无限,两列都展示具体条数。
@@ -163,66 +186,52 @@ struct PaywallContent: View {
         } else if quotaUsage.isPro {
             liveUsageCard
         } else if quotaUsage.used == 0 {
-            freeVsProComparison
+            freeVsProComparisonPill
         } else {
             liveUsageCard
         }
     }
 
-    /// 两列对比卡:Free (freeLimit/day) vs Pro (proDailyLimit/day)。
-    private var freeVsProComparison: some View {
-        HStack(spacing: 0) {
-            freeColumn
+    /// 单行对比胶囊:「免费版 N 次/天 › Pro 版 M 次/天」。
+    /// 原两列对比卡实高 ~96pt 撑破 SE 一屏预算,压成 ~44pt 单行,信息不变;
+    /// 文案与图标沿用原两列卡(label + limit_per_day + chevron 分隔)。
+    private var freeVsProComparisonPill: some View {
+        HStack(spacing: WarmSpacing.xs) {
+            Image(systemName: "bolt.circle")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(WarmTheme.textSecondary)
+                .accessibilityHidden(true)
+            comparisonText(
+                labelKey: "paywall.comparison.free",
+                limit: quotaUsage.limit,
+                color: WarmTheme.textPrimary
+            )
             chevronDivider
-            proColumn
+            comparisonText(
+                labelKey: "paywall.comparison.pro",
+                limit: NetworkConfig.proDailyLimit,
+                color: WarmTheme.primary
+            )
         }
-        .padding(WarmSpacing.md)
-        .background(WarmTheme.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
-        .shadow(color: WarmTheme.shadowLight, radius: 6, y: 2)
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.sm)
+        .background(WarmTheme.secondaryBackground)
+        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.chip))
         .padding(.horizontal, WarmSpacing.lg)
     }
 
-    private var freeColumn: some View {
-        VStack(spacing: WarmSpacing.xxs) {
-            Image(systemName: "bolt.circle")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundColor(WarmTheme.textSecondary)
-                .accessibilityHidden(true)
-            Text(String(localized: "paywall.comparison.free"))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(WarmTheme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(String(localized: "paywall.comparison.limit_per_day \(quotaUsage.limit)"))
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundColor(WarmTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .layoutPriority(1)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var proColumn: some View {
-        VStack(spacing: WarmSpacing.xxs) {
-            Image(systemName: "bolt.fill")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundColor(WarmTheme.primary)
-                .accessibilityHidden(true)
-            Text(String(localized: "paywall.comparison.pro"))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(WarmTheme.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(String(localized: "paywall.comparison.limit_per_day \(NetworkConfig.proDailyLimit)"))
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundColor(WarmTheme.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .layoutPriority(1)
-        }
-        .frame(maxWidth: .infinity)
+    /// 胶囊内一列文本:「<档位名> <N 次/每天>」单行,超宽整体缩放不截断。
+    private func comparisonText(
+        labelKey: String.LocalizationValue,
+        limit: Int,
+        color: Color
+    ) -> some View {
+        Text("\(String(localized: labelKey)) \(String(localized: "paywall.comparison.limit_per_day \(limit)"))")
+            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .layoutPriority(1)
     }
 
     /// 中间的 chevron 分隔(RTL 安全:图标会自动翻转)。
@@ -289,28 +298,26 @@ struct PaywallContent: View {
 
     // MARK: - Value Props
 
-    /// 价值主张:quota 和 support 两张卡总是显示;
-    /// trial 卡在 intro offer 资格查询完成且 isEligibleForIntroOffer 为 true 时才渲染 (C 点防抖)。
+    /// 价值主张:quota 卡已删(一屏化去重 —— 额度信息由对比胶囊表达);
+    /// trial 卡在 intro offer 资格查询完成且 isEligibleForIntroOffer 为 true 时才渲染 (C 点防抖);
+    /// support 卡总是显示。全部走 ValuePropCard compact 规格换高度。
     /// 复用 OnboardingView 同源 `onboarding.pro.bullet.*` 文案,保证设计语言一致。
     private var valuePropsList: some View {
-        VStack(spacing: WarmSpacing.md) {
-            ValuePropCard(
-                emoji: "🎯",
-                title: String(localized: "onboarding.pro.bullet.quota.title"),
-                description: String(localized: "onboarding.pro.bullet.quota.desc \(NetworkConfig.proDailyLimit)")
-            )
+        VStack(spacing: WarmSpacing.sm) {
             // 查询期间不渲染试用卡,避免查完前后「无试用 ↔ 有试用」抖动 (C 点)。
             if !entitlement.isCheckingIntroOffer && entitlement.isEligibleForIntroOffer {
                 ValuePropCard(
                     emoji: "🎁",
                     title: String(localized: "onboarding.pro.bullet.trial.title"),
-                    description: String(localized: "onboarding.pro.bullet.trial.desc")
+                    description: String(localized: "onboarding.pro.bullet.trial.desc"),
+                    compact: true
                 )
             }
             ValuePropCard(
                 emoji: "🌱",
                 title: String(localized: "onboarding.pro.bullet.support.title"),
-                description: String(localized: "onboarding.pro.bullet.support.desc")
+                description: String(localized: "onboarding.pro.bullet.support.desc"),
+                compact: true
             )
         }
         .padding(.horizontal, WarmSpacing.lg)
@@ -440,14 +447,14 @@ struct PaywallContent: View {
                         .tint(.white)
                 } else {
                     Text(ctaTitle)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, 12)
             .background(
                 Capsule()
                     .fill(WarmTheme.primary)
@@ -488,7 +495,21 @@ struct PaywallContent: View {
         return String(localized: "paywall.cta.subscribe")
     }
 
-    // MARK: - Legal Text
+    // MARK: - Legal Block
+
+    /// 法务三件套合并的底部块(自动续费说明 + 隐私·条款链接 + 恢复购买),间距压到
+    /// xxs 换取一屏预算。legalText 仍只在商品加载成功且 intro 资格查询落定后渲染
+    /// (C 点防抖,依赖 isEligibleForIntroOffer 分流);链接与恢复不依赖商品加载结果
+    /// (3.1.2:商品加载失败时付费墙仍可见,链接也必须可点)。
+    private var legalBlock: some View {
+        VStack(spacing: WarmSpacing.xxs) {
+            if entitlement.productLoadState == .success && !entitlement.isCheckingIntroOffer {
+                legalText
+            }
+            legalLinks
+            restoreButton
+        }
+    }
 
     /// App Store 审核要求的自动续费合规说明。
     /// 有试用资格 → paywall.legal.autorenew (含试用期结束后...)
@@ -498,6 +519,8 @@ struct PaywallContent: View {
             .font(.system(size: 11, weight: .regular, design: .rounded))
             .foregroundColor(WarmTheme.textMuted)
             .multilineTextAlignment(.center)
+            // 合规文案不可截断:en autorenew 84 字符,AX 大字号下需 3 行,
+            // lineLimit(2)+0.85 缩放兜不住会出 "..."(审核风险),保持 3 行预算。
             .lineLimit(3)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, WarmSpacing.lg)
@@ -508,7 +531,6 @@ struct PaywallContent: View {
     }
 
     /// App Store 审核指南 3.1.2:自动续订订阅的付费墙必须提供隐私政策与使用条款的可点链接。
-    /// 两链接在 restoreButton 之上、与 legalText 同级展示,不依赖商品加载结果。
     private var legalLinks: some View {
         HStack(spacing: WarmSpacing.sm) {
             Link(String(localized: "paywall.legal.privacy_link"), destination: PaywallLegal.privacyPolicyURL)
@@ -525,7 +547,6 @@ struct PaywallContent: View {
         }
         .font(.system(size: 11, weight: .regular, design: .rounded))
         .tint(WarmTheme.textSecondary)
-        .padding(.top, WarmSpacing.xxs)
     }
 
     // MARK: - Restore
@@ -550,7 +571,6 @@ struct PaywallContent: View {
             .minimumScaleFactor(0.8)
         }
         .disabled(entitlement.isRestoring || entitlement.isPurchasing)
-        .padding(.top, WarmSpacing.sm)
     }
 }
 
@@ -581,7 +601,7 @@ private struct ProductCard: View {
                 VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                     HStack(spacing: WarmSpacing.xs) {
                         Text(product.displayName)
-                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .foregroundColor(WarmTheme.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -597,9 +617,9 @@ private struct ProductCard: View {
                         }
                     }
                     Text(product.description)
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundColor(WarmTheme.textSecondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .layoutPriority(1)
                     if showsTrialIncluded {
@@ -616,7 +636,7 @@ private struct ProductCard: View {
                 // spinner 只在主 CTA 上,避免双 spinner 视觉噪音。
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(product.displayPrice)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(WarmTheme.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -627,7 +647,7 @@ private struct ProductCard: View {
                         .minimumScaleFactor(0.8)
                 }
             }
-            .padding(WarmSpacing.md)
+            .padding(WarmSpacing.sm)
             .background(WarmTheme.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
             .overlay(
