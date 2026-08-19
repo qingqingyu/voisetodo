@@ -75,6 +75,11 @@ struct FirstVoiceTrialHintView: View {
                             Capsule()
                                 .fill(WarmTheme.sketch.opacity(FirstVoiceTrialHintMetrics.gotItBgOpacity))
                         )
+                        // F3 修复:胶囊视觉尺寸不变(13pt 字 + 12pt padding ≈ 28pt),
+                        // 但命中区扩到 44pt(Apple HIG 最小可触控,同 BottomInputPanelView
+                        // 的 minHeight: 44 惯例)。frame 在 background 之后,胶囊仍贴文本。
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityIdentifier("FirstVoiceTrialGotItButton")
             }

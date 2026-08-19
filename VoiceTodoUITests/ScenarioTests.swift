@@ -19,6 +19,8 @@ final class ScenarioTests: XCTestCase {
             "test_S16_calendarPermissionDenied_revertsToggle",
             "test_S17_onboarding_fitsWithoutScrolling",
             "test_S18_firstVoiceTrial_hintToWowPaywall",
+            "test_S18a_firstVoiceTrial_todayToastBranch",
+            "test_S18b_firstVoiceTrial_genericToastBranch",
             "test_S19_firstVoiceTrial_micDenied_noHint"
             // S20 不进默认列表:CLI xcodebuild 不给被测进程注入 scheme 的 StoreKit
             // 配置(商品恒为空,购买按钮不渲染),只能在 Xcode GUI 里跑
@@ -520,13 +522,10 @@ final class ScenarioTests: XCTestCase {
 
     // MARK: - S18: 首次语音试用引导(正例)
 
-    /// 场景 S18: 走完 onboarding(含授权)→ hint 浮出 → 引导下录第一条 → wow → 后置 paywall。
-    /// 方案 docs/onboarding-first-voice-trial.md §3.8c 正例。
-    /// mock 转写默认「明天去银行」落别日 → 庆祝 toast 带「去看看」(4.0s),
-    /// paywall 延迟 = 4.0 + 0.3 = 4.3s,断言超时给足余量。
-    func test_S18_firstVoiceTrial_hintToWowPaywall() {
-        // Step 1: 全新启动,走完 onboarding(权限 mock 已授权)
-        appHelper.launch()
+    /// S18 系列共用前置:走完六步 onboarding(权限 mock 已授权)→ 等 HomeView 就绪
+    /// → 返回 hint 的存在信号元素(「知道了」按钮——hint 容器 children: .contain
+    /// 不作为可查询元素暴露)。调用方自行决定 launch(带不带 scenario)。
+    private func walkOnboardingToHintSignal() -> XCUIElement {
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
@@ -549,11 +548,18 @@ final class ScenarioTests: XCTestCase {
         XCTAssertTrue(completionTitle.exists, "应走到完成页")
         appHelper.nextButton.tap()  // 「去试一句」→ 关闭引导
 
-        // Step 2: hint 浮出(HomeView 挂载 + 0.4s 延迟)
         appHelper.waitForAppReady()
-        // hint 容器(children: .contain)不作为可查询元素暴露,用「知道了」按钮作存在信号
-        // (a11y id: FirstVoiceTrialGotItButton,树中已验证可达)。
-        let hint = appHelper.app.buttons["FirstVoiceTrialGotItButton"]
+        return appHelper.app.buttons["FirstVoiceTrialGotItButton"]
+    }
+
+    /// 场景 S18: 走完 onboarding(含授权)→ hint 浮出 → 引导下录第一条 → wow → 后置 paywall。
+    /// 方案 docs/onboarding-first-voice-trial.md §3.8c 正例。
+    /// mock 转写默认「明天去银行」落别日 → 庆祝 toast 带「去看看」(4.0s),
+    /// paywall 延迟 = 4.0 + 0.3 = 4.3s,断言超时给足余量。
+    func test_S18_firstVoiceTrial_hintToWowPaywall() {
+        // Step 1-2: 全新启动,走完 onboarding → hint 浮出(共用前置,见 helper)
+        appHelper.launch()
+        let hint = walkOnboardingToHintSignal()
         XCTAssertTrue(hint.waitForExistence(timeout: 3.0), "走完 onboarding(含授权)后 hint 应浮出")
 
         // Step 3: 点 FAB 录音(mock 转写)→ 确认保存。
@@ -574,16 +580,58 @@ final class ScenarioTests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "太棒了")
         ).firstMatch
         XCTAssertTrue(celebrateToast.waitForExistence(timeout: 3.0), "庆祝 toast 应出现")
+
+        // G1(v3 §5.2 反例 12):elsewhere 分支 toast 带「去看看」,时长翻倍 4.0s,
+        // paywall 延迟 = 4.0 + 0.3 = 4.3s。若 scheduleFirstWowPaywall 的延迟被
+        // 硬编码回 2.0s,paywall 会在第 2 秒盖掉 toast,用户来不及点「去看看」
+        // ——只断言「10s 内出现」对此时序回退全绿,没有回归保护。
+        // 这里轮询捕获 paywall 首现瞬间,断言那一刻 toast 已播完。
+        // 「去看看」查询同样绕开 identifier 污染:按钮与其内文本任一命中即可。
+        let goLookButton = appHelper.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "去看看")
+        ).firstMatch
+        let goLookText = appHelper.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "去看看")
+        ).firstMatch
+        func goLookOnScreen() -> Bool { goLookButton.exists || goLookText.exists }
+        var goLookAppeared = false
+        for _ in 0..<30 { // 3s 上限:confirm 关闭后 toast 应立即出现
+            if goLookOnScreen() { goLookAppeared = true; break }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(goLookAppeared, "elsewhere 分支庆祝 toast 应带「去看看」action(存在且可点)")
+
         let paywallNavBar = appHelper.app.navigationBars["升级 VoiceTodo Pro"]
         let paywallClose = appHelper.app.buttons["关闭"]
-        let paywallShown = paywallNavBar.waitForExistence(timeout: 10.0)
-            || paywallClose.waitForExistence(timeout: 1.0)
-            || appHelper.app.navigationBars.firstMatch.waitForExistence(timeout: 1.0)
+        var paywallShown = false
+        var toastStillVisibleWhenPaywallAppeared = false
+        for _ in 0..<110 { // 11s 上限(原 10s + 轮询粒度)
+            if paywallNavBar.exists || paywallClose.exists
+                || appHelper.app.navigationBars.firstMatch.exists {
+                paywallShown = true
+                // paywall 首现时 toast 应已播完(正确时序:toast 4.0s 消失,
+                // paywall 4.3s 弹出)。给 1.0s 窗口吸收 removal 动画尾巴
+                // (springStandard 过渡期间元素仍可查询)与查询延迟;
+                // 窗口必须 < 2.0s:回退时序(2.0s 硬编码)下 paywall 于 2.3s
+                // 弹出、toast 到 4.0s 才消失,差值 2.0s——窗口过宽会把回退
+                // 差值一并吸收,断言失去回归保护。
+                var gone = false
+                for _ in 0..<10 {
+                    if !goLookOnScreen() { gone = true; break }
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+                toastStillVisibleWhenPaywallAppeared = !gone
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
         if !paywallShown {
             print("===PAYWALL-DEBUG-BEGIN===\n\(appHelper.app.debugDescription)\n===PAYWALL-DEBUG-END===")
         }
         XCTAssertTrue(paywallShown,
                       "wow 播完后付费墙应弹出(延迟 2.3~4.3s,取决于 toast 是否带「去看看」)")
+        XCTAssertFalse(toastStillVisibleWhenPaywallAppeared,
+                       "paywall 弹出时庆祝 toast 仍在屏上——疑似 paywall 延迟被硬编码回 2.0s(v3 §3.5d),用户来不及点「去看看」")
 
         // Step 6: 一屏化断言 —— 付费墙全部内容(含「开始 7 天免费试用」CTA + 法务三件套)
         // 不滚动即可见。依赖 DEBUG 钩子 PaywallContentFits(value "1|content=|viewport=|state="),
@@ -647,6 +695,94 @@ final class ScenarioTests: XCTestCase {
         attachScreenshot(named: "paywall-fits\(fits)")
         XCTAssertEqual(String(fits.prefix(1)), "1",
                        "付费墙内容溢出一屏(需要滚动才能看到 CTA),value=\(fits)")
+    }
+
+    // MARK: - S18a/S18b: 首次语音试用引导(庆祝 toast 文案分支)
+
+    /// G2 验收缺口:mock 转写恒定落别日,first_trial(全落今天)与
+    /// first_trial_generic(含无日期条目)两条文案分支从未被任何测试执行过。
+    /// 两个变体分别注入落今天/无日期的 mock 转写补齐覆盖。
+    /// (v3 §5.2 反例 13 的四来源 source 断言涉及遥测,成本高,暂不做——在此记录。)
+
+    /// 变体 A:全落今天(scenario=today-single)→ first_trial 文案(点名「今天」),无「去看看」。
+    func test_S18a_firstVoiceTrial_todayToastBranch() {
+        appHelper.launch(withScenario: "today-single")
+        let hint = walkOnboardingToHintSignal()
+        XCTAssertTrue(hint.waitForExistence(timeout: 3.0), "走完 onboarding(含授权)后 hint 应浮出")
+
+        appHelper.tapRecordFABByCoordinate()
+        XCTAssertTrue(appHelper.switchToKeyboardButton.waitForExistence(timeout: 2.0), "录音面板应该出现")
+        appHelper.stopRecording()
+        appHelper.waitForConfirmSheet()
+        appHelper.tapConfirmButton()
+        // toast 从 confirm 的 onDismiss 起播,寿命仅 2.0s(无 action 不翻倍)——
+        // 先前「等 sheet 消失 + 等 hint 消失 + waitForExistence(~1s 粒度)」的
+        // 叠加窗口会错过它。这里从点击 confirm 起立即以 0.1s 粒度轮询,
+        // 捕获窗口最大化;toast 出现时 sheet 还在退场动画中也能查到(在树里)。
+        let todayToast = appHelper.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天的清单")
+        ).firstMatch
+        let goLookButton = appHelper.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "去看看")
+        ).firstMatch
+        let goLookText = appHelper.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "去看看")
+        ).firstMatch
+        var toastFound = false
+        var goLookEverSeen = false
+        for _ in 0..<40 { // 4s 上限 @ 0.1s 粒度,覆盖 toast 全寿命
+            if goLookButton.exists || goLookText.exists { goLookEverSeen = true }
+            if todayToast.exists { toastFound = true }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+        XCTAssertTrue(hint.waitForNonExistence(timeout: 3.0), "首次语音待办落库后 hint 应消失")
+        if !toastFound {
+            print("===TODAY-TOAST-DEBUG-BEGIN===\n\(appHelper.app.debugDescription)\n===TODAY-TOAST-DEBUG-END===")
+        }
+        // 全落今天 → 「太棒了!已经记在你今天的清单里」,无 action。
+        // 判别词「今天的清单」只属于 first_trial;generic/elsewhere 均不含。
+        XCTAssertTrue(toastFound, "全落今天的首条 wow 应回 first_trial 文案(点名「今天」)")
+        XCTAssertFalse(goLookEverSeen, "first_trial 分支不应带「去看看」action")
+    }
+
+    /// 变体 B:无日期条目(scenario=no-date-single)→ first_trial_generic 文案(不点名「今天」),无「去看看」。
+    func test_S18b_firstVoiceTrial_genericToastBranch() {
+        appHelper.launch(withScenario: "no-date-single")
+        let hint = walkOnboardingToHintSignal()
+        XCTAssertTrue(hint.waitForExistence(timeout: 3.0), "走完 onboarding(含授权)后 hint 应浮出")
+
+        appHelper.tapRecordFABByCoordinate()
+        XCTAssertTrue(appHelper.switchToKeyboardButton.waitForExistence(timeout: 2.0), "录音面板应该出现")
+        appHelper.stopRecording()
+        appHelper.waitForConfirmSheet()
+        appHelper.tapConfirmButton()
+        // toast 寿命仅 2.0s,同 S18a:从点击 confirm 起立即快速轮询。
+        let genericToast = appHelper.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "已经记在你的清单里")
+        ).firstMatch
+        let goLookButton = appHelper.app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "去看看")
+        ).firstMatch
+        let goLookText = appHelper.app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "去看看")
+        ).firstMatch
+        var toastFound = false
+        var goLookEverSeen = false
+        for _ in 0..<40 { // 4s 上限 @ 0.1s 粒度,覆盖 toast 全寿命
+            if goLookButton.exists || goLookText.exists { goLookEverSeen = true }
+            if genericToast.exists { toastFound = true }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+        XCTAssertTrue(hint.waitForNonExistence(timeout: 3.0), "首次语音待办落库后 hint 应消失")
+        if !toastFound {
+            print("===GENERIC-TOAST-DEBUG-BEGIN===\n\(appHelper.app.debugDescription)\n===GENERIC-TOAST-DEBUG-END===")
+        }
+        // 无日期 → 「太棒了!已经记在你的清单里」。判别词「已经记在你的清单里」
+        // 只属于 generic(first_trial 是「记在你今天**的**清单里」,不含该连续子串)。
+        XCTAssertTrue(toastFound, "含无日期条目的首条 wow 应回 first_trial_generic 文案(不点名「今天」)")
+        XCTAssertFalse(goLookEverSeen, "first_trial_generic 分支不应带「去看看」action")
     }
 
     // MARK: - S19: 首次语音试用引导(反例:权限未授予)

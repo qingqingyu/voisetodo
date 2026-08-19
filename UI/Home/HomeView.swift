@@ -481,6 +481,14 @@ struct HomeView<Store: HomeTodoStore>: View {
         .onChange(of: coordinator.showConfirmSheet) { _, _ in
             evaluateFirstTrialHintTrigger()
         }
+        // F1 修复:isInputEntryDisabled 的组成信号(isExtracting/isProcessing)
+        // 没有其它触发点观察——取消 ConfirmSheet 时若 extraction 尚未收敛,
+        // 上面那条 onChange 评估时仍不 eligible,之后 extraction 收敛也没有事件
+        // 再触发评估,hint 会卡在隐藏态直到用户切 tab/退后台。这里观察聚合值
+        // 本身(计算属性,SwiftUI onChange 支持 Equatable 计算值)补上缺口。
+        .onChange(of: isInputEntryDisabled) { _, _ in
+            evaluateFirstTrialHintTrigger()
+        }
         // 成功添加底部 toast:position=.bottom,不遮顶部 Today 计数器(pill 在做 pop)。
         // addedToastVisible/Token 由 presentAddedToast(for:) 控制;revealConfirmedTodos
         // 调用 presentAddedToast。Token 递增用于连续添加时重置 dismiss 计时。
@@ -976,7 +984,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         if wasFirstTrial {
             firstVoiceTrialRaw = FirstVoiceTrial.nextState(
                 current: FirstVoiceTrial(rawValue: firstVoiceTrialRaw) ?? .notArmed,
-                didConfirmTodos: !ids.isEmpty
+                didConfirmTodos: true // 函数开头的 guard 已保证 ids 非空
             ).rawValue
             Telemetry.record(.firstVoiceTrial(stage: FirstVoiceTrialStage.completed))
             // 状态终结后立即收起 hint。`onChange(showConfirmSheet)` 的评估发生在
@@ -1766,6 +1774,8 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - First Voice Trial Hint(首次语音试用引导)
 
     /// hint 触发条件(§3.4c):pending 状态 + today tab + 无面板/弹层 + 输入入口可用。
+    /// 注:`!coordinator.showConfirmSheet` 已被 `!isInputEntryDisabled` 覆盖
+    /// (`isInputEntryBlockedByProcessing` 含 showConfirmSheet),显式保留是为可读性。
     private var isFirstTrialHintEligible: Bool {
         firstVoiceTrialRaw == FirstVoiceTrial.pending.rawValue
             && selectedBottomTab == .today
@@ -1775,10 +1785,12 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     /// 评估首次语音试用 hint 触发(§3.4d)。结构同 evaluateExpandHintTrigger:
-    /// 可取消 Task + 延迟后二次 guard。触发入口共 5 个,缺一条就有对应失效场景:
+    /// 可取消 Task + 延迟后二次 guard。触发入口共 6 个,缺一条就有对应失效场景:
     /// `.onAppear`(主路径:onboarding sheet 关闭后 HomeView 首挂)/
     /// `onChange(selectedBottomTab)`(反例 8)/ `onChange(showInputPanel)`(反例 6)/
     /// `onChange(showConfirmSheet)`(确认 sheet 关闭但未确认)/
+    /// `onChange(isInputEntryDisabled)`(取消 ConfirmSheet 时 extraction
+    /// 尚未收敛的场景,见挂载处 F1 注释)/
     /// `onChange(scenePhase)` 回前台(反例 9)。
     ///
     /// 与 ExpandHint 的关键差异:**不在展示时落盘**——落盘只发生在「完成」

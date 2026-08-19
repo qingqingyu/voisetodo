@@ -1,15 +1,6 @@
 import SwiftUI
 import StoreKit
 
-// MARK: - Presentation Context
-
-/// 付费墙呈现形态。历史上有 sheet / onboarding 内嵌两种;onboarding 步骤已被移除
-/// (paywall 改为首次 wow 后弹 sheet,见 docs/onboarding-first-voice-trial.md §3.5),
-/// 仅剩 sheet 形态。保留 enum 以免连带改 `PaywallContent` 的调用签名。
-enum PaywallPresentationContext {
-    case sheet       // AppCoordinator.presentPaywall(四来源) / 设置页入口
-}
-
 /// 付费墙法务链接常量。3.1.2 要求隐私政策 + 使用条款均可点。
 /// 使用条款用 Apple 标准最终用户许可协议(未自定义时默认适用于本 app);
 /// 隐私政策为 GitHub Pages 公开页,与 App Store Connect 提审表单填的是同一地址。
@@ -77,7 +68,7 @@ struct PaywallView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    PaywallContent(context: .sheet)
+                    PaywallContent()
                         .padding(.vertical, WarmSpacing.xs)
                         // 测自然内容高(含上下外边距,在钩子之前):一屏化改造的回归哨兵,
                         // 超预算时 S18 读 PaywallContentFits 断言失败并显示差值。
@@ -129,15 +120,14 @@ struct PaywallView: View {
 
 // MARK: - PaywallContent
 
-/// 付费墙主体内容(现仅 sheet 形态使用;历史上有 onboarding 内嵌,已删)。
+/// 付费墙主体内容(仅 sheet 形态:AppCoordinator.presentPaywall 四来源 + 设置页入口;
+/// 历史上有 onboarding 内嵌与其形态 enum,已删)。
 ///
 /// 渲染顺序(自上而下):`comparisonCard → valuePropsList → productList → [purchaseCTA] → legalBlock`
 ///
 /// 一屏化(2026-08):删掉 header(副标题与导航标题/CTA 信息重复)与 quota 价值卡
 /// (额度信息由对比胶囊表达),区块间距 lg→sm,保证 SE 级视口下 CTA 无需滚动即可见。
 struct PaywallContent: View {
-    let context: PaywallPresentationContext
-
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
 
