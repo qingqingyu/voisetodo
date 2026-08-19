@@ -62,6 +62,16 @@ struct UITestLaunchOptions {
             return "最近好累，什么都不想干"
         case "urgent-single":
             return "必须今天交报告"
+        case "today-single":
+            // G2(S18a):落今天的单条——庆祝 toast 走 first_trial 分支(点名「今天」)。
+            // 注意配套 UITestTodoExtractor 的「今晚八点」分支:mock 抽取器兜底分支
+            // 恒给 dueHint nil(无日期),单靠这条转写落不了今天。
+            return "今晚八点给妈妈打电话"
+        case "no-date-single":
+            // G2(S18b):无日期单条——庆祝 toast 走 first_trial_generic 分支(不点名「今天」)。
+            // 转写本身不得含任何时间词(今天/明天/今晚/周X/N天后),否则会被
+            // TodoDueDateResolver 解析出日期,落错分支。
+            return "记得给阳台的花浇水"
         default:
             return "明天去银行"
         }

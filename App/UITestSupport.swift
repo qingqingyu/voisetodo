@@ -106,6 +106,17 @@ struct UITestTodoExtractor: TodoExtractorProtocol {
             )
         }
 
+        // G2(S18a):落今天的单条。兜底分支恒给 dueHint nil(无日期),
+        // 必须显式给 dueHint 才能让 TodoDueDateResolver 解析出今天。
+        if normalized.contains("今晚八点") {
+            return ExtractionResult(
+                todos: [
+                    ExtractedTodo(title: "给妈妈打电话", detail: normalized, dueHint: "今晚", priority: .normal, categoryHint: .social)
+                ],
+                ignored: ""
+            )
+        }
+
         return ExtractionResult(
             todos: [
                 ExtractedTodo(
