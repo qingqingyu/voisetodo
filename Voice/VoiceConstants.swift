@@ -8,8 +8,10 @@ enum VoiceConstants {
     static let silenceThresholdDB: Float = -40.0
 
     /// 说话后静音自动提交的超时时间（秒）。
-    /// 用户说完话后等 1.5s 静音即自动提交，Send 按钮变为可选快捷路径。
-    static let silenceTimeoutSeconds: TimeInterval = 1.5
+    /// 用户说完话后等 2.5s 静音即自动提交，Send 按钮变为可选快捷路径。
+    /// v2 从 1.5s 调大：1.5s 会把说话间的思考停顿（通常 1~2.5s）误判为说完，
+    /// 导致录音被提前掐断；2.5s 覆盖大部分自然停顿，提交延迟仍在可接受范围。
+    static let silenceTimeoutSeconds: TimeInterval = 2.5
 
     /// 硬性最大录音时长（秒）。到达即自动停止——防口袋误触/忘关导致超长转写，
     /// 也是成本整形（正常"说今天安排"远不到 90s）。注意：这是 UX/成本整形，
