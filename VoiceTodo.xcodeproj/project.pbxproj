@@ -152,6 +152,7 @@
 		AD9E8C4E0A7E696FF2BF873A /* BottomTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62DBD06A9F0879BAA041D2E1 /* BottomTabBar.swift */; };
 		ADF8DA079B27B1F1D4F1F902 /* AppGroupConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA980239E357F51EC6EE59B5 /* AppGroupConfig.swift */; };
 		AED9494EB47AAC70893B66D8 /* FeedbackSubmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C1D879B3D83F5B8CC01996 /* FeedbackSubmitter.swift */; };
+		AEE64F8C3E55ED1FD016B42A /* DetailKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE8E927A8B4BDB097F09BCC /* DetailKeyboardUITests.swift */; };
 		B0BF0CB8B48FBA279735ECB1 /* TodoSpan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34323022C7F0609A2B65B174 /* TodoSpan.swift */; };
 		B1680828A1DEBF5846D3A0A3 /* TodoDetailUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D799E5C2E379EA61F6671251 /* TodoDetailUpdateTests.swift */; };
 		B1D936E0475C10D73004F39B /* TodoItemReminderTimesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146CB1C71B58BA447C811552 /* TodoItemReminderTimesTests.swift */; };
@@ -378,6 +379,7 @@
 		A7E00281D082A7AFAB67384E /* TelemetryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryQueue.swift; sourceTree = "<group>"; };
 		AC203173915D3792B31BA1EA /* RecurrenceAnchorPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceAnchorPolicy.swift; sourceTree = "<group>"; };
 		AC981BF525760D925DDE5884 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
+		ACE8E927A8B4BDB097F09BCC /* DetailKeyboardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailKeyboardUITests.swift; sourceTree = "<group>"; };
 		ADA9B1DC522D3039EB104860 /* TodoItemFromBasisFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoItemFromBasisFilterTests.swift; sourceTree = "<group>"; };
 		B089B83D18F62D12A4885791 /* PersonalGlossaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalGlossaryView.swift; sourceTree = "<group>"; };
 		B14BFFE9BFB2C6D74E181445 /* GroupedCardRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedCardRow.swift; sourceTree = "<group>"; };
@@ -858,6 +860,7 @@
 			children = (
 				198CD6D0363C8627E4A9CA43 /* AppLaunchHelper.swift */,
 				923052D2F0F2BD6AB9CBF6B5 /* CalendarHomeUITests.swift */,
+				ACE8E927A8B4BDB097F09BCC /* DetailKeyboardUITests.swift */,
 				24C04968853DFB54D2897574 /* ScenarioTests.swift */,
 				FE4F86105DF065B995955FC1 /* UITestModels.swift */,
 				8DC7557E009F9B5CC116A814 /* WidgetSnapshotTests.swift */,
@@ -1202,6 +1205,7 @@
 			files = (
 				C8128B74D0C8012C12B2B380 /* AppLaunchHelper.swift in Sources */,
 				B66A6F9E7262A019BCA450DE /* CalendarHomeUITests.swift in Sources */,
+				AEE64F8C3E55ED1FD016B42A /* DetailKeyboardUITests.swift in Sources */,
 				8466F8A801589CE11A91EF37 /* ScenarioTests.swift in Sources */,
 				8AF7025F1A4482FAF34CC062 /* UITestModels.swift in Sources */,
 				3CFC8147CD35803BDC65D9E9 /* WidgetSnapshotTests.swift in Sources */,
