@@ -222,4 +222,15 @@ final class EntitlementManager: ObservableObject {
     /// 供 NetworkClient 构造器注入的 JWS provider（保持构造器注入风格，不回退 ServiceContainer）。
     /// 弱引用 self，避免 NetworkClient 常驻导致 EntitlementManager 无法释放。
     var jwsProvider: @MainActor () -> String? { { [weak self] in self?.jwsString } }
+
+#if DEBUG
+    /// 测试注入口：单测环境无法驱动 StoreKit `currentEntitlements`，
+    /// 直接注入 isPro / JWS 状态以覆盖订阅相关分支。
+    /// Release 配置编译缺席（与 TelemetryQueue 的测试 seam 同一取舍），
+    /// 若以 Release 跑测试，订阅分支相关测试将编译不过（预期）。
+    func setEntitlementForTesting(isPro: Bool, jwsString: String? = nil) {
+        self.isPro = isPro
+        self.jwsString = jwsString
+    }
+#endif
 }

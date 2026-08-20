@@ -22,6 +22,10 @@ enum ErrorMessages {
     /// 文案不暗示"用户额度用完"或"网络故障"，只说事实 + 行动建议。
     static let ipRateLimited = String(localized: "error.ip_rate_limited")
     static let quotaExhausted = String(localized: "error.quota_exhausted")
+    /// 已订阅用户撞当日额度上限：不弹升级墙（已无法再升级），改为告知额度耗尽事实。
+    /// 触发条件：quotaExhausted 时 `EntitlementManager.isPro == true`。
+    /// 与 quotaExhausted 的区别：不含「免费」字样（订阅用户看到会困惑），并说明转写已保留。
+    static let quotaExhaustedPro = String(localized: "error.quota_exhausted_pro")
     static let serviceBusy = String(localized: "error.service_busy")
     static let apiError = String(localized: "error.api_error")
     /// `apiResponseInvalid` case 关联值常用的 detail 字符串——被 NetworkClient 8 个失败路径

@@ -100,7 +100,71 @@ for (const { label, path } of CONFIGS) {
         + "上线时这两个值必须成对修改(见 CONFIGURATION_CHECKLIST.md)"
     );
   });
+
+  test(`${label}: subscription JWS verification vars are present`, () => {
+    const vars = readVars(path);
+
+    assert.ok(
+      typeof vars.APP_BUNDLE_ID === "string" && vars.APP_BUNDLE_ID.length > 0,
+      "APP_BUNDLE_ID 缺失 → worker.js 回退默认值 com.voicetodo.app,与本 app 的"
+        + " bundle 不匹配 → verifySubscriptionJWS 抛 bundle_mismatch → fail-safe 免费档,"
+        + "已订阅用户被静默降级(免费额度 + 撞墙弹升级 paywall)"
+    );
+    const proIDs = String(vars.PRO_PRODUCT_IDS || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    assert.ok(
+      proIDs.length >= 1 && proIDs.every((id) => /^[\w.]+$/.test(id)),
+      `PRO_PRODUCT_IDS="${vars.PRO_PRODUCT_IDS}" 不是非空的逗号分隔产品 ID 列表 → `
+        + "worker.js 回退默认值 com.voicetodo.pro.* → 真实订阅验签抛 product_mismatch → 免费档"
+    );
+  });
 }
+
+// MARK: - 订阅验签值必须与 iOS 端逐字一致(仅校验真正部署的 wrangler.toml)
+//
+// 为什么交叉校验 iOS 源码:APP_BUNDLE_ID / PRO_PRODUCT_IDS 的正确值定义在
+// iOS 仓库(project.yml / EntitlementManager.swift),不在本目录。只断言「存在」
+// 防不住「iOS 端改了产品 ID / bundle 而忘了同步 toml」—— 那正是
+// 2026-08-20 订阅用户被降级 bug 的形态:两个默认值都存在但全错。
+
+function swiftProductIDConstant(name) {
+  const source = readFileSync(new URL("../App/EntitlementManager.swift", import.meta.url), "utf8");
+  const match = source.match(new RegExp(`static\\s+let\\s+${name}\\s*=\\s*"([^"]+)"`));
+  return match ? match[1] : null;
+}
+
+function mainAppBundleID() {
+  const source = readFileSync(new URL("../project.yml", import.meta.url), "utf8");
+  // 兼容带引号/不带引号两种 yml 合法写法,剥掉成对引号避免断言误报。
+  const ids = [...source.matchAll(/PRODUCT_BUNDLE_IDENTIFIER:\s*"?([^\s"]+)"?/g)].map((m) => m[1]);
+  if (ids.length === 0) return null;
+  // 主 app target 的 bundle ID 是所有 target(.widget/.tests/.uitests)的前缀,
+  // 取最短的即主 app。
+  return ids.reduce((shortest, id) => (id.length < shortest.length ? id : shortest));
+}
+
+test("wrangler.toml: subscription verification vars match the iOS client", () => {
+  const vars = readVars(DEPLOYED);
+
+  const monthly = swiftProductIDConstant("monthlyProductID");
+  const yearly = swiftProductIDConstant("yearlyProductID");
+  assert.ok(monthly && yearly, "App/EntitlementManager.swift 解析不到 monthlyProductID/yearlyProductID —— 正则过期了?");
+  const bundle = mainAppBundleID();
+  assert.ok(bundle, "project.yml 解析不到 PRODUCT_BUNDLE_IDENTIFIER —— 正则过期了?");
+
+  const proIDs = String(vars.PRO_PRODUCT_IDS).split(",").map((s) => s.trim()).filter(Boolean);
+  assert.ok(
+    proIDs.includes(monthly) && proIDs.includes(yearly),
+    `PRO_PRODUCT_IDS (${vars.PRO_PRODUCT_IDS}) 未同时包含 iOS 端的 "${monthly}" 与 "${yearly}"。`
+      + "改产品 ID 必须两边同步改,否则验签永远 product_mismatch,付费用户被降级到免费档"
+  );
+  assert.strictEqual(
+    vars.APP_BUNDLE_ID,
+    bundle,
+    `APP_BUNDLE_ID 应为 project.yml 主 app target 的 "${bundle}"。`
+      + "不一致 → 验签永远 bundle_mismatch,付费用户被降级到免费档"
+  );
+});
 
 // MARK: - 超时预算:Worker 最坏 failover 耗时必须装得进 iOS 客户端的等待窗口
 
