@@ -3164,6 +3164,28 @@
         }
       }
     },
+    "error.quota_exhausted_pro" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today's quota is used up. Your transcript is saved; quota resets tomorrow."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日の利用枠を使い切りました。文字起こしは保存済みです。明日リセットされます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日额度已用完，转写已保留，明天重置"
+          }
+        }
+      }
+    },
     "error.rate_limited" : {
       "localizations" : {
         "en" : {

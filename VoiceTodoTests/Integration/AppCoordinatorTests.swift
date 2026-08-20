@@ -760,7 +760,89 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, ErrorMessages.storageError)
     }
 
+    // MARK: - 配额耗尽 × 订阅状态
+
+    /// 回归背景(2026-08-20):代理验签失败把订阅用户降级到免费档,免费额度耗尽的
+    /// 429 一路 presentPaywall(source: .quotaExhausted),已订阅用户看到「升级」墙。
+    /// 这组测试锁定:免费用户照旧弹 paywall;已订阅用户改弹额度耗尽 toast,不弹墙。
+
+    private func makeQuotaExhaustedCoordinator(
+        store: CoordinatorTestStore = CoordinatorTestStore(),
+        entitlement: EntitlementManager? = nil
+    ) -> AppCoordinator {
+        let extractor = DelayedExtractor()
+        extractor.extractionErrors["额度耗尽测试"] = VoiceTodoError.quotaExhausted(tier: "free", resetAt: "2026-08-21")
+        return AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store,
+            entitlement: entitlement,
+            networkIsConnectedProvider: { true }
+        )
+    }
+
+    func testQuotaExhaustedDuringManualInputPresentsPaywallForFreeUser() async {
+        let coordinator = makeQuotaExhaustedCoordinator()
+
+        await coordinator.processManualInput("额度耗尽测试")
+
+        await waitForPaywallShown(coordinator)
+    }
+
+    func testQuotaExhaustedDuringManualInputSuppressesPaywallForProUser() async {
+        let entitlement = EntitlementManager(enableTransactionListener: false)
+        entitlement.setEntitlementForTesting(isPro: true)
+        let coordinator = makeQuotaExhaustedCoordinator(entitlement: entitlement)
+
+        await coordinator.processManualInput("额度耗尽测试")
+
+        await waitForToast(coordinator, message: ErrorMessages.quotaExhaustedPro)
+        XCTAssertFalse(coordinator.showPaywall, "已订阅用户不应看到升级 paywall")
+    }
+
+    func testQuotaExhaustedDuringReextractPresentsPaywallForFreeUser() async {
+        let todoId = UUID()
+        let coordinator = makeQuotaExhaustedCoordinator(
+            store: CoordinatorTestStore(todos: [pendingTodo(id: todoId, transcript: "额度耗尽测试")])
+        )
+
+        coordinator.reextract(todoID: todoId)
+
+        await waitForPaywallShown(coordinator)
+    }
+
+    func testQuotaExhaustedDuringReextractSuppressesPaywallForProUser() async {
+        let entitlement = EntitlementManager(enableTransactionListener: false)
+        entitlement.setEntitlementForTesting(isPro: true)
+        let todoId = UUID()
+        let coordinator = makeQuotaExhaustedCoordinator(
+            store: CoordinatorTestStore(todos: [pendingTodo(id: todoId, transcript: "额度耗尽测试")]),
+            entitlement: entitlement
+        )
+
+        coordinator.reextract(todoID: todoId)
+
+        await waitForToast(coordinator, message: ErrorMessages.quotaExhaustedPro)
+        XCTAssertFalse(coordinator.showPaywall, "已订阅用户不应看到升级 paywall")
+    }
+
     // MARK: - Helpers
+
+    private func waitForPaywallShown(_ coordinator: AppCoordinator) async {
+        for _ in 0..<100 {
+            if coordinator.showPaywall { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Expected quota exhaustion to present the paywall")
+    }
+
+    private func waitForToast(_ coordinator: AppCoordinator, message: String) async {
+        for _ in 0..<100 {
+            if coordinator.showToast && coordinator.toastMessage == message { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Expected toast \"\(message)\", got \"\(coordinator.toastMessage)\"")
+    }
 
     private func waitForPartialResult(_ coordinator: AppCoordinator) async {
         for _ in 0..<100 {

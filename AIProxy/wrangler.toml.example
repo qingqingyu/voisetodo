@@ -15,6 +15,15 @@ DAILY_REQUEST_LIMIT = "2"
 #    而 paywall 仍在承诺更高额度（App Store 会按「付费无对应权益」拒审）。
 #    若产品宣传的是「无限」，这里要么设一个用户撞不到的大值，要么改文案为具体条数。
 PAID_DAILY_LIMIT = "100"
+# ─── 订阅 JWS 验签（Pro 档判定）──────────────────────────────────────────────
+# 两个值必须与 iOS 端逐字一致：bundle = project.yml 主 target 的
+# PRODUCT_BUNDLE_IDENTIFIER，产品 ID = App/EntitlementManager.swift 的
+# monthlyProductID / yearlyProductID。任一不匹配 → verifySubscriptionJWS 抛
+# bundle_mismatch / product_mismatch → fail-safe 免费档，付费用户被静默降级
+# （已付费却拿到免费额度、撞墙弹升级 paywall）。必须配置，worker.js 的默认值
+# （com.voicetodo.*）与本 app 不匹配。wrangler-config.test.js 有断言守着。
+APP_BUNDLE_ID = "com.qingqingyu.voicetodo"
+PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo.pro.yearly"
 # 全局每天调用上限：当天全网超过即对所有人返回 503，把分布式刷量的账单锁成可设上限。
 # 留空则不启用。建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。
 # GLOBAL_DAILY_LIMIT = "5000"

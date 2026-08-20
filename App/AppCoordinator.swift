@@ -1144,7 +1144,10 @@ final class AppCoordinator: ObservableObject {
     /// 外部调用失败（含配额耗尽）后离线兜底成功的统一处理。
     /// 普通失败保留原始原因并显示准确提示；配额耗尽继续走 paywall。
     /// `triggerPaywall=true` 时额外弹出订阅页（仅配额耗尽场景）。
+    /// 已订阅用户不弹升级墙（无法再升级；代理验签故障把 Pro 降级到免费档时，
+    /// 升级墙会把付费用户挡在门外），改为额度耗尽 toast 说明「为什么没解析」。
     private func handleOfflineFallbackSaved(triggerPaywall: Bool, reason: VoiceTodoError?) {
+        let suppressQuotaPaywall = triggerPaywall && entitlement.isPro
         clearExtractionPresentation()
         activeInputTranscript = nil
         activeInputLocaleIdentifier = nil
@@ -1153,12 +1156,20 @@ final class AppCoordinator: ObservableObject {
                 message: reason.errorDescription ?? ErrorMessages.unexpectedError,
                 style: .warning
             )
+        } else if suppressQuotaPaywall {
+            // 文案自带「已保留」语义，替代 savedOffline（否则订阅用户只看到
+            // 「已离线保存」，不知道是额度耗尽导致本次没解析）。
+            showToast(message: ErrorMessages.quotaExhaustedPro, style: .info)
         } else {
             showToast(message: ErrorMessages.savedOffline, style: .info)
         }
         if triggerPaywall {
-            VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted")
-            presentPaywall(source: .quotaExhausted)
+            if suppressQuotaPaywall {
+                VoiceTodoLog.coordinator.warning("coordinator.paywall.suppressed reason=already_pro source=quota_fallback")
+            } else {
+                VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted")
+                presentPaywall(source: .quotaExhausted)
+            }
         }
     }
 
@@ -1259,10 +1270,17 @@ final class AppCoordinator: ObservableObject {
                 showToast(message: ErrorMessages.networkError, style: .warning)
             case .circuitOpen:
                 showToast(message: ErrorMessages.circuitOpen, style: .warning)
-            case .quotaExhausted:
+            case .quotaExhausted(let tier, let resetAt):
                 // 配额耗尽：开 paywall 引导升级，不弹普通失败 toast。
-                VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted_handled")
-                presentPaywall(source: .quotaExhausted)
+                // 已订阅用户不可能再「升级」——升级墙只会把付费用户挡在门外
+                // （代理验签故障把 Pro 降级到免费档时正是这种形态），改为告知额度耗尽事实。
+                if entitlement.isPro {
+                    VoiceTodoLog.coordinator.warning("coordinator.paywall.suppressed reason=already_pro tier=\(tier, privacy: .public) resetAt=\(resetAt, privacy: .public)")
+                    showToast(message: ErrorMessages.quotaExhaustedPro, style: .warning)
+                } else {
+                    VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted_handled")
+                    presentPaywall(source: .quotaExhausted)
+                }
             case .rateLimited:
                 showToast(message: ErrorMessages.rateLimited, style: .warning)
             case .ipRateLimited:
