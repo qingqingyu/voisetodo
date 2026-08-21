@@ -37,6 +37,9 @@ enum SystemCalendarEventImporter {
             hasDueTime: hasDueTime,
             priority: .normal,
             category: .other,
+            // 定时导入事件同样回填全局默认提前量——导入的待办本来就会收到 App 的
+            // 准时通知(NotificationPlanner 拾取一切带钟点未完成项),套默认只是平移。
+            reminderOffsetMinutes: hasDueTime ? ReminderOffsetConfig.effectiveDefaultOffset() : nil,
             isCompleted: false,
             createdAt: Date(),
             needsAIProcessing: false,

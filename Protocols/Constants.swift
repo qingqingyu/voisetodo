@@ -139,6 +139,18 @@ enum FeedbackConfig {
 enum ReminderOffsetConfig {
     /// 最大提前分钟数(= 1 天)。0/负数/超界一律按"准时"(nil)处理。
     static let maxMinutes = 1440
+
+    /// App 级「默认提前提醒」的 UserDefaults 键(标准库;Widget 不读该值)。
+    /// 存档位原始 Int:0 = 准时,5/15/30/60/1440 = 提前分钟数。
+    static let defaultOffsetDefaultsKey = "todoDefaultReminderOffsetMinutes"
+
+    /// 当前生效的全局默认提前量(nil = 准时)。
+    /// 键缺失/0/越界脏值一律降级为准时。只在待办"出生"时读取——
+    /// 不影响存量待办,用户改设置不会重排已有通知。
+    static func effectiveDefaultOffset(from defaults: UserDefaults = .standard) -> Int? {
+        let raw = defaults.integer(forKey: defaultOffsetDefaultsKey)
+        return (1...maxMinutes).contains(raw) ? raw : nil
+    }
 }
 
 /// UI 配置

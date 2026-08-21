@@ -49,7 +49,11 @@ struct AddTodoIntent: AppIntent {
             let result = try await VoiceTodoLog.$requestPath.withValue("siri") {
                 try await extractor.extract(from: trimmed, locale: inputLocale)
             }
+            // 草稿出生点(Siri 直落库,无确认页):AI 未显式解析出提前量时回填全局默认,
+            // snippet 视图展示的即是落库真值。
+            let defaultOffset = ReminderOffsetConfig.effectiveDefaultOffset()
             extractedTodos = Self.todosWithInputLocale(result.todos, localeIdentifier: inputLocale.identifier)
+                .map { $0.backfilledDefaultReminderOffset(defaultOffset) }
             VoiceTodoLog.intent.info("intent.add.extract_success id=\(intentID, privacy: .public) locale=\(inputLocale.identifier, privacy: .public) todoCount=\(extractedTodos.count)")
         } catch let error as VoiceTodoError {
             VoiceTodoLog.intent.error("intent.add.extract_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")

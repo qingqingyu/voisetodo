@@ -8273,6 +8273,50 @@
         }
       }
     },
+    "settings.notifications.default_offset" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default early reminder"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトの事前通知"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认提前提醒"
+          }
+        }
+      }
+    },
+    "settings.notifications.default_offset.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New timed to-dos will remind this far in advance by default. Each to-do can override this on its detail page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今後作成する時間付きのタスクに適用されます。個別のタスクは詳細画面で変更できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "之后新建的带钟点待办,默认提前这么久提醒;每条待办可在详情页单独调整。"
+          }
+        }
+      }
+    },
     "settings.notifications.description" : {
       "localizations" : {
         "en" : {

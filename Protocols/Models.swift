@@ -279,6 +279,19 @@ struct ExtractedTodo: Identifiable, Codable {
         self.localeIdentifier = localeIdentifier
     }
 
+    /// 全局默认提前量回填:带钟点(dueTime != nil)且未解析出提前量时填入 defaultOffset,
+    /// 其余情况原样返回 self。只在待办"出生"(草稿构造/补钟点)时调用——
+    /// 用户显式选"准时"后不得再回填,否则永远选不回准时。
+    /// defaultOffset 过不了消毒(非 1...1440)同样不回填,脏值按"无默认"处理。
+    func backfilledDefaultReminderOffset(_ defaultOffset: Int?) -> ExtractedTodo {
+        guard dueTime != nil,
+              reminderOffsetMinutes == nil,
+              let sanitized = Self.sanitizeReminderOffset(defaultOffset) else { return self }
+        var copy = self
+        copy.reminderOffsetMinutes = sanitized
+        return copy
+    }
+
     /// 解析 AI 返回的 ISO 8601 日期串（"2026-07-15"）。固定 en_US_POSIX 防 locale 漂移。
     private static let isoDateFormatter: DateFormatter = {
         let f = DateFormatter()

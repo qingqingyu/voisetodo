@@ -35,6 +35,42 @@ final class AppCoordinatorTests: XCTestCase {
         )
     }
 
+    /// 草稿出生点回填:键盘输入路径(.partial 事件)应在草稿构造时回填全局默认提前量;
+    /// AI 显式解析的提前量优先;无钟点草稿不回填。
+    func testManualInputBackfillsGlobalDefaultReminderOffset() async throws {
+        UserDefaults.standard.set(30, forKey: ReminderOffsetConfig.defaultOffsetDefaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: ReminderOffsetConfig.defaultOffsetDefaultsKey) }
+
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["开会提醒"] = ExtractionResult(todos: [
+            ExtractedTodo(title: "带钟点", dueDate: Date(), dueTime: "15:00"),
+            ExtractedTodo(title: "显式提前", dueDate: Date(), dueTime: "16:00", reminderOffsetMinutes: 60),
+            ExtractedTodo(title: "无钟点", timeBucket: .evening)
+        ], ignored: "")
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: CoordinatorTestStore(todos: []),
+            // 不注入的话默认读 NetworkMonitor.shared——懒启动首读 connected=false,
+            // 流程走离线分支存 pending,不会经过 .partial 草稿路径。
+            networkIsConnectedProvider: { true }
+        )
+
+        await coordinator.processManualInput("开会提醒")
+
+        XCTAssertEqual(
+            coordinator.extractedTodos.map(\.title), ["带钟点", "显式提前", "无钟点"],
+            "草稿应进入确认列表,实际:\(coordinator.extractedTodos.map { "\($0.title)|\($0.dueTime ?? "-")|\(String(describing: $0.reminderOffsetMinutes))" })"
+        )
+        // 注意不能建成 [String: Int?] 字典再取值——外层 Optional 包装会让 XCTAssertNil 误报
+        func offsetMinutes(titled title: String) -> Int? {
+            coordinator.extractedTodos.first { $0.title == title }?.reminderOffsetMinutes
+        }
+        XCTAssertEqual(offsetMinutes(titled: "带钟点"), 30, "带钟点且 AI 未解析出提前量的草稿应回填全局默认")
+        XCTAssertEqual(offsetMinutes(titled: "显式提前"), 60, "AI 显式解析的提前量不应被全局默认覆盖")
+        XCTAssertNil(offsetMinutes(titled: "无钟点"), "无钟点草稿不应回填")
+    }
+
     func testHandleAppForegroundDoesNotConsumePendingWhenPresentationStateChangesBeforeDisplay() async throws {
         let pendingId = UUID()
         let store = CoordinatorTestStore(todos: [

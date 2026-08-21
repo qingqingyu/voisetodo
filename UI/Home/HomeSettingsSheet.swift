@@ -3,6 +3,9 @@ import SwiftUI
 struct HomeSettingsSheet: View {
     @Binding var calendarWriteModeRaw: String
     @AppStorage(NotificationPlanner.enabledDefaultsKey) private var notificationsEnabled = true
+    /// 默认提前提醒(原始 Int:0 = 准时,其余 = 提前分钟数,档位见 ReminderOffsetPresetOptions)。
+    /// 只在待办"出生"时回填,不影响存量。
+    @AppStorage(ReminderOffsetConfig.defaultOffsetDefaultsKey) private var defaultOffsetRaw = 0
     @AppStorage(UserVocabularyStore.isEnabledKey, store: UserVocabularyStore.sharedDefaults())
     private var isPersonalizedRecognitionEnabled = true
     /// 语音识别语言（"auto" / "zh-Hans" / "en-US"）。
@@ -161,6 +164,26 @@ struct HomeSettingsSheet: View {
                     Text(String(localized: "settings.notifications.description"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    // 默认提前提醒:只影响之后新建的带钟点待办(出生时回填),
+                    // 存量待办与用户显式选"准时"的待办不会被覆盖。
+                    Picker(selection: $defaultOffsetRaw) {
+                        ForEach(ReminderOffsetPresetOptions.presets, id: \.self) { preset in
+                            Text(ReminderOffsetPresetOptions.label(for: preset))
+                                .tag(ReminderOffsetPresetOptions.rawValue(for: preset))
+                        }
+                    } label: {
+                        Text(String(localized: "settings.notifications.default_offset"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .accessibilityIdentifier("DefaultReminderOffsetPicker")
+
+                    Text(String(localized: "settings.notifications.default_offset.footer"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
                 } header: {
                     Text(String(localized: "settings.notifications.title"))
                 }

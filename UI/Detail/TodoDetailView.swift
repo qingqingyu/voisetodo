@@ -278,8 +278,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                             // 偏移清成 nil,若 @State 仍留旧值,hasChanges 的
                             // `editedReminderOffsetMinutes != todo.reminderOffsetMinutes`
                             // 从此恒为 true——之后任意编辑都触发一次 no-op 全量写库 + toast。
+                            //
+                            // 补钟点(false→true)时反向:未选过提前量则回填全局默认——
+                            // 补钟点 = 新的提醒设置。清掉再补会重新吃到默认,接受此语义。
                             .onChange(of: editedHasDueTime) { _, hasTime in
-                                if !hasTime { editedReminderOffsetMinutes = nil }
+                                if !hasTime {
+                                    editedReminderOffsetMinutes = nil
+                                } else if editedReminderOffsetMinutes == nil {
+                                    editedReminderOffsetMinutes = ReminderOffsetConfig.effectiveDefaultOffset()
+                                }
                             }
 
                             // 提前提醒行:只在带钟点时出现(无钟点无到点提醒可言)。
