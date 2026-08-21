@@ -160,6 +160,15 @@ struct ReviewView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
 
+                        // 口径点明(2026-08-21 拍板):周/月切换器在统计页顶部,
+                        // 用户会以为它也管复盘。这行常驻小字说明流程固定「近 30 天」,
+                        // 消歧义,不动切换器位置。
+                        Text(String(localized: "review.flow.entry.scope"))
+                            .font(WarmFont.caption(11))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+
                         if let date = lastReviewDate?() {
                             Text(String(
                                 localized: "review.flow.entry.last_review_\(date.formatted(.dateTime.year().month().day()))"
@@ -263,6 +272,13 @@ struct ReviewView: View {
             dueByTodayCount: dueByTodayCount > 0 ? dueByTodayCount : nil,
             upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
         )
+        // 「当天记当天做完」按周/月各自区间算(一次性任务口径)。
+        let sameDayCount = ReviewAggregator.sameDayCompletions(
+            completedTodos.map { $0.toData() },
+            from: start,
+            to: end,
+            calendar: calendar
+        )
         return ReviewSummary(
             periodLabel: label,
             total: result.total,
@@ -274,7 +290,8 @@ struct ReviewView: View {
             completionRate: result.completionRate,
             dueByTodayCount: result.dueByTodayCount,
             upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
-            daysWithCompletion: result.daysWithCompletion
+            daysWithCompletion: result.daysWithCompletion,
+            sameDayCount: sameDayCount
         )
     }
 

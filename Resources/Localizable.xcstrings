@@ -7895,6 +7895,28 @@
         }
       }
     },
+    "review.flow.entry.scope" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Covers the last 30 days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去 30 日間をふりかえる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回顾近 30 天"
+          }
+        }
+      }
+    },
     "review.flow.entry.title" : {
       "localizations" : {
         "en" : {
@@ -9073,6 +9095,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成了 %lld 件事"
+          }
+        }
+      }
+    },
+    "review.hero.sameday_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "of which %lld were jotted down and finished the same day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのうち %lld 件は当日にメモして当日に終えた"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其中 %lld 件是当天记下、当天做完的"
           }
         }
       }

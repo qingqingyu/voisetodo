@@ -205,6 +205,7 @@
 		CD5CA4B651CED43E6A419190 /* LocalNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA666835F8CA9864517E3A2D /* LocalNotificationScheduler.swift */; };
 		CDD311EC5AFCF7108C78DE6C /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFA009138F185ACA9CCDC05 /* Telemetry.swift */; };
 		CF4B487EC3F860A09CC9D07A /* ValuePropCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */; };
+		CF6F096AC61753165DC6AFFF /* ReviewRecapSameDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */; };
 		D0E67B5D585A79FBEAF86701 /* CalendarSyncServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15F96788BBD2CF96E85A40B /* CalendarSyncServiceTests.swift */; };
 		D4057436F4B91ABC7D55D388 /* AppGroupModelContainerProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654DE387184B63467E67C633 /* AppGroupModelContainerProvider.swift */; };
 		D571348415B7377B7C5E80F1 /* TodoSpanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D240169FCFEEABE325D822BB /* TodoSpanTests.swift */; };
@@ -290,6 +291,7 @@
 		04B32FD694DE06AE8D0EE7A3 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		06C0BFDDA5AF9ECC3272D9B9 /* RecurrenceEnd.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceEnd.swift; sourceTree = "<group>"; };
 		071416DF494EE930B122B90D /* SystemCalendarWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarWriter.swift; sourceTree = "<group>"; };
+		0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewRecapSameDayTests.swift; sourceTree = "<group>"; };
 		0E4BF2A213AB8BD127DAB20B /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
 		0F91ACDCA48C0FD1301D8CEE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0FE4099B3B3B721CC2F2EF9C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -535,6 +537,7 @@
 				2C27460E635A54244B6D78AB /* HomeCalendarPeriodVisibilityTests.swift */,
 				A5636BCAAC1BD72AC5880FC0 /* HomeCalendarStateGroupingTests.swift */,
 				80D688C7A4292E80E400FC3E /* MarqueePhaseTests.swift */,
+				0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -1325,6 +1328,7 @@
 				F73DBDF0B1ED96BDD80AC94E /* QuotaUsageTests.swift in Sources */,
 				5F1CB22C37701A17182CC268 /* ReviewFlowStateTests.swift in Sources */,
 				3FAC5991B0DD20008811F2B4 /* ReviewPinningStoreTests.swift in Sources */,
+				CF6F096AC61753165DC6AFFF /* ReviewRecapSameDayTests.swift in Sources */,
 				514516D0844109E671738304 /* ReviewSessionStoreTests.swift in Sources */,
 				A4690AF940DA8DC273FCF293 /* StoreTests.swift in Sources */,
 				88969B486DF1975119DC1283 /* SystemCalendarWriterTests.swift in Sources */,

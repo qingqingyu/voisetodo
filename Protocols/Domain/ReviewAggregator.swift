@@ -33,6 +33,11 @@ struct ReviewSummary: Hashable, Equatable, Sendable {
     let upcomingDueIn7DaysCount: Int
     /// byDay 中 count > 0 的天数。UI 层据此判定是否切到稀疏文本态。
     let daysWithCompletion: Int
+    /// 「当天记下、当天做完」的完成件数(一次性任务口径)。由调用方用
+    /// `ReviewAggregator.sameDayCompletions` 算好传入——`CompletionEvent`
+    /// 不带 createdAt,summarize 内部算不了;规律任务无 per-occurrence
+    /// createdAt,不参与(设计文档「偏差与口径」)。
+    let sameDayCount: Int
 }
 
 /// 纯函数聚合层——把已完成事件聚合成回顾摘要,无副作用、无 SwiftData 依赖。
@@ -72,7 +77,8 @@ enum ReviewAggregator {
                 completionRate: nil,
                 dueByTodayCount: dueByTodayCount,
                 upcomingDueIn7DaysCount: upcomingDueIn7DaysCount,
-                daysWithCompletion: 0
+                daysWithCompletion: 0,
+                sameDayCount: 0
             )
         }
 
@@ -94,7 +100,8 @@ enum ReviewAggregator {
                 completionRate: nil,
                 dueByTodayCount: dueByTodayCount,
                 upcomingDueIn7DaysCount: upcomingDueIn7DaysCount,
-                daysWithCompletion: 0
+                daysWithCompletion: 0,
+                sameDayCount: 0
             )
         }
 
@@ -166,7 +173,35 @@ enum ReviewAggregator {
             completionRate: completionRate,
             dueByTodayCount: dueByTodayCount,
             upcomingDueIn7DaysCount: upcomingDueIn7DaysCount,
-            daysWithCompletion: daysWithCompletion
+            daysWithCompletion: daysWithCompletion,
+            sameDayCount: 0
         )
+    }
+
+    /// 「当天记、当天做完」件数:completedAt 落在 [startDay, endDay) 且与
+    /// createdAt 同一用户日。只数一次性任务(recurrenceRule == nil)——
+    /// 规律任务的完成记录(TodoOccurrenceCompletion)没有 per-occurrence
+    /// createdAt,算不了,排除(与第 3 步洞察 03 同口径)。
+    ///
+    /// - Parameters:
+    ///   - todos: 一次性/规律混排的待办 DTO(内部自过滤,规律任务直接跳过)
+    ///   - startDay: 区间起始(按用户日归一化,闭区间)
+    ///   - endDay: 区间结束(按用户日归一化,开区间——不含当天)
+    ///   - calendar: 日历,默认 .current
+    static func sameDayCompletions(
+        _ todos: [TodoItemData],
+        from startDay: Date,
+        to endDay: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
+        let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
+        return todos.filter { todo in
+            guard todo.recurrenceRule == nil, let completedAt = todo.completedAt else { return false }
+            let doneDay = DayClock.startOfUserDay(for: completedAt, calendar: calendar)
+            guard doneDay >= normalizedStart, doneDay < normalizedEnd else { return false }
+            let createdDay = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
+            return createdDay == doneDay
+        }.count
     }
 }

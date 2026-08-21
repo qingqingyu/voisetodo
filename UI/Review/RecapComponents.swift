@@ -22,6 +22,17 @@ struct RecapHeroSection: View {
                 .foregroundColor(WarmTheme.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+
+            // 「当天记、当天做完」件数(2026-08-21 用户拍板加上)。区间内没有
+            // 完成时不显示——「其中 0 件」是噪音。一次性任务口径,与洞察 03 一致。
+            if summary.total > 0 {
+                Text(String(localized: "review.hero.sameday_\(summary.sameDayCount)"))
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, WarmSpacing.lg)
@@ -279,6 +290,13 @@ enum RecapSummaryBuilder {
             dueByTodayCount: dueByTodayCount > 0 ? dueByTodayCount : nil,
             upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
         )
+        // 「当天记当天做完」只在一次性完成里数(规律完成无 per-occurrence createdAt)。
+        let sameDayCount = ReviewAggregator.sameDayCompletions(
+            completedTodos,
+            from: start,
+            to: end,
+            calendar: calendar
+        )
         return ReviewSummary(
             periodLabel: label,
             total: result.total,
@@ -290,7 +308,8 @@ enum RecapSummaryBuilder {
             completionRate: result.completionRate,
             dueByTodayCount: result.dueByTodayCount,
             upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
-            daysWithCompletion: result.daysWithCompletion
+            daysWithCompletion: result.daysWithCompletion,
+            sameDayCount: sameDayCount
         )
     }
 }
