@@ -654,6 +654,21 @@ final class TodoStore:
         VoiceTodoLog.store.warning("store.seed_for_ui_tests.success count=\(items.count) total=\(self.todos.count)")
     }
 
+    /// 数据体检:全量取库,不受 `todos` 窗口化过滤影响。
+    /// 阶段 0 诊断用,见 docs/todo-review-flow-design.md「阶段 0 · 数据体检」。
+    /// UI 入口只在 DEBUG 构建下出现;失败显式 throws,调用方负责打 error 日志并如实呈现失败。
+    func diagnosticsAllItems() throws -> [TodoItemData] {
+        do {
+            let items = try modelContext.fetch(FetchDescriptor<TodoItem>())
+            let data = items.map { $0.toData() }
+            VoiceTodoLog.store.info("store.diagnostics.fetch_success count=\(data.count, privacy: .public)")
+            return data
+        } catch {
+            VoiceTodoLog.store.error("store.diagnostics.fetch_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
     /// 记录系统日历事件 ID。
     /// - Parameters:
     ///   - eventIdentifier: 系统日历事件 ID

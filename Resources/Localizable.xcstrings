@@ -8175,6 +8175,72 @@
         }
       }
     },
+    "settings.diagnostics.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug only. Prints task statistics (priority, due times, categories, library age) to the console log."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバッグ用。タスク統計(優先度、時刻付き比率、カテゴリ分布、ライブラリ歴)をコンソールログに出力します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅调试用。把任务统计(优先级、带钟点占比、分类分布、库龄)打印到控制台日志。"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.header" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "診断"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据体检"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.run" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run data health check"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データ健診を実行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行数据体检"
+          }
+        }
+      }
+    },
     "settings.done" : {
       "localizations" : {
         "en" : {

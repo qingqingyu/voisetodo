@@ -338,6 +338,11 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
     }
 
     func refreshTodos() {}
+
+    /// 数据体检(阶段 0):Mock 无持久层,直接回内存数据。失败路径不会出现。
+    func diagnosticsAllItems() throws -> [TodoItemData] {
+        todos
+    }
 }
 
 private extension MockStore {

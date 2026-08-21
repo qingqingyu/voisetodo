@@ -211,6 +211,17 @@ protocol SystemCalendarEventIdentifierWriting {
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws
 }
 
+/// 数据体检读取能力——阶段 0 诊断用,
+/// 见 docs/todo-review-flow-design.md「阶段 0 · 数据体检」。
+/// UI 入口在 HomeSettingsSheet 的 DEBUG section(编译期裁剪);
+/// 协议本身不包 #if,因为协议继承列表(HomeTodoStore)无法条件编译,
+/// Release 下保留一个无人调用的读取方法,无行为影响。
+protocol TodoDiagnosticsReading {
+    /// 全量取库(不受 `todos` 窗口化过滤影响),供数据体检统计。
+    /// 失败时显式 throws,调用方负责打 error 日志,不许用默认值掩盖。
+    func diagnosticsAllItems() throws -> [TodoItemData]
+}
+
 /// 待办刷新能力。
 protocol TodoRefreshing {
     /// 从数据库重新加载 todos（用于 UI 状态与数据层不一致时回滚）
@@ -220,7 +231,7 @@ protocol TodoRefreshing {
 /// Home 页需要列表、完成切换、日历 occurrence、无日期任务拖拽排序,以及排序失败时的刷新回滚。
 /// 含详情更新(`TodoDetailUpdating`)——chip 改时间 popover 需要直接走 store.updateTime,
 /// 而不是绕一层 coordinator(避免 HomeView 与 AppCoordinator 的耦合进一步加深)。
-protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating {}
+protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating, TodoDiagnosticsReading {}
 
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新、pending 替换和日历导入。
 protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting, TodoImporting, TodoOrderingWriting {}

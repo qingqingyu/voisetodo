@@ -467,7 +467,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onImportFromCalendar: {
                     showSettingsSheet = false
                     showCalendarImport = true
-                }
+                },
+                onRunDataDiagnostics: { runDataDiagnostics() }
             )
         }
         // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
@@ -2746,6 +2747,42 @@ private struct GlossarySuggestionBanner: View {
                 .fill(WarmTheme.background)
                 .shadow(color: WarmTheme.shadowLight, radius: 8, y: 2)
         )
+    }
+}
+
+// MARK: - 数据体检(阶段 0;UI 入口只在 DEBUG 构建下可见)
+
+extension HomeView {
+    /// 取全量库 → 纯函数统计 → os_log 打印四组数字。
+    /// fetch 失败显式打 error 日志,不用默认值掩盖。
+    /// 输出供开发者读 Console:计数 .public;分类 key 为枚举名,非用户内容。
+    @MainActor
+    func runDataDiagnostics() {
+        let items: [TodoItemData]
+        do {
+            items = try store.diagnosticsAllItems()
+        } catch {
+            // 错误明细已在 store.diagnosticsAllItems 里打过,这里如实上报失败收尾。
+            VoiceTodoLog.ui.error("diagnostics.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return
+        }
+        let stats = DataHealthAnalyzer.analyze(items, asOf: Date())
+        let categorySummary = stats.completedByCategory
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue)=\($0.value)" }
+            .joined(separator: " ")
+        VoiceTodoLog.ui.info("""
+            diagnostics.result \
+            total=\(stats.totalCount, privacy: .public) \
+            high=\(stats.highPriorityCount, privacy: .public) \
+            highCompleted=\(stats.highPriorityCompletedCount, privacy: .public) \
+            highRatio=\(String(format: "%.3f", stats.highPriorityRatio), privacy: .public) \
+            hasDueTimeRatio=\(String(format: "%.3f", stats.hasDueTimeRatio), privacy: .public) \
+            completed=\(stats.completedCount, privacy: .public) \
+            completedWithDueDate=\(stats.completedWithDueDateCount, privacy: .public) \
+            completedByCategory=[\(categorySummary, privacy: .public)] \
+            libraryAgeWeeks=\(stats.libraryAgeWeeks, privacy: .public)
+            """)
     }
 }
 
