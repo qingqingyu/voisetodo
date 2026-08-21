@@ -1,10 +1,11 @@
 import XCTest
 
-/// 详情页键盘两段式收起(iOS 26 惯例)回归测试。
+/// 详情页键盘收起交互回归测试。
 ///
-/// 语义契约(UI/Detail/TodoDetailView.swift 的 isKeyboardVisible 两段式):
-/// - 键盘弹起时:chevron.down 按钮 / 下滑手势**只收键盘**,页面保持打开;
-/// - 键盘收起后:二者恢复「关闭页面」语义。
+/// 语义契约(UI/Detail/TodoDetailView.swift):
+/// - **点非功能空白区**(卡片留白/分区标题/背景)→ 只收键盘,页面保持打开(收键盘主通道);
+/// - **下滑手势**两段式:键盘弹起 → 只收键盘;键盘已收 → 关闭页面;
+/// - **chevron.down 按钮**恒为单一职责:无论键盘是否弹起,点击即关闭页面。
 ///
 /// 键盘存在性用 `app.keyboards` 断言,前提是模拟器显示软件键盘
 /// (Simulator 的 I/O → Keyboard → Connect Hardware Keyboard 需为关闭状态)。
@@ -26,27 +27,32 @@ final class DetailKeyboardUITests: XCTestCase {
         super.tearDown()
     }
 
-    /// chevron.down 两段式:键盘弹起 → 只收键盘;键盘收起 → 关闭页面。
-    func testChevronDismissesKeyboardBeforeClosingPage() {
+    /// 点非功能空白区收键盘:键盘收起,页面保持打开(收键盘主通道)。
+    func testTapBlankAreaDismissesKeyboardWithoutClosingPage() {
         launchAndOpenDetail()
 
         let app = appHelper.app
         focusTitleAndType()
 
-        // 键盘弹起期间按钮 a11y label 应切换为「收起键盘」(两段式语义的可达性契约)
-        XCTAssertTrue(app.buttons["收起键盘"].exists, "键盘弹起时 chevron.down 的 a11y label 应为「收起键盘」")
+        // 点「备注」分区标题 —— 静态文本属非交互区域,不落在任何功能控件上
+        let notesLabel = app.staticTexts["备注"].firstMatch
+        XCTAssertTrue(notesLabel.waitForExistence(timeout: 3), "备注分区标题应可见")
+        notesLabel.tap()
 
-        // 第一段:点 chevron.down → 只收键盘,页面仍在
+        XCTAssertFalse(waitForKeyboard(timeout: 3), "点空白区应收起键盘")
+        XCTAssertTrue(app.buttons["TodoDetailCloseButton"].waitForExistence(timeout: 2),
+                      "点空白区不应关闭详情页")
+    }
+
+    /// chevron.down 单一职责:键盘弹起时点击也直接关闭页面(不做两段式收键盘)。
+    func testChevronClosesPageEvenWithKeyboardVisible() {
+        launchAndOpenDetail()
+
+        let app = appHelper.app
+        focusTitleAndType()
+
         app.buttons["TodoDetailCloseButton"].tap()
-        XCTAssertFalse(waitForKeyboard(timeout: 3), "点 chevron.down 应收起键盘")
-        XCTAssertTrue(app.buttons["TodoDetailCloseButton"].exists, "键盘收起后详情页不应被关闭")
-
-        // 等 a11y label 翻回「关闭」—— 即 isKeyboardVisible 已翻转,消除键盘动画期竞态
-        XCTAssertTrue(app.buttons["关闭"].waitForExistence(timeout: 3), "键盘收起后 a11y label 应回到「关闭」")
-
-        // 第二段:键盘已收,再点 → 关闭页面回到主页
-        app.buttons["TodoDetailCloseButton"].tap()
-        XCTAssertTrue(waitForHome(timeout: 5), "键盘收起后再点 chevron.down 应关闭详情页回到主页")
+        XCTAssertTrue(waitForHome(timeout: 5), "键盘弹起时点 chevron.down 也应直接关闭详情页回到主页")
     }
 
     /// 下滑手势两段式:键盘弹起 → 下滑只收键盘(不误关整个编辑页);键盘收起 → 下滑关闭。
@@ -56,14 +62,11 @@ final class DetailKeyboardUITests: XCTestCase {
         let app = appHelper.app
         focusTitleAndType()
 
-        // 第一段:下滑 → 只收键盘,页面仍在(修复前:整个详情页被关闭)
+        // 第一段:下滑 → 只收键盘,页面仍在(若直接关页:键盘连同编辑页一起消失)
         dragDownSlowly()
         XCTAssertFalse(waitForKeyboard(timeout: 3), "下滑应收起键盘")
         XCTAssertTrue(app.buttons["TodoDetailCloseButton"].waitForExistence(timeout: 2),
                       "键盘弹起时的下滑不应关闭详情页")
-
-        // 等键盘状态翻转完成再进行第二段,避免动画期竞态
-        XCTAssertTrue(app.buttons["关闭"].waitForExistence(timeout: 3), "键盘收起后 a11y label 应回到「关闭」")
 
         // 第二段:键盘已收,再下滑 → 关闭页面
         dragDownSlowly()

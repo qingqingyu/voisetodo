@@ -7,8 +7,8 @@ private func formattedDetailDate(_ date: Date) -> String {
 }
 
 /// 下滑关闭手势阈值(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
-/// 跟 chevron.down 按钮(ToolbarItem)等价的输入通道:ScrollView 滚到顶后再下滑,
-/// 键盘弹起时先收键盘、键盘已收才 dismiss 关页(两段式,见 handleDismissDrag)。
+/// 下滑是独立的两段式通道:ScrollView 滚到顶后再下滑,键盘弹起时先收键盘、
+/// 键盘已收才 dismiss 关页(见 handleDismissDrag)。收键盘的主通道是点空白区(见 body 的 onTapGesture)。
 private enum DismissDragConfig {
     /// DragGesture 最小位移:低于此值不识别为拖拽,排除点击抖动
     static let minimumDistance: CGFloat = 40
@@ -83,11 +83,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var isScrollViewAtTop: Bool = true
 
     /// 软件键盘是否弹起。由 keyboardWillShow/Hide 通知驱动(与 HomeView.keyboardHeight 同套路)。
-    /// 是「chevron.down 按钮 / 下滑手势」两段式语义的判定源:
-    /// 键盘弹起 → 只收键盘不关页;iOS 26 起系统砍掉了键盘上方的 Done 工具条,
-    /// Apple 自家 App 的惯例是把导航栏关闭按钮借来收键盘(先收键盘、再关页面)。
+    /// 仅作「下滑手势」两段式语义的判定源:键盘弹起 → 下滑只收键盘不关页(见 handleDismissDrag)。
+    /// 收键盘的主通道是点页面非功能空白区(body 的 onTapGesture),
+    /// 左上角 chevron.down 按钮恒为「关闭页面」,不参与收键盘。
     /// 用键盘通知而非 @FocusState 判定:硬件键盘连接时焦点在但键盘不出现,
-    /// 此时按钮必须保持「关闭页面」语义,否则点下去是无视觉反馈的 no-op。
+    /// 此时下滑直接走关闭语义,不会被隐形焦点劫持成无视觉反馈的 no-op。
     @State private var isKeyboardVisible = false
 
     /// DragGesture 起手时的 `isScrollViewAtTop` 快照。`nil` = 当前没有进行中的手势。
@@ -365,8 +365,17 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             }
             .coordinateSpace(name: DetailScrollCoordinateSpace.name)
         }
-        // 下滑手势:跟左上角 chevron.down(ToolbarItem)等价 —— 两段式:键盘弹起先收键盘,
-        // 键盘已收才 dismiss 关页(由 .onDisappear 兜底 persistChanges)。
+        // 点空白收键盘:点页面非功能区(卡片留白、分区标题、纸纹背景等非交互区域)收起键盘。
+        // 这是收键盘的主通道 —— iOS 26 起系统砍掉了键盘上方的 Done 工具条,
+        // 点空白还原系统惯例(替代曾经的「关闭按钮两段式」方案)。
+        // onTapGesture 不吞内层交互控件:SwiftUI 手势按视图层级深者优先,
+        // TextField / Button / Toggle / Picker 各自认领 touch,此手势只在点到非交互区域时触发。
+        // 硬件键盘连接(软件键盘不出现)时点空白同样 resign 焦点,无副作用。
+        .onTapGesture {
+            dismissKeyboard()
+        }
+        // 下滑手势(独立于 chevron.down 的通道,按钮恒为直接关页):两段式 ——
+        // 键盘弹起先收键盘,键盘已收才 dismiss 关页(由 .onDisappear 兜底 persistChanges)。
         // simultaneousGesture 让 DragGesture 与 ScrollView 滚动同时识别;onChanged 第一次触发时锁定起手状态,
         // onEnded 读锁定值按阈值判断是否真的关闭(见 handleDismissDrag)。
         .simultaneousGesture(
@@ -386,9 +395,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
             isScrollViewAtTop = offset >= 0
         }
-        // 两段式语义的键盘状态源:详情页所有 first responder 都在本页两个 TextField 内,
+        // 下滑两段式语义的键盘状态源:详情页所有 first responder 都在本页两个 TextField 内,
         // 页面又是 fullScreenCover 独立窗口层级,不存在跨页键盘串扰。
-        // willShow/Hide 在动画起始帧发出,点击 chevron 后状态立即可读,无动画期竞态。
+        // willShow/Hide 在动画起始帧发出,下滑手势 onEnded 时状态立即可读,无动画期竞态。
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
@@ -406,21 +415,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             //   - chevron.down 是纯导航语义,不暗示保存/取消,匹配 autosave 行为
             ToolbarItem(placement: .cancellationAction) {
                 Button {
-                    // iOS 26 两段式(对齐系统 App 惯例):键盘弹起时此按钮只收键盘不关页,
-                    // 键盘已收起才执行关闭。修复「想收键盘却被退出整个编辑页」的体验断裂。
-                    // 硬件键盘连接时键盘不出现,isKeyboardVisible 恒 false,
-                    // 按钮保持「关闭页面」语义,不会被隐形焦点劫持成无反馈 no-op。
-                    if isKeyboardVisible {
-                        dismissKeyboard()
-                    } else {
-                        dismiss()
-                    }
+                    dismiss()
                 } label: {
                     Image(systemName: "chevron.down")
                 }
-                .accessibilityLabel(isKeyboardVisible
-                    ? String(localized: "detail.dismiss_keyboard")
-                    : String(localized: "panel.close"))
+                .accessibilityLabel(String(localized: "panel.close"))
                 .accessibilityIdentifier("TodoDetailCloseButton")
             }
         }
@@ -484,7 +483,7 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         let translation = value.translation
         guard translation.height > DismissDragConfig.verticalTranslationLowerBound,
               abs(translation.height) > abs(translation.width) else { return }
-        // 键盘弹起时:下滑只收键盘(与 chevron.down 按钮同一两段式语义),不关页面。
+        // 键盘弹起时:下滑只收键盘(滚动收键盘的系统惯例),不关页面。
         // 用户想「把键盘滑下去」,若直接 dismiss 会连同整个编辑页一起退出。
         // 键盘收起后再下滑一次才关闭 —— 对齐 Home 输入面板遮罩的两阶段心智模型。
         if isKeyboardVisible {
