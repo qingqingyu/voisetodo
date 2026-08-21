@@ -187,6 +187,23 @@ actor TodoQueryActor {
         }
     }
 
+    /// 全量任务 id(阶段 4:`ReviewPinningStore.prune` 用全量 id,不用窗口化工作集)。
+    /// 只取 id 列,不映射 DTO。失败显式抛出,不静默回退成空数组(空数组会让
+    /// prune 清光全部置顶)。
+    func allTodoIDs() throws -> [UUID] {
+        let startedAt = Date()
+        var descriptor = FetchDescriptor<TodoItem>()
+        descriptor.propertiesToFetch = [\.id]
+        do {
+            let ids = try modelContext.fetch(descriptor).map(\.id)
+            VoiceTodoLog.store.debug("query_actor.all_ids.fetch_success count=\(ids.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return ids
+        } catch {
+            VoiceTodoLog.store.error("query_actor.all_ids.fetch_failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
     /// 洞察引擎的原料查询(阶段 1 数据地基,见 docs/todo-review-flow-design.md §1.4)。
     ///
     /// 一次性取齐阶段 2 规则要的原料,组装成 `Sendable` 的 `InsightContext` 值类型

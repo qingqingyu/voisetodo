@@ -520,6 +520,12 @@ final class TodoStore:
         try await queryActor.insightContext(from: startDate, to: endDate)
     }
 
+    /// 全量任务 id(阶段 4,`TodoIDListing`:复盘收尾 prune 置顶集合用全量 id,
+    /// 不用窗口化工作集——窗口外的置顶 id 会被误删)。失败显式抛出。
+    func allTodoIDs() async throws -> [UUID] {
+        try await queryActor.allTodoIDs()
+    }
+
     /// 拆小(复盘第 2 步「拆小」按钮,docs/todo-review-flow-design.md §阶段 3):
     /// 建 N 条子任务(`parentTodoId` 指向原任务)+ 原任务标 `abandonedAt` + 记 split 事件。
     /// 三步同 context 同事务,失败一起回滚(错误显式传播)。

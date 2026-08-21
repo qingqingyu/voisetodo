@@ -41,6 +41,18 @@ struct InsightCardView: View {
 
                 vizView
 
+                // §2.4:冷却因「效应量变好」放行时换好转语气——复盘只报坏消息,
+                // 用户会停止复盘。
+                if result.tone == .improving {
+                    // 方向敏感图标(RTL 规则 2):improving 箭头随布局方向翻转。
+                    Label(String(localized: "review.flow.insights.improving"), systemImage: "arrow.down.right.circle.fill")
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.success)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .flipsForRightToLeftLayoutDirection(true)
+                }
+
                 HStack(alignment: .bottom) {
                     Text(result.sampleNote)
                         .font(WarmFont.caption(11))

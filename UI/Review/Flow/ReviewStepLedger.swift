@@ -9,7 +9,8 @@ struct ReviewStepLedger: View {
     private let calendar = Calendar.current
 
     /// 下次复盘日期:复盘提醒现有节奏是每周一(App/ReviewNotificationScheduler),
-    /// 账本对齐同一节奏——下一个周一。阶段 4 换成会话存储推导。
+    /// 账本对齐同一节奏——下一个周一。第 5 步渲染时点即会话收尾时点
+    /// (阶段 4:`finishSession` 在「完成」点击时落库),与 scheduler 语义一致。
     private var nextReviewDate: Date {
         var components = DateComponents()
         components.weekday = 2 // 周一

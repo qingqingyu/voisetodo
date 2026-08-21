@@ -355,8 +355,13 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 回顾页 sheet 内容(两个入口共用):dismiss 时重读置顶集合——
     /// 复盘流程在 sheet 内落地置顶后,回首页立即浮顶。
     private var reviewSheetContent: some View {
-        NavigationStack { ReviewView(store: reviewStore) }
-            .onDisappear { reloadPinnedTodoIDs() }
+        NavigationStack {
+            ReviewView(
+                store: reviewStore,
+                lastReviewDate: { ReviewSessionStore.shared.lastSession()?.completedAt }
+            )
+        }
+        .onDisappear { reloadPinnedTodoIDs() }
     }
 
     /// 重新读置顶集合(复盘流程 dismiss 回首页 / 首次挂载时)。

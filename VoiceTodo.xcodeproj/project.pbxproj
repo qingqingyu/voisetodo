@@ -36,6 +36,7 @@
 		203711B6DA109148B95FC53B /* StartRecordingIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D3691D04079A01909A525E1 /* StartRecordingIntent.swift */; };
 		20E2CC858114E784B44C332F /* TodoDueDateResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942DA719D392449E8E9E2C96 /* TodoDueDateResolver.swift */; };
 		21027F5CF72E4E772FFA4408 /* RecurrenceRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F702747C99D7A98923F3C220 /* RecurrenceRule.swift */; };
+		2157A2846BFCE0C4715B56B8 /* ReviewSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B39E4BF0A75D61C1EE7CFD9 /* ReviewSessionStore.swift */; };
 		228A792319476808CB6AE1DC /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15FE5035E360DE11BF21B92 /* PaywallView.swift */; };
 		233A2E9DA5BE4C4019A1380B /* TranscriptProcessingFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10F79656D9ED5A820EBC053 /* TranscriptProcessingFlowTests.swift */; };
 		2355FBB6A15F8CC5939CDDBF /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A4EE86AB884331FEE9403A /* NetworkMonitor.swift */; };
@@ -76,6 +77,7 @@
 		4C2C8C447380E65A31719875 /* FirstVoiceTrialHintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6D93F2C13AABA20913A8762 /* FirstVoiceTrialHintView.swift */; };
 		4D8FB5E7B426E3264F5508DA /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8AA736F8E3D8D0C5F71A1DA /* PermissionManager.swift */; };
 		4DC24AC70E94C8FE2D2572F3 /* CorrectionTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86009E84057260ABF2FC2C59 /* CorrectionTrackerTests.swift */; };
+		514516D0844109E671738304 /* ReviewSessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C5A61B75199216A3129B2D5 /* ReviewSessionStoreTests.swift */; };
 		5291761FCF494BDEAA7BD23D /* TelemetryUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD69F514ED13C8FE0AA07FB /* TelemetryUploader.swift */; };
 		52BEC6B149B928AB3B0A6027 /* IMPLEMENTATION_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 180D44F636BC72F7283BB347 /* IMPLEMENTATION_SUMMARY.md */; };
 		5339F1253CE23AD9B4791F03 /* ModelContainerStartupPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5A807BC7FED524BD0E4030 /* ModelContainerStartupPolicyTests.swift */; };
@@ -343,7 +345,9 @@
 		5591265ADCF113A0294F04DD /* FeedbackSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSheet.swift; sourceTree = "<group>"; };
 		57EF039D3DBBCB65393E54EC /* MockStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockStore.swift; sourceTree = "<group>"; };
 		59C85D0615B2A028EDF81062 /* ProtocolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolsTests.swift; sourceTree = "<group>"; };
+		5B39E4BF0A75D61C1EE7CFD9 /* ReviewSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewSessionStore.swift; sourceTree = "<group>"; };
 		5C091B6AB4B34F29573A3FFA /* TodoQueryActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoQueryActor.swift; sourceTree = "<group>"; };
+		5C5A61B75199216A3129B2D5 /* ReviewSessionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewSessionStoreTests.swift; sourceTree = "<group>"; };
 		5E53F2E7063A19CACE9CCE54 /* SystemCalendarReadingProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarReadingProtocol.swift; sourceTree = "<group>"; };
 		604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ValuePropCard.swift; sourceTree = "<group>"; };
 		60BCF24EA61F52842519A1D6 /* HomeMonthHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMonthHeaderView.swift; sourceTree = "<group>"; };
@@ -742,6 +746,7 @@
 				59C85D0615B2A028EDF81062 /* ProtocolsTests.swift */,
 				15010497ACE41C7CAC621B27 /* QuotaUsageTests.swift */,
 				B7C380863DC0BEEEE2E72F9C /* ReviewPinningStoreTests.swift */,
+				5C5A61B75199216A3129B2D5 /* ReviewSessionStoreTests.swift */,
 				A9A3085172CA8A07A96EB2CD /* TaskEventKindTests.swift */,
 				1FFDA727BBA626601B661A71 /* TelemetryTests.swift */,
 				D799E5C2E379EA61F6671251 /* TodoDetailUpdateTests.swift */,
@@ -803,6 +808,7 @@
 				D8CE2794EFB8BE4A9FEF9260 /* PersonalGlossary.swift */,
 				2784F3DB95DE2F2DC60A3057 /* Quota.swift */,
 				E063F26C7FEFBBDFFA7F42F5 /* ReviewPinningStore.swift */,
+				5B39E4BF0A75D61C1EE7CFD9 /* ReviewSessionStore.swift */,
 				5E53F2E7063A19CACE9CCE54 /* SystemCalendarReadingProtocol.swift */,
 				DCFA009138F185ACA9CCDC05 /* Telemetry.swift */,
 				A7E00281D082A7AFAB67384E /* TelemetryQueue.swift */,
@@ -1227,6 +1233,7 @@
 				1219A007DBE5A7305F67D533 /* ReviewFlowView.swift in Sources */,
 				06C106EDFC0BD1DBD4A656C8 /* ReviewNotificationScheduler.swift in Sources */,
 				6536422EE01FA2FFCE1D958A /* ReviewPinningStore.swift in Sources */,
+				2157A2846BFCE0C4715B56B8 /* ReviewSessionStore.swift in Sources */,
 				316A34012C602DA1D1B9C5F7 /* ReviewStepCommit.swift in Sources */,
 				FD26AF83E638F51BEDB8C439 /* ReviewStepInsights.swift in Sources */,
 				2683B06849F165F3602E3B58 /* ReviewStepLedger.swift in Sources */,
@@ -1318,6 +1325,7 @@
 				F73DBDF0B1ED96BDD80AC94E /* QuotaUsageTests.swift in Sources */,
 				5F1CB22C37701A17182CC268 /* ReviewFlowStateTests.swift in Sources */,
 				3FAC5991B0DD20008811F2B4 /* ReviewPinningStoreTests.swift in Sources */,
+				514516D0844109E671738304 /* ReviewSessionStoreTests.swift in Sources */,
 				A4690AF940DA8DC273FCF293 /* StoreTests.swift in Sources */,
 				88969B486DF1975119DC1283 /* SystemCalendarWriterTests.swift in Sources */,
 				3B50C5F3860360DA3FCEEE3C /* TaskEventKindTests.swift in Sources */,

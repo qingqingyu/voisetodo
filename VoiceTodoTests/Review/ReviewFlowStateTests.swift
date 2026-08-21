@@ -198,3 +198,106 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(state.savedRules.first { $0.insightID == .rotting }?.text, "a")
     }
 }
+
+// MARK: - 阶段 4 · 会话组装 / 跨期对照数据源 / 规则回访选择
+
+extension ReviewFlowStateTests {
+
+    private func reviewSession(
+        completedAt: Date,
+        voiceNote: String? = nil,
+        savedRules: [ReviewRule] = []
+    ) -> ReviewSession {
+        ReviewSession(
+            completedAt: completedAt,
+            periodStart: completedAt,
+            periodEnd: completedAt,
+            voiceNote: voiceNote,
+            savedRules: savedRules,
+            ledger: ReviewLedger(
+                inputCount: 1, remainingCount: 0, scheduledCount: 1, todayCount: 0,
+                abandonedCount: 0, splitCount: 0, savedRuleCount: savedRules.count, pinnedCount: 0
+            ),
+            shownInsights: []
+        )
+    }
+
+    private func reviewRule(status: ReviewRuleStatus = .pending) -> ReviewRule {
+        ReviewRule(id: UUID(), insightID: .rotting, text: "规则", createdAt: Date(), status: status)
+    }
+
+    func testLastVoiceNoteFromMostRecentSession() {
+        var state = ReviewFlowState(todos: [], previousSessions: [
+            reviewSession(completedAt: Date(timeIntervalSinceNow: -86_400), voiceNote: "旧的"),
+            reviewSession(completedAt: Date(), voiceNote: "  想把晚上留给八字 App  "),
+        ])
+        XCTAssertEqual(state.lastVoiceNote, "想把晚上留给八字 App")
+
+        state = ReviewFlowState(todos: [], previousSessions: [
+            reviewSession(completedAt: Date(), voiceNote: "   "),
+        ])
+        XCTAssertNil(state.lastVoiceNote, "空白回答视同没有")
+    }
+
+    func testRulesToRevisitOnlyPendingFromLastSession() {
+        let pending = reviewRule()
+        let state = ReviewFlowState(todos: [], previousSessions: [
+            reviewSession(completedAt: Date(timeIntervalSinceNow: -86_400), savedRules: [reviewRule(), reviewRule()]),
+            reviewSession(completedAt: Date(), savedRules: [
+                pending,
+                reviewRule(status: .working),
+                reviewRule(status: .retired),
+            ]),
+        ])
+        XCTAssertEqual(state.rulesToRevisit.map(\.id), [pending.id])
+    }
+
+    func testBuildSessionMapsLedgerRulesNoteAndInsights() {
+        let now = Date()
+        let state = ReviewFlowState(todos: [])
+        let a = TodoItemData(title: "a")
+        let b = TodoItemData(title: "b")
+        let c = TodoItemData(title: "c")
+        state.markScheduled(a)
+        state.markToday(b)
+        state.markAbandoned(c)
+        state.toggleCommitSelection(a)
+        state.saveRule(ReviewRule(insightID: .rotting, text: "规则", createdAt: now))
+        state.recordShownInsight(InsightResult(
+            id: .rotting, strength: .high, tone: .observation, headline: "h", body: "b",
+            viz: .rotting(items: []), suggestedRule: nil, sampleNote: "n",
+            score: 0.7, effectSize: 0.42, sampleCount: 30
+        ))
+        state.recordPeriod(start: now.addingTimeInterval(-86_400), end: now)
+        state.voiceAnswerText = "  这周想把上午留给重要的事  "
+        let outcomeRule = reviewRule()
+        state.setRuleOutcome(ruleID: outcomeRule.id, status: .working)
+
+        let session = state.buildSession(completedAt: now)
+
+        XCTAssertEqual(session.voiceNote, "这周想把上午留给重要的事")
+        XCTAssertEqual(session.savedRules.count, 1)
+        XCTAssertEqual(session.shownInsights, [InsightSnapshot(id: .rotting, effectSize: 0.42, strength: .high)])
+        XCTAssertEqual(session.followUps, [RuleOutcome(ruleID: outcomeRule.id, status: .working)])
+        XCTAssertEqual(session.ledger, ReviewLedger(
+            inputCount: 3, remainingCount: 0, scheduledCount: 1, todayCount: 1,
+            abandonedCount: 1, splitCount: 0, savedRuleCount: 1, pinnedCount: 1
+        ))
+        XCTAssertEqual(session.periodStart, now.addingTimeInterval(-86_400))
+        XCTAssertEqual(session.periodEnd, now)
+    }
+
+    func testRecordShownInsightUpsertsOnRetry() {
+        let state = ReviewFlowState(todos: [])
+        func result(effectSize: Double) -> InsightResult {
+            InsightResult(id: .rotting, strength: .medium, tone: .observation, headline: "h",
+                          body: "b", viz: .rotting(items: []), suggestedRule: nil, sampleNote: "n",
+                          score: 0.5, effectSize: effectSize, sampleCount: 20)
+        }
+        state.recordShownInsight(result(effectSize: 0.4))
+        state.recordShownInsight(result(effectSize: 0.6))
+
+        XCTAssertEqual(state.shownInsights.count, 1)
+        XCTAssertEqual(state.shownInsights.first?.effectSize, 0.6)
+    }
+}

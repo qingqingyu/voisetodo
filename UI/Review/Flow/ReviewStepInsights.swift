@@ -28,6 +28,7 @@ struct ReviewStepInsights: View {
                 if let error = state.insightLoadError {
                     errorCard(error)
                 } else if let context = state.insightContextValue {
+                    crossPeriodCard(context: context)
                     cards
                     ladderHint(context: context)
                     askYourselfSection
@@ -47,7 +48,9 @@ struct ReviewStepInsights: View {
 
     // MARK: 引擎
 
-    /// 跑 v1 两条规则(拍板 2),按 ladder 裁剪,score 降序(§阶段 3)。
+    /// 跑 v1 两条规则(拍板 2),按 ladder 裁剪,score 降序(§阶段 3);
+    /// 触发后先过冷却(§2.4,阶段 4 接真历史):不满足任一放行条件的本期不展示,
+    /// 也不进 `shownInsights` 历史。效应量**变好**的放行换 improving 文案。
     private func runEngine() {
         guard let context = state.insightContextValue else { return }
         let calendar = Calendar.current
@@ -64,9 +67,41 @@ struct ReviewStepInsights: View {
             collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
         }
 
-        rankedResults = InsightEngine.rank(results)
+        // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
+        let cooled = results.compactMap { result -> InsightResult? in
+            applyCooldown(result)
+        }
+        let ranked = InsightEngine.rank(cooled)
+        // 展示过的才进冷却历史(被过滤掉的不记)。重跑先清空:上一轮展示过、
+        // 这一轮被冷却过滤的洞察不该留在历史里。
+        state.resetShownInsights()
+        ranked.forEach { state.recordShownInsight($0) }
+
+        rankedResults = ranked
         placeholders = newPlaceholders
         ladderNeedMore = ladder.rottingOnlyNeedMore
+    }
+
+    /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
+    /// `InsightEngine.cooldown` 三条件。`.effectChanged(improved: true)` 换 improving 文案。
+    private func applyCooldown(_ result: InsightResult) -> InsightResult? {
+        guard let input = ReviewCooldownHistory.input(
+            insightID: result.id,
+            sessions: state.previousSessions,
+            currentEffectSize: result.effectSize,
+            lowerIsBetter: true
+        ) else {
+            return result // 无历史:第一次展示,放行
+        }
+        switch InsightEngine.cooldown(input) {
+        case .success(let reason):
+            if case .effectChanged(let improved) = reason, improved {
+                return result.withTone(.improving)
+            }
+            return result
+        case .failure:
+            return nil // 冷却中:本期不展示
+        }
     }
 
     private func collect(
@@ -128,6 +163,40 @@ struct ReviewStepInsights: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: 跨期对照卡(阶段 4)
+
+    /// 「上次复盘你说过:…」+ 一句本期数据对照(本期完成 N 件)。没有上次
+    /// voiceNote 时不显示(设计文档阶段 4 支撑事项 1)。
+    @ViewBuilder
+    private func crossPeriodCard(context: InsightContext) -> some View {
+        if let note = state.lastVoiceNote {
+            RecapCard {
+                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                    Label(String(localized: "review.flow.insights.last_note.title"), systemImage: "quote.opening")
+                        .font(WarmFont.headline(14))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .flipsForRightToLeftLayoutDirection(true)
+
+                    Text(note)
+                        .font(WarmFont.body(14))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(4)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(String(localized: "review.flow.insights.last_note.compare_\(context.completedEvents.count)"))
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 

@@ -58,8 +58,21 @@ final class ReviewFlowState {
     var insightContextValue: InsightContext?
     /// 洞察步加载原料失败的显式错误态(不静默:展示错误 + 重试入口)。
     var insightLoadError: VoiceTodoError?
-    /// 语音提问的文字回答(阶段 4 持久化,本阶段只存 State)。
+    /// 语音提问的文字回答。
     var voiceAnswerText = ""
+
+    // MARK: 历史会话(阶段 4)
+
+    /// 历史会话(`ReviewSessionStore.allSessions()`,升序)。冷却判定 / 跨期对照卡 /
+    /// 规则回访的数据源。流程启动时注入一次,之后不变。
+    private(set) var previousSessions: [ReviewSession]
+    /// 本期洞察原料的取数区间(`loadInsightContext` 写入,session 落库带上)。
+    private(set) var periodStart: Date = Date()
+    private(set) var periodEnd: Date = Date()
+    /// 第 3 步实际展示过的洞察快照(冷却历史;降级跳过时为空)。
+    private(set) var shownInsights: [InsightSnapshot] = []
+    /// 规则回访答案(ruleID → 状态;第 4 步写入,收尾随 session 落库)。
+    private(set) var ruleOutcomes: [UUID: ReviewRuleStatus] = [:]
 
     // MARK: 第 4/5 步
 
@@ -70,9 +83,13 @@ final class ReviewFlowState {
 
     // MARK: Init
 
-    /// - Parameter todos: store 工作集快照(`store.todos`)。内部按 triage 口径过滤。
-    init(todos: [TodoItemData]) {
+    /// - Parameters:
+    ///   - todos: store 工作集快照(`store.todos`)。内部按 triage 口径过滤。
+    ///   - previousSessions: 历史复盘会话(升序;阶段 4 冷却 / 回访 / 跨期对照用,
+    ///     注入而非自取,保持本类纯逻辑可测)。
+    init(todos: [TodoItemData], previousSessions: [ReviewSession] = []) {
         self.deck = Self.triageInput(from: todos)
+        self.previousSessions = previousSessions
     }
 
     /// triage 输入过滤(拍板 4):未完成 && 未划掉 && 一次性(recurrenceRule == nil)。
@@ -223,6 +240,78 @@ final class ReviewFlowState {
             pinnedCount: commitSelection.count
         )
     }
+
+    // MARK: 阶段 4 · 会话组装
+
+    /// 清空展示快照(runEngine 每次重跑前调用):重试 / 原料重载后,上一轮展示过
+    /// 但这一轮被冷却过滤的洞察不该留在历史里——没展示的不进 `shownInsights`。
+    func resetShownInsights() {
+        shownInsights = []
+    }
+
+    /// 记录一条本期展示过的洞察(第 3 步 runEngine 对每张实际展示的卡调用;
+    /// 被冷却过滤掉的不记——没展示的不该进冷却历史)。upsert:重试 / 原料重载
+    /// 会让 runEngine 再跑一遍,同一洞察只留最后一份快照。
+    func recordShownInsight(_ result: InsightResult) {
+        let snapshot = InsightSnapshot(id: result.id, effectSize: result.effectSize, strength: result.strength)
+        if let index = shownInsights.firstIndex(where: { $0.id == snapshot.id }) {
+            shownInsights[index] = snapshot
+        } else {
+            shownInsights.append(snapshot)
+        }
+    }
+
+    /// 记录本期取数区间(`loadInsightContext` 调用)。
+    func recordPeriod(start: Date, end: Date) {
+        periodStart = start
+        periodEnd = end
+    }
+
+    /// 上次复盘的「问问自己」回答(跨期对照卡数据源)。空白视同没有。
+    var lastVoiceNote: String? {
+        guard let note = previousSessions.last?.voiceNote?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else { return nil }
+        return note
+    }
+
+    /// 本次要回访的规则:**上次会话**里存下且状态仍为 `.pending` 的
+    /// (没被回访过)。working / notWorking / retired 不反复打扰。
+    var rulesToRevisit: [ReviewRule] {
+        previousSessions.last?.savedRules.filter { $0.status == .pending } ?? []
+    }
+
+    /// 规则回访答案(第 4 步交互写入;收尾时随 session 落库并同步历史规则状态)。
+    func setRuleOutcome(ruleID: UUID, status: ReviewRuleStatus) {
+        ruleOutcomes[ruleID] = status
+    }
+
+    /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
+    /// 纯函数,`VoiceTodoTests` 直测账本 → session 的映射。
+    func buildSession(completedAt: Date) -> ReviewSession {
+        let ledger = ledger
+        let trimmedNote = voiceAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ReviewSession(
+            completedAt: completedAt,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            voiceNote: trimmedNote.isEmpty ? nil : trimmedNote,
+            savedRules: savedRules,
+            ledger: ReviewLedger(
+                inputCount: ledger.inputCount,
+                remainingCount: ledger.remainingCount,
+                scheduledCount: ledger.scheduledCount,
+                todayCount: ledger.todayCount,
+                abandonedCount: ledger.abandonedCount,
+                splitCount: ledger.splitCount,
+                savedRuleCount: ledger.savedRuleCount,
+                pinnedCount: ledger.pinnedCount
+            ),
+            shownInsights: shownInsights,
+            followUps: ruleOutcomes.isEmpty
+                ? nil
+                : ruleOutcomes.map { RuleOutcome(ruleID: $0.key, status: $0.value) }.sorted { $0.ruleID.uuidString < $1.ruleID.uuidString }
+        )
+    }
 }
 
 // MARK: - 流程容器
@@ -243,8 +332,12 @@ struct ReviewFlowView: View {
     init(store: any ReviewFlowStore) {
         self.store = store
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
-        // (拆小产生的子任务不该再弹回卡堆)。
-        _state = State(initialValue: ReviewFlowState(todos: store.todos))
+        // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 / 回访 /
+        // 跨期对照的数据源,阶段 4)。
+        _state = State(initialValue: ReviewFlowState(
+            todos: store.todos,
+            previousSessions: ReviewSessionStore.shared.allSessions()
+        ))
     }
 
     var body: some View {
@@ -311,6 +404,7 @@ struct ReviewFlowView: View {
         do {
             state.insightContextValue = try await store.insightContext(from: start, to: end)
             state.insightLoadError = nil
+            state.recordPeriod(start: start, end: end)
             state.configureInsightsLadder()
         } catch {
             let wrapped = (error as? VoiceTodoError) ?? VoiceTodoError.wrapStorage(error, for: .read)
@@ -428,7 +522,7 @@ struct ReviewFlowView: View {
 
     private func advanceFromCurrentStep() {
         if state.currentStep == .ledger {
-            dismiss()
+            finishSession()
             return
         }
         // 第 4 步过闸时落地置顶(拍板 6:独立标记,不动 sortOrder)。
@@ -438,6 +532,28 @@ struct ReviewFlowView: View {
         withAnimation(WarmAnimation.springStandard) {
             state.advance()
         }
+    }
+
+    // MARK: 收尾落库(阶段 4)
+
+    /// 第 5 步「完成」:组装 session 落库 + 回访答案写回历史规则 + 用**全量**任务 id
+    /// prune 置顶集合(`TodoIDListing`,不用窗口化 `store.todos`——窗口外的置顶
+    /// id 会被误删)。prune 与落库都走 UserDefaults 同步写,失败显式记日志
+    /// (error/warning)不阻塞收尾;流程内的 store 写失败另有 toast(见 presentError)。
+    private func finishSession() {
+        let session = state.buildSession(completedAt: Date())
+        ReviewSessionStore.shared.append(session)
+        let outcomes = session.followUps ?? []
+        ReviewSessionStore.shared.recordRuleOutcomes(outcomes)
+        Task { @MainActor in
+            do {
+                let allIDs = Set(try await store.allTodoIDs())
+                ReviewPinningStore.shared.prune(existingIDs: allIDs)
+            } catch {
+                VoiceTodoLog.coordinator.error("review.flow.finish.prune_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+        }
+        dismiss()
     }
 }
 

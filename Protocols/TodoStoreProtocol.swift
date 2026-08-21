@@ -155,6 +155,15 @@ protocol InsightContextReading {
     func insightContext(from startDate: Date, to endDate: Date) async throws -> InsightContext
 }
 
+/// 全量任务 id 读取能力(阶段 4)——复盘收尾 `ReviewPinningStore.prune` 用。
+/// 不能用 `TodoListReadable.todos`(窗口化工作集)prune:窗口外的置顶 id 会被误删。
+/// 只取 id 列表,不映射 DTO,500+ 条时也只是一次轻量列存取。
+protocol TodoIDListing {
+    /// 库里全部 todo id(与完成/删除状态无关)。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+    func allTodoIDs() async throws -> [UUID]
+}
+
 /// 拆小写入能力——复盘第 2 步「拆小」按钮用(阶段 3)。
 /// 与 `TodoAbandonWriting` 互补:拆小 = 建 N 条子任务(parentTodoId 指向原任务)
 /// + 原任务标 abandonedAt + 记 split 事件,三步同事务。
@@ -164,7 +173,7 @@ protocol TodoSplitting {
 }
 
 /// 复盘五步流程需要的 store 能力集合(阶段 3,`ReviewFlowView` 的依赖类型)。
-protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, TodoSplitting {}
+protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, TodoSplitting, TodoIDListing {}
 
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {

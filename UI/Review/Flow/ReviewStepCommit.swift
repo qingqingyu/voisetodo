@@ -19,6 +19,10 @@ struct ReviewStepCommit: View {
                     candidateList
                 }
 
+                if !state.rulesToRevisit.isEmpty {
+                    ruleFollowUpSection
+                }
+
                 if !state.savedRules.isEmpty {
                     savedRulesSection
                 }
@@ -95,6 +99,54 @@ struct ReviewStepCommit: View {
         .buttonStyle(.plain)
         .opacity(isSelected ? 1 : 0.85)
         .accessibilityIdentifier("ReviewFlowCommitRow_\(todo.id.uuidString)")
+    }
+
+    /// 规则回访(阶段 4):上次会话存下且仍 pending 的规则,问「这条生效了吗」。
+    /// 答案 `state.setRuleOutcome` 写入,收尾随 session 落库,并由
+    /// `ReviewSessionStore.recordRuleOutcomes` 同步改写历史规则状态(下次不再问)。
+    /// 放在本步而非第 3 步:规则是从洞察「存下的决定」,和三件事同属「对决定负责」
+    /// 的一步;第 3 步已经有跨期对照 + 卡堆,再叠回访会拥挤。
+    private var ruleFollowUpSection: some View {
+        RecapCard {
+            VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+                Text(String(localized: "review.flow.followup.title"))
+                    .font(WarmFont.headline(15))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(state.rulesToRevisit) { rule in
+                    ruleFollowUpRow(rule)
+                }
+            }
+        }
+    }
+
+    private func ruleFollowUpRow(_ rule: ReviewRule) -> some View {
+        let current = state.ruleOutcomes[rule.id] ?? .pending
+        return VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            Text(rule.text)
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+
+            Picker(String(localized: "review.flow.followup.title"), selection: Binding(
+                get: { current },
+                set: { state.setRuleOutcome(ruleID: rule.id, status: $0) }
+            )) {
+                Text(String(localized: "review.flow.followup.status.pending")).tag(ReviewRuleStatus.pending)
+                Text(String(localized: "review.flow.followup.status.working")).tag(ReviewRuleStatus.working)
+                Text(String(localized: "review.flow.followup.status.not_working")).tag(ReviewRuleStatus.notWorking)
+                Text(String(localized: "review.flow.followup.status.retired")).tag(ReviewRuleStatus.retired)
+            }
+            .pickerStyle(.menu)
+            .frame(minWidth: 44, alignment: .leading)
+        }
+        .accessibilityIdentifier("ReviewFlowFollowUp_\(rule.id.uuidString)")
     }
 
     /// 本次存下的规则(洞察卡规则按钮的落点;持久化在阶段 4)。

@@ -18,7 +18,7 @@ import Foundation
 /// 其余四个 case 仅预留 ID,**不建规则文件**——待阶段 0 体检(01/05)、
 /// 数据攒满(06)或 v2(04)再启用。case 顺序即文档编号,勿重排
 /// (占位行、冷却历史、规则回访都以 rawValue 持久化)。
-enum InsightID: String, CaseIterable, Sendable {
+enum InsightID: String, CaseIterable, Codable, Sendable {
     /// 01 先易后难(待阶段 0 体检决定是否值得实现)。
     case effortOrdering
     /// 02 任务在腐烂。← v1 实现
@@ -36,7 +36,7 @@ enum InsightID: String, CaseIterable, Sendable {
 // MARK: - 强度与展示状态
 
 /// 洞察的信号强度标签(卡片的右上角)。三档,不做更细的评级。
-enum InsightStrength: Sendable, Equatable {
+enum InsightStrength: Codable, Sendable, Equatable {
     /// score ≥ 0.62,信号强。
     case high
     /// 0.35 ≤ score < 0.62,信号中。
@@ -86,9 +86,23 @@ enum InsightViz: Sendable {
     case weeklyDecay
 }
 
+/// 规则的回访状态(阶段 4)。状态机:`pending →(下次复盘回访)→ working /
+/// notWorking`;`retired` 可从任意态进入(用户说不再用这条规则)。回访答案由
+/// `ReviewSessionStore.recordRuleOutcomes` 写回历史会话的规则上。
+enum ReviewRuleStatus: String, Codable, Sendable, Equatable {
+    /// 存下后还没被回访过(默认态)。
+    case pending
+    /// 回访时用户说「生效了」。
+    case working
+    /// 回访时用户说「没生效」。
+    case notWorking
+    /// 用户主动作废这条规则(回访选项之一;之后不再回访)。
+    case retired
+}
+
 /// 用户从洞察卡「存下的规则」(v1 只存储 + 回访,不做效果逻辑)。
-/// 阶段 4 的 `ReviewSession.savedRules` 持久化它。
-struct ReviewRule: Sendable, Equatable, Identifiable {
+/// 阶段 4 起随 `ReviewSession.savedRules` 持久化(App Group UserDefaults + JSON)。
+struct ReviewRule: Codable, Sendable, Equatable, Identifiable {
     let id: UUID
     /// 规则来自哪条洞察(回访时按它配对)。
     let insightID: InsightID
@@ -96,12 +110,30 @@ struct ReviewRule: Sendable, Equatable, Identifiable {
     let text: String
     /// 存下的时刻。
     let createdAt: Date
+    /// 回访状态(阶段 4 新增;解码旧 payload 缺该键时前向兼容回落 `.pending`)。
+    var status: ReviewRuleStatus
 
-    init(id: UUID = UUID(), insightID: InsightID, text: String, createdAt: Date) {
+    init(id: UUID = UUID(), insightID: InsightID, text: String, createdAt: Date, status: ReviewRuleStatus = .pending) {
         self.id = id
         self.insightID = insightID
         self.text = text
         self.createdAt = createdAt
+        self.status = status
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, insightID, text, createdAt, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // status 是阶段 4 加的字段:旧 payload(阶段 3 遗留 / 测试夹具)没有它,
+        // 回落 pending 而不是 decode 失败——前向兼容,不静默吞其他键的错误。
+        status = try container.decodeIfPresent(ReviewRuleStatus.self, forKey: .status) ?? .pending
+        id = try container.decode(UUID.self, forKey: .id)
+        insightID = try container.decode(InsightID.self, forKey: .insightID)
+        text = try container.decode(String.self, forKey: .text)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
 
@@ -132,6 +164,16 @@ struct InsightResult: Sendable {
     let effectSize: Double
     /// 实际样本量 n。
     let sampleCount: Int
+
+    /// 换文案语气(§2.4:冷却因「效应量变好」放行时,用 improving 语气——
+    /// 复盘只报坏消息,用户会停止复盘)。规则数据不变,只换 tone。
+    func withTone(_ newTone: InsightTone) -> InsightResult {
+        InsightResult(
+            id: id, strength: strength, tone: newTone, headline: headline, body: body,
+            viz: viz, suggestedRule: suggestedRule, sampleNote: sampleNote,
+            score: score, effectSize: effectSize, sampleCount: sampleCount
+        )
+    }
 }
 
 // MARK: - 规则协议
