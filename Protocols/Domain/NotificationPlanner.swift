@@ -47,7 +47,8 @@ enum NotificationPlanner {
         var oneShots: [PlannedNotification] = []
 
         for todo in todos {
-            guard !todo.isCompleted, todo.hasDueTime, let due = todo.dueDate else { continue }
+            // 已划掉(abandonedAt != nil)的任务不再排提醒——用户已决定不做。
+            guard !todo.isCompleted, todo.abandonedAt == nil, todo.hasDueTime, let due = todo.dueDate else { continue }
             // 提前提醒:防御性钳 0...1440(越界脏值按准时处理)。fireAnchor = 实际触发时刻。
             let offset = min(max(todo.reminderOffsetMinutes ?? 0, 0), ReminderOffsetConfig.maxMinutes)
             let fireAnchor = offset > 0

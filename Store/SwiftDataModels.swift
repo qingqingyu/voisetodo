@@ -71,6 +71,17 @@ final class TodoItem {
     /// 详见 docs/multi-day-span-events.md。
     var eventEndDate: Date?
 
+    /// 划掉时刻(复盘「处理没做完的」里的主动放弃)。nil = 未划掉。
+    /// **必须和删除分开**:删除是数据消失,划掉是一个有意义的决定,要进复盘账本、
+    /// 要能撤销、**要留在完成率的分母里**(拍板 1——否则复盘变成洗数据的机器)。
+    /// 语义上与 isCompleted 正交:划掉的任务 isCompleted 仍为 false。
+    /// Optional + SwiftData 轻量迁移,旧数据自动补 nil(与 eventEndDate 同模式)。
+    var abandonedAt: Date?
+
+    /// 拆小后指向原任务(复盘「拆小」动作创建的子任务用)。nil = 非拆小产物。
+    /// Optional + SwiftData 轻量迁移,旧数据自动补 nil。
+    var parentTodoId: UUID?
+
     // MARK: - Indexes
 
     /// 热查询排序/过滤用字段的索引。纯 additive,走 SwiftData 轻量迁移
@@ -138,7 +149,9 @@ final class TodoItem {
         reminderOffsetMinutes: Int? = nil,
         source: TodoSource = .voice,
         parentCalendarEventIdentifier: String? = nil,
-        eventEndDate: Date? = nil
+        eventEndDate: Date? = nil,
+        abandonedAt: Date? = nil,
+        parentTodoId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -169,6 +182,8 @@ final class TodoItem {
         self.sourceRaw = source.rawValue
         self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
         self.eventEndDate = eventEndDate
+        self.abandonedAt = abandonedAt
+        self.parentTodoId = parentTodoId
     }
 
     // MARK: - Conversion
@@ -200,7 +215,9 @@ final class TodoItem {
             extractionOutcome: extractionOutcome,
             source: source,
             parentCalendarEventIdentifier: parentCalendarEventIdentifier,
-            eventEndDate: eventEndDate
+            eventEndDate: eventEndDate,
+            abandonedAt: abandonedAt,
+            parentTodoId: parentTodoId
         )
     }
 
@@ -378,7 +395,9 @@ extension TodoItem {
             reminderOffsetMinutes: data.hasDueTime ? data.reminderOffsetMinutes : nil,
             source: data.source,
             parentCalendarEventIdentifier: data.parentCalendarEventIdentifier,
-            eventEndDate: data.eventEndDate
+            eventEndDate: data.eventEndDate,
+            abandonedAt: data.abandonedAt,
+            parentTodoId: data.parentTodoId
         )
     }
 
@@ -621,6 +640,7 @@ enum VoiceTodoSchema {
     static let schema = Schema([
         TodoItem.self,
         TodoOccurrenceCompletion.self,
-        VoiceCaptureRecord.self
+        VoiceCaptureRecord.self,
+        TaskEvent.self
     ])
 }

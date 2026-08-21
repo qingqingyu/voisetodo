@@ -95,7 +95,9 @@ actor TodoQueryActor {
         do {
             let items = try modelContext.fetch(descriptor)
             let completionKeys = try fetchCompletionKeys(from: firstDay, to: lastDay)
-            let todos = items.map { $0.toData() }
+            // 已划掉(abandonedAt != nil)的任务从日历 occurrence 源头排除:
+            // 月网格 / 今日列表 / 周条图例全部消费这里的输出,一处过滤全覆盖。
+            let todos = items.filter { $0.abandonedAt == nil }.map { $0.toData() }
 
             var occurrences: [TodoOccurrenceData] = []
             for todo in todos {
@@ -181,6 +183,105 @@ actor TodoQueryActor {
             return filtered
         } catch {
             VoiceTodoLog.store.error("query_actor.completed_unscheduled.fetch_failed range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
+    /// 洞察引擎的原料查询(阶段 1 数据地基,见 docs/todo-review-flow-design.md §1.4)。
+    ///
+    /// 一次性取齐阶段 2 规则要的原料,组装成 `Sendable` 的 `InsightContext` 值类型
+    /// 跨 actor 返回;UI 侧在 `.task` 里 await 一次存 `@State`,不放 body。
+    /// 口径:
+    /// - 完成事件 / 未完成 / 到期任务都**只取一次性任务**(`recurrenceRule == nil`,
+    ///   拍板 4:规律父任务永远 isCompleted == false,且 occurrence 缺 per-occurrence
+    ///   createdAt,洞察算不出来)。
+    /// - 未完成任务排除已划掉(`abandonedAt == nil`);完成率分母(ReviewView @Query)
+    /// 不排除——两处方向相反,别改串(拍板 1)。
+    /// - 推迟计数排除 `origin == .review`:复盘里的主动排期不算推迟。
+    /// - Parameters:
+    ///   - startDate: 区间开始(闭)。
+    ///   - endDate: 区间结束(开)。
+    /// - Returns: 原料级 DTO(规则形状由阶段 2 定,此处不做形状设计)。
+    /// - Throws: `VoiceTodoError.storageReadFailed` 数据库读取错误(显式传播,不静默回退)。
+    func insightContext(from startDate: Date, to endDate: Date) throws -> InsightContext {
+        let startedAt = Date()
+        let distantPast = Date.distantPast
+        let distantFuture = Date.distantFuture
+        // 谓词外提常量:#Predicate 闭包不能引用 enum case 成员,提到局部 let 防字符串漂移。
+        let deferredRaw = TaskEventType.deferred.rawValue
+        let reviewRaw = TaskEventOrigin.review.rawValue
+        let completedDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate {
+                $0.isCompleted
+                && ($0.completedAt ?? distantPast) >= startDate
+                && ($0.completedAt ?? distantFuture) < endDate
+            }
+        )
+        let dueDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate {
+                ($0.dueDate ?? distantPast) >= startDate
+                && ($0.dueDate ?? distantFuture) < endDate
+            }
+        )
+        let deferredDescriptor = FetchDescriptor<TaskEvent>(
+            predicate: #Predicate {
+                $0.typeRaw == deferredRaw
+                && $0.at >= startDate
+                && $0.at < endDate
+                && $0.originRaw != reviewRaw
+            }
+        )
+        do {
+            let completedItems = try modelContext.fetch(completedDescriptor)
+                .filter { $0.recurrenceRule == nil }
+                .map { item in
+                    InsightCompletedEvent(
+                        todoId: item.id,
+                        createdAt: item.createdAt,
+                        completedAt: item.completedAt ?? item.createdAt,
+                        category: item.category,
+                        priority: item.priority,
+                        hasDueTime: item.hasDueTime,
+                        dueDate: item.dueDate
+                    )
+                }
+            let openItems = try modelContext.fetch(FetchDescriptor<TodoItem>(
+                predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil }
+            ))
+            let openTasks = openItems
+                .filter { $0.recurrenceRule == nil }
+                .map { item in
+                    InsightOpenTask(todoId: item.id, createdAt: item.createdAt, dueDate: item.dueDate)
+                }
+            let dueTasks = try modelContext.fetch(dueDescriptor)
+                .filter { $0.recurrenceRule == nil }
+                .map { item in
+                    // dueDescriptor 谓词已保证 dueDate != nil,这里的兜底仅安抚类型系统。
+                    InsightDueTask(
+                        todoId: item.id,
+                        dueDate: item.dueDate ?? distantPast,
+                        hasDueTime: item.hasDueTime,
+                        isCompleted: item.isCompleted,
+                        abandonedAt: item.abandonedAt
+                    )
+                }
+            let deferredEvents = try modelContext.fetch(deferredDescriptor)
+            var deferCounts: [UUID: Int] = [:]
+            for event in deferredEvents {
+                deferCounts[event.todoId, default: 0] += 1
+            }
+            let context = InsightContext(
+                from: startDate,
+                to: endDate,
+                completedEvents: completedItems,
+                openTasks: openTasks,
+                dueTasks: dueTasks,
+                deferCounts: deferCounts
+            )
+            VoiceTodoLog.store.debug("query_actor.insight_context.fetch_success range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) completed=\(context.completedEvents.count) open=\(context.openTasks.count) due=\(context.dueTasks.count) deferredTodos=\(deferCounts.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return context
+        } catch {
+            VoiceTodoLog.store.error("query_actor.insight_context.fetch_failed range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }

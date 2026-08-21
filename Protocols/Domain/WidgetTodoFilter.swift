@@ -20,6 +20,9 @@ enum WidgetTodoFilter {
         var unscheduled: [TodoItemData] = []
 
         for item in items {
+            // 已划掉(abandonedAt != nil)的任务不再是可见工作,widget 全组排除
+            // (规律任务当前无划掉入口,守卫放循环顶部一并覆盖)。
+            if item.abandonedAt != nil { continue }
             var data = item
             if let rule = data.recurrenceRule {
                 guard rule.occurs(on: day, startDate: data.dueDate ?? data.createdAt, calendar: calendar) else {

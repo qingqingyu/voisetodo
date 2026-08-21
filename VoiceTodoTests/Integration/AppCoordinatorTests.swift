@@ -1160,7 +1160,8 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
         reorderCalls.append(ids)
     }
 
-    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
+    func updateFull(_ id: UUID, update: TodoDetailUpdate, origin: TaskEventOrigin) throws {
+        // 测试 mock:origin 仅满足协议签名,不落事件。
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.storageReadFailed("todo not found: \(id)")
         }

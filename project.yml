@@ -142,6 +142,7 @@ targets:
           - "**/.DS_Store"
       - path: UI/Shared/DesignSystem.swift
       - path: Store/SwiftDataModels.swift
+      - path: Store/TaskEventModels.swift
       - path: Store/AppGroupConfig.swift
       - path: Store/AppGroupModelContainerProvider.swift
       - path: Protocols/Models.swift
@@ -157,6 +158,7 @@ targets:
       - path: Protocols/Domain/RecurrenceEnd.swift
       - path: Protocols/Domain/RecurrenceEndResolver.swift
       - path: Protocols/Domain/DayClock.swift
+      - path: Protocols/Domain/TaskEventKind.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift
       - path: Protocols/Domain/TodoSpan.swift
       - path: Protocols/VoiceTodoError.swift

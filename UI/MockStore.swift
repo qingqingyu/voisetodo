@@ -90,11 +90,29 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         }
     }
 
+    /// Mock 版划掉:只写内存字段(无事件表)。与 `TodoStore.abandon` 行为对齐用于 preview。
+    func abandon(_ id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].abandonedAt = Date()
+    }
+
+    /// Mock 版撤销划掉:只清内存字段,不记事件(与 `TodoStore.unabandon` 口径一致)。
+    func unabandon(_ id: UUID) throws {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].abandonedAt = nil
+    }
+
     func delete(_ id: UUID) throws {
         todos.removeAll { $0.id == id }
     }
 
-    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
+    func updateFull(_ id: UUID, update: TodoDetailUpdate, origin: TaskEventOrigin) throws {
+        // Mock 无持久层,不落 TaskEvent;origin 仅用于满足协议签名。
+        _ = origin
         guard let index = todos.firstIndex(where: { $0.id == id }) else {
             throw VoiceTodoError.todoNotFound(id)
         }

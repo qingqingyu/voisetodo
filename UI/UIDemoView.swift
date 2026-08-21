@@ -122,7 +122,7 @@ struct UIDemoView: View {
                     HStack {
                         Text(String(localized: "demo.uncompleted"))
                         Spacer()
-                        Text(verbatim: "\(store.todos.filter { !$0.isCompleted }.count)")
+                        Text(verbatim: "\(store.todos.filter { !$0.isCompleted && $0.abandonedAt == nil }.count)")
                             .foregroundColor(.secondary)
                     }
 

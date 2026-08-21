@@ -1025,7 +1025,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     recurrenceRule: editedRecurrenceRule,
                     // 三态契约:有钟点时 nil(准时)显式传 0 清除;清钟点则一并清提醒偏移。
                     reminderOffsetMinutes: editedHasDueTime ? (editedReminderOffsetMinutes ?? 0) : 0
-                )
+                ),
+                // 详情页直改 dueDate 的推迟埋点记 origin = .detail(区别于首页快捷操作 .app)
+                origin: .detail
             )
             // 同步基准:把 edited* 写回 todo,下次 checkForChanges 以新基准比对。
             // editedHasDueTime / editedTimeBucket 由 UI 层归一化(用户取消日期时 UI 自己清 hasDueTime),

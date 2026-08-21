@@ -166,9 +166,11 @@ struct HomeCalendarState {
         // 「时间信号」= timeBucket != nil 或 dueHint 非空。
         // 之前版本只看 dueDate==nil 就归「未安排」,导致"下午/等会儿"标签的条目也撒谎成"未安排"。
         let noSchedule = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
+        // 未完成分组补 abandonedAt == nil:已划掉的任务对首页是不可见工作
+        // (防御性过滤:生产路径 store.todos 谓词已排除,测试工厂可喂原始数组)。
         self.unparsedTodos = noSchedule
-            .filter { !$0.isCompleted && $0.extractionOutcome != .parsed }
-        let parsedIncomplete = noSchedule.filter { !$0.isCompleted && $0.extractionOutcome == .parsed }
+            .filter { !$0.isCompleted && $0.abandonedAt == nil && $0.extractionOutcome != .parsed }
+        let parsedIncomplete = noSchedule.filter { !$0.isCompleted && $0.abandonedAt == nil && $0.extractionOutcome == .parsed }
         let hasTimeSignal: (TodoItemData) -> Bool = { todo in
             if todo.timeBucket != nil { return true }
             let hint = todo.dueHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

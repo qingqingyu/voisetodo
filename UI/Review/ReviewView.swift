@@ -154,6 +154,9 @@ struct ReviewView: View {
 
         // 完成率分母:区间内 dueDate ≤ 今天的待办数。
         // 未来到期的任务不计入分母,避免月中显示"10%"这种打击人的数字。
+        // ⚠️ 有意不过滤 abandonedAt(拍板 1):已划掉的任务**留在分母**——堵死
+        // 「划掉保数字」的 gaming 路径,首次大清理完成率下跌是真实信息。
+        // 与各「未完成可见性」过滤(abandonedAt == nil)方向相反,别改串。
         // 规律任务父任务只算一次(item-based,与历史 createdCount 风格一致);
         // 不展开 occurrence,v2 若要精确可用 RecurrenceRule.occurs(on:) 改算法。
         let dueByTodayCount = allTodos.filter { item in

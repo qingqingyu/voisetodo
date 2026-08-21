@@ -60,8 +60,12 @@ protocol TodoDeletionWriting {
 
 /// 待办详情与重复规则原子写入能力。
 protocol TodoDetailUpdating {
-    /// 完整更新（含 dueDate、时段和重复规则，详情页用）
-    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws
+    /// 完整更新（含 dueDate、时段和重复规则，详情页用）。
+    /// dueDate 推迟到更晚用户日时,经 `TaskEventRecorder` 记一条 deferred 事件
+    /// (与主操作同事务;判定见 `TaskEventRules.isDeferral`)。
+    /// - Parameter origin: 事件来源(详情页传 `.detail`,首页快捷操作走默认 `.app`,
+    ///   复盘流程传 `.review`)。
+    func updateFull(_ id: UUID, update: TodoDetailUpdate, origin: TaskEventOrigin) throws
 
     /// 用一组新提取的结果替换现有 TodoItem。
     /// 用于「没能识别」分组的「重新解析」入口:把 outcome != .parsed 的原文条目,
@@ -70,6 +74,14 @@ protocol TodoDetailUpdating {
     /// 当 `extracted.count > 1` 时,第一条 mutate 原 todo,剩余的逐条插入,
     /// sortOrder 锚定在原 todo 的 sortOrder 之下(详见 `TodoStore.replaceTodo` 实现)。
     func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws
+}
+
+extension TodoDetailUpdating {
+    /// origin 默认 `.app` 的便捷入口:协议要求不能带默认参数,用扩展重载补默认值,
+    /// 让既有调用点(HomeView 快捷改时间等)不改签名、零回归。
+    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
+        try updateFull(id, update: update, origin: .app)
+    }
 }
 
 extension TodoDetailUpdating where Self: TodoListReadable {
@@ -115,8 +127,24 @@ protocol TodoOrderingWriting {
     func reorder(ids: [UUID]) throws
 }
 
+/// 划掉(放弃)写入能力——复盘「处理没做完的」用。
+/// 与 `TodoDeletionWriting` 语义对立:删除是数据消失,划掉是一个有意义的决定,
+/// 保留在完成率分母里(拍板 1),且可撤销。
+protocol TodoAbandonWriting {
+    /// 划掉待办:写 `abandonedAt = Date()` + 记一条 abandoned 事件(同事务)。
+    /// - Parameter id: 待办 ID
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func abandon(_ id: UUID) throws
+
+    /// 撤销划掉:只清 `abandonedAt` 字段。**不记事件**——拍板 3 的事件集里没有
+    /// un-abandoned 类型(撤销状态从 `abandonedAt == nil` 即可推导)。
+    /// - Parameter id: 待办 ID
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func unabandon(_ id: UUID) throws
+}
+
 /// 完整待办写入能力集合。
-protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting {}
+protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting, TodoAbandonWriting {}
 
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {

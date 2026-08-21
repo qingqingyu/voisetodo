@@ -586,6 +586,13 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
     /// 详见 docs/multi-day-span-events.md。
     var eventEndDate: Date?
 
+    /// 划掉时刻(复盘「处理没做完的」里的主动放弃,与 delete 分开)。nil = 未划掉。
+    /// Optional:参与 UI 测试 `--todos-data` JSON 解码,旧 payload 缺该键时合成
+    /// Codable 走 decodeIfPresent 解出 nil,解码兼容。
+    var abandonedAt: Date?
+    /// 拆小后指向原任务。nil = 非拆小产物。Optional 同上,解码兼容。
+    var parentTodoId: UUID?
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -610,7 +617,9 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         extractionOutcome: ExtractionOutcome = .parsed,
         source: TodoSource = .voice,
         parentCalendarEventIdentifier: String? = nil,
-        eventEndDate: Date? = nil
+        eventEndDate: Date? = nil,
+        abandonedAt: Date? = nil,
+        parentTodoId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -637,6 +646,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.source = source
         self.parentCalendarEventIdentifier = parentCalendarEventIdentifier
         self.eventEndDate = eventEndDate
+        self.abandonedAt = abandonedAt
+        self.parentTodoId = parentTodoId
     }
 
     /// 从 ExtractedTodo 创建（AI 提取结果转 DTO）[v2]
@@ -681,5 +692,8 @@ struct TodoItemData: Identifiable, Codable, Hashable, Sendable {
         self.parentCalendarEventIdentifier = nil
         // AI 不产出跨天(v1 不动 prompt),走 init(from:) 的 DTO 永远是单天
         self.eventEndDate = nil
+        // AI 路径不产出划掉/拆小(复盘流程才有),恒 nil
+        self.abandonedAt = nil
+        self.parentTodoId = nil
     }
 }
