@@ -1,6 +1,6 @@
 # 复盘流程（五步）—— 设计方案与实施计划
 
-> 状态：**待实施**。文档创建于 2026-08-21。
+> 状态：**已拍板，待实施**。文档创建于 2026-08-21；同日代码评估后拍板（见「拍板决定（2026-08-21）」），v1 范围与七项口径已定，相关章节按拍板修订。
 > 行号基准：`5f90585`（分支 `claude/todo-review-flow-design-6iyjlb` HEAD）。
 > 实施后请在此处补「实施落地记录」节，并把状态改为「已实施」（沿用
 > `docs/moat-plan-personalization-and-review.md` / `docs/day-clock-day-boundary-inconsistencies.md` 的体例）。
@@ -27,6 +27,20 @@
 | 页面结构 | `ReviewView` 保留为默认页，顶部加「开始这次复盘」入口卡，点进去是全屏五步流程 |
 | 「重要」标记 | 复用 `Priority.high`，不新增字段 |
 
+### 拍板决定（2026-08-21，评估后定稿）
+
+代码评估核实了「现状盘点」的全部断言（一处补充：`Store/TodoStore.swift:910` 还有一处 `dueDate` 赋值，但那是启动迁移 `migrateDueDatesFromHints()` 的 nil→首次排期，按 §1.3 规则本就不记，choke point 结论不变）。基于评估拍板：
+
+| # | 决定 | 选择 | 理由 |
+|---|---|---|---|
+| 1 | abandoned 与完成率分母 | **留在分母**，账本/完成率卡明示口径 | 堵死「划掉保数字」的 gaming 路径；首次大清理完成率下跌是真实信息 |
+| 2 | v1 洞察范围 | **只做 02（腐烂）+ 03（计划 vs 救火）** | 02 唯一冷启动可用且直连第 2 步动作；01/05 待阶段 0 体检，06 待 ≥4 完整周，04 涉及可编辑 accountability 映射、v2 再做 |
+| 3 | TaskEvent 记录范围 | **只记 `deferred` / `abandoned` / `split`** | created/completed 从 `createdAt`/`completedAt` 推导；widget 进程完成不经事件表，completed 记了反而比字段更不全 |
+| 4 | 规律任务 vs 第 2 步卡片堆 | **排除**（`recurrenceRule == nil && abandonedAt == nil`），标题写明「一次性任务」 | 规律父任务永远 `isCompleted == false` 会刷屏；右滑「排下周」会移动整个系列，语义不明 |
+| 5 | `TaskEventOrigin` | 删 `widget`，集合为 `app \| review \| detail` | 已核实 widget/AppIntents 无 dueDate 写入点，`deferred` 不可能在 widget 进程发生 |
+| 6 | 下周三件事置顶 | **独立置顶标记**，不动 `sortOrder` | `sortOrder` 承载手动拖拽序（含 sort_order 迁移），复盘改它会破坏用户自排的序 |
+| 7 | 撤销范围 | **只覆盖「划掉」** | 拆小的 undo 要删两条子任务+恢复原任务，成本高；排进下周/今天就做不提供 undo |
+
 ### 现状盘点（已核实）
 
 - **数据层**：SwiftData，App Group 容器（`Store/AppGroupModelContainerProvider.swift`）。Schema 单一注册点 `VoiceTodoSchema.schema`（`Store/SwiftDataModels.swift:619`）。**无 `VersionedSchema` / `SchemaMigrationPlan`**——新字段必须 optional 或带默认值才走轻量迁移（既有模式见 `:14-16`、`:23`、`:52-60`、`:66-68`）。
@@ -51,7 +65,7 @@
 3. 已完成任务总数、有 `dueDate` 的任务数、分类分布（每类 n）
 4. 最早一条 `createdAt` 到今天的周数（洞察 06 需要 ≥4 个完整周）
 
-**判据**：若已完成的 high 任务 < 8 条且没有增长趋势，阶段 2 里把洞察 01/05 降级为占位行，不投实现精力；同时考虑在详情页把「重要」标记做得更显眼（现在只有 `UI/Home/WarmTodoCard.swift:306` 的字重差异，用户可能根本不知道能标）。
+**判据**（拍板 2 后语义微调：01/05 本就不在 v1，体检决定的是**何时值得启用**）：若已完成的 high 任务 < 8 条且没有增长趋势，01/05 长期搁置，不投实现精力；同时考虑在详情页把「重要」标记做得更显眼（现在只有 `UI/Home/WarmTodoCard.swift:306` 的字重差异，用户可能根本不知道能标）。
 
 ---
 
@@ -68,11 +82,11 @@
 final class TaskEvent {
     @Attribute(.unique) var id: UUID
     var todoId: UUID
-    var typeRaw: String        // created | deferred | completed | abandoned | split | reopened
+    var typeRaw: String        // deferred | abandoned | split（拍板 3：只记推导不出的三类）
     var fromDate: Date?        // deferred 时的原 dueDate
     var toDate: Date?          // deferred 时的新 dueDate
     var at: Date
-    var originRaw: String      // app | widget | review | detail
+    var originRaw: String      // app | review | detail（拍板 5：无 widget 写入点）
 
     #Index<TaskEvent>([\.todoId], [\.at], [\.typeRaw])
 }
@@ -95,21 +109,22 @@ final class TaskEvent {
 
 **所有现有的「未完成」过滤都要补 `abandonedAt == nil`** —— 这是最容易漏的一处。检查点：`UI/Home/HomeCalendarState.swift`、`Protocols/Domain/WidgetTodoFilter.swift`、`TodoQueryActor.recentUncompleted` / `pendingItems`、`TodoStore.todos` 的消费方。
 
+**反向检查点（拍板 1）**：`ReviewView.swift:159` 的 `dueByTodayCount`（完成率分母）**不过滤** `abandonedAt`——划掉的任务要留在分母里。两处方向相反，别改串了。
+
 ### 1.3 埋点
 
 新文件 `Store/TaskEventRecorder.swift`——一个薄的写入器，`TodoStore` 持有：
 
 - **`deferred`**：只在 `TodoStore.updateFull`（`:283`）一处记。判定：`新 dueDate` 的用户日 > `旧 dueDate` 的用户日才记；**往前改不记**；旧 dueDate 为 nil（从未排期 → 首次排期）不记。`origin` 由调用方传入（新增一个带默认值的参数，默认 `.app`，复盘流程传 `.review`）。
-- **`completed` / `reopened`**：`toggleComplete`（`:241`）。
 - **`abandoned`**：新增 `TodoStore.abandon(_ id:)` / `unabandon(_ id:)`。
-- **`created`**：`add` / `addBatch` / `addImportedBatch`。
 - **`split`**：复盘拆小时记，同时写子任务的 `parentTodoId`。
+- **不记 `created` / `completed` / `reopened`（拍板 3）**：三者从 `TodoItem.createdAt` / `completedAt` 直接推导。特别是不记 `completed`——Widget/AppIntent 进程的完成走自己的 context、不经 `toggleComplete`，事件表覆盖天生残缺，记了反而比字段更不全、误导分析。
 
 **统计推迟次数时排除 `origin == .review`**——复盘里主动做的排期不该被算成推迟，否则用户越认真复盘，数字越难看。
 
 ### 1.4 查询下沉
 
-`ReviewView` 现在用三个 `@Query` 直读全表（包括一个**无过滤的 `allTodos` 全表查询**，`ReviewView.swift:79`），且 `summary` 是计算属性、每次 body 求值都重算。**六条洞察规则叠上去会把这个问题放大成六倍全表扫描。**
+`ReviewView` 现在用三个 `@Query` 直读全表（包括一个**无过滤的 `allTodos` 全表查询**，`ReviewView.swift:79`），且 `summary` 是计算属性、每次 body 求值都重算。**洞察规则叠上去会把这个问题放大成数倍全表扫描。**
 
 按 `docs/moat-plan-personalization-and-review.md` 里当初就写了、但实施时被跳过的 B1 方案补回来（该文档「⚠️ 实施时的偏离决策」一节已记录这笔欠账）：在 `TodoQueryActor`（`Store/TodoQueryActor.swift`）加只读方法，返回值类型 DTO：
 
@@ -117,7 +132,7 @@ final class TaskEvent {
 func insightContext(from: Date, to: Date) async throws -> InsightContext
 ```
 
-一次性取齐六条规则要的原料（完成事件、未完成任务、区间内到期任务、推迟事件计数），组装成一个 `Sendable` 的 `InsightContext` 结构体（放 `Protocols/Domain/Insights/`）。UI 侧在 `.task` 里 await 一次存进 `@State`，不放 body。
+一次性取齐规则要的原料（完成事件、未完成任务、区间内到期任务、推迟事件计数），组装成一个 `Sendable` 的 `InsightContext` 结构体（放 `Protocols/Domain/Insights/`）。UI 侧在 `.task` 里 await 一次存进 `@State`，不放 body。
 
 ---
 
@@ -131,12 +146,15 @@ func insightContext(from: Date, to: Date) async throws -> InsightContext
 
 ```swift
 enum InsightID: String, CaseIterable {
-    case effortOrdering     // 01 先易后难
-    case rotting            // 02 任务在腐烂
-    case reactiveVsPlanned  // 03 计划 vs 救火
-    case brokenPromises     // 04 对谁失约
-    case energyWindow       // 05 精力窗口
-    case weeklyDecay        // 06 周内衰减
+    // v1 只实现 rotting / reactiveVsPlanned（拍板 2）。
+    // 其余四个 case 仅预留 ID，不建规则文件——待阶段 0 体检（01/05）、
+    // 数据攒满（06）或 v2（04）再启用。
+    case effortOrdering     // 01 先易后难（待体检）
+    case rotting            // 02 任务在腐烂 ← v1
+    case reactiveVsPlanned  // 03 计划 vs 救火 ← v1
+    case brokenPromises     // 04 对谁失约（v2）
+    case energyWindow       // 05 精力窗口（待体检）
+    case weeklyDecay        // 06 周内衰减（待 ≥4 完整周）
 }
 enum InsightStrength { case high, medium, lowData }
 enum InsightAvailability { case fired(InsightResult), placeholder(needMore: Int), hidden }
@@ -162,26 +180,26 @@ confidence       = min(1.0, 实际样本量 / (2 × minSample))
 
 **强度标签**：`score ≥ 0.62` → 信号强；`0.35 ≤ score < 0.62` → 信号中；`n < 1.5 × minSample` → 数据偏少（不管 score 多高，强制标）。
 
-### 2.2 六条规则的口径
+### 2.2 规则口径（v1 实现 02/03，拍板 2；其余条目的口径保留备用）
 
 全部按规格文档 §2 实现，**除了下面这些必须的偏离**：
 
 - **时间口径用 `DayClock.startOfUserDay`**，不是规格里写的固定 4 点。用户已经能在设置里配日起始小时（`UI/Home/HomeSettingsSheet.swift:122`），洞察必须跟随，否则同一天数据在首页和复盘页对不上。
-- **规律任务全部排除在六条洞察之外。** 规格文档没处理这个。`TodoOccurrenceCompletion`（`Store/SwiftDataModels.swift:489`）只有 `completedAt` / `occurrenceDate`，**没有 per-occurrence 的 `createdAt`**——洞察 01（记下到做完的滞留）和 03（当天记当天做）在它上面根本算不出来。强行混进去会得到系统性偏低的滞留时间。做法：六条洞察的输入只取一次性 `TodoItem`；现有成绩单（第 1 步）继续 union 两者不变。这个差异要写进 `sampleNote`（如「47 条一次性任务，不含规律任务」）。
+- **规律任务全部排除在洞察与第 2 步卡片堆之外（拍板 4 扩大了原口径）。** 规格文档没处理这个。`TodoOccurrenceCompletion`（`Store/SwiftDataModels.swift:489`）只有 `completedAt` / `occurrenceDate`，**没有 per-occurrence 的 `createdAt`**——洞察 01（记下到做完的滞留）和 03（当天记当天做）在它上面根本算不出来。强行混进去会得到系统性偏低的滞留时间。且规律父任务永远 `isCompleted == false`，进卡片堆会刷屏、右滑「排下周」还会移动整个系列。做法：洞察输入与第 2 步 triage 输入都只取一次性 `TodoItem`（`recurrenceRule == nil && abandonedAt == nil`），第 2 步标题写明「处理没做完的一次性任务」；现有成绩单（第 1 步）继续 union 两者不变。这个差异要写进 `sampleNote`（如「47 条一次性任务，不含规律任务」）。
 - **洞察 02「腐烂」冷启动只走 age 分支。** 推迟分支（`defers ≥ 3`）在事件表攒够之前恒为空。判定：未完成 且 `abandonedAt == nil` 且（有效推迟 ≥3 **或** `now - createdAt ≥ 21 天`）。这条是六条里**唯一冷启动就能用的**，也是唯一直接连着第 2 步处理动作的，最快能验证用户是否在意。
-- **洞察 04「对谁失约」的分母必须含已划掉的任务**（`abandonedAt != nil`）。`Accountability { external, self }` 的默认映射：`.work` / `.finance` → external，其余 → self，**并允许用户改**（放在第 3 步卡片上的一个小入口，或设置页；有些人的副业有合伙人）。
-- **洞察 05「精力窗口」的重要任务时段**：`hasDueTime == true` 时用 `dueDate` 小时，否则退化用 `completedAt` 小时（规格 §2-05 已写）。阶段 0 的体检结果决定这条走不走。**文案止于观察，不要写成「你应该早起」**——数据只说明错位，不说明该往哪边调：有人的解法是把重要任务挪到上午，有人的解法是重新定义什么叫重要。
-- **`auto_rollover` origin 不存在**，origin 集合是 `app | widget | review | detail`。
+- **洞察 04「对谁失约」（v2，拍板 2）的分母必须含已划掉的任务**（`abandonedAt != nil`）。`Accountability { external, self }` 的默认映射：`.work` / `.finance` → external，其余 → self，**并允许用户改**（放在第 3 步卡片上的一个小入口，或设置页；有些人的副业有合伙人）。
+- **洞察 05「精力窗口」（待阶段 0 体检，拍板 2）的重要任务时段**：`hasDueTime == true` 时用 `dueDate` 小时，否则退化用 `completedAt` 小时（规格 §2-05 已写）。阶段 0 的体检结果决定这条走不走。**文案止于观察，不要写成「你应该早起」**——数据只说明错位，不说明该往哪边调：有人的解法是把重要任务挪到上午，有人的解法是重新定义什么叫重要。
+- **`auto_rollover` origin 不存在**，origin 集合是 `app | review | detail`（拍板 5 删 `widget`：已核实 widget/AppIntents 无 dueDate 写入点，`deferred` 不可能在 widget 进程发生）。
 
 ### 2.3 降级阶梯（规格 §3）
 
-| 已完成记录数 | 第 3 步显示 |
+| 已完成记录数 | 第 3 步显示（v1 只有 02/03，拍板 2） |
 |---|---|
 | < 5 | 整个第 3 步跳过，第 2 步直连第 4 步 |
 | 5–14 | 只跑洞察 02，加一句「再记 N 条，就能看出你的做事习惯了」 |
-| 15–24 | 跑 02 + 03，其余显示灰色占位行「精力窗口 · 还需 N 条带时间戳的记录」 |
-| ≥ 25 | 六条全部参与评估，未达阈值的**不显示**（不是显示「无异常」） |
-| ≥ 4 完整周 | 洞察 06 加入 |
+| ≥ 15 | 跑 02 + 03，未达阈值的**不显示**（不是显示「无异常」） |
+
+未实现的规则（01/04/05/06）v1 **不显示占位行**——占位行机制（「还需 N 条」）只对已实现规则生效；其余规则按拍板 2 的条件启用时，再把各自的占位行加回降级阶梯。
 
 占位行要写清楚**还差多少**。用户看到「还需 11 条」会继续用；看到「数据不足」会觉得这个功能坏了。新用户第一次点复盘就会撞上这个状态——它比主流程更影响留存，值得先把降级路径做扎实。
 
@@ -213,9 +231,11 @@ confidence       = min(1.0, 实际样本量 / (2 × minSample))
 | `ReviewStepInsights.swift` | 第 3 步 · 观察。洞察卡列表 + 语音提问 + 跨期对照卡 |
 | `ReviewStepCommit.swift` | 第 4 步 · 下周三件事 + 本次存下的规则 |
 | `ReviewStepLedger.swift` | 第 5 步 · 收尾账本 |
-| `InsightCardView.swift` + `InsightVizViews.swift` | 洞察卡容器 + 六种图的 SwiftUI 实现 |
+| `InsightCardView.swift` + `InsightVizViews.swift` | 洞察卡容器 + 图的 SwiftUI 实现（v1 只有 02/03 两种图，拍板 2） |
 
 ### 第 2 步 · 卡片堆（真实用户最直接的诉求，优先级最高）
+
+输入（拍板 4）：未完成 且 `abandonedAt == nil` 且 `recurrenceRule == nil` 的一次性任务。步骤标题写明「处理没做完的一次性任务」，让范围自明。
 
 - 右滑 → 排进下周（`updateFull` 改 dueDate，`origin = .review`，**不计入推迟次数**）
 - 左滑 → 划掉（写 `abandonedAt`，**不是 delete**）
@@ -224,14 +244,14 @@ confidence       = min(1.0, 实际样本量 / (2 × minSample))
 - 卡上那排斜杠是推迟次数，一道一次——比写「已推迟 4 次」更刺眼一点。冷启动没有推迟数据时，这排斜杠换成「记下 N 天了」。
 - 手势用 `UI/Shared/SimultaneousDragGesture.swift`（iOS 26 下 SwiftUI `.simultaneousGesture(DragGesture)` 在容器内不可靠触发，那个文件的注释里写了原因和 FB 编号）。触觉用 `UI/Shared/Haptics.swift`。
 - 滑动阈值：HTML 原型里是 85px。移动端做成**位移或速度任一达标**即触发（`DragTranslation.velocity` 已经提供了速度），纯位移阈值在小屏上偏难。
-- **必须能撤销**——划掉是个决定，但用户会手滑。顶部留一个「撤销上一张」。
+- **撤销只覆盖「划掉」（拍板 7）**——划掉是个决定，但用户会手滑。顶部留一个「撤销上一张」，仅恢复最近一次划掉；排进下周 / 今天就做 / 拆小不提供 undo（拆小的 undo 要删两条子任务+恢复原任务，成本高）。
 
 **拆小（v1 手动，AI 版放阶段 5）**：底部弹 sheet，预填两条空的子任务输入框，用户自己填或按住麦克风说。提交后创建两条新 `TodoItem`（`parentTodoId` 指向原任务），原任务标 `abandonedAt`，记 `split` 事件。这样第一版流程是完整的，AI 拆小是纯增强。
 
 ### 第 3 步 · 洞察
 
-- 六条按 `score` 降序排。**副作用**：每个月排序可能变化——最该看的在最上面（好），但用户找不到上次那条（坏）。第一版先按分数排，如果用户测试反馈找不到，再给每条加固定锚点。
-- **默认只展开前 3 条强信号，后面折叠成「还有 N 个观察」。** 六条全展开要滚很久，一次看六张图有疲劳感。折叠是更安全的默认值，展开态可以 A/B。
+- 参与的洞察按 `score` 降序排。**副作用**：每个月排序可能变化——最该看的在最上面（好），但用户找不到上次那条（坏）。第一版先按分数排，如果用户测试反馈找不到，再给每条加固定锚点。
+- **折叠机制保留但 v1 常空载**（只有 02/03 两条）：强信号默认展开，其余折叠成「还有 N 个观察」。规则启用到 4+ 条时该机制自然生效，展开态可以 A/B。
 - 每张卡右下角是样本量（「51 条带时间戳」「4 周 · 再攒 4 周更准」），右上角是信号强度标签。数据不够时要诚实地说，而不是假装确定。
 - 图表用 SwiftUI 原生绘制（`GeometryReader` + `RoundedRectangle`），**不要为这六张图引 Swift Charts**——现有 `ReviewView` 的分类图当初就从 `SectorMark` 换回了手写横条（`ReviewView.swift:355` 的注释写了原因：2 类各 1 件时画成半圆纯属装饰）。只有第 1 步的每日趋势继续用现有的 `BarMark`。
 - 滚动进入视野时才播入场动画（呼应原型的 IntersectionObserver，顺便解决一次性看六张图的疲劳感）。用 `.onScrollVisibilityChange` 或复用 `UI/Shared/CardEntranceModifier.swift`。
@@ -241,7 +261,7 @@ confidence       = min(1.0, 实际样本量 / (2 × minSample))
 
 ### 第 4 步 · 下周三件事
 
-从刚才排进下周的里挑，最多 3 件，**不选够不给过**。选中的下周一置顶（调 `sortOrder`，或加一个轻量的置顶标记）。
+从刚才排进下周的里挑，最多 3 件，**不选够不给过**。选中的下周一置顶——**用独立置顶标记（拍板 6），不动 `sortOrder`**：`sortOrder` 承载用户手动拖拽序（含 `sort_order` 迁移逻辑），复盘改它会破坏用户自排的序。置顶落为 `TodoItem` 的 optional 字段还是纯展示层标记，实施时再定。
 
 ### 第 5 步 · 收尾账本
 
@@ -317,8 +337,8 @@ Store/TaskEventModels.swift                      TaskEvent @Model
 Store/TaskEventRecorder.swift                    埋点写入器
 Protocols/Domain/TaskEventKind.swift             事件类型/来源枚举
 Protocols/Domain/Insights/InsightEngine.swift    引擎骨架 + 排序 + 强度 + 降级阶梯
-Protocols/Domain/Insights/InsightContext.swift   六条规则的共享输入 DTO
-Protocols/Domain/Insights/Rules/*.swift          六条规则各一个文件
+Protocols/Domain/Insights/InsightContext.swift   规则的共享输入 DTO
+Protocols/Domain/Insights/Rules/*.swift          v1 两条规则各一个文件（拍板 2）
 Protocols/ReviewSessionStore.swift               复盘会话持久化
 UI/Review/RecapComponents.swift                  从 ReviewView 抽出的成绩单组件
 UI/Review/Flow/*.swift                           五步流程（见阶段 3 表格）
@@ -329,7 +349,7 @@ VoiceTodoTests/Protocols/Insights/*Tests.swift   验收用例
 
 ```
 Store/SwiftDataModels.swift          TodoItem +abandonedAt +parentTodoId；VoiceTodoSchema 注册 TaskEvent
-Store/TodoStore.swift                updateFull/toggleComplete/add* 埋点；新增 abandon/unabandon
+Store/TodoStore.swift                updateFull 埋点（deferred）；新增 abandon/unabandon（拍板 3：不含 created/completed）
 Store/TodoQueryActor.swift           新增 insightContext(from:to:)
 Protocols/Models.swift               TodoItemData 同步两个新字段
 Protocols/TodoStoreProtocol.swift    新增 TodoAbandonWriting 协议 + 组合进角色协议
@@ -344,23 +364,25 @@ VoiceTodo.xcodeproj/project.pbxproj  注册新文件
 
 ### 单测
 
-`Protocols/` 纯逻辑可 `swift test` 单跑；Swift 全量需 Xcode 26。按规格文档 §5 的验收用例建夹具，每条洞察至少三个 case：
+`Protocols/` 纯逻辑可 `swift test` 单跑；Swift 全量需 Xcode 26。按规格文档 §5 的验收用例建夹具，每条洞察至少三个 case。**v1 只建 02/03/排序/冷却/降级的用例（拍板 2）；01/04/05/06 的用例保留作规格参考，各自规则启用时再建**：
 
 ```
-01-A 触发：重要 10 条中位 7.1 天，普通 22 条中位 0.5 天 → high
-01-B 不触发（比值够但绝对差不够）：重要 0.4 天，普通 0.1 天
-01-C 不触发（样本不足）：重要 5 条
 02-A 触发：3 条推迟 ≥3 次 → 列表按推迟次数降序
 02-B 触发：1 条 25 天前创建、0 次推迟 → 命中 age 分支
 02-C 不计入：origin=review 的 4 次推迟 → 不触发
 03-A 救火 ratio 0.62 n=42 / 03-B 正向 ratio 0.18 n=30 / 03-C 不触发 ratio 0.40
-04-A 差距 0.68 触发 / 04-B 差距 0.30 不触发 / 04-C 只有 1 类 n≥6 不触发
-05-A 峰值 9–11、重要中位 22 点 → 错位 12h / 05-C 仅 18 条带时间戳 → 占位行
-06-A 5 周数据 0.79 vs 0.33 触发 / 06-B 仅 3 完整周不触发 / 06-C 周日桶 n=3 → 排除后重算
-排序-A：六条全触发 → score 降序，n < 1.5×minSample 强制 lowData
+排序-A：全部触发 → score 降序，n < 1.5×minSample 强制 lowData
 冷却-A：上次展示过、效应量变化 8% → 不展示
 冷却-B：同上但用户存了规则 → 展示，用回访文案
 降级-A：完成记录 3 条 → 第 3 步整步跳过
+
+—— 以下为后续启用时的规格参考（v1 不建）——
+01-A 触发：重要 10 条中位 7.1 天，普通 22 条中位 0.5 天 → high
+01-B 不触发（比值够但绝对差不够）：重要 0.4 天，普通 0.1 天
+01-C 不触发（样本不足）：重要 5 条
+04-A 差距 0.68 触发 / 04-B 差距 0.30 不触发 / 04-C 只有 1 类 n≥6 不触发
+05-A 峰值 9–11、重要中位 22 点 → 错位 12h / 05-C 仅 18 条带时间戳 → 占位行
+06-A 5 周数据 0.79 vs 0.33 触发 / 06-B 仅 3 完整周不触发 / 06-C 周日桶 n=3 → 排除后重算
 ```
 
 补上一直缺的 `ReviewAggregatorTests`（分类占比 / streak / 区间边界 / 空区间 / union 去重）——`docs/moat-plan-personalization-and-review.md` 的 B1 当初就要求了，实施时漏了。
@@ -372,7 +394,7 @@ VoiceTodo.xcodeproj/project.pbxproj  注册新文件
 1. **迁移安全**：拿**有真实数据的旧库**升级安装，确认 App 和 Widget 都能打开（这是 `TaskEvent` + 两个新字段最大的风险点，空模拟器测不出来）。
 2. **埋点**：详情页改日期往后 → 记 deferred；往前改 → 不记；「移到明天」→ 记；复盘里排进下周 → 记但 `origin=review`，且不进推迟计数。
 3. **卡片堆**：左右滑、两个按钮、撤销、拆小后子任务带 `parentTodoId`、划掉的任务从首页消失但仍在完成率分母里。
-4. **降级路径**（新用户最容易撞上，重点测）：清库 → 完成 3 条 → 第 3 步整步跳过；完成 8 条 → 只出洞察 02 + 「再记 N 条」；完成 20 条 → 02+03 + 占位行写清还差多少。
+4. **降级路径**（新用户最容易撞上，重点测）：清库 → 完成 3 条 → 第 3 步整步跳过；完成 8 条 → 只出洞察 02 + 「再记 N 条」；完成 20 条 → 02+03 齐跑。
 5. **跨期**：连做两次复盘，第二次能看到「上次复盘你说过」和规则回访。
 6. **本地化**：中/英/日三语各走一遍五步，确认参数化文案不串位、长月份名不挤爆标题行。
 
