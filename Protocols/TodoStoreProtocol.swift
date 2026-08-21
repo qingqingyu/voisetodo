@@ -146,6 +146,26 @@ protocol TodoAbandonWriting {
 /// 完整待办写入能力集合。
 protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting, TodoAbandonWriting {}
 
+/// 洞察原料读取能力——复盘流程第 3 步(观察)用。
+/// 独立协议不并入 `TodoMutationWriting`:后者已有多个聚合消费方(MockStore 等),
+/// 追加要求会迫使无关实现补空壳。
+protocol InsightContextReading {
+    /// 洞察引擎的原料查询(一次性取齐,口径见 `TodoQueryActor.insightContext`)。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+    func insightContext(from startDate: Date, to endDate: Date) async throws -> InsightContext
+}
+
+/// 拆小写入能力——复盘第 2 步「拆小」按钮用(阶段 3)。
+/// 与 `TodoAbandonWriting` 互补:拆小 = 建 N 条子任务(parentTodoId 指向原任务)
+/// + 原任务标 abandonedAt + 记 split 事件,三步同事务。
+protocol TodoSplitting {
+    /// - Throws: 条目不存在抛 `todoNotFound`;children 为空是调用方契约违反,显式抛。
+    func splitTodo(_ id: UUID, children: [TodoItemData]) throws
+}
+
+/// 复盘五步流程需要的 store 能力集合(阶段 3,`ReviewFlowView` 的依赖类型)。
+protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, TodoSplitting {}
+
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {
     /// 获取日期区间内实际出现的待办

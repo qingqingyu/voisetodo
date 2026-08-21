@@ -12,6 +12,7 @@ final class TodoStore:
     @MainActor CalendarSyncTodoStore,
     @MainActor TodoMutationWriting,
     @MainActor WidgetTodoReadable,
+    @MainActor ReviewFlowStore,
     @MainActor TodoRefreshing {
     // MARK: - Properties
 
@@ -511,6 +512,44 @@ final class TodoStore:
     /// - Note: 读查询下沉到 `queryActor` 后台执行；失败显式抛出。
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] {
         try await queryActor.calendarOccurrences(from: startDate, to: endDate)
+    }
+
+    /// 洞察引擎的原料查询(阶段 3 洞察步用;读查询下沉到 `queryActor`)。
+    /// 口径见 `TodoQueryActor.insightContext(from:to:)`;失败显式抛出。
+    func insightContext(from startDate: Date, to endDate: Date) async throws -> InsightContext {
+        try await queryActor.insightContext(from: startDate, to: endDate)
+    }
+
+    /// 拆小(复盘第 2 步「拆小」按钮,docs/todo-review-flow-design.md §阶段 3):
+    /// 建 N 条子任务(`parentTodoId` 指向原任务)+ 原任务标 `abandonedAt` + 记 split 事件。
+    /// 三步同 context 同事务,失败一起回滚(错误显式传播)。
+    /// 与 `abandon` 区别:拆小的原任务**只记 split 事件**,不重复记 abandoned 事件
+    /// (split 本身已说明任务去向,两条都记会让账本重复计数)。
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;children 为空抛
+    ///   `apiResponseInvalid`(调用方契约违反);持久化失败向上抛。
+    func splitTodo(_ id: UUID, children: [TodoItemData]) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.split.start id=\(id.uuidString, privacy: .public) childCount=\(children.count)")
+        guard !children.isEmpty else {
+            throw VoiceTodoError.apiResponseInvalid("splitTodo with empty children")
+        }
+        let parent = try findTodoItem(by: id)
+
+        var baseSortOrder = try nextSortOrderForNewItem()
+        for childData in children {
+            let child = TodoItem.from(childData)
+            child.parentTodoId = id
+            child.sortOrder = baseSortOrder
+            baseSortOrder -= 1
+            modelContext.insert(child)
+        }
+        parent.abandonedAt = Date()
+        taskEventRecorder.recordSplit(todoId: id, origin: .review)
+
+        try saveOrRollback()
+        // 子任务 insert + 原任务出工作集 → 全量刷新(与 abandon 同模式)。
+        refreshTodos()
+        VoiceTodoLog.store.info("store.split.success id=\(id.uuidString, privacy: .public) childCount=\(children.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 区间内完成的「无安排」任务(供首页「已完成」分区按需加载工作集外的历史数据)。

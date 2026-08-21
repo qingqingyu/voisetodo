@@ -62,7 +62,16 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
 /// 使用 Swift Charts 绘制分类占比饼图和每日趋势条形图。
 /// 数据通过 `@Query` 从 SwiftData 查询已完成 TodoItem，
 /// 转换为 `CompletionEvent` 数组后调 `ReviewAggregator.summarize`。
+///
+/// 阶段 3 增补:`content` 最上方有「开始这次复盘」入口卡(点击 fullScreenCover
+/// 呈现五步流程 `ReviewFlowView`)。日常随手看统计和郑重坐下来复盘是两种心智,不混。
 struct ReviewView: View {
+    /// 复盘流程需要的 store 能力。nil(默认)时入口卡隐藏——settings 深链与
+    /// preview 不注入也能编译渲染;HomeView 的两处 sheet 注入真实 store。
+    var store: (any ReviewFlowStore)? = nil
+    /// 上次复盘日期的注入点(阶段 4 的会话存储接线)。nil 时该行隐藏。
+    var lastReviewDate: (() -> Date?)? = nil
+
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
         sort: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
@@ -79,6 +88,8 @@ struct ReviewView: View {
     @Query private var allTodos: [TodoItem]
 
     @State private var selectedPeriod: ReviewPeriod = .month
+    /// 入口卡点击 → fullScreenCover 呈现五步复盘流程。
+    @State private var showReviewFlow = false
 
     private let calendar = Calendar.current
 
@@ -87,18 +98,90 @@ struct ReviewView: View {
             PaperTextureBackground()
 
             ScrollView {
-                if summary.total == 0 {
-                    emptyState
-                } else {
-                    content
+                // 入口卡放在统计之上:无论空态还是有数据,「待处理 N 条」的入口
+                // 都该可见——新用户没有完成记录,但卡片堆(第 2 步)照样可用。
+                VStack(spacing: WarmSpacing.lg) {
+                    if store != nil {
+                        reviewFlowEntryCard
+                    }
+
+                    if summary.total == 0 {
+                        emptyState
+                    } else {
+                        content
+                    }
                 }
+                .padding(.horizontal, WarmSpacing.lg)
+                .padding(.bottom, WarmSpacing.xxl)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             stickyPeriodHeader
         }
+        .fullScreenCover(isPresented: $showReviewFlow) {
+            if let store {
+                ReviewFlowView(store: store)
+            }
+        }
         .navigationTitle(String(localized: "review.nav_title"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: Review Flow Entry
+
+    /// 「开始这次复盘」入口卡(阶段 3)。N = 未完成 && abandonedAt == nil &&
+    /// recurrenceRule == nil 的一次性任务数(与第 2 步卡片堆输入同一口径,拍板 4)。
+    @ViewBuilder
+    private var reviewFlowEntryCard: some View {
+        let pendingCount = allTodos.filter { item in
+            !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
+        }.count
+
+        Button {
+            showReviewFlow = true
+        } label: {
+            RecapCard {
+                HStack(spacing: WarmSpacing.md) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 26))
+                        .foregroundColor(WarmTheme.primary)
+
+                    VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                        Text(String(localized: "review.flow.entry.title"))
+                            .font(WarmFont.headline(16))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .layoutPriority(1)
+
+                        Text(String(localized: "review.flow.entry.pending_\(pendingCount)"))
+                            .font(WarmFont.caption(13))
+                            .foregroundColor(WarmTheme.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+
+                        if let date = lastReviewDate?() {
+                            Text(String(
+                                localized: "review.flow.entry.last_review_\(date.formatted(.dateTime.year().month().day()))"
+                            ))
+                                .font(WarmFont.caption(11))
+                                .foregroundColor(WarmTheme.textMuted)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+
+                    Spacer(minLength: WarmSpacing.xs)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .flipsForRightToLeftLayoutDirection(true)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ReviewFlowEntryCard")
     }
 
     // MARK: Sticky Header
@@ -212,14 +295,12 @@ struct ReviewView: View {
 
             Spacer()
         }
-        .padding(.horizontal, WarmSpacing.lg)
-        .padding(.bottom, WarmSpacing.xxl)
     }
 
     /// 空态说明卡——告诉用户累计数据后会看到什么,把空白变成期待,
     /// 而不是只摆一个图标让人觉得「这个 app 啥也没有」。
     private var emptyPreviewCard: some View {
-        reviewCard {
+        RecapCard {
             Text(String(localized: "review.empty.preview"))
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
@@ -230,11 +311,11 @@ struct ReviewView: View {
 
     private var content: some View {
         VStack(spacing: WarmSpacing.lg) {
-            heroSection
+            RecapHeroSection(summary: summary)
 
-            statsRow
+            RecapStatsRow(summary: summary)
 
-            categoryChartSection
+            RecapCategoryChartSection(byCategory: summary.byCategory)
 
             dailyTrendSection
 
@@ -242,8 +323,6 @@ struct ReviewView: View {
                 busiestDaySection(busiest)
             }
         }
-        .padding(.horizontal, WarmSpacing.lg)
-        .padding(.bottom, WarmSpacing.xxl)
     }
 
     // MARK: Period Picker
@@ -259,171 +338,13 @@ struct ReviewView: View {
         .accessibilityIdentifier("ReviewPeriodPicker")
     }
 
-    // MARK: Hero
-
-    private var heroSection: some View {
-        VStack(spacing: WarmSpacing.xs) {
-            Text(String(localized: "review.hero.count_\(summary.total)"))
-                .font(WarmFont.serifDisplay(40))
-                .foregroundColor(WarmTheme.primary)
-                .accessibilityIdentifier("ReviewHeroCount")
-
-            Text(summary.periodLabel)
-                .font(WarmFont.caption(14))
-                .foregroundColor(WarmTheme.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, WarmSpacing.lg)
-    }
-
-    // MARK: Stats Row
-
-    /// 完成率卡片只有在分母>0(dueByTodayCount>0)时才显示。
-    /// 分母=0 意味着区间内还没到期项,显示「0%」或「--」都是噪音。
-    /// 副文案「未来 7 天还有 N 项」在 N>0 时才显示,避免空文案占位。
-    private var statsRow: some View {
-        HStack(spacing: WarmSpacing.md) {
-            statCard(
-                icon: "flame.fill",
-                value: "\(summary.streakDays)",
-                label: String(localized: "review.stat.streak")
-            )
-
-            if summary.completionRate != nil {
-                completionRateCard
-            }
-        }
-    }
-
-    private var completionRateCard: some View {
-        let rate = summary.completionRate ?? 0
-        return VStack(spacing: WarmSpacing.xs) {
-            HStack(spacing: WarmSpacing.xxs) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(WarmTheme.primary)
-
-                Text(percentageString(rate))
-                    .font(WarmFont.headline(22))
-                    .foregroundColor(WarmTheme.textPrimary)
-            }
-
-            Text(String(localized: "review.stat.completion_rate"))
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.textSecondary)
-
-            if summary.upcomingDueIn7DaysCount > 0 {
-                Text(String(localized: "review.stat.upcoming_7d_\(summary.upcomingDueIn7DaysCount)"))
-                    .font(WarmFont.caption(11))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.vertical, WarmSpacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
-                .fill(WarmTheme.cardBackground)
-                .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
-        )
-    }
-
-    private func statCard(icon: String, value: String, label: String) -> some View {
-        VStack(spacing: WarmSpacing.xs) {
-            HStack(spacing: WarmSpacing.xxs) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(WarmTheme.primary)
-
-                Text(value)
-                    .font(WarmFont.headline(22))
-                    .foregroundColor(WarmTheme.textPrimary)
-            }
-
-            Text(label)
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.vertical, WarmSpacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
-                .fill(WarmTheme.cardBackground)
-                .shadow(color: WarmTheme.shadowLight, radius: 6, x: 0, y: 3)
-        )
-    }
-
-    // MARK: Category Chart
-
-    /// 旧版用 SectorMark(甜甜圈)。问题:2 类各 1 件时画成半圆纯属装饰,
-    /// 类别超过 4 个色块也没法读。换横条——任何数量下都准确可读,数量直接标在条尾。
-    private var categoryChartSection: some View {
-        reviewCard {
-            VStack(alignment: .leading, spacing: WarmSpacing.md) {
-                Text(String(localized: "review.section.category"))
-                    .font(WarmFont.headline(16))
-                    .foregroundColor(WarmTheme.textPrimary)
-
-                VStack(spacing: WarmSpacing.sm) {
-                    let data = categoryChartData
-                    let maxCount = max(data.first?.count ?? 1, 1)
-                    ForEach(data, id: \.category) { entry in
-                        categoryBarRow(entry, maxCount: maxCount)
-                    }
-                }
-            }
-        }
-    }
-
-    private var categoryChartData: [(category: TodoCategory, count: Int)] {
-        summary.byCategory
-            .sorted { $0.value > $1.value }
-            .map { (category: $0.key, count: $0.value) }
-    }
-
-    /// 单行横条:标签 + 条 + 数量。条宽相对最大值归一化,最长那条占满。
-    /// maxCount 由调用方算好传入,避免每行都重新构造 categoryChartData(O(n^2))。
-    private func categoryBarRow(_ entry: (category: TodoCategory, count: Int), maxCount: Int) -> some View {
-        let ratio = Double(entry.count) / Double(maxCount)
-
-        return HStack(spacing: WarmSpacing.sm) {
-            HStack(spacing: WarmSpacing.xxs) {
-                Image(systemName: entry.category.sfSymbolName)
-                    .font(.system(size: 14))
-                    .foregroundColor(WarmTheme.color(for: entry.category))
-
-                Text(entry.category.displayName)
-                    .font(WarmFont.caption(13))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
-            }
-            .frame(maxWidth: 110, alignment: .leading)
-
-            GeometryReader { proxy in
-                let barWidth = proxy.size.width * ratio
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(WarmTheme.color(for: entry.category))
-                    .frame(width: barWidth, height: 10)
-                    .frame(maxHeight: .infinity, alignment: .center)
-            }
-            .frame(height: 14)
-
-            Text(verbatim: "\(entry.count)")
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.textSecondary)
-                .frame(minWidth: 24, alignment: .trailing)
-                .fixedSize(horizontal: true, vertical: false)
-        }
-    }
-
     // MARK: Daily Trend
 
     /// 数据稀疏(<3 天有完成)时换文本态,避免画一堆空柱子观感像「这月啥也没干」。
     /// 文本态直接用一句话告诉用户「7月24日完成 2 项,其余日期无记录」。
     /// 图表态再画 BarMark,X 轴刻度按周/月差异化(月=每 7 天一标,周=全标)。
     private var dailyTrendSection: some View {
-        reviewCard {
+        RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.md) {
                 Text(String(localized: "review.section.daily_trend"))
                     .font(WarmFont.headline(16))
@@ -569,7 +490,7 @@ struct ReviewView: View {
     /// 新布局:整句一个 Text,文案是「最忙的一天:7月24日 周三 · 完成 2 项」,
     /// 让 SwiftUI 整行排版,「·」前后都有内容,不会孤立。
     private func busiestDaySection(_ date: Date) -> some View {
-        reviewCard {
+        RecapCard {
             HStack(spacing: WarmSpacing.md) {
                 Image(systemName: "star.fill")
                     .font(.system(size: 28))
@@ -585,33 +506,11 @@ struct ReviewView: View {
         }
     }
 
-    // MARK: - Helpers
-
-    /// 卡片容器——统一圆角、背景、阴影。
-    @ViewBuilder
-    private func reviewCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .padding(WarmSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
-                    .fill(WarmTheme.cardBackground)
-                    .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
-            )
-    }
-
     private func busiestDayOneLiner(_ date: Date) -> String {
         // 星期恒用 `.abbreviated`:英文 "Monday" → "Mon",中文 "星期一" → "周一"。
         // 与 HomeView todayWeekdayTitle 保持一致。
         let dateText = date.formatted(.dateTime.month().day().weekday(.abbreviated))
         return String(localized: "review.busiest.oneline_\(dateText)_\(summary.busiestDayCount)")
-    }
-
-    private func percentageString(_ value: Double) -> String {
-        // clamp 已在 ReviewAggregator 里完成,这里防御性再夹一次,
-        // 避免未来调用方直接传未 clamp 的值进来。
-        let pct = Int((min(max(value, 0), 1) * 100).rounded())
-        return "\(pct)%"
     }
 }
 

@@ -2,7 +2,7 @@ import Foundation
 
 /// 洞察原料:区间内完成的一次性任务事件。
 /// 「一次性」= recurrenceRule == nil(拍板 4:规律任务排除在洞察之外)。
-struct InsightCompletedEvent: Sendable {
+struct InsightCompletedEvent: Sendable, Equatable {
     let todoId: UUID
     let createdAt: Date
     let completedAt: Date
@@ -13,7 +13,7 @@ struct InsightCompletedEvent: Sendable {
 }
 
 /// 洞察原料:当前未完成的一次性任务(recurrenceRule == nil && abandonedAt == nil)。
-struct InsightOpenTask: Sendable {
+struct InsightOpenTask: Sendable, Equatable {
     let todoId: UUID
     let createdAt: Date
     let dueDate: Date?
@@ -22,7 +22,7 @@ struct InsightOpenTask: Sendable {
 }
 
 /// 洞察原料:区间内到期的一次性任务。
-struct InsightDueTask: Sendable {
+struct InsightDueTask: Sendable, Equatable {
     let todoId: UUID
     let dueDate: Date
     let hasDueTime: Bool
@@ -36,7 +36,7 @@ struct InsightDueTask: Sendable {
 /// 跨 actor 传递;UI 侧在 `.task` 里 await 一次存 `@State`,不放 body。
 /// 阶段 2 的规则在这个原料上算,本类型**不**替规则做形状设计
 /// (见 docs/todo-review-flow-design.md §1.4)。
-struct InsightContext: Sendable {
+struct InsightContext: Sendable, Equatable {
     /// 查询区间(闭开:[from, to))。
     let from: Date
     let to: Date
