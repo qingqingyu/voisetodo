@@ -1,6 +1,6 @@
 # 复盘流程（五步）—— 设计方案与实施计划
 
-> 状态：**已拍板，待实施**。文档创建于 2026-08-21；同日代码评估后拍板（见「拍板决定（2026-08-21）」），v1 范围与七项口径已定，相关章节按拍板修订。
+> 状态：**已实施（v1 = 阶段 0–4，2026-08-21，分支 `fupan`，commits `46b439e..5b3311e`）**。文档创建于 2026-08-21；同日评估拍板（见「拍板决定（2026-08-21）」）并完成实施（见文末「实施落地记录」）。阶段 5 为可选增强，未实施。
 > 行号基准：`5f90585`（分支 `claude/todo-review-flow-design-6iyjlb` HEAD）。
 > 实施后请在此处补「实施落地记录」节，并把状态改为「已实施」（沿用
 > `docs/moat-plan-personalization-and-review.md` / `docs/day-clock-day-boundary-inconsistencies.md` 的体例）。
@@ -414,3 +414,32 @@ VoiceTodo.xcodeproj/project.pbxproj  注册新文件
 - 历史推迟次数的推断回填（见取舍 1）。
 - 复盘成绩的分享卡片（`moat-plan` 的 B4，仍标「可选 / later」）。
 - 规则的实际生效逻辑（阶段 5，先验证用户会不会点）。
+
+---
+
+## 实施落地记录（2026-08-21）
+
+v1（阶段 0–4）在分支 `fupan` 实施，commit 链：`46b439e`(阶段 0)→ `c3fbd08`(阶段 1)→ `8547df4`(阶段 2)→ `d282954`(阶段 3)→ `5b3311e`(阶段 4)。每个阶段实施后经 dual-review-loop（Three Check + code-review-expert 交替）审查至收敛（0–2 轮不等），测试基线 `arch -arm64 swift test` 279 例唯一失败为既有 DST 红灯（与本功能无关），新增单测合计 84 例（8+17+19+17+6+26 中的去重口径见各 commit），全 target BUILD SUCCEEDED。
+
+### 实施时的偏离决策
+
+- **阶段 0**：`TodoDiagnosticsReading` 协议无法包 `#if DEBUG`（Swift 协议继承列表不支持条件编译），DEBUG 裁剪落在 UI 层，Release 下留一个无调用方的读取方法。
+- **阶段 1**：`updateFull` 的 `origin` 因「协议成员不能带默认参数」改为三参签名 + 协议扩展便捷入口（默认 `.app`）；`TaskEventType.tolerant` 对未知值返回 nil 而非兜底（无合理默认事件类型）。`pendingItems` 有意不过滤 `abandonedAt`（永不丢话原则）。
+- **阶段 2**：规格文档不在库内，阈值从本文档验收用例夹逼（03：触发 ≥0.50、正向 ≤0.20、minSample 15；02：推迟 ≥3 或躺 ≥21 用户日、minSample 3 只影响 confidence 不挡触发）；`InsightRule.evaluate` 增 `calendar` 参数（测试需固定日历）；`InsightResult` 增 `tone/effectSize/sampleCount`（冷却与好转文案需要）。
+- **阶段 3**：入口卡放在空态分支之上（新用户也能进卡片堆）；第 4 步候选池空时闸门放行（强迫排 3 件违背复盘自愿原则）；语音提问经核实**不耗 AI 额度**（转写走本地 SFSpeechRecognizer，Quota 只计代理提取），但 `VoiceInputProtocol` 与首页录音状态机耦合、注入不干净，v1 纯文字 TextEditor，麦克风待注入解耦后加；置顶 = `ReviewPinningStore`（App Group UserDefaults + HomeView 读排序浮顶，不动 `sortOrder`）；本地化 +51 键（⚠️ 审查过程中一次 checkout 事故后按代码引用重建，三语齐全格式校验过，**文案措辞建议人工过目 zh/ja**）。
+- **阶段 4**：`ReviewLedger` 在文档四项外补 inputCount/todayCount/scheduledCount/savedRuleCount（账本卡渲染需要）；下次复盘日期保持「下周一」就地渲染未另存字段；规则回访只打扰上次仍 pending 的规则。
+
+### 持续注意事项
+
+**xcodegen 会静默删 scheme 的 TestAction `StoreKitConfigurationFileReference`**（2.45.3 生成不出 `test.storeKitConfiguration`，该引用是手工配置）：每次 `xcodegen generate` 后必须 `git checkout -- VoiceTodo.xcodeproj/xcshareddata/xcschemes/VoiceTodo.xcscheme` 恢复，绝不提交其删除。
+
+### 待真机手测清单（模拟器测不了/未测）
+
+1. **迁移安全**：有真实数据的旧库升级安装，App + Widget 均能打开（TaskEvent 建表 + 两字段 + 索引轻量迁移）。
+2. **埋点**：详情页改日期往后记 deferred / 往前不记；「移到明天」记；划掉任务从首页/Widget/Siri 消失但仍在完成率分母；abandon→撤销往返。
+3. **卡片堆**：左右滑（位移 85pt 或速度 800pt/s 任一）、今天就做、拆小 sheet（子任务带 parentTodoId）、撤销只回划掉、腐烂卡深链跳回第 2 步。
+4. **降级路径**：清库 → 完成 3 条 → 第 3 步跳过；8 条 → 只有腐烂；20 条 → 两条齐跑。
+5. **跨期**：连做两次复盘，「上次你说过」+ 规则回访出现/消失；入口卡日期出现。
+6. **置顶**：置顶任务在首/日历两 tab 浮顶。
+7. **三语走查**：中/英/日（含 AX5 大字号）过五步，回访 Picker 与对照卡长文本不挤爆。
+8. **数据体检**：设置 → DEBUG「运行数据体检」，Console.app 过滤 subsystem `com.qingqingyu.voicetodo` 看 `diagnostics.result`，判据 highCompleted < 8 则 01/05 搁置。
