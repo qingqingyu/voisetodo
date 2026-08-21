@@ -251,7 +251,7 @@ actor TodoQueryActor {
             let openTasks = openItems
                 .filter { $0.recurrenceRule == nil }
                 .map { item in
-                    InsightOpenTask(todoId: item.id, createdAt: item.createdAt, dueDate: item.dueDate)
+                    InsightOpenTask(todoId: item.id, createdAt: item.createdAt, dueDate: item.dueDate, title: item.title)
                 }
             let dueTasks = try modelContext.fetch(dueDescriptor)
                 .filter { $0.recurrenceRule == nil }

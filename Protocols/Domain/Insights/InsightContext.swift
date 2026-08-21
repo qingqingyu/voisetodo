@@ -17,6 +17,8 @@ struct InsightOpenTask: Sendable {
     let todoId: UUID
     let createdAt: Date
     let dueDate: Date?
+    /// 任务标题(阶段 2 增补):洞察 02 腐烂列表的 viz 数据要展示标题。
+    let title: String
 }
 
 /// 洞察原料:区间内到期的一次性任务。
