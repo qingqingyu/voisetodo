@@ -388,6 +388,11 @@ struct TodoDraftEditorPanel: View {
                     // 维持 ExtractedTodo.init 的不变式:dueTime 与 timeBucket 互斥。
                     // 面板绕过 init 直接改字段,这里显式清 timeBucket。
                     todo.timeBucket = nil
+                    // 补钟点 = 新的提醒设置:AI 未解析出提前量时回填全局默认
+                    // (AI 显式解析的提前量优先,不被覆盖)。
+                    if todo.reminderOffsetMinutes == nil {
+                        todo.reminderOffsetMinutes = ReminderOffsetConfig.effectiveDefaultOffset()
+                    }
                 } else {
                     todo.dueTime = nil
                 }

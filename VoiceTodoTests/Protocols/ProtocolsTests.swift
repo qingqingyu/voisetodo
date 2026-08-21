@@ -139,6 +139,53 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertNil(ExtractedTodo(title: "开会", reminderOffsetMinutes: 9999).reminderOffsetMinutes)
     }
 
+    // MARK: - 默认提前提醒(全局默认回填)
+
+    /// effectiveDefaultOffset:键缺失/0/负数/超界脏值一律降级为准时(nil)。
+    func testEffectiveDefaultOffsetDegradesDirtyValuesToNil() throws {
+        let suiteName = "test-default-reminder-offset-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // 键缺失 → 准时
+        XCTAssertNil(ReminderOffsetConfig.effectiveDefaultOffset(from: defaults))
+
+        for raw in [0, -5, 1441, 9999] {
+            defaults.set(raw, forKey: ReminderOffsetConfig.defaultOffsetDefaultsKey)
+            XCTAssertNil(
+                ReminderOffsetConfig.effectiveDefaultOffset(from: defaults),
+                "raw=\(raw) 应降级为准时"
+            )
+        }
+
+        defaults.set(30, forKey: ReminderOffsetConfig.defaultOffsetDefaultsKey)
+        XCTAssertEqual(ReminderOffsetConfig.effectiveDefaultOffset(from: defaults), 30)
+
+        defaults.set(1440, forKey: ReminderOffsetConfig.defaultOffsetDefaultsKey)
+        XCTAssertEqual(ReminderOffsetConfig.effectiveDefaultOffset(from: defaults), 1440)
+    }
+
+    /// 回填语义:带钟点且无提前量 → 填默认;AI 显式结果/无钟点/无默认 → 原样。
+    func testBackfilledDefaultReminderOffset() {
+        let withTime = ExtractedTodo(title: "开会", dueTime: "15:00")
+        XCTAssertEqual(withTime.backfilledDefaultReminderOffset(30).reminderOffsetMinutes, 30)
+
+        // AI 显式解析出的提前量优先,不被全局默认覆盖
+        let explicit = ExtractedTodo(title: "开会", dueTime: "15:00", reminderOffsetMinutes: 60)
+        XCTAssertEqual(explicit.backfilledDefaultReminderOffset(30).reminderOffsetMinutes, 60)
+
+        // 无钟点(模糊时段/无时间)不回填——无到点提醒可言
+        let noTime = ExtractedTodo(title: "买菜", timeBucket: .evening)
+        XCTAssertNil(noTime.backfilledDefaultReminderOffset(30).reminderOffsetMinutes)
+
+        // 全局默认本身是准时(nil)时不回填
+        XCTAssertNil(withTime.backfilledDefaultReminderOffset(nil).reminderOffsetMinutes)
+
+        // 默认值过不了消毒(0/超界)同样不回填,脏值按"无默认"处理
+        XCTAssertNil(withTime.backfilledDefaultReminderOffset(0).reminderOffsetMinutes)
+        XCTAssertNil(withTime.backfilledDefaultReminderOffset(2000).reminderOffsetMinutes)
+    }
+
     func testExtractedTodoDecodesExplicitTimeBucketAndIgnoresUnknownValue() throws {
         let validJSON = """
         {"todos":[{"id":"00000000-0000-0000-0000-000000000011","title":"去健身","time_bucket":"evening"}],"ignored":""}

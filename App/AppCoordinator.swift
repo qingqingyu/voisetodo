@@ -569,7 +569,9 @@ final class AppCoordinator: ObservableObject {
             pendingGeneratedTodoIdsByPendingId = result.extractedTodoIdsByPendingId
             pendingItemIds = result.processedWithTodosIds
             combinedRawTranscript = result.mergedRawTranscript
-            extractedTodos = result.extractedTodos
+            // 草稿出生点(离线恢复):同样回填全局默认提前量。
+            let defaultOffset = ReminderOffsetConfig.effectiveDefaultOffset()
+            extractedTodos = result.extractedTodos.map { $0.backfilledDefaultReminderOffset(defaultOffset) }
             showConfirmSheet = true
             VoiceTodoLog.coordinator.info("coordinator.foreground.pending_success id=\(flowID, privacy: .public) extractedCount=\(result.extractedTodos.count) processedWithTodos=\(result.processedWithTodosIds.count) processedWithoutTodos=\(result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } else {
@@ -1020,7 +1022,11 @@ final class AppCoordinator: ObservableObject {
                 VoiceTodoLog.coordinator.debug("coordinator.process_transcript.empty_partial_ignored id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
                 break
             }
-            extractedTodos = result.todos
+            // 草稿出生点:AI 未显式解析出提前量时回填全局默认。每个 partial 帧都执行,
+            // 幂等——流式期间行编辑被禁用(TodoItemRow),partial 覆盖不会吃掉用户编辑;
+            // 流结束后不再有 partial,用户改成"准时"的编辑随之保留。
+            let defaultOffset = ReminderOffsetConfig.effectiveDefaultOffset()
+            extractedTodos = result.todos.map { $0.backfilledDefaultReminderOffset(defaultOffset) }
         case .success:
             // 流式稳定后异步触发撞车检测;失败不阻断,只记日志。
             // 保存 Task 引用,便于 cancelTodos 时显式取消(避免 sheet 关闭后仍在后台跑)。
