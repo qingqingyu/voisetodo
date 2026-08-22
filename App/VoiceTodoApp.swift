@@ -303,6 +303,9 @@ struct VoiceTodoApp: App {
         // 此处仅处理需要启动时执行的逻辑
         VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
         guard startupStorageError == nil else { return }
+        // 「到点提醒」总开关镜像灌入 App Group(兜住镜像机制上线前已拨 OFF 的老用户;
+        // 每次启动同步,standard 是唯一事实源)。
+        AppGroupConfig.syncNotificationsEnabledMirrorFromStandard()
         notificationSync.reconcileNow()
         Task { await entitlementManager.refresh() }
         Task { await ReviewNotificationScheduler.scheduleWeekly() }
