@@ -46,6 +46,15 @@ struct ToggleTodoIntent: AppIntent {
                 // 去抖窗口内的 pending reload 会随进程丢失。
                 WidgetCenter.shared.reloadAllTimelines()
                 VoiceTodoLog.intent.info("intent.toggle.save_success id=\(intentID, privacy: .public) todoID=\(uuid.uuidString, privacy: .public) recurrence=\(recurrence) isCompleted=\(isCompleted) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                // 局部通知对账:App 进程的 TodoNotificationSync 感知不到本次写库(要等
+                // 回前台),窗口期内已排提醒不会取消/反勾不恢复——这里在扩展进程内
+                // 就地收敛。全局开关读 App Group 镜像(扩展读不到 App 的 standard)。
+                await IntentNotificationReconciler.reconcile(
+                    todoID: uuid,
+                    context: context,
+                    enabled: AppGroupConfig.mirroredNotificationsEnabled(),
+                    port: UNNotificationPort()
+                )
             case .notFound:
                 VoiceTodoLog.intent.warning("intent.toggle.not_found id=\(intentID, privacy: .public) todoID=\(uuid.uuidString, privacy: .public)")
             case .nonOccurringToday:

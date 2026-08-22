@@ -12,6 +12,13 @@ enum AppGroupConfig {
     /// 每完成一组 migration 就推进,避免每次冷启动都全表扫描(详见
     /// docs/completed-todos-performance.md Step 6)。
     static let storeMigrationVersionKey = "VoiceTodoStoreMigrationVersion"
+
+    /// 「到点提醒」总开关的 App Group 镜像键。
+    /// 开关本体(`NotificationPlanner.enabledDefaultsKey`)存在 App 进程的
+    /// `UserDefaults.standard`,Widget 扩展进程读不到自己的 standard 之外;
+    /// intent 局部通知对账(`IntentNotificationReconciler`)在扩展内通过本镜像
+    /// 尊重全局 OFF。缺省(从未写入)= true,与"用户从未拨过开关"的默认语义一致。
+    static let notificationsEnabledMirrorKey = "todoNotificationsEnabledMirror"
     private static let widgetInteractionErrorTimestampKey = "VoiceTodoWidgetInteractionErrorTimestamp"
     private static let widgetInteractionErrorOperationKey = "VoiceTodoWidgetInteractionErrorOperation"
     private static let widgetInteractionErrorTodoIDKey = "VoiceTodoWidgetInteractionErrorTodoID"
@@ -142,6 +149,41 @@ enum AppGroupConfig {
             todoID: todoID,
             messageKey: defaults.string(forKey: widgetInteractionErrorMessageKey) ?? WidgetInteractionError.defaultMessageKey
         )
+    }
+
+    /// 镜像「到点提醒」总开关到 App Group(设置页拨动时调用)。
+    /// `defaults` 仅供测试注入临时 suite;生产走共享容器。
+    static func mirrorNotificationsEnabled(_ enabled: Bool, defaults: UserDefaults? = nil) {
+        let target = defaults ?? sharedDefaults()
+        guard let target else {
+            VoiceTodoLog.widget.warning("app_group.defaults_unavailable kind=mirrorNotificationsEnabled identifier=\(identifier, privacy: .public)")
+            return
+        }
+        target.set(enabled, forKey: notificationsEnabledMirrorKey)
+    }
+
+    /// 扩展进程读总开关镜像;从未写入时回退 true(= 默认开)。
+    /// `defaults` 仅供测试注入临时 suite。
+    static func mirroredNotificationsEnabled(defaults: UserDefaults? = nil) -> Bool {
+        let source = defaults ?? sharedDefaults()
+        return source?.object(forKey: notificationsEnabledMirrorKey) as? Bool ?? true
+    }
+
+    /// 读 App 进程 `UserDefaults.standard` 的总开关当前值(缺省 = true,与"从未拨过"语义一致)。
+    /// 唯一事实源读取口:Siri(App 进程)intent 与启动镜像同步共用,避免默认语义多处漂移。
+    /// `defaults` 仅供测试注入。
+    static func notificationsEnabledInStandard(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: NotificationPlanner.enabledDefaultsKey) as? Bool ?? true
+    }
+
+    /// 启动同步:把 standard 的当前值灌进镜像。兜住"镜像机制上线前用户已拨 OFF,
+    /// 镜像缺省被读成 true"的窗口(App 启动时调一次)。
+    /// `standard`/`mirrorDefaults` 仅供测试注入(源与目标各自独立)。
+    static func syncNotificationsEnabledMirrorFromStandard(
+        standard: UserDefaults = .standard,
+        mirrorDefaults: UserDefaults? = nil
+    ) {
+        mirrorNotificationsEnabled(notificationsEnabledInStandard(defaults: standard), defaults: mirrorDefaults)
     }
 
     /// SwiftData 数据库文件路径
