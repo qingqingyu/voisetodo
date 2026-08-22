@@ -1,6 +1,7 @@
 <!--
-  Publication source for https://[DOMAIN]/privacy
-  Placeholders in [BRACKETS] are resolved at deploy time — see APPSTORE_REVIEW_KIT.md §0.
+  Publication source for https://qingqingyu.github.io/voicetodo-privacy/ (deployed 2026-08-16, GitHub Pages)
+  Placeholders in [BRACKETS] resolved 2026-08-22 against the live page — see APPSTORE_REVIEW_KIT.md §0.
+  ⚠️ 线上页尚无 Effective date 行,源文件已填 2026-08-16;下次更新线上页时同步补上。
   Every factual claim below was verified against the code as of 2026-08-15:
   - audio: Apple Speech framework, no on-device-only flag (Voice/VoiceInputManager.swift)
   - transcript: sent to AIProxy (Cloudflare Worker), forwarded to Anthropic/OpenAI/Google
@@ -14,11 +15,11 @@
 
 # Privacy Policy
 
-**Effective date:** [EFFECTIVE_DATE]
+**Effective date:** 2026-08-16
 
-This policy explains what data VoiceTodo ("the app") handles, where it goes, and how long it is kept. It applies to the VoiceTodo iOS app operated by [DEVELOPER_NAME] ("we", "us").
+This policy explains what data VoiceTodo ("the app") handles, where it goes, and how long it is kept. It applies to the VoiceTodo iOS app operated by an independent developer ("we", "us").
 
-**Contact:** [SUPPORT_EMAIL]
+**Contact:** 334678754@qq.com
 
 ## Summary
 
@@ -63,7 +64,7 @@ Diagnostics are kept for **90 days**, then automatically deleted. You can turn d
 
 ### Feedback
 
-If you use the in-app feedback form, the text you write (and any diagnostic details attached to the message) is sent to us and archived so we can respond and fix issues. You can ask us to delete your feedback at any time via [SUPPORT_EMAIL].
+If you use the in-app feedback form, the text you write (and any diagnostic details attached to the message) is sent to us and archived so we can respond and fix issues. You can ask us to delete your feedback at any time via 334678754@qq.com.
 
 ### Purchases and device identifier
 
@@ -109,7 +110,7 @@ Each processes data under its own privacy policy. We only send them what is need
 
 - **Delete local data:** delete the app — your to-dos and settings are removed with it.
 - **Turn off diagnostics:** in the app's settings at any time.
-- **Access or delete server-side data** (feedback, diagnostics, cached subscription status): email [SUPPORT_EMAIL]. Because we only hold hashed identifiers, we may ask for the approximate date and content of your request to locate it.
+- **Access or delete server-side data** (feedback, diagnostics, cached subscription status): email 334678754@qq.com. Because we only hold hashed identifiers, we may ask for the approximate date and content of your request to locate it.
 - If you are in the EEA, UK, or another jurisdiction with similar law, you may also have rights to access, rectify, or erase personal data, and to lodge a complaint with a supervisory authority. We handle requests via the same email address.
 
 We do not direct the app to children under 13, and do not knowingly collect personal data from children.
@@ -124,4 +125,4 @@ If we change how the app handles data, we will update this page and the effectiv
 
 ## Contact
 
-Questions or requests: **[SUPPORT_EMAIL]**
+Questions or requests: **334678754@qq.com**

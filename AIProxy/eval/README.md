@@ -79,23 +79,41 @@ node run.mjs --replay results/glm-air-<ts>.json
 | 候选差 >3pp | 方案 B:PAID_DAILY_LIMIT 100 → 30-50/day,Sonnet 保留 |
 | Sonnet 基线本身 <95% | 先修 prompt/dataset(golden 可能过严,`--replay` 复核),再谈对比 |
 
-## 5. 成本模型(填空表)
+## 5. 成本模型(2026-08-22 填,估算口径)
 
-单次请求成本 ≈ (prompt tokens × 输入单价 + 输出 tokens × 输出单价)。token 估算用校准因子:跑 3 条样本去 provider console 核对实际 token 数,把 chars/token 比值填进来:
+单次请求成本 ≈ (prompt tokens × 输入单价 + 输出 tokens × 输出单价)。
 
-| locale | prompt chars(实测 base.js 三版本) | chars/token 校准 | 输出均值(实测) |
-|--------|------|------|------|
-| en | ____ | ____ | run 报告的 `avgResponseChars` |
-| zh | ____ | ____ | 〃 |
-| ja | ____ | ____ | 〃 |
+**实测输入**(2026-08-22 改 prompt 后,base.js 三版本):zh 14,263 chars(CJK 2,893)/ en 22,762 chars / ja 12,889 chars(CJK 3,489)。粗算 token:CJK ≈ 1 tok/char,拉丁 ≈ 4 chars/tok → 三语言 prompt 均 ≈ **5–6k tok**;加 transcript(~30 tok)。**实测输出均值**:628 chars ≈ **250 tok**(Sonnet baseline run 报告)。
+⚠️ 估算待校准:周二跑候选时抽 3 条去 Z.AI console 核对实际 token 数,修正后不影响**相对倍数**。
 
-| 模型 | 输入 $/M tok | 输出 $/M tok | 单次 ≈ | Pro 100/day 月成本 ≈ |
-|------|------|------|------|------|
-| claude-sonnet-4.5(基线) | ____ | ____ | ____ | ____ |
-| 候选 1: ____ | ____ | ____ | ____ | ____ |
+| 模型 | 输入 $/M | 缓存输入 $/M | 输出 $/M | 单次(无缓存) | 单次(缓存命中) | Pro 100/day 月成本(无缓存/缓存) | 相对基线 |
+|------|------|------|------|------|------|------|------|
+| claude-sonnet-4.5(基线,Anthropic 牌价;Z.AI 转售价待 console 核) | $3 | $0.30 | $15 | ≈$0.021 | ≈$0.0055 | **≈$63 / $16.4** | 1× |
+| 候选 1: glm-4.6 | $0.6 | $0.11 | $2.2 | ≈$0.0041 | ≈$0.0012 | **≈$12.2 / $3.5** | **÷5.2(−81%)** |
+| 候选 2: glm-4.5-air | $0.2 | $0.03 | $1.1 | ≈$0.0014 | ≈$0.0005 | **≈$4.3 / $1.5** | **÷14.7(−93%)** |
 
-> 决策只依赖**相对比较**(候选 vs 基线的倍数),绝对值标「估算」。填好后按 4.2 决策。
-> 注意 PROMOTION_PLAN §2.1 的量级参考:Pro 100/day × Sonnet ≈ 月成本 $15 vs 收入 $4.99。
+定价源:docs.z.ai/guides/overview/pricing(2026-08-22 查)。**收入锚:Pro $4.99/月**。
+
+结论口径(接 §4.2):
+- 最坏口径(Pro 用户天天打满 100 次、无缓存):只有 glm-4.5-air 接近打平($4.3);glm-4.6 仍亏($12.2)→ 若质量上 4.6 明显优于 air,可「glm-4.6 主力 + PAID_DAILY_LIMIT 100→50」组合(50/day×$12.2/100 ≈ $6.1,再靠缓存兜底)
+- 正常口径(缓存命中 + 真实用量远低于上限):4.6($3.5)和 air($1.5)都安全
+- §4.2「成本降 ≥90%」单独看:air 达标(−93%),4.6 差一点(−81%)→ **air 质量过关就选 air;air 不过关看 4.6+限额组合**
+
+### 5.1 周二(2026-08-25)窗口执行清单
+
+窗口:北京时间周二 08:00 后(UTC 周二/三/四均可)。前置已备好:`wrangler.eval.toml`(单 provider 生效)+ `.dev.vars`(APP_TOKEN + PROVIDER_KEY_ZAI_ANTHROPIC)。
+
+```bash
+cd AIProxy && npx wrangler dev -c wrangler.eval.toml   # 窗口期常开
+# 1. 新 prompt 的 Sonnet 基线(prompt 已改,旧结果不可比)
+node eval/run.mjs --endpoint http://localhost:8787 --token <APP_TOKEN> --label baseline-sonnet-p2
+# 2. 候选 1:改 wrangler.eval.toml 里 ZAI_ANTHROPIC 的 model → "glm-4.6",重启 wrangler dev
+node eval/run.mjs --endpoint http://localhost:8787 --token <APP_TOKEN> --label glm-4.6
+# 3. 候选 2:model → "glm-4.5-air",重启
+node eval/run.mjs --endpoint http://localhost:8787 --token <APP_TOKEN> --label glm-4.5-air
+```
+
+跑完按 §4.1 过关线评分 + §5 表拍板;若模型名 404,去 Z.AI console 查 anthropic 端点可用模型名(README §1.1)。
 
 ## 6. 日文就绪判读(ja 18 条,全 provisional)
 

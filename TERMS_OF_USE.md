@@ -1,25 +1,27 @@
 <!--
-  Publication source for https://[DOMAIN]/terms
-  Placeholders in [BRACKETS] are resolved at deploy time — see APPSTORE_REVIEW_KIT.md §0.
+  NOT PUBLISHED (2026-08-22): the app ships Apple's standard EULA (ASC 勾选标准 EULA),本文档为内档源文件;
+  若日后切自定义 Terms,发布地址 https://qingqingyu.github.io/voicetodo-privacy/terms
+  Placeholders in [BRACKETS] resolved 2026-08-22 against the live privacy page — see APPSTORE_REVIEW_KIT.md §0.
+  唯一未解析: [JURISDICTION](见 §9,发布前必须拍板)
   Consistency red lines (must match the live product, see PROMOTION_COPY.md §6):
   - never write "unlimited" — Pro is a fair-use daily allowance (PAID_DAILY_LIMIT is finite)
   - [TRIAL_DAYS] must equal the intro offer configured in App Store Connect (see APPSTORE_REVIEW_KIT.md §3) — resolved to 7 on 2026-08-15 per PROMOTION_PLAN decision #7
-  - free tier number must equal DAILY_REQUEST_LIMIT at submission time
+  - free tier number must equal DAILY_REQUEST_LIMIT at submission time — resolved to 3 on 2026-08-22
 -->
 
 # Terms of Use
 
-**Effective date:** [EFFECTIVE_DATE]
+**Effective date:** 2026-08-16
 
-These Terms of Use ("Terms") govern your use of the VoiceTodo iOS app ("the app"), provided by [DEVELOPER_NAME] ("we", "us"). By downloading or using the app you agree to these Terms.
+These Terms of Use ("Terms") govern your use of the VoiceTodo iOS app ("the app"), provided by an independent developer ("we", "us"). By downloading or using the app you agree to these Terms.
 
 The app itself is licensed under Apple's standard End User License Agreement for the App Store, which applies in addition to these Terms. Where the two conflict, Apple's agreement governs the app license and these Terms govern the service features described below.
 
-**Contact:** [SUPPORT_EMAIL]
+**Contact:** 334678754@qq.com
 
 ## 1. What the app does
 
-VoiceTodo converts spoken sentences into structured to-dos (dates, recurrence, categories, reminders) using AI, and stores your to-dos locally on your device. The conversion ("AI extraction") is an online service: it requires an internet connection and is processed on our servers and by third-party AI providers, as described in our [Privacy Policy](https://[DOMAIN]/privacy).
+VoiceTodo converts spoken sentences into structured to-dos (dates, recurrence, categories, reminders) using AI, and stores your to-dos locally on your device. The conversion ("AI extraction") is an online service: it requires an internet connection and is processed on our servers and by third-party AI providers, as described in our [Privacy Policy](https://qingqingyu.github.io/voicetodo-privacy/).
 
 ## 2. AI output disclaimer
 
@@ -27,7 +29,7 @@ To-do structuring is generated automatically by an AI model. It is usually right
 
 ## 3. Free tier and Pro subscription
 
-**Free tier.** The app is free to download and includes a limited number of AI extractions per day ([FREE_TIER_PER_DAY] per day). Local features (browsing, editing, completing to-dos, widgets) are not metered.
+**Free tier.** The app is free to download and includes a limited number of AI extractions per day (3 per day). Local features (browsing, editing, completing to-dos, widgets) are not metered.
 
 **VoiceTodo Pro.** Pro is an auto-renewable subscription that increases the daily AI extraction allowance to a high fair-use cap and removes ads (the app has no ads to begin with).
 
@@ -65,6 +67,8 @@ The app and service are provided "as is" and "as available", without warranties 
 
 If any provision of these Terms is unenforceable, the rest remains in force. Our failure to enforce a right is not a waiver of it. You may not assign these Terms; we may assign them together with the service (for example, in an acquisition), and will inform you in an app update if that happens.
 
+<!-- [JURISDICTION] 未拍板:个人开发者常住地;本文档未发布(Apple 标准 EULA 生效),发布前必须解析 -->
+
 These Terms are governed by the laws of [JURISDICTION], without regard to conflict-of-law rules.
 
 ## 10. Changes to these Terms
@@ -73,4 +77,4 @@ We may update these Terms. The current version is always available at this page 
 
 ## Contact
 
-Questions: **[SUPPORT_EMAIL]**
+Questions: **334678754@qq.com**

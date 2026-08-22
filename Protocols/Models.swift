@@ -148,9 +148,11 @@ struct TodoOccurrenceData: Identifiable, Codable, Hashable, Sendable {
 /// 解决 bug:任务标题里偶然出现的日期词(如 "prepare for Sunday")被 AI 误识别为
 /// due_date。客户端只接受 `.userExplicit`,其他清空 due_date(由 TodoItem.from 处理)。
 ///
-/// - userExplicit: 用户明确表达截止日("明天交房租"、"Submit report by Friday")
+/// - userExplicit: 用户明确表达截止日("明天交房租"、"Submit report by Friday"、
+///   "今晚/this evening"——时段词也算用户明确说了什么时候做)
 /// - titleMention: 标题/上下文偶然提到("prepare for Sunday"、"周日聚会准备"),due_date 应为 null
-/// - inferred: AI 从模糊词推断("今晚" → 推 today + evening)
+/// - inferred: 极少使用——用户完全没提日期/时段、上下文指向唯一日期(2026-08-22 重定义,
+///   与 AIProxy prompt 规则 4b 对齐;旧语义"今晚→inferred"会导致客户端清掉日期)
 ///
 /// 向后兼容:旧 AI 响应没这字段,Codable 合成的 init(from:) 对 Optional 字段走
 /// decodeIfPresent,缺失时返回 nil。客户端把 nil 视同非 userExplicit(保守清空,
