@@ -5939,13 +5939,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your subscription keeps this app ad-free and actively maintained"
+            "value" : "Your subscription keeps this app actively maintained"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你的订阅让这款 app 保持无广告、持续迭代"
+            "value" : "你的订阅让这款 app 持续迭代"
           }
         }
       }

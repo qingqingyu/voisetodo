@@ -80,7 +80,8 @@ case .empty:
 | 试用 | `introductoryOffer.referenceName` | 无此键(只有 `adHocOffers` / `winbackOffers` 的条目才有 `referenceName` 和 `offerID`) |
 
 现状文件里**写对了**的部分(不要在重写时改掉):`"winbackOffers": []` 是 v4 schema 的合法键;
-`introductoryOffer.paymentMode` 的取值 `"freeTrial"` 也是对的(见 §3.1 要点)。
+`introductoryOffer.paymentMode` 的取值应为 `"free"`(v5 schema,见 §3.1 修正说明;
+`"freeTrial"` 会让 runtime 解码失败)。
 
 Xcode 解析不了这个文件 → 本地商店里一个商品都没有 → `Product.products(for:)` 返回 `[]` → `.empty`。
 
@@ -164,7 +165,7 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
           "introductoryOffer" : {
             "displayPrice" : "0.00",
             "internalID" : "A1000012",
-            "paymentMode" : "freeTrial",
+            "paymentMode" : "free",
             "subscriptionPeriod" : "P3D"
           },
           "localizations" : [
@@ -202,7 +203,7 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
           "introductoryOffer" : {
             "displayPrice" : "0.00",
             "internalID" : "A1000011",
-            "paymentMode" : "freeTrial",
+            "paymentMode" : "free",
             "subscriptionPeriod" : "P3D"
           },
           "localizations" : [
@@ -241,9 +242,12 @@ onboarding 第三屏是直接内嵌 `PaywallContent`(`App/OnboardingView.swift:8
 - `internalID` 和组 `id` 用 8 位十六进制(Xcode 的约定),**不要**用 UUID。顶层 `identifier` 同样按 8 位 hex 写(当前文件的伪 UUID 格式 `F4A2C9D8-1B5E-...` 非标准)。
 - `groupNumber` 是组内档位排序,年付给 1(更高档),月付给 2。
 - `version` 写 `{major: 4, minor: 0}`,与 v4 基准样本一致。Xcode 打开后如需要会自行调整。
-- 试用写 **`"paymentMode": "freeTrial"`**。v4 基准样本里另外两种模式的取值是 `"payAsYouGo"` /
-  `"payUpFront"`,即 JSON 直接用 StoreKit API 枚举(`Product.SubscriptionOffer.PaymentMode`)的
-  rawValue,所以免费试用就是 `"freeTrial"`。**现状文件这一处本来是对的,重写时别改坏。**
+- 试用写 **`"paymentMode": "free"`**(v5 schema)。**2026-08-22 实测修正,推翻本节旧结论**:
+  v5 JSON 里 `payAsYouGo` / `payUpFront` 保持 API rawValue 拼写,**唯独 freeTrial 例外,写 `"free"`**。
+  132a03f 曾依本文档把 `"free"` 改成 `"freeTrial"`,结果 iOS 26.5 模拟器 runtime 的
+  ASOctaneSupport 解码整个配置文件失败(`Error decoding configuration file ... 格式不正确`),
+  本地商店无商品、`Product.products(for:)` 返回空数组 —— 即 paywall 的「Couldn't load
+  subscription plans」。已用多份真实 Xcode 26 生成的 v5 文件(Kurozora 等)交叉验证并实测修复。
 - `introductoryOffer` 里带 `displayPrice`(免费试用写 `"0.00"`)和 `internalID`,但**没有**
   `referenceName` —— `referenceName` / `offerID` 只属于 `adHocOffers` 和 `winbackOffers` 的条目。
 - `winbackOffers` 是 v4 schema 的合法键,每个商品都要有(没有 win-back offer 就给空数组)。
@@ -487,12 +491,10 @@ Xcode 较新版本是否已把 `winbackOffers` 纳入 schema —— 若已纳入
 }
 ```
 
-同一文件里 `adHocOffers` / `winbackOffers` 的 `paymentMode` 取值是 `"payAsYouGo"` —— 说明 JSON 直接用
-StoreKit API 枚举 `Product.SubscriptionOffer.PaymentMode` 的 rawValue。因此免费试用是 **`"freeTrial"`**,
-**不是**我原来写的 `"free"`。§3.1 已改正,并补上 `displayPrice` / `winbackOffers`,`version` 改为
-`{major: 4, minor: 0}`,`settings` 补 `_locale`/`_storefront`。
-
-讽刺的是,现状文件的 `"paymentMode": "freeTrial"` 本来就是对的 —— 这条别在重写时改坏。
+同一文件里 `adHocOffers` / `winbackOffers` 的 `paymentMode` 取值是 `"payAsYouGo"` —— 据此推断 JSON 直接用
+StoreKit API 枚举 rawValue、免费试用应为 `"freeTrial"`。**这个推断是错的(2026-08-22 实测推翻,见 §3.1
+修正说明):v5 里免费试用写 `"free"`,`"freeTrial"` 会让 runtime 解码器拒绝整个文件。**
+`displayPrice` / `winbackOffers` / `version` 4 / `settings` 的结论仍然成立。
 
 「以 Xcode 重新保存的结果为准」这条实施约束仍然保留:手写 JSON 再准也只是骨架。
 
@@ -575,9 +577,9 @@ v4 基准样本给出了确定答案:
 
 ### 7.6 修订后的实施 checklist
 
-1. **§3.1 已按 v4 样本修正**(`paymentMode: "freeTrial"`、补 `displayPrice`/`winbackOffers`、
-   `version` 4、`settings` 补 locale/storefront)。仍然:落盘后先用 Xcode 打开并保存一次,
-   以 Xcode 输出覆盖 §3.1。
+1. **§3.1 已按 v4 样本修正**(`paymentMode: "free"`(v5 实测修正,原误写 `"freeTrial"`)、
+   补 `displayPrice`/`winbackOffers`、`version` 4、`settings` 补 locale/storefront)。仍然:
+   落盘后先用 Xcode 打开并保存一次,以 Xcode 输出覆盖 §3.1。
 2. **§3.2 按原样实施,不要加 force-refresh**(§7.2)。
 3. **§3.5 两处原子改**,重点是 `EntitlementManager.swift:97`(§7.4)。
 4. **§3.6 保持可选,不要改 `project.yml`**(§7.3)。
