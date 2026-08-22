@@ -141,6 +141,41 @@ final class WidgetTodoFilterTests: XCTestCase {
         XCTAssertEqual(result.map(\.title), ["今天任务"])
     }
 
+    /// 未识别原文(.rawFallback / .unparsed)不进 widget——与 App「没能识别」分组同口径。
+    /// 回归场景:离线保存的原文转写 sortOrder 最新,曾抢占锁屏组件第一行。
+    func testVisibleTodosExcludesUnparsedRawFallbackItems() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 22)))
+
+        let rawFallback = TodoItemData(
+            title: "等会儿还要回去吧等会儿回去吧自己...",
+            createdAt: today,
+            sortOrder: -3,
+            extractionOutcome: .rawFallback
+        )
+        let unparsed = TodoItemData(
+            title: "没能识别的手动卡片",
+            createdAt: today,
+            sortOrder: -2,
+            extractionOutcome: .unparsed
+        )
+        let parsed = TodoItemData(
+            title: "正常任务",
+            createdAt: today,
+            sortOrder: -1
+        )
+
+        let result = WidgetTodoFilter.visibleTodos(
+            from: [rawFallback, unparsed, parsed],
+            completionKeys: [],
+            today: today,
+            limit: 3,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result.map(\.title), ["正常任务"])
+    }
+
     func testVisibleTodosKeepsRecentlyCompletedNormalTodoForWidgetIntermediateAnimation() throws {
         let calendar = Calendar(identifier: .gregorian)
         let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 21, hour: 12)))
