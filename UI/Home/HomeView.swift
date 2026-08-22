@@ -531,9 +531,10 @@ struct HomeView<Store: HomeTodoStore>: View {
             isPresented: $addedToastVisible,
             position: .bottom,
             presentationToken: addedToastToken,
-            // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
-            // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
-            bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm,
+            // 避让悬浮 VoiceFAB:FAB 占高是 WarmSize.fabOverlayHeight(120:光晕直径
+            // 参与布局 + 底部 padding,不能只按按钮 72 算),再加 WarmSpacing.sm(12)
+            // 呼吸距离,让 toast 完整浮在 FAB 光晕之上。
+            bottomPadding: WarmSize.fabOverlayHeight + WarmSpacing.sm,
             actionTitle: addedToastActionTitle,
             action: addedToastAction
         )

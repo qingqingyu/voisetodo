@@ -111,9 +111,11 @@ enum FirstVoiceTrialHintMetrics {
     static var triggerDelayNano: UInt64 { UInt64(triggerDelaySeconds * 1_000_000_000) }
 
     // MARK: 视觉定位(HomeView 用)
-    /// bottom overlay 内的 Y 偏移:hint 底边抬到 FAB 顶上方留一条呼吸缝。
-    /// FAB 上沿 = WarmSpacing.md(16) + WarmSize.fab(72) = 88;再留 WarmSpacing.sm(12) 的缝。
-    static let overlayOffsetY: CGFloat = -(WarmSpacing.md + WarmSize.fab + WarmSpacing.sm)
+    /// bottom overlay 内的 Y 偏移:hint 底边抬到 FAB 光晕顶上方留一条呼吸缝。
+    /// FAB 占高 = WarmSize.fabOverlayHeight(120:光晕直径 104 参与布局 + 底部
+    /// padding 16),不能只按按钮 72 算——旧值 -100 把卡片底边压到按钮顶部圆弧
+    /// 与光晕上(2026-08-22 真机反馈"方框把圆盖住")。再留 WarmSpacing.sm(12) 的缝。
+    static let overlayOffsetY: CGFloat = -(WarmSize.fabOverlayHeight + WarmSpacing.sm)
 
     // MARK: 动画曲线(FirstVoiceTrialHintView 用)
     /// 单轮动画时长(秒)。麦克风下压一圈 1.6s。
