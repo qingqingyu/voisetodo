@@ -34,6 +34,9 @@ struct HomeSelectedDayListView: View {
     /// 正在重新解析的 todo id 集合(来自 AppCoordinator.reextractingTodoIDs)。
     /// 用于驱动 UnparsedTodoCard 的按钮 disabled + ProgressView,防连点。
     var reextractingTodoIDs: Set<UUID> = []
+    /// 复盘置顶的 todo id(`ReviewPinningStore`,阶段 3 拍板 6)。
+    /// 排序层消费:Today 各时段 tier 内 pinned 稳定浮顶(只读比较器,不动 sortOrder)。
+    var pinnedTodoIDs: Set<UUID> = []
     /// 待揭晓的新增条目 id(来自 AppCoordinator.pendingRevealTodoIDs)。
     /// 这些条目已写库但还没在 UI 上播过入场动画——`onAppear` 必须跳过自动 insert,
     /// 等 HomeView 在 ConfirmSheet `onDismiss` 后按 rank 依次放动画。否则动画会在
@@ -238,7 +241,9 @@ struct HomeSelectedDayListView: View {
         var occurrenceIndex = 0
         for (tierIndex, group) in state.tieredUncompletedOccurrences.enumerated() {
             entries.append(.subhead(tier: group.tier, tierIndex: tierIndex))
-            for occurrence in group.items {
+            // 复盘「下周三件事」置顶浮顶(拍板 6:独立标记,不动 sortOrder;
+            // tier 结构保持,tier 内 pinned 稳定分区到最前)。
+            for occurrence in ReviewPinningSort.pinnedFirst(group.items, id: \.todo.id, pinned: pinnedTodoIDs) {
                 entries.append(.occurrence(occurrence, index: occurrenceIndex))
                 occurrenceIndex += 1
             }

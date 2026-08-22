@@ -892,11 +892,13 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// 详情页完整更新——支持 dueDate、模糊时段和 detail。
-    func updateTodoDetail(_ id: UUID, update: TodoDetailUpdate) throws {
+    /// - Parameter origin: dueDate 推迟时的埋点来源(默认 `.app`;详情页直调处传
+    ///   `.detail`,复盘流程将来传 `.review`)。
+    func updateTodoDetail(_ id: UUID, update: TodoDetailUpdate, origin: TaskEventOrigin = .app) throws {
         let startedAt = Date()
         // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
         let oldTodo = store.findTodo(by: id)
-        try store.updateFull(id, update: update)
+        try store.updateFull(id, update: update, origin: origin)
         VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(update.dueDate != nil) explicitTimeBucket=\(update.timeBucket?.rawValue ?? "nil", privacy: .public) hasDetail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
         let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar

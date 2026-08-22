@@ -62,7 +62,7 @@ struct TodoEntityQuery: EntityQuery {
         let context = ModelContext(container)
 
         var descriptor = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { !$0.isCompleted },
+            predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil },
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
         descriptor.fetchLimit = Self.suggestedLimit
@@ -97,7 +97,7 @@ struct TodoEntityQuery: EntityQuery {
         // 数据库层做 localizedStandardContains 在 SwiftData #Predicate 下行为不稳定 (各后端支持差异),
         // 这里保守走"先 DB 过滤 isCompleted,再内存做标题匹配"。
         var descriptor = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { !$0.isCompleted },
+            predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil },
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
         descriptor.fetchLimit = Self.suggestedLimit * 2

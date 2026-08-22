@@ -283,7 +283,7 @@ struct VoiceTodoApp: App {
             // Intent (Spotlight/Action Button) 录音信号由 HomeView 自己消费
             // (coordinator.pendingIntentRecordingLaunch),展开 BottomInputPanel 后再调
             // coordinator.handleActionButtonLaunch —— 不再走 @State 中转。
-            HomeView(store: todoStore)
+            HomeView(store: todoStore, reviewStore: todoStore)
                 .accessibilityIdentifier("HomeRootView")
         } else {
             // 未完成引导，显示占位（引导会通过 sheet 显示）

@@ -84,7 +84,8 @@ struct QueryTodosIntent: AppIntent {
         switch status {
         case .incomplete:
             var d = FetchDescriptor<TodoItem>(
-                predicate: #Predicate { !$0.isCompleted },
+                // 已划掉(abandonedAt != nil)不算「未完成」的可见工作,Siri 查询排除。
+                predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil },
                 sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
             )
             d.fetchLimit = Self.fetchLimit

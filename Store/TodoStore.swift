@@ -12,6 +12,7 @@ final class TodoStore:
     @MainActor CalendarSyncTodoStore,
     @MainActor TodoMutationWriting,
     @MainActor WidgetTodoReadable,
+    @MainActor ReviewFlowStore,
     @MainActor TodoRefreshing {
     // MARK: - Properties
 
@@ -22,6 +23,10 @@ final class TodoStore:
     /// 只读重查询的后台执行器（独立 ModelContext，跑在 actor executor 上）。
     /// 用主上下文的 container 构造，与主线程写操作共享同一持久化存储。
     private let queryActor: TodoQueryActor
+
+    /// 复盘埋点写入器(deferred / abandoned / split)。只 insert 进主 context,
+    /// 事件随本类的 `saveOrRollback()` 与主操作同事务存取(失败一起回滚)。
+    private let taskEventRecorder: TaskEventRecorder
 
     /// 所有待办（按 sortOrder 升序排列）
     @Published var todos: [TodoItemData] = [] {
@@ -67,6 +72,7 @@ final class TodoStore:
         self.modelContext = modelContext
         self.saveAction = saveAction
         self.queryActor = TodoQueryActor(modelContainer: modelContext.container)
+        self.taskEventRecorder = TaskEventRecorder(modelContext: modelContext)
         let previousMigrationVersion = AppGroupConfig.currentStoreMigrationVersion()
         VoiceTodoLog.store.info("store.init.start previousMigration=\(previousMigrationVersion) target=\(Self.currentMigrationVersion) forceMigration=\(forceMigration)")
         if forceMigration || previousMigrationVersion < Self.currentMigrationVersion {
@@ -280,7 +286,9 @@ final class TodoStore:
     }
 
     /// 详情页完整更新——支持直接设 dueDate、模糊时段和 detail。
-    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
+    /// - Parameter origin: dueDate 推迟时的埋点来源(默认 `.app`,见协议扩展;
+    ///   详情页经 `AppCoordinator.updateTodoDetail` 传 `.detail`,复盘流程传 `.review`)。
+    func updateFull(_ id: UUID, update: TodoDetailUpdate, origin: TaskEventOrigin = .app) throws {
         let startedAt = Date()
         let effectiveBucket = TimeBucketResolver.effective(
             explicitBucket: update.timeBucket,
@@ -290,6 +298,9 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.updateFull.start id=\(id.uuidString, privacy: .public) dueDate=\(update.dueDate != nil) hasDueTime=\(update.hasDueTime) explicitTimeBucket=\(update.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public)")
         let todoItem = try findTodoItem(by: id)
         let hadRecurrence = todoItem.recurrenceRule != nil
+        let oldDueDate = todoItem.dueDate
+        let oldIsCompleted = todoItem.isCompleted
+        let oldAbandonedAt = todoItem.abandonedAt
 
         // 先完成可能失败的写操作（删除旧完成记录），再修改 TodoItem。
         // 显式 try 而非 try?：如果 completion 删除失败，说明底层 SwiftData 出了问题，
@@ -333,11 +344,67 @@ final class TodoStore:
         // 补这一行是为了闭合字段写入路径,避免「init 归一化了但 updateFull 没落地」的死路径。
         todoItem.eventEndDate = update.eventEndDate
 
+        // 推迟埋点(拍板 3:只记 deferred/abandoned/split)。判定在 mutate 之后、
+        // save 之前做:用 mutate 前快照(oldDueDate/oldIsCompleted/oldAbandonedAt)
+        // 与 update.dueDate 比较,纯函数 `TaskEventRules.isDeferral` 可独立单测。
+        // 事件 insert 与主操作同 context,随下面的 saveOrRollback 一起提交/回滚。
+        // 已完成/已划掉不记(推迟语义只对未完成工作成立);同用户日改钟点、
+        // 往前改、旧值 nil(首次排期)由 isDeferral 内部排除。
+        if TaskEventRules.isDeferral(
+            oldDueDate: oldDueDate,
+            newDueDate: update.dueDate,
+            isCompleted: oldIsCompleted,
+            abandonedAt: oldAbandonedAt
+        ) {
+            taskEventRecorder.recordDeferred(
+                todoId: id,
+                from: oldDueDate,
+                to: update.dueDate,
+                origin: origin
+            )
+        }
+
         try saveOrRollback()
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
         VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(update.dueDate != nil) explicitTimeBucket=\(todoItem.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public) detail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
+    /// 划掉待办(复盘「处理没做完的」用):写 `abandonedAt = Date()` + 记 abandoned 事件。
+    /// 与 delete 分开——数据保留,仍在完成率分母里(拍板 1),unabandon 可撤销。
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func abandon(_ id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.abandon.start id=\(id.uuidString, privacy: .public)")
+        let todoItem = try findTodoItem(by: id)
+
+        let abandonedAt = Date()
+        todoItem.abandonedAt = abandonedAt
+        taskEventRecorder.recordAbandoned(todoId: id, at: abandonedAt, origin: .review)
+
+        try saveOrRollback()
+        // 工作集谓词含 abandonedAt == nil,划掉后条目要出工作集 → 全量刷新
+        // (与 toggleOccurrenceComplete 的失败回滚路径同模式),而非增量改内存行。
+        refreshTodos()
+        VoiceTodoLog.store.info("store.abandon.success id=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
+    /// 撤销划掉:只清 `abandonedAt`。**不记事件**——拍板 3 的事件集里没有
+    /// un-abandoned 类型(撤销状态从 `abandonedAt == nil` 即可推导,阶段 3 的
+    /// 「撤销上一张」只恢复最近一次划掉)。
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func unabandon(_ id: UUID) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.unabandon.start id=\(id.uuidString, privacy: .public)")
+        let todoItem = try findTodoItem(by: id)
+
+        todoItem.abandonedAt = nil
+
+        try saveOrRollback()
+        // 与 abandon 对称:条目要回工作集,全量刷新而非增量改内存行。
+        refreshTodos()
+        VoiceTodoLog.store.info("store.unabandon.success id=\(id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 用 AI 重新提取的结果替换原 todo(用于「没能识别」分组的「重新解析」入口)。
@@ -445,6 +512,50 @@ final class TodoStore:
     /// - Note: 读查询下沉到 `queryActor` 后台执行；失败显式抛出。
     func calendarOccurrences(from startDate: Date, to endDate: Date) async throws -> [TodoOccurrenceData] {
         try await queryActor.calendarOccurrences(from: startDate, to: endDate)
+    }
+
+    /// 洞察引擎的原料查询(阶段 3 洞察步用;读查询下沉到 `queryActor`)。
+    /// 口径见 `TodoQueryActor.insightContext(from:to:)`;失败显式抛出。
+    func insightContext(from startDate: Date, to endDate: Date) async throws -> InsightContext {
+        try await queryActor.insightContext(from: startDate, to: endDate)
+    }
+
+    /// 全量任务 id(阶段 4,`TodoIDListing`:复盘收尾 prune 置顶集合用全量 id,
+    /// 不用窗口化工作集——窗口外的置顶 id 会被误删)。失败显式抛出。
+    func allTodoIDs() async throws -> [UUID] {
+        try await queryActor.allTodoIDs()
+    }
+
+    /// 拆小(复盘第 2 步「拆小」按钮,docs/todo-review-flow-design.md §阶段 3):
+    /// 建 N 条子任务(`parentTodoId` 指向原任务)+ 原任务标 `abandonedAt` + 记 split 事件。
+    /// 三步同 context 同事务,失败一起回滚(错误显式传播)。
+    /// 与 `abandon` 区别:拆小的原任务**只记 split 事件**,不重复记 abandoned 事件
+    /// (split 本身已说明任务去向,两条都记会让账本重复计数)。
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;children 为空抛
+    ///   `apiResponseInvalid`(调用方契约违反);持久化失败向上抛。
+    func splitTodo(_ id: UUID, children: [TodoItemData]) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.split.start id=\(id.uuidString, privacy: .public) childCount=\(children.count)")
+        guard !children.isEmpty else {
+            throw VoiceTodoError.apiResponseInvalid("splitTodo with empty children")
+        }
+        let parent = try findTodoItem(by: id)
+
+        var baseSortOrder = try nextSortOrderForNewItem()
+        for childData in children {
+            let child = TodoItem.from(childData)
+            child.parentTodoId = id
+            child.sortOrder = baseSortOrder
+            baseSortOrder -= 1
+            modelContext.insert(child)
+        }
+        parent.abandonedAt = Date()
+        taskEventRecorder.recordSplit(todoId: id, origin: .review)
+
+        try saveOrRollback()
+        // 子任务 insert + 原任务出工作集 → 全量刷新(与 abandon 同模式)。
+        refreshTodos()
+        VoiceTodoLog.store.info("store.split.success id=\(id.uuidString, privacy: .public) childCount=\(children.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
     /// 区间内完成的「无安排」任务(供首页「已完成」分区按需加载工作集外的历史数据)。
@@ -613,9 +724,13 @@ final class TodoStore:
             for record in historyRecords {
                 modelContext.delete(record)
             }
+            let taskEvents = try modelContext.fetch(FetchDescriptor<TaskEvent>())
+            for event in taskEvents {
+                modelContext.delete(event)
+            }
             try saveOrRollback()
             todos = []
-            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count) deletedLegacyHistory=\(historyRecords.count)")
+            VoiceTodoLog.store.warning("store.reset_for_ui_tests.success deletedItems=\(items.count) deletedCompletions=\(completions.count) deletedLegacyHistory=\(historyRecords.count) deletedTaskEvents=\(taskEvents.count)")
         } catch {
             VoiceTodoLog.store.error("store.reset_for_ui_tests.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.wrapStorage(error, for: .write)
@@ -654,6 +769,21 @@ final class TodoStore:
         VoiceTodoLog.store.warning("store.seed_for_ui_tests.success count=\(items.count) total=\(self.todos.count)")
     }
 
+    /// 数据体检:全量取库,不受 `todos` 窗口化过滤影响。
+    /// 阶段 0 诊断用,见 docs/todo-review-flow-design.md「阶段 0 · 数据体检」。
+    /// UI 入口只在 DEBUG 构建下出现;失败显式 throws,调用方负责打 error 日志并如实呈现失败。
+    func diagnosticsAllItems() throws -> [TodoItemData] {
+        do {
+            let items = try modelContext.fetch(FetchDescriptor<TodoItem>())
+            let data = items.map { $0.toData() }
+            VoiceTodoLog.store.info("store.diagnostics.fetch_success count=\(data.count, privacy: .public)")
+            return data
+        } catch {
+            VoiceTodoLog.store.error("store.diagnostics.fetch_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
     /// 记录系统日历事件 ID。
     /// - Parameters:
     ///   - eventIdentifier: 系统日历事件 ID
@@ -688,7 +818,8 @@ final class TodoStore:
             return
         }
         let descriptor = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { !$0.isCompleted }
+            // 已划掉(abandonedAt != nil)的任务不再是可排序的「未完成工作」,排除。
+            predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil }
         )
         let allUncompleted: [TodoItem]
         do {
@@ -738,7 +869,9 @@ final class TodoStore:
         let distantPast = Date.distantPast
 
         let pending = FetchDescriptor<TodoItem>(
-            predicate: #Predicate { !$0.isCompleted },
+            // 工作集 = 未完成 && 未划掉:划掉的任务对首页/widget 是不可见工作
+            // (仍在库里、仍在完成率分母——分母走 ReviewView 的 @Query,不经此谓词)。
+            predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil },
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )
         let recentDone = FetchDescriptor<TodoItem>(

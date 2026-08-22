@@ -27,17 +27,22 @@ struct HomeSettingsSheet: View {
     private let vocabularyStore: UserVocabularyStore
     private let onUpgradePro: () -> Void
     private let onImportFromCalendar: () -> Void
+    /// 数据体检回调(DEBUG-only UI,Release 下为默认空实现)。
+    /// 由 HomeView 注入:取全量库 → `DataHealthAnalyzer.analyze` → os_log 打印。
+    private let onRunDataDiagnostics: () -> Void
 
     init(
         calendarWriteModeRaw: Binding<String>,
         vocabularyStore: UserVocabularyStore = .shared,
         onUpgradePro: @escaping () -> Void = {},
-        onImportFromCalendar: @escaping () -> Void = {}
+        onImportFromCalendar: @escaping () -> Void = {},
+        onRunDataDiagnostics: @escaping () -> Void = {}
     ) {
         _calendarWriteModeRaw = calendarWriteModeRaw
         self.vocabularyStore = vocabularyStore
         self.onUpgradePro = onUpgradePro
         self.onImportFromCalendar = onImportFromCalendar
+        self.onRunDataDiagnostics = onRunDataDiagnostics
     }
 
     var body: some View {
@@ -236,6 +241,26 @@ struct HomeSettingsSheet: View {
                 } footer: {
                     Text(String(localized: "settings.feedback.footer"))
                 }
+
+                #if DEBUG
+                // 阶段 0 · 数据体检(DEBUG-only):打印四组统计到 os_log,
+                // 决定洞察 01/05(依赖 Priority.high)何时值得启用。
+                // 详见 docs/todo-review-flow-design.md「阶段 0」。
+                Section {
+                    Button {
+                        onRunDataDiagnostics()
+                    } label: {
+                        Label(String(localized: "settings.diagnostics.run"), systemImage: "stethoscope")
+                    }
+                    .accessibilityIdentifier("DataDiagnosticsButton")
+                } header: {
+                    Text(String(localized: "settings.diagnostics.header"))
+                } footer: {
+                    Text(String(localized: "settings.diagnostics.footer"))
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                }
+                #endif
             }
             .sheet(isPresented: $showFeedbackSheet) {
                 FeedbackSheet()

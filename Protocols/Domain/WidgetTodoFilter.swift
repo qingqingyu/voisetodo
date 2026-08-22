@@ -20,6 +20,9 @@ enum WidgetTodoFilter {
         var unscheduled: [TodoItemData] = []
 
         for item in items {
+            // 已划掉(abandonedAt != nil)的任务不再是可见工作,widget 全组排除
+            // (规律任务当前无划掉入口,守卫放循环顶部一并覆盖)。
+            if item.abandonedAt != nil { continue }
             var data = item
             // 与 App「没能识别」分组同口径(HomeCalendarState):原文兜底(.rawFallback)/
             // 未解析(.unparsed)条目不是普通待办,不进任何 widget。它们没有结构化字段、

@@ -291,13 +291,26 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     // MARK: - Initialization
 
-    init(store: Store) {
+    /// 复盘流程的 store 注入(阶段 3)。独立于泛型 `Store`:`HomeView` 的泛型约束
+    /// 是 `HomeTodoStore`(preview/UITest 用 MockStore),而五步流程还需要
+    /// `InsightContextReading` / `TodoSplitting`——把这两个要求并进泛型约束会迫使
+    /// MockStore 补齐洞察查询实现。真实 App 传入 `TodoStore`(VoiceTodoApp),
+    /// preview/UITest 不传(入口卡隐藏),保持 MockStore 零改动。
+    private let reviewStore: (any ReviewFlowStore)?
+
+    init(store: Store, reviewStore: (any ReviewFlowStore)? = nil) {
         self.store = store
+        self.reviewStore = reviewStore
     }
 
     @State private var selectedTodo: TodoItemData?
     /// 统计 pill 点击进入 ReviewView(原 NavigationLink push,移除 NavigationStack 后改 sheet)。
     @State private var showReviewFromStats = false
+    /// 复盘「下周三件事」置顶的 todo id(阶段 3 拍板 6)。只读快照:
+    /// 复盘流程落地置顶后回到首页时刷新(见 onChange showReviewFromNotification /
+    /// showReviewFromStats 的 dismiss + onAppear)。HomeView 改动控制在最小——
+    /// 只把它透传给 HomeSelectedDayListView 的排序层,不动任何 sortOrder。
+    @State private var pinnedTodoIDs: Set<UUID> = []
 
     /// 列表可见性：录音 / 处理 / 抽取中 / 弹层升起时隐藏列表与底部渐隐遮罩。
     /// 集中此条件避免 Group 与遮罩两处重复判断漂移。
@@ -338,6 +351,23 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// (today-card-layout-redesign 把右上角 pill 换成了标题行下方进度条行,
     /// trigger 跟着迁移到新位置,token 语义不变。)
     @State private var confirmPopToken = 0
+
+    /// 回顾页 sheet 内容(两个入口共用):dismiss 时重读置顶集合——
+    /// 复盘流程在 sheet 内落地置顶后,回首页立即浮顶。
+    private var reviewSheetContent: some View {
+        NavigationStack {
+            ReviewView(
+                store: reviewStore,
+                lastReviewDate: { ReviewSessionStore.shared.lastSession()?.completedAt }
+            )
+        }
+        .onDisappear { reloadPinnedTodoIDs() }
+    }
+
+    /// 重新读置顶集合(复盘流程 dismiss 回首页 / 首次挂载时)。
+    private func reloadPinnedTodoIDs() {
+        pinnedTodoIDs = ReviewPinningStore.shared.pinnedIDs()
+    }
 
     private var actions: HomeViewActions<Store> {
         HomeViewActions(
@@ -394,6 +424,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             startEntranceAnimation()
             // 首次语音试用 hint 的主触发路径:onboarding sheet 关闭 → HomeView 首挂。
             evaluateFirstTrialHintTrigger()
+            // 复盘置顶浮顶:首次挂载读一次快照(阶段 3)。
+            reloadPinnedTodoIDs()
         }
         .overlay {
             if coordinator.isRecording {
@@ -467,7 +499,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onImportFromCalendar: {
                     showSettingsSheet = false
                     showCalendarImport = true
-                }
+                },
+                onRunDataDiagnostics: { runDataDiagnostics() }
             )
         }
         // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),
@@ -513,10 +546,10 @@ struct HomeView<Store: HomeTodoStore>: View {
             get: { coordinator.showReviewFromNotification },
             set: { coordinator.showReviewFromNotification = $0 }
         )) {
-            NavigationStack { ReviewView() }
+            reviewSheetContent
         }
         .sheet(isPresented: $showReviewFromStats) {
-            NavigationStack { ReviewView() }
+            reviewSheetContent
         }
         // 用户在 onboarding 跳过权限后的二次引导:点录音按钮时拦截,
         // 弹更详细的说明 sheet,再走系统权限弹窗。
@@ -1470,6 +1503,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             onReextract: { id in coordinator.reextract(todoID: id) },
                             onReorder: { ids in actions.reorderTodos(ids) },
                             reextractingTodoIDs: coordinator.reextractingTodoIDs,
+                            pinnedTodoIDs: pinnedTodoIDs,
                             pendingRevealIDs: Set(coordinator.pendingRevealTodoIDs)
                         )
                         .frame(height: listHeight)
@@ -2746,6 +2780,42 @@ private struct GlossarySuggestionBanner: View {
                 .fill(WarmTheme.background)
                 .shadow(color: WarmTheme.shadowLight, radius: 8, y: 2)
         )
+    }
+}
+
+// MARK: - 数据体检(阶段 0;UI 入口只在 DEBUG 构建下可见)
+
+extension HomeView {
+    /// 取全量库 → 纯函数统计 → os_log 打印四组数字。
+    /// fetch 失败显式打 error 日志,不用默认值掩盖。
+    /// 输出供开发者读 Console:计数 .public;分类 key 为枚举名,非用户内容。
+    @MainActor
+    func runDataDiagnostics() {
+        let items: [TodoItemData]
+        do {
+            items = try store.diagnosticsAllItems()
+        } catch {
+            // 错误明细已在 store.diagnosticsAllItems 里打过,这里如实上报失败收尾。
+            VoiceTodoLog.ui.error("diagnostics.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return
+        }
+        let stats = DataHealthAnalyzer.analyze(items, asOf: Date())
+        let categorySummary = stats.completedByCategory
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue)=\($0.value)" }
+            .joined(separator: " ")
+        VoiceTodoLog.ui.info("""
+            diagnostics.result \
+            total=\(stats.totalCount, privacy: .public) \
+            high=\(stats.highPriorityCount, privacy: .public) \
+            highCompleted=\(stats.highPriorityCompletedCount, privacy: .public) \
+            highRatio=\(String(format: "%.3f", stats.highPriorityRatio), privacy: .public) \
+            hasDueTimeRatio=\(String(format: "%.3f", stats.hasDueTimeRatio), privacy: .public) \
+            completed=\(stats.completedCount, privacy: .public) \
+            completedWithDueDate=\(stats.completedWithDueDateCount, privacy: .public) \
+            completedByCategory=[\(categorySummary, privacy: .public)] \
+            libraryAgeWeeks=\(stats.libraryAgeWeeks, privacy: .public)
+            """)
     }
 }
 

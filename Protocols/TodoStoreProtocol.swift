@@ -60,8 +60,12 @@ protocol TodoDeletionWriting {
 
 /// 待办详情与重复规则原子写入能力。
 protocol TodoDetailUpdating {
-    /// 完整更新（含 dueDate、时段和重复规则，详情页用）
-    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws
+    /// 完整更新（含 dueDate、时段和重复规则，详情页用）。
+    /// dueDate 推迟到更晚用户日时,经 `TaskEventRecorder` 记一条 deferred 事件
+    /// (与主操作同事务;判定见 `TaskEventRules.isDeferral`)。
+    /// - Parameter origin: 事件来源(详情页传 `.detail`,首页快捷操作走默认 `.app`,
+    ///   复盘流程传 `.review`)。
+    func updateFull(_ id: UUID, update: TodoDetailUpdate, origin: TaskEventOrigin) throws
 
     /// 用一组新提取的结果替换现有 TodoItem。
     /// 用于「没能识别」分组的「重新解析」入口:把 outcome != .parsed 的原文条目,
@@ -70,6 +74,14 @@ protocol TodoDetailUpdating {
     /// 当 `extracted.count > 1` 时,第一条 mutate 原 todo,剩余的逐条插入,
     /// sortOrder 锚定在原 todo 的 sortOrder 之下(详见 `TodoStore.replaceTodo` 实现)。
     func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws
+}
+
+extension TodoDetailUpdating {
+    /// origin 默认 `.app` 的便捷入口:协议要求不能带默认参数,用扩展重载补默认值,
+    /// 让既有调用点(HomeView 快捷改时间等)不改签名、零回归。
+    func updateFull(_ id: UUID, update: TodoDetailUpdate) throws {
+        try updateFull(id, update: update, origin: .app)
+    }
 }
 
 extension TodoDetailUpdating where Self: TodoListReadable {
@@ -115,8 +127,53 @@ protocol TodoOrderingWriting {
     func reorder(ids: [UUID]) throws
 }
 
+/// 划掉(放弃)写入能力——复盘「处理没做完的」用。
+/// 与 `TodoDeletionWriting` 语义对立:删除是数据消失,划掉是一个有意义的决定,
+/// 保留在完成率分母里(拍板 1),且可撤销。
+protocol TodoAbandonWriting {
+    /// 划掉待办:写 `abandonedAt = Date()` + 记一条 abandoned 事件(同事务)。
+    /// - Parameter id: 待办 ID
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func abandon(_ id: UUID) throws
+
+    /// 撤销划掉:只清 `abandonedAt` 字段。**不记事件**——拍板 3 的事件集里没有
+    /// un-abandoned 类型(撤销状态从 `abandonedAt == nil` 即可推导)。
+    /// - Parameter id: 待办 ID
+    /// - Throws: 条目不存在抛 `VoiceTodoError.todoNotFound`;持久化失败向上抛。
+    func unabandon(_ id: UUID) throws
+}
+
 /// 完整待办写入能力集合。
-protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting {}
+protocol TodoMutationWriting: TodoCreating, TodoCompletionWriting, TodoDeletionWriting, TodoDetailUpdating, TodoRecurrenceWriting, TodoOrderingWriting, TodoAbandonWriting {}
+
+/// 洞察原料读取能力——复盘流程第 3 步(观察)用。
+/// 独立协议不并入 `TodoMutationWriting`:后者已有多个聚合消费方(MockStore 等),
+/// 追加要求会迫使无关实现补空壳。
+protocol InsightContextReading {
+    /// 洞察引擎的原料查询(一次性取齐,口径见 `TodoQueryActor.insightContext`)。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+    func insightContext(from startDate: Date, to endDate: Date) async throws -> InsightContext
+}
+
+/// 全量任务 id 读取能力(阶段 4)——复盘收尾 `ReviewPinningStore.prune` 用。
+/// 不能用 `TodoListReadable.todos`(窗口化工作集)prune:窗口外的置顶 id 会被误删。
+/// 只取 id 列表,不映射 DTO,500+ 条时也只是一次轻量列存取。
+protocol TodoIDListing {
+    /// 库里全部 todo id(与完成/删除状态无关)。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+    func allTodoIDs() async throws -> [UUID]
+}
+
+/// 拆小写入能力——复盘第 2 步「拆小」按钮用(阶段 3)。
+/// 与 `TodoAbandonWriting` 互补:拆小 = 建 N 条子任务(parentTodoId 指向原任务)
+/// + 原任务标 abandonedAt + 记 split 事件,三步同事务。
+protocol TodoSplitting {
+    /// - Throws: 条目不存在抛 `todoNotFound`;children 为空是调用方契约违反,显式抛。
+    func splitTodo(_ id: UUID, children: [TodoItemData]) throws
+}
+
+/// 复盘五步流程需要的 store 能力集合(阶段 3,`ReviewFlowView` 的依赖类型)。
+protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, TodoSplitting, TodoIDListing {}
 
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {
@@ -211,6 +268,17 @@ protocol SystemCalendarEventIdentifierWriting {
     func updateSystemCalendarEventIdentifier(_ eventIdentifier: String?, for id: UUID) throws
 }
 
+/// 数据体检读取能力——阶段 0 诊断用,
+/// 见 docs/todo-review-flow-design.md「阶段 0 · 数据体检」。
+/// UI 入口在 HomeSettingsSheet 的 DEBUG section(编译期裁剪);
+/// 协议本身不包 #if,因为协议继承列表(HomeTodoStore)无法条件编译,
+/// Release 下保留一个无人调用的读取方法,无行为影响。
+protocol TodoDiagnosticsReading {
+    /// 全量取库(不受 `todos` 窗口化过滤影响),供数据体检统计。
+    /// 失败时显式 throws,调用方负责打 error 日志,不许用默认值掩盖。
+    func diagnosticsAllItems() throws -> [TodoItemData]
+}
+
 /// 待办刷新能力。
 protocol TodoRefreshing {
     /// 从数据库重新加载 todos（用于 UI 状态与数据层不一致时回滚）
@@ -220,7 +288,7 @@ protocol TodoRefreshing {
 /// Home 页需要列表、完成切换、日历 occurrence、无日期任务拖拽排序,以及排序失败时的刷新回滚。
 /// 含详情更新(`TodoDetailUpdating`)——chip 改时间 popover 需要直接走 store.updateTime,
 /// 而不是绕一层 coordinator(避免 HomeView 与 AppCoordinator 的耦合进一步加深)。
-protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating {}
+protocol HomeTodoStore: TodoListReadable, TodoCompletionWriting, CalendarOccurrenceStore, TodoOrderingWriting, TodoRefreshing, TodoDetailUpdating, TodoDiagnosticsReading {}
 
 /// AppCoordinator 直接编排待办批量保存、删除、详情更新、pending 替换和日历导入。
 protocol AppCoordinatorTodoStore: TodoListReadable, TodoBatchAdding, TodoDeletionWriting, TodoDetailUpdating, PendingTranscriptReplacing, TodoCompletionWriting, TodoImporting, TodoOrderingWriting {}
