@@ -127,7 +127,6 @@ struct ReviewStepInsights: View {
         ForEach(Array(rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
                 result: result,
-                onSaveRule: { state.saveRule($0) },
                 onOpenTask: result.id == .rotting ? { todoId in
                     // 腐烂卡任务跳回第 2 步对应卡片(§阶段 3)。
                     state.triageFocusID = todoId

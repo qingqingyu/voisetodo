@@ -1,12 +1,11 @@
 import SwiftUI
 
 /// 洞察卡容器(阶段 3,§阶段 3 · 第 3 步)。
-/// 布局约定:右上角信号强度标签、右下角样本量说明、底部规则按钮。
+/// 布局约定:右上角信号强度标签、右下角样本量说明。
+/// (2026-08-22 拍板:「存成规则」按钮移除——回访砍掉后规则只剩展示+计数,整链路删除。)
 /// 入场动画复用 `CardEntranceModifier` 的 stagger 模式(滚动进入视野时播)。
 struct InsightCardView: View {
     let result: InsightResult
-    /// 规则按钮回调(suggestedRule 由本视图按 insightID 构造,v1 只存储)。
-    let onSaveRule: (ReviewRule) -> Void
     /// 腐烂卡的任务点击 → 跳回第 2 步对应卡片(仅 rotting 卡传入非 nil)。
     var onOpenTask: ((UUID) -> Void)? = nil
 
@@ -63,8 +62,6 @@ struct InsightCardView: View {
 
                     Spacer(minLength: WarmSpacing.xs)
                 }
-
-                ruleButton
             }
         }
         .opacity(appeared ? 1 : 0)
@@ -117,39 +114,6 @@ struct InsightCardView: View {
             ReactiveRatioBarView(ratio: ratio, sampleCount: sampleCount)
         default:
             EmptyView()
-        }
-    }
-
-    // MARK: 规则按钮
-
-    /// 「存下这条规则」:点了带到第 4 步「这次存下的规则」并计入最后的账(§阶段 3)。
-    private var ruleButton: some View {
-        Button {
-            onSaveRule(ReviewRule(
-                insightID: result.id,
-                text: suggestedRuleText,
-                createdAt: Date()
-            ))
-            HapticFeedback.light()
-        } label: {
-            Label(String(localized: "review.flow.insights.rule_button"), systemImage: "bookmark")
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, WarmSpacing.sm)
-                .padding(.vertical, WarmSpacing.xxs)
-                .background(Capsule().fill(WarmTheme.primary.opacity(0.12)))
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// v1 规则文本按 insightID 给固定建议文案(用户阶段 4 可改;引擎 suggestedRule 恒 nil)。
-    private var suggestedRuleText: String {
-        switch result.id {
-        case .rotting: return String(localized: "review.flow.rule.suggested.rotting")
-        case .reactiveVsPlanned: return String(localized: "review.flow.rule.suggested.reactive")
-        default: return result.headline
         }
     }
 }

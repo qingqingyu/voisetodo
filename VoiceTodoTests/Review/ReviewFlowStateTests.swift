@@ -7,7 +7,7 @@ import Foundation
 #endif
 
 /// `ReviewFlowState` 纯逻辑验收(阶段 3):
-/// triage 输入过滤 / 步骤闸门(不选够不过)/ 撤销栈(只覆盖划掉)/ 账本计数。
+/// triage 输入过滤 / 步骤闸门(至少选 1 件,2026-08-22 放宽)/ 撤销栈(只覆盖划掉)/ 账本计数。
 /// 见 docs/todo-review-flow-design.md「验证」与「阶段 3」。
 ///
 /// fixture 注意:`todo(_:)` 每次调用生成新 UUID,决定必须作用于**同一实例**
@@ -43,23 +43,20 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(result.map(\.title), ["open one-shot", "another open"])
     }
 
-    // MARK: 步骤闸门(不选够不给过)
+    // MARK: 步骤闸门(2026-08-22 拍板放宽:至少选 1 件)
 
-    func testCommitGateBlocksUntilRequiredCountSelected() {
+    func testCommitGateRequiresAtLeastOneSelection() {
         let state = ReviewFlowState(todos: (0..<5).map { todo("t\($0)") })
         // 没有任何决定时:候选池空 → 闸门放行(无从选起,见 State 注释)。
         XCTAssertTrue(state.canPassCommit)
 
         for item in state.deck { state.markScheduled(item) }
-        // 候选 5 条 → 应选 3 件;0/1/2 件都不过。
-        XCTAssertEqual(state.commitRequiredCount, 3)
+        // 候选池非空:0 件不过,1 件即过(不再强制选满 3)。
+        XCTAssertFalse(state.canPassCommit)
         state.toggleCommitSelection(state.scheduled[0])
-        XCTAssertFalse(state.canPassCommit)
-        state.toggleCommitSelection(state.scheduled[1])
-        XCTAssertFalse(state.canPassCommit)
-        state.toggleCommitSelection(state.scheduled[2])
         XCTAssertTrue(state.canPassCommit)
-        // 第 4 件:已达上限,不可再选。
+        // 第 4 件:已达上限 3,不可再选。
+        for item in state.scheduled.dropFirst() { state.toggleCommitSelection(item) }
         state.toggleCommitSelection(state.scheduled[3])
         XCTAssertEqual(state.commitSelection.count, 3)
         XCTAssertTrue(state.canPassCommit)
@@ -70,10 +67,8 @@ final class ReviewFlowStateTests: XCTestCase {
         let items = state.deck
         state.markScheduled(items[0])
         state.markScheduled(items[1])
-        XCTAssertEqual(state.commitRequiredCount, 2)
-        state.toggleCommitSelection(state.scheduled[0])
         XCTAssertFalse(state.canPassCommit)
-        state.toggleCommitSelection(state.scheduled[1])
+        state.toggleCommitSelection(state.scheduled[0])
         XCTAssertTrue(state.canPassCommit)
     }
 
@@ -81,9 +76,9 @@ final class ReviewFlowStateTests: XCTestCase {
         let state = ReviewFlowState(todos: (0..<4).map { todo("t\($0)") })
         for item in state.deck { state.markScheduled(item) }
         for item in state.scheduled.prefix(3) { state.toggleCommitSelection(item) }
-        // 取消选中的第一件 → 回到 2 件,闸门重新关上。
-        state.toggleCommitSelection(state.scheduled[0])
-        XCTAssertEqual(state.commitSelection.count, 2)
+        // 取消到 0 件 → 闸门重新关上。
+        for item in state.scheduled.prefix(3) { state.toggleCommitSelection(item) }
+        XCTAssertEqual(state.commitSelection.count, 0)
         XCTAssertFalse(state.canPassCommit)
     }
 
@@ -161,7 +156,6 @@ final class ReviewFlowStateTests: XCTestCase {
         state.markToday(items[2])
         state.markAbandoned(items[3])
         state.markSplit(items[4])
-        state.saveRule(ReviewRule(insightID: .rotting, text: "r", createdAt: Date()))
         state.toggleCommitSelection(state.scheduled[0])
         state.toggleCommitSelection(state.scheduled[1])
 
@@ -172,7 +166,6 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(ledger.todayCount, 1)
         XCTAssertEqual(ledger.abandonedCount, 1)
         XCTAssertEqual(ledger.splitCount, 1)
-        XCTAssertEqual(ledger.savedRuleCount, 1)
         XCTAssertEqual(ledger.pinnedCount, 2)
     }
 
@@ -186,44 +179,27 @@ final class ReviewFlowStateTests: XCTestCase {
         state.bringToFrontOfDeck(UUID())
         XCTAssertEqual(state.deck.map(\.title), ["c", "a", "b"])
     }
-
-    // MARK: 规则去重
-
-    func testSaveRuleDeduplicatesByInsightID() {
-        let state = ReviewFlowState(todos: [])
-        state.saveRule(ReviewRule(insightID: .rotting, text: "a", createdAt: Date()))
-        state.saveRule(ReviewRule(insightID: .rotting, text: "b", createdAt: Date()))
-        state.saveRule(ReviewRule(insightID: .reactiveVsPlanned, text: "c", createdAt: Date()))
-        XCTAssertEqual(state.savedRules.count, 2)
-        XCTAssertEqual(state.savedRules.first { $0.insightID == .rotting }?.text, "a")
-    }
 }
 
-// MARK: - 阶段 4 · 会话组装 / 跨期对照数据源 / 规则回访选择
+// MARK: - 阶段 4 · 会话组装 / 跨期对照数据源
 
 extension ReviewFlowStateTests {
 
     private func reviewSession(
         completedAt: Date,
-        voiceNote: String? = nil,
-        savedRules: [ReviewRule] = []
+        voiceNote: String? = nil
     ) -> ReviewSession {
         ReviewSession(
             completedAt: completedAt,
             periodStart: completedAt,
             periodEnd: completedAt,
             voiceNote: voiceNote,
-            savedRules: savedRules,
             ledger: ReviewLedger(
                 inputCount: 1, remainingCount: 0, scheduledCount: 1, todayCount: 0,
-                abandonedCount: 0, splitCount: 0, savedRuleCount: savedRules.count, pinnedCount: 0
+                abandonedCount: 0, splitCount: 0, pinnedCount: 0
             ),
             shownInsights: []
         )
-    }
-
-    private func reviewRule(status: ReviewRuleStatus = .pending) -> ReviewRule {
-        ReviewRule(id: UUID(), insightID: .rotting, text: "规则", createdAt: Date(), status: status)
     }
 
     func testLastVoiceNoteFromMostRecentSession() {
@@ -239,20 +215,7 @@ extension ReviewFlowStateTests {
         XCTAssertNil(state.lastVoiceNote, "空白回答视同没有")
     }
 
-    func testRulesToRevisitOnlyPendingFromLastSession() {
-        let pending = reviewRule()
-        let state = ReviewFlowState(todos: [], previousSessions: [
-            reviewSession(completedAt: Date(timeIntervalSinceNow: -86_400), savedRules: [reviewRule(), reviewRule()]),
-            reviewSession(completedAt: Date(), savedRules: [
-                pending,
-                reviewRule(status: .working),
-                reviewRule(status: .retired),
-            ]),
-        ])
-        XCTAssertEqual(state.rulesToRevisit.map(\.id), [pending.id])
-    }
-
-    func testBuildSessionMapsLedgerRulesNoteAndInsights() {
+    func testBuildSessionMapsLedgerNoteAndInsights() {
         let now = Date()
         let state = ReviewFlowState(todos: [])
         let a = TodoItemData(title: "a")
@@ -262,26 +225,21 @@ extension ReviewFlowStateTests {
         state.markToday(b)
         state.markAbandoned(c)
         state.toggleCommitSelection(a)
-        state.saveRule(ReviewRule(insightID: .rotting, text: "规则", createdAt: now))
         state.recordShownInsight(InsightResult(
             id: .rotting, strength: .high, tone: .observation, headline: "h", body: "b",
-            viz: .rotting(items: []), suggestedRule: nil, sampleNote: "n",
+            viz: .rotting(items: []), sampleNote: "n",
             score: 0.7, effectSize: 0.42, sampleCount: 30
         ))
         state.recordPeriod(start: now.addingTimeInterval(-86_400), end: now)
         state.voiceAnswerText = "  这周想把上午留给重要的事  "
-        let outcomeRule = reviewRule()
-        state.setRuleOutcome(ruleID: outcomeRule.id, status: .working)
 
         let session = state.buildSession(completedAt: now)
 
         XCTAssertEqual(session.voiceNote, "这周想把上午留给重要的事")
-        XCTAssertEqual(session.savedRules.count, 1)
         XCTAssertEqual(session.shownInsights, [InsightSnapshot(id: .rotting, effectSize: 0.42, strength: .high)])
-        XCTAssertEqual(session.followUps, [RuleOutcome(ruleID: outcomeRule.id, status: .working)])
         XCTAssertEqual(session.ledger, ReviewLedger(
             inputCount: 3, remainingCount: 0, scheduledCount: 1, todayCount: 1,
-            abandonedCount: 1, splitCount: 0, savedRuleCount: 1, pinnedCount: 1
+            abandonedCount: 1, splitCount: 0, pinnedCount: 1
         ))
         XCTAssertEqual(session.periodStart, now.addingTimeInterval(-86_400))
         XCTAssertEqual(session.periodEnd, now)
@@ -291,7 +249,7 @@ extension ReviewFlowStateTests {
         let state = ReviewFlowState(todos: [])
         func result(effectSize: Double) -> InsightResult {
             InsightResult(id: .rotting, strength: .medium, tone: .observation, headline: "h",
-                          body: "b", viz: .rotting(items: []), suggestedRule: nil, sampleNote: "n",
+                          body: "b", viz: .rotting(items: []), sampleNote: "n",
                           score: 0.5, effectSize: effectSize, sampleCount: 20)
         }
         state.recordShownInsight(result(effectSize: 0.4))

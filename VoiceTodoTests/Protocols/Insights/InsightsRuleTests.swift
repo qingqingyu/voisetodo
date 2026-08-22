@@ -310,48 +310,33 @@ final class InsightsRuleTests: XCTestCase {
 
     // MARK: - 冷却 A/B
 
-    /// 冷却-A:上次展示过、效应量变化 8%、间隔 1 次、没存规则 → 不展示。
+    /// 冷却-A:上次展示过、效应量变化 8%、间隔 1 次 → 不展示。
     func testCooldownA_eightPercentChange_suppressed() {
         let decision = InsightEngine.cooldown(
             .init(
                 reviewsSinceLastShown: 1,
                 lastEffectSize: 0.50,
                 currentEffectSize: 0.46, // -8%
-                lowerIsBetter: true,
-                userSavedRuleLastTime: false
+                lowerIsBetter: true
             )
         )
         guard case .failure = decision else { return XCTFail("8% 变化且间隔不足应冷却") }
     }
 
-    /// 冷却-B:同上但用户上次存了规则 → 展示,用回访文案(ruleFollowUp)。
-    func testCooldownB_savedRule_showsForFollowUp() {
-        let decision = InsightEngine.cooldown(
-            .init(
-                reviewsSinceLastShown: 0,
-                lastEffectSize: 0.50,
-                currentEffectSize: 0.46,
-                lowerIsBetter: true,
-                userSavedRuleLastTime: true
-            )
-        )
-        XCTAssertEqual(decision, .success(.ruleFollowUp))
-    }
-
     /// 15% 变化放行;变好(lowerIsBetter 且下降)标 improved=true(用好转文案)。
     func testCooldown_fifteenPercentChange_showsWithImprovedFlag() {
         let improved = InsightEngine.cooldown(
-            .init(reviewsSinceLastShown: 0, lastEffectSize: 0.40, currentEffectSize: 0.34, lowerIsBetter: true, userSavedRuleLastTime: false)
+            .init(reviewsSinceLastShown: 0, lastEffectSize: 0.40, currentEffectSize: 0.34, lowerIsBetter: true)
         )
         XCTAssertEqual(improved, .success(.effectChanged(improved: true)))
 
         let worsened = InsightEngine.cooldown(
-            .init(reviewsSinceLastShown: 0, lastEffectSize: 0.40, currentEffectSize: 0.46, lowerIsBetter: true, userSavedRuleLastTime: false)
+            .init(reviewsSinceLastShown: 0, lastEffectSize: 0.40, currentEffectSize: 0.46, lowerIsBetter: true)
         )
         XCTAssertEqual(worsened, .success(.effectChanged(improved: false)))
 
         let interval = InsightEngine.cooldown(
-            .init(reviewsSinceLastShown: 3, lastEffectSize: 0.40, currentEffectSize: 0.41, lowerIsBetter: true, userSavedRuleLastTime: false)
+            .init(reviewsSinceLastShown: 3, lastEffectSize: 0.40, currentEffectSize: 0.41, lowerIsBetter: true)
         )
         XCTAssertEqual(interval, .success(.intervalElapsed))
     }

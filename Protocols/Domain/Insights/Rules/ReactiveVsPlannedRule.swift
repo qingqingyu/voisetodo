@@ -76,7 +76,6 @@ struct ReactiveVsPlannedRule: InsightRule {
                 headline: headline,
                 body: body,
                 viz: .reactiveVsPlanned(ratio: ratio, sampleCount: n),
-                suggestedRule: nil, // v1 只存储规则(阶段 3 UI 决定)
                 // 样本口径必须写明「不含规律任务」(§2.2)——否则用户会发现
                 // 第 1 步成绩单和第 3 步观察的条数对不上。
                 sampleNote: String(localized: "review.insight.reactive.sample_note_\(n)"),

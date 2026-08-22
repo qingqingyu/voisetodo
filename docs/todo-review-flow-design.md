@@ -429,6 +429,13 @@ v1（阶段 0–4）在分支 `fupan` 实施，commit 链：`46b439e`(阶段 0)�
 - **阶段 3**：入口卡放在空态分支之上（新用户也能进卡片堆）；第 4 步候选池空时闸门放行（强迫排 3 件违背复盘自愿原则）；语音提问经核实**不耗 AI 额度**（转写走本地 SFSpeechRecognizer，Quota 只计代理提取），但 `VoiceInputProtocol` 与首页录音状态机耦合、注入不干净，v1 纯文字 TextEditor，麦克风待注入解耦后加；置顶 = `ReviewPinningStore`（App Group UserDefaults + HomeView 读排序浮顶，不动 `sortOrder`）；本地化 +51 键（⚠️ 审查过程中一次 checkout 事故后按代码引用重建，三语齐全格式校验过，**文案措辞建议人工过目 zh/ja**）。
 - **阶段 4**：`ReviewLedger` 在文档四项外补 inputCount/todayCount/scheduledCount/savedRuleCount（账本卡渲染需要）；下次复盘日期保持「下周一」就地渲染未另存字段；规则回访只打扰上次仍 pending 的规则。
 
+### 实施后拍板变更（2026-08-22，用户裁决）
+
+1. **规则回访整体移除**：`ReviewRuleStatus` 状态机、`RuleOutcome`、`ReviewSession.followUps`、`recordRuleOutcomes`、第 4 步回访卡全部删除——v1 里回访答案只存档不驱动任何下游行为（用户原话「只是存档的话完全可以先不要」）。冷却的「上次存了规则」放行条件随之删除，冷却剩两个放行条件（≥3 次复盘 / 效应量变化 ≥15%）。
+2. **「存成规则」链路整体移除**：`ReviewRule` 结构、洞察卡规则按钮、第 4 步规则卡、账本「存下规则」行（`ReviewLedger.savedRuleCount`）、`ReviewSession.savedRules` 全部删除——回访砍掉后规则只剩当次展示+计数，无任何下游消费者。旧会话 payload 的 `savedRules`/`followUps`/`status`/`savedRuleCount` 键解码时忽略（前向兼容有单测）。
+3. **第 4 步闸门放宽为至少选 1 件**：不再强制选满 min(3, N)——强制凑满 3 件会把「只想清卡堆」的用户卡在半路，养复盘习惯比单次产出更重要。文案仍鼓励选满 3（`review.flow.commit.hint`）。空池放行不变。
+4. 同日新增（另一 commit，`a7edfa8`）：成绩单 Hero「其中 N 件是当天记下、当天做完的」（`sameDayCount`）+ 入口卡「回顾近 30 天」口径点明（周/月切换器只管统计页，复盘固定近一个月）。
+
 ### 持续注意事项
 
 **xcodegen 会静默删 scheme 的 TestAction `StoreKitConfigurationFileReference`**（2.45.3 生成不出 `test.storeKitConfiguration`，该引用是手工配置）：每次 `xcodegen generate` 后必须 `git checkout -- VoiceTodo.xcodeproj/xcshareddata/xcschemes/VoiceTodo.xcscheme` 恢复，绝不提交其删除。
@@ -439,7 +446,7 @@ v1（阶段 0–4）在分支 `fupan` 实施，commit 链：`46b439e`(阶段 0)�
 2. **埋点**：详情页改日期往后记 deferred / 往前不记；「移到明天」记；划掉任务从首页/Widget/Siri 消失但仍在完成率分母；abandon→撤销往返。
 3. **卡片堆**：左右滑（位移 85pt 或速度 800pt/s 任一）、今天就做、拆小 sheet（子任务带 parentTodoId）、撤销只回划掉、腐烂卡深链跳回第 2 步。
 4. **降级路径**：清库 → 完成 3 条 → 第 3 步跳过；8 条 → 只有腐烂；20 条 → 两条齐跑。
-5. **跨期**：连做两次复盘，「上次你说过」+ 规则回访出现/消失；入口卡日期出现。
+5. **跨期**：连做两次复盘，「上次你说过」出现/消失；入口卡日期出现。
 6. **置顶**：置顶任务在首/日历两 tab 浮顶。
-7. **三语走查**：中/英/日（含 AX5 大字号）过五步，回访 Picker 与对照卡长文本不挤爆。
+7. **三语走查**：中/英/日（含 AX5 大字号）过五步，对照卡与账本长文本不挤爆。
 8. **数据体检**：设置 → DEBUG「运行数据体检」，Console.app 过滤 subsystem `com.qingqingyu.voicetodo` 看 `diagnostics.result`，判据 highCompleted < 8 则 01/05 搁置。

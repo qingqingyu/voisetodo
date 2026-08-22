@@ -67,7 +67,6 @@ struct RottingRule: InsightRule {
                     localized: "review.insight.rotting.body_\(rottingCount)_\(oldestAge)_\(n)"
                 ),
                 viz: .rotting(items: items),
-                suggestedRule: nil, // v1 只存储规则,不替用户预填(阶段 3 UI 决定)
                 sampleNote: String(localized: "review.insight.rotting.sample_note_\(n)"),
                 score: score,
                 effectSize: effect,

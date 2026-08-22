@@ -72,10 +72,6 @@ struct ReviewStepLedger: View {
                     text: String(localized: "review.flow.ledger.split_\(ledger.splitCount)")
                 )
                 ledgerRow(
-                    icon: "bookmark",
-                    text: String(localized: "review.flow.ledger.rules_\(ledger.savedRuleCount)")
-                )
-                ledgerRow(
                     icon: "pin",
                     text: String(localized: "review.flow.ledger.pinned_\(ledger.pinnedCount)")
                 )

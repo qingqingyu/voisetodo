@@ -9,7 +9,8 @@ import Foundation
 /// `ReviewSessionStore` / `ReviewCooldownHistory` / `ReviewFlowState.buildSession`
 /// 的阶段 4 验收(docs/todo-review-flow-design.md「阶段 4」):
 /// 读写往返 / 旧 payload 兼容 / 容量上限 / 损坏 JSON / 冷却接真历史 /
-/// 跨期对照数据源 / 规则回访状态机 / 账本→session 映射 / prune 用全量 id。
+/// 跨期对照数据源 / 账本→session 映射 / prune 用全量 id。
+/// (2026-08-22 拍板:规则回访状态机与存规则链路移除,相关用例删除。)
 final class ReviewSessionStoreTests: XCTestCase {
 
     // MARK: - 夹具
@@ -18,7 +19,6 @@ final class ReviewSessionStoreTests: XCTestCase {
         id: UUID = UUID(),
         completedAt: Date = Date(),
         voiceNote: String? = nil,
-        savedRules: [ReviewRule] = [],
         shownInsights: [InsightSnapshot] = []
     ) -> ReviewSession {
         ReviewSession(
@@ -27,10 +27,9 @@ final class ReviewSessionStoreTests: XCTestCase {
             periodStart: completedAt,
             periodEnd: completedAt,
             voiceNote: voiceNote,
-            savedRules: savedRules,
             ledger: ReviewLedger(
                 inputCount: 1, remainingCount: 0, scheduledCount: 1, todayCount: 0,
-                abandonedCount: 0, splitCount: 0, savedRuleCount: savedRules.count, pinnedCount: 0
+                abandonedCount: 0, splitCount: 0, pinnedCount: 0
             ),
             shownInsights: shownInsights
         )
@@ -42,14 +41,6 @@ final class ReviewSessionStoreTests: XCTestCase {
         strength: InsightStrength = .medium
     ) -> InsightSnapshot {
         InsightSnapshot(id: id, effectSize: effectSize, strength: strength)
-    }
-
-    private func rule(
-        _ id: UUID = UUID(),
-        insightID: InsightID = .rotting,
-        status: ReviewRuleStatus = .pending
-    ) -> ReviewRule {
-        ReviewRule(id: id, insightID: insightID, text: "22 点后不排重要任务", createdAt: Date(), status: status)
     }
 
     // MARK: - 读写往返
@@ -139,9 +130,10 @@ final class ReviewSessionStoreTests: XCTestCase {
 
     // MARK: - 旧 payload 前向兼容
 
-    func testOldPayloadWithoutRuleStatusOrFollowUpsDecodes() throws {
+    func testOldPayloadWithRemovedRuleFieldsDecodes() throws {
         let id = UUID()
-        // 阶段 3 时代的 payload 形状:savedRules 无 status 键,顶层无 followUps 键。
+        // 2026-08-22 之前的 payload 形状:顶层有 savedRules/followUps、ledger 有
+        // savedRuleCount——这些字段随存规则链路移除,解码时应被忽略而不是报错。
         let json = """
         [{
           "id": "\(id.uuidString)",
@@ -153,8 +145,10 @@ final class ReviewSessionStoreTests: XCTestCase {
             "id": "\(UUID().uuidString)",
             "insightID": "rotting",
             "text": "22 点后不排重要任务",
-            "createdAt": "2026-08-01T09:00:00Z"
+            "createdAt": "2026-08-01T09:00:00Z",
+            "status": "working"
           }],
+          "followUps": [{"ruleID": "\(UUID().uuidString)", "status": "working"}],
           "ledger": {
             "inputCount": 3, "remainingCount": 1, "scheduledCount": 1, "todayCount": 0,
             "abandonedCount": 1, "splitCount": 0, "savedRuleCount": 1, "pinnedCount": 1
@@ -167,36 +161,8 @@ final class ReviewSessionStoreTests: XCTestCase {
             return XCTFail("旧 payload 应解码成功: \(result)")
         }
         XCTAssertEqual(sessions.count, 1)
-        XCTAssertNil(sessions[0].followUps)
-        XCTAssertEqual(sessions[0].savedRules.first?.status, .pending)
         XCTAssertEqual(sessions[0].shownInsights.first?.id, .rotting)
-    }
-
-    // MARK: - 规则回访状态机(recordRuleOutcomes)
-
-    func testRecordRuleOutcomesRewritesHistoryRuleStatus() {
-        let store = makeStore()
-        let pendingRule = rule()
-        let workingRule = rule(status: .working)
-        store.append(session(completedAt: Date(), savedRules: [pendingRule, workingRule]))
-
-        store.recordRuleOutcomes([RuleOutcome(ruleID: pendingRule.id, status: .notWorking)])
-
-        let reloaded = store.allSessions().flatMap(\.savedRules)
-        XCTAssertEqual(reloaded.first { $0.id == pendingRule.id }?.status, .notWorking)
-        XCTAssertEqual(reloaded.first { $0.id == workingRule.id }?.status, .working)
-    }
-
-    func testRecordRuleOutcomesPersistsAcrossInstances() {
-        let defaults = makeDefaults()
-        let writer = ReviewSessionStore(defaults: defaults)
-        let saved = rule()
-        writer.append(session(completedAt: Date(), savedRules: [saved]))
-
-        writer.recordRuleOutcomes([RuleOutcome(ruleID: saved.id, status: .retired)])
-
-        let reader = ReviewSessionStore(defaults: defaults)
-        XCTAssertEqual(reader.allSessions().flatMap(\.savedRules).first?.status, .retired)
+        XCTAssertEqual(sessions[0].ledger.pinnedCount, 1)
     }
 
     // MARK: - 冷却接真历史(§2.4)
@@ -253,25 +219,11 @@ final class ReviewSessionStoreTests: XCTestCase {
         XCTAssertEqual(InsightEngine.cooldown(input), .success(.effectChanged(improved: false)))
     }
 
-    func testCooldownSavedRuleLastTimePassesWithRuleFollowUp() throws {
-        // 上次为这条洞察存了规则 → 放行 ruleFollowUp(回访「生效了吗」)。
-        let sessions = [session(completedAt: Date(), savedRules: [rule(insightID: .rotting)], shownInsights: [snapshot(effectSize: 0.5)])]
-        let input = try XCTUnwrap(cooldownInput(sessions: sessions, current: 0.51))
-        XCTAssertEqual(InsightEngine.cooldown(input), .success(.ruleFollowUp))
-    }
-
-    func testCooldownRetiredRuleDoesNotCountAsFollowUpPass() throws {
-        // 规则已 retired:不再回访,不构成放行条件。
-        let sessions = [session(completedAt: Date(), savedRules: [rule(insightID: .rotting, status: .retired)], shownInsights: [snapshot(effectSize: 0.5)])]
-        let input = try XCTUnwrap(cooldownInput(sessions: sessions, current: 0.51))
-        XCTAssertEqual(InsightEngine.cooldown(input), .failure(.cooldownActive))
-    }
-
-    func testCooldownSavedRuleForDifferentInsightDoesNotPass() throws {
-        // 存的是 reactiveVsPlanned 的规则,不该放行 rotting 的冷却。
-        let sessions = [session(completedAt: Date(), savedRules: [rule(insightID: .reactiveVsPlanned)], shownInsights: [snapshot(effectSize: 0.5)])]
-        let input = try XCTUnwrap(cooldownInput(sessions: sessions, current: 0.51))
-        XCTAssertEqual(InsightEngine.cooldown(input), .failure(.cooldownActive))
+    func testCooldownOtherInsightsHistoryDoesNotInterfere() throws {
+        // 上次展示的是别的洞察(reactiveVsPlanned),对 rotting 而言等于没有历史。
+        let sessions = [session(completedAt: Date(), shownInsights: [snapshot(.reactiveVsPlanned, effectSize: 0.5)])]
+        let input = cooldownInput(sessions: sessions, current: 0.51)
+        XCTAssertNil(input, "别的洞察的展示历史不算数")
     }
 
     // MARK: - prune 用全量 id(不是窗口化工作集)

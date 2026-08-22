@@ -63,21 +63,17 @@ final class ReviewFlowState {
 
     // MARK: 历史会话(阶段 4)
 
-    /// 历史会话(`ReviewSessionStore.allSessions()`,升序)。冷却判定 / 跨期对照卡 /
-    /// 规则回访的数据源。流程启动时注入一次,之后不变。
+    /// 历史会话(`ReviewSessionStore.allSessions()`,升序)。冷却判定 / 跨期对照卡
+    /// 的数据源。流程启动时注入一次,之后不变。
     private(set) var previousSessions: [ReviewSession]
     /// 本期洞察原料的取数区间(`loadInsightContext` 写入,session 落库带上)。
     private(set) var periodStart: Date = Date()
     private(set) var periodEnd: Date = Date()
     /// 第 3 步实际展示过的洞察快照(冷却历史;降级跳过时为空)。
     private(set) var shownInsights: [InsightSnapshot] = []
-    /// 规则回访答案(ruleID → 状态;第 4 步写入,收尾随 session 落库)。
-    private(set) var ruleOutcomes: [UUID: ReviewRuleStatus] = [:]
 
     // MARK: 第 4/5 步
 
-    /// 本次存下的规则(规则按钮 → 第 4 步展示 → 账本计数;持久化在阶段 4)。
-    private(set) var savedRules: [ReviewRule] = []
     /// 第 4 步选中的「三件事」(提交置顶时读取)。
     private(set) var commitSelection: [TodoItemData] = []
 
@@ -85,7 +81,7 @@ final class ReviewFlowState {
 
     /// - Parameters:
     ///   - todos: store 工作集快照(`store.todos`)。内部按 triage 口径过滤。
-    ///   - previousSessions: 历史复盘会话(升序;阶段 4 冷却 / 回访 / 跨期对照用,
+    ///   - previousSessions: 历史复盘会话(升序;阶段 4 冷却 / 跨期对照用,
     ///     注入而非自取,保持本类纯逻辑可测)。
     init(todos: [TodoItemData], previousSessions: [ReviewSession] = []) {
         self.deck = Self.triageInput(from: todos)
@@ -99,15 +95,12 @@ final class ReviewFlowState {
 
     // MARK: 步骤闸门
 
-    /// 第 4 步(下周三件事)主按钮闸门:**不选够不给过**。
-    /// 应选数 = min(3, 排进下周的任务数);候选为空时(用户一张都没排)
-    /// 无从选起,放行——强迫用户回去排 3 件违背复盘自愿原则(§2.5 反 gaming)。
-    var commitRequiredCount: Int {
-        min(3, scheduled.count)
-    }
-
+    /// 第 4 步(下周三件事)主按钮闸门(2026-08-22 拍板放宽):**至少选 1 件**,
+    /// 文案仍鼓励选满 3——强制凑满 3 件会把「只想清卡堆」的用户卡在半路,
+    /// 养复盘习惯比单次产出更重要。候选池为空(一张都没排进下周)时无从
+    /// 选起,放行——强迫回去排 3 件违背复盘自愿原则(§2.5 反 gaming)。
     var canPassCommit: Bool {
-        commitSelection.count == commitRequiredCount
+        scheduled.isEmpty || !commitSelection.isEmpty
     }
 
     /// 当前步骤主按钮是否可点。recap / triage / insights / ledger 恒可过
@@ -194,14 +187,7 @@ final class ReviewFlowState {
         deck.insert(todo, at: 0)
     }
 
-    // MARK: 第 3/4 步决定
-
-    /// 存下一条规则(同一条洞察重复存会去重——按 insightID 一条洞察只留一规则)。
-    func saveRule(_ rule: ReviewRule) {
-        if !savedRules.contains(where: { $0.insightID == rule.insightID }) {
-            savedRules.append(rule)
-        }
-    }
+    // MARK: 第 4 步决定
 
     /// 第 4 步选择切换。选中数已达上限(3)时切换到取消态仍允许(取消不受限)。
     func toggleCommitSelection(_ todo: TodoItemData) {
@@ -224,7 +210,6 @@ final class ReviewFlowState {
         let abandonedCount: Int
         let splitCount: Int
         let todayCount: Int
-        let savedRuleCount: Int
         let pinnedCount: Int
     }
 
@@ -236,7 +221,6 @@ final class ReviewFlowState {
             abandonedCount: abandonedStack.count,
             splitCount: splitCount,
             todayCount: todayPicked.count,
-            savedRuleCount: savedRules.count,
             pinnedCount: commitSelection.count
         )
     }
@@ -274,17 +258,6 @@ final class ReviewFlowState {
         return note
     }
 
-    /// 本次要回访的规则:**上次会话**里存下且状态仍为 `.pending` 的
-    /// (没被回访过)。working / notWorking / retired 不反复打扰。
-    var rulesToRevisit: [ReviewRule] {
-        previousSessions.last?.savedRules.filter { $0.status == .pending } ?? []
-    }
-
-    /// 规则回访答案(第 4 步交互写入;收尾时随 session 落库并同步历史规则状态)。
-    func setRuleOutcome(ruleID: UUID, status: ReviewRuleStatus) {
-        ruleOutcomes[ruleID] = status
-    }
-
     /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
     /// 纯函数,`VoiceTodoTests` 直测账本 → session 的映射。
     func buildSession(completedAt: Date) -> ReviewSession {
@@ -295,7 +268,6 @@ final class ReviewFlowState {
             periodStart: periodStart,
             periodEnd: periodEnd,
             voiceNote: trimmedNote.isEmpty ? nil : trimmedNote,
-            savedRules: savedRules,
             ledger: ReviewLedger(
                 inputCount: ledger.inputCount,
                 remainingCount: ledger.remainingCount,
@@ -303,13 +275,9 @@ final class ReviewFlowState {
                 todayCount: ledger.todayCount,
                 abandonedCount: ledger.abandonedCount,
                 splitCount: ledger.splitCount,
-                savedRuleCount: ledger.savedRuleCount,
                 pinnedCount: ledger.pinnedCount
             ),
-            shownInsights: shownInsights,
-            followUps: ruleOutcomes.isEmpty
-                ? nil
-                : ruleOutcomes.map { RuleOutcome(ruleID: $0.key, status: $0.value) }.sorted { $0.ruleID.uuidString < $1.ruleID.uuidString }
+            shownInsights: shownInsights
         )
     }
 }
@@ -332,7 +300,7 @@ struct ReviewFlowView: View {
     init(store: any ReviewFlowStore) {
         self.store = store
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
-        // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 / 回访 /
+        // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 /
         // 跨期对照的数据源,阶段 4)。
         _state = State(initialValue: ReviewFlowState(
             todos: store.todos,
@@ -536,15 +504,13 @@ struct ReviewFlowView: View {
 
     // MARK: 收尾落库(阶段 4)
 
-    /// 第 5 步「完成」:组装 session 落库 + 回访答案写回历史规则 + 用**全量**任务 id
+    /// 第 5 步「完成」:组装 session 落库 + 用**全量**任务 id
     /// prune 置顶集合(`TodoIDListing`,不用窗口化 `store.todos`——窗口外的置顶
     /// id 会被误删)。prune 与落库都走 UserDefaults 同步写,失败显式记日志
     /// (error/warning)不阻塞收尾;流程内的 store 写失败另有 toast(见 presentError)。
     private func finishSession() {
         let session = state.buildSession(completedAt: Date())
         ReviewSessionStore.shared.append(session)
-        let outcomes = session.followUps ?? []
-        ReviewSessionStore.shared.recordRuleOutcomes(outcomes)
         Task { @MainActor in
             do {
                 let allIDs = Set(try await store.allTodoIDs())

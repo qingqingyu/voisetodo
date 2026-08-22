@@ -17,7 +17,7 @@ import Foundation
 ///
 /// 其余四个 case 仅预留 ID,**不建规则文件**——待阶段 0 体检(01/05)、
 /// 数据攒满(06)或 v2(04)再启用。case 顺序即文档编号,勿重排
-/// (占位行、冷却历史、规则回访都以 rawValue 持久化)。
+/// (占位行、冷却历史都以 rawValue 持久化)。
 enum InsightID: String, CaseIterable, Codable, Sendable {
     /// 01 先易后难(待阶段 0 体检决定是否值得实现)。
     case effortOrdering
@@ -86,56 +86,10 @@ enum InsightViz: Sendable {
     case weeklyDecay
 }
 
-/// 规则的回访状态(阶段 4)。状态机:`pending →(下次复盘回访)→ working /
-/// notWorking`;`retired` 可从任意态进入(用户说不再用这条规则)。回访答案由
-/// `ReviewSessionStore.recordRuleOutcomes` 写回历史会话的规则上。
-enum ReviewRuleStatus: String, Codable, Sendable, Equatable {
-    /// 存下后还没被回访过(默认态)。
-    case pending
-    /// 回访时用户说「生效了」。
-    case working
-    /// 回访时用户说「没生效」。
-    case notWorking
-    /// 用户主动作废这条规则(回访选项之一;之后不再回访)。
-    case retired
-}
-
-/// 用户从洞察卡「存下的规则」(v1 只存储 + 回访,不做效果逻辑)。
-/// 阶段 4 起随 `ReviewSession.savedRules` 持久化(App Group UserDefaults + JSON)。
-struct ReviewRule: Codable, Sendable, Equatable, Identifiable {
-    let id: UUID
-    /// 规则来自哪条洞察(回访时按它配对)。
-    let insightID: InsightID
-    /// 规则文本,如「22 点后不排重要任务」。
-    let text: String
-    /// 存下的时刻。
-    let createdAt: Date
-    /// 回访状态(阶段 4 新增;解码旧 payload 缺该键时前向兼容回落 `.pending`)。
-    var status: ReviewRuleStatus
-
-    init(id: UUID = UUID(), insightID: InsightID, text: String, createdAt: Date, status: ReviewRuleStatus = .pending) {
-        self.id = id
-        self.insightID = insightID
-        self.text = text
-        self.createdAt = createdAt
-        self.status = status
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, insightID, text, createdAt, status
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        // status 是阶段 4 加的字段:旧 payload(阶段 3 遗留 / 测试夹具)没有它,
-        // 回落 pending 而不是 decode 失败——前向兼容,不静默吞其他键的错误。
-        status = try container.decodeIfPresent(ReviewRuleStatus.self, forKey: .status) ?? .pending
-        id = try container.decode(UUID.self, forKey: .id)
-        insightID = try container.decode(InsightID.self, forKey: .insightID)
-        text = try container.decode(String.self, forKey: .text)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-    }
-}
+/// (2026-08-22 拍板)`ReviewRule` 与「存成规则」链路整体移除——回访砍掉后
+/// 规则只剩当次展示 + 计数,无任何下游消费者;洞察卡上的规则按钮、第 4 步
+/// 规则卡、账本「存下规则」行一并删除。旧会话 payload 里的 `savedRules`
+/// 数组解码时自然忽略。
 
 /// 文案语气:普通观察 vs 好转(§2.4:效应量变好或正向信号要用好转文案——
 /// 复盘只报坏消息,用户会停止复盘)。阶段 3 据此选文案与样式。
@@ -154,8 +108,6 @@ struct InsightResult: Sendable {
     let headline: String
     let body: String
     let viz: InsightViz
-    /// v1 恒 nil(规则按钮只存储,不做效果逻辑);阶段 4 起由 UI 构造。
-    let suggestedRule: ReviewRule?
     /// 样本量说明,必须写明「N 条一次性任务,不含规律任务」(§2.2)。
     let sampleNote: String
     /// 排序分 = normalizedEffect × confidence。只用于排序,不是「复盘得分」(见文件头反 gaming 注)。
@@ -170,7 +122,7 @@ struct InsightResult: Sendable {
     func withTone(_ newTone: InsightTone) -> InsightResult {
         InsightResult(
             id: id, strength: strength, tone: newTone, headline: headline, body: body,
-            viz: viz, suggestedRule: suggestedRule, sampleNote: sampleNote,
+            viz: viz, sampleNote: sampleNote,
             score: score, effectSize: effectSize, sampleCount: sampleCount
         )
     }
@@ -271,8 +223,6 @@ enum InsightEngine {
         let currentEffectSize: Double
         /// 该洞察的效应量是否「越小越好」(02 腐烂占比、03 救火占比都是 true)。
         let lowerIsBetter: Bool
-        /// 用户上次为这条洞察存了规则(要回访规则有没有生效)。
-        let userSavedRuleLastTime: Bool
     }
 
     /// 重复展示的原因——决定阶段 3 用哪套文案(effectChanged(improved: true) 用好转文案)。
@@ -281,14 +231,12 @@ enum InsightEngine {
         case intervalElapsed
         /// 效应量相对变化 ≥ 15%。`improved` = 变好(变好也算,但要用好转文案)。
         case effectChanged(improved: Bool)
-        /// 用户上次存了规则,回来问「这条生效了吗」。
-        case ruleFollowUp
     }
 
     /// 冷却判定:同一条洞察重复展示需满足任一——
-    /// 距上次 ≥ 3 次复盘 / 效应量相对变化 ≥ 15%(变好也算)/ 上次存了规则。
+    /// 距上次 ≥ 3 次复盘 / 效应量相对变化 ≥ 15%(变好也算)。
+    /// (2026-08-22 拍板:「上次存了规则」放行条件随存规则链路移除。)
     static func cooldown(_ input: CooldownInput) -> Result<CooldownShowReason, CooldownSuppressed> {
-        if input.userSavedRuleLastTime { return .success(.ruleFollowUp) }
         let last = abs(input.lastEffectSize)
         if last > 0 {
             let relative = abs(input.currentEffectSize - input.lastEffectSize) / last

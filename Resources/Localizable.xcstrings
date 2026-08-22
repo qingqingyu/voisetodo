@@ -7785,46 +7785,24 @@
         }
       }
     },
-    "review.flow.commit.hint_%lld" : {
+    "review.flow.commit.hint" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick %lld for next week — pick all to continue"
+            "value" : "Pick next week's focus from what you scheduled — at least 1, 3 recommended"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "来週に向け %lld 件を選択。すべて選ぶまで進めません"
+            "value" : "来週に組み込んだ中から重点を選ぼう:最低 1 件、3 件が目安"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从排进下周的里挑 %lld 件,选够才能继续"
-          }
-        }
-      }
-    },
-    "review.flow.commit.rules_title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rules saved this session"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "今回保存したルール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这次存下的规则"
+            "value" : "从排进下周的里挑出下周的重点:至少选 1 件,建议选满 3 件"
           }
         }
       }
@@ -7935,116 +7913,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "开始这次复盘"
-          }
-        }
-      }
-    },
-    "review.flow.followup.status.not_working" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not working"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "効いていない"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没生效"
-          }
-        }
-      }
-    },
-    "review.flow.followup.status.pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not checked yet"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ未回答"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "还没回访"
-          }
-        }
-      }
-    },
-    "review.flow.followup.status.retired" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retired"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "やめた"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不再用了"
-          }
-        }
-      }
-    },
-    "review.flow.followup.status.working" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Working"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "効いている"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "生效了"
-          }
-        }
-      }
-    },
-    "review.flow.followup.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Did last time's rules work?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回のルールは効いていますか?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次的规则生效了吗?"
           }
         }
       }
@@ -8225,28 +8093,6 @@
         }
       }
     },
-    "review.flow.insights.rule_button" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save as rule"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ルールとして保存"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "存成规则"
-          }
-        }
-      }
-    },
     "review.flow.ledger.abandoned_%lld" : {
       "localizations" : {
         "en" : {
@@ -8309,28 +8155,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下周置顶:%lld"
-          }
-        }
-      }
-    },
-    "review.flow.ledger.rules_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rules saved: %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存したルール:%lld 件"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "存下规则:%lld"
           }
         }
       }
@@ -8551,50 +8375,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还有 %lld 条在第 2 步等处理"
-          }
-        }
-      }
-    },
-    "review.flow.rule.suggested.reactive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Leave room for planned work"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "計画した仕事に余白を残す"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "给计划内的事留出余地"
-          }
-        }
-      }
-    },
-    "review.flow.rule.suggested.rotting" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tasks older than 3 weeks: split or let go"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3週を超えたタスクは分割か見切り"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "超过 3 周的任务:拆小或划掉"
           }
         }
       }
