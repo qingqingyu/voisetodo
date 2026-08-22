@@ -71,7 +71,7 @@
             "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "A720F8C6",
             "numberOfPeriods" : 1,
-            "paymentMode" : "freeTrial",
+            "paymentMode" : "free",
             "subscriptionPeriod" : "P7D"
           },
           "introductoryOffers" : [
@@ -79,7 +79,7 @@
               "billingPlanType" : "BILLED_UPFRONT",
               "internalID" : "A720F8C6",
               "numberOfPeriods" : 1,
-              "paymentMode" : "freeTrial",
+              "paymentMode" : "free",
               "subscriptionPeriod" : "P7D"
             }
           ],
@@ -128,7 +128,7 @@
             "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "CE77B620",
             "numberOfPeriods" : 1,
-            "paymentMode" : "freeTrial",
+            "paymentMode" : "free",
             "subscriptionPeriod" : "P7D"
           },
           "introductoryOffers" : [
@@ -136,7 +136,7 @@
               "billingPlanType" : "BILLED_UPFRONT",
               "internalID" : "CE77B620",
               "numberOfPeriods" : 1,
-              "paymentMode" : "freeTrial",
+              "paymentMode" : "free",
               "subscriptionPeriod" : "P7D"
             }
           ],
