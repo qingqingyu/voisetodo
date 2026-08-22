@@ -327,7 +327,7 @@ struct PaywallContent: View {
             // 归因在渲染时点读取,网络后续变化不主动刷新 —— Retry 会驱动状态变化并重新归因。
             stateMessage(
                 icon: NetworkMonitor.shared.isConnected
-                    ? "cart.badge.exclamationmark" : "wifi.exclamationmark",
+                    ? "storefront" : "wifi.exclamationmark",
                 title: String(localized: "paywall.products_empty.title"),
                 subtitle: String(localized: productsEmptySubtitleKey),
                 retryAction: { Task { await entitlement.refresh() } }
