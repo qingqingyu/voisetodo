@@ -26,6 +26,9 @@ enum PaywallLegal {
 struct PaywallView: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
+    /// 购买成功后发全局 toast 用(收起时 sheet 已消失,toast 挂在主视图上)。
+    /// 由 VoiceTodoApp 的 sheet 内容显式注入,与 entitlement/quotaUsage 同惯例。
+    @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
 
     /// 一屏化:ScrollView 视口高度。初值 .infinity 表示「尚未测得」,
@@ -113,7 +116,15 @@ struct PaywallView: View {
             }
         }
         .onChange(of: entitlement.isPro) { _, becamePro in
+            // 兜底路径:restore 等不含购买的场景,靠 isPro 翻正收起。
             if becamePro { dismiss() }
+        }
+        .onChange(of: entitlement.purchaseSuccessCount) { _, _ in
+            // 主路径:购买成功事件驱动收起(与 isPro 状态解耦)。isPro 在订阅过期后可能
+            // 停留在 stale-true,二次购买成功时无跳变,只靠上面的 onChange 会漏收起。
+            // 先 dismiss 再 toast:toast 挂在主视图,sheet 收起动画期间即升起。
+            dismiss()
+            coordinator.showToast(message: ErrorMessages.paywallPurchaseSucceeded, style: .success)
         }
     }
 }
@@ -142,6 +153,7 @@ struct PaywallContent: View {
             productList
             if entitlement.productLoadState == .success {
                 purchaseCTA
+                inlineErrorText
             }
             legalBlock
             Spacer(minLength: WarmSpacing.xxs)
@@ -454,6 +466,24 @@ struct PaywallContent: View {
         .disabled(ctaDisabled)
         .accessibilityIdentifier("PaywallPurchaseButton")
         .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    /// 购买/恢复失败的显式反馈(错误显式传播):`.success` 态下 `lastError` 此前无处渲染,
+    /// 购买失败、验签失败(unverified)、恢复无可恢复项都会静默无反馈。
+    /// `paywall.pending` 也共用此行(中性提示文案)。purchase/restore 开始时会清 lastError,
+    /// 双 isPurchasing/isRestoring 守卫只是兜底防飞行中显示陈旧错误。
+    @ViewBuilder
+    private var inlineErrorText: some View {
+        if !entitlement.isPurchasing, !entitlement.isRestoring, let error = entitlement.lastError {
+            Text(error)
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.warning)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .padding(.horizontal, WarmSpacing.lg)
+                .accessibilityIdentifier("PaywallInlineError")
+        }
     }
 
     /// CTA 是否显示 spinner:资格查询中 或 购买中。

@@ -29,6 +29,10 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
+    /// 购买成功计数(只增不减的事件信号,与 isPro 状态解耦)。paywall 收起与成功 toast 观察它:
+    /// isPro 在订阅过期后可能停留在 stale-true,二次购买成功时无 false→true 跳变,
+    /// 靠 isPro 跳变驱动收起会漏(2026-08 二次订阅「成功但不收起」事故根因之一)。
+    @Published private(set) var purchaseSuccessCount = 0
     /// 当前 Apple ID 是否还能享受该订阅组的介绍性优惠（免费试用）。
     /// 老用户退订后重订将为 false —— 此时必须隐藏试用文案（App Store 审核要求）。
     @Published private(set) var isEligibleForIntroOffer = false
@@ -162,9 +166,13 @@ final class EntitlementManager: ObservableObject {
         Task { [weak self] in
             for await result in Transaction.updates {
                 guard let self else { return }
-                if case .verified(let transaction) = result {
+                switch result {
+                case .verified(let transaction):
                     await transaction.finish()
                     await self.refreshEntitlements()
+                case .unverified(let transaction, let error):
+                    // 不 finish、不授信,但必须留痕 —— 静默丢弃会让续订/到账的验签异常无从归因。
+                    VoiceTodoLog.app.warning("entitlement.transaction_unverified transactionID=\(transaction.id) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 }
             }
         }
@@ -180,11 +188,19 @@ final class EntitlementManager: ObservableObject {
             let outcome = try await product.purchase()
             switch outcome {
             case .success(let verification):
-                if case .verified(let transaction) = verification {
+                switch verification {
+                case .verified(let transaction):
                     await transaction.finish()
                     await refreshEntitlements()
+                    purchaseSuccessCount += 1
+                    VoiceTodoLog.app.info("entitlement.purchase_success productID=\(product.id, privacy: .public) isPro=\(self.isPro)")
+                case .unverified(let transaction, let error):
+                    // 端侧 StoreKit 验签失败:不 finish(不可信交易不授信也不消费,Apple
+                    // checkVerified 范式),显式报错而非静默 —— 旧代码这里什么都不做还照打
+                    // 成功日志,正是「提示成功但不收起/不生效」的直接根因之一。
+                    VoiceTodoLog.app.error("entitlement.purchase_unverified productID=\(product.id, privacy: .public) transactionID=\(transaction.id) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    lastError = ErrorMessages.paywallPurchaseUnverified
                 }
-                VoiceTodoLog.app.info("entitlement.purchase_success productID=\(product.id, privacy: .public) isPro=\(self.isPro)")
             case .userCancelled:
                 VoiceTodoLog.app.info("entitlement.purchase_cancelled productID=\(product.id, privacy: .public)")
             case .pending:
@@ -192,7 +208,9 @@ final class EntitlementManager: ObservableObject {
                 VoiceTodoLog.app.info("entitlement.purchase_pending productID=\(product.id, privacy: .public)")
                 lastError = String(localized: "paywall.pending")
             @unknown default:
-                break
+                // 未来 SDK 新增 outcome 时编译兜底:显式留痕 + 用户可见反馈,不静默。
+                VoiceTodoLog.app.warning("entitlement.purchase_unknown_outcome productID=\(product.id, privacy: .public)")
+                lastError = ErrorMessages.paywallPurchaseFailed
             }
         } catch {
             VoiceTodoLog.app.error("entitlement.purchase_failed productID=\(product.id, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")

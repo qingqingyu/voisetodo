@@ -229,6 +229,7 @@ struct VoiceTodoApp: App {
                     PaywallView()
                         .environmentObject(entitlementManager)
                         .environmentObject(quotaUsage)
+                        .environmentObject(coordinator)
                 }
                 .toast(
                     message: coordinator.toastMessage,
@@ -334,6 +335,10 @@ struct VoiceTodoApp: App {
             // 回前台补账本地通知（清过期、权限刚授予后补排、外部改动同步）
             notificationSync.reconcileNow()
             NetworkMonitor.shared.restartIfNeeded()
+            // 回前台重读订阅权益:过期(沙盒加速/真实到期)后 isPro 若停留在 stale-true,
+            // 二次购买成功时无 false→true 跳变,paywall 收起会漏。只读 currentEntitlements
+            // (本地毫秒级),不调 refresh() 避免每次回前台都打 StoreKit 商品接口。
+            Task { await entitlementManager.refreshEntitlements() }
             Task {
                 await coordinator.handleAppForeground()
             }
