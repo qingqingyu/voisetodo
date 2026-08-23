@@ -406,7 +406,7 @@ struct ReviewFlowView: View {
     private var stepContent: some View {
         switch state.currentStep {
         case .recap:
-            ReviewStepRecap()
+            ReviewStepRecap(lastReviewDate: state.previousSessions.last?.completedAt)
         case .triage:
             ReviewStepTriage(
                 state: state,

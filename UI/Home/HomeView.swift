@@ -356,10 +356,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 复盘流程在 sheet 内落地置顶后,回首页立即浮顶。
     private var reviewSheetContent: some View {
         NavigationStack {
-            ReviewView(
-                store: reviewStore,
-                lastReviewDate: { ReviewSessionStore.shared.lastSession()?.completedAt }
-            )
+            ReviewView(store: reviewStore)
         }
         .onDisappear { reloadPinnedTodoIDs() }
     }

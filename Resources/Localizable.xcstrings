@@ -7829,7 +7829,7 @@
         }
       }
     },
-    "review.flow.entry.last_review_%@" : {
+    "review.flow.recap.last_review_%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7856,29 +7856,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld tasks to review"
+            "value" : "Things to decide: %lld"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未処理:単発タスク %lld 件"
+            "value" : "決めることが %lld 件"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "待处理:%lld 条一次性任务"
+            "value" : "%lld 件事等你决定"
           }
         }
       }
     },
-    "review.flow.entry.scope" : {
+    "review.flow.recap.scope" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Covers the last 30 days"
+            "value" : "The last 30 days"
           }
         },
         "ja" : {
@@ -7895,24 +7895,46 @@
         }
       }
     },
-    "review.flow.entry.title" : {
+    "review.flow.entry.action" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start this review"
+            "value" : "Start"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今回のふりかえりを始める"
+            "value" : "はじめる"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开始这次复盘"
+            "value" : "开始"
+          }
+        }
+      }
+    },
+    "review.flow.entry.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All sorted — see how the month went"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片付いた。この1ヶ月をふりかえる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "都清完了,看看这一个月"
           }
         }
       }
@@ -9204,18 +9226,24 @@
         }
       }
     },
-    "review.stat.completion_rate" : {
+    "review.stat.done" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Completion rate"
+            "value" : "Done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成率"
+            "value" : "本期完成"
           }
         }
       }
