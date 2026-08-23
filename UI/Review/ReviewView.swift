@@ -98,14 +98,15 @@ struct ReviewView: View {
             PaperTextureBackground()
 
             ScrollView {
-                // 入口卡放在统计之上:无论空态还是有数据,「待处理 N 条」的入口
-                // 都该可见——新用户没有完成记录,但卡片堆(第 2 步)照样可用。
+                // 顺序(2026-08-23 拍板):有数据时先情绪回报(Hero/统计)再派活
+                // (入口卡在 `content` 内、统计行之后);空态仍入口卡置顶——
+                // 新用户没有完成记录,行动入口必须第一眼可见。
                 VStack(spacing: WarmSpacing.lg) {
-                    if store != nil {
-                        reviewFlowEntryCard
-                    }
-
                     if summary.total == 0 {
+                        if store != nil {
+                            reviewFlowEntryCard
+                        }
+
                         emptyState
                     } else {
                         content
@@ -331,6 +332,10 @@ struct ReviewView: View {
             RecapHeroSection(summary: summary)
 
             RecapStatsRow(summary: summary)
+
+            if store != nil {
+                reviewFlowEntryCard
+            }
 
             RecapCategoryChartSection(byCategory: summary.byCategory)
 

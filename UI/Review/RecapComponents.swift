@@ -25,17 +25,20 @@ struct RecapHeroSection: View {
 
             // 「当天记、当天做完」件数(2026-08-21 用户拍板加上)。区间内没有
             // 完成时不显示——「其中 0 件」是噪音。一次性任务口径,与洞察 03 一致。
+            // 整块收窄居中(2026-08-23 打磨):长句换行后不再撑满行宽,与上方
+            // 居中的数字保持同一视觉节奏。
             if summary.total > 0 {
                 Text(String(localized: "review.hero.sameday_\(summary.sameDayCount)"))
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.textSecondary)
+                    .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, WarmSpacing.xl)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, WarmSpacing.lg)
     }
 }
 

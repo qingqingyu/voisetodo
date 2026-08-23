@@ -7856,7 +7856,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To process: %lld one-time tasks"
+            "value" : "%lld tasks to review"
           }
         },
         "ja" : {
@@ -8994,13 +8994,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "of which %lld were jotted down and finished the same day"
+            "value" : "%lld of them were captured and done the same day"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "そのうち %lld 件は当日にメモして当日に終えた"
+            "value" : "そのうち %lld 件は、メモしたその日に終えた"
           }
         },
         "zh-Hans" : {
