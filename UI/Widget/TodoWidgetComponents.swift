@@ -116,11 +116,13 @@ struct LockscreenRectangularWidget: View {
             case .error:
                 lockscreenState(systemName: "exclamationmark.triangle", title: String(localized: "widget.load_failed"))
             case .success:
-                // 三行统一固定 15pt(对齐 Apple 提醒事项锁屏组件观感),超长标题 … 截断。
-                // 上一版 ViewThatFits 阶梯(16→11)按"最长标题能否单行放下"选档:
-                // 一条超长原文(离线兜底转写)连 11pt 都放不下时,阶梯落到最小档,
-                // 三行全部被拖到 11pt——"字都特别小"的根因。锁屏 widget 无动态字号,
-                // 固定字号 + 尾部截断即可保证同字号且不溢出。
+                // 三行统一固定 16pt semibold,超长标题 … 截断。
+                // 字号上限由垂直空间决定:容器约 58pt 高,16pt 行高 19.2×3 = 57.6pt
+                // 刚好放下(15pt 是 54pt,17pt 起溢出)。semibold 治"单薄"——中文走
+                // 苹方 Semibold,拉丁走 SF Pro;.width(.expanded) 对 CJK 无效不用。
+                // 上一版 ViewThatFits 阶梯(16→11)按"最长标题能否单行放下"选档,
+                // 一条超长原文连 11pt 都放不下时阶梯落到最小档,三行全被拖小——
+                // 已废弃。锁屏 widget 无动态字号,固定字号 + 尾部截断即不溢出。
                 lockscreenRows
             }
         }
@@ -137,7 +139,7 @@ struct LockscreenRectangularWidget: View {
                 Toggle(isOn: todo.isCompleted, intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
                     HStack(spacing: WarmSpacing.xs) {
                         Text(todo.title)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 16, weight: .semibold))
                             .strikethrough(todo.isCompleted)
                             .lineLimit(1)
                             .contentTransition(WidgetAnimation.opacityContent(enabled: animationsEnabled))
@@ -149,7 +151,7 @@ struct LockscreenRectangularWidget: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .toggleStyle(WidgetTodoToggleStyle(iconSize: 13, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled, hitTarget: nil))
+                .toggleStyle(WidgetTodoToggleStyle(iconSize: 14, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled, hitTarget: nil))
                 .id(todo)
                 .transition(WidgetAnimation.rowTransition(enabled: animationsEnabled))
             }
@@ -358,7 +360,7 @@ struct WidgetTodoToggleStyle: ToggleStyle {
 #Preview(as: .accessoryRectangular) {
     TodoWidget()
 } timeline: {
-    // 三条长短不一:验证三行同字号(固定 15pt),超长标题尾部 … 截断不拖小其他行
+    // 三条长短不一:验证三行同字号(固定 16pt semibold),超长标题尾部 … 截断不拖小其他行
     TodoEntry(date: .now, todos: [
         TodoItemData(title: "买咖啡豆", dueHint: nil, priority: .normal, category: .life),
         TodoItemData(title: "完成周报并发给组长", dueHint: nil, priority: .normal, category: .work),
