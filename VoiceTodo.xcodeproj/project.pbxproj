@@ -71,6 +71,7 @@
 		42EC3FF6847E7F9054A781D5 /* RecapComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288ABB62D3378CA0E925F957 /* RecapComponents.swift */; };
 		44BE9A6F18E57A5A1C9287DA /* HomeMonthGridButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDCFD0DAC91451B891F38C6 /* HomeMonthGridButton.swift */; };
 		45FD4DDE7D3B3CD4405D30A8 /* RottingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 446A6B571A5A455CB2D16BC7 /* RottingRule.swift */; };
+		46E46A148458D7EE7AB052C6 /* EnergyWindowRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = C192FD4DB4A639D6201932F7 /* EnergyWindowRule.swift */; };
 		46FC727E12F322D49590ABA6 /* CardEntranceModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E865543BECF19023D86612D /* CardEntranceModifier.swift */; };
 		48626276A4A7A46FAA008B33 /* TodoDueDateShifter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788A0E6103988FD99A9926A6 /* TodoDueDateShifter.swift */; };
 		4A4D0F28023A0D57EACAE2D5 /* TodoDraftEditorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C092B30F1AA0FAE5610A93D4 /* TodoDraftEditorPanel.swift */; };
@@ -172,6 +173,7 @@
 		A8E5F6B53344DD5FC5E8AE82 /* IntentNotificationReconcilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5628A4102ACFE6756F38C2CA /* IntentNotificationReconcilerTests.swift */; };
 		AAF899D6CCF5913CDD2048DD /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C614E969A8BA60A97BA3808D /* HomeView.swift */; };
 		AB248E394438022D031615FD /* Quota.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2784F3DB95DE2F2DC60A3057 /* Quota.swift */; };
+		AB2D52C13D513825CD0F7B30 /* EffortOrderingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3706508ED956335ECEFE6D54 /* EffortOrderingRule.swift */; };
 		ABBE6AF97895BD28770A6805 /* UserVocabulary.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78DB34A64BE991E3FD047AB /* UserVocabulary.swift */; };
 		ACDD80A1B2C33D1C974962C3 /* TodoSpan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34323022C7F0609A2B65B174 /* TodoSpan.swift */; };
 		ACFA81667F9F54766A5ED2B2 /* DayClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79AC32962B30F2731167C4C9 /* DayClock.swift */; };
@@ -329,6 +331,7 @@
 		3054450B6874574D7087EDEB /* ReactiveVsPlannedRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactiveVsPlannedRule.swift; sourceTree = "<group>"; };
 		34323022C7F0609A2B65B174 /* TodoSpan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoSpan.swift; sourceTree = "<group>"; };
 		35F68F661953DC7B90440FB5 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
+		3706508ED956335ECEFE6D54 /* EffortOrderingRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffortOrderingRule.swift; sourceTree = "<group>"; };
 		37124752250C86FE8C1A7B73 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		3753100085CB7B257087A685 /* ConfirmGroupedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmGroupedList.swift; sourceTree = "<group>"; };
 		377ECE045102EA0F8A0A4CFB /* TranscriptProcessingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptProcessingFlow.swift; sourceTree = "<group>"; };
@@ -452,6 +455,7 @@
 		BFA5691B44AEA593B00AAE61 /* HomeSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSettingsSheet.swift; sourceTree = "<group>"; };
 		C092B30F1AA0FAE5610A93D4 /* TodoDraftEditorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoDraftEditorPanel.swift; sourceTree = "<group>"; };
 		C15F96788BBD2CF96E85A40B /* CalendarSyncServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncServiceTests.swift; sourceTree = "<group>"; };
+		C192FD4DB4A639D6201932F7 /* EnergyWindowRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyWindowRule.swift; sourceTree = "<group>"; };
 		C27243BFC27974DE4C55FD65 /* TodoWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetBundle.swift; sourceTree = "<group>"; };
 		C3FF73890A8CCCA090945D1E /* VoiceTodoLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTodoLog.swift; sourceTree = "<group>"; };
 		C4C1D879B3D83F5B8CC01996 /* FeedbackSubmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSubmitter.swift; sourceTree = "<group>"; };
@@ -714,6 +718,8 @@
 		64EDEC8F2D2356AFA6896980 /* Rules */ = {
 			isa = PBXGroup;
 			children = (
+				3706508ED956335ECEFE6D54 /* EffortOrderingRule.swift */,
+				C192FD4DB4A639D6201932F7 /* EnergyWindowRule.swift */,
 				3054450B6874574D7087EDEB /* ReactiveVsPlannedRule.swift */,
 				446A6B571A5A455CB2D16BC7 /* RottingRule.swift */,
 			);
@@ -1206,7 +1212,9 @@
 				ACFA81667F9F54766A5ED2B2 /* DayClock.swift in Sources */,
 				C652EA7FE3542F97852D21F6 /* DeleteTodoIntent.swift in Sources */,
 				F103C9B0F4624D5F6B3F165F /* DesignSystem.swift in Sources */,
+				AB2D52C13D513825CD0F7B30 /* EffortOrderingRule.swift in Sources */,
 				E9F16B5B3B3DE61A279E66B2 /* EmptyStateView.swift in Sources */,
+				46E46A148458D7EE7AB052C6 /* EnergyWindowRule.swift in Sources */,
 				89E24C19614B09569E93D162 /* EntitlementManager.swift in Sources */,
 				BA963C9069E96D64C1F8EA2F /* ErrorMessages.swift in Sources */,
 				37BB21060C722754F8959EA2 /* ExpandMonthHintView.swift in Sources */,

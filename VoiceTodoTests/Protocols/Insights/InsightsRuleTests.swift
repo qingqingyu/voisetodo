@@ -341,3 +341,207 @@ final class InsightsRuleTests: XCTestCase {
         XCTAssertEqual(interval, .success(.intervalElapsed))
     }
 }
+
+// MARK: - 01 先易后难(2026-08-23 启用)
+
+final class EffortOrderingRuleTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    private func date(_ y: Int, _ m: Int, _ d: Int) throws -> Date {
+        try XCTUnwrap(calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12)))
+    }
+
+    private func event(
+        createdDaysAgo: Int,
+        spanDays: Int,
+        priority: Priority,
+        now: Date
+    ) -> InsightCompletedEvent {
+        let created = calendar.date(byAdding: .day, value: -createdDaysAgo, to: now)!
+        let completed = calendar.date(byAdding: .day, value: -(createdDaysAgo - spanDays), to: now)!
+        return InsightCompletedEvent(
+            todoId: UUID(),
+            createdAt: created,
+            completedAt: completed,
+            category: .work,
+            priority: priority,
+            hasDueTime: false,
+            dueDate: nil
+        )
+    }
+
+    private func makeContext(now: Date, completed: [InsightCompletedEvent]) -> InsightContext {
+        InsightContext(
+            from: calendar.date(byAdding: .day, value: -30, to: now)!,
+            to: now,
+            completedEvents: completed,
+            openTasks: [],
+            dueTasks: [],
+            deferCounts: [:]
+        )
+    }
+
+    /// 01-A 触发:高优中位 6 天 vs 其他 1 天(≥ max(2,2))→ fired,viz 带中位数。
+    func test01A_highDragsMuchLonger_fires() throws {
+        let now = try date(2026, 8, 21)
+        let highSpans = [5, 6, 7, 8].map { span in event(createdDaysAgo: 10, spanDays: span, priority: .high, now: now) }
+        let other = (0..<4).map { _ in event(createdDaysAgo: 10, spanDays: 0, priority: .normal, now: now) }
+        let ctx = makeContext(now: now, completed: highSpans + other)
+
+        guard case let .fired(result) = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("01-A 应触发 fired")
+        }
+        XCTAssertEqual(result.id, .effortOrdering)
+        XCTAssertEqual(result.tone, .observation)
+        guard case let .effortOrdering(highDays, otherDays, highCount, otherCount) = result.viz else {
+            return XCTFail("viz 应为 effortOrdering")
+        }
+        XCTAssertEqual(highDays, 6, "5,6,7,8 中位 = (6+7)/2 = 6")
+        XCTAssertEqual(otherDays, 0)
+        XCTAssertEqual(highCount, 4)
+        XCTAssertEqual(otherCount, 4)
+        // n = 较稀缺组 = 4 < 1.5×6 → 强制 lowData(诚实标注)
+        XCTAssertEqual(result.strength, .lowData)
+    }
+
+    /// 01-B 中间地带:高优 3 天 vs 其他 2 天 → hidden。
+    func test01B_mildGap_hidden() throws {
+        let now = try date(2026, 8, 21)
+        let high = [2, 3, 3, 4].map { event(createdDaysAgo: 10, spanDays: $0, priority: .high, now: now) }
+        let other = [1, 2, 2, 3].map { event(createdDaysAgo: 10, spanDays: $0, priority: .normal, now: now) }
+        let ctx = makeContext(now: now, completed: high + other)
+        guard case .hidden = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("01-B 3 vs 2 天应 hidden")
+        }
+    }
+
+    /// 01-C 正向:高优中位 ≤ 其他 → improving。
+    func test01C_highFaster_improving() throws {
+        let now = try date(2026, 8, 21)
+        let high = [0, 1, 1, 2].map { event(createdDaysAgo: 10, spanDays: $0, priority: .high, now: now) }
+        let other = [2, 3, 3, 4].map { event(createdDaysAgo: 10, spanDays: $0, priority: .normal, now: now) }
+        let ctx = makeContext(now: now, completed: high + other)
+        guard case let .fired(result) = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("01-C 应触发正向 fired")
+        }
+        XCTAssertEqual(result.tone, .improving)
+        // improving 的 effectSize 取负(「越大越糟」冷却语义,防止跨期 tone 翻转
+        // 时把恶化误标 improving):effect = (3-1)/3 取负 = -2/3。
+        XCTAssertEqual(result.effectSize, -2.0 / 3.0, accuracy: 0.001)
+    }
+
+    /// 01-D 组样本不足:高优仅 2 条 → placeholder 写清还差几条。
+    func test01D_groupTooSmall_placeholder() throws {
+        let now = try date(2026, 8, 21)
+        let high = [1, 2].map { event(createdDaysAgo: 10, spanDays: $0, priority: .high, now: now) }
+        let other = (0..<6).map { _ in event(createdDaysAgo: 10, spanDays: 1, priority: .normal, now: now) }
+        let ctx = makeContext(now: now, completed: high + other)
+        guard case let .placeholder(needMore) = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("01-D 应 placeholder")
+        }
+        XCTAssertEqual(needMore, 1)
+    }
+}
+
+// MARK: - 05 精力窗口(2026-08-23 启用)
+
+final class EnergyWindowRuleTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    private func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int) throws -> Date {
+        try XCTUnwrap(calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h)))
+    }
+
+    /// 高优 + 带钟点(dueHour)的完成事件(completedAt = now,完成钟点由 now 决定)。
+    private func timedHigh(now: Date, dueHour: Int) throws -> InsightCompletedEvent {
+        InsightCompletedEvent(
+            todoId: UUID(),
+            createdAt: calendar.date(byAdding: .day, value: -2, to: now)!,
+            completedAt: now,
+            category: .work,
+            priority: .high,
+            hasDueTime: true,
+            dueDate: try date(2026, 8, 20, dueHour)
+        )
+    }
+
+    /// 普通完成事件(completedAt = now)。
+    private func filler(now: Date) -> InsightCompletedEvent {
+        InsightCompletedEvent(
+            todoId: UUID(),
+            createdAt: calendar.date(byAdding: .day, value: -1, to: now)!,
+            completedAt: now,
+            category: .life,
+            priority: .normal,
+            hasDueTime: false,
+            dueDate: nil
+        )
+    }
+
+    private func makeContext(now: Date, completed: [InsightCompletedEvent]) -> InsightContext {
+        InsightContext(
+            from: calendar.date(byAdding: .day, value: -30, to: now)!,
+            to: now,
+            completedEvents: completed,
+            openTasks: [],
+            dueTasks: [],
+            deferCounts: [:]
+        )
+    }
+
+    /// 05-A 触发:15 条完成全在 9 点 + 2 件高优排在 22/23 点 → fired,lowData(稀缺腿 n=2)。
+    func test05A_morningPeakLateHigh_fires() throws {
+        let now = try date(2026, 8, 21, 9)
+        var events: [InsightCompletedEvent] = (0..<13).map { _ in filler(now: now) }
+        events.append(try timedHigh(now: now, dueHour: 22))
+        events.append(try timedHigh(now: now, dueHour: 23))
+        let ctx = makeContext(now: now, completed: events)
+
+        guard case let .fired(result) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("05-A 应触发 fired")
+        }
+        XCTAssertEqual(result.id, .energyWindow)
+        guard case let .energyWindow(hourCounts, highDueHours, peakHour) = result.viz else {
+            return XCTFail("viz 应为 energyWindow")
+        }
+        XCTAssertEqual(hourCounts.count, 24)
+        XCTAssertEqual(Set(highDueHours), [22, 23])
+        XCTAssertEqual(peakHour, 9)
+        // 稀缺腿 n=2 → 恒 lowData(demo 同款诚实标注)
+        XCTAssertEqual(result.strength, .lowData)
+    }
+
+    /// 05-B 高峰在下午 → hidden(上半句不成立,组合洞察宁漏报不误报)。
+    func test05B_afternoonPeak_hidden() throws {
+        let now = try date(2026, 8, 21, 15)
+        var events: [InsightCompletedEvent] = (0..<13).map { _ in filler(now: now) }
+        events.append(try timedHigh(now: now, dueHour: 22))
+        events.append(try timedHigh(now: now, dueHour: 23))
+        let ctx = makeContext(now: now, completed: events)
+        guard case .hidden = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("05-B 下午高峰应 hidden")
+        }
+    }
+
+    /// 05-C 带钟点的高优仅 1 件 → hidden(下半句样本不足,整条不说)。
+    func test05C_singleHighTimed_hidden() throws {
+        let now = try date(2026, 8, 21, 9)
+        var events: [InsightCompletedEvent] = (0..<14).map { _ in filler(now: now) }
+        events.append(try timedHigh(now: now, dueHour: 22))
+        let ctx = makeContext(now: now, completed: events)
+        guard case .hidden = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("05-C 单件高优应 hidden")
+        }
+    }
+
+    /// 05-D 完成记录 < 15 → placeholder 写清还差几条。
+    func test05D_tooFewCompletions_placeholder() throws {
+        let now = try date(2026, 8, 21, 9)
+        let events = (0..<5).map { _ in filler(now: now) }
+        let ctx = makeContext(now: now, completed: events)
+        guard case let .placeholder(needMore) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("05-D 应 placeholder")
+        }
+        XCTAssertEqual(needMore, 10)
+    }
+}

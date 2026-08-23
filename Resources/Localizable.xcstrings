@@ -9441,6 +9441,336 @@
         }
       }
     },
+    "review.insight.effort.headline_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The important stuff sat %lld days before it got done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大切なことは%lld日置いてからやった"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要的事,放了 %lld 天才做完"
+          }
+        }
+      }
+    },
+    "review.insight.effort.headline_positive_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Important items got done in a median of %lld days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大切なことは中央値%lld日で完了していた"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要的事,中位 %lld 天就做完了"
+          }
+        }
+      }
+    },
+    "review.insight.effort.body_%lld_%lld_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%3$lld high-priority items took a median of %1$lld days from note to done; the other %4$lld items took %2$lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「重要」の%3$lld件はメモから完了まで中央値%1$lld日。他の%4$lld件は%2$lld日。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标了「重要」的 %3$lld 件事,从记下到做完中位 %1$lld 天;其他 %4$lld 件事,中位 %2$lld 天。"
+          }
+        }
+      }
+    },
+    "review.insight.effort.body_positive_%lld_%lld_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%3$lld high-priority items didn't drag longer than the other %4$lld (median %1$lld vs %2$lld days)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「重要」の%3$lld件は他の%4$lld件より長くはかからなかった(中央値%1$lld日対%2$lld日)。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标了「重要」的 %3$lld 件事没有比其他 %4$lld 件事拖得更久(中位 %1$lld 天 vs %2$lld 天)。"
+          }
+        }
+      }
+    },
+    "review.insight.effort.sample_note_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld high-priority + %2$lld other timestamped one-time tasks, recurring excluded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要%1$lld件+その他%2$lld件。タイムスタンプ付きの単発タスク、規律タスク除く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 件重要 + %2$lld 件其他,带时间戳的一次性任务,不含规律任务"
+          }
+        }
+      }
+    },
+    "review.insight.effort.viz_note" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "User-day span from note to done, median of each group."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモから完了までのユーザー日数(各グループの中央値)。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从记下到做完的用户日跨度,取各组中位数。"
+          }
+        }
+      }
+    },
+    "review.insight.effort.row.high_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "High priority (%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要優先(%lld件)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标了「重要」(%lld 件)"
+          }
+        }
+      }
+    },
+    "review.insight.effort.row.other_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything else (%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他(%lld件)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他事(%lld 件)"
+          }
+        }
+      }
+    },
+    "review.insight.effort.median_days_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "median %lld days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中央値%lld日"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中位 %lld 天"
+          }
+        }
+      }
+    },
+    "review.insight.effort.need_more_high_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld more high-priority completions needed for this insight"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このインサイトには「重要」の完了がさらに %lld 件必要です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再记 %lld 条重要任务并完成,这条洞察就能算出来"
+          }
+        }
+      }
+    },
+    "review.insight.energy.headline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your best hours are mornings — the important stuff lands late at night"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "調子がいいのは午前,大切なことは深夜に"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好时段在上午,重要的事排在深夜"
+          }
+        }
+      }
+    },
+    "review.insight.energy.body_%lld_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your completion peak is %1$lld:00; of %3$lld important items with a set time, %2$lld land after 22:00."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了のピークは%1$lld時。時刻設定のある大切なタスク%3$lld件のうち%2$lld件が22時以降。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成高峰在 %1$lld 点;带钟点的 %3$lld 件重要任务里,%2$lld 件排在 22 点后。"
+          }
+        }
+      }
+    },
+    "review.insight.energy.sample_note_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld completion timestamps · %2$lld important items with a set time, recurring excluded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了時刻%1$lld件・時刻設定のある大切なタスク%2$lld件。規律タスク除く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成时刻 %1$lld 条 · 带钟点的重要任务 %2$lld 件,不含规律任务"
+          }
+        }
+      }
+    },
+    "review.insight.energy.legend.peak" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peak completion"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ピーク帯"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成高峰"
+          }
+        }
+      }
+    },
+    "review.insight.energy.legend.mark" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheduled times of important items"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大切なタスクの設定時刻"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要任务排的钟点"
+          }
+        }
+      }
+    },
     "review.insight.reactive.headline_%lld" : {
       "localizations" : {
         "en" : {
