@@ -3,7 +3,7 @@ import SwiftUI
 /// 第 3 步 · 观察(阶段 3)。
 ///
 /// 原料在流程启动时已存进 `state.insightContextValue`(不放 body,§1.4);
-/// 本视图把它跑过引擎(降级阶梯 §2.3:5–14 只跑腐烂;≥15 跑 02+03),
+/// 本视图把它跑过引擎(降级阶梯 §2.3:5–14 只跑腐烂;≥15 跑 01/02/03/05),
 /// 结果 score 降序。未达阈值的不显示(不是「无异常」)。
 ///
 /// 语音提问:本阶段**只提供纯文字输入**——额度已核实(转写走本地 SFSpeechRecognizer,
@@ -48,9 +48,10 @@ struct ReviewStepInsights: View {
 
     // MARK: 引擎
 
-    /// 跑 v1 两条规则(拍板 2),按 ladder 裁剪,score 降序(§阶段 3);
-    /// 触发后先过冷却(§2.4,阶段 4 接真历史):不满足任一放行条件的本期不展示,
-    /// 也不进 `shownInsights` 历史。效应量**变好**的放行换 improving 文案。
+    /// 跑四条规则(02/03 v1 + 01/05 2026-08-23 拍板启用),按 ladder 裁剪,
+    /// score 降序(§阶段 3);触发后先过冷却(§2.4,阶段 4 接真历史):不满足
+    /// 任一放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
+    /// 放行换 improving 文案。
     private func runEngine() {
         guard let context = state.insightContextValue else { return }
         let calendar = Calendar.current
@@ -65,6 +66,14 @@ struct ReviewStepInsights: View {
         if ladder == .full {
             let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
             collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
+
+            // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
+            // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
+            let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders)
+
+            let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders)
         }
 
         // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
@@ -141,9 +150,14 @@ struct ReviewStepInsights: View {
     }
 
     /// 占位行:写清还差多少(「还需 11 条」,不是「数据不足」,§2.3)。
+    /// 01 的缺口是高优任务数——通用「再记 N 条」会误导用户去记普通任务,单独文案。
     private func placeholderRow(_ placeholder: (id: InsightID, needMore: Int)) -> some View {
         RecapCard {
-            Text(String(localized: "review.flow.insights.need_more_tasks_\(placeholder.needMore)"))
+            let key: String.LocalizationValue =
+                placeholder.id == .effortOrdering
+                ? "review.insight.effort.need_more_high_\(placeholder.needMore)"
+                : "review.flow.insights.need_more_tasks_\(placeholder.needMore)"
+            Text(String(localized: key))
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textMuted)
                 .lineLimit(2)

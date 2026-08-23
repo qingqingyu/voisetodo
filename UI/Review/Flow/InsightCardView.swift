@@ -112,6 +112,19 @@ struct InsightCardView: View {
             RottingTaskListView(items: items, onOpenTask: onOpenTask)
         case .reactiveVsPlanned(let ratio, let sampleCount):
             ReactiveRatioBarView(ratio: ratio, sampleCount: sampleCount)
+        case .effortOrdering(let highDays, let otherDays, let highCount, let otherCount):
+            EffortOrderingBarsView(
+                highDays: highDays,
+                otherDays: otherDays,
+                highCount: highCount,
+                otherCount: otherCount
+            )
+        case .energyWindow(let hourCounts, let highDueHours, let peakHour):
+            EnergyWindowBarsView(
+                hourCounts: hourCounts,
+                highDueHours: highDueHours,
+                peakHour: peakHour
+            )
         default:
             EmptyView()
         }

@@ -13,13 +13,13 @@ import Foundation
 
 // MARK: - 洞察标识
 
-/// 六条洞察的稳定 ID。v1 只实现 `rotting` / `reactiveVsPlanned`(拍板 2)。
+/// 六条洞察的稳定 ID。已实现:`rotting` / `reactiveVsPlanned`(拍板 2)+
+/// `effortOrdering` / `energyWindow`(2026-08-23 拍板启用)。
 ///
-/// 其余四个 case 仅预留 ID,**不建规则文件**——待阶段 0 体检(01/05)、
-/// 数据攒满(06)或 v2(04)再启用。case 顺序即文档编号,勿重排
-/// (占位行、冷却历史都以 rawValue 持久化)。
+/// 其余两个 case 仅预留 ID,**不建规则文件**——待数据攒满(06)或 v2(04)
+/// 再启用。case 顺序即文档编号,勿重排(占位行、冷却历史都以 rawValue 持久化)。
 enum InsightID: String, CaseIterable, Codable, Sendable {
-    /// 01 先易后难(待阶段 0 体检决定是否值得实现)。
+    /// 01 先易后难:重要的事放得最久。← 2026-08-23 启用
     case effortOrdering
     /// 02 任务在腐烂。← v1 实现
     case rotting
@@ -27,7 +27,7 @@ enum InsightID: String, CaseIterable, Codable, Sendable {
     case reactiveVsPlanned
     /// 04 对谁失约(v2:涉及可编辑 accountability 映射)。
     case brokenPromises
-    /// 05 精力窗口(待阶段 0 体检)。
+    /// 05 精力窗口:好时段在上午,重要的事排在深夜。← 2026-08-23 启用
     case energyWindow
     /// 06 周内衰减(待 ≥4 个完整周)。
     case weeklyDecay
@@ -69,19 +69,19 @@ struct RottingVizItem: Sendable, Equatable {
     let ageDays: Int
 }
 
-/// 六种图各一个 case。v1 只有 02/03 两图有数据;其余四个 case 是预留锚点,
-/// 对应规则启用时再补关联值(避免为未实现洞察臆造数据形状)。
+/// 六种图各一个 case。02/03(v1)与 01/05(2026-08-23)有数据;04/06 是
+/// 预留锚点,对应规则启用时再补关联值(避免为未实现洞察臆造数据形状)。
 enum InsightViz: Sendable {
-    /// 01 先易后难(预留,无数据)。
-    case effortOrdering
+    /// 01 高优 vs 其他的「记下→做完」中位天数对比。
+    case effortOrdering(highDays: Int, otherDays: Int, highCount: Int, otherCount: Int)
     /// 02 腐烂任务列表,按推迟次数降序。
     case rotting(items: [RottingVizItem])
     /// 03 救火占比与样本量。
     case reactiveVsPlanned(ratio: Double, sampleCount: Int)
     /// 04 对谁失约(预留,无数据)。
     case brokenPromises
-    /// 05 精力窗口(预留,无数据)。
-    case energyWindow
+    /// 05 完成时刻直方图(24 小时计数)+ 重要任务排期钟点(▲ 标记)+ 峰值小时。
+    case energyWindow(hourCounts: [Int], highDueHours: [Int], peakHour: Int)
     /// 06 周内衰减(预留,无数据)。
     case weeklyDecay
 }
