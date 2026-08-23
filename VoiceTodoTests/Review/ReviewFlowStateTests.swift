@@ -215,6 +215,31 @@ extension ReviewFlowStateTests {
         XCTAssertNil(state.lastVoiceNote, "空白回答视同没有")
     }
 
+    /// `ReviewNotesEntry.make`(2026-08-23 拍板「全量可见」):空白过滤 / 新→旧 /
+    /// 处理数取 ledger.inputCount。与 `lastVoiceNote` 同口径但不过滤条数。
+    func testReviewNotesEntryMakeFiltersBlanksAndSortsNewestFirst() {
+        let old = reviewSession(completedAt: Date(timeIntervalSinceNow: -7 * 86_400), voiceNote: "上周的话")
+        let blank = reviewSession(completedAt: Date(timeIntervalSinceNow: -86_400), voiceNote: "  \n ")
+        let newest = ReviewSession(
+            completedAt: Date(),
+            periodStart: Date(),
+            periodEnd: Date(),
+            voiceNote: "  这周想把上午留给重要的事  ",
+            ledger: ReviewLedger(
+                inputCount: 5, remainingCount: 0, scheduledCount: 1, todayCount: 0,
+                abandonedCount: 0, splitCount: 0, pinnedCount: 0
+            ),
+            shownInsights: []
+        )
+
+        let entries = ReviewNotesEntry.make(from: [old, blank, newest])
+
+        XCTAssertEqual(entries.map(\.id), [newest.id, old.id], "空白视同没有,其余新→旧")
+        XCTAssertEqual(entries.map(\.note), ["这周想把上午留给重要的事", "上周的话"])
+        XCTAssertEqual(entries.map(\.handledCount), [5, 1])
+        XCTAssertTrue(ReviewNotesEntry.make(from: []).isEmpty)
+    }
+
     func testBuildSessionMapsLedgerNoteAndInsights() {
         let now = Date()
         let state = ReviewFlowState(todos: [])

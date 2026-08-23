@@ -224,6 +224,85 @@ struct RecapCard<Content: View>: View {
     }
 }
 
+// MARK: - 历次复盘笔记(2026-08-23 拍板「全量可见」)
+
+/// 一条可展示的复盘笔记行:当期日期 + 笔记原文 + 当期处理件数。
+/// 注:「当期完成数」未持久化(ReviewSession 只存处置账本),先用 ledger 的
+/// 处理输入数顶——完成数字段与语义对照(后续语义对照任务)一起补。
+struct ReviewNotesEntry: Equatable, Identifiable {
+    let id: UUID
+    let date: Date
+    let note: String
+    let handledCount: Int
+
+    /// 会话列表 → 展示条目:只留写了笔记的会话,新→旧。
+    /// 空白笔记视同没有(与 `ReviewFlowState.lastVoiceNote` 同口径)。
+    static func make(from sessions: [ReviewSession]) -> [ReviewNotesEntry] {
+        sessions.compactMap { session in
+            guard let note = session.voiceNote?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else {
+                return nil
+            }
+            return ReviewNotesEntry(
+                id: session.id,
+                date: session.completedAt,
+                note: note,
+                handledCount: session.ledger.inputCount
+            )
+        }
+        // 新→旧;同刻(极端场景)按 id 定序,避免 Swift 非稳定排序导致顺序抖动。
+        .sorted { lhs, rhs in
+            lhs.date == rhs.date ? lhs.id.uuidString > rhs.id.uuidString : lhs.date > rhs.date
+        }
+    }
+}
+
+/// 历次复盘笔记列表:回顾页时间线与复盘流程第 3 步共用(别复制两份)。
+struct ReviewNotesListView: View {
+    let entries: [ReviewNotesEntry]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.md) {
+            ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                row(entry)
+                if index < entries.count - 1 {
+                    Rectangle()
+                        .fill(WarmTheme.rowHairline)
+                        .frame(height: 1)
+                }
+            }
+        }
+    }
+
+    private func row(_ entry: ReviewNotesEntry) -> some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            HStack(spacing: WarmSpacing.sm) {
+                Text(entry.date.formatted(.dateTime.year().month().day()))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
+
+                Text(String(localized: "review.notes.row.handled_\(entry.handledCount)"))
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(WarmTheme.textMuted.opacity(0.8))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            Text(entry.note)
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(4)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - 月度摘要构建(共用聚合逻辑)
 
 /// 把 @Query 原料聚合成近一个月的 `ReviewSummary`(ReviewView 与复盘第 1 步共用,

@@ -28,7 +28,7 @@ struct ReviewStepInsights: View {
                 if let error = state.insightLoadError {
                     errorCard(error)
                 } else if let context = state.insightContextValue {
-                    crossPeriodCard(context: context)
+                    crossPeriodCard()
                     cards
                     ladderHint(context: context)
                     askYourselfSection
@@ -165,35 +165,24 @@ struct ReviewStepInsights: View {
         }
     }
 
-    // MARK: 跨期对照卡(阶段 4)
+    // MARK: 历次笔记卡(2026-08-23 拍板:全量可见)
 
-    /// 「上次复盘你说过:…」+ 一句本期数据对照(本期完成 N 件)。没有上次
-    /// voiceNote 时不显示(设计文档阶段 4 支撑事项 1)。
+    /// 「历次复盘,你说过」:全部写过笔记的会话,新→旧。原来只回显最近一条,
+    /// 用户判词「写了基本看不到,没达到复盘的意思」。没有笔记时不显示。
     @ViewBuilder
-    private func crossPeriodCard(context: InsightContext) -> some View {
-        if let note = state.lastVoiceNote {
+    private func crossPeriodCard() -> some View {
+        let entries = ReviewNotesEntry.make(from: state.previousSessions)
+        if !entries.isEmpty {
             RecapCard {
-                VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                    Label(String(localized: "review.flow.insights.last_note.title"), systemImage: "quote.opening")
+                VStack(alignment: .leading, spacing: WarmSpacing.md) {
+                    Label(String(localized: "review.flow.insights.notes.title"), systemImage: "quote.opening")
                         .font(WarmFont.headline(14))
                         .foregroundColor(WarmTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .flipsForRightToLeftLayoutDirection(true)
 
-                    Text(note)
-                        .font(WarmFont.body(14))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .lineLimit(4)
-                        .minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(String(localized: "review.flow.insights.last_note.compare_\(context.completedEvents.count)"))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.textMuted)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ReviewNotesListView(entries: entries)
                 }
             }
         }

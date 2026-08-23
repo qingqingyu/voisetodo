@@ -93,6 +93,9 @@ struct ReviewView: View {
     @State private var selectedPeriod: ReviewPeriod = .month
     /// 入口卡点击 → fullScreenCover 呈现五步复盘流程。
     @State private var showReviewFlow = false
+    /// 「复盘笔记」时间线(2026-08-23 拍板:历次笔记随时可翻)。
+    /// App Group UserDefaults(≤52 条),onAppear 与复盘流程收尾后各读一次。
+    @State private var reviewNotes: [ReviewNotesEntry] = []
 
     private let calendar = Calendar.current
 
@@ -111,12 +114,24 @@ struct ReviewView: View {
                         }
 
                         emptyState
+
+                        // 空态也显示笔记时间线:「全量可见」拍板不因当期无完成数据
+                        // 而失效——有历史笔记的老用户换期后仍要能翻到。
+                        if !reviewNotes.isEmpty {
+                            reviewNotesSection
+                        }
                     } else {
                         content
                     }
                 }
                 .padding(.horizontal, WarmSpacing.lg)
                 .padding(.bottom, WarmSpacing.xxl)
+            }
+            .onAppear { loadReviewNotes() }
+            // 复盘流程收尾(fullScreenCover 落下)会写入新会话——此刻重读,
+            // 时间线立即出现刚写的那条。
+            .onChange(of: showReviewFlow) { _, shown in
+                if !shown { loadReviewNotes() }
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -327,7 +342,33 @@ struct ReviewView: View {
             if let busiest = summary.busiestDay {
                 busiestDaySection(busiest)
             }
+
+            if !reviewNotes.isEmpty {
+                reviewNotesSection
+            }
         }
+    }
+
+    // MARK: 复盘笔记时间线
+
+    /// 「复盘笔记」:历次复盘写过的话,随时可翻(2026-08-23 拍板)。无笔记整节隐藏。
+    private var reviewNotesSection: some View {
+        RecapCard {
+            VStack(alignment: .leading, spacing: WarmSpacing.md) {
+                Text(String(localized: "review.notes.title"))
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                ReviewNotesListView(entries: reviewNotes)
+            }
+        }
+    }
+
+    /// 读取历次笔记(只留写了内容的会话,新→旧)。
+    private func loadReviewNotes() {
+        reviewNotes = ReviewNotesEntry.make(from: ReviewSessionStore.shared.allSessions())
     }
 
     // MARK: Period Picker
