@@ -14,14 +14,14 @@ struct RecordingActivityAttributes: ActivityAttributes {
         /// 当前转写文本
         var transcript: String
 
-        /// 录音时长（秒）
-        var duration: TimeInterval
+        /// 录音开始时刻——视图用 Text(timerInterval:countsDown: false) 原生走秒，App 不再每秒推 update
+        var startedAt: Date
 
         /// 初始化
-        init(isRecording: Bool = true, transcript: String = "", duration: TimeInterval = 0) {
+        init(isRecording: Bool = true, transcript: String = "", startedAt: Date = Date()) {
             self.isRecording = isRecording
             self.transcript = transcript
-            self.duration = duration
+            self.startedAt = startedAt
         }
     }
 
@@ -37,12 +37,5 @@ struct RecordingActivityAttributes: ActivityAttributes {
 extension RecordingActivityAttributes {
     /// Activity 类型标识符
     static let activityID = "com.voicetodo.recording"
-
-    /// 格式化时长显示
-    static func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
 }
 

@@ -33,7 +33,7 @@ struct RecordingLiveActivity: Widget {
 
                 DynamicIslandExpandedRegion(.trailing) {
                     // 录音时长
-                    Text(RecordingActivityAttributes.formatDuration(context.state.duration))
+                    Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
                         .font(.system(.caption, design: .monospaced))
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
@@ -66,7 +66,7 @@ struct RecordingLiveActivity: Widget {
                     )
             } compactTrailing: {
                 // 紧凑模式右侧 - 时长
-                Text(RecordingActivityAttributes.formatDuration(context.state.duration))
+                Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
                     .font(.system(.caption2, design: .monospaced))
                     .fontWeight(.medium)
             } minimal: {
@@ -119,7 +119,7 @@ struct LockScreenLiveActivityView: View {
 
                     Spacer()
 
-                    Text(RecordingActivityAttributes.formatDuration(context.state.duration))
+                    Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundColor(.secondary)
                 }

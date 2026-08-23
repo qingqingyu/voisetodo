@@ -78,7 +78,6 @@ final class VoiceInputManager: VoiceInputProtocol {
     // Live Activity 相关
     private var liveActivity: Activity<RecordingActivityAttributes>?
     private var recordingStartTime: Date?
-    private var updateTimer: Timer?
     private var finishRecordingWatchdogTask: Task<Void, Never>?
     private var interruptionBeganObserver: NSObjectProtocol?
     private var recordingSessionID: String?
@@ -432,7 +431,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         let initialState = RecordingActivityAttributes.ContentState(
             isRecording: true,
             transcript: "",
-            duration: 0
+            startedAt: recordingStartTime ?? Date()
         )
 
         do {
@@ -444,10 +443,6 @@ final class VoiceInputManager: VoiceInputProtocol {
             )
             self.liveActivity = activity
             VoiceTodoLog.voice.info("live_activity.started recordingID=\(self.recordingSessionID ?? "none", privacy: .public) activityID=\(activity.id, privacy: .public)")
-
-            // 启动定时器更新时长
-            startUpdateTimer()
-
         } catch {
             VoiceTodoLog.voice.error("live_activity.start_failed recordingID=\(self.recordingSessionID ?? "none", privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
         }
@@ -458,11 +453,10 @@ final class VoiceInputManager: VoiceInputProtocol {
         guard let activity = liveActivity,
               let startTime = recordingStartTime else { return }
 
-        let duration = Date().timeIntervalSince(startTime)
         let updatedState = RecordingActivityAttributes.ContentState(
             isRecording: true,
             transcript: transcript,
-            duration: duration
+            startedAt: startTime
         )
 
         Task {
@@ -473,12 +467,10 @@ final class VoiceInputManager: VoiceInputProtocol {
 
     /// 结束 Live Activity
     private func endLiveActivity() {
-        // 停止定时器
-        stopUpdateTimer()
-
         let finalTranscript = transcript
         let finalTranscriptChars = transcript.count
-        let finalDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        let startedAt = recordingStartTime ?? Date()
+        let finalDuration = Date().timeIntervalSince(startedAt)
 
         defer {
             liveActivity = nil
@@ -492,47 +484,14 @@ final class VoiceInputManager: VoiceInputProtocol {
             let finalState = RecordingActivityAttributes.ContentState(
                 isRecording: false,
                 transcript: finalTranscript,
-                duration: finalDuration
+                startedAt: startedAt
             )
 
             // 结束 Activity
             let content = ActivityContent(state: finalState, staleDate: nil)
             await activity.end(content, dismissalPolicy: .immediate)
-            VoiceTodoLog.voice.info("live_activity.ended activityID=\(activity.id, privacy: .public) transcriptChars=\(finalTranscriptChars) duration=\(finalState.duration)")
+            VoiceTodoLog.voice.info("live_activity.ended activityID=\(activity.id, privacy: .public) transcriptChars=\(finalTranscriptChars) duration=\(finalDuration)")
         }
-    }
-
-    /// 启动定时器更新 Live Activity 时长
-    private func startUpdateTimer() {
-        stopUpdateTimer()
-
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            // Timer.scheduledTimer 闭包是 @Sendable,但 startUpdateTimer 由 @MainActor 调用,
-            // timer 默认加 main run loop —— assumeIsolated 让编译器承认 main actor 隔离
-            MainActor.assumeIsolated {
-                guard let self = self,
-                      self.isRecording,
-                      let startTime = self.recordingStartTime else { return }
-
-                let duration = Date().timeIntervalSince(startTime)
-                let updatedState = RecordingActivityAttributes.ContentState(
-                    isRecording: true,
-                    transcript: self.transcript,
-                    duration: duration
-                )
-
-                Task { [weak self] in
-                    let content = ActivityContent(state: updatedState, staleDate: nil)
-                    await self?.liveActivity?.update(content)
-                }
-            }
-        }
-    }
-
-    /// 停止定时器
-    private func stopUpdateTimer() {
-        updateTimer?.invalidate()
-        updateTimer = nil
     }
 
     private func startFinishRecordingWatchdog() {
