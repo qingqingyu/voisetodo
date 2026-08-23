@@ -31,8 +31,6 @@ struct BottomInputPanelView: View {
     /// 录音模式的实时转写文本（来自 SFSpeechRecognizer partial results）。
     /// 空字符串时不显示，有内容时在波形上方展示，让用户确认"它有没有听对"。
     let transcript: String
-    /// 当前音频电平 (0...1)，驱动波形动画
-    let audioLevel: Float
     /// 键盘模式是否由录音失败 fallback 触发。true 时显示警告 banner + 「重新尝试语音」按钮；
     /// false（手动切换）时只显示文本框 + 操作行，避免误导用户「麦克风坏了」。
     let isFallbackMode: Bool
@@ -188,9 +186,10 @@ struct BottomInputPanelView: View {
                 .animation(.easeOut(duration: 0.2), value: transcript)
         }
 
-        // 波形 + 计时器：波形接真实音量驱动，计时器缩成配角（小灰字挪到波形右边）
+        // 波形 + 计时器：波形接真实音量驱动（自订阅，失效范围只有波形条），
+        // 计时器缩成配角（小灰字挪到波形右边）
         HStack(spacing: WarmSpacing.sm) {
-            WaveformView(color: WarmTheme.urgent, isActive: isRecording, audioLevel: audioLevel)
+            LiveWaveformView(isActive: isRecording)
             Text(formatDuration(recordingElapsed))
                 .font(.caption.weight(.medium))
                 .monospacedDigit()
@@ -451,7 +450,6 @@ private extension BottomInputPanelView {
         inputText: .constant(""),
         isRecording: true,
         transcript: "明天下午三点开会",
-        audioLevel: 0.5,
         isFallbackMode: false,
         onClose: {},
         onModeChange: { _ in },
@@ -460,4 +458,6 @@ private extension BottomInputPanelView {
     )
     .padding()
     .background(WarmTheme.background)
+    // LiveWaveformView 从环境读 AppCoordinator，preview 必须注入
+    .environmentObject(AppCoordinator.preview)
 }

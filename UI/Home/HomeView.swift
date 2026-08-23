@@ -1958,7 +1958,6 @@ struct HomeView<Store: HomeTodoStore>: View {
                 inputText: $panelInputText,
                 isRecording: coordinator.isRecording,
                 transcript: coordinator.transcript,
-                audioLevel: coordinator.audioLevel,
                 isFallbackMode: isFallbackMode,
                 onClose: { closeInputPanel() },
                 onModeChange: { switchInputPanelMode(toKeyboard: $0) },

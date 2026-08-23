@@ -51,8 +51,13 @@ final class AppCoordinator: ObservableObject {
     /// 静音自动提交信号（true = 语音识别检测到说话后静音，已自动 finishRecording，
     /// UI 应触发 handlePanelSend 进入处理流程）。UI 消费后复位为 false。
     @Published var didAutoFinishDueToSilence = false
-    /// 当前音频电平 (0...1)，驱动波形动画
-    @Published var audioLevel: Float = 0
+    /// 30Hz 节流后的音频电平流，供波形叶子视图（LiveWaveformView）局部订阅。
+    ///
+    /// 设计动机：若走 @Published 广播，HomeView（@EnvironmentObject 观察者）会在
+    /// 录音期间每秒失效 30 次、重算整个 body。改为暴露 publisher 让叶子视图用
+    /// .onReceive 订阅，失效范围压缩到波形条本身。必须在 init 存一次（稳定
+    /// 订阅身份），不能写成 computed——否则每次 body 访问都新建订阅链。
+    let audioLevelPublisher: AnyPublisher<Float, Never>
     /// 配额耗尽或用户手动进入时弹出订阅页。
     @Published var showPaywall = false
     /// 语音输入不可用（识别器初始化失败 / 资源缺失）时设为 true，通知 UI 自动切键盘模式。
@@ -137,6 +142,11 @@ final class AppCoordinator: ObservableObject {
         self.calendarWriteModeProvider = calendarWriteModeProvider
         self.vocabularyStore = vocabularyStore
         self.quotaUsage = quotaUsage
+        // throttle 到 30Hz 对齐 WaveformView 的 TimelineView(.animation) 帧率，
+        // 避免 43Hz tap 回调全量触发 SwiftUI body 重算。
+        self.audioLevelPublisher = voiceInput.audioLevelPublisher
+            .throttle(for: .seconds(1.0 / 30.0), scheduler: DispatchQueue.main, latest: true)
+            .eraseToAnyPublisher()
         self.calendarSyncService = CalendarSyncService(store: store, writer: systemCalendarWriter)
         self.pendingRecoveryFlow = PendingRecoveryFlow(
             store: store,
@@ -183,13 +193,6 @@ final class AppCoordinator: ObservableObject {
         voiceInput.didAutoFinishDueToSilencePublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$didAutoFinishDueToSilence)
-
-        // 监听音频电平——驱动波形动画。
-        // throttle 到 30Hz 对齐 WaveformView 的 TimelineView(.animation) 帧率，
-        // 避免 43Hz tap 回调全量触发 SwiftUI body 重算。
-        voiceInput.audioLevelPublisher
-            .throttle(for: .seconds(1.0 / 30.0), scheduler: DispatchQueue.main, latest: true)
-            .assign(to: &$audioLevel)
 
         // 监听录音成功完成(语音识别 isFinal + 有 transcript),用于"第 5 次录音后引导付费"。
         // 与 isRecordingPublisher 的下降沿不同:后者失败也会下降,这里只在成功路径发射。
