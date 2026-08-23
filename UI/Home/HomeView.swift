@@ -357,6 +357,57 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// trigger 跟着迁移到新位置,token 语义不变。)
     @State private var confirmPopToken = 0
 
+    // MARK: - Overlay 组件(拆出巨型 body,给类型检查器留边界)
+    //
+    // 2026-08-23 合并 fupan 后 body 的链式表达式超过类型检查预算
+    // (「unable to type-check this expression in reasonable time」)——
+    // 两段最大的 overlay 抽成计算属性,行为零变化,纯类型检查减负。
+
+    /// A2 自动学习建议 banner(top overlay 内容)。
+    @ViewBuilder
+    private var glossarySuggestionBanner: some View {
+        if let suggestion = coordinator.glossarySuggestion {
+            GlossarySuggestionBanner(
+                suggestion: suggestion,
+                onAccept: {
+                    PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
+                        type: .alias,
+                        phrase: suggestion.correction.originalTitle,
+                        expansion: suggestion.correction.confirmedTitle,
+                        localeIdentifier: suggestion.correction.localeIdentifier
+                    ))
+                    CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                    withAnimation { coordinator.glossarySuggestion = nil }
+                },
+                onDismiss: {
+                    CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                    withAnimation { coordinator.glossarySuggestion = nil }
+                }
+            )
+            .padding(.horizontal, WarmSpacing.lg)
+            .padding(.top, WarmSpacing.xs)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    /// 悬浮 FAB(bottom overlay 内容)。
+    /// 挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,列表铺满至屏幕底,
+    /// 卡片可从按钮背后穿过(配合上方渐隐带溶解)。overlay 挂载顺序——FAB 在前、
+    /// hint/输入面板在后,后挂的更上层,所以输入面板出现时会盖住 FAB。
+    /// VoiceFAB 自带 .padding(.bottom, WarmSpacing.md) 让按钮浮在 home indicator
+    /// 上方,无需额外处理。(drawer 条件因 UnscheduledDrawer 当前为死代码恒为
+    /// false,保留以防恢复。)
+    @ViewBuilder
+    private var voiceFABOverlay: some View {
+        if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
+            VoiceFAB(
+                isDisabled: isInputEntryDisabled,
+                onTap: { openVoiceInputPanel() }
+            )
+            .transition(.opacity)
+        }
+    }
+
     /// 回顾页 sheet 内容(两个入口共用):dismiss 时重读置顶集合——
     /// 复盘流程在 sheet 内落地置顶后,回首页立即浮顶。
     private var reviewSheetContent: some View {
@@ -442,43 +493,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         // A2 自动学习建议 banner
         .overlay(alignment: .top) {
-            if let suggestion = coordinator.glossarySuggestion {
-                GlossarySuggestionBanner(
-                    suggestion: suggestion,
-                    onAccept: {
-                        PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
-                            type: .alias,
-                            phrase: suggestion.correction.originalTitle,
-                            expansion: suggestion.correction.confirmedTitle,
-                            localeIdentifier: suggestion.correction.localeIdentifier
-                        ))
-                        CorrectionTracker.shared.remove(id: suggestion.correction.id)
-                        withAnimation { coordinator.glossarySuggestion = nil }
-                    },
-                    onDismiss: {
-                        CorrectionTracker.shared.remove(id: suggestion.correction.id)
-                        withAnimation { coordinator.glossarySuggestion = nil }
-                    }
-                )
-                .padding(.horizontal, WarmSpacing.lg)
-                .padding(.top, WarmSpacing.xs)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            glossarySuggestionBanner
         }
         .overlay(alignment: .bottom) {
-            // 悬浮 FAB:挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,
-            // 列表铺满至屏幕底,卡片可从按钮背后穿过(配合上方渐隐带溶解)。
-            // overlay 挂载顺序——FAB 在前、hint/输入面板在后,后挂的更上层,
-            // 所以输入面板出现时会盖住 FAB。VoiceFAB 自带 .padding(.bottom, WarmSpacing.md)
-            // 让按钮浮在 home indicator 上方,无需额外处理。
-            // (drawer 条件因 UnscheduledDrawer 当前为死代码恒为 false,保留以防恢复。)
-            if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
-                VoiceFAB(
-                    isDisabled: isInputEntryDisabled,
-                    onTap: { openVoiceInputPanel() }
-                )
-                .transition(.opacity)
-            }
+            voiceFABOverlay
         }
         // 首次语音试用 hint(§3.4b):独立 overlay,offset 抬到 FAB 上方。
         // 不能和 FAB 共用同一个 overlay——两个子视图会形成 TupleView 包装,
