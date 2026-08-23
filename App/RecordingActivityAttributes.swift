@@ -7,12 +7,13 @@ struct RecordingActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var isRecording: Bool
         var transcript: String
-        var duration: TimeInterval
+        /// 录音开始时刻——LA 视图用 Text(timerInterval:countsDown: false) 原生走秒，App 不再每秒推 update
+        var startedAt: Date
 
-        init(isRecording: Bool = true, transcript: String = "", duration: TimeInterval = 0) {
+        init(isRecording: Bool = true, transcript: String = "", startedAt: Date = Date()) {
             self.isRecording = isRecording
             self.transcript = transcript
-            self.duration = duration
+            self.startedAt = startedAt
         }
     }
 
