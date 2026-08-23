@@ -8105,50 +8105,6 @@
         }
       }
     },
-    "review.flow.insights.last_note.compare_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You completed %lld tasks this period."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この期間で %lld 件完了しました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这一期你完成了 %lld 件事。"
-          }
-        }
-      }
-    },
-    "review.flow.insights.last_note.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last review you said"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回のふりかえりでこう言いました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次复盘你说过"
-          }
-        }
-      }
-    },
     "review.flow.insights.load_failed" : {
       "localizations" : {
         "en" : {
@@ -9653,6 +9609,72 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "第 %2$lld 周 · %1$lld"
+          }
+        }
+      }
+    },
+    "review.flow.insights.notes.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What you said in past reviews"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去のふりかえりで言ったこと"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历次复盘,你说过"
+          }
+        }
+      }
+    },
+    "review.notes.row.handled_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sorted that review"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その回で%lld件処理"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当期处理 %lld 件"
+          }
+        }
+      }
+    },
+    "review.notes.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review notes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ふりかえりメモ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复盘笔记"
           }
         }
       }
