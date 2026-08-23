@@ -8098,19 +8098,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Let go: %lld"
+            "value" : "Dropped: %lld"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "見切り:%lld 件"
+            "value" : "やらない:%lld 件"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "划掉:%lld"
+            "value" : "不做了:%lld"
           }
         }
       }
@@ -8709,24 +8709,156 @@
         }
       }
     },
-    "review.flow.triage.age_%lld" : {
+    "review.flow.triage.tl_nodefer" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Created %lld days ago"
+            "value" : "Never deferred"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録から %lld 日"
+            "value" : "先送りなし"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "记下 %lld 天了"
+            "value" : "还没推迟过"
+          }
+        }
+      }
+    },
+    "review.flow.triage.tl_deferred_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deferred %lld times"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 回先送り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推迟 %lld 次"
+          }
+        }
+      }
+    },
+    "review.flow.triage.menu.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What to do with this card?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このカードをどうする?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这张卡怎么处理?"
+          }
+        }
+      }
+    },
+    "review.flow.triage.lede" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decide one at a time. Swipe, or tap the buttons below. Untouched cards stay."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 枚ずつ決める。スワイプでも下のボタンでも。触らないカードはそのまま残る。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一条一条决定。划走,或者点下面的按钮;不动的就是留着。"
+          }
+        }
+      }
+    },
+    "review.flow.triage.born_%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noted %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@にメモ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@记下"
+          }
+        }
+      }
+    },
+    "review.flow.triage.action.keep" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来週へ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排下周"
+          }
+        }
+      }
+    },
+    "review.flow.triage.action.drop" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not doing it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "やめる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不做了"
           }
         }
       }
@@ -8775,46 +8907,24 @@
         }
       }
     },
-    "review.flow.triage.swipe_hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Right: next week · Left: let go"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "右:来週へ · 左:見切り"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "右滑排下周 · 左滑划掉"
-          }
-        }
-      }
-    },
     "review.flow.triage.title" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Handle unfinished one-time tasks: swipe right for next week, left to let go"
+            "value" : "Handle unfinished one-time tasks"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未完了の単発タスクを処理:右スワイプで来週へ、左で見切り"
+            "value" : "未完了の単発タスクを整理"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "处理没做完的一次性任务:右滑排进下周,左滑划掉"
+            "value" : "处理没做完的一次性任务"
           }
         }
       }
