@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		010449ABF1720531F8CED5F6 /* SimultaneousDragGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E151F244003A66D9F29EAD /* SimultaneousDragGesture.swift */; };
 		02B7DC7A5517AF12E9C09BAA /* NumberPopModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A53173B55EBC043C9CDCD1B /* NumberPopModifier.swift */; };
+		0674F892D39395A6954860EB /* TodoSplitterProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F6C05FA3D2BD54134B24AA /* TodoSplitterProtocol.swift */; };
 		06AC72FCAC5B9AD1AE008FC4 /* WidgetReloadCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 719676AA60F28DCA5FECF568 /* WidgetReloadCoalescer.swift */; };
 		06C106EDFC0BD1DBD4A656C8 /* ReviewNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF5820B1E3978DDE95D48ED /* ReviewNotificationScheduler.swift */; };
 		08A6FBBD1BE37D9F1D7B78A2 /* ExtractorCircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1167DFCC2D46703F8A7053E6 /* ExtractorCircuitBreaker.swift */; };
@@ -482,6 +483,7 @@
 		DF5DE4C3511E13DAD7A2DEAC /* PermissionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManagerTests.swift; sourceTree = "<group>"; };
 		E063F26C7FEFBBDFFA7F42F5 /* ReviewPinningStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewPinningStore.swift; sourceTree = "<group>"; };
 		E082C18F98C210471AED38B4 /* RelativeDueLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeDueLabel.swift; sourceTree = "<group>"; };
+		E0F6C05FA3D2BD54134B24AA /* TodoSplitterProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoSplitterProtocol.swift; sourceTree = "<group>"; };
 		E11A65D311C65AF4EF11CD73 /* QueryTodosIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryTodosIntent.swift; sourceTree = "<group>"; };
 		E11A80095EA27CA9DE703D7C /* CalendarImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarImportView.swift; sourceTree = "<group>"; };
 		E15FE5035E360DE11BF21B92 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
@@ -826,6 +828,7 @@
 				DCFA009138F185ACA9CCDC05 /* Telemetry.swift */,
 				A7E00281D082A7AFAB67384E /* TelemetryQueue.swift */,
 				7190AA6AA0C742F4547172D6 /* TodoExtractorProtocol.swift */,
+				E0F6C05FA3D2BD54134B24AA /* TodoSplitterProtocol.swift */,
 				9334F835FFE9BE2A6EC35CB2 /* TodoStoreProtocol.swift */,
 				9D985A942F5AEF1211D9C329 /* UITestLaunchOptions.swift */,
 				F78DB34A64BE991E3FD047AB /* UserVocabulary.swift */,
@@ -1296,6 +1299,7 @@
 				BAABC4674991E043BA856197 /* TodoQueryActor.swift in Sources */,
 				59F9EFC5F8D8D3702D1102B9 /* TodoSource.swift in Sources */,
 				B0BF0CB8B48FBA279735ECB1 /* TodoSpan.swift in Sources */,
+				0674F892D39395A6954860EB /* TodoSplitterProtocol.swift in Sources */,
 				8ACB71750D6E288EC1046941 /* TodoStore.swift in Sources */,
 				96C4D55D3A9122A57978F4A0 /* TodoStoreProtocol.swift in Sources */,
 				71860C211EC68F3A80E3A3EE /* TodoTimeDisplayComposer.swift in Sources */,

@@ -25,22 +25,26 @@ struct RecapHeroSection: View {
 
             // 「当天记、当天做完」件数(2026-08-21 用户拍板加上)。区间内没有
             // 完成时不显示——「其中 0 件」是噪音。一次性任务口径,与洞察 03 一致。
+            // 整块收窄居中(2026-08-23 打磨):长句换行后不再撑满行宽,与上方
+            // 居中的数字保持同一视觉节奏。
             if summary.total > 0 {
                 Text(String(localized: "review.hero.sameday_\(summary.sameDayCount)"))
                     .font(WarmFont.caption(13))
                     .foregroundColor(WarmTheme.textSecondary)
+                    .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, WarmSpacing.xl)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, WarmSpacing.lg)
     }
 }
 
-/// Stats 行:streak 卡 + 完成率卡。
-/// 完成率卡片只有在分母>0(completionRate != nil)时才显示。
+/// Stats 行:streak 卡 + 本期完成卡。
+/// 完成率已下岗(2026-08-23 拍板):比率与入口卡待处理数不同分母同屏会自相矛盾
+/// (「100% + 5 件没做」),且违反洞察引擎反 gaming 章程,改显绝对数。
 /// 副文案「未来 7 天还有 N 项」在 N>0 时才显示,避免空文案占位。
 struct RecapStatsRow: View {
     let summary: ReviewSummary
@@ -53,9 +57,7 @@ struct RecapStatsRow: View {
                 label: String(localized: "review.stat.streak")
             )
 
-            if summary.completionRate != nil {
-                RecapCompletionRateCard(summary: summary)
-            }
+            RecapDoneCard(summary: summary)
         }
     }
 }
@@ -90,24 +92,25 @@ struct RecapStatCard: View {
     }
 }
 
-/// 完成率卡(原 ReviewView.completionRateCard):百分比 + 标签 + 未来 7 天副文案。
-struct RecapCompletionRateCard: View {
+/// 本期完成卡(原 completionRateCard 改版,2026-08-23):绝对数 + 标签 + 未来 7 天副文案。
+struct RecapDoneCard: View {
     let summary: ReviewSummary
 
     var body: some View {
-        let rate = summary.completionRate ?? 0
-        return VStack(spacing: WarmSpacing.xs) {
+        VStack(spacing: WarmSpacing.xs) {
             HStack(spacing: WarmSpacing.xxs) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundColor(WarmTheme.primary)
 
-                Text(recapPercentage(rate))
+                Text(verbatim: "\(summary.total)")
                     .font(WarmFont.headline(22))
                     .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
 
-            Text(String(localized: "review.stat.completion_rate"))
+            Text(String(localized: "review.stat.done"))
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textSecondary)
                 .lineLimit(1)
@@ -221,20 +224,12 @@ struct RecapCard<Content: View>: View {
     }
 }
 
-/// 百分比字符串。clamp 已在 `ReviewAggregator` 里完成,这里防御性再夹一次,
-/// 避免未来调用方直接传未 clamp 的值进来。
-func recapPercentage(_ value: Double) -> String {
-    let pct = Int((min(max(value, 0), 1) * 100).rounded())
-    return "\(pct)%"
-}
-
 // MARK: - 月度摘要构建(共用聚合逻辑)
 
 /// 把 @Query 原料聚合成近一个月的 `ReviewSummary`(ReviewView 与复盘第 1 步共用,
-/// 避免 40 行聚合逻辑复制两份)。口径与原 ReviewView.month 完全一致:
-/// - 完成率分母**有意不过滤 abandonedAt**(拍板 1:划掉的留在分母);
+/// 避免 40 行聚合逻辑复制两份)。口径:
 /// - 一次性完成 + 规律任务完成记录 union;
-/// - 未来 7 天到期数作完成率副文案。
+/// - 未来 7 天到期数作统计卡副文案(完成率已下岗,2026-08-23)。
 enum RecapSummaryBuilder {
     /// - Parameters:
     ///   - today: 参照「今天」。
@@ -256,12 +251,6 @@ enum RecapSummaryBuilder {
             .formatted(.dateTime.year().month(.abbreviated))
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
 
-        // 完成率分母:区间内 dueDate ≤ 今天的待办数(含已划掉,拍板 1)。
-        let dueByTodayCount = allTodos.filter { item in
-            guard let due = item.dueDate else { return false }
-            let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
-            return dueDay >= start && dueDay <= todayStart
-        }.count
         let upcomingDueIn7DaysCount = allTodos.filter { item in
             guard let due = item.dueDate else { return false }
             let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
@@ -287,7 +276,6 @@ enum RecapSummaryBuilder {
             from: start,
             to: end,
             calendar: calendar,
-            dueByTodayCount: dueByTodayCount > 0 ? dueByTodayCount : nil,
             upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
         )
         // 「当天记当天做完」只在一次性完成里数(规律完成无 per-occurrence createdAt)。
@@ -305,8 +293,6 @@ enum RecapSummaryBuilder {
             streakDays: result.streakDays,
             busiestDay: result.busiestDay,
             busiestDayCount: result.busiestDayCount,
-            completionRate: result.completionRate,
-            dueByTodayCount: result.dueByTodayCount,
             upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
             daysWithCompletion: result.daysWithCompletion,
             sameDayCount: sameDayCount

@@ -294,11 +294,21 @@ struct ReviewFlowView: View {
     @Environment(\.dismiss) private var dismiss
 
     let store: any ReviewFlowStore
+    /// 拆小 sheet 的 AI 候选源(2026-08-23 拆小改版)。nil → sheet 直接手写降级。
+    var splitter: (any TodoSplitterProtocol)? = nil
+    /// 拆小 sheet 的麦克风(与首页共用同一实例)。nil → 「说一句」行隐藏。
+    var voiceInput: (any VoiceInputProtocol)? = nil
 
     @State private var state: ReviewFlowState
 
-    init(store: any ReviewFlowStore) {
+    init(
+        store: any ReviewFlowStore,
+        splitter: (any TodoSplitterProtocol)? = nil,
+        voiceInput: (any VoiceInputProtocol)? = nil
+    ) {
         self.store = store
+        self.splitter = splitter
+        self.voiceInput = voiceInput
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
         // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 /
         // 跨期对照的数据源,阶段 4)。
@@ -406,13 +416,15 @@ struct ReviewFlowView: View {
     private var stepContent: some View {
         switch state.currentStep {
         case .recap:
-            ReviewStepRecap()
+            ReviewStepRecap(lastReviewDate: state.previousSessions.last?.completedAt)
         case .triage:
             ReviewStepTriage(
                 state: state,
                 store: store,
                 onError: { presentError($0) },
-                onUndoToast: { coordinator.showToast(message: $0, style: .info) }
+                onUndoToast: { coordinator.showToast(message: $0, style: .info) },
+                splitter: splitter,
+                voiceInput: voiceInput
             )
         case .insights:
             ReviewStepInsights(

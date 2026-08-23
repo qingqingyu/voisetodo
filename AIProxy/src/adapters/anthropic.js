@@ -9,7 +9,7 @@
 //   - content_block_delta  -> { delta: { text } }
 //   - message_stop         -> terminal
 
-import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // Anthropic error bodies that indicate a model-side fix (just retry against the next
 // provider, whose model may not have this problem). Anything else in 400/422 is treated
@@ -25,7 +25,7 @@ const ANTHROPIC_MODEL_CONFIG_KEYWORDS = [
 export const anthropicAdapter = {
   type: "anthropic",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, mode, abortSignal }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "Anthropic key not configured");
     }
@@ -51,7 +51,10 @@ export const anthropicAdapter = {
           max_tokens: 8192,
           temperature: 0,
           stream,
-          system: buildSystemPrompt(locale, vocabularyHints, today, personalHints),
+          // split 模式(拆小)换专用 prompt;today/vocabularyHints/personalHints 仅提取模式有意义
+          system: mode === "split"
+            ? buildSplitPrompt(locale)
+            : buildSystemPrompt(locale, vocabularyHints, today, personalHints),
           messages: [{ role: "user", content: transcript }]
         })
       }

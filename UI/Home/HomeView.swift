@@ -358,7 +358,8 @@ struct HomeView<Store: HomeTodoStore>: View {
         NavigationStack {
             ReviewView(
                 store: reviewStore,
-                lastReviewDate: { ReviewSessionStore.shared.lastSession()?.completedAt }
+                splitter: coordinator.reviewSplitter,
+                voiceInput: coordinator.reviewVoiceInput
             )
         }
         .onDisappear { reloadPinnedTodoIDs() }

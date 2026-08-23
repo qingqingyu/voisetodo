@@ -119,7 +119,8 @@ final class ReviewSessionStore {
 
     // MARK: 读取
 
-    /// 最近一次完成的会话(入口卡「上次复盘日期」用)。无历史返回 nil。
+    /// 最近一次完成的会话(复盘流程第 1 步 ReviewStepRecap「上次复盘」行的
+    /// 数据源——`ReviewFlowView` 传的 lastReviewDate 即 `previousSessions.last?.completedAt`)。无历史返回 nil。
     func lastSession() -> ReviewSession? {
         allSessions().last
     }

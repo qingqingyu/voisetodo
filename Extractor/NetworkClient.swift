@@ -3,12 +3,15 @@ import Foundation
 // MARK: - Codable Request/Response Models
 
 /// VoiceTodo AI 代理请求体。iOS 端只发送转写文本和语言，不携带供应商密钥或供应商请求格式。
+/// `mode`:nil / "extract" = 待办提取(默认);"split" = 任务拆小(2026-08-23 拆小改版,
+/// 代理侧不计费、不缓存、不支持流式)。
 private struct ProxyExtractionRequest: Encodable {
     let transcript: String
     let locale: String
     let stream: Bool
     let vocabularyHints: [String]?
     let personalHints: String?
+    let mode: String?
 }
 
 // MARK: - SSE Parsing Models
@@ -56,19 +59,21 @@ final class NetworkClient {
 
     /// 调用 VoiceTodo AI 代理
     /// - Parameters:
-    ///   - transcript: 语音转写文本
+    ///   - transcript: 语音转写文本(split 模式下为任务标题或口述段落)
     ///   - localeIdentifier: 语言标识
-    /// - Returns: 代理返回的 ExtractionResult JSON 文本
+    ///   - mode: nil = 提取(默认);"split" = 任务拆小(代理侧不计费/不缓存,stream 恒为 false)
+    /// - Returns: 代理返回的 JSON 文本(提取模式为 ExtractionResult,split 模式为 {"steps":[...]})
     func callTodoExtractionProxy(
         transcript: String,
         localeIdentifier: String,
         vocabularyHints: [String] = [],
-        personalHints: String? = nil
+        personalHints: String? = nil,
+        mode: String? = nil
     ) async throws -> String {
         let requestID = VoiceTodoLog.makeID("proxy")
         let extractID = VoiceTodoLog.extractID ?? "none"
         let startedAt = Date()
-        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
+        VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false mode=\(mode ?? "extract", privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
 
         let request: URLRequest
         do {
@@ -79,6 +84,7 @@ final class NetworkClient {
                 stream: false,
                 vocabularyHints: vocabularyHints,
                 personalHints: personalHints,
+                mode: mode,
                 requestID: requestID,
                 extractID: extractID,
                 subscriptionJWS: subscriptionJWS
@@ -159,6 +165,7 @@ final class NetworkClient {
                         stream: true,
                         vocabularyHints: vocabularyHints,
                         personalHints: personalHints,
+                        mode: nil, // split 不支持流式,流式路径恒为提取模式
                         requestID: requestID,
                         extractID: extractID,
                         subscriptionJWS: subscriptionJWS
@@ -247,6 +254,7 @@ final class NetworkClient {
         stream: Bool,
         vocabularyHints: [String],
         personalHints: String?,
+        mode: String?,
         requestID: String,
         extractID: String,
         subscriptionJWS: String?
@@ -289,7 +297,8 @@ final class NetworkClient {
                     locale: localeIdentifier,
                     stream: stream,
                     vocabularyHints: vocabularyHints.isEmpty ? nil : vocabularyHints,
-                    personalHints: personalHints
+                    personalHints: personalHints,
+                    mode: mode
                 )
             )
             return request

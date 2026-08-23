@@ -32,10 +32,21 @@ struct ReviewStepTriage: View {
     /// 时间轴推迟节点的显示上限(防 10+ 次推迟挤爆行宽)。
     private static let timelineNodeCap = 8
 
-    /// 拆小 sheet 的两条子任务输入(v1 手动,AI 版阶段 5)。
+    /// 拆小 sheet 依赖(2026-08-23 改版:AI 候选 + 说一句 + 动态加条)。
+    /// splitter nil(测试/preview 未注入)→ sheet 直接降级为手写路径。
+    let splitter: (any TodoSplitterProtocol)?
+    /// 复盘内麦克风(与首页共用同一实例——复盘全屏时首页录音不可能并发,无会话冲突)。
+    /// nil 时「说一句」行隐藏。
+    let voiceInput: (any VoiceInputProtocol)?
+
     @State private var splitTarget: TodoItemData?
-    @State private var splitField1 = ""
-    @State private var splitField2 = ""
+    /// 候选加载状态机:idle(未打开)→ loading → ready / failed(AI 失败 → 降级手写)。
+    @State private var splitPhase: SplitPhase = .idle
+    /// 候选来源(决定标题文案):ai = 打开/换一批;voice = 「说一句」切条。
+    @State private var splitSource: SplitSource = .ai
+    @State private var splitCandidates: [SplitCandidate] = []
+    @State private var splitTask: Task<Void, Never>?
+    @State private var customFieldText = ""
     /// 拖拽跟手偏移(手势进行中)。
     @State private var dragOffset: CGFloat = 0
     /// 飞出动画期间置 0(状态更新在动画结束后进行,提前改会掐断动画)。
@@ -590,18 +601,83 @@ struct ReviewStepTriage: View {
     }
 
     private func openSplit(_ todo: TodoItemData) {
-        splitField1 = ""
-        splitField2 = ""
         splitTarget = todo
+        splitCandidates = []
+        customFieldText = ""
+        splitSource = .ai
+        startSplitLoad(
+            input: todo.title,
+            locale: Locale(identifier: todo.localeIdentifier ?? Locale.current.identifier),
+            wantsAlternative: false
+        )
     }
 
-    /// 拆小提交:建两条 TodoItem(parentTodoId 指向原任务)+ 原任务 abandon +
+    /// 发起候选加载。成功替换 AI 候选、保留手写行;失败置 failed(降级为手写路径,
+    /// 拍板口径:AI 失败不弹错,「自己写一条」始终可用;失败明细在 service 层日志)。
+    private func startSplitLoad(input: String, locale: Locale, wantsAlternative: Bool) {
+        splitTask?.cancel()
+        guard let splitter else {
+            splitPhase = .failed
+            return
+        }
+        // loading 期间麦克风行会隐藏——若正在录音(如 ready 态下边录音边点「换一批」),
+        // 先按用户取消收掉,否则录音失去 UI 挂在后台,只能等关 sheet 才停。
+        if voiceInput?.isRecording == true {
+            voiceInput?.cancelRecordingByUser()
+        }
+        splitPhase = .loading
+        splitTask = Task { @MainActor in
+            do {
+                let steps = try await splitter.splitSteps(
+                    for: input,
+                    locale: locale,
+                    wantsAlternative: wantsAlternative
+                )
+                guard !Task.isCancelled else { return }
+                let customs = splitCandidates.filter(\.custom)
+                splitCandidates = steps.map { SplitCandidate(text: $0, checked: true, custom: false) } + customs
+                splitPhase = .ready
+            } catch is CancellationError {
+                return // 换目标/关 sheet/再次发起:新流程已接管,状态不动
+            } catch {
+                guard !Task.isCancelled else { return }
+                splitPhase = .failed
+            }
+        }
+    }
+
+    /// 「说一句」完成:转写文本作为 split 输入按内容切条,替换 AI 候选(手写行保留)。
+    private func adoptVoiceTranscript(_ transcript: String) {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let target = splitTarget else { return }
+        splitSource = .voice
+        let locale = voiceInput?.currentLocale ?? Locale(identifier: target.localeIdentifier ?? Locale.current.identifier)
+        startSplitLoad(input: trimmed, locale: locale, wantsAlternative: false)
+    }
+
+    private func addCustomCandidate() {
+        let text = customFieldText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        splitCandidates.append(SplitCandidate(text: text, checked: true, custom: true))
+        customFieldText = ""
+    }
+
+    /// 已勾选且非空的候选标题(提交与按钮文案共用)。
+    private var selectedSplitTitles: [String] {
+        splitCandidates.compactMap { candidate in
+            guard candidate.checked else { return nil }
+            let text = candidate.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        }
+    }
+
+    /// 拆小提交:建 N 条 TodoItem(parentTodoId 指向原任务)+ 原任务 abandon +
     /// 记 split 事件——三步在 `TodoStore.splitTodo` 同事务落地。
+    /// 2026-08-23 改版:条数动态(≥1 即可,旧版两条必填的闸门废除)。
     private func submitSplit(_ todo: TodoItemData) {
-        let titles = [splitField1, splitField2]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let titles = selectedSplitTitles
         guard !titles.isEmpty else { return }
+        splitTask?.cancel()
         do {
             let children = titles.map { title in
                 TodoItemData(
@@ -619,8 +695,6 @@ struct ReviewStepTriage: View {
             withAnimation(WarmAnimation.springBouncy) { state.markSplit(todo) }
             HapticFeedback.success()
             splitTarget = nil
-            splitField1 = ""
-            splitField2 = ""
         } catch {
             // sheet 不关:输入保留,用户可重试或手动取消;错误如实呈现。
             onError(error)
@@ -656,92 +730,463 @@ struct ReviewStepTriage: View {
         return DayClock.startOfUserDay(for: next, calendar: calendar)
     }
 
-    // MARK: 拆小 sheet
+    // MARK: 拆小 sheet(2026-08-23 改版)
 
-    /// 拆小 v1 手动:预填两条空的子任务输入框,两条都填才能提交。
+    /// 三通道冗余:① AI 候选(点选/可改/换一批) ② 说一句(转写自动切条)
+    /// ③ 自己写一条(动态数量,可删)。至少选 1 条即可提交;AI 失败 → ②③ 兜底。
     private func splitSheet(_ todo: TodoItemData) -> some View {
         NavigationStack {
             ZStack {
                 PaperTextureBackground()
 
-                VStack(spacing: WarmSpacing.lg) {
-                    Text(todo.title)
-                        .font(WarmFont.headline(15))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
+                VStack(spacing: WarmSpacing.md) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: WarmSpacing.lg) {
+                            splitOrigRow(todo)
+
+                            switch splitPhase {
+                            case .idle, .loading:
+                                splitLoadingSection
+                            case .ready:
+                                splitCandidatesHeader
+                            case .failed:
+                                splitFailedNote
+                            }
+
+                            if !splitCandidates.isEmpty {
+                                splitRows
+                            }
+
+                            if let voiceInput, splitPhase != .loading {
+                                SplitMicRow(
+                                    voiceInput: voiceInput,
+                                    onError: onError,
+                                    onAdopt: { adoptVoiceTranscript($0) }
+                                )
+                            }
+
+                            splitCustomSection
+                        }
                         .padding(.horizontal, WarmSpacing.lg)
-
-                    VStack(spacing: WarmSpacing.md) {
-                        splitTextField(
-                            title: String(localized: "review.flow.split.field_1"),
-                            text: $splitField1
-                        )
-                        splitTextField(
-                            title: String(localized: "review.flow.split.field_2"),
-                            text: $splitField2
-                        )
+                        .padding(.top, WarmSpacing.sm)
+                        .padding(.bottom, WarmSpacing.lg)
                     }
-                    .padding(.horizontal, WarmSpacing.lg)
 
-                    Button {
-                        submitSplit(todo)
-                    } label: {
-                        Text(String(localized: "review.flow.split.submit"))
-                            .font(WarmFont.headline(15))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: WarmSize.touch)
-                            .background(
-                                Capsule().fill(canSubmitSplit ? WarmTheme.primary : WarmTheme.divider)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canSubmitSplit)
-                    .padding(.horizontal, WarmSpacing.lg)
-
-                    Spacer()
+                    splitSubmitRow(todo)
                 }
-                .padding(.top, WarmSpacing.xl)
             }
             .navigationTitle(String(localized: "review.flow.split.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(String(localized: "review.flow.split.cancel")) {
-                        splitTarget = nil
+                        stopSplitSession()
                     }
                 }
             }
+            .onDisappear {
+                stopSplitSession()
+            }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.large])
         .accessibilityIdentifier("ReviewFlowSplitSheet")
     }
 
-    private var canSubmitSplit: Bool {
-        ![splitField1, splitField2]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .contains(true)
+    /// 取消/关闭 sheet 时收尾:取消在途 AI 请求、停掉可能还在跑的录音。
+    /// splitTarget 同步清空——SplitMicRow 的延迟采纳(onDisappear 后才跑的
+    /// adoptVoiceTranscript)靠它拦截,否则会对已关闭的 sheet 多发一次拆小请求。
+    private func stopSplitSession() {
+        splitTask?.cancel()
+        if voiceInput?.isRecording == true {
+            voiceInput?.cancelRecordingByUser()
+        }
+        splitTarget = nil
     }
 
-    private func splitTextField(title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-            Text(title)
-                .font(WarmFont.caption(12))
+    /// 原任务行(引号 + 标题)。
+    private func splitOrigRow(_ todo: TodoItemData) -> some View {
+        HStack(alignment: .top, spacing: WarmSpacing.xs) {
+            Image(systemName: "quote.opening")
+                .font(.system(size: 14))
+                .foregroundColor(WarmTheme.primaryText)
+                .flipsForRightToLeftLayoutDirection(true)
+
+            Text(todo.title)
+                .font(WarmFont.headline(15))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+        }
+    }
+
+    private var splitLoadingSection: some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+            Text(String(localized: "review.flow.split.loading"))
+                .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            TextField("", text: text, axis: .vertical)
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                    .fill(WarmTheme.inputFieldBackground)
+                    .frame(height: 44)
+            }
+        }
+    }
+
+    /// 候选区头:标题随来源变化(AI 候选 vs 按你说的切条)+ 换一批。
+    private var splitCandidatesHeader: some View {
+        HStack {
+            Text(String(localized: splitSource == .ai
+                ? "review.flow.split.candidates.title"
+                : "review.flow.split.candidates.voice_title"))
+                .font(WarmFont.headline(14))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .layoutPriority(1)
+
+            Spacer(minLength: WarmSpacing.xs)
+
+            Button(String(localized: "review.flow.split.regen")) {
+                guard let target = splitTarget else { return }
+                splitSource = .ai
+                startSplitLoad(
+                    input: target.title,
+                    locale: Locale(identifier: target.localeIdentifier ?? Locale.current.identifier),
+                    wantsAlternative: true
+                )
+            }
+            .font(WarmFont.caption(13))
+            .foregroundColor(WarmTheme.primaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var splitFailedNote: some View {
+        Text(String(localized: "review.flow.split.failed"))
+            .font(WarmFont.caption(13))
+            .foregroundColor(WarmTheme.textSecondary)
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// 候选行列表(AI 候选 + 手写行混排;手写行带删除)。
+    private var splitRows: some View {
+        VStack(spacing: WarmSpacing.sm) {
+            ForEach($splitCandidates) { $candidate in
+                splitCandidateRow($candidate)
+            }
+        }
+    }
+
+    private func splitCandidateRow(_ candidate: Binding<SplitCandidate>) -> some View {
+        HStack(spacing: WarmSpacing.sm) {
+            Button {
+                candidate.wrappedValue.checked.toggle()
+                HapticFeedback.selection()
+            } label: {
+                ZStack {
+                    Circle()
+                        .strokeBorder(
+                            candidate.wrappedValue.checked ? WarmTheme.primary : WarmTheme.divider,
+                            lineWidth: 2
+                        )
+                        .background(
+                            Circle().fill(candidate.wrappedValue.checked ? WarmTheme.primary : .clear)
+                        )
+                    if candidate.wrappedValue.checked {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(width: 22, height: 22)
+                .animation(WarmAnimation.springStandard, value: candidate.wrappedValue.checked)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: candidate.wrappedValue.checked
+                ? "review.flow.split.a11y.deselect"
+                : "review.flow.split.a11y.select"))
+
+            TextField("", text: candidate.text, axis: .vertical)
                 .font(WarmFont.body(15))
+                .foregroundColor(candidate.wrappedValue.checked ? WarmTheme.textPrimary : WarmTheme.textMuted)
                 .lineLimit(1...2)
                 .padding(WarmSpacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
                         .fill(WarmTheme.inputFieldBackground)
                 )
+
+            if candidate.wrappedValue.custom {
+                Button {
+                    splitCandidates.removeAll { $0.id == candidate.wrappedValue.id }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .padding(WarmSpacing.xs)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "review.flow.split.a11y.delete"))
+            }
         }
+    }
+
+    private var splitCustomSection: some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+            Text(String(localized: "review.flow.split.custom.title"))
+                .font(WarmFont.headline(14))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            HStack(spacing: WarmSpacing.sm) {
+                TextField(
+                    String(localized: "review.flow.split.custom.placeholder"),
+                    text: $customFieldText
+                )
+                .font(WarmFont.body(15))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(1)
+                .padding(WarmSpacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                        .fill(WarmTheme.inputFieldBackground)
+                )
+                .onSubmit { addCustomCandidate() }
+
+                Button {
+                    addCustomCandidate()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(WarmTheme.primaryText)
+                        .frame(width: 42, height: 42)
+                        .background(
+                            RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                                .fill(WarmTheme.subtleControlBackground)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(customFieldText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel(String(localized: "review.flow.split.custom.add"))
+            }
+        }
+    }
+
+    /// 提交行:实时报数「拆成 N 条」;0 条时禁用并说明「至少选一条」。
+    private func splitSubmitRow(_ todo: TodoItemData) -> some View {
+        let count = selectedSplitTitles.count
+        return Button {
+            submitSplit(todo)
+        } label: {
+            Text(String(localized: count > 0
+                ? "review.flow.split.submit_\(count)"
+                : "review.flow.split.submit_disabled"))
+                .font(WarmFont.headline(15))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .frame(height: WarmSize.touch)
+                .background(
+                    Capsule().fill(count > 0 ? WarmTheme.primary : WarmTheme.divider)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(count == 0)
+        .padding(.horizontal, WarmSpacing.lg)
+    }
+}
+
+// MARK: - 拆小 sheet 数据类型
+
+/// 候选加载状态。failed = AI/网络失败 → 降级为「自己写一条」路径(拍板:失败降级手写)。
+enum SplitPhase {
+    case idle
+    case loading
+    case ready
+    case failed
+}
+
+/// 候选来源:ai = 打开/换一批;voice = 「说一句」切条(候选区标题文案不同)。
+enum SplitSource {
+    case ai
+    case voice
+}
+
+/// 一条候选步骤。custom = 用户手写(带删除按钮;换候选/语音切条时保留)。
+struct SplitCandidate: Identifiable {
+    let id = UUID()
+    var text: String
+    var checked: Bool
+    let custom: Bool
+}
+
+/// sheet 内「说一句」行(2026-08-23 拆小改版):复用全局 `VoiceInputProtocol` 实例。
+/// 说完(手动停 / 静音自动停)把本次转写交给 `onAdopt` 切条;取消不留痕。
+/// 转写走本地 SFSpeechRecognizer,不经代理、不耗 AI 额度(与首页录音同一成本结构)。
+///
+/// 观察方式:手写订阅三个 Publisher 镜像进 @State——`any VoiceInputProtocol`
+/// 存在类型满足不了 `@ObservedObject` 的泛型约束(Swift 限制),协议已把状态
+/// 全部暴露为 Publisher,镜像订阅是等价且唯一干净的路。
+/// 注意:录音只能在真机验证(CLAUDE.md 模拟器限制)。
+private struct SplitMicRow: View {
+    let voiceInput: any VoiceInputProtocol
+    let onError: (Error) -> Void
+    let onAdopt: (String) -> Void
+
+    /// isRecording 的本地镜像(onAppear 播种 + publisher 同步)。
+    @State private var isRecording = false
+    /// 本次监听期间累积的转写。不直接读 `voiceInput.transcript`——那里可能留着
+    /// 首页上一次录音的旧文本,只有监听开始后的 publisher 事件才是本次的。
+    @State private var liveText = ""
+    @State private var wasListening = false
+    /// 录音停止后的待采纳转写(error 事件在下一个 runloop 前可将其清空作废)。
+    @State private var pendingAdoptText: String?
+
+    var body: some View {
+        Group {
+            if isRecording {
+                listeningRow
+            } else {
+                idleRow
+            }
+        }
+        .onAppear {
+            // 行可能出现在录音已开始之后(如候选加载完成时):播种当前态
+            isRecording = voiceInput.isRecording
+        }
+        .onReceive(voiceInput.isRecordingPublisher) { recording in
+            isRecording = recording
+            if recording {
+                wasListening = true
+                liveText = ""
+                pendingAdoptText = nil
+            } else if wasListening {
+                // 结束(手动停/静音自动停):进入待采纳态。VoiceInputManager 的错误路径
+                // (中断/watchdog)是先置 isRecording=false 再设 error——同一个调用栈里
+                // error 事件会紧跟着到,这里延后一个 runloop 再决定采纳还是报错,
+                // 避免把不完整转写当结果、又把错误吞掉。
+                wasListening = false
+                let final = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
+                liveText = ""
+                guard !final.isEmpty else { return }
+                pendingAdoptText = final
+                DispatchQueue.main.async {
+                    guard let text = pendingAdoptText else { return } // error 路径已清空
+                    pendingAdoptText = nil
+                    onAdopt(text)
+                }
+            }
+        }
+        .onReceive(voiceInput.transcriptPublisher) { text in
+            guard wasListening else { return }
+            liveText = text
+        }
+        .onReceive(voiceInput.errorPublisher) { error in
+            // 录音出错(含停止后紧跟的错误事件):不采纳、如实上报(错误显式传播,不静默)
+            guard let error, wasListening || pendingAdoptText != nil else { return }
+            wasListening = false
+            liveText = ""
+            pendingAdoptText = nil
+            onError(error)
+        }
+    }
+
+    private var idleRow: some View {
+        Button {
+            Task { @MainActor in
+                do {
+                    try await voiceInput.startRecording()
+                } catch {
+                    onError(error)
+                }
+            }
+        } label: {
+            HStack(spacing: WarmSpacing.sm) {
+                Label(String(localized: "review.flow.split.mic.say"), systemImage: "mic.fill")
+                    .font(WarmFont.headline(13))
+                    .foregroundColor(WarmTheme.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: WarmSpacing.xs)
+
+                Text(String(localized: "review.flow.split.mic.hint"))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
+            }
+            .padding(WarmSpacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                    .fill(WarmTheme.cardBackground)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var listeningRow: some View {
+        HStack(spacing: WarmSpacing.sm) {
+            Image(systemName: "mic.fill")
+                .font(.system(size: 16))
+                .foregroundColor(WarmTheme.urgentText)
+
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                Text(verbatim: liveText.isEmpty
+                    ? String(localized: "review.flow.split.mic.listening")
+                    : liveText)
+                    .font(WarmFont.body(14))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+
+                HStack(spacing: WarmSpacing.md) {
+                    // 手动「说完了」:等 isFinal 最终转写后自动停止 → 采纳
+                    Button(String(localized: "review.flow.split.mic.done")) {
+                        voiceInput.finishRecording()
+                    }
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .buttonStyle(.plain)
+
+                    Button(String(localized: "review.flow.split.mic.cancel")) {
+                        voiceInput.cancelRecordingByUser()
+                        wasListening = false
+                        liveText = ""
+                        pendingAdoptText = nil
+                    }
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .buttonStyle(.plain)
+                }
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textMuted)
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(WarmSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                .fill(WarmTheme.cardBackground)
+        )
     }
 }

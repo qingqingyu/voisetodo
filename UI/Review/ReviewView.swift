@@ -63,14 +63,17 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
 /// 数据通过 `@Query` 从 SwiftData 查询已完成 TodoItem，
 /// 转换为 `CompletionEvent` 数组后调 `ReviewAggregator.summarize`。
 ///
-/// 阶段 3 增补:`content` 最上方有「开始这次复盘」入口卡(点击 fullScreenCover
-/// 呈现五步流程 `ReviewFlowView`)。日常随手看统计和郑重坐下来复盘是两种心智,不混。
+/// 阶段 3 增补:复盘入口卡(2026-08-23 拍板改版为「N 件事等你决定」一行动作行,
+/// 点击 fullScreenCover 呈现五步流程 `ReviewFlowView`)——有数据时位于 `content`
+/// 统计行之后,空态置顶。日常随手看统计和郑重坐下来复盘是两种心智,不混。
 struct ReviewView: View {
     /// 复盘流程需要的 store 能力。nil(默认)时入口卡隐藏——settings 深链与
     /// preview 不注入也能编译渲染;HomeView 的两处 sheet 注入真实 store。
     var store: (any ReviewFlowStore)? = nil
-    /// 上次复盘日期的注入点(阶段 4 的会话存储接线)。nil 时该行隐藏。
-    var lastReviewDate: (() -> Date?)? = nil
+    /// 拆小 sheet 的 AI 候选源(2026-08-23 拆小改版)。nil → sheet 直接手写降级。
+    var splitter: (any TodoSplitterProtocol)? = nil
+    /// 拆小 sheet 的麦克风(与首页共用同一实例)。nil → 「说一句」行隐藏。
+    var voiceInput: (any VoiceInputProtocol)? = nil
 
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
@@ -98,14 +101,15 @@ struct ReviewView: View {
             PaperTextureBackground()
 
             ScrollView {
-                // 入口卡放在统计之上:无论空态还是有数据,「待处理 N 条」的入口
-                // 都该可见——新用户没有完成记录,但卡片堆(第 2 步)照样可用。
+                // 顺序(2026-08-23 拍板):有数据时先情绪回报(Hero/统计)再派活
+                // (入口卡在 `content` 内、统计行之后);空态仍入口卡置顶——
+                // 新用户没有完成记录,行动入口必须第一眼可见。
                 VStack(spacing: WarmSpacing.lg) {
-                    if store != nil {
-                        reviewFlowEntryCard
-                    }
-
                     if summary.total == 0 {
+                        if store != nil {
+                            reviewFlowEntryCard
+                        }
+
                         emptyState
                     } else {
                         content
@@ -120,7 +124,7 @@ struct ReviewView: View {
         }
         .fullScreenCover(isPresented: $showReviewFlow) {
             if let store {
-                ReviewFlowView(store: store)
+                ReviewFlowView(store: store, splitter: splitter, voiceInput: voiceInput)
             }
         }
         .navigationTitle(String(localized: "review.nav_title"))
@@ -129,13 +133,20 @@ struct ReviewView: View {
 
     // MARK: Review Flow Entry
 
-    /// 「开始这次复盘」入口卡(阶段 3)。N = 未完成 && abandonedAt == nil &&
-    /// recurrenceRule == nil 的一次性任务数(与第 2 步卡片堆输入同一口径,拍板 4)。
+    /// 复盘入口卡(2026-08-23 拍板改版):一行动作行——icon + 「N 件事等你决定」
+    /// + 尾部胶囊「开始 →」。N = 未完成 && abandonedAt == nil && recurrenceRule == nil
+    /// 的一次性任务数(与第 2 步卡片堆输入同一口径,拍板 4)。
+    ///
+    /// 改版动机:旧三行卡(title/pending/scope)读起来像信息展示,且「一次性任务」
+    /// 是内部模型泄漏(用户没有这个分类);「回顾近 30 天」消歧义移进流程第 1 步;
+    /// 「上次复盘日期」也移第 1 步(从 previousSessions 取,不再外部注入)。
+    /// N == 0 时空态文案「都清完了,看看这一个月」——卡不消失,回顾本身仍有价值。
     @ViewBuilder
     private var reviewFlowEntryCard: some View {
         let pendingCount = allTodos.filter { item in
             !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
         }.count
+        let hasPending = pendingCount > 0
 
         Button {
             showReviewFlow = true
@@ -143,49 +154,38 @@ struct ReviewView: View {
             RecapCard {
                 HStack(spacing: WarmSpacing.md) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 26))
+                        .font(.system(size: 22))
                         .foregroundColor(WarmTheme.primary)
 
-                    VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                        Text(String(localized: "review.flow.entry.title"))
-                            .font(WarmFont.headline(16))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .layoutPriority(1)
-
-                        Text(String(localized: "review.flow.entry.pending_\(pendingCount)"))
-                            .font(WarmFont.caption(13))
-                            .foregroundColor(WarmTheme.textSecondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-
-                        // 口径点明(2026-08-21 拍板):周/月切换器在统计页顶部,
-                        // 用户会以为它也管复盘。这行常驻小字说明流程固定「近 30 天」,
-                        // 消歧义,不动切换器位置。
-                        Text(String(localized: "review.flow.entry.scope"))
-                            .font(WarmFont.caption(11))
-                            .foregroundColor(WarmTheme.textMuted)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-
-                        if let date = lastReviewDate?() {
-                            Text(String(
-                                localized: "review.flow.entry.last_review_\(date.formatted(.dateTime.year().month().day()))"
-                            ))
-                                .font(WarmFont.caption(11))
-                                .foregroundColor(WarmTheme.textMuted)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                        }
-                    }
+                    Text(String(localized: hasPending
+                        ? "review.flow.entry.pending_\(pendingCount)"
+                        : "review.flow.entry.empty"))
+                        .font(WarmFont.headline(15))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
 
                     Spacer(minLength: WarmSpacing.xs)
 
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(WarmTheme.textMuted)
-                        .flipsForRightToLeftLayoutDirection(true)
+                    // 尾部胶囊是动作暗示:这一行是「进去做事」,不是信息展示。
+                    HStack(spacing: WarmSpacing.xxs) {
+                        Text(String(localized: "review.flow.entry.action"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .flipsForRightToLeftLayoutDirection(true)
+                    }
+                    .font(WarmFont.headline(13))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, WarmSpacing.md)
+                    .padding(.vertical, WarmSpacing.xs)
+                    .background(
+                        Capsule().fill(hasPending ? WarmTheme.primary : WarmTheme.primary.opacity(0.75))
+                    )
                 }
             }
         }
@@ -244,20 +244,7 @@ struct ReviewView: View {
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
 
-        // 完成率分母:区间内 dueDate ≤ 今天的待办数。
-        // 未来到期的任务不计入分母,避免月中显示"10%"这种打击人的数字。
-        // ⚠️ 有意不过滤 abandonedAt(拍板 1):已划掉的任务**留在分母**——堵死
-        // 「划掉保数字」的 gaming 路径,首次大清理完成率下跌是真实信息。
-        // 与各「未完成可见性」过滤(abandonedAt == nil)方向相反,别改串。
-        // 规律任务父任务只算一次(item-based,与历史 createdCount 风格一致);
-        // 不展开 occurrence,v2 若要精确可用 RecurrenceRule.occurs(on:) 改算法。
-        let dueByTodayCount = allTodos.filter { item in
-            guard let due = item.dueDate else { return false }
-            let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
-            return dueDay >= start && dueDay <= todayStart
-        }.count
-
-        // 未来 7 天到期数:用作完成率副文案,提示用户接下来要做什么。
+        // 未来 7 天到期数:统计卡副文案(完成率分母链路随完成率下岗移除,2026-08-23)。
         let upcomingDueIn7DaysCount = allTodos.filter { item in
             guard let due = item.dueDate else { return false }
             let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
@@ -269,7 +256,6 @@ struct ReviewView: View {
             from: start,
             to: end,
             calendar: calendar,
-            dueByTodayCount: dueByTodayCount > 0 ? dueByTodayCount : nil,
             upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
         )
         // 「当天记当天做完」按周/月各自区间算(一次性任务口径)。
@@ -287,8 +273,6 @@ struct ReviewView: View {
             streakDays: result.streakDays,
             busiestDay: result.busiestDay,
             busiestDayCount: result.busiestDayCount,
-            completionRate: result.completionRate,
-            dueByTodayCount: result.dueByTodayCount,
             upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
             daysWithCompletion: result.daysWithCompletion,
             sameDayCount: sameDayCount
@@ -331,6 +315,10 @@ struct ReviewView: View {
             RecapHeroSection(summary: summary)
 
             RecapStatsRow(summary: summary)
+
+            if store != nil {
+                reviewFlowEntryCard
+            }
 
             RecapCategoryChartSection(byCategory: summary.byCategory)
 
@@ -543,7 +531,7 @@ struct ReviewView: View {
     for i in 0..<15 {
         let dayOffset = -(i % 10)
         let date = cal.date(byAdding: .day, value: dayOffset, to: now)!
-        // 同时给 dueDate(也设在同一天),让完成率分母非零,验证 statsRow 副文案显示。
+        // 给 dueDate(与完成同一天),保持与真实数据形状一致。
         let item = TodoItem(
             title: "Preview item \(i)",
             dueDate: date,
@@ -570,7 +558,7 @@ struct ReviewView: View {
 
 #Preview("Sparse") {
     // 整月只有今天完成 2 项,触发稀疏文本态:Daily Trend 切到一句话,
-    // Category 也走横条(2 类各 1 件)。完成率分母 2(今天到期的 2 项)。
+    // Category 也走横条(2 类各 1 件)。两件都到期于今天。
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try! ModelContainer(for: TodoItem.self, configurations: config)
 

@@ -7861,7 +7861,7 @@
         }
       }
     },
-    "review.flow.entry.last_review_%@" : {
+    "review.flow.recap.last_review_%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7888,29 +7888,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To process: %lld one-time tasks"
+            "value" : "Things to decide: %lld"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未処理:単発タスク %lld 件"
+            "value" : "決めることが %lld 件"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "待处理:%lld 条一次性任务"
+            "value" : "%lld 件事等你决定"
           }
         }
       }
     },
-    "review.flow.entry.scope" : {
+    "review.flow.recap.scope" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Covers the last 30 days"
+            "value" : "The last 30 days"
           }
         },
         "ja" : {
@@ -7927,24 +7927,46 @@
         }
       }
     },
-    "review.flow.entry.title" : {
+    "review.flow.entry.action" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start this review"
+            "value" : "Start"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今回のふりかえりを始める"
+            "value" : "はじめる"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开始这次复盘"
+            "value" : "开始"
+          }
+        }
+      }
+    },
+    "review.flow.entry.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All sorted — see how the month went"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片付いた。この1ヶ月をふりかえる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "都清完了,看看这一个月"
           }
         }
       }
@@ -8433,68 +8455,398 @@
         }
       }
     },
-    "review.flow.split.field_1" : {
+    "review.flow.split.a11y.delete" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Subtask 1"
+            "value" : "Delete"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サブタスク 1"
+            "value" : "削除"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "子任务 1"
+            "value" : "删除"
           }
         }
       }
     },
-    "review.flow.split.field_2" : {
+    "review.flow.split.a11y.deselect" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Subtask 2"
+            "value" : "Deselect"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サブタスク 2"
+            "value" : "選択を解除"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "子任务 2"
+            "value" : "取消选择"
           }
         }
       }
     },
-    "review.flow.split.submit" : {
+    "review.flow.split.a11y.select" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Split"
+            "value" : "Select"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "分割する"
+            "value" : "選択"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拆小"
+            "value" : "选择"
+          }
+        }
+      }
+    },
+    "review.flow.split.candidates.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start with these three steps"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まずこの3ステップで"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先拆成三步试试"
+          }
+        }
+      }
+    },
+    "review.flow.split.candidates.voice_title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cut into these, as you said"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話した内容で切りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按你说的,切成这几条"
+          }
+        }
+      }
+    },
+    "review.flow.split.custom.add" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add item"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "項目を追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加一条"
+          }
+        }
+      }
+    },
+    "review.flow.split.custom.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "e.g. dig out the hard drive first"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例:まず外付けHDDを探す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "比如:先把移动硬盘翻出来"
+          }
+        }
+      }
+    },
+    "review.flow.split.custom.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Or write your own"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "または自分で書く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "或自己写一条"
+          }
+        }
+      }
+    },
+    "review.flow.split.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't come up with a split — write your own steps below"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上手く分割できませんでした。下の手書き欄を使ってください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没拆出来——下面自己写几条也行"
+          }
+        }
+      }
+    },
+    "review.flow.split.loading" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thinking about how to split it…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分割方法を考えています…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在想怎么拆…"
+          }
+        }
+      }
+    },
+    "review.flow.split.mic.cancel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
+    },
+    "review.flow.split.mic.done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done speaking"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話し終えた"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说完了"
+          }
+        }
+      }
+    },
+    "review.flow.split.mic.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speaking is faster — one sentence, auto-split"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話す方が速い。一言で自動分割"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说的更快——一句话,自动切成几条"
+          }
+        }
+      }
+    },
+    "review.flow.split.mic.listening" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listening…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聞いています…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在听…"
+          }
+        }
+      }
+    },
+    "review.flow.split.mic.say" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Say it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一言話す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说一句"
+          }
+        }
+      }
+    },
+    "review.flow.split.regen" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try another"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の案で"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "换一批"
+          }
+        }
+      }
+    },
+    "review.flow.split.submit_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split into %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件に分割"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拆成 %lld 条"
+          }
+        }
+      }
+    },
+    "review.flow.split.submit_disabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick at least one"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1つは選んでください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少选一条"
           }
         }
       }
@@ -9026,13 +9378,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "of which %lld were jotted down and finished the same day"
+            "value" : "%lld of them were captured and done the same day"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "そのうち %lld 件は当日にメモして当日に終えた"
+            "value" : "そのうち %lld 件は、メモしたその日に終えた"
           }
         },
         "zh-Hans" : {
@@ -9436,18 +9788,24 @@
         }
       }
     },
-    "review.stat.completion_rate" : {
+    "review.stat.done" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Completion rate"
+            "value" : "Done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成率"
+            "value" : "本期完成"
           }
         }
       }
