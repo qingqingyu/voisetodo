@@ -127,7 +127,7 @@
        {"title": "喝水提醒", "detail": "下午 3 点、5 点和 7 点", "due_date": null, "due_hint": "下午 3 点、5 点和 7 点", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": ["15:00", "17:00", "19:00"], "due_date_basis": null, "priority": "normal", "category_hint": "health"}],
        "ignored": "最近太忙了（状态描述，无可执行行动项）"}},
     {"id": "zh-019", "locale": "zh", "transcript": "明天跟山田开会", "tags": ["single", "name-preserve"],
-     "golden": {"todos": [{"title": "跟山田开会", "detail": "明天跟山田开会", "due_date": "2026-01-08", "due_hint": "明天", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "social"}], "ignored": ""}},
+     "golden": {"todos": [{"title": "跟山田开会", "detail": "明天跟山田开会", "due_date": "2026-01-08", "due_hint": "明天", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "work"}], "ignored": ""}},
     {"id": "zh-020", "locale": "zh", "transcript": "明天去银行办卡，顺便买菜，晚上给老妈打电话", "tags": ["multi", "fuzzy-bucket"],
      "golden": {"todos": [
        {"title": "去银行办卡", "detail": "明天去银行办卡", "due_date": "2026-01-08", "due_hint": "明天", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "finance"},

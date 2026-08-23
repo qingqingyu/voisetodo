@@ -24,7 +24,8 @@
 **前提条件（不满足无法开始）**
 - [ ] Apple Developer Program 会员有效（$99/年，过期无法提审）
 - [ ] 真机验证 Live Activity（fix 64caf21 之后装包验证锁屏/灵动岛）
-- [ ] AIProxy 生产额度切换 + `LOG_HASH_SALT`（见 CONFIGURATION_CHECKLIST.md「上线前必做」，前置 P1 已全部修复）
+- [x] AIProxy 生产额度切换（2026-08-20 已部署 free=2/Pro=100；2026-08-22 文件改 free=3，**待部署生效**）；两个前置 P1 已修复（0ead216）
+- [ ] `LOG_HASH_SALT` secret 核验（`wrangler secret list` 确认已设置；CONFIGURATION_CHECKLIST.md 原「上线前必做」节已删——两个 P1 修完后过期）
 - [ ] 隐私政策页可访问：https://qingqingyu.github.io/voicetodo-privacy/
 
 ---
@@ -97,10 +98,10 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 · 无需账号，无登录。请直接体验。
 · 首次使用需授权麦克风 + 语音识别（Apple Speech framework），这是核心功能所需。
 · 申请了 audio 后台模式：录音中锁屏后仍需继续采集（锁屏 Live Activity 展示实时转写）。
-· AI 解析走我们自建 Cloudflare Worker 代理（key 不在客户端），每设备每日免费额度
-  有限（当前测试期临时放大，上线前会收紧）。审核期间额度足够正常体验。
+· AI 解析走我们自建 Cloudflare Worker 代理（key 不在客户端），免费档每设备每日
+  3 次解析，Pro 提升额度。审核期间额度足够正常体验（键盘输入走同一链路）。
 · 订阅（Pro）仅提高每日解析额度。付费墙内含隐私政策与使用条款链接、恢复购买按钮。
-· App Store 上架后将立即切换生产额度配置。
+· 生产额度配置已上线（2026-08-20 部署；free 2→3 改动待部署）。
 ```
 
 - 版本发布方式：**建议「手动发布」**（首次上线时间可控），熟练后可改分阶段 7 天
@@ -182,7 +183,7 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 - [ ] 出口合规确认
 - [ ] （可选）TestFlight 内测一天再提审
 - [ ] **Submit for Review**
-- [ ] 审核通过后：先去 Cloudflare 切生产额度（`wrangler.toml` 两值 + `wrangler secret put LOG_HASH_SALT` + deploy，见 CONFIGURATION_CHECKLIST.md），再点手动发布
+- [ ] 审核通过后：确认 free=3 的 wrangler.toml 已 deploy + `LOG_HASH_SALT` 已设置，再点手动发布
 
 ---
 

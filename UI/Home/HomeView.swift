@@ -240,6 +240,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
     @State private var occurrenceRevision = 0
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+    /// 「首次确认带日期待办后的一次性日历同步询问」是否已弹过(弹过一次永不复弹,
+    /// 含下滑关闭;真正的开关在设置页)。触发与条件见 `maybePresentCalendarSyncAsk`。
+    @AppStorage(CalendarWriteMode.deferredAskShownKey) private var calendarSyncAskShown = false
+    /// 一次性日历同步询问 sheet 的 presentation 状态。
+    @State private var showCalendarSyncAsk = false
     /// 网格折叠进度(0=展开满屏 6 行, 1=折叠到选中日所在周 1 行 + 任务列表)。
     /// 生命周期:与 HomeView 的 View identity 绑定。HomeView 在 App 级别长期存活,
     /// 切 tab 不会销毁重建 HomeView,因此 collapseProgress 在 tab 切换间自然保留。
@@ -352,6 +357,57 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// trigger 跟着迁移到新位置,token 语义不变。)
     @State private var confirmPopToken = 0
 
+    // MARK: - Overlay 组件(拆出巨型 body,给类型检查器留边界)
+    //
+    // 2026-08-23 合并 fupan 后 body 的链式表达式超过类型检查预算
+    // (「unable to type-check this expression in reasonable time」)——
+    // 两段最大的 overlay 抽成计算属性,行为零变化,纯类型检查减负。
+
+    /// A2 自动学习建议 banner(top overlay 内容)。
+    @ViewBuilder
+    private var glossarySuggestionBanner: some View {
+        if let suggestion = coordinator.glossarySuggestion {
+            GlossarySuggestionBanner(
+                suggestion: suggestion,
+                onAccept: {
+                    PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
+                        type: .alias,
+                        phrase: suggestion.correction.originalTitle,
+                        expansion: suggestion.correction.confirmedTitle,
+                        localeIdentifier: suggestion.correction.localeIdentifier
+                    ))
+                    CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                    withAnimation { coordinator.glossarySuggestion = nil }
+                },
+                onDismiss: {
+                    CorrectionTracker.shared.remove(id: suggestion.correction.id)
+                    withAnimation { coordinator.glossarySuggestion = nil }
+                }
+            )
+            .padding(.horizontal, WarmSpacing.lg)
+            .padding(.top, WarmSpacing.xs)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    /// 悬浮 FAB(bottom overlay 内容)。
+    /// 挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,列表铺满至屏幕底,
+    /// 卡片可从按钮背后穿过(配合上方渐隐带溶解)。overlay 挂载顺序——FAB 在前、
+    /// hint/输入面板在后,后挂的更上层,所以输入面板出现时会盖住 FAB。
+    /// VoiceFAB 自带 .padding(.bottom, WarmSpacing.md) 让按钮浮在 home indicator
+    /// 上方,无需额外处理。(drawer 条件因 UnscheduledDrawer 当前为死代码恒为
+    /// false,保留以防恢复。)
+    @ViewBuilder
+    private var voiceFABOverlay: some View {
+        if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
+            VoiceFAB(
+                isDisabled: isInputEntryDisabled,
+                onTap: { openVoiceInputPanel() }
+            )
+            .transition(.opacity)
+        }
+    }
+
     /// 回顾页 sheet 内容(两个入口共用):dismiss 时重读置顶集合——
     /// 复盘流程在 sheet 内落地置顶后,回首页立即浮顶。
     private var reviewSheetContent: some View {
@@ -437,43 +493,10 @@ struct HomeView<Store: HomeTodoStore>: View {
         }
         // A2 自动学习建议 banner
         .overlay(alignment: .top) {
-            if let suggestion = coordinator.glossarySuggestion {
-                GlossarySuggestionBanner(
-                    suggestion: suggestion,
-                    onAccept: {
-                        PersonalGlossaryStore.shared.add(PersonalGlossaryEntry(
-                            type: .alias,
-                            phrase: suggestion.correction.originalTitle,
-                            expansion: suggestion.correction.confirmedTitle,
-                            localeIdentifier: suggestion.correction.localeIdentifier
-                        ))
-                        CorrectionTracker.shared.remove(id: suggestion.correction.id)
-                        withAnimation { coordinator.glossarySuggestion = nil }
-                    },
-                    onDismiss: {
-                        CorrectionTracker.shared.remove(id: suggestion.correction.id)
-                        withAnimation { coordinator.glossarySuggestion = nil }
-                    }
-                )
-                .padding(.horizontal, WarmSpacing.lg)
-                .padding(.top, WarmSpacing.xs)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            glossarySuggestionBanner
         }
         .overlay(alignment: .bottom) {
-            // 悬浮 FAB:挂在 root ZStack 的 overlay 上,不再占 safeAreaInset,
-            // 列表铺满至屏幕底,卡片可从按钮背后穿过(配合上方渐隐带溶解)。
-            // overlay 挂载顺序——FAB 在前、hint/输入面板在后,后挂的更上层,
-            // 所以输入面板出现时会盖住 FAB。VoiceFAB 自带 .padding(.bottom, WarmSpacing.md)
-            // 让按钮浮在 home indicator 上方,无需额外处理。
-            // (drawer 条件因 UnscheduledDrawer 当前为死代码恒为 false,保留以防恢复。)
-            if !(showInputPanel || (selectedBottomTab == .calendar && unscheduledDrawerExpanded)) {
-                VoiceFAB(
-                    isDisabled: isInputEntryDisabled,
-                    onTap: { openVoiceInputPanel() }
-                )
-                .transition(.opacity)
-            }
+            voiceFABOverlay
         }
         // 首次语音试用 hint(§3.4b):独立 overlay,offset 抬到 FAB 上方。
         // 不能和 FAB 共用同一个 overlay——两个子视图会形成 TupleView 包装,
@@ -532,9 +555,10 @@ struct HomeView<Store: HomeTodoStore>: View {
             isPresented: $addedToastVisible,
             position: .bottom,
             presentationToken: addedToastToken,
-            // 避让悬浮 VoiceFAB:FAB 上沿在 16+72=88pt(WarmSpacing.md + WarmSize.fab),
-            // 此处给到 100pt(再加 WarmSpacing.sm=12 呼吸距离),让 toast 完整浮在 FAB 之上。
-            bottomPadding: WarmSpacing.md + WarmSize.fab + WarmSpacing.sm,
+            // 避让悬浮 VoiceFAB:FAB 占高是 WarmSize.fabOverlayHeight(120:光晕直径
+            // 参与布局 + 底部 padding,不能只按按钮 72 算),再加 WarmSpacing.sm(12)
+            // 呼吸距离,让 toast 完整浮在 FAB 光晕之上。
+            bottomPadding: WarmSize.fabOverlayHeight + WarmSpacing.sm,
             actionTitle: addedToastActionTitle,
             action: addedToastAction
         )
@@ -558,6 +582,17 @@ struct HomeView<Store: HomeTodoStore>: View {
             VoicePermissionRepromptSheet(
                 onAllow: handleRepromptAllow,
                 onDismiss: handleRepromptDismiss
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        // 一次性日历同步询问:首次确认带日期待办后弹(2026-08-23 决策,
+        // 取代已删除的 onboarding 日历页)。条件见 maybePresentCalendarSyncAsk。
+        .sheet(isPresented: $showCalendarSyncAsk) {
+            CalendarSyncAskSheet(
+                permissionManager: permissionManager,
+                calendarWriteModeRaw: $calendarWriteModeRaw,
+                onDismissRequest: { showCalendarSyncAsk = false }
             )
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
@@ -1090,6 +1125,36 @@ struct HomeView<Store: HomeTodoStore>: View {
         if !onDayIds.isEmpty {
             confirmPopToken += 1
         }
+
+        maybePresentCalendarSyncAsk(todosById: todosById, wasFirstTrial: wasFirstTrial)
+    }
+
+    /// 一次性日历同步询问的触发判定(2026-08-23 决策:删 onboarding 日历页,
+    /// 在用户刚看到日期被识别出来的那一刻请求价值)。
+    ///
+    /// 条件全部满足才弹:
+    /// - 从未弹过(`deferredAskShownKey`,弹过一次永不复弹)
+    /// - 本次确认批次里有带日期的待办(无日期批次与日历无关,问「要同步吗」突兀)
+    /// - 写模式仍是 .appOnly(用户没在设置里主动开/关过)
+    /// - 不是首次语音 wow(wow 时刻 paywall 已排队,不叠第二层打断)
+    /// - 非 UI 测试或显式 `--calendar-ask` 注入(防既有场景测试被意外弹层打断)
+    ///
+    /// 已被拒的用户**不排除**在外:sheet 的被拒分支自带「去设置开启」出口,
+    /// 而「不再打扰」由一次性 flag 保证——拒过的人也值得拿到那一次出口。
+    ///
+    /// 注意:触发本询问的这批待办是在询问**之前**落库的,不会回填进系统日历;
+    /// 开启后从下一条带日期待办开始同步(文案按此事实表述,不承诺回填)。
+    private func maybePresentCalendarSyncAsk(todosById: [UUID: TodoItemData], wasFirstTrial: Bool) {
+        let uiTestOptions = UITestLaunchOptions.current
+        guard !calendarSyncAskShown,
+              !wasFirstTrial,
+              calendarWriteModeRaw == CalendarWriteMode.appOnly.rawValue,
+              todosById.values.contains(where: { $0.dueDate != nil }),
+              !uiTestOptions.isUITesting || uiTestOptions.calendarAskEnabled
+        else { return }
+        // 先落「已弹过」再弹:下滑关闭也算问过,不给二次打扰留口子
+        calendarSyncAskShown = true
+        showCalendarSyncAsk = true
     }
 
     /// 成功添加后的底部 toast。统计落别处的条目数,选「已添加 N 条」或分流版「N 条 + M 条在其他日期」。
@@ -1958,7 +2023,6 @@ struct HomeView<Store: HomeTodoStore>: View {
                 inputText: $panelInputText,
                 isRecording: coordinator.isRecording,
                 transcript: coordinator.transcript,
-                audioLevel: coordinator.audioLevel,
                 isFallbackMode: isFallbackMode,
                 onClose: { closeInputPanel() },
                 onModeChange: { switchInputPanelMode(toKeyboard: $0) },

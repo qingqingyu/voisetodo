@@ -57,6 +57,15 @@ struct CompleteTodoIntent: AppIntent {
             AppGroupConfig.markExternalDataChanged()
             WidgetCenter.shared.reloadAllTimelines()
             VoiceTodoLog.intent.info("intent.complete.success id=\(intentID, privacy: .public) todoID=\(todo.id.uuidString, privacy: .public) recurrence=\(recurrence) isCompleted=\(isCompleted) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            // Siri 跑在 App 进程,但写库走独立 ModelContext,不走活着的 TodoStore
+            // → $todos 不发布 → 通知不对账(与 widget 同一类洞),这里就地局部对账。
+            // App 进程直接读 standard 的总开关本体,无需镜像。
+            await IntentNotificationReconciler.reconcile(
+                todoID: todo.id,
+                context: context,
+                enabled: AppGroupConfig.notificationsEnabledInStandard(),
+                port: UNNotificationPort()
+            )
             return .result(dialog: "siri.complete.success \(todo.title)")
         case .notFound:
             VoiceTodoLog.intent.warning("intent.complete.not_found id=\(intentID, privacy: .public) todoID=\(todo.id.uuidString, privacy: .public)")

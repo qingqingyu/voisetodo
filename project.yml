@@ -161,6 +161,7 @@ targets:
       - path: Protocols/Domain/TaskEventKind.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift
       - path: Protocols/Domain/TodoSpan.swift
+      - path: Protocols/Domain/NotificationPlanner.swift
       - path: Protocols/VoiceTodoError.swift
       - path: Protocols/ErrorMessages.swift
       - path: Protocols/Constants.swift
@@ -168,6 +169,7 @@ targets:
       - path: Protocols/Telemetry.swift
       - path: Protocols/TelemetryQueue.swift
       - path: App/Intents/ToggleTodoIntent.swift
+      - path: App/Intents/IntentNotificationReconciler.swift
       - path: Resources/Localizable.xcstrings
       - path: VoiceTodoWidget/InfoPlist.xcstrings
     settings:

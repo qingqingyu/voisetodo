@@ -56,6 +56,9 @@ struct VoiceTodoApp: App {
             // 重置语义 = 全新安装,计数与冷却都应是零。
             UserDefaults.standard.removeObject(forKey: AppCoordinator.recordingSuccessCountKey)
             UserDefaults.standard.removeObject(forKey: AppCoordinator.lastPaywallAutoShownAtKey)
+            // 日历延后询问的一次性 flag 一并清:重置语义 = 全新安装,flag 残留会让
+            // 带 --calendar-ask 的场景(S16)在同一模拟器重跑时 sheet 永不弹出。
+            UserDefaults.standard.removeObject(forKey: CalendarWriteMode.deferredAskShownKey)
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 
@@ -236,6 +239,7 @@ struct VoiceTodoApp: App {
                     PaywallView()
                         .environmentObject(entitlementManager)
                         .environmentObject(quotaUsage)
+                        .environmentObject(coordinator)
                 }
                 .toast(
                     message: coordinator.toastMessage,
@@ -310,6 +314,9 @@ struct VoiceTodoApp: App {
         // 此处仅处理需要启动时执行的逻辑
         VoiceTodoLog.app.info("app.launch hasCompletedOnboarding=\(hasCompletedOnboarding) startupStorageError=\(startupStorageError != nil)")
         guard startupStorageError == nil else { return }
+        // 「到点提醒」总开关镜像灌入 App Group(兜住镜像机制上线前已拨 OFF 的老用户;
+        // 每次启动同步,standard 是唯一事实源)。
+        AppGroupConfig.syncNotificationsEnabledMirrorFromStandard()
         notificationSync.reconcileNow()
         Task { await entitlementManager.refresh() }
         Task { await ReviewNotificationScheduler.scheduleWeekly() }
@@ -338,6 +345,10 @@ struct VoiceTodoApp: App {
             // 回前台补账本地通知（清过期、权限刚授予后补排、外部改动同步）
             notificationSync.reconcileNow()
             NetworkMonitor.shared.restartIfNeeded()
+            // 回前台重读订阅权益:过期(沙盒加速/真实到期)后 isPro 若停留在 stale-true,
+            // 二次购买成功时无 false→true 跳变,paywall 收起会漏。只读 currentEntitlements
+            // (本地毫秒级),不调 refresh() 避免每次回前台都打 StoreKit 商品接口。
+            Task { await entitlementManager.refreshEntitlements() }
             Task {
                 await coordinator.handleAppForeground()
             }

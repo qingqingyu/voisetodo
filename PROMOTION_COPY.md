@@ -1,13 +1,13 @@
 # VoiceTodo 宣传文案手册(PROMOTION_COPY)
 
 > 配套 `PROMOTION_PLAN.md`(策略与执行)使用。本手册 = **对外文案资产包**,全部英文(英文市场)。
-> 定稿: 2026-08-14 · 状态: 草稿 v1(上线前需按 §6 一致性红线核一遍)
+> 定稿: 2026-08-14 · 状态: 草稿 v1.1(2026-08-22 同步:语言范围 zh+en、iOS 26、截图 6.9"、免费档 3/day 已定)
 
 ---
 
 ## 0. 使用说明
 
-- 所有文案基于 `PROMOTION_PLAN.md` 的 12 项决策,并**假定 §2.1 gating 清单已完成**(Free 3/day、wow-first onboarding、AI 成本已解)。若上线时 `DAILY_REQUEST_LIMIT` 仍是 2,所有写 "3" 的地方必须改成 "2"。
+- 所有文案基于 `PROMOTION_PLAN.md` 的 12 项决策。**免费档已定 3/day**(`wrangler.toml` `DAILY_REQUEST_LIMIT = "3"`,2026-08-22 改,待随下次 deploy 生效);文案里的 "3" 与它一致,改配置时同步改文案。
 - 字符上限按 App Store 规则标注。**提交前用字符计数器逐条核**,不要信肉眼。
 - Reddit 帖子草稿是"骨架 + 语气示范",发帖当天必须按当时 sub 的 rules 和最近热帖再调一遍。
 
@@ -81,7 +81,7 @@ Built for people who think faster than they type.
 • Times: "tonight at half past ten" → 22:30 reminder
 • Multiple reminders: "water at 3, 5 and 7" → three reminders on one todo
 • Priority & category: urgent tone → high priority; auto-filed into Work / Life / Health / Finance…
-• Your language: speaks English, 中文, 日本語 — mixed sentences are fine
+• Your language: speaks English and 中文 — mixed sentences are fine
 
 — Built into your iPhone —
 • Lock Screen widgets & Live Activity
@@ -97,7 +97,7 @@ VoiceTodo Pro: $4.99/month or $39.99/year after a 7-day free trial. Unlimited-fe
 Privacy: speech recognition uses Apple's Speech framework. To structure todos, the transcript text (not audio) is sent to our server and an AI provider. Audio is not stored. No account required.
 ```
 
-### 2.3 截图文案(6.7" 1290×2796,前 3 张 = wow)
+### 2.3 截图文案(6.9" 1320×2868,前 3 张 = wow)
 
 | # | 大字(Headline) | 小字(Caption) | 画面 |
 |---|----------------|----------------|------|
@@ -106,7 +106,7 @@ Privacy: speech recognition uses Apple's Speech framework. To structure todos, t
 | 3 | **It understands time.** | "By Friday" → real date. "Every Mon/Wed/Fri" → repeats. "This weekend" → asks you. | 日期解析特写 |
 | 4 | **On your Lock Screen.** | Widgets + Live Activity. | 锁屏 widget 组合 |
 | 5 | **Deep in your iPhone.** | Action Button. Siri. Calendar. | Action Button / Siri / 日历三联 |
-| 6 | **Your language, kept.** | English · 中文 · 日本語 — mixed is fine. | 三语言混输示例 |
+| 6 | **Your language, kept.** | English · 中文 — mixed is fine. | 中英混输示例 |
 
 ---
 
@@ -140,9 +140,9 @@ Three build decisions I'm proud of:
 
 1. Relative dates become real dates. "By Friday" resolves against today's date. You never see "Friday" in a date field.
 2. "This weekend" deliberately does NOT resolve. Saturday or Sunday? That's your call — the app asks instead of guessing. Guessing is how trust dies.
-3. Numbers stay out of your content. Your titles stay exactly in the language you spoke (English, 中文, 日本語 — mixing is fine).
+3. Numbers stay out of your content. Your titles stay exactly in the language you spoke (English or 中文 — mixing is fine).
 
-Honest limits: iOS 17+. The structuring step needs network (it's AI), voice notes queue offline. Free tier is 3 AI extractions/day; Pro is $4.99/mo or $39.99/yr after a 7-day trial — AI calls cost real money per extraction, so that's the honest way to price it.
+Honest limits: iOS 26+. The structuring step needs network (it's AI), voice notes queue offline. Free tier is 3 AI extractions/day; Pro is $4.99/mo or $39.99/yr after a 7-day trial — AI calls cost real money per extraction, so that's the honest way to price it.
 
 What's your capture flow today — and where does it break?
 ```
@@ -194,7 +194,7 @@ Step 3 — Daily review (2min): confirm what was parsed, fix what wasn't. Judgme
 
 If you want the DIY version: Siri → Reminders for time-boxed ones, voice memo for the jumble, weekly triage. It works. I just got tired of step 2.
 
-Link: [App Store]. iOS 17+, free tier 3 AI extractions/day, Pro $4.99/mo. Happy to answer build questions.
+Link: [App Store]. iOS 26+, free tier 3 AI extractions/day, Pro $4.99/mo. Happy to answer build questions.
 ```
 
 **发帖注意:** r/productivity 对 self-promo 最狠。骨架里"DIY version 也能做"这段是保命符,**不能删**。发帖前看 mod pinned post 和最近被删的 promo 帖。
@@ -217,7 +217,7 @@ Native-first, not cross-platform-port. The parts of iOS that made this worth bui
 
 The AI part: one ramble in, structured todos out. "Every Mon/Wed/Fri at 8pm, gym" → a real weekly rule, not a text blob.
 
-iOS 17+, free tier 3/day, Pro $4.99/mo or $39.99/yr (7-day trial).
+iOS 26+, free tier 3/day, Pro $4.99/mo or $39.99/yr (7-day trial).
 
 What would you map the Action Button to, if capture were free?
 ```
@@ -255,7 +255,7 @@ Thanks for the feedback — sorry [具体问题] got in your way. [一句话承�
 - [ ] Name/Subtitle/Keywords 逐条字符数复核(30/30/100)
 - [ ] Promotional Text ≤170
 - [ ] Description 与**当时真实产品**一致: 免费额度数字、Pro 权益措辞(不许出现 "unlimited" 字样 —— PAID_DAILY_LIMIT 是有限值,写 "unlimited" 有 App Store 审核拒审风险)
-- [ ] 截图 6 张导出 1290×2796,前 3 张 wow 顺序不变
+- [ ] 截图 6 张导出 1320×2868(6.9"),前 3 张 wow 顺序不变
 - [ ] GIF ≤15s,自动播放无声可懂(带字幕)
 - [ ] 每篇 Reddit 草稿发帖当天对照该 sub rules 与最近 3 天热帖语气再调
 - [ ] 4.1-4.4 话术存进手机备忘录,评论出现 10 分钟内可粘贴微调
@@ -265,5 +265,5 @@ Thanks for the feedback — sorry [具体问题] got in your way. [一句话承�
 1. **免费额度数字**(3/day)必须与线上 `DAILY_REQUEST_LIMIT` 一致
 2. **禁止 "unlimited"**: Pro 是 fair-use 上限,不是无限(参见 `wrangler.toml.example` 内注释的拒审风险)
 3. **禁止暗示 on-device AI**: 结构化是云端做的,privacy 文案必须照 4.3 口径
-4. **语言宣称只写 EN/中文/日本語**,别写 "any language"(prompt 规则 10 是"跟随输入语言",但质量只在三语言上验证过)
+4. **语言宣称只写 EN/中文**(日本语推迟到 v1.1,2026-08-15 拍板,在那之前任何对外文案不出现 日本語/Japanese),别写 "any language"(prompt 规则 10 是"跟随输入语言",但质量只在 en/zh 上验证过)
 5. **Android/Web 不存在**,任何渠道都别留"coming soon"式的口子

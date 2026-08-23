@@ -93,6 +93,11 @@ enum ErrorMessages {
 
     // Paywall / 订阅相关
     static let paywallPurchaseFailed = String(localized: "paywall.purchase_failed")
+    /// 购买成功 toast:购买成功信号(EntitlementManager.purchaseSuccessCount)驱动
+    /// paywall 收起时同时弹出 —— 收起不再只依赖 isPro 跳变,反馈也不能缺。
+    static let paywallPurchaseSucceeded = String(localized: "paywall.purchase_success")
+    /// 购买返回 unverified(端侧 StoreKit 验签失败):不能授信,提示重试或恢复购买。
+    static let paywallPurchaseUnverified = String(localized: "paywall.purchase_unverified")
     /// 加载订阅方案失败(未发生购买,与 `paywallPurchaseFailed` 区分,避免误导用户)。
     /// `EntitlementManager.loadProducts()` catch + `PaywallView` `.error` 分支都用这条。
     static let paywallProductsLoadFailed = String(localized: "paywall.products_load_failed")

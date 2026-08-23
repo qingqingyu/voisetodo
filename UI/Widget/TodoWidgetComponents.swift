@@ -116,27 +116,20 @@ struct LockscreenRectangularWidget: View {
             case .error:
                 lockscreenState(systemName: "exclamationmark.triangle", title: String(localized: "widget.load_failed"))
             case .success:
-                // 三行统一字号:从阶梯最大档往下取第一个能让所有标题单行放下的档位。
-                // 旧实现是每行独立 minimumScaleFactor(0.8),长标题行自行缩小,
-                // 导致三条字号不一致;阶梯方案保证同字号且永不出现 …。
-                ViewThatFits(in: .horizontal) {
-                    lockscreenRows(fontSize: 16)
-                    lockscreenRows(fontSize: 15)
-                    lockscreenRows(fontSize: 14)
-                    lockscreenRows(fontSize: 13)
-                    lockscreenRows(fontSize: 12)
-                    lockscreenRows(fontSize: 11)
-                }
+                // 三行统一固定 16pt semibold,超长标题 … 截断。
+                // 字号上限由垂直空间决定:容器约 58pt 高,16pt 行高 19.2×3 = 57.6pt
+                // 刚好放下(15pt 是 54pt,17pt 起溢出)。semibold 治"单薄"——中文走
+                // 苹方 Semibold,拉丁走 SF Pro;.width(.expanded) 对 CJK 无效不用。
+                // 上一版 ViewThatFits 阶梯(16→11)按"最长标题能否单行放下"选档,
+                // 一条超长原文连 11pt 都放不下时阶梯落到最小档,三行全被拖小——
+                // 已废弃。锁屏 widget 无动态字号,固定字号 + 尾部截断即不溢出。
+                lockscreenRows
             }
         }
         .containerBackground(.clear, for: .widget)
     }
 
-    /// 一个"三行同字号"的候选视图,配合外层 ViewThatFits 按阶梯尝试。
-    /// 标题 Text 用 fixedSize(horizontal:) 让 ideal width 等于单行完整宽度,
-    /// ViewThatFits 以此判定该档位能否放下;被选中的档位所有行同字号、不截断。
-    /// 极端超长标题(连 11pt 都放不下)会溢出到组件边缘被裁切,而非显示 …。
-    private func lockscreenRows(fontSize: CGFloat) -> some View {
+    private var lockscreenRows: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let interactionError {
                 WidgetInteractionErrorView(error: interactionError, compact: true)
@@ -146,10 +139,9 @@ struct LockscreenRectangularWidget: View {
                 Toggle(isOn: todo.isCompleted, intent: ToggleTodoIntent(todoId: todo.id.uuidString)) {
                     HStack(spacing: WarmSpacing.xs) {
                         Text(todo.title)
-                            .font(.system(size: fontSize, weight: .medium))
+                            .font(.system(size: 16, weight: .semibold))
                             .strikethrough(todo.isCompleted)
                             .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
                             .contentTransition(WidgetAnimation.opacityContent(enabled: animationsEnabled))
                             .animation(WidgetAnimation.ease(enabled: animationsEnabled), value: todo.isCompleted)
                             .invalidatableContent()
@@ -159,7 +151,7 @@ struct LockscreenRectangularWidget: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .toggleStyle(WidgetTodoToggleStyle(iconSize: 13, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled, hitTarget: nil))
+                .toggleStyle(WidgetTodoToggleStyle(iconSize: 14, uncheckedOpacity: 0.6, animationsEnabled: animationsEnabled, hitTarget: nil))
                 .id(todo)
                 .transition(WidgetAnimation.rowTransition(enabled: animationsEnabled))
             }
@@ -368,7 +360,7 @@ struct WidgetTodoToggleStyle: ToggleStyle {
 #Preview(as: .accessoryRectangular) {
     TodoWidget()
 } timeline: {
-    // 三条长短不一,验证 ViewThatFits 阶梯选中同一档位、三行同字号
+    // 三条长短不一:验证三行同字号(固定 16pt semibold),超长标题尾部 … 截断不拖小其他行
     TodoEntry(date: .now, todos: [
         TodoItemData(title: "买咖啡豆", dueHint: nil, priority: .normal, category: .life),
         TodoItemData(title: "完成周报并发给组长", dueHint: nil, priority: .normal, category: .work),

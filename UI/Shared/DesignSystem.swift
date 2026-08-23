@@ -231,6 +231,11 @@ enum WarmSize {
     /// 卡片可从光晕背后穿过并渐隐溶入背景(见 HomeView.swift 的 overlay 挂载)。
     /// 改此值需同步真机验证:光晕既不被裁切,也不挤占按钮可点击区。
     static let fabHaloOverflow: CGFloat = 16
+    /// VoiceFAB 挂在 bottom overlay 里的整体占高 = 光晕直径(104) + 底部 WarmSpacing.md
+    /// padding(16) = 120。光晕溢出**参与 layout**(VoiceFAB 的 ZStack),所以
+    /// 「浮在 FAB 上方」的元素(hint 卡片 / 底部 toast)必须以此值为基准再留间距——
+    /// 按 `fab`(72) 计算会把底边压到按钮顶部圆弧和光晕上(2026-08-22 真机反馈)。
+    static var fabOverlayHeight: CGFloat { fab + fabHaloOverflow * 2 + WarmSpacing.md }
     /// 底部 tab 玻璃胶囊直径（48→52 增大热区）。
     /// 只读计算属性（Swift 计算属性必须用 static var 声明，无 setter 故不可写），
     /// 由 fab - fabTabSizeDelta 推导。

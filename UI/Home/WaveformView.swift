@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// 录音波形动画：20 根竖条用真实音频电平驱动高度，sin 函数叠加微变让波形有呼吸感。
@@ -48,6 +49,23 @@ struct WaveformView: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+}
+
+/// 自订阅音频电平的波形叶子视图。
+///
+/// 失效范围设计：音频电平 30Hz 变化若经 AppCoordinator 的 @Published 广播，
+/// 会让 HomeView（@EnvironmentObject 观察者）在录音期间每秒失效 30 次。
+/// 本视图通过 .onReceive 局部订阅 coordinator.audioLevelPublisher，
+/// 把失效范围压缩到这一个波形条——录音期间 HomeView body 保持静止。
+struct LiveWaveformView: View {
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @State private var level: Float = 0
+    let isActive: Bool
+
+    var body: some View {
+        WaveformView(color: WarmTheme.urgent, isActive: isActive, audioLevel: level)
+            .onReceive(coordinator.audioLevelPublisher) { level = $0 }
     }
 }
 

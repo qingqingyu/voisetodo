@@ -16,7 +16,7 @@ final class ScenarioTests: XCTestCase {
             "test_confirmSheetKeyboardInputKeepsHeaderAtTopAndEnablesFirstPartial",
             "test_S11_homeView_emptyState",
             "test_S12_firstLaunch_onboarding",
-            "test_S16_calendarPermissionDenied_revertsToggle",
+            "test_S16_calendarAskDenied_oneShot",
             "test_S17_onboarding_fitsWithoutScrolling",
             "test_S18_firstVoiceTrial_hintToWowPaywall",
             "test_S18a_firstVoiceTrial_todayToastBranch",
@@ -439,40 +439,47 @@ final class ScenarioTests: XCTestCase {
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
         XCTAssertTrue(appHelper.app.staticTexts["VoiceTodo"].waitForExistence(timeout: 2.0), "应显示欢迎页")
 
-        // Step 3: 欢迎页 → 权限合并页(麦克风 + 语音识别)。
+        // Step 3: 欢迎页 → 演示页(2026-08-23 新增:一句话 → 两条待办的 before/after)。
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingDemoStep"].waitForExistence(timeout: 2.0),
+                      "应进入演示页")
+
+        // Step 4: 演示页 → 权限合并页(麦克风 + 语音识别)。
         // UI 测试下权限默认 mock 为「已授权」,合并页不显示授权按钮,直接「下一步」即可。
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
 
-        // Step 4: 权限页 → 完成页(Pro 付费墙已移出 onboarding,改为首次 wow 后弹,方案 §3.5)。
-        // 从权限页到完成页经过 speechLanguage → calendarSync → [actionButton] → completion。
+        // Step 5: 权限页 → 完成页(Pro 付费墙已移出 onboarding,改为首次 wow 后弹,方案 §3.5)。
+        // 从权限页到完成页经过 speechLanguage → [actionButton] → completion
+        // (日历页已删,2026-08-23 起延后到首次带日期待办确认后一次性询问)。
         appHelper.nextButton.tap()
 
-        // 显式断言两个新步骤依次出现 —— 失败时直接指向具体哪一步,
+        // 显式断言语言页出现 —— 失败时直接指向具体哪一步,
         // 而不是笼统的「完成页没出现」。
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
-                      "应进入日历同步页")
 
         let completionTitle = appHelper.app.staticTexts["最后一步"]
         var attempts = 0
+        // 先等再点:步骤切换动画(~0.5s)期间完成页标题暂时不在 a11y 树里,
+        // 先 tap 会抢拍到完成页的「去试一句」把 sheet 关掉(删日历页后两步相邻,竞态显形)。
         while !completionTitle.exists && attempts < 6 {
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            if completionTitle.exists { break }
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
-            _ = completionTitle.waitForExistence(timeout: 1.5)
             attempts += 1
         }
 
-        // Step 5: 完成页应出现(允许跨过可选的 Action Button 步骤)。
+        // Step 6: 完成页应出现(允许跨过可选的 Action Button 步骤)。
         // onboarding 内不应再出现付费墙 —— 它已后置到首次 wow。
         XCTAssertTrue(completionTitle.exists, "完成页应出现")
         XCTAssertFalse(appHelper.app.buttons["ProIntroLaterButton"].exists,
                        "onboarding 内不应再有 Pro 付费墙")
 
-        // Step 6: 点击「去试一句」结束引导
+        // Step 7: 点击「去试一句」结束引导
         appHelper.nextButton.tap()
 
         // Step 8: 引导关闭并进入主界面;权限已 mock 授权,首次语音试用 hint 应浮出
@@ -499,11 +506,15 @@ final class ScenarioTests: XCTestCase {
         // Step 1: 启动 App（Mock 麦克风权限被拒）
         appHelper.launchWithMicPermissionDenied()
 
-        // Step 2: 进入权限页面
+        // Step 2: 欢迎页 → 演示页 → 权限页面
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingDemoStep"].waitForExistence(timeout: 2.0),
+                      "应进入演示页")
         appHelper.nextButton.tap()
 
         // Step 3: 尝试授权（Mock 返回 denied）
         let authorizeButton = appHelper.app.buttons["AuthorizeMicButton"]
+        XCTAssertTrue(authorizeButton.waitForExistence(timeout: 2.0), "应进入权限合并页")
         authorizeButton.tap()
 
         // Step 4: 验证显示错误提示
@@ -522,27 +533,32 @@ final class ScenarioTests: XCTestCase {
 
     // MARK: - S18: 首次语音试用引导(正例)
 
-    /// S18 系列共用前置:走完六步 onboarding(权限 mock 已授权)→ 等 HomeView 就绪
+    /// S18 系列共用前置:走完 onboarding(权限 mock 已授权;模拟器 5 步:
+    /// welcome/demo/权限/语言/完成)→ 等 HomeView 就绪
     /// → 返回 hint 的存在信号元素(「知道了」按钮——hint 容器 children: .contain
     /// 不作为可查询元素暴露)。调用方自行决定 launch(带不带 scenario)。
     private func walkOnboardingToHintSignal() -> XCUIElement {
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingDemoStep"].waitForExistence(timeout: 2.0),
+                      "应进入演示页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
-                      "应进入日历同步页")
 
         let completionTitle = appHelper.app.staticTexts["最后一步"]
         var attempts = 0
+        // 先等再点:步骤切换动画(~0.5s)期间完成页标题暂时不在 a11y 树里,
+        // 先 tap 会抢拍到完成页的「去试一句」把 sheet 关掉(删日历页后两步相邻,竞态显形)。
         while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            if completionTitle.exists { break }
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
-            _ = completionTitle.waitForExistence(timeout: 1.5)
             attempts += 1
         }
         XCTAssertTrue(completionTitle.exists, "应走到完成页")
@@ -793,24 +809,28 @@ final class ScenarioTests: XCTestCase {
         appHelper.launchWithMicPermissionDenied()
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0))
 
-        // 欢迎页 → 权限页;权限 mock 拒绝,「继续」不授权也能走
+        // 欢迎页 → 演示页 → 权限页;权限 mock 拒绝,「下一步」不授权也能走
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingDemoStep"].waitForExistence(timeout: 2.0),
+                      "应进入演示页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
-                      "应进入日历同步页")
 
         // 走到完成页,点「去试一句」关闭引导
         let completionTitle = appHelper.app.staticTexts["最后一步"]
         var attempts = 0
+        // 先等再点:步骤切换动画(~0.5s)期间完成页标题暂时不在 a11y 树里,
+        // 先 tap 会抢拍到完成页的「去试一句」把 sheet 关掉(删日历页后两步相邻,竞态显形)。
         while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            if completionTitle.exists { break }
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
-            _ = completionTitle.waitForExistence(timeout: 1.5)
             attempts += 1
         }
         XCTAssertTrue(completionTitle.exists, "应走到完成页")
@@ -839,25 +859,29 @@ final class ScenarioTests: XCTestCase {
     /// StoreKit 交易(isPro 翻转 → PaywallView dismiss),mock 路径覆盖不到,
     /// 故用 scheme 的 Products.storekit 配置走完整购买。
     func test_S20_trialPurchase_onboardingMustNotReappear() {
-        // Step 1: 全新启动,走完 onboarding(与 S18 相同的六步流程)
+        // Step 1: 全新启动,走完 onboarding(与 S18 相同的流程;模拟器 5 步)
         appHelper.launch()
         XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+        appHelper.nextButton.tap()
+        XCTAssertTrue(appHelper.app.otherElements["OnboardingDemoStep"].waitForExistence(timeout: 2.0),
+                      "应进入演示页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
         appHelper.nextButton.tap()
-        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
-                      "应进入日历同步页")
 
         let completionTitle = appHelper.app.staticTexts["最后一步"]
         var attempts = 0
+        // 先等再点:步骤切换动画(~0.5s)期间完成页标题暂时不在 a11y 树里,
+        // 先 tap 会抢拍到完成页的「去试一句」把 sheet 关掉(删日历页后两步相邻,竞态显形)。
         while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
+            _ = completionTitle.waitForExistence(timeout: 1.5)
+            if completionTitle.exists { break }
             if appHelper.nextButton.exists {
                 appHelper.nextButton.tap()
             }
-            _ = completionTitle.waitForExistence(timeout: 1.5)
             attempts += 1
         }
         XCTAssertTrue(completionTitle.exists, "应走到完成页")
@@ -979,67 +1003,74 @@ final class ScenarioTests: XCTestCase {
         print("Widget 测试需要在 Widget Extension target 中单独执行")
     }
 
-    // MARK: - S16: 日历权限被拒后开关视觉回弹
+    // MARK: - S16: 日历延后询问(权限被拒回退 + 一次性)
 
-    /// 场景 S16: 日历权限被拒后开关视觉回弹
-    /// 验证 onboarding 日历同步页在权限被拒时:
-    ///   1. 开关视觉回弹到关(持久化保持 .appOnly,不变量成立)
-    ///   2. 出现「去设置开启」按钮
-    ///   3. 「下一步」始终可点,引导不被权限拒绝卡死
-    ///   4. 能继续走完引导进入主界面
-    func test_S16_calendarPermissionDenied_revertsToggle() {
-        // Step 1: 启动 App(--calendar-permission-denied 模拟日历权限被拒)
-        appHelper.launchWithCalendarPermissionDenied()
-        XCTAssertTrue(appHelper.onboardingView.waitForExistence(timeout: 5.0), "应该显示 OnboardingView")
+    /// FAB 点击三级兜底:identifier(a11y id 可能被容器污染)→ label(录音添加待办)
+    /// → 坐标(部分机型几何偏移,见 tapRecordFABByCoordinate 注释)。
+    /// S18 系在本机 iPhone 17 上因单一坐标点击命不中而既有红灯(HEAD 同样失败),
+    /// 本测试不依赖单一手段。
+    private func tapRecordFABWithFallback() {
+        let byId = appHelper.app.buttons["RecordFAB"]
+        if byId.waitForExistence(timeout: 2.0) {
+            byId.tap()
+            return
+        }
+        let byLabel = appHelper.app.buttons["录音添加待办"]
+        if byLabel.waitForExistence(timeout: 1.0) {
+            byLabel.tap()
+            return
+        }
+        appHelper.tapRecordFABByCoordinate()
+    }
 
-        // Step 2: 走到日历同步页(欢迎 → 权限 → 语言 → 日历,3 次 nextButton)
-        appHelper.nextButton.tap()  // 欢迎页 → 权限合并页
-        XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0),
-                      "应进入权限合并页")
+    /// 场景 S16: 首次确认带日期待办后的一次性日历同步询问(2026-08-23 起取代
+    /// 原 onboarding 日历页)。验证:
+    ///   1. 非首次 wow 的带日期确认后,询问 sheet 弹出
+    ///   2. 权限被拒(Mock)→ 显示「去设置开启」,开启按钮被替换(不再重复点)
+    ///   3. 「暂不」关闭 sheet,不写持久化(写模式保持 .appOnly)
+    ///   4. 一次性:之后再次带日期确认不再弹
+    /// --skip-onboarding 让 FirstVoiceTrial 保持 notArmed,首次确认不被 wow
+    /// 条件吞掉(真实用户路径:onboarding 后的第一句是 wow,询问顺延到下一句)。
+    func test_S16_calendarAskDenied_oneShot() {
+        // Step 1: 跳过 onboarding + 日历权限 mock 拒绝 + 显式开启延后询问
+        appHelper.launchWithCalendarAskDenied()
+        appHelper.waitForAppReady()
 
-        appHelper.nextButton.tap()  // 权限页 → 语言页
-        XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
-                      "应进入语音识别语言页")
+        // Step 2: 第一次录音确认(默认 mock 转写「明天去银行」→ 带日期待办)
+        tapRecordFABWithFallback()
+        XCTAssertTrue(appHelper.switchToKeyboardButton.waitForExistence(timeout: 3.0), "录音面板应该出现")
+        appHelper.stopRecording()
+        appHelper.waitForConfirmSheet()
+        appHelper.tapConfirmButton()
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
 
-        appHelper.nextButton.tap()  // 语言页 → 日历页
-        XCTAssertTrue(appHelper.app.otherElements["OnboardingCalendarSyncStep"].waitForExistence(timeout: 2.0),
-                      "应进入日历同步页")
+        // Step 3: 一次性询问 sheet 应弹出;点「开启同步」(Mock 必返回 denied)
+        let allowButton = appHelper.app.buttons["CalendarAskAllowButton"]
+        XCTAssertTrue(allowButton.waitForExistence(timeout: 3.0), "首次带日期确认后应弹一次性日历询问")
+        allowButton.tap()
 
-        // Step 3: 打开日历开关(Mock 必返回 denied)
-        let toggle = appHelper.app.switches["CalendarSyncToggle"]
-        XCTAssertTrue(toggle.exists, "日历同步开关应存在")
-        toggle.tap()
-
-        // Step 4: 权限被拒后应显示「去设置开启」按钮
-        let openSettingsButton = appHelper.app.buttons["OnboardingCalendarOpenSettingsButton"]
+        // Step 4: 权限被拒 → 显示「去设置开启」,开启按钮不再重复出现
+        let openSettingsButton = appHelper.app.buttons["CalendarAskOpenSettingsButton"]
         XCTAssertTrue(openSettingsButton.waitForExistence(timeout: 2.0),
                       "权限被拒后应显示「去设置开启」")
+        XCTAssertFalse(allowButton.exists, "被拒后开启按钮应被替换,不再可点")
 
-        // Step 5: 开关视觉应回弹到 off(持久化 calendarWriteModeRaw 全程没被写过,保持 .appOnly)
-        XCTAssertEqual(toggle.value as? String, "0", "权限被拒后开关应回弹到关")
+        // Step 5: 「暂不」关闭 sheet,回到主界面(持久化保持 .appOnly)
+        let notNowButton = appHelper.app.buttons["CalendarAskNotNowButton"]
+        XCTAssertTrue(notNowButton.exists, "「暂不」应存在")
+        notNowButton.tap()
+        XCTAssertTrue(appHelper.app.buttons["CalendarAskAllowButton"].waitForNonExistence(timeout: 2.0),
+                      "询问 sheet 应关闭")
 
-        // Step 6: 「下一步」仍可点 —— onboarding 不被权限拒绝卡死
-        XCTAssertTrue(appHelper.nextButton.isEnabled, "「下一步」始终可点")
-
-        // Step 7: 走完引导进入主界面
-        appHelper.nextButton.tap()
-        // 跳过 [Action Button](若存在)直至完成页,点「去试一句」结束引导。
-        // 付费墙已不在 onboarding 内(移到首次 wow 后,方案 §3.5)。
-        let completionTitle = appHelper.app.staticTexts["最后一步"]
-        var attempts = 0
-        while !completionTitle.exists && appHelper.onboardingView.exists && attempts < 6 {
-            if appHelper.nextButton.exists {
-                appHelper.nextButton.tap()
-            }
-            _ = completionTitle.waitForExistence(timeout: 1.5)
-            attempts += 1
-        }
-        if completionTitle.exists {
-            appHelper.nextButton.tap()
-        }
-        appHelper.waitForAppReady(timeout: 5.0)
-        XCTAssertTrue(appHelper.onboardingView.waitForNonExistence(timeout: 3.0),
-                      "权限被拒不应卡死引导,应能进入主界面")
+        // Step 6: 一次性 —— 第二次带日期确认不再弹
+        tapRecordFABWithFallback()
+        XCTAssertTrue(appHelper.switchToKeyboardButton.waitForExistence(timeout: 3.0), "录音面板应该出现")
+        appHelper.stopRecording()
+        appHelper.waitForConfirmSheet()
+        appHelper.tapConfirmButton()
+        XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
+        XCTAssertFalse(appHelper.app.buttons["CalendarAskAllowButton"].waitForExistence(timeout: 2.0),
+                      "弹过一次后不应再弹一次性日历询问")
     }
 
     // MARK: - S17: Onboarding 小屏一屏装下
@@ -1080,7 +1111,7 @@ final class ScenarioTests: XCTestCase {
         // sheet 关闭时钩子随树一起消失,天然是可靠的「引导还在」信号。
         var stepIndex = 0
         var fittedStepCount = 0
-        // 步数上限:模拟器 5 步(无 Action Button:welcome/权限/语言/日历/完成),
+        // 步数上限:模拟器 5 步(无 Action Button:welcome/demo/权限/语言/完成),
         // 真机最多 6 步,取 8 留余量。超过说明引导没按预期推进,
         // 由循环后的「引导应关闭」断言兜底报错。
         let maxStepCount = 8

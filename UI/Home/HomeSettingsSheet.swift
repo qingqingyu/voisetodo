@@ -165,6 +165,11 @@ struct HomeSettingsSheet: View {
                 Section {
                     Toggle(String(localized: "settings.notifications.toggle"), isOn: $notificationsEnabled)
                         .accessibilityIdentifier("NotificationsToggle")
+                        // 同步镜像到 App Group:Widget 扩展进程的 intent 局部通知对账
+                        // 读不到 App 的 standard,靠镜像尊重全局 OFF(见 AppGroupConfig)。
+                        .onChange(of: notificationsEnabled) { _, enabled in
+                            AppGroupConfig.mirrorNotificationsEnabled(enabled)
+                        }
 
                     Text(String(localized: "settings.notifications.description"))
                         .font(.footnote)

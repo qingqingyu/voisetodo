@@ -1,7 +1,7 @@
 # App Store 提审材料包(REVIEW KIT)
 
 > 配套 `PROMOTION_PLAN.md`(策略)与 `PRIVACY_POLICY.md` / `TERMS_OF_USE.md`(发布源文件)。
-> 定稿: 2026-08-15 · 状态: 待执行(占位符未解析、政策页未部署)
+> 定稿: 2026-08-15 · 状态: 占位符已解析(2026-08-22,唯 [JURISDICTION] 留待);政策页已上线(GitHub Pages,非原计划自定义域名)
 > 性质: **内档**,不对外。所有对外文案以两个英文源文件为准。
 
 ---
@@ -12,13 +12,13 @@
 
 | 占位符 | 出现于 | 当前状态 | 动作 |
 |--------|--------|----------|------|
-| `[DOMAIN]` | 政策页 URL、Terms 内链 | 未定 | 买域名(§5.1),候选: `voicetodo.app` / `getvoicetodo.com` / `voicetodoapp.com`,买前查可用性与商标 |
-| `[SUPPORT_EMAIL]` | 两份政策 + ASC + 差评回复模板 | 未定 | 创建 iCloud 专用别名(如 `voicetodo@icloud.com`),设置 → Apple ID → 登录与安全 → App 专用/别名邮件;**确认能收信再发布** |
-| `[DEVELOPER_NAME]` | 两份政策署名 | 未定 | 必须与 App Store Connect 开发者名称一致(个人开发者 = 账号法定名) |
-| `[EFFECTIVE_DATE]` | 两份政策 | 未定 | 填政策页实际上线日(= 提交审核前) |
+| `[DOMAIN]` | 政策页 URL、Terms 内链 | **已定: 不买域名**,用 `https://qingqingyu.github.io/voicetodo-privacy/`(GitHub Pages,2026-08-16 上线) | ~~买域名(§5.1)~~ 方案变更;若日后买域名,全量替换 URL 并做重定向 |
+| `[SUPPORT_EMAIL]` | 两份政策 + ASC + 差评回复模板 | **已定: `334678754@qq.com`**(线上隐私页同款) | ~~iCloud 别名~~ 方案变更;确认该邮箱能收外网来信(尤其海外用户) |
+| `[DEVELOPER_NAME]` | 两份政策署名 | **已定: 泛称 "an independent developer"**(与线上页一致) | 残留检查:ASC 开发者显示名与政策不冲突即可;若审核要求具名再具名 |
+| `[EFFECTIVE_DATE]` | 两份政策 | **已定: 2026-08-16**(政策页实际上线日) | ⚠️ 线上页暂无日期行,下次更新线上页时补 |
 | `[TRIAL_DAYS]` | ~~Terms §3~~ | **已拍板: 7 天**(2026-08-15,按 PLAN 决策 7;Terms 已解析,Products.storekit 与文案已同步,ASC 配置见 §3.3) | ~~见 §3.3~~ 已办 |
-| `[FREE_TIER_PER_DAY]` | Terms §3 | 依赖工程项 | = 上线时 `DAILY_REQUEST_LIMIT`(PLAN 已定 3,若仍是 2 则全局替换,含 PROMOTION_COPY) |
-| `[JURISDICTION]` | Terms §9 | 未定 | 管辖法律,个人开发者通常写自己常住地;拿不准就写开发者所在地,别留空 |
+| `[FREE_TIER_PER_DAY]` | Terms §3 | **已定: 3**(2026-08-22 `wrangler.toml` 改 `DAILY_REQUEST_LIMIT="3"`,待部署生效) | 部署后按 §6 自检三处一致(Terms=Description=Review Notes=线上配置) |
+| `[JURISDICTION]` | Terms §9 | **未定(唯一残留)** | Terms 未发布(Apple 标准 EULA 生效),此项休眠;若切自定义 Terms 发布,必须先拍板(个人开发者常住地) |
 
 ---
 
@@ -55,10 +55,10 @@ fully functional for review purposes.
 
 PRIVACY: transcripts (text, not audio) are sent to our server and an AI
 provider to structure them; audio is never stored. Full policy:
-https://[DOMAIN]/privacy
+https://qingqingyu.github.io/voicetodo-privacy/
 ```
 
-替换 `3`(免费额度)为提审当日真实值,与 §6 自检一致;trial 天数已定 7(§3.3),无需当日再替换。
+免费额度 `3` 已与 `DAILY_REQUEST_LIMIT="3"` 定死(2026-08-22),无需当日再替换;若日后改额度,按 §6 自检三处同步。
 
 **审核注意点(预判):**
 - 语音类 app 审核员第一反应是「模拟器没法测语音」——备注里的 typed path 就是为这个准备的,别删。
@@ -196,50 +196,28 @@ https://[DOMAIN]/privacy
 
 | ASC 字段 | 填什么 | 状态 |
 |----------|--------|------|
-| Privacy Policy URL(**必填**) | `https://[DOMAIN]/privacy` | 待域名(§5) |
-| Terms of Use / EULA | 二选一: ① 用 Apple 标准 EULA(ASC 里直接勾,零维护) ② `https://[DOMAIN]/terms`(自定义,内容即 `TERMS_OF_USE.md`) | 建议先勾 Apple 标准 EULA 过审,自定义 Terms 作为增强后续再切 |
-| App Support URL(**必填**) | 先用 `https://[DOMAIN]/`(落地页),后续可做 `/support` FAQ | 待域名 |
-| Marketing URL(可选) | `https://[DOMAIN]/` | 软启动期可留空 |
+| Privacy Policy URL(**必填**) | `https://qingqingyu.github.io/voicetodo-privacy/` | ✅ 已上线(2026-08-16),直接填 |
+| Terms of Use / EULA | 二选一: ① 用 Apple 标准 EULA(ASC 里直接勾,零维护) ② 自定义 Terms URL(内容即 `TERMS_OF_USE.md`) | **走 ①**:app 内 legalLinks 也是「隐私政策 + Apple 标准 EULA」;`TERMS_OF_USE.md` 为内档备用,切 ② 前先拍板 [JURISDICTION] |
+| App Support URL(**必填**) | **未着落(残留)**。候选: ① 隐私站根路径 `https://qingqingyu.github.io/voicetodo-privacy/`(合规但体验差) ② 部署 `temp/index.html` 落地页后填落地页 ③ GitHub 主页 `https://github.com/qingqingyu` | 待拍板 |
+| Marketing URL(可选) | 落地页部署后填,或留空 | 软启动期可留空 |
 
-订阅类 app 若不用 Apple 标准 EULA,则自定义 EULA 链接**必填**——两条路都通,别两处都空着。
+订阅类 app 若不用 Apple 标准 EULA,则自定义 EULA 链接**必填**——走 Apple 标准 EULA 路线则无需自定义链接。
 
 ---
 
-## 5. 政策页落地(约 1 小时)
+## 5. 政策页落地 —— ✅ 已完成(方案变更,2026-08-16)
 
-### 5.1 域名
+原计划(买域名 + Cloudflare Pages + iCloud 别名)**全部作废**,实际做法:
 
-1. 查可用性: `voicetodo.app` 首选(`.app` 强制 HTTPS,与政策页气质合)→ `getvoicetodo.com` → `voicetodoapp.com`
-2. 注册商任意(Cloudflare Registrar 无加价,推荐),~$15-25/年
-3. 顺手查一下 App Name/商标近似冲突,避免上线后被投诉改名
+- 域名:不买,用 GitHub Pages —— `https://qingqingyu.github.io/voicetodo-privacy/`(仓库 qingqingyu/voicetodo-privacy,本地副本 `temp/voicetodo-privacy/`)
+- 页面:单文件 `index.html`,中英双语,内联样式
+- 联系邮箱:`334678754@qq.com`(未建 iCloud 别名)
+- Apple 标准 EULA 外链:`https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`
 
-### 5.2 部署(Cloudflare Pages,免费)
-
-```bash
-# 一次性
-npm install -g wrangler && wrangler login
-
-# 把两个 MD 转成极简 HTML(任何 MD→HTML 工具均可,要求:
-# 单文件、内联样式、移动端可读、<meta name="viewport">)
-# 目录结构:
-#   site/privacy.html   ← PRIVACY_POLICY.md
-#   site/terms.html     ← TERMS_OF_USE.md
-
-cd site && wrangler pages deploy . --project-name=voicetodo
-# 绑定自定义域: Pages 项目 → Custom domains → [DOMAIN]
-```
-
-校验清单:
-- [ ] `https://[DOMAIN]/privacy` 与 `/terms` 手机 Safari 打开可读
-- [ ] 页内链接(如 Terms → Privacy)指向线上域名而非占位符
-- [ ] `[BRACKET]` 全局搜索为 0 个
-- [ ] 隐私政策里的 Apple 隐私政策外链可点
-
-### 5.3 iCloud 别名
-
-1. 设置 → [你的名字] → 登录与安全 → 登录 iCloud.com → 隐藏我的邮件 / 或直接注册新 iCloud 邮箱 `voicetodo@icloud.com`
-2. 测试收发(尤其确认垃圾邮件过滤不吞用户来信)
-3. 解析进两份政策 + ASC 联系方式 + `PROMOTION_COPY.md` §4.2 差评模板的 `[support email]`
+残留(见 §0 表):
+- [ ] 线上页补 Effective date 行(源文件已定 2026-08-16)
+- [ ] 确认 qq 邮箱能正常收到海外用户来信
+- [ ] 源文件 2026-08-22 的占位符解析结果(邮箱具名等)下次更新线上页时一并同步
 
 ---
 
@@ -248,13 +226,13 @@ cd site && wrangler pages deploy . --project-name=voicetodo
 在 COPY §6 原 5 条之上新增/交叉引用:
 
 - [ ] **trial 天数(已定 7)**: ASC Intro Offer 配置 = Products.storekit(P7D) = paywall UI = Review Notes = Terms §3 = Description(§3.3)
-- [ ] **免费额度数字**: `DAILY_REQUEST_LIMIT` = Description = Review Notes = Terms `[FREE_TIER_PER_DAY]`(原红线 1 的扩展)
+- [ ] **免费额度数字(已定 3)**: `DAILY_REQUEST_LIMIT` = Description = Review Notes = Terms §3(原红线 1 的扩展;`wrangler.toml` 已改 3,部署生效后勾)
 - [ ] **禁词 "unlimited"**: 全局搜索两份政策 + Description + paywall 文案 + ASC 产品显示名(原红线 2)
 - [ ] **隐私口径三处一致**: `PRIVACY_POLICY.md` ↔ `PROMOTION_COPY.md` §4.3 ↔ Description 隐私段(均为「transcript 文本发服务器+AI 厂商,音频不存储」,不暗示 on-device AI / on-device 识别)
 - [ ] **隐私标签 = 实际行为**: xcprivacy(§2.3)与 ASC 问卷答案(§2.2)逐项一致
 - [ ] **审核可测性**: Review Notes 的 typed-path 说明与当版 UI 一致(输入框位置/交互若改版需同步)
-- [ ] **政策页已上线且占位符清零**(§5.2 校验清单)
-- [ ] **ASC 开发者名 = 政策署名 `[DEVELOPER_NAME]`**
+- [ ] **政策页已上线且占位符清零**(§5;线上页差 Effective date 行,源文件已清零)
+- [ ] **ASC 开发者名与政策署名不冲突**(政策用泛称 "an independent developer",ASC 个人开发者法定名即可,无需逐字一致)
 
 ---
 

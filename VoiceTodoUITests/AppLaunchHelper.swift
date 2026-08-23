@@ -65,6 +65,16 @@ class AppLaunchHelper {
         app.launch()
     }
 
+    /// 启动 App 并模拟:跳过 onboarding + 日历权限被拒 + 显式开启「首次带日期
+    /// 待办后的一次性日历询问」(UI 测试默认抑制该询问,防既有场景断言被弹层
+    /// 打断;专测该流程时用本入口)。--skip-onboarding 让 FirstVoiceTrial 保持
+    /// notArmed,首次确认不会被 wow 条件吞掉。
+    func launchWithCalendarAskDenied() {
+        configureLaunchArguments(["--calendar-permission-denied", "--calendar-ask",
+                                  "--skip-onboarding", "--reset-user-data"])
+        app.launch()
+    }
+
     /// 启动 App 并预置待办数据
     /// - Parameter todos: 预置的待办数据
     func launchWithPresetTodos(_ todos: [UITestTodoPayload]) {
@@ -208,8 +218,8 @@ extension AppLaunchHelper {
             return identifierMatch
         }
 
-        // 合并权限页 label 是「继续」(onboarding.button.continue)、完成页是「去试一句」
-        // (onboarding.button.try_voice),都加入匹配集合。
+        // 中间各步 label 统一「下一步」(onboarding.button.next)、Action Button 页是
+        // 「知道了」、完成页是「去试一句」(onboarding.button.try_voice),都加入匹配集合。
         let labels = ["下一步", "跳过", "知道了", "去试一句", "继续", "Next", "Skip", "Got it", "Try a Sentence", "Continue"]
         return app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
     }

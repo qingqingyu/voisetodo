@@ -24,6 +24,11 @@ enum WidgetTodoFilter {
             // (规律任务当前无划掉入口,守卫放循环顶部一并覆盖)。
             if item.abandonedAt != nil { continue }
             var data = item
+            // 与 App「没能识别」分组同口径(HomeCalendarState):原文兜底(.rawFallback)/
+            // 未解析(.unparsed)条目不是普通待办,不进任何 widget。它们没有结构化字段、
+            // 无 dueDate、sortOrder 又最新(新条目排在最前),放进来会抢占锁屏第一行,
+            // 且超长原文会把整体字号拖到最小档。原文数据仍在 App「没能识别」组里,不丢。
+            guard data.extractionOutcome == .parsed else { continue }
             if let rule = data.recurrenceRule {
                 guard rule.occurs(on: day, startDate: data.dueDate ?? data.createdAt, calendar: calendar) else {
                     continue

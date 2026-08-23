@@ -9,6 +9,9 @@ struct UITestLaunchOptions {
     let speechPermissionDenied: Bool
     let calendarPermissionDenied: Bool
     let enableAccessibilityIdentifiers: Bool
+    /// UI 测试默认抑制「首次带日期待办后的一次性日历询问」(防既有场景断言被弹层打断);
+    /// 传 `--calendar-ask` 显式开启以专测该流程。
+    let calendarAskEnabled: Bool
     let scenario: String?
     let presetTodos: [TodoItemData]
     let presetTodosDecodeError: Error?
@@ -24,6 +27,7 @@ struct UITestLaunchOptions {
         speechPermissionDenied = arguments.contains("--speech-permission-denied")
         calendarPermissionDenied = arguments.contains("--calendar-permission-denied")
         enableAccessibilityIdentifiers = arguments.contains("--enable-accessibility-identifiers")
+        calendarAskEnabled = arguments.contains("--calendar-ask")
 
         scenario = arguments.first(where: { $0.hasPrefix("--scenario=") })
             .map { String($0.dropFirst("--scenario=".count)) }
