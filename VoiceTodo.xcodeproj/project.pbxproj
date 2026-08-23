@@ -225,6 +225,7 @@
 		DE618709EFF93C9727A57AB9 /* TelemetryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E00281D082A7AFAB67384E /* TelemetryQueue.swift */; };
 		DF60FE91AA7850C69D73AC82 /* IntentNotificationReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75DC9CFF56174E43ADA62220 /* IntentNotificationReconciler.swift */; };
 		E7040FF2B2956F18F0D0B042 /* TelemetryUploaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0A1EBC09C2EEC71D8D6946 /* TelemetryUploaderTests.swift */; };
+		E769988581C6E832A9A1FC81 /* CalendarSyncAskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04EE0D5AC197C730AD1D61E /* CalendarSyncAskSheet.swift */; };
 		E9F16B5B3B3DE61A279E66B2 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37124752250C86FE8C1A7B73 /* EmptyStateView.swift */; };
 		EA7D4972C0860DA591925945 /* ProductsStorekitGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E6BB49565E850EF4E96279 /* ProductsStorekitGuardTests.swift */; };
 		EC9FED41174E8847641275F5 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10DE2C3D42323F4BC2A3384 /* Haptics.swift */; };
@@ -437,6 +438,7 @@
 		AC981BF525760D925DDE5884 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		ACE8E927A8B4BDB097F09BCC /* DetailKeyboardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailKeyboardUITests.swift; sourceTree = "<group>"; };
 		ADA9B1DC522D3039EB104860 /* TodoItemFromBasisFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoItemFromBasisFilterTests.swift; sourceTree = "<group>"; };
+		B04EE0D5AC197C730AD1D61E /* CalendarSyncAskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncAskSheet.swift; sourceTree = "<group>"; };
 		B089B83D18F62D12A4885791 /* PersonalGlossaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalGlossaryView.swift; sourceTree = "<group>"; };
 		B14BFFE9BFB2C6D74E181445 /* GroupedCardRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedCardRow.swift; sourceTree = "<group>"; };
 		B1CF9F76C2E853FB64141EC7 /* DeleteTodoIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteTodoIntent.swift; sourceTree = "<group>"; };
@@ -610,6 +612,7 @@
 		4E526C220F8DF25D9E69A8B9 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				B04EE0D5AC197C730AD1D61E /* CalendarSyncAskSheet.swift */,
 				2E865543BECF19023D86612D /* CardEntranceModifier.swift */,
 				38FA0BC0E641C92B6086C486 /* CategoryIconView.swift */,
 				553880D7569474DB9E18EB87 /* DesignSystem.swift */,
@@ -1183,6 +1186,7 @@
 				61A1F3A3F3D884AF58D601D4 /* BottomSafeAreaReader.swift in Sources */,
 				AD9E8C4E0A7E696FF2BF873A /* BottomTabBar.swift in Sources */,
 				83B2BBC54ED391A406838516 /* CalendarImportView.swift in Sources */,
+				E769988581C6E832A9A1FC81 /* CalendarSyncAskSheet.swift in Sources */,
 				5CC25602AD26AACDB0E95D80 /* CalendarSyncService.swift in Sources */,
 				5BB975AF610B720187248CD4 /* CalendarWriteMode.swift in Sources */,
 				46FC727E12F322D49590ABA6 /* CardEntranceModifier.swift in Sources */,

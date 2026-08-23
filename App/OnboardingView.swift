@@ -6,11 +6,13 @@ import SwiftUI
 /// Onboarding 步骤。`visibleSteps` 会根据设备能力(Action Button)动态过滤,
 /// 旧机型会跳过对应步骤。Pro 付费墙已移出 onboarding——改为首次 wow 之后弹
 /// app 级 sheet(docs/onboarding-first-voice-trial.md §3.5)。
+/// 日历同步页已删(2026-08-23):改为首次确认带日期待办后由主页弹一次性询问
+/// (CalendarSyncAskSheet)——在用户刚看到日期被识别出来的那一刻请求价值。
 private enum OnboardingStep: CaseIterable {
     case welcome
+    case demo
     case voicePermissions
     case speechLanguage
-    case calendarSync
     case actionButton
     case completion
 }
@@ -49,16 +51,8 @@ struct OnboardingView: View {
     @AppStorage(SpeechRecognitionLanguage.storageKey)
     private var speechLanguageRaw = SpeechRecognitionLanguage.auto.rawValue
 
-    // 日历写入模式:与 HomeView 共享同一个 UserDefaults key。
-    @AppStorage(CalendarWriteMode.storageKey)
-    private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
-
-    /// Toggle 的视觉状态,与持久化状态刻意分开。不变量:
-    /// 持久化为 .appAndSystemCalendar ⟹ 权限确实拿到过。
-    /// 详见 calendarSyncBinding 的实现。
-    @State private var calendarSyncOn = false
-    @State private var isRequestingCalendarPermission = false
-    @State private var showCalendarDeniedNote = false
+    // (日历写入模式已不在 onboarding 配置——日历页删除后,一次性询问
+    // 由主页 CalendarSyncAskSheet 负责,读写都走 HomeView 的共享 key。)
 
     /// EntitlementManager 通过 environmentObject 注入(VoiceTodoApp 的 sheet 显式传入)。
     /// completion 页用 isPro 显示已订阅用户的感谢文案(实时读,非快照)。
@@ -177,12 +171,12 @@ struct OnboardingView: View {
                             switch currentStep {
                             case .welcome:
                                 welcomeStep
+                            case .demo:
+                                demoStep
                             case .voicePermissions:
                                 voicePermissionsStep
                             case .speechLanguage:
                                 speechLanguageStep
-                            case .calendarSync:
-                                calendarSyncStep
                             case .actionButton:
                                 actionButtonGuideStep
                             case .completion:
@@ -224,8 +218,8 @@ struct OnboardingView: View {
                     viewportHeight = newHeight
                 }
 
-                // 底部按钮:
-                // - 权限合并页:用 Continue 替代 Next(授权后才亮)
+                // 底部按钮:所有步骤统一「下一步」,始终可用
+                // (权限被拒不卡流程,设置页可随时补授权)
                 bottomButtons
             }
         }
@@ -488,9 +482,9 @@ struct OnboardingView: View {
     // MARK: - Step: Voice Permissions (microphone + speech merged)
 
     /// 麦克风和语音识别合并为一页。用户心智里这是同一件事 ——「让 App 听我说话」。
-    /// 两张独立卡片各自带授权按钮,用户可按任意顺序授权;即便一项都不授权,右下角 Continue
+    /// 两张独立卡片各自带授权按钮,用户可按任意顺序授权;即便一项都不授权,右下角「下一步」
     /// 也可点(被拒权限之后能在「设置 - 语音权限」里跳系统设置重新开启)。Skip 作为更轻量
-    /// 的文字链接保留,语义和 Continue 一致 —— 不授权就标记为主动跳过,首次录音前会给引导。
+    /// 的文字链接,只在权限未全开时显示 —— 不授权就标记为主动跳过,首次录音前会给引导。
     private var voicePermissionsStep: some View {
         VStack(spacing: isCompact ? 12 : 22) {
 
@@ -554,20 +548,24 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // Skip 文字链接 —— 灰色小号居中,不抢导航位
-            Button {
-                permissionManager.markSkippedInOnboarding()
-                nextStep()
-            } label: {
-                Text(String(localized: "onboarding.button.skip"))
-                    .font(WarmFont.body(14))
-                    .foregroundColor(sketchColor.opacity(0.6))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .padding(.vertical, 6)
+            // Skip 文字链接 —— 灰色小号居中,不抢导航位。
+            // 两项权限都已开启时隐藏:此时「跳过」语义为空,留着只会误导
+            // (点了还会误标 markSkippedInOnboarding,触发后续不必要的重问)。
+            if !permissionManager.allPermissionsGranted {
+                Button {
+                    permissionManager.markSkippedInOnboarding()
+                    nextStep()
+                } label: {
+                    Text(String(localized: "onboarding.button.skip"))
+                        .font(WarmFont.body(14))
+                        .foregroundColor(sketchColor.opacity(0.6))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.vertical, 6)
+                }
+                .accessibilityIdentifier("SkipVoicePermissionsButton")
+                .padding(.top, 2)
             }
-            .accessibilityIdentifier("SkipVoicePermissionsButton")
-            .padding(.top, 2)
         }
     }
 
@@ -685,79 +683,50 @@ struct OnboardingView: View {
         .accessibilityIdentifier("SpeechLanguageOption_\(lang.rawValue)")
     }
 
-    // MARK: - Step 2.6: Calendar Sync
+    // MARK: - Step: Demo(一句话 → 两条待办)
 
-    /// 日历同步开关。Toggle 视觉状态(@State)与持久化状态(@AppStorage)刻意分开:
-    /// 持久化只在拿到权限后写。不变量:`.appAndSystemCalendar ⟹ 权限已拿到`。
-    /// 详见 `calendarSyncBinding`。
-    private var calendarSyncStep: some View {
-        VStack(spacing: isCompact ? 14 : 22) {
-
-            ZStack {
-                Circle()
-                    .fill(highlightColor.opacity(0.1))
-                    .frame(width: isCompact ? 80 : 120, height: isCompact ? 80 : 120)
-                HStack(spacing: 14) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: isCompact ? 26 : 34, weight: .medium))
-                        .foregroundColor(inkColor)
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: isCompact ? 24 : 30, weight: .medium))
-                        .foregroundColor(highlightColor)
-                }
-            }
-            .scaleEffect(illustrationScale)
-            .animation(motionAnim(.spring(response: 0.5)), value: illustrationScale)
-            .accessibilityHidden(true)
-
+    /// 静态 before/after 演示:一句口语 → 两条整理好的待办。
+    /// 设计动机(2026-08-23 拍板):三张 feature 卡是「声明」,用户不买账;
+    /// 产品的说服力在「乱糟糟的口语变成整齐待办」这个瞬间,把它前置到
+    /// onboarding 里演示一遍。示例台词与 completion 页/主页 hint 的
+    /// `home.first_trial.example` 刻意不同——那是用户接下来要照着说的句子,
+    /// 这里是演示用的另一句,避免同一句话出现三遍。
+    private var demoStep: some View {
+        VStack(spacing: isCompact ? 16 : 24) {
             VStack(spacing: 10) {
-                Text(String(localized: "onboarding.calendar.title"))
+                Text(String(localized: "onboarding.demo.title"))
                     .font(WarmFont.title(isCompact ? 24 : 28))
                     .foregroundColor(inkColor)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
 
-                Text(String(localized: "onboarding.calendar.desc"))
+                Text(String(localized: "onboarding.demo.desc"))
                     .font(WarmFont.body(isCompact ? 15 : 17))
                     .foregroundColor(sketchColor)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
-                    .lineLimit(3)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.8)
             }
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            privacyNote(String(localized: "onboarding.calendar.privacy"))
-                .padding(.top, isCompact ? 0 : 4)
-                .offset(y: contentOffset)
-                .opacity(contentOpacity)
+            // Before:口语原文,手写便签风格
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: isCompact ? 20 : 24, weight: .medium))
+                    .foregroundColor(highlightColor)
+                    .frame(width: isCompact ? 32 : 40)
+                    .accessibilityHidden(true)
 
-            VStack(spacing: 14) {
-                HStack(spacing: isCompact ? 10 : 14) {
-                    Image(systemName: "calendar.badge.plus")
-                        .font(.system(size: isCompact ? 22 : 28, weight: .medium))
-                        .foregroundColor(inkColor)
-                        .frame(width: isCompact ? 36 : 44, height: isCompact ? 36 : 44)
-                        .accessibilityHidden(true)
-
-                    Text(String(localized: "onboarding.calendar.toggle"))
-                        .font(WarmFont.headline(isCompact ? 15 : 17))
-                        .foregroundColor(inkColor)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                        .layoutPriority(1)
-
-                    Spacer(minLength: 0)
-
-                    Toggle("", isOn: calendarSyncBinding)
-                        .labelsHidden()
-                        .tint(highlightColor)
-                        .disabled(isRequestingCalendarPermission)
-                        .accessibilityIdentifier("CalendarSyncToggle")
-                }
+                Text(String(localized: "onboarding.demo.speech"))
+                    .font(WarmFont.body(isCompact ? 15 : 17))
+                    .foregroundColor(inkColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
             }
-            .padding(isCompact ? 14 : 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(isCompact ? 14 : 18)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(WarmTheme.cardBackground)
@@ -767,99 +736,76 @@ struct OnboardingView: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(sketchColor.opacity(0.15), lineWidth: 1)
             )
-            .padding(.top, isCompact ? 0 : 14)
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            if showCalendarDeniedNote {
-                if isCompact {
-                    // 紧凑屏:被拒附注内联单行,同权限页 denied 分支的理由
-                    compactDeniedNote(
-                        message: String(localized: "onboarding.calendar.denied"),
-                        accessId: "OnboardingCalendarOpenSettingsButton"
-                    )
-                    .transition(.opacity)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(String(localized: "onboarding.calendar.denied"))
-                            .font(WarmFont.caption(13))
-                            .foregroundColor(sketchColor)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.8)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .layoutPriority(1)
+            // 转化箭头(方向敏感,RTL 翻转不适用——垂直方向)
+            Image(systemName: "arrow.down")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(highlightColor)
+                .accessibilityHidden(true)
+                .offset(y: contentOffset)
+                .opacity(contentOpacity)
 
-                        Button(action: { permissionManager.openAppSettings() }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "gear")
-                                    .font(.system(size: 12))
-                                Text(String(localized: "onboarding.open_settings"))
-                                    .font(WarmFont.body(14))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(inkColor))
-                        }
-                        // 用独立 id,不要沿用权限页的 "OpenSettingsButton" —— onboarding 期间
-                        // 两页可能前后出现,UI 测试若按 id 查找会跨页匹配到歧义节点。
-                        .accessibilityIdentifier("OnboardingCalendarOpenSettingsButton")
-                        .accessibilityHint(String(localized: "a11y.onboarding.open_settings_hint"))
-                    }
-                    .padding(.horizontal, 4)
-                    .transition(.opacity)
-                }
+            // After:两条整理好的待办
+            VStack(spacing: isCompact ? 10 : 12) {
+                demoTodoRow(
+                    title: String(localized: "onboarding.demo.todo1"),
+                    timeChip: String(localized: "onboarding.demo.todo1.time")
+                )
+                demoTodoRow(
+                    title: String(localized: "onboarding.demo.todo2"),
+                    timeChip: nil
+                )
             }
-        }
-        .onAppear {
-            // 重装用户可能已是开启状态 —— 视觉 toggle 对齐持久化值
-            calendarSyncOn = (calendarWriteModeRaw == CalendarWriteMode.appAndSystemCalendar.rawValue)
+            .padding(isCompact ? 14 : 18)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(WarmTheme.cardBackground)
+                    .shadow(color: sketchColor.opacity(0.08), radius: 8, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(highlightColor.opacity(0.35), lineWidth: 1)
+            )
+            .offset(y: contentOffset)
+            .opacity(contentOpacity)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(String(localized: "a11y.onboarding.calendar"))
-        .accessibilityIdentifier("OnboardingCalendarSyncStep")
+        .accessibilityLabel(String(localized: "onboarding.demo.title"))
+        .accessibilityIdentifier("OnboardingDemoStep")
     }
 
-    /// Toggle 的双向 Binding。视觉(@State calendarSyncOn)立即跟手;持久化
-    /// (@AppStorage calendarWriteModeRaw)只在拿到权限后写。
-    ///
-    /// 不变量:**持久化为 .appAndSystemCalendar ⟹ 权限确实拿到过。**
-    /// 失败只回滚视觉 —— 系统弹窗期间 App 被杀也不会留下脏持久化值
-    /// (正是 §1.4 那个「开着但不工作」状态的反面)。
-    private var calendarSyncBinding: Binding<Bool> {
-        Binding(
-            get: { calendarSyncOn },
-            set: { wantsOn in
-                calendarSyncOn = wantsOn          // 视觉立即跟手,不弹回
-                guard wantsOn else {
-                    calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
-                    showCalendarDeniedNote = false
-                    return
-                }
-                // 已授权(比如重装用户)直接开,不再多弹一次系统窗
-                if permissionManager.calendarGranted {
-                    calendarWriteModeRaw = CalendarWriteMode.appAndSystemCalendar.rawValue
-                    return
-                }
-                isRequestingCalendarPermission = true
-                Task {
-                    let granted = await permissionManager.requestCalendarPermission()
-                    isRequestingCalendarPermission = false
-                    if granted {
-                        calendarWriteModeRaw = CalendarWriteMode.appAndSystemCalendar.rawValue
-                    } else {
-                        // 只回滚视觉;calendarWriteModeRaw 全程没被写过,不存在写脏的窗口
-                        withAnimation(motionAnim(.spring(response: 0.3))) {
-                            calendarSyncOn = false
-                        }
-                        showCalendarDeniedNote = true
-                    }
-                }
+    /// 演示页的单条待办行:空选框 + 标题 + 时间胶囊。纯视觉,不可交互。
+    private func demoTodoRow(title: String, timeChip: String?) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .stroke(sketchColor.opacity(0.5), lineWidth: 1.5)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(WarmFont.headline(isCompact ? 15 : 17))
+                .foregroundColor(inkColor)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+
+            Spacer(minLength: 0)
+
+            if let timeChip {
+                Text(timeChip)
+                    .font(WarmFont.caption(isCompact ? 12 : 13))
+                    .foregroundColor(highlightColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(highlightColor.opacity(0.1))
+                    )
             }
-        )
+        }
     }
 
     private var voicePermissionsIllustration: some View {
@@ -1429,10 +1375,9 @@ struct OnboardingView: View {
             return String(localized: "onboarding.button.try_voice")
         case .actionButton:
             return String(localized: "onboarding.button.got_it")
-        case .voicePermissions:
-            // 合并页右下角的 Continue —— 始终可点,不授权也能继续
-            return String(localized: "onboarding.button.continue")
         default:
+            // 中间各步(含权限页)统一「下一步」——按钮文案不一致会让人
+            // 怀疑每一步的语义不同,实际都是同一导航动作。
             return String(localized: "onboarding.button.next")
         }
     }

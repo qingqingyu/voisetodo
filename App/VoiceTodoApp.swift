@@ -56,6 +56,9 @@ struct VoiceTodoApp: App {
             // 重置语义 = 全新安装,计数与冷却都应是零。
             UserDefaults.standard.removeObject(forKey: AppCoordinator.recordingSuccessCountKey)
             UserDefaults.standard.removeObject(forKey: AppCoordinator.lastPaywallAutoShownAtKey)
+            // 日历延后询问的一次性 flag 一并清:重置语义 = 全新安装,flag 残留会让
+            // 带 --calendar-ask 的场景(S16)在同一模拟器重跑时 sheet 永不弹出。
+            UserDefaults.standard.removeObject(forKey: CalendarWriteMode.deferredAskShownKey)
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 
