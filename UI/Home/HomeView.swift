@@ -240,6 +240,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
     @State private var occurrenceRevision = 0
     @AppStorage(CalendarWriteMode.storageKey) private var calendarWriteModeRaw = CalendarWriteMode.appOnly.rawValue
+    /// 「首次确认带日期待办后的一次性日历同步询问」是否已弹过(弹过一次永不复弹,
+    /// 含下滑关闭;真正的开关在设置页)。触发与条件见 `maybePresentCalendarSyncAsk`。
+    @AppStorage(CalendarWriteMode.deferredAskShownKey) private var calendarSyncAskShown = false
+    /// 一次性日历同步询问 sheet 的 presentation 状态。
+    @State private var showCalendarSyncAsk = false
     /// 网格折叠进度(0=展开满屏 6 行, 1=折叠到选中日所在周 1 行 + 任务列表)。
     /// 生命周期:与 HomeView 的 View identity 绑定。HomeView 在 App 级别长期存活,
     /// 切 tab 不会销毁重建 HomeView,因此 collapseProgress 在 tab 切换间自然保留。
@@ -559,6 +564,17 @@ struct HomeView<Store: HomeTodoStore>: View {
             VoicePermissionRepromptSheet(
                 onAllow: handleRepromptAllow,
                 onDismiss: handleRepromptDismiss
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        // 一次性日历同步询问:首次确认带日期待办后弹(2026-08-23 决策,
+        // 取代已删除的 onboarding 日历页)。条件见 maybePresentCalendarSyncAsk。
+        .sheet(isPresented: $showCalendarSyncAsk) {
+            CalendarSyncAskSheet(
+                permissionManager: permissionManager,
+                calendarWriteModeRaw: $calendarWriteModeRaw,
+                onDismissRequest: { showCalendarSyncAsk = false }
             )
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
@@ -1091,6 +1107,36 @@ struct HomeView<Store: HomeTodoStore>: View {
         if !onDayIds.isEmpty {
             confirmPopToken += 1
         }
+
+        maybePresentCalendarSyncAsk(todosById: todosById, wasFirstTrial: wasFirstTrial)
+    }
+
+    /// 一次性日历同步询问的触发判定(2026-08-23 决策:删 onboarding 日历页,
+    /// 在用户刚看到日期被识别出来的那一刻请求价值)。
+    ///
+    /// 条件全部满足才弹:
+    /// - 从未弹过(`deferredAskShownKey`,弹过一次永不复弹)
+    /// - 本次确认批次里有带日期的待办(无日期批次与日历无关,问「要同步吗」突兀)
+    /// - 写模式仍是 .appOnly(用户没在设置里主动开/关过)
+    /// - 不是首次语音 wow(wow 时刻 paywall 已排队,不叠第二层打断)
+    /// - 非 UI 测试或显式 `--calendar-ask` 注入(防既有场景测试被意外弹层打断)
+    ///
+    /// 已被拒的用户**不排除**在外:sheet 的被拒分支自带「去设置开启」出口,
+    /// 而「不再打扰」由一次性 flag 保证——拒过的人也值得拿到那一次出口。
+    ///
+    /// 注意:触发本询问的这批待办是在询问**之前**落库的,不会回填进系统日历;
+    /// 开启后从下一条带日期待办开始同步(文案按此事实表述,不承诺回填)。
+    private func maybePresentCalendarSyncAsk(todosById: [UUID: TodoItemData], wasFirstTrial: Bool) {
+        let uiTestOptions = UITestLaunchOptions.current
+        guard !calendarSyncAskShown,
+              !wasFirstTrial,
+              calendarWriteModeRaw == CalendarWriteMode.appOnly.rawValue,
+              todosById.values.contains(where: { $0.dueDate != nil }),
+              !uiTestOptions.isUITesting || uiTestOptions.calendarAskEnabled
+        else { return }
+        // 先落「已弹过」再弹:下滑关闭也算问过,不给二次打扰留口子
+        calendarSyncAskShown = true
+        showCalendarSyncAsk = true
     }
 
     /// 成功添加后的底部 toast。统计落别处的条目数,选「已添加 N 条」或分流版「N 条 + M 条在其他日期」。

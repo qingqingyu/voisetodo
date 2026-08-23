@@ -557,22 +557,6 @@
         }
       }
     },
-    "a11y.onboarding.calendar" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Calendar sync setting"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日历同步设置"
-          }
-        }
-      }
-    },
     "a11y.onboarding.open_settings_hint" : {
       "localizations" : {
         "en" : {
@@ -1070,6 +1054,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "从日历导入"
+          }
+        }
+      }
+    },
+    "calendar.ask.allow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Sync"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启同步"
+          }
+        }
+      }
+    },
+    "calendar.ask.not_now" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂不"
           }
         }
       }
@@ -4253,13 +4269,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap the mic button below and just say it"
+            "value" : "Tap the mic button and just say it"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点下面的麦克风按钮,试着说一句"
+            "value" : "点麦克风按钮，试着说一句"
           }
         }
       }
@@ -5498,22 +5514,6 @@
         }
       }
     },
-    "onboarding.button.continue" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "继续"
-          }
-        }
-      }
-    },
     "onboarding.button.got_it" : {
       "localizations" : {
         "en" : {
@@ -5642,18 +5642,98 @@
         }
       }
     },
-    "onboarding.calendar.toggle" : {
+    "onboarding.demo.desc" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Write to iOS Calendar"
+            "value" : "Just speak — date, time, and items are sorted for you"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "写入 iOS 日历"
+            "value" : "你只管说，日期、时间和条目都帮你分好"
+          }
+        }
+      }
+    },
+    "onboarding.demo.speech" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Meeting with the team at 3 tomorrow, and pick up some milk”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「明天下午三点跟张总开会，顺便买点牛奶」"
+          }
+        }
+      }
+    },
+    "onboarding.demo.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One sentence, neatly done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一句话，就整理好了"
+          }
+        }
+      }
+    },
+    "onboarding.demo.todo1" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Team meeting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟张总开会"
+          }
+        }
+      }
+    },
+    "onboarding.demo.todo1.time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tomorrow 3:00 PM"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天 15:00"
+          }
+        }
+      }
+    },
+    "onboarding.demo.todo2" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick up milk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "买牛奶"
           }
         }
       }
@@ -5679,13 +5759,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Head to your list, tap the mic button, and just say it"
+            "value" : "Now tap the orange mic button and just say it"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "回到清单,点右下角的麦克风,说一句话试试"
+            "value" : "接下来，点亮那个橙色的麦克风按钮，说一句试试"
           }
         }
       }
@@ -5711,13 +5791,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Press the button and say your todos"
+            "value" : "Tap the mic and speak your todos"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按下按钮，说出你的待办"
+            "value" : "点一下麦克风，说出你的待办"
           }
         }
       }
@@ -5775,13 +5855,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Always visible on your lock screen and home screen"
+            "value" : "See your todos on lock screen and home screen widgets"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "锁屏桌面上随时提醒你"
+            "value" : "待办可显示在锁屏和桌面小组件"
           }
         }
       }
@@ -5880,23 +5960,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "麦克风已开启"
-          }
-        }
-      }
-    },
-    "onboarding.mic.privacy" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recordings are only used for voice recognition and are never saved or uploaded"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "录音只用于识别你的语音，不会保存或上传"
           }
         }
       }
@@ -6009,7 +6072,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前为 %@"
+            "value" : "当前:%@"
           }
         }
       }
@@ -6111,23 +6174,6 @@
         }
       }
     },
-    "onboarding.speech.privacy" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speech-to-text runs on your device. Task parsing sends the text to our server."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "语音转文字在设备本地完成；任务解析会把文字发到服务器处理"
-          }
-        }
-      }
-    },
     "onboarding.speech.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6166,13 +6212,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voice transcription runs on your device. Task parsing sends the text to our server."
+            "value" : "Apple turns your voice into text; only that text goes to our server to parse your todos."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "语音转文字在设备本地完成；任务解析会把文字发到服务器处理"
+            "value" : "语音由 Apple 转成文字，只有文字会发到服务器解析成待办"
           }
         }
       }
