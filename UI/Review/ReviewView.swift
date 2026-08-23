@@ -70,6 +70,10 @@ struct ReviewView: View {
     /// 复盘流程需要的 store 能力。nil(默认)时入口卡隐藏——settings 深链与
     /// preview 不注入也能编译渲染;HomeView 的两处 sheet 注入真实 store。
     var store: (any ReviewFlowStore)? = nil
+    /// 拆小 sheet 的 AI 候选源(2026-08-23 拆小改版)。nil → sheet 直接手写降级。
+    var splitter: (any TodoSplitterProtocol)? = nil
+    /// 拆小 sheet 的麦克风(与首页共用同一实例)。nil → 「说一句」行隐藏。
+    var voiceInput: (any VoiceInputProtocol)? = nil
 
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
@@ -120,7 +124,7 @@ struct ReviewView: View {
         }
         .fullScreenCover(isPresented: $showReviewFlow) {
             if let store {
-                ReviewFlowView(store: store)
+                ReviewFlowView(store: store, splitter: splitter, voiceInput: voiceInput)
             }
         }
         .navigationTitle(String(localized: "review.nav_title"))

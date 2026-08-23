@@ -130,17 +130,51 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     requestContext.vocabularyHintCount = vocabularyHints.length;
     logInfo("proxy.payload.accepted", requestContext);
 
-    const quotaState = await enforceAllQuotas(request, env, requestContext, ctx);
-
-    // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
-    // 直接复用作为 today 注入 prompt，避免重复调用 resolveQuotaDate 产生重复漂移校验日志。
-    // 防御性检查：若未来 enforceDailyLimit 重构遗漏 resetDate，立即抛错而非静默注入 undefined。
-    const todayDate = quotaState.resetDate;
-    if (!todayDate) {
-      throw new ProxyHTTPError(500, "enforceDailyLimit returned no resetDate", {
-        errorType: "invariant_violation",
-        body: { error: "invariant_violation", detail: "resetDate missing" }
+    // Split 模式(2026-08-23 拆小改版):把一件模糊任务(或一段说了几件事的话)
+    // 拆成 2-4 条具体步骤。与提取模式共用 provider 链路,差异:
+    //   - 不计费额度(用户拍板:拆小是低频辅助动作,不占每日额度)
+    //   - 不读不写 cache(「换一批」必须拿到不同结果)
+    //   - 不支持 stream(iOS 端固定 stream:false)
+    const rawMode = payload.mode == null ? "" : String(payload.mode);
+    if (rawMode !== "" && rawMode !== "extract" && rawMode !== "split") {
+      return finishRequest(new Response("Invalid mode", { status: 400 }), requestContext, {
+        reason: "invalid_mode",
+        mode: rawMode
       });
+    }
+    const mode = rawMode || "extract";
+    if (mode === "split" && stream) {
+      return finishRequest(
+        new Response("split mode does not support streaming", { status: 400 }),
+        requestContext,
+        { reason: "split_stream_unsupported" }
+      );
+    }
+    requestContext.mode = mode;
+
+    // split 不计费:quotaState 保持 null(quotaHeaders / refundDeviceQuotaOnUpstreamFailure
+    // 都对 null 安全,无需分支守卫)。提取模式照旧三层配额 + today 不变量。
+    let quotaState = null;
+    let todayDate = null;
+    if (mode === "extract") {
+      quotaState = await enforceAllQuotas(request, env, requestContext, ctx);
+
+      // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
+      // 直接复用作为 today 注入 prompt，避免重复调用 resolveQuotaDate 产生重复漂移校验日志。
+      // 防御性检查：若未来 enforceDailyLimit 重构遗漏 resetDate，立即抛错而非静默注入 undefined。
+      todayDate = quotaState.resetDate;
+      if (!todayDate) {
+        throw new ProxyHTTPError(500, "enforceDailyLimit returned no resetDate", {
+          errorType: "invariant_violation",
+          body: { error: "invariant_violation", detail: "resetDate missing" }
+        });
+      }
+    } else {
+      // split 不占计费额度(拍板),但保留反滥用护栏:全局预算熔断 + ip 短窗速率限流。
+      // 不计费 ≠ 零防护——跳过这两层会让外部无成本刷模型调用。
+      await enforceGlobalBudgetHotPath(env, requestContext);
+      await enforceIpRateLimit(request, env, requestContext);
+      logInfo("proxy.split.quota_skipped", requestContext);
     }
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
@@ -199,11 +233,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // 提前取 personalHints(原本在 line 197,cache 判断需要)
     const personalHints = typeof payload.personalHints === "string" ? payload.personalHints.trim() : null;
 
-    // Cache lookup: 非流式 + 无 personalHints 才 cache
+    // Cache lookup: 提取模式 + 非流式 + 无 personalHints 才 cache
     // - 流式响应是 SSE 多事件序列,序列化复杂度高于纯 JSON,先不缓存
     // - personalHints 是用户级个人术语表,不同用户不能共享 cache(隐私 + 正确性)
+    // - split 不缓存:「换一批」语义要求重复请求返回不同结果
     // Cache key 含 today(YYYY-MM-DD),跨天后 cache 自动失效;TTL 1h 也是兜底
-    const cacheable = !stream && !personalHints;
+    const cacheable = mode === "extract" && !stream && !personalHints;
     let cacheKey = null;
     if (cacheable) {
       cacheKey = await makeCacheKey({ transcript, locale, vocabularyHints, today: todayDate });
@@ -241,7 +276,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     requestContext.candidateCount = candidates.length;
 
-    const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints };
+    const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints, mode };
     // executeWithFailover 的所有失败出口都是 throw(候选为空 / 非重试类失败 /
     // 全部候选耗尽 / invariant_violation),所以这一层 catch 覆盖了全部
     // "用户一个字都没拿到"的情况 —— 一律退回设备额度后原样上抛。

@@ -12,7 +12,7 @@
 // provider layer NOT to log URLs and on the request layer NOT to echo upstream URLs
 // back to the client. Never add `attempt.url` to a log payload.
 
-import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 const GEMINI_MODEL_CONFIG_KEYWORDS = [
   "model not found",
@@ -25,7 +25,7 @@ const GEMINI_MODEL_CONFIG_KEYWORDS = [
 export const geminiAdapter = {
   type: "gemini",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, mode, abortSignal }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "Gemini key not configured");
     }
@@ -47,7 +47,10 @@ export const geminiAdapter = {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: buildSystemPrompt(locale, vocabularyHints, today, personalHints) }] },
+          // split 模式(拆小)换专用 prompt;today/vocabularyHints/personalHints 仅提取模式有意义
+          systemInstruction: { parts: [{ text: mode === "split"
+            ? buildSplitPrompt(locale)
+            : buildSystemPrompt(locale, vocabularyHints, today, personalHints) }] },
           contents: [{ role: "user", parts: [{ text: transcript }] }],
           generationConfig: {
             temperature: 0,

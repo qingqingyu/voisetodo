@@ -9,7 +9,7 @@
 //   - choices[].delta.content      -> text chunk
 //   - choices[].finish_reason      -> terminal
 
-import { buildSystemPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // OpenAI error bodies that indicate the model in this provider can't serve the request;
 // failover to a different provider (which may have a different model) is worth trying.
@@ -25,7 +25,7 @@ const OPENAI_MODEL_CONFIG_KEYWORDS = [
 export const openaiAdapter = {
   type: "openai",
 
-  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal }) {
+  buildRequest({ transcript, locale, vocabularyHints, stream, provider, today, personalHints, mode, abortSignal }) {
     if (!provider.apiKey) {
       throw new ProxyHTTPError(500, "OpenAI key not configured");
     }
@@ -48,7 +48,13 @@ export const openaiAdapter = {
           stream,
           response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: buildSystemPrompt(locale, vocabularyHints, today, personalHints) },
+            // split 模式(拆小)换专用 prompt;today/vocabularyHints/personalHints 仅提取模式有意义
+            {
+              role: "system",
+              content: mode === "split"
+                ? buildSplitPrompt(locale)
+                : buildSystemPrompt(locale, vocabularyHints, today, personalHints)
+            },
             { role: "user", content: transcript }
           ]
         })

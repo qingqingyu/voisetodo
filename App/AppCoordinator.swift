@@ -10,6 +10,15 @@ final class AppCoordinator: ObservableObject {
     // MARK: - Dependencies
 
     private let voiceInput: any VoiceInputProtocol
+
+    /// 复盘拆小 sheet 的依赖出口(2026-08-23 拆小改版):
+    /// - `reviewSplitter` 默认 nil——测试/UI 测试不注入,sheet 直接手写降级;
+    ///   生产环境由 VoiceTodoApp 传入与 extractor 同一个 TodoExtractorService 实例
+    ///   (它同时实现 TodoExtractorProtocol 与 TodoSplitterProtocol)。
+    /// - `reviewVoiceInput` 暴露共用的录音机实例(复盘全屏时首页录音不可能并发)。
+    let reviewSplitter: (any TodoSplitterProtocol)?
+
+    var reviewVoiceInput: any VoiceInputProtocol { voiceInput }
     /// 协议交集与 init 参数一致:除常规编排外,还直接落 pending(录音错误部分转写兜底)
     /// 与转持手动卡片(前台恢复的确定性失败/noTodos 止损)。
     private let store: any AppCoordinatorTodoStore & PendingRecoveryTodoStore & PendingTranscriptCreating & PendingTranscriptHolding & CalendarSyncTodoStore
@@ -125,11 +134,13 @@ final class AppCoordinator: ObservableObject {
         calendarWriteModeProvider: @escaping () -> CalendarWriteMode = { CalendarWriteMode.current },
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
         vocabularyStore: UserVocabularyStore = .shared,
-        quotaUsage: QuotaUsage? = nil
+        quotaUsage: QuotaUsage? = nil,
+        reviewSplitter: (any TodoSplitterProtocol)? = nil
     ) {
         self.voiceInput = voiceInput
         self.store = store
         self.extractor = extractor
+        self.reviewSplitter = reviewSplitter
         // nil 兜底:测试调用方不传时,创建不监听 Transaction.updates 的轻量实例,
         // 避免在测试环境启动常驻 Task 监听 StoreKit2 异步流
         self.entitlement = entitlement ?? EntitlementManager(enableTransactionListener: false)

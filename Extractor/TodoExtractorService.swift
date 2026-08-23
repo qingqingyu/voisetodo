@@ -1,7 +1,7 @@
 import Foundation
 
 /// 待办提取服务
-final class TodoExtractorService: TodoExtractorProtocol {
+final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol {
     // MARK: - Properties
 
     private let networkClient: NetworkClient
@@ -168,6 +168,77 @@ final class TodoExtractorService: TodoExtractorProtocol {
         )
 
         return ExtractionResult(todos: [todo], ignored: "")
+    }
+
+    // MARK: - TodoSplitterProtocol Implementation
+
+    /// 任务拆小(2026-08-23 拆小改版):走代理 `mode=split`。
+    /// 与主提取链路的差异(拍板口径):单次调用不重试、不喂熔断器、不计费额度;
+    /// 失败由调用方降级为手动输入。
+    func splitSteps(for input: String, locale: Locale, wantsAlternative: Bool) async throws -> [String] {
+        let splitID = VoiceTodoLog.makeID("split")
+        let startedAt = Date()
+        // 「换一批」的多样性指令拼在用户输入后(按内容语言选措辞,避免给英文/日文
+        // 输入拼中文指令干扰「输出语言与输入一致」规则)——代理/模型侧无需感知 variant 概念
+        let message = wantsAlternative ? input + Self.alternativeInstruction(for: locale) : input
+        VoiceTodoLog.extractor.info("split.start id=\(splitID, privacy: .public) locale=\(locale.identifier, privacy: .public) alternative=\(wantsAlternative) \(VoiceTodoLog.textSummary(input), privacy: .public)")
+        do {
+            let responseText = try await networkClient.callTodoExtractionProxy(
+                transcript: message,
+                localeIdentifier: locale.identifier,
+                mode: "split"
+            )
+            let steps = try parseSplitResponse(responseText)
+            VoiceTodoLog.extractor.info("split.success id=\(splitID, privacy: .public) steps=\(steps.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return steps
+        } catch {
+            VoiceTodoLog.extractor.error("split.failed id=\(splitID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw error
+        }
+    }
+
+    /// split 模式响应体:{"steps":["...", "..."]}
+    private struct SplitStepsResponse: Decodable {
+        let steps: [String]
+    }
+
+    /// 「换一批」多样性指令:与用户输入同语言(不给英文/日文输入拼中文)。
+    private static func alternativeInstruction(for locale: Locale) -> String {
+        let id = locale.identifier
+        if id.hasPrefix("zh") { return "\n\n(给出与上次不同角度的拆法)" }
+        if id.hasPrefix("ja") { return "\n\n(前回とは異なる切り口で分解してください)" }
+        return "\n\n(Break it down from a different angle than last time)"
+    }
+
+    /// 解析 split 响应。与 parseResponse 同样的 fence 清理套路;空步骤按失败抛错
+    /// (协议契约:拆不出东西不该静默返回空数组让 UI 显示空候选区)。
+    private func parseSplitResponse(_ responseText: String) throws -> [String] {
+        var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = cleanedText.range(of: "^```(?:json|JSON)?\\s*\\n", options: .regularExpression) {
+            cleanedText.removeSubrange(range)
+        }
+        if let range = cleanedText.range(of: "\\n\\s*```\\s*$", options: .regularExpression) {
+            cleanedText.removeSubrange(range)
+        }
+        cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw VoiceTodoError.jsonParsingFailed("无法转换为 UTF-8 数据")
+        }
+        do {
+            let decoded = try JSONCoding.makeResponseDecoder().decode(SplitStepsResponse.self, from: jsonData)
+            let steps = decoded.steps
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !steps.isEmpty else {
+                throw VoiceTodoError.jsonParsingFailed("split 返回空步骤")
+            }
+            return steps
+        } catch let error as VoiceTodoError {
+            throw error
+        } catch {
+            throw VoiceTodoError.jsonParsingFailed("split JSON 解析失败: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Streaming Implementation
