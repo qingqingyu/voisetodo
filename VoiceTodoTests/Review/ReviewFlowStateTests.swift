@@ -19,11 +19,13 @@ final class ReviewFlowStateTests: XCTestCase {
         _ title: String,
         isCompleted: Bool = false,
         abandoned: Bool = false,
-        recurring: Bool = false
+        recurring: Bool = false,
+        category: TodoCategory = .other
     ) -> TodoItemData {
         TodoItemData(
             title: title,
             recurrenceRule: recurring ? RecurrenceRule(frequency: .daily) : nil,
+            category: category,
             isCompleted: isCompleted,
             abandonedAt: abandoned ? Date() : nil
         )
@@ -282,5 +284,73 @@ extension ReviewFlowStateTests {
 
         XCTAssertEqual(state.shownInsights.count, 1)
         XCTAssertEqual(state.shownInsights.first?.effectSize, 0.6)
+    }
+}
+
+// MARK: - 上次定的重点 / 领域提示(2026-08-25 轻修)
+
+extension ReviewFlowStateTests {
+
+    // MARK: 上次定的重点结局
+
+    func testLastPinnedOutcomeNilWhenNoPins() {
+        let state = ReviewFlowState(todos: [todo("a")])
+        XCTAssertNil(state.lastPinnedOutcome, "上次没置顶过 → 结局行隐藏")
+        XCTAssertTrue(state.lastPinnedIDs.isEmpty)
+    }
+
+    func testLastPinnedOutcomeCountsFromRawSnapshotNotDeck() {
+        let done = todo("done", isCompleted: true)
+        let open = todo("open")
+        let recurringOpen = todo("recurring", recurring: true)
+        let state = ReviewFlowState(
+            todos: [done, open, recurringOpen],
+            lastPinnedIDs: [done.id, open.id, recurringOpen.id]
+        )
+        // 完成的 done 不在 deck 里,但照样数得出来——计数基于原始快照而非 deck。
+        // (生产中置顶池只可能含一次性任务:commit 候选 = scheduled,全部来自卡堆;
+        // recurringOpen 进 pending 只是夹具造出来的边界,口径仍是纯 isCompleted 切分。)
+        XCTAssertEqual(state.lastPinnedOutcome, .init(completed: 1, pending: 2))
+    }
+
+    func testLastPinnedOutcomeIgnoresDeletedIDs() {
+        let open = todo("open")
+        let deletedID = UUID()
+        let state = ReviewFlowState(todos: [open], lastPinnedIDs: [open.id, deletedID])
+        // 已删除的 id 两边都不计,数字与当前库对得上。
+        XCTAssertEqual(state.lastPinnedOutcome, .init(completed: 0, pending: 1))
+    }
+
+    func testLastPinnedOutcomeNilWhenAllDeleted() {
+        let state = ReviewFlowState(todos: [todo("other")], lastPinnedIDs: [UUID()])
+        // 上次定的重点全删了 → 0/0 是误导噪音(读起来像一件没动),结局行隐藏。
+        XCTAssertNil(state.lastPinnedOutcome)
+    }
+
+    // MARK: 领域提示轮换(2026-08-25 拍板:只在出现过的分类里轮换)
+
+    func testAskDomainHintOnlyRotatesAmongPresentCategories() {
+        let todos = [todo("w1", category: .work), todo("l1", category: .life)]
+        // 只轮换出现过的分类,声明序稳定:seed 0/1/2/3 → work,life,work,life。
+        // (study/health 等从未出现的分类永不出现。)
+        let rotation = (0...3).map {
+            ReviewFlowState.askDomainHintCategory(todos: todos, rotationSeed: $0)
+        }
+        XCTAssertEqual(rotation, [.work, .life, .work, .life])
+
+        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: [], rotationSeed: 0),
+                     "空快照无分类可问 → 提示行隐藏")
+    }
+
+    func testAskDomainHintAdvancesWithSessionCount() {
+        let todos = [todo("w1", category: .work), todo("l1", category: .life)]
+        let first = ReviewFlowState(todos: todos)
+        let second = ReviewFlowState(
+            todos: todos,
+            previousSessions: [reviewSession(completedAt: Date())]
+        )
+        // seed = 历史会话数:每次复盘前进一格。
+        XCTAssertEqual(first.askDomainHintCategory, .work)
+        XCTAssertEqual(second.askDomainHintCategory, .life)
     }
 }

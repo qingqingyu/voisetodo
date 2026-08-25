@@ -282,6 +282,8 @@ struct ReviewStepInsights: View {
 
     /// 「问问自己」:纯文字输入(accessibility 兜底 + 唯一入口,见类型注释)。
     /// 答案存 `state.voiceAnswerText`(阶段 4 持久化)。
+    /// 标题下有领域提示行(2026-08-25 轻修):只在快照出现过的分类里按历史
+    /// 会话数轮换——承接实际复盘「心里过一遍分领域进度」的口问习惯。
     private var askYourselfSection: some View {
         RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.sm) {
@@ -291,6 +293,17 @@ struct ReviewStepInsights: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let category = state.askDomainHintCategory {
+                    Text(String(
+                        format: String(localized: "review.flow.insights.ask.domain_hint"),
+                        category.displayName
+                    ))
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
 
                 TextEditor(text: $state.voiceAnswerText)
                     .font(WarmFont.body(14))

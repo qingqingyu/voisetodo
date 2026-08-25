@@ -7907,6 +7907,28 @@
         }
       }
     },
+    "review.flow.recap.last_pinned_outcome" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priorities from last review: %1$d done, %2$d still open"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回決めた重点:%1$d 件完了、%2$d 件残り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次定的重点:%1$d 件完成、%2$d 件待处理"
+          }
+        }
+      }
+    },
     "review.flow.recap.last_review_%@" : {
       "localizations" : {
         "en" : {
@@ -8013,6 +8035,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "都清完了,看看这一个月"
+          }
+        }
+      }
+    },
+    "review.flow.insights.ask.domain_hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How are things going in \"%@\" this week?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週、「%@」の目標は進みましたか?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这周「%@」上的目标推进得怎么样?"
           }
         }
       }
@@ -9157,6 +9201,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这张卡怎么处理?"
+          }
+        }
+      }
+    },
+    "review.flow.triage.last_pinned" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の重点"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次重点"
           }
         }
       }
