@@ -30,6 +30,17 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     let pinnedCount: Int
 }
 
+/// 一条从复盘笔记里提取的关注点(2026-08-23 拍板语义对照):text 保留用户
+/// 原话关键短语 + 语义映射(至少一个维度非 nil,prompt 侧保证)+ 提取当期的
+/// 计数(下期展示「本期 N 件(上期 M 件)」时的 M)。
+struct ReviewTopic: Codable, Sendable, Equatable {
+    let text: String
+    let category: TodoCategory?
+    let timeBucket: TimeBucket?
+    /// 提取当期该维度的完成数(一次性任务口径)。
+    let periodCount: Int
+}
+
 /// 一次完整复盘会话(阶段 4)。App Group UserDefaults + JSON 持久化,**不进 SwiftData**
 /// (一年约 52 条,动 `VoiceTodoSchema` 会连累 Widget 只读容器,不值)。
 /// 2026-08-22 拍板:规则回访(followUps + 历史规则状态改写)整体移除——v1 只存档
@@ -43,6 +54,12 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
     let periodEnd: Date
     /// 第 3 步「问问自己」的回答(空输入存 nil)。
     let voiceNote: String?
+    /// 当期完成数(一次性任务口径;洞察步被降级跳过时无法统计 → nil)。
+    /// 旧会话无此字段,解码为 nil。
+    let completedCount: Int?
+    /// 笔记语义对照的关注点(收尾后异步 AI 提取回写,唯一可变字段)。
+    /// nil = 未提取/提取失败/旧会话——展示端退化为纯文本笔记。
+    var topics: [ReviewTopic]?
     /// 账本。
     let ledger: ReviewLedger
     /// 第 3 步展示过的洞察快照(冷却判定用)。未到洞察步(降级跳过)时为空数组。
@@ -54,6 +71,8 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
         periodStart: Date,
         periodEnd: Date,
         voiceNote: String?,
+        completedCount: Int? = nil,
+        topics: [ReviewTopic]? = nil,
         ledger: ReviewLedger,
         shownInsights: [InsightSnapshot]
     ) {
@@ -62,6 +81,8 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
         self.periodStart = periodStart
         self.periodEnd = periodEnd
         self.voiceNote = voiceNote
+        self.completedCount = completedCount
+        self.topics = topics
         self.ledger = ledger
         self.shownInsights = shownInsights
     }
@@ -156,6 +177,26 @@ final class ReviewSessionStore {
             Self.save(sessions, to: defaults)
         }
         VoiceTodoLog.app.info("review_session.append.success insights=\(session.shownInsights.count)")
+    }
+
+    /// 收尾后异步回写 `topics`(2026-08-23 语义对照):按 id 原地补齐。
+    /// 对照是增强——目标会话被容量裁剪挤掉时记 warning 放弃,不视为错误;
+    /// defaults 不可用与 append 同口径。
+    func updateTopics(sessionID: UUID, topics: [ReviewTopic]) {
+        guard let defaults else {
+            VoiceTodoLog.app.warning("review_session.update_topics.failed reason=defaults_unavailable")
+            return
+        }
+        lock.withLock {
+            var sessions = Self.load(from: defaults)
+            guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
+                VoiceTodoLog.app.warning("review_session.update_topics.missing id=\(sessionID.uuidString, privacy: .public)")
+                return
+            }
+            sessions[index].topics = topics
+            Self.save(sessions, to: defaults)
+        }
+        VoiceTodoLog.app.info("review_session.update_topics.success id=\(sessionID.uuidString, privacy: .public) topics=\(topics.count)")
     }
 
     // MARK: 存取实现

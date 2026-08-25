@@ -9,7 +9,7 @@
 //   - content_block_delta  -> { delta: { text } }
 //   - message_stop         -> terminal
 
-import { buildSystemPrompt, buildSplitPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // Anthropic error bodies that indicate a model-side fix (just retry against the next
 // provider, whose model may not have this problem). Anything else in 400/422 is treated
@@ -51,10 +51,13 @@ export const anthropicAdapter = {
           max_tokens: 8192,
           temperature: 0,
           stream,
-          // split 模式(拆小)换专用 prompt;today/vocabularyHints/personalHints 仅提取模式有意义
+          // split(拆小)/reflect(语义对照)换专用 prompt;
+          // today/vocabularyHints/personalHints 仅提取模式有意义
           system: mode === "split"
             ? buildSplitPrompt(locale)
-            : buildSystemPrompt(locale, vocabularyHints, today, personalHints),
+            : mode === "reflect"
+              ? buildReflectPrompt(locale)
+              : buildSystemPrompt(locale, vocabularyHints, today, personalHints),
           messages: [{ role: "user", content: transcript }]
         })
       }

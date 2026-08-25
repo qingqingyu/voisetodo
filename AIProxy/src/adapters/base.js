@@ -755,3 +755,81 @@ JSON のみを返す:{"steps":["1つ目","2つ目","3つ目"]}
 例 4:
 入力:App Store 審査資料を提出する
 出力:{"steps":["端末ごとのスクリーンショット6枚を書き出す","プライバシーポリシーURLとマーケティングURLを入力","ビルドを App Store Connect にアップロード"]}`;
+
+// Reflect 模式 prompts(2026-08-23 拍板语义对照,任务 #4)。输入是复盘笔记
+// (「问问自己」的回答),输出 ≤3 条关注点,每条映射到分类/时段枚举——
+// 客户端据此在下一期做「本期 N 件(上期 M 件)」的本地对照。
+// ⚠️ 笔记是用户私密内容:worker 对 reflect 模式绝不读写缓存。
+const CHINESE_REFLECT_PROMPT = `你是一个复盘笔记分析助手。用户刚写完一段复盘笔记(这一段哪里不顺、想改变什么)。从中提取最多 3 条「关注点」,并映射到可统计的维度。
+
+规则:
+1. 只提取用户想改变/在意的事,不是复述全文
+2. 每条 text 保留用户原话的关键短语(≤15 字),不翻译、不改写
+3. category:该关注点能落到 work/study/life/health/finance/social/other 哪个分类就填哪个;落不进去填 null
+4. time_bucket:关注点明确指向时段(上午/下午/晚上)才填 morning/afternoon/evening,否则 null
+5. category 和 time_bucket 至少有一个非 null;两个都落不进去的关注点不要输出
+6. 最多 3 条,按笔记里的重要性排序
+
+只返回 JSON:{"topics":[{"text":"…","category":"work 或 null","time_bucket":"morning/afternoon/evening 或 null"}]}
+
+示例 1:
+输入:这周想把晚上留给八字 App,少接点会议
+输出:{"topics":[{"text":"把晚上留给八字 App","category":null,"time_bucket":"evening"},{"text":"少接会议","category":"work","time_bucket":null}]}
+
+示例 2:
+输入:最近老熬夜,该恢复早锻炼了
+输出:{"topics":[{"text":"别熬夜","category":null,"time_bucket":"evening"},{"text":"恢复早锻炼","category":"health","time_bucket":"morning"}]}`;
+
+const ENGLISH_REFLECT_PROMPT = `You are a review-note analysis assistant. The user just wrote a reflection note (what went wrong, what they want to change). Extract up to 3 "concerns" and map them to countable dimensions.
+
+Rules:
+1. Extract only what the user wants to change or cares about — not a summary of the text
+2. Each text keeps the user's own key phrase (≤10 words), no translation or rewriting
+3. category: fill in work/study/life/health/finance/social/other if the concern maps to one; otherwise null
+4. time_bucket: fill in morning/afternoon/evening only if the concern clearly points to a time of day; otherwise null
+5. At least one of category/time_bucket must be non-null; drop concerns that map to neither
+6. At most 3, ordered by importance in the note
+
+Return JSON only: {"topics":[{"text":"…","category":"work or null","time_bucket":"morning/afternoon/evening or null"}]}
+
+Example 1:
+Input: I want to keep evenings for the bazi app this week, and take fewer meetings
+Output: {"topics":[{"text":"keep evenings for bazi app","category":null,"time_bucket":"evening"},{"text":"fewer meetings","category":"work","time_bucket":null}]}
+
+Example 2:
+Input: staying up late again — need to get back to morning workouts
+Output: {"topics":[{"text":"stop staying up late","category":null,"time_bucket":"evening"},{"text":"morning workouts again","category":"health","time_bucket":"morning"}]}`;
+
+const JAPANESE_REFLECT_PROMPT = `あなたはふりかえりメモ分析アシスタントです。ユーザーがふりかえりメモ(何がうまくいかなかったか、何を変えたいか)を書いた直後です。そこから最大3件の「関心事」を抽出し、集計可能な次元にマッピングしてください。
+
+ルール:
+1. ユーザーが変えたい・気にかけている事柄だけを抽出する(要約ではない)
+2. text はユーザーの言葉のキーフレーズをそのまま(15文字以内)。翻訳・書き換えしない
+3. category: work/study/life/health/finance/social/other のどれか当てはまるなら設定、なければ null
+4. time_bucket: 時間帯(朝/昼/夜)を明確に指す場合のみ morning/afternoon/evening、それ以外は null
+5. category と time_bucket の少なくとも一方は非 null。どちらも当てはまらない関心事は出力しない
+6. 最大3件、メモ内の重要度順に
+
+JSON のみを返す:{"topics":[{"text":"…","category":"work または null","time_bucket":"morning/afternoon/evening または null"}]}
+
+例 1:
+入力:今週は夜を八字アプリに残したい。会議は減らしたい
+出力:{"topics":[{"text":"夜を八字アプリに残す","category":null,"time_bucket":"evening"},{"text":"会議を減らす","category":"work","time_bucket":null}]}
+
+例 2:
+入力:また夜更かししてる。朝の運動を戻さないと
+出力:{"topics":[{"text":"夜更かしをやめる","category":null,"time_bucket":"evening"},{"text":"朝の運動を戻す","category":"health","time_bucket":"morning"}]}`;
+
+/**
+ * Reflect 模式 system prompt(2026-08-23 语义对照,任务 #4)。不需要 today。
+ * @param {"zh"|"ja"|string} locale
+ */
+export function buildReflectPrompt(locale) {
+  if (locale === "zh") {
+    return CHINESE_REFLECT_PROMPT;
+  }
+  if (locale === "ja") {
+    return JAPANESE_REFLECT_PROMPT;
+  }
+  return ENGLISH_REFLECT_PROMPT;
+}

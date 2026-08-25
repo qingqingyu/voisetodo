@@ -131,29 +131,33 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     logInfo("proxy.payload.accepted", requestContext);
 
     // Split 模式(2026-08-23 拆小改版):把一件模糊任务(或一段说了几件事的话)
-    // 拆成 2-4 条具体步骤。与提取模式共用 provider 链路,差异:
-    //   - 不计费额度(用户拍板:拆小是低频辅助动作,不占每日额度)
-    //   - 不读不写 cache(「换一批」必须拿到不同结果)
+    // 拆成 2-4 条具体步骤。Reflect 模式(语义对照,任务 #4):从复盘笔记里提取
+    // 关注点并映射分类/时段。两模式与提取模式共用 provider 链路,差异:
+    //   - 不计费额度(用户拍板:复盘辅助动作,不占每日额度)
+    //   - 不读不写 cache(split「换一批」要不同结果;reflect 的笔记是
+    //     用户私密内容,绝不能进共享缓存——与 personalHints 不缓存同口径)
     //   - 不支持 stream(iOS 端固定 stream:false)
     const rawMode = payload.mode == null ? "" : String(payload.mode);
-    if (rawMode !== "" && rawMode !== "extract" && rawMode !== "split") {
+    if (rawMode !== "" && rawMode !== "extract" && rawMode !== "split" && rawMode !== "reflect") {
       return finishRequest(new Response("Invalid mode", { status: 400 }), requestContext, {
         reason: "invalid_mode",
         mode: rawMode
       });
     }
     const mode = rawMode || "extract";
-    if (mode === "split" && stream) {
+    if (mode !== "extract" && stream) {
       return finishRequest(
-        new Response("split mode does not support streaming", { status: 400 }),
+        new Response("split/reflect modes do not support streaming", { status: 400 }),
         requestContext,
-        { reason: "split_stream_unsupported" }
+        { reason: "assist_stream_unsupported" }
       );
     }
     requestContext.mode = mode;
 
-    // split 不计费:quotaState 保持 null(quotaHeaders / refundDeviceQuotaOnUpstreamFailure
-    // 都对 null 安全,无需分支守卫)。提取模式照旧三层配额 + today 不变量。
+    // split/reflect 不计费:quotaState 保持 null(quotaHeaders /
+    // refundDeviceQuotaOnUpstreamFailure 都对 null 安全,无需分支守卫)。
+    // 反滥用护栏(全局预算熔断 + ip 短窗限流)对两种模式照常生效——
+    // 不计费 ≠ 零防护。提取模式照旧三层配额 + today 不变量。
     let quotaState = null;
     let todayDate = null;
     if (mode === "extract") {
@@ -174,7 +178,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       // 不计费 ≠ 零防护——跳过这两层会让外部无成本刷模型调用。
       await enforceGlobalBudgetHotPath(env, requestContext);
       await enforceIpRateLimit(request, env, requestContext);
-      logInfo("proxy.split.quota_skipped", requestContext);
+      logInfo("proxy.assist.quota_skipped", { ...requestContext, mode });
     }
 
     sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);

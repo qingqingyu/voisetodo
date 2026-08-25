@@ -226,14 +226,16 @@ struct RecapCard<Content: View>: View {
 
 // MARK: - 历次复盘笔记(2026-08-23 拍板「全量可见」)
 
-/// 一条可展示的复盘笔记行:当期日期 + 笔记原文 + 当期处理件数。
-/// 注:「当期完成数」未持久化(ReviewSession 只存处置账本),先用 ledger 的
-/// 处理输入数顶——完成数字段与语义对照(后续语义对照任务)一起补。
+/// 一条可展示的复盘笔记行:当期日期 + 笔记原文 + 当期处理件数(+ 最新一条的
+/// 语义对照关注点,任务 #4)。注:「当期完成数」用 ledger 的处理输入数展示;
+/// 会话的 completedCount 是洞察口径,两者语义不同,别混用。
 struct ReviewNotesEntry: Equatable, Identifiable {
     let id: UUID
     let date: Date
     let note: String
     let handledCount: Int
+    /// 语义对照关注点(收尾后异步回写;nil = 未提取/失败/旧会话)。
+    let topics: [ReviewTopic]?
 
     /// 会话列表 → 展示条目:只留写了笔记的会话,新→旧。
     /// 空白笔记视同没有(与 `ReviewFlowState.lastVoiceNote` 同口径)。
@@ -247,7 +249,8 @@ struct ReviewNotesEntry: Equatable, Identifiable {
                 id: session.id,
                 date: session.completedAt,
                 note: note,
-                handledCount: session.ledger.inputCount
+                handledCount: session.ledger.inputCount,
+                topics: session.topics
             )
         }
         // 新→旧;同刻(极端场景)按 id 定序,避免 Swift 非稳定排序导致顺序抖动。

@@ -168,11 +168,14 @@ struct VoiceTodoApp: App {
         let voiceInput: any VoiceInputProtocol = uiTestOptions.isUITesting ? UITestVoiceInputManager(options: uiTestOptions) : VoiceInputManager()
         let extractor: any TodoExtractorProtocol
         // 拆小 sheet 的 AI 候选源(2026-08-23 拆小改版):生产环境与 extractor 同一个
-        // TodoExtractorService 实例(双协议);UI 测试不注入 → sheet 手写降级。
+        // TodoExtractorService 实例(三协议);UI 测试不注入 → sheet 手写降级。
+        // reviewNoteAnalyzer(笔记语义对照)同源同实例。
         let reviewSplitter: (any TodoSplitterProtocol)?
+        let reviewNoteAnalyzer: (any ReviewNoteAnalyzerProtocol)?
         if uiTestOptions.isUITesting {
             extractor = UITestTodoExtractor(options: uiTestOptions)
             reviewSplitter = nil
+            reviewNoteAnalyzer = nil
         } else {
             // NetworkClient 注入订阅 JWS provider 与额度模型（构造器注入，保持依赖反转）
             let networkClient = NetworkClient(
@@ -182,6 +185,7 @@ struct VoiceTodoApp: App {
             let extractorService = TodoExtractorService(networkClient: networkClient)
             extractor = extractorService
             reviewSplitter = extractorService
+            reviewNoteAnalyzer = extractorService
         }
 
         // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
@@ -196,7 +200,8 @@ struct VoiceTodoApp: App {
             store: store,
             entitlement: entitlementManager,
             quotaUsage: quotaUsage,
-            reviewSplitter: reviewSplitter
+            reviewSplitter: reviewSplitter,
+            reviewNoteAnalyzer: reviewNoteAnalyzer
         )
         _coordinator = StateObject(wrappedValue: coordinator)
 

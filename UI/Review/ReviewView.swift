@@ -74,6 +74,8 @@ struct ReviewView: View {
     var splitter: (any TodoSplitterProtocol)? = nil
     /// 拆小 sheet 的麦克风(与首页共用同一实例)。nil → 「说一句」行隐藏。
     var voiceInput: (any VoiceInputProtocol)? = nil
+    /// 笔记语义对照提取器(2026-08-23)。nil → 收尾不做 AI 分析。
+    var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
 
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
@@ -139,7 +141,12 @@ struct ReviewView: View {
         }
         .fullScreenCover(isPresented: $showReviewFlow) {
             if let store {
-                ReviewFlowView(store: store, splitter: splitter, voiceInput: voiceInput)
+                ReviewFlowView(
+                    store: store,
+                    splitter: splitter,
+                    voiceInput: voiceInput,
+                    noteAnalyzer: noteAnalyzer
+                )
             }
         }
         .navigationTitle(String(localized: "review.nav_title"))

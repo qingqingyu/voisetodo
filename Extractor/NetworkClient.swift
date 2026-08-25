@@ -61,8 +61,9 @@ final class NetworkClient {
     /// - Parameters:
     ///   - transcript: 语音转写文本(split 模式下为任务标题或口述段落)
     ///   - localeIdentifier: 语言标识
-    ///   - mode: nil = 提取(默认);"split" = 任务拆小(代理侧不计费/不缓存,stream 恒为 false)
-    /// - Returns: 代理返回的 JSON 文本(提取模式为 ExtractionResult,split 模式为 {"steps":[...]})
+    ///   - mode: nil = 提取(默认);"split" = 任务拆小;"reflect" = 复盘笔记关注点提取
+    ///     (split/reflect 代理侧均不计费/不缓存,stream 恒为 false)
+    /// - Returns: 代理返回的 JSON 文本(提取模式为 ExtractionResult,split 模式为 {"steps":[...]},reflect 模式为 {"topics":[...]})
     func callTodoExtractionProxy(
         transcript: String,
         localeIdentifier: String,

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 待办提取服务
-final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol {
+final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, ReviewNoteAnalyzerProtocol {
     // MARK: - Properties
 
     private let networkClient: NetworkClient
@@ -239,6 +239,74 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol {
         } catch {
             throw VoiceTodoError.jsonParsingFailed("split JSON 解析失败: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - ReviewNoteAnalyzerProtocol Implementation
+
+    /// 笔记语义对照(2026-08-23 拍板,任务 #4):走代理 `mode=reflect`。
+    /// 与 split 同口径:单次调用、不重试、不喂熔断器、不计费;失败由调用方
+    /// 降级为纯文本笔记。代理侧对 reflect **绝不缓存**(笔记是私密内容)。
+    func analyzeNoteTopics(note: String, locale: Locale) async throws -> [ReviewTopicDraft] {
+        let analyzeID = VoiceTodoLog.makeID("reflect")
+        let startedAt = Date()
+        VoiceTodoLog.extractor.info("reflect.start id=\(analyzeID, privacy: .public) locale=\(locale.identifier, privacy: .public) \(VoiceTodoLog.textSummary(note), privacy: .public)")
+        do {
+            let responseText = try await networkClient.callTodoExtractionProxy(
+                transcript: note,
+                localeIdentifier: locale.identifier,
+                mode: "reflect"
+            )
+            let drafts = try parseReflectResponse(responseText)
+            VoiceTodoLog.extractor.info("reflect.success id=\(analyzeID, privacy: .public) topics=\(drafts.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return drafts
+        } catch {
+            VoiceTodoLog.extractor.error("reflect.failed id=\(analyzeID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw error
+        }
+    }
+
+    /// reflect 模式响应体:{"topics":[{"text":"…","category":"work"|null,"time_bucket":"evening"|null}]}
+    private struct ReflectTopicsResponse: Decodable {
+        struct Topic: Decodable {
+            let text: String?
+            let category: String?
+            let time_bucket: String?
+        }
+        let topics: [Topic]?
+    }
+
+    /// 解析 reflect 响应。category/time_bucket 是 AI 产出的枚举字符串:
+    /// 认不出的值静默归 nil(该维度不可统计)而不是整条丢弃——text 仍有展示
+    /// 价值;`anytime` 时段无统计意义,同样归 nil。两个维度都 nil 的条目丢弃
+    /// (与 prompt 第 5 条规则对齐,双保险)。
+    private func parseReflectResponse(_ responseText: String) throws -> [ReviewTopicDraft] {
+        var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = cleanedText.range(of: "^```(?:json|JSON)?\\s*\\n", options: .regularExpression) {
+            cleanedText.removeSubrange(range)
+        }
+        if let range = cleanedText.range(of: "\\n\\s*```\\s*$", options: .regularExpression) {
+            cleanedText.removeSubrange(range)
+        }
+        cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw VoiceTodoError.jsonParsingFailed("无法转换为 UTF-8 数据")
+        }
+        let decoded: ReflectTopicsResponse
+        do {
+            decoded = try JSONCoding.makeResponseDecoder().decode(ReflectTopicsResponse.self, from: jsonData)
+        } catch {
+            throw VoiceTodoError.jsonParsingFailed("reflect JSON 解析失败: \(error.localizedDescription)")
+        }
+        let drafts = (decoded.topics ?? []).compactMap { topic -> ReviewTopicDraft? in
+            guard let text = topic.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { return nil }
+            let category = TodoCategory(rawValue: topic.category?.lowercased() ?? "")
+            let bucket = TimeBucket.explicit(from: topic.time_bucket?.lowercased())
+            guard category != nil || bucket != nil else { return nil }
+            return ReviewTopicDraft(text: text, category: category, timeBucket: bucket)
+        }
+        return drafts
     }
 
     // MARK: - Streaming Implementation
