@@ -9965,6 +9965,28 @@
         }
       }
     },
+    "review.notes.compare" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld items this period vs %3$lld last period (%1$@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今の期間は%2$lld件(前の期間は%3$lld件・%1$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本期 %1$@ %2$lld 件(上期 %3$lld 件)"
+          }
+        }
+      }
+    },
     "review.notes.row.handled_%lld" : {
       "localizations" : {
         "en" : {

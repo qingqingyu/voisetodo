@@ -262,3 +262,132 @@ final class ReviewSessionStoreTests: XCTestCase {
         return defaults
     }
 }
+
+// MARK: - 语义对照(2026-08-23 拍板,任务 #4)
+
+final class ReviewTopicStoreTests: XCTestCase {
+
+    private func makeStore() -> ReviewSessionStore {
+        let suite = "ReviewTopicStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return ReviewSessionStore(defaults: defaults)
+    }
+
+    private func session(id: UUID = UUID(), voiceNote: String? = "想把晚上留给八字 App") -> ReviewSession {
+        ReviewSession(
+            id: id,
+            completedAt: Date(),
+            periodStart: Date(),
+            periodEnd: Date(),
+            voiceNote: voiceNote,
+            ledger: ReviewLedger(
+                inputCount: 2, remainingCount: 0, scheduledCount: 1, todayCount: 1,
+                abandonedCount: 0, splitCount: 0, pinnedCount: 0
+            ),
+            shownInsights: []
+        )
+    }
+
+    /// updateTopics 按 id 原地回写;目标不存在时不崩溃、不动其他会话。
+    func testUpdateTopics_replacesById() {
+        let store = makeStore()
+        let a = session()
+        let b = session()
+        store.append(a)
+        store.append(b)
+
+        let topics = [
+            ReviewTopic(text: "少接会议", category: .work, timeBucket: nil, periodCount: 6),
+            ReviewTopic(text: "晚上留给八字 App", category: nil, timeBucket: .evening, periodCount: 4)
+        ]
+        store.updateTopics(sessionID: a.id, topics: topics)
+
+        let reloaded = store.allSessions()
+        XCTAssertEqual(reloaded.first { $0.id == a.id }?.topics, topics, "按 id 回写并持久化")
+        XCTAssertNil(reloaded.first { $0.id == b.id }?.topics, "其他会话不受影响")
+
+        // 目标不存在:只记日志,不改任何数据。
+        store.updateTopics(sessionID: UUID(), topics: topics)
+        XCTAssertEqual(store.allSessions().count, 2)
+    }
+
+    /// 旧 payload(无 completedCount/topics 键)解码 → 新字段 nil(向后兼容)。
+    func testDecodeLegacyPayload_missingNewFields_decodesNil() throws {
+        let legacyJSON = """
+        [{
+          "id": "11111111-2222-3333-4444-555555555555",
+          "completedAt": "2026-08-01T12:00:00Z",
+          "periodStart": "2026-07-01T12:00:00Z",
+          "periodEnd": "2026-08-01T12:00:00Z",
+          "voiceNote": "旧的",
+          "ledger": {"inputCount": 3, "remainingCount": 0, "scheduledCount": 1,
+                     "todayCount": 1, "abandonedCount": 1, "splitCount": 0, "pinnedCount": 0},
+          "shownInsights": []
+        }]
+        """
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let result = ReviewSessionStore.parse(data)
+        guard case .success(let sessions) = result else {
+            return XCTFail("旧 payload 必须可解码")
+        }
+        XCTAssertNil(sessions.first?.completedCount)
+        XCTAssertNil(sessions.first?.topics)
+    }
+}
+
+/// 关注点 ↔ 本期完成事件的计数匹配(收尾与展示共用口径)。
+final class ReviewTopicMatchingTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    private func event(atHour hour: Int, category: TodoCategory) -> InsightCompletedEvent {
+        let date = calendar.date(from: DateComponents(year: 2026, month: 8, day: 20, hour: hour))!
+        return InsightCompletedEvent(
+            todoId: UUID(),
+            createdAt: date,
+            completedAt: date,
+            category: category,
+            priority: .normal,
+            hasDueTime: false,
+            dueDate: nil
+        )
+    }
+
+    /// 分类维度:只数该分类;与时段无关。
+    func testCategoryMatch() {
+        let events = [
+            event(atHour: 9, category: .work),
+            event(atHour: 22, category: .work),
+            event(atHour: 10, category: .life)
+        ]
+        XCTAssertEqual(
+            ReviewTopicMatching.periodCount(category: .work, timeBucket: nil, in: events, calendar: calendar),
+            2
+        )
+    }
+
+    /// 时段维度:5–11 morning / 12–17 afternoon / 其余 evening(与 TimeBucketResolver 同界)。
+    func testBucketMatch() {
+        let events = [
+            event(atHour: 9, category: .work),
+            event(atHour: 23, category: .life),
+            event(atHour: 23, category: .health),
+            event(atHour: 14, category: .study)
+        ]
+        XCTAssertEqual(
+            ReviewTopicMatching.periodCount(category: nil, timeBucket: .evening, in: events, calendar: calendar),
+            2
+        )
+        XCTAssertEqual(
+            ReviewTopicMatching.periodCount(category: nil, timeBucket: .afternoon, in: events, calendar: calendar),
+            1
+        )
+    }
+
+    /// 两个维度都没有 → nil(不可统计,不显示对照)。
+    func testNoDimensionReturnsNil() {
+        XCTAssertNil(ReviewTopicMatching.periodCount(
+            category: nil, timeBucket: nil, in: [], calendar: calendar
+        ))
+    }
+}

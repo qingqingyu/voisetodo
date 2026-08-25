@@ -28,7 +28,7 @@ struct ReviewStepInsights: View {
                 if let error = state.insightLoadError {
                     errorCard(error)
                 } else if let context = state.insightContextValue {
-                    crossPeriodCard()
+                    crossPeriodCard(context: context)
                     cards
                     ladderHint(context: context)
                     askYourselfSection
@@ -183,8 +183,10 @@ struct ReviewStepInsights: View {
 
     /// 「历次复盘,你说过」:全部写过笔记的会话,新→旧。原来只回显最近一条,
     /// 用户判词「写了基本看不到,没达到复盘的意思」。没有笔记时不显示。
+    /// 最新一条若带语义对照关注点(收尾 AI 提取回写),在其下渲染对照行
+    /// (任务 #4:「本期 N 件(上期 M 件)」纯本地现算)。
     @ViewBuilder
-    private func crossPeriodCard() -> some View {
+    private func crossPeriodCard(context: InsightContext) -> some View {
         let entries = ReviewNotesEntry.make(from: state.previousSessions)
         if !entries.isEmpty {
             RecapCard {
@@ -197,9 +199,63 @@ struct ReviewStepInsights: View {
                         .flipsForRightToLeftLayoutDirection(true)
 
                     ReviewNotesListView(entries: entries)
+
+                    if let topics = entries.first?.topics, !topics.isEmpty {
+                        topicCompareRows(topics, context: context)
+                    }
                 }
             }
         }
+    }
+
+    /// 最新一条笔记的语义对照行。本期数用当前洞察原料现算(与收尾存
+    /// `periodCount` 同一 `ReviewTopicMatching` 口径,两期可比);
+    /// 不可统计的维度跳过。
+    @ViewBuilder
+    private func topicCompareRows(_ topics: [ReviewTopic], context: InsightContext) -> some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            Rectangle()
+                .fill(WarmTheme.rowHairline)
+                .frame(height: 1)
+
+            // id 用「text + 维度」组合:AI 可能返回同 text 的两条关注点,
+            // 单用 \.text 会撞 id(ForEach 丢行)。
+            ForEach(Array(topics.enumerated()), id: \.offset) { _, topic in
+                if let current = ReviewTopicMatching.periodCount(
+                    category: topic.category,
+                    timeBucket: topic.timeBucket,
+                    in: context.completedEvents,
+                    calendar: Calendar.current
+                ) {
+                    Text(String(
+                        format: String(localized: "review.notes.compare"),
+                        Self.topicDimensionLabel(topic),
+                        current,
+                        topic.periodCount
+                    ))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+            }
+        }
+    }
+
+    /// 对照行的维度标签:分类名优先,否则时段名。两个维度都 nil 的 topic
+    /// 不会出现在存储里(prompt + 解析双侧过滤),这里只是防御。
+    private static func topicDimensionLabel(_ topic: ReviewTopic) -> String {
+        if let category = topic.category {
+            return category.displayName
+        }
+        if let bucket = topic.timeBucket {
+            switch bucket {
+            case .morning: return String(localized: "time_bucket.morning")
+            case .afternoon: return String(localized: "time_bucket.afternoon")
+            case .evening, .anytime: return String(localized: "time_bucket.evening")
+            }
+        }
+        return ""
     }
 
     // MARK: 错误态

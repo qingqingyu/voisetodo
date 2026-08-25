@@ -415,7 +415,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             ReviewView(
                 store: reviewStore,
                 splitter: coordinator.reviewSplitter,
-                voiceInput: coordinator.reviewVoiceInput
+                voiceInput: coordinator.reviewVoiceInput,
+                noteAnalyzer: coordinator.reviewNoteAnalyzer
             )
         }
         .onDisappear { reloadPinnedTodoIDs() }

@@ -9,7 +9,7 @@
 //   - choices[].delta.content      -> text chunk
 //   - choices[].finish_reason      -> terminal
 
-import { buildSystemPrompt, buildSplitPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // OpenAI error bodies that indicate the model in this provider can't serve the request;
 // failover to a different provider (which may have a different model) is worth trying.
@@ -48,12 +48,15 @@ export const openaiAdapter = {
           stream,
           response_format: { type: "json_object" },
           messages: [
-            // split 模式(拆小)换专用 prompt;today/vocabularyHints/personalHints 仅提取模式有意义
+            // split(拆小)/reflect(语义对照)换专用 prompt;
+            // today/vocabularyHints/personalHints 仅提取模式有意义
             {
               role: "system",
               content: mode === "split"
                 ? buildSplitPrompt(locale)
-                : buildSystemPrompt(locale, vocabularyHints, today, personalHints)
+                : mode === "reflect"
+                  ? buildReflectPrompt(locale)
+                  : buildSystemPrompt(locale, vocabularyHints, today, personalHints)
             },
             { role: "user", content: transcript }
           ]

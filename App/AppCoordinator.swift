@@ -14,9 +14,11 @@ final class AppCoordinator: ObservableObject {
     /// 复盘拆小 sheet 的依赖出口(2026-08-23 拆小改版):
     /// - `reviewSplitter` 默认 nil——测试/UI 测试不注入,sheet 直接手写降级;
     ///   生产环境由 VoiceTodoApp 传入与 extractor 同一个 TodoExtractorService 实例
-    ///   (它同时实现 TodoExtractorProtocol 与 TodoSplitterProtocol)。
+    ///   (它同时实现 TodoExtractorProtocol / TodoSplitterProtocol / ReviewNoteAnalyzerProtocol)。
+    /// - `reviewNoteAnalyzer` 同源实例(笔记语义对照,任务 #4)。
     /// - `reviewVoiceInput` 暴露共用的录音机实例(复盘全屏时首页录音不可能并发)。
     let reviewSplitter: (any TodoSplitterProtocol)?
+    let reviewNoteAnalyzer: (any ReviewNoteAnalyzerProtocol)?
 
     var reviewVoiceInput: any VoiceInputProtocol { voiceInput }
     /// 协议交集与 init 参数一致:除常规编排外,还直接落 pending(录音错误部分转写兜底)
@@ -140,12 +142,14 @@ final class AppCoordinator: ObservableObject {
         networkIsConnectedProvider: @escaping @MainActor () -> Bool = { NetworkMonitor.shared.isConnected },
         vocabularyStore: UserVocabularyStore = .shared,
         quotaUsage: QuotaUsage? = nil,
-        reviewSplitter: (any TodoSplitterProtocol)? = nil
+        reviewSplitter: (any TodoSplitterProtocol)? = nil,
+        reviewNoteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
     ) {
         self.voiceInput = voiceInput
         self.store = store
         self.extractor = extractor
         self.reviewSplitter = reviewSplitter
+        self.reviewNoteAnalyzer = reviewNoteAnalyzer
         // nil 兜底:测试调用方不传时,创建不监听 Transaction.updates 的轻量实例,
         // 避免在测试环境启动常驻 Task 监听 StoreKit2 异步流
         self.entitlement = entitlement ?? EntitlementManager(enableTransactionListener: false)

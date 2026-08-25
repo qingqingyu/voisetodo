@@ -240,6 +240,7 @@
 		F0A6EFBDCA0DFFB16A913D9E /* FocusableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E83FF0531EA6338B74E67EA /* FocusableTextView.swift */; };
 		F0E11F610AC7AFE82A3E91A6 /* SystemCalendarReadingProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E53F2E7063A19CACE9CCE54 /* SystemCalendarReadingProtocol.swift */; };
 		F103C9B0F4624D5F6B3F165F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553880D7569474DB9E18EB87 /* DesignSystem.swift */; };
+		F125E73B91AD66A1301B545E /* ReviewNoteAnalyzerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = C517D40F8F76210EEA7E846A /* ReviewNoteAnalyzerProtocol.swift */; };
 		F1FB49B74627A0041E4FE8EB /* HomeCalendarStateGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5636BCAAC1BD72AC5880FC0 /* HomeCalendarStateGroupingTests.swift */; };
 		F280B85D69CE9ED22D02B9BE /* ProtocolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59C85D0615B2A028EDF81062 /* ProtocolsTests.swift */; };
 		F560614BD6688A985250A576 /* CodingUserInfoKey+Recurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C3D64CBFC24F44D961A39C1 /* CodingUserInfoKey+Recurrence.swift */; };
@@ -459,6 +460,7 @@
 		C27243BFC27974DE4C55FD65 /* TodoWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetBundle.swift; sourceTree = "<group>"; };
 		C3FF73890A8CCCA090945D1E /* VoiceTodoLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTodoLog.swift; sourceTree = "<group>"; };
 		C4C1D879B3D83F5B8CC01996 /* FeedbackSubmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSubmitter.swift; sourceTree = "<group>"; };
+		C517D40F8F76210EEA7E846A /* ReviewNoteAnalyzerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewNoteAnalyzerProtocol.swift; sourceTree = "<group>"; };
 		C614E969A8BA60A97BA3808D /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		C9C1F56A17658A054DB660FD /* IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationTests.swift; sourceTree = "<group>"; };
 		CA1115CC23A701919FEC80DE /* TimeEditPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeEditPopover.swift; sourceTree = "<group>"; };
@@ -831,6 +833,7 @@
 				03A4EE86AB884331FEE9403A /* NetworkMonitor.swift */,
 				D8CE2794EFB8BE4A9FEF9260 /* PersonalGlossary.swift */,
 				2784F3DB95DE2F2DC60A3057 /* Quota.swift */,
+				C517D40F8F76210EEA7E846A /* ReviewNoteAnalyzerProtocol.swift */,
 				E063F26C7FEFBBDFFA7F42F5 /* ReviewPinningStore.swift */,
 				5B39E4BF0A75D61C1EE7CFD9 /* ReviewSessionStore.swift */,
 				5E53F2E7063A19CACE9CCE54 /* SystemCalendarReadingProtocol.swift */,
@@ -1269,6 +1272,7 @@
 				9A7AE69A8FBDF842C66C6FEA /* RelativeDueLabel.swift in Sources */,
 				9E85428D6867C0A1C58EB615 /* ReviewAggregator.swift in Sources */,
 				1219A007DBE5A7305F67D533 /* ReviewFlowView.swift in Sources */,
+				F125E73B91AD66A1301B545E /* ReviewNoteAnalyzerProtocol.swift in Sources */,
 				06C106EDFC0BD1DBD4A656C8 /* ReviewNotificationScheduler.swift in Sources */,
 				6536422EE01FA2FFCE1D958A /* ReviewPinningStore.swift in Sources */,
 				2157A2846BFCE0C4715B56B8 /* ReviewSessionStore.swift in Sources */,

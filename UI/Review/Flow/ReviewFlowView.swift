@@ -268,6 +268,8 @@ final class ReviewFlowState {
             periodStart: periodStart,
             periodEnd: periodEnd,
             voiceNote: trimmedNote.isEmpty ? nil : trimmedNote,
+            // 洞察步被降级跳过时原料为 nil → 完成数不可统计,存 nil(2026-08-23)。
+            completedCount: insightContextValue?.completedEvents.count,
             ledger: ReviewLedger(
                 inputCount: ledger.inputCount,
                 remainingCount: ledger.remainingCount,
@@ -298,17 +300,22 @@ struct ReviewFlowView: View {
     var splitter: (any TodoSplitterProtocol)? = nil
     /// 拆小 sheet 的麦克风(与首页共用同一实例)。nil → 「说一句」行隐藏。
     var voiceInput: (any VoiceInputProtocol)? = nil
+    /// 笔记语义对照的提取器(2026-08-23,任务 #4)。nil → 收尾不做 AI 分析,
+    /// 笔记照存,下期退化为纯文本。
+    var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
 
     @State private var state: ReviewFlowState
 
     init(
         store: any ReviewFlowStore,
         splitter: (any TodoSplitterProtocol)? = nil,
-        voiceInput: (any VoiceInputProtocol)? = nil
+        voiceInput: (any VoiceInputProtocol)? = nil,
+        noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
     ) {
         self.store = store
         self.splitter = splitter
         self.voiceInput = voiceInput
+        self.noteAnalyzer = noteAnalyzer
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
         // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 /
         // 跨期对照的数据源,阶段 4)。
@@ -531,7 +538,42 @@ struct ReviewFlowView: View {
                 VoiceTodoLog.coordinator.error("review.flow.finish.prune_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             }
         }
+        analyzeNoteTopicsInBackground(session: session)
         dismiss()
+    }
+
+    /// 收尾后的语义对照提取(2026-08-23 拍板,任务 #4):存完会话立刻异步做
+    /// 一次 AI 分析(不计费),把「关注点 + 当期计数」按 id 回写进会话;下次
+    /// 复盘纯本地拼对照。失败只记日志——对照是增强,离线/失败退化为纯文本
+    /// 笔记(拍板口径);洞察原料缺失(降级跳过)时本期计数算不了,同样跳过。
+    private func analyzeNoteTopicsInBackground(session: ReviewSession) {
+        guard let noteAnalyzer,
+              let note = session.voiceNote,
+              let context = state.insightContextValue else { return }
+        let calendar = Calendar.current
+        Task { @MainActor in
+            do {
+                let drafts = try await noteAnalyzer.analyzeNoteTopics(note: note, locale: .current)
+                let topics = drafts.prefix(3).map { draft in
+                    ReviewTopic(
+                        text: draft.text,
+                        category: draft.category,
+                        timeBucket: draft.timeBucket,
+                        periodCount: ReviewTopicMatching.periodCount(
+                            category: draft.category,
+                            timeBucket: draft.timeBucket,
+                            in: context.completedEvents,
+                            calendar: calendar
+                        ) ?? 0
+                    )
+                }
+                guard !topics.isEmpty else { return }
+                ReviewSessionStore.shared.updateTopics(sessionID: session.id, topics: Array(topics))
+            } catch {
+                // 降级不弹错:笔记本体已存好,对照行下期自然不出现。
+                VoiceTodoLog.coordinator.warning("review.flow.note_analyze.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+        }
     }
 }
 
