@@ -77,15 +77,73 @@ final class ReviewFlowState {
     /// 第 4 步选中的「三件事」(提交置顶时读取)。
     private(set) var commitSelection: [TodoItemData] = []
 
+    // MARK: 上次定的重点(2026-08-25 轻修:plan-do-review 闭环)
+
+    /// 上次复盘第 4 步置顶的 todo id(流程启动时快照注入)。`ReviewPinningStore
+    /// .setPinned` 整体覆写、`prune` 只清已删 id——新会话启动时集合恰好就是
+    /// 上次定的那批。注入而非自取,保持本类纯逻辑可测。
+    private(set) var lastPinnedIDs: Set<UUID>
+
+    /// 上次定的重点在本期快照里的结局(nil = 上次没置顶过,第 1 步结局行隐藏)。
+    private(set) var lastPinnedOutcome: LastPinnedOutcome?
+
+    /// 上次定的重点的结局(第 1 步结局行的数据源)。
+    struct LastPinnedOutcome: Equatable, Sendable {
+        /// 已完成(不在卡堆里,只能从原始快照数出来)。
+        let completed: Int
+        /// 仍未完成(会再次出现在第 2 步卡堆里,带「上次重点」标记)。
+        let pending: Int
+    }
+
+    /// 「问问自己」的领域提示分类(nil = 快照里没有任何分类可问,提示行隐藏)。
+    private(set) var askDomainHintCategory: TodoCategory?
+
     // MARK: Init
 
     /// - Parameters:
     ///   - todos: store 工作集快照(`store.todos`)。内部按 triage 口径过滤。
     ///   - previousSessions: 历史复盘会话(升序;阶段 4 冷却 / 跨期对照用,
     ///     注入而非自取,保持本类纯逻辑可测)。
-    init(todos: [TodoItemData], previousSessions: [ReviewSession] = []) {
+    ///   - lastPinnedIDs: 上次复盘置顶的 id 集(第 2 步卡堆标记 + 第 1 步结局行用)。
+    init(
+        todos: [TodoItemData],
+        previousSessions: [ReviewSession] = [],
+        lastPinnedIDs: Set<UUID> = []
+    ) {
         self.deck = Self.triageInput(from: todos)
         self.previousSessions = previousSessions
+        self.lastPinnedIDs = lastPinnedIDs
+        // todos / previousSessions / lastPinnedIDs init 后不变,两个派生值一次算好,
+        // 不留整份快照。
+        self.lastPinnedOutcome = Self.lastPinnedOutcome(todos: todos, pinnedIDs: lastPinnedIDs)
+        self.askDomainHintCategory = Self.askDomainHintCategory(
+            todos: todos,
+            rotationSeed: previousSessions.count
+        )
+    }
+
+    /// 上次置顶的结局计数(2026-08-25)。从**原始快照**数,不是 deck——完成的重点
+    /// 不在 deck 里。已删除的 id 两边都不计;快照里一条都找不到(全删了)时返回
+    /// nil——「0 完成、0 待处理」读起来像定了重点一件没动,实际是全删,属误导噪音。
+    static func lastPinnedOutcome(todos: [TodoItemData], pinnedIDs: Set<UUID>) -> LastPinnedOutcome? {
+        guard !pinnedIDs.isEmpty else { return nil }
+        var completed = 0
+        var pending = 0
+        for todo in todos where pinnedIDs.contains(todo.id) {
+            if todo.isCompleted { completed += 1 } else { pending += 1 }
+        }
+        guard completed > 0 || pending > 0 else { return nil }
+        return LastPinnedOutcome(completed: completed, pending: pending)
+    }
+
+    /// 领域提示轮换(2026-08-25 拍板):只在快照中出现过的分类里按声明序轮换,
+    /// seed = 历史会话数——每次复盘前进一格,不问从未使用的领域,无需新存储。
+    static func askDomainHintCategory(todos: [TodoItemData], rotationSeed: Int) -> TodoCategory? {
+        let present = TodoCategory.allCases.filter { category in
+            todos.contains { $0.category == category }
+        }
+        guard !present.isEmpty else { return nil }
+        return present[abs(rotationSeed) % present.count]
     }
 
     /// triage 输入过滤(拍板 4):未完成 && 未划掉 && 一次性(recurrenceRule == nil)。
@@ -318,10 +376,12 @@ struct ReviewFlowView: View {
         self.noteAnalyzer = noteAnalyzer
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
         // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 /
-        // 跨期对照的数据源,阶段 4)。
+        // 跨期对照的数据源,阶段 4);上次置顶 id 同批快照(setPinned 整体
+        // 覆写 → 集合即「上次定的重点」,2026-08-25)。
         _state = State(initialValue: ReviewFlowState(
             todos: store.todos,
-            previousSessions: ReviewSessionStore.shared.allSessions()
+            previousSessions: ReviewSessionStore.shared.allSessions(),
+            lastPinnedIDs: ReviewPinningStore.shared.pinnedIDs()
         ))
     }
 
@@ -423,7 +483,12 @@ struct ReviewFlowView: View {
     private var stepContent: some View {
         switch state.currentStep {
         case .recap:
-            ReviewStepRecap(lastReviewDate: state.previousSessions.last?.completedAt)
+            ReviewStepRecap(
+                lastReviewDate: state.previousSessions.last?.completedAt,
+                lastPinnedOutcome: state.lastPinnedOutcome.map { outcome in
+                    (completed: outcome.completed, pending: outcome.pending)
+                }
+            )
         case .triage:
             ReviewStepTriage(
                 state: state,

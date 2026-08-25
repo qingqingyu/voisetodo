@@ -361,7 +361,9 @@ struct ReviewStepTriage: View {
         }
     }
 
-    /// 卡头:分类标签 +「8月3日记下」。
+    /// 卡头:分类标签 +「上次重点」标记(上次复盘置顶、还没做完的)+「8月3日记下」。
+    /// 卡头挤时压 bornLabel 的优先级,不压标记——「这是你上次自己定的重点」比
+    /// 记下日重要(plan-do-review 闭环,2026-08-25)。
     private func cardHead(_ todo: TodoItemData) -> some View {
         HStack(spacing: WarmSpacing.xs) {
             Text(todo.category.displayName)
@@ -376,11 +378,26 @@ struct ReviewStepTriage: View {
                         .fill(WarmTheme.subtleControlBackground)
                 )
 
+            if state.lastPinnedIDs.contains(todo.id) {
+                Label(String(localized: "review.flow.triage.last_pinned"), systemImage: "pin.fill")
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, WarmSpacing.sm)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                            .fill(WarmTheme.subtleControlBackground)
+                    )
+            }
+
             Text(bornLabel(todo))
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .layoutPriority(-1)
         }
     }
 
