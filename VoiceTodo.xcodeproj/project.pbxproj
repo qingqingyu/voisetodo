@@ -130,6 +130,7 @@
 		80788BB9C1D63283212A6AA8 /* NetworkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AAA6A8633B6EFD4C741124 /* NetworkClient.swift */; };
 		8187B2DD6300A88CD0B5B541 /* TodoSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AFF34C0FF6B000D86BA3 /* TodoSource.swift */; };
 		823A1D83BB706127F52A206E /* TaskEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C23C812F5069BEC8DA00345 /* TaskEventModels.swift */; };
+		827679BFE4B081F8EF150B15 /* CompletionFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ED689A1D8E8ED9FA0980831 /* CompletionFeedback.swift */; };
 		82F523F20569291CD8555D50 /* SystemCalendarEventImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A45EB0617A8B9BF3A5077F8 /* SystemCalendarEventImporter.swift */; };
 		83B2BBC54ED391A406838516 /* CalendarImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11A80095EA27CA9DE703D7C /* CalendarImportView.swift */; };
 		8466F8A801589CE11A91EF37 /* ScenarioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24C04968853DFB54D2897574 /* ScenarioTests.swift */; };
@@ -342,6 +343,7 @@
 		3CD65717391B25A5E68E1C18 /* InsightCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightCardView.swift; sourceTree = "<group>"; };
 		3DBBE53FF4A5FFA27BCF5C78 /* CalendarWriteMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriteMode.swift; sourceTree = "<group>"; };
 		3E51B798662E8477BAEAC3DB /* AudioSessionHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionHelper.swift; sourceTree = "<group>"; };
+		3ED689A1D8E8ED9FA0980831 /* CompletionFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionFeedback.swift; sourceTree = "<group>"; };
 		41DFCFCAA748A498A5A2A0CC /* JSONCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCoding.swift; sourceTree = "<group>"; };
 		43589A601B187AFAC389117A /* TodoWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetProvider.swift; sourceTree = "<group>"; };
 		437110FA8FB9C002DB8EB91A /* ToggleTodoIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToggleTodoIntent.swift; sourceTree = "<group>"; };
@@ -623,6 +625,7 @@
 				B04EE0D5AC197C730AD1D61E /* CalendarSyncAskSheet.swift */,
 				2E865543BECF19023D86612D /* CardEntranceModifier.swift */,
 				38FA0BC0E641C92B6086C486 /* CategoryIconView.swift */,
+				3ED689A1D8E8ED9FA0980831 /* CompletionFeedback.swift */,
 				553880D7569474DB9E18EB87 /* DesignSystem.swift */,
 				37124752250C86FE8C1A7B73 /* EmptyStateView.swift */,
 				5591265ADCF113A0294F04DD /* FeedbackSheet.swift */,
@@ -1206,6 +1209,7 @@
 				B392DDDCC687AE55AE0CB1F7 /* ChipView.swift in Sources */,
 				56C5A38A64EE33C4269775CE /* CodingUserInfoKey+Recurrence.swift in Sources */,
 				EF935E725AEA0FD041FAC839 /* CompleteTodoIntent.swift in Sources */,
+				827679BFE4B081F8EF150B15 /* CompletionFeedback.swift in Sources */,
 				D93DAEEA2962E0E69C6B266F /* ConfirmGroupedList.swift in Sources */,
 				69369FD77EADAFD459B988F2 /* ConfirmSheetAnimations.swift in Sources */,
 				9696E47C733767930DA56955 /* ConfirmSheetView.swift in Sources */,

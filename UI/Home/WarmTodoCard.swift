@@ -99,6 +99,31 @@ struct WarmTodoCard: View {
     @State private var showTimeEditor = false
     @State private var editingDate: Date = Date()
 
+    /// 完成瞬间 checkbox 弹跳(docs/todo-completion-feedback.md §2:springBouncy 放大回弹)。
+    /// Reduce Motion 跳过(§9)。
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var checkboxBouncing = false
+    /// 弹跳复位任务:view 销毁时 cancel,防旧 Task 醒来写已销毁 @State
+    /// (写法对齐 NumberPopModifier 的句柄持有)。
+    @State private var checkboxBounceTask: Task<Void, Error>?
+
+    /// 触发 checkbox 弹跳:放大后由 Task 延时复位(springBouncy 自带回弹手感)。
+    private func triggerCheckboxBounce() {
+        checkboxBouncing = true
+        checkboxBounceTask?.cancel()
+        checkboxBounceTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 180_000_000)
+            } catch is CancellationError {
+                return
+            } catch {
+                // 不可达:Task.sleep 只 throw CancellationError。显式穷尽闭包错误,不静默吞。
+                return
+            }
+            checkboxBouncing = false
+        }
+    }
+
     private var categoryColor: Color {
         WarmTheme.color(for: todo.category)
     }
@@ -269,6 +294,22 @@ struct WarmTodoCard: View {
                 // 避免 checkbox 视觉圆环 24pt 命中区过小。
                 .frame(width: 44, height: 44, alignment: .center)
                 .contentShape(Rectangle())
+                // 完成正反馈接线(docs/todo-completion-feedback.md):
+                // 1. anchor 上报 checkbox 边界 —— HomeView 顶层 overlay 据此定位爆花原点
+                //    (粒子不挂行内,List 行会裁掉,复核 A);
+                // 2. 完成瞬间 springBouncy 弹跳(§2);取消回退不弹(§8);Reduce Motion 跳过(§9)。
+                .scaleEffect(checkboxBouncing ? 1.18 : 1)
+                .animation(WarmAnimation.springBouncy, value: checkboxBouncing)
+                .anchorPreference(key: CompletionCheckboxAnchorKey.self, value: .bounds) { anchor in
+                    [todo.id: anchor]
+                }
+                .onChange(of: todo.isCompleted) { oldValue, newValue in
+                    guard newValue, !oldValue, !reduceMotion else { return }
+                    triggerCheckboxBounce()
+                }
+                .onDisappear {
+                    checkboxBounceTask?.cancel()
+                }
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("TodoCheckbox_\(index)")

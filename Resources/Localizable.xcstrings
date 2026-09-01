@@ -4100,6 +4100,28 @@
         }
       }
     },
+    "home.celebration.all_done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All done for today!"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日のタスク、すべて完了！"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天全部完成！"
+          }
+        }
+      }
+    },
     "home.cancel_extraction" : {
       "localizations" : {
         "en" : {

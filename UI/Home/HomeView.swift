@@ -25,6 +25,10 @@ private struct HomeViewActions<Store: HomeTodoStore> {
     let selectTodo: (TodoItemData) -> Void
     /// 通知视图：规律任务 occurrence 完成状态已写入（store.todos 不会变化），需要刷新月历缓存。
     let markCalendarDataChanged: () -> Void
+    /// 完成正反馈分发(docs/todo-completion-feedback.md §2/§8):
+    /// 落库成功后由 Actions 回调视图层——触感/爆花/清空检测都在视图层统筹。
+    /// 参数:todo id(爆花锚点查表用)、勾选前是否已完成(定向)、当条分类(爆花配色)。
+    let handleToggleFeedback: (_ todoID: UUID, _ wasCompleted: Bool, _ category: TodoCategory?) -> Void
 
     func cancelExtraction() {
         coordinator.cancelExtraction()
@@ -80,11 +84,15 @@ private struct HomeViewActions<Store: HomeTodoStore> {
     }
 
     func toggleTodo(_ id: UUID) {
+        // 方向先取:勾选前状态决定反馈档位(完成 = light 触感 + 爆花;取消 = 轻 selection)。
+        let wasCompleted = store.findTodo(by: id)?.isCompleted ?? false
+        var toggled = false
         withAnimation(WarmAnimation.springSmooth) {
             do {
                 try store.toggleComplete(id)
                 WidgetReloadCoalescer.scheduleReload()
                 VoiceTodoLog.store.info("ui.home.toggle.success id=\(id.uuidString, privacy: .public)")
+                toggled = true
             } catch {
                 VoiceTodoLog.store.error("ui.home.toggle.failed id=\(id.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 coordinator.showToast(
@@ -93,15 +101,21 @@ private struct HomeViewActions<Store: HomeTodoStore> {
                 )
             }
         }
+        // 落库失败不给反馈(错误已由 toast 呈现)。
+        guard toggled else { return }
+        handleToggleFeedback(id, wasCompleted, store.findTodo(by: id)?.category)
     }
 
     func toggleOccurrence(_ occurrence: TodoOccurrenceData) {
+        let wasCompleted = occurrence.isCompleted
+        var toggled = false
         withAnimation(WarmAnimation.springSmooth) {
             do {
                 try store.toggleOccurrenceComplete(occurrence.todo.id, on: occurrence.occurrenceDate)
                 WidgetReloadCoalescer.scheduleReload()
                 markCalendarDataChanged()
                 VoiceTodoLog.store.info("ui.home.toggle_occurrence.success id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public)")
+                toggled = true
             } catch {
                 VoiceTodoLog.store.error("ui.home.toggle_occurrence.failed id=\(occurrence.todo.id.uuidString, privacy: .public) date=\(occurrence.occurrenceDate.ISO8601Format(), privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 coordinator.showToast(
@@ -110,6 +124,8 @@ private struct HomeViewActions<Store: HomeTodoStore> {
                 )
             }
         }
+        guard toggled else { return }
+        handleToggleFeedback(occurrence.todo.id, wasCompleted, occurrence.todo.category)
     }
 
     func deleteTodo(_ id: UUID) {
@@ -311,6 +327,20 @@ struct HomeView<Store: HomeTodoStore>: View {
     @State private var selectedTodo: TodoItemData?
     /// 统计 pill 点击进入 ReviewView(原 NavigationLink push,移除 NavigationStack 后改 sheet)。
     @State private var showReviewFromStats = false
+
+    // MARK: 完成正反馈状态(docs/todo-completion-feedback.md 分级制)
+    // Reduce Motion(:177 已有 reduceMotion 环境量):爆花/彩带降级,触感不降级
+    // (§9——系统触感总开关在系统设置,app 不二次拦截)。
+    /// 进行中的爆花集合。多实例并存防连点互断(方案「实现要点」)。
+    @State private var completionBursts: [CompletionBurst] = []
+    /// 进行中的全屏彩带(单实例:今日清空一瞬只有一个)。
+    @State private var confettiShow: CompletionConfettiShow?
+    /// 中央庆祝文案可见性。
+    @State private var showCelebrationBanner = false
+    /// 庆祝文案自动隐藏任务(重复触发时 cancel 重排,复用 ToastModifier token 同思路)。
+    @State private var celebrationBannerTask: Task<Void, Never>?
+    /// 今日清空检测任务:连点时取消旧检测、由最新一次落库后的状态定夺。
+    @State private var clearCheckTask: Task<Void, Never>?
     /// 复盘「下周三件事」置顶的 todo id(阶段 3 拍板 6)。只读快照:
     /// 复盘流程落地置顶后回到首页时刷新(见 onChange showReviewFromNotification /
     /// showReviewFromStats 的 dismiss + onAppear)。HomeView 改动控制在最小——
@@ -433,8 +463,120 @@ struct HomeView<Store: HomeTodoStore>: View {
             coordinator: coordinator,
             setProcessing: { isProcessing = $0 },
             selectTodo: { selectedTodo = $0 },
-            markCalendarDataChanged: { occurrenceRevision += 1 }
+            markCalendarDataChanged: { occurrenceRevision += 1 },
+            handleToggleFeedback: { todoID, wasCompleted, category in
+                handleToggleFeedback(todoID: todoID, wasCompleted: wasCompleted, category: category)
+            }
         )
+    }
+
+    // MARK: - 完成正反馈(docs/todo-completion-feedback.md,含 2026-09-01 复核修订)
+
+    /// toggle 落库成功后的反馈分发(§2/§8/修订 2):
+    /// - 完成 = `light` 触感 + 延时爆花 + 清空检测(light 让位给大庆祝的 success,触感层同步分级);
+    /// - 取消 = 轻 `selection`,无粒子(取消是修正不是成就,不稀释完成反馈对比度)。
+    private func handleToggleFeedback(todoID: UUID, wasCompleted: Bool, category: TodoCategory?) {
+        if wasCompleted {
+            HapticFeedback.selection()
+            return
+        }
+        HapticFeedback.light()
+        scheduleCompletionBurst(todoID: todoID, category: category)
+        scheduleTodayClearCelebrationCheck()
+    }
+
+    /// 排一次爆花:起播时刻 = 现在 + 接力延时(勾号描画进行大半时爆开,§4),
+    /// 到点整实例自清理。粒子在创建时按确定性随机一次定死,渲染是纯时间函数。
+    private func scheduleCompletionBurst(todoID: UUID, category: TodoCategory?) {
+        // §9 Reduce Motion:爆花降级为仅触感。
+        guard !reduceMotion else { return }
+        let colors: [Color] = [WarmTheme.success, WarmTheme.color(for: category ?? .other)]
+        let burst = CompletionBurst(
+            todoID: todoID,
+            particles: CompletionBurstRenderer.particles(
+                colors: colors,
+                seed: SeededRandom.randomSeed()
+            ),
+            startsAt: Date().addingTimeInterval(CompletionFeedbackMetrics.burstRelayDelay)
+        )
+        completionBursts.append(burst)
+        // 清理任务不存句柄:HomeView 是 app 根视图不销毁,无需防销毁后写 @State;
+        // 连点多实例并行,逐实例句柄数组得不偿失(渲染层按 id 独立,互不打断)。
+        Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(CompletionFeedbackMetrics.burstCleanupDelay * 1_000_000_000))
+            } catch is CancellationError {
+                return
+            } catch {
+                // 不可达:Task.sleep 只 throw CancellationError(与 NumberPopModifier 同理由,显式穷尽)。
+                return
+            }
+            completionBursts.removeAll { $0.id == burst.id }
+        }
+    }
+
+    /// 今日清空检测(§5 + 复核「四处必须钉死的口径」):
+    /// 1. 真今天:`DayClock.isSameUserDay(selectedDate, Date())` —— 翻到历史日期补勾不庆祝;
+    /// 2. 分母复用 `selectedDayStats()`,与顶部进度圆环同源,不另写一套(圆环满 = 彩带);
+    /// 3. 只在 toggle 落库成功后检测 —— abandon/删除/Widget/详情页路径一律不放彩带;
+    /// 4. 延时 250ms:等 `.task(id:)` 清空 monthOccurrences 缓存,让 stats 走 store.todos 兜底读到新值。
+    private func scheduleTodayClearCelebrationCheck() {
+        clearCheckTask?.cancel()
+        clearCheckTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(CompletionFeedbackMetrics.clearCheckDelay * 1_000_000_000))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            guard DayClock.isSameUserDay(selectedDate, Date()) else { return }
+            let stats = selectedDayStats()
+            guard stats.total > 0, stats.completed >= stats.total else { return }
+            celebrateTodayClear()
+        }
+    }
+
+    /// 大庆祝(§6):success 触感 + 全屏彩带(1.5s,不挡交互)+ 中央庆祝文案(2s)。
+    private func celebrateTodayClear() {
+        HapticFeedback.success()
+        withAnimation(WarmAnimation.springSmooth) {
+            showCelebrationBanner = true
+        }
+        celebrationBannerTask?.cancel()
+        celebrationBannerTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(CompletionFeedbackMetrics.celebrationBannerDuration * 1_000_000_000))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            withAnimation(WarmAnimation.springStandard) {
+                showCelebrationBanner = false
+            }
+        }
+        // §9 Reduce Motion:彩带降级为仅文案 toast。
+        guard !reduceMotion else { return }
+        let show = CompletionConfettiShow(
+            pieces: CompletionConfettiGenerator.pieces(
+                seed: SeededRandom.randomSeed()
+            ),
+            startedAt: Date()
+        )
+        confettiShow = show
+        Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(CompletionFeedbackMetrics.confettiCleanupDelay * 1_000_000_000))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            if confettiShow?.id == show.id {
+                confettiShow = nil
+            }
+        }
     }
 
     /// ZStack + 全部 sheet/overlay/toast 挂载。与 body 拆成两层:首次语音试用接线
@@ -484,6 +626,24 @@ struct HomeView<Store: HomeTodoStore>: View {
             evaluateFirstTrialHintTrigger()
             // 复盘置顶浮顶:首次挂载读一次快照(阶段 3)。
             reloadPinnedTodoIDs()
+        }
+        // 完成正反馈(分级制,docs/todo-completion-feedback.md):
+        // 爆花层读 checkbox anchor preference 定位原点(锚点不挂行内——List 行会裁掉粒子,复核 A);
+        // 彩带/庆祝文案为全屏纯视觉层,不挡交互、不进 a11y 树。
+        // 层序在这些 overlay 之前的 glossary banner / FAB / 输入面板之下,弹层永远在最上。
+        .overlayPreferenceValue(CompletionCheckboxAnchorKey.self) { anchors in
+            CompletionBurstLayer(bursts: completionBursts, anchors: anchors)
+        }
+        .overlay {
+            if let confettiShow {
+                CompletionConfettiLayer(show: confettiShow)
+            }
+        }
+        .overlay {
+            if showCelebrationBanner {
+                CelebrationBannerView(message: String(localized: "home.celebration.all_done"))
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            }
         }
         .overlay {
             if coordinator.isRecording {

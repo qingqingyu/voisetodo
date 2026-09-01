@@ -62,6 +62,13 @@ struct PendingDateTodoRow: View {
                     // 让 checkbox 始终坐卡片纵向中点。44pt frame 保留以撑 HIG hit target。
                     .frame(width: 44, height: 44, alignment: .center)
                     .contentShape(Rectangle())
+                    // 完成正反馈接线(docs/todo-completion-feedback.md 复核 B):
+                    // 本行是手写 checkbox(无 WarmCheckmarkShape 描画动画),只上报 anchor
+                    // 让 HomeView 顶层爆花统一覆盖;勾号「接力时机」在这里退化为
+                    // tap 后固定延时(由 HomeView 的 burstRelayDelay 统一承担)。
+                    .anchorPreference(key: CompletionCheckboxAnchorKey.self, value: .bounds) { anchor in
+                        [todo.id: anchor]
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("PendingDateCheckbox_\(index)")
