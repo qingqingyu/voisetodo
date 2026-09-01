@@ -39,7 +39,8 @@ enum CompletionFeedbackMetrics {
 // MARK: - Checkbox 锚点上报
 
 /// checkbox 边界上报:WarmTodoCard / PendingDateTodoRow 的勾选框把自己的 bounds
-/// 以 todo id 为键上浮;HomeView 顶层 overlay 据此定位爆花原点。
+/// 以 todo id 为键上浮;HomeView 用 `.onPreferenceChange` 维护一份最新表,
+/// 排花时把锚点**冻结**进 `CompletionBurst` 实例(冻结理由见该类型注释)。
 ///
 /// 为什么不挂行内粒子:List 行把内容裁到行边界(HomeSelectedDayListView 是 `List`),
 /// 行高 56-76pt 会切掉飞散中的粒子;顶层 overlay 与行生命周期解耦,
@@ -61,8 +62,15 @@ struct CompletionCheckboxAnchorKey: PreferenceKey {
 struct CompletionBurst: Identifiable {
     let id = UUID()
 
-    /// 被勾选的 todo id —— 用于从 anchor 表查 checkbox 位置。
-    let todoID: UUID
+    /// 排花时刻冻结的 checkbox 锚点。
+    ///
+    /// 为什么冻结而不是渲染时按 todo id 实时查表:完成后行会从 Today/稍后分区
+    /// 移入页面底部的「已完成」分区,而该分区同样用 WarmTodoCard 渲染、
+    /// 以同一 todo id 上报 anchor —— 实时查表会让爆花原点跟着行翻转到已完成区,
+    /// 长列表下烟花在屏幕底部(甚至屏外)炸开。排花与 toggle 落库同处一个
+    /// 同步调用栈、早于列表重渲染 tick,此刻锚点必是点击处位置;冻结后
+    /// 动画期间用户滚动列表,爆花也稳定锚在点击点而非跟着行走。
+    let anchor: Anchor<CGRect>
 
     /// 粒子参数。创建时按确定性随机一次性生成,Canvas 每帧只做纯时间函数渲染。
     let particles: [CompletionBurstParticle]
@@ -201,24 +209,21 @@ enum CompletionBurstRenderer {
     }
 }
 
-/// 爆花渲染层:挂在 HomeView 顶层,按 anchor 表解析每个进行中爆花的 checkbox 位置。
+/// 爆花渲染层:挂在 HomeView 顶层,每个进行中的爆花用**冻结锚点**解析 checkbox 位置
+/// (锚点在排花时已定格为点击处,见 `CompletionBurst.anchor` 注释)。
 ///
 /// a11y/命中防护(方案「实现要点」):`.allowsHitTesting(false)` + `.accessibilityHidden(true)`
 /// —— 挂顶层 overlay 后会进入 a11y 树,光靠不加 identifier 不足以让元素查询忽略它。
 struct CompletionBurstLayer: View {
     /// 进行中的爆花集合(HomeView 维护)。
     let bursts: [CompletionBurst]
-    /// checkbox 边界表(overlayPreferenceValue 直供,天然最新)。
-    let anchors: [UUID: Anchor<CGRect>]
 
     var body: some View {
         GeometryReader { proxy in
             TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: bursts.isEmpty)) { timeline in
                 Canvas { context, _ in
                     for burst in bursts {
-                        // 行已滚出屏幕 → anchor 不在表里,本实例无声跳过(不做位置兜底)。
-                        guard let anchor = anchors[burst.todoID] else { continue }
-                        let rect = proxy[anchor]
+                        let rect = proxy[burst.anchor]
                         CompletionBurstRenderer.draw(
                             particles: burst.particles,
                             rippleColor: WarmTheme.success,

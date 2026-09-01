@@ -94,7 +94,7 @@
 
 - **零第三方依赖**（用户全局规则）：粒子/彩带全用 `Canvas` + `TimelineView` 自绘。
 - **爆花锚点：anchor preference + HomeView 顶层 overlay，不要挂在行内**（复核 A/B 的结论，这是与原方案最大的差别）：
-  - checkbox 上挂 `.anchorPreference(key:value:.bounds)` 上报边界；`HomeView` 用 `.overlayPreferenceValue` 在顶层 overlay 画 Canvas 粒子。
+  - checkbox 上挂 `.anchorPreference(key:value:.bounds)` 上报边界；`HomeView` 用 `.onPreferenceChange` 维护锚点表，排花时**冻结**锚点进 `CompletionBurst` 实例，顶层 overlay 画 Canvas 粒子时用冻结值解析原点（2026-09-01 修订，见文末「锚点冻结」）。
   - 挂行内会被 `List` 行裁掉（`HomeSelectedDayListView.swift:56`），且覆盖不到 `PendingDateTodoRow` 自己那套 checkbox。
   - 顺带收益：粒子层与行的生命周期解耦，行滚出屏幕不会把动画掐断。
   - 触感仍挂 `toggleTodo` / `toggleOccurrence` 动作层（那一层天然全入口覆盖）。
@@ -154,3 +154,19 @@ iOS 没有读取静音开关位置的公开 API。正确机制是 `AVAudioSessio
 ### 未改动的部分
 
 分级制本身（§1）、爆花配方（§4，点+星+涟漪+分类色，在顶层 overlay 方案下完全可行）、大庆祝触发选「今日清空」而非连续打卡（§5）、取消完成只给 selection（§8）、`.allowsHitTesting(false)`、参考 `NumberPopModifier` 防竞写——复核认为均成立，不动。
+
+---
+
+## 锚点冻结（2026-09-01 实现后 bugfix）
+
+### 现象
+
+长列表下勾选 Today 上方任务，爆花不在点击处炸开，而是出现在页面底部「已完成」分区里（或已完成行在屏外时整场无声消失）。
+
+### 根因
+
+原实现 `CompletionBurst` 只存 `todoID`，渲染层逐帧按 id **实时**查 anchor 表（`overlayPreferenceValue` 直供）。而「已完成」分区的行同样走 `WarmTodoCard`、以**同一 todo id** 无条件上报 anchor——勾选落库后行从 Today 分区移入底部已完成区，表内该 id 的锚点翻转到新位置；爆花起播在 0.22s 接力延时之后，查到的已是已完成区坐标。
+
+### 修法
+
+排花时**快照冻结**：`handleToggleFeedback` 与 toggle 落库同一同步调用栈、早于列表重渲染 tick，此刻锚点表里必是点击处位置。`HomeView` 改用 `.onPreferenceChange(CompletionCheckboxAnchorKey.self)` 维护锚点表，`scheduleCompletionBurst` 创建实例时把 `Anchor<CGRect>`（值类型）存进 `CompletionBurst`，渲染层只解析冻结值。副带收益：0.5s 动画期间用户滚动列表，爆花稳定锚在点击点而非跟着行走。

@@ -333,6 +333,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     // (§9——系统触感总开关在系统设置,app 不二次拦截)。
     /// 进行中的爆花集合。多实例并存防连点互断(方案「实现要点」)。
     @State private var completionBursts: [CompletionBurst] = []
+    /// checkbox 锚点表最新快照(`.onPreferenceChange` 维护)。排花时从中取
+    /// 点击处锚点冻结进爆花实例——不渲染时实时查表,防爆花原点跟着行移入
+    /// 页面底部的已完成分区(见 CompletionBurst.anchor 注释)。
+    @State private var checkboxAnchors: [UUID: Anchor<CGRect>] = [:]
     /// 进行中的全屏彩带(单实例:今日清空一瞬只有一个)。
     @State private var confettiShow: CompletionConfettiShow?
     /// 中央庆祝文案可见性。
@@ -490,9 +494,13 @@ struct HomeView<Store: HomeTodoStore>: View {
     private func scheduleCompletionBurst(todoID: UUID, category: TodoCategory?) {
         // §9 Reduce Motion:爆花降级为仅触感。
         guard !reduceMotion else { return }
+        // 冻结锚点:本方法与 toggle 落库同一同步调用栈、早于列表重渲染 tick,
+        // 此刻锚点表里还是点击处位置。被点的行已完成布局上报,锚点必在;
+        // 极端时序下缺失则本次不放粒子(纯视觉层,触感反馈不受影响),不做位置兜底。
+        guard let anchor = checkboxAnchors[todoID] else { return }
         let colors: [Color] = [WarmTheme.success, WarmTheme.color(for: category ?? .other)]
         let burst = CompletionBurst(
-            todoID: todoID,
+            anchor: anchor,
             particles: CompletionBurstRenderer.particles(
                 colors: colors,
                 seed: SeededRandom.randomSeed()
@@ -628,11 +636,15 @@ struct HomeView<Store: HomeTodoStore>: View {
             reloadPinnedTodoIDs()
         }
         // 完成正反馈(分级制,docs/todo-completion-feedback.md):
-        // 爆花层读 checkbox anchor preference 定位原点(锚点不挂行内——List 行会裁掉粒子,复核 A);
+        // 爆花层用排花时冻结的 checkbox 锚点定位原点(锚点不挂行内——List 行会裁掉粒子,复核 A;
+        // 也不渲染时实时查表——完成后行移入已完成分区会让原点跟跑到列表底部,见 CompletionBurst 注释);
         // 彩带/庆祝文案为全屏纯视觉层,不挡交互、不进 a11y 树。
         // 层序在这些 overlay 之前的 glossary banner / FAB / 输入面板之下,弹层永远在最上。
-        .overlayPreferenceValue(CompletionCheckboxAnchorKey.self) { anchors in
-            CompletionBurstLayer(bursts: completionBursts, anchors: anchors)
+        .onPreferenceChange(CompletionCheckboxAnchorKey.self) { anchors in
+            checkboxAnchors = anchors
+        }
+        .overlay {
+            CompletionBurstLayer(bursts: completionBursts)
         }
         .overlay {
             if let confettiShow {
