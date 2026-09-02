@@ -7885,24 +7885,68 @@
         }
       }
     },
-    "review.flow.commit.hint" : {
+    "review.flow.commit.group.existing" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick next week's focus from what you scheduled — at least 1, 3 recommended"
+            "value" : "Already on next week"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "来週に組み込んだ中から重点を選ぼう:最低 1 件、3 件が目安"
+            "value" : "もともと来週にあった"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从排进下周的里挑出下周的重点:至少选 1 件,建议选满 3 件"
+            "value" : "本来就在下周的"
+          }
+        }
+      }
+    },
+    "review.flow.commit.group.scheduled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just scheduled for next week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今回組み込んだ来週のタスク"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你刚排进下周的"
+          }
+        }
+      }
+    },
+    "review.flow.commit.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick next week's focus — at least 1, 3 recommended"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来週の重点を選ぼう:最低 1 件、3 件が目安"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "挑出下周的重点:至少选 1 件,建议选满 3 件"
           }
         }
       }

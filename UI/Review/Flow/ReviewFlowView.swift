@@ -93,6 +93,15 @@ final class ReviewFlowState {
     /// 第 4 步选中的「三件事」(提交置顶时读取)。
     private(set) var commitSelection: [TodoItemData] = []
 
+    /// 本来就排在下周的未完成任务(2026-09-01 拍板「第 4 步」:候选池不能
+    /// 只有刚才排的——第 2 步被跳过时池子照样有内容,空池死路消失)。
+    /// init 快照口径:`dueDate` 落在下周 && `!isCompleted` && `abandonedAt == nil`。
+    /// 不按 recurrenceRule 排除(文档字面口径):锚点在过去的规律任务自然
+    /// 不命中;锚点恰在下周的允许被置顶——置顶标记按 id 对账,语义成立。
+    /// ⚠️ 右滑「排下周」是即时写库,但快照取自 init——第 2 步新排的走
+    /// `scheduled`,两路靠 `processedIDs` 去重(不去重会双行)。
+    private(set) var nextWeekCommitted: [TodoItemData] = []
+
     // MARK: 上次定的重点(2026-08-25 轻修:plan-do-review 闭环)
 
     /// 上次复盘第 4 步置顶的 todo id(流程启动时快照注入)。`ReviewPinningStore
@@ -136,13 +145,40 @@ final class ReviewFlowState {
         self.tail = Array(ranked.dropFirst(TriageRanking.deckSize))
         self.previousSessions = previousSessions
         self.lastPinnedIDs = lastPinnedIDs
-        // todos / previousSessions / lastPinnedIDs init 后不变,两个派生值一次算好,
+        // todos / previousSessions / lastPinnedIDs init 后不变,派生值一次算好,
         // 不留整份快照。
         self.lastPinnedOutcome = Self.lastPinnedOutcome(todos: todos, pinnedIDs: lastPinnedIDs)
         self.askDomainHintCategory = Self.askDomainHintCategory(
             todos: todos,
             rotationSeed: previousSessions.count
         )
+        self.nextWeekCommitted = Self.nextWeekCommitted(
+            from: todos, now: Date(), calendar: Calendar.current
+        )
+    }
+
+    /// 快照里本来就排在下周的未完成任务。下周窗口与「排下周」的落点同语义:
+    /// 下一个周一的用户日起点起 7 天(与 ReviewStepTriage.nextMondayStart 一致,
+    /// 排期写库与候选池取数必须同一坐标系)。
+    static func nextWeekCommitted(
+        from todos: [TodoItemData],
+        now: Date,
+        calendar: Calendar
+    ) -> [TodoItemData] {
+        var components = DateComponents()
+        components.weekday = 2 // 周一(gregorian),与 nextMondayStart 一致
+        guard let nextMonday = calendar.nextDate(
+            after: now, matching: components, matchingPolicy: .nextTime
+        ) else { return [] }
+        let weekStart = DayClock.startOfUserDay(for: nextMonday, calendar: calendar)
+        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+        return todos.filter { todo in
+            guard let due = todo.dueDate,
+                  !todo.isCompleted,
+                  todo.abandonedAt == nil else { return false }
+            let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
+            return dueDay >= weekStart && dueDay < weekEnd
+        }
     }
 
     /// 上次置顶的结局计数(2026-08-25)。从**原始快照**数,不是 deck——完成的重点
@@ -176,12 +212,25 @@ final class ReviewFlowState {
 
     // MARK: 步骤闸门
 
+    /// 第 4 步候选池(2026-09-01 拍板「第 4 步」):本会话排进下周的 ∪ 快照里
+    /// 本来就在下周且本会话没动过的。第二路排除 processedIDs——右滑「排下周」
+    /// 即时写库,不排掉会双行(审阅缺口 B);「今天就做/不做了/拆小」处理过的
+    /// 同样不该再当选下周三件事。
+    var preexistingNextWeek: [TodoItemData] {
+        nextWeekCommitted.filter { !processedIDs.contains($0.id) }
+    }
+
+    /// 完整候选池(视图分组渲染:scheduled 一组、preexistingNextWeek 一组)。
+    var commitPool: [TodoItemData] {
+        scheduled + preexistingNextWeek
+    }
+
     /// 第 4 步(下周三件事)主按钮闸门(2026-08-22 拍板放宽):**至少选 1 件**,
     /// 文案仍鼓励选满 3——强制凑满 3 件会把「只想清卡堆」的用户卡在半路,
-    /// 养复盘习惯比单次产出更重要。候选池为空(一张都没排进下周)时无从
-    /// 选起,放行——强迫回去排 3 件违背复盘自愿原则(§2.5 反 gaming)。
+    /// 养复盘习惯比单次产出更重要。候选池(含本来就排在下周的,v2)为空时
+    /// 无从选起,放行——强迫回去排 3 件违背复盘自愿原则(§2.5 反 gaming)。
     var canPassCommit: Bool {
-        scheduled.isEmpty || !commitSelection.isEmpty
+        commitPool.isEmpty || !commitSelection.isEmpty
     }
 
     /// 当前步骤主按钮是否可点。recap / triage / insights / ledger 恒可过

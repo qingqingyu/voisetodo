@@ -22,10 +22,12 @@ final class ReviewFlowStateTests: XCTestCase {
         recurring: Bool = false,
         category: TodoCategory = .other,
         daysOld: Int = 0,
+        dueDate: Date? = nil,
         extractionOutcome: ExtractionOutcome = .parsed
     ) -> TodoItemData {
         TodoItemData(
             title: title,
+            dueDate: dueDate,
             recurrenceRule: recurring ? RecurrenceRule(frequency: .daily) : nil,
             category: category,
             isCompleted: isCompleted,
@@ -524,5 +526,87 @@ extension ReviewFlowStateTests {
             ReviewLedger.self, from: JSONEncoder().encode(new)
         )
         XCTAssertEqual(roundtrip, new)
+    }
+}
+
+// MARK: - v2 · 第 4 步候选池并集(2026-09-01 拍板,docs/todo-review-flow-v2.md)
+
+extension ReviewFlowStateTests {
+
+    private var fixedCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar
+    }
+
+    private func at(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        fixedCalendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
+    }
+
+    /// 窗口语义:下一个周一(2026-09-07,周三参照)起 7 天,闭开区间;
+    /// 与「排下周」写库落点同坐标系。本周/下下周/无日期都不进。
+    func testNextWeekCommittedWindow() {
+        // 2026-09-02 是周三 → 下一个周一是 09-07,窗口 [09-07, 09-14)。
+        let now = at(2026, 9, 2)
+        let input = [
+            todo("本周四", dueDate: at(2026, 9, 3)),
+            todo("下周一", dueDate: at(2026, 9, 7)),
+            todo("下周日", dueDate: at(2026, 9, 13)),
+            todo("下下周一", dueDate: at(2026, 9, 14)),
+            todo("无日期"),
+            todo("下周但已完成", isCompleted: true, dueDate: at(2026, 9, 9)),
+        ]
+        let committed = ReviewFlowState.nextWeekCommitted(
+            from: input, now: now, calendar: fixedCalendar
+        )
+        XCTAssertEqual(committed.map(\.title), ["下周一", "下周日"])
+    }
+
+    /// 候选池并集 + 去重:本来就在下周的未处理条目进池;本会话「今天就做/
+    /// 不做了/拆小」处理过的下周条目退出;右滑即时写库不产生双行(审阅缺口 B)。
+    func testCommitPoolUnionsAndDedups() {
+        let calendar = Calendar.current
+        let nextMonday = calendar.nextDate(
+            after: Date(), matching: DateComponents(weekday: 2), matchingPolicy: .nextTime
+        )!
+        let nextWednesday = calendar.date(byAdding: .day, value: 2, to: nextMonday)!
+        let state = ReviewFlowState(todos: [
+            todo("本来就在下周", daysOld: 20, dueDate: nextWednesday),
+            todo("swipeA", daysOld: 15),
+            todo("swipeB", daysOld: 10),
+            todo("今天做-原本在下周", daysOld: 8, dueDate: nextWednesday),
+            todo("划掉-原本在下周", daysOld: 6, dueDate: nextWednesday),
+        ])
+
+        // 第 2 步:右滑两张 + 今天一张 + 划掉一张(按标题取,避免顺序假设)。
+        func deckItem(_ title: String) -> TodoItemData {
+            state.deck.first { $0.title == title }!
+        }
+        state.markScheduled(deckItem("swipeA"))
+        state.markScheduled(deckItem("swipeB"))
+        state.markToday(deckItem("今天做-原本在下周"))
+        state.markAbandoned(deckItem("划掉-原本在下周"))
+
+        XCTAssertEqual(state.scheduled.map(\.title).sorted(), ["swipeA", "swipeB"])
+        XCTAssertEqual(state.preexistingNextWeek.map(\.title), ["本来就在下周"])
+        XCTAssertEqual(state.commitPool.count, 3, "2 张刚排 + 1 张本来就在,无重复")
+        XCTAssertFalse(state.commitPool.contains { $0.title == "今天做-原本在下周" })
+        XCTAssertFalse(state.commitPool.contains { $0.title == "划掉-原本在下周" })
+    }
+
+    /// 闸门随池子走:第 2 步整步跳过(scheduled 空)但下周本有排期时,
+    /// 空池死路消失——池子非空,至少选 1 件(2026-08-22 闸门口径不变)。
+    func testCommitGateWithPreexistingOnly() {
+        let calendar = Calendar.current
+        let nextMonday = calendar.nextDate(
+            after: Date(), matching: DateComponents(weekday: 2), matchingPolicy: .nextTime
+        )!
+        let state = ReviewFlowState(todos: [todo("本来就在下周", daysOld: 20, dueDate: nextMonday)])
+
+        XCTAssertTrue(state.scheduled.isEmpty, "前提:第 2 步没排任何一张")
+        XCTAssertFalse(state.commitPool.isEmpty)
+        XCTAssertFalse(state.canPassCommit, "池子非空 → 至少选 1 件")
+        state.toggleCommitSelection(state.commitPool[0])
+        XCTAssertTrue(state.canPassCommit)
     }
 }
