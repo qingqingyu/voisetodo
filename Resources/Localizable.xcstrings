@@ -7929,94 +7929,6 @@
         }
       }
     },
-    "review.flow.recap.last_pinned_outcome" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Priorities from last review: %1$d done, %2$d still open"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回決めた重点:%1$d 件完了、%2$d 件残り"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次定的重点:%1$d 件完成、%2$d 件待处理"
-          }
-        }
-      }
-    },
-    "review.flow.recap.last_review_%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last review: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回のふりかえり:%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次复盘:%@"
-          }
-        }
-      }
-    },
-    "review.flow.entry.pending_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Things to decide: %lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "決めることが %lld 件"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 件事等你决定"
-          }
-        }
-      }
-    },
-    "review.flow.recap.scope" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The last 30 days"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "過去 30 日間をふりかえる"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回顾近 30 天"
-          }
-        }
-      }
-    },
     "review.flow.entry.action" : {
       "localizations" : {
         "en" : {
@@ -8040,6 +7952,7 @@
       }
     },
     "review.flow.entry.empty" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8057,6 +7970,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "都清完了,看看这一个月"
+          }
+        }
+      }
+    },
+    "review.flow.entry.pending_%lld" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Things to decide: %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "決めることが %lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件事等你决定"
           }
         }
       }
@@ -8211,6 +8147,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再记 %lld 条,这条洞察就能算出来"
+          }
+        }
+      }
+    },
+    "review.flow.insights.notes.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What you said in past reviews"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去のふりかえりで言ったこと"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历次复盘,你说过"
           }
         }
       }
@@ -8457,6 +8415,72 @@
         }
       }
     },
+    "review.flow.recap.last_pinned_outcome" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priorities from last review: %1$d done, %2$d still open"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回決めた重点:%1$d 件完了、%2$d 件残り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次定的重点:%1$d 件完成、%2$d 件待处理"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_review_%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last review: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のふりかえり:%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次复盘:%@"
+          }
+        }
+      }
+    },
+    "review.flow.recap.scope" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last 30 days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去 30 日間をふりかえる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回顾近 30 天"
+          }
+        }
+      }
+    },
     "review.flow.rotting.age_%lld" : {
       "localizations" : {
         "en" : {
@@ -8501,28 +8525,6 @@
         }
       }
     },
-    "review.flow.split.cancel" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "キャンセル"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消"
-          }
-        }
-      }
-    },
     "review.flow.split.a11y.delete" : {
       "localizations" : {
         "en" : {
@@ -8546,6 +8548,7 @@
       }
     },
     "review.flow.split.a11y.deselect" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8568,6 +8571,7 @@
       }
     },
     "review.flow.split.a11y.select" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8589,7 +8593,30 @@
         }
       }
     },
+    "review.flow.split.cancel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
+    },
     "review.flow.split.candidates.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8612,6 +8639,7 @@
       }
     },
     "review.flow.split.candidates.voice_title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8876,6 +8904,7 @@
       }
     },
     "review.flow.split.submit_%lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8898,6 +8927,7 @@
       }
     },
     "review.flow.split.submit_disabled" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9117,6 +9147,50 @@
         }
       }
     },
+    "review.flow.triage.action.drop" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not doing it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "やめる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不做了"
+          }
+        }
+      }
+    },
+    "review.flow.triage.action.keep" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来週へ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排下周"
+          }
+        }
+      }
+    },
     "review.flow.triage.action.split" : {
       "localizations" : {
         "en" : {
@@ -9161,116 +9235,6 @@
         }
       }
     },
-    "review.flow.triage.tl_nodefer" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Never deferred"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "先送りなし"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "还没推迟过"
-          }
-        }
-      }
-    },
-    "review.flow.triage.tl_deferred_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deferred %lld times"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 回先送り"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推迟 %lld 次"
-          }
-        }
-      }
-    },
-    "review.flow.triage.menu.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "What to do with this card?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このカードをどうする?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这张卡怎么处理?"
-          }
-        }
-      }
-    },
-    "review.flow.triage.last_pinned" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last focus"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回の重点"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次重点"
-          }
-        }
-      }
-    },
-    "review.flow.triage.lede" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Decide one at a time. Swipe, or tap the buttons below. Untouched cards stay."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 枚ずつ決める。スワイプでも下のボタンでも。触らないカードはそのまま残る。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一条一条决定。划走,或者点下面的按钮;不动的就是留着。"
-          }
-        }
-      }
-    },
     "review.flow.triage.born_%@" : {
       "localizations" : {
         "en" : {
@@ -9289,50 +9253,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@记下"
-          }
-        }
-      }
-    },
-    "review.flow.triage.action.keep" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next week"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "来週へ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "排下周"
-          }
-        }
-      }
-    },
-    "review.flow.triage.action.drop" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not doing it"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "やめる"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不做了"
           }
         }
       }
@@ -9381,6 +9301,72 @@
         }
       }
     },
+    "review.flow.triage.last_pinned" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の重点"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次重点"
+          }
+        }
+      }
+    },
+    "review.flow.triage.lede" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decide one at a time. Swipe, or tap the buttons below. Untouched cards stay."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 枚ずつ決める。スワイプでも下のボタンでも。触らないカードはそのまま残る。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一条一条决定。划走,或者点下面的按钮;不动的就是留着。"
+          }
+        }
+      }
+    },
+    "review.flow.triage.menu.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What to do with this card?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このカードをどうする?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这张卡怎么处理?"
+          }
+        }
+      }
+    },
     "review.flow.triage.title" : {
       "localizations" : {
         "en" : {
@@ -9399,6 +9385,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "处理没做完的一次性任务"
+          }
+        }
+      }
+    },
+    "review.flow.triage.tl_deferred_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deferred %lld times"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 回先送り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推迟 %lld 次"
+          }
+        }
+      }
+    },
+    "review.flow.triage.tl_nodefer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never deferred"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先送りなし"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没推迟过"
           }
         }
       }
@@ -9485,46 +9515,46 @@
         }
       }
     },
-    "review.insight.reactive.body_%lld_%lld" : {
+    "review.insight.effort.body_%lld_%lld_%lld_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld%% of your completed to-dos were done the same day you noted them (%2$lld finished one-off to-dos)."
+            "value" : "%3$lld high-priority items took a median of %1$lld days from note to done; the other %4$lld items took %2$lld."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完了したタスクのうち%1$lld%%は、メモしたその日に片付けています(単発タスク%2$lld件完了)。"
+            "value" : "「重要」の%3$lld件はメモから完了まで中央値%1$lld日。他の%4$lld件は%2$lld日。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你完成的事里,%1$lld%% 是记下当天就做完的(%2$lld 条一次性完成记录)。"
+            "value" : "标了「重要」的 %3$lld 件事,从记下到做完中位 %1$lld 天;其他 %4$lld 件事,中位 %2$lld 天。"
           }
         }
       }
     },
-    "review.insight.reactive.body_positive_%lld_%lld" : {
+    "review.insight.effort.body_positive_%lld_%lld_%lld_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Only %1$lld%% of your completed to-dos were done the same day you noted them (%2$lld finished one-off to-dos). Most of your work is planned ahead."
+            "value" : "%3$lld high-priority items didn't drag longer than the other %4$lld (median %1$lld vs %2$lld days)."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完了したタスクのうち、メモした当日に片付けたのは%1$lld%%だけです(単発タスク%2$lld件完了)。ほとんどは計画どおりに進んでいます。"
+            "value" : "「重要」の%3$lld件は他の%4$lld件より長くはかからなかった(中央値%1$lld日対%2$lld日)。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你完成的事里只有 %1$lld%% 是记下当天就做完的(%2$lld 条一次性完成记录),大部分都提前安排好了。"
+            "value" : "标了「重要」的 %3$lld 件事没有比其他 %4$lld 件事拖得更久(中位 %1$lld 天 vs %2$lld 天)。"
           }
         }
       }
@@ -9573,90 +9603,46 @@
         }
       }
     },
-    "review.insight.effort.body_%lld_%lld_%lld_%lld" : {
+    "review.insight.effort.median_days_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%3$lld high-priority items took a median of %1$lld days from note to done; the other %4$lld items took %2$lld."
+            "value" : "median %lld days"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「重要」の%3$lld件はメモから完了まで中央値%1$lld日。他の%4$lld件は%2$lld日。"
+            "value" : "中央値%lld日"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "标了「重要」的 %3$lld 件事,从记下到做完中位 %1$lld 天;其他 %4$lld 件事,中位 %2$lld 天。"
+            "value" : "中位 %lld 天"
           }
         }
       }
     },
-    "review.insight.effort.body_positive_%lld_%lld_%lld_%lld" : {
+    "review.insight.effort.need_more_high_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%3$lld high-priority items didn't drag longer than the other %4$lld (median %1$lld vs %2$lld days)."
+            "value" : "%lld more high-priority completions needed for this insight"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「重要」の%3$lld件は他の%4$lld件より長くはかからなかった(中央値%1$lld日対%2$lld日)。"
+            "value" : "このインサイトには「重要」の完了がさらに %lld 件必要です"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "标了「重要」的 %3$lld 件事没有比其他 %4$lld 件事拖得更久(中位 %1$lld 天 vs %2$lld 天)。"
-          }
-        }
-      }
-    },
-    "review.insight.effort.sample_note_%lld_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld high-priority + %2$lld other timestamped one-time tasks, recurring excluded"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重要%1$lld件+その他%2$lld件。タイムスタンプ付きの単発タスク、規律タスク除く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld 件重要 + %2$lld 件其他,带时间戳的一次性任务,不含规律任务"
-          }
-        }
-      }
-    },
-    "review.insight.effort.viz_note" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "User-day span from note to done, median of each group."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メモから完了までのユーザー日数(各グループの中央値)。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从记下到做完的用户日跨度,取各组中位数。"
+            "value" : "再记 %lld 条重要任务并完成,这条洞察就能算出来"
           }
         }
       }
@@ -9705,68 +9691,46 @@
         }
       }
     },
-    "review.insight.effort.median_days_%lld" : {
+    "review.insight.effort.sample_note_%lld_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "median %lld days"
+            "value" : "%1$lld high-priority + %2$lld other timestamped one-time tasks, recurring excluded"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中央値%lld日"
+            "value" : "重要%1$lld件+その他%2$lld件。タイムスタンプ付きの単発タスク、規律タスク除く"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中位 %lld 天"
+            "value" : "%1$lld 件重要 + %2$lld 件其他,带时间戳的一次性任务,不含规律任务"
           }
         }
       }
     },
-    "review.insight.effort.need_more_high_%lld" : {
+    "review.insight.effort.viz_note" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld more high-priority completions needed for this insight"
+            "value" : "User-day span from note to done, median of each group."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このインサイトには「重要」の完了がさらに %lld 件必要です"
+            "value" : "メモから完了までのユーザー日数(各グループの中央値)。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再记 %lld 条重要任务并完成,这条洞察就能算出来"
-          }
-        }
-      }
-    },
-    "review.insight.energy.headline" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your best hours are mornings — the important stuff lands late at night"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "調子がいいのは午前,大切なことは深夜に"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "好时段在上午,重要的事排在深夜"
+            "value" : "从记下到做完的用户日跨度,取各组中位数。"
           }
         }
       }
@@ -9793,24 +9757,46 @@
         }
       }
     },
-    "review.insight.energy.sample_note_%lld_%lld" : {
+    "review.insight.energy.headline" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld completion timestamps · %2$lld important items with a set time, recurring excluded"
+            "value" : "Your best hours are mornings — the important stuff lands late at night"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完了時刻%1$lld件・時刻設定のある大切なタスク%2$lld件。規律タスク除く"
+            "value" : "調子がいいのは午前,大切なことは深夜に"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成时刻 %1$lld 条 · 带钟点的重要任务 %2$lld 件,不含规律任务"
+            "value" : "好时段在上午,重要的事排在深夜"
+          }
+        }
+      }
+    },
+    "review.insight.energy.legend.mark" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheduled times of important items"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大切なタスクの設定時刻"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要任务排的钟点"
           }
         }
       }
@@ -9837,24 +9823,68 @@
         }
       }
     },
-    "review.insight.energy.legend.mark" : {
+    "review.insight.energy.sample_note_%lld_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scheduled times of important items"
+            "value" : "%1$lld completion timestamps · %2$lld important items with a set time, recurring excluded"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "大切なタスクの設定時刻"
+            "value" : "完了時刻%1$lld件・時刻設定のある大切なタスク%2$lld件。規律タスク除く"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重要任务排的钟点"
+            "value" : "完成时刻 %1$lld 条 · 带钟点的重要任务 %2$lld 件,不含规律任务"
+          }
+        }
+      }
+    },
+    "review.insight.reactive.body_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld%% of your completed to-dos were done the same day you noted them (%2$lld finished one-off to-dos)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了したタスクのうち%1$lld%%は、メモしたその日に片付けています(単発タスク%2$lld件完了)。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你完成的事里,%1$lld%% 是记下当天就做完的(%2$lld 条一次性完成记录)。"
+          }
+        }
+      }
+    },
+    "review.insight.reactive.body_positive_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only %1$lld%% of your completed to-dos were done the same day you noted them (%2$lld finished one-off to-dos). Most of your work is planned ahead."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了したタスクのうち、メモした当日に片付けたのは%1$lld%%だけです(単発タスク%2$lld件完了)。ほとんどは計画どおりに進んでいます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你完成的事里只有 %1$lld%% 是记下当天就做完的(%2$lld 条一次性完成记录),大部分都提前安排好了。"
           }
         }
       }
@@ -10031,24 +10061,18 @@
         }
       }
     },
-    "review.flow.insights.notes.title" : {
+    "review.nav_title" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What you said in past reviews"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "過去のふりかえりで言ったこと"
+            "value" : "Review"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "历次复盘,你说过"
+            "value" : "回顾"
           }
         }
       }
@@ -10115,22 +10139,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复盘笔记"
-          }
-        }
-      }
-    },
-    "review.nav_title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Review"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回顾"
           }
         }
       }
