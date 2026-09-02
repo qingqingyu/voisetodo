@@ -1,11 +1,12 @@
 # 复盘流程 v2 —— 改版方案
 
-> 状态：**待实施**。文档创建于 2026-09-01。
-> 基线：`22236f7`（`main`）。v1 见 `docs/todo-review-flow-design.md`（状态：已实施）。
+> 状态：**已实施**（2026-09-02，fupan `6be3d96`…`73e2f62`，见文末「实施补注」）。
+> 文档创建于 2026-09-01；基线 `22236f7`（`main`）。v1 见 `docs/todo-review-flow-design.md`（状态：已实施）。
 > 环境提示：Swift 需在 **Xcode 26** 编译验证（iOS 26 部署目标）；`Protocols/` 纯逻辑可 `swift test` 单跑。
 > 相关文件：`UI/Review/Flow/ReviewFlowView.swift`、`ReviewStepTriage.swift`、`ReviewStepCommit.swift`、
 > `ReviewStepLedger.swift`、`ReviewStepInsights.swift`、`UI/Review/RecapComponents.swift`、
-> `UI/Home/HomeCalendarState.swift`、`Protocols/ReviewSessionStore.swift`。
+> `UI/Home/HomeCalendarState.swift`、`Protocols/ReviewSessionStore.swift`、
+> `Protocols/Domain/Insights/TriageRanking.swift`（新增）。
 
 ## Context
 
@@ -174,11 +175,11 @@ TodoDetailUpdate(
 
 ## 落地顺序
 
-1. **第 2 步排序 + 截断 + 批量出口**——最高价值，且一改就把第 4、5 步的空态问题连带解决大半。注意 `insightContext` 异步到位的时序问题。
-2. **第 5 步零值行不渲染 + 主角换成决定数**——几行代码，立竿见影。
-3. **第 4 步候选池补下周已排期任务**——解掉最后一条死路。
-4. **第 1 步删 streak、sameDay 提为判词、补「新增」数**——文案已在，主要是排版。
-5. **第 3 步占位行合并 + 洞察卡当场动作**——动作部分工作量最大，放最后。
+1. **第 2 步排序 + 截断 + 批量出口**——最高价值，且一改就把第 4、5 步的空态问题连带解决大半。注意 `insightContext` 异步到位的时序问题。（✅ `6be3d96`）
+2. **第 5 步零值行不渲染 + 主角换成决定数**——几行代码，立竿见影。（✅ `6be3d96`，与第 2 步经 `ReviewLedger.somedayCount` 耦合，同提交落地）
+3. **第 4 步候选池补下周已排期任务**——解掉最后一条死路。（✅ `2fc55a6`）
+4. **第 1 步删 streak、sameDay 提为判词、补「新增」数**——文案已在，主要是排版。（✅ `ac7a754`）
+5. **第 3 步占位行合并 + 洞察卡当场动作**——动作部分工作量最大，放最后。（✅ `73e2f62`）
 
 ---
 
@@ -208,3 +209,29 @@ TodoDetailUpdate(
 - 新增 `somedayAt` 终态（拍板 3 已选复用「稍后」）。
 - 洞察 04/06 启用（仍待样本量）。
 - 历史推迟次数回填（v1 取舍 1 不变）。
+
+---
+
+## 实施补注（2026-09-02）
+
+实施前对方案做了一轮代码级审阅，五个缺口在实施中按下述口径处置（审阅结论：方案的事实断言全部核实无误，含 `hasTimeSignal` 不看 `dueDate` 的坑、`dueHint` 三态、`isDeferral` 双非 nil 守卫、时序问题等）：
+
+**A · 共享组件边界（审阅补的最大缺口）**：`RecapHeroSection` / `RecapStatsRow` / `RecapCategoryChartSection` 三件都是回顾页与第 1 步共用的（`RecapComponents.swift` 头注释明写「别在两处复制」），原方案只对 CategoryChart 提了「不要删组件」。处置：**回顾页零变化**——Hero 加 `promotesSameDay` 参数（默认 false = 原 13pt 副行），第 1 步传 true；streak 卡只从流程里下岗，`RecapStatsRow` 原样留给回顾页（注释已标注）。
+
+**B · 候选池并集去重**：右滑「排下周」是**即时写库**（`markScheduled` 注释），并集必须按 id 去重，否则刚排的任务双行。处置：第二路（`nextWeekCommitted`）排除 `processedIDs`，「今天就做 / 不做了 / 拆小」处理过的下周条目同步退出。规律任务按文档字面口径不排除——锚点在过去的自然不命中，锚点恰在下周的可被置顶（置顶按 id 对账，语义成立）。**闸门行为变化**：跳过第 2 步但下周本有排期的用户，现在必须选 1 件才能过第 4 步（之前无条件放行）——「候选池为空放行」的原拍板语义不变，池子定义修正了。
+
+**C · 「下次复盘会给你看」的兑现位**：语义对照行原来在第 3 步，而冷启动（<5 完成记录）第 3 步整步被 `skipsInsights` 跳过——承诺会落空。处置：**历次笔记卡（含语义对照行）随「问问自己」一起迁到第 5 步**，回看上次→写下这次的动线也顺；2026-08-25 轻修④的领域提示轮换随输入框同迁（留在原处等于轻修④失效）。附带好处：冷启动用户第一次能见到输入框。
+
+**D · 批量出口的周而复始（立场）**：推「稍后」的条目下周仍在 `triageInput`（dueDate==nil 不过滤）且按停滞天数排最前——同一批古董任务每周回来占卡堆前排，「每周一键再推」是合法 snooze。这是**刻意设计**：复盘持续施压直到真决定（排期 / 划掉 / 做掉），与反 gaming 章程相邻但不冲突（出口不清零任何数字，只是换抽屉）。若实测变成无脑每周扫，候选缓解：连续 N 次批量推后的条目在第 2 步卡堆置顶并给「该划掉了」提示——待真机走查后再议。
+
+**E · `ReviewLedger` 兼容的失败半径**：加非可选 `somedayCount` 后，自动合成的 Codable 遇旧 payload 缺键是**抛错**而非默认 0，一条会话解码失败会拖垮整个 `allSessions()` 列表。已手写 `init(from:)`（`decodeIfPresent ?? 0`），单测覆盖新旧 payload 与编码往返。
+
+**范围裁剪（洞察当场动作）**：「排周三 19:00」式的具体排期建议**不做**——洞察卡内嵌日期选择缺交互设计，先落「不做了」（走既有 abandon 写路径，覆盖卡堆与尾部，计入决定数）与「去看看」（既有跳转）；具体排期待后续单独立项。
+
+**账本字段去留**：`inputCount` / `remainingCount` 保留原语义（deck 侧口径——`inputCount` = 逐张决定 + 仍留卡堆，截断后尾部不计入），不再渲染但继续落盘，避免一次无收益的迁移；「N / M」计数器随截断自动变成「n / 8」。
+
+**i18n 增删**：新增 24 键（batch 出口 7、账本 9、承诺 1、分组 2、证据行 2、占位合并 1、最小事实 1、卡面天数 1），删除 9 个无引用键（旧账本主行+五行 6、ladder_hint 1、need_more_tasks 1、need_more_high 1），全部 zh/en/ja 三语。
+
+**新增测试**：`TriageRankingTests`（5）、`ReviewFlowStateTests` v2 扩展（排序截断 / 重排不回流 / 批量候选门槛 / 执行撤销闭环 / decidedCount / 旧 payload 解码 / 候选池并集去重 / 闸门 / abandonFromInsight）、`HomeCalendarStateGroupingTests` 批量出口落点护栏（`dueHint` 空串路径）、`TaskEventKindTests` `isDeferral(new=nil)`、`ReviewRecapSameDayTests` 证据链三数。
+
+**真机回归待办**（模拟器不可验的部分）：三语长文本走查（第 5 步账本一行小字、批量出口标题）、批量出口落点真机确认（27 条进「稍后」抽屉）、整批撤销、连续两周批量推后的体验（见 D）。
