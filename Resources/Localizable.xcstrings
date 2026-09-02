@@ -10568,6 +10568,28 @@
         }
       }
     },
+    "review.stat.created" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增"
+          }
+        }
+      }
+    },
     "review.stat.done" : {
       "localizations" : {
         "en" : {
@@ -10602,6 +10624,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连续天数"
+          }
+        }
+      }
+    },
+    "review.stat.pending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still open"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "残り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还挂着"
           }
         }
       }

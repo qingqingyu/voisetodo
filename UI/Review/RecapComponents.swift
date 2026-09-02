@@ -9,6 +9,10 @@ import SwiftUI
 /// Hero 区:大数字 + 周期标签。
 struct RecapHeroSection: View {
     let summary: ReviewSummary
+    /// sameDay 判词主体化(2026-09-01 拍板,复盘第 1 步):true 时「当天记
+    /// 当天做完」与总数同级呈现。默认 false = 回顾页原样(13pt 副行)——
+    /// 本组件两页共用(见文件头),回顾页行为不动(审阅缺口 A)。
+    var promotesSameDay: Bool = false
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
@@ -29,8 +33,8 @@ struct RecapHeroSection: View {
             // 居中的数字保持同一视觉节奏。
             if summary.total > 0 {
                 Text(String(localized: "review.hero.sameday_\(summary.sameDayCount)"))
-                    .font(WarmFont.caption(13))
-                    .foregroundColor(WarmTheme.textSecondary)
+                    .font(promotesSameDay ? WarmFont.body(15) : WarmFont.caption(13))
+                    .foregroundColor(promotesSameDay ? WarmTheme.primaryText : WarmTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -46,6 +50,8 @@ struct RecapHeroSection: View {
 /// 完成率已下岗(2026-08-23 拍板):比率与入口卡待处理数不同分母同屏会自相矛盾
 /// (「100% + 5 件没做」),且违反洞察引擎反 gaming 章程,改显绝对数。
 /// 副文案「未来 7 天还有 N 项」在 N>0 时才显示,避免空文案占位。
+/// ⚠️ 仅回顾页在用(2026-09-01 v2:第 1 步换 `RecapEvidenceRow`,streak 卡
+/// 按拍板 5 从流程里下岗;回顾页保持成绩单角色不动,审阅缺口 A)。
 struct RecapStatsRow: View {
     let summary: ReviewSummary
 
@@ -58,6 +64,36 @@ struct RecapStatsRow: View {
             )
 
             RecapDoneCard(summary: summary)
+        }
+    }
+}
+
+/// 三数证据行(2026-09-01 拍板,复盘第 1 步专用):「完成 N / 新增 M /
+/// 还挂着 K」——判词的证据链,清单在变长还是变短,三个数并排自己会说。
+/// 数字口径见 `ReviewSummary.createdCount` / `pendingOneOffCount` 注释
+/// (还挂着与入口卡「N 件事等你决定」、第 2 步卡堆同源)。
+struct RecapEvidenceRow: View {
+    let summary: ReviewSummary
+
+    var body: some View {
+        HStack(spacing: WarmSpacing.md) {
+            RecapStatCard(
+                icon: "checkmark.circle",
+                value: "\(summary.total)",
+                label: String(localized: "review.stat.done")
+            )
+
+            RecapStatCard(
+                icon: "plus.circle",
+                value: "\(summary.createdCount)",
+                label: String(localized: "review.stat.created")
+            )
+
+            RecapStatCard(
+                icon: "tray",
+                value: "\(summary.pendingOneOffCount)",
+                label: String(localized: "review.stat.pending")
+            )
         }
     }
 }
@@ -367,6 +403,15 @@ enum RecapSummaryBuilder {
             to: end,
             calendar: calendar
         )
+        // 判词证据链的另两个数(2026-09-01 拍板):新增(不过滤规律)与
+        // 还挂着(与入口卡/卡堆同口径)。allTodos 不过滤完成态。
+        let createdCount = ReviewAggregator.createdInWindow(
+            allTodos,
+            from: start,
+            to: end,
+            calendar: calendar
+        )
+        let pendingOneOffCount = ReviewAggregator.pendingOneOffCount(allTodos)
         return ReviewSummary(
             periodLabel: label,
             total: result.total,
@@ -377,7 +422,9 @@ enum RecapSummaryBuilder {
             busiestDayCount: result.busiestDayCount,
             upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
             daysWithCompletion: result.daysWithCompletion,
-            sameDayCount: sameDayCount
+            sameDayCount: sameDayCount,
+            createdCount: createdCount,
+            pendingOneOffCount: pendingOneOffCount
         )
     }
 }

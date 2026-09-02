@@ -287,6 +287,13 @@ struct ReviewView: View {
             to: end,
             calendar: calendar
         )
+        // 判词证据链的另两个数(2026-09-01 拍板;回顾页本页不展示,但
+        // ReviewSummary 是两页共用的形状,按周/月区间如实填,不留死值)。
+        let todoDTOs = allTodos.map { $0.toData() }
+        let createdCount = ReviewAggregator.createdInWindow(
+            todoDTOs, from: start, to: end, calendar: calendar
+        )
+        let pendingOneOffCount = ReviewAggregator.pendingOneOffCount(todoDTOs)
         return ReviewSummary(
             periodLabel: label,
             total: result.total,
@@ -297,7 +304,9 @@ struct ReviewView: View {
             busiestDayCount: result.busiestDayCount,
             upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
             daysWithCompletion: result.daysWithCompletion,
-            sameDayCount: sameDayCount
+            sameDayCount: sameDayCount,
+            createdCount: createdCount,
+            pendingOneOffCount: pendingOneOffCount
         )
     }
 

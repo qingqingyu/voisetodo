@@ -1,8 +1,11 @@
 import SwiftUI
 import SwiftData
 
-/// 第 1 步 · 回顾(阶段 3):复用 `RecapComponents`,压到 10 秒能看完。
-/// 只放口径行 + Hero + stats + 分类横条(每日趋势/最忙一天留在回顾页,这里是「快扫」)。
+/// 第 1 步 · 回顾(阶段 3;2026-09-01 v2 改版:从数字墙改成判词)。
+/// 只放口径行 + Hero(sameDay 判词主体化)+ 三数证据行(完成/新增/还挂着)。
+/// streak 卡与分类横条从本步下岗(拍板 5 /「分类是描述不是判断」);
+/// 组件不删——回顾页(`ReviewView`)仍在用,那里才是给人随手看描述的地方
+/// (审阅缺口 A:两页共用组件,回顾页行为零变化)。
 struct ReviewStepRecap: View {
     /// 上次复盘日期(2026-08-23 从回顾页入口卡移入)。nil(首次复盘)时该行隐藏。
     var lastReviewDate: Date? = nil
@@ -39,9 +42,8 @@ struct ReviewStepRecap: View {
         ScrollView {
             VStack(spacing: WarmSpacing.lg) {
                 scopeHeader
-                RecapHeroSection(summary: summary)
-                RecapStatsRow(summary: summary)
-                RecapCategoryChartSection(byCategory: summary.byCategory)
+                RecapHeroSection(summary: summary, promotesSameDay: true)
+                RecapEvidenceRow(summary: summary)
             }
             .padding(.horizontal, WarmSpacing.lg)
             .padding(.bottom, WarmSpacing.xxl)

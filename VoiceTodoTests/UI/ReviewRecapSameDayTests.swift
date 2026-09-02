@@ -173,4 +173,70 @@ final class ReviewRecapSameDayTests: XCTestCase {
 
         XCTAssertEqual(summary.sameDayCount, 2)
     }
+
+    // MARK: - 判词证据链(2026-09-01 拍板:完成 / 新增 / 还挂着)
+
+    /// 新增:窗口内 createdAt 落区间,**不过滤规律**、不看完成态;
+    /// 边界(开区间)与 sameDayCompletions 同约定。
+    func testCreatedInWindow_countsAllTypes_openEndBoundary() throws {
+        let todos = [
+            TodoItemData(title: "窗口内-未完成", createdAt: try noon(2026, 8, 5)),
+            TodoItemData(title: "窗口内-已完成", isCompleted: true, completedAt: try noon(2026, 8, 6), createdAt: try noon(2026, 8, 5)),
+            TodoItemData(
+                title: "窗口内-规律",
+                recurrenceRule: RecurrenceRule(frequency: .daily),
+                createdAt: try noon(2026, 8, 7)
+            ),
+            TodoItemData(title: "窗口前", createdAt: try noon(2026, 7, 31)),
+            TodoItemData(title: "end 当天(开区间不含)", createdAt: try noon(2026, 8, 21)),
+        ]
+
+        let count = ReviewAggregator.createdInWindow(
+            todos,
+            from: try noon(2026, 8, 1),
+            to: try noon(2026, 8, 21),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(count, 3, "未完成/已完成/规律都算新增,边界与窗口前不算")
+    }
+
+    /// 还挂着:与入口卡「N 件事等你决定」、第 2 步卡堆同口径
+    /// (!isCompleted && abandonedAt == nil && recurrenceRule == nil)。
+    func testPendingOneOffCount_matchesTriageInputCriteria() {
+        let todos = [
+            TodoItemData(title: "挂着"),
+            TodoItemData(title: "完成了", isCompleted: true),
+            TodoItemData(
+                title: "划掉了",
+                abandonedAt: Date()
+            ),
+            TodoItemData(
+                title: "规律",
+                recurrenceRule: RecurrenceRule(frequency: .daily)
+            ),
+            TodoItemData(title: "另一件挂着"),
+        ]
+
+        XCTAssertEqual(ReviewAggregator.pendingOneOffCount(todos), 2)
+    }
+
+    /// monthSummary 接线:三数并排的数据源就位(第 1 步判词证据链)。
+    func testMonthSummary_carriesEvidenceChainNumbers() throws {
+        let today = try noon(2026, 8, 21)
+        let summary = RecapSummaryBuilder.monthSummary(
+            today: today,
+            calendar: calendar,
+            allTodos: [
+                TodoItemData(title: "本月新增-未完成", createdAt: try noon(2026, 8, 10)),
+                TodoItemData(title: "上月旧账-还挂着", createdAt: try noon(2026, 7, 15)),
+                TodoItemData(title: "本月新增-已完成", isCompleted: true, completedAt: try noon(2026, 8, 11), createdAt: try noon(2026, 8, 9)),
+            ],
+            completedTodos: [],
+            recurringCompletions: []
+        )
+
+        XCTAssertEqual(summary.createdCount, 2)
+        XCTAssertEqual(summary.pendingOneOffCount, 2, "两件未完成的一次性(本月一件 + 上月一件)")
+    }
 }

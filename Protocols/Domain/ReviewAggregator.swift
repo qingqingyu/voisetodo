@@ -32,6 +32,15 @@ struct ReviewSummary: Hashable, Equatable, Sendable {
     /// 不带 createdAt,summarize 内部算不了;规律任务无 per-occurrence
     /// createdAt,不参与(设计文档「偏差与口径」)。
     let sameDayCount: Int
+    /// 窗口内「新增」的任务数(2026-09-01 拍板:第 1 步判词证据链
+    /// 「完成 9 / 新增 12 / 还挂着 35」)。由调用方用 `createdInWindow`
+    /// 算好传入(同 sameDayCount 的注入模式)。**不过滤 recurrenceRule**:
+    /// 判词比的是清单进出(新增 vs 完成),规律父任务记下时也是新增。
+    let createdCount: Int
+    /// 「还挂着」的一次性任务数(与复盘入口卡「N 件事等你决定」、第 2 步
+    /// 卡堆输入同一口径:!isCompleted && abandonedAt == nil &&
+    /// recurrenceRule == nil)。三处数字必须同源,否则同屏自相矛盾。
+    let pendingOneOffCount: Int
 }
 
 /// 纯函数聚合层——把已完成事件聚合成回顾摘要,无副作用、无 SwiftData 依赖。
@@ -67,7 +76,9 @@ enum ReviewAggregator {
                 busiestDayCount: 0,
                 upcomingDueIn7DaysCount: upcomingDueIn7DaysCount,
                 daysWithCompletion: 0,
-                sameDayCount: 0
+                sameDayCount: 0,
+                createdCount: 0,
+                pendingOneOffCount: 0
             )
         }
 
@@ -88,7 +99,9 @@ enum ReviewAggregator {
                 busiestDayCount: 0,
                 upcomingDueIn7DaysCount: upcomingDueIn7DaysCount,
                 daysWithCompletion: 0,
-                sameDayCount: 0
+                sameDayCount: 0,
+                createdCount: 0,
+                pendingOneOffCount: 0
             )
         }
 
@@ -150,7 +163,9 @@ enum ReviewAggregator {
             busiestDayCount: busiestDayCount,
             upcomingDueIn7DaysCount: upcomingDueIn7DaysCount,
             daysWithCompletion: daysWithCompletion,
-            sameDayCount: 0
+            sameDayCount: 0,
+            createdCount: 0,
+            pendingOneOffCount: 0
         )
     }
 
@@ -179,5 +194,33 @@ enum ReviewAggregator {
             let createdDay = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
             return createdDay == doneDay
         }.count
+    }
+
+    /// 窗口内「新增」的任务数:createdAt 落在 [startDay, endDay)。
+    /// **不过滤 recurrenceRule**(判词比的是清单进出,规律父任务记下时也是新增),
+    /// 也不看完成态(新增后做完仍是本期新增)。
+    ///
+    /// - Parameters:
+    ///   - todos: 待办 DTO(含已完成)。
+    ///   - startDay/endDay: 用户日归一化的闭开区间(与 sameDayCompletions 同约定)。
+    static func createdInWindow(
+        _ todos: [TodoItemData],
+        from startDay: Date,
+        to endDay: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
+        let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
+        return todos.filter { todo in
+            let day = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
+            return day >= normalizedStart && day < normalizedEnd
+        }.count
+    }
+
+    /// 「还挂着」的一次性任务数:!isCompleted && abandonedAt == nil &&
+    /// recurrenceRule == nil——与复盘入口卡、第 2 步卡堆输入同一口径
+    /// (2026-09-01 拍板:三处数字必须同源)。
+    static func pendingOneOffCount(_ todos: [TodoItemData]) -> Int {
+        todos.filter { !$0.isCompleted && $0.abandonedAt == nil && $0.recurrenceRule == nil }.count
     }
 }
