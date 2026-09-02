@@ -13,6 +13,10 @@ struct ReviewStepInsights: View {
     @Bindable var state: ReviewFlowState
     let onRetryInsights: () -> Void
     let onJumpToTriage: () -> Void
+    /// 腐烂卡当场动作「不做了」(2026-09-01 v2「洞察卡带当场动作」:对一个
+    /// 具体任务执行一个具体动作,有下游行为——与 2026-08-22 移除的「只存档
+    /// 不驱动」的存规则链路不是一回事,docs v2 已辨析)。
+    let onAbandonTask: (UUID) -> Void
 
     /// 引擎跑出的结果(.task 里算一次存 State,不放 body)。
     @State private var rankedResults: [InsightResult] = []
@@ -137,43 +141,51 @@ struct ReviewStepInsights: View {
                     // 腐烂卡任务跳回第 2 步对应卡片(§阶段 3)。
                     state.triageFocusID = todoId
                     onJumpToTriage()
+                } : nil,
+                onAbandonTask: result.id == .rotting ? { todoId in
+                    onAbandonTask(todoId)
                 } : nil
             )
         }
 
-        ForEach(placeholders, id: \.id) { placeholder in
-            placeholderRow(placeholder)
-        }
+        placeholderSummaryRow
     }
 
-    /// 占位行:写清还差多少(「还需 11 条」,不是「数据不足」,§2.3)。
-    /// 01 的缺口是高优任务数——通用「再记 N 条」会误导用户去记普通任务,单独文案。
-    private func placeholderRow(_ placeholder: (id: InsightID, needMore: Int)) -> some View {
-        RecapCard {
-            let key: String.LocalizationValue =
-                placeholder.id == .effortOrdering
-                ? "review.insight.effort.need_more_high_\(placeholder.needMore)"
-                : "review.flow.insights.need_more_tasks_\(placeholder.needMore)"
-            Text(String(localized: key))
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.textMuted)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// 5–14 档的预告:「再记 N 条,就能看出你的做事习惯了」(§2.3)。
+    /// 占位合并(2026-09-01 拍板 6):不再逐条 ForEach 堆叠——刺眼的是四行
+    /// 「再记 N 条」的堆叠,不是单条文案。取最严的一条门槛,一行说完。
     @ViewBuilder
-    private func ladderHint(context: InsightContext) -> some View {
-        if let needMore = ladderNeedMore {
-            Text(String(localized: "review.flow.insights.ladder_hint_\(needMore)"))
+    private var placeholderSummaryRow: some View {
+        if let maxNeedMore = placeholders.map(\.needMore).max() {
+            Text(String(localized: "review.flow.insights.need_more_merged_\(maxNeedMore)"))
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// 5–14 档的最小事实(2026-09-01 v2:「数据不够时显示当下能算出的最小
+    /// 事实,而不是锁」)——「你目前只有约 N 周记录,先说说这周」。
+    /// N = 完成事件里最早的记录距今天的周数(向上取整,至少 1)。
+    @ViewBuilder
+    private func ladderHint(context: InsightContext) -> some View {
+        if ladderNeedMore != nil {
+            Text(String(localized: "review.flow.insights.minimal_fact_\(weeksOfRecords(context))"))
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textMuted)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func weeksOfRecords(_ context: InsightContext) -> Int {
+        guard let oldest = context.completedEvents.map(\.createdAt).min() else { return 1 }
+        let days = Calendar.current.dateComponents([.day], from: oldest, to: Date()).day ?? 0
+        return max(1, Int(ceil(Double(days) / 7)))
     }
 
     // MARK: 错误态

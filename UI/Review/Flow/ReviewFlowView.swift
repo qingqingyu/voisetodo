@@ -290,6 +290,23 @@ final class ReviewFlowState {
         removeFromDeck(todo.id)
     }
 
+    /// 洞察腐烂卡的当场动作「不做了」(2026-09-01 v2「洞察卡带当场动作」;
+    /// 写库在视图层,本方法只改状态)。条目可能在前 8 卡堆或排序尾部,
+    /// 两处都清;不在(已处理过)时返回 false。决定数照常 +1(拍板 4)。
+    @discardableResult
+    func abandonFromInsight(id: UUID) -> Bool {
+        if let todo = deck.first(where: { $0.id == id }) {
+            markAbandoned(todo)
+            return true
+        }
+        if let todo = tail.first(where: { $0.id == id }) {
+            markAbandoned(todo)
+            tail.removeAll { $0.id == id }
+            return true
+        }
+        return false
+    }
+
     /// 拆小提交成功后调用。原任务不进撤销栈(拆小不提供 undo,拍板 7)。
     func markSplit(_ todo: TodoItemData) {
         processedIDs.insert(todo.id)
@@ -644,6 +661,18 @@ struct ReviewFlowView: View {
                 onJumpToTriage: {
                     withAnimation(WarmAnimation.springStandard) {
                         state.retreat(toTriage: true)
+                    }
+                },
+                // 腐烂卡当场「不做了」:先写库后改状态,与第 2 步 abandon 同序
+                // (失败只报错,状态不动)。id 已不在卡堆/尾部(处理过)时
+                // 状态侧无操作——重复 abandon 只会刷新时间戳,无事件重复。
+                onAbandonTask: { todoId in
+                    do {
+                        try store.abandon(todoId)
+                        _ = state.abandonFromInsight(id: todoId)
+                        HapticFeedback.light()
+                    } catch {
+                        presentError(error)
                     }
                 }
             )

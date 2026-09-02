@@ -609,4 +609,23 @@ extension ReviewFlowStateTests {
         state.toggleCommitSelection(state.commitPool[0])
         XCTAssertTrue(state.canPassCommit)
     }
+
+    /// 洞察腐烂卡当场「不做了」(v2 洞察卡带当场动作):卡堆条目与尾部条目
+    /// 都能删,决定数照常累计;已处理/未知 id 无操作。
+    func testAbandonFromInsightCoversDeckAndTail() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let state = ReviewFlowState(todos: fillers + [todo("tail-old", daysOld: 40)])
+
+        let tailID = state.tail[0].id
+        XCTAssertTrue(state.abandonFromInsight(id: tailID))
+        XCTAssertTrue(state.tail.isEmpty)
+        XCTAssertEqual(state.decidedCount, 1)
+
+        XCTAssertTrue(state.abandonFromInsight(id: state.deck[0].id))
+        XCTAssertEqual(state.decidedCount, 2)
+
+        XCTAssertFalse(state.abandonFromInsight(id: tailID), "已处理的不重复计")
+        XCTAssertFalse(state.abandonFromInsight(id: UUID()))
+        XCTAssertEqual(state.decidedCount, 2)
+    }
 }

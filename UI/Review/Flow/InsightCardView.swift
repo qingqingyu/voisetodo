@@ -8,6 +8,8 @@ struct InsightCardView: View {
     let result: InsightResult
     /// 腐烂卡的任务点击 → 跳回第 2 步对应卡片(仅 rotting 卡传入非 nil)。
     var onOpenTask: ((UUID) -> Void)? = nil
+    /// 腐烂卡任务行尾「不做了」当场动作(2026-09-01 v2,仅 rotting 卡传入)。
+    var onAbandonTask: ((UUID) -> Void)? = nil
 
     @State private var appeared = false
     /// 折叠机制保留但 v1 常空载(§阶段 3):强信号默认展开,其余折叠成「还有 N 个观察」。
@@ -109,7 +111,7 @@ struct InsightCardView: View {
     private var vizView: some View {
         switch result.viz {
         case .rotting(let items):
-            RottingTaskListView(items: items, onOpenTask: onOpenTask)
+            RottingTaskListView(items: items, onOpenTask: onOpenTask, onAbandonTask: onAbandonTask)
         case .reactiveVsPlanned(let ratio, let sampleCount):
             ReactiveRatioBarView(ratio: ratio, sampleCount: sampleCount)
         case .effortOrdering(let highDays, let otherDays, let highCount, let otherCount):

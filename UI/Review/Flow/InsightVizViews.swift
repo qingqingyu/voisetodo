@@ -3,10 +3,14 @@ import SwiftUI
 // MARK: - 洞察 02 · 腐烂任务列表
 
 /// 腐烂任务列表(v1 两图之一)。行可点击 → 跳回第 2 步对应卡片
-/// (§阶段 3:指出腐烂却不给处理入口是最糟的设计)。
+/// (§阶段 3:指出腐烂却不给处理入口是最糟的设计);
+/// 行尾另有「不做了」当场动作(2026-09-01 v2「洞察卡带当场动作」——
+/// 从清单删掉一条具体任务,写库走既有 abandon 路径)。
 struct RottingTaskListView: View {
     let items: [RottingVizItem]
     var onOpenTask: ((UUID) -> Void)?
+    /// nil → 行尾不出删除钮(仅流程内腐烂卡注入;测试/预览可省)。
+    var onAbandonTask: ((UUID) -> Void)? = nil
 
     /// 列表截断:前 5 条 + 「还有 N 条在第 2 步等处理」。
     private static let maxVisible = 5
@@ -37,42 +41,58 @@ struct RottingTaskListView: View {
 
     @ViewBuilder
     private func row(_ item: RottingVizItem, isLast: Bool) -> some View {
-        Button {
-            onOpenTask?(item.todoId)
-        } label: {
-            HStack(spacing: WarmSpacing.sm) {
-                Text(item.title)
-                    .font(WarmFont.body(14))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .layoutPriority(1)
-
-                Spacer(minLength: WarmSpacing.xs)
-
-                if item.deferCount > 0 {
-                    Text(verbatim: String(repeating: "∕∕ ", count: min(item.deferCount, 5)))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.urgentText)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .accessibilityLabel(String(localized: "review.flow.triage.deferred_a11y_\(item.deferCount)"))
-                } else {
-                    Text(String(localized: "review.flow.rotting.age_\(item.ageDays)"))
-                        .font(WarmFont.caption(11))
-                        .foregroundColor(WarmTheme.textMuted)
+        HStack(spacing: WarmSpacing.xs) {
+            Button {
+                onOpenTask?(item.todoId)
+            } label: {
+                HStack(spacing: WarmSpacing.sm) {
+                    Text(item.title)
+                        .font(WarmFont.body(14))
+                        .foregroundColor(WarmTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                }
+                        .layoutPriority(1)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(WarmTheme.textMuted.opacity(0.6))
-                    .flipsForRightToLeftLayoutDirection(true)
+                    Spacer(minLength: WarmSpacing.xs)
+
+                    if item.deferCount > 0 {
+                        Text(verbatim: String(repeating: "∕∕ ", count: min(item.deferCount, 5)))
+                            .font(WarmFont.caption(12))
+                            .foregroundColor(WarmTheme.urgentText)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .accessibilityLabel(String(localized: "review.flow.triage.deferred_a11y_\(item.deferCount)"))
+                    } else {
+                        Text(String(localized: "review.flow.rotting.age_\(item.ageDays)"))
+                            .font(WarmFont.caption(11))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(WarmTheme.textMuted.opacity(0.6))
+                        .flipsForRightToLeftLayoutDirection(true)
+                }
+                .padding(.vertical, WarmSpacing.xxs)
             }
-            .padding(.vertical, WarmSpacing.xxs)
+            .buttonStyle(.plain)
+
+            if let onAbandonTask {
+                Button {
+                    onAbandonTask(item.todoId)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(WarmTheme.urgentText.opacity(0.8))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "review.flow.triage.action.drop"))
+                .accessibilityIdentifier("ReviewFlowRottingDrop_\(item.todoId.uuidString)")
+            }
         }
-        .buttonStyle(.plain)
         if !isLast {
             Rectangle()
                 .fill(WarmTheme.rowHairline)

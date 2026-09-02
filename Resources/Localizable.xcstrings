@@ -8151,24 +8151,24 @@
         }
       }
     },
-    "review.flow.insights.ladder_hint_%lld" : {
+    "review.flow.insights.minimal_fact_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Record %lld more to see your work habits"
+            "value" : "About %lld weeks of records so far — start with this week"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "さらに %lld 件記録すると行動パターンが見えてきます"
+            "value" : "記録はまだ約 %lld 週間。まずは今週のことから"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再记 %lld 条,就能看出你的做事习惯了"
+            "value" : "你目前只有约 %lld 周记录,先说说这周"
           }
         }
       }
@@ -8195,24 +8195,24 @@
         }
       }
     },
-    "review.flow.insights.need_more_tasks_%lld" : {
+    "review.flow.insights.need_more_merged_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld more completed tasks needed for this insight"
+            "value" : "Record %lld more to unlock more observations"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このインサイトには完了がさらに %lld 件必要です"
+            "value" : "あと %lld 件で、さらに観察が表示されます"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再记 %lld 条,这条洞察就能算出来"
+            "value" : "再记 %lld 条,解锁更多观察"
           }
         }
       }
@@ -9885,28 +9885,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "中位 %lld 天"
-          }
-        }
-      }
-    },
-    "review.insight.effort.need_more_high_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld more high-priority completions needed for this insight"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このインサイトには「重要」の完了がさらに %lld 件必要です"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再记 %lld 条重要任务并完成,这条洞察就能算出来"
           }
         }
       }
