@@ -14,9 +14,9 @@ routes = [
 #
 # 当前是【上线】值：
 #   2026-08-20 首次切换上线值（free=2/Pro=100，随订阅验签修复一起部署）
-#   2026-08-22 free 2→3（PROMOTION_PLAN §2.1 拍板，与定价决策对齐；文案/Terms/
-#   Review Notes 均按 3 口径，见 APPSTORE_REVIEW_KIT.md §6）。⚠️ 改后尚未 deploy，
-#   deploy 前线上仍是 2。
+#   2026-08-22 free 2→3 拍板（PROMOTION_PLAN §2.1）；2026-08-30 已 deploy 上线
+#   （版本 a8dd0bc2，随行 prompt 精化 + 复盘 split 代理模式）。iOS 客户端
+#   Constants.swift freeDailyLimit 同日同步 2→3，三处口径一致。
 #   DAILY_REQUEST_LIMIT = "3"     PAID_DAILY_LIMIT = "100"
 #
 # 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
