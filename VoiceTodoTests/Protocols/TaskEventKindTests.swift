@@ -58,6 +58,18 @@ final class TaskEventKindTests: XCTestCase {
         ))
     }
 
+    /// 批量出口回归护栏(docs v2「批量出口的实现细节」):清日期(new = nil)
+    /// 不构成推迟——推后不是推迟,不污染推迟计数。
+    func testIsDeferral_newDueDateNil_notDeferred() {
+        XCTAssertFalse(TaskEventRules.isDeferral(
+            oldDueDate: date(2026, 8, 20),
+            newDueDate: nil,
+            isCompleted: false,
+            abandonedAt: nil,
+            calendar: makeCalendar()
+        ))
+    }
+
     func testIsDeferral_crossUserDay_deferred() {
         // 跨用户日(20 日 → 21 日)记
         XCTAssertTrue(TaskEventRules.isDeferral(

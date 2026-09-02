@@ -1,15 +1,14 @@
 import SwiftUI
 
-/// 第 3 步 · 观察(阶段 3)。
+/// 第 3 步 · 观察(阶段 3;2026-09-01 v2 改版:只留洞察)。
 ///
 /// 原料在流程启动时已存进 `state.insightContextValue`(不放 body,§1.4);
 /// 本视图把它跑过引擎(降级阶梯 §2.3:5–14 只跑腐烂;≥15 跑 01/02/03/05),
 /// 结果 score 降序。未达阈值的不显示(不是「无异常」)。
 ///
-/// 语音提问:本阶段**只提供纯文字输入**——额度已核实(转写走本地 SFSpeechRecognizer,
-/// 不经代理,不耗 AI 额度),但 `VoiceInputProtocol` 由 AppCoordinator 私有持有、
-/// 与首页录音状态机强耦合,注入不干净;麦克风按钮留待注入解耦后再加。
-/// 纯文字输入同时是 accessibility 兜底。答案存 State(阶段 4 持久化)。
+/// 「历次笔记」卡与「问问自己」输入框已随迁第 5 步(2026-09-02 实施补注:
+/// 收尾带「下次复盘会给你看」承诺,且洞察步被降级跳过时第 3 步整步不出,
+/// 承诺需要收尾位兜底)。
 struct ReviewStepInsights: View {
     @Bindable var state: ReviewFlowState
     let onRetryInsights: () -> Void
@@ -28,10 +27,8 @@ struct ReviewStepInsights: View {
                 if let error = state.insightLoadError {
                     errorCard(error)
                 } else if let context = state.insightContextValue {
-                    crossPeriodCard(context: context)
                     cards
                     ladderHint(context: context)
-                    askYourselfSection
                 } else {
                     ProgressView()
                         .padding(.top, WarmSpacing.xxl)
@@ -179,85 +176,6 @@ struct ReviewStepInsights: View {
         }
     }
 
-    // MARK: 历次笔记卡(2026-08-23 拍板:全量可见)
-
-    /// 「历次复盘,你说过」:全部写过笔记的会话,新→旧。原来只回显最近一条,
-    /// 用户判词「写了基本看不到,没达到复盘的意思」。没有笔记时不显示。
-    /// 最新一条若带语义对照关注点(收尾 AI 提取回写),在其下渲染对照行
-    /// (任务 #4:「本期 N 件(上期 M 件)」纯本地现算)。
-    @ViewBuilder
-    private func crossPeriodCard(context: InsightContext) -> some View {
-        let entries = ReviewNotesEntry.make(from: state.previousSessions)
-        if !entries.isEmpty {
-            RecapCard {
-                VStack(alignment: .leading, spacing: WarmSpacing.md) {
-                    Label(String(localized: "review.flow.insights.notes.title"), systemImage: "quote.opening")
-                        .font(WarmFont.headline(14))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .flipsForRightToLeftLayoutDirection(true)
-
-                    ReviewNotesListView(entries: entries)
-
-                    if let topics = entries.first?.topics, !topics.isEmpty {
-                        topicCompareRows(topics, context: context)
-                    }
-                }
-            }
-        }
-    }
-
-    /// 最新一条笔记的语义对照行。本期数用当前洞察原料现算(与收尾存
-    /// `periodCount` 同一 `ReviewTopicMatching` 口径,两期可比);
-    /// 不可统计的维度跳过。
-    @ViewBuilder
-    private func topicCompareRows(_ topics: [ReviewTopic], context: InsightContext) -> some View {
-        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-            Rectangle()
-                .fill(WarmTheme.rowHairline)
-                .frame(height: 1)
-
-            // id 用「text + 维度」组合:AI 可能返回同 text 的两条关注点,
-            // 单用 \.text 会撞 id(ForEach 丢行)。
-            ForEach(Array(topics.enumerated()), id: \.offset) { _, topic in
-                if let current = ReviewTopicMatching.periodCount(
-                    category: topic.category,
-                    timeBucket: topic.timeBucket,
-                    in: context.completedEvents,
-                    calendar: Calendar.current
-                ) {
-                    Text(String(
-                        format: String(localized: "review.notes.compare"),
-                        Self.topicDimensionLabel(topic),
-                        current,
-                        topic.periodCount
-                    ))
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                }
-            }
-        }
-    }
-
-    /// 对照行的维度标签:分类名优先,否则时段名。两个维度都 nil 的 topic
-    /// 不会出现在存储里(prompt + 解析双侧过滤),这里只是防御。
-    private static func topicDimensionLabel(_ topic: ReviewTopic) -> String {
-        if let category = topic.category {
-            return category.displayName
-        }
-        if let bucket = topic.timeBucket {
-            switch bucket {
-            case .morning: return String(localized: "time_bucket.morning")
-            case .afternoon: return String(localized: "time_bucket.afternoon")
-            case .evening, .anytime: return String(localized: "time_bucket.evening")
-            }
-        }
-        return ""
-    }
-
     // MARK: 错误态
 
     private func errorCard(_ error: VoiceTodoError) -> some View {
@@ -278,57 +196,6 @@ struct ReviewStepInsights: View {
         }
     }
 
-    // MARK: 语音/文字提问
-
-    /// 「问问自己」:纯文字输入(accessibility 兜底 + 唯一入口,见类型注释)。
-    /// 答案存 `state.voiceAnswerText`(阶段 4 持久化)。
-    /// 标题下有领域提示行(2026-08-25 轻修):只在快照出现过的分类里按历史
-    /// 会话数轮换——承接实际复盘「心里过一遍分领域进度」的口问习惯。
-    private var askYourselfSection: some View {
-        RecapCard {
-            VStack(alignment: .leading, spacing: WarmSpacing.sm) {
-                Text(String(localized: "review.flow.insights.ask.title"))
-                    .font(WarmFont.headline(15))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let category = state.askDomainHintCategory {
-                    Text(String(
-                        format: String(localized: "review.flow.insights.ask.domain_hint"),
-                        category.displayName
-                    ))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-
-                TextEditor(text: $state.voiceAnswerText)
-                    .font(WarmFont.body(14))
-                    .frame(minHeight: 72)
-                    .scrollContentBackground(.hidden)
-                    .padding(WarmSpacing.xs)
-                    .background(
-                        RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
-                            .fill(WarmTheme.inputFieldBackground)
-                    )
-                    .overlay(alignment: .topLeading) {
-                        if state.voiceAnswerText.isEmpty {
-                            Text(String(localized: "review.flow.insights.ask.placeholder"))
-                                .font(WarmFont.caption(12))
-                                .foregroundColor(WarmTheme.textMuted)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.7)
-                                .padding(WarmSpacing.sm)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .accessibilityIdentifier("ReviewFlowAskYourself")
-            }
-        }
-    }
 }
 
 // MARK: - 降级阶梯便捷取值

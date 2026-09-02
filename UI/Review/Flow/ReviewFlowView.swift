@@ -35,9 +35,25 @@ final class ReviewFlowState {
     /// triage 输入快照:未完成 && abandonedAt == nil && recurrenceRule == nil 的
     /// 一次性任务(拍板 4)。流程启动时过滤一次,之后 store 变动(如拆小产生的
     /// 子任务)不回流进卡堆,避免「拆完子任务又弹出子任务卡」。
+    /// 2026-09-01 拍板 1:排序后只取前 `TriageRanking.deckSize` 张;第 9 名以后
+    /// 进 `tail`(批量出口候选 / 原样留着)。
     private(set) var deck: [TodoItemData]
 
+    /// 排序尾部(不进卡堆,docs v2「第 2 步」):其中停滞 ≥ 30 天且 AI 识别成功
+    /// 的走批量出口,其余既不进卡堆也不进批量出口——「不动」也是合法状态,
+    /// UI 必须把这个说清楚,否则用户以为「其他都被处理了」。
+    private(set) var tail: [TodoItemData] = []
+
+    /// 最近一次批量推「稍后」的原字段快照(整批撤销,拍板 7 的唯一扩展:
+    /// 一键操作没有 undo 不可接受)。nil = 本期尚未执行。一次性——撤销后清空。
+    private(set) var somedayUndoSnapshot: [TodoItemData]?
+
+    /// 本期批量推「稍后」的累计条数(账本单独一行「另有 M 件推到以后」,
+    /// 不并进「决定了 N 件」,拍板 4)。
+    private(set) var somedayCount = 0
+
     /// 已处理(排进下周 / 今天就做 / 划掉 / 拆小)的 todo id 集。
+    /// 批量推「稍后」**不进**此集——推后不是逐张决定,不占决定数。
     private(set) var processedIDs: Set<UUID> = []
 
     /// 排进下周的任务(第 4 步的候选池,保留标题供账本渲染)。
@@ -110,7 +126,14 @@ final class ReviewFlowState {
         previousSessions: [ReviewSession] = [],
         lastPinnedIDs: Set<UUID> = []
     ) {
-        self.deck = Self.triageInput(from: todos)
+        // 冷启动帧:推迟数据(insightContext)异步到达,init 只有空字典可排——
+        // 字典序排序在主键全 0 时退化为纯停滞天数,这一帧已经比原序(原始
+        // sortOrder)合理;context 到位后 `rankDeck` 用真实推迟数重排一次。
+        let ranked = TriageRanking.rank(
+            Self.triageInput(from: todos), deferCounts: [:], now: Date()
+        )
+        self.deck = Array(ranked.prefix(TriageRanking.deckSize))
+        self.tail = Array(ranked.dropFirst(TriageRanking.deckSize))
         self.previousSessions = previousSessions
         self.lastPinnedIDs = lastPinnedIDs
         // todos / previousSessions / lastPinnedIDs init 后不变,两个派生值一次算好,
@@ -245,6 +268,57 @@ final class ReviewFlowState {
         deck.insert(todo, at: 0)
     }
 
+    /// insightContext 到位后重排卡堆与尾部(2026-09-01 拍板 2 的时序落地:
+    /// deck 在 init 用空推迟数据排过一次,context 异步到达后必须用真实
+    /// deferCounts 重排,否则冷启动那帧排出来的是错的)。已处理条目不在
+    /// deck/tail 里,天然不回流。
+    func rankDeck(deferCounts: [UUID: Int], now: Date = Date()) {
+        let pool = deck + tail
+        guard !pool.isEmpty else { return }
+        let ranked = TriageRanking.rank(pool, deferCounts: deferCounts, now: now)
+        deck = Array(ranked.prefix(TriageRanking.deckSize))
+        tail = Array(ranked.dropFirst(TriageRanking.deckSize))
+    }
+
+    // MARK: 第 2 步 · 批量出口(拍板 3:复用「稍后」,不新增 somedayAt 终态)
+
+    /// 尾部里可一键推「稍后」的:停滞 ≥ 30 天 **且** AI 识别成功。
+    /// `.rawFallback` / `.unparsed` 即使清了三字段也只落「没能识别」而不是
+    /// 「稍后」,不承诺做不到的落点,排除在外。
+    var somedayBatchCandidates: [TodoItemData] {
+        tail.filter {
+            TriageRanking.stagnationDays(of: $0, now: Date()) >= TriageRanking.batchStagnationDays
+                && $0.extractionOutcome == .parsed
+        }
+    }
+
+    /// 尾部里既不进卡堆也不进批量出口的条数(UI 呈现「其余 N 件先不动」,
+    /// 防止用户误以为所有积压都被处理了)。
+    var untouchedTailCount: Int {
+        tail.count - somedayBatchCandidates.count
+    }
+
+    /// 批量出口执行(视图层 store 全部写成功后调用):快照原字段(整批撤销用)、
+    /// 计数累加、尾部清掉对应条目。不进 processedIDs / abandonedStack——
+    /// 推后不是「决定」(拍板 4),也不是划掉。
+    func markSomedayBatchExecuted() {
+        let batch = somedayBatchCandidates
+        guard !batch.isEmpty else { return }
+        somedayUndoSnapshot = batch
+        somedayCount += batch.count
+        let ids = Set(batch.map(\.id))
+        tail.removeAll { ids.contains($0.id) }
+    }
+
+    /// 整批撤销(视图层把快照原字段写回 store 成功后调用):条目回尾部、
+    /// 计数回退、快照清空(一次性,重复撤销无操作)。
+    func undoSomedayBatch() {
+        guard let batch = somedayUndoSnapshot else { return }
+        somedayUndoSnapshot = nil
+        somedayCount -= batch.count
+        tail.append(contentsOf: batch)
+    }
+
     // MARK: 第 4 步决定
 
     /// 第 4 步选择切换。选中数已达上限(3)时切换到取消态仍允许(取消不受限)。
@@ -260,7 +334,8 @@ final class ReviewFlowState {
 
     /// 账本数字(第 5 步渲染,阶段 4 持久化)。
     struct Ledger: Equatable, Sendable {
-        /// 流程开始时的待处理一次性任务数(N)。
+        /// 卡堆侧总数 = 逐张决定的 + 仍留在卡堆的。2026-09-01 拍板 1 截断后
+        /// 尾部不计入——「N / M」计数器只对用户真正面对过的卡有意义。
         let inputCount: Int
         /// 处理后仍留在卡堆的(M,含撤销回来的)。
         let remainingCount: Int
@@ -269,6 +344,8 @@ final class ReviewFlowState {
         let splitCount: Int
         let todayCount: Int
         let pinnedCount: Int
+        /// 批量推「稍后」条数(单独一行,不并决定数,拍板 4)。
+        let somedayCount: Int
     }
 
     var ledger: Ledger {
@@ -279,8 +356,16 @@ final class ReviewFlowState {
             abandonedCount: abandonedStack.count,
             splitCount: splitCount,
             todayCount: todayPicked.count,
-            pinnedCount: commitSelection.count
+            pinnedCount: commitSelection.count,
+            somedayCount: somedayCount
         )
+    }
+
+    /// 「你决定了 N 件」的 N(2026-09-01 拍板 4):逐张决定的四种去向之和。
+    /// 批量推「稍后」**不算**——逐张决定的 28 件 ≠ 一键扫掉的 28 件,
+    /// 不能用同一句话庆祝。
+    var decidedCount: Int {
+        scheduled.count + todayPicked.count + abandonedStack.count + splitCount
     }
 
     // MARK: 阶段 4 · 会话组装
@@ -335,7 +420,8 @@ final class ReviewFlowState {
                 todayCount: ledger.todayCount,
                 abandonedCount: ledger.abandonedCount,
                 splitCount: ledger.splitCount,
-                pinnedCount: ledger.pinnedCount
+                pinnedCount: ledger.pinnedCount,
+                somedayCount: ledger.somedayCount
             ),
             shownInsights: shownInsights
         )
@@ -447,10 +533,14 @@ struct ReviewFlowView: View {
         let start = Calendar.current.date(byAdding: .month, value: -1, to: DayClock.startOfUserDay(for: today)) ?? today
         let end = Calendar.current.date(byAdding: .day, value: 1, to: DayClock.startOfUserDay(for: today)) ?? today
         do {
-            state.insightContextValue = try await store.insightContext(from: start, to: end)
+            let context = try await store.insightContext(from: start, to: end)
+            state.insightContextValue = context
             state.insightLoadError = nil
             state.recordPeriod(start: start, end: end)
             state.configureInsightsLadder()
+            // 拍板 2 的时序要求:deck 在 init 用空推迟数据排过,真实 deferCounts
+            // 到位后重排一次(已处理条目不回流,见 rankDeck)。
+            state.rankDeck(deferCounts: context.deferCounts)
         } catch {
             let wrapped = (error as? VoiceTodoError) ?? VoiceTodoError.wrapStorage(error, for: .read)
             VoiceTodoLog.coordinator.error("review.flow.insight_load.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")

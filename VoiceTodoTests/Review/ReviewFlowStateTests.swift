@@ -20,13 +20,17 @@ final class ReviewFlowStateTests: XCTestCase {
         isCompleted: Bool = false,
         abandoned: Bool = false,
         recurring: Bool = false,
-        category: TodoCategory = .other
+        category: TodoCategory = .other,
+        daysOld: Int = 0,
+        extractionOutcome: ExtractionOutcome = .parsed
     ) -> TodoItemData {
         TodoItemData(
             title: title,
             recurrenceRule: recurring ? RecurrenceRule(frequency: .daily) : nil,
             category: category,
             isCompleted: isCompleted,
+            createdAt: Calendar.current.date(byAdding: .day, value: -daysOld, to: Date())!,
+            extractionOutcome: extractionOutcome,
             abandonedAt: abandoned ? Date() : nil
         )
     }
@@ -87,7 +91,12 @@ final class ReviewFlowStateTests: XCTestCase {
     // MARK: 撤销栈只覆盖划掉(拍板 7)
 
     func testUndoOnlyRestoresAbandoned() {
-        let state = ReviewFlowState(todos: [todo("a"), todo("b"), todo("c")])
+        // 2026-09-01 拍板 2 后 init 按停滞天数重排,固定顺序需错开 createdAt。
+        let state = ReviewFlowState(todos: [
+            todo("a", daysOld: 30),
+            todo("b", daysOld: 20),
+            todo("c", daysOld: 10),
+        ])
         let a = state.deck[0], b = state.deck[1], c = state.deck[2]
         // 排进下周:不进撤销栈。
         state.markScheduled(a)
@@ -174,7 +183,14 @@ final class ReviewFlowStateTests: XCTestCase {
     // MARK: 深链聚焦
 
     func testBringToFrontOfDeck() {
-        let state = ReviewFlowState(todos: [todo("a"), todo("b"), todo("c")])
+        // 2026-09-01 拍板 2 后 init 会按停滞天数重排,同日创建的条目退化为
+        // id 决胜——测试要固定顺序必须错开 createdAt(a 最久 → 排最前)。
+        let state = ReviewFlowState(todos: [
+            todo("a", daysOld: 30),
+            todo("b", daysOld: 20),
+            todo("c", daysOld: 10),
+        ])
+        XCTAssertEqual(state.deck.map(\.title), ["a", "b", "c"])
         state.bringToFrontOfDeck(state.deck[2].id)
         XCTAssertEqual(state.deck.map(\.title), ["c", "a", "b"])
         // 不在卡堆的 id:无操作。
@@ -352,5 +368,161 @@ extension ReviewFlowStateTests {
         // seed = 历史会话数:每次复盘前进一格。
         XCTAssertEqual(first.askDomainHintCategory, .work)
         XCTAssertEqual(second.askDomainHintCategory, .life)
+    }
+}
+
+// MARK: - v2 · 排序截断 + 批量出口(2026-09-01 拍板 1/2/3,docs/todo-review-flow-v2.md)
+
+extension ReviewFlowStateTests {
+
+    /// 35 条积压:卡堆只取前 8,尾部 27;最该决定的(停滞最久)在卡堆最前。
+    func testInitTruncatesDeckAndRanksByStagnation() {
+        // t34 最久(35 天)、t0 最新(1 天):daysOld = index + 1。
+        let todos = (0..<35).map { index in
+            todo("t\(index)", daysOld: index + 1)
+        }
+        let state = ReviewFlowState(todos: todos)
+
+        XCTAssertEqual(state.deck.count, TriageRanking.deckSize)
+        XCTAssertEqual(state.tail.count, 35 - TriageRanking.deckSize)
+        XCTAssertEqual(state.deck.first?.title, "t34", "停滞最久的排最前")
+        XCTAssertEqual(state.tail.first?.title, "t26", "第 9 名起进尾部")
+    }
+
+    /// 不足 8 条:全部进卡堆,尾部空(批量出口整块不出)。
+    func testInitKeepsSmallBacklogEntirelyInDeck() {
+        let state = ReviewFlowState(todos: (0..<5).map { todo("t\($0)", daysOld: $0 + 1) })
+        XCTAssertEqual(state.deck.count, 5)
+        XCTAssertTrue(state.tail.isEmpty)
+        XCTAssertTrue(state.somedayBatchCandidates.isEmpty)
+        XCTAssertEqual(state.untouchedTailCount, 0)
+    }
+
+    /// insightContext 到位后重排:尾部高推迟条目顶进卡堆,原卡堆末位换到尾部
+    /// (拍板 2 的时序要求——冷启动那帧排序是错的,必须重排)。
+    func testRankDeckPromotesDeferredTailItem() {
+        // 9 条:t8 最久(9 天)→ 卡堆,t0 最新(1 天)→ 尾部。
+        let todos = (0..<9).map { index in todo("t\(index)", daysOld: index + 1) }
+        let state = ReviewFlowState(todos: todos)
+        XCTAssertEqual(state.tail.map(\.title), ["t0"])
+
+        state.rankDeck(deferCounts: [state.tail[0].id: 5], now: Date())
+
+        XCTAssertEqual(state.deck.first?.title, "t0", "推迟 5 次的尾部条目顶到最前")
+        XCTAssertEqual(state.deck.count, TriageRanking.deckSize)
+        XCTAssertEqual(state.tail.count, 1, "原卡堆末位换到尾部")
+
+        // 已处理的条目不在 deck/tail,重排不回流——哪怕给它最高的推迟次数。
+        let processed = state.deck[1]
+        state.markScheduled(processed)
+        state.rankDeck(deferCounts: [processed.id: 99], now: Date())
+        XCTAssertFalse(state.deck.contains { $0.id == processed.id })
+        XCTAssertFalse(state.tail.contains { $0.id == processed.id })
+        XCTAssertEqual(state.processedIDs.count, 1)
+    }
+
+    /// 批量候选门槛:停滞 ≥ 30 天 **且** AI 识别成功(.parsed)。
+    /// `.rawFallback` 清了三字段也只落「没能识别」,不进候选。
+    /// 批量候选只看尾部(排序后第 9 名起),不满 8 条没有尾部也就没有候选。
+    func testSomedayBatchCandidatesFilter() {
+        // 8 条「更久」的占位把目标条目挤进尾部。
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let full = ReviewFlowState(todos: fillers + [
+            todo("古董-parsed", daysOld: 40),
+            todo("古董-rawFallback", daysOld: 40, extractionOutcome: .rawFallback),
+            todo("古董-unparsed", daysOld: 40, extractionOutcome: .unparsed),
+            todo("新-10天", daysOld: 10),
+        ])
+
+        XCTAssertEqual(full.somedayBatchCandidates.map(\.title), ["古董-parsed"])
+        XCTAssertEqual(full.untouchedTailCount, 3, "rawFallback/unparsed 与 10 天的都原样留着")
+    }
+
+    /// 执行 → 整批撤销 的状态闭环:快照、计数、尾部进出;不进 processedIDs /
+    /// abandonedStack(推后不是决定,也不是划掉)。
+    func testSomedayBatchExecuteUndoRoundtrip() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let oldies = (0..<3).map { todo("old\($0)", daysOld: 40 + $0) }
+        let state = ReviewFlowState(todos: fillers + oldies + [todo("新", daysOld: 5)])
+        let batchIDs = Set(oldies.map(\.id))
+
+        state.markSomedayBatchExecuted()
+        XCTAssertEqual(state.somedayCount, 3)
+        XCTAssertEqual(state.somedayUndoSnapshot?.count, 3)
+        XCTAssertTrue(state.somedayBatchCandidates.isEmpty, "尾部已清,出口行消失")
+        XCTAssertEqual(state.untouchedTailCount, 1, "不满 30 天的说明行还在")
+        XCTAssertTrue(state.processedIDs.isEmpty)
+        XCTAssertTrue(state.abandonedStack.isEmpty)
+        XCTAssertEqual(state.ledger.somedayCount, 3)
+
+        state.undoSomedayBatch()
+        XCTAssertEqual(state.somedayCount, 0)
+        XCTAssertNil(state.somedayUndoSnapshot)
+        XCTAssertEqual(Set(state.somedayBatchCandidates.map(\.id)), batchIDs, "原字段条目回尾部")
+        state.undoSomedayBatch() // 重复撤销:无操作
+        XCTAssertEqual(state.somedayCount, 0)
+    }
+
+    /// buildSession 把 somedayCount 写进持久化账本。
+    func testBuildSessionCarriesSomedayCount() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let state = ReviewFlowState(todos: fillers + [todo("old", daysOld: 40)])
+        state.markSomedayBatchExecuted()
+
+        let session = state.buildSession(completedAt: Date())
+        XCTAssertEqual(session.ledger.somedayCount, 1)
+    }
+
+    /// 「决定了 N 件」= 逐张决定四去向之和;批量推后不算,划掉撤销会回退(拍板 4)。
+    func testDecidedCountExcludesSomedayAndRespectsUndo() {
+        let state = ReviewFlowState(todos: [
+            todo("a", daysOld: 30), todo("b", daysOld: 20),
+            todo("c", daysOld: 10), todo("d", daysOld: 5),
+        ])
+        XCTAssertEqual(state.decidedCount, 0, "全零——收尾主卡不出")
+
+        let items = state.deck
+        state.markScheduled(items[0])
+        state.markToday(items[1])
+        state.markAbandoned(items[2])
+        XCTAssertEqual(state.decidedCount, 3)
+
+        // 划掉撤销:决定数回退(撤销栈是净额)。
+        _ = state.popAbandonForUndo()
+        XCTAssertEqual(state.decidedCount, 2)
+
+        // 批量推后不进决定数。
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let batchState = ReviewFlowState(todos: fillers + (0..<3).map { todo("old\($0)", daysOld: 40 + $0) })
+        batchState.markSomedayBatchExecuted()
+        XCTAssertEqual(batchState.decidedCount, 0)
+        XCTAssertEqual(batchState.ledger.somedayCount, 3)
+    }
+
+    /// 旧 payload(无 somedayCount 键)解码 → 默认 0;混排列表不拖垮整体。
+    /// 失败半径:自动合成的 Codable 遇缺键是抛错,一条失败会污染整个
+    /// allSessions(),自定义 init(from:) 兜底(docs v2 实施补注)。
+    func testReviewLedgerDecodesOldPayloadWithoutSomedayCount() throws {
+        let oldJSON = """
+        {"inputCount":3,"remainingCount":1,"scheduledCount":1,"todayCount":1,
+        "abandonedCount":0,"splitCount":0,"pinnedCount":1}
+        """
+        let old = try JSONDecoder().decode(ReviewLedger.self, from: Data(oldJSON.utf8))
+        XCTAssertEqual(old.somedayCount, 0)
+        XCTAssertEqual(old.inputCount, 3)
+
+        // 新 payload 正常读出。
+        let newJSON = """
+        {"inputCount":3,"remainingCount":1,"scheduledCount":1,"todayCount":1,
+        "abandonedCount":0,"splitCount":0,"pinnedCount":1,"somedayCount":27}
+        """
+        let new = try JSONDecoder().decode(ReviewLedger.self, from: Data(newJSON.utf8))
+        XCTAssertEqual(new.somedayCount, 27)
+
+        // 编码往返:新字段写入后再读不丢。
+        let roundtrip = try JSONDecoder().decode(
+            ReviewLedger.self, from: JSONEncoder().encode(new)
+        )
+        XCTAssertEqual(roundtrip, new)
     }
 }

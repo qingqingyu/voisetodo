@@ -80,6 +80,8 @@ struct ReviewStepTriage: View {
                 pad
                 Spacer(minLength: WarmSpacing.xs)
             }
+
+            batchSection
         }
         .sheet(item: $splitTarget) { todo in
             splitSheet(todo)
@@ -181,6 +183,107 @@ struct ReviewStepTriage: View {
             opacity: 0.6
         )
         Spacer()
+    }
+
+    // MARK: 批量出口(2026-09-01 拍板 3:尾部停滞 ≥ 30 天的一键推「稍后」)
+
+    /// 尾部三态:可推「稍后」的一批 → 出口行;刚推完 → 结果 + 整批撤销行;
+    /// 两种都没有 → 只剩「其余 N 件先不动」的说明行(防误以为全处理了)。
+    /// 没有尾部时整块不出。
+    @ViewBuilder
+    private var batchSection: some View {
+        let candidates = state.somedayBatchCandidates
+        if !candidates.isEmpty || state.somedayUndoSnapshot != nil || state.untouchedTailCount > 0 {
+            VStack(spacing: WarmSpacing.sm) {
+                if !candidates.isEmpty {
+                    batchExitRow(count: candidates.count)
+                } else if state.somedayUndoSnapshot != nil {
+                    batchDoneRow
+                }
+
+                if state.untouchedTailCount > 0 {
+                    Text(String(localized: "review.flow.triage.batch.untouched_\(state.untouchedTailCount)"))
+                        .font(WarmFont.caption(11))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, WarmSpacing.lg)
+        }
+    }
+
+    /// 出口行:条数写明在标题里(「另外 27 件超过 30 天没碰过」),
+    /// 尾部胶囊是动作暗示(与回顾页入口卡同一模式)。
+    private func batchExitRow(count: Int) -> some View {
+        Button {
+            pushBatchToSomeday()
+        } label: {
+            RecapCard {
+                HStack(spacing: WarmSpacing.md) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(.system(size: 20))
+                        .foregroundColor(WarmTheme.primary)
+
+                    Text(String(localized: "review.flow.triage.batch.title_\(count)"))
+                        .font(WarmFont.headline(14))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+
+                    Spacer(minLength: WarmSpacing.xs)
+
+                    HStack(spacing: WarmSpacing.xxs) {
+                        Text(String(localized: "review.flow.triage.batch.action"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .font(WarmFont.headline(13))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, WarmSpacing.md)
+                    .padding(.vertical, WarmSpacing.xs)
+                    .background(Capsule().fill(WarmTheme.primary))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ReviewFlowTriageBatchExit")
+    }
+
+    /// 刚推完:结果一行 + 整批撤销(拍板 7 的唯一扩展——一键操作没有 undo
+    /// 不可接受)。撤销入口只在此处,会话收尾后不再提供。
+    private var batchDoneRow: some View {
+        let count = state.somedayUndoSnapshot?.count ?? 0
+        return HStack(spacing: WarmSpacing.md) {
+            Label(
+                String(localized: "review.flow.triage.batch.done_\(count)"),
+                systemImage: "tray.and.arrow.down"
+            )
+            .font(WarmFont.caption(13))
+            .foregroundColor(WarmTheme.textSecondary)
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
+
+            Spacer(minLength: WarmSpacing.xs)
+
+            Button {
+                undoBatchSomeday()
+            } label: {
+                Text(String(localized: "review.flow.triage.batch.undo"))
+                    .font(WarmFont.headline(13))
+                    .foregroundColor(WarmTheme.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ReviewFlowTriageBatchUndo")
+        }
     }
 
     // MARK: 卡片堆
@@ -361,9 +464,12 @@ struct ReviewStepTriage: View {
         }
     }
 
-    /// 卡头:分类标签 +「上次重点」标记(上次复盘置顶、还没做完的)+「8月3日记下」。
-    /// 卡头挤时压 bornLabel 的优先级,不压标记——「这是你上次自己定的重点」比
-    /// 记下日重要(plan-do-review 闭环,2026-08-25)。
+    /// 卡头:分类标签 +「上次重点」标记(上次复盘置顶、还没做完的)+ 主线索
+    /// (「记下 N 天了」/「已推迟 N 次」,2026-09-01 拍板:走查说「已推迟 4 次
+    /// 是全 App 最有洞见的数据,别藏」——有推迟数据时它顶上来;事件表 2026-08-21
+    /// 建且不回填,冷启动恒 0,主线索退化为停滞天数,数据长出来自动接管)。
+    /// 卡头挤时压主线索的优先级,不压标记——「这是你上次自己定的重点」比
+    /// 停滞数字重要(plan-do-review 闭环,2026-08-25 口径不变)。
     private func cardHead(_ todo: TodoItemData) -> some View {
         HStack(spacing: WarmSpacing.xs) {
             Text(todo.category.displayName)
@@ -392,9 +498,9 @@ struct ReviewStepTriage: View {
                     )
             }
 
-            Text(bornLabel(todo))
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.textMuted)
+            Text(leadLabel(todo))
+                .font(WarmFont.caption(13))
+                .foregroundColor(WarmTheme.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .layoutPriority(-1)
@@ -483,6 +589,21 @@ struct ReviewStepTriage: View {
 
     private func bornLabel(_ todo: TodoItemData) -> String {
         String(localized: "review.flow.triage.born_\(todo.createdAt.formatted(.dateTime.month().day()))")
+    }
+
+    /// 卡面主线索(2026-09-01 拍板):推迟次数 > 0 → 「已推迟 N 次」;
+    /// 否则 → 停滞天数「记下 N 天了」(createdAt 立即可算,冷启动的主线索);
+    /// 今天记的仍用「M月d日记下」——「记下 0 天」是噪音。
+    private func leadLabel(_ todo: TodoItemData) -> String {
+        let deferCount = state.insightContextValue?.deferCounts[todo.id] ?? 0
+        if deferCount > 0 {
+            return String(localized: "review.flow.triage.tl_deferred_\(deferCount)")
+        }
+        let days = TriageRanking.stagnationDays(of: todo, now: Date(), calendar: calendar)
+        if days >= 1 {
+            return String(localized: "review.flow.triage.born_days_\(days)")
+        }
+        return bornLabel(todo)
     }
 
     // MARK: 底部按钮 pad(位置 = 手势方向)
@@ -612,6 +733,73 @@ struct ReviewStepTriage: View {
         do {
             try store.abandon(todo.id)
             withAnimation(WarmAnimation.springBouncy) { state.markAbandoned(todo) }
+        } catch {
+            onError(error)
+        }
+    }
+
+    /// 批量推「稍后」(拍板 3:复用「稍后」抽屉,不新增 somedayAt 终态)。
+    /// 每条**三个字段一起清**:dueDate + timeBucket + dueHint——「稍后」的命中
+    /// 条件是三者皆无信号;`hasTimeSignal` 不看 dueDate,只清日期的条目会落
+    /// 「待定日期」(另一个照样催你选日期的抽屉),出口等于白做(docs v2
+    /// 「批量出口的实现细节」)。`dueHint` 传空串不是 nil:nil 是保留原值。
+    /// state 只在全部写成功后更新;中途失败显式报错,重推幂等(已清的再清
+    /// 是 no-op)。origin = .review:insightContext 的推迟计数排除 review 来源,
+    /// 批量推后不记 deferred(推后不是推迟)。
+    private func pushBatchToSomeday() {
+        let batch = state.somedayBatchCandidates
+        guard !batch.isEmpty else { return }
+        do {
+            for todo in batch {
+                try store.updateFull(
+                    todo.id,
+                    update: TodoDetailUpdate(
+                        title: todo.title,
+                        detail: todo.detail,
+                        category: nil,                      // nil = 保留原值
+                        priority: nil,                      // nil = 保留原值
+                        dueDate: nil,                       // nil = 清除日期
+                        hasDueTime: false,
+                        timeBucket: nil,                    // 清模糊时段
+                        dueHint: "",                        // 空串 = 清除(nil 是保留)
+                        recurrenceRule: todo.recurrenceRule // 卡堆口径恒 nil,原样回写
+                    ),
+                    origin: .review
+                )
+            }
+            withAnimation(WarmAnimation.springBouncy) { state.markSomedayBatchExecuted() }
+            HapticFeedback.success()
+        } catch {
+            onError(error)
+        }
+    }
+
+    /// 整批撤销:按快照把 dueDate / hasDueTime / timeBucket / dueHint 原值写回
+    /// (其余字段同值回写)。原值本就是空的字段,恢复后仍空——与清除语义闭环。
+    /// state 只在全部写成功后更新,重复撤销无操作(快照一次性)。
+    private func undoBatchSomeday() {
+        guard let batch = state.somedayUndoSnapshot else { return }
+        do {
+            for todo in batch {
+                try store.updateFull(
+                    todo.id,
+                    update: TodoDetailUpdate(
+                        title: todo.title,
+                        detail: todo.detail,
+                        category: todo.category,
+                        priority: todo.priority,
+                        dueDate: todo.dueDate,
+                        hasDueTime: todo.hasDueTime,
+                        timeBucket: todo.timeBucket,
+                        dueHint: todo.dueHint,
+                        recurrenceRule: todo.recurrenceRule
+                    ),
+                    origin: .review
+                )
+            }
+            withAnimation(WarmAnimation.springBouncy) { state.undoSomedayBatch() }
+            HapticFeedback.light()
+            onUndoToast(String(localized: "review.flow.triage.batch.undo_done"))
         } catch {
             onError(error)
         }

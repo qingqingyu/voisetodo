@@ -28,6 +28,47 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     let splitCount: Int
     /// 下周三件事置顶数。
     let pinnedCount: Int
+    /// 批量推「稍后」的条数(2026-09-01 拍板 3;账本单独一行,不并决定数)。
+    /// 旧 payload 无此键——自定义解码给默认 0(自动合成的 Codable 遇缺键是
+    /// 抛错,一条会话解码失败会拖垮整个 `allSessions()` 列表,必须兜)。
+    let somedayCount: Int
+
+    init(
+        inputCount: Int,
+        remainingCount: Int,
+        scheduledCount: Int,
+        todayCount: Int,
+        abandonedCount: Int,
+        splitCount: Int,
+        pinnedCount: Int,
+        somedayCount: Int = 0
+    ) {
+        self.inputCount = inputCount
+        self.remainingCount = remainingCount
+        self.scheduledCount = scheduledCount
+        self.todayCount = todayCount
+        self.abandonedCount = abandonedCount
+        self.splitCount = splitCount
+        self.pinnedCount = pinnedCount
+        self.somedayCount = somedayCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case inputCount, remainingCount, scheduledCount, todayCount
+        case abandonedCount, splitCount, pinnedCount, somedayCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        inputCount = try container.decode(Int.self, forKey: .inputCount)
+        remainingCount = try container.decode(Int.self, forKey: .remainingCount)
+        scheduledCount = try container.decode(Int.self, forKey: .scheduledCount)
+        todayCount = try container.decode(Int.self, forKey: .todayCount)
+        abandonedCount = try container.decode(Int.self, forKey: .abandonedCount)
+        splitCount = try container.decode(Int.self, forKey: .splitCount)
+        pinnedCount = try container.decode(Int.self, forKey: .pinnedCount)
+        somedayCount = try container.decodeIfPresent(Int.self, forKey: .somedayCount) ?? 0
+    }
 }
 
 /// 一条从复盘笔记里提取的关注点(2026-08-23 拍板语义对照):text 保留用户

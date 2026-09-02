@@ -100,6 +100,22 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
         XCTAssertFalse(state.unparsedTodos.contains { $0.id == todo.id })
     }
 
+    // MARK: - 复盘批量出口的落点回归(2026-09-01 拍板 3,docs/todo-review-flow-v2.md)
+
+    /// 批量出口写出的**精确字段组合**:dueDate=nil + timeBucket=nil + dueHint=""
+    /// (空串,不是 nil——updateFull 的三态语义里空串才是清除)→ 必须落
+    /// 「稍后」(unscheduledTodos)。空串路径与 nil 不同,单独锁住。
+    func testBatchExitClearedFieldsLandInUnscheduled() throws {
+        let todo = makeTodo(title: "批量推后的老任务", dueHint: "", dueDate: nil)
+        let state = HomeCalendarState.makeForTests(
+            todos: [todo], selectedDate: today, calendar: calendar
+        )
+
+        XCTAssertTrue(state.unscheduledTodos.contains { $0.id == todo.id })
+        XCTAssertFalse(state.pendingDateTodos.contains { $0.id == todo.id },
+                       "只清日期不清时段信号会落「待定日期」——批量出口最大的坑")
+    }
+
     // MARK: - 已完成无日期任务按「完成日」归档
 
     /// 主 bug 修复:无日期任务完成 → 只出现在「完成那天」的已完成区,
