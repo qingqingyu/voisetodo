@@ -337,6 +337,13 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 点击处锚点冻结进爆花实例——不渲染时实时查表,防爆花原点跟着行移入
     /// 页面底部的已完成分区(见 CompletionBurst.anchor 注释)。
     @State private var checkboxAnchors: [UUID: Anchor<CGRect>] = [:]
+    /// 「原地保留」:完成后延迟归组的 todo id。集合内的已完成条目由
+    /// HomeCalendarState 留在原分区渲染,反馈(勾号描画/弹跳/爆花)在原位
+    /// 播完后由到点任务移出集合,行才动画进「已完成」(Reminders 式先反馈后归档)。
+    @State private var deferredCompletionIDs: Set<UUID> = []
+    /// 每条延迟归组的到点任务。0.75s 内「取消→再完成」时 cancel 旧任务重排,
+    /// 防止旧计时器把重新完成的行提前送走。
+    @State private var deferredDepartureTasks: [UUID: Task<Void, Never>] = [:]
     /// 进行中的全屏彩带(单实例:今日清空一瞬只有一个)。
     @State private var confettiShow: CompletionConfettiShow?
     /// 中央庆祝文案可见性。
@@ -477,16 +484,54 @@ struct HomeView<Store: HomeTodoStore>: View {
     // MARK: - 完成正反馈(docs/todo-completion-feedback.md,含 2026-09-01 复核修订)
 
     /// toggle 落库成功后的反馈分发(§2/§8/修订 2):
-    /// - 完成 = `light` 触感 + 延时爆花 + 清空检测(light 让位给大庆祝的 success,触感层同步分级);
-    /// - 取消 = 轻 `selection`,无粒子(取消是修正不是成就,不稀释完成反馈对比度)。
+    /// - 完成 = `light` 触感 + 原地保留(行延迟归组)+ 延时爆花 + 清空检测
+    ///   (light 让位给大庆祝的 success,触感层同步分级);
+    /// - 取消 = 轻 `selection`,无粒子(取消是修正不是成就,不稀释完成反馈对比度),
+    ///   并立即清 deferral(防悬挂计时器干扰后续再完成)。
     private func handleToggleFeedback(todoID: UUID, wasCompleted: Bool, category: TodoCategory?) {
         if wasCompleted {
             HapticFeedback.selection()
+            cancelDeferredDeparture(of: todoID)
             return
         }
         HapticFeedback.light()
+        deferDeparture(of: todoID)
         scheduleCompletionBurst(todoID: todoID, category: category)
         scheduleTodayClearCelebrationCheck()
+    }
+
+    /// 「原地保留」:完成的行在原分区多留 deferredDepartureDelay(勾号描画 +
+    /// 爆花播完),到点动画移出集合 → 分组重算,行才进「已完成」。
+    /// 与落库同一同步调用栈插入集合 → 落库那一拍的分组重算就直接把行留在原位,
+    /// 勾号 trim 描画得以在原行上播(此前行当拍被移除,描画/弹跳从未可见)。
+    /// 不随 Reduce Motion 降级:归组时序与动效开关无关,勾号描画本身不降级。
+    private func deferDeparture(of todoID: UUID) {
+        deferredDepartureTasks[todoID]?.cancel()
+        deferredCompletionIDs.insert(todoID)
+        deferredDepartureTasks[todoID] = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(CompletionFeedbackMetrics.deferredDepartureDelay * 1_000_000_000))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            withAnimation(WarmAnimation.springSmooth) {
+                deferredCompletionIDs.remove(todoID)
+            }
+            deferredDepartureTasks[todoID] = nil
+        }
+    }
+
+    /// 取消完成时立即清 deferral:行回到未完成态本就属于原分区,集合残留 +
+    /// 悬挂计时器会在半路重排分组(如 0.75s 内再完成,旧计时器会把新窗口掐短)。
+    private func cancelDeferredDeparture(of todoID: UUID) {
+        guard deferredCompletionIDs.contains(todoID) || deferredDepartureTasks[todoID] != nil else { return }
+        deferredDepartureTasks[todoID]?.cancel()
+        deferredDepartureTasks[todoID] = nil
+        withAnimation(WarmAnimation.springSmooth) {
+            deferredCompletionIDs.remove(todoID)
+        }
     }
 
     /// 排一次爆花:起播时刻 = 现在 + 接力延时(勾号描画进行大半时爆开,§4),
@@ -1593,7 +1638,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             visibleMonthAnchor: visibleMonthAnchor,
             occurrencesByDay: monthOccurrences,
             completedUnscheduledByDay: completedUnscheduledByDay,
-            calendar: calendar
+            calendar: calendar,
+            deferredCompletionIDs: deferredCompletionIDs
         )
         // 选中日在 42 格里的行索引(0-5),折叠时把选中周推到顶部。
         // 提到 GeometryReader 外:只依赖 visibleMonthAnchor / selectedDate,与 proxy.size 无关,

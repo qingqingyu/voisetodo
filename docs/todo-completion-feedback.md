@@ -170,3 +170,28 @@ iOS 没有读取静音开关位置的公开 API。正确机制是 `AVAudioSessio
 ### 修法
 
 排花时**快照冻结**：`handleToggleFeedback` 与 toggle 落库同一同步调用栈、早于列表重渲染 tick，此刻锚点表里必是点击处位置。`HomeView` 改用 `.onPreferenceChange(CompletionCheckboxAnchorKey.self)` 维护锚点表，`scheduleCompletionBurst` 创建实例时把 `Anchor<CGRect>`（值类型）存进 `CompletionBurst`，渲染层只解析冻结值。副带收益：0.5s 动画期间用户滚动列表，爆花稳定锚在点击点而非跟着行走。
+
+---
+
+## 原地保留:完成反馈播完再归组(2026-09-02 修订)
+
+### 现象
+
+锚点冻结修完后,烟花准点在点击处炸了,但 0.22s 接力延时内行已经移进底部「已完成」分区——起爆点成了空槽,像半空凭空放烟花。更早就有且一直没被发现的事:**行是带着「未完成」快照被移除的**,勾号 trim 描画、checkbox 弹跳在原位从来没播出来过——§4「描画进行到大半时爆开」的前提(行留在原地)从第一天就不成立,三个原位反馈实际全部哑火。
+
+### 修法(方案 A,Reminders 式「先反馈后归档」)
+
+落库照旧当拍(isCompleted 立即写库;圆环/清空检测/Widget 都是 store 口径,不受影响),但**分组归组延迟**:
+
+- `HomeView` 维护 `deferredCompletionIDs` + 每条的到点任务(`CompletionFeedbackMetrics.deferredDepartureDelay` = 0.22 + 0.5 + 0.03 ≈ 0.75s);
+- `HomeCalendarState.make(deferredCompletionIDs:)`:集合内的已完成条目仍留在原分区(当日 tier / 稍后 / 待定日期),「已完成」分区到点前不含它(防空槽双行);空集合 = 旧行为;
+- 到点 `withAnimation(springSmooth)` 移出集合 → 分组重算,行才动画离场进「已完成」——与原先同一个移动动画,只是晚了 0.75s;
+- 行在原位的时间线:t=0 勾号 trim 描画(0.3s)→ t=0.22s 爆花从活着的 checkbox 上接力 → t≈0.75s 归档;
+- `PendingDateTodoRow` 补完成态样式(手写 checkbox 原无完成分支):绿环 + 勾号 trim 描画 + 标题删除线,与 WarmTodoCard 对齐;checkbox 弹跳刻意不补(半成品分区保持低权重)。
+
+### 边界口径
+
+- **取消完成**:立即清 deferral + cancel 计时器(防悬挂任务把 0.75s 内重新完成的行提前送走);取消后行本就属于原分区,无视觉跳变;
+- **Reduce Motion**:爆花/弹跳降级,但原地保留与勾号描画不降级——归组时序与动效开关无关;
+- **详情页/Widget 完成**:不走 `handleToggleFeedback` → 不延迟、不放花(口径 4 不变);
+- **store 口径全不受影响**:`selectedDayStats()` 读 `monthOccurrences`/`completedUnscheduledByDay` 缓存,圆环与清空检测照常当拍响应。

@@ -68,7 +68,8 @@ struct HomeCalendarState {
         occurrencesByDay: [String: [TodoOccurrenceData]],
         completedUnscheduledByDay: [String: [TodoItemData]],
         calendar: Calendar,
-        now: Date = Date()
+        now: Date = Date(),
+        deferredCompletionIDs: Set<UUID> = []
     ) -> HomeCalendarState {
         let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
         let normalizedAnchor = calendar.startOfDay(for: visibleMonthAnchor)
@@ -82,7 +83,8 @@ struct HomeCalendarState {
             weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
             occurrencesByDay: occurrencesByDay,
             completedUnscheduledByDay: completedUnscheduledByDay,
-            calendar: calendar
+            calendar: calendar,
+            deferredCompletionIDs: deferredCompletionIDs
         )
     }
 
@@ -95,7 +97,8 @@ struct HomeCalendarState {
         occurrencesByDay: [String: [TodoOccurrenceData]] = [:],
         completedUnscheduledByDay: [String: [TodoItemData]]? = nil,
         calendar: Calendar = Calendar(identifier: .gregorian),
-        now: Date = Date()
+        now: Date = Date(),
+        deferredCompletionIDs: Set<UUID> = []
     ) -> HomeCalendarState {
         let normalizedSelectedDate = calendar.startOfDay(for: selectedDate)
         let anchor = visibleMonthAnchor ?? selectedDate
@@ -109,7 +112,8 @@ struct HomeCalendarState {
             weekHeaderDays: weekHeaderDays(referenceDate: now, calendar: calendar),
             occurrencesByDay: occurrencesByDay,
             completedUnscheduledByDay: completedUnscheduledByDay,
-            calendar: calendar
+            calendar: calendar,
+            deferredCompletionIDs: deferredCompletionIDs
         )
     }
 
@@ -150,7 +154,8 @@ struct HomeCalendarState {
         weekHeaderDays: [Date],
         occurrencesByDay: [String: [TodoOccurrenceData]],
         completedUnscheduledByDay: [String: [TodoItemData]]? = nil,
-        calendar: Calendar
+        calendar: Calendar,
+        deferredCompletionIDs: Set<UUID> = []
     ) {
         self.selectedDate = selectedDate
         self.visibleMonthAnchor = visibleMonthAnchor
@@ -165,12 +170,18 @@ struct HomeCalendarState {
         //
         // 「时间信号」= timeBucket != nil 或 dueHint 非空。
         // 之前版本只看 dueDate==nil 就归「未安排」,导致"下午/等会儿"标签的条目也撒谎成"未安排"。
+        // deferredCompletionIDs(「原地保留」修订):集合内的已完成条目**仍留在原分区**
+        // (当日 tier / 稍后 / 待定日期),到点 HomeView 移出集合后行才动画进「已完成」——
+        // 勾号描画 + 爆花在原位播完之前,分组不把行送走。空集合 = 旧行为,零影响。
         let noSchedule = todos.filter { $0.dueDate == nil && $0.recurrenceRule == nil }
         // 未完成分组补 abandonedAt == nil:已划掉的任务对首页是不可见工作
         // (防御性过滤:生产路径 store.todos 谓词已排除,测试工厂可喂原始数组)。
         self.unparsedTodos = noSchedule
             .filter { !$0.isCompleted && $0.abandonedAt == nil && $0.extractionOutcome != .parsed }
-        let parsedIncomplete = noSchedule.filter { !$0.isCompleted && $0.abandonedAt == nil && $0.extractionOutcome == .parsed }
+        let parsedIncomplete = noSchedule.filter { todo in
+            (todo.abandonedAt == nil && todo.extractionOutcome == .parsed)
+                && (!todo.isCompleted || deferredCompletionIDs.contains(todo.id))
+        }
         let hasTimeSignal: (TodoItemData) -> Bool = { todo in
             if todo.timeBucket != nil { return true }
             let hint = todo.dueHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -189,16 +200,19 @@ struct HomeCalendarState {
         // 已完成的无安排任务:生产路径从 completedUnscheduledByDay 查表(HomeView 在 .task 里
         // 按用户日分桶预加载),nil 走 fallback(测试场景用旧 filter+sort)。
         // 见 docs/completed-todos-performance.md Step 3c-d。
+        // deferred 集合内的条目尚未归档(还留在上面三路分区),这里排除防双行。
         let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
         if let completedUnscheduledByDay {
             let completedDayKey = TodoOccurrenceData.dayKey(for: completedDayStart, calendar: calendar)
-            self.completedUnscheduledTodos = completedUnscheduledByDay[completedDayKey] ?? []
+            self.completedUnscheduledTodos = (completedUnscheduledByDay[completedDayKey] ?? [])
+                .filter { !deferredCompletionIDs.contains($0.id) }
         } else {
             // Fallback:nil 时走旧 filter+sort(测试 / 未升级的调用方)。
             self.completedUnscheduledTodos = noSchedule
                 .filter { todo in
                     guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
-                    return DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
+                    return !deferredCompletionIDs.contains(todo.id)
+                        && DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
                 }
                 .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         }
@@ -207,8 +221,15 @@ struct HomeCalendarState {
 
         let selectedOccurrences = Self.occurrences(on: selectedDate, in: occurrencesByDay, calendar: calendar)
         self.selectedOccurrences = selectedOccurrences
-        self.uncompletedOccurrences = selectedOccurrences.filter { !$0.isCompleted }
-        self.completedOccurrences = selectedOccurrences.filter { $0.isCompleted }
+        // 当日 occurrence 同样按 deferred 拆:集合内的已完成条目留在「当日 tier」
+        // (tieredUncompletedOccurrences 据此把行留在原位,勾号描画在原行上播),
+        // 「已完成」分区到点前不含它。
+        self.uncompletedOccurrences = selectedOccurrences.filter {
+            !$0.isCompleted || deferredCompletionIDs.contains($0.todo.id)
+        }
+        self.completedOccurrences = selectedOccurrences.filter {
+            $0.isCompleted && !deferredCompletionIDs.contains($0.todo.id)
+        }
     }
 
     private func occurrences(on day: Date) -> [TodoOccurrenceData] {
