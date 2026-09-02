@@ -21,6 +21,11 @@ enum CompletionFeedbackMetrics {
     /// 爆花实例从集合清理的延时(动画时长 + 余量;行滚出屏幕也不提前掐断)。
     static let burstCleanupDelay: TimeInterval = burstRelayDelay + burstDuration + 0.2
 
+    /// 完成后行原地保留时长(「原地保留」修订,见 docs 文末对应一节):
+    /// 勾号描画(0.3s)+ 爆花(接力延时 + 时长)播完,行才动画移入「已完成」。
+    /// Reminders 式「先反馈后归档」——落库当拍,但归组延迟,反馈全部在原位播。
+    static let deferredDepartureDelay: TimeInterval = burstRelayDelay + burstDuration + 0.03
+
     /// 今日清空检测延时:toggle 改 store → `.task(id:)` 先清空 monthOccurrences 缓存
     /// (HomeView.swift 该 task 首段同步执行),之后 selectedDayStats() 走
     /// store.todos 兜底分支读到新值。250ms 足够跨过这一拍。

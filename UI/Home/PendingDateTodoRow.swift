@@ -51,21 +51,37 @@ struct PendingDateTodoRow: View {
                 Button(action: onToggle) {
                     ZStack {
                         Circle()
-                            .stroke(WarmTheme.sketch, lineWidth: 2)
+                            .stroke(
+                                todo.isCompleted ? WarmTheme.success : WarmTheme.sketch,
+                                lineWidth: 2
+                            )
                             .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
+
                         Circle()
                             .fill(WarmTheme.success)
                             .frame(width: WarmSize.icon - 4, height: WarmSize.icon - 4)
-                            .opacity(0)
+                            .opacity(todo.isCompleted ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.2), value: todo.isCompleted)
+
+                        // 勾号 trim 描画与 WarmTodoCard 同款(「原地保留」修订:完成的行
+                        // 在原分区留到反馈播完才归组,描画动画必须真的能在这里播出来;
+                        // 此前勾选当拍行就被移走,本行又没有完成态分支,描画从未可见)。
+                        WarmCheckmarkShape()
+                            .trim(from: 0, to: todo.isCompleted ? 1 : 0)
+                            .stroke(
+                                .white,
+                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                            )
+                            .frame(width: WarmSize.icon - 10, height: WarmSize.icon - 10)
+                            .animation(.easeInOut(duration: 0.3), value: todo.isCompleted)
                     }
                     // alignment: .center 让 24pt 圆环居 44pt frame 中央,配合外层 HStack(.center)
                     // 让 checkbox 始终坐卡片纵向中点。44pt frame 保留以撑 HIG hit target。
                     .frame(width: 44, height: 44, alignment: .center)
                     .contentShape(Rectangle())
                     // 完成正反馈接线(docs/todo-completion-feedback.md 复核 B):
-                    // 本行是手写 checkbox(无 WarmCheckmarkShape 描画动画),只上报 anchor
-                    // 让 HomeView 顶层爆花统一覆盖;勾号「接力时机」在这里退化为
-                    // tap 后固定延时(由 HomeView 的 burstRelayDelay 统一承担)。
+                    // 手写 checkbox 上报 anchor,让 HomeView 顶层爆花统一覆盖;
+                    // 勾号「接力时机」由 HomeView 的 burstRelayDelay 统一承担。
                     .anchorPreference(key: CompletionCheckboxAnchorKey.self, value: .bounds) { anchor in
                         [todo.id: anchor]
                     }
@@ -78,7 +94,9 @@ struct PendingDateTodoRow: View {
                 VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
                     Text(todo.title)
                         .font(WarmFont.body(15))
-                        .foregroundColor(WarmTheme.textPrimary)
+                        .foregroundColor(todo.isCompleted ? WarmTheme.textSecondary : WarmTheme.textPrimary)
+                        // 完成态降级与 WarmTodoCard 一致(原地保留窗口内行显示完成样式)。
+                        .strikethrough(todo.isCompleted, color: WarmTheme.textSecondary)
                         // lineLimit(3):右侧「选日期」按钮 fixedSize + 左侧 CategoryIconView
                         // 双重挤压标题可用宽(AX5 字号下尤其紧张)。原 lineLimit(2) 在加图标后
                         // 会让长标题过早 tail 截断,放宽到 3 行作为对冲——卡片高度有界,

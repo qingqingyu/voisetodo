@@ -3,10 +3,11 @@ import XCTest
 
 /// `HomeCalendarState` 的分组不变量测试。
 ///
-/// 覆盖三个 bug 的回归:
+/// 覆盖四个 bug 的回归:
 /// 1. 「未安排」不再撒谎:有 `timeBucket` 或 `dueHint` 的条目不应进 `unscheduledTodos`。
 /// 2. `.rawFallback` 条目路由到 `unparsedTodos`,不混进 Today。
 /// 3. 今天内部三层 tier(allDay → period → timed)顺序与 HTML 设计稿一致。
+/// 4. 完成反馈「原地保留」:deferred 集合内的已完成条目留在原分区,不进「已完成」。
 final class HomeCalendarStateGroupingTests: XCTestCase {
     private let calendar = Calendar(identifier: .gregorian)
     private var today: Date!
@@ -379,6 +380,71 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
             stateYesterday.completedUnscheduledTodos.contains { $0.id == todo.id },
             "hour=0 时不应归到昨天"
         )
+    }
+
+    // MARK: - 完成反馈原地保留(deferredCompletionIDs)
+
+    /// 「原地保留」修订:deferred 集合内的已完成条目留在原分区(当日 tier /
+    /// 稍后 / 待定日期),「已完成」分区到点前不含它(防同一行双处渲染)。
+    /// 回归 bug:完成当拍行即被移进底部已完成区,0.22s 后爆花在空槽上"凭空"炸开,
+    /// 勾号 trim 描画也从未在原位播过。同一份数据 + 空 deferred 集合 = 旧归档行为。
+    func testDeferredCompletionStaysInPlaceAndOutOfCompletedSection() throws {
+        let timed = TodoOccurrenceData(
+            todo: makeTodo(
+                title: "带钟点的",
+                dueDate: makeDate(hour: 9, minute: 0),
+                hasDueTime: true,
+                isCompleted: true,
+                completedAt: today
+            ),
+            occurrenceDate: today,
+            isCompleted: true
+        )
+        let later = makeTodo(title: "稍后任务", dueDate: nil)
+        let completedUnscheduled = makeTodo(
+            title: "完成的稍后任务", dueDate: nil, isCompleted: true, completedAt: today
+        )
+        let completedPendingDate = makeTodo(
+            title: "完成的待定日期", timeBucket: .afternoon, dueDate: nil,
+            isCompleted: true, completedAt: today
+        )
+        let deferred: Set<UUID> = [timed.todo.id, completedUnscheduled.id, completedPendingDate.id]
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later, completedUnscheduled, completedPendingDate],
+            selectedDate: today,
+            occurrencesByDay: [
+                TodoOccurrenceData.dayKey(for: today, calendar: calendar): [timed]
+            ],
+            calendar: calendar,
+            deferredCompletionIDs: deferred
+        )
+
+        // 当日 tier:deferred 已完成 occurrence 留在原 tier。
+        let timedTier = state.tieredUncompletedOccurrences.first { $0.tier == .timed }
+        XCTAssertEqual(timedTier?.items.map(\.todo.id), [timed.todo.id])
+        // 稍后 / 待定日期:deferred 已完成条目各留原分区。
+        XCTAssertTrue(state.unscheduledTodos.contains { $0.id == completedUnscheduled.id })
+        XCTAssertTrue(state.pendingDateTodos.contains { $0.id == completedPendingDate.id })
+        // 「已完成」分区到点前不含 deferred 条目。
+        XCTAssertTrue(state.completedOccurrences.isEmpty)
+        XCTAssertTrue(state.completedUnscheduledTodos.isEmpty)
+
+        // 空 deferred 集合(到点移出后)= 旧归档行为,零回归。
+        let archived = HomeCalendarState.makeForTests(
+            todos: [later, completedUnscheduled, completedPendingDate],
+            selectedDate: today,
+            occurrencesByDay: [
+                TodoOccurrenceData.dayKey(for: today, calendar: calendar): [timed]
+            ],
+            calendar: calendar
+        )
+        XCTAssertEqual(archived.completedOccurrences.map(\.todo.id), [timed.todo.id])
+        XCTAssertEqual(
+            Set(archived.completedUnscheduledTodos.map(\.id)),
+            [completedUnscheduled.id, completedPendingDate.id]
+        )
+        XCTAssertTrue(archived.unscheduledTodos.contains { $0.id == later.id })
     }
 
     // MARK: - Helpers
