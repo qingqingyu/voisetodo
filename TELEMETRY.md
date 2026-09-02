@@ -88,6 +88,9 @@ BGProcessingTask                          ↓
 - 计数与时长（todosCount、durationMS、attempts）
 - 文本摘要（`VoiceTodoLog.textSummary()`：chars / lines / exceedsLimit）
 
+> 同一条红线适用于 `ALERTING.md` 的客户端故障信标（`/v1/incident`）：信标只回答
+> 「通不通」，不回答「用户说了什么」，绝不携带 transcript / Todo 标题。
+
 ## App Store Connect 隐私问卷
 
 - 「追踪用户」：**否**
@@ -188,3 +191,4 @@ ORDER BY received_at DESC LIMIT 50;
 | `AIProxy/schema.sql` | D1 表结构 |
 | `AIProxy/wrangler.toml.example` | 部署配置示例 |
 | `LOGGING.md` | 本地日志规范（与遥测区分） |
+| `ALERTING.md` | 实时告警设计（与遥测的分工见该文档「与 TELEMETRY.md 的分工」一节） |
