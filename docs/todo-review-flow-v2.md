@@ -235,3 +235,16 @@ TodoDetailUpdate(
 **新增测试**：`TriageRankingTests`（5）、`ReviewFlowStateTests` v2 扩展（排序截断 / 重排不回流 / 批量候选门槛 / 执行撤销闭环 / decidedCount / 旧 payload 解码 / 候选池并集去重 / 闸门 / abandonFromInsight）、`HomeCalendarStateGroupingTests` 批量出口落点护栏（`dueHint` 空串路径）、`TaskEventKindTests` `isDeferral(new=nil)`、`ReviewRecapSameDayTests` 证据链三数。
 
 **真机回归待办**（模拟器不可验的部分）：三语长文本走查（第 5 步账本一行小字、批量出口标题）、批量出口落点真机确认（27 条进「稍后」抽屉）、整批撤销、连续两周批量推后的体验（见 D）。
+
+---
+
+## 审阅修正（2026-09-03）
+
+对实施代码的一轮静态审查发现四处缺陷，处置如下（1、2 经拍板）：
+
+1. **周窗口落点（两处，含一处既有代码）**：`ReviewStepTriage.nextMondayStart()`（v2 之前就有）与 `ReviewFlowState.nextWeekCommitted`（v2 新增）都把 `calendar.nextDate` 返回的**自然日 0 点**喂给了 `startOfUserDay(for:)`——该函数接收时刻、问「属于哪个用户日」，0 点会被判回前一用户日（`DayClock` 注释明言这是 bug，见 docs/day-clock-day-boundary-inconsistencies.md 同类问题）。后果：`startHour > 0` 的用户「排下周」落到周日、候选窗左移一天；`startHour = 0` 短路走 `startOfDay` 从未暴露。两处改用 `userDayStart(onNaturalDay:)`（DayClock 为归一化日专门提供的入口）。**行为变更**：`startHour > 0` 用户「排下周」落点从周日用户日改回周一用户日——朝本方案「下一个周一的用户日起点」的既定语义修正；写库落点与候选窗必须同坐标系（缺口 B 的前提），两处一起改。
+2. **批量出口部分失败补偿**：原实现 27 条逐条写库、`catch` 只报错——第 N 条失败时前 N-1 条已落库（`updateFull` 逐条 `saveOrRollback`）但 state 完全不动：出口行还在、计数为 0、无快照无撤销路径，「报错但已静默生效」。改为逐条累计成功子集，失败时对成功子集照常落地 state（快照可整批撤销），失败条目留尾部可重推（幂等保留），错误如实上报。
+3. **`markSomedayBatchExecuted` 不再二次求值候选集**：改签名收 `batch` 参数——原实现视图写库用一份候选、state 落地时又独立求值一次（`somedayBatchCandidates` 依赖 `Date()`，30 天门槛跨阈值时两次求值错位，快照与落库不是同一批）。传参后严格同批，兼作 2 的接口。
+4. **`inputCount` 口径注明例外**：洞察腐烂卡当场「不做了」的尾部条目走 `abandonFromInsight` → `markAbandoned`（进 `processedIDs`），照常计入 `inputCount`——用户确实面对并决定了它（拍板 4：决定数同理），若排除会出现 `decidedCount > inputCount` 的口径倒挂。原「截断后尾部不计入」的注释（含上方实施补注）就此打补丁，**行为不变，只修文档**。
+
+新增测试：非零 `startHour` 的周窗落点（`testNextWeekCommittedWindowWithNonZeroStartHour`）、部分成功子集的执行/撤销闭环（`testSomedayBatchExecuteWithPartialBatch`）。

@@ -448,7 +448,7 @@ extension ReviewFlowStateTests {
         let state = ReviewFlowState(todos: fillers + oldies + [todo("新", daysOld: 5)])
         let batchIDs = Set(oldies.map(\.id))
 
-        state.markSomedayBatchExecuted()
+        state.markSomedayBatchExecuted(batch: state.somedayBatchCandidates)
         XCTAssertEqual(state.somedayCount, 3)
         XCTAssertEqual(state.somedayUndoSnapshot?.count, 3)
         XCTAssertTrue(state.somedayBatchCandidates.isEmpty, "尾部已清,出口行消失")
@@ -465,11 +465,32 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(state.somedayCount, 0)
     }
 
+    /// 部分成功补偿的 state 契约(2026-09-03 审阅修正:视图层批量写库中途
+    /// 失败时只对成功子集调用):快照 = 实际写入的子集(可整批撤销),未写入
+    /// 的留在尾部仍是候选(出口行可重推,重推幂等)。
+    func testSomedayBatchExecuteWithPartialBatch() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let oldies = (0..<3).map { todo("old\($0)", daysOld: 40 + $0) }
+        let state = ReviewFlowState(todos: fillers + oldies + [todo("新", daysOld: 5)])
+        let succeeded = [oldies[0], oldies[1]] // 第 3 条写库失败
+
+        state.markSomedayBatchExecuted(batch: succeeded)
+        XCTAssertEqual(state.somedayCount, 2)
+        XCTAssertEqual(state.somedayUndoSnapshot?.count, 2)
+        XCTAssertEqual(state.somedayBatchCandidates.map(\.title), ["old2"], "未写入的仍是候选,出口行可重推")
+        XCTAssertEqual(state.untouchedTailCount, 1)
+
+        state.undoSomedayBatch()
+        XCTAssertEqual(state.somedayCount, 0)
+        XCTAssertNil(state.somedayUndoSnapshot)
+        XCTAssertEqual(Set(state.somedayBatchCandidates.map(\.title)), ["old0", "old1", "old2"], "撤销只回滚成功子集")
+    }
+
     /// buildSession 把 somedayCount 写进持久化账本。
     func testBuildSessionCarriesSomedayCount() {
         let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
         let state = ReviewFlowState(todos: fillers + [todo("old", daysOld: 40)])
-        state.markSomedayBatchExecuted()
+        state.markSomedayBatchExecuted(batch: state.somedayBatchCandidates)
 
         let session = state.buildSession(completedAt: Date())
         XCTAssertEqual(session.ledger.somedayCount, 1)
@@ -496,7 +517,7 @@ extension ReviewFlowStateTests {
         // 批量推后不进决定数。
         let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
         let batchState = ReviewFlowState(todos: fillers + (0..<3).map { todo("old\($0)", daysOld: 40 + $0) })
-        batchState.markSomedayBatchExecuted()
+        batchState.markSomedayBatchExecuted(batch: batchState.somedayBatchCandidates)
         XCTAssertEqual(batchState.decidedCount, 0)
         XCTAssertEqual(batchState.ledger.somedayCount, 3)
     }
@@ -560,6 +581,31 @@ extension ReviewFlowStateTests {
             from: input, now: now, calendar: fixedCalendar
         )
         XCTAssertEqual(committed.map(\.title), ["下周一", "下周日"])
+    }
+
+    /// startHour > 0 的周窗落点(2026-09-03 审阅修正):`nextDate` 返回的是
+    /// 自然日 0 点,抬用户日必须用 `userDayStart(onNaturalDay:)`——对 0 点调
+    /// `startOfUserDay(for:)` 会判回前一用户日,窗口左移一天(周一凌晨的进得
+    /// 来、下周日深夜的被挤出去)。startHour=3 → 窗口 [周一 03:00, 下周一 03:00)。
+    /// 改共享 UserDefaults,defer 复位。
+    func testNextWeekCommittedWindowWithNonZeroStartHour() {
+        DayClock.setStartHour(3)
+        defer { DayClock.setStartHour(0) }
+
+        // 2026-09-02 是周三 → 下一个周一是 09-07。
+        let now = at(2026, 9, 2)
+        let mondayEarly = fixedCalendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 1))!
+        let sundayLate = fixedCalendar.date(from: DateComponents(year: 2026, month: 9, day: 13, hour: 23))!
+        let input = [
+            todo("周一凌晨1点", dueDate: mondayEarly), // 属周日用户日 → 窗外
+            todo("周一半", dueDate: at(2026, 9, 7)),   // 周一用户日 → 窗内
+            todo("上周日", dueDate: at(2026, 9, 6)),    // 周日用户日 → 窗外
+            todo("下周日深夜", dueDate: sundayLate),    // 周日用户日,仍在窗内
+        ]
+        let committed = ReviewFlowState.nextWeekCommitted(
+            from: input, now: now, calendar: fixedCalendar
+        )
+        XCTAssertEqual(committed.map(\.title), ["周一半", "下周日深夜"])
     }
 
     /// 候选池并集 + 去重:本来就在下周的未处理条目进池;本会话「今天就做/

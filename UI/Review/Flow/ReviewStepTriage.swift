@@ -743,12 +743,16 @@ struct ReviewStepTriage: View {
     /// 条件是三者皆无信号;`hasTimeSignal` 不看 dueDate,只清日期的条目会落
     /// 「待定日期」(另一个照样催你选日期的抽屉),出口等于白做(docs v2
     /// 「批量出口的实现细节」)。`dueHint` 传空串不是 nil:nil 是保留原值。
-    /// state 只在全部写成功后更新;中途失败显式报错,重推幂等(已清的再清
-    /// 是 no-op)。origin = .review:insightContext 的推迟计数排除 review 来源,
-    /// 批量推后不记 deferred(推后不是推迟)。
+    ///
+    /// 部分失败补偿:逐条写库并累计成功条目,中途失败时**成功子集照常落地
+    /// state**(快照 + 计数 + 出尾部,可整批撤销),失败条目留在尾部,错误
+    /// 如实上报——「报错但前 N 条已静默生效、又无撤销路径」不可接受。
+    /// 重推幂等(已清的再清是 no-op)。origin = .review:insightContext 的
+    /// 推迟计数排除 review 来源,批量推后不记 deferred(推后不是推迟)。
     private func pushBatchToSomeday() {
         let batch = state.somedayBatchCandidates
         guard !batch.isEmpty else { return }
+        var succeeded: [TodoItemData] = []
         do {
             for todo in batch {
                 try store.updateFull(
@@ -766,10 +770,18 @@ struct ReviewStepTriage: View {
                     ),
                     origin: .review
                 )
+                succeeded.append(todo)
             }
-            withAnimation(WarmAnimation.springBouncy) { state.markSomedayBatchExecuted() }
+            withAnimation(WarmAnimation.springBouncy) {
+                state.markSomedayBatchExecuted(batch: batch)
+            }
             HapticFeedback.success()
         } catch {
+            if !succeeded.isEmpty {
+                withAnimation(WarmAnimation.springBouncy) {
+                    state.markSomedayBatchExecuted(batch: succeeded)
+                }
+            }
             onError(error)
         }
     }
@@ -924,6 +936,9 @@ struct ReviewStepTriage: View {
     }
 
     /// 下一个周一的用户日起点(「排进下周」的落点)。
+    /// `nextDate` 返回的是自然日 0 点——必须用 `userDayStart(onNaturalDay:)`
+    /// 抬到用户日;对 0 点调 `startOfUserDay(for:)` 会被判回前一用户日,
+    /// startHour > 0 时「排下周」落到周日(DayClock 注释明言那是 bug)。
     private func nextMondayStart() -> Date {
         var components = DateComponents()
         components.weekday = 2 // 周一(gregorian)
@@ -932,7 +947,7 @@ struct ReviewStepTriage: View {
             matching: components,
             matchingPolicy: .nextTime
         ) ?? Date()
-        return DayClock.startOfUserDay(for: next, calendar: calendar)
+        return DayClock.userDayStart(onNaturalDay: next, calendar: calendar)
     }
 
     // MARK: 拆小 sheet(2026-08-23 改版)
