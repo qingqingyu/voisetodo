@@ -1,10 +1,12 @@
 import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
+import { AlertStateStore, classifyLevel, shouldNotify, nextRecord } from "./src/alertState.js";
 import { ExtractionCacheStore, makeCacheKey } from "./src/extractionCache.js";
 import { getAdapter } from "./src/adapters/index.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore, configureHealthParams } from "./src/health.js";
 import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
+import { sendTelegramAlert } from "./src/notify.js";
 import { executeWithFailover } from "./src/provider.js";
 import { pickCandidates } from "./src/selector.js";
 import { normalizeProviderStream } from "./src/stream.js";
@@ -36,6 +38,10 @@ const sharedAdminConfigStore = new AdminConfigStore();
 // (CACHE_RESULT_KV),1h TTL。只缓存非流式 + 无 personalHints 的请求。
 const sharedExtractionCache = new ExtractionCacheStore();
 
+// Module-level AlertStateStore:层 B 告警状态机(状态跃迁 + 6h reminder)的持久层。
+// 复用 AI_PROVIDER_STATE_KV(key 前缀 alert:),跟 HealthStore 同模式按请求刷新 binding。
+const sharedAlertStateStore = new AlertStateStore();
+
 // Isolate 首请求标记:Cloudflare Workers 的 isolate 在首次请求时才真正 lazy-load
 // KV/DO binding,首个 /v1/todo-extractions 请求会承担冷启动开销。本标志在 isolate
 // 生命周期内只对首请求输出一次 `proxy.cold_start.warmup` 日志,后续请求不再打。
@@ -57,6 +63,11 @@ export function _testResetExtractionCache() {
   sharedExtractionCache.reset();
 }
 
+// Test-only export: allows tests to reset module-level alert state between runs.
+export function _testResetAlertState() {
+  sharedAlertStateStore.reset();
+}
+
 export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, env, ctx, fetch);
@@ -75,6 +86,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // Telemetry 路由：批量上报匿名事件到 D1
     if (url.pathname === "/v1/telemetry/events") {
       return await handleTelemetryBatch(request, env, requestContext);
+    }
+
+    // 公开健康探针(层 C-1,ALERTING.md):给 UptimeRobot 等拨测服务,无鉴权。
+    // 必须放在 validateAppToken 之前 —— 拨测服务不带 token。零 AI 成本,只读熔断状态。
+    if (url.pathname === "/v1/health") {
+      return await handlePublicHealthProbe(request, env, requestContext);
     }
 
     // Admin 路由:动态切换 provider 主力等运维操作。
@@ -768,6 +785,120 @@ function jsonResponse(status, body) {
   });
 }
 
+// MARK: - Public health probe (层 C-1, ALERTING.md)
+
+/// 公开健康探针:GET/HEAD /v1/health,无鉴权(拨测服务不带 token),其余方法 405。
+///
+/// 硬约束(ALERTING.md 层 C-1):
+///   1. 不复用 handleAdminGetProviders —— 那个返回 type/model/priority/timeoutMs/
+///      完整 health 快照,还带 ADMIN_TOKEN 鉴权。这里只出 id + state,其余一律不出。
+///   2. 不调用上游 AI,只读 HealthStore 熔断状态(KV 未绑定时回退内存态,
+///      state 默认 closed)—— 无鉴权端点绝不能变成刷爆 AI 账单的入口。
+///   3. HTTP 状态码本身携带语义:全部 provider open → 503,否则 200。
+///      拨测服务不用解析 body 就能告警。
+///   4. Cache-Control: max-age=30 让 Cloudflare 边缘挡掉重复轮询。
+async function handlePublicHealthProbe(request, env, requestContext) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return finishRequest(new Response("Method Not Allowed", { status: 405 }), requestContext, {
+      reason: "health_probe_method_not_allowed"
+    });
+  }
+
+  sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
+  configureHealthParams(env);
+
+  let providers;
+  try {
+    providers = loadProviders(env, { onSecretMissing: () => {} });
+  } catch (error) {
+    logError("health_probe.providers_failed", { ...requestContext, ...errorFields(error) });
+    // 配置非法 → 503 + misconfigured(不是 500):对拨测服务「服务不可用」比
+    // 「服务器错误」语义更准,且 loadProviders 对空数组同样抛错,不会漏成 200。
+    return finishRequest(
+      healthProbeResponse(503, { status: "misconfigured", providers: [], ts: Date.now() }, request.method),
+      requestContext,
+      { reason: "health_probe_misconfigured" }
+    );
+  }
+
+  const now = Date.now();
+  const entries = await Promise.all(providers.map(async (p) => ({
+    id: p.id,
+    state: (await sharedHealthStore.snapshot(p.id, now)).state
+  })));
+  const allOpen = entries.length > 0 && entries.every((e) => e.state === "open");
+  const status = allOpen ? "down" : entries.some((e) => e.state === "open") ? "degraded" : "ok";
+  return finishRequest(
+    healthProbeResponse(allOpen ? 503 : 200, { status, providers: entries, ts: now }, request.method),
+    requestContext,
+    { reason: "health_probe", probeStatus: status }
+  );
+}
+
+function healthProbeResponse(status, body, method) {
+  // HEAD 按 HTTP 语义不带 body(拨测服务只看状态码,Content-Type/Cache 照带)。
+  return new Response(method === "HEAD" ? null : JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "max-age=30"
+    }
+  });
+}
+
+// MARK: - Provider health alerting (层 B, ALERTING.md)
+
+/// 把本次探活结果喂给告警状态机,状态跃迁时推 Telegram。
+/// 任何一步(KV 读写 / Telegram 发送)失败都不抛 —— cron 不能被告警拖垮。
+async function notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl }) {
+  sharedAlertStateStore.updateKv(env.AI_PROVIDER_STATE_KV);
+  const now = Date.now();
+  // KV 读失败 → load 返回 null → shouldNotify 视为「无历史」→ 有故障就推(宁多勿漏)
+  const previous = await sharedAlertStateStore.load();
+  const decision = shouldNotify(previous, level, now);
+  const record = nextRecord(previous, level, decision, now);
+  await sharedAlertStateStore.save(record);
+  if (!decision.notify) return;
+
+  // 熔断状态一并带上:failed 的 provider 此刻在 HealthStore 里的真实 circuit 状态
+  // (内存态刚被 recordFailure 更新过,读的是最新值),不用再去查 /v1/admin/providers。
+  const failedLines = await Promise.all(failedDetails.map(async (f) => {
+    const circuit = await sharedHealthStore.circuitState(f.providerId);
+    return `- ${f.providerId} (circuit ${circuit}): ${f.reason}`;
+  }));
+  const text = buildHealthAlertMessage({ kind: decision.kind, level, succeeded, total, failedLines, previous, record, now });
+  const sent = await sendTelegramAlert(env, text, fetchImpl);
+  logInfo("alert.health.notified", { kind: decision.kind, level, delivered: sent.ok, skipped: Boolean(sent.skipped) });
+}
+
+function buildHealthAlertMessage({ kind, level, succeeded, total, failedLines, previous, record, now }) {
+  const emoji = level === "ok" ? "✅" : level === "down" ? "🚨" : "⚠️";
+  const head = kind === "recovered"
+    ? "VoiceTodo 告警恢复(层 B: provider 健康检查)"
+    : kind === "reminder"
+      ? "VoiceTodo 持续故障提醒(层 B: provider 健康检查)"
+      : "VoiceTodo 告警(层 B: provider 健康检查)";
+  const lines = [
+    `${emoji} ${head}`,
+    `状态: ${level.toUpperCase()}(${succeeded}/${total} provider 可用)`
+  ];
+  if (kind === "recovered" && previous?.since) {
+    lines.push(`故障总时长: ${formatDuration(now - previous.since)}`);
+  } else if (kind === "reminder" && record?.since) {
+    lines.push(`已持续: ${formatDuration(now - record.since)}`);
+  }
+  lines.push(...failedLines);
+  return lines.join("\n");
+}
+
+function formatDuration(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest > 0 ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+}
+
 // MARK: - Scheduled handler (90 天 GC)
 
 export async function handleScheduled(env, fetchImpl = fetch) {
@@ -787,16 +918,32 @@ export async function handleScheduled(env, fetchImpl = fetch) {
   // 新加(P3):主动健康检查。每 30 分钟 cron 触发,并行 ping 所有 provider,
   // 成功调 recordSuccess(更新 EWMA),失败调 recordFailure(可能触发熔断)。
   // 跟真实请求共享 HealthStore 状态机,故障时 selector 提前避开不健康 provider。
-  await runProviderHealthCheck(env, fetchImpl);
+  const level = await runProviderHealthCheck(env, fetchImpl);
+
+  // 层 C-2(ALERTING.md):healthchecks.io 死人开关心跳。
+  // 心跳测的是「cron 还在跑」,不是「provider 健康」—— KV 未绑定 / PROVIDERS
+  // 非法时 level 为 null(算不出),cron 本身活着,仍发成功心跳。这两件事别混。
+  if (env.HEALTHCHECK_PING_URL) {
+    const base = String(env.HEALTHCHECK_PING_URL).replace(/\/+$/, "");
+    const pingUrl = level === "down" ? `${base}/fail` : base;
+    try {
+      await fetchImpl(pingUrl);
+    } catch (error) {
+      // 心跳失败只 log,不影响 cron 其余部分
+      logWarn("alert.healthcheck_ping.failed", { errorName: error?.name, errorMessage: error?.message });
+    }
+  }
 }
 
 /// 主动健康检查:用最短 transcript "test" 省 token,并行 ping 所有 provider。
 /// 复用 HealthStore 状态机 — 成功更新 EWMA,失败累计(达到阈值会进 open)。
 /// 单个 provider 失败不影响其他(Promise.allSettled)。
+/// 返回本次探活的告警 level("ok"|"degraded"|"down");算不出 level 时返回 null
+/// (KV 未绑定 / PROVIDERS 非法),层 C-2 心跳据此仍发成功 ping。
 async function runProviderHealthCheck(env, fetchImpl) {
   if (!env.AI_PROVIDER_STATE_KV) {
     logInfo("health_check.skipped", { reason: "kv_not_bound" });
-    return;
+    return null;
   }
   sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV);
   configureHealthParams(env);
@@ -806,7 +953,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
     providers = loadProviders(env, { onSecretMissing: () => {} });
   } catch (error) {
     logError("health_check.providers_failed", errorFields(error));
-    return;
+    return null;
   }
 
   const probeTranscript = "test";
@@ -866,12 +1013,28 @@ async function runProviderHealthCheck(env, fetchImpl) {
   const failed = results
     .map((r) => r.status === "fulfilled" ? r.value : { providerId: "unknown", ok: false, reason: r.reason?.message || "rejected" })
     .filter((r) => !r.ok);
+  // reason 归一化到 HealthStore 的 errorType 口径(http_503 / timeout / network / no_key),
+  // 让 summary log 与 Telegram 告警消息里的错误类型可直接对照熔断记录。
+  const failedDetails = failed.map((f) => ({
+    providerId: f.providerId,
+    reason: f.reason || f.errorType || (f.status !== undefined ? `http_${f.status}` : "unknown")
+  }));
   logInfo("health_check.completed", {
     total,
     succeeded,
     failedCount: failed.length,
-    failedDetails: failed.map((f) => ({ providerId: f.providerId, reason: f.reason || f.errorType || f.status || "unknown" }))
+    failedDetails
   });
+
+  // 层 B(ALERTING.md):状态跃迁告警。classifyLevel 返回 null(total === 0,
+  // 如 secret 全缺)时跳过 —— 没有可探活的 provider 是配置问题,不告警,
+  // 避免被误报成服务故障。no_key / no_adapter 的单个 provider 仍计入
+  // failedDetails → degraded:failover 容量减半该知道,这是有意的口径。
+  const level = classifyLevel(succeeded, total);
+  if (level) {
+    await notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl });
+  }
+  return level;
 }
 
 async function readPayload(request) {

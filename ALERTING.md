@@ -89,8 +89,8 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 
 | 层 | 状态 | 说明 |
 |---|------|------|
-| B cron 熔断告警 | **待实施（细则已定稿）** | 纯服务端，`wrangler deploy` 当天生效 |
-| C 健康探针 + 死人开关 | **待实施（细则已定稿）** | 同上 |
+| B cron 熔断告警 | **已实施，待部署** | 代码 + 测试已落地（`src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`），按「部署步骤」1–4 上线 |
+| C 健康探针 + 死人开关 | **已实施，待部署** | 同上（`/v1/health` + `handleScheduled` 心跳） |
 | A 客户端信标 | 待发版 | 要过审核 + 等用户升级，实际生效晚得多 |
 | A/D feedback-relay 接收端 | 待发版 | 没有层 A 发信标，先建接收端没意义 |
 | D pending 积压 | 待发版 | 随层 A 一起 |
@@ -245,6 +245,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 
 - **KV 读失败时返回 `notify: true`**——宁可多推一条，不可漏报。这条要有测试守着。
 - **`total === 0` 不算 `down`。** 没有可探活的 provider（如 secret 全缺）走单独的 `skipped` 分支不告警，避免配置问题被误报成服务故障。
+- **单个 provider 缺 secret（`no_key`）/ 缺 adapter 计入 failed → `degraded`。** 与上一条不同口径是有意的：failover 容量减半是维护者该知道的事，且失败明细里带 `no_key` 一眼可辨——别当成误报修掉。
 
 ### 改 `runProviderHealthCheck`
 
@@ -276,7 +277,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 
 1. **不复用 `handleAdminGetProviders`。** 那个返回 `type` / `model` / `priority` / `timeoutMs` / 完整 `health` 快照。新写精简版，**只出 `id` + `state`**，其余一律不出。
 2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId, now)` 是 per-provider 签名，实现时遍历 `loadProviders(env)` 的结果逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
-3. **HTTP 状态码本身携带语义**：全部 provider `open` → 503，否则 200。这样拨测服务不用解析 body 就能告警。
+3. **HTTP 状态码本身携带语义**：全部 provider `open` → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分 open）/ `down`（全 open，503）/ `misconfigured`（配置非法，503）。
 4. `Cache-Control: max-age=30` 让 Cloudflare 边缘挡掉重复轮询。
 
 两条边界：

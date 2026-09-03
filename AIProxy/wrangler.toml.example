@@ -129,8 +129,20 @@ TELEMETRY_DAILY_LIMIT = "500"
 
 # 每天 03:00 UTC 执行遥测事件 GC（删除 90 天前的数据）。
 # 必须配置 D1 binding 才生效；未配置时 cron 仍触发但 handler 直接跳过。
+# cron 同时做:provider 主动健康检查 + 状态跃迁 Telegram 告警(层 B)、
+# healthchecks.io 心跳(层 C-2),三个告警 secret 全可选,缺配只 logWarn 跳过。
 # [triggers]
 # crons = ["0 3 * * *"]
+
+# ─── 告警 secrets（层 B/C，全部可选，缺配只 logWarn 不会让核心链路挂掉）─────
+# Telegram 推送:与 feedback-relay 用同一个 bot(贴相同的值),两个都配才生效。
+#   wrangler secret put TELEGRAM_BOT_TOKEN
+#   wrangler secret put TELEGRAM_CHAT_ID
+#
+# healthchecks.io 死人开关:cron 每次跑完 ping 一次,心跳断了它反向告警 ——
+# 唯一能覆盖「告警系统自身挂了」的手段。ping URL 含 uuid,等价于凭据,
+# 按 secret 处理,不写进 wrangler.toml。
+#   wrangler secret put HEALTHCHECK_PING_URL
 
 # ─── Durable Objects（强一致配额计数器） ─────────────────────────────────────
 # QuotaCounter 替代 KV 上的 read-modify-write,后者在并发下丢失更新。

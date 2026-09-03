@@ -118,12 +118,24 @@ id = "ef09b0ad898241d5aa33291f406beb7e"
 # database_name = "voicetodo-telemetry"
 # database_id = "your-d1-database-id"
 
-# Cron triggers:每 30 分钟跑一次 handleScheduled,做两件事:
+# Cron triggers:每 30 分钟跑一次 handleScheduled,做四件事:
 #   1. telemetry GC(90 天保留,需 TELEMETRY_DB binding)
 #   2. provider 主动健康检查(P3):并行 ping 所有 provider,更新 HealthStore 状态
+#   3. 状态跃迁告警(层 B,ALERTING.md):全挂/恢复推 Telegram(需 TELEGRAM_* secrets)
+#   4. healthchecks.io 心跳(层 C-2):死人开关(需 HEALTHCHECK_PING_URL)
 # 成本估算:每 30min × N provider = N*48 次/天,2 provider ≈ 96 次/天 ≈ $1/天
 [triggers]
 crons = ["*/30 * * * *"]
+
+# ─── 告警 secrets(层 B/C,全部可选,缺配只 logWarn 不会让核心链路挂掉)─────
+# Telegram 推送:与 feedback-relay 用同一个 bot(贴相同的值),两个都配才生效。
+#   wrangler secret put TELEGRAM_BOT_TOKEN
+#   wrangler secret put TELEGRAM_CHAT_ID
+#
+# healthchecks.io 死人开关:cron 每次跑完 ping 一次,心跳断了它反向告警 ——
+# 唯一能覆盖「告警系统自身挂了」的手段。ping URL 含 uuid,等价于凭据,
+# 按 secret 处理,不写进 wrangler.toml。
+#   wrangler secret put HEALTHCHECK_PING_URL
 
 # ─── Extraction Cache KV(解析结果缓存)─────────────────────────────────────
 # 用于 P2:同一 transcript 1h TTL 缓存,省上游 AI 调用。
