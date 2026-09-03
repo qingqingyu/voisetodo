@@ -159,7 +159,9 @@ final class ReviewFlowState {
 
     /// 快照里本来就排在下周的未完成任务。下周窗口与「排下周」的落点同语义:
     /// 下一个周一的用户日起点起 7 天(与 ReviewStepTriage.nextMondayStart 一致,
-    /// 排期写库与候选池取数必须同一坐标系)。
+    /// 排期写库与候选池取数必须同一坐标系)。`nextDate` 返回自然日 0 点,
+    /// 抬用户日用 `userDayStart(onNaturalDay:)`——对 0 点调 `startOfUserDay(for:)`
+    /// 会掉到前一用户日(startHour > 0 时窗口左移一天)。
     static func nextWeekCommitted(
         from todos: [TodoItemData],
         now: Date,
@@ -170,7 +172,7 @@ final class ReviewFlowState {
         guard let nextMonday = calendar.nextDate(
             after: now, matching: components, matchingPolicy: .nextTime
         ) else { return [] }
-        let weekStart = DayClock.startOfUserDay(for: nextMonday, calendar: calendar)
+        let weekStart = DayClock.userDayStart(onNaturalDay: nextMonday, calendar: calendar)
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
         return todos.filter { todo in
             guard let due = todo.dueDate,
@@ -292,7 +294,8 @@ final class ReviewFlowState {
 
     /// 洞察腐烂卡的当场动作「不做了」(2026-09-01 v2「洞察卡带当场动作」;
     /// 写库在视图层,本方法只改状态)。条目可能在前 8 卡堆或排序尾部,
-    /// 两处都清;不在(已处理过)时返回 false。决定数照常 +1(拍板 4)。
+    /// 两处都清;不在(已处理过)时返回 false。决定数照常 +1(拍板 4);
+    /// 尾部条目也因此进 processedIDs、计入 inputCount(口径例外见 `Ledger`)。
     @discardableResult
     func abandonFromInsight(id: UUID) -> Bool {
         if let todo = deck.first(where: { $0.id == id }) {
@@ -364,11 +367,15 @@ final class ReviewFlowState {
         tail.count - somedayBatchCandidates.count
     }
 
-    /// 批量出口执行(视图层 store 全部写成功后调用):快照原字段(整批撤销用)、
+    /// 批量出口执行(视图层 store 写库后调用):快照原字段(整批撤销用)、
     /// 计数累加、尾部清掉对应条目。不进 processedIDs / abandonedStack——
     /// 推后不是「决定」(拍板 4),也不是划掉。
-    func markSomedayBatchExecuted() {
-        let batch = somedayBatchCandidates
+    ///
+    /// 参数传**实际写入的批**,不在此二次求值 `somedayBatchCandidates`——
+    /// 它依赖 `Date()`,与视图侧取批两次求值可能错位(边界跨 30 天门槛时
+    /// 快照与落库不是同一批)。部分失败时视图侧只传成功子集:快照严格等于
+    /// 已落库的条目,未写入的留在尾部可重推(重推幂等,已清的再清是 no-op)。
+    func markSomedayBatchExecuted(batch: [TodoItemData]) {
         guard !batch.isEmpty else { return }
         somedayUndoSnapshot = batch
         somedayCount += batch.count
@@ -402,6 +409,10 @@ final class ReviewFlowState {
     struct Ledger: Equatable, Sendable {
         /// 卡堆侧总数 = 逐张决定的 + 仍留在卡堆的。2026-09-01 拍板 1 截断后
         /// 尾部不计入——「N / M」计数器只对用户真正面对过的卡有意义。
+        /// **例外**:洞察腐烂卡当场「不做了」的尾部条目走 `abandonFromInsight`
+        /// → `markAbandoned`(进 processedIDs),照常计入——用户确实面对并
+        /// 决定了它(拍板 4:决定数同理 +1),若从 inputCount 排除会出现
+        /// decidedCount > inputCount 的口径倒挂。
         let inputCount: Int
         /// 处理后仍留在卡堆的(M,含撤销回来的)。
         let remainingCount: Int
