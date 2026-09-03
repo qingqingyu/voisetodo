@@ -97,9 +97,12 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 
 ### 触发点
 
-`App/TranscriptProcessingFlow.swift` 的 `saveOffline()` 是所有「AI 不通 → 存起来」的**唯一漏斗**——`networkUnavailable` / `apiTimeout` / `circuitOpen` / `apiServerError` / `rateLimited` / `ipRateLimited` / `serviceUnavailable` 全部经过它。
+「AI 不通 → 存起来」有**两条独立的落库路径**，信标必须都挂上：
 
-加 `incidentReason: String?` 参数，各 catch 分支把已有的 `voiceError` case 名传进来。
+1. **App 内录音**：`App/TranscriptProcessingFlow.swift` 的 `saveOffline()`——`networkUnavailable` / `apiTimeout` / `circuitOpen` / `apiServerError` / `rateLimited` / `ipRateLimited` / `serviceUnavailable` 全部经过它。加 `incidentReason: String?` 参数，各 catch 分支把已有的 `voiceError` case 名传进来。
+2. **Siri / AppIntent**：`App/Intents/AddTodoIntent.swift` 的兜底分支**不经过 `saveOffline`**——它直接 `TodoItem.rawTranscript(...)` + `context.insert`，是独立实现。而 Siri 恰是 app 不在前台时的故障场景，这条路径漏了，层 A 就有盲区。该分支按同一 reason 口径触发信标；Intent 进程随时可能退出，发不出去没关系——`pendingReport` 标记在 App Group 里，下次打开 app 会补发。
+
+> **`quotaExhausted` 走漏斗但不触发信标**（两条路径同口径）。它是付费墙事件——用户个人配额耗尽，不是连通性故障，遥测已覆盖。更不能混进来的原因：免费额度打满的那天，大量设备会同时走这条路径，会把层 A「多台设备同时失败 = 服务真挂了」的判别维度直接污染掉。
 
 > `saveManual()` 路径（确定性解析失败）**不触发**信标——那是 AI 通了但解析不了，不是连通性问题。
 
@@ -118,6 +121,8 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 - 连续失败 ≥ 2 次
 - 单次 pending 恢复批次里失败 ≥ 3 条
 - 最老的 pending 卡了 > 30 分钟仍未恢复（层 D）
+
+> 三条都只能在 app 活着时（前台 / BGTask）评估。用户录完失败就退出 app，信标要等下次打开才发——客户端信标的固有限制，「失败当下立刻发」已覆盖主场景。
 
 ### 发送时机——「快速察觉」的关键
 
@@ -150,7 +155,7 @@ deviceId(复用已有 sha256 匿名标识), appVersion, osVersion, locale
 
 两点关键差异：
 
-- **超时设 8s，不是 `NetworkConfig.apiTimeout` 的 55s。** 告警不该拖着用户，也不该在故障时反复捶。
+- **超时设 8s，落在新常量**（如 `Protocols/Constants.swift` 新增 `IncidentConfig.reportTimeout`）。不是 `NetworkConfig.apiTimeout` 的 55s，也别照抄 `FeedbackSubmitter` 读的 `FeedbackConfig.requestTimeout`（30s）——告警不该拖着用户，也不该在故障时反复捶。
 - **失败不重试**，只置 `pendingReport` 标记等下次机会。故障时反复重试会加重问题。
 
 端点复用已有的 `FeedbackConfig.endpoint`（`Protocols/Constants.swift`），无需新增构建配置。
@@ -233,7 +238,7 @@ level = succeeded === 0 ? "down" : (succeeded < total ? "degraded" : "ok")
 四条硬约束：
 
 1. **不复用 `/v1/admin/providers`。** 那个返回完整配置含 url / model / secretName。新写精简版，只出 provider id + circuit state，其余一律不出。
-2. **不调用上游 AI。** 只读 `sharedHealthStore.snapshot()`。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
+2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId)` 是 per-provider 签名，实现时遍历 provider 列表逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
 3. **HTTP 状态码本身携带语义**：全部 provider `open` → 503，否则 200。这样拨测服务不用解析 body 就能告警。
 4. `Cache-Control: max-age=30` 让 Cloudflare 边缘挡掉重复轮询。
 
@@ -356,7 +361,8 @@ curl "http://localhost:8787/cdn-cgi/handler/scheduled"
 | 文件 | 用途 |
 |------|------|
 | `App/IncidentReporter.swift` | 客户端信标：累计、节流、发送、离线补发 |
-| `App/TranscriptProcessingFlow.swift` | 信标触发点（`saveOffline` 漏斗） |
+| `App/TranscriptProcessingFlow.swift` | 信标触发点（App 内录音的 `saveOffline` 漏斗） |
+| `App/Intents/AddTodoIntent.swift` | 信标触发点（Siri 兜底路径，不经过 `saveOffline`） |
 | `App/PendingRecoveryFlow.swift` | 层 D 的 pending 积压信号来源 |
 | `Protocols/NetworkMonitor.swift` | 网络恢复时触发补发 |
 | `feedback-relay/worker.js` | `/v1/incident` endpoint + 聚合 + Telegram 推送 |
