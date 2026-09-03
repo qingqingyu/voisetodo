@@ -85,6 +85,20 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 | C 健康探针 + 死人开关 | Worker 整个挂了、域名不通、cron 死了 | 此时 A 和 B 都发不出告警 |
 | D pending 积压 | 用户「点重试还是不通」的持续痛感 | 单次失败信号看不出持续性 |
 
+## 实施状态
+
+| 层 | 状态 | 说明 |
+|---|------|------|
+| B cron 熔断告警 | **待实施（细则已定稿）** | 纯服务端，`wrangler deploy` 当天生效 |
+| C 健康探针 + 死人开关 | **待实施（细则已定稿）** | 同上 |
+| A 客户端信标 | 待发版 | 要过审核 + 等用户升级，实际生效晚得多 |
+| A/D feedback-relay 接收端 | 待发版 | 没有层 A 发信标，先建接收端没意义 |
+| D pending 积压 | 待发版 | 随层 A 一起 |
+
+**B/C 先做的理由：** 它们不依赖发版，且覆盖的「上游 AI 全挂」和「Worker/域名整个不可达」是影响面最大的两类故障。层 A 价值最高但生效最慢，两件事不冲突——B/C 先把服务端的眼睛装上。
+
+下面各层的小节里，**层 B / C 已经写到可直接照着实现的粒度**（函数签名、挂接点、边界与降级行为）；层 A / D 仍是设计口径，实施前需要再细化一轮。
+
 ---
 
 ## 层 A：客户端故障信标（最关键的一层）
@@ -193,35 +207,56 @@ deviceId(复用已有 sha256 匿名标识), appVersion, osVersion, locale
 
 ## 层 B：cron 健康状态告警
 
-### 新增 `AIProxy/src/notify.js`
+改动全部集中在 `AIProxy/`，不碰 `feedback-relay/`，不碰 iOS 端。
 
-`sendTelegramAlert(env, text)`——从 `feedback-relay/worker.js` 的 `deliverToTelegram` 抄同款 `sendMessage` 实现，约 25 行。
+### 新增 `AIProxy/src/notify.js`（约 40 行）
+
+```js
+sendTelegramAlert(env, text, fetchImpl = fetch) → { ok, skipped? }
+```
+
+照 `feedback-relay/worker.js` 的 `deliverToTelegram` 抄同款 `sendMessage`。
 
 > **刻意复制而非跨 worker 调用。** 告警链路的依赖越少越好——如果 AIProxy 要靠调 feedback-relay 才能告警，就多了一个能一起挂的环节。这是告警系统该有的偏执。
 
-未配 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` 时静默跳过 + `logWarn`，**绝不抛异常打断 cron**（cron 还要做 telemetry GC）。
+三条约束：
 
-### 新增 `AIProxy/src/alertState.js`
+- **必须接受 `fetchImpl` 参数。** `handleScheduled(env, fetchImpl)` 已经是可注入签名，测试靠它拦截 Telegram 调用；不透传就会在跑测试时打真实网络。
+- 未配 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` → `logWarn` 后返回 `{ ok: false, skipped: true }`。
+- 发送异常自己 catch 掉，同样只 log。**绝不抛异常打断 cron**——cron 还要做 telemetry GC，不能被告警拖垮。
 
-在已有的 `AI_PROVIDER_STATE_KV` 里用 `alert:` key 前缀存 `{ level, since, lastNotifiedAt }`。与 `health:` 前缀共存，跟 `src/health.js` 的做法一致。
+### 新增 `AIProxy/src/alertState.js`（约 70 行）
 
-`shouldNotify(previous, current, now)` → `{ notify, kind: "degraded"|"down"|"recovered"|"reminder" }`：
+沿用 `src/health.js` 的形态：KV 存取 + 纯函数判定，KV 失败时降级。
+
+存储在已有的 `AI_PROVIDER_STATE_KV`，key `alert:provider_health`，值 `{ level, since, lastNotifiedAt }`。`alert:` 前缀与 `health:` / `config:` 共存，与现有做法一致。
+
+```js
+classifyLevel(succeeded, total) → "ok" | "degraded" | "down"
+shouldNotify(previous, current, now) → { notify, kind }
+// kind ∈ recovered | degraded | down | reminder
+```
 
 - level 变化 → 推
-- level 仍是 `down` 且距上次推送 ≥ 6h → 推 reminder
+- 仍是 `down` 且距 `lastNotifiedAt` ≥ 6h → 推 `reminder`
 - 其余 → 不推
 
-**KV 读写失败时降级为「推送」**——宁可多推一条，不可漏报。
+两条边界：
+
+- **KV 读失败时返回 `notify: true`**——宁可多推一条，不可漏报。这条要有测试守着。
+- **`total === 0` 不算 `down`。** 没有可探活的 provider（如 secret 全缺）走单独的 `skipped` 分支不告警，避免配置问题被误报成服务故障。
 
 ### 改 `runProviderHealthCheck`
 
-它已经算好了 `succeeded` / `total` / `failed`，只需在末尾接告警：
+在末尾、现有 `logInfo("health_check.completed")` 之后接告警。它已经算好了 `succeeded` / `total` / `failed`（`failed` 含 `providerId` + `reason`），直接喂给 `classifyLevel` + `shouldNotify`。
 
-```js
-level = succeeded === 0 ? "down" : (succeeded < total ? "degraded" : "ok")
-```
+**该函数改为返回 level**，供层 C-2 的心跳判断用。
 
-消息带上定位所需的全部信息：哪个 provider、错误类型（`http_503` / `timeout` / `network`）、熔断状态、已持续多久。恢复消息带故障总时长。
+消息带上定位所需的全部信息：哪个 provider、错误类型（`http_503` / `timeout` / `network`）、熔断状态、已持续多久。恢复消息带故障总时长（`now - previous.since`）。
+
+### 向后兼容
+
+现有测试里的 `handleScheduled({})` 和 `handleScheduled({ TELEMETRY_DB: db })` 都没配 `TELEGRAM_*` / `HEALTHCHECK_PING_URL`，两个新分支都会跳过，不会打真实网络。
 
 ---
 
@@ -229,33 +264,46 @@ level = succeeded === 0 ? "down" : (succeeded < total ? "degraded" : "ok")
 
 ### `GET /v1/health`（AIProxy，无鉴权）
 
-在 `handleRequest` 里**必须放在 `validateAppToken` 之前**分发——拨测服务不带 token。放在现有 `/v1/telemetry/events` 分支旁边。
+在 `handleRequest` 里 `const url = new URL(...)` 之后、紧挨现有 `/v1/telemetry/events` 分支加一支。**必须放在 `validateAppToken` 之前**——拨测服务不带 token。
+
+接受 `GET` 和 `HEAD`（UptimeRobot 可能用 HEAD），其余方法 405。
 
 ```json
-{ "status": "ok", "providers": [{ "id": "ZAI_ANTHROPIC", "state": "closed" }], "ts": 1234567890 }
+{ "status": "ok", "providers": [{ "id": "ZAI_ANTHROPIC", "state": "closed" }], "ts": 1756900000000 }
 ```
 
 四条硬约束：
 
-1. **不复用 `/v1/admin/providers`。** 那个返回完整配置含 url / model / secretName。新写精简版，只出 provider id + circuit state，其余一律不出。
-2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId)` 是 per-provider 签名，实现时遍历 provider 列表逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
+1. **不复用 `handleAdminGetProviders`。** 那个返回 `type` / `model` / `priority` / `timeoutMs` / 完整 `health` 快照。新写精简版，**只出 `id` + `state`**，其余一律不出。
+2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId, now)` 是 per-provider 签名，实现时遍历 `loadProviders(env)` 的结果逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
 3. **HTTP 状态码本身携带语义**：全部 provider `open` → 503，否则 200。这样拨测服务不用解析 body 就能告警。
 4. `Cache-Control: max-age=30` 让 Cloudflare 边缘挡掉重复轮询。
 
+两条边界：
+
+- `loadProviders` 抛错（`PROVIDERS` 配置非法）→ **503 + `status: "misconfigured"`，不是 500**。对拨测服务而言「服务不可用」比「服务器错误」语义更准。
+- `AI_PROVIDER_STATE_KV` 未绑定 → 照常返回，`state` 取内存态默认值 `closed`。
+
+复用现有的 `finishRequest(response, requestContext, extra)` 保持日志一致。
+
 ## 层 C-2：healthchecks.io 死人开关
 
-`handleScheduled` 末尾追加心跳：
+`handleScheduled` 末尾追加心跳，拿层 B 里 `runProviderHealthCheck` 返回的 level：
 
-- `level !== "down"` → `fetch(env.HEALTHCHECK_PING_URL)`
-- `level === "down"` → `fetch(env.HEALTHCHECK_PING_URL + "/fail")`
+- `level === "down"` → `fetchImpl(env.HEALTHCHECK_PING_URL + "/fail")`
+- 其余（**含 KV 未绑定的早退**）→ `fetchImpl(env.HEALTHCHECK_PING_URL)`
 
-心跳失败只 log，不影响 cron 其余部分。
+> KV 未绑定时 `runProviderHealthCheck` 会早退、算不出 level，但 **cron 本身是活的**，仍要发成功心跳——心跳测的是「cron 还在跑」，不是「provider 健康」。这两件事别混。
+
+未配 `HEALTHCHECK_PING_URL` 时跳过。心跳失败只 log，不影响 cron 其余部分。
 
 一旦 Worker 或 cron 整个死了、心跳断了，healthchecks.io 会在 grace 期后主动告警。
 
 ---
 
 ## 部署步骤
+
+### 层 B / C（服务端，随本次实施）
 
 1. **AIProxy 注入 Telegram secrets**（贴与 feedback-relay 相同的值）：
    ```bash
@@ -264,30 +312,40 @@ level = succeeded === 0 ? "down" : (succeeded < total ? "degraded" : "ok")
    npx wrangler secret put TELEGRAM_CHAT_ID
    ```
 
-2. **feedback-relay 创建 KV namespace**：
+2. **healthchecks.io 建 check**（period 30min、grace 15min），拿到 ping URL：
+   ```bash
+   cd AIProxy && npx wrangler secret put HEALTHCHECK_PING_URL
+   ```
+   > ping URL 含 uuid，等价于凭据，按 secret 处理，不写进 `wrangler.toml`。
+
+3. **部署**：
+   ```bash
+   cd AIProxy && npx wrangler deploy
+   ```
+
+4. **UptimeRobot 加 HTTPS 监控** `https://ai.saydo.org/v1/health`，5 分钟间隔。
+
+> **三个 secret 全是可选的。** 一个都不配，cron 与 `/v1/health` 照常工作，只是告警静默（每次跳过会 `logWarn`）。这是刻意的：告警配置缺失绝不能让核心 AI 链路挂掉。
+>
+> `wrangler.toml` 与 `.example` 里对这三个只留注释说明（照现有 `ADMIN_TOKEN` 那段的写法），不写明文值。
+
+### 层 A / D（客户端，随下个版本）
+
+5. **feedback-relay 创建 KV namespace**：
    ```bash
    cd feedback-relay
    npx wrangler kv namespace create INCIDENT_KV
    ```
    把返回的 id 填进 `wrangler.toml`。
 
-3. **feedback-relay 初始化 incidents 表**：
+6. **feedback-relay 初始化 incidents 表**：
    ```bash
    npx wrangler d1 execute voicetodo-feedback --remote --file=./schema.sql
    ```
 
-4. **healthchecks.io 建 check**（period 30min、grace 15min），拿到 ping URL：
+7. **部署 feedback-relay**：
    ```bash
-   cd AIProxy && npx wrangler secret put HEALTHCHECK_PING_URL
-   ```
-   > ping URL 含 uuid，按 secret 处理，不写进 `wrangler.toml`。
-
-5. **UptimeRobot 加 HTTPS 监控** `https://ai.saydo.org/v1/health`，5 分钟间隔。
-
-6. **部署两个 worker**：
-   ```bash
-   cd AIProxy && npx wrangler deploy
-   cd ../feedback-relay && npx wrangler deploy
+   cd feedback-relay && npx wrangler deploy
    ```
 
 ### 顺手确认一件既存问题
@@ -300,17 +358,45 @@ level = succeeded === 0 ? "down" : (succeeded < total ? "degraded" : "ok")
 
 ## 验证
 
-### 单元测试
+### 层 B / C 单元测试（`AIProxy/worker.test.js`，`npm test`）
+
+复用现有的 `makeFakeKV()` / `providersEnv(providers, secrets, extraEnv)` / `jsonResponse()` helper，以及现有那批 `handleScheduled` 健康检查测试的形态——它们是现成的模板。
+
+Telegram 与心跳调用靠注入的 `fetchImpl` 按 URL 前缀分流拦截（`api.telegram.org` / ping host），断言调用次数与消息内容。
+
+**`/v1/health`**
+
+- 全 closed → 200 + `status: "ok"`；部分 open → 200 + `"degraded"`；全 open → **503**
+- 不带 `X-App-Token` 也能访问（回归防线：别哪天被挪到 auth 后面）
+- **body 里搜不到 `secretName` / provider url / model**——直接 `assert.ok(!text.includes("api.z.ai"))`。这是安全断言，必须有
+- `PROVIDERS` 非法 → 503 + `misconfigured`，不是 500
+- `POST /v1/health` → 405
+
+**告警状态机**
+
+- ok → down：推一次；同一 level 再跑一次：**不重推**
+- down → ok：推恢复消息，含故障时长
+- down 持续 5h59m 不推、6h01m 推 reminder（**用可注入的 `now` 控时，别用真实时钟**）
+- KV 读失败 → 仍然推（漏报比误报危险）
+- `total === 0` → 不推
+- 未配 `TELEGRAM_*` → 不抛错，cron 其余部分照常完成（拿现有的 telemetry GC 测试断言这点）
+
+**心跳**
+
+- `down` → 打 `/fail` 端点；`ok` → 打 base URL
+- KV 未绑定早退时**仍发成功心跳**
+- 心跳 fetch 抛错 → `handleScheduled` 不抛
+
+### 层 A / D 单元测试（随下个版本）
 
 | 文件 | 覆盖 |
 |------|------|
-| `AIProxy/worker.test.js`（已有，追加） | `/v1/health` 三种状态的码与 body；无鉴权可访问；**不泄露 url/model/secretName**；告警状态跃迁只推一次；恢复推一次；`down` 持续需满 6h 才 reminder。用注入的 `fetchImpl` mock 掉 Telegram 与 healthchecks ping |
 | `feedback-relay/worker.test.js`（新建） | 窗口内第一条推、后续静默、跨窗口带汇总、unique device 计数 |
 | `VoiceTodoTests/App/IncidentReporterTests.swift`（新建） | 30 分钟节流；payload 不含 transcript/标题；离线时置 `pendingReport` 且恢复后补发一次（不重复发） |
 
 > feedback-relay 的 README 里原本刻意没写测试，但聚合窗口是有状态逻辑、易错，值得破例覆盖。
 
-### 端到端手测（最关键的一步）
+### 端到端手测（层 A，随下个版本）
 
 精确复现「说完待办 → AI 不通 → 存起来 → 点重试还是不通」的场景。
 
@@ -321,17 +407,34 @@ level = succeeded === 0 ? "down" : (succeeded < total ? "degraded" : "ok")
 3. **Telegram 应在秒级收到 🚨**（因为 `feedback.saydo.org` 仍然通）
 4. 恢复端点配置，回前台 → pending 正常恢复，且**不再重复告警**
 
-### 服务端手测
+### 服务端手测（层 B / C）
+
+先跑全量测试，不只新增用例：
 
 ```bash
-# 健康探针：应返回 200 + provider 状态，且 body 里搜不到 api.z.ai / secretName
-curl -i https://ai.saydo.org/v1/health
+cd AIProxy && npm test
+npx wrangler dev
+```
 
-# 本地触发 cron：把 provider url 改成不可达地址
-cd AIProxy && npx wrangler dev
+两条手测：
+
+```bash
+# 1. 健康探针：200 + provider 状态，且 body 里搜不到 api.z.ai / secretName
+curl -i "http://localhost:8787/v1/health"
+
+# 2. cron 告警：把 wrangler.toml 的 provider url 改成不可达地址
+#    (需先在本地 .dev.vars 配好 TELEGRAM_*)
 # wrangler 4.x 的 scheduled 触发入口（不是旧版的 /__scheduled）
 curl "http://localhost:8787/cdn-cgi/handler/scheduled"
-# → Telegram 应收到 down 告警；改回正常地址再触发 → 应收到恢复告警
+# → Telegram 应收到 down 告警
+# → 紧接着再触发一次 → 不应重复推送（状态跃迁去重生效）
+# → 改回正常地址再触发 → 应收到恢复告警，且带故障时长
+```
+
+上线后确认一次线上探针：
+
+```bash
+curl -i https://ai.saydo.org/v1/health
 ```
 
 ---
