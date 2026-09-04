@@ -157,6 +157,13 @@ struct PaywallContent: View {
                 // refreshEntitlements 会翻回 false,本分支自动退回完整购买 UI。
                 comparisonCard
                 subscribedStatusCard
+                if entitlement.lastError != ErrorMessages.paywallProductsLoadFailed {
+                    // 错误显式传播:恢复购买失败(离线时 AppStore.sync 抛错)必须可见。
+                    // 只排除商品加载错误 —— 本分支不渲染商品,加载失败对已订阅者是噪音;
+                    // loadProducts 失败时只赋 paywallProductsLoadFailed 这一个常量,
+                    // 按值比较即按错误来源过滤(lastError 均来自 ErrorMessages 常量赋值)。
+                    inlineErrorText
+                }
                 legalBlock
             } else {
                 comparisonCard
@@ -193,11 +200,15 @@ struct PaywallContent: View {
     ///
     /// 分流顺序:error → 错误胶囊;Pro 用户 → 实时用量卡(对比卡对已订阅者无意义);
     /// Free 且 used == 0 → 对比卡;Free 已用 → 实时用量卡。
+    /// 「Pro 用户」同时看 entitlement 与 quotaUsage 两处:quotaUsage.isPro 是代理
+    /// 验签后的 plan,可能滞后于 StoreKit 的 entitlement.isPro(刚订阅、代理响应未到);
+    /// 只看前者时已订阅+当日零用量的用户会看到「免费 vs Pro」转化胶囊,
+    /// 与已订阅状态卡自相矛盾 —— 任一处为 Pro 即走实时用量卡。
     @ViewBuilder
     private var comparisonCard: some View {
         if quotaUsage.loadState == .error {
             quotaErrorPill
-        } else if quotaUsage.isPro {
+        } else if quotaUsage.isPro || entitlement.isPro {
             liveUsageCard
         } else if quotaUsage.used == 0 {
             freeVsProComparisonPill
