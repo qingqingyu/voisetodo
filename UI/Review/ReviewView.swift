@@ -110,7 +110,7 @@ struct ReviewView: View {
                 // (入口卡在 `content` 内、统计行之后);空态仍入口卡置顶——
                 // 新用户没有完成记录,行动入口必须第一眼可见。
                 VStack(spacing: WarmSpacing.lg) {
-                    if summary.total == 0 {
+                    if fixedWindowSummary.total == 0 {
                         if store != nil {
                             reviewFlowEntryCard
                         }
@@ -135,9 +135,6 @@ struct ReviewView: View {
             .onChange(of: showReviewFlow) { _, shown in
                 if !shown { loadReviewNotes() }
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            stickyPeriodHeader
         }
         .fullScreenCover(isPresented: $showReviewFlow) {
             if let store {
@@ -179,15 +176,26 @@ struct ReviewView: View {
                         .font(.system(size: 22))
                         .foregroundColor(WarmTheme.primary)
 
-                    Text(String(localized: hasPending
-                        ? "review.flow.entry.pending_\(pendingCount)"
-                        : "review.flow.entry.empty"))
-                        .font(WarmFont.headline(15))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
+                    VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                        Text(String(localized: hasPending
+                            ? "review.flow.entry.pending_\(pendingCount)"
+                            : "review.flow.entry.empty"))
+                            .font(WarmFont.headline(15))
+                            .foregroundColor(WarmTheme.textPrimary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        // 范围标(2026-09-04 拍板 B1):点进流程前就锚定窗口口径——
+                        // 割裂感发生在点之前。信息层级刻意低于主文案,不加第三行/图标,
+                        // 不要退回 8-23 否掉的「信息展示卡」。
+                        Text(String(localized: "review.window.last30d"))
+                            .font(WarmFont.caption(11))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .layoutPriority(1)
 
                     Spacer(minLength: WarmSpacing.xs)
 
@@ -213,22 +221,6 @@ struct ReviewView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("ReviewFlowEntryCard")
-    }
-
-    // MARK: Sticky Header
-
-    /// 周/月切换器吸顶——滚动后仍能看到当前在看哪个范围。
-    /// 只放 Picker(32pt),Hero 区已经有周期标签,重复会拥挤。
-    private var stickyPeriodHeader: some View {
-        periodPicker
-            .padding(.horizontal, WarmSpacing.lg)
-            .padding(.vertical, WarmSpacing.sm)
-            .background(WarmTheme.cardBackground)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(WarmTheme.divider)
-                    .frame(height: 1)
-            }
     }
 
     // MARK: - Computed
@@ -257,8 +249,25 @@ struct ReviewView: View {
         return events
     }
 
-    /// 当前选中周期的聚合摘要。
-    private var summary: ReviewSummary {
+    /// 固定近 30 天的聚合摘要——Hero / Stats / 空态判定用,**不随周/月 picker 变**
+    /// (2026-09-04 拍板 A,docs/review-window-tab-decoupling.md)。与复盘流程
+    /// 第 1 步(`ReviewStepRecap`)同调 `monthSummary`,两处同窗口同数字;
+    /// 周期标签经 `periodLabel` 参数锚定「近 30 天」,修掉滚动窗口配日历月名的错配。
+    private var fixedWindowSummary: ReviewSummary {
+        RecapSummaryBuilder.monthSummary(
+            today: Date(),
+            calendar: calendar,
+            periodLabel: String(localized: "review.window.last30d"),
+            allTodos: allTodos.map { $0.toData() },
+            completedTodos: completedTodos.map { $0.toData() },
+            recurringCompletions: recurringCompletions.map {
+                (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
+            }
+        )
+    }
+
+    /// 当前选中周期的聚合摘要——只喂 picker 辖区(分类图 / 每日趋势 / 最忙一天)。
+    private var periodSummary: ReviewSummary {
         let today = Date()
         let start = selectedPeriod.startDay(from: today, calendar: calendar)
         let end = selectedPeriod.endDay(from: today, calendar: calendar)
@@ -343,19 +352,24 @@ struct ReviewView: View {
 
     private var content: some View {
         VStack(spacing: WarmSpacing.lg) {
-            RecapHeroSection(summary: summary)
+            // Hero/Stats 固定近 30 天(拍板 A):picker 只管下方图表区,
+            // 切周/月不再牵动成绩单——窗口口径见 docs/review-window-tab-decoupling.md。
+            RecapHeroSection(summary: fixedWindowSummary)
 
-            RecapStatsRow(summary: summary)
+            RecapStatsRow(summary: fixedWindowSummary)
 
             if store != nil {
                 reviewFlowEntryCard
             }
 
-            RecapCategoryChartSection(byCategory: summary.byCategory)
+            // ── picker 辖区从这里开始(内联,不再吸顶):只管图表,不管上方成绩单 ──
+            periodPicker
+
+            RecapCategoryChartSection(byCategory: periodSummary.byCategory)
 
             dailyTrendSection
 
-            if let busiest = summary.busiestDay {
+            if let busiest = periodSummary.busiestDay {
                 busiestDaySection(busiest)
             }
 
@@ -412,7 +426,7 @@ struct ReviewView: View {
                     .font(WarmFont.headline(16))
                     .foregroundColor(WarmTheme.textPrimary)
 
-                if summary.daysWithCompletion < 3 {
+                if periodSummary.daysWithCompletion < 3 {
                     sparseTrendText
                 } else {
                     dailyTrendChart
@@ -425,7 +439,7 @@ struct ReviewView: View {
     /// 稀疏态文本:把所有有完成的天按日期顺序列出,以「,」分隔,末尾接「其余日期无记录」。
     /// 阈值 <3 天意味着最多 2 天需要描述,句子不会过长。
     private var sparseTrendText: some View {
-        let activeDays = summary.byDay
+        let activeDays = periodSummary.byDay
             .filter { $0.value > 0 }
             .sorted { $0.key < $1.key }
         let segments: [String] = activeDays.map { day, count in
@@ -479,9 +493,9 @@ struct ReviewView: View {
     /// 仅在图表态显示(稀疏态已有自己的替代文案,不重复堆叠)。
     @ViewBuilder
     private var trendConclusion: some View {
-        if let busiest = summary.busiestDay, summary.busiestDayCount > 0 {
+        if let busiest = periodSummary.busiestDay, periodSummary.busiestDayCount > 0 {
             let dateText = busiest.formatted(.dateTime.month().day())
-            let sentence = String(localized: "review.trend.summary_\(summary.total)_\(dateText)_\(summary.busiestDayCount)")
+            let sentence = String(localized: "review.trend.summary_\(periodSummary.total)_\(dateText)_\(periodSummary.busiestDayCount)")
             Text(sentence)
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
@@ -498,7 +512,7 @@ struct ReviewView: View {
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
 
         while cursor <= todayStart {
-            let count = summary.byDay[cursor] ?? 0
+            let count = periodSummary.byDay[cursor] ?? 0
             result.append((day: cursor, count: count))
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else {
                 break
@@ -572,7 +586,7 @@ struct ReviewView: View {
         // 星期恒用 `.abbreviated`:英文 "Monday" → "Mon",中文 "星期一" → "周一"。
         // 与 HomeView todayWeekdayTitle 保持一致。
         let dateText = date.formatted(.dateTime.month().day().weekday(.abbreviated))
-        return String(localized: "review.busiest.oneline_\(dateText)_\(summary.busiestDayCount)")
+        return String(localized: "review.busiest.oneline_\(dateText)_\(periodSummary.busiestDayCount)")
     }
 }
 

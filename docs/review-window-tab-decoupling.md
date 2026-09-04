@@ -1,6 +1,6 @@
 # 统计页周/月 tab 与复盘窗口的割裂 —— 修复方案
 
-> 状态：**待实施**。文档创建于 2026-09-02；2026-09-04 按实施前审阅补齐（见文末修订记录）。
+> 状态：**已实施**（2026-09-04，A/B/C 全部落地；见文末修订记录）。文档创建于 2026-09-02；2026-09-04 按实施前审阅补齐。
 > 基线：`7959174`。注意：其后的告警提交（当前 `main` = `3f7f051`）改动过 `ReviewFlowView.swift`，
 > 该文件行号已漂移，本文行号已按 `3f7f051` 更新、以符号名为准；其余相关文件在两个基线下内容未变。
 > 环境提示：Swift 需在 **Xcode 26** 编译验证（iOS 26 部署目标）。
@@ -250,3 +250,4 @@ static func monthSummary(
 
 - 2026-09-02：初版（`44ab6fa`）。
 - 2026-09-04：实施前审阅补齐——`ReviewFlowView` 行号对齐 `3f7f051`（窗口 `:608-611`、`triageInput` `:211`）；空态失去 picker 记为有意；`review.section.trends` 不采用；C 从 4 键扩至 6 键并界定其余 16 键归 v3；护栏 6 理由改如实（暂无渲染点）；新增护栏 8（xcstrings 三条纪律）；单测两条不可实现项改写为 builder 级；补验收 7 的 v3 顺序前提。
+- 2026-09-04：**实施完成**——A：`ReviewView` 拆 `fixedWindowSummary`（复用 `monthSummary` + 传标签）/`periodSummary`（原 `summary` 整体改名，编译器揪全读取点），删吸顶、picker 内联入口卡后，空态判定换 `fixedWindowSummary.total`；B：入口卡 VStack 加范围标，`monthSummary` 增 `periodLabel` 参数（缺省保留旧行为），`ReviewView` 与 `ReviewStepRecap` 两处传「近 30 天」；C：6 键补 ja + 新增 `review.window.last30d`。新增 2 条 builder 级单测（窗口边界 / 标签参数），全套单测 657 过，仅 2 个与本改动无关的既有环境红灯（StoreKit CLI 注入、DST +0800）。真机手测项（周/月切换、三语 AX5、深链）待做。

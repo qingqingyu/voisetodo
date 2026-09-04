@@ -174,6 +174,57 @@ final class ReviewRecapSameDayTests: XCTestCase {
         XCTAssertEqual(summary.sameDayCount, 2)
     }
 
+    // MARK: - monthSummary 窗口与标签口径(docs/review-window-tab-decoupling.md)
+
+    /// 滚动 30 天窗口边界:窗口 = [todayStart − 1 个月, todayStart + 1 天)。
+    /// 统计页 Hero(`fixedWindowSummary`)与流程第 1 步同调本 builder,
+    /// 窗口一致性由构造保证——这里钉住边界,防回归成日历月。
+    func testMonthSummary_windowIsRolling30Days_notCalendarMonth() throws {
+        let today = try noon(2026, 9, 2)
+        // startHour 已被 setUp 清零 → start = 2026-08-02 00:00,end = 2026-09-03 00:00。
+        let summary = RecapSummaryBuilder.monthSummary(
+            today: today,
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [
+                // 窗口前一天(8/1)→ 不计。
+                TodoItemData(title: "窗口前", isCompleted: true, completedAt: try noon(2026, 8, 1), createdAt: try noon(2026, 8, 1)),
+                // 窗口首日(8/2)→ 计入。
+                TodoItemData(title: "窗口首日", isCompleted: true, completedAt: try noon(2026, 8, 2), createdAt: try noon(2026, 8, 2)),
+                // 今天(9/2,已在日历 9 月)→ 计入,证明是滚动窗口不是日历 8 月。
+                TodoItemData(title: "今天", isCompleted: true, completedAt: today, createdAt: today),
+            ],
+            recurringCompletions: []
+        )
+
+        XCTAssertEqual(summary.total, 2, "8/1 不计、8/2 与 9/2 计入——滚动 30 天,非日历月")
+    }
+
+    /// periodLabel 覆盖参数(2026-09-04 拍板 B2):传值原样生效;缺省保留
+    /// 日历月名旧行为——参数新增对既有调用方零回归。
+    func testMonthSummary_periodLabelOverride() throws {
+        let today = try noon(2026, 9, 2)
+        let overridden = RecapSummaryBuilder.monthSummary(
+            today: today,
+            calendar: calendar,
+            periodLabel: "近 30 天",
+            allTodos: [],
+            completedTodos: [],
+            recurringCompletions: []
+        )
+        XCTAssertEqual(overridden.periodLabel, "近 30 天")
+
+        let fallback = RecapSummaryBuilder.monthSummary(
+            today: today,
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [],
+            recurringCompletions: []
+        )
+        XCTAssertFalse(fallback.periodLabel.isEmpty, "缺省仍产出日历月名标签")
+        XCTAssertNotEqual(fallback.periodLabel, "近 30 天", "缺省行为不受参数新增影响")
+    }
+
     // MARK: - 判词证据链(2026-09-01 拍板:完成 / 新增 / 还挂着)
 
     /// 新增:窗口内 createdAt 落区间,**不过滤规律**、不看完成态;

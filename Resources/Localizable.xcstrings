@@ -10311,6 +10311,12 @@
             "value" : "Review"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ふりかえり"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10425,6 +10431,12 @@
             "value" : "Month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10440,6 +10452,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Period"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期間"
           }
         },
         "zh-Hans" : {
@@ -10458,6 +10476,12 @@
             "value" : "Week"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10474,6 +10498,12 @@
             "value" : "By Category"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カテゴリ別"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10488,6 +10518,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Daily Trend"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日別推移"
           }
         },
         "zh-Hans" : {
@@ -10656,6 +10692,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共完成 %1$lld 项 · %2$@ 最多（%3$lld 项）"
+          }
+        }
+      }
+    },
+    "review.window.last30d" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last 30 days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去 30 日間"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "近 30 天"
           }
         }
       }

@@ -352,12 +352,16 @@ enum RecapSummaryBuilder {
     /// - Parameters:
     ///   - today: 参照「今天」。
     ///   - calendar: 日历(日界走 `DayClock` 用户日)。
+    ///   - periodLabel: 周期标签覆盖值。窗口是滚动 30 天,默认日历月名与区间
+    ///     错位;两个生产调用方(`ReviewView` / `ReviewStepRecap`)都传
+    ///     「近 30 天」,缺省保留旧行为(日历月名)。
     ///   - allTodos: 全量待办 DTO(不过滤完成态——分母与分类表都要查父任务)。
     ///   - completedTodos: 已完成的一次性待办 DTO。
     ///   - recurringCompletions: 规律任务完成记录(todoId + completedAt)。
     static func monthSummary(
         today: Date = Date(),
         calendar: Calendar = Calendar.current,
+        periodLabel: String? = nil,
         allTodos: [TodoItemData],
         completedTodos: [TodoItemData],
         recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
@@ -365,7 +369,10 @@ enum RecapSummaryBuilder {
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
         let start = calendar.date(byAdding: .month, value: -1, to: todayStart) ?? todayStart
         let end = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
-        let label = (calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today)
+        // 标签口径(2026-09-04 拍板 B2):窗口是滚动 30 天,默认日历月名与实际
+        // 统计区间错位(9/2 时窗口 8/2-9/3 却标「2026年9月」)。调用方显式
+        // 传入时以传入为准;缺省保留日历月名旧行为——零回归,未列出的调用方不受影响。
+        let label = periodLabel ?? (calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today)
             .formatted(.dateTime.year().month(.abbreviated))
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
 
