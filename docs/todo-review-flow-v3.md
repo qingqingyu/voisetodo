@@ -1,7 +1,9 @@
 # 复盘流程 v3 —— 走查核实与改版方案
 
 > 状态：**待实施**。基线 `7959174`（`claude/review-flow-breakpoints-x8izga`）。
-> 2026-09-04 审阅修订（一轮，15 条断言全部核实属实后修方案层）：拍板 3 表格与正文对齐（`Still open` 保持全时段口径）、删除 ① 屏跨口径算式、hero 空态补回退、sameDay 判词语义修正、② 屏积压数改 init 快照、占位键 4→3（rotting 无占位分支）、untouched 文案去掉「都不满 30 天」断言、⑤ 屏 N=0 边界、引擎前移连带项补齐。
+> 2026-09-04 审阅修订一（15 条断言全部核实属实后修方案层）：拍板 3 表格与正文对齐（`Still open` 保持全时段口径）、删除 ① 屏跨口径算式、hero 空态补回退、sameDay 判词语义修正、② 屏积压数改 init 快照、占位键 4→3（rotting 无占位分支）、untouched 文案去掉「都不满 30 天」断言、⑤ 屏 N=0 边界、引擎前移连带项补齐。
+> 2026-09-04 审阅修订二（复核修订一的 9 处，8 处成立；另查初稿两处未审漏项）：① sameDay 判词的替换文案在 40–50% 区间仍是假命题，且占比分子分母口径不一（分子排除规律任务、分母包含），补 `oneOffCompletions` 同口径分母；② ③ 屏占位选取「取 needMore 最小」比的是不同量纲（高优任务数 vs 完成记录数），改固定优先序；③ ② 屏 `initialBacklogCount` 与 ① 屏实时 `@Query` 在「上一步」回看时会分叉，补文案约束与注释要求。三处均补了能真正挡住回归的单测（走查场景本身覆盖不到）。
+> 基线代码已含 `cf76c37`（v2 实施审阅修正：周窗落点 / 批量出口部分失败补偿 / `markSomedayBatchExecuted(batch:)` 签名 / `inputCount` 口径例外）——复核确认该提交不影响本方案任何一条断言，`Ledger.inputCount` 新增的「洞察腐烂卡尾部条目计入」例外与 ⑤ 屏改用 `initialBacklogCount` 后无交叉。
 > 前作：`docs/todo-review-flow-design.md`（v1，已实施）、`docs/todo-review-flow-v2.md`（v2，已实施 2026-09-02）。
 > 走查条件：**英文环境 + 25 条积压 + 26 条近 30 天完成 + 事件表无推迟历史**（与 v2 走查同一台设备，数据长了一轮）。
 > 环境提示：Swift 需在 Xcode 26 编译验证；`Protocols/` 纯逻辑可 `swift test` 单跑。
@@ -131,8 +133,11 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
    ⚠️ 空态回退：`lastPinnedOutcome == nil`（首次复盘 / 上次没置顶 / 上次置顶的已全删）时，主标题**回退现状的 `review.hero.count_` 句式**，不硬造「上次没有承诺」的空标题——兑现判词是有上次承诺才有的话，没有就别占这个位置。`HeroContent` 实际三态：回顾页默认 / 兑现判词 / 回退。
 3. **三数同窗**。`pendingOneOffCount` 保持全时段口径（它必须与 ② 屏卡堆同源，见修正 C），`RecapEvidenceRow` 补一行 `caption(11)` **只做一件事：说明 `Still open` 与左两数不同窗**——「Still open 25 是全部积压，不只这一窗」。**不写减法算式**：窗口统一后 Done/Added 虽同窗，但「Added − Done」仍不是任何真实集合——Done 含窗口前记下、本期做完的，Added 含已完成与已划掉的；算式一旦上屏就是新的自相矛盾，恰是本方案要消灭的东西（审阅修订：删去初稿「73 − 26 = 47 件进了清单」）。
    **候选方案（更彻底）**：`Still open` 换成窗口内新增且未完成的数，全时段积压另起一行。本方案取前者——`triageInput` 同源是硬约束，动它会连带 ② 屏与入口卡三处对不上。
-4. **sameDay 给指向**。`11 of them were captured and done the same day` 后接一句判定：占比 > 40% 时「大多是记下当天就做完的——清单在被当即时备忘用，提前一天以上记下的完成得少」，否则整句不出（沿用 `summary.total > 0` 的既有守卫模式）。
-   ⚠️ 判词不能写「清单被绕过 / 没进过清单」（审阅修订）：sameDay 的定义就是「**记下**当天做完」，这些事恰恰进了清单——高占比说明的是提前量不足（清单在记录、不在驱动），不是绕过。走查稿的直觉文案会被用户一眼证伪。
+4. **sameDay 给指向**。`11 of them were captured and done the same day` 后接一句判定：占比超过门槛时「清单更多在记录，不在提前安排」，否则整句不出（沿用 `summary.total > 0` 的既有守卫模式）。
+   ⚠️ 判词不能写「清单被绕过 / 没进过清单」（审阅修订一）：sameDay 的定义就是「**记下**当天做完」，这些事恰恰进了清单——高占比说明的是提前量不足（清单在记录、不在驱动），不是绕过。走查稿的直觉文案会被用户一眼证伪。
+   ⚠️ 也不能写「提前一天以上记下的完成得少」（审阅修订二）：门槛是 40%，而 40–50% 区间里非当天完成的那组**更多**（走查数据 11 : 15 就落在这个区间），这句在门槛刚触发时是假的。判词只陈述「清单的用法」，不比较两组的量——**任何形如「另一组更少」的表述都要求门槛 > 50%**，若要那样写就把门槛提到 50% 并在文案里对齐，本方案不这么做（50% 太罕见，等于这句永不出现）。
+   ⚠️ 分子分母口径不一致，是本条真正的前置工作（审阅修订二）：`sameDayCount` 走 `ReviewAggregator.sameDayCompletions`，明确过滤 `recurrenceRule == nil`；而 `summary.total` 来自 `summarize(events:)`，`events` 是一次性完成 **∪ 规律任务完成记录**。规律任务多的用户分母被抬高、占比被系统性低估，同一句判词在不同用户身上门槛不等价。
+   **处置**：占比改用同口径分母——`ReviewAggregator` 增加 `oneOffCompletions(in:)`（窗口内 `recurrenceRule == nil` 的完成数），占比 = `sameDayCount / oneOffCompletions`。`summary.total` 作为 Done 卡的展示数**不动**（它含规律完成是对的，用户确实做完了那些）。判词的分母与展示的数不是同一个，这一点写进 `ReviewSummary` 注释，别让下一个人再合并回去。
 
 **验收**：① 屏任意时刻只出现一个时间口径；主标题是上次承诺的结局；三个数要么同窗口，要么有一行说明它们不同窗口。
 
@@ -142,7 +147,8 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
 
 1. **中段按钮改同构布局**（拍板 4）。`padCapsuleButton` 换成 `padRoundButton` 同款结构（图标 44pt 圆 + 下方 `caption(11)` 标签），四个按钮走同一个 `HStack(spacing:)`，中段两个用 `.layoutPriority(1)` 保证标签不塌。视觉层级靠尺寸区分（两侧 56pt / 中段 44pt），不靠有无标签区分。
 2. **卡堆入选理由**。`ledeText` 上方加一行接上屏：「25 件积压里，推迟最多、放得最久的 8 件在这儿」。数字取 **init 快照的积压总数**——`ReviewFlowState` 增加 `initialBacklogCount`（= 排序前 `triageInput(from:).count`，init 一次算好），与 ① 屏 `Still open` 天然同源（修正 C）。
-   ⚠️ 不能在渲染期用 `ledger.inputCount + tail.count` 动态求值（审阅修订）：批量推「稍后」落地后 `tail` 缩水，同屏数字会从 25 跳到 8——恰是本方案要消灭的同屏矛盾。快照数在整个会话内恒定。
+   ⚠️ 不能在渲染期用 `ledger.inputCount + tail.count` 动态求值（审阅修订一）：批量推「稍后」落地后 `tail` 缩水，同屏数字会从 25 跳到 8——恰是本方案要消灭的同屏矛盾。快照数在整个会话内恒定。
+   ⚠️ 「与 ① 屏 `Still open` 同源」只在**首次前进**时成立（审阅修订二）：① 屏的 `pendingOneOffCount` 走 `ReviewStepRecap` 的 `@Query`，是**实时**的；`initialBacklogCount` 是 init 快照。用户在 ② 屏划掉 3 张再点「上一步」回 ① 屏，① 会显示 22 而 ② 仍显示 25。这是**可接受的**——② 屏那句话说的是「本次会话开始时的 25 件」，语义自洽；但文案要写成能承受这个差的说法（「这次一共 25 件积压」，不要写成「现在还有 25 件」），并在 `initialBacklogCount` 注释里点明它与 ① 屏实时口径的分叉，免得下一个人把两边「对齐」成同一个实时值、把批量推后的跳数问题又装回来。
 3. **零推迟不画时间轴**（拍板 6）。`timeline(_:)` 加 `guard deferCount > 0`；`review.flow.triage.tl_nodefer` 键删除。卡头 `review.flow.triage.born_days_%lld`（「Noted 3 days ago」）已经承载了「放了多久」，不重复。
 4. **尾部文案接上文**。`review.flow.triage.batch.untouched_%lld` 现在读起来像在解释卡堆的筛选口径，改成明确指向尾部：「余下 17 件这次不动——下次复盘还会回来」。
    ⚠️ 文案不要断言「都不满 30 天」（审阅修订）：`untouchedTailCount` 里除了不满 30 天的，还有 ≥ 30 天但 AI 识别失败（`.rawFallback` / `.unparsed`，永不丢话原则的手动卡）被批量出口排除的条目——对它们这句话是假的。现状 en 文案 "newer than 30 days" 同样有此问题，本次一并修掉；30 天门槛语义由出口行标题「超过 30 天没碰过」承载，不在这行重复。
@@ -156,12 +162,15 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
 1. **空态整步跳过**（拍板 7）。`ReviewFlowState` 增加 `skipsInsightsWhenEmpty`：`runEngine` 跑完若 `rankedResults.isEmpty`，走与 `skipsInsights` 相同的跳过路径（`advance`/`retreat` 已有分支，复用即可）。
    ⚠️ 时序：`runEngine` 在 `ReviewStepInsights.task` 里跑，此时已经在第 3 步了。**必须把引擎前移**到 `ReviewFlowView` 拿到 `insightContextValue` 之后（与 `configureInsightsLadder()` 同一时机），结果存 `state`，视图只读。否则会出现「进了第 3 步再被弹走」的闪屏。
    引擎前移连带三处，一并做掉（审阅修订补齐）：① `rankedResults` / `placeholders` / `ladderNeedMore` 从视图 `@State` 迁入 `ReviewFlowState`；② `ReviewStepInsights` 的 `.task { runEngine() }` 与 `.onChange(of: insightContextValue)` 两个触发点删除——重试路径走 `loadInsightContext` 重跑，引擎随跑、flag 随更新；③ `stepBarFill` 的跳过态视觉目前只读 `skipsInsights`，新 flag 同样要接，否则步骤条上 ③ 段不显示跳过态。
-2. **占位行报真实解锁条件**（拍板 7，修 发现 E）。`placeholderSummaryRow` 不再只取 `max(needMore)`，改成取 `needMore` 最小（最接近解锁）的那条，并按 `InsightID` 选对应文案：
+2. **占位行报真实解锁条件**（拍板 7，修 发现 E）。`placeholderSummaryRow` 不再取 `max(needMore)`，改成按 `InsightID` 选对应文案：
    - `.effortOrdering` → 「再标 3 条高优先级任务，就能看出你是先易后难还是先难后易」
    - `.energyWindow` → 「再记 N 条完成时间，就能看出你的精力窗口」
    
    新增 3 个 `review.flow.insights.need_more.<id>_%lld` 键（三语：`reactiveVsPlanned` / `effortOrdering` / `energyWindow`——`RottingRule` 只有 hidden/fired 两态、永不返回占位，无需配键；审阅修订：初稿误计 4 个），删除 `need_more_merged_%lld`。
    这不是回退拍板 6（拍板 6 反对的是**四行堆叠**）：仍然只出一行，只是这一行说真话。
+
+   ⚠️ **选哪一条不能比 `needMore` 的数值大小**（审阅修订二，修初稿的「取 needMore 最小 = 最接近解锁」）：三条规则的 needMore **不同量纲**——`EffortOrderingRule.needMore` 数的是缺几条**高优先级任务**（`minPerGroup = 3`），`ReactiveVsPlannedRule` 与 `EnergyWindowRule` 数的是缺几条**完成记录**（两者 `minSample` 均为 15）。「差 3 条高优」并不比「差 5 条完成记录」更接近解锁，比大小是拿苹果比橘子，会随机选出一条更难达成的条件当建议。
+   **改成固定优先序**（在 `InsightID` 上写死，与 `InsightEngine.rank` 的 score 排序无关——占位没有 score）：`effortOrdering` > `energyWindow` > `reactiveVsPlanned`。理由是可执行性，不是数值：标高优是用户当场就能做的一个动作；攒完成记录只能靠时间，写在建议里等于没建议。走查数据恰好只有 effortOrdering 一条占位，min/max/优先序三种选法结果相同——**正因如此这条错误在本次走查里不会暴露，必须靠单测挡**（见验证章）。
 3. **最小事实保留**。`ladderHint` 的 5–14 档逻辑不动。
 
 **验收**：③ 屏要么有至少一张洞察卡，要么整步不出现；占位文案里的动作照做能真的解锁对应洞察。
@@ -222,7 +231,8 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
 - `ReviewStepLedger` 三态：全零 → 渲染「原样留着」行；N == 0 → 整卡不出（现有 `ReviewFlowStateTests` 的 `decidedCount` 夹具可复用；⚠️ `ReviewFlowStateTests` 现有断言「全零——收尾主卡不出」描述的是旧行为，随本改版翻转）。
 - `initialBacklogCount`：init 一次算好；批量推「稍后」、卡堆逐张处理后均不随 `ledger` / `tail` 变动。
 - Hero 三态：`lastPinnedOutcome` 非 nil → 兑现判词；nil → 回退 `review.hero.count_` 句式；回顾页默认参数渲染不变。
-- 占位文案选取：`EffortOrderingRule` 报 needMore=3 且 `EnergyWindowRule` 满足 → 选中 effortOrdering 文案，不出通用句。
+- 占位文案选取（**审阅修订二加强**）：走查场景（只有 effortOrdering 一条占位）不足以覆盖——必须构造**两条以上同时占位**的夹具，且让 `effortOrdering.needMore`（如 3）**大于** `energyWindow.needMore`（如 2），断言仍选中 effortOrdering。按数值取最小的实现会在这条上红，按固定优先序的实现绿。只测走查场景等于没测。
+- sameDay 判词占比（**审阅修订二新增**）：夹具含规律任务完成记录 → 占比分母走 `oneOffCompletions` 而非 `summary.total`，两者不等；`summary.total` 展示值不受影响。再补一条门槛边界：占比恰在 40% 上下时判词的出/不出与文案表述一致（**回归护栏**——防止有人把「另一组更少」的说法加回来）。
 
 **真机手测**
 
