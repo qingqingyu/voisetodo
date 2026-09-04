@@ -21,6 +21,9 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var isPro: Bool = false
     /// 当前生效订阅的 JWS 字符串（发给代理做 Pro 档验签）。无生效订阅时为 nil。
     @Published private(set) var jwsString: String?
+    /// 当前生效订阅的到期时间（自动续期开启时即下次续期日）。
+    /// 付费墙"已订阅"态用它展示「有效期至 X」。无生效订阅时为 nil。
+    @Published private(set) var subscriptionExpirationDate: Date?
     @Published private(set) var products: [Product] = []
     /// 初始为 .loading —— 首帧应显示 spinner 而不是「加载失败」卡片。
     /// 真正的空/错误态由 loadProducts() 落定。
@@ -148,16 +151,19 @@ final class EntitlementManager: ObservableObject {
     func refreshEntitlements() async -> Bool {
         var foundPro = false
         var jws: String?
+        var expiration: Date?
         // currentEntitlements 只返回当前生效（未过期）的权益，无需额外过期校验。
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             guard Self.productIDs.contains(transaction.productID) else { continue }
             foundPro = true
             jws = result.jwsRepresentation
+            expiration = transaction.expirationDate
         }
-        let changed = isPro != foundPro || jwsString != jws
+        let changed = isPro != foundPro || jwsString != jws || subscriptionExpirationDate != expiration
         isPro = foundPro
         jwsString = jws
+        subscriptionExpirationDate = expiration
         VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) changed=\(changed)")
         return changed
     }
@@ -246,9 +252,10 @@ final class EntitlementManager: ObservableObject {
     /// 直接注入 isPro / JWS 状态以覆盖订阅相关分支。
     /// Release 配置编译缺席（与 TelemetryQueue 的测试 seam 同一取舍），
     /// 若以 Release 跑测试，订阅分支相关测试将编译不过（预期）。
-    func setEntitlementForTesting(isPro: Bool, jwsString: String? = nil) {
+    func setEntitlementForTesting(isPro: Bool, jwsString: String? = nil, expirationDate: Date? = nil) {
         self.isPro = isPro
         self.jwsString = jwsString
+        self.subscriptionExpirationDate = expirationDate
     }
 #endif
 }

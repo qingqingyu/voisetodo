@@ -134,7 +134,9 @@ struct PaywallView: View {
 /// 付费墙主体内容(仅 sheet 形态:AppCoordinator.presentPaywall 四来源 + 设置页入口;
 /// 历史上有 onboarding 内嵌与其形态 enum,已删)。
 ///
-/// 渲染顺序(自上而下):`comparisonCard → valuePropsList → productList → [purchaseCTA] → legalBlock`
+/// 渲染顺序(自上而下):
+/// - 已订阅(`entitlement.isPro`):`comparisonCard(实时用量) → subscribedStatusCard → legalBlock`
+/// - 未订阅:`comparisonCard → valuePropsList → productList → [purchaseCTA] → legalBlock`
 ///
 /// 一屏化(2026-08):删掉 header(副标题与导航标题/CTA 信息重复)与 quota 价值卡
 /// (额度信息由对比胶囊表达),区块间距 lg→sm,保证 SE 级视口下 CTA 无需滚动即可见。
@@ -148,14 +150,24 @@ struct PaywallContent: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.sm) {
-            comparisonCard
-            valuePropsList
-            productList
-            if entitlement.productLoadState == .success {
-                purchaseCTA
-                inlineErrorText
+            if entitlement.isPro {
+                // 已订阅:不再出现购买选项 —— 展示订阅状态卡(含有效期)。
+                // 价值主张/商品列表/购买 CTA 都只服务「未订阅 → 转化」,对已订阅者是噪音。
+                // refresh() 仍无条件跑:isPro 若是 stale-true(订阅实际已过期),
+                // refreshEntitlements 会翻回 false,本分支自动退回完整购买 UI。
+                comparisonCard
+                subscribedStatusCard
+                legalBlock
+            } else {
+                comparisonCard
+                valuePropsList
+                productList
+                if entitlement.productLoadState == .success {
+                    purchaseCTA
+                    inlineErrorText
+                }
+                legalBlock
             }
-            legalBlock
             Spacer(minLength: WarmSpacing.xxs)
         }
         .task { await entitlement.refresh() }
@@ -296,6 +308,42 @@ struct PaywallContent: View {
         .background(WarmTheme.secondaryBackground)
         .clipShape(Capsule())
         .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    // MARK: - Subscribed Status Card
+
+    /// 已订阅状态卡:`isPro == true` 时替代价值主张 + 商品列表 + 购买 CTA。
+    /// 已订阅用户进付费墙不该再看到购买选项(点了也只能从 StoreKit 系统弹窗得知
+    /// 订阅已生效到几号),直接告知订阅状态与有效期。
+    /// 到期时间来自 `Transaction.currentEntitlements` 的 `expirationDate`
+    /// (自动续期开启时即下次续期日);理论上有订阅必有值,nil 时只降级不显示日期行。
+    private var subscribedStatusCard: some View {
+        VStack(spacing: WarmSpacing.xs) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundColor(WarmTheme.success)
+                .accessibilityHidden(true)
+            Text(String(localized: "paywall.subscribed.title"))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let expiration = entitlement.subscriptionExpirationDate {
+                Text(String(localized: "paywall.subscribed.expires \(expiration.formatted(date: .abbreviated, time: .omitted))"))
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(WarmSpacing.md)
+        .background(WarmTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
+        .padding(.horizontal, WarmSpacing.lg)
+        // combine:整卡作为一个 a11y 元素(标题+日期合并朗读),UI 测试按 id 定位。
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("PaywallSubscribedCard")
     }
 
     // MARK: - Value Props

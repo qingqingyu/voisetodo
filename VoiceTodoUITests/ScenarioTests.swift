@@ -936,6 +936,18 @@ final class ScenarioTests: XCTestCase {
             add(attachment)
         }
         XCTAssertFalse(onboardingReappeared, "BUG 复现:购买试用后 onboarding 第一页重新出现")
+
+        // Step 8: 回归断言——已订阅用户再进付费墙,不得出现购买选项,应显示已订阅状态卡。
+        // 用户报告的 bug:订阅后再点订阅入口仍是完整购买 UI,只有点了购买、
+        // 从 StoreKit 系统弹窗才得知"订阅已生效到几号"。
+        appHelper.app.buttons["HomeSettingsButton"].tap()
+        let upgradeEntry = appHelper.app.buttons["UpgradeProButton"]
+        XCTAssertTrue(upgradeEntry.waitForExistence(timeout: 5.0), "设置页应有 Pro 入口")
+        upgradeEntry.tap()
+
+        let subscribedCard = appHelper.app.otherElements["PaywallSubscribedCard"]
+        XCTAssertTrue(subscribedCard.waitForExistence(timeout: 10.0), "已订阅再进付费墙应显示已订阅状态卡")
+        XCTAssertFalse(appHelper.app.buttons["PaywallPurchaseButton"].exists, "已订阅用户不应再看到购买按钮")
     }
 
     // MARK: - S14: 紧急单条待办
