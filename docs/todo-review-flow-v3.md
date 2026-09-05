@@ -3,7 +3,9 @@
 > 状态：**待实施**。基线 `7959174`（`claude/review-flow-breakpoints-x8izga`）。
 > 2026-09-04 审阅修订一（15 条断言全部核实属实后修方案层）：拍板 3 表格与正文对齐（`Still open` 保持全时段口径）、删除 ① 屏跨口径算式、hero 空态补回退、sameDay 判词语义修正、② 屏积压数改 init 快照、占位键 4→3（rotting 无占位分支）、untouched 文案去掉「都不满 30 天」断言、⑤ 屏 N=0 边界、引擎前移连带项补齐。
 > 2026-09-04 审阅修订二（复核修订一的 9 处，8 处成立；另查初稿两处未审漏项）：① sameDay 判词的替换文案在 40–50% 区间仍是假命题，且占比分子分母口径不一（分子排除规律任务、分母包含），补 `oneOffCompletions` 同口径分母；② ③ 屏占位选取「取 needMore 最小」比的是不同量纲（高优任务数 vs 完成记录数），改固定优先序；③ ② 屏 `initialBacklogCount` 与 ① 屏实时 `@Query` 在「上一步」回看时会分叉，补文案约束与注释要求。三处均补了能真正挡住回归的单测（走查场景本身覆盖不到）。
+> 2026-09-04 审阅修订三（复核修订二的 3 处新写内容，2 处自身违规 + 1 处交接缺口）：① 修订二的新判词「清单**更多**在记录」仍是多数派断言，40% 门槛刚触发时为假——判词去比较级，只说份额事实；② 「再**标** 3 条高优先级任务」照做不解锁（解锁条件是**完成**事件），文案改「做完」、优先序理由同步改口；③ 补 tab 分支（review-window-tab-decoupling）交接：v3 在其上实施，ja 范围扩为 23 键。
 > 基线代码已含 `cf76c37`（v2 实施审阅修正：周窗落点 / 批量出口部分失败补偿 / `markSomedayBatchExecuted(batch:)` 签名 / `inputCount` 口径例外）——复核确认该提交不影响本方案任何一条断言，`Ledger.inputCount` 新增的「洞察腐烂卡尾部条目计入」例外与 ⑤ 屏改用 `initialBacklogCount` 后无交叉。
+> ⚠️ 实施基线还含 **tab 分支**（`docs/review-window-tab-decoupling.md`，统计页周/月 tab 与复盘窗口割裂修复，拍板「先本后 v3」）：① `monthSummary` 在 tab 上已加 `periodLabel: String?` 参数，本方案 ① 屏改动 1 的 `weekSummary(since:)` 与其并存（回顾页走 `monthSummary`，复盘第 1 步走 `weekSummary`），不得回退该参数；② ja 补齐范围按 tab 的交接扩为 **23 键**（16 个 `review.*` + 7 个 `category.*`，见 ⑤ 屏改动 4）。
 > 前作：`docs/todo-review-flow-design.md`（v1，已实施）、`docs/todo-review-flow-v2.md`（v2，已实施 2026-09-02）。
 > 走查条件：**英文环境 + 25 条积压 + 26 条近 30 天完成 + 事件表无推迟历史**（与 v2 走查同一台设备，数据长了一轮）。
 > 环境提示：Swift 需在 Xcode 26 编译验证；`Protocols/` 纯逻辑可 `swift test` 单跑。
@@ -133,9 +135,10 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
    ⚠️ 空态回退：`lastPinnedOutcome == nil`（首次复盘 / 上次没置顶 / 上次置顶的已全删）时，主标题**回退现状的 `review.hero.count_` 句式**，不硬造「上次没有承诺」的空标题——兑现判词是有上次承诺才有的话，没有就别占这个位置。`HeroContent` 实际三态：回顾页默认 / 兑现判词 / 回退。
 3. **三数同窗**。`pendingOneOffCount` 保持全时段口径（它必须与 ② 屏卡堆同源，见修正 C），`RecapEvidenceRow` 补一行 `caption(11)` **只做一件事：说明 `Still open` 与左两数不同窗**——「Still open 25 是全部积压，不只这一窗」。**不写减法算式**：窗口统一后 Done/Added 虽同窗，但「Added − Done」仍不是任何真实集合——Done 含窗口前记下、本期做完的，Added 含已完成与已划掉的；算式一旦上屏就是新的自相矛盾，恰是本方案要消灭的东西（审阅修订：删去初稿「73 − 26 = 47 件进了清单」）。
    **候选方案（更彻底）**：`Still open` 换成窗口内新增且未完成的数，全时段积压另起一行。本方案取前者——`triageInput` 同源是硬约束，动它会连带 ② 屏与入口卡三处对不上。
-4. **sameDay 给指向**。`11 of them were captured and done the same day` 后接一句判定：占比超过门槛时「清单更多在记录，不在提前安排」，否则整句不出（沿用 `summary.total > 0` 的既有守卫模式）。
+4. **sameDay 给指向**。`11 of them were captured and done the same day` 后接一句判定：占比超过门槛时「相当一部分事是记下当天就做完的——清单更像收件箱，不像计划表」，否则整句不出（沿用 `summary.total > 0` 的既有守卫模式）。
    ⚠️ 判词不能写「清单被绕过 / 没进过清单」（审阅修订一）：sameDay 的定义就是「**记下**当天做完」，这些事恰恰进了清单——高占比说明的是提前量不足（清单在记录、不在驱动），不是绕过。走查稿的直觉文案会被用户一眼证伪。
    ⚠️ 也不能写「提前一天以上记下的完成得少」（审阅修订二）：门槛是 40%，而 40–50% 区间里非当天完成的那组**更多**（走查数据 11 : 15 就落在这个区间），这句在门槛刚触发时是假的。判词只陈述「清单的用法」，不比较两组的量——**任何形如「另一组更少」的表述都要求门槛 > 50%**，若要那样写就把门槛提到 50% 并在文案里对齐，本方案不这么做（50% 太罕见，等于这句永不出现）。
+   ⚠️ 「清单**更多**在记录」同样不合法（审阅修订三，修修订二的替换文案）：「更多」仍是多数派断言，40% 门槛刚触发（11 : 15）时为假，且 ① 屏同时显示 11 和 26，用户当场能算。判词只允许「相当一部分」级别的**份额事实**，不出现「更多 / 更少」比较级。
    ⚠️ 分子分母口径不一致，是本条真正的前置工作（审阅修订二）：`sameDayCount` 走 `ReviewAggregator.sameDayCompletions`，明确过滤 `recurrenceRule == nil`；而 `summary.total` 来自 `summarize(events:)`，`events` 是一次性完成 **∪ 规律任务完成记录**。规律任务多的用户分母被抬高、占比被系统性低估，同一句判词在不同用户身上门槛不等价。
    **处置**：占比改用同口径分母——`ReviewAggregator` 增加 `oneOffCompletions(in:)`（窗口内 `recurrenceRule == nil` 的完成数），占比 = `sameDayCount / oneOffCompletions`。`summary.total` 作为 Done 卡的展示数**不动**（它含规律完成是对的，用户确实做完了那些）。判词的分母与展示的数不是同一个，这一点写进 `ReviewSummary` 注释，别让下一个人再合并回去。
 
@@ -163,14 +166,15 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
    ⚠️ 时序：`runEngine` 在 `ReviewStepInsights.task` 里跑，此时已经在第 3 步了。**必须把引擎前移**到 `ReviewFlowView` 拿到 `insightContextValue` 之后（与 `configureInsightsLadder()` 同一时机），结果存 `state`，视图只读。否则会出现「进了第 3 步再被弹走」的闪屏。
    引擎前移连带三处，一并做掉（审阅修订补齐）：① `rankedResults` / `placeholders` / `ladderNeedMore` 从视图 `@State` 迁入 `ReviewFlowState`；② `ReviewStepInsights` 的 `.task { runEngine() }` 与 `.onChange(of: insightContextValue)` 两个触发点删除——重试路径走 `loadInsightContext` 重跑，引擎随跑、flag 随更新；③ `stepBarFill` 的跳过态视觉目前只读 `skipsInsights`，新 flag 同样要接，否则步骤条上 ③ 段不显示跳过态。
 2. **占位行报真实解锁条件**（拍板 7，修 发现 E）。`placeholderSummaryRow` 不再取 `max(needMore)`，改成按 `InsightID` 选对应文案：
-   - `.effortOrdering` → 「再标 3 条高优先级任务，就能看出你是先易后难还是先难后易」
+   - `.effortOrdering` → 「再**做完** 3 条高优先级任务，就能看出你是先易后难还是先难后易」（审阅修订三：原文「再标」照做不解锁，见下）
    - `.energyWindow` → 「再记 N 条完成时间，就能看出你的精力窗口」
    
    新增 3 个 `review.flow.insights.need_more.<id>_%lld` 键（三语：`reactiveVsPlanned` / `effortOrdering` / `energyWindow`——`RottingRule` 只有 hidden/fired 两态、永不返回占位，无需配键；审阅修订：初稿误计 4 个），删除 `need_more_merged_%lld`。
    这不是回退拍板 6（拍板 6 反对的是**四行堆叠**）：仍然只出一行，只是这一行说真话。
 
    ⚠️ **选哪一条不能比 `needMore` 的数值大小**（审阅修订二，修初稿的「取 needMore 最小 = 最接近解锁」）：三条规则的 needMore **不同量纲**——`EffortOrderingRule.needMore` 数的是缺几条**高优先级任务**（`minPerGroup = 3`），`ReactiveVsPlannedRule` 与 `EnergyWindowRule` 数的是缺几条**完成记录**（两者 `minSample` 均为 15）。「差 3 条高优」并不比「差 5 条完成记录」更接近解锁，比大小是拿苹果比橘子，会随机选出一条更难达成的条件当建议。
-   **改成固定优先序**（在 `InsightID` 上写死，与 `InsightEngine.rank` 的 score 排序无关——占位没有 score）：`effortOrdering` > `energyWindow` > `reactiveVsPlanned`。理由是可执行性，不是数值：标高优是用户当场就能做的一个动作；攒完成记录只能靠时间，写在建议里等于没建议。走查数据恰好只有 effortOrdering 一条占位，min/max/优先序三种选法结果相同——**正因如此这条错误在本次走查里不会暴露，必须靠单测挡**（见验证章）。
+   **改成固定优先序**（在 `InsightID` 上写死，与 `InsightEngine.rank` 的 score 排序无关——占位没有 score）：`effortOrdering` > `energyWindow` > `reactiveVsPlanned`。理由是缺口最小且可定向，不是数值大小：effortOrdering 只差 3 条高优**完成**（做哪条自己挑），energy/reactive 的缺口只能靠时间攒。
+   ⚠️ 解锁条件是**完成**事件，不是「标」（审阅修订三，修修订二的理由表述）：`InsightCompletedEvent` 由 `isCompleted` 的 TodoItem 构造（`TodoQueryActor.insightContext`），给任务标高优本身什么都不解锁——修订二「标高优是当场就能做的动作」这句理由建立在同一误读上。文案写「做完」，否则重蹈发现 E「照做不解锁」的覆辙、违反本节验收。走查数据恰好只有 effortOrdering 一条占位，min/max/优先序三种选法结果相同——**正因如此这条错误在本次走查里不会暴露，必须靠单测挡**（见验证章）。
 3. **最小事实保留**。`ladderHint` 的 5–14 档逻辑不动。
 
 **验收**：③ 屏要么有至少一张洞察卡，要么整步不出现；占位文案里的动作照做能真的解锁对应洞察。
@@ -198,7 +202,7 @@ v2 实施补注的原意是「『你决定了 0 件』是审判，不是确认�
    新增 1 键 `review.flow.ledger.decided_none_%lld`（三语）。这是**事实陈述不是审判**：v2 补注担心的「你决定了 0 件」的问题在于用「决定」这个正向动词报零，换成「原样留着」就没有这个语气问题，而且它同时回答了「那 25 件去哪了」。
 2. **领域提示排除 `.other`**（拍板 11）。`askDomainHintCategory` 的 `present` 过滤加 `$0 != .other`；全为 `.other` 时返回 nil（提示行本就有 nil 分支）。
 3. **一个输入框只问一个问题**（拍板 11）。`ask.placeholder` 从「这周是什么挡住了你？」改成与 `ask.domain_hint` 同题的续写引导（「随便写两句」）。标题行负责提问，占位符负责降低起笔门槛，不再抢着提第二个问题。
-4. **补齐 ja 本地化**（附带发现）：`review.hero.count_%lld`、`review.stat.streak`、`review.stat.upcoming_7d_%lld`、`category.*` 共 10 键。
+4. **补齐 ja 本地化**（附带发现 + tab 分支交接，审阅修订三扩为 23 键）：本方案自查的 `review.hero.count_%lld`、`review.stat.streak`、`review.stat.upcoming_7d_%lld` + `category.*` 7 键，**加上 tab 分支交接的 16 个 `review.*` 键**（`busiest.oneline` / `chart.count` / `chart.day` / `chart.mark` / `empty.message` / `empty.preview` / `hero.count` / `label.week` / `notification.body` / `notification.title` / `sparse.day` / `sparse.separator` / `sparse.tail` / `stat.streak` / `stat.upcoming_7d` / `trend.summary`），去重后共 **23 键**。
 
 **验收**：⑤ 屏在任何路径下都至少有一张交代本次会话结果的卡；提问不出现「Other」；日文环境无英文回落。
 
