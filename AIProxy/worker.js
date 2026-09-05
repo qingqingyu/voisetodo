@@ -6,7 +6,7 @@ import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore, configureHealthParams } from "./src/health.js";
 import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
-import { sendTelegramAlert } from "./src/notify.js";
+import { sendTelegramAlert, ALERT_FETCH_TIMEOUT_MS } from "./src/notify.js";
 import { executeWithFailover } from "./src/provider.js";
 import { pickCandidates } from "./src/selector.js";
 import { normalizeProviderStream } from "./src/stream.js";
@@ -66,6 +66,12 @@ export function _testResetExtractionCache() {
 // Test-only export: allows tests to reset module-level alert state between runs.
 export function _testResetAlertState() {
   sharedAlertStateStore.reset();
+}
+
+// Test-only export: clears the /v1/health isolate cache so each probe test sees
+// fresh KV state instead of a result cached by a previous test within the TTL.
+export function _testResetProbeCache() {
+  probeCache = freshProbeCache();
 }
 
 export default {
@@ -787,6 +793,20 @@ function jsonResponse(status, body) {
 
 // MARK: - Public health probe (层 C-1, ALERTING.md)
 
+// 探针结果 isolate 内缓存:/v1/health 是全 Worker 唯一无鉴权且读 KV 的端点。
+// Cloudflare 默认不缓存 Worker 响应(Cache-Control 只是客户端提示,边缘缓存要显式
+// Cache API),所以每个请求都会真实执行 N 次 KV get —— 随机 query 攻击可无上限
+// 放大 KV 读费用。isolate 内 15s 结果缓存把单个 isolate 的 KV 读频压到 4 次/分钟;
+// 探针语义本就是 30min 级监控,15s 滞后无影响。缓存的是序列化 body 字符串 ——
+// Response body 是一次性流,不能直接缓存 Response 对象。
+const PROBE_CACHE_TTL_MS = 15_000;
+// expiresAt: 0 永不命中(Date.now() 恒 ≥ 0),status/body/probeStatus 只是
+// shape 占位。初始值与 _testResetProbeCache 共用本工厂,避免两份字面量漂移。
+function freshProbeCache() {
+  return { expiresAt: 0, status: 200, body: "{}", probeStatus: "ok" };
+}
+let probeCache = freshProbeCache();
+
 /// 公开健康探针:GET/HEAD /v1/health,无鉴权(拨测服务不带 token),其余方法 405。
 ///
 /// 硬约束(ALERTING.md 层 C-1):
@@ -796,7 +816,8 @@ function jsonResponse(status, body) {
 ///      state 默认 closed)—— 无鉴权端点绝不能变成刷爆 AI 账单的入口。
 ///   3. HTTP 状态码本身携带语义:全部 provider open → 503,否则 200。
 ///      拨测服务不用解析 body 就能告警。
-///   4. Cache-Control: max-age=30 让 Cloudflare 边缘挡掉重复轮询。
+///   4. Cache-Control: max-age=30 提示拨测客户端别高频轮询;服务端由上面的
+///      isolate 内缓存兜住 KV 读频率(见 PROBE_CACHE_TTL_MS 注释)。
 async function handlePublicHealthProbe(request, env, requestContext) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return finishRequest(new Response("Method Not Allowed", { status: 405 }), requestContext, {
@@ -807,6 +828,18 @@ async function handlePublicHealthProbe(request, env, requestContext) {
   sharedHealthStore.updateKv(env.AI_PROVIDER_STATE_KV || null);
   configureHealthParams(env);
 
+  const checkedAt = Date.now();
+  if (checkedAt < probeCache.expiresAt) {
+    return finishRequest(
+      healthProbeResponse(probeCache.status, probeCache.body, request.method),
+      requestContext,
+      // probeStatus 记录缓存里的真实语义状态(ok/degraded/down),缓存命中用
+      // probeCached 单独标记 —— 不能把 "cached" 塞进 probeStatus,否则按该字段
+      // 检索健康状态的日志查询会漏掉全部缓存命中。
+      { reason: "health_probe", probeStatus: probeCache.probeStatus, probeCached: true }
+    );
+  }
+
   let providers;
   try {
     providers = loadProviders(env, { onSecretMissing: () => {} });
@@ -814,8 +847,9 @@ async function handlePublicHealthProbe(request, env, requestContext) {
     logError("health_probe.providers_failed", { ...requestContext, ...errorFields(error) });
     // 配置非法 → 503 + misconfigured(不是 500):对拨测服务「服务不可用」比
     // 「服务器错误」语义更准,且 loadProviders 对空数组同样抛错,不会漏成 200。
+    // 不写缓存:配置修复(重 deploy)后应立即反映,不该再吃 15s 旧错误。
     return finishRequest(
-      healthProbeResponse(503, { status: "misconfigured", providers: [], ts: Date.now() }, request.method),
+      healthProbeResponse(503, JSON.stringify({ status: "misconfigured", providers: [], ts: checkedAt }), request.method),
       requestContext,
       { reason: "health_probe_misconfigured" }
     );
@@ -828,16 +862,19 @@ async function handlePublicHealthProbe(request, env, requestContext) {
   })));
   const allOpen = entries.length > 0 && entries.every((e) => e.state === "open");
   const status = allOpen ? "down" : entries.some((e) => e.state === "open") ? "degraded" : "ok";
+  const httpStatus = allOpen ? 503 : 200;
+  const body = JSON.stringify({ status, providers: entries, ts: now });
+  probeCache = { expiresAt: now + PROBE_CACHE_TTL_MS, status: httpStatus, body, probeStatus: status };
   return finishRequest(
-    healthProbeResponse(allOpen ? 503 : 200, { status, providers: entries, ts: now }, request.method),
+    healthProbeResponse(httpStatus, body, request.method),
     requestContext,
     { reason: "health_probe", probeStatus: status }
   );
 }
 
-function healthProbeResponse(status, body, method) {
+function healthProbeResponse(status, bodyString, method) {
   // HEAD 按 HTTP 语义不带 body(拨测服务只看状态码,Content-Type/Cache 照带)。
-  return new Response(method === "HEAD" ? null : JSON.stringify(body), {
+  return new Response(method === "HEAD" ? null : bodyString, {
     status,
     headers: {
       "Content-Type": "application/json",
@@ -927,7 +964,21 @@ export async function handleScheduled(env, fetchImpl = fetch) {
     const base = String(env.HEALTHCHECK_PING_URL).replace(/\/+$/, "");
     const pingUrl = level === "down" ? `${base}/fail` : base;
     try {
-      await fetchImpl(pingUrl);
+      // 超时与告警外呼同量级:心跳挂起不该把 cron 卡死(死人心跳变成死 cron)。
+      const resp = await fetchImpl(pingUrl, { signal: AbortSignal.timeout(ALERT_FETCH_TIMEOUT_MS) });
+      // 非 2xx(如 UUID 配错恒 404)意味着死人开关自身已失效 —— 这条链路的
+      // 职责就是兜底「告警系统自己挂了」,它坏掉必须留痕,不能只靠网络异常 catch。
+      if (!resp.ok) {
+        logWarn("alert.healthcheck_ping.failed", { status: resp.status });
+      }
+      // Workers 惯例:不消费的 body 显式 cancel,释放底层流/连接资源。
+      // 送达状态上面已判定完;cancel 失败只影响资源回收,单独留痕,
+      // 不落入外层 catch 再打一条误导性的 healthcheck_ping.failed。
+      try {
+        await resp.body?.cancel();
+      } catch (error) {
+        logWarn("alert.healthcheck_ping.body_cancel_failed", { errorName: error?.name, errorMessage: error?.message });
+      }
     } catch (error) {
       // 心跳失败只 log,不影响 cron 其余部分
       logWarn("alert.healthcheck_ping.failed", { errorName: error?.name, errorMessage: error?.message });
@@ -1026,11 +1077,25 @@ async function runProviderHealthCheck(env, fetchImpl) {
     failedDetails
   });
 
-  // 层 B(ALERTING.md):状态跃迁告警。classifyLevel 返回 null(total === 0,
-  // 如 secret 全缺)时跳过 —— 没有可探活的 provider 是配置问题,不告警,
-  // 避免被误报成服务故障。no_key / no_adapter 的单个 provider 仍计入
-  // failedDetails → degraded:failover 容量减半该知道,这是有意的口径。
-  const level = classifyLevel(succeeded, total);
+  // 层 B(ALERTING.md):状态跃迁告警。没有「可探活」的 provider(全部缺 secret)
+  // 是配置问题,不算服务故障,不进告警状态机 —— 注意这是可达路径:
+  // loadProviders 对空 PROVIDERS 直接抛错(走上面的 providers_failed 早退),
+  // 未知 type 同样过不了 loadProviders 的校验,「provider 在、secret 全缺」
+  // 会走到这里,靠 probeable === 0 拦下。
+  // 单个 no_key / no_adapter 仍计入 failedDetails → degraded:failover 容量
+  // 减半该知道,与全缺不告警是两种有意并存的口径。
+  // probeable 从 results 推导(reason 为 no_key / no_adapter 即配置性跳过),
+  // 与上面 map 内的跳过条件同源 —— 不另写一份 apiKey/adapter 谓词,防止两处漂移。
+  const probeable = results.filter((r) => {
+    if (r.status !== "fulfilled") return false;
+    return r.value?.reason !== "no_key" && r.value?.reason !== "no_adapter";
+  }).length;
+  let level = null;
+  if (probeable === 0) {
+    logInfo("health_check.alert_skipped", { reason: "no_probeable_provider", total });
+  } else {
+    level = classifyLevel(succeeded, total);
+  }
   if (level) {
     await notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl });
   }

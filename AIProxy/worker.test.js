@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
-import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache, _testResetAlertState } from "./worker.js";
+import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache, _testResetAlertState, _testResetProbeCache } from "./worker.js";
 import { applyPrimaryOverride } from "./src/adminConfig.js";
 import { classifyLevel, shouldNotify } from "./src/alertState.js";
 import { makeCacheKey } from "./src/extractionCache.js";
@@ -19,6 +19,7 @@ beforeEach(() => {
   _testResetAdminConfig();
   _testResetExtractionCache();
   _testResetAlertState();
+  _testResetProbeCache();
   _testResetHealthParams();
   configureHealthParams({
     CIRCUIT_OPEN_THRESHOLD: "3",
@@ -5032,6 +5033,39 @@ test("health probe: KV 未绑定 → 照常 200,state 取内存默认 closed", a
   assert.ok(data.providers.every((p) => p.state === "closed"));
 });
 
+test("health probe: isolate 内 15s 缓存 —— TTL 内 KV 变化不反映(防 KV 读放大)", async () => {
+  const kv = new MemoryKV(new Map());
+  const env = probeEnv(kv);
+  // 第一发:全 closed → 200 ok,并写入 isolate 缓存
+  const first = await handleRequest(probeRequest(), env, {});
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).status, "ok");
+
+  // 立即把 P1 打开 —— Cloudflare 默认不缓存 Worker 响应,无 isolate 缓存时
+  // 这发请求会重新读 KV 并报 degraded;有缓存时应原样返回 ok(旧结果)。
+  kv.values.set("health:P1", openCircuitRecord());
+  const second = await handleRequest(probeRequest(), env, {});
+  assert.equal(second.status, 200);
+  // degraded 也是 HTTP 200,body 的 status 才能判别是否命中缓存:
+  // 重读 KV 会看到 open → degraded;命中缓存则原样返回旧结果 ok
+  assert.equal((await second.json()).status, "ok", "TTL 内应命中缓存,不重读 KV");
+});
+
+test("health probe: misconfigured(503)不写缓存 —— 配置修复后立即反映", async () => {
+  // 配置非法 → 503,且不落 isolate 缓存
+  const bad = await handleRequest(
+    probeRequest(),
+    { APP_TOKEN: "token", AI_PROVIDER_STATE_KV: new MemoryKV(new Map()), PROVIDERS: "{not json" },
+    {}
+  );
+  assert.equal(bad.status, 503);
+
+  // 紧接着(远小于 15s TTL)换合法 env:若 misconfigured 写了缓存,这里会错误地 503
+  const good = await handleRequest(probeRequest(), probeEnv(new MemoryKV(new Map())), {});
+  assert.equal(good.status, 200);
+  assert.equal((await good.json()).status, "ok");
+});
+
 // MARK: - 层 B: 告警状态机纯函数 (src/alertState.js)
 
 test("classifyLevel: ok / degraded / down / total===0 → null", async () => {
@@ -5179,7 +5213,7 @@ test("cron 告警: KV 读失败仍推(宁可多推,不可漏报)", async () => {
   assert.equal(telegramCalls.length, 1, "KV 读失败降级为「无历史」,down 仍要推");
 });
 
-test("cron 告警: PROVIDERS 为空(total===0)不推,走 skipped 分支但心跳照发", async () => {
+test("cron 告警: PROVIDERS 为空不推(loadProviders 抛错早退),心跳照发", async () => {
   const kv = new MemoryKV(new Map());
   const telegramCalls = [];
   const pingCalls = [];
@@ -5192,7 +5226,36 @@ test("cron 告警: PROVIDERS 为空(total===0)不推,走 skipped 分支但心跳
     }),
     makeCronFetch({ telegramCalls, pingCalls })
   );
+  // 注:PROVIDERS=[] 让 loadProviders 抛 "PROVIDERS is empty",走的是
+  // providers_failed 早退(runProviderHealthCheck 返回 null),不是
+  // classifyLevel 的 total===0 路径 ——「secret 全缺不告警」由下面那条测试守着。
   assert.equal(telegramCalls.length, 0, "配置问题不告警");
+  assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid"], "cron 活着,仍发成功心跳");
+});
+
+test("cron 告警: secrets 全缺(无可探活 provider)不推 down,不写告警状态", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  const pingCalls = [];
+  await handleScheduled(
+    providersEnv(
+      [
+        { id: "C1", type: "anthropic", url: "https://c1.test/v1/messages", model: "m1", priority: 1, secretName: "PROVIDER_KEY_C1" },
+        { id: "C2", type: "openai", url: "https://c2.test/v1/chat/completions", model: "m2", priority: 2, secretName: "PROVIDER_KEY_C2" }
+      ],
+      {}, // secrets 全缺:loadProviders 保留条目(apiKey=""),probe 全部 no_key
+      {
+        AI_PROVIDER_STATE_KV: kv,
+        TELEGRAM_BOT_TOKEN: "t",
+        TELEGRAM_CHAT_ID: "c",
+        HEALTHCHECK_PING_URL: "https://hc-ping.com/uuid"
+      }
+    ),
+    makeCronFetch({ telegramCalls, pingCalls })
+  );
+  // ALERTING.md 层 B 边界:全部缺 secret 是配置问题,不得误报成「全挂」服务故障
+  assert.equal(telegramCalls.length, 0, "secrets 全缺不得推 down");
+  assert.ok(!kv.values.has("alert:provider_health"), "skipped 分支不写告警状态");
   assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid"], "cron 活着,仍发成功心跳");
 });
 
@@ -5239,6 +5302,23 @@ test("cron 心跳: 心跳 fetch 抛错不打断 cron", async () => {
   };
   await handleScheduled(cronEnv({ kv, pingUrl: "https://hc-ping.com/uuid" }), fetchImpl);
   // 不抛错即通过
+});
+
+test("cron 心跳: 心跳返回非 2xx 留痕但不抛(死人开关自身失效必须可见)", async () => {
+  const kv = new MemoryKV(new Map());
+  const fetchImpl = async (url) => {
+    if (url.startsWith("https://hc-ping.com/")) return new Response("not found", { status: 404 });
+    if (url.startsWith("https://api.telegram.org/")) return new Response('{"ok":true}', { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  const lines = await captureConsole(async () => {
+    await handleScheduled(cronEnv({ kv, pingUrl: "https://hc-ping.com/uuid" }), fetchImpl);
+  });
+  // 不抛错 + 必须 logWarn(uuid 配错恒 404 时死人开关已静默失效)
+  assert.ok(
+    lines.some((line) => line.includes("alert.healthcheck_ping.failed")),
+    "心跳非 2xx 应有 logWarn 留痕"
+  );
 });
 
 test("cron: 未配告警 secrets 时打不到任何真实网络端点", async () => {
