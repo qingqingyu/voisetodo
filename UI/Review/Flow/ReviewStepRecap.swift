@@ -30,6 +30,9 @@ struct ReviewStepRecap: View {
         RecapSummaryBuilder.monthSummary(
             today: Date(),
             calendar: calendar,
+            // 标签锚定「近 30 天」(2026-09-04 拍板 B2):滚动窗口配日历月名是
+            // 错配,且统计页 Hero 已同口径——两处标签/数字一致。
+            periodLabel: String(localized: "review.window.last30d"),
             allTodos: allTodos.map { $0.toData() },
             completedTodos: completedTodos.map { $0.toData() },
             recurringCompletions: recurringCompletions.map {
