@@ -224,11 +224,14 @@ final class ReviewFlowState {
         return LastPinnedOutcome(completed: completed, pending: pending)
     }
 
-    /// 领域提示轮换(2026-08-25 拍板):只在快照中出现过的分类里按声明序轮换,
-    /// seed = 历史会话数——每次复盘前进一格,不问从未使用的领域,无需新存储。
+    /// 领域提示轮换(2026-08-25 拍板;v3 拍板 11 排除 `.other`):只在快照中
+    /// 出现过的分类里按声明序轮换,seed = 历史会话数——每次复盘前进一格,
+    /// 不问从未使用的领域,无需新存储。`.other` 是兜底分类(AI 解析失败的
+    /// 落点),把它当提问对象等于问「其他方面怎么样」——不是问题;快照里
+    /// 只有 `.other` 时返回 nil(提示行本就有 nil 分支,整行隐藏)。
     static func askDomainHintCategory(todos: [TodoItemData], rotationSeed: Int) -> TodoCategory? {
         let present = TodoCategory.allCases.filter { category in
-            todos.contains { $0.category == category }
+            category != .other && todos.contains { $0.category == category }
         }
         guard !present.isEmpty else { return nil }
         return present[abs(rotationSeed) % present.count]

@@ -429,6 +429,23 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(first.askDomainHintCategory, .work)
         XCTAssertEqual(second.askDomainHintCategory, .life)
     }
+
+    /// v3 拍板 11:`.other` 排除出轮换——它是兜底分类(AI 解析失败的落点),
+    /// 「其他方面怎么样」不是问题;快照全为 `.other` → nil(提示行隐藏)。
+    func testAskDomainHintExcludesOtherBucket() {
+        let onlyOther = [todo("x", category: .other), todo("y", category: .other)]
+        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: onlyOther, rotationSeed: 0),
+                     "只有兜底分类 → 无可问,提示行隐藏")
+
+        let mixed = [todo("w", category: .work), todo("o", category: .other)]
+        for seed in 0...3 {
+            XCTAssertNotEqual(
+                ReviewFlowState.askDomainHintCategory(todos: mixed, rotationSeed: seed),
+                .other,
+                "任何 seed 都不把 .other 当提问对象"
+            )
+        }
+    }
 }
 
 // MARK: - v2 · 排序截断 + 批量出口(2026-09-01 拍板 1/2/3,docs/todo-review-flow-v2.md)

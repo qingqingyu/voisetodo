@@ -66,6 +66,7 @@ struct ReviewStepTriage: View {
     var body: some View {
         VStack(spacing: WarmSpacing.md) {
             headerRow
+            poolIntroRow
             ledeText
 
             if !state.abandonedStack.isEmpty {
@@ -129,6 +130,28 @@ struct ReviewStepTriage: View {
             }
         }
         .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    /// 卡堆入选理由(v3 拍板 5):把「为什么是这 8 张」说出口——排序规则
+    /// (推迟次数 desc → 停滞天数 desc)浓缩成一句人话,接上 ① 屏的
+    /// `Still open`。数字用 **init 快照**(`initialBacklogCount` 恒定;积压
+    /// ≤ 8 张全在卡堆里,这行没有「里面/外面」的分别,不出)。文案写「本次
+    /// 共 N 件」不写「现在还有 N 件」——回看 ① 屏是实时口径,允许有差。
+    @ViewBuilder
+    private var poolIntroRow: some View {
+        let deckSize = min(state.initialBacklogCount, TriageRanking.deckSize)
+        if state.initialBacklogCount > TriageRanking.deckSize {
+            Text(String(
+                localized: "review.flow.triage.pool_intro_\(state.initialBacklogCount)_\(deckSize)"
+            ))
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, WarmSpacing.lg)
+        }
     }
 
     private var ledeText: some View {
@@ -507,52 +530,49 @@ struct ReviewStepTriage: View {
         }
     }
 
-    /// 推迟时间轴:记下日 →(每次推迟一个节点)→ 现在。推迟次数高亮在右端;
-    /// 冷启动无推迟数据时右端显示「还没推迟过」。
+    /// 推迟时间轴:记下日 →(每次推迟一个节点)→ 现在,推迟次数高亮在右端。
+    /// v3 拍板 6:零推迟**整块不渲染**——「一个点 + 一条线 + 一个圈」不携带
+    /// 任何信息;「放了多久」由卡头 leadLabel(「记下 N 天了」)承载,不重复
+    /// (tl_nodefer 键随删)。
+    @ViewBuilder
     private func timeline(_ todo: TodoItemData) -> some View {
         let deferCount = state.insightContextValue?.deferCounts[todo.id] ?? 0
-        let nodes = min(deferCount, Self.timelineNodeCap)
-        return VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-            HStack(spacing: WarmSpacing.xs) {
-                Circle()
-                    .fill(WarmTheme.textMuted)
-                    .frame(width: 6, height: 6)
-
-                ForEach(0..<nodes, id: \.self) { _ in
-                    timelineSegment
+        if deferCount > 0 {
+            let nodes = min(deferCount, Self.timelineNodeCap)
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                HStack(spacing: WarmSpacing.xs) {
                     Circle()
-                        .fill(WarmTheme.textMuted.opacity(0.45))
+                        .fill(WarmTheme.textMuted)
                         .frame(width: 6, height: 6)
+
+                    ForEach(0..<nodes, id: \.self) { _ in
+                        timelineSegment
+                        Circle()
+                            .fill(WarmTheme.textMuted.opacity(0.45))
+                            .frame(width: 6, height: 6)
+                    }
+
+                    timelineSegment
+
+                    Circle()
+                        .strokeBorder(WarmTheme.primaryText, lineWidth: 2)
+                        .background(Circle().fill(WarmTheme.cardBackground))
+                        .frame(width: 11, height: 11)
                 }
 
-                timelineSegment
+                HStack {
+                    // 记下日已在卡头展示,此处不重复;底行只承载右端推迟计数。
+                    Spacer(minLength: WarmSpacing.xs)
 
-                Circle()
-                    .strokeBorder(WarmTheme.primaryText, lineWidth: 2)
-                    .background(Circle().fill(WarmTheme.cardBackground))
-                    .frame(width: 11, height: 11)
-            }
-
-            HStack {
-                // 记下日已在卡头展示,此处不重复;时间轴底行只承载右端推迟计数。
-                Spacer(minLength: WarmSpacing.xs)
-
-                if deferCount > 0 {
                     Text(String(localized: "review.flow.triage.tl_deferred_\(deferCount)"))
                         .font(WarmFont.headline(11))
                         .foregroundColor(WarmTheme.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                } else {
-                    Text(String(localized: "review.flow.triage.tl_nodefer"))
-                        .font(WarmFont.caption(11))
-                        .foregroundColor(WarmTheme.textMuted)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
                 }
             }
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var timelineSegment: some View {

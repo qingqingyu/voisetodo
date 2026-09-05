@@ -1164,6 +1164,12 @@
             "value" : "Finance"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お金"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1178,6 +1184,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Health"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康"
           }
         },
         "zh-Hans" : {
@@ -1196,6 +1208,12 @@
             "value" : "Life"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生活"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1210,6 +1228,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Other"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他"
           }
         },
         "zh-Hans" : {
@@ -1228,6 +1252,12 @@
             "value" : "Social"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交流"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1244,6 +1274,12 @@
             "value" : "Study"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学習"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1258,6 +1294,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Work"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仕事"
           }
         },
         "zh-Hans" : {
@@ -7820,6 +7862,12 @@
             "value" : "Busiest day: %1$@ · %2$lld completed"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最も多い日:%1$@ · %2$lld 件完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7835,6 +7883,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Count"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "件数"
           }
         },
         "zh-Hans" : {
@@ -7854,6 +7908,12 @@
             "value" : "Day"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7863,7 +7923,27 @@
       }
     },
     "review.chart.mark" : {
-
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "なし"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无"
+          }
+        }
+      }
     },
     "review.empty.message" : {
       "localizations" : {
@@ -7871,6 +7951,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No completed todos yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了したタスクはまだありません"
           }
         },
         "zh-Hans" : {
@@ -7887,6 +7973,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "After a few days of data, you'll see completion trends, category breakdown, and streaks here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数日分のデータがたまると、完了の推移・カテゴリ比率・連続日数がここに表示されます"
           }
         },
         "zh-Hans" : {
@@ -8124,19 +8216,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What got in the way this week?"
+            "value" : "A line or two is enough"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今週、何が邪魔をしていましたか?"
+            "value" : "二、三行で構いません"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这周是什么挡住了你?"
+            "value" : "随便写两句"
           }
         }
       }
@@ -9604,19 +9696,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The other %lld are newer than 30 days — leaving them as is"
+            "value" : "The other %lld stay untouched for now — they will be back at your next review"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "残り %lld 件は 30 日未満なので、今回はそのままに"
+            "value" : "残り %lld 件は今回そのまま——次のふりかえりでまた扱います"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "其余 %lld 件不满 30 天,这次先不动"
+            "value" : "余下 %lld 件这次不动——下次复盘还会回来"
           }
         }
       }
@@ -9775,6 +9867,28 @@
         }
       }
     },
+    "review.flow.triage.pool_intro_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Of this session's %1$lld open items, the %2$lld most-deferred and longest-sitting are here"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今回の未解決 %1$lld 件のうち、先送りが多く長く放置された %2$lld 件がここに"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次 %1$lld 件积压里,推迟最多、放得最久的 %2$lld 件在这儿"
+          }
+        }
+      }
+    },
     "review.flow.triage.title" : {
       "localizations" : {
         "en" : {
@@ -9815,28 +9929,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "推迟 %lld 次"
-          }
-        }
-      }
-    },
-    "review.flow.triage.tl_nodefer" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Never deferred"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "先送りなし"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "还没推迟过"
           }
         }
       }
@@ -9891,6 +9983,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld completed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件完了"
           }
         },
         "zh-Hans" : {
@@ -10461,6 +10559,12 @@
             "value" : "Week %2$lld, %1$lld"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 年 第 %2$lld 週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10565,6 +10669,12 @@
             "value" : "See how much you got done last week 📊"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先週どれだけ終えたか見てみましょう 📊"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10579,6 +10689,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Weekly Review"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週次ふりかえり"
           }
         },
         "zh-Hans" : {
@@ -10708,6 +10824,12 @@
             "value" : "%1$@: %2$lld completed"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ に %2$lld 件完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10724,6 +10846,12 @@
             "value" : ". "
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "、"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10738,6 +10866,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : ". No records on other days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "、その他の日は記録なし"
           }
         },
         "zh-Hans" : {
@@ -10800,6 +10934,12 @@
             "value" : "Streak"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連続日数"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10860,6 +11000,12 @@
             "value" : "%lld more in the next 7 days"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今後 7 日間にあと %lld 件"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10874,6 +11020,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld completed · Most on %2$@ (%3$lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計 %1$lld 件完了 · 一番多いのは %2$@(%3$lld 件)"
           }
         },
         "zh-Hans" : {
