@@ -244,7 +244,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 两条边界：
 
 - **KV 读失败时返回 `notify: true`**——宁可多推一条，不可漏报。这条要有测试守着。
-- **`total === 0` 不算 `down`。** 没有可探活的 provider（如 secret 全缺）走单独的 `skipped` 分支不告警，避免配置问题被误报成服务故障。
+- **没有可探活的 provider 不算 `down`。** secrets 全缺时 `runProviderHealthCheck` 走单独的 `skipped` 分支不告警，避免配置问题被误报成服务故障。（`classifyLevel` 的 `total === 0 → null` 是同口径的纯函数兜底；cron 路径上 PROVIDERS 空数组在 `loadProviders` 就抛错，走 `providers_failed` 早退，到不了 `total === 0`。）
 - **单个 provider 缺 secret（`no_key`）/ 缺 adapter 计入 failed → `degraded`。** 与上一条不同口径是有意的：failover 容量减半是维护者该知道的事，且失败明细里带 `no_key` 一眼可辨——别当成误报修掉。
 
 ### 改 `runProviderHealthCheck`
@@ -278,7 +278,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 1. **不复用 `handleAdminGetProviders`。** 那个返回 `type` / `model` / `priority` / `timeoutMs` / 完整 `health` 快照。新写精简版，**只出 `id` + `state`**，其余一律不出。
 2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId, now)` 是 per-provider 签名，实现时遍历 `loadProviders(env)` 的结果逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
 3. **HTTP 状态码本身携带语义**：全部 provider `open` → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分 open）/ `down`（全 open，503）/ `misconfigured`（配置非法，503）。
-4. `Cache-Control: max-age=30` 让 Cloudflare 边缘挡掉重复轮询。
+4. `Cache-Control: max-age=30` 提示拨测客户端降低轮询频率。注意 Cloudflare **默认不缓存 Worker 响应**（边缘缓存需显式用 Cache API），该头挡不住恶意轮询 —— `/v1/health` 是唯一无鉴权且读 KV 的端点，Worker 内另有 15s isolate 结果缓存兜住 KV 读频率。
 
 两条边界：
 
@@ -379,7 +379,7 @@ Telegram 与心跳调用靠注入的 `fetchImpl` 按 URL 前缀分流拦截（`a
 - down → ok：推恢复消息，含故障时长
 - down 持续 5h59m 不推、6h01m 推 reminder（**用可注入的 `now` 控时，别用真实时钟**）
 - KV 读失败 → 仍然推（漏报比误报危险）
-- `total === 0` → 不推
+- 无可探活 provider（secrets 全缺）→ 不推（PROVIDERS 空数组在 `loadProviders` 抛错早退，同样不推）
 - 未配 `TELEGRAM_*` → 不抛错，cron 其余部分照常完成（拿现有的 telemetry GC 测试断言这点）
 
 **心跳**
