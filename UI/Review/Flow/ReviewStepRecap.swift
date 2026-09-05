@@ -27,12 +27,13 @@ struct ReviewStepRecap: View {
     private let calendar = Calendar.current
 
     private var summary: ReviewSummary {
-        RecapSummaryBuilder.monthSummary(
+        // v3 拍板 1:窗口 = 上次复盘至今(与每周一的提醒节奏对齐;首次复盘
+        // 回落近 7 天)。回顾页/统计页仍走 monthSummary(滚动 30 天),两窗
+        // 有意不同——复盘回答「这一段做了什么」,统计页看长趋势。
+        RecapSummaryBuilder.weekSummary(
+            since: lastReviewDate,
             today: Date(),
             calendar: calendar,
-            // 标签锚定「近 30 天」(2026-09-04 拍板 B2):滚动窗口配日历月名是
-            // 错配,且统计页 Hero 已同口径——两处标签/数字一致。
-            periodLabel: String(localized: "review.window.last30d"),
             allTodos: allTodos.map { $0.toData() },
             completedTodos: completedTodos.map { $0.toData() },
             recurringCompletions: recurringCompletions.map {
@@ -62,13 +63,15 @@ struct ReviewStepRecap: View {
         return .pinnedOutcome(total: outcome.completed + outcome.pending, completed: outcome.completed)
     }
 
-    /// 口径行:点明本流程固定「近 30 天」——回顾页顶部的周/月切换器管不到复盘,
-    /// 消歧义小字 2026-08-23 从入口卡移入(放卡里读起来像废话,放流程首屏才有上下文)。
+    /// 口径行(v3 拍板 1:窗口随上次复盘走,首次复盘是近 7 天)——文案与
+    /// `weekSummary` 的回落规则必须同源,别出现「上次复盘以来」配 7 天数。
     /// 顺带承载上次复盘日期(原入口卡第四行)。
     /// (v3 拍板 2:原「上次定的重点」11pt 闭环行升格为 Hero 主标题,此处不再重复。)
     private var scopeHeader: some View {
         VStack(spacing: WarmSpacing.xxs) {
-            Text(String(localized: "review.flow.recap.scope"))
+            Text(String(localized: lastReviewDate != nil
+                ? "review.flow.recap.scope_since"
+                : "review.flow.recap.scope_first"))
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
                 .lineLimit(1)

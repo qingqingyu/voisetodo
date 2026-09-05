@@ -41,6 +41,12 @@ struct ReviewSummary: Hashable, Equatable, Sendable {
     /// 卡堆输入同一口径:!isCompleted && abandonedAt == nil &&
     /// recurrenceRule == nil)。三处数字必须同源,否则同屏自相矛盾。
     let pendingOneOffCount: Int
+    /// 窗口内**一次性完成**件数(v3 ① 屏):sameDay 判词占比的同口径分母
+    /// (`ReviewAggregator.oneOffCompletions` 算好传入)。**别与 `total` 合并**:
+    /// total 是 Done 卡展示数,含规律完成记录是对的(用户确实做完了那些);
+    /// 本字段只服务判词占比——分子 `sameDayCount` 只数一次性完成,分母若用
+    /// total,规律任务多的用户占比被系统性低估(审阅修订二)。
+    let oneOffCompletionCount: Int
 }
 
 /// 纯函数聚合层——把已完成事件聚合成回顾摘要,无副作用、无 SwiftData 依赖。
@@ -78,7 +84,8 @@ enum ReviewAggregator {
                 daysWithCompletion: 0,
                 sameDayCount: 0,
                 createdCount: 0,
-                pendingOneOffCount: 0
+                pendingOneOffCount: 0,
+                oneOffCompletionCount: 0
             )
         }
 
@@ -101,7 +108,8 @@ enum ReviewAggregator {
                 daysWithCompletion: 0,
                 sameDayCount: 0,
                 createdCount: 0,
-                pendingOneOffCount: 0
+                pendingOneOffCount: 0,
+                oneOffCompletionCount: 0
             )
         }
 
@@ -165,7 +173,8 @@ enum ReviewAggregator {
             daysWithCompletion: daysWithCompletion,
             sameDayCount: 0,
             createdCount: 0,
-            pendingOneOffCount: 0
+            pendingOneOffCount: 0,
+            oneOffCompletionCount: 0
         )
     }
 
@@ -213,6 +222,26 @@ enum ReviewAggregator {
         let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
         return todos.filter { todo in
             let day = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
+            return day >= normalizedStart && day < normalizedEnd
+        }.count
+    }
+
+    /// 窗口内「一次性完成」件数:completedAt 落 [startDay, endDay) 且
+    /// recurrenceRule == nil。用途(v3 ① 屏,审阅修订二):sameDay 判词占比的
+    /// **同口径分母**——分子 `sameDayCompletions` 本就只数一次性完成,分母若
+    /// 用 `summarize` 的 total(events 含规律完成记录 union)会被规律任务抬高,
+    /// 占比被系统性低估、同一门槛在不同用户身上不等价。
+    static func oneOffCompletions(
+        _ todos: [TodoItemData],
+        from startDay: Date,
+        to endDay: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
+        let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
+        return todos.filter { todo in
+            guard todo.recurrenceRule == nil, let completedAt = todo.completedAt else { return false }
+            let day = DayClock.startOfUserDay(for: completedAt, calendar: calendar)
             return day >= normalizedStart && day < normalizedEnd
         }.count
     }

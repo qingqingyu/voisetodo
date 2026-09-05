@@ -8691,24 +8691,46 @@
         }
       }
     },
-    "review.flow.recap.scope" : {
+    "review.flow.recap.scope_first" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The last 30 days"
+            "value" : "The last 7 days"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "過去 30 日間をふりかえる"
+            "value" : "過去 7 日間をふりかえる"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "回顾近 30 天"
+            "value" : "回顾近 7 天"
+          }
+        }
+      }
+    },
+    "review.flow.recap.scope_since" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since your last review"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のふりかえりから"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次复盘以来"
           }
         }
       }
@@ -9901,6 +9923,28 @@
         }
       }
     },
+    "review.hero.sameday_judgment" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quite a few were done the same day you noted them — this list works like an inbox, not a planner"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "かなりの件数をメモしたその日に終えています——このリストは計画表というより受信箱です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相当一部分事是记下当天就做完的——清单更像收件箱,不像计划表"
+          }
+        }
+      }
+    },
     "review.insight.effort.body_%lld_%lld_%lld_%lld" : {
       "localizations" : {
         "en" : {
@@ -10782,6 +10826,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还挂着"
+          }
+        }
+      }
+    },
+    "review.stat.pending_note_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%lld still open\" is your entire backlog — not just this window"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「残り %lld 件」は全期間の滞留です——この期間だけではありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「还挂着 %lld 件」是全部积压,不只这一窗"
           }
         }
       }
