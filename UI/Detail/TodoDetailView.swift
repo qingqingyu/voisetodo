@@ -34,14 +34,23 @@ private enum DetailChromeMetrics {
     static let grabberHeight: CGFloat = 5
     static let grabberBaseWidth: CGFloat = 38
     static let grabberExtraWidth: CGFloat = 10
+    /// grabber 不透明度曲线(B.3):静止 0.4,随 progress 插值到 0.7;
+    /// 越过关闭阈值时直接跳 0.7 给离散信号(对齐 HTML 原型)。
+    static let grabberBaseAlpha: CGFloat = 0.4
+    static let grabberPeakAlpha: CGFloat = 0.7
     /// grabber 区高 = 胶囊 + 上下 WarmSpacing.xs(8pt) padding = 21pt。
     static var grabberZoneHeight: CGFloat { grabberHeight + WarmSpacing.xs * 2 }
-    /// compact toast 顶部留白 = chrome 总高(65) + WarmSpacing.xs(8) = 73pt。
-    /// toast(~36pt 高)落在 grabber 与标题卡之间:内容顶 padding 仍为 48(xxxl),
-    /// 标题卡顶在 chrome 下 113pt,toast 底(+109pt)与卡顶留 4pt 呼吸 —— 与旧布局
-    /// (导航栏下 toast 8~44 / 卡顶 48)同构。
+    /// chrome 默认总高 = header(44) + grabber 区(21) = 65pt(标准 Dynamic Type 档)。
+    /// header 行用 minHeight:44 只设下限 —— 标题字体 WarmFont.headline 随 Dynamic Type
+    /// 缩放(AX4/AX5 单行行高 > 44),chrome 实际高度会更高,toast 让位量必须实测
+    /// (见 body 的 measuredChromeHeight),不能锁死本常量。
+    static var defaultChromeHeight: CGFloat { headerHeight + grabberZoneHeight }
+    /// compact toast 顶部留白 = chrome 实际高度 + WarmSpacing.xs(8)。
+    /// 标准档 = 65 + 8 = 73pt:toast(~36pt 高)落在 grabber 与标题卡之间,
+    /// 内容顶 padding 仍为 48(xxxl),标题卡顶在 chrome 下 113pt,toast 底(+109pt)
+    /// 与卡顶留 4pt 呼吸 —— 与旧布局(导航栏下 toast 8~44 / 卡顶 48)同构。
     /// 注:文档 B.7 曾估"padding 收到 24",实测账算不过 —— 36pt 的 toast 需要完整空隙,维持 48。
-    static var toastTopPadding: CGFloat { headerHeight + grabberZoneHeight + WarmSpacing.xs }
+    static func toastTopPadding(chromeHeight: CGFloat) -> CGFloat { chromeHeight + WarmSpacing.xs }
 }
 
 /// 待办详情页 - 温暖主题风格
@@ -113,6 +122,11 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     @State private var dragGestureKeyboardOnly = false
     /// 是否已越过关闭阈值(haptic 只在上升沿触发一次,回落复位后可再触发)。
     @State private var didCrossDismissThreshold = false
+    /// chrome(自绘 header + grabber)实测高度。header 标题随 Dynamic Type 缩放,
+    /// AX4/AX5 下行高超过 44pt 下限 → chrome 高于默认 65pt;compact toast 的让位量
+    /// 用实测值才能在所有字号档位避开 grabber(旧系统导航栏高度自适应,无此问题)。
+    /// onGeometryChange 首帧前用默认值兜底,首帧后持续跟随(字体档位/语言切换)。
+    @State private var measuredChromeHeight: CGFloat = DetailChromeMetrics.defaultChromeHeight
 
     init(store: Store, todo: TodoItemData) {
         self.store = store
@@ -381,13 +395,27 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     detailHeaderRow
                     dismissGrabber
                 }
+                // chrome 实际高度上报:toast 让位量(topPadding)读它 —— header 随
+                // Dynamic Type 增高时(AX4/AX5)常量 73 会压住 grabber,实测值全档位安全。
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { _, newHeight in
+                    if newHeight != measuredChromeHeight {
+                        measuredChromeHeight = newHeight
+                    }
+                }
             }
         }
-        // 跟手变换(B.6):scale/圆角/offset 挂根 ZStack,整页(含 chrome)读作
+        // 跟手变换(B.6):圆角/scale/offset 挂根 ZStack,整页(含 chrome)读作
         // 「一张正在脱离屏幕的卡片」。露出区底色 = WarmTheme.background(offset 不改变
         // 布局 frame,background 固定在原位填满整屏)。
-        .scaleEffect(dismissScale, anchor: .top)
+        // 顺序约束:clipShape 必须在 scaleEffect 之内 —— scaleEffect 不改变布局 frame,
+        // 挂在外层的 clipShape 会以未缩放的整屏 bounds 为裁剪区,scale(0.94) 后的可见
+        // 内容完全落在裁剪矩形内部,圆角永远裁不到像素(等价于 CSS 把 border-radius
+        // 写在 transform 外层)。clip 在内则圆角随内容一起被缩放变换,静态时 radius=0
+        // 无副作用。
         .clipShape(RoundedRectangle(cornerRadius: dismissCornerRadius))
+        .scaleEffect(dismissScale, anchor: .top)
         .offset(y: dismissDragOffset)
         .background(WarmTheme.background.ignoresSafeArea())
         // ↓ 以下全部挂在变换层之外:toast 不随卡片缩放位移,手势命中区不跟着跑。
@@ -443,14 +471,15 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         //
         // compact + chrome 让位 topPadding:详情页专用优化。
         // 默认 `.top` 用 48pt 顶部间距 + 64pt 高度的大 toast,在详情页里会压住第一张标题卡片。
-        // compact 把 toast 缩到 ~36pt 高;topPadding = chrome(65) + 8,toast 占据
-        // chrome 下 +8~44pt 区段;配合内容顶 padding 48(xxxl),标题卡顶在 chrome 下 113pt,
-        // toast 完整装在 grabber 与标题卡之间的空隙,不遮挡内容(账见 DetailChromeMetrics)。
+        // compact 把 toast 缩到 ~36pt 高;topPadding = chrome 实测高度 + 8(标准档 73),
+        // toast 占据 chrome 下 +8~44pt 区段;配合内容顶 padding 48(xxxl),标题卡顶在
+        // chrome 下 113pt,toast 完整装在 grabber 与标题卡之间的空隙,不遮挡内容
+        // (账见 DetailChromeMetrics;AX4/AX5 下 chrome 增高由 measuredChromeHeight 跟随)。
         .toast(
             message: coordinator.toastMessage,
             style: coordinator.toastStyle,
             isPresented: $coordinator.showToast,
-            topPadding: DetailChromeMetrics.toastTopPadding,
+            topPadding: DetailChromeMetrics.toastTopPadding(chromeHeight: measuredChromeHeight),
             compact: true,
             actionTitle: coordinator.toastActionTitle,
             action: coordinator.toastAction
@@ -589,7 +618,10 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// VoiceOver 隐藏(按钮已承担 a11y 出口)。
     private var dismissGrabber: some View {
         let progress = dismissProgress
-        let alpha = didCrossDismissThreshold ? 0.7 : 0.4 + 0.3 * progress
+        let alpha = didCrossDismissThreshold
+            ? DetailChromeMetrics.grabberPeakAlpha
+            : DetailChromeMetrics.grabberBaseAlpha
+                + (DetailChromeMetrics.grabberPeakAlpha - DetailChromeMetrics.grabberBaseAlpha) * progress
         return Capsule()
             .fill(WarmTheme.sketch.opacity(alpha))
             .frame(
