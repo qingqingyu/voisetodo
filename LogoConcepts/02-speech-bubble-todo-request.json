@@ -1,0 +1,7 @@
+{
+  "model": "gpt-image-2",
+  "prompt": "Use case: logo-brand. Asset type: iOS app icon concept for an app named VoiceTodo. Primary request: create a minimal speech bubble icon that contains two short todo lines and one small check mark, expressing a voice assistant that captures tasks. The bubble should feel warm and efficient, not a generic chat app. Style/medium: vector-friendly flat logo mark rendered as polished raster PNG, soft rounded geometry, professional productivity app aesthetic. Composition/framing: centered symbol inside a rounded-square app icon background, strong silhouette, readable at 29px. Color palette: fresh teal or blue-green bubble, deep ink navy or charcoal background, restrained warm amber check accent. Constraints: no text, no letters, no words, no watermark, no mockup, no 3D, no realistic microphone, no clutter, no childish style.",
+  "size": "1024x1024",
+  "quality": "auto",
+  "output_format": "png"
+}

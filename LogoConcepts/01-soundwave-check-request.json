@@ -1,0 +1,7 @@
+{
+  "model": "gpt-image-2",
+  "prompt": "Use case: logo-brand. Asset type: iOS app icon concept for an app named VoiceTodo. Primary request: create a clean, memorable app icon where a soft three-part voice waveform naturally transforms into a check mark at the final stroke, communicating voice input becoming a completed todo. Style/medium: vector-friendly flat logo mark rendered as polished raster PNG, rounded and modern, crisp silhouette, no realistic microphone. Composition/framing: centered symbol inside a rounded-square app icon background, generous safe margin, instantly readable at 29px. Color palette: fresh teal and blue-green primary mark, deep ink navy background, tiny warm amber accent only on the check tip if useful. Constraints: no text, no letters, no words, no watermark, no mockup, no 3D, no busy gradients, no complex audio waveform, no calendar, no literal microphone.",
+  "size": "1024x1024",
+  "quality": "auto",
+  "output_format": "png"
+}

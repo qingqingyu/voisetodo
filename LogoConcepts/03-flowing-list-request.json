@@ -1,0 +1,7 @@
+{
+  "model": "gpt-image-2",
+  "prompt": "Use case: logo-brand. Asset type: iOS app icon concept for an app named VoiceTodo. Primary request: create an abstract flowing-list mark: two or three voice wave arcs on the left progressively become three clean todo list strokes on the right, with one list stroke ending in a check mark. It should clearly express speech being organized into actionable tasks. Style/medium: vector-friendly flat logo mark rendered as polished raster PNG, clean geometric curves, modern productivity tool, simple enough for app icon use. Composition/framing: centered compact mark inside a rounded-square app icon background, generous safe margin, strong silhouette, readable at 29px. Color palette: fresh teal and blue-green with deep ink navy support, tiny warm amber accent only on the checked item if useful. Constraints: no text, no letters, no words, no watermark, no mockup, no 3D, no detailed waveform, no literal microphone, no calendar page, no overloaded checklist.",
+  "size": "1024x1024",
+  "quality": "auto",
+  "output_format": "png"
+}
