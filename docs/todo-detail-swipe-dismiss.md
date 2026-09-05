@@ -2,10 +2,17 @@
 
 > 状态：**待实施**。本文档同时是 HTML 原型的绘制规格 + Swift 实施规格。
 >
+> **2026-09-05 v2 改版**：HTML 原型实测后，滚动接管语义拍板改为**起手锁定**
+> （否决 v1 的「同一次手势无缝接管」——原型实测发现它把滚动意图中途译成关闭意图，
+> 且 scale 视觉突变读作「样式切换」）。**方案 B 升为主案，方案 A 降级**：
+> 系统 sheet 的接管语义即无缝接管且不可定制，与起手锁定冲突。
+> 原型已产出并实测：`docs/prototypes/todo-detail-swipe-dismiss.html`。
+>
 > **基线**：行号对齐 `3f7f051`（*feat(alerting): 层 B/C 实施*）。
 > 实施时**先按符号名（属性名 / 函数名 / 注释原文）定位，行号仅作参考**。
 >
-> 主改动文件：`UI/Detail/TodoDetailView.swift`、`UI/Home/HomeView.swift`（呈现方式）
+> 主改动文件：`UI/Detail/TodoDetailView.swift`（方案 B 改动全部集中于此，
+> 不动 `HomeView.swift` 的呈现方式；只有已降级的方案 A 才需要改 HomeView）
 >
 > 相关文件（只读参考）：`UI/Shared/SimultaneousDragGesture.swift`、
 > `UI/Home/UnscheduledDrawer.swift`（grabber 实现）、`UI/Shared/DesignSystem.swift`、
@@ -31,7 +38,7 @@
 | 跟手反馈 | **完全没有**，页面 0 位移 | **必做**：offset + scale + 圆角 + haptic |
 | 速度判定 | **没有**，只比位移 > 80pt | **必做**：位移 **或** 速度任一达标 |
 | grabber | **没有**（fullScreenCover 非 sheet） | **必做**，但必须与跟手配套 |
-| 滚动接管 | 要抬手再拖第二次 | **改**：同一次手势无缝接管 |
+| 滚动接管 | 要抬手再拖第二次 | **保留起手锁定**（v2 拍板）；补的是顶部起手的全程跟手反馈 |
 | iOS 26 手势失效风险 | 用的是已知有 bug 的原生 API | **先验证**，见「风险 0」 |
 | 键盘两段式 | 已实现 ✓ | 保留，微调触发时机 |
 | 误触成本 | 已有实时保存 ✓ | 不加确认弹窗 |
@@ -103,16 +110,21 @@ guard translation.height > DismissDragConfig.verticalTranslationLowerBound,   //
 项目内已有一个可复用的标准 grabber：`UI/Home/UnscheduledDrawer.swift:167-182`
 （38×5pt Capsule，`WarmTheme.sketch.opacity(0.4)`）。
 
-### 4. 滚动接管不平滑，而且是刻意的
+### 4. 起手锁定的语义是对的，缺的是顶部起手的跟手反馈
 
 `dragStartedAtTop`（`:100`，注释在 `:93-99`）锁定起手瞬间的滚动位置，
-起手时不在顶部的**整段手势**都不会关闭。注释写得很明白，想要的是
-「第一次滑到顶 → 抬手 → 第二次再滑才关」的二次确认心智模型。
+起手时不在顶部的**整段手势**都不会关闭 —— 即「第一次滑到顶 → 抬手 →
+第二次再滑才关」的二次确认心智模型。
 
-但这跟系统 sheet 不一致：系统里列表滚到顶后继续下拉，**同一次手势**就无缝接管了，
-不需要抬手。当前实现是这个交互里最不跟手的一环。
+**v1 曾主张删掉它改无缝接管（对齐系统 sheet），v2 原型实测后否决**：
+无缝接管会把滚动意图中途译成关闭意图 —— 用户在内容中段按住往下翻、
+滚到顶的瞬间手指还没抬，页面就变成缩放收起卡片，读作「样式突然切换」
+而非连续运动。**起手锁定保留**，真正要修的是：
 
-配套设施（都为这个二次确认服务，改完后可一并删除）：
+- 起手**在顶部**的手势同样零反馈（这才是「最不跟手」的一环）；
+- 判定源是 SwiftUI Preference 异步上报（滚动中有帧延迟）。
+
+配套设施（服务的是「起手判定」，v2 改在 UIKit 手势门控里同步读取后同样可删）：
 `DetailScrollOffsetKey`（`:24-30`）、`DetailScrollCoordinateSpace`（`:33-35`）、
 `isScrollViewAtTop`（`:83`）、`.onPreferenceChange`（`:402-404`）、
 `ScrollView` 顶部锚点 `GeometryReader`（`:136-145`）、`.coordinateSpace`（`:373`）。
@@ -145,10 +157,10 @@ guard translation.height > DismissDragConfig.verticalTranslationLowerBound,   //
 
 | 决策点 | 选择 | 落选项及原因 |
 |---|---|---|
-| 呈现方式 | **方案 A：换 `.sheet` + `.large` detent**（推荐） | 方案 B 手写跟手：工作量大、要自己维护物理曲线，且绕不开 iOS 26 手势 bug 之外的其他坑 |
+| 呈现方式 | **方案 B：保持 fullScreenCover，手写跟手**（v2 主案） | 方案 A（sheet）降级：系统 sheet 的滚动→关闭接管是无缝语义且**不可定制**，与拍板的起手锁定冲突（v1 推荐它时拍板尚未发生） |
 | 引导形式 | **静态 grabber，不做 coach mark** | coach mark 见「为什么不做引导」 |
 | 误触保护 | **不加**，靠现有实时保存 | 确认弹窗体验重，且与 autosave 语义打架 |
-| 二次确认（抬手再拖） | **删除**，改无缝接管 | 与系统 sheet 不一致，是当前最大的「不跟手」来源 |
+| 滚动接管语义 | **保留起手锁定**（v2 拍板，原型实测否决无缝接管） | 无缝接管：滚动意图被中途译成关闭意图 + scale 视觉突变，用户判定不可接受 |
 
 ### 为什么不做引导动画
 
@@ -167,7 +179,11 @@ grabber 的语义是「这是一张可以拖的卡片」。如果加了 grabber�
 
 ---
 
-## 方案 A（推荐）：换成 `.sheet` + `.large` detent
+## 方案 A（已降级）：换成 `.sheet` + `.large` detent
+
+> ⚠️ **v2 起降级为备选**：系统 sheet 的「滚到顶后同手势继续下拉」是无缝接管语义，
+> **不可定制**，与 2026-09-05 拍板的起手锁定直接冲突。仅当产品重新接受
+> 无缝接管语义时才走本方案。以下内容保留供参考。
 
 改 `UI/Home/HomeView.swift:818-823`：
 
@@ -212,17 +228,25 @@ grabber 的语义是「这是一张可以拖的卡片」。如果加了 grabber�
 
 ---
 
-## 方案 B（备选）：保持 fullScreenCover，手写跟手
+## 方案 B（v2 主案）：保持 fullScreenCover，手写跟手
 
-如果全屏形态不能动，就得手写完整的跟手。以下参数同时是 **HTML 原型的绘制规格**。
+全屏形态保留，跟手按 HTML 原型（`docs/prototypes/todo-detail-swipe-dismiss.html`）
+的已验证行为移植。以下参数同时是 **HTML 原型的绘制规格**。
 
 ### B.1 状态
 
 ```swift
 /// 跟手位移(pt)。0 = 静止;正值 = 页面下移。上滑 clamp 到 0。
 @State private var dismissDragOffset: CGFloat = 0
+/// 本手势是否激活(首帧 onChanged 置位,onEnded/onCancelled 复位)。
+/// 起手语义快照只在此刻捕获——不要用 `dismissDragOffset == 0` 当"起手"信号:
+/// 回弹动画进行中 offset ≠ 0 时再抓,键盘判定会被跳过,出现"键盘挂着页面却跟手"。
+@State private var isDragActive = false
+/// 起手锁定快照:门控闭包首次被问询时记录的「起手时 ScrollView 是否在顶」。
+/// nil = 无进行中手势。true/false 一经锁定,整段手势沿用(见 B.5 门控)。
+@State private var dragGateLockedAtTop: Bool?
 /// 本次手势是否只用于收键盘(起手时键盘弹起)。为 true 时不驱动 offset。
-@State private var dragIsKeyboardOnly = false
+@State private var dragGestureKeyboardOnly = false
 /// 是否已在本次手势中越过阈值(用于 haptic 只触发一次)。
 @State private var didCrossDismissThreshold = false
 ```
@@ -275,11 +299,13 @@ grabber 色 = sketch 40% → 70% 不透明度        // #8993A4,alpha 0.4 → 0.
 这条比任何引导动画都有用：它在用户**正在做这件事的那一刻**告诉他
 「松手就关了」，而不是在他还没想做的时候打断他。
 
-### B.5 手势实现
+### B.5 手势实现（v2：起手锁定）
 
 换用项目已有的 `SimultaneousDragGesture`（`UI/Shared/SimultaneousDragGesture.swift`），
-绕开 iOS 26 的 `DragGesture` bug，并用 `allowSimultaneousWithScrollViewPan`
-拿到无缝滚动接管（首页折叠手势 `HomeView.swift:1804` 是现成范例）：
+绕开 iOS 26 的 `DragGesture` bug（首页折叠手势 `HomeView.swift:1804` 是现成范例）。
+**起手锁定在这里落地**：门控闭包首次被 UIKit 问询时快照 `contentOffset`，
+之后整段手势沿用该快照 —— 起手不在顶的手势，外层手势永远不与滚动共存
+（整段交回系统 ScrollView，保留系统 bounce/惯性）。
 
 ```swift
 .gesture(
@@ -287,20 +313,23 @@ grabber 色 = sketch 40% → 70% 不透明度        // #8993A4,alpha 0.4 → 0.
         minimumDistance: DismissDragConfig.minimumDistance,
         direction: .vertical,
         onChanged: { drag in
-            // 起手时键盘弹起 → 本次手势只收键盘,不驱动 offset
-            if dismissDragOffset == 0 && !dragIsKeyboardOnly && isKeyboardVisible {
-                dragIsKeyboardOnly = true
-                dismissKeyboard()
-                return
+            // 首帧:捕获起手语义快照
+            if !isDragActive {
+                isDragActive = true
+                dragGestureKeyboardOnly = isKeyboardVisible
+                if dragGestureKeyboardOnly { dismissKeyboard() }
             }
-            guard !dragIsKeyboardOnly else { return }
-            dismissDragOffset = max(0, drag.translation.height)
+            guard !dragGestureKeyboardOnly, dragGateLockedAtTop ?? true else { return }
+            // 扣掉 minimumDistance:UIKit 首帧 onChanged 已带满 10pt 位移,
+            // 不扣会 0→10pt 瞬跳(首页折叠手势同款处理,见其 :1815-1818 注释)
+            dismissDragOffset = max(0, drag.translation.height - DismissDragConfig.minimumDistance)
             updateThresholdHaptic()
         },
         onEnded: { drag in
-            defer { dragIsKeyboardOnly = false; didCrossDismissThreshold = false }
-            guard !dragIsKeyboardOnly else { return }
-            let shouldDismiss = drag.translation.height > DismissDragConfig.dismissTranslation
+            defer { resetDragGestureState() }
+            guard isDragActive, !dragGestureKeyboardOnly, dragGateLockedAtTop ?? true else { return }
+            let travel = max(0, drag.translation.height - DismissDragConfig.minimumDistance)
+            let shouldDismiss = travel > DismissDragConfig.dismissTranslation
                 || drag.velocity.dy > DismissDragConfig.dismissVelocity
             if shouldDismiss {
                 dismiss()
@@ -309,31 +338,76 @@ grabber 色 = sketch 40% → 70% 不透明度        // #8993A4,alpha 0.4 → 0.
             }
         },
         onCancelled: {
-            dragIsKeyboardOnly = false
-            didCrossDismissThreshold = false
+            // 手势被系统中断(来电/边缘手势/被 ScrollView 判负):复位一切,
+            // 否则 dismissDragOffset 卡中途,页面永久歪着(契约见 SimultaneousDragGesture.swift:73-77)
+            resetDragGestureState()
             withAnimation(WarmAnimation.springSmooth) { dismissDragOffset = 0 }
         },
         allowSimultaneousWithScrollViewPan: { scrollView, pan in
-            // 列表已在顶部 + 手指向下 → 外层接管,同一次手势无缝转交,不需要抬手
-            scrollView.contentOffset.y <= 0 && pan.velocity(in: scrollView).y > 0
+            // 起手锁定:本手势首次被问询时快照,整段手势沿用。
+            // 闭包可能被 UIKit 多次调用(含手势中途),快照防止中段起手滚到顶后"变成"可关闭
+            if dragGateLockedAtTop == nil {
+                dragGateLockedAtTop = scrollView.contentOffset.y <= 0
+            }
+            return dragGateLockedAtTop == true
+                && scrollView.contentOffset.y <= 0
+                && pan.velocity(in: scrollView).y > 0
         }
     )
 )
+
+/// 复位起手快照与手势内状态。onEnded / onCancelled 双调用点,漏一处都会污染下一手势。
+private func resetDragGestureState() {
+    isDragActive = false
+    dragGateLockedAtTop = nil
+    dragGestureKeyboardOnly = false
+    didCrossDismissThreshold = false
+}
 ```
 
-**注意 `onCancelled` 必须实现** —— 否则手势被系统中断（来电、系统边缘手势）时
-`dismissDragOffset` 会卡在中途，页面永久歪着。这个契约在
-`SimultaneousDragGesture.swift:73-77` 有明确说明。
+**`dragGateLockedAtTop ?? true` 的含义**：门控只在与 ScrollView pan 冲突时被问询。
+手指落在自绘 header / grabber（无 ScrollView 冲突）时快照为 nil ——
+这些区域是纯拖拽面，恒允许（与 HTML 原型的 inScroll 语义一致）。
 
-### B.6 视觉挂载
+**快照复位依赖 onCancelled 的 `.failed` 路径**：起手不在顶 → 门控 false →
+ScrollView 独占 → 外层 recognizer 被 UIKit 判 `.failed` → 包装层派发
+`onCancelled` → 快照复位。所以 onCancelled 在本方案里不只是视觉兜底，
+还是起手锁定的生命周期一环。
+
+**注意 `onCancelled` 必须实现** —— 理由如上，缺了它锁会跨手势泄漏。
+
+### B.6 视觉挂载 + 自绘 header（v2 审阅补充）
+
+**前置问题（v1 遗漏）**：现在的 chevron.down 是 `.toolbar` + `.navigationTitle(.inline)`
+（`:414-432`），导航栏由 HomeView `fullScreenCover` 闭包里的 `NavigationStack` 渲染，
+**在 TodoDetailView 根 ZStack 之外**。把 scale/offset 挂根 ZStack，导航栏会钉死在顶，
+内容从它下面滑走 —— 与原型（导航栏随卡片走）不符。
+
+**决策：弃系统导航栏，改自绘 header**（与 HTML 原型同构）：44pt 行 =
+左 `chevron.down` 24pt + 居中标题「详情」，作为根 ZStack 的首子视图。
+必须原样保留：`accessibilityLabel("panel.close")` 和
+`accessibilityIdentifier("TodoDetailCloseButton")`（UI 测试在用）。
+删除 `.navigationTitle` / `.navigationBarTitleDisplayMode` / `.toolbar` 三处修饰符。
 
 ```swift
-ZStack { ... }                                    // 现有根 ZStack(:128)
-    .scaleEffect(dismissScale, anchor: .top)
-    .clipShape(RoundedRectangle(cornerRadius: dismissCornerRadius))
-    .offset(y: dismissDragOffset)
-    .background(WarmTheme.background.ignoresSafeArea())   // 露出区底色
+ZStack {
+    detailHeaderRow          // 自绘 header(chevron.down + 居中标题),替代 .toolbar
+    grabber                  // B.7
+    ScrollView { ... }       // 现有内容
+}
+.scaleEffect(dismissScale, anchor: .top)
+.clipShape(RoundedRectangle(cornerRadius: dismissCornerRadius))
+.offset(y: dismissDragOffset)
+.background(WarmTheme.background.ignoresSafeArea())   // 露出区底色
+// ↓ 这些挂在变换层之外:toast 不随卡片缩放位移,手势命中区不跟着跑
+.onTapGesture { dismissKeyboard() }
+.toast(...)
+.alert(...)
+.gesture(SimultaneousDragGesture(...))                // B.5
 ```
+
+**真机验证项**：拖拽期间整页每帧合成层变换（GPU 路径），键盘弹起 + 长列表
+场景下确认不掉帧。
 
 ### B.7 grabber
 
@@ -360,15 +434,20 @@ withAnimation(.easeOut(duration: 0.22)) { dismissDragOffset = UIScreen.main.boun
 DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { dismiss() }
 ```
 
-代价是与系统转场时长叠加，需要调参。**这个坑是方案 A 完全没有的**，
-也是推荐方案 A 的主要理由之一。
+代价是与系统转场时长叠加，需要调参。**这个坑是方案 A 完全没有的**
+（v1 曾以此为主要理由推荐 A；v2 起手锁定拍板后 A 语义不符，此坑只能直面）。
 
 ---
 
-## HTML 原型规格（给画原型的 AI）
+## HTML 原型规格（已产出并实测）
 
-目的：先看手感对不对，再决定走 A 还是 B。**原型只验证方案 B 的视觉，
-因为方案 A 的手感就是 iOS 系统 sheet，不需要原型。**
+原型已落地：`docs/prototypes/todo-detail-swipe-dismiss.html`（390×844 模拟屏 +
+实时调试面板 + 6 参数滑杆，自动化验证过四条路径：中段起手 500px 下拖页面零位移 /
+顶部起手跟手关闭 / 慢速不足阈值弹回 / 快甩速度通道关闭）。
+
+**实测产出两条改版结论**：① 接管语义从无缝接管改为**起手锁定**（本文件 v2）；
+② 顺带修正「顶部下拉后同手势上推,超出 offset 的部分内容滚动方向反了」的实现细节。
+以下规格保留为原型的行为描述（iOS 移植的对照物）。
 
 ### 要做出来的东西
 
@@ -388,7 +467,7 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { dismiss() }
      阴影 `0 2px 4px rgba(30,42,58,.10)`。每张卡顶部一行 13px `#5C6A7A` 的小标题，
      下面塞占位内容（chip 行 / 文本行皆可）
    - 底部：红色「删除」文字链（14px `#E5484D`）+ 创建时间小字（12px `#8E97A4`）
-4. 内容要**足够长可滚动**（至少 1.5 屏），用于验证「滚到顶后继续下拉才接管」
+4. 内容要**足够长可滚动**（至少 1.5 屏），用于验证「中段起手下拖回顶,页面纹丝不动」
 
 ### 配色 token（来自 `UI/Shared/DesignSystem.swift`，浅色模式）
 
@@ -413,9 +492,12 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { dismiss() }
    `offset = max(0, currentY - startY)`，实时更新 transform。**必须用
    `transform: translateY()` + `scale()`，不要用 `top`**，否则掉帧。
    拖拽期间关掉 CSS transition（`transition: none`），松手时再打开。
-2. **接管规则**：只有 `scrollContainer.scrollTop <= 0` **且**手指向下时才进入拖拽模式；
-   否则是正常滚动。关键是**同一次手势内**从滚动切到拖拽，不要求抬手。
-   这一条是原型要验证的核心，请重点确认手感连续。
+2. **起手锁定**（v2 改版,原型实测催生）：进入拖拽模式的**唯一入口**是
+   「起手时 `scrollTop <= 0`」；起手时不在顶 → **整段手势只算滚动**，
+   滚到顶后剩余位移被吞掉、页面纹丝不动；抬手后再从顶部下拉才跟手。
+   顶部下拉后同手势上推、超出 offset 的部分 → 页面回位,内容**向下**接续滚动。
+   （v1 规格是「同一次手势内滚动→拖拽无缝切换」,实测把滚动意图中途译成
+   关闭意图,已否决——这正是原型存在的意义。）
 3. **松手判定**：`offset > 120 || velocity > 800 px/s` → 播放关闭动画
    （`translateY(844px)`，220ms `ease-out`），然后 2 秒后自动复位便于反复试；
    否则弹回 0，用 spring 近似曲线
@@ -425,8 +507,9 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { dismiss() }
 4. **阈值反馈**：`offset` 跨过 120 时，grabber 变色到 alpha 0.7 并
    `navigator.vibrate?.(10)`（桌面浏览器无效不影响），同时在屏幕外
    加一行调试文字「已越过阈值，松手关闭」。回落到 120 以下复位。
-5. **调试面板**：屏幕右侧（模拟屏之外）实时显示 `offset / progress / scale /
-   radius / velocity / 是否越过阈值`，方便调参。
+5. **调试面板**：屏幕右侧（模拟屏之外）实时显示 `模式 / 起手锁定判定 /
+   scrollTop / offset / progress / scale / radius / grabber 宽 / velocity /
+   是否越过阈值`，方便调参与验证锁定语义。
 6. **参数可调**：把 B.2 的 6 个常量做成滑杆
    （dismissTranslation / dismissVelocity / visualTravel / minScale /
    maxCornerRadius / 回弹时长），我们要用原型直接调出最终数值，
@@ -447,7 +530,7 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { dismiss() }
 
 iOS 26 真机 / 模拟器验证当前 `:388` 的下滑关闭是否还生效。记录结果。
 
-### 走方案 A
+### 走方案 A（已降级,仅当产品重新接受无缝接管语义）
 
 1. `HomeView.swift:818-823` `fullScreenCover` → `sheet` + `.presentationDetents([.large])`
    + `.presentationDragIndicator(.visible)`
@@ -458,17 +541,22 @@ iOS 26 真机 / 模拟器验证当前 `:388` 的下滑关闭是否还生效。�
 5. 重量顶部 padding（`:370`），验证 compact toast（`:468-476`）不遮标题卡
 6. 跑 `VoiceTodoUITests/DetailKeyboardUITests.swift`，大概率要改
 
-### 走方案 B
+### 走方案 B（v2 主路径）
 
 1. 按 B.1 / B.2 加状态与常量，删除 `dragStartedAtTop`、`isScrollViewAtTop`、
    `DetailScrollOffsetKey`、`DetailScrollCoordinateSpace`、`.onPreferenceChange`、
    ScrollView 顶部锚点
-2. 按 B.5 换 `SimultaneousDragGesture`（**别忘 `onCancelled`**）
-3. 按 B.6 挂视觉，参数用 HTML 原型调出来的最终值
-4. 按 B.4 加阈值 haptic
-5. 按 B.7 加 grabber + 重量顶部 padding
-6. 按 B.8 实测 dismiss 跳变，必要时加推出动画
-7. 跑 `VoiceTodoUITests/DetailKeyboardUITests.swift`
+2. 按 B.6 前置决策改**自绘 header**：删 `.navigationTitle` / `.toolbar`，
+   保留 `panel.close` 标签与 `TodoDetailCloseButton` identifier
+3. 按 B.5 换 `SimultaneousDragGesture`（**别忘 `onCancelled`**——它同时承担
+   起手锁定快照的复位；onChanged 首帧扣 `minimumDistance` 防瞬跳）
+4. 按 B.6 挂视觉（toast/alert/手势在变换层之外），参数用 HTML 原型调出来的最终值；
+   真机验证拖拽帧率（键盘弹起 + 长列表场景）
+5. 按 B.4 加阈值 haptic
+6. 按 B.7 加 grabber + 重量顶部 padding
+7. 按 B.8 实测 dismiss 跳变，必要时加推出动画
+8. 跑 `VoiceTodoUITests/DetailKeyboardUITests.swift`；若有模拟「一次下滑关闭」的
+   用例,改为两次手势（抬手后再拖）
 
 ---
 
@@ -476,18 +564,23 @@ iOS 26 真机 / 模拟器验证当前 `:388` 的下滑关闭是否还生效。�
 
 **跟手**
 
-- [ ] 手指按住页面任意空白处下拉，页面**立即**跟随，无 40pt 死区
+- [ ] 内容在顶部时，手指按住任意空白处下拉 → 页面跟随，无 40pt 死区
+      （保留 ~10pt UIKit 识别门槛，首帧无 0→10pt 瞬跳）
 - [ ] 慢速拖到 100pt 松手 → 平滑回弹，不闪烁不跳变
 - [ ] 慢速拖到 150pt 松手 → 关闭
 - [ ] 快速轻扫 60pt 松手 → 关闭（速度通道生效）
 - [ ] 上滑 → 页面不动（clamp 生效），不出现负位移
 - [ ] 越过 120pt 时有一次 haptic，回落再越过可再次触发，不连续震
 
-**滚动接管**
+**滚动接管（起手锁定）**
 
 - [ ] 内容滚到中段时下拉 → 正常滚动，页面不跟手
-- [ ] 滚到顶后**不抬手**继续下拉 → 无缝接管，中间不掉帧、不需要第二次手势
-- [ ] 接管过程中 List 不出现 bounce 抢位
+- [ ] 中段起手、滚到顶后**不抬手**继续下拉 → 页面仍纹丝不动（剩余位移吞掉）
+- [ ] 抬手后再从顶部下拉 → 全程跟手（顶部起手是关闭拖拽的唯一入口）
+- [ ] 中段起手的滚动保留系统 bounce / 惯性（整段交回 ScrollView 的收益）
+- [ ] 顶部起手下拉后同手势上推、超出 offset 的部分 → 页面回位，
+      内容**向下**接续滚动（方向正确，原型曾在此处反向）
+- [ ] 顶部起手跟手过程中 List 无 bounce 抢位
 
 **grabber**
 
@@ -508,9 +601,12 @@ iOS 26 真机 / 模拟器验证当前 `:388` 的下滑关闭是否还生效。�
 
 **回归**
 
-- [ ] 左上角 `chevron.down` 行为不变
+- [ ] 左上角 `chevron.down`（自绘 header 内）行为不变；`panel.close` 标签与
+      `TodoDetailCloseButton` identifier 原样保留
 - [ ] 删除按钮的二次确认 alert 正常
-- [ ] 详情页内 toast（保存成功 / 校验失败）位置不被 grabber 挤动
+- [ ] 详情页内 toast（保存成功 / 校验失败）位置不被 grabber 挤动，
+      且拖拽时 toast 不随卡片缩放位移（挂在变换层外）
+- [ ] 拖拽期间（键盘弹起 + 长列表）无掉帧
 - [ ] iOS 26 上手势稳定触发（呼应第 0 步）
 
 ---

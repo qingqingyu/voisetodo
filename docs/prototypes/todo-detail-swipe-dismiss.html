@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>详情页下滑关闭 · 跟手原型(方案 B)</title>
+<style>
+  /* ===== 布局 ===== */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: #E7EAEE;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    color: #1E2A3A;
+  }
+  header.page-header { padding: 28px 40px 0; max-width: 1080px; margin: 0 auto; }
+  header.page-header h1 { font-size: 18px; margin: 0 0 6px; }
+  header.page-header p { font-size: 13px; color: #5C6A7A; margin: 0; line-height: 1.7; }
+
+  .stage {
+    display: flex; gap: 40px; padding: 28px 40px 60px;
+    align-items: flex-start; justify-content: center; flex-wrap: wrap;
+  }
+
+  /* ===== 模拟屏(390 × 844) ===== */
+  .device {
+    width: 390px; height: 844px; flex: none;
+    background: #F4F5F7;                 /* 露出区底色 = WarmTheme.background */
+    border: 12px solid #1B1D20; border-radius: 54px;
+    box-shadow: 0 30px 60px rgba(30, 42, 58, 0.25);
+    overflow: hidden; position: relative;
+    user-select: none; -webkit-user-select: none;
+  }
+  /* 页面 = 可拖动的卡片。transform 由 JS 驱动,禁用 top/left 定位防掉帧 */
+  .page {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    background-color: #F4F5F7;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.05'/></svg>");
+    transform-origin: 50% 0;
+    overflow: hidden;
+    touch-action: none;                  /* 触摸滚动/拖拽全部由 JS 接管(滚动与关闭拖拽按起手锁定分流) */
+    will-change: transform;
+  }
+  /* 松手回弹:页面 + grabber 一起插值 */
+  .device.springing #page {
+    transition: transform var(--springMs, 350ms) cubic-bezier(0.34, 1.36, 0.64, 1),
+                border-radius var(--springMs, 350ms) cubic-bezier(0.34, 1.36, 0.64, 1);
+  }
+  .device.springing .grabber {
+    transition: width var(--springMs, 350ms) cubic-bezier(0.34, 1.36, 0.64, 1),
+                background-color var(--springMs, 350ms) cubic-bezier(0.34, 1.36, 0.64, 1);
+  }
+  /* 松手关闭:220ms ease-out 推出屏幕 */
+  .device.closing #page { transition: transform 220ms ease-out; }
+
+  /* ===== 导航栏 ===== */
+  .navbar { height: 44px; flex: none; position: relative; display: flex; align-items: center; padding: 0 16px; }
+  .navbar .chevron { width: 24px; height: 24px; display: block; }
+  .navbar .title {
+    position: absolute; left: 60px; right: 60px; text-align: center;
+    font-size: 17px; font-weight: 600; color: #1E2A3A;
+  }
+
+  /* ===== grabber(本次新增,重点) ===== */
+  .grabber-zone { flex: none; display: flex; justify-content: center; padding: 8px 0; }
+  .grabber {
+    width: 38px; height: 5px; border-radius: 3px;
+    background: rgba(137, 147, 164, 0.4);  /* WarmTheme.sketch */
+  }
+
+  /* ===== 内容区 ===== */
+  #scroll { flex: 1; overflow-y: auto; touch-action: none; scrollbar-width: none; }
+  #scroll::-webkit-scrollbar { display: none; }
+  .content { display: flex; flex-direction: column; gap: 20px; padding: 0 24px 40px; }
+
+  .card {
+    background: #FFFFFF; border-radius: 16px; padding: 12px;
+    box-shadow: 0 2px 4px rgba(30, 42, 58, 0.10);
+  }
+  .card.title-card {
+    border-radius: 20px; padding: 20px;
+    box-shadow: 0 5px 10px rgba(30, 42, 58, 0.14);
+  }
+  .label { font-size: 13px; color: #5C6A7A; margin: 0 0 8px; }
+
+  .title-row { display: flex; gap: 12px; align-items: stretch; }
+  .title-bar { width: 4px; border-radius: 2px; background: #6B8FE8; flex: none; }
+  .title-col { flex: 1; min-width: 0; }
+  .title-text { font-size: 20px; color: #1E2A3A; font-weight: 600; line-height: 1.4; }
+
+  .note-lines { font-size: 14px; color: #1E2A3A; line-height: 1.8; margin: 0; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-size: 13px; color: #5C6A7A; background: #FFFFFF;
+    border: 1px solid rgba(137, 147, 164, 0.35); border-radius: 999px;
+    padding: 5px 12px; line-height: 1.3;
+  }
+  .chip.on  { color: #FF8A6B; border-color: rgba(255, 138, 107, 0.55); background: rgba(255, 138, 107, 0.12); }
+  .chip.on.blue { color: #6B8FE8; border-color: rgba(107, 143, 232, 0.55); background: rgba(107, 143, 232, 0.12); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+
+  .footer { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 8px; }
+  .delete { color: #E5484D; font-size: 14px; }
+  .created { color: #8E97A4; font-size: 12px; }
+
+  /* ===== 调试面板(屏幕右侧,模拟屏之外) ===== */
+  .panel {
+    width: 270px; flex: none; background: #FFFFFF; border-radius: 16px;
+    padding: 16px 18px; box-shadow: 0 2px 4px rgba(30, 42, 58, 0.10);
+  }
+  .panel h2 { font-size: 13px; color: #5C6A7A; margin: 0 0 10px; font-weight: 600; }
+  .panel section + section { margin-top: 18px; }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; font-variant-numeric: tabular-nums; }
+  .kv .k { color: #8E97A4; }
+  .kv .v { color: #1E2A3A; }
+  #thresholdState {
+    margin-top: 8px; padding: 6px 10px; border-radius: 8px; font-size: 12px;
+    background: rgba(137, 147, 164, 0.12); color: #8E97A4; text-align: center;
+  }
+  #thresholdState.on { background: rgba(255, 138, 107, 0.15); color: #FF8A6B; font-weight: 600; }
+
+  .slider-row { display: grid; grid-template-columns: 86px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; padding: 4px 0; }
+  .slider-row .name { color: #5C6A7A; }
+  .slider-row .val { color: #1E2A3A; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: #FF8A6B; }
+  .reset-btn {
+    margin-top: 10px; width: 100%; border: 1px solid rgba(137, 147, 164, 0.4);
+    background: #FFFFFF; color: #5C6A7A; border-radius: 10px; padding: 8px 0; font-size: 13px; cursor: pointer;
+  }
+  .reset-btn:active { background: #F4F5F7; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>详情页下滑关闭 · 跟手原型(方案 B)</h1>
+  <p>① <b>起手锁定</b>:起手时内容不在顶部 → 整段手势只算滚动,页面纹丝不动(滚到顶后的剩余位移被吞掉);
+     抬手后再从顶部下拉才进入跟手关闭。② 顶部起手(内容区/导航栏/grabber 皆可):下拉页面全程跟手,
+     松手按 offset &gt; 位移阈值 或 下拉速度 &gt; 速度阈值 判定关闭,2 秒后自动复位;不足则弹回。
+     右侧面板实时显示状态与本次手势的锁定判定,滑杆可直接调参。</p>
+</header>
+
+<div class="stage">
+  <div class="device" id="device">
+    <div class="page" id="page">
+      <div class="navbar">
+        <svg class="chevron" viewBox="0 0 24 24" fill="none">
+          <path d="M6 9.5 12 15.5 18 9.5" stroke="#1E2A3A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="title">详情</div>
+      </div>
+      <div class="grabber-zone"><div class="grabber" id="grabber"></div></div>
+      <div id="scroll">
+        <div class="content">
+          <div class="card title-card">
+            <div class="title-row">
+              <div class="title-bar"></div>
+              <div class="title-col">
+                <div class="label">标题</div>
+                <div class="title-text">准备周五产品评审:整理语音输入的竞品对比</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="label">备注</div>
+            <p class="note-lines">
+              重点对比三家竞品的语音识别准确率和首字延迟。<br>
+              整理用户访谈里关于提醒时间默认值的反馈。<br>
+              把上季度漏掉的日历集成案例补进附录。<br>
+              会前把演示视频压一版 1080p 的,避免现场卡顿。<br>
+              提醒自己提前十分钟进会议室占投屏。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="label">时间</div>
+            <div class="row"><span class="chip on">9月5日 周五</span><span class="chip">9月8日 周一</span><span class="chip">自定义…</span></div>
+            <div class="row"><span class="chip on">14:00</span><span class="chip">19:30</span><span class="chip">无钟点</span></div>
+            <div class="row"><span class="chip on">准时提醒</span><span class="chip">提前 15 分钟</span><span class="chip">提前 1 小时</span></div>
+          </div>
+
+          <div class="card">
+            <div class="label">重复</div>
+            <div class="row"><span class="chip">不重复</span><span class="chip on">每周</span><span class="chip">双周</span><span class="chip">每月</span></div>
+            <div class="row"><span class="chip">一</span><span class="chip">二</span><span class="chip">三</span><span class="chip">四</span><span class="chip on">五</span><span class="chip">六</span><span class="chip">日</span></div>
+            <div class="row"><span class="chip on">永不结束</span><span class="chip">设置结束日期…</span></div>
+          </div>
+
+          <div class="card">
+            <div class="label">分类</div>
+            <div class="chips"><span class="chip on blue">工作</span><span class="chip">生活</span><span class="chip">学习</span><span class="chip">其他</span></div>
+          </div>
+
+          <div class="card">
+            <div class="label">优先级</div>
+            <div class="chips"><span class="chip">高</span><span class="chip on">中</span><span class="chip">低</span></div>
+          </div>
+
+          <div class="footer">
+            <div class="delete">删除</div>
+            <div class="created">创建于 2026年9月1日 10:24</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <section>
+      <h2>实时状态</h2>
+      <div class="kv"><span class="k">模式</span><span class="v" id="dMode">idle</span></div>
+      <div class="kv"><span class="k">起手锁定</span><span class="v" id="dLock">—</span></div>
+      <div class="kv"><span class="k">scrollTop</span><span class="v" id="dScrollTop">0</span></div>
+      <div class="kv"><span class="k">offset</span><span class="v" id="dOffset">0</span></div>
+      <div class="kv"><span class="k">progress</span><span class="v" id="dProgress">0.00</span></div>
+      <div class="kv"><span class="k">scale</span><span class="v" id="dScale">1.000</span></div>
+      <div class="kv"><span class="k">radius</span><span class="v" id="dRadius">0</span></div>
+      <div class="kv"><span class="k">grabber 宽</span><span class="v" id="dGrabber">38</span></div>
+      <div class="kv"><span class="k">速度</span><span class="v" id="dVel">0</span></div>
+      <div id="thresholdState">未越过阈值</div>
+    </section>
+
+    <section>
+      <h2>参数(对应 B.2 常量)</h2>
+      <div class="slider-row"><span class="name">关闭位移</span><input type="range" id="sTranslation" min="60" max="240" step="5" value="120"><span class="val" id="vTranslation">120</span></div>
+      <div class="slider-row"><span class="name">关闭速度</span><input type="range" id="sVelocity" min="400" max="1600" step="50" value="800"><span class="val" id="vVelocity">800</span></div>
+      <div class="slider-row"><span class="name">视觉行程</span><input type="range" id="sTravel" min="120" max="400" step="10" value="260"><span class="val" id="vTravel">260</span></div>
+      <div class="slider-row"><span class="name">最小缩放</span><input type="range" id="sScale" min="0.85" max="1" step="0.01" value="0.94"><span class="val" id="vScale">0.94</span></div>
+      <div class="slider-row"><span class="name">最大圆角</span><input type="range" id="sRadius" min="0" max="32" step="1" value="20"><span class="val" id="vRadius">20</span></div>
+      <div class="slider-row"><span class="name">回弹时长</span><input type="range" id="sSpring" min="150" max="600" step="10" value="350"><span class="val" id="vSpring">350</span></div>
+      <button class="reset-btn" id="resetBtn">立即复位</button>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ===== B.2 常量(滑杆可调) =====
+  const P = {
+    dismissTranslation: 120,   // 松手关闭的位移阈值
+    dismissVelocity: 800,      // 松手关闭的速度阈值(pt/s)
+    visualTravel: 260,         // 视觉插值行程:offset 到此值时 scale/圆角到达终点
+    minScale: 0.94,            // 页面最小缩放
+    maxCornerRadius: 20,       // 页面最大圆角(= WarmRadius.sheet)
+    springMs: 350              // 回弹时长
+  };
+  const CLOSE_MS = 220;        // 关闭动画时长
+  const RESET_DELAY = 2000;    // 关闭后自动复位延时
+  const ENGAGE = 10;           // 手势激活门槛(≈ UIPan 内置 10pt + minimumDistance 10)
+  const GRABBER_BASE_W = 38, GRABBER_EXTRA_W = 10;
+  const SCREEN_H = 844;
+
+  // ===== 状态 =====
+  const S = {
+    mode: 'idle',        // idle | scroll | drag | closing | closed
+    offset: 0,
+    velocity: 0,         // 最近两帧 Δy/Δt,px/s,正 = 向下
+    crossed: false,      // 是否越过关闭阈值(haptic 只在上升沿触发)
+    lastLock: null       // 上一次手势的起手锁定判定(true = 起手时在顶部,可关闭)
+  };
+
+  const device = document.getElementById('device');
+  const page = document.getElementById('page');
+  const grabber = document.getElementById('grabber');
+  const scroller = document.getElementById('scroll');
+
+  let g = null;          // 当前手势:{ x,y,lastX,lastY,lastT, v, engaged, inScroll }
+  let closeTimer = null, resetTimer = null, momRaf = null;
+
+  // ===== 视觉:按 B.3 物理曲线插值 =====
+  function applyVisuals() {
+    const progress = Math.min(1, Math.max(0, S.offset) / P.visualTravel);
+    const scale = 1 - progress * (1 - P.minScale);
+    const radius = progress * P.maxCornerRadius;
+    const gw = GRABBER_BASE_W + progress * GRABBER_EXTRA_W;
+    const alpha = S.crossed ? 0.7 : 0.4 + 0.3 * progress;   // 越过阈值:跳到 0.7,给出离散信号
+    page.style.transform = 'translateY(' + S.offset + 'px) scale(' + scale.toFixed(4) + ')';
+    page.style.borderRadius = radius.toFixed(2) + 'px';
+    grabber.style.width = gw.toFixed(1) + 'px';
+    grabber.style.backgroundColor = 'rgba(137,147,164,' + alpha.toFixed(3) + ')';
+  }
+
+  function setOffset(o) {
+    S.offset = Math.max(0, o);
+    const nowCrossed = S.offset > P.dismissTranslation;
+    if (nowCrossed && !S.crossed) navigator.vibrate && navigator.vibrate(10);  // 阈值 haptic,上升沿一次
+    S.crossed = nowCrossed;
+    applyVisuals();
+  }
+
+  // ===== 滚动 =====
+  function scrollMax() { return scroller.scrollHeight - scroller.clientHeight; }
+  function scrollByDelta(d) {   // 手指位移 d(正 = 向下) → scrollTop -= d,返回实际 scrollTop 变化量
+    const prev = scroller.scrollTop;
+    scroller.scrollTop = Math.min(Math.max(prev - d, 0), scrollMax());
+    return prev - scroller.scrollTop;
+  }
+
+  // ===== 手势核心:起手锁定 =====
+  // 起手时(本手势第一次位移)内容在顶部 → 本手势 = 关闭拖拽(可下拉跟手);
+  // 起手时内容不在顶部 → 本手势整段只算滚动,滚到顶后剩余位移被吞掉,页面纹丝不动。
+  // 想关闭必须抬手,再从顶部下拉 —— 对齐现 app 的二次确认心智模型,避免
+  // 「滚着滚着页面突然变成收起卡片」的意图错译。
+  function applyDelta(dy) {
+    if (S.mode !== 'drag' && S.mode !== 'scroll') S.mode = g.startedAtTop ? 'drag' : 'scroll';
+
+    if (S.mode === 'drag') {
+      if (dy >= 0) { setOffset(S.offset + dy); return; }
+      // 上滑:先收回 offset;收完仍有剩余且起手在内容区 → 交还滚动,内容向下滚
+      const used = Math.min(S.offset, -dy);
+      setOffset(S.offset - used);
+      const rem = -dy - used;
+      if (rem > 0 && g.inScroll) { S.mode = 'scroll'; scrollByDelta(-rem); }
+      return;
+    }
+    // scroll 模式:整段手势只滚动(scrollByDelta 自带 0/max 夹紧,到顶即停)
+    scrollByDelta(dy);
+  }
+
+  // ===== 事件 =====
+  page.addEventListener('pointerdown', function (e) {
+    if (S.mode === 'closing' || S.mode === 'closed') return;
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    stopMomentum();
+    g = {
+      x: e.clientX, y: e.clientY,
+      lastX: e.clientX, lastY: e.clientY, lastT: performance.now(),
+      v: 0, engaged: false,
+      inScroll: !!(e.target && e.target.closest && e.target.closest('#scroll')),
+      startedAtTop: scroller.scrollTop <= 0   // 起手锁定:整段手势的语义在此一刻决定
+    };
+    S.lastLock = g.startedAtTop;
+    S.velocity = 0;
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+  });
+
+  function onMove(e) {
+    if (!g) return;
+    e.preventDefault();
+    const now = performance.now();
+    const dy = e.clientY - g.lastY;
+    const dt = now - g.lastT;
+    if (dt >= 1) { g.v = dy / (dt / 1000); S.velocity = g.v; }   // 速度 = 最近两帧 Δy/Δt
+
+    if (!g.engaged) {
+      const cy = e.clientY - g.y, cx = e.clientX - g.x;
+      if (Math.abs(cy) < ENGAGE) { g.lastY = e.clientY; g.lastT = now; return; }
+      if (Math.abs(cy) <= Math.abs(cx)) { killGesture(); return; }  // 横向 → 放弃(让位给潜在横滑)
+      g.engaged = true;
+      applyDelta(cy - ENGAGE);   // 扣掉激活门槛,首帧不瞬跳(对应 HomeView 折叠手势扣 threshold 的处理)
+    } else {
+      applyDelta(dy);
+    }
+    g.lastX = e.clientX; g.lastY = e.clientY; g.lastT = now;
+  }
+
+  function onUp() {
+    if (!g) return killGesture();
+    if (!g.engaged) return killGesture();   // 纯点击:无操作
+    if (S.mode === 'drag') {
+      if (S.offset > P.dismissTranslation || S.velocity > P.dismissVelocity) closePage();
+      else springBack();
+    } else {
+      momentum(g.v);
+    }
+    killGesture();
+  }
+
+  function onCancel() {   // 手势被系统中断:必须清理,否则 offset 卡中途
+    if (g && g.engaged && S.mode === 'drag') springBack();
+    killGesture();
+  }
+
+  function killGesture() {
+    g = null;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel);
+    if (S.mode === 'scroll') S.mode = 'idle';
+  }
+
+  // ===== 松手后的三条路径 =====
+  function springBack() {
+    device.style.setProperty('--springMs', P.springMs + 'ms');
+    device.classList.add('springing');
+    setOffset(0);
+    setTimeout(function () { device.classList.remove('springing'); }, P.springMs + 60);
+    S.mode = 'idle';
+  }
+
+  function closePage() {
+    S.mode = 'closing';
+    device.classList.add('closing');
+    requestAnimationFrame(function () {
+      page.style.transform = 'translateY(' + SCREEN_H + 'px) scale(1)';
+    });
+    closeTimer = setTimeout(function () {
+      S.mode = 'closed';
+      resetTimer = setTimeout(resetPage, RESET_DELAY);
+    }, CLOSE_MS + 30);
+  }
+
+  function resetPage() {
+    clearTimeout(closeTimer); clearTimeout(resetTimer);
+    device.classList.remove('springing', 'closing');   // 移除类 = 移除 transition → 瞬时复位
+    scroller.scrollTop = 0;
+    S.mode = 'idle';
+    setOffset(0);
+  }
+
+  // ===== 惯性滚动(简单的指数衰减;到边界即停) =====
+  function stopMomentum() { if (momRaf) { cancelAnimationFrame(momRaf); momRaf = null; } }
+  function momentum(v0) {
+    let v = v0, last = performance.now();
+    function step(now) {
+      const dt = Math.min((now - last) / 1000, 0.064); last = now;
+      scroller.scrollTop = Math.min(Math.max(scroller.scrollTop - v * dt, 0), scrollMax());
+      v *= Math.exp(-dt / 0.325);
+      const hitTop = scroller.scrollTop <= 0 && v > 0;
+      const hitBottom = scroller.scrollTop >= scrollMax() - 0.5 && v < 0;
+      if (Math.abs(v) > 15 && !hitTop && !hitBottom) momRaf = requestAnimationFrame(step);
+      else momRaf = null;
+    }
+    momRaf = requestAnimationFrame(step);
+  }
+
+  // ===== 调试面板 + 滑杆 =====
+  const $ = function (id) { return document.getElementById(id); };
+  function renderPanel() {
+    const progress = Math.min(1, S.offset / P.visualTravel);
+    $('dMode').textContent = S.mode;
+    $('dLock').textContent = S.lastLock === null ? '—' : (S.lastLock ? '顶部 → 可关闭' : '中段 → 仅滚动');
+    $('dScrollTop').textContent = Math.round(scroller.scrollTop);
+    $('dOffset').textContent = Math.round(S.offset);
+    $('dProgress').textContent = progress.toFixed(2);
+    $('dScale').textContent = (1 - progress * (1 - P.minScale)).toFixed(3);
+    $('dRadius').textContent = Math.round(progress * P.maxCornerRadius);
+    $('dGrabber').textContent = Math.round(GRABBER_BASE_W + progress * GRABBER_EXTRA_W);
+    $('dVel').textContent = Math.round(S.velocity);
+    const th = $('thresholdState');
+    th.textContent = S.crossed ? '已越过阈值,松手关闭' : '未越过阈值';
+    th.classList.toggle('on', S.crossed);
+    requestAnimationFrame(renderPanel);
+  }
+  requestAnimationFrame(renderPanel);
+
+  const sliders = [
+    ['sTranslation', 'vTranslation', 'dismissTranslation', function (v) { return v; }],
+    ['sVelocity', 'vVelocity', 'dismissVelocity', function (v) { return v; }],
+    ['sTravel', 'vTravel', 'visualTravel', function (v) { return v; }],
+    ['sScale', 'vScale', 'minScale', function (v) { return (+v).toFixed(2); }],
+    ['sRadius', 'vRadius', 'maxCornerRadius', function (v) { return v; }],
+    ['sSpring', 'vSpring', 'springMs', function (v) { return v; }]
+  ];
+  sliders.forEach(function (row) {
+    const input = $(row[0]), label = $(row[1]), key = row[2];
+    input.addEventListener('input', function () {
+      P[key] = +input.value;
+      label.textContent = row[3](input.value);
+      applyVisuals();
+    });
+  });
+  $('resetBtn').addEventListener('click', resetPage);
+
+  // ===== 供自动化验证用 =====
+  window.__proto_state = { P: P, S: S, scroller: scroller };
+})();
+</script>
+</body>
+</html>
