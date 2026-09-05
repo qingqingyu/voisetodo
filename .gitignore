@@ -78,3 +78,8 @@ Config/Secrets.xcconfig
 .refactor-logs/
 .gstack/
 dev-flow.sh
+
+# 本地工具产物:SwiftPM 调试状态 / git worktree 管理目录 / Claude Code 会话数据
+.swiftpm/
+.worktrees/
+.claude/
