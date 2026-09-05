@@ -373,4 +373,92 @@ final class ReviewRecapSameDayTests: XCTestCase {
         XCTAssertEqual(summary.total, 2, "展示数含规律完成记录(对,用户确实做完了)")
         XCTAssertEqual(summary.oneOffCompletionCount, 1, "判词分母只数一次性完成——两个口径,别合并")
     }
+
+    // MARK: - Hero 三态(v3 拍板 2,docs v3 验证章)
+
+    /// 有上次置顶结局 → 兑现判词(total = 完成 + 待处理);nil(首次复盘 /
+    /// 上次没置顶 / 上次置顶的已全删)→ 回退完成数句式,不硬造空承诺文案。
+    func testHeroContentThreeStates() {
+        XCTAssertEqual(RecapHeroContent.make(lastPinnedOutcome: nil), .countSummary)
+        XCTAssertEqual(
+            RecapHeroContent.make(lastPinnedOutcome: (completed: 1, pending: 2)),
+            .pinnedOutcome(total: 3, completed: 1),
+            "上次定的 3 件、1 件做完 → 判词「上次定的 3 件,1 件做完了」"
+        )
+    }
+
+    // MARK: - sameDay 判词门槛(v3 ① 改动 4)
+
+    /// 门槛边界:占比**严格大于** 40% 才出——恰在门槛(2/5 = 0.40)不出,
+    /// 越过(3/5 = 0.60)出;分母为 0(只有规律完成)不出。判词键
+    /// `review.hero.sameday_judgment` 三语均为「相当一部分」份额事实——
+    /// 门槛不动文案不动,谁把比较级说法加回来先在这里红(审阅修订三护栏)。
+    func testSameDayJudgmentThresholdBoundary() throws {
+        // 5 条一次性完成,其中 2 条当天记当天完:2/5 = 0.40,恰在门槛 → 不出。
+        let atThreshold = try judgmentSummary(sameDayCount: 2, oneOffCount: 5)
+        XCTAssertFalse(atThreshold.showsSameDayJudgment, "占比 == 40% 不出(严格大于)")
+
+        // 3 条当天完:3/5 = 0.60 → 出。
+        let aboveThreshold = try judgmentSummary(sameDayCount: 3, oneOffCount: 5)
+        XCTAssertTrue(aboveThreshold.showsSameDayJudgment, "占比 > 40% 出判词")
+
+        // 分母为 0:窗口内只有规律完成记录 → 不出(无同口径分母)。
+        let recurringOnly = RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [],
+            recurringCompletions: [(id: UUID(), todoId: UUID(), completedAt: try noon(2026, 8, 31))]
+        )
+        XCTAssertEqual(recurringOnly.total, 1)
+        XCTAssertEqual(recurringOnly.oneOffCompletionCount, 0)
+        XCTAssertFalse(recurringOnly.showsSameDayJudgment)
+    }
+
+    /// 判词分母回归护栏:分母是 `oneOffCompletionCount` 不是 `total`——
+    /// sameDay 2 / oneOff 4(占比 0.5,出),规律完成把 total 抬到 10(若有人
+    /// 把分母改回 total 会算 0.2 不出)→ 这条红(审阅修订二)。
+    func testSameDayJudgmentDenominatorIsOneOffNotTotal() throws {
+        let summary = try judgmentSummary(sameDayCount: 2, oneOffCount: 4, recurringCount: 6)
+        XCTAssertEqual(summary.total, 10, "total 含规律完成")
+        XCTAssertEqual(summary.oneOffCompletionCount, 4)
+        XCTAssertTrue(summary.showsSameDayJudgment, "2/4 = 0.5 > 0.4 出;若分母误用 total(2/10)则不出——回归护栏")
+    }
+
+    /// 判词夹具:窗口 8/28–9/4,sameDayCount 条「当天记当天完」+
+    /// (oneOffCount − sameDayCount)条「前一天记次日完」+ recurringCount 条
+    /// 规律完成记录(抬 total、不进分母)。
+    private func judgmentSummary(
+        sameDayCount: Int,
+        oneOffCount: Int,
+        recurringCount: Int = 0
+    ) throws -> ReviewSummary {
+        precondition(sameDayCount <= oneOffCount)
+        let doneDay = try noon(2026, 8, 29)
+        let plannedDay = try noon(2026, 8, 28)
+        var oneOff: [TodoItemData] = (0..<sameDayCount).map { index in
+            TodoItemData(title: "same\(index)", isCompleted: true, completedAt: doneDay, createdAt: doneDay)
+        }
+        oneOff.append(contentsOf: (0..<(oneOffCount - sameDayCount)).map { index in
+            TodoItemData(title: "slow\(index)", isCompleted: true, completedAt: doneDay, createdAt: plannedDay)
+        })
+        let recurringParent = TodoItemData(
+            title: "规律",
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            createdAt: try noon(2026, 8, 1)
+        )
+        var recurring: [(id: UUID, todoId: UUID, completedAt: Date)] = []
+        for offset in 0..<recurringCount {
+            recurring.append((id: UUID(), todoId: recurringParent.id, completedAt: try noon(2026, 8, 30 + offset % 3)))
+        }
+        return RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: recurringCount > 0 ? oneOff + [recurringParent] : oneOff,
+            completedTodos: oneOff,
+            recurringCompletions: recurring
+        )
+    }
 }

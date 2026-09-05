@@ -46,21 +46,20 @@ struct ReviewStepRecap: View {
         ScrollView {
             VStack(spacing: WarmSpacing.lg) {
                 scopeHeader
-                RecapHeroSection(summary: summary, promotesSameDay: true, heroContent: heroContent)
+                // Hero 三态判定收在 `RecapHeroContent.make`(v3 拍板 2,可单测):
+                // 有上次置顶结局 → 兑现判词;nil → 回退完成数句式。数据来自流程
+                // 启动时注入的快照(与本步其他 @Query 区块的实时聚合口径不同——
+                // 有意的快照语义:结局是对「上次定的那批」的静态对账)。
+                RecapHeroSection(
+                    summary: summary,
+                    promotesSameDay: true,
+                    heroContent: RecapHeroContent.make(lastPinnedOutcome: lastPinnedOutcome)
+                )
                 RecapEvidenceRow(summary: summary)
             }
             .padding(.horizontal, WarmSpacing.lg)
             .padding(.bottom, WarmSpacing.xxl)
         }
-    }
-
-    /// Hero 主标题(v3 拍板 2):有上次置顶结局 → 兑现判词;nil(首次复盘 /
-    /// 上次没置顶 / 上次置顶的已全删)→ 回退完成数句式,不硬造空承诺文案。
-    /// 数据来自流程启动时注入的快照(与本步其他 @Query 区块的实时聚合口径
-    /// 不同——有意的快照语义:结局是对「上次定的那批」的静态对账)。
-    private var heroContent: RecapHeroContent {
-        guard let outcome = lastPinnedOutcome else { return .countSummary }
-        return .pinnedOutcome(total: outcome.completed + outcome.pending, completed: outcome.completed)
     }
 
     /// 口径行(v3 拍板 1:窗口随上次复盘走,首次复盘是近 7 天)——文案与

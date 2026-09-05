@@ -314,6 +314,21 @@ final class ReviewFlowState {
         let calendar = Calendar.current
         let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
 
+        // 降级跳过(<5 条完成记录)时引擎**不跑**(v3 拍板 7 引擎前移的语义
+        // 补丁):旧实现引擎在第 3 步视图挂载(.task)时才跑,跳过路径从不
+        // 执行、shownInsights 恒空;前移后若照跑,腐烂规则(age ≥ 21 天分支
+        // 单条即触发)会在从未展示的情况下进冷却历史并随会话持久化——
+        // 「展示过的才进冷却历史」被破坏,下期冷却把「从没看过」当
+        // 「上期看过」。结果清空(重试路径可能从 .full 落回,不留残影)。
+        guard ladder != .skipStep else {
+            resetShownInsights()
+            rankedResults = []
+            insightPlaceholders = []
+            ladderNeedMore = nil
+            skipsInsightsWhenEmpty = false
+            return
+        }
+
         var results: [InsightResult] = []
         var newPlaceholders: [(InsightID, Int)] = []
 
@@ -562,6 +577,29 @@ final class ReviewFlowState {
     /// 不能用同一句话庆祝。
     var decidedCount: Int {
         scheduled.count + todayPicked.count + abandonedStack.count + splitCount
+    }
+
+    /// ⑤ 屏主卡渲染判定(v3 拍板 10「账本永远在」;四态 = 三态 + 边界不出)。
+    /// 视图(`ReviewStepLedger.summaryCard`)按此渲染,**别在视图里重写条件**——
+    /// 三态/边界(全零 + 零积压不出)的单测在 `ReviewFlowStateTests`
+    /// (docs v3 验证章「ReviewStepLedger 三态」)。
+    enum LedgerCardContent: Equatable, Sendable {
+        /// 有逐张决定 → 「你决定了 N 件」+ caption(+批量行 / 明细行)。
+        case decided
+        /// 零决定但有批量推后 → 只出批量行(现状已支持)。
+        case batchOnly
+        /// 全零但有积压 → 「这次一件都没决定,N 件原样留着」
+        /// (N = `initialBacklogCount` init 快照,与 ② 屏 lede 同源;事实陈述,
+        /// 不是审判——名叫 Ledger 的屏上不能没有账本)。
+        case noneDecided
+        /// 全零且零积压(本期本就没有待处理)→ 整卡不出(「0 件原样留着」是噪音)。
+        case omitted
+    }
+
+    var ledgerCardContent: LedgerCardContent {
+        if decidedCount > 0 { return .decided }
+        if ledger.somedayCount > 0 { return .batchOnly }
+        return initialBacklogCount > 0 ? .noneDecided : .omitted
     }
 
     // MARK: 阶段 4 · 会话组装

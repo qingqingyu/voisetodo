@@ -62,14 +62,15 @@ struct ReviewStepInsights: View {
     /// 占位行(v3 拍板 7:仍然只出一行——拍板 6 反对的是四行堆叠——但这一行
     /// 说真话):按 `InsightID.placeholderPriority` 固定优先序选条,不比
     /// needMore 数值(三条规则缺口量纲不同,比大小会随机推荐更难达成的条件);
-    /// 按 id 出对应文案,文案里的动作照做能真的解锁(effortOrdering 的解锁
-    /// 是**完成** 3 条高优——「标」优先级不解锁,写「做完」)。
+    /// 文案经 `InsightID.placeholderText(needMore:)`——键里的 id 段必须是
+    /// 静态字面量(String 插值进键会变 %@,catalog 按 id 命名,查不到整串
+    /// 回落键名),文案里的动作照做能真的解锁(effortOrdering 的解锁是
+    /// **完成** 3 条高优——「标」优先级不解锁,写「做完」)。
     @ViewBuilder
     private var placeholderSummaryRow: some View {
-        if let pick = InsightID.firstPlaceholder(in: state.insightPlaceholders) {
-            Text(String(
-                localized: "review.flow.insights.need_more.\(pick.id.rawValue)_\(pick.needMore)"
-            ))
+        if let pick = InsightID.firstPlaceholder(in: state.insightPlaceholders),
+           let text = pick.id.placeholderText(needMore: pick.needMore) {
+            Text(text)
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
                 .lineLimit(2)

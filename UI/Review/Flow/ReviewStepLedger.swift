@@ -38,16 +38,17 @@ struct ReviewStepLedger: View {
 
     // MARK: 主卡(拍板 4:决定了 N 件,批量推后单独一行;v3 拍板 10:永远在)
 
-    /// 三态(v3 拍板 10,修发现 D):有决定 → 现状卡;零决定但有批量 → 只出
-    /// 批量行(现状已支持);全零但有积压 → 「这次一件都没决定,N 件原样
-    /// 留着」——事实陈述不是审判,静默消失会让「名叫 Ledger 的屏上没有账本」。
-    /// 全零且零积压(本期本就没有待处理)仍不出卡——「0 件原样留着」是噪音。
+    /// 三态(v3 拍板 10,修发现 D):判定收敛在 `state.ledgerCardContent`
+    /// (含边界:全零且零积压不出卡),本视图只按态渲染。
     /// (注:全零态不渲染 `summary_caption`——那句「你的每个决定,都在这串
     /// 数字里」在零决定下自相矛盾,文案三语均为决定语义。)
     @ViewBuilder
     private var summaryCard: some View {
         let ledger = state.ledger
-        if state.decidedCount > 0 || ledger.somedayCount > 0 {
+        switch state.ledgerCardContent {
+        case .decided, .batchOnly:
+            // 内部两个 if(decidedCount / somedayCount)与判定态同源:
+            // .decided → 判词行 + caption;.batchOnly → 只批量行。
             RecapCard {
                 VStack(spacing: WarmSpacing.xs) {
                     if state.decidedCount > 0 {
@@ -86,7 +87,7 @@ struct ReviewStepLedger: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-        } else if state.initialBacklogCount > 0 {
+        case .noneDecided:
             // 全零态(v3 拍板 10):N 用 init 快照(与 ② 屏 lede 同源同恒定),
             // 回答「那 25 件去哪了」;不加 caption——见上方注释。
             RecapCard {
@@ -98,6 +99,8 @@ struct ReviewStepLedger: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        case .omitted:
+            EmptyView()
         }
     }
 

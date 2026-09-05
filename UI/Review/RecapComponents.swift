@@ -9,12 +9,22 @@ import SwiftUI
 /// Hero 主标题内容(v3 拍板 2):回顾页默认 = 完成数;复盘第 1 步在有上次
 /// 置顶结局时升级为兑现判词。沿用 `promotesSameDay` 的参数化模式——
 /// 默认值 = 回顾页现状,回顾页调用点零变化(审阅缺口 A)。
-enum RecapHeroContent {
+enum RecapHeroContent: Equatable {
     /// 回顾页现状:大数字 + 周期标签。
     case countSummary
     /// 兑现判词(v3 ① 屏主副对调):上次置顶的结局当主标题,完成数降为
     /// `RecapEvidenceRow` 的 Done 卡。
     case pinnedOutcome(total: Int, completed: Int)
+
+    /// 三态判定(docs v3 ① 改动 2):有上次置顶结局 → 兑现判词(total =
+    /// 完成 + 待处理);nil(首次复盘 / 上次没置顶 / 上次置顶的已全删)→
+    /// 回退完成数句式——不硬造「上次没有承诺」的空标题,兑现判词是有上次
+    /// 承诺才有的话。收进工厂(而非视图私有计算)是为了可单测
+    /// (docs v3 验证章「Hero 三态」)。
+    static func make(lastPinnedOutcome: (completed: Int, pending: Int)?) -> RecapHeroContent {
+        guard let outcome = lastPinnedOutcome else { return .countSummary }
+        return .pinnedOutcome(total: outcome.completed + outcome.pending, completed: outcome.completed)
+    }
 }
 
 /// Hero 区:大数字 + 周期标签。
@@ -30,9 +40,10 @@ struct RecapHeroSection: View {
     var heroContent: RecapHeroContent = .countSummary
 
     /// sameDay 判词门槛(v3 ① 改动 4):占比(分子分母同为一次性完成口径)
-    /// **超过**该值时出判词。注意文案约束:门槛 < 50% 时当天组可能仍是少数,
-    /// 判词只允许「相当一部分」级别的份额事实,不写「更多/更少」比较级。
-    private static let sameDayJudgmentThreshold = 0.4
+    /// **严格超过**该值时出判词。注意文案约束:门槛 < 50% 时当天组可能仍是
+    /// 少数,判词只允许「相当一部分」级别的份额事实,不写「更多/更少」比较级
+    /// ——改门槛必须连同 `review.hero.sameday_judgment` 三语文案复核。
+    static let sameDayJudgmentThreshold = 0.4
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
@@ -58,6 +69,8 @@ struct RecapHeroSection: View {
                     .font(WarmFont.serifDisplay(32))
                     .foregroundColor(WarmTheme.primary)
                     .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, WarmSpacing.lg)
                     .accessibilityIdentifier("ReviewHeroPinnedOutcome")
@@ -78,13 +91,9 @@ struct RecapHeroSection: View {
                     .padding(.horizontal, WarmSpacing.xl)
 
                 // sameDay 判词(v3 ① 改动 4,仅复盘第 1 步):占比超门槛时接
-                // 一句判定。分母用 oneOffCompletionCount(同口径——分子只数
-                // 一次性完成,分母不能是 total,审阅修订二);文案只说份额事实,
-                // 不写「更多/更少」比较级——40% 门槛刚触发时当天组仍是少数,
-                // 比较级会被同屏数字当场证伪(审阅修订三)。
-                if promotesSameDay, summary.oneOffCompletionCount > 0,
-                   Double(summary.sameDayCount) / Double(summary.oneOffCompletionCount)
-                       > Self.sameDayJudgmentThreshold {
+                // 一句判定,判定在 `summary.showsSameDayJudgment`(可单测,
+                // 含同口径分母与门槛边界)。
+                if promotesSameDay, summary.showsSameDayJudgment {
                     Text(String(localized: "review.hero.sameday_judgment"))
                         .font(WarmFont.caption(13))
                         .foregroundColor(WarmTheme.textSecondary)
@@ -97,6 +106,19 @@ struct RecapHeroSection: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+extension ReviewSummary {
+    /// sameDay 判词是否出(v3 ① 改动 4):分子分母同为一次性完成口径
+    /// (`sameDayCount / oneOffCompletionCount`,审阅修订二——分母不是 total,
+    /// total 含规律完成会被抬高、占比被系统性低估),占比**严格大于** 40%
+    /// 门槛才出;分母为 0 不出。收进本扩展(而非 View body)是为了可单测
+    /// (docs v3 验证章的门槛边界回归护栏)。
+    var showsSameDayJudgment: Bool {
+        oneOffCompletionCount > 0
+            && Double(sameDayCount) / Double(oneOffCompletionCount)
+                > RecapHeroSection.sameDayJudgmentThreshold
     }
 }
 

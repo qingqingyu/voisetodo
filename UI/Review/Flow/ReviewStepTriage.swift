@@ -137,12 +137,15 @@ struct ReviewStepTriage: View {
     /// `Still open`。数字用 **init 快照**(`initialBacklogCount` 恒定;积压
     /// ≤ 8 张全在卡堆里,这行没有「里面/外面」的分别,不出)。文案写「本次
     /// 共 N 件」不写「现在还有 N 件」——回看 ① 屏是实时口径,允许有差。
+    /// 8 张全部处理完(deck 空)后这行也不出——「8 件在这儿」对着
+    /// 「都处理完了」空态是自相矛盾的事实陈述。
     @ViewBuilder
     private var poolIntroRow: some View {
-        let deckSize = min(state.initialBacklogCount, TriageRanking.deckSize)
-        if state.initialBacklogCount > TriageRanking.deckSize {
+        // 渲染分支保证积压 > deckSize 时卡堆必满 8 张(rank/rankDeck 取 prefix);
+        // deck 清空 = 本会话已把卡堆处理完。
+        if !state.deck.isEmpty, state.initialBacklogCount > TriageRanking.deckSize {
             Text(String(
-                localized: "review.flow.triage.pool_intro_\(state.initialBacklogCount)_\(deckSize)"
+                localized: "review.flow.triage.pool_intro_\(state.initialBacklogCount)_\(TriageRanking.deckSize)"
             ))
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textSecondary)

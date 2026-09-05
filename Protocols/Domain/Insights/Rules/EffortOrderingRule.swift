@@ -33,10 +33,19 @@ struct EffortOrderingRule: InsightRule {
         let other = events.filter { $0.priority != .high }
 
         guard high.count >= Self.minPerGroup, other.count >= Self.minPerGroup else {
-            // 组样本不足:占位写清还差多少(§2.3)。高优组有缺口时优先报高优
-            // 缺口——解锁条件是「高优任务」,通用占位文案会误导用户去记普通任务。
+            // 组样本不足:占位写清还差多少(§2.3)。高优组有缺口时报高优缺口
+            // ——解锁条件是「高优任务的完成」,占位文案(need_more.effortOrdering_)
+            // 据此写「做完 N 条高优先级任务」,照做恰好解锁。
+            // **对照组(非高优)缺口不出占位**(v3 ③「占位必须说真话」):该分支
+            // 的 needMore 是非高优缺口,按 effortOrdering 键写「做完 N 条高优」
+            // 照做永不解锁;而诚实的建议(「去完成 N 条普通任务以解锁洞察」)
+            // 是在教用户为解锁洞察而优化行为,违反反 gaming 章程——没有可诚实
+            // 建议的动作就不说(hidden)。
             let needHigh = max(0, Self.minPerGroup - high.count)
-            return .placeholder(needMore: needHigh > 0 ? needHigh : Self.minPerGroup - other.count)
+            if needHigh > 0 {
+                return .placeholder(needMore: needHigh)
+            }
+            return .hidden
         }
 
         let highMedian = Self.medianDays(high, calendar: calendar)

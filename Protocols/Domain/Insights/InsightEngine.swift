@@ -55,6 +55,26 @@ enum InsightID: String, CaseIterable, Codable, Sendable {
         }
         return nil
     }
+
+    /// 占位行本地化文案(v3 拍板 7):按规则 id 选键。⚠️ 键里的 id 段必须是
+    /// **静态字面量**——`String(localized:)` 对 String 插值生成 `%@` 占位
+    /// (Int 是 `%lld`),把 `rawValue` 插进键里运行时查的是
+    /// `need_more.%@_%lld`,catalog 只有按 id 命名的键,查不到会整串回落
+    /// 键名;N 段用 needMore 插值(`%lld`,与 catalog 键逐字一致)。
+    /// 键映射与 `firstPlaceholder` 同处一文件——选条与文案单一来源。
+    /// rotting 只有 hidden/fired 两态、04/06 未实现,均无占位文案 → nil。
+    func placeholderText(needMore: Int) -> String? {
+        switch self {
+        case .effortOrdering:
+            return String(localized: "review.flow.insights.need_more.effortOrdering_\(needMore)")
+        case .energyWindow:
+            return String(localized: "review.flow.insights.need_more.energyWindow_\(needMore)")
+        case .reactiveVsPlanned:
+            return String(localized: "review.flow.insights.need_more.reactiveVsPlanned_\(needMore)")
+        case .rotting, .brokenPromises, .weeklyDecay:
+            return nil
+        }
+    }
 }
 
 // MARK: - 强度与展示状态
