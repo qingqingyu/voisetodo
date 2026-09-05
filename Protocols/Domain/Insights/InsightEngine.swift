@@ -31,6 +31,30 @@ enum InsightID: String, CaseIterable, Codable, Sendable {
     case energyWindow
     /// 06 周内衰减(待 ≥4 个完整周)。
     case weeklyDecay
+
+    /// 占位行展示优先序(v3 ③ 拍板 7):**不比 needMore 数值**——三条规则的
+    /// 缺口量纲不同(EffortOrdering 数缺几条高优「完成」、minPerGroup=3;
+    /// ReactiveVsPlanned / EnergyWindow 数缺几条完成记录、minSample=15),
+    /// 比大小是拿苹果比橘子,会随机推荐一条更难达成的条件。按可定向性排:
+    /// effortOrdering(只差 3 条高优完成,做哪条自己挑)> energyWindow >
+    /// reactiveVsPlanned(缺口只能靠时间攒)。rotting 只有 hidden/fired 两态,
+    /// 永不出占位,不在序内。解锁条件是**完成**事件(`InsightCompletedEvent`
+    /// 由 isCompleted 的 TodoItem 构造)——「标」优先级不解锁,文案写「做完」。
+    static let placeholderPriority: [InsightID] = [.effortOrdering, .energyWindow, .reactiveVsPlanned]
+
+    /// 占位行选条:按 `placeholderPriority` 取第一条出现的占位;没有占位返回
+    /// nil(占位行不渲染)。供 `ReviewFlowState` / `ReviewStepInsights` 与单测
+    /// 共用——选条规则单一来源,不散落视图。
+    static func firstPlaceholder(
+        in placeholders: [(id: InsightID, needMore: Int)]
+    ) -> (id: InsightID, needMore: Int)? {
+        for id in placeholderPriority {
+            if let hit = placeholders.first(where: { $0.id == id }) {
+                return hit
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - 强度与展示状态

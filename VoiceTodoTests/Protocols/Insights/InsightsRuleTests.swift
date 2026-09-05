@@ -544,4 +544,24 @@ final class EnergyWindowRuleTests: XCTestCase {
         }
         XCTAssertEqual(needMore, 10)
     }
+
+    // MARK: 占位行选取(v3 ③ 拍板 7)
+
+    /// 选条按 `placeholderPriority` 固定优先序,**不比 needMore 数值**——三条
+    /// 规则缺口量纲不同(高优完成 vs 完成记录),比大小会随机推荐更难达成的
+    /// 条件。对抗夹具:effortOrdering(3) 数值上比 energyWindow(2) 更大,
+    /// 仍必须选 effortOrdering——按「取最小」实现的代码会在这条上红。
+    /// 走查场景恰好只有一条占位,min/max/优先序结果相同,此错走查不可能暴露。
+    func testPlaceholderPicksByPriorityNotByValue() {
+        let both: [(id: InsightID, needMore: Int)] = [
+            (id: .energyWindow, needMore: 2),
+            (id: .effortOrdering, needMore: 3),
+        ]
+        XCTAssertEqual(InsightID.firstPlaceholder(in: both)?.id, .effortOrdering)
+
+        let reactiveOnly: [(id: InsightID, needMore: Int)] = [(id: .reactiveVsPlanned, needMore: 5)]
+        XCTAssertEqual(InsightID.firstPlaceholder(in: reactiveOnly)?.id, .reactiveVsPlanned)
+
+        XCTAssertNil(InsightID.firstPlaceholder(in: []), "无占位 → 行不渲染")
+    }
 }

@@ -8229,24 +8229,68 @@
         }
       }
     },
-    "review.flow.insights.need_more_merged_%lld" : {
+    "review.flow.insights.need_more.energyWindow_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Record %lld more to unlock more observations"
+            "value" : "Log %lld more completion times to see your energy windows"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "あと %lld 件で、さらに観察が表示されます"
+            "value" : "完了時刻をあと %lld 件記録すると、集中しやすい時間帯が見えます"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再记 %lld 条,解锁更多观察"
+            "value" : "再记 %lld 条完成时间,就能看出你的精力窗口"
+          }
+        }
+      }
+    },
+    "review.flow.insights.need_more.effortOrdering_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish %lld more high-priority tasks to see whether you tackle easy or hard things first"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高優先度のタスクをあと %lld 件完了すると、やさしい方から片付ける傾向が見えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再做完 %lld 条高优先级任务,就能看出你是先易后难还是先难后易"
+          }
+        }
+      }
+    },
+    "review.flow.insights.need_more.reactiveVsPlanned_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log %lld more completions to see whether you run reactive or planned"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了をあと %lld 件記録すると、突発型か計画型かが見えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再记 %lld 条完成,就能看出你是救火型还是计划型"
           }
         }
       }

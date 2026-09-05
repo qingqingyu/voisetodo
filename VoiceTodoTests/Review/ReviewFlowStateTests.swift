@@ -158,6 +158,64 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(state.currentStep, .insights)
     }
 
+    // MARK: 空洞察整步跳过(v3 拍板 7:引擎零结果比空屏 + 错误指令的占位行更该跳)
+
+    /// 15 条完成(进 .full 档)但一条规则都不触发:无高优(effort 占位)、
+    /// 无带钟点高优(energy hidden)、救火占比 5/15 = 0.33 落中间带(reactive
+    /// hidden)、无未完成任务(rotting hidden)——rankedResults 空 → 整步跳过,
+    /// advance/retreat 与降级跳过走同一路径。
+    func testEmptyInsightResultsSkipInsightsStep() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let now = Date()
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: now) ?? now
+        let events = (0..<15).map { index in
+            InsightCompletedEvent(
+                todoId: UUID(),
+                createdAt: index < 5 ? now : threeDaysAgo,
+                completedAt: now,
+                category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+            )
+        }
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertFalse(state.skipsInsights, "15 条完成,降级阶梯放行")
+        XCTAssertTrue(state.skipsInsightsWhenEmpty, "引擎零结果——整步跳过")
+        XCTAssertTrue(state.rankedResults.isEmpty)
+        XCTAssertEqual(state.insightPlaceholders.count, 1)
+        XCTAssertEqual(state.insightPlaceholders.first?.id, .effortOrdering, "唯一占位:高优组缺口")
+        XCTAssertEqual(state.insightPlaceholders.first?.needMore, 3)
+        state.advance()
+        XCTAssertEqual(state.currentStep, .commit, "空洞察从第 2 步直达第 4 步")
+        state.retreat()
+        XCTAssertEqual(state.currentStep, .triage, "反向对称")
+    }
+
+    /// 引擎有结果 → 第 3 步照常出现(15 条全部「记下当天做完」→ 救火占比
+    /// 100% ≥ 50%,reactive 触发)。
+    func testNonEmptyInsightResultsKeepInsightsStep() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let events = (0..<15).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: Date(), completedAt: Date(),
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: Date(), to: Date(),
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertFalse(state.skipsInsightsWhenEmpty)
+        XCTAssertFalse(state.rankedResults.isEmpty)
+        state.advance()
+        XCTAssertEqual(state.currentStep, .insights, "有洞察正常停第 3 步")
+    }
+
     // MARK: 账本计数
 
     func testLedgerCounts() {

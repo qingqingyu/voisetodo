@@ -29,6 +29,23 @@ final class ReviewFlowState {
     /// 洞察步是否被降级阶梯跳过(<5 条完成记录 → 第 2 步直连第 4 步,§2.3)。
     /// 在流程启动拿到 insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
+    /// 洞察步是否因「引擎跑完一条都没触发」整步跳过(v3 拍板 7:空屏 + 错误
+    /// 指令的占位行比不出这一步更差)。与 `skipsInsights` 走同一跳过路径;
+    /// 在流程启动引擎跑完后设定——**必须**在进入第 3 步之前定好,否则会出现
+    /// 「进了第 3 步再被弹走」的闪屏(引擎因此从视图 `.task` 前移至此)。
+    private(set) var skipsInsightsWhenEmpty = false
+    /// 两个跳过 flag 的单一来源(导航与步骤条共用)。
+    var skipsInsightsStep: Bool { skipsInsights || skipsInsightsWhenEmpty }
+
+    // MARK: 第 3 步 · 引擎结果(v3 拍板 7 引擎前移:从 ReviewStepInsights 的
+    // @State 迁入,视图只读;重试路径随 loadInsightContext 重跑)
+
+    /// 引擎跑出的结果(score 降序,已过冷却)。
+    private(set) var rankedResults: [InsightResult] = []
+    /// 已实现规则的占位(「还需 N 条」;选取见 `InsightID.firstPlaceholder`)。
+    private(set) var insightPlaceholders: [(id: InsightID, needMore: Int)] = []
+    /// 降级阶梯的「再记 N 条」提示(5–14 档,只跑 02 时的预告;其他档 nil)。
+    private(set) var ladderNeedMore: Int?
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -256,20 +273,20 @@ final class ReviewFlowState {
 
     // MARK: 导航
 
-    /// 下一步。insights 在 skipsInsights 时被跳过。
+    /// 下一步。insights 在降级跳过或空结果跳过时不出现(v3 拍板 7)。
     func advance() {
         let candidates = (currentStep.rawValue + 1)...Step.ledger.rawValue
         guard let raw = candidates.first else { return }
         var next = Step(rawValue: raw)!
-        if next == .insights, skipsInsights { next = .commit }
+        if next == .insights, skipsInsightsStep { next = .commit }
         currentStep = next
     }
 
-    /// 上一步。insights 在 skipsInsights 时被跳过。
+    /// 上一步。insights 的两种跳过对称生效。
     func retreat() {
         guard let raw = (Step.recap.rawValue..<currentStep.rawValue).last else { return }
         var prev = Step(rawValue: raw)!
-        if prev == .insights, skipsInsights { prev = .triage }
+        if prev == .insights, skipsInsightsStep { prev = .triage }
         currentStep = prev
     }
 
@@ -277,6 +294,90 @@ final class ReviewFlowState {
     func configureInsightsLadder() {
         let completedCount = insightContextValue?.completedEvents.count ?? 0
         skipsInsights = InsightEngine.ladder(completedRecordCount: completedCount) == .skipStep
+    }
+
+    /// 跑四条规则并落库结果(v3 拍板 7:从 `ReviewStepInsights.runEngine` 前移,
+    /// 与 `configureInsightsLadder()` 同一时机由 `loadInsightContext` 调用)。
+    /// 规则按 ladder 裁剪,score 降序;触发后先过冷却(§2.4):不满足任一
+    /// 放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
+    /// 放行换 improving 文案。空结果 → `skipsInsightsWhenEmpty`(整步跳过)。
+    func runInsightEngine() {
+        guard let context = insightContextValue else { return }
+        let calendar = Calendar.current
+        let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
+
+        var results: [InsightResult] = []
+        var newPlaceholders: [(InsightID, Int)] = []
+
+        let rotting = RottingRule().evaluate(context, calendar: calendar)
+        collect(rotting, id: .rotting, into: &results, &newPlaceholders)
+
+        if ladder == .full {
+            let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
+            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
+
+            // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
+            // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
+            let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders)
+
+            let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders)
+        }
+
+        // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
+        let cooled = results.compactMap { result -> InsightResult? in
+            applyCooldown(result)
+        }
+        let ranked = InsightEngine.rank(cooled)
+        // 展示过的才进冷却历史(被过滤掉的不记)。重跑先清空:上一轮展示过、
+        // 这一轮被冷却过滤的洞察不该留在历史里。
+        resetShownInsights()
+        ranked.forEach { recordShownInsight($0) }
+
+        rankedResults = ranked
+        insightPlaceholders = newPlaceholders
+        ladderNeedMore = ladder.rottingOnlyNeedMore
+        skipsInsightsWhenEmpty = ranked.isEmpty
+    }
+
+    /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
+    /// `InsightEngine.cooldown` 三条件。`.effectChanged(improved: true)` 换
+    /// improving 文案。
+    private func applyCooldown(_ result: InsightResult) -> InsightResult? {
+        guard let input = ReviewCooldownHistory.input(
+            insightID: result.id,
+            sessions: previousSessions,
+            currentEffectSize: result.effectSize,
+            lowerIsBetter: true
+        ) else {
+            return result // 无历史:第一次展示,放行
+        }
+        switch InsightEngine.cooldown(input) {
+        case .success(let reason):
+            if case .effectChanged(let improved) = reason, improved {
+                return result.withTone(.improving)
+            }
+            return result
+        case .failure:
+            return nil // 冷却中:本期不展示
+        }
+    }
+
+    private func collect(
+        _ availability: InsightAvailability,
+        id: InsightID,
+        into results: inout [InsightResult],
+        _ placeholders: inout [(InsightID, Int)]
+    ) {
+        switch availability {
+        case .fired(let result):
+            results.append(result)
+        case .placeholder(let needMore):
+            placeholders.append((id, needMore))
+        case .hidden:
+            break
+        }
     }
 
     // MARK: 第 2 步决定
@@ -625,6 +726,10 @@ struct ReviewFlowView: View {
             state.insightLoadError = nil
             state.recordPeriod(start: start, end: end)
             state.configureInsightsLadder()
+            // v3 拍板 7:引擎与阶梯同时机跑(失败重试路径随本函数重跑),
+            // 空结果在此刻就定 skipsInsightsWhenEmpty——进第 3 步前定好,
+            // 不闪屏。
+            state.runInsightEngine()
             // 拍板 2 的时序要求:deck 在 init 用空推迟数据排过,真实 deferCounts
             // 到位后重排一次(已处理条目不回流,见 rankDeck)。
             state.rankDeck(deferCounts: context.deferCounts)
@@ -704,7 +809,8 @@ struct ReviewFlowView: View {
         }
     }
 
-    /// 步骤条:5 段胶囊,当前及已过的段填充主色。insights 被跳过时该段显示为跳过态。
+    /// 步骤条:5 段胶囊,当前及已过的段填充主色。insights 被跳过时该段显示为
+    /// 跳过态(v3 拍板 7:降级跳过与空结果跳过走同一视觉)。
     private var stepBar: some View {
         HStack(spacing: WarmSpacing.xxs) {
             ForEach(ReviewFlowState.Step.allCases, id: \.rawValue) { step in
@@ -718,7 +824,7 @@ struct ReviewFlowView: View {
     }
 
     private func stepBarFill(_ step: ReviewFlowState.Step) -> Color {
-        if step == .insights && state.skipsInsights {
+        if step == .insights && state.skipsInsightsStep {
             return WarmTheme.divider.opacity(0.5)
         }
         return step.rawValue <= state.currentStep.rawValue
@@ -837,5 +943,15 @@ extension ReviewFlowState {
     func retreat(toTriage: Bool) {
         guard toTriage else { return }
         currentStep = .triage
+    }
+}
+
+// MARK: - 降级阶梯便捷取值
+
+extension InsightEngine.Ladder {
+    /// rottingOnly 档的 needMore(其他档 nil)。
+    var rottingOnlyNeedMore: Int? {
+        if case .rottingOnly(let needMore) = self { return needMore }
+        return nil
     }
 }
