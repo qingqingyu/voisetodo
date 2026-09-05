@@ -6889,6 +6889,40 @@
         }
       }
     },
+    "paywall.subscribed.expires %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valid until %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至 %@"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're already subscribed to Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你已订阅 Pro"
+          }
+        }
+      }
+    },
     "paywall.title" : {
       "localizations" : {
         "en" : {

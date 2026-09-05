@@ -19,8 +19,9 @@ const REMINDER_INTERVAL_MS = 6 * 3600 * 1000;
 
 /// 探活结果 → 告警 level。纯函数。
 ///   succeeded === total → "ok";部分成功 → "degraded";全挂 → "down"
-/// total === 0 → null:没有可探活的 provider(如 secret 全缺)走 caller 的
-/// skipped 分支不告警 —— 配置问题不该被误报成服务故障。
+/// total === 0 → null:没有 provider 可计入时走 caller 的 skipped 分支不告警 ——
+/// 配置问题不该被误报成服务故障。cron 路径的「secrets 全缺」(total > 0 但全部
+/// no_key)由 worker.js 的 probeable 守卫拦下,不会走到这里的 total === 0。
 export function classifyLevel(succeeded, total) {
   if (!Number.isFinite(succeeded) || !Number.isFinite(total) || total <= 0) {
     return null;
