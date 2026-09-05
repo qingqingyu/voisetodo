@@ -608,8 +608,12 @@ struct ReviewStepTriage: View {
 
     // MARK: 底部按钮 pad(位置 = 手势方向)
 
+    /// 四钮同构(v3 拍板 4):中段两个从 `Label` 胶囊(窄屏下 title 会被两侧
+    /// 56pt 圆钮挤塌成纯图标,文案三语俱全但读不到)改成与方向钮同款
+    /// 「图标圆 + 下方小标签」——视觉层级靠尺寸分(两侧 56 / 中段 44),不靠
+    /// 有无标签分;中段两个拿 `layoutPriority(1)`,四个动作名任何语言下可读。
     private var pad: some View {
-        HStack(spacing: WarmSpacing.lg) {
+        HStack(spacing: WarmSpacing.md) {
             padRoundButton(
                 icon: "xmark",
                 label: String(localized: "review.flow.triage.action.drop"),
@@ -619,21 +623,29 @@ struct ReviewStepTriage: View {
                 if let top = state.deck.first, !isFlying { abandon(top) }
             }
 
-            HStack(spacing: WarmSpacing.sm) {
-                padCapsuleButton(
-                    title: String(localized: "review.flow.triage.action.today"),
-                    icon: "sun.max"
-                ) {
-                    if let top = state.deck.first, !isFlying { doToday(top) }
-                }
-
-                padCapsuleButton(
-                    title: String(localized: "review.flow.triage.action.split"),
-                    icon: "scissors"
-                ) {
-                    if let top = state.deck.first, !isFlying { openSplit(top) }
-                }
+            padRoundButton(
+                icon: "sun.max",
+                label: String(localized: "review.flow.triage.action.today"),
+                color: WarmTheme.primaryText,
+                id: "ReviewFlowTriageToday",
+                circleSize: 44,
+                iconSize: 17
+            ) {
+                if let top = state.deck.first, !isFlying { doToday(top) }
             }
+            .layoutPriority(1)
+
+            padRoundButton(
+                icon: "scissors",
+                label: String(localized: "review.flow.triage.action.split"),
+                color: WarmTheme.primaryText,
+                id: "ReviewFlowTriageSplit",
+                circleSize: 44,
+                iconSize: 17
+            ) {
+                if let top = state.deck.first, !isFlying { openSplit(top) }
+            }
+            .layoutPriority(1)
 
             padRoundButton(
                 icon: "arrow.right",
@@ -647,14 +659,23 @@ struct ReviewStepTriage: View {
         .padding(.horizontal, WarmSpacing.lg)
     }
 
-    /// 方向性圆钮(✕/→):56pt 白底圆 + 图标 + 底部小标签。
-    private func padRoundButton(icon: String, label: String, color: Color, id: String, action: @escaping () -> Void) -> some View {
+    /// 方向性圆钮(✕/→):56pt 白底圆 + 图标 + 底部小标签;中段中性钮
+    /// (今天就做/拆小)复用同结构,44pt(v3 拍板 4 同构布局)。
+    private func padRoundButton(
+        icon: String,
+        label: String,
+        color: Color,
+        id: String,
+        circleSize: CGFloat = 56,
+        iconSize: CGFloat = 22,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: iconSize, weight: .semibold))
                     .foregroundColor(color)
-                    .frame(width: 56, height: 56)
+                    .frame(width: circleSize, height: circleSize)
                     .background(
                         Circle()
                             .fill(WarmTheme.cardBackground)
@@ -671,27 +692,6 @@ struct ReviewStepTriage: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
-    }
-
-    /// 中性胶囊小钮(今天就做/拆小)。
-    private func padCapsuleButton(title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(WarmFont.caption(13))
-                .foregroundColor(WarmTheme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, WarmSpacing.md)
-                .padding(.vertical, WarmSpacing.xs)
-                .background(
-                    Capsule()
-                        .fill(WarmTheme.cardBackground)
-                        .overlay(
-                            Capsule().strokeBorder(WarmTheme.rowHairline, lineWidth: 1)
-                        )
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: 决定落地

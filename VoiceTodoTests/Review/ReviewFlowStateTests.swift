@@ -497,12 +497,13 @@ extension ReviewFlowStateTests {
     }
 
     /// 「决定了 N 件」= 逐张决定四去向之和;批量推后不算,划掉撤销会回退(拍板 4)。
+    /// 全零时 ⑤ 屏主卡走 v3「原样留着」文案(decidedCount == 0 是它的前提)。
     func testDecidedCountExcludesSomedayAndRespectsUndo() {
         let state = ReviewFlowState(todos: [
             todo("a", daysOld: 30), todo("b", daysOld: 20),
             todo("c", daysOld: 10), todo("d", daysOld: 5),
         ])
-        XCTAssertEqual(state.decidedCount, 0, "全零——收尾主卡不出")
+        XCTAssertEqual(state.decidedCount, 0, "全零——⑤ 屏主卡走「原样留着」文案(v3 拍板 10)")
 
         let items = state.deck
         state.markScheduled(items[0])
@@ -520,6 +521,23 @@ extension ReviewFlowStateTests {
         batchState.markSomedayBatchExecuted(batch: batchState.somedayBatchCandidates)
         XCTAssertEqual(batchState.decidedCount, 0)
         XCTAssertEqual(batchState.ledger.somedayCount, 3)
+    }
+
+    /// initialBacklogCount(v3 ②/⑤):init 一次算好的快照——逐张决定(deck 缩、
+    /// processedIDs 涨)与批量推「稍后」(tail 缩水)都不改变它;它存在的理由
+    /// 就是防「渲染期动态求值导致同屏跳数」。与 ① 屏实时 @Query 的有意分叉
+    /// 见 `ReviewFlowState.initialBacklogCount` 注释。
+    func testInitialBacklogCountIsInitSnapshot() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let olds = (0..<3).map { todo("old\($0)", daysOld: 40 + $0) }
+        let state = ReviewFlowState(todos: fillers + olds)
+        XCTAssertEqual(state.initialBacklogCount, 11, "排序前 triageInput 总数(deck 8 + tail 3)")
+
+        if let top = state.deck.first {
+            state.markAbandoned(top)
+        }
+        state.markSomedayBatchExecuted(batch: state.somedayBatchCandidates)
+        XCTAssertEqual(state.initialBacklogCount, 11, "处理后快照恒定——deck/tail/ledger 怎么动都不影响")
     }
 
     /// 旧 payload(无 somedayCount 键)解码 → 默认 0;混排列表不拖垮整体。

@@ -45,7 +45,7 @@ struct ReviewStepRecap: View {
         ScrollView {
             VStack(spacing: WarmSpacing.lg) {
                 scopeHeader
-                RecapHeroSection(summary: summary, promotesSameDay: true)
+                RecapHeroSection(summary: summary, promotesSameDay: true, heroContent: heroContent)
                 RecapEvidenceRow(summary: summary)
             }
             .padding(.horizontal, WarmSpacing.lg)
@@ -53,9 +53,19 @@ struct ReviewStepRecap: View {
         }
     }
 
+    /// Hero 主标题(v3 拍板 2):有上次置顶结局 → 兑现判词;nil(首次复盘 /
+    /// 上次没置顶 / 上次置顶的已全删)→ 回退完成数句式,不硬造空承诺文案。
+    /// 数据来自流程启动时注入的快照(与本步其他 @Query 区块的实时聚合口径
+    /// 不同——有意的快照语义:结局是对「上次定的那批」的静态对账)。
+    private var heroContent: RecapHeroContent {
+        guard let outcome = lastPinnedOutcome else { return .countSummary }
+        return .pinnedOutcome(total: outcome.completed + outcome.pending, completed: outcome.completed)
+    }
+
     /// 口径行:点明本流程固定「近 30 天」——回顾页顶部的周/月切换器管不到复盘,
     /// 消歧义小字 2026-08-23 从入口卡移入(放卡里读起来像废话,放流程首屏才有上下文)。
     /// 顺带承载上次复盘日期(原入口卡第四行)。
+    /// (v3 拍板 2:原「上次定的重点」11pt 闭环行升格为 Hero 主标题,此处不再重复。)
     private var scopeHeader: some View {
         VStack(spacing: WarmSpacing.xxs) {
             Text(String(localized: "review.flow.recap.scope"))
@@ -67,20 +77,6 @@ struct ReviewStepRecap: View {
             if let date = lastReviewDate {
                 Text(String(
                     localized: "review.flow.recap.last_review_\(date.formatted(.dateTime.year().month().day()))"
-                ))
-                    .font(WarmFont.caption(11))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-
-            // 数据来自流程启动时注入的快照(与本步其他 @Query 区块的实时聚合
-            // 口径不同——有意的快照语义:结局是对「上次定的那批」的静态对账)。
-            if let outcome = lastPinnedOutcome {
-                Text(String(
-                    format: String(localized: "review.flow.recap.last_pinned_outcome"),
-                    outcome.completed,
-                    outcome.pending
                 ))
                     .font(WarmFont.caption(11))
                     .foregroundColor(WarmTheme.textMuted)

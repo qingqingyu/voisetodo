@@ -6,6 +6,17 @@ import SwiftUI
 // 「入口与既有页面」):`ReviewView`(日常随手看)与 `ReviewStepRecap`(五步流程
 // 第 1 步,压到 10 秒能看完)共用,**别在两处复制**。纯搬移重构,视觉/行为零变化。
 
+/// Hero 主标题内容(v3 拍板 2):回顾页默认 = 完成数;复盘第 1 步在有上次
+/// 置顶结局时升级为兑现判词。沿用 `promotesSameDay` 的参数化模式——
+/// 默认值 = 回顾页现状,回顾页调用点零变化(审阅缺口 A)。
+enum RecapHeroContent {
+    /// 回顾页现状:大数字 + 周期标签。
+    case countSummary
+    /// 兑现判词(v3 ① 屏主副对调):上次置顶的结局当主标题,完成数降为
+    /// `RecapEvidenceRow` 的 Done 卡。
+    case pinnedOutcome(total: Int, completed: Int)
+}
+
 /// Hero 区:大数字 + 周期标签。
 struct RecapHeroSection: View {
     let summary: ReviewSummary
@@ -13,19 +24,39 @@ struct RecapHeroSection: View {
     /// 当天做完」与总数同级呈现。默认 false = 回顾页原样(13pt 副行)——
     /// 本组件两页共用(见文件头),回顾页行为不动(审阅缺口 A)。
     var promotesSameDay: Bool = false
+    /// 主标题内容(v3 拍板 2)。默认 = 回顾页现状;复盘第 1 步传
+    /// `.pinnedOutcome` 或(空态回退)`.countSummary`——不硬造「上次没有
+    /// 承诺」的空标题,兑现判词是有上次承诺才有的话。
+    var heroContent: RecapHeroContent = .countSummary
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            Text(String(localized: "review.hero.count_\(summary.total)"))
-                .font(WarmFont.serifDisplay(40))
-                .foregroundColor(WarmTheme.primary)
-                .accessibilityIdentifier("ReviewHeroCount")
+            switch heroContent {
+            case .countSummary:
+                Text(String(localized: "review.hero.count_\(summary.total)"))
+                    .font(WarmFont.serifDisplay(40))
+                    .foregroundColor(WarmTheme.primary)
+                    .accessibilityIdentifier("ReviewHeroCount")
 
-            Text(summary.periodLabel)
-                .font(WarmFont.caption(14))
-                .foregroundColor(WarmTheme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                Text(summary.periodLabel)
+                    .font(WarmFont.caption(14))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+            case .pinnedOutcome(let total, let completed):
+                // 兑现判词主标题(v3 拍板 2):周期标签不跟——它描述的是
+                // 完成数窗口,而判词说的是上次置顶那批的结局,两个口径。
+                Text(String(
+                    localized: "review.flow.recap.pinned_outcome_hero_\(total)_\(completed)"
+                ))
+                    .font(WarmFont.serifDisplay(32))
+                    .foregroundColor(WarmTheme.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .accessibilityIdentifier("ReviewHeroPinnedOutcome")
+            }
 
             // 「当天记、当天做完」件数(2026-08-21 用户拍板加上)。区间内没有
             // 完成时不显示——「其中 0 件」是噪音。一次性任务口径,与洞察 03 一致。

@@ -44,6 +44,14 @@ final class ReviewFlowState {
     /// UI 必须把这个说清楚,否则用户以为「其他都被处理了」。
     private(set) var tail: [TodoItemData] = []
 
+    /// 流程开始时的积压总数(v3 ②/⑤):= 排序前 `triageInput` 的条数,init 一次
+    /// 算好,整个会话恒定。**不得**改成 `ledger.inputCount + tail.count` 之类的
+    /// 动态求值——批量推「稍后」落地后 `tail` 缩水,同屏数字会跳(恰是要消灭的
+    /// 同屏矛盾);也**不得**与 ① 屏对齐成实时值:① 屏 `pendingOneOffCount` 走
+    /// `@Query` 是实时的,用户在 ② 屏处理几张后回看 ① 屏会变小——那是可接受
+    /// 的分叉,本值永远是「本次会话开始时」的快照(审阅修订二)。
+    private(set) var initialBacklogCount: Int
+
     /// 最近一次批量推「稍后」的原字段快照(整批撤销,拍板 7 的唯一扩展:
     /// 一键操作没有 undo 不可接受)。nil = 本期尚未执行。一次性——撤销后清空。
     private(set) var somedayUndoSnapshot: [TodoItemData]?
@@ -138,8 +146,10 @@ final class ReviewFlowState {
         // 冷启动帧:推迟数据(insightContext)异步到达,init 只有空字典可排——
         // 字典序排序在主键全 0 时退化为纯停滞天数,这一帧已经比原序(原始
         // sortOrder)合理;context 到位后 `rankDeck` 用真实推迟数重排一次。
+        let input = Self.triageInput(from: todos)
+        self.initialBacklogCount = input.count
         let ranked = TriageRanking.rank(
-            Self.triageInput(from: todos), deferCounts: [:], now: Date()
+            input, deferCounts: [:], now: Date()
         )
         self.deck = Array(ranked.prefix(TriageRanking.deckSize))
         self.tail = Array(ranked.dropFirst(TriageRanking.deckSize))
