@@ -47,4 +47,22 @@ enum TriageRanking {
     ) -> Int {
         max(0, calendar.dateComponents([.day], from: todo.createdAt, to: now).day ?? 0)
     }
+
+    /// 单键排序:停滞天数 desc → id 决胜(v3 拍板 8,第 4 步候选池)。
+    /// 与 `rank` 的区别:不带推迟次数主键——第 4 步排序的是「从池子里挑焦点」
+    /// 的呈现顺序,不是卡堆的处理优先级;停滞天数是现成且有意义的代理
+    /// (放得最久的排最前),复用同一决胜规则保证确定性。不引入新的重要性
+    /// 模型(任务没有 estimate 字段,按「大小」排当前数据模型做不到)。
+    static func sortByStagnation(
+        _ todos: [TodoItemData],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> [TodoItemData] {
+        todos.sorted { lhs, rhs in
+            let lhsAge = stagnationDays(of: lhs, now: now, calendar: calendar)
+            let rhsAge = stagnationDays(of: rhs, now: now, calendar: calendar)
+            if lhsAge != rhsAge { return lhsAge > rhsAge }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
 }

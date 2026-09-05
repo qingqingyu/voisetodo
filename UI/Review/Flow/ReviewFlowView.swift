@@ -245,8 +245,13 @@ final class ReviewFlowState {
     /// 本来就在下周且本会话没动过的。第二路排除 processedIDs——右滑「排下周」
     /// 即时写库,不排掉会双行(审阅缺口 B);「今天就做/不做了/拆小」处理过的
     /// 同样不该再当选下周三件事。
+    /// v3 拍板 8:按停滞天数降序(同天数 id 决胜)——放得最久的排最前,
+    /// 从琐事里挑焦点才有分量;原实现是 store.todos 原始序,连排都没排。
     var preexistingNextWeek: [TodoItemData] {
-        nextWeekCommitted.filter { !processedIDs.contains($0.id) }
+        TriageRanking.sortByStagnation(
+            nextWeekCommitted.filter { !processedIDs.contains($0.id) },
+            now: Date()
+        )
     }
 
     /// 完整候选池(视图分组渲染:scheduled 一组、preexistingNextWeek 一组)。
@@ -836,28 +841,42 @@ struct ReviewFlowView: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        Button {
-            advanceFromCurrentStep()
-        } label: {
-            Text(bottomButtonTitle)
-                .font(WarmFont.headline(16))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity)
-                .frame(height: WarmSize.touch)
-                .padding(.horizontal, WarmSpacing.lg)
-                .background(
-                    Capsule().fill(
-                        state.canAdvanceCurrentStep ? WarmTheme.primary : WarmTheme.divider
+        VStack(spacing: WarmSpacing.xs) {
+            // 闸门原因常驻(v3 拍板 9,修发现 F):步骤内的 hint 在屏幕顶端,
+            // 滚一屏就看不见,按钮禁用又无说明是「④ 屏像死路」的直接来源。
+            // 流程级改法——任何步骤的硬闸门都必须在按钮旁说明原因
+            // (Step.commit 是目前唯一有硬闸门的步骤)。
+            if !state.canAdvanceCurrentStep {
+                Text(String(localized: "review.flow.commit.gate_hint"))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            Button {
+                advanceFromCurrentStep()
+            } label: {
+                Text(bottomButtonTitle)
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: WarmSize.touch)
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .background(
+                        Capsule().fill(
+                            state.canAdvanceCurrentStep ? WarmTheme.primary : WarmTheme.divider
+                        )
                     )
-                )
-                .padding(.horizontal, WarmSpacing.lg)
-                .padding(.bottom, WarmSpacing.md)
+                    .padding(.horizontal, WarmSpacing.lg)
+            }
+            .buttonStyle(.plain)
+            .disabled(!state.canAdvanceCurrentStep)
+            .accessibilityIdentifier("ReviewFlowPrimary")
         }
-        .buttonStyle(.plain)
-        .disabled(!state.canAdvanceCurrentStep)
-        .accessibilityIdentifier("ReviewFlowPrimary")
+        .padding(.bottom, WarmSpacing.md)
     }
 
     private var bottomButtonTitle: String {

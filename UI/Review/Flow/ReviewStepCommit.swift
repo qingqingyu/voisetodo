@@ -22,7 +22,9 @@ struct ReviewStepCommit: View {
                     hint
                     if !state.scheduled.isEmpty {
                         groupHeader(String(localized: "review.flow.commit.group.scheduled"))
-                        candidateList(state.scheduled)
+                        // v3 拍板 8:与 preexistingNextWeek 同一排序原语——
+                        // 停滞天数降序,放得最久的排最前(呈现顺序,不动数据)。
+                        candidateList(TriageRanking.sortByStagnation(state.scheduled, now: Date()))
                     }
                     if !state.preexistingNextWeek.isEmpty {
                         groupHeader(String(localized: "review.flow.commit.group.existing"))

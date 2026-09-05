@@ -7919,24 +7919,46 @@
         }
       }
     },
-    "review.flow.commit.group.existing" : {
+    "review.flow.commit.gate_hint" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Already on next week"
+            "value" : "Pick at least 1 to continue"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "もともと来週にあった"
+            "value" : "続けるには 1 件以上選んでください"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本来就在下周的"
+            "value" : "至少选 1 件才能继续"
+          }
+        }
+      }
+    },
+    "review.flow.commit.group.existing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already on next week (not picked as focus)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来週に入っている(重点は未選択)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已排在下周(还没选为重点)"
           }
         }
       }
@@ -7968,19 +7990,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick next week's focus — at least 1, 3 recommended"
+            "value" : "Which ones will you seriously tackle next week? Picked ones get called out in your next review"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "来週の重点を選ぼう:最低 1 件、3 件が目安"
+            "value" : "来週、本気で取り組むのはどれ?選んだものは次のふりかえりで取り上げます"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "挑出下周的重点:至少选 1 件,建议选满 3 件"
+            "value" : "下周你要认真做哪几件?选中的会在下次复盘里被点名"
           }
         }
       }

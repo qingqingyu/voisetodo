@@ -598,6 +598,33 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(state.initialBacklogCount, 11, "处理后快照恒定——deck/tail/ledger 怎么动都不影响")
     }
 
+    /// 第 4 步候选池排序(v3 拍板 8):preexistingNextWeek 按停滞天数降序
+    /// (原实现是 store.todos 原始序,连排都没排);同天数 id 决胜。
+    func testPreexistingNextWeekSortedByStagnation() {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.weekday = 2 // 周一,与 nextWeekCommitted 同一取窗
+        let nextMonday = calendar.nextDate(after: Date(), matching: components, matchingPolicy: .nextTime)!
+        let due = DayClock.userDayStart(onNaturalDay: nextMonday, calendar: calendar)
+
+        let state = ReviewFlowState(todos: [
+            todo("young", daysOld: 1, dueDate: due),
+            todo("mid", daysOld: 10, dueDate: due),
+            todo("old", daysOld: 30, dueDate: due),
+            todo("nodue", daysOld: 5), // 无日期,不进候选池
+        ])
+        XCTAssertEqual(
+            state.preexistingNextWeek.map(\.title),
+            ["old", "mid", "young"],
+            "停滞天数降序——放得最久的排最前"
+        )
+
+        // 同停滞天数:id 升序决胜(确定性,与 TriageRanking.rank 同款)。
+        let sameAge = [todo("a", daysOld: 7, dueDate: due), todo("b", daysOld: 7, dueDate: due)]
+        let ranked = TriageRanking.sortByStagnation(sameAge, now: Date())
+        XCTAssertEqual(ranked.map(\.id.uuidString), sameAge.map(\.id.uuidString).sorted())
+    }
+
     /// 旧 payload(无 somedayCount 键)解码 → 默认 0;混排列表不拖垮整体。
     /// 失败半径:自动合成的 Codable 遇缺键是抛错,一条失败会污染整个
     /// allSessions(),自定义 init(from:) 兜底(docs v2 实施补注)。
