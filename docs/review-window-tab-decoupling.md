@@ -117,6 +117,8 @@ reviewNotesSection                                  // 不受 picker 管
 
 ⚠️ 由此产生一个可见变化，**有意为之**：picker 现挂在 `safeAreaInset` 上，空态/有数据两分支都显示；移进 `content` 后**空态整页不再有 picker**。零完成数据下切周/月毫无意义，这是改善不是回归——已记为拍板，实现者不要当成漏改补回去。
 
+⚠️ 窗口拆分带出一个**新的可达状态**（2026-09-06 双审发现）：30 天有数据、选中的**周**窗口零完成（月窗口与 30 天同式，不可能出现）。此时图表区整体退一行周期限定提示（`ReviewView.periodEmptyHint`），不渲染空标题的分类卡，也不走稀疏拼接——`activeDays` 为空时拼接句会以「，」/「.」开头成残句。提示文案用 `review.period.empty`，**不复用** `review.empty.message`（那是整页空态文案，与同屏 Hero「完成 N 件」自相矛盾）。
+
 ⚠️ 窗口拆分的落地手法：把现有 `summary` 计算属性**整体改名 `periodSummary`**，让编译器揪出全部读取点。读 `summary` 的不止三处——`sparseTrendText`（`:428`）、稀疏判定（`:415`）、`trendConclusion`（`:482`）、`dailyTrendData`（`:501`）、`busiestDayOneLiner`（`:575`）、`content` 的 `busiestDay` 判定（`:358`）都在内，漏一处就会出现「图表是周、结论句是 30 天」的新割裂。`dailyTrendData` / `xAxisDates`（`:494`、`:526-529`）里对 `selectedPeriod` 的读取**保留不动**（图表区本就随 picker）。
 
 ### A3. 共享组件不许动
@@ -167,6 +169,7 @@ static func monthSummary(
 | key | zh-Hans | en | ja |
 |---|---|---|---|
 | `review.window.last30d`（新增） | `近 30 天` | `Last 30 days` | `過去 30 日間` |
+| `review.period.empty`（2026-09-06 双审新增，超出 C 表 6 键——修复周窗口零完成态所必需，见 A2 第二条 ⚠️） | `这个周期还没有完成记录` | `No completions in this period yet` | `この期間の記録はまだありません` |
 
 ~~`review.section.trends`~~（图表分组头，原备选）**不采用**（2026-09-04 拍板）：picker 内联后自身就是辖区边界，再加分组头会与紧随其后的「每日趋势」卡片标题重复。key 不新增。
 
@@ -251,3 +254,4 @@ static func monthSummary(
 - 2026-09-02：初版（`44ab6fa`）。
 - 2026-09-04：实施前审阅补齐——`ReviewFlowView` 行号对齐 `3f7f051`（窗口 `:608-611`、`triageInput` `:211`）；空态失去 picker 记为有意；`review.section.trends` 不采用；C 从 4 键扩至 6 键并界定其余 16 键归 v3；护栏 6 理由改如实（暂无渲染点）；新增护栏 8（xcstrings 三条纪律）；单测两条不可实现项改写为 builder 级；补验收 7 的 v3 顺序前提。
 - 2026-09-04：**实施完成**——A：`ReviewView` 拆 `fixedWindowSummary`（复用 `monthSummary` + 传标签）/`periodSummary`（原 `summary` 整体改名，编译器揪全读取点），删吸顶、picker 内联入口卡后，空态判定换 `fixedWindowSummary.total`；B：入口卡 VStack 加范围标，`monthSummary` 增 `periodLabel` 参数（缺省保留旧行为），`ReviewView` 与 `ReviewStepRecap` 两处传「近 30 天」；C：6 键补 ja + 新增 `review.window.last30d`。新增 2 条 builder 级单测（窗口边界 / 标签参数），全套单测 657 过，仅 2 个与本改动无关的既有环境红灯（StoreKit CLI 注入、DST +0800）。真机手测项（周/月切换、三语 AX5、深链）待做。
+- 2026-09-06：双 review 循环修复三处（不动既有拍板）——①周窗口零完成（30 天有数据）时图表区整区退一行提示（`periodEmptyHint` + 新键 `review.period.empty`），堵掉稀疏拼接残句与空标题分类卡（窗口拆分带出的新可达态，见 A2 第二条 ⚠️）；②`ReviewView.dailyTrendData` 循环外提 `periodSummary.byDay`，消除循环内 7~30 次全量重聚合；③单测 661 过（含新增 2 条），红灯仍为既有 2 个。

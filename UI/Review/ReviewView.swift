@@ -365,12 +365,19 @@ struct ReviewView: View {
             // ── picker 辖区从这里开始(内联,不再吸顶):只管图表,不管上方成绩单 ──
             periodPicker
 
-            RecapCategoryChartSection(byCategory: periodSummary.byCategory)
+            // 空态判定与图表区窗口拆分后(d8f9c33)新增的可达状态:30 天有数据、
+            // 选中的周窗口零完成。此时图表区整体退一行提示——不渲染空标题的分类卡,
+            // 也不走稀疏拼接(activeDays 为空会拼出「，其余日期无记录」残句)。
+            if periodSummary.total == 0 {
+                periodEmptyHint
+            } else {
+                RecapCategoryChartSection(byCategory: periodSummary.byCategory)
 
-            dailyTrendSection
+                dailyTrendSection
 
-            if let busiest = periodSummary.busiestDay {
-                busiestDaySection(busiest)
+                if let busiest = periodSummary.busiestDay {
+                    busiestDaySection(busiest)
+                }
             }
 
             if !reviewNotes.isEmpty {
@@ -412,6 +419,20 @@ struct ReviewView: View {
         }
         .pickerStyle(.segmented)
         .accessibilityIdentifier("ReviewPeriodPicker")
+    }
+
+    /// 选中周期(仅周可能:月窗口与 30 天窗口同式)零完成时,图表区的整区空态——
+    /// 一行周期限定提示,替代空标题卡与残句。不用 `review.empty.message`
+    /// (「还没有完成的待办」/ "No completed todos yet"):那是整页空态的文案,
+    /// 这里同屏上方 Hero 正显示 30 天完成数,复用会自相矛盾。
+    private var periodEmptyHint: some View {
+        RecapCard {
+            Text(String(localized: "review.period.empty"))
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     // MARK: Daily Trend
@@ -510,9 +531,12 @@ struct ReviewView: View {
         var result: [(day: Date, count: Int)] = []
         var cursor = start
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
+        // 循环外取一次:`periodSummary` 是完整聚合(events 构建 + summarize +
+        // 三条 O(n) 过滤),放循环体内会被求值 7~30 次,大数据量下无谓放大主线程开销。
+        let byDay = periodSummary.byDay
 
         while cursor <= todayStart {
-            let count = periodSummary.byDay[cursor] ?? 0
+            let count = byDay[cursor] ?? 0
             result.append((day: cursor, count: count))
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else {
                 break

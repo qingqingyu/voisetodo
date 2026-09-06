@@ -10457,6 +10457,28 @@
         }
       }
     },
+    "review.period.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No completions in this period yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間の記録はまだありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个周期还没有完成记录"
+          }
+        }
+      }
+    },
     "review.period.month" : {
       "localizations" : {
         "en" : {
