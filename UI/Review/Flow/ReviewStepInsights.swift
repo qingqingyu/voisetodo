@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// 第 3 步 · 观察(阶段 3;2026-09-01 v2 改版:只留洞察)。
+/// 第 3 步 · 观察(阶段 3;2026-09-01 v2 改版:只留洞察;v3 拍板 7:只读 State)。
 ///
-/// 原料在流程启动时已存进 `state.insightContextValue`(不放 body,§1.4);
-/// 本视图把它跑过引擎(降级阶梯 §2.3:5–14 只跑腐烂;≥15 跑 01/02/03/05),
-/// 结果 score 降序。未达阈值的不显示(不是「无异常」)。
+/// 引擎已在流程启动时跑完(`ReviewFlowState.runInsightEngine`,与
+/// `configureInsightsLadder()` 同一时机——空结果在进本步之前就定好整步跳过,
+/// 不会出现「进了第 3 步再被弹走」的闪屏);本视图只读
+/// `state.rankedResults` / `insightPlaceholders` / `ladderNeedMore`,
+/// 失败态展示错误 + 重试(重试随 `loadInsightContext` 重跑引擎)。
 ///
 /// 「历次笔记」卡与「问问自己」输入框已随迁第 5 步(2026-09-02 实施补注:
 /// 收尾带「下次复盘会给你看」承诺,且洞察步被降级跳过时第 3 步整步不出,
@@ -17,13 +19,6 @@ struct ReviewStepInsights: View {
     /// 具体任务执行一个具体动作,有下游行为——与 2026-08-22 移除的「只存档
     /// 不驱动」的存规则链路不是一回事,docs v2 已辨析)。
     let onAbandonTask: (UUID) -> Void
-
-    /// 引擎跑出的结果(.task 里算一次存 State,不放 body)。
-    @State private var rankedResults: [InsightResult] = []
-    /// 已实现规则的占位行(「还需 N 条」,§2.3:必须写清还差多少)。
-    @State private var placeholders: [(id: InsightID, needMore: Int)] = []
-    /// 降级阶梯的「再记 N 条」提示(5–14 档,只跑 02 时的预告)。
-    @State private var ladderNeedMore: Int?
 
     var body: some View {
         ScrollView {
@@ -41,100 +36,13 @@ struct ReviewStepInsights: View {
             .padding(.horizontal, WarmSpacing.lg)
             .padding(.bottom, WarmSpacing.xxl)
         }
-        .task { runEngine() }
-        // 原料是异步到达的(流程启动 .task 加载/失败重试):挂载时可能还没就绪,
-        // 就绪或重试成功后必须重算,否则卡片区空白(错误恢复路径)。
-        .onChange(of: state.insightContextValue) { _, _ in runEngine() }
-    }
-
-    // MARK: 引擎
-
-    /// 跑四条规则(02/03 v1 + 01/05 2026-08-23 拍板启用),按 ladder 裁剪,
-    /// score 降序(§阶段 3);触发后先过冷却(§2.4,阶段 4 接真历史):不满足
-    /// 任一放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
-    /// 放行换 improving 文案。
-    private func runEngine() {
-        guard let context = state.insightContextValue else { return }
-        let calendar = Calendar.current
-        let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
-
-        var results: [InsightResult] = []
-        var newPlaceholders: [(InsightID, Int)] = []
-
-        let rotting = RottingRule().evaluate(context, calendar: calendar)
-        collect(rotting, id: .rotting, into: &results, &newPlaceholders)
-
-        if ladder == .full {
-            let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
-            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
-
-            // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
-            // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
-            let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
-            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders)
-
-            let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
-            collect(energy, id: .energyWindow, into: &results, &newPlaceholders)
-        }
-
-        // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
-        let cooled = results.compactMap { result -> InsightResult? in
-            applyCooldown(result)
-        }
-        let ranked = InsightEngine.rank(cooled)
-        // 展示过的才进冷却历史(被过滤掉的不记)。重跑先清空:上一轮展示过、
-        // 这一轮被冷却过滤的洞察不该留在历史里。
-        state.resetShownInsights()
-        ranked.forEach { state.recordShownInsight($0) }
-
-        rankedResults = ranked
-        placeholders = newPlaceholders
-        ladderNeedMore = ladder.rottingOnlyNeedMore
-    }
-
-    /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
-    /// `InsightEngine.cooldown` 三条件。`.effectChanged(improved: true)` 换 improving 文案。
-    private func applyCooldown(_ result: InsightResult) -> InsightResult? {
-        guard let input = ReviewCooldownHistory.input(
-            insightID: result.id,
-            sessions: state.previousSessions,
-            currentEffectSize: result.effectSize,
-            lowerIsBetter: true
-        ) else {
-            return result // 无历史:第一次展示,放行
-        }
-        switch InsightEngine.cooldown(input) {
-        case .success(let reason):
-            if case .effectChanged(let improved) = reason, improved {
-                return result.withTone(.improving)
-            }
-            return result
-        case .failure:
-            return nil // 冷却中:本期不展示
-        }
-    }
-
-    private func collect(
-        _ availability: InsightAvailability,
-        id: InsightID,
-        into results: inout [InsightResult],
-        _ placeholders: inout [(InsightID, Int)]
-    ) {
-        switch availability {
-        case .fired(let result):
-            results.append(result)
-        case .placeholder(let needMore):
-            placeholders.append((id, needMore))
-        case .hidden:
-            break
-        }
     }
 
     // MARK: 卡片
 
     @ViewBuilder
     private var cards: some View {
-        ForEach(Array(rankedResults.enumerated()), id: \.element.id) { _, result in
+        ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
                 result: result,
                 onOpenTask: result.id == .rotting ? { todoId in
@@ -151,12 +59,18 @@ struct ReviewStepInsights: View {
         placeholderSummaryRow
     }
 
-    /// 占位合并(2026-09-01 拍板 6):不再逐条 ForEach 堆叠——刺眼的是四行
-    /// 「再记 N 条」的堆叠,不是单条文案。取最严的一条门槛,一行说完。
+    /// 占位行(v3 拍板 7:仍然只出一行——拍板 6 反对的是四行堆叠——但这一行
+    /// 说真话):按 `InsightID.placeholderPriority` 固定优先序选条,不比
+    /// needMore 数值(三条规则缺口量纲不同,比大小会随机推荐更难达成的条件);
+    /// 文案经 `InsightID.placeholderText(needMore:)`——键里的 id 段必须是
+    /// 静态字面量(String 插值进键会变 %@,catalog 按 id 命名,查不到整串
+    /// 回落键名),文案里的动作照做能真的解锁(effortOrdering 的解锁是
+    /// **完成** 3 条高优——「标」优先级不解锁,写「做完」)。
     @ViewBuilder
     private var placeholderSummaryRow: some View {
-        if let maxNeedMore = placeholders.map(\.needMore).max() {
-            Text(String(localized: "review.flow.insights.need_more_merged_\(maxNeedMore)"))
+        if let pick = InsightID.firstPlaceholder(in: state.insightPlaceholders),
+           let text = pick.id.placeholderText(needMore: pick.needMore) {
+            Text(text)
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
                 .lineLimit(2)
@@ -171,7 +85,7 @@ struct ReviewStepInsights: View {
     /// N = 完成事件里最早的记录距今天的周数(向上取整,至少 1)。
     @ViewBuilder
     private func ladderHint(context: InsightContext) -> some View {
-        if ladderNeedMore != nil {
+        if state.ladderNeedMore != nil {
             Text(String(localized: "review.flow.insights.minimal_fact_\(weeksOfRecords(context))"))
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
@@ -208,14 +122,4 @@ struct ReviewStepInsights: View {
         }
     }
 
-}
-
-// MARK: - 降级阶梯便捷取值
-
-extension InsightEngine.Ladder {
-    /// rottingOnly 档的 needMore(其他档 nil)。
-    var rottingOnlyNeedMore: Int? {
-        if case .rottingOnly(let needMore) = self { return needMore }
-        return nil
-    }
 }

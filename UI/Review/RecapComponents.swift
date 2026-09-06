@@ -6,6 +6,27 @@ import SwiftUI
 // 「入口与既有页面」):`ReviewView`(日常随手看)与 `ReviewStepRecap`(五步流程
 // 第 1 步,压到 10 秒能看完)共用,**别在两处复制**。纯搬移重构,视觉/行为零变化。
 
+/// Hero 主标题内容(v3 拍板 2):回顾页默认 = 完成数;复盘第 1 步在有上次
+/// 置顶结局时升级为兑现判词。沿用 `promotesSameDay` 的参数化模式——
+/// 默认值 = 回顾页现状,回顾页调用点零变化(审阅缺口 A)。
+enum RecapHeroContent: Equatable {
+    /// 回顾页现状:大数字 + 周期标签。
+    case countSummary
+    /// 兑现判词(v3 ① 屏主副对调):上次置顶的结局当主标题,完成数降为
+    /// `RecapEvidenceRow` 的 Done 卡。
+    case pinnedOutcome(total: Int, completed: Int)
+
+    /// 三态判定(docs v3 ① 改动 2):有上次置顶结局 → 兑现判词(total =
+    /// 完成 + 待处理);nil(首次复盘 / 上次没置顶 / 上次置顶的已全删)→
+    /// 回退完成数句式——不硬造「上次没有承诺」的空标题,兑现判词是有上次
+    /// 承诺才有的话。收进工厂(而非视图私有计算)是为了可单测
+    /// (docs v3 验证章「Hero 三态」)。
+    static func make(lastPinnedOutcome: (completed: Int, pending: Int)?) -> RecapHeroContent {
+        guard let outcome = lastPinnedOutcome else { return .countSummary }
+        return .pinnedOutcome(total: outcome.completed + outcome.pending, completed: outcome.completed)
+    }
+}
+
 /// Hero 区:大数字 + 周期标签。
 struct RecapHeroSection: View {
     let summary: ReviewSummary
@@ -13,19 +34,47 @@ struct RecapHeroSection: View {
     /// 当天做完」与总数同级呈现。默认 false = 回顾页原样(13pt 副行)——
     /// 本组件两页共用(见文件头),回顾页行为不动(审阅缺口 A)。
     var promotesSameDay: Bool = false
+    /// 主标题内容(v3 拍板 2)。默认 = 回顾页现状;复盘第 1 步传
+    /// `.pinnedOutcome` 或(空态回退)`.countSummary`——不硬造「上次没有
+    /// 承诺」的空标题,兑现判词是有上次承诺才有的话。
+    var heroContent: RecapHeroContent = .countSummary
+
+    /// sameDay 判词门槛(v3 ① 改动 4):占比(分子分母同为一次性完成口径)
+    /// **严格超过**该值时出判词。注意文案约束:门槛 < 50% 时当天组可能仍是
+    /// 少数,判词只允许「相当一部分」级别的份额事实,不写「更多/更少」比较级
+    /// ——改门槛必须连同 `review.hero.sameday_judgment` 三语文案复核。
+    static let sameDayJudgmentThreshold = 0.4
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
-            Text(String(localized: "review.hero.count_\(summary.total)"))
-                .font(WarmFont.serifDisplay(40))
-                .foregroundColor(WarmTheme.primary)
-                .accessibilityIdentifier("ReviewHeroCount")
+            switch heroContent {
+            case .countSummary:
+                Text(String(localized: "review.hero.count_\(summary.total)"))
+                    .font(WarmFont.serifDisplay(40))
+                    .foregroundColor(WarmTheme.primary)
+                    .accessibilityIdentifier("ReviewHeroCount")
 
-            Text(summary.periodLabel)
-                .font(WarmFont.caption(14))
-                .foregroundColor(WarmTheme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                Text(summary.periodLabel)
+                    .font(WarmFont.caption(14))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+            case .pinnedOutcome(let total, let completed):
+                // 兑现判词主标题(v3 拍板 2):周期标签不跟——它描述的是
+                // 完成数窗口,而判词说的是上次置顶那批的结局,两个口径。
+                Text(String(
+                    localized: "review.flow.recap.pinned_outcome_hero_\(total)_\(completed)"
+                ))
+                    .font(WarmFont.serifDisplay(32))
+                    .foregroundColor(WarmTheme.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .accessibilityIdentifier("ReviewHeroPinnedOutcome")
+            }
 
             // 「当天记、当天做完」件数(2026-08-21 用户拍板加上)。区间内没有
             // 完成时不显示——「其中 0 件」是噪音。一次性任务口径,与洞察 03 一致。
@@ -40,9 +89,36 @@ struct RecapHeroSection: View {
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, WarmSpacing.xl)
+
+                // sameDay 判词(v3 ① 改动 4,仅复盘第 1 步):占比超门槛时接
+                // 一句判定,判定在 `summary.showsSameDayJudgment`(可单测,
+                // 含同口径分母与门槛边界)。
+                if promotesSameDay, summary.showsSameDayJudgment {
+                    Text(String(localized: "review.hero.sameday_judgment"))
+                        .font(WarmFont.caption(13))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, WarmSpacing.xl)
+                }
             }
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+extension ReviewSummary {
+    /// sameDay 判词是否出(v3 ① 改动 4):分子分母同为一次性完成口径
+    /// (`sameDayCount / oneOffCompletionCount`,审阅修订二——分母不是 total,
+    /// total 含规律完成会被抬高、占比被系统性低估),占比**严格大于** 40%
+    /// 门槛才出;分母为 0 不出。收进本扩展(而非 View body)是为了可单测
+    /// (docs v3 验证章的门槛边界回归护栏)。
+    var showsSameDayJudgment: Bool {
+        oneOffCompletionCount > 0
+            && Double(sameDayCount) / Double(oneOffCompletionCount)
+                > RecapHeroSection.sameDayJudgmentThreshold
     }
 }
 
@@ -72,28 +148,45 @@ struct RecapStatsRow: View {
 /// 还挂着 K」——判词的证据链,清单在变长还是变短,三个数并排自己会说。
 /// 数字口径见 `ReviewSummary.createdCount` / `pendingOneOffCount` 注释
 /// (还挂着与入口卡「N 件事等你决定」、第 2 步卡堆同源)。
+/// v3 拍板 3:Done/Added 已同窗(拍板 1),Still open 是全时段口径——
+/// 差异必须说出口,补一行 caption 说明;**不写减法算式**(Added − Done
+/// 不是任何真实集合,算式上屏就是新的自相矛盾)。
 struct RecapEvidenceRow: View {
     let summary: ReviewSummary
 
     var body: some View {
-        HStack(spacing: WarmSpacing.md) {
-            RecapStatCard(
-                icon: "checkmark.circle",
-                value: "\(summary.total)",
-                label: String(localized: "review.stat.done")
-            )
+        VStack(spacing: WarmSpacing.xxs) {
+            HStack(spacing: WarmSpacing.md) {
+                RecapStatCard(
+                    icon: "checkmark.circle",
+                    value: "\(summary.total)",
+                    label: String(localized: "review.stat.done")
+                )
 
-            RecapStatCard(
-                icon: "plus.circle",
-                value: "\(summary.createdCount)",
-                label: String(localized: "review.stat.created")
-            )
+                RecapStatCard(
+                    icon: "plus.circle",
+                    value: "\(summary.createdCount)",
+                    label: String(localized: "review.stat.created")
+                )
 
-            RecapStatCard(
-                icon: "tray",
-                value: "\(summary.pendingOneOffCount)",
-                label: String(localized: "review.stat.pending")
-            )
+                RecapStatCard(
+                    icon: "tray",
+                    value: "\(summary.pendingOneOffCount)",
+                    label: String(localized: "review.stat.pending")
+                )
+            }
+
+            // 零积压时这行没有对象,不出。
+            if summary.pendingOneOffCount > 0 {
+                Text(String(localized: "review.stat.pending_note_\(summary.pendingOneOffCount)"))
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, WarmSpacing.md)
+            }
         }
     }
 }
@@ -342,19 +435,24 @@ struct ReviewNotesListView: View {
     }
 }
 
-// MARK: - 月度摘要构建(共用聚合逻辑)
+// MARK: - 摘要构建(共用聚合逻辑)
 
-/// 把 @Query 原料聚合成近一个月的 `ReviewSummary`(ReviewView 与复盘第 1 步共用,
-/// 避免 40 行聚合逻辑复制两份)。口径:
+/// 把 @Query 原料聚合成 `ReviewSummary`。两个窗口(ReviewView 与复盘第 1 步
+/// 共用聚合核,避免 40 行逻辑复制两份):
+/// - `monthSummary`:滚动 30 天(回顾页 / 统计页);
+/// - `weekSummary(since:)`:上次复盘至今(v3 拍板 1,复盘第 1 步专用;
+///   首次复盘回落近 7 天)。
+/// 口径:
 /// - 一次性完成 + 规律任务完成记录 union;
 /// - 未来 7 天到期数作统计卡副文案(完成率已下岗,2026-08-23)。
 enum RecapSummaryBuilder {
+    /// 滚动 30 天窗口。
     /// - Parameters:
     ///   - today: 参照「今天」。
     ///   - calendar: 日历(日界走 `DayClock` 用户日)。
     ///   - periodLabel: 周期标签覆盖值。窗口是滚动 30 天,默认日历月名与区间
-    ///     错位;两个生产调用方(`ReviewView` / `ReviewStepRecap`)都传
-    ///     「近 30 天」,缺省保留旧行为(日历月名)。
+    ///     错位;两个生产调用方(`ReviewView` / 统计页)都传「近 30 天」,
+    ///     缺省保留旧行为(日历月名)。
     ///   - allTodos: 全量待办 DTO(不过滤完成态——分母与分类表都要查父任务)。
     ///   - completedTodos: 已完成的一次性待办 DTO。
     ///   - recurringCompletions: 规律任务完成记录(todoId + completedAt)。
@@ -374,6 +472,64 @@ enum RecapSummaryBuilder {
         // 传入时以传入为准;缺省保留日历月名旧行为——零回归,未列出的调用方不受影响。
         let label = periodLabel ?? (calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today)
             .formatted(.dateTime.year().month(.abbreviated))
+        return buildSummary(
+            today: today,
+            calendar: calendar,
+            label: label,
+            start: start,
+            end: end,
+            allTodos: allTodos,
+            completedTodos: completedTodos,
+            recurringCompletions: recurringCompletions
+        )
+    }
+
+    /// 上次复盘至今的窗口(v3 拍板 1,复盘第 1 步专用)。
+    ///
+    /// 起点取上次复盘**完成时刻**的用户日(与提醒节奏「每周一」对齐——复盘
+    /// 窗口跟着复盘走,不跟日历月走);`since == nil`(首次复盘)回落近 7 天。
+    /// `periodLabel` 是窗口本身的描述(「8月28日–9月4日」),不是日历月名——
+    /// 窗口滚动,月名必然错配(与 tab 拍板 B2 同一结论,回归护栏在测试里)。
+    /// 注意:`pendingOneOffCount` 保持全时段口径(与 ② 屏卡堆/入口卡三处
+    /// 同源是硬约束,修正 C),窗口只影响 Done/Added/分类/按天。
+    static func weekSummary(
+        since: Date?,
+        today: Date = Date(),
+        calendar: Calendar = Calendar.current,
+        allTodos: [TodoItemData],
+        completedTodos: [TodoItemData],
+        recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
+    ) -> ReviewSummary {
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
+        let sinceDay = since.map { DayClock.startOfUserDay(for: $0, calendar: calendar) }
+            ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
+        let end = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+        // 展示到「今天」(闭端);统计 end 是明天 0 点(开端)——同一约定。
+        let label = "\(sinceDay.formatted(.dateTime.month(.abbreviated).day()))–\(todayStart.formatted(.dateTime.month(.abbreviated).day()))"
+        return buildSummary(
+            today: today,
+            calendar: calendar,
+            label: label,
+            start: sinceDay,
+            end: end,
+            allTodos: allTodos,
+            completedTodos: completedTodos,
+            recurringCompletions: recurringCompletions
+        )
+    }
+
+    /// 两窗口共用的聚合核(私有):窗口与标签由调用方定,口径此处单一来源。
+    private static func buildSummary(
+        today: Date,
+        calendar: Calendar,
+        label: String,
+        start: Date,
+        end: Date,
+        allTodos: [TodoItemData],
+        completedTodos: [TodoItemData],
+        recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
+    ) -> ReviewSummary {
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
 
         let upcomingDueIn7DaysCount = allTodos.filter { item in
@@ -410,6 +566,14 @@ enum RecapSummaryBuilder {
             to: end,
             calendar: calendar
         )
+        // sameDay 判词的同口径分母(v3 审阅修订二):只数一次性完成,
+        // 与展示数 total(含规律完成)是两个口径,别合并(见 ReviewSummary 注释)。
+        let oneOffCompletionCount = ReviewAggregator.oneOffCompletions(
+            completedTodos,
+            from: start,
+            to: end,
+            calendar: calendar
+        )
         // 判词证据链的另两个数(2026-09-01 拍板):新增(不过滤规律)与
         // 还挂着(与入口卡/卡堆同口径)。allTodos 不过滤完成态。
         let createdCount = ReviewAggregator.createdInWindow(
@@ -431,7 +595,8 @@ enum RecapSummaryBuilder {
             daysWithCompletion: result.daysWithCompletion,
             sameDayCount: sameDayCount,
             createdCount: createdCount,
-            pendingOneOffCount: pendingOneOffCount
+            pendingOneOffCount: pendingOneOffCount,
+            oneOffCompletionCount: oneOffCompletionCount
         )
     }
 }

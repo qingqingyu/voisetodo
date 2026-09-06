@@ -36,14 +36,19 @@ struct ReviewStepLedger: View {
         }
     }
 
-    // MARK: 主卡(拍板 4:决定了 N 件,批量推后单独一行)
+    // MARK: 主卡(拍板 4:决定了 N 件,批量推后单独一行;v3 拍板 10:永远在)
 
-    /// 全零(没决定任何一件、也没批量推后)时整卡不出——「你决定了 0 件」
-    /// 是审判,不是确认。
+    /// 三态(v3 拍板 10,修发现 D):判定收敛在 `state.ledgerCardContent`
+    /// (含边界:全零且零积压不出卡),本视图只按态渲染。
+    /// (注:全零态不渲染 `summary_caption`——那句「你的每个决定,都在这串
+    /// 数字里」在零决定下自相矛盾,文案三语均为决定语义。)
     @ViewBuilder
     private var summaryCard: some View {
         let ledger = state.ledger
-        if state.decidedCount > 0 || ledger.somedayCount > 0 {
+        switch state.ledgerCardContent {
+        case .decided, .batchOnly:
+            // 内部两个 if(decidedCount / somedayCount)与判定态同源:
+            // .decided → 判词行 + caption;.batchOnly → 只批量行。
             RecapCard {
                 VStack(spacing: WarmSpacing.xs) {
                     if state.decidedCount > 0 {
@@ -82,6 +87,20 @@ struct ReviewStepLedger: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+        case .noneDecided:
+            // 全零态(v3 拍板 10):N 用 init 快照(与 ② 屏 lede 同源同恒定),
+            // 回答「那 25 件去哪了」;不加 caption——见上方注释。
+            RecapCard {
+                Text(String(localized: "review.flow.ledger.decided_none_\(state.initialBacklogCount)"))
+                    .font(WarmFont.headline(17))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case .omitted:
+            EmptyView()
         }
     }
 

@@ -158,6 +158,93 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(state.currentStep, .insights)
     }
 
+    // MARK: 空洞察整步跳过(v3 拍板 7:引擎零结果比空屏 + 错误指令的占位行更该跳)
+
+    /// 15 条完成(进 .full 档)但一条规则都不触发:无高优(effort 占位)、
+    /// 无带钟点高优(energy hidden)、救火占比 5/15 = 0.33 落中间带(reactive
+    /// hidden)、无未完成任务(rotting hidden)——rankedResults 空 → 整步跳过,
+    /// advance/retreat 与降级跳过走同一路径。
+    func testEmptyInsightResultsSkipInsightsStep() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let now = Date()
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: now) ?? now
+        let events = (0..<15).map { index in
+            InsightCompletedEvent(
+                todoId: UUID(),
+                createdAt: index < 5 ? now : threeDaysAgo,
+                completedAt: now,
+                category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+            )
+        }
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertFalse(state.skipsInsights, "15 条完成,降级阶梯放行")
+        XCTAssertTrue(state.skipsInsightsWhenEmpty, "引擎零结果——整步跳过")
+        XCTAssertTrue(state.rankedResults.isEmpty)
+        XCTAssertEqual(state.insightPlaceholders.count, 1)
+        XCTAssertEqual(state.insightPlaceholders.first?.id, .effortOrdering, "唯一占位:高优组缺口")
+        XCTAssertEqual(state.insightPlaceholders.first?.needMore, 3)
+        state.advance()
+        XCTAssertEqual(state.currentStep, .commit, "空洞察从第 2 步直达第 4 步")
+        state.retreat()
+        XCTAssertEqual(state.currentStep, .triage, "反向对称")
+    }
+
+    /// 引擎有结果 → 第 3 步照常出现(15 条全部「记下当天做完」→ 救火占比
+    /// 100% ≥ 50%,reactive 触发)。
+    func testNonEmptyInsightResultsKeepInsightsStep() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let events = (0..<15).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: Date(), completedAt: Date(),
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: Date(), to: Date(),
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertFalse(state.skipsInsightsWhenEmpty)
+        XCTAssertFalse(state.rankedResults.isEmpty)
+        state.advance()
+        XCTAssertEqual(state.currentStep, .insights, "有洞察正常停第 3 步")
+    }
+
+    /// 降级跳过时引擎**不跑**(v3 拍板 7 引擎前移的回归护栏):<5 条完成 →
+    /// 第 3 步整步跳过,旧实现引擎(视图 .task)从不执行、shownInsights 恒空;
+    /// 前移后若照跑,腐烂规则(单条停滞 ≥21 天即触发)会在从未展示的情况下
+    /// 进冷却历史并随会话持久化——「展示过的才进冷却历史」被破坏。夹具:
+    /// 3 条完成(skipStep)+ 一条 30 天前记下的未完成任务(腐烂必触发,
+    /// 引擎照跑时本条会红)。
+    func testSkippedLadderDoesNotRecordShownInsights() {
+        let state = ReviewFlowState(todos: [])
+        let now = Date()
+        let staleSince = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
+        let events = (0..<3).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events,
+            openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾")],
+            dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        XCTAssertTrue(state.skipsInsights, "3 条完成 < 5 → 降级跳过")
+
+        state.runInsightEngine()
+        XCTAssertTrue(state.rankedResults.isEmpty, "跳过路径引擎不产出(腐烂照跑会非空)")
+        XCTAssertTrue(state.shownInsights.isEmpty, "从未展示 → 冷却历史必须为空")
+        XCTAssertTrue(state.buildSession(completedAt: now).shownInsights.isEmpty, "会话落库不带幽灵记录")
+    }
+
     // MARK: 账本计数
 
     func testLedgerCounts() {
@@ -371,6 +458,23 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(first.askDomainHintCategory, .work)
         XCTAssertEqual(second.askDomainHintCategory, .life)
     }
+
+    /// v3 拍板 11:`.other` 排除出轮换——它是兜底分类(AI 解析失败的落点),
+    /// 「其他方面怎么样」不是问题;快照全为 `.other` → nil(提示行隐藏)。
+    func testAskDomainHintExcludesOtherBucket() {
+        let onlyOther = [todo("x", category: .other), todo("y", category: .other)]
+        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: onlyOther, rotationSeed: 0),
+                     "只有兜底分类 → 无可问,提示行隐藏")
+
+        let mixed = [todo("w", category: .work), todo("o", category: .other)]
+        for seed in 0...3 {
+            XCTAssertNotEqual(
+                ReviewFlowState.askDomainHintCategory(todos: mixed, rotationSeed: seed),
+                .other,
+                "任何 seed 都不把 .other 当提问对象"
+            )
+        }
+    }
 }
 
 // MARK: - v2 · 排序截断 + 批量出口(2026-09-01 拍板 1/2/3,docs/todo-review-flow-v2.md)
@@ -497,12 +601,13 @@ extension ReviewFlowStateTests {
     }
 
     /// 「决定了 N 件」= 逐张决定四去向之和;批量推后不算,划掉撤销会回退(拍板 4)。
+    /// 全零时 ⑤ 屏主卡走 v3「原样留着」文案(decidedCount == 0 是它的前提)。
     func testDecidedCountExcludesSomedayAndRespectsUndo() {
         let state = ReviewFlowState(todos: [
             todo("a", daysOld: 30), todo("b", daysOld: 20),
             todo("c", daysOld: 10), todo("d", daysOld: 5),
         ])
-        XCTAssertEqual(state.decidedCount, 0, "全零——收尾主卡不出")
+        XCTAssertEqual(state.decidedCount, 0, "全零——⑤ 屏主卡走「原样留着」文案(v3 拍板 10)")
 
         let items = state.deck
         state.markScheduled(items[0])
@@ -520,6 +625,80 @@ extension ReviewFlowStateTests {
         batchState.markSomedayBatchExecuted(batch: batchState.somedayBatchCandidates)
         XCTAssertEqual(batchState.decidedCount, 0)
         XCTAssertEqual(batchState.ledger.somedayCount, 3)
+    }
+
+    /// initialBacklogCount(v3 ②/⑤):init 一次算好的快照——逐张决定(deck 缩、
+    /// processedIDs 涨)与批量推「稍后」(tail 缩水)都不改变它;它存在的理由
+    /// 就是防「渲染期动态求值导致同屏跳数」。与 ① 屏实时 @Query 的有意分叉
+    /// 见 `ReviewFlowState.initialBacklogCount` 注释。
+    func testInitialBacklogCountIsInitSnapshot() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let olds = (0..<3).map { todo("old\($0)", daysOld: 40 + $0) }
+        let state = ReviewFlowState(todos: fillers + olds)
+        XCTAssertEqual(state.initialBacklogCount, 11, "排序前 triageInput 总数(deck 8 + tail 3)")
+
+        if let top = state.deck.first {
+            state.markAbandoned(top)
+        }
+        state.markSomedayBatchExecuted(batch: state.somedayBatchCandidates)
+        XCTAssertEqual(state.initialBacklogCount, 11, "处理后快照恒定——deck/tail/ledger 怎么动都不影响")
+    }
+
+    /// ⑤ 屏主卡四态(v3 拍板 10,docs v3 验证章「ReviewStepLedger 三态」):
+    /// 全零 + 有积压 → noneDecided(「这次一件都没决定,N 件原样留着」——
+    /// 名叫 Ledger 的屏上不能没有账本);全零 + 零积压 → omitted(N==0 边界,
+    /// 审阅修订一:「0 件原样留着」是噪音);有决定 → decided;零决定 +
+    /// 批量 → batchOnly。视图只按态渲染,别在视图里重写条件。
+    func testLedgerCardContentFourStates() {
+        // 全零 + 有积压 → noneDecided(复用 testDecidedCount 的夹具口径)。
+        let state = ReviewFlowState(todos: [
+            todo("a", daysOld: 30), todo("b", daysOld: 20),
+            todo("c", daysOld: 10), todo("d", daysOld: 5),
+        ])
+        XCTAssertEqual(state.ledgerCardContent, .noneDecided, "全零但有积压——「原样留着」")
+
+        // 有决定 → decided(批量照常另起一行,不改变态)。
+        if let top = state.deck.first {
+            state.markAbandoned(top)
+        }
+        XCTAssertEqual(state.ledgerCardContent, .decided)
+
+        // 零决定 + 批量 → batchOnly(tail 需 ≥30 天 parsed 候选才出批量)。
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let batchState = ReviewFlowState(todos: fillers + (0..<3).map { todo("old\($0)", daysOld: 40 + $0) })
+        batchState.markSomedayBatchExecuted(batch: batchState.somedayBatchCandidates)
+        XCTAssertEqual(batchState.ledgerCardContent, .batchOnly, "零决定但有批量——只出批量行")
+
+        // 全零 + 零积压(本期本就没有待处理)→ omitted,整卡不出。
+        let empty = ReviewFlowState(todos: [])
+        XCTAssertEqual(empty.ledgerCardContent, .omitted, "N == 0 边界——不渲染主卡")
+    }
+
+    /// 第 4 步候选池排序(v3 拍板 8):preexistingNextWeek 按停滞天数降序
+    /// (原实现是 store.todos 原始序,连排都没排);同天数 id 决胜。
+    func testPreexistingNextWeekSortedByStagnation() {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.weekday = 2 // 周一,与 nextWeekCommitted 同一取窗
+        let nextMonday = calendar.nextDate(after: Date(), matching: components, matchingPolicy: .nextTime)!
+        let due = DayClock.userDayStart(onNaturalDay: nextMonday, calendar: calendar)
+
+        let state = ReviewFlowState(todos: [
+            todo("young", daysOld: 1, dueDate: due),
+            todo("mid", daysOld: 10, dueDate: due),
+            todo("old", daysOld: 30, dueDate: due),
+            todo("nodue", daysOld: 5), // 无日期,不进候选池
+        ])
+        XCTAssertEqual(
+            state.preexistingNextWeek.map(\.title),
+            ["old", "mid", "young"],
+            "停滞天数降序——放得最久的排最前"
+        )
+
+        // 同停滞天数:id 升序决胜(确定性,与 TriageRanking.rank 同款)。
+        let sameAge = [todo("a", daysOld: 7, dueDate: due), todo("b", daysOld: 7, dueDate: due)]
+        let ranked = TriageRanking.sortByStagnation(sameAge, now: Date())
+        XCTAssertEqual(ranked.map(\.id.uuidString), sameAge.map(\.id.uuidString).sorted())
     }
 
     /// 旧 payload(无 somedayCount 键)解码 → 默认 0;混排列表不拖垮整体。

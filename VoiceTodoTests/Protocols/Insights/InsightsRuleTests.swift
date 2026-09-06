@@ -340,6 +340,56 @@ final class InsightsRuleTests: XCTestCase {
         )
         XCTAssertEqual(interval, .success(.intervalElapsed))
     }
+
+    // MARK: 占位行选取(v3 ③ 拍板 7)
+
+    /// 选条按 `placeholderPriority` 固定优先序,**不比 needMore 数值**——三条
+    /// 规则缺口量纲不同(高优完成 vs 完成记录),比大小会随机推荐更难达成的
+    /// 条件。对抗夹具:effortOrdering(3) 数值上比 energyWindow(2) 更大,
+    /// 仍必须选 effortOrdering——按「取最小」实现的代码会在这条上红。
+    /// 走查场景恰好只有一条占位,min/max/优先序结果相同,此错走查不可能暴露。
+    func testPlaceholderPicksByPriorityNotByValue() {
+        let both: [(id: InsightID, needMore: Int)] = [
+            (id: .energyWindow, needMore: 2),
+            (id: .effortOrdering, needMore: 3),
+        ]
+        XCTAssertEqual(InsightID.firstPlaceholder(in: both)?.id, .effortOrdering)
+
+        let reactiveOnly: [(id: InsightID, needMore: Int)] = [(id: .reactiveVsPlanned, needMore: 5)]
+        XCTAssertEqual(InsightID.firstPlaceholder(in: reactiveOnly)?.id, .reactiveVsPlanned)
+
+        XCTAssertNil(InsightID.firstPlaceholder(in: []), "无占位 → 行不渲染")
+    }
+
+    /// 占位文案键映射(v3 拍板 7):三条可占位规则按 id 出**静态字面量**键,
+    /// rotting/预留 id 无占位文案 → nil(行不渲染)。断言环境无关:swift test
+    /// (无 catalog)回落「键模式 + 实参」,app 宿主测试(catalog 在场)返回
+    /// 真文案——两环境都成立的是:非 nil、三条互不相同(同 N 不同串 ⇒ 键
+    /// 各自命中,防 id↔键错接)、文案含 N。⚠️ 若有人把键改回
+    /// `"\(...rawValue)"` 动态拼键,运行时查 `need_more.%@_%lld`(catalog
+    /// 无此键,真机整串回落键名)——该构造约束由 `placeholderText` 的
+    /// 静态字面量与注释保证,单测两环境下无法区分动态拼键,不在此断言。
+    func testPlaceholderTextKeyedStaticallyById() {
+        let effort = InsightID.effortOrdering.placeholderText(needMore: 3)
+        let energy = InsightID.energyWindow.placeholderText(needMore: 3)
+        let reactive = InsightID.reactiveVsPlanned.placeholderText(needMore: 3)
+
+        XCTAssertNotNil(effort)
+        XCTAssertNotNil(energy)
+        XCTAssertNotNil(reactive)
+        // 同 N 三条互不相同 ⇒ 三个 id 各自命中各自的键。
+        XCTAssertNotEqual(effort, energy)
+        XCTAssertNotEqual(effort, reactive)
+        XCTAssertNotEqual(energy, reactive)
+        // N 段进了文案(回落键模式与三语真文案都含 N)。
+        XCTAssertTrue(effort?.contains("3") == true, "文案携带 needMore: \(String(describing: effort))")
+        XCTAssertTrue(energy?.contains("3") == true)
+        XCTAssertTrue(reactive?.contains("3") == true)
+
+        XCTAssertNil(InsightID.rotting.placeholderText(needMore: 1), "rotting 无占位分支")
+        XCTAssertNil(InsightID.brokenPromises.placeholderText(needMore: 1), "04 未实现")
+        XCTAssertNil(InsightID.weeklyDecay.placeholderText(needMore: 1), "06 未实现")
+    }
 }
 
 // MARK: - 01 先易后难(2026-08-23 启用)
@@ -440,6 +490,21 @@ final class EffortOrderingRuleTests: XCTestCase {
             return XCTFail("01-D 应 placeholder")
         }
         XCTAssertEqual(needMore, 1)
+    }
+
+    /// 01-E 对照组不足(高优已满 ≥3、其他 <3)**不出占位**:该分支缺口在
+    /// 非高优组,按 effortOrdering 占位键写「做完 N 条高优」照做永不解锁
+    /// (v3 ③ 验收禁止);诚实建议(去做普通任务以解锁)违反反 gaming
+    /// 章程——没有可诚实建议的动作就不说。走查场景不会碰到(priority 可
+    /// 手改,高优重度用户可达),此错只能靠本测试挡。
+    func test01E_otherGroupTooSmall_noPlaceholder() throws {
+        let now = try date(2026, 8, 21)
+        let high = (0..<4).map { _ in event(createdDaysAgo: 10, spanDays: 1, priority: .high, now: now) }
+        let other = (0..<2).map { _ in event(createdDaysAgo: 10, spanDays: 1, priority: .normal, now: now) }
+        let ctx = makeContext(now: now, completed: high + other)
+        guard case .hidden = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("01-E 高优已满、对照组不足应 hidden,不得出高优口径占位")
+        }
     }
 }
 

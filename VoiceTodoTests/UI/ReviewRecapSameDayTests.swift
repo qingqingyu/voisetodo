@@ -290,4 +290,175 @@ final class ReviewRecapSameDayTests: XCTestCase {
         XCTAssertEqual(summary.createdCount, 2)
         XCTAssertEqual(summary.pendingOneOffCount, 2, "两件未完成的一次性(本月一件 + 上月一件)")
     }
+
+    // MARK: - weekSummary(v3 拍板 1:窗口 = 上次复盘至今)
+
+    /// 起点取 since 的用户日(含),窗口外不计——不是滚动 30 天。
+    func testWeekSummary_startIsSince_notRollingMonth() throws {
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [
+                TodoItemData(title: "起点当天", isCompleted: true, completedAt: try noon(2026, 8, 28), createdAt: try noon(2026, 8, 27)),
+                TodoItemData(title: "起点前一天", isCompleted: true, completedAt: try noon(2026, 8, 27), createdAt: try noon(2026, 8, 27)),
+                TodoItemData(title: "今天", isCompleted: true, completedAt: try noon(2026, 9, 4), createdAt: try noon(2026, 9, 4)),
+            ],
+            recurringCompletions: []
+        )
+        XCTAssertEqual(summary.total, 2, "8/28(含)起:起点前一天不计,起点当天与今天计入")
+    }
+
+    /// since == nil(首次复盘)→ 回落近 7 天。
+    func testWeekSummary_firstReviewFallsBackTo7Days() throws {
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: nil,
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [
+                TodoItemData(title: "8 天前", isCompleted: true, completedAt: try noon(2026, 8, 27), createdAt: try noon(2026, 8, 27)),
+                TodoItemData(title: "7 天前", isCompleted: true, completedAt: try noon(2026, 8, 28), createdAt: try noon(2026, 8, 28)),
+            ],
+            recurringCompletions: []
+        )
+        XCTAssertEqual(summary.total, 1, "窗口 = 8/28(含)–9/5(不含),8/27 不计")
+    }
+
+    /// 回归护栏:periodLabel 是窗口描述(月日),不是日历月名——月名格式带
+    /// 年份(「Sep 2026」/「2026年9月」),窗口描述只有月日;「滚动窗口配
+    /// 日历月名」的错配正是 v3 拍板 1 要修的。
+    func testWeekSummary_periodLabelIsWindowRange_notCalendarMonth() throws {
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [],
+            recurringCompletions: []
+        )
+        XCTAssertFalse(summary.periodLabel.isEmpty)
+        XCTAssertFalse(summary.periodLabel.contains("2026"), "窗口描述不带年份;带年份即回退成了日历月名")
+    }
+
+    /// sameDay 判词同口径分母(审阅修订二):oneOffCompletionCount 只数窗口内
+    /// 一次性完成;total 含规律完成记录。有规律任务时两者不等——判词分母
+    /// 不许合并回 total(回归护栏),summary.total 展示数不动。
+    func testOneOffCompletions_denominatorExcludesRecurring() throws {
+        let todos = [
+            TodoItemData(title: "一次性", isCompleted: true, completedAt: try noon(2026, 8, 30), createdAt: try noon(2026, 8, 30)),
+            TodoItemData(
+                title: "规律",
+                recurrenceRule: RecurrenceRule(frequency: .daily),
+                isCompleted: true,
+                completedAt: try noon(2026, 8, 31),
+                createdAt: try noon(2026, 8, 1)
+            ),
+        ]
+        XCTAssertEqual(
+            ReviewAggregator.oneOffCompletions(todos, from: try noon(2026, 8, 28), to: try noon(2026, 9, 5), calendar: calendar),
+            1,
+            "窗口内一次性完成 = 1(规律父任务的 isCompleted 完成时刻不进分母)"
+        )
+
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: todos,
+            completedTodos: todos.filter { $0.recurrenceRule == nil },
+            recurringCompletions: [(id: UUID(), todoId: todos[1].id, completedAt: try noon(2026, 8, 31))]
+        )
+        XCTAssertEqual(summary.total, 2, "展示数含规律完成记录(对,用户确实做完了)")
+        XCTAssertEqual(summary.oneOffCompletionCount, 1, "判词分母只数一次性完成——两个口径,别合并")
+    }
+
+    // MARK: - Hero 三态(v3 拍板 2,docs v3 验证章)
+
+    /// 有上次置顶结局 → 兑现判词(total = 完成 + 待处理);nil(首次复盘 /
+    /// 上次没置顶 / 上次置顶的已全删)→ 回退完成数句式,不硬造空承诺文案。
+    func testHeroContentThreeStates() {
+        XCTAssertEqual(RecapHeroContent.make(lastPinnedOutcome: nil), .countSummary)
+        XCTAssertEqual(
+            RecapHeroContent.make(lastPinnedOutcome: (completed: 1, pending: 2)),
+            .pinnedOutcome(total: 3, completed: 1),
+            "上次定的 3 件、1 件做完 → 判词「上次定的 3 件,1 件做完了」"
+        )
+    }
+
+    // MARK: - sameDay 判词门槛(v3 ① 改动 4)
+
+    /// 门槛边界:占比**严格大于** 40% 才出——恰在门槛(2/5 = 0.40)不出,
+    /// 越过(3/5 = 0.60)出;分母为 0(只有规律完成)不出。判词键
+    /// `review.hero.sameday_judgment` 三语均为「相当一部分」份额事实——
+    /// 门槛不动文案不动,谁把比较级说法加回来先在这里红(审阅修订三护栏)。
+    func testSameDayJudgmentThresholdBoundary() throws {
+        // 5 条一次性完成,其中 2 条当天记当天完:2/5 = 0.40,恰在门槛 → 不出。
+        let atThreshold = try judgmentSummary(sameDayCount: 2, oneOffCount: 5)
+        XCTAssertFalse(atThreshold.showsSameDayJudgment, "占比 == 40% 不出(严格大于)")
+
+        // 3 条当天完:3/5 = 0.60 → 出。
+        let aboveThreshold = try judgmentSummary(sameDayCount: 3, oneOffCount: 5)
+        XCTAssertTrue(aboveThreshold.showsSameDayJudgment, "占比 > 40% 出判词")
+
+        // 分母为 0:窗口内只有规律完成记录 → 不出(无同口径分母)。
+        let recurringOnly = RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [],
+            recurringCompletions: [(id: UUID(), todoId: UUID(), completedAt: try noon(2026, 8, 31))]
+        )
+        XCTAssertEqual(recurringOnly.total, 1)
+        XCTAssertEqual(recurringOnly.oneOffCompletionCount, 0)
+        XCTAssertFalse(recurringOnly.showsSameDayJudgment)
+    }
+
+    /// 判词分母回归护栏:分母是 `oneOffCompletionCount` 不是 `total`——
+    /// sameDay 2 / oneOff 4(占比 0.5,出),规律完成把 total 抬到 10(若有人
+    /// 把分母改回 total 会算 0.2 不出)→ 这条红(审阅修订二)。
+    func testSameDayJudgmentDenominatorIsOneOffNotTotal() throws {
+        let summary = try judgmentSummary(sameDayCount: 2, oneOffCount: 4, recurringCount: 6)
+        XCTAssertEqual(summary.total, 10, "total 含规律完成")
+        XCTAssertEqual(summary.oneOffCompletionCount, 4)
+        XCTAssertTrue(summary.showsSameDayJudgment, "2/4 = 0.5 > 0.4 出;若分母误用 total(2/10)则不出——回归护栏")
+    }
+
+    /// 判词夹具:窗口 8/28–9/4,sameDayCount 条「当天记当天完」+
+    /// (oneOffCount − sameDayCount)条「前一天记次日完」+ recurringCount 条
+    /// 规律完成记录(抬 total、不进分母)。
+    private func judgmentSummary(
+        sameDayCount: Int,
+        oneOffCount: Int,
+        recurringCount: Int = 0
+    ) throws -> ReviewSummary {
+        precondition(sameDayCount <= oneOffCount)
+        let doneDay = try noon(2026, 8, 29)
+        let plannedDay = try noon(2026, 8, 28)
+        var oneOff: [TodoItemData] = (0..<sameDayCount).map { index in
+            TodoItemData(title: "same\(index)", isCompleted: true, completedAt: doneDay, createdAt: doneDay)
+        }
+        oneOff.append(contentsOf: (0..<(oneOffCount - sameDayCount)).map { index in
+            TodoItemData(title: "slow\(index)", isCompleted: true, completedAt: doneDay, createdAt: plannedDay)
+        })
+        let recurringParent = TodoItemData(
+            title: "规律",
+            recurrenceRule: RecurrenceRule(frequency: .daily),
+            createdAt: try noon(2026, 8, 1)
+        )
+        var recurring: [(id: UUID, todoId: UUID, completedAt: Date)] = []
+        for offset in 0..<recurringCount {
+            recurring.append((id: UUID(), todoId: recurringParent.id, completedAt: try noon(2026, 8, 30 + offset % 3)))
+        }
+        return RecapSummaryBuilder.weekSummary(
+            since: try noon(2026, 8, 28),
+            today: try noon(2026, 9, 4),
+            calendar: calendar,
+            allTodos: recurringCount > 0 ? oneOff + [recurringParent] : oneOff,
+            completedTodos: oneOff,
+            recurringCompletions: recurring
+        )
+    }
 }
