@@ -6,32 +6,51 @@ private func formattedDetailDate(_ date: Date) -> String {
     date.formatted(.dateTime.year().month().day().hour().minute())
 }
 
-/// 下滑关闭手势阈值(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
-/// 下滑是独立的两段式通道:ScrollView 滚到顶后再下滑,键盘弹起时先收键盘、
-/// 键盘已收才 dismiss 关页(见 handleDismissDrag)。收键盘的主通道是点空白区(见 body 的 onTapGesture)。
+/// 下滑关闭跟手手势常量(file-private 顶层 —— TodoDetailView<Store> 是泛型,Swift 不允许泛型类型内有 static stored properties)。
+/// 规格:docs/todo-detail-swipe-dismiss.md v2(方案 B,起手锁定)。
+/// 两段式语义:起手时键盘弹起 → 本手势只收键盘(见 dismissDragGesture 的 onChanged);
+/// 收键盘的主通道仍是点空白区(body 的 onTapGesture)。
 private enum DismissDragConfig {
-    /// DragGesture 最小位移:低于此值不识别为拖拽,排除点击抖动
-    static let minimumDistance: CGFloat = 40
-    /// 下滑位移下限:足够大才视为有意图的"关闭手势",排除轻微拖拽
-    static let verticalTranslationLowerBound: CGFloat = 80
+    /// 手势识别最小位移。要跟手就必须小,旧值 40pt 会让前 40pt 页面不动。
+    /// ~10pt 同时是 UIPanGestureRecognizer 的内置 began 门槛,再小无意义。
+    static let minimumDistance: CGFloat = 10
+    /// 松手关闭的位移阈值。
+    static let dismissTranslation: CGFloat = 120
+    /// 松手关闭的速度阈值(pt/s)。位移不足但甩得快也关。
+    static let dismissVelocity: CGFloat = 800
+    /// 视觉插值行程:offset 到这个值时 scale/圆角/grabber 达到终点。
+    static let visualTravel: CGFloat = 260
+    /// 页面最小缩放。
+    static let minScale: CGFloat = 0.94
+    /// 页面最大圆角(= WarmRadius.sheet)。
+    static let maxCornerRadius: CGFloat = WarmRadius.sheet
 }
 
-/// ScrollView 偏移量上报通道:VStack 顶部锚点通过 GeometryReader 把 frame.minY 上报给根视图,
-/// 根视图用 `minY >= 0` 判断 ScrollView 是否处于顶部(静止 + bounce 都算)。
-/// 跟 `UI/ConfirmSheet/ConfirmSheetView.swift` 的 `SheetContentHeightKey` 同套路(PreferenceKey + 锚点 +
-/// .onPreferenceChange),区别在 reduce:本 key 当前只有单源(VStack 首项锚点),用直接覆盖;
-/// SheetContentHeightKey 用 max 合并多源。若未来加多源需改 reduce 语义。
-private struct DetailScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        // 单源直接覆盖。多源场景需像 SheetContentHeightKey 那样用 max/value 选择策略。
-        value = nextValue()
-    }
-}
-
-/// ScrollView 命名坐标空间。锚点 GeometryReader 的 frame(in:) 必须用同名空间配对。
-private enum DetailScrollCoordinateSpace {
-    static let name = "detailScroll"
+/// 顶部 chrome 常量:自绘 header + grabber 区(方案 B.6/B.7)。
+private enum DetailChromeMetrics {
+    /// 自绘 header 行高(对齐系统导航栏 44pt)。
+    static let headerHeight: CGFloat = 44
+    /// grabber 胶囊:高恒 5pt,宽随拖拽 38 → 48pt(基础规格复用 UnscheduledDrawer)。
+    static let grabberHeight: CGFloat = 5
+    static let grabberBaseWidth: CGFloat = 38
+    static let grabberExtraWidth: CGFloat = 10
+    /// grabber 不透明度曲线(B.3):静止 0.4,随 progress 插值到 0.7;
+    /// 越过关闭阈值时直接跳 0.7 给离散信号(对齐 HTML 原型)。
+    static let grabberBaseAlpha: CGFloat = 0.4
+    static let grabberPeakAlpha: CGFloat = 0.7
+    /// grabber 区高 = 胶囊 + 上下 WarmSpacing.xs(8pt) padding = 21pt。
+    static var grabberZoneHeight: CGFloat { grabberHeight + WarmSpacing.xs * 2 }
+    /// chrome 默认总高 = header(44) + grabber 区(21) = 65pt(标准 Dynamic Type 档)。
+    /// header 行用 minHeight:44 只设下限 —— 标题字体 WarmFont.headline 随 Dynamic Type
+    /// 缩放(AX4/AX5 单行行高 > 44),chrome 实际高度会更高,toast 让位量必须实测
+    /// (见 body 的 measuredChromeHeight),不能锁死本常量。
+    static var defaultChromeHeight: CGFloat { headerHeight + grabberZoneHeight }
+    /// compact toast 顶部留白 = chrome 实际高度 + WarmSpacing.xs(8)。
+    /// 标准档 = 65 + 8 = 73pt:toast(~36pt 高)落在 grabber 与标题卡之间,
+    /// 内容顶 padding 仍为 48(xxxl),标题卡顶在 chrome 下 113pt,toast 底(+109pt)
+    /// 与卡顶留 4pt 呼吸 —— 与旧布局(导航栏下 toast 8~44 / 卡顶 48)同构。
+    /// 注:文档 B.7 曾估"padding 收到 24",实测账算不过 —— 36pt 的 toast 需要完整空隙,维持 48。
+    static func toastTopPadding(chromeHeight: CGFloat) -> CGFloat { chromeHeight + WarmSpacing.xs }
 }
 
 /// 待办详情页 - 温暖主题风格
@@ -78,26 +97,36 @@ struct TodoDetailView<Store: TodoListReadable>: View {
     /// onDisappear 时 cancel 并立即静默保存,保证用户离开时一定落盘。
     @State private var saveTask: Task<Void, Never>?
 
-    /// ScrollView 是否处于顶部(静止 + bounce 都算 true)。由根视图 `.onPreferenceChange`
-    /// 根据 VStack 顶部锚点的 frame.minY 更新。
-    @State private var isScrollViewAtTop: Bool = true
-
     /// 软件键盘是否弹起。由 keyboardWillShow/Hide 通知驱动(与 HomeView.keyboardHeight 同套路)。
-    /// 仅作「下滑手势」两段式语义的判定源:键盘弹起 → 下滑只收键盘不关页(见 handleDismissDrag)。
+    /// 仅作「下滑手势」两段式语义的判定源:键盘弹起 → 下滑只收键盘不关页
+    /// (见 dismissDragGesture 的 onChanged 起手快照)。
     /// 收键盘的主通道是点页面非功能空白区(body 的 onTapGesture),
     /// 左上角 chevron.down 按钮恒为「关闭页面」,不参与收键盘。
     /// 用键盘通知而非 @FocusState 判定:硬件键盘连接时焦点在但键盘不出现,
     /// 此时下滑直接走关闭语义,不会被隐形焦点劫持成无视觉反馈的 no-op。
     @State private var isKeyboardVisible = false
 
-    /// DragGesture 起手时的 `isScrollViewAtTop` 快照。`nil` = 当前没有进行中的手势。
-    /// 第一次 onChanged 时锁定,整个手势生命周期内 onEnded 都读这个锁定值。
-    ///
-    /// 解决 bug:用户在中段起手下滑,ScrollView 滚动过程把 `isScrollViewAtTop` 异步翻转为 true,
-    /// onEnded 读到 true 误触发 dismiss。锁定后,起手 not-at-top 的手势整段都不 dismiss ——
-    /// 用户必须松手后再下滑一次(此时内容已稳定在顶,起手读 true)才关闭,对齐
-    /// 「第一次滚到顶、第二次再下滑才关闭」的二次确认心智模型。
-    @State private var dragStartedAtTop: Bool?
+    // MARK: - 下滑关闭跟手(方案 B,起手锁定;规格 docs/todo-detail-swipe-dismiss.md v2)
+
+    /// 跟手位移(pt)。0 = 静止;正值 = 页面下移。上滑 clamp 到 0。
+    @State private var dismissDragOffset: CGFloat = 0
+    /// 本手势是否激活(首帧 onChanged 置位,onEnded/onCancelled 复位)。
+    /// 起手语义快照只在此刻捕获 —— 不能用 `dismissDragOffset == 0` 当"起手"信号:
+    /// 回弹动画进行中 offset ≠ 0 时再抓,键盘判定会被跳过,出现"键盘挂着页面却跟手"。
+    @State private var isDragActive = false
+    /// 起手锁定快照:手势门控闭包首次被 UIKit 问询时记录的「起手时 ScrollView 是否在顶」。
+    /// nil = 无进行中手势。true/false 一经锁定,整段手势沿用 —— 起手不在顶的手势
+    /// 门控恒 false,整段交回系统 ScrollView(保留其 bounce/惯性),本页不跟手。
+    @State private var dragGateLockedAtTop: Bool?
+    /// 本次手势是否只用于收键盘(起手时键盘弹起)。为 true 时不驱动 offset。
+    @State private var dragGestureKeyboardOnly = false
+    /// 是否已越过关闭阈值(haptic 只在上升沿触发一次,回落复位后可再触发)。
+    @State private var didCrossDismissThreshold = false
+    /// chrome(自绘 header + grabber)实测高度。header 标题随 Dynamic Type 缩放,
+    /// AX4/AX5 下行高超过 44pt 下限 → chrome 高于默认 65pt;compact toast 的让位量
+    /// 用实测值才能在所有字号档位避开 grabber(旧系统导航栏高度自适应,无此问题)。
+    /// onGeometryChange 首帧前用默认值兜底,首帧后持续跟随(字体档位/语言切换)。
+    @State private var measuredChromeHeight: CGFloat = DetailChromeMetrics.defaultChromeHeight
 
     init(store: Store, todo: TodoItemData) {
         self.store = store
@@ -130,19 +159,6 @@ struct TodoDetailView<Store: TodoListReadable>: View {
 
             ScrollView {
                 VStack(spacing: WarmSpacing.lg) {
-                    // ScrollView 偏移锚点:0 高度不可见,通过 GeometryReader 把 frame.minY 上报给根视图。
-                    // 用 background 而非 overlay,让 GeometryReader 的尺寸跟锚点 Color.clear 一致(0×0),
-                    // frame(in:) 读到的就是锚点在 coordinateSpace 里的真实位置。
-                    Color.clear
-                        .frame(height: 0)
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: DetailScrollOffsetKey.self,
-                                    value: proxy.frame(in: .named(DetailScrollCoordinateSpace.name)).minY
-                                )
-                            }
-                        )
                     // 标题
                     VStack(alignment: .leading) {
                         HStack(spacing: WarmSpacing.xs) {
@@ -363,15 +379,46 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     .padding(.top, WarmSpacing.sm)
                 }
                 .padding(.horizontal, WarmSpacing.xl)
-                // 顶部 padding = 48pt(xxxl):既防 Title 被导航栏视觉截断(issue 6 原意),
-                // 又给详情页专用的 compact toast(高 ~36pt + topPadding 8pt = 占 +8~44pt 区段)
-                // 让出导航栏下方的完整空间。标题卡片顶部落在 +48pt,与 toast 底部(+44pt)
-                // 之间留 4pt 呼吸距离,完全不遮挡。改自原 WarmSpacing.xl(24pt)。
+                // 顶部 padding = 48pt(xxxl):chrome(自绘 header 44 + grabber 21)之下,
+                // 给详情页专用 compact toast(高 ~36pt,chrome 下 +8~44pt 区段)让出完整空隙。
+                // 标题卡顶在 chrome 下 113pt,与 toast 底部(+109pt)留 4pt 呼吸,不遮挡。
+                // 注:方案文档 B.7 曾估收到 24pt,但 36pt 的 toast 需要完整空隙,维持 48
+                // (账见 DetailChromeMetrics.toastTopPadding 注释)。
                 .padding(.top, WarmSpacing.xxxl)
                 .padding(.bottom, 40)
             }
-            .coordinateSpace(name: DetailScrollCoordinateSpace.name)
+            // 顶部 chrome(自绘 header + grabber):必须在根 ZStack 内 —— 整页作为一张卡片
+            // 参与跟手变换,header 不在其中就会钉死在顶。safeAreaInset 让内容从 chrome
+            // 之下开始排布,不钻到 header 底下。
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    detailHeaderRow
+                    dismissGrabber
+                }
+                // chrome 实际高度上报:toast 让位量(topPadding)读它 —— header 随
+                // Dynamic Type 增高时(AX4/AX5)常量 73 会压住 grabber,实测值全档位安全。
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { _, newHeight in
+                    if newHeight != measuredChromeHeight {
+                        measuredChromeHeight = newHeight
+                    }
+                }
+            }
         }
+        // 跟手变换(B.6):圆角/scale/offset 挂根 ZStack,整页(含 chrome)读作
+        // 「一张正在脱离屏幕的卡片」。露出区底色 = WarmTheme.background(offset 不改变
+        // 布局 frame,background 固定在原位填满整屏)。
+        // 顺序约束:clipShape 必须在 scaleEffect 之内 —— scaleEffect 不改变布局 frame,
+        // 挂在外层的 clipShape 会以未缩放的整屏 bounds 为裁剪区,scale(0.94) 后的可见
+        // 内容完全落在裁剪矩形内部,圆角永远裁不到像素(等价于 CSS 把 border-radius
+        // 写在 transform 外层)。clip 在内则圆角随内容一起被缩放变换,静态时 radius=0
+        // 无副作用。
+        .clipShape(RoundedRectangle(cornerRadius: dismissCornerRadius))
+        .scaleEffect(dismissScale, anchor: .top)
+        .offset(y: dismissDragOffset)
+        .background(WarmTheme.background.ignoresSafeArea())
+        // ↓ 以下全部挂在变换层之外:toast 不随卡片缩放位移,手势命中区不跟着跑。
         // 点空白收键盘:点页面非功能区(卡片留白、分区标题、纸纹背景等非交互区域)收起键盘。
         // 这是收键盘的主通道 —— iOS 26 起系统砍掉了键盘上方的 Done 工具条,
         // 点空白还原系统惯例(替代曾经的「关闭按钮两段式」方案)。
@@ -381,27 +428,9 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         .onTapGesture {
             dismissKeyboard()
         }
-        // 下滑手势(独立于 chevron.down 的通道,按钮恒为直接关页):两段式 ——
-        // 键盘弹起先收键盘,键盘已收才 dismiss 关页(由 .onDisappear 兜底 persistChanges)。
-        // simultaneousGesture 让 DragGesture 与 ScrollView 滚动同时识别;onChanged 第一次触发时锁定起手状态,
-        // onEnded 读锁定值按阈值判断是否真的关闭(见 handleDismissDrag)。
-        .simultaneousGesture(
-            DragGesture(minimumDistance: DismissDragConfig.minimumDistance)
-                .onChanged { _ in
-                    // 锁定起手时的 isScrollViewAtTop(只记一次,后续 onChanged 不覆盖)。
-                    if dragStartedAtTop == nil {
-                        dragStartedAtTop = isScrollViewAtTop
-                    }
-                }
-                .onEnded { value in
-                    let startedAtTop = dragStartedAtTop ?? false
-                    dragStartedAtTop = nil
-                    handleDismissDrag(value, startedAtTop: startedAtTop)
-                }
-        )
-        .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
-            isScrollViewAtTop = offset >= 0
-        }
+        // 下滑关闭手势(B.5,起手锁定):独立于 chevron.down 的通道,按钮恒为直接关页。
+        // 两段式 —— 键盘弹起的手势只收键盘;判定与门控快照见 dismissDragGesture。
+        .gesture(dismissDragGesture)
         // 下滑两段式语义的键盘状态源:详情页所有 first responder 都在本页两个 TextField 内,
         // 页面又是 fullScreenCover 独立窗口层级,不存在跨页键盘串扰。
         // willShow/Hide 在动画起始帧发出,下滑手势 onEnded 时状态立即可读,无动画期竞态。
@@ -410,25 +439,6 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
-        }
-        .navigationTitle(String(localized: "detail.title"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // HomeView 移除 NavigationStack 后,详情页靠 fullScreenCover 内嵌的 NavigationStack 呈现。
-            // 内嵌 NavigationStack 无 push 历史 → 无自动 back,补关闭按钮。
-            // 图标用 chevron.down(iOS 17+ 标准 modal dismiss 语义,跟系统提醒事项详情页一致):
-            //   - 旧版 xmark 在 autosave 机制下有歧义 —— 用户会误以为"放弃改动退出"
-            //   - checkmark 会跟卡片左侧 todo 完成勾选框视觉重复,误以为"标记 todo 完成"
-            //   - chevron.down 是纯导航语义,不暗示保存/取消,匹配 autosave 行为
-            ToolbarItem(placement: .cancellationAction) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.down")
-                }
-                .accessibilityLabel(String(localized: "panel.close"))
-                .accessibilityIdentifier("TodoDetailCloseButton")
-            }
         }
         // 自动保存:用户每次改字段会 schedule debounce,onDisappear 时 cancel 并立即静默保存兜底。
         // 这样用户改完停 0.8s 看到顶部「已保存 ✓」反馈,或在用户离开页面时静默落盘。
@@ -459,45 +469,168 @@ struct TodoDetailView<Store: TodoListReadable>: View {
         // 这里在详情页内再挂一份,复用同一组 coordinator 状态,反馈就能在详情页顶部出现。
         // dismiss 后若 toast 未消失,主 overlay 接管显示,不会丢反馈。
         //
-        // compact + topPadding(8):详情页专用优化。
-        // 默认 `.top` 用 48pt 顶部间距 + 64pt 高度的大 toast,在详情页里会压住第一张标题卡片
-        // (标题卡片顶部在导航栏下沿 + 24pt 处,toast 占据 +48~112pt 区段,完全覆盖标题)。
-        // compact 把 toast 缩到 ~36pt 高,topPadding 收到 8pt,toast 占据 +8~44pt 区段;
-        // 配合下面 ScrollView 顶部 padding 从 24 提到 48,标题卡片顶部下移到 +48pt,
-        // toast 完整装在导航栏与标题卡片之间的空隙,不再遮挡内容。
+        // compact + chrome 让位 topPadding:详情页专用优化。
+        // 默认 `.top` 用 48pt 顶部间距 + 64pt 高度的大 toast,在详情页里会压住第一张标题卡片。
+        // compact 把 toast 缩到 ~36pt 高;topPadding = chrome 实测高度 + 8(标准档 73),
+        // toast 占据 chrome 下 +8~44pt 区段;配合内容顶 padding 48(xxxl),标题卡顶在
+        // chrome 下 113pt,toast 完整装在 grabber 与标题卡之间的空隙,不遮挡内容
+        // (账见 DetailChromeMetrics;AX4/AX5 下 chrome 增高由 measuredChromeHeight 跟随)。
         .toast(
             message: coordinator.toastMessage,
             style: coordinator.toastStyle,
             isPresented: $coordinator.showToast,
-            topPadding: WarmSpacing.xs,
+            topPadding: DetailChromeMetrics.toastTopPadding(chromeHeight: measuredChromeHeight),
             compact: true,
             actionTitle: coordinator.toastActionTitle,
             action: coordinator.toastAction
         )
     }
 
-    // MARK: - Dismiss Drag
+    // MARK: - Dismiss Drag(方案 B:起手锁定 + 跟手;规格 docs/todo-detail-swipe-dismiss.md v2)
 
-    /// 处理 simultaneousGesture 的下滑:读 `DismissDragConfig` 阈值 + 起手时滚动状态判定。
-    /// - Parameter startedAtTop: 手势起手时(onChanged 第一次触发)锁定的 `isScrollViewAtTop`。
-    ///   不读 onEnded 时的当前值 —— ScrollView 在手势过程中可能滚到顶导致 isScrollViewAtTop
-    ///   异步翻转为 true,读当前值会误触发 dismiss。
-    private func handleDismissDrag(_ value: DragGesture.Value, startedAtTop: Bool) {
-        // 必须**起手时** ScrollView 已在顶部才识别为关闭手势。
-        // 用户工作流:第一次下滑(内容在中段)把内容滚到顶,松手不关闭;第二次下滑(内容已稳定在顶)
-        // 才关闭 —— 起手锁定值正好对齐这个二次确认心智模型。
-        guard startedAtTop else { return }
-        let translation = value.translation
-        guard translation.height > DismissDragConfig.verticalTranslationLowerBound,
-              abs(translation.height) > abs(translation.width) else { return }
-        // 键盘弹起时:下滑只收键盘(滚动收键盘的系统惯例),不关页面。
-        // 用户想「把键盘滑下去」,若直接 dismiss 会连同整个编辑页一起退出。
-        // 键盘收起后再下滑一次才关闭 —— 对齐 Home 输入面板遮罩的两阶段心智模型。
-        if isKeyboardVisible {
-            dismissKeyboard()
-        } else {
-            dismiss()
+    /// 跟手视觉插值进度:0(静止)→ 1(visualTravel 处到达终点)。
+    private var dismissProgress: CGFloat {
+        min(1, max(0, dismissDragOffset) / DismissDragConfig.visualTravel)
+    }
+
+    /// 页面缩放(1.0 → minScale),anchor = .top,挂在 body 的 scaleEffect 上。
+    private var dismissScale: CGFloat {
+        1 - dismissProgress * (1 - DismissDragConfig.minScale)
+    }
+
+    /// 页面圆角(0 → maxCornerRadius)。
+    private var dismissCornerRadius: CGFloat {
+        dismissProgress * DismissDragConfig.maxCornerRadius
+    }
+
+    /// 阈值 haptic(B.4):offset 首次跨过 dismissTranslation 触发一次 light 触感,
+    /// 回落复位后可再次触发。这是"暗示"的正解 —— 在用户正在拖的那一刻告诉他
+    /// 「松手就关了」,比任何引导动画都直接。
+    private func updateThresholdHaptic() {
+        let crossed = dismissDragOffset > DismissDragConfig.dismissTranslation
+        if crossed && !didCrossDismissThreshold {
+            HapticFeedback.light()
         }
+        didCrossDismissThreshold = crossed
+    }
+
+    /// 复位手势内状态。onEnded / onCancelled 双调用点 —— 门控判负时本页 recognizer
+    /// 被 ScrollView 判 .failed 也会走 onCancelled,漏复位会让起手锁定快照跨手势泄漏,
+    /// 污染下一手势的判定。
+    private func resetDragGestureState() {
+        isDragActive = false
+        dragGateLockedAtTop = nil
+        dragGestureKeyboardOnly = false
+        didCrossDismissThreshold = false
+    }
+
+    /// 下滑关闭手势(B.5)。SimultaneousDragGesture 绕开 iOS 26 原生 DragGesture 回归
+    /// (FB18199844;首页折叠手势同款包装)。
+    ///
+    /// **起手锁定**在门控闭包落地:首次被 UIKit 问询时快照 contentOffset,整段手势沿用 ——
+    /// 起手不在顶的手势门控恒 false,整段交回系统 ScrollView(保留 bounce/惯性),页面不跟手;
+    /// 想关闭必须抬手,再从顶部下拉(对齐「滚到顶 → 抬手 → 再下滑才关」的二次确认心智)。
+    private var dismissDragGesture: SimultaneousDragGesture {
+        SimultaneousDragGesture(
+            minimumDistance: DismissDragConfig.minimumDistance,
+            direction: .vertical,
+            onChanged: { drag in
+                // 首帧:捕获起手语义快照。键盘判定只看此刻 —— 键盘弹起的手势
+                // 只收键盘不关页(用户想「把键盘滑下去」,直接 dismiss 会连同编辑页一起退出)。
+                if !isDragActive {
+                    isDragActive = true
+                    dragGestureKeyboardOnly = isKeyboardVisible
+                    if dragGestureKeyboardOnly { dismissKeyboard() }
+                }
+                guard !dragGestureKeyboardOnly, dragGateLockedAtTop ?? true else { return }
+                // 扣掉 minimumDistance:UIKit 首帧 onChanged 已带满 10pt 位移,
+                // 不扣会 0→10pt 瞬跳(首页折叠手势同款处理,HomeView 折叠手势注释)。
+                dismissDragOffset = max(0, drag.translation.height - DismissDragConfig.minimumDistance)
+                updateThresholdHaptic()
+            },
+            onEnded: { drag in
+                defer { resetDragGestureState() }
+                guard isDragActive, !dragGestureKeyboardOnly, dragGateLockedAtTop ?? true else { return }
+                // 位移或速度任一达标即关 —— 快扫 60pt(位移不足)也能关。
+                let travel = max(0, drag.translation.height - DismissDragConfig.minimumDistance)
+                let shouldDismiss = travel > DismissDragConfig.dismissTranslation
+                    || drag.velocity.dy > DismissDragConfig.dismissVelocity
+                if shouldDismiss {
+                    dismiss()
+                } else {
+                    withAnimation(WarmAnimation.springSmooth) { dismissDragOffset = 0 }
+                }
+            },
+            onCancelled: {
+                // 手势被系统中断(来电/系统边缘手势/被 ScrollView 判负):
+                // 复位快照与视觉,否则 offset 卡中途、页面永久歪着
+                // (契约见 SimultaneousDragGesture.swift 的 onCancelled 文档)。
+                resetDragGestureState()
+                withAnimation(WarmAnimation.springSmooth) { dismissDragOffset = 0 }
+            },
+            allowSimultaneousWithScrollViewPan: { scrollView, pan in
+                // 起手锁定:首问快照,整段沿用。闭包会被 UIKit 多次调用(含手势中途),
+                // 快照防止「中段起手滚到顶后,本手势中途变成可关闭」。
+                if dragGateLockedAtTop == nil {
+                    dragGateLockedAtTop = scrollView.contentOffset.y <= 0
+                }
+                return dragGateLockedAtTop == true
+                    && scrollView.contentOffset.y <= 0
+                    && pan.velocity(in: scrollView).y > 0
+            }
+        )
+    }
+
+    // MARK: - 顶部 Chrome(自绘 header + grabber,B.6/B.7)
+
+    /// 自绘 header(44pt,对齐系统导航栏高度):左 chevron.down 关闭按钮 + 居中标题。
+    /// 替代 .toolbar —— 系统导航栏由外层 NavigationStack 渲染、不在本页根 ZStack 内,
+    /// 跟手变换时它会钉死在顶,内容从它下面滑走。
+    /// 图标沿用旧 toolbar 的语义论证:chevron.down 是 iOS 17+ 标准 modal dismiss 语义,
+    /// 纯导航语义,不暗示保存/取消,匹配 autosave 行为(xmark 有"放弃改动"歧义,
+    /// checkmark 会跟完成勾选框视觉重复)。
+    private var detailHeaderRow: some View {
+        Text(String(localized: "detail.title"))
+            .font(WarmFont.headline(17))
+            .foregroundColor(WarmTheme.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, minHeight: DetailChromeMetrics.headerHeight)
+            .overlay(alignment: .leading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(WarmTheme.primary)
+                        .frame(width: DetailChromeMetrics.headerHeight, height: DetailChromeMetrics.headerHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "panel.close"))
+                .accessibilityIdentifier("TodoDetailCloseButton")
+            }
+    }
+
+    /// grabber:视觉指示「整页可下拉」。宽度/不透明度随拖拽 progress 变化
+    /// (38→48pt / 0.4→0.7;越过阈值直接跳 0.7 给离散信号,对齐 HTML 原型)。
+    /// 不可点 —— 它是指示器不是控件,关闭动作由 header 的 chevron.down 承担;
+    /// VoiceOver 隐藏(按钮已承担 a11y 出口)。
+    private var dismissGrabber: some View {
+        let progress = dismissProgress
+        let alpha = didCrossDismissThreshold
+            ? DetailChromeMetrics.grabberPeakAlpha
+            : DetailChromeMetrics.grabberBaseAlpha
+                + (DetailChromeMetrics.grabberPeakAlpha - DetailChromeMetrics.grabberBaseAlpha) * progress
+        return Capsule()
+            .fill(WarmTheme.sketch.opacity(alpha))
+            .frame(
+                width: DetailChromeMetrics.grabberBaseWidth + progress * DetailChromeMetrics.grabberExtraWidth,
+                height: DetailChromeMetrics.grabberHeight
+            )
+            .padding(.vertical, WarmSpacing.xs)
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
     }
 
     /// 主动收起键盘:全局 resign first responder。
