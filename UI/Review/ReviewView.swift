@@ -303,6 +303,10 @@ struct ReviewView: View {
             todoDTOs, from: start, to: end, calendar: calendar
         )
         let pendingOneOffCount = ReviewAggregator.pendingOneOffCount(todoDTOs)
+        // sameDay 判词分母(v3):同口径一次性完成,与 total(含规律)是两个口径。
+        let oneOffCompletionCount = ReviewAggregator.oneOffCompletions(
+            completedTodos.map { $0.toData() }, from: start, to: end, calendar: calendar
+        )
         return ReviewSummary(
             periodLabel: label,
             total: result.total,
@@ -315,7 +319,8 @@ struct ReviewView: View {
             daysWithCompletion: result.daysWithCompletion,
             sameDayCount: sameDayCount,
             createdCount: createdCount,
-            pendingOneOffCount: pendingOneOffCount
+            pendingOneOffCount: pendingOneOffCount,
+            oneOffCompletionCount: oneOffCompletionCount
         )
     }
 

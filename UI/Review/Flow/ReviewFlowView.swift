@@ -29,6 +29,23 @@ final class ReviewFlowState {
     /// 洞察步是否被降级阶梯跳过(<5 条完成记录 → 第 2 步直连第 4 步,§2.3)。
     /// 在流程启动拿到 insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
+    /// 洞察步是否因「引擎跑完一条都没触发」整步跳过(v3 拍板 7:空屏 + 错误
+    /// 指令的占位行比不出这一步更差)。与 `skipsInsights` 走同一跳过路径;
+    /// 在流程启动引擎跑完后设定——**必须**在进入第 3 步之前定好,否则会出现
+    /// 「进了第 3 步再被弹走」的闪屏(引擎因此从视图 `.task` 前移至此)。
+    private(set) var skipsInsightsWhenEmpty = false
+    /// 两个跳过 flag 的单一来源(导航与步骤条共用)。
+    var skipsInsightsStep: Bool { skipsInsights || skipsInsightsWhenEmpty }
+
+    // MARK: 第 3 步 · 引擎结果(v3 拍板 7 引擎前移:从 ReviewStepInsights 的
+    // @State 迁入,视图只读;重试路径随 loadInsightContext 重跑)
+
+    /// 引擎跑出的结果(score 降序,已过冷却)。
+    private(set) var rankedResults: [InsightResult] = []
+    /// 已实现规则的占位(「还需 N 条」;选取见 `InsightID.firstPlaceholder`)。
+    private(set) var insightPlaceholders: [(id: InsightID, needMore: Int)] = []
+    /// 降级阶梯的「再记 N 条」提示(5–14 档,只跑 02 时的预告;其他档 nil)。
+    private(set) var ladderNeedMore: Int?
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -43,6 +60,14 @@ final class ReviewFlowState {
     /// 的走批量出口,其余既不进卡堆也不进批量出口——「不动」也是合法状态,
     /// UI 必须把这个说清楚,否则用户以为「其他都被处理了」。
     private(set) var tail: [TodoItemData] = []
+
+    /// 流程开始时的积压总数(v3 ②/⑤):= 排序前 `triageInput` 的条数,init 一次
+    /// 算好,整个会话恒定。**不得**改成 `ledger.inputCount + tail.count` 之类的
+    /// 动态求值——批量推「稍后」落地后 `tail` 缩水,同屏数字会跳(恰是要消灭的
+    /// 同屏矛盾);也**不得**与 ① 屏对齐成实时值:① 屏 `pendingOneOffCount` 走
+    /// `@Query` 是实时的,用户在 ② 屏处理几张后回看 ① 屏会变小——那是可接受
+    /// 的分叉,本值永远是「本次会话开始时」的快照(审阅修订二)。
+    private(set) var initialBacklogCount: Int
 
     /// 最近一次批量推「稍后」的原字段快照(整批撤销,拍板 7 的唯一扩展:
     /// 一键操作没有 undo 不可接受)。nil = 本期尚未执行。一次性——撤销后清空。
@@ -138,8 +163,10 @@ final class ReviewFlowState {
         // 冷启动帧:推迟数据(insightContext)异步到达,init 只有空字典可排——
         // 字典序排序在主键全 0 时退化为纯停滞天数,这一帧已经比原序(原始
         // sortOrder)合理;context 到位后 `rankDeck` 用真实推迟数重排一次。
+        let input = Self.triageInput(from: todos)
+        self.initialBacklogCount = input.count
         let ranked = TriageRanking.rank(
-            Self.triageInput(from: todos), deferCounts: [:], now: Date()
+            input, deferCounts: [:], now: Date()
         )
         self.deck = Array(ranked.prefix(TriageRanking.deckSize))
         self.tail = Array(ranked.dropFirst(TriageRanking.deckSize))
@@ -197,11 +224,14 @@ final class ReviewFlowState {
         return LastPinnedOutcome(completed: completed, pending: pending)
     }
 
-    /// 领域提示轮换(2026-08-25 拍板):只在快照中出现过的分类里按声明序轮换,
-    /// seed = 历史会话数——每次复盘前进一格,不问从未使用的领域,无需新存储。
+    /// 领域提示轮换(2026-08-25 拍板;v3 拍板 11 排除 `.other`):只在快照中
+    /// 出现过的分类里按声明序轮换,seed = 历史会话数——每次复盘前进一格,
+    /// 不问从未使用的领域,无需新存储。`.other` 是兜底分类(AI 解析失败的
+    /// 落点),把它当提问对象等于问「其他方面怎么样」——不是问题;快照里
+    /// 只有 `.other` 时返回 nil(提示行本就有 nil 分支,整行隐藏)。
     static func askDomainHintCategory(todos: [TodoItemData], rotationSeed: Int) -> TodoCategory? {
         let present = TodoCategory.allCases.filter { category in
-            todos.contains { $0.category == category }
+            category != .other && todos.contains { $0.category == category }
         }
         guard !present.isEmpty else { return nil }
         return present[abs(rotationSeed) % present.count]
@@ -218,8 +248,13 @@ final class ReviewFlowState {
     /// 本来就在下周且本会话没动过的。第二路排除 processedIDs——右滑「排下周」
     /// 即时写库,不排掉会双行(审阅缺口 B);「今天就做/不做了/拆小」处理过的
     /// 同样不该再当选下周三件事。
+    /// v3 拍板 8:按停滞天数降序(同天数 id 决胜)——放得最久的排最前,
+    /// 从琐事里挑焦点才有分量;原实现是 store.todos 原始序,连排都没排。
     var preexistingNextWeek: [TodoItemData] {
-        nextWeekCommitted.filter { !processedIDs.contains($0.id) }
+        TriageRanking.sortByStagnation(
+            nextWeekCommitted.filter { !processedIDs.contains($0.id) },
+            now: Date()
+        )
     }
 
     /// 完整候选池(视图分组渲染:scheduled 一组、preexistingNextWeek 一组)。
@@ -246,20 +281,20 @@ final class ReviewFlowState {
 
     // MARK: 导航
 
-    /// 下一步。insights 在 skipsInsights 时被跳过。
+    /// 下一步。insights 在降级跳过或空结果跳过时不出现(v3 拍板 7)。
     func advance() {
         let candidates = (currentStep.rawValue + 1)...Step.ledger.rawValue
         guard let raw = candidates.first else { return }
         var next = Step(rawValue: raw)!
-        if next == .insights, skipsInsights { next = .commit }
+        if next == .insights, skipsInsightsStep { next = .commit }
         currentStep = next
     }
 
-    /// 上一步。insights 在 skipsInsights 时被跳过。
+    /// 上一步。insights 的两种跳过对称生效。
     func retreat() {
         guard let raw = (Step.recap.rawValue..<currentStep.rawValue).last else { return }
         var prev = Step(rawValue: raw)!
-        if prev == .insights, skipsInsights { prev = .triage }
+        if prev == .insights, skipsInsightsStep { prev = .triage }
         currentStep = prev
     }
 
@@ -267,6 +302,105 @@ final class ReviewFlowState {
     func configureInsightsLadder() {
         let completedCount = insightContextValue?.completedEvents.count ?? 0
         skipsInsights = InsightEngine.ladder(completedRecordCount: completedCount) == .skipStep
+    }
+
+    /// 跑四条规则并落库结果(v3 拍板 7:从 `ReviewStepInsights.runEngine` 前移,
+    /// 与 `configureInsightsLadder()` 同一时机由 `loadInsightContext` 调用)。
+    /// 规则按 ladder 裁剪,score 降序;触发后先过冷却(§2.4):不满足任一
+    /// 放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
+    /// 放行换 improving 文案。空结果 → `skipsInsightsWhenEmpty`(整步跳过)。
+    func runInsightEngine() {
+        guard let context = insightContextValue else { return }
+        let calendar = Calendar.current
+        let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
+
+        // 降级跳过(<5 条完成记录)时引擎**不跑**(v3 拍板 7 引擎前移的语义
+        // 补丁):旧实现引擎在第 3 步视图挂载(.task)时才跑,跳过路径从不
+        // 执行、shownInsights 恒空;前移后若照跑,腐烂规则(age ≥ 21 天分支
+        // 单条即触发)会在从未展示的情况下进冷却历史并随会话持久化——
+        // 「展示过的才进冷却历史」被破坏,下期冷却把「从没看过」当
+        // 「上期看过」。结果清空(重试路径可能从 .full 落回,不留残影)。
+        guard ladder != .skipStep else {
+            resetShownInsights()
+            rankedResults = []
+            insightPlaceholders = []
+            ladderNeedMore = nil
+            skipsInsightsWhenEmpty = false
+            return
+        }
+
+        var results: [InsightResult] = []
+        var newPlaceholders: [(InsightID, Int)] = []
+
+        let rotting = RottingRule().evaluate(context, calendar: calendar)
+        collect(rotting, id: .rotting, into: &results, &newPlaceholders)
+
+        if ladder == .full {
+            let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
+            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
+
+            // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
+            // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
+            let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders)
+
+            let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders)
+        }
+
+        // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
+        let cooled = results.compactMap { result -> InsightResult? in
+            applyCooldown(result)
+        }
+        let ranked = InsightEngine.rank(cooled)
+        // 展示过的才进冷却历史(被过滤掉的不记)。重跑先清空:上一轮展示过、
+        // 这一轮被冷却过滤的洞察不该留在历史里。
+        resetShownInsights()
+        ranked.forEach { recordShownInsight($0) }
+
+        rankedResults = ranked
+        insightPlaceholders = newPlaceholders
+        ladderNeedMore = ladder.rottingOnlyNeedMore
+        skipsInsightsWhenEmpty = ranked.isEmpty
+    }
+
+    /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
+    /// `InsightEngine.cooldown` 三条件。`.effectChanged(improved: true)` 换
+    /// improving 文案。
+    private func applyCooldown(_ result: InsightResult) -> InsightResult? {
+        guard let input = ReviewCooldownHistory.input(
+            insightID: result.id,
+            sessions: previousSessions,
+            currentEffectSize: result.effectSize,
+            lowerIsBetter: true
+        ) else {
+            return result // 无历史:第一次展示,放行
+        }
+        switch InsightEngine.cooldown(input) {
+        case .success(let reason):
+            if case .effectChanged(let improved) = reason, improved {
+                return result.withTone(.improving)
+            }
+            return result
+        case .failure:
+            return nil // 冷却中:本期不展示
+        }
+    }
+
+    private func collect(
+        _ availability: InsightAvailability,
+        id: InsightID,
+        into results: inout [InsightResult],
+        _ placeholders: inout [(InsightID, Int)]
+    ) {
+        switch availability {
+        case .fired(let result):
+            results.append(result)
+        case .placeholder(let needMore):
+            placeholders.append((id, needMore))
+        case .hidden:
+            break
+        }
     }
 
     // MARK: 第 2 步决定
@@ -445,6 +579,29 @@ final class ReviewFlowState {
         scheduled.count + todayPicked.count + abandonedStack.count + splitCount
     }
 
+    /// ⑤ 屏主卡渲染判定(v3 拍板 10「账本永远在」;四态 = 三态 + 边界不出)。
+    /// 视图(`ReviewStepLedger.summaryCard`)按此渲染,**别在视图里重写条件**——
+    /// 三态/边界(全零 + 零积压不出)的单测在 `ReviewFlowStateTests`
+    /// (docs v3 验证章「ReviewStepLedger 三态」)。
+    enum LedgerCardContent: Equatable, Sendable {
+        /// 有逐张决定 → 「你决定了 N 件」+ caption(+批量行 / 明细行)。
+        case decided
+        /// 零决定但有批量推后 → 只出批量行(现状已支持)。
+        case batchOnly
+        /// 全零但有积压 → 「这次一件都没决定,N 件原样留着」
+        /// (N = `initialBacklogCount` init 快照,与 ② 屏 lede 同源;事实陈述,
+        /// 不是审判——名叫 Ledger 的屏上不能没有账本)。
+        case noneDecided
+        /// 全零且零积压(本期本就没有待处理)→ 整卡不出(「0 件原样留着」是噪音)。
+        case omitted
+    }
+
+    var ledgerCardContent: LedgerCardContent {
+        if decidedCount > 0 { return .decided }
+        if ledger.somedayCount > 0 { return .batchOnly }
+        return initialBacklogCount > 0 ? .noneDecided : .omitted
+    }
+
     // MARK: 阶段 4 · 会话组装
 
     /// 清空展示快照(runEngine 每次重跑前调用):重试 / 原料重载后,上一轮展示过
@@ -615,6 +772,10 @@ struct ReviewFlowView: View {
             state.insightLoadError = nil
             state.recordPeriod(start: start, end: end)
             state.configureInsightsLadder()
+            // v3 拍板 7:引擎与阶梯同时机跑(失败重试路径随本函数重跑),
+            // 空结果在此刻就定 skipsInsightsWhenEmpty——进第 3 步前定好,
+            // 不闪屏。
+            state.runInsightEngine()
             // 拍板 2 的时序要求:deck 在 init 用空推迟数据排过,真实 deferCounts
             // 到位后重排一次(已处理条目不回流,见 rankDeck)。
             state.rankDeck(deferCounts: context.deferCounts)
@@ -694,7 +855,8 @@ struct ReviewFlowView: View {
         }
     }
 
-    /// 步骤条:5 段胶囊,当前及已过的段填充主色。insights 被跳过时该段显示为跳过态。
+    /// 步骤条:5 段胶囊,当前及已过的段填充主色。insights 被跳过时该段显示为
+    /// 跳过态(v3 拍板 7:降级跳过与空结果跳过走同一视觉)。
     private var stepBar: some View {
         HStack(spacing: WarmSpacing.xxs) {
             ForEach(ReviewFlowState.Step.allCases, id: \.rawValue) { step in
@@ -708,7 +870,7 @@ struct ReviewFlowView: View {
     }
 
     private func stepBarFill(_ step: ReviewFlowState.Step) -> Color {
-        if step == .insights && state.skipsInsights {
+        if step == .insights && state.skipsInsightsStep {
             return WarmTheme.divider.opacity(0.5)
         }
         return step.rawValue <= state.currentStep.rawValue
@@ -720,28 +882,42 @@ struct ReviewFlowView: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        Button {
-            advanceFromCurrentStep()
-        } label: {
-            Text(bottomButtonTitle)
-                .font(WarmFont.headline(16))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity)
-                .frame(height: WarmSize.touch)
-                .padding(.horizontal, WarmSpacing.lg)
-                .background(
-                    Capsule().fill(
-                        state.canAdvanceCurrentStep ? WarmTheme.primary : WarmTheme.divider
+        VStack(spacing: WarmSpacing.xs) {
+            // 闸门原因常驻(v3 拍板 9,修发现 F):步骤内的 hint 在屏幕顶端,
+            // 滚一屏就看不见,按钮禁用又无说明是「④ 屏像死路」的直接来源。
+            // 流程级改法——任何步骤的硬闸门都必须在按钮旁说明原因
+            // (Step.commit 是目前唯一有硬闸门的步骤)。
+            if !state.canAdvanceCurrentStep {
+                Text(String(localized: "review.flow.commit.gate_hint"))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            Button {
+                advanceFromCurrentStep()
+            } label: {
+                Text(bottomButtonTitle)
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: WarmSize.touch)
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .background(
+                        Capsule().fill(
+                            state.canAdvanceCurrentStep ? WarmTheme.primary : WarmTheme.divider
+                        )
                     )
-                )
-                .padding(.horizontal, WarmSpacing.lg)
-                .padding(.bottom, WarmSpacing.md)
+                    .padding(.horizontal, WarmSpacing.lg)
+            }
+            .buttonStyle(.plain)
+            .disabled(!state.canAdvanceCurrentStep)
+            .accessibilityIdentifier("ReviewFlowPrimary")
         }
-        .buttonStyle(.plain)
-        .disabled(!state.canAdvanceCurrentStep)
-        .accessibilityIdentifier("ReviewFlowPrimary")
+        .padding(.bottom, WarmSpacing.md)
     }
 
     private var bottomButtonTitle: String {
@@ -827,5 +1003,15 @@ extension ReviewFlowState {
     func retreat(toTriage: Bool) {
         guard toTriage else { return }
         currentStep = .triage
+    }
+}
+
+// MARK: - 降级阶梯便捷取值
+
+extension InsightEngine.Ladder {
+    /// rottingOnly 档的 needMore(其他档 nil)。
+    var rottingOnlyNeedMore: Int? {
+        if case .rottingOnly(let needMore) = self { return needMore }
+        return nil
     }
 }
