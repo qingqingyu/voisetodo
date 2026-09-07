@@ -4142,6 +4142,22 @@
         }
       }
     },
+    "home.cancel_extraction" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
+    },
     "home.celebration.all_done" : {
       "localizations" : {
         "en" : {
@@ -4160,22 +4176,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今天全部完成！"
-          }
-        }
-      }
-    },
-    "home.cancel_extraction" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消"
           }
         }
       }
@@ -8299,28 +8299,6 @@
         }
       }
     },
-    "review.flow.insights.minimal_fact_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "About %lld weeks of records so far — start with this week"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "記録はまだ約 %lld 週間。まずは今週のことから"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你目前只有约 %lld 周记录,先说说这周"
-          }
-        }
-      }
-    },
     "review.flow.insights.load_failed" : {
       "localizations" : {
         "en" : {
@@ -8343,24 +8321,24 @@
         }
       }
     },
-    "review.flow.insights.need_more.energyWindow_%lld" : {
+    "review.flow.insights.minimal_fact_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Log %lld more completion times to see your energy windows"
+            "value" : "About %lld weeks of records so far — start with this week"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完了時刻をあと %lld 件記録すると、集中しやすい時間帯が見えます"
+            "value" : "記録はまだ約 %lld 週間。まずは今週のことから"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再记 %lld 条完成时间,就能看出你的精力窗口"
+            "value" : "你目前只有约 %lld 周记录,先说说这周"
           }
         }
       }
@@ -8383,6 +8361,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再做完 %lld 条高优先级任务,就能看出你是先易后难还是先难后易"
+          }
+        }
+      }
+    },
+    "review.flow.insights.need_more.energyWindow_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log %lld more completion times to see your energy windows"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了時刻をあと %lld 件記録すると、集中しやすい時間帯が見えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再记 %lld 条完成时间,就能看出你的精力窗口"
           }
         }
       }
@@ -8607,28 +8607,6 @@
         }
       }
     },
-    "review.flow.ledger.someday_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another %lld moved to Later"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ほかに %lld 件を「あとで」へ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "另有 %lld 件推到以后"
-          }
-        }
-      }
-    },
     "review.flow.ledger.next_review_%@" : {
       "localizations" : {
         "en" : {
@@ -8647,6 +8625,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下次复盘:%@"
+          }
+        }
+      }
+    },
+    "review.flow.ledger.someday_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another %lld moved to Later"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ほかに %lld 件を「あとで」へ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另有 %lld 件推到以后"
           }
         }
       }
@@ -8784,6 +8784,7 @@
       }
     },
     "review.flow.recap.scope_first" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8806,6 +8807,7 @@
       }
     },
     "review.flow.recap.scope_since" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9735,28 +9737,6 @@
         }
       }
     },
-    "review.flow.triage.deferred_a11y_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deferred %lld times"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 回先延ばし"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已推迟 %lld 次"
-          }
-        }
-      }
-    },
     "review.flow.triage.born_days_%lld" : {
       "localizations" : {
         "en" : {
@@ -9775,6 +9755,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "记下 %lld 天了"
+          }
+        }
+      }
+    },
+    "review.flow.triage.deferred_a11y_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deferred %lld times"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 回先延ばし"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已推迟 %lld 次"
           }
         }
       }
@@ -10948,28 +10950,6 @@
         }
       }
     },
-    "review.stat.streak" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streak"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連続日数"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连续天数"
-          }
-        }
-      }
-    },
     "review.stat.pending" : {
       "localizations" : {
         "en" : {
@@ -11010,6 +10990,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「还挂着 %lld 件」是全部积压,不只这一窗"
+          }
+        }
+      }
+    },
+    "review.stat.streak" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streak"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連続日数"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连续天数"
           }
         }
       }
