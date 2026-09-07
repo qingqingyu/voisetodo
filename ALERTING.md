@@ -89,11 +89,13 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 
 | 层 | 状态 | 说明 |
 |---|------|------|
-| B cron 熔断告警 | **已实施，待部署** | 代码 + 测试已落地（`src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`），按「部署步骤」1–4 上线 |
-| C 健康探针 + 死人开关 | **已实施，待部署** | 同上（`/v1/health` + `handleScheduled` 心跳） |
+| B cron 熔断告警 | **已实施，待修复后部署** | 代码 + 测试已落地（`src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`），但 review 发现 5 处缺陷 |
+| C 健康探针 + 死人开关 | **已实施，待修复后部署** | 同上（`/v1/health` + `handleScheduled` 心跳） |
 | A 客户端信标 | 待发版 | 要过审核 + 等用户升级，实际生效晚得多 |
 | A/D feedback-relay 接收端 | 待发版 | 没有层 A 发信标，先建接收端没意义 |
 | D pending 积压 | 待发版 | 随层 A 一起 |
+
+> ⚠️ **B/C 先别急着部署。** review 发现 5 处缺陷，其中 3 处会让故障变得不可见（探针把 `half-open` 当健康、secret 全缺时三层同时报绿、停用 provider 稀释故障判定）。带着这些缺陷上线比不上线更危险——会让人以为「没收到告警 = 没出事」。修复方案见 **`docs/alerting-layer-bc-review-fixes.md`**，本文档下面各节已按该方案修订口径。
 
 **B/C 先做的理由：** 它们不依赖发版，且覆盖的「上游 AI 全挂」和「Worker/域名整个不可达」是影响面最大的两类故障。层 A 价值最高但生效最慢，两件事不冲突——B/C 先把服务端的眼睛装上。
 
@@ -244,8 +246,14 @@ shouldNotify(previous, current, now) → { notify, kind }
 两条边界：
 
 - **KV 读失败时返回 `notify: true`**——宁可多推一条，不可漏报。这条要有测试守着。
-- **没有可探活的 provider 不算 `down`。** secrets 全缺时 `runProviderHealthCheck` 走单独的 `skipped` 分支不告警，避免配置问题被误报成服务故障。（`classifyLevel` 的 `total === 0 → null` 是同口径的纯函数兜底；cron 路径上 PROVIDERS 空数组在 `loadProviders` 就抛错，走 `providers_failed` 早退，到不了 `total === 0`。）
-- **单个 provider 缺 secret（`no_key`）/ 缺 adapter 计入 failed → `degraded`。** 与上一条不同口径是有意的：failover 容量减半是维护者该知道的事，且失败明细里带 `no_key` 一眼可辨——别当成误报修掉。
+- **全部 provider 缺 secret / adapter 判为 `down`。** 这是 100% 的服务不可用——用户此刻一个字都提取不出来——不是「配置问题可以不告警」。用独立 reason 让告警文案说清是配置问题（该去改 secret，不是查上游），**区分的是文案，不是告不告警**。两边代价不对等：误报一次只是瞥一眼 Telegram，漏报一次是全部用户不可用而没人知道。
+
+  > `classifyLevel` 的 `total <= 0 → null` 纯函数兜底可以保留，实际到不了——`loadProviders` 对空 `PROVIDERS` 直接抛错，走 `providers_failed` 早退。
+  >
+  > 早期方案曾写成「secrets 全缺不告警，避免配置问题被误报成服务故障」，那是错的：密钥轮换写错一个字符就会让层 B/C-1/C-2 同时报健康。详见 `docs/alerting-layer-bc-review-fixes.md` 缺陷 2。
+
+- **单个 provider 缺 secret（`no_key`）/ 缺 adapter 计入 failed → `degraded`。** 与上一条是不同口径且有意并存：failover 容量减半是维护者该知道的事，且失败明细里带 `no_key` 一眼可辨——别当成误报修掉。只有「全部缺」才升级为 `down`。
+- **只统计 `enabled !== false` 的 provider。** 与 `selector.js` 的 `pickCandidates` 口径对齐（它用同一个谓词跳过停用项）。停用的 provider 不承接任何流量，计入分母会把总故障稀释成局部故障：唯一在跑的挂了却算成 `degraded`(1/2)，于是不推 🚨、无 6h reminder、心跳照发成功。注意 `loadProviders` **不过滤**停用项，只是给 `enabled` 赋值，得在调用侧自己滤。
 
 ### 改 `runProviderHealthCheck`
 
@@ -277,13 +285,18 @@ shouldNotify(previous, current, now) → { notify, kind }
 
 1. **不复用 `handleAdminGetProviders`。** 那个返回 `type` / `model` / `priority` / `timeoutMs` / 完整 `health` 快照。新写精简版，**只出 `id` + `state`**，其余一律不出。
 2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId, now)` 是 per-provider 签名，实现时遍历 `loadProviders(env)` 的结果逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
-3. **HTTP 状态码本身携带语义**：全部 provider `open` → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分 open）/ `down`（全 open，503）/ `misconfigured`（配置非法，503）。
+3. **HTTP 状态码本身携带语义**：全部 provider **不健康** → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分不健康）/ `down`（全部不健康，503）/ `misconfigured`（配置非法，503）。
+
+   > **「不健康」= `open` **或** `half-open`，只有 `closed` 算健康。** `half-open` 不是独立存储的状态，是 `health.js` 的 `classifyState()` 在熔断打开、冷却期一过就返回的**读时派生状态**（默认初始冷却 10s，上限 5min），语义是「曾经挂了，尚未证明恢复」——恢复要靠 `recordSuccess` 写回 `closed`。
+   >
+   > 只判 `open` 会让探针在故障中报绿：稳态下每 30 分钟只有约 5 分钟窗口是 `open`，故障刚发生时窗口只有 10 秒；夜间无流量时不会触发新的 `recordFailure`，`half-open` 一直挂着，探针永远绿。这正是层 C-1 存在的意义所在，必须算不健康。详见 `docs/alerting-layer-bc-review-fixes.md` 缺陷 1。
 4. `Cache-Control: max-age=30` 提示拨测客户端降低轮询频率。注意 Cloudflare **默认不缓存 Worker 响应**（边缘缓存需显式用 Cache API），该头挡不住恶意轮询 —— `/v1/health` 是唯一无鉴权且读 KV 的端点，Worker 内另有 15s isolate 结果缓存兜住 KV 读频率。
 
 两条边界：
 
 - `loadProviders` 抛错（`PROVIDERS` 配置非法）→ **503 + `status: "misconfigured"`，不是 500**。对拨测服务而言「服务不可用」比「服务器错误」语义更准。
 - `AI_PROVIDER_STATE_KV` 未绑定 → 照常返回，`state` 取内存态默认值 `closed`。
+- **只列 `enabled !== false` 的 provider**，与层 B 的探活口径、`selector.js` 的 `pickCandidates` 三处一致。停用项既不承接流量也不该出现在探针结果里。
 
 复用现有的 `finishRequest(response, requestContext, extra)` 保持日志一致。
 
@@ -291,8 +304,10 @@ shouldNotify(previous, current, now) → { notify, kind }
 
 `handleScheduled` 末尾追加心跳，拿层 B 里 `runProviderHealthCheck` 返回的 level：
 
-- `level === "down"` → `fetchImpl(env.HEALTHCHECK_PING_URL + "/fail")`
-- 其余（**含 KV 未绑定的早退**）→ `fetchImpl(env.HEALTHCHECK_PING_URL)`
+- `level === "down"` → ping URL 的 **pathname 追加 `/fail`**
+- 其余（**含 KV 未绑定的早退**）→ ping URL 原样
+
+> **用 `new URL()` 操作 pathname，不要字符串拼接。** `` `${base}/fail` `` 遇到带 query 的 ping URL（healthchecks.io 的 `?rid=` 形式、Uptime Kuma 的 push URL）会拼成 `...?rid=xxx/fail`——`/fail` 落进 query value，服务端收到的是一次普通成功心跳。故障信号被静默降级成健康信号，正是死人开关最不能出的错。
 
 > KV 未绑定时 `runProviderHealthCheck` 会早退、算不出 level，但 **cron 本身是活的**，仍要发成功心跳——心跳测的是「cron 还在跑」，不是「provider 健康」。这两件事别混。
 
@@ -475,6 +490,7 @@ curl -i https://ai.saydo.org/v1/health
 | `AIProxy/src/alertState.js` | 告警状态机（跃迁判定 + 6h reminder） |
 | `AIProxy/src/health.js` | 熔断器状态（告警的数据源） |
 | `AIProxy/worker.js` | `/v1/health` endpoint + cron 告警接入 |
+| `docs/alerting-layer-bc-review-fixes.md` | 层 B/C 实施后的 review 修复方案（5 处缺陷，含本文档两处口径修订的来由） |
 | `TELEMETRY.md` | 遥测设计（事后统计，与本文档分工见上） |
 | `LOGGING.md` | 本地日志规范 |
 | `TROUBLESHOOTING.md` | 收到告警后的排查手册 |
