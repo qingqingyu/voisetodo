@@ -2,6 +2,7 @@
 //
 // 只在状态跃迁时告警,不是每次失败都告警(告警疲劳 = bot 被静音 = 白做):
 //   - level 变化 → 推
+//   - 故障告警从未成功送达(lastNotifiedAt 仍为 0)→ 重推,直到送达为止
 //   - 仍是 down 且距上次推送 ≥ 6h → 推 reminder
 //   - 其余 → 不推
 //
@@ -19,9 +20,10 @@ const REMINDER_INTERVAL_MS = 6 * 3600 * 1000;
 
 /// 探活结果 → 告警 level。纯函数。
 ///   succeeded === total → "ok";部分成功 → "degraded";全挂 → "down"
-/// total === 0 → null:没有 provider 可计入时走 caller 的 skipped 分支不告警 ——
-/// 配置问题不该被误报成服务故障。cron 路径的「secrets 全缺」(total > 0 但全部
-/// no_key)由 worker.js 的 probeable 守卫拦下,不会走到这里的 total === 0。
+/// total === 0 → null:纯函数兜底,cron 路径实际到不了 —— loadProviders 对空
+/// PROVIDERS 直接抛错(走 providers_failed 早退);「provider 在、secret 全缺」
+/// 与「全部停用」由 worker.js 的 probeable 守卫直接判 down,不会以 total === 0
+/// 走到这里。
 export function classifyLevel(succeeded, total) {
   if (!Number.isFinite(succeeded) || !Number.isFinite(total) || total <= 0) {
     return null;
@@ -44,6 +46,16 @@ export function shouldNotify(previous, current, now) {
       return prevLevel ? { notify: true, kind: "recovered" } : { notify: false, kind: null };
     }
     // 首次见到 down/degraded(prevLevel null,含 KV 读失败的降级路径)也视为跃迁 → 推
+    return { notify: true, kind: current };
+  }
+
+  // 故障告警从未成功送达(上次发送失败,lastNotifiedAt 仍为 0)→ 重推。
+  // 没有这条,Telegram 偶发失败(网络抖动/超时/429)会让 degraded 告警永久
+  // 丢失(它没有 reminder 兜底),down 告警也得干等 6h reminder —— worker.js
+  // 的「送达后才写 lastNotifiedAt」正是这条规则的另一半,两边缺一不可。
+  // ok 不适用:正常状态本来就不推,lastNotifiedAt 为 0 的 ok 记录是常态
+  // (开机首跑 ok 不推,record 落盘 lastNotifiedAt=0)。
+  if (current !== "ok" && !previous.lastNotifiedAt) {
     return { notify: true, kind: current };
   }
 
