@@ -122,6 +122,21 @@ struct HomeCalendarState {
         return calendar.date(from: components) ?? calendar.startOfDay(for: date)
     }
 
+    /// 无安排任务(`dueDate == nil && recurrenceRule == nil`)是否「已完成且完成于给定用户日」。
+    /// 单一口径来源:`completedUnscheduledTodos` 的 fallback filter 与
+    /// `HomeView.selectedDayStats()` 的 `calendarCacheStale` 兜底共用,
+    /// 防两处等价判断各自漂移(复发「列表-圆环口径分裂」,同 `isRecurring` 上移的动机)。
+    /// 注意**不判 abandonedAt / deferredCompletionIDs**:调用方按各自语义另行叠加。
+    static func isCompletedUnscheduled(
+        _ todo: TodoItemData,
+        onUserDay userDayStart: Date,
+        calendar: Calendar
+    ) -> Bool {
+        guard todo.dueDate == nil, todo.recurrenceRule == nil, todo.isCompleted else { return false }
+        guard let completedAt = todo.completedAt else { return false }
+        return DayClock.isSameUserDay(completedAt, userDayStart, calendar: calendar)
+    }
+
     func dayState(for day: Date) -> HomeCalendarDayState {
         let dayOccurrences = occurrences(on: day)
         return HomeCalendarDayState(
@@ -210,9 +225,8 @@ struct HomeCalendarState {
             // Fallback:nil 时走旧 filter+sort(测试 / 未升级的调用方)。
             self.completedUnscheduledTodos = noSchedule
                 .filter { todo in
-                    guard todo.isCompleted, let completedAt = todo.completedAt else { return false }
-                    return !deferredCompletionIDs.contains(todo.id)
-                        && DayClock.isSameUserDay(completedAt, completedDayStart, calendar: calendar)
+                    Self.isCompletedUnscheduled(todo, onUserDay: completedDayStart, calendar: calendar)
+                        && !deferredCompletionIDs.contains(todo.id)
                 }
                 .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         }

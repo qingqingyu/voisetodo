@@ -252,6 +252,13 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 由 `.task(id:)` 跟 `groupedCalendarOccurrences` 一起加载,覆盖整月范围(两端放宽 1 天,
     /// 防 `VoiceTodoDayStartHour > 0` 时边界天漏掉)。详见 docs/completed-todos-performance.md Step 3c。
     @State private var completedUnscheduledByDay: [String: [TodoItemData]] = [:]
+    /// 月历两份缓存(`monthOccurrences` / `completedUnscheduledByDay`)是否处于「重查进行中」的过期态。
+    /// `.task(id:)` 重启时置 true,新数据落地置 false。过期期间:
+    /// - **列表继续用旧缓存渲染,不清空**。清空会让 Today/已完成分区瞬间塌缩,UICollectionView
+    ///   把滚动偏移钳回 0 —— 条目多时表现为「勾完一条,列表滚回最上面」(2026-09-07 用户反馈)。
+    /// - 统计读数(`selectedDayStats()`)见此标志走 store.todos 兜底,不吃旧值(保住 3280621
+    ///   修的「删除当天唯一一条 todo,进度条卡 0/1」问题——那是当初清空缓存的动机,改由标志承担)。
+    @State private var calendarCacheStale = false
     @State private var calendarLoadState: HomeCalendarLoadState = .loading
     /// 规律任务 occurrence 完成切换不会改 `store.todos`（完成记录在独立表），用此 revision 强制刷新。
     @State private var occurrenceRevision = 0
@@ -572,7 +579,7 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 1. 真今天:`DayClock.isSameUserDay(selectedDate, Date())` —— 翻到历史日期补勾不庆祝;
     /// 2. 分母复用 `selectedDayStats()`,与顶部进度圆环同源,不另写一套(圆环满 = 彩带);
     /// 3. 只在 toggle 落库成功后检测 —— abandon/删除/Widget/详情页路径一律不放彩带;
-    /// 4. 延时 250ms:等 `.task(id:)` 清空 monthOccurrences 缓存,让 stats 走 store.todos 兜底读到新值。
+    /// 4. 延时 250ms:等 `.task(id:)` 把缓存标记为 stale(calendarCacheStale),让 stats 走 store.todos 兜底读到新值。
     private func scheduleTodayClearCelebrationCheck() {
         clearCheckTask?.cancel()
         clearCheckTask = Task { @MainActor in
@@ -1186,10 +1193,12 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     /// 计算 selectedDate 当天的完成度统计。
     /// 优先用 `monthOccurrences` 缓存（已通过 .task(id:) 异步算好）；
-    /// 缓存未就绪（冷启动/跨月切换）时同步从 `store.todos` 过滤兜底，
-    /// 避免 statsBadge 闪现 "0/0"。
+    /// 缓存未就绪（冷启动/跨月切换）**或已过期**（`calendarCacheStale`，任一 todos/occurrence
+    /// 修订后的重查窗口期）时同步从 `store.todos` 过滤兜底，避免 statsBadge 闪现 "0/0"
+    /// 或吃到旧值。
     ///
-    /// 已知瞬态：跨月切换瞬间缓存清空，fallback 只覆盖原始 dueDate 命中（保守，
+    /// 已知瞬态：走 fallback 的窗口期（冷启动缓存未就绪 / 跨月切换旧月缓存对新选中日
+    /// miss / 任一修订后的 stale 重查期），fallback 只覆盖原始 dueDate 命中（保守，
     /// 不计 recurrenceRule 重复展开），数字会从"含重复任务的真实计数"暂时回落到
     /// "仅原始 dueDate 计数"，几十 ms 后缓存加载完成即恢复。这是可接受的瞬态——
     /// 比闪 "0/0" 更友好（用户至少能看到当天有任务）。
@@ -1205,7 +1214,7 @@ struct HomeView<Store: HomeTodoStore>: View {
         let dayKey = TodoOccurrenceData.dayKey(for: selectedDate, calendar: calendar)
         var total: Int
         var completed: Int
-        if let cached = monthOccurrences[dayKey] {
+        if !calendarCacheStale, let cached = monthOccurrences[dayKey] {
             completed = cached.filter { $0.isCompleted }.count
             total = cached.count
         } else {
@@ -1224,11 +1233,22 @@ struct HomeView<Store: HomeTodoStore>: View {
         // 同源(同一个 DayClock.isSameUserDay 判断),所以圆环 +1 与「已完成」section 里多出来
         // 的那一条是同一个 todo。total 和 completed 同步 +1,避免 completed > total 的负进度。
         let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
-        // 用 completedUnscheduledByDay 查表(O(1)),取代原 store.todos 全量 filter。
-        // 字面上就是 HomeCalendarState.completedUnscheduledTodos 的同源数据,
-        // 不再是两处各自维护的等价判断。详见 docs/completed-todos-performance.md Step 3e。
-        let completedDayKey = TodoOccurrenceData.dayKey(for: completedDayStart, calendar: calendar)
-        let completedUnscheduledToday = completedUnscheduledByDay[completedDayKey]?.count ?? 0
+        let completedUnscheduledToday: Int
+        if calendarCacheStale {
+            // stale 窗口期 completedUnscheduledByDay 也是旧值(如刚勾/刚取消的无日期任务
+            // 还躺在旧桶里或还没进桶),与上面 occurrences 一样走 store.todos 兜底。
+            // 口径 = HomeCalendarState.completedUnscheduledTodos 的 fallback filter
+            // (谓词上移至 HomeCalendarState.isCompletedUnscheduled,单一来源防漂移),
+            // 但**不排除 deferredCompletionIDs**——原地保留的条目已完成,统计要计入。
+            completedUnscheduledToday = store.todos.filter {
+                HomeCalendarState.isCompletedUnscheduled($0, onUserDay: completedDayStart, calendar: calendar)
+            }.count
+        } else {
+            // 查表(O(1)),字面上就是 HomeCalendarState.completedUnscheduledTodos 的同源数据,
+            // 不再是两处各自维护的等价判断。详见 docs/completed-todos-performance.md Step 3e。
+            let completedDayKey = TodoOccurrenceData.dayKey(for: completedDayStart, calendar: calendar)
+            completedUnscheduledToday = completedUnscheduledByDay[completedDayKey]?.count ?? 0
+        }
         total += completedUnscheduledToday
         completed += completedUnscheduledToday
         return (total, completed)
@@ -1964,12 +1984,15 @@ struct HomeView<Store: HomeTodoStore>: View {
         .opacity(listOpacity)
         .accessibilityIdentifier("MonthHomeView")
         .task(id: CalendarRefreshKey(anchor: visibleMonthAnchor, todosRevision: store.todosRevision, revision: occurrenceRevision)) {
-            // id 变化(todosRevision / occurrenceRevision / anchor 任一)→ 旧缓存已过期,先清空。
-            // 否则 selectedDayStats() 会命中旧缓存,在 await 完成前一直返回过期数据
-            // (例:删除当天唯一一条 todo,进度条仍卡 0/1 直到 await 返回;若 task 被取消则永久卡死)。
-            // 清空后走 selectedDayStats() 的 fallback 分支,直接从 store.todos 读最新值。
-            monthOccurrences = [:]
-            completedUnscheduledByDay = [:]
+            // id 变化(todosRevision / occurrenceRevision / anchor 任一)→ 旧缓存已过期,标记 stale。
+            // **不清空缓存**:列表在重查落回前继续用旧数据渲染,保住滚动位置、行不闪没
+            // (清空的代价:Today/已完成分区瞬间塌缩 → 滚动偏移被钳回顶部,详见 calendarCacheStale 声明处)。
+            // 统计读数由 `selectedDayStats()` 见 stale 标志走 store.todos 兜底分支读最新值,
+            // 不吃旧数据(3280621 修的「删除当天唯一一条 todo,进度条卡 0/1;task 被取消则永久卡死」
+            // 由标志位继续承担,不再牺牲列表连续性)。
+            // task 被取消时本标志不会悬挂:false 只在新数据落地处写;取消意味着 id 又变了一次,
+            // 重启本 task 的新实例已同步把它重新置 true。
+            calendarCacheStale = true
 
             let startedAt = Date()
             if calendarLoadState == .error {
@@ -1979,6 +2002,8 @@ struct HomeView<Store: HomeTodoStore>: View {
             guard let firstDay = rangeDays.first, let lastDay = rangeDays.last else {
                 monthOccurrences = [:]
                 completedUnscheduledByDay = [:]
+                // 空缓存即本(退化)锚点的最终值,解除过期标记。
+                calendarCacheStale = false
                 calendarLoadState = store.todos.isEmpty ? .empty : .success
                 VoiceTodoLog.store.warning("home.month_occurrences.load_skipped reason=no_month_days anchor=\(visibleMonthAnchor.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 return
@@ -2018,8 +2043,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                     throw CancellationError()
                 } catch {
                     VoiceTodoLog.store.error("home.completed_unscheduled.load_failed range_start=\(completedRangeStart.ISO8601Format(), privacy: .public) range_end=\(completedRangeEnd.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    // 真实错误撞上取消(id 又变了一次):降级写 [:] 及其后的 stale=false/success
+                    // 会写穿新 id 实例刚置好的 calendarCacheStale=true、清掉列表正在渲染的旧缓存,
+                    // 按取消处理,状态交由重启后的新实例落定(保住 calendarCacheStale 声明处的不变量)。
+                    if Task.isCancelled { throw CancellationError() }
                     completedUnscheduledByDay = [:]
                 }
+                // 两份缓存都已落到本 revision 的最新值(completedUnscheduled 失败的降级空表也算定型),
+                // 解除过期标记。错误路径(calendarLoadState = .error)不清:列表已被错误视图替换,
+                // 统计保持兜底读 store.todos 更安全。
+                calendarCacheStale = false
                 calendarLoadState = (store.todos.isEmpty && completedUnscheduledByDay.isEmpty) ? .empty : .success
                 VoiceTodoLog.store.debug("home.month_occurrences.load_success start=\(firstDay.ISO8601Format(), privacy: .public) end=\(lastDay.ISO8601Format(), privacy: .public) dayBuckets=\(monthOccurrences.count) completedBuckets=\(completedUnscheduledByDay.count) todoCount=\(store.todos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             } catch is CancellationError {
