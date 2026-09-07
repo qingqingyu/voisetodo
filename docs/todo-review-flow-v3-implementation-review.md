@@ -1,6 +1,6 @@
 # 复盘流程 v3 —— 实施代码审阅（交接稿）
 
-> 状态：**一轮核实与修改完成（2026-09-07），待二轮 review**。各条目下「处置」小节为一轮记录。
+> 状态：**二轮 review 通过（2026-09-07），四条处置全部验收，可合入**。各条目下「处置」为一轮记录，文末「二轮 review 结论」为二轮验收 + 两条新发现（均不阻塞）。
 > 审阅基线 `797eae2`（`main` / `claude/review-flow-breakpoints-x8izga`，两者同一提交）。
 > 审阅对象：v3 五批实施 `fdc13a5`→`73f1eae` + 两轮双审修正 `26ddc59` / `407ded2`。
 > 方案原文：`docs/todo-review-flow-v3.md`（含审阅修订一 / 二 / 三）。
@@ -445,3 +445,78 @@ createdInWindow / oneOffCompletions）入口处都会
 > StoreKit 守卫），对照时以 stash 基线为准。
 
 _（其余待填）_
+
+---
+
+## 二轮 review 结论（2026-09-07，原审阅者）
+
+**审阅对象**：`3ef0246`（v3 实施审阅一轮处置）。**结论：四条处置全部通过验收，可合入。**
+另提两条新发现，均**不阻塞**——一条是本轮扩面改动留下的契约缺口（建议顺手补），
+一条是流程性提醒。
+
+> ⚠️ 与一轮同样的限制：**本次二轮 review 仍是纯静态的**——审阅环境无 Swift 工具链
+> （无 `swift`、无 Xcode），**没有编译、没有跑过任何测试**。处置里「✅ 真的跑过
+> （iPhone 17 Pro 模拟器 iOS 26.5）」与「DST / StoreKit 两条基线红灯经 stash 对照
+> 无关」我**无法复验**，只能采信一轮的记录。别让「两轮 review 都过了」被读成
+> 「两轮都验过测试」——真机手测 7 项至今仍是零执行。
+
+### 逐条验收
+
+| # | 验收标准 | 结论 | 证据 |
+|---|---|---|---|
+| 1 | 发现 1 已修，三条测试方向正确 | ✅ | `ReviewFlowView.swift` 判定行与建议修法**逐字一致**，`hasPlaceholderText` 复用 `InsightID.firstPlaceholder` + `placeholderText`，与 `placeholderSummaryRow` 渲染条件同源；顺序约束写进行间注释。`testEmptyResultsWithPlaceholderKeepsInsightsStep` 断言 `.insights` 且 retreat 对称；`testTrueEmptyResultsSkipInsightsStep` 夹具（高优 3 条跨度 3 / 普通 5 条跨度 0 + 7 条跨度 2 / 全 `hasDueTime: false` / 无 openTasks）确实让四条规则全 hidden 且无占位；`testRottingOnlyLadderWithNoTriggerKeepsInsightsStep` 直接护住受害者 B。旧测试名无残留（仅注释保留出处） |
+| 2 | 发现 2 有结论 + 注释 + 单测 | ✅ | 拍板时刻粒度；`weekSummary` 与 `ReviewAggregator` 四处过滤的注释都写清了边界语义与理由；`testWeekSummary_startIsSinceInstant_notSinceUserDay`（9/3 08:00 不计、10:00 计）在旧实现下必红，是有效护栏 |
+| 3 | 发现 4 已处置，注释与实现不矛盾 | ✅ | `gateHintText` 用 `switch state.currentStep` **穷举**（非 `default:`），第二个闸门出现时编译器会强制补分支；注释从「流程级」口号改成「文案键按步骤选」的事实描述 |
+| 4 | 发现 5 有交代 | ✅ | 明确「未验证，留真机回归」，未凭想象调 `layoutPriority`；`docs/todo-review-flow-v3.md` 验证章第 4 项的「日文最长」错误已修正为「最危险的是 en」，第 5 项同步了收窄后的跳过语义 |
+| 5 | 每条有处置小节 + 编译/跑过声明 | ✅ | 六条齐全，声明具体到模拟器型号与系统版本（我无法复验，见上方限制） |
+| 6 | 反驳同样算完成 | — | 本轮无反驳，四条均核实成立 |
+| 7 | 不扩大范围 | ✅ **判断正确** | 见下 |
+
+**关于第 7 条**：工作约定写的是「看到别的可改点，写进新增发现，不要顺手改」，而本轮
+确实改了 `ReviewAggregator` 四个函数——**但这是对的**。「新增发现 1」说明了原因：
+时刻粒度是用户拍板要实施的东西，而聚合核入口会把起点折回用户日，只改 `weekSummary`
+传参是**静默空改**（改了、测试还全绿、行为纹丝不动）。这属于「拍板项的必要实施面」，
+不是顺手扩面；且它主动把扩面理由、影响面核对过程、和「审阅时只读传参处没读聚合核」
+的教训一并写进了文档。这是本轮做得最好的一件事——**换个做法（照字面只改传参然后报完成）
+会留下一个看起来修好了、其实没修的坑**。
+
+### 新发现 A（低，不阻塞）· 聚合核的下界契约依赖「调用方起点必须日对齐」，但无人强制、无测试钉住
+
+四个函数的下界改成 `>= startDay` 精确时刻比较后，**只有当调用方传入的 start 恰是用户日
+起点时，才与旧语义等价**。等价性我自己推过一遍，成立：设 `startDay` 是用户日 D 的起点，
+则「事件的用户日 ≥ D」与「事件时刻 ≥ D 的起点」互为充要（用户日是连续区间）。
+
+问题在于**这个前提没有任何东西保证**：
+
+- 两个日对齐调用方都是 `date(byAdding:)` 作用在 `startOfUserDay(today)` 上
+  （`monthSummary` 的 `-1 month`、`ReviewView.Period.startDay(from:)` 的 `-7 day` / `-1 month`）。
+  `date(byAdding:)` 保留**挂钟时间**——正常情况下结果仍是该日的用户日起点，等价成立。
+- 但若 `DayClock.startHour` 恰好落在目标日 DST spring-forward 缺失的那个小时，
+  `date(byAdding:)` 的结果不是该日的用户日起点，新旧语义就分叉了：旧实现会
+  `startOfUserDay` 再归一化一次把偏差抹掉，新实现直接比时刻。窄，但这个仓库**已有一条
+  已知红的 DST 用例**（`TodoDueDateShifterTests.testDSTSpringForward_fallsBackToMidnight`），
+  说明 DST 在这里不是纯理论。
+- 更实际的风险是契约层面：将来有人给 `monthSummary` 加一个非日对齐的起点
+  （比如「自安装以来」「自某次事件以来」），会**静默**拿到时刻语义而不自知——
+  正是本轮刚踩过的那类坑的镜像。
+
+**便宜的修法**（1 行 × 2 处 + 1 条测试）：让日对齐的调用方**显式**归一化——
+`monthSummary` 的 `start` 与 `ReviewView.Period.startDay(from:)` 的返回值各套一次
+`DayClock.startOfUserDay(for:)`。既把契约钉死在调用方，又顺带堵上 DST 洞；
+`weekSummary` 传时刻不变。再加一条测试：给 `monthSummary` 传一个**非日对齐**时刻，
+断言结果与传其用户日起点相同。
+
+不阻塞的理由：当前两个调用方在非 DST 边界下行为正确，且已有
+`DayStartHourBoundaryTests` 覆盖用户日边界。这是防将来的护栏，不是现在的 bug。
+
+### 新发现 B（信息）· 真机手测 7 项仍是零执行，且它是唯一能定论发现 5 的手段
+
+`docs/todo-review-flow-v3.md` 头注的「真机手测 7 项（验证章）待做」从 v3 实施至今未变。
+本轮又往里追加了发现 5（② 屏 pad 的 `layoutPriority` 在 en 下的塌陷风险）。
+这意味着：**② 屏四钮标签在 en 下到底可不可读，两轮 review 都没有能力回答**——
+一轮无模拟器截图、二轮无工具链。发现 5 的「未验证，留真机回归」是诚实的处置，
+但那条回归再不做，v3 就会以「两轮 review 通过」的名义带着一个未验证的布局风险上线，
+而它恰好是走查修正 A 想修的那个问题的同类。
+
+建议把真机手测 7 项从「待做」升级为**发布前阻塞项**，至少第 3、4、5 项
+（闸门路径 / ② 屏三语按钮 / ③ 屏两条路径）——后两项正好覆盖本轮两处改动的视觉出口。
