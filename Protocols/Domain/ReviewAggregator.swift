@@ -55,8 +55,11 @@ enum ReviewAggregator {
     ///
     /// - Parameters:
     ///   - events: 完成事件列表(已从 SwiftData 转换好)
-    ///   - startDay: 区间起始(按用户日归一化,闭区间)
-    ///   - endDay: 区间结束(按用户日归一化,开区间——不含当天)
+    ///   - startDay: 区间起始——**按传入时刻精确比较**(不折算用户日;日对齐
+    ///     起点的调用方两种比较等价,weekSummary 传上次复盘完成时刻,见
+    ///     过滤处注释)
+    ///   - endDay: 区间结束(按用户日归一化,开区间——不含当天;起始刻当天
+    ///     仅含起始刻之后的部分,「整天」只在起始刻次日起成立)
     ///   - calendar: 日历,默认 .current
     ///   - upcomingDueIn7DaysCount: 未来 7 天到期的待办数(统计卡副文案)
     /// - Returns: 聚合后的回顾摘要
@@ -89,10 +92,14 @@ enum ReviewAggregator {
             )
         }
 
-        // 过滤到 [startDay, endDay) 区间
+        // 过滤到窗口内:下界按**传入时刻**精确比较,上界按用户日(含整天)。
+        // 日对齐起点的调用方(滚动 30 天 / 回顾页周月 picker)两种比较等价;
+        // weekSummary 传上次复盘完成**时刻**——若下界折算成用户日,复盘当天
+        // 早晨、已被上次复盘统计过的完成会整段重复计入,周节奏下每期窗口
+        // 与上期重叠一天(v3 实施审阅发现 2,2026-09-07 拍板:时刻粒度)。
         let inRange = events.filter { event in
             let day = DayClock.startOfUserDay(for: event.completedAt, calendar: calendar)
-            return day >= normalizedStart && day < normalizedEnd
+            return event.completedAt >= startDay && day < normalizedEnd
         }
 
         guard !inRange.isEmpty else {
@@ -185,7 +192,8 @@ enum ReviewAggregator {
     ///
     /// - Parameters:
     ///   - todos: 一次性/规律混排的待办 DTO(内部自过滤,规律任务直接跳过)
-    ///   - startDay: 区间起始(按用户日归一化,闭区间)
+    ///   - startDay: 区间起始——**按传入时刻精确比较**(同 summarize;日对齐
+    ///     调用方两种比较等价)
     ///   - endDay: 区间结束(按用户日归一化,开区间——不含当天)
     ///   - calendar: 日历,默认 .current
     static func sameDayCompletions(
@@ -194,12 +202,11 @@ enum ReviewAggregator {
         to endDay: Date,
         calendar: Calendar = .current
     ) -> Int {
-        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
         let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
         return todos.filter { todo in
             guard todo.recurrenceRule == nil, let completedAt = todo.completedAt else { return false }
             let doneDay = DayClock.startOfUserDay(for: completedAt, calendar: calendar)
-            guard doneDay >= normalizedStart, doneDay < normalizedEnd else { return false }
+            guard completedAt >= startDay, doneDay < normalizedEnd else { return false }
             let createdDay = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
             return createdDay == doneDay
         }.count
@@ -211,18 +218,18 @@ enum ReviewAggregator {
     ///
     /// - Parameters:
     ///   - todos: 待办 DTO(含已完成)。
-    ///   - startDay/endDay: 用户日归一化的闭开区间(与 sameDayCompletions 同约定)。
+    ///   - startDay/endDay: 下界按传入时刻精确比较、上界按用户日的闭开区间
+    ///     (与 sameDayCompletions / summarize 同约定)。
     static func createdInWindow(
         _ todos: [TodoItemData],
         from startDay: Date,
         to endDay: Date,
         calendar: Calendar = .current
     ) -> Int {
-        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
         let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
         return todos.filter { todo in
             let day = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
-            return day >= normalizedStart && day < normalizedEnd
+            return todo.createdAt >= startDay && day < normalizedEnd
         }.count
     }
 
@@ -231,18 +238,18 @@ enum ReviewAggregator {
     /// **同口径分母**——分子 `sameDayCompletions` 本就只数一次性完成,分母若
     /// 用 `summarize` 的 total(events 含规律完成记录 union)会被规律任务抬高,
     /// 占比被系统性低估、同一门槛在不同用户身上不等价。
+    /// 窗口边界与 summarize 同约定:下界按传入时刻精确比较,上界按用户日。
     static func oneOffCompletions(
         _ todos: [TodoItemData],
         from startDay: Date,
         to endDay: Date,
         calendar: Calendar = .current
     ) -> Int {
-        let normalizedStart = DayClock.startOfUserDay(for: startDay, calendar: calendar)
         let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
         return todos.filter { todo in
             guard todo.recurrenceRule == nil, let completedAt = todo.completedAt else { return false }
             let day = DayClock.startOfUserDay(for: completedAt, calendar: calendar)
-            return day >= normalizedStart && day < normalizedEnd
+            return completedAt >= startDay && day < normalizedEnd
         }.count
     }
 
