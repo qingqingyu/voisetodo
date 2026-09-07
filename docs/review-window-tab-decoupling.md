@@ -214,13 +214,14 @@ static func monthSummary(
 ## 验收标准
 
 1. 统计页选「周」与选「月」，**Hero 数字、Stats、入口卡三处完全不变**；只有分类图 / 每日趋势 / 最忙一天跟着变。
-2. 入口卡上可见「近 30 天」范围标，字号与颜色明显次于主文案。
+2. ~~入口卡上可见「近 30 天」范围标~~（**2026-09-07 修订**，入口卡范围标口径改为与流程第 1 步同源后失效，见修订记录）：入口卡上可见范围标（有历史会话「上次复盘以来」/ 首次复盘「回顾近 7 天」），字号与颜色明显次于主文案。
 3. picker 不再吸顶；滚动时它随内容滚走。
-4. 从统计页点入口卡进流程，**第 1 步 Hero 数字与统计页 Hero 数字相同**。
+4. ~~从统计页点入口卡进流程，**第 1 步 Hero 数字与统计页 Hero 数字相同**~~（**2026-09-07 修订**，v3 拍板 1 让两窗有意分叉后失效）：统计页 Hero（滚动 30 天）与流程第 1 步 Hero（上次复盘至今）**窗口有意不同，不要求同数**；要求改为**入口卡的范围标与流程第 1 步的范围文案一致**（键同源 `scope_since` / `scope_first`，见 `docs/review-entry-scope-mismatch.md`）。
 5. 空态（近 30 天零完成）下入口卡仍置顶；且空态整页不显示周/月 picker（有意，见 A2）。
 6. 日文设备上 picker 显示「週 / 月」、导航标题显示「ふりかえり」，两张图表卡标题显示「日別推移」「カテゴリ別」。
-7. `ReviewStepRecap` 的 Hero **只有周期标签一处变化**（「2026年9月」→「近 30 天」），其余渲染与改动前一致（共用组件本体未被动过）。（前提：v3 方案尚未实施——见下。）
-8. 统计页 Hero 与流程第 1 步 Hero 的周期标签文案相同。
+7. `ReviewStepRecap` 的 Hero **只有周期标签一处变化**（「2026年9月」→「近 30 天」），其余渲染与改动前一致（共用组件本体未被动过）。（前提：v3 方案尚未实施——见下；v3 落地后本条整体由 v3 文档接管。）
+8. ~~统计页 Hero 与流程第 1 步 Hero 的周期标签文案相同~~（**2026-09-07 删除**，同 #4 失效原因，被 #4 新口径取代）。
+9. （**2026-09-07 新增**）首次复盘（无历史会话）时，入口卡范围标显示「回顾近 7 天」，与第 1 步一致；有历史会话时两处均显示「上次复盘以来」。做完一次复盘返回统计页，入口卡范围标立即切换（`loadReviewNotes()` 在流程收尾已有刷新）。
 
 > **与 v3 的顺序**：v3 方案（`docs/todo-review-flow-v3.md`，同分支 `0383d72`）也动第 1 步周边与 ja 键。两份都落地时**先本后 v3**，v3 在本方案之上 rebase，否则验收 7 不成立。
 
@@ -255,3 +256,4 @@ static func monthSummary(
 - 2026-09-04：实施前审阅补齐——`ReviewFlowView` 行号对齐 `3f7f051`（窗口 `:608-611`、`triageInput` `:211`）；空态失去 picker 记为有意；`review.section.trends` 不采用；C 从 4 键扩至 6 键并界定其余 16 键归 v3；护栏 6 理由改如实（暂无渲染点）；新增护栏 8（xcstrings 三条纪律）；单测两条不可实现项改写为 builder 级；补验收 7 的 v3 顺序前提。
 - 2026-09-04：**实施完成**——A：`ReviewView` 拆 `fixedWindowSummary`（复用 `monthSummary` + 传标签）/`periodSummary`（原 `summary` 整体改名，编译器揪全读取点），删吸顶、picker 内联入口卡后，空态判定换 `fixedWindowSummary.total`；B：入口卡 VStack 加范围标，`monthSummary` 增 `periodLabel` 参数（缺省保留旧行为），`ReviewView` 与 `ReviewStepRecap` 两处传「近 30 天」；C：6 键补 ja + 新增 `review.window.last30d`。新增 2 条 builder 级单测（窗口边界 / 标签参数），全套单测 657 过，仅 2 个与本改动无关的既有环境红灯（StoreKit CLI 注入、DST +0800）。真机手测项（周/月切换、三语 AX5、深链）待做。
 - 2026-09-06：双 review 循环修复三处（不动既有拍板）——①周窗口零完成（30 天有数据）时图表区整区退一行提示（`periodEmptyHint` + 新键 `review.period.empty`），堵掉稀疏拼接残句与空标题分类卡（窗口拆分带出的新可达态，见 A2 第二条 ⚠️）；②`ReviewView.dailyTrendData` 循环外提 `periodSummary.byDay`，消除循环内 7~30 次全量重聚合；③单测 661 过（含新增 2 条），红灯仍为既有 2 个。
+- 2026-09-07：**入口卡范围标口径修正**（实施 `docs/review-entry-scope-mismatch.md`，该 review 经逐条核实成立）——v3 拍板 1（`9c5fac9`）把流程第 1 步窗口改为「上次复盘至今」后，本方案的验收 #2/#4/#8 按字面失效（B1 当年锚定 30 天是对的，因为当时流程窗口就是 30 天；缝出在两个改动范围的交界处）。入口卡范围标从 `review.window.last30d` 改为与第 1 步同源的三元 `scope_since`/`scope_first`，`lastReviewDate` 由 `loadReviewNotes()` 的同一次 `allSessions()` 赋值（升序，`.last` 即最近，与 `ReviewFlowView` 注入第 1 步的口径同源）。#2/#4 改口径、#8 删除、新增 #9。统计页 Hero 的「近 30 天」（`fixedWindowSummary`）不动，`review.window.last30d` 键保留（仍有一个消费者）。

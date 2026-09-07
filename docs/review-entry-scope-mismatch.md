@@ -1,6 +1,6 @@
 # 复盘入口卡范围标与流程窗口失配 —— review 意见
 
-> 状态：**待核实 / 待修**。文档创建于 2026-09-06。
+> 状态：**已核实 / 已实施**（2026-09-07，逐条复验全部成立，见文末「核实记录」）。文档创建于 2026-09-06。
 > 基线：`797eae2`（`main`）。
 > 性质：这是一份 **review 意见**，不是已拍板方案。下述「已核实事实」请核实人逐条复验后再动手；
 > 「判断与建议」部分可以推翻，推翻时请在文末「核实记录」写明理由。
@@ -182,13 +182,13 @@ v3 已给第 1 步加了自己的 scopeHeader，锚定的活它干了。但这�
 
 请逐条确认后在「核实记录」打勾或写明分歧：
 
-- [ ] F1：`grep -n "review.window.last30d" UI/Review/ReviewView.swift` 得两处
-- [ ] F2：`ReviewStepRecap.swift:33` 确为 `weekSummary`，且 `RecapComponents.swift:495-506` 的回落是 7 天
-- [ ] F3：`ReviewStepRecap.swift:72-73` 的两个 key 与 xcstrings 中的三语值一致
-- [ ] F4：`ReviewView.swift:165-167` 的 `pendingCount` 确无日期过滤
-- [ ] F5：`git show 9c5fac9 -- UI/Review/ReviewView.swift` 确认只动 `periodSummary` 字段接线、未碰入口卡；且 `d8f9c33` 早于 `9c5fac9`
-- [ ] J1–J4：判断是否认同；不认同请写明
-- [ ] 数据通路：`allSessions()` 确为升序（`.last` 是最近一次）
+- [x] F1：`grep -n "review.window.last30d" UI/Review/ReviewView.swift` 得两处
+- [x] F2：`ReviewStepRecap.swift:33` 确为 `weekSummary`，且 `RecapComponents.swift:495-506` 的回落是 7 天
+- [x] F3：`ReviewStepRecap.swift:72-73` 的两个 key 与 xcstrings 中的三语值一致
+- [x] F4：`ReviewView.swift:165-167` 的 `pendingCount` 确无日期过滤
+- [x] F5：`git show 9c5fac9 -- UI/Review/ReviewView.swift` 确认只动 `periodSummary` 字段接线、未碰入口卡；且 `d8f9c33` 早于 `9c5fac9`
+- [x] J1–J4：判断是否认同；不认同请写明
+- [x] 数据通路：`allSessions()` 确为升序（`.last` 是最近一次）
 
 ## 验证（改完之后）
 
@@ -209,4 +209,30 @@ v3 已给第 1 步加了自己的 scopeHeader，锚定的活它干了。但这�
 
 ## 核实记录
 
-（核实人填写：逐条结论、分歧、最终改法、实施 commit）
+**2026-09-07 核实**（核实环境：`fupan1` worktree，基线 `1d35db5` = `797eae2` + 本文档；核实含编译与回归测试）。
+
+**逐条结论（F1–F5 / 数据通路全部属实，无分歧）：**
+
+- **F1 ✅** 两处：`:192`（入口卡）与 `:260`（`fixedWindowSummary` 的 `periodLabel` 参数，喂统计页 Hero）。
+- **F2 ✅** `ReviewStepRecap.swift:33` 为 `weekSummary(since: lastReviewDate, ...)`；`RecapComponents.swift:503-505` 回落 `todayStart − 7 天`。
+- **F3 ✅** 三语值与 xcstrings 逐字一致（zh `上次复盘以来`/`回顾近 7 天`；en `Since your last review`/`The last 7 days`；ja `前回のふりかえりから`/`過去 7 日間をふりかえる`）。
+- **F4 ✅** 过滤条件仅 `isCompleted`/`abandonedAt`/`recurrenceRule`，无任何日期谓词。
+- **F5 ✅** `git merge-base --is-ancestor d8f9c33 9c5fac9` 通过；`9c5fac9` 对 `ReviewView.swift` 的 diff 仅 6+/1−，全部在 `periodSummary` 内补 `oneOffCompletionCount` 接线，未碰入口卡。
+- **数据通路 ✅** `ReviewSessionStore.load(from:)`（`:260`）显式 `.sorted { $0.completedAt < $1.completedAt }`（升序）；`ReviewFlowView.swift:815` 注入的正是 `state.previousSessions.last?.completedAt`。
+
+**J1–J4 全部认同。** J2 的直接证据：F1 处代码注释自述用途「点进流程前就锚定窗口口径」——用途声明的是**流程**，锚的却是**统计页**窗口，与自身注释矛盾。
+
+**最终改法：按「推荐」方案实施。**
+
+- `ReviewView` 新增 `@State private var lastReviewDate: Date?`；
+- `loadReviewNotes()` 改为取一次 `let sessions = allSessions()`，`reviewNotes` 与 `lastReviewDate` 同源赋值（遵守「不要调两遍」）；
+- 入口卡范围标改三元 `lastReviewDate != nil ? scope_since : scope_first`，注释改写锚定对象为流程窗口并注明与第 1 步同源；
+- 未动：统计页 Hero（`fixedWindowSummary`）、`pendingCount` 口径、`review.window.last30d` 键——改后 grep 确认该键仅剩 `fixedWindowSummary` 一个消费者。
+
+**单测选择：跳过 `ReviewEntryScope.label` 纯函数抽缝，不新增单测。** 理由：该三元与 `ReviewStepRecap.scopeHeader` 的既有内联三元同形，只给入口卡一侧抽缝防不了两处漂移（流程侧仍是内联），同源靠「键一致 + 注释互指」在构造上保证——与 `review-window-tab-decoupling.md` 「不为测试抽缝」的既有拍板一致。回归：`ReviewRecapSameDayTests` + `HomeCalendarStateGroupingTests` 全绿（xcodebuild，iPhone 17 Pro / iOS 26.5）。
+
+**超出原 review 的一点补充：** 验收标准失效清单不止 #4/#8——**#2（「入口卡上可见『近 30 天』范围标」）按字面同样失效**，本次改法直接替换了那行字。已在 `review-window-tab-decoupling.md` 一并修订（#2/#4 改口径、#8 删除、新增 #9，修订记录 2026-09-07 条）。
+
+**实施 commit：**代码 `8747e64`（fix(review): 入口卡范围标改与流程第 1 步同源——上次复盘以来/回顾近 7 天）；文档与本记录随后同批提交。
+
+**真机手测 4 项（首次复盘 / 有历史 / 收尾后切换 / 三语 AX5）待做。**
