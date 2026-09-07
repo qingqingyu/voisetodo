@@ -98,6 +98,10 @@ struct ReviewView: View {
     /// 「复盘笔记」时间线(2026-08-23 拍板:历次笔记随时可翻)。
     /// App Group UserDefaults(≤52 条),onAppear 与复盘流程收尾后各读一次。
     @State private var reviewNotes: [ReviewNotesEntry] = []
+    /// 上次复盘完成时刻(入口卡范围标用,2026-09-07 范围标口径修正)。与流程侧
+    /// `ReviewFlowView` 注入第 1 步的 `previousSessions.last?.completedAt` 同源;
+    /// 随 `loadReviewNotes()` 的同一次 `allSessions()` 一并赋值,不单独再读。
+    @State private var lastReviewDate: Date?
 
     private let calendar = Calendar.current
 
@@ -186,10 +190,17 @@ struct ReviewView: View {
                             .minimumScaleFactor(0.7)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        // 范围标(2026-09-04 拍板 B1):点进流程前就锚定窗口口径——
-                        // 割裂感发生在点之前。信息层级刻意低于主文案,不加第三行/图标,
+                        // 范围标(2026-09-04 拍板 B1;2026-09-07 修正口径):点进流程
+                        // 前就锚定窗口口径——割裂感发生在点之前。锚定对象是**流程**的
+                        // 窗口(v3 拍板 1:上次复盘至今,首次复盘回落近 7 天),不是本页
+                        // 统计窗口——两窗有意分叉,Hero 的「近 30 天」属
+                        // `fixedWindowSummary`,与此处无关。键与三元判断和第 1 步
+                        // `ReviewStepRecap.scopeHeader` 同源,别让两处漂移。
+                        // 信息层级刻意低于主文案,不加第三行/图标,
                         // 不要退回 8-23 否掉的「信息展示卡」。
-                        Text(String(localized: "review.window.last30d"))
+                        Text(String(localized: lastReviewDate != nil
+                            ? "review.flow.recap.scope_since"
+                            : "review.flow.recap.scope_first"))
                             .font(WarmFont.caption(11))
                             .foregroundColor(WarmTheme.textMuted)
                             .lineLimit(1)
@@ -408,9 +419,12 @@ struct ReviewView: View {
         }
     }
 
-    /// 读取历次笔记(只留写了内容的会话,新→旧)。
+    /// 读取历次笔记(只留写了内容的会话,新→旧);顺带取最近一次会话时刻
+    /// 作为入口卡范围标的口径(全量会话升序,`.last` 即最近,与流程侧同源)。
     private func loadReviewNotes() {
-        reviewNotes = ReviewNotesEntry.make(from: ReviewSessionStore.shared.allSessions())
+        let sessions = ReviewSessionStore.shared.allSessions()
+        reviewNotes = ReviewNotesEntry.make(from: sessions)
+        lastReviewDate = sessions.last?.completedAt
     }
 
     // MARK: Period Picker
