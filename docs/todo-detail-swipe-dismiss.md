@@ -344,14 +344,19 @@ grabber 色 = sketch 40% → 70% 不透明度        // #8993A4,alpha 0.4 → 0.
             withAnimation(WarmAnimation.springSmooth) { dismissDragOffset = 0 }
         },
         allowSimultaneousWithScrollViewPan: { scrollView, pan in
-            // 起手锁定:本手势首次被问询时快照,整段手势沿用。
+            // 起手锁定:本手势首次被问询时快照(0.5pt 容差),整段手势沿用。
             // 闭包可能被 UIKit 多次调用(含手势中途),快照防止中段起手滚到顶后"变成"可关闭
             if dragGateLockedAtTop == nil {
-                dragGateLockedAtTop = scrollView.contentOffset.y <= 0
+                dragGateLockedAtTop = scrollView.contentOffset.y <= 0.5
             }
-            return dragGateLockedAtTop == true
-                && scrollView.contentOffset.y <= 0
-                && pan.velocity(in: scrollView).y > 0
+            guard dragGateLockedAtTop == true, scrollView.contentOffset.y <= 0.5 else { return false }
+            // 方向:t.y ≥ 0 或 v.y ≥ 0(非明显上滑即放行)。
+            // 首问发生在 ScrollView pan 刚 began 的瞬间,velocity 常读 0/未稳,
+            // 严格 velocity.y > 0 会让首问 false → ScrollView 独占 → 本手势 .failed,
+            // 整段手势死亡(HomeView.swift:1879-1888 的既有结论)。
+            let t = pan.translation(in: scrollView)
+            let v = pan.velocity(in: scrollView)
+            return t.y >= 0 || v.y >= 0
         }
     )
 )
@@ -368,6 +373,16 @@ private func resetDragGestureState() {
 **`dragGateLockedAtTop ?? true` 的含义**：门控只在与 ScrollView pan 冲突时被问询。
 手指落在自绘 header / grabber（无 ScrollView 冲突）时快照为 nil ——
 这些区域是纯拖拽面，恒允许（与 HTML 原型的 inScroll 语义一致）。
+
+> **2026-09-07 修订（真机反馈「第二次下滑时灵时不灵」）**：v2 原稿的方向判定是
+> `pan.velocity(in: scrollView).y > 0`、到顶判定是严格 `contentOffset.y <= 0`。
+> 真机实测「滚到顶 → 抬手 → 第二次下滑」经常整段无响应 —— 首次 simultaneous 问询
+> 发生在 ScrollView pan 刚 began 的瞬间，velocity 常读 0，严格判定让首问返回 false，
+> ScrollView pan 独占，外层 recognizer 被判 `.failed`，整段手势死亡；内容不满一屏时
+> 无滚动竞争反而正常，更添随机感。与 HomeView 折叠手势注释（:1882-1888）记录的
+> 根因相同。修订为对齐 HomeView 的既证形式：`t.y >= 0 || v.y >= 0` + 0.5pt 容差。
+> **起手锁定语义不变**（起手不在顶 → 整段手势仍恒为纯滚动）。
+> 修订同步落在 `TodoDetailView.swift`（已合入 main 的实施代码）。
 
 **快照复位依赖 onCancelled 的 `.failed` 路径**：起手不在顶 → 门控 false →
 ScrollView 独占 → 外层 recognizer 被 UIKit 判 `.failed` → 包装层派发

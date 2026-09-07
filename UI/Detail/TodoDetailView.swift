@@ -571,12 +571,21 @@ struct TodoDetailView<Store: TodoListReadable>: View {
             allowSimultaneousWithScrollViewPan: { scrollView, pan in
                 // 起手锁定:首问快照,整段沿用。闭包会被 UIKit 多次调用(含手势中途),
                 // 快照防止「中段起手滚到顶后,本手势中途变成可关闭」。
+                // 0.5pt 容差对齐 HomeView 折叠手势:惯性滚停到顶后 contentOffset 常留
+                // 亚点级浮点残值,严格 <= 0 会把整段手势误锁成「起手不在顶」。
                 if dragGateLockedAtTop == nil {
-                    dragGateLockedAtTop = scrollView.contentOffset.y <= 0
+                    dragGateLockedAtTop = scrollView.contentOffset.y <= 0.5
                 }
-                return dragGateLockedAtTop == true
-                    && scrollView.contentOffset.y <= 0
-                    && pan.velocity(in: scrollView).y > 0
+                guard dragGateLockedAtTop == true, scrollView.contentOffset.y <= 0.5 else { return false }
+                // 方向判定不能用严格 velocity.y > 0:首次问询发生在两个 recognizer 都还在
+                // .possible / ScrollView pan 刚 began 的瞬间,velocity 常读 0 或未稳 ——
+                // 首问返回 false 会让 ScrollView pan 独占、本手势被判 .failed,后续位移
+                // 再大也救不回来(真机表现:到顶后的第二次下滑时灵时不灵)。
+                // 对齐 HomeView 折叠手势的既有结论(HomeView.swift:1879-1888):
+                // 只有「明显上滑」才拒绝,t.y / v.y 任一 ≥ 0 即放行。
+                let t = pan.translation(in: scrollView)
+                let v = pan.velocity(in: scrollView)
+                return t.y >= 0 || v.y >= 0
             }
         )
     }
