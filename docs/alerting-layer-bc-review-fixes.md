@@ -357,3 +357,17 @@ curl -i "http://localhost:8787/v1/health"
 3. **层 B / C-1 补一句 `enabled` 口径**：探活与探针都只算 `enabled !== false` 的 provider，与 `selector.js` 的 `pickCandidates` 对齐——停用的 provider 不承接流量，计入分母会把总故障稀释成局部故障。
 
 4. **层 C-2 心跳**：把 `env.HEALTHCHECK_PING_URL + "/fail"` 的写法改成 `new URL()` 操作 pathname 的描述。
+
+---
+
+## 实施记录（2026-09-07）
+
+5 处修复已全部实施，`AIProxy` 全量测试 264 pass。与本文档的三处偏差，均为实施时发现文档自身不自洽，按下述方式收敛：
+
+1. **缺陷 4 的修法补了另一半。** 「修法」小节只调整了 `worker.js` 的调用顺序（送达后才写 `lastNotifiedAt`），并断言「下次 cron 自然重试这条跃迁」，同时「不要改的」禁止动 `shouldNotify`——这两者矛盾：`level`/`since` 照常落盘后，下次 cron 时 level 未变，未修改的 `shouldNotify` 只会走 6h reminder（且仅 down 有），degraded 告警仍会永久丢失，本文测试规格里「sent.ok === false → 下次 cron 同 level 仍重推」也无法通过。实施时在 `shouldNotify` 补了一条纯函数规则：`current !== "ok" && !previous.lastNotifiedAt` → 重推（`kind = current`）。「不要改的」对状态机的保护相应收窄为：`classifyLevel` / `nextRecord` 未动，`shouldNotify` 仅增此分支。
+
+2. **去掉了 `/v1/health` 的 `entries.length > 0` 守卫。** 缺陷 1 的修法片段保留了 `entries.length > 0 &&`，但缺陷 3 的 `enabled` 过滤落地后，空 `entries` 有了唯一新来源——全部 provider 停用（过滤前该守卫是死代码：`loadProviders` 对空 `PROVIDERS` 抛错走 `misconfigured`，`entries` 不可能为空）。此时 cron 探活走 `probeable === 0` 判 down + 打 `/fail` 心跳，探针若因空数组报 ok 就与心跳口径矛盾。空数组上 `every()` 的空真判定恰好给出 down/503，故直接去掉守卫，探针 / cron / 心跳三处口径一致。
+
+3. **部署前提与事实不符。** 本文档写作时的前提是「B/C 已实施、尚未部署」。经 `wrangler deployments list` 核实：层 B/C 已随 **2026-09-05 11:43** 的部署上线（之后的两次 Secret Change 重新部署的也是修复前代码），**线上正在跑本文所述 5 处缺陷的版本**。结论从「先别急着部署」反转为「尽快重新部署」；`ALERTING.md` 状态表与警示块已照此改写。
+
+其余按原文实施：缺陷 1/2/3/5 修法照抄；缺陷 2 的告警文案按「必要时加一句提示」落实（`buildHealthAlertMessage` 增 `configMissing` 提示行，覆盖 secrets 全缺与全部停用两种形态）；测试表 6 项全部落地，另补 open + half-open 混合探针与 `shouldNotify` 重推的单元断言。

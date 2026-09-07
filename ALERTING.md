@@ -89,13 +89,13 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 
 | 层 | 状态 | 说明 |
 |---|------|------|
-| B cron 熔断告警 | **已实施，待修复后部署** | 代码 + 测试已落地（`src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`），但 review 发现 5 处缺陷 |
-| C 健康探针 + 死人开关 | **已实施，待修复后部署** | 同上（`/v1/health` + `handleScheduled` 心跳） |
+| B cron 熔断告警 | **已实施 + 5 处缺陷已修复，待重新部署** | 代码 + 测试已落地（`src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`）；review 发现的 5 处缺陷已按 `docs/alerting-layer-bc-review-fixes.md` 修复 |
+| C 健康探针 + 死人开关 | **已实施 + 5 处缺陷已修复，待重新部署** | 同上（`/v1/health` + `handleScheduled` 心跳） |
 | A 客户端信标 | 待发版 | 要过审核 + 等用户升级，实际生效晚得多 |
 | A/D feedback-relay 接收端 | 待发版 | 没有层 A 发信标，先建接收端没意义 |
 | D pending 积压 | 待发版 | 随层 A 一起 |
 
-> ⚠️ **B/C 先别急着部署。** review 发现 5 处缺陷，其中 3 处会让故障变得不可见（探针把 `half-open` 当健康、secret 全缺时三层同时报绿、停用 provider 稀释故障判定）。带着这些缺陷上线比不上线更危险——会让人以为「没收到告警 = 没出事」。修复方案见 **`docs/alerting-layer-bc-review-fixes.md`**，本文档下面各节已按该方案修订口径。
+> ⚠️ **线上正在跑修复前的版本（2026-09-05 部署），需尽快 `wrangler deploy` 重新部署。** 修复前版本有 3 处会让故障变得不可见（探针把 `half-open` 当健康、secret 全缺时三层同时报绿、停用 provider 稀释故障判定）——会让人以为「没收到告警 = 没出事」。缺陷明细与修复见 **`docs/alerting-layer-bc-review-fixes.md`**（文末附实施记录）。
 
 **B/C 先做的理由：** 它们不依赖发版，且覆盖的「上游 AI 全挂」和「Worker/域名整个不可达」是影响面最大的两类故障。层 A 价值最高但生效最慢，两件事不冲突——B/C 先把服务端的眼睛装上。
 
@@ -240,6 +240,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 ```
 
 - level 变化 → 推
+- 故障告警从未成功送达（`lastNotifiedAt` 仍为 0，上次 Telegram 发送失败）→ 重推，直到送达为止。**与「送达后才写 `lastNotifiedAt`」配套**：`notifyProviderHealthTransition` 必须先发送、送达（或未配 `TELEGRAM_*` 的 skipped）才落盘 `lastNotifiedAt`；`level`/`since` 照常落盘（否则恢复消息的故障时长会算错）。只做一半没用——先发送后落盘但无重推规则，degraded 告警仍会永久丢失（它没有 reminder 兜底）；有重推规则但先落盘，重推永远不会触发。
 - 仍是 `down` 且距 `lastNotifiedAt` ≥ 6h → 推 `reminder`
 - 其余 → 不推
 
@@ -382,7 +383,8 @@ Telegram 与心跳调用靠注入的 `fetchImpl` 按 URL 前缀分流拦截（`a
 
 **`/v1/health`**
 
-- 全 closed → 200 + `status: "ok"`；部分 open → 200 + `"degraded"`；全 open → **503**
+- 全 closed → 200 + `status: "ok"`；部分不健康 → 200 + `"degraded"`；全部不健康 → **503**。**必须各有一条 half-open 用例**（部分 half-open → degraded；全 half-open → 503；open + half-open 混合 → 503）——只测 open 守不住「half-open 算不健康」这条口径
+- 停用的 provider 不出现在 `entries` 里；全部停用 → 503 + `down`（与 cron 探活/心跳口径一致）
 - 不带 `X-App-Token` 也能访问（回归防线：别哪天被挪到 auth 后面）
 - **body 里搜不到 `secretName` / provider url / model**——直接 `assert.ok(!text.includes("api.z.ai"))`。这是安全断言，必须有
 - `PROVIDERS` 非法 → 503 + `misconfigured`，不是 500
@@ -390,16 +392,19 @@ Telegram 与心跳调用靠注入的 `fetchImpl` 按 URL 前缀分流拦截（`a
 
 **告警状态机**
 
-- ok → down：推一次；同一 level 再跑一次：**不重推**
+- ok → down：推一次；同一 level 再跑一次（已送达、未满 6h）：**不重推**
 - down → ok：推恢复消息，含故障时长
 - down 持续 5h59m 不推、6h01m 推 reminder（**用可注入的 `now` 控时，别用真实时钟**）
 - KV 读失败 → 仍然推（漏报比误报危险）
-- 无可探活 provider（secrets 全缺）→ 不推（PROVIDERS 空数组在 `loadProviders` 抛错早退，同样不推）
-- 未配 `TELEGRAM_*` → 不抛错，cron 其余部分照常完成（拿现有的 telemetry GC 测试断言这点）
+- secrets 全缺（无可探活 provider）→ **判 down 推告警 + 打 `/fail` 心跳 + 写告警状态**，文案明说这是配置问题（PROVIDERS 空数组在 `loadProviders` 抛错早退，那条路径才是「算不出 level 不推、心跳照发成功」）
+- 停用的 provider 不计入分母：唯一启用的挂掉 → `down (0/1)` 而非 `degraded (0/2)`
+- Telegram 发送失败 → `lastNotifiedAt` 不写入，下次 cron 同 level **重推**；送达后同 level 未满 6h 不再重推
+- 未配 `TELEGRAM_*`（skipped）→ 视为已处理，`lastNotifiedAt` 照常写入（不无限重算）；不抛错，cron 其余部分照常完成（拿现有的 telemetry GC 测试断言这点）
 
 **心跳**
 
 - `down` → 打 `/fail` 端点；`ok` → 打 base URL
+- ping URL 带 query（如 healthchecks.io 的 `?rid=`）→ `/fail` 必须落在 pathname 上、query 原样保留（`new URL()` 构造，不许字符串拼接）
 - KV 未绑定早退时**仍发成功心跳**
 - 心跳 fetch 抛错 → `handleScheduled` 不抛
 

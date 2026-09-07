@@ -4955,6 +4955,18 @@ function openCircuitRecord() {
   });
 }
 
+/// 熔断已打开且冷却期已过 —— classifyState 读时派生为 "half-open"。
+/// 这是故障中的真实稳态:冷却一过读出来就是 half-open,夜间无流量时没有
+/// 新的 recordFailure,这个状态会一直挂着。
+function halfOpenCircuitRecord() {
+  return JSON.stringify({
+    state: "open",
+    openedAt: Date.now() - 60_000,
+    cooldownMs: 10_000,
+    updatedAt: Date.now() - 60_000
+  });
+}
+
 function probeRequest(method = "GET") {
   return new Request("https://proxy.test/v1/health", { method });
 }
@@ -4990,6 +5002,74 @@ test("health probe: 全 open → 503(状态码本身携带语义)", async () => 
   const response = await handleRequest(probeRequest(), probeEnv(kv), {});
   assert.equal(response.status, 503);
   assert.equal((await response.json()).status, "down");
+});
+
+// ALERTING.md 缺陷 1 回归:half-open 是「曾经挂了,尚未证明恢复」,对外部探针
+// 必须算不健康。只判 open 的话,故障刚发生时 503 窗口只有 10s,夜间无流量时
+// half-open 永久挂着,探针永远绿 —— 层 C-1 就白装了。
+test("health probe: 部分 half-open → 200 + status degraded(不是 ok)", async () => {
+  const kv = new MemoryKV(new Map([["health:P1", halfOpenCircuitRecord()]]));
+  const response = await handleRequest(probeRequest(), probeEnv(kv), {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.status, "degraded", "half-open 不算健康");
+  assert.equal(data.providers.find((p) => p.id === "P1").state, "half-open");
+});
+
+test("health probe: 全 half-open → 503 + down(冷却已过不算恢复)", async () => {
+  const kv = new MemoryKV(new Map([
+    ["health:P1", halfOpenCircuitRecord()],
+    ["health:P2", halfOpenCircuitRecord()]
+  ]));
+  const response = await handleRequest(probeRequest(), probeEnv(kv), {});
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).status, "down");
+});
+
+test("health probe: open + half-open 混合 → 503 + down(两者都是不健康)", async () => {
+  const kv = new MemoryKV(new Map([
+    ["health:P1", openCircuitRecord()],
+    ["health:P2", halfOpenCircuitRecord()]
+  ]));
+  const response = await handleRequest(probeRequest(), probeEnv(kv), {});
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).status, "down");
+});
+
+// ALERTING.md 缺陷 3 回归:停用的 provider 不承接流量,不得出现在探针结果里,
+// 否则停用但健康的 provider 会把「唯一在跑的挂了」稀释成 degraded。
+test("health probe: 停用的 provider 不进 entries", async () => {
+  const kv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      { id: "P1", type: "anthropic", url: "https://api.z.ai/v1/messages", model: "claude-test", priority: 1, secretName: "PROVIDER_KEY_P1", enabled: false },
+      { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2" }
+    ],
+    { PROVIDER_KEY_P1: "k1", PROVIDER_KEY_P2: "k2" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const response = await handleRequest(probeRequest(), env, {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.status, "ok");
+  assert.deepEqual(data.providers, [{ id: "P2", state: "closed" }], "停用的 P1 不该出现在探针结果里");
+});
+
+test("health probe: 全部停用 → 503 + down(与 cron 探活/心跳口径一致,不是 ok)", async () => {
+  const kv = new MemoryKV(new Map());
+  const env = providersEnv(
+    [
+      { id: "P1", type: "anthropic", url: "https://api.z.ai/v1/messages", model: "claude-test", priority: 1, secretName: "PROVIDER_KEY_P1", enabled: false },
+      { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2", enabled: false }
+    ],
+    { PROVIDER_KEY_P1: "k1", PROVIDER_KEY_P2: "k2" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const response = await handleRequest(probeRequest(), env, {});
+  assert.equal(response.status, 503, "全部停用 = 100% 不可用,探针必须红");
+  const data = await response.json();
+  assert.equal(data.status, "down");
+  assert.deepEqual(data.providers, []);
 });
 
 test("health probe: body 不泄露 url / model / secretName / secret 值(安全断言)", async () => {
@@ -5105,19 +5185,36 @@ test("shouldNotify: 跃迁矩阵(注入 now 控时,不用真实时钟)", async (
   // degraded 持续没有 reminder(只有 down 有)
   const degradedLong = { level: "degraded", since: now - sixHours - 1000, lastNotifiedAt: now - sixHours - 1000 };
   assert.deepEqual(shouldNotify(degradedLong, "degraded", now), { notify: false, kind: null });
+  // 故障告警从未成功送达(lastNotifiedAt 仍为 0,上次 Telegram 发送失败)→ 重推:
+  // degraded 没有 reminder 兜底,不重推就是永久丢失;down 不用干等 6h
+  assert.deepEqual(
+    shouldNotify({ level: "degraded", since: now - 3600_000, lastNotifiedAt: 0 }, "degraded", now),
+    { notify: true, kind: "degraded" },
+    "从未送达的 degraded 必须重推"
+  );
+  assert.deepEqual(
+    shouldNotify({ level: "down", since: now - 3600_000, lastNotifiedAt: 0 }, "down", now),
+    { notify: true, kind: "down" },
+    "从未送达的 down 重推,不用等 6h reminder"
+  );
+  // ok 不适用重推:正常状态本来就不推,开机首跑 ok 的记录 lastNotifiedAt 就是 0
+  assert.deepEqual(
+    shouldNotify({ level: "ok", since: now, lastNotifiedAt: 0 }, "ok", now),
+    { notify: false, kind: null }
+  );
   // current 为 null(skipped)一律不推
   assert.deepEqual(shouldNotify(downRecently, null, now), { notify: false, kind: null });
 });
 
 // MARK: - 层 B/C 集成: handleScheduled 告警推送 + healthchecks.io 心跳
 
-function cronEnv({ kv, failIds = [], telegram = true, pingUrl = null, extra = {} } = {}) {
+function cronEnv({ kv, telegram = true, pingUrl = null, extra = {}, providers = null, secrets = null } = {}) {
   return providersEnv(
-    [
+    providers || [
       { id: "C1", type: "anthropic", url: "https://c1.test/v1/messages", model: "m1", priority: 1, secretName: "PROVIDER_KEY_C1" },
       { id: "C2", type: "openai", url: "https://c2.test/v1/chat/completions", model: "m2", priority: 2, secretName: "PROVIDER_KEY_C2" }
     ],
-    { PROVIDER_KEY_C1: "k1", PROVIDER_KEY_C2: "k2" },
+    secrets || { PROVIDER_KEY_C1: "k1", PROVIDER_KEY_C2: "k2" },
     {
       AI_PROVIDER_STATE_KV: kv,
       ...(telegram ? { TELEGRAM_BOT_TOKEN: "tg-token", TELEGRAM_CHAT_ID: "42" } : {}),
@@ -5128,11 +5225,13 @@ function cronEnv({ kv, failIds = [], telegram = true, pingUrl = null, extra = {}
 }
 
 /// 分流 fetchImpl:provider url 按 failIds 返回 503/200;Telegram / hc-ping 记录调用
-/// 并返回 200。其余 URL 一律抛错 —— 测试绝不允许打真实网络。
-function makeCronFetch({ failIds = [], telegramCalls = [], pingCalls = [] } = {}) {
+/// 并返回 200(telegramFail 时 Telegram 返回 500,模拟偶发发送失败)。
+/// 其余 URL 一律抛错 —— 测试绝不允许打真实网络。
+function makeCronFetch({ failIds = [], telegramCalls = [], pingCalls = [], telegramFail = false } = {}) {
   return async (url, init = {}) => {
     if (url.startsWith("https://api.telegram.org/")) {
       telegramCalls.push({ url, body: JSON.parse(init.body) });
+      if (telegramFail) return new Response('{"ok":false}', { status: 500 });
       return new Response('{"ok":true}', { status: 200 });
     }
     if (url.startsWith("https://hc-ping.com/")) {
@@ -5228,35 +5327,100 @@ test("cron 告警: PROVIDERS 为空不推(loadProviders 抛错早退),心跳照�
   );
   // 注:PROVIDERS=[] 让 loadProviders 抛 "PROVIDERS is empty",走的是
   // providers_failed 早退(runProviderHealthCheck 返回 null),不是
-  // classifyLevel 的 total===0 路径 ——「secret 全缺不告警」由下面那条测试守着。
-  assert.equal(telegramCalls.length, 0, "配置问题不告警");
+  // classifyLevel 的 total===0 路径 ——「secrets 全缺判 down」由下面那条测试守着。
+  assert.equal(telegramCalls.length, 0, "PROVIDERS 为空算不出 level,不推");
   assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid"], "cron 活着,仍发成功心跳");
 });
 
-test("cron 告警: secrets 全缺(无可探活 provider)不推 down,不写告警状态", async () => {
+// ALERTING.md 缺陷 2 回归:secrets 全缺是 100% 的服务不可用(密钥轮换贴错一个
+// 字符就是这个形态),不是「配置问题可以不告警」—— 层 B/C-1/C-2 三层在这条
+// 路径上必须同时报警,而不是同时装瞎。文案要说清是配置问题(该去改 secret)。
+test("cron 告警: secrets 全缺(无可探活 provider)判 down + /fail 心跳 + 写告警状态", async () => {
   const kv = new MemoryKV(new Map());
   const telegramCalls = [];
   const pingCalls = [];
   await handleScheduled(
-    providersEnv(
-      [
-        { id: "C1", type: "anthropic", url: "https://c1.test/v1/messages", model: "m1", priority: 1, secretName: "PROVIDER_KEY_C1" },
-        { id: "C2", type: "openai", url: "https://c2.test/v1/chat/completions", model: "m2", priority: 2, secretName: "PROVIDER_KEY_C2" }
-      ],
-      {}, // secrets 全缺:loadProviders 保留条目(apiKey=""),probe 全部 no_key
-      {
-        AI_PROVIDER_STATE_KV: kv,
-        TELEGRAM_BOT_TOKEN: "t",
-        TELEGRAM_CHAT_ID: "c",
-        HEALTHCHECK_PING_URL: "https://hc-ping.com/uuid"
-      }
-    ),
+    cronEnv({
+      kv,
+      secrets: {}, // secrets 全缺:loadProviders 保留条目(apiKey=""),probe 全部 no_key
+      pingUrl: "https://hc-ping.com/uuid"
+    }),
     makeCronFetch({ telegramCalls, pingCalls })
   );
-  // ALERTING.md 层 B 边界:全部缺 secret 是配置问题,不得误报成「全挂」服务故障
-  assert.equal(telegramCalls.length, 0, "secrets 全缺不得推 down");
-  assert.ok(!kv.values.has("alert:provider_health"), "skipped 分支不写告警状态");
-  assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid"], "cron 活着,仍发成功心跳");
+  assert.equal(telegramCalls.length, 1, "secrets 全缺必须推 down");
+  const text = telegramCalls[0].body.text;
+  assert.ok(text.includes("DOWN"), text);
+  assert.ok(text.includes("no_key"), "失败明细要能看出是缺 secret");
+  assert.ok(text.includes("配置问题"), "文案要明说这是配置问题,不是上游故障");
+  const record = JSON.parse(kv.values.get("alert:provider_health"));
+  assert.equal(record.level, "down", "告警状态必须落盘");
+  assert.ok(record.lastNotifiedAt > 0, "Telegram 送达成功,写 lastNotifiedAt");
+  assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid/fail"], "100% 不可用必须打 /fail 心跳");
+});
+
+// ALERTING.md 缺陷 3 回归:停用的 provider 不承接流量、不计入分母 —— 否则唯一
+// 在跑的挂了会算成 degraded(1/2)而不是 down(0/1),不推 🚨、心跳照发成功。
+test("cron 告警: 停用的 provider 不计入分母——唯一启用的挂掉判 down 而非 degraded", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  const pingCalls = [];
+  await handleScheduled(
+    cronEnv({
+      kv,
+      pingUrl: "https://hc-ping.com/uuid",
+      providers: [
+        { id: "C1", type: "anthropic", url: "https://c1.test/v1/messages", model: "m1", priority: 1, secretName: "PROVIDER_KEY_C1", enabled: false },
+        { id: "C2", type: "openai", url: "https://c2.test/v1/chat/completions", model: "m2", priority: 2, secretName: "PROVIDER_KEY_C2" }
+      ]
+    }),
+    makeCronFetch({ failIds: ["C2"], telegramCalls, pingCalls })
+  );
+  assert.equal(telegramCalls.length, 1, "唯一启用的挂掉是总故障,必须推");
+  const text = telegramCalls[0].body.text;
+  assert.ok(text.includes("DOWN"), text);
+  assert.ok(text.includes("(0/1 provider 可用)"), "分母只算启用的,不是 0/2");
+  assert.ok(!text.includes("C1"), "停用的 C1 不该出现在告警明细里");
+  assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid/fail"], "down 必须打 /fail 心跳");
+});
+
+// ALERTING.md 缺陷 4 回归:发送失败不得把跃迁记成「已通知」。送达后才写
+// lastNotifiedAt + shouldNotify 的「从未送达」重推分支,两边一起保证偶发失败
+// 的告警在下次 cron 被补发,而不是永久丢失(degraded)或干等 6h(down)。
+test("cron 告警: Telegram 发送失败不写 lastNotifiedAt,下次 cron 同 level 重推", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  // 第一跑:两家全挂 → down,但 Telegram 偶发 500
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls, telegramFail: true }));
+  assert.equal(telegramCalls.length, 1, "发送尝试过一次");
+  const record = JSON.parse(kv.values.get("alert:provider_health"));
+  assert.equal(record.level, "down", "level 照常落盘(since 不能漂)");
+  assert.equal(record.lastNotifiedAt, 0, "发送失败不得写 lastNotifiedAt");
+
+  // 第二跑:同 level、未满 6h —— 必须靠「从未送达」分支重推
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
+  assert.equal(telegramCalls.length, 2, "下次 cron 补发这条告警");
+  const record2 = JSON.parse(kv.values.get("alert:provider_health"));
+  assert.ok(record2.lastNotifiedAt > 0, "送达成功后写 lastNotifiedAt");
+
+  // 第三跑:已送达、未满 6h —— 不再重推
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
+  assert.equal(telegramCalls.length, 2, "送达后同 level 未满 6h 不重推");
+});
+
+// skipped(未配 TELEGRAM_*)要当成「已处理」写入,否则每次 cron 都会重算一遍
+// 跃迁、刷无用日志 —— 真正需要重试的只有 ok === false && !skipped。
+test("cron 告警: 未配 TELEGRAM_*(skipped)视为已处理,写 lastNotifiedAt 不无限重算", async () => {
+  const kv = new MemoryKV(new Map());
+  const fetchImpl = async (url) => {
+    if (url.startsWith("https://c1.test/") || url.startsWith("https://c2.test/")) {
+      return new Response("upstream down", { status: 503 });
+    }
+    throw new Error(`test fetch: unexpected url ${url}`);
+  };
+  await handleScheduled(cronEnv({ kv, telegram: false }), fetchImpl);
+  const record = JSON.parse(kv.values.get("alert:provider_health"));
+  assert.equal(record.level, "down");
+  assert.ok(record.lastNotifiedAt > 0, "skipped 也算已处理,写 lastNotifiedAt");
 });
 
 test("cron 心跳: down → /fail,ok → base URL", async () => {
@@ -5275,6 +5439,27 @@ test("cron 心跳: down → /fail,ok → base URL", async () => {
     makeCronFetch({ failIds: [], pingCalls: pingCalls2 })
   );
   assert.deepEqual(pingCalls2, ["https://hc-ping.com/uuid"]);
+});
+
+// ALERTING.md 缺陷 5 回归:带 query 的 ping URL(healthchecks.io 的 ?rid= 形式、
+// Uptime Kuma 的 push URL)上,/fail 必须落在 pathname,不能被字符串拼接进
+// query value —— 那样故障心跳会被服务端当成功心跳处理。
+test("cron 心跳: ping URL 带 query —— /fail 落在 pathname,query 保留", async () => {
+  const kv = new MemoryKV(new Map());
+  const pingCalls = [];
+  await handleScheduled(
+    cronEnv({ kv, telegram: false, pingUrl: "https://hc-ping.com/uuid?rid=abc" }),
+    makeCronFetch({ failIds: ["C1", "C2"], pingCalls })
+  );
+  assert.deepEqual(pingCalls, ["https://hc-ping.com/uuid/fail?rid=abc"]);
+
+  const kv2 = new MemoryKV(new Map());
+  const pingCalls2 = [];
+  await handleScheduled(
+    cronEnv({ kv: kv2, telegram: false, pingUrl: "https://hc-ping.com/uuid?rid=abc" }),
+    makeCronFetch({ failIds: [], pingCalls: pingCalls2 })
+  );
+  assert.deepEqual(pingCalls2, ["https://hc-ping.com/uuid?rid=abc"], "非 down 时 URL 原样");
 });
 
 test("cron 心跳: KV 未绑定早退仍发成功心跳(cron 活着 ≠ provider 健康)", async () => {

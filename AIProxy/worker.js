@@ -856,13 +856,26 @@ async function handlePublicHealthProbe(request, env, requestContext) {
   }
 
   const now = Date.now();
-  const entries = await Promise.all(providers.map(async (p) => ({
+  // 只列 enabled 的 provider,与 selector.js pickCandidates / runProviderHealthCheck
+  // 三处同一谓词(p.enabled === false 跳过)—— 停用的不承接流量,计入只会把
+  // 总故障稀释成局部故障(ALERTING.md 缺陷 3)。
+  const activeProviders = providers.filter((p) => p.enabled !== false);
+  const entries = await Promise.all(activeProviders.map(async (p) => ({
     id: p.id,
     state: (await sharedHealthStore.snapshot(p.id, now)).state
   })));
-  const allOpen = entries.length > 0 && entries.every((e) => e.state === "open");
-  const status = allOpen ? "down" : entries.some((e) => e.state === "open") ? "degraded" : "ok";
-  const httpStatus = allOpen ? 503 : 200;
+  // 不健康 = open 或 half-open,只有 closed 算健康(ALERTING.md 缺陷 1)。
+  // half-open 是 classifyState 的读时派生状态(冷却一过即如此),语义是
+  // 「曾经挂了,尚未证明恢复」—— 恢复要靠 recordSuccess 写回 closed。只判
+  // open 的话,稳态下每 30min 只有约 5min 窗口报 503,夜间无流量时探针永远绿。
+  const unhealthy = (s) => s === "open" || s === "half-open";
+  // 不加 entries.length > 0 守卫:entries 为空只可能来自「全部 provider 停用」
+  // (loadProviders 对空 PROVIDERS 抛错走 misconfigured),那也是 100% 不可用,
+  // 空数组上 every() 的空真判定恰好给出 down,与 cron 探活(probeable===0 →
+  // down)和 /fail 心跳口径一致。
+  const allBad = entries.every((e) => unhealthy(e.state));
+  const status = allBad ? "down" : entries.some((e) => unhealthy(e.state)) ? "degraded" : "ok";
+  const httpStatus = allBad ? 503 : 200;
   const body = JSON.stringify({ status, providers: entries, ts: now });
   probeCache = { expiresAt: now + PROBE_CACHE_TTL_MS, status: httpStatus, body, probeStatus: status };
   return finishRequest(
@@ -887,15 +900,20 @@ function healthProbeResponse(status, bodyString, method) {
 
 /// 把本次探活结果喂给告警状态机,状态跃迁时推 Telegram。
 /// 任何一步(KV 读写 / Telegram 发送)失败都不抛 —— cron 不能被告警拖垮。
-async function notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl }) {
+/// configMissing: 全部 provider 缺 secret/adapter 或全部停用(probeable===0),
+/// 告警文案要明说这是配置问题,该去改 secret/PROVIDERS 而不是查上游。
+async function notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl, configMissing = false }) {
   sharedAlertStateStore.updateKv(env.AI_PROVIDER_STATE_KV);
   const now = Date.now();
   // KV 读失败 → load 返回 null → shouldNotify 视为「无历史」→ 有故障就推(宁多勿漏)
   const previous = await sharedAlertStateStore.load();
   const decision = shouldNotify(previous, level, now);
-  const record = nextRecord(previous, level, decision, now);
-  await sharedAlertStateStore.save(record);
-  if (!decision.notify) return;
+  if (!decision.notify) {
+    // 不推送也要落盘:level/since 必须前进,否则恢复消息的故障总时长会算错;
+    // lastNotifiedAt 沿用旧值(reminder 的 6h 窗口靠它)。
+    await sharedAlertStateStore.save(nextRecord(previous, level, decision, now));
+    return;
+  }
 
   // 熔断状态一并带上:failed 的 provider 此刻在 HealthStore 里的真实 circuit 状态
   // (内存态刚被 recordFailure 更新过,读的是最新值),不用再去查 /v1/admin/providers。
@@ -903,12 +921,21 @@ async function notifyProviderHealthTransition(env, { level, succeeded, total, fa
     const circuit = await sharedHealthStore.circuitState(f.providerId);
     return `- ${f.providerId} (circuit ${circuit}): ${f.reason}`;
   }));
-  const text = buildHealthAlertMessage({ kind: decision.kind, level, succeeded, total, failedLines, previous, record, now });
+  // 注意 record 参数传 previous:reminder 文案的「已持续」读的是 since,与
+  // nextRecord 算出的新记录同值(level 没变时 since 沿用)。
+  const text = buildHealthAlertMessage({ kind: decision.kind, level, succeeded, total, failedLines, previous, record: previous, now, configMissing });
   const sent = await sendTelegramAlert(env, text, fetchImpl);
+  // 送达(或未配 TELEGRAM_* 的 skipped)才算「已通知」;发送失败不写 lastNotifiedAt,
+  // 下次 cron shouldNotify 走「故障从未送达」重推分支补发这条告警 —— 否则
+  // Telegram 偶发失败会让 degraded 告警永久丢失(它没有 reminder 兜底)、
+  // down 告警干等 6h(ALERTING.md 缺陷 4)。
+  const delivered = sent.ok || Boolean(sent.skipped);
+  const record = nextRecord(previous, level, delivered ? decision : { ...decision, notify: false }, now);
+  await sharedAlertStateStore.save(record);
   logInfo("alert.health.notified", { kind: decision.kind, level, delivered: sent.ok, skipped: Boolean(sent.skipped) });
 }
 
-function buildHealthAlertMessage({ kind, level, succeeded, total, failedLines, previous, record, now }) {
+function buildHealthAlertMessage({ kind, level, succeeded, total, failedLines, previous, record, now, configMissing = false }) {
   const emoji = level === "ok" ? "✅" : level === "down" ? "🚨" : "⚠️";
   const head = kind === "recovered"
     ? "VoiceTodo 告警恢复(层 B: provider 健康检查)"
@@ -925,6 +952,9 @@ function buildHealthAlertMessage({ kind, level, succeeded, total, failedLines, p
     lines.push(`已持续: ${formatDuration(now - record.since)}`);
   }
   lines.push(...failedLines);
+  if (configMissing) {
+    lines.push("⚠️ 本次探活没有任何可探的 provider(secrets 全缺或全部停用)——这是配置问题,先查 wrangler secret 与 PROVIDERS(enabled/secretName),不是上游故障。");
+  }
   return lines.join("\n");
 }
 
@@ -934,6 +964,18 @@ function formatDuration(ms) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest > 0 ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+}
+
+/// 心跳 ping URL 构造:failed 时在 pathname 上追加 /fail。
+/// 必须用 URL 对象操作 pathname —— 字符串拼接会把 /fail 落进 query value
+/// (如 hc-ping 的 ?rid= 形式),故障心跳被服务端当成功心跳处理。
+/// 非法 URL 抛 TypeError,caller 的 catch 兜住(心跳失败只 log,不打断 cron)。
+function buildPingUrl(rawUrl, failed) {
+  const url = new URL(rawUrl);
+  if (failed) {
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/fail`;
+  }
+  return url.toString();
 }
 
 // MARK: - Scheduled handler (90 天 GC)
@@ -961,9 +1003,12 @@ export async function handleScheduled(env, fetchImpl = fetch) {
   // 心跳测的是「cron 还在跑」,不是「provider 健康」—— KV 未绑定 / PROVIDERS
   // 非法时 level 为 null(算不出),cron 本身活着,仍发成功心跳。这两件事别混。
   if (env.HEALTHCHECK_PING_URL) {
-    const base = String(env.HEALTHCHECK_PING_URL).replace(/\/+$/, "");
-    const pingUrl = level === "down" ? `${base}/fail` : base;
     try {
+      // 用 URL 对象操作 pathname,不要字符串拼接(ALERTING.md 缺陷 5):
+      // `${base}/fail` 遇到带 query 的 ping URL(healthchecks.io 的 ?rid= 形式、
+      // Uptime Kuma 的 push URL)会把 /fail 拼进 query value,故障心跳被当成
+      // 成功心跳送达。非法 URL 抛 TypeError,由本 catch 兜住(只 log 不打断 cron)。
+      const pingUrl = buildPingUrl(env.HEALTHCHECK_PING_URL, level === "down");
       // 超时与告警外呼同量级:心跳挂起不该把 cron 卡死(死人心跳变成死 cron)。
       const resp = await fetchImpl(pingUrl, { signal: AbortSignal.timeout(ALERT_FETCH_TIMEOUT_MS) });
       // 非 2xx(如 UUID 配错恒 404)意味着死人开关自身已失效 —— 这条链路的
@@ -1007,6 +1052,10 @@ async function runProviderHealthCheck(env, fetchImpl) {
     return null;
   }
 
+  // 只探活 enabled 的 provider,与 selector.js pickCandidates 同一谓词
+  // (p.enabled === false 跳过):停用的不承接流量,探它白耗上游配额,计入
+  // 分母还会把总故障稀释成局部故障(ALERTING.md 缺陷 3)。
+  const activeProviders = providers.filter((p) => p.enabled !== false);
   const probeTranscript = "test";
   const probeLocale = "en";
   const probeTimeoutMs = 10_000;
@@ -1014,7 +1063,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
   // 用 UTC 当天日期兜底。probe 只测连通性,不关心相对日期解析准确。
   const probeToday = new Date().toISOString().slice(0, 10);
 
-  const results = await Promise.allSettled(providers.map(async (provider) => {
+  const results = await Promise.allSettled(activeProviders.map(async (provider) => {
     if (!provider.apiKey) {
       logWarn("health_check.skip_no_key", { providerId: provider.id });
       return { providerId: provider.id, ok: false, reason: "no_key" };
@@ -1058,7 +1107,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
   }));
 
   const succeeded = results.filter((r) => r.status === "fulfilled" && r.value?.ok).length;
-  const total = providers.length;
+  const total = activeProviders.length;
   // 汇总失败 provider + 原因,让 summary log 一眼能看到谁挂了、为什么,
   // 不用再去翻 health_check.failed / health_check.http_failed 单条日志。
   const failed = results
@@ -1077,27 +1126,30 @@ async function runProviderHealthCheck(env, fetchImpl) {
     failedDetails
   });
 
-  // 层 B(ALERTING.md):状态跃迁告警。没有「可探活」的 provider(全部缺 secret)
-  // 是配置问题,不算服务故障,不进告警状态机 —— 注意这是可达路径:
-  // loadProviders 对空 PROVIDERS 直接抛错(走上面的 providers_failed 早退),
-  // 未知 type 同样过不了 loadProviders 的校验,「provider 在、secret 全缺」
-  // 会走到这里,靠 probeable === 0 拦下。
+  // 层 B(ALERTING.md):状态跃迁告警。全部 provider 缺 secret/adapter(或全停用)
+  // 判为 down —— 这是 100% 的服务不可用(用户一个字都提取不出来),不是「配置
+  // 问题可以不告警」:密钥轮换贴错一个字符就会走到这里,而它正是整套告警要防的
+  // 头号场景。区分的是告警文案(见 buildHealthAlertMessage 的 configMissing
+  // 提示),不是告不告警。误报一次只是瞥一眼 Telegram,漏报一次是全部用户
+  // 不可用而没人知道。
+  // 可达路径:loadProviders 对空 PROVIDERS 直接抛错(走上面的 providers_failed
+  // 早退),未知 type 同样过不了 loadProviders 的校验;「provider 在、secret
+  // 全缺」会走到这里,probeable === 0 拦下判 down。
   // 单个 no_key / no_adapter 仍计入 failedDetails → degraded:failover 容量
-  // 减半该知道,与全缺不告警是两种有意并存的口径。
+  // 减半该知道,与「全部缺判 down」是两种有意并存的口径。
   // probeable 从 results 推导(reason 为 no_key / no_adapter 即配置性跳过),
   // 与上面 map 内的跳过条件同源 —— 不另写一份 apiKey/adapter 谓词,防止两处漂移。
   const probeable = results.filter((r) => {
     if (r.status !== "fulfilled") return false;
     return r.value?.reason !== "no_key" && r.value?.reason !== "no_adapter";
   }).length;
-  let level = null;
-  if (probeable === 0) {
-    logInfo("health_check.alert_skipped", { reason: "no_probeable_provider", total });
-  } else {
-    level = classifyLevel(succeeded, total);
+  const configMissing = probeable === 0;
+  const level = configMissing ? "down" : classifyLevel(succeeded, total);
+  if (configMissing) {
+    logWarn("health_check.no_probeable_provider", { total });
   }
   if (level) {
-    await notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl });
+    await notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl, configMissing });
   }
   return level;
 }
