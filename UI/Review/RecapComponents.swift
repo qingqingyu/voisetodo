@@ -486,8 +486,13 @@ enum RecapSummaryBuilder {
 
     /// 上次复盘至今的窗口(v3 拍板 1,复盘第 1 步专用)。
     ///
-    /// 起点取上次复盘**完成时刻**的用户日(与提醒节奏「每周一」对齐——复盘
-    /// 窗口跟着复盘走,不跟日历月走);`since == nil`(首次复盘)回落近 7 天。
+    /// 窗口 = [上次复盘**完成时刻**, 明天用户日起点)。起点**不折算用户日**
+    /// (2026-09-07 实施审阅发现 2 拍板:时刻粒度)——折算成用户日会把复盘
+    /// 当天早晨、已被上次复盘统计过的完成重复计入,周节奏下每期窗口与上期
+    /// 重叠一天,「上次复盘以来」名实不符。聚合核 `ReviewAggregator` 的窗口
+    /// 下界因此按传入时刻精确比较(见其过滤处注释);标签仍显示用户日粒度
+    /// (「9月3日–9月10日」)——展示说「从哪天起」,统计界「从哪刻起」。
+    /// `since == nil`(首次复盘)回落近 7 天(日对齐)。
     /// `periodLabel` 是窗口本身的描述(「8月28日–9月4日」),不是日历月名——
     /// 窗口滚动,月名必然错配(与 tab 拍板 B2 同一结论,回归护栏在测试里)。
     /// 注意:`pendingOneOffCount` 保持全时段口径(与 ② 屏卡堆/入口卡三处
@@ -501,16 +506,19 @@ enum RecapSummaryBuilder {
         recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
     ) -> ReviewSummary {
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
-        let sinceDay = since.map { DayClock.startOfUserDay(for: $0, calendar: calendar) }
-            ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
+        // 起点用 since 原始时刻(不折算用户日,见函数注释);首次复盘回落
+        // 近 7 天(日对齐)。
+        let windowStart = since ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
         let end = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
         // 展示到「今天」(闭端);统计 end 是明天 0 点(开端)——同一约定。
+        // 标签用 since 的用户日(天粒度),统计下界是时刻粒度(见函数注释)。
+        let sinceDay = DayClock.startOfUserDay(for: windowStart, calendar: calendar)
         let label = "\(sinceDay.formatted(.dateTime.month(.abbreviated).day()))–\(todayStart.formatted(.dateTime.month(.abbreviated).day()))"
         return buildSummary(
             today: today,
             calendar: calendar,
             label: label,
-            start: sinceDay,
+            start: windowStart,
             end: end,
             allTodos: allTodos,
             completedTodos: completedTodos,

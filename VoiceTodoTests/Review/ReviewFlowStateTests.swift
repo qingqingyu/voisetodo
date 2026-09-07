@@ -158,13 +158,16 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(state.currentStep, .insights)
     }
 
-    // MARK: 空洞察整步跳过(v3 拍板 7:引擎零结果比空屏 + 错误指令的占位行更该跳)
+    // MARK: 空洞察整步跳过(v3 拍板 7 + 实施审阅发现 1:三块可渲染内容
+    // ——洞察卡/占位行/最小事实行——全空才跳,只看 ranked 空会把后两块跳掉)
 
-    /// 15 条完成(进 .full 档)但一条规则都不触发:无高优(effort 占位)、
-    /// 无带钟点高优(energy hidden)、救火占比 5/15 = 0.33 落中间带(reactive
-    /// hidden)、无未完成任务(rotting hidden)——rankedResults 空 → 整步跳过,
-    /// advance/retreat 与降级跳过走同一路径。
-    func testEmptyInsightResultsSkipInsightsStep() {
+    /// 15 条完成(进 .full 档)但一条规则都不触发:无高优(effort 占位
+    /// needMore=3)、无带钟点高优(energy hidden)、救火占比 5/15 = 0.33 落
+    /// 中间带(reactive hidden)、无未完成任务(rotting hidden)——rankedResults
+    /// 空,但占位行有话可说 → **不跳整步**(实施审阅发现 1:原判定只看
+    /// ranked.isEmpty,把「做完 3 条高优任务…」的说真话占位一起跳掉,
+    /// 本测试原名 testEmptyInsightResultsSkipInsightsStep,断言方向随修复翻转)。
+    func testEmptyResultsWithPlaceholderKeepsInsightsStep() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         let now = Date()
@@ -184,15 +187,86 @@ final class ReviewFlowStateTests: XCTestCase {
         state.configureInsightsLadder()
         state.runInsightEngine()
         XCTAssertFalse(state.skipsInsights, "15 条完成,降级阶梯放行")
-        XCTAssertTrue(state.skipsInsightsWhenEmpty, "引擎零结果——整步跳过")
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "ranked 空但占位行可渲染——不跳")
         XCTAssertTrue(state.rankedResults.isEmpty)
         XCTAssertEqual(state.insightPlaceholders.count, 1)
         XCTAssertEqual(state.insightPlaceholders.first?.id, .effortOrdering, "唯一占位:高优组缺口")
         XCTAssertEqual(state.insightPlaceholders.first?.needMore, 3)
         state.advance()
-        XCTAssertEqual(state.currentStep, .commit, "空洞察从第 2 步直达第 4 步")
+        XCTAssertEqual(state.currentStep, .insights, "ranked 空但有占位——第 3 步照常出现")
         state.retreat()
         XCTAssertEqual(state.currentStep, .triage, "反向对称")
+    }
+
+    /// 真空态(v3 拍板 7 的跳过分支,实施审阅发现 1 补的边界):15 条完成
+    /// (.full 档,ladderNeedMore 为 nil)+ 四条规则全部 hidden——高优 3 条
+    /// 跨度 3 天、普通组中位 2 天(3 落在 (2, max(2×2, 2)) 中间带 → effort
+    /// hidden);救火 5/15 ≈ 0.33 落中间带(reactive hidden);高优全无钟点
+    /// (energy hidden);无未完成任务(rotting hidden)——三块全空 → 整步
+    /// 跳过,advance/retreat 与降级跳过走同一路径。
+    func testTrueEmptyResultsSkipInsightsStep() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let now = Date()
+        let cal = Calendar.current
+        let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: now) ?? now
+        let twoDaysAgo = cal.date(byAdding: .day, value: -2, to: now) ?? now
+        // 高优 3 条(跨度 3,中位 3)——注意 hasDueTime 全 false,energy 不触发。
+        var events = (0..<3).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: threeDaysAgo, completedAt: now,
+            category: .other, priority: .high, hasDueTime: false, dueDate: nil
+        )}
+        // 普通 12 条:5 条当天记当天完(救火,跨度 0)+ 7 条跨度 2(中位 2;
+        // 5 个 0 与 7 个 2 排序后中间两位都是 2)。
+        events += (0..<5).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        events += (0..<7).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: twoDaysAgo, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertFalse(state.skipsInsights, "15 条完成,降级阶梯放行")
+        XCTAssertTrue(state.rankedResults.isEmpty, "四条规则全 hidden")
+        XCTAssertTrue(state.insightPlaceholders.isEmpty, "两组各 ≥3,effort 无占位")
+        XCTAssertNil(state.ladderNeedMore, ".full 档无阶梯提示")
+        XCTAssertTrue(state.skipsInsightsWhenEmpty, "三块可渲染内容全空——整步跳过")
+        state.advance()
+        XCTAssertEqual(state.currentStep, .commit, "真空态从第 2 步直达第 4 步")
+        state.retreat()
+        XCTAssertEqual(state.currentStep, .triage, "反向对称")
+    }
+
+    /// 5–14 档零触发(实施审阅发现 1 受害者 B):8 条完成 → 只跑腐烂规则,
+    /// 未完成清单空 → 不触发、无占位;但 ladderNeedMore = 7 ≠ nil——最小
+    /// 事实行有话可说,**不跳整步**(原判定只看 ranked.isEmpty,5–14 档的
+    /// 最小事实行成死代码,方案 v3「最小事实保留」被路径断掉)。
+    func testRottingOnlyLadderWithNoTriggerKeepsInsightsStep() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let events = (0..<8).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: Date(), completedAt: Date(),
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: Date(), to: Date(),
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertFalse(state.skipsInsights, "8 条完成 ≥ 5,不整步降级")
+        XCTAssertTrue(state.rankedResults.isEmpty, "腐烂不触发(无未完成任务)")
+        XCTAssertTrue(state.insightPlaceholders.isEmpty, "rottingOnly 档其余规则不跑")
+        XCTAssertEqual(state.ladderNeedMore, 7, "15 − 8 = 7")
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "ranked 空但最小事实行可渲染——不跳")
+        state.advance()
+        XCTAssertEqual(state.currentStep, .insights, "5–14 档零触发——第 3 步出最小事实行")
     }
 
     /// 引擎有结果 → 第 3 步照常出现(15 条全部「记下当天做完」→ 救火占比

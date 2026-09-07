@@ -29,6 +29,12 @@ final class ReviewRecapSameDayTests: XCTestCase {
         )
     }
 
+    private func at(_ year: Int, _ month: Int, _ day: Int, hour: Int) throws -> Date {
+        try XCTUnwrap(
+            calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))
+        )
+    }
+
     // MARK: - 纯函数口径
 
     func testSameUserDayCounted_crossDayNot() throws {
@@ -293,7 +299,8 @@ final class ReviewRecapSameDayTests: XCTestCase {
 
     // MARK: - weekSummary(v3 拍板 1:窗口 = 上次复盘至今)
 
-    /// 起点取 since 的用户日(含),窗口外不计——不是滚动 30 天。
+    /// 起点取 since 时刻(含;下界时刻粒度,见下一条钉边界测试),窗口外不计
+    /// ——不是滚动 30 天。
     func testWeekSummary_startIsSince_notRollingMonth() throws {
         let summary = RecapSummaryBuilder.weekSummary(
             since: try noon(2026, 8, 28),
@@ -308,6 +315,26 @@ final class ReviewRecapSameDayTests: XCTestCase {
             recurringCompletions: []
         )
         XCTAssertEqual(summary.total, 2, "8/28(含)起:起点前一天不计,起点当天与今天计入")
+    }
+
+    /// 窗口起点 = 上次复盘完成**时刻**(2026-09-07 实施审阅发现 2 拍板:
+    /// 时刻粒度)——起点折算用户日会把复盘当天早晨、已被上次复盘统计过的
+    /// 完成重复计入,周节奏下每期窗口与上期重叠一天。夹具:上次复盘
+    /// 9/3 09:00;9/3 08:00 完成的(复盘前)不计,9/3 10:00 完成的(复盘后)计。
+    func testWeekSummary_startIsSinceInstant_notSinceUserDay() throws {
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: try at(2026, 9, 3, hour: 9),
+            today: try noon(2026, 9, 10),
+            calendar: calendar,
+            allTodos: [],
+            completedTodos: [
+                TodoItemData(title: "复盘前完成", isCompleted: true, completedAt: try at(2026, 9, 3, hour: 8), createdAt: try noon(2026, 9, 1)),
+                TodoItemData(title: "复盘后完成", isCompleted: true, completedAt: try at(2026, 9, 3, hour: 10), createdAt: try noon(2026, 9, 1)),
+            ],
+            recurringCompletions: []
+        )
+        XCTAssertEqual(summary.total, 1, "窗口 = [9/3 09:00, 9/11):复盘前(08:00)不计,复盘后(10:00)计")
+        XCTAssertEqual(summary.oneOffCompletionCount, 1)
     }
 
     /// since == nil(首次复盘)→ 回落近 7 天。

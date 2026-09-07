@@ -29,10 +29,13 @@ final class ReviewFlowState {
     /// 洞察步是否被降级阶梯跳过(<5 条完成记录 → 第 2 步直连第 4 步,§2.3)。
     /// 在流程启动拿到 insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
-    /// 洞察步是否因「引擎跑完一条都没触发」整步跳过(v3 拍板 7:空屏 + 错误
-    /// 指令的占位行比不出这一步更差)。与 `skipsInsights` 走同一跳过路径;
-    /// 在流程启动引擎跑完后设定——**必须**在进入第 3 步之前定好,否则会出现
-    /// 「进了第 3 步再被弹走」的闪屏(引擎因此从视图 `.task` 前移至此)。
+    /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过(v3 拍板 7:空屏 +
+    /// 错误指令的占位行比不出这一步更差)。可渲染内容 = 洞察卡 / 占位行 /
+    /// 最小事实行**三块,全空才跳**(实施审阅发现 1:原判定只看 rankedResults
+    /// 空,会把占位行与 5–14 档最小事实行一起跳掉)。与 `skipsInsights` 走
+    /// 同一跳过路径;在流程启动引擎跑完后设定——**必须**在进入第 3 步之前
+    /// 定好,否则会出现「进了第 3 步再被弹走」的闪屏(引擎因此从视图
+    /// `.task` 前移至此)。
     private(set) var skipsInsightsWhenEmpty = false
     /// 两个跳过 flag 的单一来源(导航与步骤条共用)。
     var skipsInsightsStep: Bool { skipsInsights || skipsInsightsWhenEmpty }
@@ -308,7 +311,8 @@ final class ReviewFlowState {
     /// 与 `configureInsightsLadder()` 同一时机由 `loadInsightContext` 调用)。
     /// 规则按 ladder 裁剪,score 降序;触发后先过冷却(§2.4):不满足任一
     /// 放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
-    /// 放行换 improving 文案。空结果 → `skipsInsightsWhenEmpty`(整步跳过)。
+    /// 放行换 improving 文案。三块可渲染内容全空 → `skipsInsightsWhenEmpty`
+    /// (整步跳过,判定见属性注释)。
     func runInsightEngine() {
         guard let context = insightContextValue else { return }
         let calendar = Calendar.current
@@ -361,7 +365,16 @@ final class ReviewFlowState {
         rankedResults = ranked
         insightPlaceholders = newPlaceholders
         ladderNeedMore = ladder.rottingOnlyNeedMore
-        skipsInsightsWhenEmpty = ranked.isEmpty
+        // 跳过判定 = 「这一步还有没有可渲染内容」(实施审阅发现 1):第 3 步
+        // 可渲染内容有三块——洞察卡(ranked)/占位行/最小事实行,只看 ranked
+        // 空会把后两块一起跳掉(26 条完成零触发时,说真话的占位文案不可达;
+        // 5–14 档最小事实行成死代码)。占位行判定复用视图同一选条+文案单一
+        // 来源(`InsightID.firstPlaceholder` + `placeholderText`)。
+        // ⚠️ ladderNeedMore 的赋值必须在本行之前(rottingOnly 档「有内容」
+        // 全靠它),勿调换顺序。
+        let hasPlaceholderText = InsightID.firstPlaceholder(in: insightPlaceholders)
+            .flatMap { $0.id.placeholderText(needMore: $0.needMore) } != nil
+        skipsInsightsWhenEmpty = ranked.isEmpty && !hasPlaceholderText && ladderNeedMore == nil
     }
 
     /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
@@ -880,15 +893,28 @@ struct ReviewFlowView: View {
 
     // MARK: 底部主按钮
 
+    /// 硬闸门的原因文案(实施审阅发现 4):按步骤选键,与
+    /// `ReviewFlowState.canAdvanceCurrentStep` 的闸门一一对应——**给新步骤
+    /// 加硬闸门时必须同步在此加分支**,否则闸门原因静默不显示(注释拦不住
+    /// 人,分支才拦得住)。nil = 该步骤无硬闸门或闸门已放行,不渲染。
+    private var gateHintText: String? {
+        switch state.currentStep {
+        case .commit:
+            return state.canPassCommit ? nil : String(localized: "review.flow.commit.gate_hint")
+        case .recap, .triage, .insights, .ledger:
+            return nil
+        }
+    }
+
     @ViewBuilder
     private var bottomBar: some View {
         VStack(spacing: WarmSpacing.xs) {
             // 闸门原因常驻(v3 拍板 9,修发现 F):步骤内的 hint 在屏幕顶端,
             // 滚一屏就看不见,按钮禁用又无说明是「④ 屏像死路」的直接来源。
-            // 流程级改法——任何步骤的硬闸门都必须在按钮旁说明原因
-            // (Step.commit 是目前唯一有硬闸门的步骤)。
-            if !state.canAdvanceCurrentStep {
-                Text(String(localized: "review.flow.commit.gate_hint"))
+            // 流程级改法——任何步骤的硬闸门都必须在按钮旁说明原因,文案键
+            // 按步骤选(见 `gateHintText`;Step.commit 是目前唯一有硬闸门的步骤)。
+            if let gateHint = gateHintText {
+                Text(gateHint)
                     .font(WarmFont.caption(12))
                     .foregroundColor(WarmTheme.primaryText)
                     .lineLimit(1)
