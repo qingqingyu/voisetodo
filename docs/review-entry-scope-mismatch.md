@@ -1,7 +1,9 @@
 # 复盘入口卡范围标与流程窗口失配 —— review 意见
 
 > 状态：**待核实 / 待修**。文档创建于 2026-09-06。
-> 基线：`797eae2`（`main`）。
+> 基线：**`3b0f0e7`**（`main`，2026-09-07 rebase 时更新；初稿基线 `797eae2`）。
+> ⚠️ `3ef0246`（v3 实施审阅处置）改过 `weekSummary` 的窗口起点粒度与 `RecapComponents.swift` 行号，
+> 本文 F2 已按新基线复核并重写；F1 / F3 / F4 的引用在两个基线下逐字未变。
 > 性质：这是一份 **review 意见**，不是已拍板方案。下述「已核实事实」请核实人逐条复验后再动手；
 > 「判断与建议」部分可以推翻，推翻时请在文末「核实记录」写明理由。
 > ⚠️ **本次 review 未编译、未跑测试**——审阅环境无 Swift 工具链（`swift: command not found`），
@@ -36,14 +38,18 @@ Text(String(localized: "review.window.last30d"))
 
 `UI/Review/Flow/ReviewStepRecap.swift:33` 调的是 `RecapSummaryBuilder.weekSummary(since: lastReviewDate, ...)`，不是 `monthSummary`。
 
-`weekSummary`（`RecapComponents.swift:495`）的窗口：
+`weekSummary`（`RecapComponents.swift:500`）的窗口：
 
 ```swift
-let sinceDay = since.map { DayClock.startOfUserDay(for: $0, calendar: calendar) }
-    ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
+// 起点用 since 原始时刻(不折算用户日,见函数注释);首次复盘回落近 7 天(日对齐)。
+let windowStart = since ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
 ```
 
-即：**上次复盘至今；首次复盘回落近 7 天**。
+即：**上次复盘的那一刻至今；首次复盘回落近 7 天**。
+
+（`3ef0246` 把起点从「上次复盘日的用户日起点」改成了「上次复盘的精确时刻」，
+避免复盘当天早晨已统计过的完成被下一期重复计入。这不改变本 review 的结论——
+无论哪种粒度，都**不是** 30 天。）
 
 同文件 `:30-32` 的注释明写这是 v3 拍板 1 的有意决定：
 
