@@ -371,3 +371,203 @@ curl -i "http://localhost:8787/v1/health"
 3. **部署前提与事实不符。** 本文档写作时的前提是「B/C 已实施、尚未部署」。经 `wrangler deployments list` 核实：层 B/C 已随 **2026-09-05 11:43** 的部署上线（之后的两次 Secret Change 重新部署的也是修复前代码），**线上正在跑本文所述 5 处缺陷的版本**。结论从「先别急着部署」反转为「尽快重新部署」；`ALERTING.md` 状态表与警示块已照此改写。
 
 其余按原文实施：缺陷 1/2/3/5 修法照抄；缺陷 2 的告警文案按「必要时加一句提示」落实（`buildHealthAlertMessage` 增 `configMissing` 提示行，覆盖 secrets 全缺与全部停用两种形态）；测试表 6 项全部落地，另补 open + half-open 混合探针与 `shouldNotify` 重推的单元断言。
+
+---
+
+# 第二轮 review（复核修复结果）
+
+对 `7d3ea0c` 的复核。**5 处修复全部真修好了**，另发现 3 处遗留，其中 1 处说明缺陷 2 只修了三分之二。
+
+## 复核结论：5 处修复通过
+
+| 缺陷 | 复核 | 说明 |
+|------|------|------|
+| 1 half-open | ✅ | `unhealthy = open \|\| half-open`，`allBad` / `some` 两处都改了 |
+| 2 secret 全缺 | ⚠️ **2/3** | cron 告警 ✅、`/fail` 心跳 ✅、**探针 ❌**（见遗留 1） |
+| 3 enabled 过滤 | ✅ | 探活与探针两处都加了 `activeProviders`，谓词与 `selector.js:34` 一致 |
+| 4 发送顺序 | ✅ | 见下，实施方补齐了本文档缺的另一半 |
+| 5 ping URL | ✅ | `buildPingUrl` 用 `new URL()` 操作 pathname |
+
+测试也复核过：`halfOpenCircuitRecord()` fixture 构造正确（`state:"open"` + `openedAt: now-60s` + `cooldownMs:10s`，`classifyState` 读时正是 `half-open`，就是缺陷 1 描述的故障稳态，不是假测试）；「发送失败重推」是三跑结构（失败→重推→送达→不再推），覆盖完整。
+
+**「实施记录」里的三处偏差全部成立，本文档接受这三处修正：**
+
+1. **缺陷 4 的修法确实自相矛盾。** 本文档只让调 `worker.js` 的调用顺序，又在「不要改的」里禁止动 `shouldNotify`。但 level 未变时未修改的 `shouldNotify` 根本不会重推（`degraded` 没有 reminder 兜底），本文档自己写的测试规格「下次 cron 同 level 仍重推」按原方案**无法通过**。实施方补的 `current !== "ok" && !previous.lastNotifiedAt → 重推` 分支是正确的补全。
+2. **`entries.length > 0` 守卫该去掉。** `enabled` 过滤给空 `entries` 带来了新来源（全部停用），空真判定给出 down/503 恰好与 cron/心跳口径一致。
+3. **部署前提写错了。** 层 B/C 已随 2026-09-05 上线，缺陷版本一直在线上跑，本文档「待部署」的前提不成立。
+
+另外实施方抓到本文档「文档同步修订」漏了一处：`ALERTING.md`「验证」小节的测试清单仍是旧口径（「全 open → 503」「无可探活 provider → 不推」），照那份清单写测试会把缺陷改回去。四处规格修订漏了第五处，已由实施方补上。
+
+---
+
+## 遗留 1：`/v1/health` 在 secret 全缺时仍报 `200 ok`（HIGH）
+
+**缺陷 2 只修好了 cron 告警与心跳两层，探针这层没修。**
+
+### 证据
+
+`AIProxy/worker.js:863` 的探针只读熔断状态，**不看 `apiKey`**：
+
+```js
+const entries = await Promise.all(activeProviders.map(async (p) => ({
+  id: p.id,
+  state: (await sharedHealthStore.snapshot(p.id, now)).state
+})));
+```
+
+而 `runProviderHealthCheck`（`worker.js:1066`）遇到缺 key 的 provider 是**提前 return，从不调 `recordFailure`**：
+
+```js
+if (!provider.apiKey) {
+  logWarn("health_check.skip_no_key", { providerId: provider.id });
+  return { providerId: provider.id, ok: false, reason: "no_key" };
+}
+```
+
+所以 `health:<id>` 记录压根不存在 → `HealthStore.load()` 返回 `freshRecord()` → `state: "closed"` → 探针 `200 ok`。
+
+### 后果
+
+密钥轮换贴错这个场景下，修复后的行为是：
+
+- 层 B cron 告警 → 🚨 **响了**（`probeable === 0 → down`）
+- 层 C-2 心跳 → `/fail` **响了**
+- 层 C-1 探针 → **仍然全绿**
+
+UptimeRobot 是独立于 Cloudflare 的外部眼睛，恰恰在「Worker 活着但一个 provider 都用不了」时最该红——这正是缺陷 2 要防的头号场景。
+
+顺带，修复里的注释写着「与 cron 探活(probeable===0 → down)和 /fail 心跳口径一致」，但这个一致**只在「全部停用」时成立，「secret 全缺」时不成立**——注释本身会误导下一个读代码的人，要一并改。
+
+### 修法
+
+探针把「缺 key / 缺 adapter」也算不健康，与 cron 的 `probeable` 谓词同源：
+
+```js
+const entries = await Promise.all(activeProviders.map(async (p) => ({
+  id: p.id,
+  state: p.apiKey && getAdapter(p.type)
+    ? (await sharedHealthStore.snapshot(p.id, now)).state
+    : "unconfigured"
+})));
+const unhealthy = (s) => s === "open" || s === "half-open" || s === "unconfigured";
+```
+
+`"unconfigured"` 不是凭据，不违反 body 的脱敏约束（provider id 本来就在 body 里）。
+
+### 测试
+
+- 全部 provider 缺 key → 探针 **503 + `down`**（与「cron 告警: secrets 全缺…」那条形成对照，两层口径一致）
+- 部分缺 key → `degraded`
+- 缺 adapter（未知 type）同理——若 `loadProviders` 的校验已经挡住未知 type 使其不可达，在测试里注明即可，不必强造
+
+---
+
+## 遗留 2：恢复消息发送失败会永久丢失（MEDIUM）
+
+### 证据
+
+`AIProxy/src/alertState.js:58` 的重推分支排除了 `ok`：
+
+```js
+if (current !== "ok" && !previous.lastNotifiedAt) {
+  return { notify: true, kind: current };
+}
+```
+
+但 `worker.js` 现在对**所有 kind** 都是「送达才写 `lastNotifiedAt`」。于是：
+
+1. down 告警送达 → `lastNotifiedAt = T1`
+2. 恢复 → `kind: "recovered"`，Telegram 偶发 500 → 不写 `lastNotifiedAt`
+   → 记录变成 `{ level: "ok", since: now, lastNotifiedAt: T1 }`
+3. 下次 cron：`prevLevel === current === "ok"` → 跳过分支 1；重推分支 `current !== "ok"` 为 false → 跳过；reminder 只对 `down` → 跳过
+
+**✅ 恢复消息永久丢失。** 收到 🚨 的人一直以为故障还在。
+
+排除 `ok` 本身是必要的——首跑 ok 的 `lastNotifiedAt` 就是 0，不能当成待补发。问题在于用「`lastNotifiedAt` 是否为 0」表达「有没有待补发」，在 `ok` 上失效了：这是把两件事挤进同一个字段的后果。
+
+### 修法（推荐）
+
+改用显式的「上次成功通知的是哪个 level」，对三种 kind 统一生效：
+
+```js
+// nextRecord:送达才更新
+lastNotifiedLevel: delivered ? current : (previous?.lastNotifiedLevel ?? "ok")
+
+// shouldNotify:用户还不知道当前 level → 补发
+if (previous.lastNotifiedLevel !== current) {
+  return { notify: true, kind: current === "ok" ? "recovered" : current };
+}
+```
+
+`lastNotifiedLevel` 初值取 `"ok"`，首跑 ok 不推自然成立。这条替换掉现有的 `current !== "ok" && !previous.lastNotifiedAt` 分支；`lastNotifiedAt` 继续只负责 6h reminder 的计时，两个字段各司其职。
+
+> 这条要动 `nextRecord`，超出上一轮「只增 `shouldNotify` 分支」的边界。是刻意的：上一轮已经证明把「待补发」编码进 `lastNotifiedAt` 会漏掉 `ok`。
+>
+> 注意向后兼容：线上已有的 KV 记录没有 `lastNotifiedLevel` 字段，`?? "ok"` 会让第一次读到旧记录时视为「上次通知的是 ok」。若当时正处于 down，会补推一条——方向安全（宁吵勿哑），且只发生一次。
+
+### 测试
+
+- 恢复消息发送失败 → 下次 cron **重推 ✅**；送达后不再重推
+- 首跑 ok 不推（回归防线，防止 `lastNotifiedLevel` 初值取错导致开机就推一条 ✅）
+- 旧记录（无 `lastNotifiedLevel` 字段）能被正确读取，不抛错
+
+---
+
+## 遗留 3：`alert.health.notified` 日志覆盖掉 `level` 严重度字段（LOW）
+
+### 证据
+
+`AIProxy/worker.js:935`：
+
+```js
+logInfo("alert.health.notified", { kind: decision.kind, level, delivered: sent.ok, skipped: ... });
+```
+
+`src/log.js` 的 `log()` 把 `fields` 展开在后：
+
+```js
+const payload = { ts: ..., level, event, ...fields };
+```
+
+字段里的 `level: "down"` **覆盖掉严重度 `"info"`**。实际输出是 `"level":"down"`，按 `level=info|warn|error` 过滤的日志查询会漏掉这一行——而它正是唯一记录「告警到底发出去没有」的那行。
+
+全仓仅此一处冲突（`worker.js` + `src/*.js` 已全量 grep 确认）。
+
+### 修法
+
+字段改名 `alertLevel`。顺手在 `src/log.js` 的文件头注释加一句：**`fields` 不得使用 `ts` / `level` / `event` 三个保留键**，防止再犯。
+
+---
+
+## 本轮改动清单
+
+| 文件 | 改什么 |
+|------|--------|
+| `AIProxy/worker.js` | 遗留 1（`:863` 探针 + 修正那段注释）、遗留 3（`:935` 字段改名） |
+| `AIProxy/src/alertState.js` | 遗留 2（`shouldNotify` 分支换成 `lastNotifiedLevel` 判定 + `nextRecord` 加字段） |
+| `AIProxy/src/log.js` | 遗留 3 的保留键注释 |
+| `AIProxy/worker.test.js` | 遗留 1×2、遗留 2×3（见各节「测试」） |
+| `ALERTING.md` | 层 C-1 规格补「缺 key/adapter 也算不健康」；`shouldNotify` 规格第 4 条改为覆盖 recovered 的口径 |
+
+## 不要改的
+
+- **5 处修复本身**：复核通过，不返工
+- **缺陷 4 补的重推分支**：方向对。遗留 2 是在它基础上补 `ok` 的缺口，不是推翻它
+- **探针 15s 缓存 / 去掉 `entries.length > 0` 守卫 / `buildHealthAlertMessage` 传 `record: previous`**：都核过，正确（`record: previous` 仅 reminder 分支用到 `since`，而 reminder 时 level 未变、`nextRecord` 的 `since` 沿用旧值，两者同值）
+
+## 验证
+
+```bash
+cd AIProxy && npm test
+```
+
+手测补一条针对遗留 1 的——把 `.dev.vars` 里的 `PROVIDER_KEY_*` 全部拿掉：
+
+```bash
+curl "http://localhost:8787/cdn-cgi/handler/scheduled"   # 应收到 down 告警 + /fail 心跳(已修好)
+curl -i "http://localhost:8787/v1/health"
+# 修复前:200 {"status":"ok"}   ← 遗留 1
+# 修复后:503 {"status":"down"}
+```
+
+两条对照跑完，缺陷 2 的三层才算真正齐了。
