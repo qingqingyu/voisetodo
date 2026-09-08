@@ -395,6 +395,14 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                     detailHeaderRow
                     dismissGrabber
                 }
+                // chrome 底色:safeAreaInset 只把内容静息位挪到 chrome 之下,不裁剪 ——
+                // 滚动时文字会从透明的 header/grabber 底下穿过,横条压在正文上。
+                // 铺与页面同色的底(与系统 sheet 的 grabber 区同构):静息态像素不变
+                // (PaperTextureBackground 的 grain 点不透明度 ≤2.3%,被纯色盖住不可辨),
+                // 滚动时内容隐入 chrome 之下,grabber 永不叠字。
+                // ignoresSafeArea(edges: .top):背景上延盖住状态栏/灵动岛窄条,
+                // 否则内容会从 chrome 上沿与状态栏之间的缝隙里漏出来。
+                .background(WarmTheme.background.ignoresSafeArea(edges: .top))
                 // chrome 实际高度上报:toast 让位量(topPadding)读它 —— header 随
                 // Dynamic Type 增高时(AX4/AX5)常量 73 会压住 grabber,实测值全档位安全。
                 .onGeometryChange(for: CGFloat.self) { proxy in

@@ -8,6 +8,13 @@
 > 系统 sheet 的接管语义即无缝接管且不可定制，与起手锁定冲突。
 > 原型已产出并实测：`docs/prototypes/todo-detail-swipe-dismiss.html`。
 >
+> **2026-09-08 修订（B.6 缺口）**：真机反馈——页面往上滚时，文字从透明的
+> chrome（自绘 header + grabber）底下穿过，横条压在正文上。根因：
+> `safeAreaInset(edge: .top)` 只挪内容静息位、不裁剪滚动内容。修复：
+> chrome 铺与页面同色的底（`WarmTheme.background`，`ignoresSafeArea(edges: .top)`
+> 连状态栏窄条一起盖住），滚动内容隐入 chrome 之下，与系统 sheet 的 grabber 区同构；
+> 静息态像素不变。
+>
 > **基线**：行号对齐 `3f7f051`（*feat(alerting): 层 B/C 实施*）。
 > 实施时**先按符号名（属性名 / 函数名 / 注释原文）定位，行号仅作参考**。
 >
