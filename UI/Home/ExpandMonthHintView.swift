@@ -65,10 +65,10 @@ enum ExpandHintMetrics {
     static var triggerDelayNano: UInt64 { UInt64(triggerDelaySeconds * 1_000_000_000) }
 
     // MARK: Hint 视觉定位(HomeView 用)
-    /// ZStack 内 hint 的 Y 偏移:让胶囊底边贴 WeekStripCard 顶边,手指指向卡片"按下"。
+    /// ZStack 内 hint 的 Y 偏移:让胶囊底边贴 WeekStripCard 顶边,手指指向周条"按下"。
     /// 胶囊内容高度 = 图标 32 + chevron 10 + spacing 4 = 46;加 padding 8×2 = 62(总高)。
-    /// -52 让胶囊底边略低于 WeekStripCard 顶边 ~10pt,手指指尖落在卡片顶缘内,
-    /// 视觉上像"按在卡片上"而非"飘在卡片上方"。
+    /// -52 让胶囊底边略低于 WeekStripCard 顶边 ~10pt,手指指尖落在周条顶缘内,
+    /// 视觉上像"按在周条上"而非"飘在周条上方"。
     static let overlayOffsetY: CGFloat = -52
 
     // MARK: 动画曲线(ExpandMonthHintView 用)

@@ -101,7 +101,8 @@ struct HomeMonthHeaderView: View {
         // 相比 8pt 再多 ~4pt 可用宽度(每格 +0.57pt,中文条目约多塞 0.5 个字)。
         // 留 4pt 不归零:防边格被 iPhone 屏幕圆角裁切、避免格子贴屏幕边显得溢出。
         // 纯留白方案:格子无独立白底/描边,贴边靠 4pt 边距 + 事件条自身圆角区分。
-        // 上方 headerView 仍保留水平 24pt padding(WarmSpacing.xl),形成"上呼吸、下铺满"的层次。
+        // 上方 headerView 保留水平 20pt padding(WarmSpacing.lg),形成"上呼吸、下铺满"的层次;
+        // 折叠态 WeekStripCard 外层复用本常量(见 HomeView),周/月同宽同列。
         .padding(.horizontal, HomeLayoutMetrics.monthGridPaddingHorizontal)
         .padding(.top, WarmSpacing.xxs)
         .padding(.bottom, WarmSpacing.sm)
@@ -193,19 +194,20 @@ enum HomeLayoutMetrics {
 
     // MARK: - MonthGrid(展开态月历网格)布局常量
     /// 月历网格容器水平 padding(= WarmSpacing.xxs = 4pt)。
-    /// 刻意小于折叠态 WeekStripCard 的外层 20pt(HomeView 里 .padding(.horizontal, .lg))——
-    /// 此不对称是设计意图,不要为"对齐"改回 lg。
-    /// 4pt 比原来 8pt(xs)再多 ~4pt 可用宽度(每格 +0.57pt,7 列中文条目约多塞 0.5 个字),
-    /// 同时仍留极少边距,避免边格被 iPhone 屏幕圆角裁切、不让格子贴屏幕边显得溢出。
+    /// 折叠态 WeekStripCard 的外层水平 padding(HomeView)复用同一常量——
+    /// 周/月两视图必须同宽,折叠/展开动画里日期才不会横向跳(用户 2026-09-19 反馈)。
+    /// 仍留极少边距,避免边格被 iPhone 屏幕圆角裁切、不让格子贴屏幕边显得溢出。
     /// 引用 WarmSpacing.xxs 而非裸字面量,design system 调整 xxs 时自动跟随。
     static let monthGridPaddingHorizontal: CGFloat = WarmSpacing.xxs
 
-    // MARK: - WeekStripCard(折叠态周条卡片)布局常量
+    // MARK: - WeekStripCard(折叠态周条)布局常量
     // 集中管理 WeekStripCard 内部布局字面量,调间距改这里,不散落在 View body 里。
-    /// 卡片根 VStack spacing(7 天行 / 图例行 / 展开按钮)。
+    /// 根 VStack spacing(7 天行 / 图例行)。
     static let weekStripSectionSpacing: CGFloat = 8
-    /// 7 天行 HStack 列间距。
-    static let weekStripDaySpacing: CGFloat = 4
+    /// 7 天行 HStack 列间距。必须等于 gridColumnSpacing:周条与月网格共用同一套
+    /// 7 列几何(同容器宽 + 同列距),列距不同会让七列中心线在折叠/展开过渡中
+    /// 横向错位。引用而非重复字面量,改列距两处自动同步。
+    static let weekStripDaySpacing: CGFloat = gridColumnSpacing
     /// 单格 VStack(weekday / 圆 / 圆点)spacing。
     static let weekStripCellSpacing: CGFloat = 7
     /// 日期圆直径。
@@ -229,8 +231,8 @@ enum HomeLayoutMetrics {
     static let legendDotDiameter: CGFloat = 6
     /// 图例文字字号。
     static let legendFontSize: CGFloat = 11
-    /// 卡片 padding。
-    static let weekStripPaddingHorizontal: CGFloat = 8
+    /// 周条上下 padding(去卡片底后保留的呼吸空间;水平方向不另加 padding,
+    /// 由 HomeView 外层统一用 monthGridPaddingHorizontal 对齐月网格)。
     static let weekStripPaddingTop: CGFloat = 12
     static let weekStripPaddingBottom: CGFloat = 10
 
@@ -464,8 +466,9 @@ struct WeekStripHeightKey: PreferenceKey {
 
 // MARK: - Week strip card (折叠态周条)
 
-/// 折叠态的周条卡片:7 天 + 圆点 + 图例。
-/// 对齐竞品 HTML 参考稿:白色卡片容器 + border + 圆角,格子内用圆点不用横条。
+/// 折叠态的周条:7 天 + 圆点 + 图例。
+/// 与月网格同款「纯留白」方案:无卡片底/描边,水平边距与列间距同月网格
+/// (用户 2026-09-19 反馈:周/月两视图宽度不一致不美观,折叠/展开时列线错位)。
 ///
 /// **展开整月入口**:可见按钮已删除(用户通过下拉手势展开,首次由 `ExpandMonthHintView` 引导)。
 /// `onExpand` 保留——仅供 VoiceOver `accessibilityAction` 兜底使用,盲人用户仍可通过
@@ -502,7 +505,7 @@ struct WeekStripCard: View {
             }
 
             // 图例:本周出现过的所有分类。点其他周/切 backlog 会跟着变。
-            // FlowLayout 换行 + 居中:5+ 项时自动换到第二行,每行在卡片宽度内水平居中。
+            // FlowLayout 换行 + 居中:5+ 项时自动换到第二行,每行在容器宽度内水平居中。
             // 字体用 `.system` 而非 WarmFont.caption:后者底层是 Avenir Next(纯拉丁),
             // 中文回落到 PingFang SC 后视觉偏小;.system 在中英混排下 cap-height 对齐、视觉一致。
             if !weekCategories.isEmpty {
@@ -531,24 +534,15 @@ struct WeekStripCard: View {
             // onExpand 保留作为 VoiceOver 兜底入口(accessibilityAction)——盲人用户无法看到引导动画,
             // 仍需一个语义化动作触发展开。
         }
-        .padding(.horizontal, HomeLayoutMetrics.weekStripPaddingHorizontal)
         .padding(.top, HomeLayoutMetrics.weekStripPaddingTop)
         .padding(.bottom, HomeLayoutMetrics.weekStripPaddingBottom)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.section)
-                .fill(WarmTheme.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: WarmRadius.section)
-                .stroke(WarmTheme.sketch.opacity(0.12), lineWidth: 1)
-        )
         .accessibilityAction(named: String(localized: "a11y.action.expand_month")) {
             onExpand()
         }
         .accessibilityHint(String(localized: "a11y.week_strip.hint"))
         .accessibilityIdentifier("WeekStripCard")
-        // 测量卡片实际高度上报父容器。放在所有修饰符最外层,
-        // 测的是经过 padding/background/overlay 后的最终渲染高度,
+        // 测量周条实际高度上报父容器。放在所有修饰符最外层,
+        // 测的是经过上下 padding 后的最终渲染高度(周条已无卡片底/描边),
         // 与父容器 .frame(height:).clipped() 看到的尺寸一致。
         .background(
             GeometryReader { proxy in
