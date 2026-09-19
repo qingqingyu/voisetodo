@@ -187,6 +187,9 @@ struct HomeMonthGridButton: View {
         // hour 前缀:完整 "HH:mm" 钟点(9:45 → "09:45"),与 WarmTodoCard 列表卡片的
         // 内联钟点串(inlineTimeText,同为 HH:mm)同格式——同一待办在月格与列表里
         // 显示一致。原实现只显示两位小时("09"),用户 2026-09-19 反馈希望看到正式时间。
+        // 字重 semibold:对齐 HTML 参考稿 chips 的时间 <b>(600)——时间比任务名
+        // (9pt regular)重一档,8pt 等宽小字更耐读、可扫读;等宽字体各字重 advance
+        // 宽度一致,不占任务名宽度。+N / N/M 标记保持默认 medium 不加粗。
         // 颜色策略:
         // - 未完成:沿用 tx(分类深字)但 opacity 0.62(spec 第 42 行)——任务名是主信息,时间是次要信息。
         // - 已完成:不叠 opacity。已完成态 tx 已经是中性灰 #B4BCC7,再叠 0.62 会让 hour 几乎不可见
@@ -202,7 +205,7 @@ struct HomeMonthGridButton: View {
                 let hour = Self.calendar.component(.hour, from: dueDate)
                 let minute = Self.calendar.component(.minute, from: dueDate)
                 hourText = Text(verbatim: String(format: "%02d:%02d ", hour, minute))
-                    .font(WarmFont.mono(8))
+                    .font(WarmFont.mono(8, weight: .semibold))
                     .foregroundColor(tx.opacity(hourOpacity))
             } else {
                 hourText = Text("")

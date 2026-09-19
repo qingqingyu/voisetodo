@@ -369,8 +369,10 @@ enum WarmFont {
     /// 与 `headlineFixed` 同逻辑：固定字号、不跟随 Dynamic Type（这些数字是 UI 装饰，
     /// 放大会撑爆格子或破坏时间网格对齐）。受限于 `.frame(width:height:)` 的 Text 同样需要 `.fixedSize()`。
     /// 2026-07 视觉改版：等宽 + 衬线标题 + Avenir 正文三种字体共存，营造「精致工具」辨识度。
-    static func mono(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium, design: .monospaced)
+    /// weight 参数(2026-09-19):月格时间前缀需要 semibold 档;默认 .medium 保持既有调用不变。
+    /// 等宽字体各字重 advance 宽度一致,换字重不影响布局。
+    static func mono(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
+        .system(size: size, weight: weight, design: .monospaced)
     }
 }
 
