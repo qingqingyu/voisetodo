@@ -24,11 +24,18 @@ PAID_DAILY_LIMIT = "100"
 # （com.voicetodo.*）与本 app 不匹配。wrangler-config.test.js 有断言守着。
 APP_BUNDLE_ID = "com.qingqingyu.voicetodo"
 PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo.pro.yearly"
-# 全局每天调用上限：当天全网超过即对所有人返回 503，把分布式刷量的账单锁成可设上限。
-# 留空则不启用。建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。
+# 全局每天调用上限：当天全网**免费档**调用超过即熔断 503（只影响免费档，Pro 走独立桶），
+# 把分布式刷量的账单锁成可设上限。留空则不启用。
+# 建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。
 # GLOBAL_DAILY_LIMIT = "5000"
+# 付费档全局预算（独立桶）。付费调用是有收入覆盖的成本，不计入、也不被免费桶熔断误伤。
+# 估算口径：预期 Pro 用户数 × PAID_DAILY_LIMIT × 2~3 倍余量。留空则付费侧无全局上限
+# （device 侧 PAID_DAILY_LIMIT 仍是单设备硬顶）。trip 错误码 global_budget_exceeded_pro。
+# GLOBAL_PRO_DAILY_LIMIT = "20000"
 # 按 IP 限流（独立于设备，挡"单 IP 轮换 X-Device-ID"）。留空则不启用。
 # 日上限需显著高于单设备额度，避免 VPN、公司网络等共享出口误伤正常用户。
+# ⚠️ 仅对免费档生效：验签通过的 Pro 请求豁免两道 IP 闸门（CGNAT 共享出口下
+# 多名付费用户会互相误伤，且 device 侧付费额度已是单设备速度上限）。
 # IP_DAILY_LIMIT = "500"
 # IP_RATE_PER_MINUTE = "10"
 # 每设备每天遥测事件上限（默认 500）

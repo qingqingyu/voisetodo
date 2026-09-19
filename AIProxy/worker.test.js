@@ -1237,6 +1237,227 @@ test("subscription cache entries without a future expiresAt are ignored", async 
   });
 });
 
+// MARK: - P0 反刷闸门认订阅档位(docs/pre-launch-risk-review.md)
+// 三道闸门(全局熔断/IP 每分钟/IP 每日)此前全部执行在 tier 解析之前,
+// 付费用户会被免费档熔断 503 / IP 限流 429 一起误伤。以下用例锁住分流语义。
+
+test("P0: Pro 不被免费桶全局熔断误伤,计数进独立 pro 桶", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map([["global-budget-tripped:2026-05-26", "1"]]));
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "付费用户请求" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro-trip",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        GLOBAL_DAILY_LIMIT: "5",
+        GLOBAL_PRO_DAILY_LIMIT: "20",
+        RATE_LIMIT_KV: kv,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("X-Quota-Plan"), "pro");
+    // KV 增量路径(degraded):付费计数进 global-quota-pro,免费桶不动
+    assert.equal(kv.values.get("global-quota-pro:2026-05-26"), "1");
+    assert.equal(kv.values.has("global-quota:2026-05-26"), false, "免费桶不应被付费请求递增");
+  });
+});
+
+test("P0: pro 桶独立 trip → 503 错误码 global_budget_exceeded_pro", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map([["global-budget-tripped-pro:2026-05-26", "1"]]));
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "x" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro-bucket-trip",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        GLOBAL_DAILY_LIMIT: "5",
+        GLOBAL_PRO_DAILY_LIMIT: "20",
+        RATE_LIMIT_KV: kv,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      failingFetch
+    );
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.error, "global_budget_exceeded_pro");
+  });
+});
+
+test("P0: Pro 豁免 IP 每分钟限流,免费档同 IP 仍被限", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      DAILY_REQUEST_LIMIT: "5",
+      PAID_DAILY_LIMIT: "100",
+      IP_RATE_PER_MINUTE: "1",
+      RATE_LIMIT_KV: kv,
+      SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+      APP_BUNDLE_ID: "com.voicetodo.app"
+    };
+    const provider = async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] });
+    const ip = { "CF-Connecting-IP": "9.9.9.9", "X-App-Token": "token", "X-Local-Date": "2026-05-26" };
+    // 免费第一次:消耗 IP 速率 1/1
+    const free1 = await handleRequest(request({ transcript: "a" }, { ...ip, "X-Device-ID": "d-free-v1" }), env, {}, provider);
+    assert.equal(free1.status, 200);
+    // 免费第二次(轮换 device id 也一样):同 IP → 429 velocity
+    const free2 = await handleRequest(request({ transcript: "b" }, { ...ip, "X-Device-ID": "d-free-v2" }), env, {}, provider);
+    assert.equal(free2.status, 429);
+    assert.equal(free2.headers.get("X-RateLimit-Type"), "velocity");
+    // Pro 同 IP 第三次:豁免 → 200
+    const pro = await handleRequest(
+      request({ transcript: "c" }, { ...ip, "X-Device-ID": "d-pro-v", "X-Subscription-JWS": jws }),
+      env,
+      {},
+      provider
+    );
+    assert.equal(pro.status, 200);
+    assert.equal(pro.headers.get("X-Quota-Plan"), "pro");
+  });
+});
+
+test("P0: Pro 豁免 IP 每日限流,免费档同 IP 仍被限", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      DAILY_REQUEST_LIMIT: "5",
+      PAID_DAILY_LIMIT: "100",
+      IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+      APP_BUNDLE_ID: "com.voicetodo.app"
+    };
+    const provider = async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] });
+    const ip = { "CF-Connecting-IP": "9.9.9.9", "X-App-Token": "token", "X-Local-Date": "2026-05-26" };
+    const free1 = await handleRequest(request({ transcript: "a" }, { ...ip, "X-Device-ID": "d-free-d1" }), env, {}, provider);
+    assert.equal(free1.status, 200);
+    const free2 = await handleRequest(request({ transcript: "b" }, { ...ip, "X-Device-ID": "d-free-d2" }), env, {}, provider);
+    assert.equal(free2.status, 429);
+    assert.equal(free2.headers.get("X-RateLimit-Type"), "ip_daily");
+    const pro = await handleRequest(
+      request({ transcript: "c" }, { ...ip, "X-Device-ID": "d-pro-d", "X-Subscription-JWS": jws }),
+      env,
+      {},
+      provider
+    );
+    assert.equal(pro.status, 200);
+    assert.equal(pro.headers.get("X-Quota-Plan"), "pro");
+  });
+});
+
+test("P0: DO 路径 Pro 计入 global-budget-pro 桶,免费桶不被触碰", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "5",
+      PAID_DAILY_LIMIT: "100",
+      GLOBAL_DAILY_LIMIT: "5",
+      GLOBAL_PRO_DAILY_LIMIT: "7",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding,
+      SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+      APP_BUNDLE_ID: "com.voicetodo.app"
+    };
+    const r = await handleRequest(
+      request({ transcript: "a" }, {
+        "X-App-Token": "token",
+        "X-Device-ID": "dev-pro-do",
+        "X-Local-Date": "2026-05-26",
+        "X-Subscription-JWS": jws
+      }),
+      env,
+      ctx,
+      jsonResponseProvider("a")
+    );
+    assert.equal(r.status, 200);
+    await ctx.awaitAll();
+    const proConsume = doBinding._calls.filter((c) => c.key === "global-budget-pro");
+    assert.equal(proConsume.length, 1);
+    assert.equal(proConsume[0].limit, 7);
+    assert.equal(proConsume[0].date, "2026-05-26");
+    assert.equal(doBinding._calls.some((c) => c.key === "global-budget"), false, "免费全局桶不应被付费请求递增");
+  });
+});
+
+test("P0: split 模式 Pro 同样豁免免费桶熔断", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map([["global-budget-tripped:2026-05-26", "1"]]));
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "拆一下这件事", mode: "split" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro-split",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        // PAID_DAILY_LIMIT 必须配置,否则 resolveSubscriptionTier 短路返回免费档
+        // (不配置 = Pro 无效,连 JWS 都不验),那 503 就是免费桶的而不是豁免失败。
+        PAID_DAILY_LIMIT: "100",
+        GLOBAL_DAILY_LIMIT: "5",
+        // 有意不配置 GLOBAL_PRO_DAILY_LIMIT:付费侧未设全局上限 = 直接跳过熔断
+        RATE_LIMIT_KV: kv,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      jsonResponseProvider("a")
+    );
+    // split 不计费(quotaState=null,无 X-Quota-* 头),此处只验证不被免费桶 503
+    assert.equal(response.status, 200);
+  });
+});
+
 test("enforces global daily budget with 503", async () => {
   const kv = new MemoryKV(new Map([["global-quota:2026-05-26", "5"]]));
   await withMockedToday("2026-05-26T12:00:00Z", async () => {
