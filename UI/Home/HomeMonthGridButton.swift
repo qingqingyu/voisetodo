@@ -184,7 +184,9 @@ struct HomeMonthGridButton: View {
         let bg = occurrence.isCompleted ? WarmTheme.monthGridDoneBackground : categoryBg
         let tx = occurrence.isCompleted ? WarmTheme.monthGridDoneText : categoryTx
 
-        // hour 前缀:只显示小时(两位数)省空间:"09:55" → "09",给任务名留更多宽度。
+        // hour 前缀:完整 "HH:mm" 钟点(9:45 → "09:45"),与 WarmTodoCard 列表卡片的
+        // 内联钟点串(inlineTimeText,同为 HH:mm)同格式——同一待办在月格与列表里
+        // 显示一致。原实现只显示两位小时("09"),用户 2026-09-19 反馈希望看到正式时间。
         // 颜色策略:
         // - 未完成:沿用 tx(分类深字)但 opacity 0.62(spec 第 42 行)——任务名是主信息,时间是次要信息。
         // - 已完成:不叠 opacity。已完成态 tx 已经是中性灰 #B4BCC7,再叠 0.62 会让 hour 几乎不可见
@@ -197,7 +199,9 @@ struct HomeMonthGridButton: View {
         let hourText: Text
         if occurrence.isSpanStart {
             if occurrence.todo.hasDueTime, let dueDate = occurrence.todo.dueDate {
-                hourText = Text(verbatim: String(format: "%02d ", Self.calendar.component(.hour, from: dueDate)))
+                let hour = Self.calendar.component(.hour, from: dueDate)
+                let minute = Self.calendar.component(.minute, from: dueDate)
+                hourText = Text(verbatim: String(format: "%02d:%02d ", hour, minute))
                     .font(WarmFont.mono(8))
                     .foregroundColor(tx.opacity(hourOpacity))
             } else {

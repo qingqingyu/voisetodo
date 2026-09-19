@@ -1024,9 +1024,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                 .clipped()
         }
         .animation(motionAnim(.easeOut(duration: 0.3)), value: statsHidden)
-        // 横向 padding 与周条卡片 / 任务卡 listRowInsets 统一 lg(20pt),
-        // 三层(标题 → 周条 → 任务卡)左右边缘齐平。原 xl(24pt) 让标题独占一段缩进,
-        // 但与下方两层错位 4pt;用户 2026-07-26 反馈视觉不齐。
+        // 横向 padding 与任务卡 listRowInsets 统一 lg(20pt),标题与任务卡左右边缘齐平。
+        // 原 xl(24pt) 让标题独占一段缩进,与任务卡错位 4pt;用户 2026-07-26 反馈视觉不齐。
+        // (2026-09-19 起周条不再参与这层对齐——它已去卡片框、改为与月网格同宽的
+        // 4pt 边距,「标题/任务卡 20pt、日历区 4pt」两组层次,同 HTML 参考稿。)
         // 影响:header 内容总宽 +8pt,ViewThatFits 竖排回退 / minimumScaleFactor 缩字
         // 触发阈值均降低(更长英文月份名/星期名才能触发),长文本场景只会更宽松。
         .padding(.horizontal, WarmSpacing.lg)
@@ -1716,7 +1717,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             .opacity(1 - collapseProgress)
                             .allowsHitTesting(collapseProgress <= 0.5)
 
-                        // 折叠态:周条卡片(淡入) + 首次下拉引导动画
+                        // 折叠态:周条(淡入) + 首次下拉引导动画
                         ZStack(alignment: .top) {
                             WeekStripCard(
                                 state: state,
@@ -1728,13 +1729,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                                 },
                                 onShiftWeek: { shiftWeek(by: $0) }
                             )
-                            // 横向 padding 对齐 HomeSelectedDayListView 任务卡 listRowInsets 的 lg(20pt),
-                            // 让折叠态周条卡片与下方任务卡左右边缘齐平——原先用 xl(24pt) 比任务卡窄 8pt,
-                            // 用户 2026-07-26 反馈「周条卡片比下面 task 方块小,宽度不太合适」。
-                            .padding(.horizontal, WarmSpacing.lg)
+                            // 横向 padding 与月网格共用 monthGridPaddingHorizontal(4pt):
+                            // 周/月两视图同宽同列,折叠/展开切换时日期不横向跳。
+                            // 原两侧边距合计 56pt(外层 lg 20pt + 卡片内部 8pt,各 ×2)比月网格
+                            // (合计 8pt)的内容宽窄 48pt,且列距 4pt ≠ 2pt 导致七列中心线错位
+                            // ——用户 2026-09-19 反馈两视图宽度对不上不美观。
+                            // 下方任务卡的 20pt 边距不动:HTML 参考稿同样是「日历铺满、列表内缩」层次。
+                            .padding(.horizontal, HomeLayoutMetrics.monthGridPaddingHorizontal)
                             .padding(.top, WarmSpacing.xxs)
-                            // 接收卡片实测高度。切周导致图例行数变化时,容器高度跟随平滑过渡,
-                            // 避免 collapsedHeight 跳变让卡片/列表抖一下。
+                            // 接收周条实测高度。切周导致图例行数变化时,容器高度跟随平滑过渡,
+                            // 避免 collapsedHeight 跳变让周条/列表抖一下。
                             // 手势进行中(isCollapseGesturing=true)不套动画:此时 collapseProgress
                             // 正随手势逐帧驱动,withAnimation 会与手势帧叠加导致高度抢帧弹跳。
                             // 首次上报(weekStripHeight==0→实际值)也不套动画:避免首屏可见一次
@@ -1749,7 +1753,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                                 }
                             }
 
-                            // 首次下拉引导:浮在卡片上方,手指下拉动画提示可下拉展开。
+                            // 首次下拉引导:浮在周条上方,手指下拉动画提示可下拉展开。
                             // 触发条件由 onChange + hintTriggerTask 管控;maxDisplayDuration 后自动消失(ExpandMonthHintView 内部超时)。
                             if showExpandHint {
                                 ExpandMonthHintView {
@@ -1883,14 +1887,14 @@ struct HomeView<Store: HomeTodoStore>: View {
                         }
                     },
                     // 折叠态下「List 已到顶 + 用户下滑」时,允许外层折叠手势与 List pan 共存,
-                    // 让"在 List 区域下拉"也能展开月网格(原仅周条卡片区域下拉可触发)。
+                    // 让"在 List 区域下拉"也能展开月网格(原仅周条区域下拉可触发)。
                     // 纯 predicate:不 mutate ScrollView,Coordinator 在返回 true 时同步
                     // disable bounces + 杀 in-flight bounce/decel 动画,gesture 结束时恢复。
                     //
                     // 判定:
                     //   1. atTop:contentOffset.y ≤ 0.5(0.5pt 容差)。
                     //      SwiftUI List 视觉顶部恒等于 contentOffset.y == 0,不论 List 自身
-                    //      contentInset / 父视图 safe area 如何 —— List 被 headerView + 周条卡片
+                    //      contentInset / 父视图 safe area 如何 —— List 被 headerView + 周条
                     //      推到 safe area 之外时 adjustedContentInset.top 可能是 0,但 contentOffset.y
                     //      仍以 0 为「看到第一条」的零点。容差覆盖 List 在 bounce/rubber-band
                     //      瞬态(此时 contentOffset.y < 0)以及浮点抖动。

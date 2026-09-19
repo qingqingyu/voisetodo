@@ -823,13 +823,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Swipe down on this card to expand the full month."
+            "value" : "Swipe down here to expand the full month."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在卡片上下滑可展开整月。"
+            "value" : "在此区域下滑可展开整月。"
           }
         }
       }
