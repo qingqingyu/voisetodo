@@ -183,8 +183,19 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // 不计费 ≠ 零防护。提取模式照旧三层配额 + today 不变量。
     let quotaState = null;
     let todayDate = null;
+    // 订阅档位在所有配额/反滥用闸门之前解析一次(docs/pre-launch-risk-review.md P0):
+    // 此前三道闸门(全局熔断/IP 每分钟/IP 每日)全部执行在 tier 解析之前,付费用户
+    // 会被免费档的熔断 503 / IP 限流 429 一起误伤。现在付费档豁免两道 IP 闸门,
+    // 全局预算分免费/pro 两桶(trip 只影响本桶),计费额度(PAID_DAILY_LIMIT)照常。
+    // 解析成本:无 JWS 零成本短路返回 free;有 JWS 走 sub:<deviceId> KV 缓存
+    // (≤15min TTL)。extract 模式此前在 enforceDailyLimit 内每请求本就要跑一次,
+    // 这里只是提前;split/reflect 则是本次为档位豁免**新增**的解析(成本同上:
+    // 无 JWS 零成本,有 JWS 缓存命中一次 KV 读)。
+    const subscription = await resolveSubscriptionTier(request, env, requestContext);
+    requestContext.subscriptionTier = subscription.tier;
+    const isPro = subscription.tier === "pro";
     if (mode === "extract") {
-      quotaState = await enforceAllQuotas(request, env, requestContext, ctx);
+      quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription);
 
       // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
       // 直接复用作为 today 注入 prompt，避免重复调用 resolveQuotaDate 产生重复漂移校验日志。
@@ -199,8 +210,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     } else {
       // split 不占计费额度(拍板),但保留反滥用护栏:全局预算熔断 + ip 短窗速率限流。
       // 不计费 ≠ 零防护——跳过这两层会让外部无成本刷模型调用。
-      await enforceGlobalBudgetHotPath(env, requestContext);
-      await enforceIpRateLimit(request, env, requestContext);
+      // 付费档与 extract 模式同口径豁免两道 IP 闸门 / 走 pro 熔断桶。
+      await enforceGlobalBudgetHotPath(env, requestContext, isPro);
+      await enforceIpRateLimit(request, env, requestContext, isPro);
       logInfo("proxy.assist.quota_skipped", { ...requestContext, mode });
     }
 
@@ -1234,17 +1246,28 @@ function validateAppToken(request, env) {
 // 注意:ip-rate 在 Step A 已 increment,即使后续 device reject 也**不 refund** ——
 // 这是有意为之,ip-rate 是反"短时间内高频尝试"的维度,被它拒绝或被它放行后再被其他维度
 // 拒绝,都应消耗一次 ip-rate 配额,避免攻击者用"device 配额耗尽重试"绕过 ip-rate。
-async function enforceAllQuotas(request, env, requestContext, ctx) {
+async function enforceAllQuotas(request, env, requestContext, ctx, subscription) {
+  // 订阅档位由 handler 在闸门之前解析并注入(见调用处注释,P0)。缺参时原地解析,
+  // 保持本函数可独立调用(测试/未来调用方)。
+  // 分流规则:
+  //   - 免费档:三道反滥用闸门照旧,语义与 tier 改造前完全一致
+  //   - 付费档:豁免两道 IP 闸门(威胁模型是"单 IP 轮换 X-Device-ID 刷免费额度",
+  //     付费用户不在其中;且 device 侧 PAID_DAILY_LIMIT 本身构成单设备速度上限),
+  //     全局熔断走独立 pro 桶(免费桶 trip 不误伤付费用户)
+  //   - 计费额度(enforceDailyLimit)两档都照常执行——付费只是上限更高,不是免检
+  const sub = subscription ?? await resolveSubscriptionTier(request, env, requestContext);
+  const isPro = sub.tier === "pro";
+
   // Step A: 前置检查
   // - global-budget:纯读 KV tripped 标志,真正零成本
   // - ip-rate:KV RMW,会扣计数(有意不补偿,见上方注释)
-  await enforceGlobalBudgetHotPath(env, requestContext);
-  await enforceIpRateLimit(request, env, requestContext);
+  await enforceGlobalBudgetHotPath(env, requestContext, isPro);
+  await enforceIpRateLimit(request, env, requestContext, isPro);
 
   // Step B: device + ip-daily 并行扣减
   const [deviceResult, ipResult] = await Promise.allSettled([
-    enforceDailyLimit(request, env, requestContext, ctx),
-    enforceIpDailyLimit(request, env, requestContext, ctx)
+    enforceDailyLimit(request, env, requestContext, ctx, sub),
+    enforceIpDailyLimit(request, env, requestContext, ctx, isPro)
   ]);
 
   // Step C: 失败补偿
@@ -1264,11 +1287,16 @@ async function enforceAllQuotas(request, env, requestContext, ctx) {
   // 不会泄漏给用户。若未来需要严格一致,需要让 increment 影子写读 DO 当前值再写,
   // 或改用 D1 单 SQL 事务做 KV 替代。
   if (deviceResult.status === "rejected" && ipResult.status === "fulfilled") {
-    await refundIpDaily(request, env, requestContext, ctx).catch((error) => {
-      // outer catch 是补偿失败的刻意吞点:用户已被拒,refund 失败只产生配额泄漏,
-      // 不应再让响应 5xx。需通过日志监控 leak 率。
-      logWarn("proxy.ip_quota.refund_failed", { ...requestContext, ...errorFields(error) });
-    });
+    // pro 豁免了 ip-daily(Step B 从未扣减),不能对它发 refund——KV 路径下
+    // ip-quota 是同 IP 共享计数,CGNAT 共享出口时会错减免费用户的计数,放松免费档
+    // IP 日限;DO 路径下则是纯浪费的 refund 往返 + 误导性 refunded 日志。
+    if (!isPro) {
+      await refundIpDaily(request, env, requestContext, ctx).catch((error) => {
+        // outer catch 是补偿失败的刻意吞点:用户已被拒,refund 失败只产生配额泄漏,
+        // 不应再让响应 5xx。需通过日志监控 leak 率。
+        logWarn("proxy.ip_quota.refund_failed", { ...requestContext, ...errorFields(error) });
+      });
+    }
     throw deviceResult.reason;
   }
   if (ipResult.status === "rejected" && deviceResult.status === "fulfilled") {
@@ -1282,8 +1310,9 @@ async function enforceAllQuotas(request, env, requestContext, ctx) {
     throw deviceResult.reason;
   }
 
-  // Step D: 都通过,异步递增 global budget(若 DO 未绑则同步 KV 路径)
-  await enforceGlobalBudgetIncrement(env, requestContext, ctx);
+  // Step D: 都通过,异步递增 global budget(若 DO 未绑则同步 KV 路径)。
+  // 付费档计入独立 pro 桶(未配置 GLOBAL_PRO_DAILY_LIMIT 则跳过,见函数内注释)。
+  await enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro);
 
   return deviceResult.value;
 }
@@ -1425,7 +1454,7 @@ async function refundQuotaCounterDO(env, subjectKey, subjectId, date, logEvent) 
 // DO 故障(fetch 抛错 / 非 200)自动回退到 KV 路径并 log warn —— KV 虽有丢失更新,
 // 但单线程下仍正确,作为 degraded 模式比纯 fail-open 安全。
 // 测试/dev 环境不绑定 DO 时直接走 KV 路径,行为与 Step 3 前一致。
-async function enforceDailyLimit(request, env, requestContext, ctx) {
+async function enforceDailyLimit(request, env, requestContext, ctx, subscription) {
   // 即使配额未启用也预先解析 quotaDate，让调用方（today 注入）能复用而无需重复调用
   // resolveQuotaDate（避免重复漂移校验日志）。
   const { date: quotaDate, source } = resolveQuotaDate(request, requestContext);
@@ -1439,7 +1468,9 @@ async function enforceDailyLimit(request, env, requestContext, ctx) {
     return { skipped: true, resetDate: quotaDate, dateSource: source };
   }
 
-  const { tier, limit, productId } = await resolveSubscriptionTier(request, env, requestContext);
+  // subscription 由 enforceAllQuotas 入口解析后注入(P0:tier 现在也被反滥用闸门
+  // 消费,统一在 handler 解析一次)。缺参时原地解析,保持本函数可独立调用。
+  const { tier, limit, productId } = subscription ?? await resolveSubscriptionTier(request, env, requestContext);
 
   if (env.QUOTA_COUNTER_DO) {
     return enforceDailyLimitViaDO(env, requestContext, ctx, { tier, limit, productId, quotaDate, dateSource: source });
@@ -1688,8 +1719,41 @@ function secondsUntilNextLocalDay(quotaDate) {
 // "计数器根本不涨、上限形同虚设",这是从"漏"到"精确到分钟级"的改变。
 
 // 热路径:读 KV tripped 标志位,熔断时立即 503。
-async function enforceGlobalBudgetHotPath(env, requestContext) {
-  if (!env.RATE_LIMIT_KV || !env.GLOBAL_DAILY_LIMIT) {
+// isPro(P0):付费档读独立 pro 桶标志(global-budget-tripped-pro:<date>),
+// 免费桶 trip 不影响付费用户。未配置 GLOBAL_PRO_DAILY_LIMIT = 付费侧不设全局上限
+// (付费调用有收入覆盖的成本;device 侧 PAID_DAILY_LIMIT 仍是单设备硬顶)。
+async function enforceGlobalBudgetHotPath(env, requestContext, isPro = false) {
+  // KV 未绑定:免费/付费桶都无法读 tripped 标志,统一跳过并记日志(同口径)。
+  if (!env.RATE_LIMIT_KV) {
+    logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured" });
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  if (isPro) {
+    // 跳过路径与免费侧同口径记日志:付费侧熔断"未配置/配错"必须能从日志发现,
+    // 否则看起来生效、实际没有上限,静默跳过违反项目"不静默"规则。
+    if (!env.GLOBAL_PRO_DAILY_LIMIT) {
+      logInfo("proxy.global_budget.skipped", { ...requestContext, today, tier: "pro", reason: "not_configured" });
+      return;
+    }
+    const proLimit = Number(env.GLOBAL_PRO_DAILY_LIMIT);
+    if (!Number.isFinite(proLimit) || proLimit <= 0) {
+      logWarn("proxy.global_budget.skipped", { ...requestContext, today, tier: "pro", reason: "invalid_limit", configuredLimit: env.GLOBAL_PRO_DAILY_LIMIT });
+      return;
+    }
+    const tripped = await env.RATE_LIMIT_KV.get(`global-budget-tripped-pro:${today}`);
+    if (tripped === "1") {
+      // 错误码独立(global_budget_exceeded_pro):客户端/运维可区分"付费侧成本上限"
+      // 与"免费侧防刷熔断",不会把两者混成"服务挂了"。
+      logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit: proLimit, tier: "pro" });
+      throw new ProxyHTTPError(503, "Service temporarily unavailable", {
+        errorType: "global_budget_exceeded_pro",
+        body: { error: "global_budget_exceeded_pro" }
+      });
+    }
+    return;
+  }
+  if (!env.GLOBAL_DAILY_LIMIT) {
     logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured" });
     return;
   }
@@ -1698,7 +1762,6 @@ async function enforceGlobalBudgetHotPath(env, requestContext) {
     logWarn("proxy.global_budget.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.GLOBAL_DAILY_LIMIT });
     return;
   }
-  const today = new Date().toISOString().slice(0, 10);
   const trippedKey = `global-budget-tripped:${today}`;
   const tripped = await env.RATE_LIMIT_KV.get(trippedKey);
   if (tripped === "1") {
@@ -1711,12 +1774,22 @@ async function enforceGlobalBudgetHotPath(env, requestContext) {
 }
 
 // 增量路径:device/ip 都通过后调用。DO 异步 consume + 写 tripped(若超限)。
-// KV 路径(degraded)直接同步 increment。
-async function enforceGlobalBudgetIncrement(env, requestContext, ctx) {
-  if (!env.RATE_LIMIT_KV || !env.GLOBAL_DAILY_LIMIT) return;
+// KV 路径(degraded)直接同步 increment。付费档计入独立 pro 桶。
+async function enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro = false) {
+  if (!env.RATE_LIMIT_KV) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (isPro) {
+    const proLimit = Number(env.GLOBAL_PRO_DAILY_LIMIT || 0);
+    if (!Number.isFinite(proLimit) || proLimit <= 0) return;
+    if (env.QUOTA_COUNTER_DO) {
+      enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, { today, limit: proLimit, tier: "pro" });
+      return;
+    }
+    await enforceGlobalBudgetViaKV(env, requestContext, { today, limit: proLimit, tier: "pro" });
+    return;
+  }
   const limit = Number(env.GLOBAL_DAILY_LIMIT);
   if (!Number.isFinite(limit) || limit <= 0) return;
-  const today = new Date().toISOString().slice(0, 10);
 
   if (env.QUOTA_COUNTER_DO) {
     enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, { today, limit });
@@ -1726,9 +1799,13 @@ async function enforceGlobalBudgetIncrement(env, requestContext, ctx) {
 }
 
 // DO 异步增量路径:ctx.waitUntil 包好,本次响应不阻塞。
+// tier 分桶:独立 DO 实例(global-budget / global-budget-pro)+ 独立 tripped key。
 function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
-  const { today, limit } = params;
-  const trippedKey = `global-budget-tripped:${today}`;
+  const { today, limit, tier = "free" } = params;
+  const subjectKey = tier === "pro" ? "global-budget-pro" : "global-budget";
+  const trippedKey = tier === "pro"
+    ? `global-budget-tripped-pro:${today}`
+    : `global-budget-tripped:${today}`;
   if (!ctx?.waitUntil) {
     // 生产路径 ctx 必然存在;缺失表示调用方契约违反(测试 mock 不全 / 运行时异常)。
     // 显式 warn 而非静默 —— 否则 global budget 会被无声地跳过。
@@ -1742,12 +1819,12 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
   ctx.waitUntil(
     (async () => {
       try {
-        const id = env.QUOTA_COUNTER_DO.idFromName("global-budget");
+        const id = env.QUOTA_COUNTER_DO.idFromName(subjectKey);
         const stub = env.QUOTA_COUNTER_DO.get(id);
         const response = await stub.fetch(new Request("https://quota-counter.local/consume", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: "global-budget", date: today, limit, amount: 1 })
+          body: JSON.stringify({ key: subjectKey, date: today, limit, amount: 1 })
         }));
         if (!response.ok) {
           logWarn("proxy.global_budget.do_http_error", {
@@ -1763,13 +1840,15 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
             ...requestContext,
             today,
             used: result.used,
-            limit
+            limit,
+            tier
           });
         } else {
           logInfo("proxy.global_budget.incremented", {
             ...requestContext,
             used: result.used,
             limit,
+            tier,
             source: "do"
           });
         }
@@ -1785,18 +1864,19 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
 
 // KV 路径(degraded / dev / test):保留 Step 5 前的 read-modify-write 语义。
 async function enforceGlobalBudgetViaKV(env, requestContext, params) {
-  const { today, limit } = params;
-  const key = `global-quota:${today}`;
+  const { today, limit, tier = "free" } = params;
+  const key = tier === "pro" ? `global-quota-pro:${today}` : `global-quota:${today}`;
+  const errorType = tier === "pro" ? "global_budget_exceeded_pro" : "global_budget_exceeded";
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= limit) {
-    logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit, source: "kv" });
+    logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit, tier, source: "kv" });
     throw new ProxyHTTPError(503, "Service temporarily unavailable", {
-      errorType: "global_budget_exceeded",
-      body: { error: "global_budget_exceeded" }
+      errorType,
+      body: { error: errorType }
     });
   }
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
-  logInfo("proxy.global_budget.incremented", { ...requestContext, current: current + 1, limit, source: "kv" });
+  logInfo("proxy.global_budget.incremented", { ...requestContext, current: current + 1, limit, tier, source: "kv" });
 }
 
 // 独立于设备的 IP 限流：始终按 CF-Connecting-IP 计，挡"单 IP 轮换 X-Device-ID 刷配额"。
@@ -1807,7 +1887,12 @@ async function enforceGlobalBudgetViaKV(env, requestContext, params) {
 //
 // ip-rate 保留 KV,精度收益不抵成本(每分钟 × 每 IP 一个 DO 实例太多)。
 
-async function enforceIpRateLimit(request, env, requestContext) {
+async function enforceIpRateLimit(request, env, requestContext, isPro = false) {
+  // 付费档豁免(P0):本闸门挡"单 IP 轮换 X-Device-ID 刷免费配额",付费用户不在
+  // 威胁模型内;device 侧 PAID_DAILY_LIMIT(100/天)本身构成单设备速度上限,IP 限速
+  // 对它冗余。而 CGNAT/VPN 共享出口 IP 下,多名付费用户会互相误伤
+  // (docs/pre-launch-risk-review.md P0:5 个 Pro 用户共享出口即可打满 500/天)。
+  if (isPro) return;
   if (!env.RATE_LIMIT_KV) return;
   const perMinute = Number(env.IP_RATE_PER_MINUTE || 0);
   if (!Number.isFinite(perMinute) || perMinute <= 0) return;
@@ -1829,7 +1914,9 @@ async function enforceIpRateLimit(request, env, requestContext) {
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
 }
 
-async function enforceIpDailyLimit(request, env, requestContext, ctx) {
+async function enforceIpDailyLimit(request, env, requestContext, ctx, isPro = false) {
+  // 付费档豁免:理由同 enforceIpRateLimit(威胁模型不含付费用户;device 额度已是硬顶)。
+  if (isPro) return;
   if (!env.RATE_LIMIT_KV) return;
   const perDay = Number(env.IP_DAILY_LIMIT || 0);
   if (!Number.isFinite(perDay) || perDay <= 0) return;
