@@ -101,6 +101,23 @@ for (const { label, path } of CONFIGS) {
     );
   });
 
+  test(`${label}: GLOBAL_PRO_DAILY_LIMIT, if set, is a positive integer`, () => {
+    // 未配置是合法状态(拍板:未配置 = 付费侧无全局上限,device 侧 PAID_DAILY_LIMIT
+    // 仍是单设备硬顶),这里只拦"配置了但配错"——比如 "2O000" 这类笔误会让
+    // worker 侧 Number() 判 NaN → 每请求 logWarn 跳过,付费全局预算静默失效,
+    // 只能靠线上日志发现。与本文件守 DAILY_REQUEST_LIMIT / PAID_DAILY_LIMIT 的
+    // 口径一致:防"代码对 + 测试绿 + 线上配置配错"长期共存。
+    const vars = readVars(path);
+    if (vars.GLOBAL_PRO_DAILY_LIMIT === undefined) return;
+
+    const value = Number(vars.GLOBAL_PRO_DAILY_LIMIT);
+    assert.ok(
+      Number.isInteger(value) && value > 0,
+      `GLOBAL_PRO_DAILY_LIMIT="${vars.GLOBAL_PRO_DAILY_LIMIT}" 不是正整数 → `
+        + "worker 侧 Number.isFinite 校验会判为无效,付费档全局预算静默失效(invalid_limit 每请求 logWarn)"
+    );
+  });
+
   test(`${label}: subscription JWS verification vars are present`, () => {
     const vars = readVars(path);
 

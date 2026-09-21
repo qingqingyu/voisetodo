@@ -1458,6 +1458,88 @@ test("P0: split 模式 Pro 同样豁免免费桶熔断", async () => {
   });
 });
 
+test("P0: Pro 设备额度超限时不对共享 IP 计数发 refund(Step C 豁免)", async () => {
+  // 回归守卫:enforceAllQuotas Step C 的 if (!isPro) 分支。pro 豁免了 ip-daily
+  // (Step B 从未扣减),若回归掉守卫对它发 refund,KV 路径会把同 IP 的免费用户
+  // 共享计数错减(refundIpDaily 对不存在的键 Math.max(0, 0-1)=0 → 写入 "0"),
+  // 放松免费档 IP 日限。断言:pro 设备超限被 429 后,ip-quota 键保持缺失。
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      DAILY_REQUEST_LIMIT: "5",
+      // PAID_DAILY_LIMIT=1:第一次请求用满 1/1,第二次 device reject → 走 Step C
+      PAID_DAILY_LIMIT: "1",
+      IP_DAILY_LIMIT: "10",
+      RATE_LIMIT_KV: kv,
+      SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+      APP_BUNDLE_ID: "com.voicetodo.app"
+    };
+    const headers = {
+      "X-App-Token": "token",
+      "X-Device-ID": "dev-pro-no-refund",
+      "X-Local-Date": "2026-05-26",
+      "CF-Connecting-IP": "9.9.9.9",
+      "X-Subscription-JWS": jws
+    };
+    // 第一次:成功,付费设备额度用满 1/1
+    const first = await handleRequest(request({ transcript: "a" }, headers), env, {}, jsonResponseProvider("a"));
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get("X-Quota-Plan"), "pro");
+    // 第二次:device reject(429 quota)。pro 豁免 ip-daily → ipResult fulfilled;
+    // Step C 若回归掉 if (!isPro) 守卫,refundIpDaily 会把 ip-quota 错写成 "0"。
+    const second = await handleRequest(request({ transcript: "b" }, headers), env, {}, failingFetch);
+    assert.equal(second.status, 429);
+    assert.equal(second.headers.get("X-RateLimit-Type"), "quota");
+    // ip-quota 键必须既未被扣减(豁免)也未被 refund(Step C 豁免)——保持缺失
+    const ipKeys = [...kv.values.keys()].filter((k) => k.startsWith("ip-quota:"));
+    assert.equal(ipKeys.length, 0, "pro 请求不应触碰共享 ip-quota 计数(不扣减也不 refund)");
+  });
+});
+
+test("P0: pro 桶 KV 增量超限 → 503 global_budget_exceeded_pro(增量路径而非 tripped 标志)", async () => {
+  // 覆盖 enforceGlobalBudgetViaKV 的 pro 分支:current >= limit 时同步抛错,
+  // 错误码必须走 tier 分流(global_budget_exceeded_pro),与 tripped 标志读取路径
+  // (hot path)是两条独立代码路径。
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map([["global-quota-pro:2026-05-26", "20"]]));
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "x" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro-kv-limit",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        GLOBAL_DAILY_LIMIT: "5",
+        GLOBAL_PRO_DAILY_LIMIT: "20",
+        RATE_LIMIT_KV: kv,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      failingFetch
+    );
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.error, "global_budget_exceeded_pro");
+    // 免费桶计数不被 pro 增量路径触碰
+    assert.equal(kv.values.has("global-quota:2026-05-26"), false, "免费桶不应被付费请求递增");
+  });
+});
+
 test("enforces global daily budget with 503", async () => {
   const kv = new MemoryKV(new Map([["global-quota:2026-05-26", "5"]]));
   await withMockedToday("2026-05-26T12:00:00Z", async () => {
