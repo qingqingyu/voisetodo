@@ -96,8 +96,20 @@ enum InsightAvailability: Sendable {
     /// 已实现的规则但样本未到线——**必须写清还差多少**(「还需 11 条」,
     /// 不是「数据不足」)。v1 只对已实现的 02/03 生效,未实现规则不产生占位行(拍板 2)。
     case placeholder(needMore: Int)
+    /// 中间地带事实行(v4 拍板 3:只报占比、不带判断、不带建议——明确推翻
+    /// v1「无可行动信号,不显示」)。与 `.fired` 的分野:**不进**洞察卡堆、
+    /// **不走冷却、不记 `shownInsights`**(拍板 6:事实每期都该重述;不记
+    /// 历史 ⇒ 中间地带升级为真警报时首期放行),但算「规则层有内容」
+    /// (整步存活判定)。
+    case fact(InsightFactLine)
     /// 不显示(未触发,或降级阶梯裁掉)。不是「无异常」。
     case hidden
+}
+
+/// 03 中间地带的一行事实(v4 拍板 3):文案构造时已本地化,仅展示用、不落库。
+struct InsightFactLine: Sendable, Equatable {
+    let id: InsightID
+    let text: String
 }
 
 // MARK: - 结果与图数据
@@ -354,6 +366,79 @@ enum InsightEngine {
 
     /// 地板 A 分档的新鲜上限(0–7 天;8–20 为中档,≥21 沿用腐烂卡阈值)。
     static let backlogAgeFreshMaxDays = 7
+
+    // MARK: 地板 C · 积压集中在哪(v4 批 3,拍板 4 的下游)
+
+    /// 地板 C 的事实:最集中的分类 + 对照组(本期完成过、当前零积压的分类
+    /// ——「都在 Work 攒,Personal 反而清完了」)。与地板 A 同约束:只报
+    /// 事实、不走冷却、不进 `shownInsights`。
+    struct BacklogCategoryFact: Sendable, Equatable {
+        /// 积压条数最多的分类(`.other` 兜底除外——它是 AI 解析失败的落点,
+        /// 把它当「最集中的领域」是噪音;全在 `.other` 时整块不渲染)。
+        let focusCategory: TodoCategory
+        let focusCount: Int
+        /// focus 分类里最老的放置天数(用户日口径,与地板 A 同尺)。
+        let focusOldestAgeDays: Int
+        /// 对照组:窗口内完成过 ≥1 条、当前积压为 0 的分类里完成数最多的
+        /// 一个(没有这样的分类时 nil,对照行不渲染)。
+        let contrastCategory: TodoCategory?
+        let contrastCount: Int
+    }
+
+    /// 地板 C 计算。零积压 / 全部落在 `.other` → nil(整块不渲染)。
+    /// focus 取积压条数最多者;并列时按 `TodoCategory.allCases` 声明序取先
+    /// (确定性,单测稳定)。严格大于比较天然实现「并列取先」。
+    static func backlogCategoryFact(
+        openTasks: [InsightOpenTask],
+        completedEvents: [InsightCompletedEvent],
+        now: Date,
+        calendar: Calendar
+    ) -> BacklogCategoryFact? {
+        var openCounts: [TodoCategory: Int] = [:]
+        for task in openTasks where task.category != .other {
+            openCounts[task.category, default: 0] += 1
+        }
+        var focusCategory: TodoCategory?
+        var focusCount = 0
+        for category in TodoCategory.allCases {
+            let count = openCounts[category] ?? 0
+            if count > focusCount {
+                focusCategory = category
+                focusCount = count
+            }
+        }
+        guard let focus = focusCategory else { return nil }
+
+        let nowDay = DayClock.startOfUserDay(for: now, calendar: calendar)
+        var focusOldest = 0
+        for task in openTasks where task.category == focus {
+            let createdDay = DayClock.startOfUserDay(for: task.createdAt, calendar: calendar)
+            let ageDays = max(0, calendar.dateComponents([.day], from: createdDay, to: nowDay).day ?? 0)
+            focusOldest = max(focusOldest, ageDays)
+        }
+
+        // 对照组:本期完成过、当前零积压的分类里完成数最多者(对照同样排除
+        // `.other`——「其他方面清完了」不是有效对照;并列同取声明序在先)。
+        var doneCounts: [TodoCategory: Int] = [:]
+        for event in completedEvents where event.category != .other {
+            doneCounts[event.category, default: 0] += 1
+        }
+        var contrastCategory: TodoCategory?
+        var contrastCount = 0
+        for category in TodoCategory.allCases {
+            guard let done = doneCounts[category], openCounts[category] == nil, done > contrastCount else { continue }
+            contrastCategory = category
+            contrastCount = done
+        }
+
+        return BacklogCategoryFact(
+            focusCategory: focus,
+            focusCount: focusCount,
+            focusOldestAgeDays: focusOldest,
+            contrastCategory: contrastCategory,
+            contrastCount: contrastCount
+        )
+    }
 
     // MARK: 冷却(§2.4;阶段 4 接历史数据,本层只做纯判定)
 

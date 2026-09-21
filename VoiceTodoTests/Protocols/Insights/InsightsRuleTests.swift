@@ -31,9 +31,10 @@ final class InsightsRuleTests: XCTestCase {
         title: String,
         createdAt: Date,
         dueDate: Date? = nil,
-        id: UUID = UUID()
+        id: UUID = UUID(),
+        category: TodoCategory = .life
     ) -> InsightOpenTask {
-        InsightOpenTask(todoId: id, createdAt: createdAt, dueDate: dueDate, title: title)
+        InsightOpenTask(todoId: id, createdAt: createdAt, dueDate: dueDate, title: title, category: category)
     }
 
     private func completedEvent(created: Date, completed: Date, id: UUID = UUID()) -> InsightCompletedEvent {
@@ -179,13 +180,17 @@ final class InsightsRuleTests: XCTestCase {
         XCTAssertEqual(result.tone, .improving)
     }
 
-    /// 03-C:ratio 0.40(12/30)→ 不触发(中间地带隐藏)。
-    func test03C_ratio040_hidden() throws {
+    /// 03-C:ratio 0.40(12/30)→ 一行事实(v4 拍板 3,推翻 v1 的「隐藏」:
+    /// 只报占比、不带判断;不走冷却、不记 shownInsights 由 State 侧
+    /// `collect` 的分野保证,见 ReviewFlowStateTests)。
+    func test03C_ratio040_factLine() throws {
         let now = try date(2026, 8, 21)
         let ctx = reactiveContext(reactive: 12, planned: 18, now: now)
-        guard case .hidden = ReactiveVsPlannedRule().evaluate(ctx, calendar: calendar) else {
-            return XCTFail("03-C 0.40 应隐藏")
+        guard case let .fact(line) = ReactiveVsPlannedRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("03-C 0.40 应降级成一行事实(拍板 3)")
         }
+        XCTAssertEqual(line.id, .reactiveVsPlanned)
+        XCTAssertTrue(line.text.contains("40"), "只报占比:\(line.text)")
     }
 
     /// 03 样本不足(n < 15)→ placeholder 并写明还差多少。
@@ -630,7 +635,7 @@ final class BacklogAgeFloorTests: XCTestCase {
     }
 
     private func openTask(title: String, createdAt: Date) -> InsightOpenTask {
-        InsightOpenTask(todoId: UUID(), createdAt: createdAt, dueDate: nil, title: title)
+        InsightOpenTask(todoId: UUID(), createdAt: createdAt, dueDate: nil, title: title, category: .life)
     }
 
     private func fact(
@@ -757,5 +762,95 @@ final class BacklogAgeFloorTests: XCTestCase {
         let clamped = try XCTUnwrap(fact([future], now: now))
         XCTAssertEqual(clamped.freshCount, 1, "未来创建钳 0 天,不产生负年龄")
         XCTAssertEqual(clamped.oldestAgeDays, 0)
+    }
+}
+
+// MARK: - 地板 C · 积压集中在哪(v4 批 3,拍板 4 的下游)
+
+final class BacklogCategoryFloorTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    private func date(_ y: Int, _ m: Int, _ d: Int) throws -> Date {
+        try XCTUnwrap(calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12)))
+    }
+
+    private func daysAgo(_ days: Int, from now: Date) -> Date {
+        calendar.date(byAdding: .day, value: -days, to: now)!
+    }
+
+    private func open(_ title: String, category: TodoCategory, daysOld: Int, now: Date) -> InsightOpenTask {
+        InsightOpenTask(
+            todoId: UUID(), createdAt: daysAgo(daysOld, from: now),
+            dueDate: nil, title: title, category: category
+        )
+    }
+
+    private func done(_ category: TodoCategory, now: Date) -> InsightCompletedEvent {
+        InsightCompletedEvent(
+            todoId: UUID(), createdAt: daysAgo(3, from: now), completedAt: now,
+            category: category, priority: .normal, hasDueTime: false, dueDate: nil
+        )
+    }
+
+    private func fact(
+        _ open: [InsightOpenTask],
+        done completed: [InsightCompletedEvent] = [],
+        now: Date
+    ) -> InsightEngine.BacklogCategoryFact? {
+        InsightEngine.backlogCategoryFact(
+            openTasks: open, completedEvents: completed, now: now, calendar: calendar
+        )
+    }
+
+    /// 零积压 → nil;全部 `.other`(AI 解析失败兜底)→ nil(「其他」不是领域)。
+    func testNilOnEmptyOrOtherOnly() throws {
+        let now = try date(2026, 8, 21)
+        XCTAssertNil(fact([], now: now))
+        XCTAssertNil(fact([open("x", category: .other, daysOld: 9, now: now)], now: now))
+    }
+
+    /// focus = 积压条数最多者;并列取声明序在先(TodoCategory.allCases 序,
+    /// 确定性);focusOldestAgeDays 取该分类里最老的放置天数(用户日)。
+    func testFocusPicksMostConcentratedWithDeclarationTiebreak() throws {
+        let now = try date(2026, 8, 21)
+        let open_ = [
+            open("w1", category: .work, daysOld: 5, now: now),
+            open("w2", category: .work, daysOld: 14, now: now),
+            open("l1", category: .life, daysOld: 30, now: now),
+        ]
+        let result = try XCTUnwrap(fact(open_, now: now))
+        XCTAssertEqual(result.focusCategory, .work, "2 > 1")
+        XCTAssertEqual(result.focusCount, 2)
+        XCTAssertEqual(result.focusOldestAgeDays, 14)
+        XCTAssertNil(result.contrastCategory, "life 也有积压——无「全清」对照")
+
+        // 并列 1:1 → 声明序在先者(断言用 allCases 动态算,不硬编码序)。
+        let tie = [
+            open("w", category: .work, daysOld: 3, now: now),
+            open("l", category: .life, daysOld: 3, now: now),
+        ]
+        let firstDeclared = TodoCategory.allCases.first { $0 == .work || $0 == .life }
+        let tieResult = try XCTUnwrap(fact(tie, now: now))
+        XCTAssertEqual(tieResult.focusCategory, firstDeclared, "并列取声明序在先")
+    }
+
+    /// 对照组 = 本期完成过、当前零积压的分类里完成数最多者;`.other` 的完成
+    /// 不当对照(「其他方面清完了」不是有效对照)。
+    func testContrastPicksClearedCategoryWithMostCompletions() throws {
+        let now = try date(2026, 8, 21)
+        let open_ = [
+            open("w1", category: .work, daysOld: 5, now: now),
+            open("w2", category: .work, daysOld: 14, now: now),
+        ]
+        let completed = (0..<3).map { _ in done(.life, now: now) }
+            + (0..<1).map { _ in done(.study, now: now) }
+            + (0..<9).map { _ in done(.other, now: now) }
+        let result = try XCTUnwrap(fact(open_, done: completed, now: now))
+        XCTAssertEqual(result.contrastCategory, .life, "3 > 1,.other 的 9 条不算对照")
+        XCTAssertEqual(result.contrastCount, 3)
+
+        // 什么都没完成过 → 无对照(fact 仍出 focus 行)。
+        let noDone = try XCTUnwrap(fact(open_, now: now))
+        XCTAssertNil(noDone.contrastCategory)
     }
 }

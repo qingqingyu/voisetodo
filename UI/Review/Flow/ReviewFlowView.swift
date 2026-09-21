@@ -57,6 +57,13 @@ final class ReviewFlowState {
     /// 点名行是**引擎跑时快照**——当场动作落地后视图按 `processedIDs` 过滤
     /// 已处理条目,快照本身不回改。
     private(set) var backlogAgeFact: InsightEngine.BacklogAgeFact?
+    /// 地板 C · 积压集中在哪(v4 批 3:最集中分类 + 对照组;全在 `.other` 或
+    /// 零积压时 nil = 整块不渲染)。快照口径同地板 A。
+    private(set) var backlogCategoryFact: InsightEngine.BacklogCategoryFact?
+    /// 规则层的事实行(v4 批 3 拍板 3:03 中间地带只报占比的一行;不走冷却、
+    /// 不进 `shownInsights`——拍板 6)。**算规则层内容**(整步存活判定),
+    /// 但不进 `rankedResults`、不出卡。
+    private(set) var insightFactLines: [InsightFactLine] = []
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -161,6 +168,8 @@ final class ReviewFlowState {
     }
 
     /// 「问问自己」的领域提示分类(nil = 快照里没有任何分类可问,提示行隐藏)。
+    /// v4 批 3:改问**积压最集中**的领域(与地板 C 同口径),取代历史会话数
+    /// 轮换——见 `askDomainHintCategory(todos:)`。
     private(set) var askDomainHintCategory: TodoCategory?
 
     // MARK: Init
@@ -190,10 +199,7 @@ final class ReviewFlowState {
         // todos / previousSessions / lastPinnedIDs init 后不变,派生值一次算好,
         // 不留整份快照。
         self.lastPinnedOutcome = Self.lastPinnedOutcome(todos: todos, pinnedIDs: lastPinnedIDs)
-        self.askDomainHintCategory = Self.askDomainHintCategory(
-            todos: todos,
-            rotationSeed: previousSessions.count
-        )
+        self.askDomainHintCategory = Self.askDomainHintCategory(todos: todos)
         self.nextWeekCommitted = Self.nextWeekCommitted(
             from: todos, now: Date(), calendar: Calendar.current
         )
@@ -253,17 +259,29 @@ final class ReviewFlowState {
         return LastPinnedOutcome(completed: completed, pending: pending)
     }
 
-    /// 领域提示轮换(2026-08-25 拍板;v3 拍板 11 排除 `.other`):只在快照中
-    /// 出现过的分类里按声明序轮换,seed = 历史会话数——每次复盘前进一格,
-    /// 不问从未使用的领域,无需新存储。`.other` 是兜底分类(AI 解析失败的
-    /// 落点),把它当提问对象等于问「其他方面怎么样」——不是问题;快照里
-    /// 只有 `.other` 时返回 nil(提示行本就有 nil 分支,整行隐藏)。
-    static func askDomainHintCategory(todos: [TodoItemData], rotationSeed: Int) -> TodoCategory? {
-        let present = TodoCategory.allCases.filter { category in
-            category != .other && todos.contains { $0.category == category }
+    /// 领域提示(v4 批 3 改口:问**积压最集中**的领域,取代 2026-08-25 的
+    /// 历史会话数轮换——与地板 C 同口径同序:未完成一次性任务里条数最多的
+    /// 分类,并列取声明序在先。第 5 步问的正是第 3 步地板 C 刚指出的那一块;
+    /// 积压不变时连续几期问同一领域是**有意的**(问题还在,plan-do-review
+    /// 闭环),不是回归)。`.other` 是兜底分类(AI 解析失败的落点),问
+    /// 「其他方面怎么样」不是问题,排除;无可问 → nil(提示行整行隐藏)。
+    /// 口径注:init 从 todos 快照算,与 `InsightEngine.backlogCategoryFact`
+    /// 的 openTasks(异步取数)同过滤条件(未完成 && 未划掉 && 一次性)。
+    static func askDomainHintCategory(todos: [TodoItemData]) -> TodoCategory? {
+        var counts: [TodoCategory: Int] = [:]
+        for todo in triageInput(from: todos) where todo.category != .other {
+            counts[todo.category, default: 0] += 1
         }
-        guard !present.isEmpty else { return nil }
-        return present[abs(rotationSeed) % present.count]
+        var pick: TodoCategory?
+        var best = 0
+        for category in TodoCategory.allCases {
+            let count = counts[category] ?? 0
+            if count > best {
+                pick = category
+                best = count
+            }
+        }
+        return pick
     }
 
     /// triage 输入过滤(拍板 4):未完成 && 未划掉 && 一次性(recurrenceRule == nil)。
@@ -362,36 +380,44 @@ final class ReviewFlowState {
             rankedResults = []
             insightPlaceholders = []
             ladderNeedMore = nil
+            insightFactLines = []
             backlogAgeFact = InsightEngine.backlogAgeFact(
                 openTasks: context.openTasks,
                 now: context.to,
                 calendar: calendar,
                 rottingShown: false
             )
-            // 只出地板 A:地板也空(零积压)时才整步跳过——「零积压+零完成」
+            backlogCategoryFact = InsightEngine.backlogCategoryFact(
+                openTasks: context.openTasks,
+                completedEvents: context.completedEvents,
+                now: context.to,
+                calendar: calendar
+            )
+            // 只出地板 A(+C):地板也空(零积压)时才整步跳过——「零积压+零完成」
             // 已被 skipsInsights 在引擎前拦下,这里兜的是 1–4 条完成 + 零积压
             // 的边缘态(批 4 地板 B 上线后该态有净变化可说,届时自然不跳)。
-            skipsInsightsWhenEmpty = backlogAgeFact == nil
+            skipsInsightsWhenEmpty = backlogAgeFact == nil && backlogCategoryFact == nil
             return
         }
 
         var results: [InsightResult] = []
         var newPlaceholders: [(InsightID, Int)] = []
+        var newFactLines: [InsightFactLine] = []
 
         let rotting = RottingRule().evaluate(context, calendar: calendar)
-        collect(rotting, id: .rotting, into: &results, &newPlaceholders)
+        collect(rotting, id: .rotting, into: &results, &newPlaceholders, &newFactLines)
 
         if ladder == .full {
             let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
-            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
+            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders, &newFactLines)
 
             // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
             // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
             let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
-            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders)
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders, &newFactLines)
 
             let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
-            collect(energy, id: .energyWindow, into: &results, &newPlaceholders)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders, &newFactLines)
         }
 
         // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
@@ -407,6 +433,7 @@ final class ReviewFlowState {
         rankedResults = ranked
         insightPlaceholders = newPlaceholders
         ladderNeedMore = ladder.rottingOnlyNeedMore
+        insightFactLines = newFactLines
         // 地板 A(v4 批 1):腐烂卡**实际展示**(过冷却)时点名让位——被冷却
         // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。
         backlogAgeFact = InsightEngine.backlogAgeFact(
@@ -415,12 +442,22 @@ final class ReviewFlowState {
             calendar: calendar,
             rottingShown: ranked.contains { $0.id == .rotting }
         )
+        // 地板 C(v4 批 3):原料同批,与 A 无去重(两块说的不是一件事)。
+        backlogCategoryFact = InsightEngine.backlogCategoryFact(
+            openTasks: context.openTasks,
+            completedEvents: context.completedEvents,
+            now: context.to,
+            calendar: calendar
+        )
         // v4 拍板 5 连带:整步存活判定改写为「地板层与规则层是否都空」,
         // 整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行降级为
-        // 地板块下方的脚注,不再参与判定、不再单独撑起一屏(有积压时地板 A
-        // 恒非空,此判定实际只兜零积压态)。地板层扩新块(批 3 C / 批 4 B)
-        // 时同步扩进本判定。
-        skipsInsightsWhenEmpty = ranked.isEmpty && backlogAgeFact == nil
+        // 地板块下方的脚注,不再参与判定、不再单独撑起一屏。规则层含
+        // 事实行(批 3:03 中间地带),地板层含 A(批 1)与 C(批 3),
+        // 批 4 的 B 落地时同步扩进。
+        skipsInsightsWhenEmpty = ranked.isEmpty
+            && insightFactLines.isEmpty
+            && backlogAgeFact == nil
+            && backlogCategoryFact == nil
     }
 
     /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
@@ -450,13 +487,18 @@ final class ReviewFlowState {
         _ availability: InsightAvailability,
         id: InsightID,
         into results: inout [InsightResult],
-        _ placeholders: inout [(InsightID, Int)]
+        _ placeholders: inout [(InsightID, Int)],
+        _ factLines: inout [InsightFactLine]
     ) {
         switch availability {
         case .fired(let result):
             results.append(result)
         case .placeholder(let needMore):
             placeholders.append((id, needMore))
+        case .fact(let line):
+            // v4 拍板 3+6:事实行不进 results(→ 不过冷却、不进
+            // shownInsights、不参与卡排序),单独收集供整步存活判定与渲染。
+            factLines.append(line)
         case .hidden:
             break
         }

@@ -64,6 +64,12 @@ struct ReviewStepInsights: View {
             ladderHint(context: context)
         }
 
+        // 地板 C(v4 批 3):积压集中在哪——直接指向「该砍哪边」的事实,
+        // 与第 5 步领域提示同口径(问的正是这一块)。
+        if let categoryFact = state.backlogCategoryFact {
+            BacklogCategoryFloorCard(fact: categoryFact)
+        }
+
         ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
                 result: result,
@@ -76,6 +82,18 @@ struct ReviewStepInsights: View {
                     onAbandonTask(todoId)
                 } : nil
             )
+        }
+
+        // 规则层事实行(v4 批 3 拍板 3:03 中间地带只报占比;排在洞察卡后——
+        // 极端模式的警报先说,中性事实收尾)。
+        ForEach(state.insightFactLines, id: \.id) { line in
+            Text(line.text)
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textMuted)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -144,6 +162,41 @@ struct ReviewStepInsights: View {
         }
     }
 
+}
+
+// MARK: - 地板 C · 积压集中在哪(v4 批 3,docs/todo-review-flow-v4.md)
+
+/// 最集中分类一行 + 对照组一行(本期完成过、当前零积压的领域)。只报事实;
+/// 口径说明由上方地板 A 的 sample_note 承载(A 恒先渲染且必在场)。
+private struct BacklogCategoryFloorCard: View {
+    let fact: InsightEngine.BacklogCategoryFact
+
+    var body: some View {
+        RecapCard {
+            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                Text(String(
+                    localized: "review.floor.backlog_focus.line_\(fact.focusCategory.displayName)_\(fact.focusCount)_\(fact.focusOldestAgeDays)"
+                ))
+                    .font(WarmFont.body(14))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let contrast = fact.contrastCategory {
+                    Text(String(
+                        localized: "review.floor.backlog_focus.contrast_\(contrast.displayName)_\(fact.contrastCount)"
+                    ))
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityIdentifier("ReviewFlowBacklogFocusFloor")
+    }
 }
 
 // MARK: - 地板 A · 积压年龄(v4 批 1,docs/todo-review-flow-v4.md)

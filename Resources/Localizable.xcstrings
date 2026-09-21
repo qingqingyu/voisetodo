@@ -8121,6 +8121,50 @@
         }
       }
     },
+    "review.floor.backlog_focus.contrast_%@_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meanwhile %1$@ is all cleared — %2$lld finished this period, none left open."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "而「%1$@」这期清完了 %2$lld 件,现在一件没剩。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一方「%1$@」は今期%2$lld件片付いて、残っていません。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_focus.line_%@_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld open to-dos are sitting in %1$@ — the oldest for %3$lld days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "积压最集中在「%1$@」:%2$lld 件,最久的放了 %3$lld 天"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未処理が最も多いのは「%1$@」:%2$lld件、最長で%3$lld日経過"
+          }
+        }
+      }
+    },
     "review.flow.commit.empty" : {
       "localizations" : {
         "en" : {
@@ -10481,6 +10525,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成时刻 %1$lld 条 · 带钟点的重要任务 %2$lld 件,不含规律任务"
+          }
+        }
+      }
+    },
+    "review.insight.reactive.fact_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%% of what you finished this period was captured and done the same day."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期完成的事里,%lld%% 是记下当天就做完的。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期完了したもののうち%lld%%は、記録した当日に済ませたものです。"
           }
         }
       }

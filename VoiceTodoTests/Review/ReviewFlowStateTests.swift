@@ -158,7 +158,7 @@ final class ReviewFlowStateTests: XCTestCase {
         state.insightContextValue = InsightContext(
             from: now, to: now,
             completedEvents: events,
-            openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾")],
+            openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾", category: .work)],
             dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -196,10 +196,11 @@ final class ReviewFlowStateTests: XCTestCase {
     // 都空」,整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行
     // 降级为地板块下方的脚注,退出判据)
 
-    /// 15 条完成(进 .full 档)但一条规则都不触发、且零积压:占位行存在
-    /// 但已退出判据——地板空 + 规则空 → **整步跳过**(v3 时代的断言方向
-    /// 随拍板 5 翻转:占位行不再单独撑起一屏)。
-    func testEmptyResultsWithPlaceholderSkipInsightsStep() {
+    /// 15 条完成(进 .full 档)、救火占比落中间带(1/3)、零积压:四条规则
+    /// 一条卡都不出,但 03 中间地带降级成**一行事实**(v4 拍板 3)——规则层
+    /// 非空 → **不跳整步**。v3 时代该夹具靠占位行撑屏(退出判据)、批 2
+    /// 一度整步跳过,批 3 后由事实行接住(断言随拍板 3 翻转)。
+    func testEmptyRulesWithZeroBacklogKeepsStepViaReactiveFact() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         let now = Date()
@@ -219,13 +220,19 @@ final class ReviewFlowStateTests: XCTestCase {
         state.configureInsightsLadder()
         state.runInsightEngine()
         XCTAssertFalse(state.skipsInsights, "15 条完成,非零完成不整步降级")
-        XCTAssertTrue(state.rankedResults.isEmpty)
-        XCTAssertEqual(state.insightPlaceholders.count, 1, "占位行数据仍在(有地板时作脚注)")
+        XCTAssertTrue(state.rankedResults.isEmpty, "四条规则零卡(1/3 落中间带、无高优、无钟点)")
+        XCTAssertEqual(state.insightPlaceholders.count, 1, "占位行数据仍在(作脚注)")
         XCTAssertEqual(state.insightPlaceholders.first?.id, .effortOrdering, "唯一占位:高优组缺口")
-        XCTAssertNil(state.backlogAgeFact, "零积压 → 地板空")
-        XCTAssertTrue(state.skipsInsightsWhenEmpty, "地板空 + 规则空——整步跳过(占位行退出判据)")
+        XCTAssertEqual(state.insightFactLines.count, 1, "03 中间地带 → 一行事实")
+        XCTAssertEqual(state.insightFactLines.first?.id, .reactiveVsPlanned)
+        XCTAssertNil(state.backlogAgeFact, "零积压 → 地板 A 空")
+        XCTAssertNil(state.backlogCategoryFact, "零积压 → 地板 C 空")
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "规则层有事实行——不跳(拍板 3)")
+        // 拍板 6:事实行不进冷却历史——shownInsights 必须为空。
+        XCTAssertTrue(state.shownInsights.isEmpty, "事实行不记 shownInsights(拍板 6)")
+        XCTAssertTrue(state.buildSession(completedAt: now).shownInsights.isEmpty)
         state.advance()
-        XCTAssertEqual(state.currentStep, .commit, "第 2 步直达第 4 步")
+        XCTAssertEqual(state.currentStep, .insights, "第 3 步由事实行撑住")
         state.retreat()
         XCTAssertEqual(state.currentStep, .triage, "反向对称")
     }
@@ -249,7 +256,8 @@ final class ReviewFlowStateTests: XCTestCase {
             todoId: UUID(),
             createdAt: Calendar.current.date(byAdding: .day, value: -age, to: now)!,
             dueDate: nil,
-            title: "t\(age)"
+            title: "t\(age)",
+            category: .life
         )}
         state.insightContextValue = InsightContext(
             from: now, to: now,
@@ -264,10 +272,13 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(state.currentStep, .insights)
     }
 
-    /// 真空态:15 条完成(.full 档,ladderNeedMore 为 nil)+ 四条规则全部
-    /// hidden + 零积压——地板空 + 规则空 → 整步跳过,advance/retreat 与
-    /// 降级跳过走同一路径。
-    func testTrueEmptyResultsSkipInsightsStep() {
+    /// .full 档零积压(批 3 后的语义):n ≥ 15 时 03 **永远有话可说**——
+    /// ratio 落两端出卡、落中间带出一行事实(拍板 3),第 3 步不再可能
+    /// 「.full 档 + 零积压 + 整步跳过」。本夹具(高优/普通中位 3 vs 2 →
+    /// effort hidden;救火 1/3 → 事实行;无钟点 → energy hidden)四卡全空,
+    /// 由事实行撑住第 3 步;「地板空 + 规则空才跳」的可跳路径只剩
+    /// skipStep/rottingOnly 档零积压(见上方两例)与零积压零完成。
+    func testFullLadderZeroBacklogNeverSkips() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         let now = Date()
@@ -296,14 +307,13 @@ final class ReviewFlowStateTests: XCTestCase {
         state.configureInsightsLadder()
         state.runInsightEngine()
         XCTAssertFalse(state.skipsInsights, "15 条完成,非零完成不整步降级")
-        XCTAssertTrue(state.rankedResults.isEmpty, "四条规则全 hidden")
+        XCTAssertTrue(state.rankedResults.isEmpty, "四条规则全 hidden(零卡)")
         XCTAssertTrue(state.insightPlaceholders.isEmpty, "两组各 ≥3,effort 无占位")
         XCTAssertNil(state.ladderNeedMore, ".full 档无阶梯提示")
-        XCTAssertTrue(state.skipsInsightsWhenEmpty, "地板空 + 规则空——整步跳过")
+        XCTAssertEqual(state.insightFactLines.count, 1, "救火 5/15≈0.33 落中间带 → 一行事实")
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, ".full 档零积压由 03 事实行撑住(批 3 语义)")
         state.advance()
-        XCTAssertEqual(state.currentStep, .commit, "真空态从第 2 步直达第 4 步")
-        state.retreat()
-        XCTAssertEqual(state.currentStep, .triage, "反向对称")
+        XCTAssertEqual(state.currentStep, .insights, "第 3 步由事实行撑住")
     }
 
     /// 5–14 档 + 零积压(v3 时代最小事实行曾撑住第 3 步,实施审阅发现 1
@@ -541,48 +551,53 @@ extension ReviewFlowStateTests {
         XCTAssertNil(state.lastPinnedOutcome)
     }
 
-    // MARK: 领域提示轮换(2026-08-25 拍板:只在出现过的分类里轮换)
+    // MARK: 领域提示(v4 批 3 改口:问积压最集中的领域,与地板 C 同口径;
+    // 2026-08-25 的历史会话数轮换退役)
 
-    func testAskDomainHintOnlyRotatesAmongPresentCategories() {
-        let todos = [todo("w1", category: .work), todo("l1", category: .life)]
-        // 只轮换出现过的分类,声明序稳定:seed 0/1/2/3 → work,life,work,life。
-        // (study/health 等从未出现的分类永不出现。)
-        let rotation = (0...3).map {
-            ReviewFlowState.askDomainHintCategory(todos: todos, rotationSeed: $0)
-        }
-        XCTAssertEqual(rotation, [.work, .life, .work, .life])
-
-        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: [], rotationSeed: 0),
+    /// focus = 未完成一次性任务里条数最多的分类;已完成/已划掉/规律任务
+    /// 不进统计(triageInput 口径,与地板 C 同源)。
+    func testAskDomainHintPicksMostConcentratedBacklog() {
+        let todos = [
+            todo("w1", category: .work),
+            todo("w2", category: .work),
+            todo("l1", category: .life),
+            todo("done", isCompleted: true, category: .life),
+            todo("gone", abandoned: true, category: .life),
+            todo("recurring", recurring: true, category: .life),
+        ]
+        XCTAssertEqual(ReviewFlowState.askDomainHintCategory(todos: todos), .work,
+                       "work 2 条在积压,life 的 3 条已完成/划掉/规律——不算")
+        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: []),
                      "空快照无分类可问 → 提示行隐藏")
     }
 
-    func testAskDomainHintAdvancesWithSessionCount() {
+    /// 积压不变则连续几期问同一领域——**有意的**(问题还在,plan-do-review
+    /// 闭环),取代轮换后「上次问过就换一个」的行为随本测试固化。
+    func testAskDomainHintSticksWhileBacklogUnchanged() {
         let todos = [todo("w1", category: .work), todo("l1", category: .life)]
         let first = ReviewFlowState(todos: todos)
         let second = ReviewFlowState(
             todos: todos,
             previousSessions: [reviewSession(completedAt: Date())]
         )
-        // seed = 历史会话数:每次复盘前进一格。
         XCTAssertEqual(first.askDomainHintCategory, .work)
-        XCTAssertEqual(second.askDomainHintCategory, .life)
+        XCTAssertEqual(second.askDomainHintCategory, .work, "不随会话数轮换")
     }
 
-    /// v3 拍板 11:`.other` 排除出轮换——它是兜底分类(AI 解析失败的落点),
+    /// v3 拍板 11 保留:`.other` 排除——兜底分类(AI 解析失败的落点),
     /// 「其他方面怎么样」不是问题;快照全为 `.other` → nil(提示行隐藏)。
+    /// 批 3 加码:`.other` 条数再多也不抢焦点(与地板 C 同排除口径)。
     func testAskDomainHintExcludesOtherBucket() {
         let onlyOther = [todo("x", category: .other), todo("y", category: .other)]
-        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: onlyOther, rotationSeed: 0),
+        XCTAssertNil(ReviewFlowState.askDomainHintCategory(todos: onlyOther),
                      "只有兜底分类 → 无可问,提示行隐藏")
 
-        let mixed = [todo("w", category: .work), todo("o", category: .other)]
-        for seed in 0...3 {
-            XCTAssertNotEqual(
-                ReviewFlowState.askDomainHintCategory(todos: mixed, rotationSeed: seed),
-                .other,
-                "任何 seed 都不把 .other 当提问对象"
-            )
-        }
+        let mixed = [todo("w", category: .work), todo("o1", category: .other), todo("o2", category: .other)]
+        XCTAssertEqual(
+            ReviewFlowState.askDomainHintCategory(todos: mixed),
+            .work,
+            ".other 条数再多也不当提问对象"
+        )
     }
 }
 
@@ -1020,12 +1035,13 @@ extension ReviewFlowStateTests {
         )
     }
 
-    private func openTask(daysOld: Int, now: Date, title: String = "t") -> InsightOpenTask {
+    private func openTask(daysOld: Int, now: Date, title: String = "t", category: TodoCategory = .life) -> InsightOpenTask {
         InsightOpenTask(
             todoId: UUID(),
             createdAt: Calendar.current.date(byAdding: .day, value: -daysOld, to: now)!,
             dueDate: nil,
-            title: title
+            title: title,
+            category: category
         )
     }
 
