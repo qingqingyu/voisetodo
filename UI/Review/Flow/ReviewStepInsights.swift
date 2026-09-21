@@ -19,6 +19,10 @@ struct ReviewStepInsights: View {
     /// 具体任务执行一个具体动作,有下游行为——与 2026-08-22 移除的「只存档
     /// 不驱动」的存规则链路不是一回事,docs v2 已辨析)。
     let onAbandonTask: (UUID) -> Void
+    /// 地板 A 当场「排下周」(v4 批 1):写库在容器层,落点与第 2 步右滑一致。
+    let onScheduleTask: (UUID) -> Void
+    /// 地板 A「拆小」(v4 批 1):深链跳回第 2 步自动开拆小 sheet(复用既有链路)。
+    let onSplitTask: (UUID) -> Void
 
     var body: some View {
         ScrollView {
@@ -42,6 +46,19 @@ struct ReviewStepInsights: View {
 
     @ViewBuilder
     private var cards: some View {
+        // 地板层(v4:事实永远算得出来,兜住警报层集体沉默的空屏)先出,
+        // 规则层洞察卡随后——极端模式的警报比事实更值得被先看到时,用户
+        // 可以滚动;两层的相对顺序不承载「谁更重要」的判断。
+        if let fact = state.backlogAgeFact {
+            BacklogAgeFloorCard(
+                fact: fact,
+                processedIDs: state.processedIDs,
+                onAbandonTask: onAbandonTask,
+                onScheduleTask: onScheduleTask,
+                onSplitTask: onSplitTask
+            )
+        }
+
         ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
                 result: result,
@@ -122,4 +139,198 @@ struct ReviewStepInsights: View {
         }
     }
 
+}
+
+// MARK: - 地板 A · 积压年龄(v4 批 1,docs/todo-review-flow-v4.md)
+
+/// 三档分布条(0–7 / 8–20 / 21+)+ 最老 3 条点名(每条带「不做了 / 排下周 /
+/// 拆小」当场动作)。只报事实、零值不渲染;腐烂卡本期展示时点名让位
+/// (`BacklogAgeFact.oldestItems` 为空),只剩分布条。点名行是引擎跑时快照,
+/// 当场动作落地后按 `processedIDs` 过滤——快照不回改,行自然消失。
+private struct BacklogAgeFloorCard: View {
+    let fact: InsightEngine.BacklogAgeFact
+    /// 已处理条目过滤集(当场动作落地后点名行消失)。
+    let processedIDs: Set<UUID>
+    let onAbandonTask: (UUID) -> Void
+    let onScheduleTask: (UUID) -> Void
+    let onSplitTask: (UUID) -> Void
+
+    /// 快照里尚未处理的最老 3 条。
+    private var liveItems: [InsightEngine.BacklogAgeFact.Item] {
+        fact.oldestItems.filter { !processedIDs.contains($0.todoId) }
+    }
+
+    var body: some View {
+        RecapCard {
+            VStack(alignment: .leading, spacing: WarmSpacing.md) {
+                Text(String(localized: "review.floor.backlog_age.headline_\(fact.total)"))
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                distributionBar
+                legendRow
+
+                // 「说真话」行:21+ 档为 0 时不开一扇锁着的门,报最久的实际天数
+                // (v4 方案;腐烂卡自己有话可说时不再叠加,判定收在 fact 里)。
+                if fact.showsNoOldLine {
+                    Text(String(localized: "review.floor.backlog_age.no_old_\(fact.total)_\(fact.oldestAgeDays)"))
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !liveItems.isEmpty {
+                    oldestList
+                }
+
+                // 口径说明与腐烂卡同款(§2.2):总数与首页「待处理」差规律任务时,
+                // 这里说清楚,数字不打架。
+                Text(String(localized: "review.insight.rotting.sample_note_\(fact.total)"))
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityIdentifier("ReviewFlowBacklogAgeFloor")
+    }
+
+    // MARK: 分布条 + 图例
+
+    /// 三段堆叠横条,零值段不渲染(宽度 0 的段连缝隙都不留)。RTL:HStack
+    /// 自动镜像,不用绝对坐标。
+    private var distributionBar: some View {
+        GeometryReader { proxy in
+            HStack(spacing: 2) {
+                barSegment(count: fact.freshCount, totalWidth: proxy.size.width, color: WarmTheme.subtleControlBackground)
+                barSegment(count: fact.agingCount, totalWidth: proxy.size.width, color: WarmTheme.warning.opacity(0.7))
+                barSegment(count: fact.oldCount, totalWidth: proxy.size.width, color: WarmTheme.urgentText.opacity(0.85))
+            }
+        }
+        .frame(height: 10)
+        .accessibilityHidden(true)
+    }
+
+    private func barSegment(count: Int, totalWidth: CGFloat, color: Color) -> some View {
+        // 零值段 width 0:HStack 的 spacing 只在有可见子视图间生效,但 0 宽
+        // 子视图仍占一个间隙——用 Group 条件渲染彻底不出现。
+        Group {
+            if count > 0 {
+                Capsule()
+                    .fill(color)
+                    .frame(width: max(totalWidth * CGFloat(count) / CGFloat(max(fact.total, 1)), 6))
+            }
+        }
+    }
+
+    /// 图例行:与分布条同色系,零值档不出(「21+ 天:0」是噪音行)。
+    private var legendRow: some View {
+        HStack(spacing: WarmSpacing.md) {
+            if fact.freshCount > 0 {
+                legendDot(
+                    color: WarmTheme.subtleControlBackground,
+                    label: String(localized: "review.floor.backlog_age.bucket.fresh_\(fact.freshCount)")
+                )
+            }
+            if fact.agingCount > 0 {
+                legendDot(
+                    color: WarmTheme.warning.opacity(0.7),
+                    label: String(localized: "review.floor.backlog_age.bucket.aging_\(fact.agingCount)")
+                )
+            }
+            if fact.oldCount > 0 {
+                legendDot(
+                    color: WarmTheme.urgentText.opacity(0.85),
+                    label: String(localized: "review.floor.backlog_age.bucket.old_\(fact.oldCount)")
+                )
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func legendDot(color: Color, label: String) -> some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(WarmFont.caption(11))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: 点名行
+
+    private var oldestList: some View {
+        VStack(spacing: WarmSpacing.xs) {
+            ForEach(Array(liveItems.enumerated()), id: \.element.todoId) { index, item in
+                itemRow(item)
+                if index < liveItems.count - 1 {
+                    Rectangle()
+                        .fill(WarmTheme.rowHairline)
+                        .frame(height: 1)
+                }
+            }
+        }
+    }
+
+    /// 行 = 标题 + 放置天数;尾随「不做了」(与腐烂卡同款 xmark)+ 菜单
+    /// (排下周 / 拆小)。三动作文案复用第 2 步既有键。
+    private func itemRow(_ item: InsightEngine.BacklogAgeFact.Item) -> some View {
+        HStack(spacing: WarmSpacing.xs) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title)
+                    .font(WarmFont.body(14))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
+
+                Text(String(localized: "review.flow.rotting.age_\(item.ageDays)"))
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            Spacer(minLength: WarmSpacing.xs)
+
+            Button {
+                onAbandonTask(item.todoId)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(WarmTheme.urgentText.opacity(0.8))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "review.flow.triage.action.drop"))
+            .accessibilityIdentifier("ReviewFlowBacklogAgeDrop_\(item.todoId.uuidString)")
+
+            Menu {
+                Button(String(localized: "review.flow.triage.action.keep")) {
+                    onScheduleTask(item.todoId)
+                }
+                Button(String(localized: "review.flow.triage.action.split")) {
+                    onSplitTask(item.todoId)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(WarmTheme.primaryText.opacity(0.8))
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel(String(localized: "review.floor.backlog_age.item.actions"))
+            .accessibilityIdentifier("ReviewFlowBacklogAgeMenu_\(item.todoId.uuidString)")
+        }
+    }
 }

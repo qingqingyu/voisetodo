@@ -610,3 +610,152 @@ final class EnergyWindowRuleTests: XCTestCase {
         XCTAssertEqual(needMore, 10)
     }
 }
+
+// MARK: - 地板 A · 积压年龄(v4 批 1,docs/todo-review-flow-v4.md)
+
+final class BacklogAgeFloorTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    override func tearDown() {
+        DayClock.appGroupDefaults.removeObject(forKey: DayClock.startHourKey)
+        super.tearDown()
+    }
+
+    private func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 12, _ min: Int = 0) throws -> Date {
+        try XCTUnwrap(calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min)))
+    }
+
+    private func daysAgo(_ days: Int, from now: Date) -> Date {
+        calendar.date(byAdding: .day, value: -days, to: now)!
+    }
+
+    private func openTask(title: String, createdAt: Date) -> InsightOpenTask {
+        InsightOpenTask(todoId: UUID(), createdAt: createdAt, dueDate: nil, title: title)
+    }
+
+    private func fact(
+        _ tasks: [InsightOpenTask],
+        now: Date,
+        rottingShown: Bool = false
+    ) -> InsightEngine.BacklogAgeFact? {
+        InsightEngine.backlogAgeFact(
+            openTasks: tasks, now: now, calendar: calendar, rottingShown: rottingShown
+        )
+    }
+
+    /// 零积压 → nil(整块不渲染——第 2 步卡堆也是空的,无话可说是诚实的)。
+    func testEmptyBacklogReturnsNil() throws {
+        let now = try date(2026, 8, 21)
+        XCTAssertNil(fact([], now: now))
+    }
+
+    /// 19 条全新(1–19 天):三档 0–7 / 8–20 / 21+ 分布正确;点名最老 3 条
+    /// (年龄降序);21+ 档为 0 且点名在场 → 说真话行(矩阵档 2)。
+    func test19FreshTasks_bucketsNamingAndHonestLine() throws {
+        let now = try date(2026, 8, 21)
+        let tasks = (1...19).map { age in
+            openTask(title: "t\(age)", createdAt: daysAgo(age, from: now))
+        }
+        let result = try XCTUnwrap(fact(tasks, now: now))
+
+        XCTAssertEqual(result.total, 19)
+        XCTAssertEqual(result.freshCount, 7, "0–7 天:1…7 天共 7 条")
+        XCTAssertEqual(result.agingCount, 12, "8–20 天:8…19 天共 12 条")
+        XCTAssertEqual(result.oldCount, 0)
+        XCTAssertEqual(result.oldestAgeDays, 19)
+        XCTAssertEqual(result.oldestItems.map(\.ageDays), [19, 18, 17], "最老前 3,年龄降序")
+        XCTAssertTrue(result.showsNoOldLine, "21+ 为 0 且点名在场——说真话行渲染")
+    }
+
+    /// 含 21+ 条目:进 old 档(分界沿用 RottingRule.ageThresholdDays,20 天
+    /// 不进、21 天进);点名含最老条目。
+    func test21PlusItemsEnterOldBucket() throws {
+        let now = try date(2026, 8, 21)
+        let tasks = [
+            openTask(title: "20天", createdAt: daysAgo(20, from: now)),
+            openTask(title: "21天", createdAt: daysAgo(21, from: now)),
+            openTask(title: "25天", createdAt: daysAgo(25, from: now)),
+            openTask(title: "3天", createdAt: daysAgo(3, from: now)),
+        ]
+        let result = try XCTUnwrap(fact(tasks, now: now))
+        XCTAssertEqual(result.oldCount, 2)
+        XCTAssertEqual(result.agingCount, 1)
+        XCTAssertEqual(result.freshCount, 1)
+        XCTAssertEqual(result.oldestItems.map(\.title), ["25天", "21天", "20天"])
+        XCTAssertFalse(result.showsNoOldLine, "21+ 档非空——真话行不出")
+    }
+
+    /// 腐烂卡本期展示 → 点名整体让位(分布条保留;腐烂卡的列表更细,同屏
+    /// 不重复点名);被冷却扣掉时(rottingShown=false)地板照常点名。
+    func testRottingShownYieldsNaming() throws {
+        let now = try date(2026, 8, 21)
+        let tasks = [
+            openTask(title: "25天", createdAt: daysAgo(25, from: now)),
+            openTask(title: "30天", createdAt: daysAgo(30, from: now)),
+        ]
+        let shown = try XCTUnwrap(fact(tasks, now: now, rottingShown: true))
+        XCTAssertTrue(shown.oldestItems.isEmpty, "腐烂卡展示——点名让位")
+        XCTAssertEqual(shown.oldCount, 2, "分布条照报(说事实不重复点名)")
+        XCTAssertFalse(shown.showsNoOldLine)
+
+        let cooledAway = try XCTUnwrap(fact(tasks, now: now, rottingShown: false))
+        XCTAssertEqual(cooledAway.oldestItems.map(\.title), ["30天", "25天"], "冷却扣掉腐烂卡——地板点名顶上(核心回归:屏不空)")
+    }
+
+    /// 腐烂卡经推迟分支触发(0 条 ≥21 天)时点名为空 ⇔ 真话行同被压制
+    /// (`showsNoOldLine` 的派生契约:腐烂卡自己有话可说,不叠加)。
+    func testDeferBranchRottingSuppressesHonestLineDerivation() throws {
+        let now = try date(2026, 8, 21)
+        let tasks = [openTask(title: "t", createdAt: daysAgo(9, from: now))]
+        let result = try XCTUnwrap(fact(tasks, now: now, rottingShown: true))
+        XCTAssertEqual(result.oldCount, 0)
+        XCTAssertTrue(result.oldestItems.isEmpty)
+        XCTAssertFalse(result.showsNoOldLine, "点名为空(=腐烂卡在场)——真话行不出")
+    }
+
+    /// 口径边界(startHour=3):地板 A 的档位与 RottingRule 判定在 20/21 天
+    /// 边界必须同一把尺(用户日)。7/31 04:00 创建(用户日 7/31)→ 20 个用户
+    /// 日 → aging;7/31 01:30 创建(用户日 7/30)→ 21 个用户日 → old,
+    /// 且 RottingRule 同步命中 age 分支(v4 批 1「口径统一到 DayClock」的
+    /// 回归护栏——改回自然日会在这里红)。
+    func testUserDayBoundaryMatchesRottingRule() throws {
+        DayClock.setStartHour(3)
+        let now = try date(2026, 8, 21, 1, 30) // 用户日 8/20
+        let justUnder = try date(2026, 7, 31, 4, 0)  // 用户日 7/31 → 躺 20 个用户日
+        let atLine = try date(2026, 7, 31, 1, 30)    // 用户日 7/30 → 躺 21 个用户日
+
+        let under = try XCTUnwrap(fact([openTask(title: "u", createdAt: justUnder)], now: now))
+        XCTAssertEqual(under.agingCount, 1)
+        XCTAssertEqual(under.oldCount, 0)
+        XCTAssertEqual(under.oldestItems.first?.ageDays, 20)
+
+        let over = try XCTUnwrap(fact([openTask(title: "o", createdAt: atLine)], now: now))
+        XCTAssertEqual(over.oldCount, 1, "21 个用户日 → old 档")
+        XCTAssertEqual(over.oldestItems.first?.ageDays, 21)
+
+        // 同尺对账:RottingRule 对 atLine 条目命中 age 分支(21 用户日)。
+        let ctx = InsightContext(
+            from: daysAgo(30, from: now), to: now,
+            completedEvents: [], openTasks: [openTask(title: "o", createdAt: atLine)],
+            dueTasks: [], deferCounts: [:]
+        )
+        guard case .fired = RottingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("21 用户日应与 RottingRule 同步命中——地板与腐烂卡分界漂移")
+        }
+    }
+
+    /// 同年龄 id 决胜(确定性,单测稳定);未来创建的脏数据钳 0(进 fresh 档)。
+    func testDeterministicTiebreakAndFutureDataClamped() throws {
+        let now = try date(2026, 8, 21)
+        let a = openTask(title: "a", createdAt: daysAgo(10, from: now))
+        let b = openTask(title: "b", createdAt: daysAgo(10, from: now))
+        let result = try XCTUnwrap(fact([b, a], now: now))
+        let expected = [a, b].sorted { $0.todoId.uuidString < $1.todoId.uuidString }
+        XCTAssertEqual(result.oldestItems.map(\.todoId), expected.map(\.todoId))
+
+        let future = openTask(title: "f", createdAt: calendar.date(byAdding: .day, value: 3, to: now)!)
+        let clamped = try XCTUnwrap(fact([future], now: now))
+        XCTAssertEqual(clamped.freshCount, 1, "未来创建钳 0 天,不产生负年龄")
+        XCTAssertEqual(clamped.oldestAgeDays, 0)
+    }
+}

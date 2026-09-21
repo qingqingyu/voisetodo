@@ -40,6 +40,12 @@ enum TriageRanking {
     }
 
     /// 停滞天数(创建日到 now 的整日数;未来创建的脏数据钳 0)。
+    ///
+    /// ⚠️ 口径备注(v4 批 1):这里算的是**自然日**(`calendar.dateComponents`
+    /// 直差),而洞察侧的年龄口径(`RottingRule` / `InsightEngine.backlogAgeFact`)
+    /// 是 **DayClock 用户日**——两者在 startHour > 0 的边界会差一天。**有意
+    /// 不同**,不改齐:本函数只服务卡堆/候选池的**相对排序**,差一天不改变
+    /// 「谁更久」;洞察分档是对着 21 天阈值**切档**,必须与腐烂卡同一把尺。
     static func stagnationDays(
         of todo: TodoItemData,
         now: Date,

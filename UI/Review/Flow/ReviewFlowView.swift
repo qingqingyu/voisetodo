@@ -49,6 +49,11 @@ final class ReviewFlowState {
     private(set) var insightPlaceholders: [(id: InsightID, needMore: Int)] = []
     /// 降级阶梯的「再记 N 条」提示(5–14 档,只跑 02 时的预告;其他档 nil)。
     private(set) var ladderNeedMore: Int?
+    /// 地板 A · 积压年龄事实(v4 批 1:第 3 步的事实层,永远算得出来;
+    /// 零积压 nil = 整块不渲染)。引擎同批计算,重试随 `runInsightEngine` 重跑。
+    /// 点名行是**引擎跑时快照**——当场动作落地后视图按 `processedIDs` 过滤
+    /// 已处理条目,快照本身不回改。
+    private(set) var backlogAgeFact: InsightEngine.BacklogAgeFact?
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -95,6 +100,10 @@ final class ReviewFlowState {
 
     /// 洞察步「跳回第 2 步对应卡片」的聚焦 id(腐烂卡点击设置,triage 步消费后清空)。
     var triageFocusID: UUID?
+    /// 地板 A「拆小」深链(v4 批 1):跳回第 2 步后对该条目**自动打开拆小
+    /// sheet**——复用第 2 步既有拆小链路(AI 候选/说一句/手写全在那一侧,
+    /// 不在洞察步重造)。与 `triageFocusID` 同值时触发,triage 步消费后清空。
+    var triageAutoSplitID: UUID?
 
     // MARK: 第 3 步 · 观察
 
@@ -192,6 +201,20 @@ final class ReviewFlowState {
     /// 排期写库与候选池取数必须同一坐标系)。`nextDate` 返回自然日 0 点,
     /// 抬用户日用 `userDayStart(onNaturalDay:)`——对 0 点调 `startOfUserDay(for:)`
     /// 会掉到前一用户日(startHour > 0 时窗口左移一天)。
+    /// 「排下周」的写库落点:下一个周一的**用户日**起点(`nextDate` 返回
+    /// 自然日 0 点,必须用 `userDayStart(onNaturalDay:)` 抬——对 0 点调
+    /// `startOfUserDay(for:)` 会掉到前一用户日,startHour > 0 时落点漂到
+    /// 周日,DayClock 注释明言那是 bug)。第 2 步右滑与洞察地板 A「排下周」
+    /// 共用同一坐标系,单一来源防两处漂移。
+    static func nextMondayUserDayStart(now: Date, calendar: Calendar) -> Date? {
+        var components = DateComponents()
+        components.weekday = 2 // 周一(gregorian)
+        guard let next = calendar.nextDate(
+            after: now, matching: components, matchingPolicy: .nextTime
+        ) else { return nil }
+        return DayClock.userDayStart(onNaturalDay: next, calendar: calendar)
+    }
+
     static func nextWeekCommitted(
         from todos: [TodoItemData],
         now: Date,
@@ -329,6 +352,13 @@ final class ReviewFlowState {
             rankedResults = []
             insightPlaceholders = []
             ladderNeedMore = nil
+            // skipStep 档规则不跑 → 腐烂卡必然没展示,rottingShown 传 false。
+            backlogAgeFact = InsightEngine.backlogAgeFact(
+                openTasks: context.openTasks,
+                now: context.to,
+                calendar: calendar,
+                rottingShown: false
+            )
             skipsInsightsWhenEmpty = false
             return
         }
@@ -365,6 +395,14 @@ final class ReviewFlowState {
         rankedResults = ranked
         insightPlaceholders = newPlaceholders
         ladderNeedMore = ladder.rottingOnlyNeedMore
+        // 地板 A(v4 批 1):腐烂卡**实际展示**(过冷却)时点名让位——被冷却
+        // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。
+        backlogAgeFact = InsightEngine.backlogAgeFact(
+            openTasks: context.openTasks,
+            now: context.to,
+            calendar: calendar,
+            rottingShown: ranked.contains { $0.id == .rotting }
+        )
         // 跳过判定 = 「这一步还有没有可渲染内容」(实施审阅发现 1):第 3 步
         // 可渲染内容有三块——洞察卡(ranked)/占位行/最小事实行,只看 ranked
         // 空会把后两块一起跳掉(26 条完成零触发时,说真话的占位文案不可达;
@@ -457,11 +495,33 @@ final class ReviewFlowState {
         return false
     }
 
+    /// 洞察地板 A 当场「排下周」(v4 批 1;写库在视图层,与第 2 步右滑同一
+    /// 落点:下周一用户日起点、origin = .review)。与 `abandonFromInsight`
+    /// 同构:条目可能在卡堆或尾部,两处都清;不在(已处理过)时返回 false。
+    /// 排进的进 `scheduled` → 第 4 步候选池(「排下周」的条目天然入池,
+    /// 不依赖兜底池方案,见附带发现 2)。
+    @discardableResult
+    func scheduleFromInsight(_ todo: TodoItemData) -> Bool {
+        let existed = deck.contains { $0.id == todo.id } || tail.contains { $0.id == todo.id }
+        guard existed else { return false }
+        markScheduled(todo)
+        tail.removeAll { $0.id == todo.id }
+        return true
+    }
+
+    /// 按 id 在卡堆 ∪ 尾部找条目(洞察当场动作的写库 payload 来源)。
+    func todo(withId id: UUID) -> TodoItemData? {
+        deck.first { $0.id == id } ?? tail.first { $0.id == id }
+    }
+
     /// 拆小提交成功后调用。原任务不进撤销栈(拆小不提供 undo,拍板 7)。
+    /// v4 批 1:地板 A「拆小」深链可能指向**尾部**条目——同步清尾部
+    /// (卡堆口径的既有调用是 no-op,行为不变)。
     func markSplit(_ todo: TodoItemData) {
         processedIDs.insert(todo.id)
         splitCount += 1
         removeFromDeck(todo.id)
+        tail.removeAll { $0.id == todo.id }
     }
 
     /// 撤销最近一次划掉(unabandon 写库在视图层)。返回被撤销的任务,nil = 栈空。
@@ -858,6 +918,45 @@ struct ReviewFlowView: View {
                         HapticFeedback.light()
                     } catch {
                         presentError(error)
+                    }
+                },
+                // 地板 A 当场「排下周」(v4 批 1):与第 2 步右滑同一落点/同一
+                // origin(复盘排期不记推迟);payload 从卡堆 ∪ 尾部找,其余
+                // 字段原样回写。先写库后改状态,失败只报错。
+                onScheduleTask: { todoId in
+                    guard let todo = state.todo(withId: todoId),
+                          let dueDate = ReviewFlowState.nextMondayUserDayStart(
+                              now: Date(), calendar: Calendar.current
+                          ) else { return }
+                    do {
+                        try store.updateFull(
+                            todo.id,
+                            update: TodoDetailUpdate(
+                                title: todo.title,
+                                detail: todo.detail,
+                                category: todo.category,
+                                priority: todo.priority,
+                                dueDate: dueDate,
+                                hasDueTime: false,
+                                timeBucket: todo.timeBucket,
+                                dueHint: todo.dueHint,
+                                recurrenceRule: todo.recurrenceRule
+                            ),
+                            origin: .review
+                        )
+                        _ = state.scheduleFromInsight(todo)
+                        HapticFeedback.light()
+                    } catch {
+                        presentError(error)
+                    }
+                },
+                // 地板 A「拆小」深链:跳回第 2 步聚焦对应卡片并自动开拆小
+                // sheet(复用既有链路,v4 实施注记)。
+                onSplitTask: { todoId in
+                    state.triageFocusID = todoId
+                    state.triageAutoSplitID = todoId
+                    withAnimation(WarmAnimation.springStandard) {
+                        state.retreat(toTriage: true)
                     }
                 }
             )

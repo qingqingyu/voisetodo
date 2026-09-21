@@ -7989,6 +7989,138 @@
         }
       }
     },
+    "review.floor.backlog_age.headline_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your %lld open to-dos, by age"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件没做完的事,各放了多久"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了の%lld件、それぞれ放置期間"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.bucket.fresh_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–7 days: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–7 天:%lld 件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–7日:%lld件"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.bucket.aging_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8–20 days: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8–20 天:%lld 件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8–20日:%lld件"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.bucket.old_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21+ days: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21 天以上:%lld 件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21日以上:%lld件"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.no_old_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The oldest of these %1$lld has waited %2$lld days — none past 21 yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这 %1$lld 件里放得最久的是 %2$lld 天——没有一件超过 21 天。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この%1$lld件のうち最長で%2$lld日——21日を超えたものはまだありません。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.item.actions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More actions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他の操作"
+          }
+        }
+      }
+    },
     "review.flow.commit.empty" : {
       "localizations" : {
         "en" : {

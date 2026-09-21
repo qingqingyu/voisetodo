@@ -927,4 +927,115 @@ extension ReviewFlowStateTests {
         XCTAssertFalse(state.abandonFromInsight(id: UUID()))
         XCTAssertEqual(state.decidedCount, 2)
     }
+
+    /// 洞察地板 A 当场「排下周」(v4 批 1):与 abandonFromInsight 同构——
+    /// 卡堆与尾部都清、进 scheduled(→ 第 4 步候选池)、决定数 +1;已处理/
+    /// 未知 id 返回 false。`todo(withId:)` 是写库 payload 的查找源。
+    func testScheduleFromInsightCoversDeckAndTail() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let state = ReviewFlowState(todos: fillers + [todo("tail-old", daysOld: 40)])
+
+        XCTAssertEqual(state.todo(withId: state.tail[0].id)?.title, "tail-old")
+        XCTAssertEqual(state.todo(withId: state.deck[0].id)?.title, "filler7", "最久的 filler 在 deck[0]")
+        XCTAssertNil(state.todo(withId: UUID()))
+
+        let tailTodo = state.todo(withId: state.tail[0].id)!
+        XCTAssertTrue(state.scheduleFromInsight(tailTodo))
+        XCTAssertTrue(state.tail.isEmpty)
+        XCTAssertEqual(state.scheduled.map(\.title), ["tail-old"], "排进的进第 4 步候选池")
+        XCTAssertEqual(state.decidedCount, 1)
+
+        XCTAssertTrue(state.scheduleFromInsight(state.deck[0]))
+        XCTAssertEqual(state.scheduled.count, 2)
+
+        XCTAssertFalse(state.scheduleFromInsight(tailTodo), "已处理的不重复计")
+        XCTAssertFalse(state.scheduleFromInsight(TodoItemData(title: "unknown")))
+    }
+
+    /// 地板 A「拆小」深链指向尾部条目(v4 批 1):markSplit 同步清尾部,
+    /// 拆小计数照常;卡堆口径的既有调用行为不变(testSplitNotUndoable)。
+    func testMarkSplitClearsTailItem() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let state = ReviewFlowState(todos: fillers + [todo("tail-old", daysOld: 40)])
+
+        let tailTodo = state.todo(withId: state.tail[0].id)!
+        state.markSplit(tailTodo)
+        XCTAssertTrue(state.tail.isEmpty)
+        XCTAssertEqual(state.splitCount, 1)
+        XCTAssertTrue(state.processedIDs.contains(tailTodo.id))
+    }
+}
+
+// MARK: - v4 批 1 · 地板 A 状态侧接线
+
+extension ReviewFlowStateTests {
+
+    private func backlogContext(
+        now: Date,
+        open: [InsightOpenTask],
+        completedCount: Int = 15
+    ) -> InsightContext {
+        InsightContext(
+            from: now, to: now,
+            completedEvents: (0..<completedCount).map { _ in InsightCompletedEvent(
+                todoId: UUID(), createdAt: now, completedAt: now,
+                category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+            )},
+            openTasks: open, dueTasks: [], deferCounts: [:]
+        )
+    }
+
+    private func openTask(daysOld: Int, now: Date, title: String = "t") -> InsightOpenTask {
+        InsightOpenTask(
+            todoId: UUID(),
+            createdAt: Calendar.current.date(byAdding: .day, value: -daysOld, to: now)!,
+            dueDate: nil,
+            title: title
+        )
+    }
+
+    /// runInsightEngine 同批计算地板 A:零积压 nil;有积压出事实;腐烂卡
+    /// 触发且未被冷却 → 点名让位;skipStep 路径(rottingShown=false)也出事实
+    /// (批 2 的前置:skipStep 档将改为「只出地板 A」)。
+    func testBacklogAgeFactComputedWithEngine() {
+        let state = ReviewFlowState(todos: [])
+        let now = Date()
+
+        // 零积压 → nil。
+        state.insightContextValue = backlogContext(now: now, open: [])
+        state.runInsightEngine()
+        XCTAssertNil(state.backlogAgeFact)
+
+        // 19 条全新(全 ≤20 天):腐烂不触发 → 点名在场,真话行条件成立。
+        let fresh = (1...19).map { openTask(daysOld: $0, now: now) }
+        state.insightContextValue = backlogContext(now: now, open: fresh)
+        state.runInsightEngine()
+        let fact = state.backlogAgeFact
+        XCTAssertNotNil(fact)
+        XCTAssertEqual(fact?.oldCount, 0)
+        XCTAssertEqual(fact?.oldestItems.count, 3)
+        XCTAssertTrue(fact?.showsNoOldLine == true)
+        XCTAssertFalse(state.rankedResults.contains { $0.id == .rotting }, "前提:腐烂卡未触发")
+
+        // 含 21+ 条目:腐烂卡触发且首期无冷却 → 实际展示 → 点名让位。
+        let withOld = fresh + [openTask(daysOld: 25, now: now)]
+        state.insightContextValue = backlogContext(now: now, open: withOld)
+        state.runInsightEngine()
+        XCTAssertTrue(state.rankedResults.contains { $0.id == .rotting }, "前提:腐烂卡触发")
+        XCTAssertEqual(state.backlogAgeFact?.oldCount, 1)
+        XCTAssertTrue(state.backlogAgeFact?.oldestItems.isEmpty == true, "腐烂卡展示——点名让位")
+
+        // skipStep 路径(<5 完成):引擎不跑,但地板事实照算(规则没跑 =
+        // 腐烂卡没展示,rottingShown=false)。
+        let coldState = ReviewFlowState(todos: [])
+        coldState.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: [],
+            openTasks: [openTask(daysOld: 9, now: now)],
+            dueTasks: [], deferCounts: [:]
+        )
+        coldState.runInsightEngine()
+        XCTAssertEqual(coldState.backlogAgeFact?.total, 1, "skipStep 也算事实(批 2 改口的输入)")
+        XCTAssertTrue(coldState.rankedResults.isEmpty)
+    }
 }
