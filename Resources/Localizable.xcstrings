@@ -8121,6 +8121,72 @@
         }
       }
     },
+    "review.floor.backlog_flow.grew_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You added %1$lld and finished %2$lld this period — the list is growing."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期新增 %1$lld 件、完成 %2$lld 件——清单在涨。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期は%1$lld件追加して%2$lld件完了——リストは増えています。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_flow.shrank_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You finished %2$lld and added %1$lld this period — the list is shrinking."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期完成 %2$lld 件、新增 %1$lld 件——清单在缩。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期は%2$lld件完了・%1$lld件追加——リストは減っています。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_flow.flat_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You added %1$lld and finished %2$lld this period — the list held steady."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期新增 %1$lld 件、完成 %2$lld 件——进出相抵。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期は%1$lld件追加・%2$lld件完了——増減なし。"
+          }
+        }
+      }
+    },
     "review.floor.backlog_focus.contrast_%@_%lld" : {
       "localizations" : {
         "en" : {

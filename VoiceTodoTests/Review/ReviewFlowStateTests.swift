@@ -488,8 +488,9 @@ extension ReviewFlowStateTests {
 
         XCTAssertEqual(session.voiceNote, "这周想把上午留给重要的事")
         XCTAssertEqual(session.shownInsights, [InsightSnapshot(id: .rotting, effectSize: 0.42, strength: .high)])
+        // backlogCount = initialBacklogCount init 快照(v4 批 4;本夹具 todos 为空 → 0)。
         XCTAssertEqual(session.ledger, ReviewLedger(
-            inputCount: 3, remainingCount: 0, scheduledCount: 1, todayCount: 1,
+            inputCount: 3, backlogCount: 0, remainingCount: 0, scheduledCount: 1, todayCount: 1,
             abandonedCount: 1, splitCount: 0, pinnedCount: 1
         ))
         XCTAssertEqual(session.periodStart, now.addingTimeInterval(-86_400))
@@ -825,9 +826,11 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(ranked.map(\.id.uuidString), sameAge.map(\.id.uuidString).sorted())
     }
 
-    /// 旧 payload(无 somedayCount 键)解码 → 默认 0;混排列表不拖垮整体。
-    /// 失败半径:自动合成的 Codable 遇缺键是抛错,一条失败会污染整个
-    /// allSessions(),自定义 init(from:) 兜底(docs v2 实施补注)。
+    /// 旧 payload(无 somedayCount / backlogCount 键)解码 → somedayCount 默认 0、
+    /// backlogCount 默认 **-1 哨兵**(0 是「本期零积压」的有效事实,默认 0 会把
+    /// 旧会话画成零积压污染趋势);混排列表不拖垮整体。失败半径:自动合成的
+    /// Codable 遇缺键是抛错,一条失败会污染整个 allSessions(),自定义
+    /// init(from:) 兜底(docs v2 实施补注)。
     func testReviewLedgerDecodesOldPayloadWithoutSomedayCount() throws {
         let oldJSON = """
         {"inputCount":3,"remainingCount":1,"scheduledCount":1,"todayCount":1,
@@ -835,15 +838,17 @@ extension ReviewFlowStateTests {
         """
         let old = try JSONDecoder().decode(ReviewLedger.self, from: Data(oldJSON.utf8))
         XCTAssertEqual(old.somedayCount, 0)
+        XCTAssertEqual(old.backlogCount, -1, "旧 payload 无积压总数——哨兵,不进趋势")
         XCTAssertEqual(old.inputCount, 3)
 
         // 新 payload 正常读出。
         let newJSON = """
-        {"inputCount":3,"remainingCount":1,"scheduledCount":1,"todayCount":1,
+        {"inputCount":3,"backlogCount":35,"remainingCount":1,"scheduledCount":1,"todayCount":1,
         "abandonedCount":0,"splitCount":0,"pinnedCount":1,"somedayCount":27}
         """
         let new = try JSONDecoder().decode(ReviewLedger.self, from: Data(newJSON.utf8))
         XCTAssertEqual(new.somedayCount, 27)
+        XCTAssertEqual(new.backlogCount, 35)
 
         // 编码往返:新字段写入后再读不丢。
         let roundtrip = try JSONDecoder().decode(
@@ -1088,5 +1093,69 @@ extension ReviewFlowStateTests {
         coldState.runInsightEngine()
         XCTAssertEqual(coldState.backlogAgeFact?.total, 1, "skipStep 也算事实(批 2 改口的输入)")
         XCTAssertTrue(coldState.rankedResults.isEmpty)
+    }
+}
+
+// MARK: - v4 批 4 · 地板 B(本期进出)+ backlogCount 落库
+
+extension ReviewFlowStateTests {
+
+    /// recordBacklogFlow:零进零出 → nil(整块不渲染、不参与判定);
+    /// 有进出 → 净变化方向派生正确。
+    func testRecordBacklogFlowZeroActivityYieldsNil() {
+        let state = ReviewFlowState(todos: [])
+        state.recordBacklogFlow(created: 0, completed: 0)
+        XCTAssertNil(state.backlogFlowFact, "零进零出——「新增 0 完成 0」是噪音行")
+
+        state.recordBacklogFlow(created: 12, completed: 9)
+        XCTAssertEqual(state.backlogFlowFact?.net, 3, "净涨 3")
+        state.recordBacklogFlow(created: 4, completed: 9)
+        XCTAssertEqual(state.backlogFlowFact?.net, -5, "净缩 5")
+        state.recordBacklogFlow(created: 5, completed: 5)
+        XCTAssertEqual(state.backlogFlowFact?.net, 0, "相抵")
+        state.recordBacklogFlow(created: 0, completed: 0)
+        XCTAssertNil(state.backlogFlowFact, "重跑(重试路径)回落零进零出 → 清空")
+    }
+
+    /// 拍板 5 的边缘态闭合:1–4 条完成 + 零积压(skipStep 档、A/C 全空)
+    /// 此前会被 skipsInsightsWhenEmpty 跳过,批 4 后由地板 B 的净变化保住
+    /// 第 3 步——「整步跳过只留零积压+零完成」至此字面成立。
+    func testSkipStepZeroBacklogFewCompletionsKeptByFloorB() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let now = Date()
+        let events = (0..<3).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        // 容器层顺序:快照 B 在 runInsightEngine 之前(存活判定要读它)。
+        state.recordBacklogFlow(created: 0, completed: 3)
+        state.configureInsightsLadder()
+        XCTAssertFalse(state.skipsInsights, "非零完成——引擎前不整步跳")
+        state.runInsightEngine()
+        XCTAssertNil(state.backlogAgeFact, "零积压 → A 空")
+        XCTAssertNil(state.backlogCategoryFact, "零积压 → C 空")
+        XCTAssertNotNil(state.backlogFlowFact, "完成 3 → B 有净变化可说")
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "地板 B 在——不跳(拍板 5 字面闭合)")
+        state.advance()
+        XCTAssertEqual(state.currentStep, .insights, "第 3 步只出地板 B 一行")
+    }
+
+    /// buildSession 落库 backlogCount = initialBacklogCount(init 快照),
+    /// 与卡堆口径的 inputCount 分野(35 条积压截断后 inputCount 只数面对过的)。
+    func testBuildSessionCarriesBacklogCountSnapshot() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let state = ReviewFlowState(todos: fillers + (0..<27).map { todo("t\($0)", daysOld: 40 + $0) })
+
+        if let top = state.deck.first {
+            state.markAbandoned(top)
+        }
+        let session = state.buildSession(completedAt: Date())
+        XCTAssertEqual(session.ledger.backlogCount, 35, "积压总数(排序前 triageInput 快照)")
+        XCTAssertEqual(session.ledger.inputCount, 8, "卡堆口径:7 留卡 + 1 决定——两数语义不同")
     }
 }

@@ -14,8 +14,18 @@ struct InsightSnapshot: Codable, Sendable, Equatable {
 
 /// 收尾账本的持久化形状(第 5 步渲染数字的落盘版,对应 `ReviewFlowState.ledger`)。
 struct ReviewLedger: Codable, Sendable, Equatable {
-    /// 流程开始时的待处理一次性任务数(N)。
+    /// 卡堆侧总数 = 逐张决定的 + 仍留在卡堆的(v2 拍板 1 截断后**尾部不计入**;
+    /// 例外:洞察当场动作处理过的尾部条目照常计入,见 `ReviewFlowState.Ledger
+    /// .inputCount`)。**不是积压总数**——别拿它画趋势线,积压总数在
+    /// `backlogCount`(v4 批 4 对齐注释与实现:本字段历史上注释写成
+    /// 「流程开始时的待处理一次性任务数(N)」,与实现不符)。
     let inputCount: Int
+    /// 流程开始时的积压总数(v4 批 4,地板 B 趋势线的数据源;=
+    /// `ReviewFlowState.initialBacklogCount` init 快照,整个会话恒定)。
+    /// 旧 payload 无此键——自定义解码默认 **-1**(哨兵:0 是「本期零积压」
+    /// 的有效事实,默认 0 会把旧会话画成零积压污染趋势;调用方按 <0 视为
+    /// 「未记录」,不进趋势)。
+    let backlogCount: Int
     /// 处理后仍留在卡堆的(M)。
     let remainingCount: Int
     /// 排进下周。
@@ -35,6 +45,7 @@ struct ReviewLedger: Codable, Sendable, Equatable {
 
     init(
         inputCount: Int,
+        backlogCount: Int = -1,
         remainingCount: Int,
         scheduledCount: Int,
         todayCount: Int,
@@ -44,6 +55,7 @@ struct ReviewLedger: Codable, Sendable, Equatable {
         somedayCount: Int = 0
     ) {
         self.inputCount = inputCount
+        self.backlogCount = backlogCount
         self.remainingCount = remainingCount
         self.scheduledCount = scheduledCount
         self.todayCount = todayCount
@@ -54,13 +66,14 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case inputCount, remainingCount, scheduledCount, todayCount
+        case inputCount, backlogCount, remainingCount, scheduledCount, todayCount
         case abandonedCount, splitCount, pinnedCount, somedayCount
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         inputCount = try container.decode(Int.self, forKey: .inputCount)
+        backlogCount = try container.decodeIfPresent(Int.self, forKey: .backlogCount) ?? -1
         remainingCount = try container.decode(Int.self, forKey: .remainingCount)
         scheduledCount = try container.decode(Int.self, forKey: .scheduledCount)
         todayCount = try container.decode(Int.self, forKey: .todayCount)

@@ -64,6 +64,12 @@ struct ReviewStepInsights: View {
             ladderHint(context: context)
         }
 
+        // 地板 B(v4 批 4):本期进出——净变化的方向。与第 1 步成绩单的差别
+        // 在语气:这里回答「清单在缩还是在涨」。零进零出 → nil 不渲染。
+        if let flow = state.backlogFlowFact {
+            BacklogFlowFloorCard(fact: flow)
+        }
+
         // 地板 C(v4 批 3):积压集中在哪——直接指向「该砍哪边」的事实,
         // 与第 5 步领域提示同口径(问的正是这一块)。
         if let categoryFact = state.backlogCategoryFact {
@@ -162,6 +168,38 @@ struct ReviewStepInsights: View {
         }
     }
 
+}
+
+// MARK: - 地板 B · 本期进出(v4 批 4,docs/todo-review-flow-v4.md)
+
+/// 一行净变化方向(新增/完成的差)。只报方向与数字,不带判断;口径与第 1 步
+/// 证据行同源(`weekSummary` 的 createdCount / total)。趋势线待 ≥3 期
+/// `ReviewLedger.backlogCount` 攒够再开(批 4 明确不做)。
+private struct BacklogFlowFloorCard: View {
+    let fact: ReviewFlowState.BacklogFlowFact
+
+    var body: some View {
+        RecapCard {
+            Text(flowLine)
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityIdentifier("ReviewFlowBacklogFlowFloor")
+    }
+
+    /// 方向三态:在涨 / 在缩 / 相抵(净变化的正负决定选键,数字同键序)。
+    private var flowLine: String {
+        if fact.net > 0 {
+            return String(localized: "review.floor.backlog_flow.grew_\(fact.createdCount)_\(fact.completedCount)")
+        }
+        if fact.net < 0 {
+            return String(localized: "review.floor.backlog_flow.shrank_\(fact.createdCount)_\(fact.completedCount)")
+        }
+        return String(localized: "review.floor.backlog_flow.flat_\(fact.createdCount)_\(fact.completedCount)")
+    }
 }
 
 // MARK: - 地板 C · 积压集中在哪(v4 批 3,docs/todo-review-flow-v4.md)
