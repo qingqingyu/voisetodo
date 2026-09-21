@@ -30,8 +30,7 @@ struct ReviewStepInsights: View {
                 if let error = state.insightLoadError {
                     errorCard(error)
                 } else if let context = state.insightContextValue {
-                    cards
-                    ladderHint(context: context)
+                    cards(context: context)
                 } else {
                     ProgressView()
                         .padding(.top, WarmSpacing.xxl)
@@ -45,7 +44,7 @@ struct ReviewStepInsights: View {
     // MARK: 卡片
 
     @ViewBuilder
-    private var cards: some View {
+    private func cards(context: InsightContext) -> some View {
         // 地板层(v4:事实永远算得出来,兜住警报层集体沉默的空屏)先出,
         // 规则层洞察卡随后——极端模式的警报比事实更值得被先看到时,用户
         // 可以滚动;两层的相对顺序不承载「谁更重要」的判断。
@@ -57,6 +56,12 @@ struct ReviewStepInsights: View {
                 onScheduleTask: onScheduleTask,
                 onSplitTask: onSplitTask
             )
+
+            // 脚注(v4 批 2 拍板 5 连带):占位行与最小事实行从「撑起一屏的
+            // 内容」降级为地板块下方的脚注——不再参与整步存活判定;地板与
+            // 规则都空时整步已跳,脚注不再单独出现(无孤儿态)。
+            placeholderSummaryRow
+            ladderHint(context: context)
         }
 
         ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
@@ -72,12 +77,11 @@ struct ReviewStepInsights: View {
                 } : nil
             )
         }
-
-        placeholderSummaryRow
     }
 
     /// 占位行(v3 拍板 7:仍然只出一行——拍板 6 反对的是四行堆叠——但这一行
-    /// 说真话):按 `InsightID.placeholderPriority` 固定优先序选条,不比
+    /// 说真话;v4 批 2:降级为地板块下方的**脚注**,不再参与整步存活判定):
+    /// 按 `InsightID.placeholderPriority` 固定优先序选条,不比
     /// needMore 数值(三条规则缺口量纲不同,比大小会随机推荐更难达成的条件);
     /// 文案经 `InsightID.placeholderText(needMore:)`——键里的 id 段必须是
     /// 静态字面量(String 插值进键会变 %@,catalog 按 id 命名,查不到整串
@@ -98,7 +102,8 @@ struct ReviewStepInsights: View {
     }
 
     /// 5–14 档的最小事实(2026-09-01 v2:「数据不够时显示当下能算出的最小
-    /// 事实,而不是锁」)——「你目前只有约 N 周记录,先说说这周」。
+    /// 事实,而不是锁」;v4 批 2:同样降级为地板块下方的脚注,不再参与
+    /// 整步存活判定)——「你目前只有约 N 周记录,先说说这周」。
     /// N = 完成事件里最早的记录距今天的周数(向上取整,至少 1)。
     @ViewBuilder
     private func ladderHint(context: InsightContext) -> some View {

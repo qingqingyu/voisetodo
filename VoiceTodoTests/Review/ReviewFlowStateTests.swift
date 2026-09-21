@@ -124,9 +124,11 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertNil(state.popAbandonForUndo())
     }
 
-    // MARK: 步骤跳转(降级阶梯:<5 条完成 → 跳过洞察步)
+    // MARK: 步骤跳转(v4 拍板 5:整步跳过只保留给「零积压 + 零完成」;
+    // <5 完成的 skipStep 档改为只出地板 A,不再整步跳)
 
-    func testAdvanceSkipsInsightsWhenLadderSaysSo() {
+    /// 零积压 + 零完成(真空态)→ 引擎前就整步跳过,advance/retreat 对称。
+    func testAdvanceSkipsInsightsWhenZeroBacklogAndZeroCompletions() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         state.insightContextValue = InsightContext(
@@ -134,11 +136,43 @@ final class ReviewFlowStateTests: XCTestCase {
             completedEvents: [], openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
-        XCTAssertTrue(state.skipsInsights)
+        XCTAssertTrue(state.skipsInsights, "零积压 + 零完成 → 整步跳过")
         state.advance()
         XCTAssertEqual(state.currentStep, .commit)
         state.retreat()
         XCTAssertEqual(state.currentStep, .triage)
+    }
+
+    /// <5 条完成 + 有积压(v1 会整步跳,矩阵档 2):**不再整步跳**——
+    /// 第 3 步只出地板 A,规则层照旧不跑(腐烂单条 21+ 也不触发)。
+    /// 这是拍板 5 的核心:「洞察 = 完成记录的函数」假设被推翻。
+    func testSkipStepWithBacklogShowsFloorAOnly() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let now = Date()
+        let staleSince = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
+        let events = (0..<3).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events,
+            openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾")],
+            dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        XCTAssertFalse(state.skipsInsights, "有积压 → skipStep 不再整步跳(拍板 5)")
+
+        state.runInsightEngine()
+        XCTAssertTrue(state.rankedResults.isEmpty, "规则层照旧不跑(腐烂照跑会非空)")
+        XCTAssertTrue(state.shownInsights.isEmpty, "从未展示 → 冷却历史必须为空")
+        XCTAssertTrue(state.buildSession(completedAt: now).shownInsights.isEmpty, "会话落库不带幽灵记录")
+        XCTAssertNotNil(state.backlogAgeFact, "只出地板 A")
+        XCTAssertEqual(state.backlogAgeFact?.oldCount, 1)
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "地板 A 在——不跳")
+        state.advance()
+        XCTAssertEqual(state.currentStep, .insights, "第 3 步出现,只出地板 A")
     }
 
     func testAdvanceKeepsInsightsWhenEnoughCompletions() {
@@ -158,16 +192,14 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(state.currentStep, .insights)
     }
 
-    // MARK: 空洞察整步跳过(v3 拍板 7 + 实施审阅发现 1:三块可渲染内容
-    // ——洞察卡/占位行/最小事实行——全空才跳,只看 ranked 空会把后两块跳掉)
+    // MARK: 空洞察整步跳过(v4 拍板 5 连带:判定 = 「地板层与规则层是否
+    // 都空」,整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行
+    // 降级为地板块下方的脚注,退出判据)
 
-    /// 15 条完成(进 .full 档)但一条规则都不触发:无高优(effort 占位
-    /// needMore=3)、无带钟点高优(energy hidden)、救火占比 5/15 = 0.33 落
-    /// 中间带(reactive hidden)、无未完成任务(rotting hidden)——rankedResults
-    /// 空,但占位行有话可说 → **不跳整步**(实施审阅发现 1:原判定只看
-    /// ranked.isEmpty,把「做完 3 条高优任务…」的说真话占位一起跳掉,
-    /// 本测试原名 testEmptyInsightResultsSkipInsightsStep,断言方向随修复翻转)。
-    func testEmptyResultsWithPlaceholderKeepsInsightsStep() {
+    /// 15 条完成(进 .full 档)但一条规则都不触发、且零积压:占位行存在
+    /// 但已退出判据——地板空 + 规则空 → **整步跳过**(v3 时代的断言方向
+    /// 随拍板 5 翻转:占位行不再单独撑起一屏)。
+    func testEmptyResultsWithPlaceholderSkipInsightsStep() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         let now = Date()
@@ -186,24 +218,55 @@ final class ReviewFlowStateTests: XCTestCase {
         )
         state.configureInsightsLadder()
         state.runInsightEngine()
-        XCTAssertFalse(state.skipsInsights, "15 条完成,降级阶梯放行")
-        XCTAssertFalse(state.skipsInsightsWhenEmpty, "ranked 空但占位行可渲染——不跳")
+        XCTAssertFalse(state.skipsInsights, "15 条完成,非零完成不整步降级")
         XCTAssertTrue(state.rankedResults.isEmpty)
-        XCTAssertEqual(state.insightPlaceholders.count, 1)
+        XCTAssertEqual(state.insightPlaceholders.count, 1, "占位行数据仍在(有地板时作脚注)")
         XCTAssertEqual(state.insightPlaceholders.first?.id, .effortOrdering, "唯一占位:高优组缺口")
-        XCTAssertEqual(state.insightPlaceholders.first?.needMore, 3)
+        XCTAssertNil(state.backlogAgeFact, "零积压 → 地板空")
+        XCTAssertTrue(state.skipsInsightsWhenEmpty, "地板空 + 规则空——整步跳过(占位行退出判据)")
         state.advance()
-        XCTAssertEqual(state.currentStep, .insights, "ranked 空但有占位——第 3 步照常出现")
+        XCTAssertEqual(state.currentStep, .commit, "第 2 步直达第 4 步")
         state.retreat()
         XCTAssertEqual(state.currentStep, .triage, "反向对称")
     }
 
-    /// 真空态(v3 拍板 7 的跳过分支,实施审阅发现 1 补的边界):15 条完成
-    /// (.full 档,ladderNeedMore 为 nil)+ 四条规则全部 hidden——高优 3 条
-    /// 跨度 3 天、普通组中位 2 天(3 落在 (2, max(2×2, 2)) 中间带 → effort
-    /// hidden);救火 5/15 ≈ 0.33 落中间带(reactive hidden);高优全无钟点
-    /// (energy hidden);无未完成任务(rotting hidden)——三块全空 → 整步
-    /// 跳过,advance/retreat 与降级跳过走同一路径。
+    /// 同上一夹具但**有积压**(规则全 hidden):地板 A 在 → 不跳,占位行
+    /// 作地板块下方的脚注出现(矩阵档 3 的判定面)。
+    func testEmptyRulesWithBacklogKeepsStepViaFloor() {
+        let state = ReviewFlowState(todos: [])
+        state.currentStep = .triage
+        let now = Date()
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: now) ?? now
+        let events = (0..<15).map { index in
+            InsightCompletedEvent(
+                todoId: UUID(),
+                createdAt: index < 5 ? now : threeDaysAgo,
+                completedAt: now,
+                category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+            )
+        }
+        let open = (1...5).map { age in InsightOpenTask(
+            todoId: UUID(),
+            createdAt: Calendar.current.date(byAdding: .day, value: -age, to: now)!,
+            dueDate: nil,
+            title: "t\(age)"
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now,
+            completedEvents: events, openTasks: open, dueTasks: [], deferCounts: [:]
+        )
+        state.configureInsightsLadder()
+        state.runInsightEngine()
+        XCTAssertTrue(state.rankedResults.isEmpty, "规则全 hidden(救火 1/3 落中间带)")
+        XCTAssertNotNil(state.backlogAgeFact, "有积压 → 地板 A 在")
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "地板非空——不跳,占位行作脚注")
+        state.advance()
+        XCTAssertEqual(state.currentStep, .insights)
+    }
+
+    /// 真空态:15 条完成(.full 档,ladderNeedMore 为 nil)+ 四条规则全部
+    /// hidden + 零积压——地板空 + 规则空 → 整步跳过,advance/retreat 与
+    /// 降级跳过走同一路径。
     func testTrueEmptyResultsSkipInsightsStep() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
@@ -232,22 +295,22 @@ final class ReviewFlowStateTests: XCTestCase {
         )
         state.configureInsightsLadder()
         state.runInsightEngine()
-        XCTAssertFalse(state.skipsInsights, "15 条完成,降级阶梯放行")
+        XCTAssertFalse(state.skipsInsights, "15 条完成,非零完成不整步降级")
         XCTAssertTrue(state.rankedResults.isEmpty, "四条规则全 hidden")
         XCTAssertTrue(state.insightPlaceholders.isEmpty, "两组各 ≥3,effort 无占位")
         XCTAssertNil(state.ladderNeedMore, ".full 档无阶梯提示")
-        XCTAssertTrue(state.skipsInsightsWhenEmpty, "三块可渲染内容全空——整步跳过")
+        XCTAssertTrue(state.skipsInsightsWhenEmpty, "地板空 + 规则空——整步跳过")
         state.advance()
         XCTAssertEqual(state.currentStep, .commit, "真空态从第 2 步直达第 4 步")
         state.retreat()
         XCTAssertEqual(state.currentStep, .triage, "反向对称")
     }
 
-    /// 5–14 档零触发(实施审阅发现 1 受害者 B):8 条完成 → 只跑腐烂规则,
-    /// 未完成清单空 → 不触发、无占位;但 ladderNeedMore = 7 ≠ nil——最小
-    /// 事实行有话可说,**不跳整步**(原判定只看 ranked.isEmpty,5–14 档的
-    /// 最小事实行成死代码,方案 v3「最小事实保留」被路径断掉)。
-    func testRottingOnlyLadderWithNoTriggerKeepsInsightsStep() {
+    /// 5–14 档 + 零积压(v3 时代最小事实行曾撑住第 3 步,实施审阅发现 1
+    /// 受害者 B):拍板 5 后占位行/最小事实行退出判据——地板空 + 规则空
+    /// → 整步跳过(脚注不单独撑屏;批 4 地板 B 上线后该态有净变化可说,
+    /// 届时自然不跳)。ladderNeedMore 仍算出(有地板时作脚注)。
+    func testRottingOnlyLadderNoBacklogSkipsViaEmptyFloors() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         let events = (0..<8).map { _ in InsightCompletedEvent(
@@ -260,13 +323,14 @@ final class ReviewFlowStateTests: XCTestCase {
         )
         state.configureInsightsLadder()
         state.runInsightEngine()
-        XCTAssertFalse(state.skipsInsights, "8 条完成 ≥ 5,不整步降级")
+        XCTAssertFalse(state.skipsInsights, "8 条完成(非零)→ 不整步降级")
         XCTAssertTrue(state.rankedResults.isEmpty, "腐烂不触发(无未完成任务)")
         XCTAssertTrue(state.insightPlaceholders.isEmpty, "rottingOnly 档其余规则不跑")
-        XCTAssertEqual(state.ladderNeedMore, 7, "15 − 8 = 7")
-        XCTAssertFalse(state.skipsInsightsWhenEmpty, "ranked 空但最小事实行可渲染——不跳")
+        XCTAssertEqual(state.ladderNeedMore, 7, "15 − 8 = 7(数据仍算,作脚注)")
+        XCTAssertNil(state.backlogAgeFact, "零积压 → 地板空")
+        XCTAssertTrue(state.skipsInsightsWhenEmpty, "地板空 + 规则空——跳(最小事实行退出判据)")
         state.advance()
-        XCTAssertEqual(state.currentStep, .insights, "5–14 档零触发——第 3 步出最小事实行")
+        XCTAssertEqual(state.currentStep, .commit)
     }
 
     /// 引擎有结果 → 第 3 步照常出现(15 条全部「记下当天做完」→ 救火占比
@@ -288,35 +352,6 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertFalse(state.rankedResults.isEmpty)
         state.advance()
         XCTAssertEqual(state.currentStep, .insights, "有洞察正常停第 3 步")
-    }
-
-    /// 降级跳过时引擎**不跑**(v3 拍板 7 引擎前移的回归护栏):<5 条完成 →
-    /// 第 3 步整步跳过,旧实现引擎(视图 .task)从不执行、shownInsights 恒空;
-    /// 前移后若照跑,腐烂规则(单条停滞 ≥21 天即触发)会在从未展示的情况下
-    /// 进冷却历史并随会话持久化——「展示过的才进冷却历史」被破坏。夹具:
-    /// 3 条完成(skipStep)+ 一条 30 天前记下的未完成任务(腐烂必触发,
-    /// 引擎照跑时本条会红)。
-    func testSkippedLadderDoesNotRecordShownInsights() {
-        let state = ReviewFlowState(todos: [])
-        let now = Date()
-        let staleSince = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
-        let events = (0..<3).map { _ in InsightCompletedEvent(
-            todoId: UUID(), createdAt: now, completedAt: now,
-            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
-        )}
-        state.insightContextValue = InsightContext(
-            from: now, to: now,
-            completedEvents: events,
-            openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾")],
-            dueTasks: [], deferCounts: [:]
-        )
-        state.configureInsightsLadder()
-        XCTAssertTrue(state.skipsInsights, "3 条完成 < 5 → 降级跳过")
-
-        state.runInsightEngine()
-        XCTAssertTrue(state.rankedResults.isEmpty, "跳过路径引擎不产出(腐烂照跑会非空)")
-        XCTAssertTrue(state.shownInsights.isEmpty, "从未展示 → 冷却历史必须为空")
-        XCTAssertTrue(state.buildSession(completedAt: now).shownInsights.isEmpty, "会话落库不带幽灵记录")
     }
 
     // MARK: 账本计数

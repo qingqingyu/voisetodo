@@ -26,16 +26,19 @@ final class ReviewFlowState {
 
     /// 测试可直设(导航入口统一走 advance/retreat);UI 侧只读。
     var currentStep: Step = .recap
-    /// 洞察步是否被降级阶梯跳过(<5 条完成记录 → 第 2 步直连第 4 步,§2.3)。
-    /// 在流程启动拿到 insightContext 后设定;「上一步」同理跳过。
+    /// 洞察步是否在引擎前就整步跳过(v4 拍板 5:整步跳过只保留给
+    /// **零积压 + 零完成**——此时连地板事实都算不出来;v1 的「<5 条完成 →
+    /// 整步跳过」已推翻,<5 档改为只出地板 A)。在流程启动拿到
+    /// insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
-    /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过(v3 拍板 7:空屏 +
-    /// 错误指令的占位行比不出这一步更差)。可渲染内容 = 洞察卡 / 占位行 /
-    /// 最小事实行**三块,全空才跳**(实施审阅发现 1:原判定只看 rankedResults
-    /// 空,会把占位行与 5–14 档最小事实行一起跳掉)。与 `skipsInsights` 走
-    /// 同一跳过路径;在流程启动引擎跑完后设定——**必须**在进入第 3 步之前
-    /// 定好,否则会出现「进了第 3 步再被弹走」的闪屏(引擎因此从视图
-    /// `.task` 前移至此)。
+    /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过。判定 = **地板层
+    /// 与规则层是否都空**(v4 拍板 5 连带,整体取代 2026-09-07 拍板①的
+    /// 「三块可渲染内容全空才跳」——占位行/最小事实行降级为地板块下方的
+    /// 脚注,退出判据):地板空 = 地板 A 为 nil(批 3 加 C、批 4 加 B 时同步
+    /// 扩进),规则空 = `rankedResults` 空。与 `skipsInsights` 走同一跳过
+    /// 路径;在流程启动引擎跑完后设定——**必须**在进入第 3 步之前定好,
+    /// 否则会出现「进了第 3 步再被弹走」的闪屏(引擎因此从视图 `.task`
+    /// 前移至此)。
     private(set) var skipsInsightsWhenEmpty = false
     /// 两个跳过 flag 的单一来源(导航与步骤条共用)。
     var skipsInsightsStep: Bool { skipsInsights || skipsInsightsWhenEmpty }
@@ -324,42 +327,51 @@ final class ReviewFlowState {
         currentStep = prev
     }
 
-    /// 洞察原料就绪后设定降级阶梯(§2.3)。<5 条完成记录 → 整步跳过。
+    /// 洞察原料就绪后设定降级跳过(v4 拍板 5):整步跳过只保留给
+    /// **零积压 + 零完成**(连地板 A 都算不出来的真空态)。<5 完成(阶梯
+    /// `.skipStep`)不再整步跳——第 3 步只出地板 A(引擎侧规则照旧不跑,
+    /// 见 `runInsightEngine`)。1–4 条完成 + 零积压的边缘态不在此跳:
+    /// 引擎路径的 `skipsInsightsWhenEmpty` 会兜(地板空 + 规则不跑);
+    /// 批 4 地板 B(本期净变化)上线后这类用户有话可说,届时自然不跳。
     func configureInsightsLadder() {
         let completedCount = insightContextValue?.completedEvents.count ?? 0
-        skipsInsights = InsightEngine.ladder(completedRecordCount: completedCount) == .skipStep
+        let openCount = insightContextValue?.openTasks.count ?? 0
+        skipsInsights = completedCount == 0 && openCount == 0
     }
 
     /// 跑四条规则并落库结果(v3 拍板 7:从 `ReviewStepInsights.runEngine` 前移,
     /// 与 `configureInsightsLadder()` 同一时机由 `loadInsightContext` 调用)。
     /// 规则按 ladder 裁剪,score 降序;触发后先过冷却(§2.4):不满足任一
     /// 放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
-    /// 放行换 improving 文案。三块可渲染内容全空 → `skipsInsightsWhenEmpty`
-    /// (整步跳过,判定见属性注释)。
+    /// 放行换 improving 文案。**地板层与规则层都空** → `skipsInsightsWhenEmpty`
+    /// (整步跳过,v4 拍板 5 连带;判定见属性注释)。
     func runInsightEngine() {
         guard let context = insightContextValue else { return }
         let calendar = Calendar.current
         let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
 
-        // 降级跳过(<5 条完成记录)时引擎**不跑**(v3 拍板 7 引擎前移的语义
-        // 补丁):旧实现引擎在第 3 步视图挂载(.task)时才跑,跳过路径从不
-        // 执行、shownInsights 恒空;前移后若照跑,腐烂规则(age ≥ 21 天分支
-        // 单条即触发)会在从未展示的情况下进冷却历史并随会话持久化——
-        // 「展示过的才进冷却历史」被破坏,下期冷却把「从没看过」当
-        // 「上期看过」。结果清空(重试路径可能从 .full 落回,不留残影)。
+        // 降级档(<5 条完成)规则层**不跑**(v3 拍板 7 引擎前移的语义补丁,
+        // v4 拍板 5 后该档不再整步跳过、只出地板 A,但「规则不跑」不变):
+        // 照跑的话,腐烂规则(age ≥ 21 天分支单条即触发)会在从未展示的情况
+        // 下进冷却历史并随会话持久化——「展示过的才进冷却历史」被破坏,
+        // 下期冷却把「从没看过」当「上期看过」。结果清空(重试路径可能从
+        // .full 落回,不留残影);地板 A 照算(规则没跑 = 腐烂卡没展示,
+        // rottingShown 恒 false)。
         guard ladder != .skipStep else {
             resetShownInsights()
             rankedResults = []
             insightPlaceholders = []
             ladderNeedMore = nil
-            // skipStep 档规则不跑 → 腐烂卡必然没展示,rottingShown 传 false。
             backlogAgeFact = InsightEngine.backlogAgeFact(
                 openTasks: context.openTasks,
                 now: context.to,
                 calendar: calendar,
                 rottingShown: false
             )
-            skipsInsightsWhenEmpty = false
+            // 只出地板 A:地板也空(零积压)时才整步跳过——「零积压+零完成」
+            // 已被 skipsInsights 在引擎前拦下,这里兜的是 1–4 条完成 + 零积压
+            // 的边缘态(批 4 地板 B 上线后该态有净变化可说,届时自然不跳)。
+            skipsInsightsWhenEmpty = backlogAgeFact == nil
             return
         }
 
@@ -403,16 +415,12 @@ final class ReviewFlowState {
             calendar: calendar,
             rottingShown: ranked.contains { $0.id == .rotting }
         )
-        // 跳过判定 = 「这一步还有没有可渲染内容」(实施审阅发现 1):第 3 步
-        // 可渲染内容有三块——洞察卡(ranked)/占位行/最小事实行,只看 ranked
-        // 空会把后两块一起跳掉(26 条完成零触发时,说真话的占位文案不可达;
-        // 5–14 档最小事实行成死代码)。占位行判定复用视图同一选条+文案单一
-        // 来源(`InsightID.firstPlaceholder` + `placeholderText`)。
-        // ⚠️ ladderNeedMore 的赋值必须在本行之前(rottingOnly 档「有内容」
-        // 全靠它),勿调换顺序。
-        let hasPlaceholderText = InsightID.firstPlaceholder(in: insightPlaceholders)
-            .flatMap { $0.id.placeholderText(needMore: $0.needMore) } != nil
-        skipsInsightsWhenEmpty = ranked.isEmpty && !hasPlaceholderText && ladderNeedMore == nil
+        // v4 拍板 5 连带:整步存活判定改写为「地板层与规则层是否都空」,
+        // 整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行降级为
+        // 地板块下方的脚注,不再参与判定、不再单独撑起一屏(有积压时地板 A
+        // 恒非空,此判定实际只兜零积压态)。地板层扩新块(批 3 C / 批 4 B)
+        // 时同步扩进本判定。
+        skipsInsightsWhenEmpty = ranked.isEmpty && backlogAgeFact == nil
     }
 
     /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按

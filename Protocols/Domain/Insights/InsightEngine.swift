@@ -239,7 +239,10 @@ enum InsightEngine {
     /// 第 3 步(观察步)按完成记录数的降级阶梯。v1 只有 02/03(拍板 2),
     /// 未实现的 01/04/05/06 **不**产生占位行。
     enum Ladder: Sendable, Equatable {
-        /// 完成记录 < 5:整个第 3 步跳过,第 2 步直连第 4 步。
+        /// 完成记录 < 5:**规则层不跑,第 3 步只出地板 A**(v4 拍板 5;v1 的
+        /// 「整个第 3 步跳过」已被推翻——地板 A 只依赖 `openTasks`,与完成了
+        /// 几条无关,攒了积压的新用户恰恰最需要看到积压年龄)。整步跳过只保留
+        /// 给「零积压 + 零完成」,判定在 `ReviewFlowState.configureInsightsLadder`。
         case skipStep
         /// 5–14:只跑洞察 02;`needMore` = 距离 03 启用还差几条(占位文案「再记 N 条」)。
         case rottingOnly(needMore: Int)
