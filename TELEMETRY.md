@@ -168,9 +168,11 @@ ORDER BY received_at DESC LIMIT 50;
 
 ## 关闭遥测
 
-用户可通过系统「设置 → VoiceTodo」（待实现）或 App 内设置（待实现）关闭遥测。关闭后：
-- 本地 `Telemetry.record()` 仍可调用，但 `TelemetryUploader` 不再上报
-- BGProcessingTask 不再 schedule
+用户可在 App 内「设置 → 诊断与隐私 → 匿名诊断上报」关闭（2026-09-23 实现，
+`TelemetrySettings`，App Group 存储，默认开启）。关闭后：
+- 本地 `Telemetry.record()` 仍可调用，但 `TelemetryUploader` 不再上报（队列原样保留，7 天 GC 兜底）
+- BGProcessingTask 不再 schedule；重新开启后下次进后台即恢复调度
+- 与 `PRIVACY_POLICY.md` "You can turn diagnostic reporting off at any time in the app's settings" 的承诺对齐
 
 ## 后续扩展（不在当前 plan）
 

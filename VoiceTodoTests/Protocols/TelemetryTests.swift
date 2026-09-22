@@ -287,3 +287,40 @@ final class TelemetryTests: XCTestCase {
         return defaults
     }
 }
+
+// MARK: - TelemetrySettings
+
+final class TelemetrySettingsTests: XCTestCase {
+    /// 从未设置(全新安装)必须默认开启——opt-out 模型,与隐私政策申报口径一致。
+    /// 「未设置」与「显式 false」必须可判别:object(forKey:) is Bool 是关键。
+    func testDefaultsToEnabledWhenUnset() throws {
+        let defaults = try makeTemporaryDefaults()
+        XCTAssertTrue(TelemetrySettings.isEnabled(defaults: defaults))
+    }
+
+    func testExplicitFalseDisables() throws {
+        let defaults = try makeTemporaryDefaults()
+        defaults.set(false, forKey: TelemetrySettings.isEnabledKey)
+        XCTAssertFalse(TelemetrySettings.isEnabled(defaults: defaults))
+    }
+
+    func testExplicitFalseThenTrueReenables() throws {
+        let defaults = try makeTemporaryDefaults()
+        defaults.set(false, forKey: TelemetrySettings.isEnabledKey)
+        defaults.set(true, forKey: TelemetrySettings.isEnabledKey)
+        XCTAssertTrue(TelemetrySettings.isEnabled(defaults: defaults))
+    }
+
+    /// defaults 不可用(App Group 缺失的极端环境)时 fail-open 默认开启——
+    /// 开关读不到不应让遥测静默关闭(度量口径失真),上报内容本身已脱敏。
+    func testNilDefaultsFailsOpen() {
+        XCTAssertTrue(TelemetrySettings.isEnabled(defaults: nil))
+    }
+
+    private func makeTemporaryDefaults() throws -> UserDefaults {
+        let suiteName = "VoiceTodoTests.TelemetrySettings.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+}

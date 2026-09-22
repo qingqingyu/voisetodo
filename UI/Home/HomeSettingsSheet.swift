@@ -8,6 +8,10 @@ struct HomeSettingsSheet: View {
     @AppStorage(ReminderOffsetConfig.defaultOffsetDefaultsKey) private var defaultOffsetRaw = 0
     @AppStorage(UserVocabularyStore.isEnabledKey, store: UserVocabularyStore.sharedDefaults())
     private var isPersonalizedRecognitionEnabled = true
+    /// 匿名诊断上报开关(默认开)。隐私政策承诺「可在设置中随时关闭」,
+    /// 存 App Group 与 TelemetryQueue 同库,Uploader 跨进程读取。
+    @AppStorage(TelemetrySettings.isEnabledKey, store: TelemetrySettings.sharedDefaults())
+    private var isTelemetryEnabled = true
     /// 语音识别语言（"auto" / "zh-Hans" / "en-US"）。
     /// 改了之后下次 startRecording 立即生效（不用重启 App）。
     @AppStorage(SpeechRecognitionLanguage.storageKey)
@@ -232,6 +236,19 @@ struct HomeSettingsSheet: View {
                     }
                 } header: {
                     Text(String(localized: "settings.personalization.title"))
+                }
+
+                Section {
+                    Toggle(String(localized: "settings.telemetry.toggle"), isOn: $isTelemetryEnabled)
+                        .accessibilityIdentifier("TelemetryToggle")
+
+                    Text(String(localized: "settings.telemetry.footer"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                        .minimumScaleFactor(0.7)
+                } header: {
+                    Text(String(localized: "settings.telemetry.title"))
                 }
 
                 Section {

@@ -26,13 +26,22 @@ final class TelemetryUploader {
     private let deviceID: String
     private let session: URLSession
     private let encoder: JSONEncoder
+    /// 遥测开关（设置页「匿名诊断上报」）。默认读 App Group 共享值;测试注入用。
+    private let isTelemetryEnabled: () -> Bool
 
-    init(endpoint: URL?, appToken: String?, deviceID: String, session: URLSession) {
+    init(
+        endpoint: URL?,
+        appToken: String?,
+        deviceID: String,
+        session: URLSession,
+        isTelemetryEnabled: @escaping () -> Bool = { TelemetrySettings.isEnabled() }
+    ) {
         self.endpoint = endpoint
         self.appToken = appToken
         self.deviceID = deviceID
         self.session = session
         self.encoder = JSONCoding.makeRequestEncoder()
+        self.isTelemetryEnabled = isTelemetryEnabled
     }
 
     // MARK: - Background task lifecycle
@@ -58,7 +67,12 @@ final class TelemetryUploader {
     }
 
     /// 调度下一次 BGTask。App 进入后台 / 上报完成后调用。
+    /// 遥测关闭时不调度(TELEMETRY.md「关闭遥测」);重新开启后下次进后台即恢复调度。
     func scheduleNextRun() {
+        guard isTelemetryEnabled() else {
+            VoiceTodoLog.app.info("telemetry.upload.schedule_skipped reason=disabled")
+            return
+        }
         #if canImport(BackgroundTasks)
         let request = BGProcessingTaskRequest(identifier: Self.backgroundTaskIdentifier)
         request.requiresExternalPower = true           // 仅充电
@@ -108,9 +122,15 @@ final class TelemetryUploader {
     // MARK: - Upload
 
     /// 上传一批事件。成功则丢弃队列内容；失败则回滚。
+    /// 遥测关闭时直接返回成功：队列原样保留(本地 7 天 GC 兜底)，不发出任何请求——
+    /// 这是隐私政策「turn off at any time」承诺的执行点。
     /// - Returns: 是否成功（用于 BGTask 完成 + 测试断言）
     @discardableResult
     func uploadBatch() async -> Bool {
+        guard isTelemetryEnabled() else {
+            VoiceTodoLog.app.info("telemetry.upload.disabled queuedEvents=\(TelemetryQueue.count())")
+            return true
+        }
         let events = TelemetryQueue.drain()
         guard !events.isEmpty else {
             VoiceTodoLog.app.debug("telemetry.upload.empty_queue")

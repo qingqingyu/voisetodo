@@ -12251,6 +12251,72 @@
         }
       }
     },
+    "settings.telemetry.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Helps us detect and fix failures. Only anonymous events are sent (recording success, durations, counts) — never audio, to-do text, or identity. Turning off stops it immediately; collected data auto-deletes within 90 days."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不具合の検出と修正に使います。送信は匿名イベントのみ（成否・所要時間・回数）。音声・ToDo の内容・個人情報は一切含まれません。オフにすると直ちに停止し、収集済みデータは 90 日以内に自動削除されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "帮助我们发现并修复线上故障。只上报匿名事件（录音是否成功、耗时、次数），绝不包含录音内容、待办文本或身份信息。关闭后立即停止，已收集数据 90 天内自动删除。"
+          }
+        }
+      }
+    },
+    "settings.telemetry.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics & Privacy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "診断とプライバシー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断与隐私"
+          }
+        }
+      }
+    },
+    "settings.telemetry.toggle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymous diagnostics"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名診断の送信"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名诊断上报"
+          }
+        }
+      }
+    },
     "settings.title" : {
       "localizations" : {
         "en" : {

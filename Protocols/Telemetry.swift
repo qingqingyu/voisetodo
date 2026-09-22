@@ -3,6 +3,29 @@ import Foundation
 import UIKit
 #endif
 
+/// 遥测开关。存 App Group UserDefaults（与 `TelemetryQueue` 同库），默认开启。
+///
+/// 隐私政策承诺「可在设置中随时关闭诊断上报」（PRIVACY_POLICY.md "You can turn
+/// diagnostic reporting off at any time in the app's settings"）——这是该承诺的实现。
+/// 关闭后 `record()` 仍可入队（本地队列 7 天 GC 兜底），但 `TelemetryUploader`
+/// 不再上报、不再调度 BGProcessingTask。
+enum TelemetrySettings {
+    /// 开关键（App Group UserDefaults key）。
+    static let isEnabledKey = "VoiceTodoTelemetryEnabled"
+
+    /// App Group UserDefaults。与 `TelemetryQueue` 共用一套，跨主 App / Widget / Intent 进程可见。
+    static func sharedDefaults() -> UserDefaults? {
+        UserDefaults(suiteName: WidgetConfig.appGroupIdentifier)
+    }
+
+    /// 当前是否允许上报。默认 true（opt-out 模型，与隐私政策申报口径一致）。
+    /// 用 `object(forKey:)` 判别「从未设置」与「显式 false」——未设置走默认开启。
+    static func isEnabled(defaults: UserDefaults? = sharedDefaults()) -> Bool {
+        guard let defaults, defaults.object(forKey: isEnabledKey) is Bool else { return true }
+        return defaults.bool(forKey: isEnabledKey)
+    }
+}
+
 /// 遥测事件入口。本地 OSLog 始终记录，远端批量上报走 `TelemetryUploader`。
 ///
 /// 仅记录脱敏数据，不含 PII。文本参数必须用 `VoiceTodoLog.textSummary(_)` 包裹，

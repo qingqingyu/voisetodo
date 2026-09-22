@@ -189,18 +189,13 @@ ADMIN_TOKEN,§6.3),与本方案解耦。
 `telemetry.events.accepted` 日志里的 dropped 字段,发现 >0 再修 uploader 分批循环**
 (按 `maxBatchSize=100` 切片,改动小、测试基建现成)。
 
-### 6.2 遥测开关未实现,但隐私政策已承诺(建议列为上线前置)
+### 6.2 遥测开关未实现,但隐私政策已承诺 → ✅ 已解决(2026-09-23)
 
 `PRIVACY_POLICY.md:63/112` 明文承诺 *"You can turn diagnostic reporting off at any
-time in the app's settings"*;设置页(HomeSettingsSheet)没有这个开关,TELEMETRY.md
-「关闭遥测」一节也标注待实现。**已上线的政策页与实现不符** → App Review 5.1.1 风险,
-也是对用户的失信。二选一(决策点 D2):
-
-- 实现 toggle(设置页加开关 + `TelemetryUploader` 短路 + 本地队列停入队);
-- 或先把 Pages 政策措辞改为与现状一致(代价:D1 开通后无用户退出手段,申报口径
-  "App 功能用途"虽仍成立,但政策不能再承诺不存在的控制)。
-
-推荐实现 toggle:工作量小,且政策页已对外发布,改回来的成本更高。
+time in the app's settings"*;设置页(HomeSettingsSheet)原无此开关。**已实现(分支
+`kaiguan`)**:设置页新增「诊断与隐私」区(`settings.telemetry.*` 三语文案),
+`TelemetrySettings`(App Group 存储,默认开启)+ `TelemetryUploader` 上报/调度双短路
+(关闭时队列原样保留)。决策点 D2 按 §8 推荐落地:实现 toggle。
 
 ### 6.3 ADMIN_TOKEN 未配置
 
@@ -230,5 +225,5 @@ AI 成本评测拍板后的"admin 端点灰度切换 provider 主力"(AIProxy/ev
 
 | # | 决策 | 推荐 | 状态 |
 |---|---|---|---|
-| D1 | LOG_HASH_SALT 现在配独立值,还是接受 APP_TOKEN 兼任 | 现在配(§3 选项 A) | 待拍板 |
-| D2 | 遥测开关(§6.2):实现 toggle 还是改政策措辞 | 实现 toggle | 待拍板(另立工作项) |
+| D1 | LOG_HASH_SALT 现在配独立值,还是接受 APP_TOKEN 兼任 | 现在配(§3 选项 A) | ✅ 已拍板执行(2026-09-22) |
+| D2 | 遥测开关(§6.2):实现 toggle 还是改政策措辞 | 实现 toggle | ✅ 已拍板执行(2026-09-23,分支 `kaiguan`) |
