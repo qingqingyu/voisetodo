@@ -77,10 +77,13 @@ struct RecapHeroSection: View {
             }
 
             // 「当天记、当天做完」件数(2026-08-21 用户拍板加上)。区间内没有
-            // 完成时不显示——「其中 0 件」是噪音。一次性任务口径,与洞察 03 一致。
+            // 完成时不显示——「其中 0 件」是噪音;**完成 > 0 但当天件数为 0
+            // 也不显示**(v4 批 5 附带发现 4):该行在第 1 步以主文案级别出现,
+            // 「0 件当天记当天做完」读起来像指责,判词行依赖本行,一并消隐。
+            // 一次性任务口径,与洞察 03 一致。判定收在 `summary.showsSameDayLine`。
             // 整块收窄居中(2026-08-23 打磨):长句换行后不再撑满行宽,与上方
             // 居中的数字保持同一视觉节奏。
-            if summary.total > 0 {
+            if summary.showsSameDayLine {
                 Text(String(localized: "review.hero.sameday_\(summary.sameDayCount)"))
                     .font(promotesSameDay ? WarmFont.body(15) : WarmFont.caption(13))
                     .foregroundColor(promotesSameDay ? WarmTheme.primaryText : WarmTheme.textSecondary)
@@ -110,6 +113,14 @@ struct RecapHeroSection: View {
 }
 
 extension ReviewSummary {
+    /// sameday 行是否出(v4 批 5 附带发现 4):完成 > 0 **且**当天件数 > 0——
+    /// 「其中 0 件是当天记下、当天做完的」在第 1 步以主文案级别出现读起来
+    /// 像指责,在回顾页是噪音;判词行(>40% 份额)依赖本行,零值时一并消隐。
+    /// 收进本扩展与 `showsSameDayJudgment` 同处,可单测。
+    var showsSameDayLine: Bool {
+        total > 0 && sameDayCount > 0
+    }
+
     /// sameDay 判词是否出(v3 ① 改动 4):分子分母同为一次性完成口径
     /// (`sameDayCount / oneOffCompletionCount`,审阅修订二——分母不是 total,
     /// total 含规律完成会被抬高、占比被系统性低估),占比**严格大于** 40%
