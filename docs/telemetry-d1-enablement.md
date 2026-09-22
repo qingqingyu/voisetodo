@@ -1,9 +1,24 @@
 # D1 遥测开通方案(上线前置)
 
-> 创建:2026-09-07 · 分支:`yaoce` · 状态:**待执行**
+> 创建:2026-09-07 · 分支:`yaoce` · 状态:**✅ 已执行(2026-09-22,分支 `bushu` 落地)**
 > 性质:运维执行单。客户端与 worker 代码**均已实现**,本方案零代码改动,只做:
 > 建库 → 初始化 schema → salt 决策 → wrangler.toml 绑定 → deploy → 验证。
 > 调研中发现的 4 个相邻缺口见 §6(其中 6.2 建议也列为上线前置,需另立拍板)。
+
+## 执行结果(2026-09-22)
+
+| 步骤 | 结果 |
+|---|---|
+| Step 1 建库 | ✅ `database_id = 5861ea98-ab16-49c8-9c3f-e4baab1aa297`(region WNAM) |
+| Step 2 schema(--remote) | ✅ `telemetry_events` 表 + 5 索引建成 |
+| Step 3 salt(决策 D1 → 选项 A) | ✅ `LOG_HASH_SALT` 独立值已配(secret);同批配了 `ADMIN_TOKEN`(§6.3 缺口一并解决,值存 `.dev.vars`) |
+| Step 4 wrangler.toml | ✅ `[[d1_databases]]` 解注释并填 id;配置断言 15/15 |
+| Step 5 deploy | ✅ 版本 `e5f03cee`(同批携带:告警修复 503e448/7d3ea0c、P0 反刷闸门 2c87f33、air provider 条目) |
+| §5 验证 | ✅ 遥测 503→200(`accepted:1`)· D1 落库可见(`device_id` 为新 salt 哈希)· 真实提取链路正常 · admin providers 可读 |
+
+备注:
+- cron GC 路径随 `*/30` 定时自然验证(部署后首个整半点起,`telemetry.cron.gc_done`);tail 因本机网络到 CF websocket 被断未做实时观察,不影响开通结论
+- 剩余待办仅 §6.2(遥测开关,决策 D2 未拍板)与 §7 文档同步(本文件之外的部分已随本次提交完成)
 
 ---
 

@@ -4,6 +4,22 @@
 > 「每 Pro 用户月亏 $10」不解决不上线——本工具回答:**便宜模型在抽取质量上掉多少,值不值得换**。
 > 零依赖(Node ≥ 18 全局 fetch),不需要 npm install。
 
+## ✅ 结论已出(2026-09-22,方案 A 生效)
+
+三轮评测(72 条 golden,同锚 2026-09-23,results/ 留档):
+
+| label | case 全对 | en+zh(过关口径) | infra_error | 延迟 mean |
+|---|---|---|---|---|
+| baseline-sonnet-p2 | 95.7%(66/69) | 94.3% | 3 | 9.5s |
+| glm-4.6 | 95.7%(67/70) | 96.2% | 2 | 9.8s |
+| **glm-4.5-air** | **97.2%(70/72)** | **98.1% ✓ 过 ≥98% 线** | **0** | **3.7s** |
+
+- air 按 §4.1 三关全过:全对率 ≥98% ✓ / 与基线差距 ≤1pp(实际 +3.8pp)✓ / 日期重复组零回归(due_date 98.9% > 基线 98.8%)✓
+- 成本按 §5 表 **−93%**;生产实测延迟 5.5-6s(比 Sonnet 同环境快约 2×)
+- 失败仅 2:zh-017(基线同错)、ja-014(§6 已知「今度」歧义,ja 不 gate);Sonnet 与 glm-4.6 同错的 en-016/en-018,air 全对
+- **生产落地**:wrangler.toml 增 `ZAI_ANTHROPIC_AIR`(p3),admin 端点灰度切 primary;同批修 selector override 钉头 bug。回滚 = DELETE override
+- Token 实际数待 Z.AI console 校准(不影响相对结论)
+
 ## 1. 快速开始
 
 ### 1.1 单 provider 本地起服务(防 failover 混样)

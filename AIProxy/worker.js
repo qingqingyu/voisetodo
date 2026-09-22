@@ -297,7 +297,10 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
 
     const candidates = await pickCandidates(providers, sharedHealthStore, Date.now(), {
-      maxAttempts: resolveMaxAttempts(env)
+      maxAttempts: resolveMaxAttempts(env),
+      // admin override 钉头:没有这个参数,override 只改 priority,而 P5 selector
+      // 的 warm/cold 桶都不按 priority 排 → override 静默失效(见 selector.js 注释)
+      primaryId: primaryOverride?.primaryId
     });
     if (candidates.length === 0) {
       // 带上每个 provider 的熔断快照。旧日志只说「没有候选」,却不说是谁被摘了、

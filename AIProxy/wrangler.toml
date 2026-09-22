@@ -17,6 +17,10 @@ routes = [
 #   2026-08-22 free 2→3 拍板（PROMOTION_PLAN §2.1）；2026-08-30 已 deploy 上线
 #   （版本 a8dd0bc2，随行 prompt 精化 + 复盘 split 代理模式）。iOS 客户端
 #   Constants.swift freeDailyLimit 同日同步 2→3，三处口径一致。
+#   2026-09-22 部署(版本 e5f03cee→0157fdee):D1 遥测绑定开通(见
+#   docs/telemetry-d1-enablement.md)+ 新增 ZAI_ANTHROPIC_AIR provider(p3)
+#   + admin 灰度切 primary→glm-4.5-air(评测三关全过,成本 -93%,PROMOTION_PLAN
+#   §2.1 已闭环)。回滚 = DELETE /v1/admin/providers/primary。
 #   DAILY_REQUEST_LIMIT = "3"     PAID_DAILY_LIMIT = "100"
 #
 # 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
@@ -79,6 +83,17 @@ PROVIDERS = '''
     "enabled": true,
     "secretName": "PROVIDER_KEY_CLAWTO_OPENAI",
     "timeoutMs": 30000
+  },
+  {
+    "id": "ZAI_ANTHROPIC_AIR",
+    "type": "anthropic",
+    "url": "https://api.z.ai/api/anthropic/v1/messages",
+    "model": "glm-4.5-air",
+    "priority": 3,
+    "weight": 10,
+    "enabled": true,
+    "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC",
+    "timeoutMs": 30000
   }
 ]
 '''
@@ -118,13 +133,14 @@ id = "17ea278a008b4599988f1a5882ad252a"
 binding = "AI_PROVIDER_STATE_KV"
 id = "ef09b0ad898241d5aa33291f406beb7e"
 
-# ─── D1 遥测存储（创建后填入 database_id） ────────────────────────────────
-# 创建：`wrangler d1 create voicetodo-telemetry`
-# 初始化 schema：`wrangler d1 execute voicetodo-telemetry --file=./schema.sql`
-# [[d1_databases]]
-# binding = "TELEMETRY_DB"
-# database_name = "voicetodo-telemetry"
-# database_id = "your-d1-database-id"
+# ─── D1 遥测存储(2026-09-22 开通,方案见 docs/telemetry-d1-enablement.md)────
+# 建库:`wrangler d1 create voicetodo-telemetry`(返回的 id 填下面)
+# 初始化 schema:`wrangler d1 execute voicetodo-telemetry --remote --file=./schema.sql`
+# ⚠️ execute 必须带 --remote,否则只建到本地 miniflare,线上空表 → 全部 insert 失败
+[[d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "voicetodo-telemetry"
+database_id = "5861ea98-ab16-49c8-9c3f-e4baab1aa297"
 
 # Cron triggers:每 30 分钟跑一次 handleScheduled,做四件事:
 #   1. telemetry GC(90 天保留,需 TELEMETRY_DB binding)

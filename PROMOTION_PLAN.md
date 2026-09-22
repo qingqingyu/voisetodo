@@ -32,14 +32,13 @@
 
 - [x] **Onboarding 改造**(2026-08-18 实施,docs/onboarding-first-voice-trial.md):现状「权限 → 语言 → 付费页」已改为「权限 → 语言 → 首次录音 demo → wow → trial → paywall」。
   **与本文原目标序列的偏差(有意选择,已拍板)**:paywall 弹点在 **wow 播完后立即**(~2.3s),不等「第 2 次撞墙」——理由:free 3/day 配额下新用户首日只录 1–2 条,「第 2 次撞墙」在 day-1 不可达,而软启动只有 4 周度量窗口;且现状配额路径是首撞即弹(`quota_exhausted`),「第 2 次才弹」的触发点并不存在。弹点效果靠 `paywall_shown(source: first_wow / quota_exhausted)` 两列对照度量。付费页前置曾是战略 bug,本次已消除
-- [ ] **AI 成本控制**(unit economics,必须解决):
-  - 风险: Pro 100/day × Sonnet ≈ $15/月成本 vs $4.99 收入 = **每 Pro 用户月亏 $10**
-  - 方案 A: 主力换 gpt-4o-mini / gemini-flash(成本降 ~99%,质量需 A/B 验证)
-  - 方案 B: PAID_DAILY_LIMIT 100 → 30-50/day
-  - 方案 C: 提价(与 Todoist 锚定冲突,不推荐)
-  - **评测工具已就绪**:`AIProxy/eval/`(72 条 golden 数据集 en30/zh24/ja18 + 零依赖 runner + 评分器)。候选定为 Z.AI 系便宜模型(零新 key)。过关线与决策规则见 `AIProxy/eval/README.md` §4
-  - **进度(2026-08-22)**: Sonnet 基线已跑(2026-08-20,88.9%,低于 95% 线)→ 按 §4.2 先归因修 golden/prompt;候选未跑。⚠️ 运行窗口硬约束:golden 按周三锚定,**只能 UTC 周二/三/四跑**(北京时间周二 8 点~周五 8 点),下个窗口 2026-08-25
-- [x] **免费档调整**: DAILY_REQUEST_LIMIT 2 → 3(与定价决策对齐;`wrangler.toml` 已改 2026-08-22,**待部署生效**,文案侧 PROMOTION_COPY/TERMS/Review Notes 均按 3 口径)
+- [x] **AI 成本控制**(unit economics,必须解决)——**已解决(2026-09-22,方案 A)**:
+  - 风险(原状): Pro 100/day × Sonnet ≈ $15+/月成本 vs $4.99 收入 = 每 Pro 用户月亏 $10
+  - **评测三轮结果(2026-09-22,72 条 golden)**:sonnet-p2 基线 95.7% / glm-4.6 95.7% / **glm-4.5-air 97.2%(en+zh 口径 98.1%,过 ≥98% 线;零 infra_error;en 满分;生产延迟 ~5.5-6s,比 Sonnet 快约 2×)**。air 按 `AIProxy/eval/README.md` §4.1 三关全过(全对率/与基线差距/日期重复组零回归),成本按 §5 表 **−93%**(Pro 月成本正常口径 $1.5,最坏口径 $4.3,对 $4.99 收入安全)
+  - **生产落地(2026-09-22)**:wrangler.toml 新增 `ZAI_ANTHROPIC_AIR` provider(priority 3,默认不接流量),deploy 后经 admin 端点 `/v1/admin/providers/primary` 灰度切 primary → air。同批修复了 selector 对 admin override 静默失效的 bug(warm/cold 桶不看 priority,详见 selector.js 注释与 worker.test.js 钉头回归测试)。**回滚 = DELETE 该 override,秒级回 Sonnet**
+  - 方案 B(限额)/C(提价)不再需要;失败 case 仅 2:zh-017(基线同错,归类判断题)、ja-014(README §6 已知「今度」歧义,ja 不 gate)
+  - 评测工具:`AIProxy/eval/`(72 条 golden + 零依赖 runner)。运行窗口约束仍在:只能 UTC 周二/三/四跑
+- [x] **免费档调整**: DAILY_REQUEST_LIMIT 2 → 3(与定价决策对齐;2026-08-30 已部署生效,文案侧均按 3 口径)
 - [ ] **崩溃监控接入**:差评第一来源是崩溃
 - [ ] 英文 copy 过类母语审(App 内所有英文文案)
 

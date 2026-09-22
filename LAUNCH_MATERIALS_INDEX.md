@@ -91,7 +91,7 @@
 
 章节:设计目标 / 架构 / 9 个核心事件(A 类功能使用 + B 类线上质量)/ PII 红线(绝不上报清单)/ ASC 隐私问卷 / **部署步骤(AIProxy)** / 查询示例 / 数据保留(90 天)/ 关闭遥测。
 
-状态:⚠️ 文档就绪但 **D1 遥测未开通**(`AIProxy/wrangler.toml` 的 `TELEMETRY_DB` binding 仍注释,事件当前静默丢弃)。上线要靠漏斗 KPI 判 4 周过关,**开通 D1 = 上线前置**。部署步骤就在本文件内。
+状态:✅ **D1 遥测已开通(2026-09-22)**——库/schema/LOG_HASH_SALT/ADMIN_TOKEN/binding 全部就位,部署后验证 503→200、事件落库。执行记录见 `docs/telemetry-d1-enablement.md`「执行结果」。剩余:遥测开关(用户设置里的关闭入口)未实现,见该文档 §6.2。
 
 ---
 
@@ -109,5 +109,5 @@
 |---|---|---|
 | 隐私政策页(发布源) | GitHub 仓库 `qingqingyu/voicetodo-privacy` → `https://qingqingyu.github.io/voicetodo-privacy/` | ✅ 已上线(2026-08-16,中英双语) |
 | App Store 商品/Intro Offer/隐私问卷 | App Store Connect 后台 | ⬜ 待配置(照 checklist §5/§6) |
-| 生产 AIProxy(额度/订阅验签/遥测 D1) | Cloudflare Worker `voicetodo-ai-proxy` | ⬜ 生产部署停在 2026-07-24,8 月修复未上(含上线额度值 2/100、订阅验签 bundle 修复) |
+| 生产 AIProxy(额度/订阅验签/遥测 D1) | Cloudflare Worker `voicetodo-ai-proxy` | ✅ 2026-09-22 已部署(e5f03cee→0157fdee):free=3、订阅验签修复、告警 B/C 修复、P0 反刷闸门、遥测 D1 开通、主力模型灰度切 glm-4.5-air(admin override,可秒级回滚) |
 | 技术支持 URL 页 | 计划复用 Pages 仓库加 support 一页纸 | ⬜ 未做(ASC 必填) |

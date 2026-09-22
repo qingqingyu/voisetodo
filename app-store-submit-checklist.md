@@ -24,8 +24,8 @@
 **前提条件（不满足无法开始）**
 - [ ] Apple Developer Program 会员有效（$99/年，过期无法提审）
 - [ ] 真机验证 Live Activity（fix 64caf21 之后装包验证锁屏/灵动岛）
-- [x] AIProxy 生产额度切换（2026-08-20 已部署 free=2/Pro=100；2026-08-22 文件改 free=3，**待部署生效**）；两个前置 P1 已修复（0ead216）
-- [ ] `LOG_HASH_SALT` secret 核验（`wrangler secret list` 确认已设置；CONFIGURATION_CHECKLIST.md 原「上线前必做」节已删——两个 P1 修完后过期）
+- [x] AIProxy 生产额度切换（2026-08-20 上线 free=2/Pro=100 → 2026-08-30 free=3 已生效；2026-09-22 部署遥测 D1 + 主力模型灰度切 glm-4.5-air,详见 `docs/telemetry-d1-enablement.md` 执行结果）
+- [x] `LOG_HASH_SALT` secret 核验（2026-09-22 已配置独立值,`wrangler secret list` 可确认;配套 `ADMIN_TOKEN` 同日配置,值在 `AIProxy/.dev.vars`）
 - [ ] 隐私政策页可访问：https://qingqingyu.github.io/voicetodo-privacy/
 
 ---

@@ -3095,6 +3095,55 @@ test("selector puts half-open providers at the end of the candidate list", async
   assert.deepEqual(candidates.map((p) => p.id), ["CLOSED", "HALF"]);
 });
 
+// ─── admin override 钉头(primaryId)─────────────────────────────────────────
+// 2026-09-22 生产复现:override 只改 priority,而 warm 桶按延迟排序、cold 桶排
+// warm 之后 —— warm 的旧主力永远压住 cold 的新主力,override 静默失效。
+// 以下三条锁住 pickCandidates 的 primaryId 钉头语义。
+
+test("selector primaryId pins a cold provider above warm providers (admin override vs warm old primary)", async () => {
+  const providers = [
+    makeProvider({ id: "OLD_WARM", priority: 2 }),
+    makeProvider({ id: "NEW_COLD", priority: 1 })
+  ];
+  const health = stubHealthStore({
+    OLD_WARM: { state: "closed", ewmaLatencyMs: 10400, sampleCount: 5 },
+    NEW_COLD: { state: "closed", ewmaLatencyMs: 0, sampleCount: 0 }
+  });
+  // 不带 primaryId:warm 压 cold(旧行为,上面第一条测试锁的就是它)
+  const withoutPin = await pickCandidates(providers, health, Date.now());
+  assert.deepEqual(withoutPin.map((p) => p.id), ["OLD_WARM", "NEW_COLD"]);
+  // 带 primaryId:被 override 的 cold provider 必须排最前
+  const pinned = await pickCandidates(providers, health, Date.now(), { primaryId: "NEW_COLD" });
+  assert.deepEqual(pinned.map((p) => p.id), ["NEW_COLD", "OLD_WARM"]);
+});
+
+test("selector primaryId pins a slow warm provider above faster warm providers (override beats latency order)", async () => {
+  const providers = [
+    makeProvider({ id: "FAST", priority: 2 }),
+    makeProvider({ id: "PINNED_SLOW", priority: 1 })
+  ];
+  const health = stubHealthStore({
+    FAST: { state: "closed", ewmaLatencyMs: 3000, sampleCount: 9 },
+    PINNED_SLOW: { state: "closed", ewmaLatencyMs: 9500, sampleCount: 9 }
+  });
+  const candidates = await pickCandidates(providers, health, Date.now(), { primaryId: "PINNED_SLOW" });
+  assert.deepEqual(candidates.map((p) => p.id), ["PINNED_SLOW", "FAST"]);
+});
+
+test("selector primaryId is a no-op when the pinned provider was dropped (circuit open)", async () => {
+  const providers = [
+    makeProvider({ id: "OPEN", priority: 1 }),
+    makeProvider({ id: "CLOSED", priority: 2 })
+  ];
+  const health = stubHealthStore({
+    OPEN: { state: "open", ewmaLatencyMs: 0, sampleCount: 0 },
+    CLOSED: { state: "closed", ewmaLatencyMs: 0, sampleCount: 0 }
+  });
+  // OPEN 被熔断摘除 → 钉头无对象 → 回落 P5 顺序,不报错不空转
+  const candidates = await pickCandidates(providers, health, Date.now(), { primaryId: "OPEN" });
+  assert.deepEqual(candidates.map((p) => p.id), ["CLOSED"]);
+});
+
 test("HealthStore EWMA converges toward new latency samples", async () => {
   const healthStore = new HealthStore({ kv: null });
   // Seed with a high first sample (no prior → set directly).
