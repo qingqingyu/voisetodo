@@ -1,6 +1,6 @@
 # 复盘流程 v4 —— 第 3 步(观察)没话说
 
-> 状态：**已实施（fupan3 分支，2026-09-21 批 1–4 落地，待合并 main）**（方案 2026-09-20；拍板 2026-09-21——方案五条全部按建议采纳，批 3 开工前补拍第 6 条；实施补注见文末）。方案基线 `cab54b3`（main）；实施基线 `2d874a0`（main，晚于方案基线，无冲突）。开发分支 `claude/review-flow-decision-output-959xqn`（文档）/ `fupan3`（代码）。
+> 状态：**已实施（fupan3 分支，2026-09-21/22 批 1–5 全部落地，待合并 main）**（方案 2026-09-20；拍板 2026-09-21——方案五条全部按建议采纳，批 3 开工前补拍第 6 条；实施补注见文末）。方案基线 `cab54b3`（main）；实施基线 `2d874a0`（main，晚于方案基线，无冲突）。开发分支 `claude/review-flow-decision-output-959xqn`（文档）/ `fupan3`（代码）。
 > 走查条件：**英文环境 + 19 条积压 + 近 30 天完成 ≥15 条（`.full` 档）+ 上次复盘 Sep 16（本期窗口 3 天）+ 有历史会话（Aug 22 留过笔记）**。
 > 与 v2/v3 走查的关键差别：**这一轮数据是够的**——降级阶梯走到 `.full` 档，四条规则全跑。上两轮的结论「数据不够所以屏是空的」在本轮不成立。
 > 前作：`docs/todo-review-flow-design.md`（v1，已实施）、`docs/todo-review-flow-v2.md`（v2，已实施 2026-09-02）、`docs/todo-review-flow-v3.md`（v3，已实施 2026-09-05）。
@@ -203,9 +203,9 @@ v3 拍板 7 写这个判定的理由原话是「**空屏 + 错误指令的占位
 
 ---
 
-## 实施补注（2026-09-21，fupan3 批 1–4：0599a9f → fe74367 → cc91667 → b654234）
+## 实施补注（2026-09-21/22，fupan3 批 1–5：0599a9f → fe74367 → cc91667 → b654234 → 6e54085）
 
-按「实施顺序」四批全部落地（批 5 文案批未动，独立）。与方案的偏差与关键取舍：
+按「实施顺序」五批全部落地。与方案的偏差与关键取舍：
 
 1. **地板 A「拆小」= 深链**：跳回第 2 步聚焦对应卡片并**自动打开拆小 sheet**（`triageAutoSplitID`），不在洞察步重造 AI 候选/说一句/手写三通道——「复用第 2 步既有写库路径」的字面落地。尾部条目（不在卡堆）也能开（`markSplit` 同步清尾部）。
 2. **「排下周」落点收口单一来源**：新增 `ReviewFlowState.nextMondayUserDayStart`，第 2 步右滑与地板 A 共用（此前 triage 私有实现，三处 copy 有漂移风险）。
@@ -214,7 +214,8 @@ v3 拍板 7 写这个判定的理由原话是「**空屏 + 错误指令的占位
 5. **地板 C 的 `.other` 双排除**：focus 与对照组都排除 `.other`（AI 解析失败兜底不是领域；「其他方面清完了」不是有效对照）。对照组取「本期完成过且当前零积压」里完成数最多者。
 6. **领域提示轮换退役**：`askDomainHintCategory` 改问积压最集中领域（`triageInput` 口径，与地板 C 同源同序）；积压不变连续几期问同一块是**有意的**（问题还在，plan-do-review 闭环）。`rotationSeed` 参数删除。
 7. **03 事实行的机制**：`InsightAvailability` 加 `.fact(InsightFactLine)`，`collect` 分流——事实行不进 `results`（机械地实现拍板 6：不过冷却、不进 `shownInsights`、不参与排序），但计入存活判定。n ≥ 15 时 03 永远有话可说，「.full 档零积压整步跳过」从此不可达（批 2 阶段短暂存在过的路径消亡，相关测试随批 3 再翻转一次）。
+8. **批 5 单复数的两类处置**：单计数键补 en variations（18 个，one/other）；**多 `%lld` 键不做 variations**（xcstrings 单复数单轴，多参键选轴有歧义）——改写成计数安全结构（7 个：decided_none / untouched / pool_intro / pinned_outcome_hero / added_toast.elsewhere ×2 / backlog_focus.line）。代价：多参键里「N days」在 N=1 时仍是 "1 days"（沿既有 rotting.body 「since %lld days ago」惯例，系统性的已知留白）。sameday 零值消隐的谓词收进 `ReviewSummary.showsSameDayLine`（可单测）；单复数护栏是**直读源码 catalog 的数据测试**——模拟器语言不定（本机 zh），运行时英文断言会随宿主语言漂移。
 
-**测试基线**：`swift test` 303 例（仅既有 DST 环境红灯）；iPhone 17 Pro 模拟器 `VoiceTodoTests` 全量 698 例，仅 2 个既有环境红灯（DST / StoreKit 配置注入），零新增失败。新增 14 例（BacklogAgeFloor 7 / BacklogCategoryFloor 3 / State 侧 14 中含改写翻转的旧例）。
+**测试基线**：`swift test` 303 例（仅既有 DST 环境红灯）；iPhone 17 Pro 模拟器 `VoiceTodoTests` 全量 700 例，仅 2 个既有环境红灯（DST / StoreKit 配置注入），零新增失败。
 
-**未做（沿方案）**：趋势线（待 ≥3 期 `backlogCount` 攒够）、批 5 文案批（全局单复数 variations / sameday 零值分支 / domain_hint 窗口文案）、真机手测 5 档矩阵 + 三语 AX5。合并 main 前须过真机。
+**未做（沿方案）**：趋势线（待 ≥3 期 `backlogCount` 攒够）、真机手测 5 档矩阵 + 三语 AX5。合并 main 前须过真机。
