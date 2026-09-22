@@ -19,6 +19,9 @@ struct InsightOpenTask: Sendable, Equatable {
     let dueDate: Date?
     /// 任务标题(阶段 2 增补):洞察 02 腐烂列表的 viz 数据要展示标题。
     let title: String
+    /// 任务分类(v4 批 3 拍板 4:地板 C「积压集中在哪」的原料)。原料级
+    /// 字段,不替规则做形状设计(§1.4)。
+    let category: TodoCategory
 }
 
 /// 洞察原料:区间内到期的一次性任务。

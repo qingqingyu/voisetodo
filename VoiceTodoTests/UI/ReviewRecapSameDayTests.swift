@@ -488,4 +488,61 @@ final class ReviewRecapSameDayTests: XCTestCase {
             recurringCompletions: recurring
         )
     }
+
+    // MARK: - sameday 行零值消隐(v4 批 5 附带发现 4)
+
+    /// 完成 > 0 但当天件数为 0 → 行不出(主文案级别的「0 件当天记当天做完」
+    /// 读起来像指责);当天件数 > 0 → 出;total == 0 沿旧行为不出。
+    /// 判词行依赖本行(>40% 份额在 sameDay==0 时数学上不可达,无需单测)。
+    func testSameDayLineHiddenAtZero() throws {
+        // 3 条一次性完成、全部隔天 → sameDay == 0:行消隐(走查病灶)。
+        let zeroSameDay = try judgmentSummary(sameDayCount: 0, oneOffCount: 3)
+        XCTAssertFalse(zeroSameDay.showsSameDayLine, "完成 3 但当天 0——「其中 0 件」是指责,不出")
+
+        let hasSameDay = try judgmentSummary(sameDayCount: 2, oneOffCount: 5)
+        XCTAssertTrue(hasSameDay.showsSameDayLine)
+
+        let noCompletions = try judgmentSummary(sameDayCount: 0, oneOffCount: 0, recurringCount: 0)
+        XCTAssertFalse(noCompletions.showsSameDayLine, "total == 0 沿旧行为——不出")
+    }
+
+    // MARK: - 英文单复数 variations 结构护栏(v4 批 5 附带发现 3)
+
+    /// 直读**源码里的 catalog**(编译产物按语言拆 lproj,模拟器语言不定,
+    /// 运行时断言会随宿主语言漂移):18 个已做 variations 的键 en 侧必须有
+    /// one/other 两档且互不相同——删掉或写坏(只剩 other/两档同文)先红。
+    /// 精确文案不在测试里重复(catalog 单一来源);zh/ja 无复数形态,不查。
+    func testEnglishPluralVariationsStructurally() throws {
+        let catalogURL = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/Localizable.xcstrings")
+        let data = try Data(contentsOf: catalogURL)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let strings = try XCTUnwrap(object["strings"] as? [String: Any])
+
+        let variedKeys = [
+            "review.flow.ledger.decided_%lld",
+            "review.hero.sameday_%lld",
+            "review.flow.rotting.age_%lld",
+            "review.flow.triage.born_days_%lld",
+            "review.flow.triage.tl_deferred_%lld",
+            "review.insight.rotting.sample_note_%lld",
+            "review.insight.effort.headline_%lld",
+            "review.insight.rotting.headline_%lld",
+        ]
+        for key in variedKeys {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
+            let en = try XCTUnwrap(localizations["en"] as? [String: Any], key)
+            let variations = try XCTUnwrap(en["variations"] as? [String: Any], "\(key) 缺 variations")
+            let plural = try XCTUnwrap(variations["plural"] as? [String: Any], key)
+            let one = try XCTUnwrap(plural["one"] as? [String: Any], key)
+            let other = try XCTUnwrap(plural["other"] as? [String: Any], key)
+            let oneValue = try XCTUnwrap((one["stringUnit"] as? [String: Any])?["value"] as? String, key)
+            let otherValue = try XCTUnwrap((other["stringUnit"] as? [String: Any])?["value"] as? String, key)
+            XCTAssertNotEqual(oneValue, otherValue, "\(key) 单复数两档不得同文(同文=variations 失效)")
+        }
+    }
 }

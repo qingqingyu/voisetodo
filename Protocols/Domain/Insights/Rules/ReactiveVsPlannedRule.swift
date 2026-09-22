@@ -14,7 +14,9 @@ import Foundation
 ///   这个语义自然线。
 /// - **正向下界 ratio ≤ 0.20** → 计划式,**用好转文案**(复盘只报坏消息,用户会
 ///   停止复盘,§2.4)。依据:03-B(0.18 是正向信号);0.2 取「五件里至多一件救火」。
-/// - **0.20 < ratio < 0.50** → 隐藏。中间地带没有可行动的信号。
+/// - **0.20 < ratio < 0.50** → 一行事实(v4 拍板 3,推翻 v1 的「隐藏」:
+///   只报占比,不带判断——一屏什么都不说比说一个中性事实更糟;不走冷却、
+///   不记 shownInsights,拍板 6)。
 ///
 /// `minSample = 15`:降级阶梯规定 ≥15 条完成记录才跑 03(§2.3)。
 /// 满分效应量:警示方向 = ratio / 0.80(80% 救火即封顶,100% 留给「全是救火」的
@@ -64,8 +66,16 @@ struct ReactiveVsPlannedRule: InsightRule {
             headline = String(localized: "review.insight.reactive.headline_positive_\(percent)")
             body = String(localized: "review.insight.reactive.body_positive_\(percent)_\(n)")
         } else {
-            // 0.20 < ratio < 0.50:中间地带,无可行动信号,不显示。
-            return .hidden
+            // 0.20 < ratio < 0.50:中间地带。v1 判断「无可行动信号,不显示」
+            // 被 v4 拍板 3 **明确推翻**——一屏什么都不说,比说一个中性事实
+            // 更糟;该事实(本期救火占比)正是第 5 步「问问自己」的素材。
+            // 降级成一行事实:只报占比,不带判断、不带建议(§2.2 文案止于
+            // 观察);不走冷却、不记 shownInsights(拍板 6,见
+            // `InsightAvailability.fact`)。
+            return .fact(InsightFactLine(
+                id: id,
+                text: String(localized: "review.insight.reactive.fact_\(percent)")
+            ))
         }
 
         return .fired(

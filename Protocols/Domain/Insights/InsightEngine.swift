@@ -96,8 +96,20 @@ enum InsightAvailability: Sendable {
     /// 已实现的规则但样本未到线——**必须写清还差多少**(「还需 11 条」,
     /// 不是「数据不足」)。v1 只对已实现的 02/03 生效,未实现规则不产生占位行(拍板 2)。
     case placeholder(needMore: Int)
+    /// 中间地带事实行(v4 拍板 3:只报占比、不带判断、不带建议——明确推翻
+    /// v1「无可行动信号,不显示」)。与 `.fired` 的分野:**不进**洞察卡堆、
+    /// **不走冷却、不记 `shownInsights`**(拍板 6:事实每期都该重述;不记
+    /// 历史 ⇒ 中间地带升级为真警报时首期放行),但算「规则层有内容」
+    /// (整步存活判定)。
+    case fact(InsightFactLine)
     /// 不显示(未触发,或降级阶梯裁掉)。不是「无异常」。
     case hidden
+}
+
+/// 03 中间地带的一行事实(v4 拍板 3):文案构造时已本地化,仅展示用、不落库。
+struct InsightFactLine: Sendable, Equatable {
+    let id: InsightID
+    let text: String
 }
 
 // MARK: - 结果与图数据
@@ -239,7 +251,10 @@ enum InsightEngine {
     /// 第 3 步(观察步)按完成记录数的降级阶梯。v1 只有 02/03(拍板 2),
     /// 未实现的 01/04/05/06 **不**产生占位行。
     enum Ladder: Sendable, Equatable {
-        /// 完成记录 < 5:整个第 3 步跳过,第 2 步直连第 4 步。
+        /// 完成记录 < 5:**规则层不跑,第 3 步只出地板 A**(v4 拍板 5;v1 的
+        /// 「整个第 3 步跳过」已被推翻——地板 A 只依赖 `openTasks`,与完成了
+        /// 几条无关,攒了积压的新用户恰恰最需要看到积压年龄)。整步跳过只保留
+        /// 给「零积压 + 零完成」,判定在 `ReviewFlowState.configureInsightsLadder`。
         case skipStep
         /// 5–14:只跑洞察 02;`needMore` = 距离 03 启用还差几条(占位文案「再记 N 条」)。
         case rottingOnly(needMore: Int)
@@ -253,6 +268,176 @@ enum InsightEngine {
         if completedRecordCount < 5 { return .skipStep }
         if completedRecordCount < 15 { return .rottingOnly(needMore: 15 - completedRecordCount) }
         return .full
+    }
+
+    // MARK: 地板层事实(v4,docs/todo-review-flow-v4.md)
+
+    /// 地板 A · 积压年龄的事实。只报事实——不打分、不评级、不给「你应该」
+    /// (文件头反 gaming 章程对地板层同样成立);**不走冷却**(v4 拍板 1:
+    /// 事实每期都该重述,冷却是为「同一句判断反复说教」设计的,只作用于
+    /// 规则层)。
+    struct BacklogAgeFact: Sendable, Equatable {
+        /// 点名行条目(最老前 3;腐烂卡本期展示时整体让位为空,见
+        /// `BacklogAgeFloor.fact(rottingShown:)`)。
+        struct Item: Sendable, Equatable {
+            let todoId: UUID
+            let title: String
+            /// 用户日口径的放置天数(与 `RottingRule` 同一把尺)。
+            let ageDays: Int
+        }
+
+        /// 未完成一次性任务总数(分布条总盘)。
+        let total: Int
+        /// 0–7 天条数。
+        let freshCount: Int
+        /// 8–20 天条数。
+        let agingCount: Int
+        /// ≥ 21 天条数(分界沿用 `RottingRule.ageThresholdDays`,同屏不漂移)。
+        let oldCount: Int
+        /// 全积压最老的放置天数。
+        let oldestAgeDays: Int
+        /// 最老前 3 条(年龄降序;腐烂卡展示时为空)。
+        let oldestItems: [Item]
+
+        /// 「没有一件超过 21 天」说真话行的渲染判定(纯函数,视图别重写):
+        /// 只有当 21+ 档为 0 **且**点名行在场(点名为空 ⇔ 腐烂卡本期展示,
+        /// 那时腐烂卡自己有话可说,真话行不再叠加)。
+        var showsNoOldLine: Bool {
+            oldCount == 0 && !oldestItems.isEmpty
+        }
+    }
+
+    /// 地板 A 计算:三档分布 0–7 / 8–20 / 21+。零积压返回 nil(整块不渲染
+    /// ——此时第 2 步卡堆也是空的,无话可说是诚实的)。
+    ///
+    /// 口径:**DayClock 用户日**(`now` 兼作现在,与 `RottingRule` 的
+    /// `ctx.to` 同源)——同屏不能出现「这条 21 天」与「21+ 档 0 条」并存的
+    /// 分界漂移(v4 批 1:统一到用户日)。与 `TriageRanking.stagnationDays`
+    /// 的自然日口径**有意不同**:排序是相对序,差一天不改变「谁更久」;
+    /// 分档是对着阈值切,必须与腐烂卡同一把尺。
+    ///
+    /// - Parameter rottingShown: 腐烂卡本期是否实际展示(过冷却后的
+    ///   ranked 结果,不是规则触发)。展示时点名让位——腐烂卡的列表更细
+    ///   (带推迟次数),同屏不重复点名(v4 方案「与 02 腐烂卡去重」)。
+    static func backlogAgeFact(
+        openTasks: [InsightOpenTask],
+        now: Date,
+        calendar: Calendar,
+        rottingShown: Bool
+    ) -> BacklogAgeFact? {
+        guard !openTasks.isEmpty else { return nil }
+        let nowDay = DayClock.startOfUserDay(for: now, calendar: calendar)
+
+        var fresh = 0
+        var aging = 0
+        var old = 0
+        var aged: [(task: InsightOpenTask, ageDays: Int)] = []
+        aged.reserveCapacity(openTasks.count)
+        for task in openTasks {
+            let createdDay = DayClock.startOfUserDay(for: task.createdAt, calendar: calendar)
+            let ageDays = max(0, calendar.dateComponents([.day], from: createdDay, to: nowDay).day ?? 0)
+            aged.append((task, ageDays))
+            if ageDays >= RottingRule.ageThresholdDays {
+                old += 1
+            } else if ageDays > Self.backlogAgeFreshMaxDays {
+                aging += 1
+            } else {
+                fresh += 1
+            }
+        }
+
+        aged.sort { lhs, rhs in
+            if lhs.ageDays != rhs.ageDays { return lhs.ageDays > rhs.ageDays }
+            return lhs.task.todoId.uuidString < rhs.task.todoId.uuidString
+        }
+        let oldestItems: [BacklogAgeFact.Item] = rottingShown ? [] : aged.prefix(3).map { pair in
+            BacklogAgeFact.Item(todoId: pair.task.todoId, title: pair.task.title, ageDays: pair.ageDays)
+        }
+
+        return BacklogAgeFact(
+            total: openTasks.count,
+            freshCount: fresh,
+            agingCount: aging,
+            oldCount: old,
+            oldestAgeDays: aged.first?.ageDays ?? 0,
+            oldestItems: oldestItems
+        )
+    }
+
+    /// 地板 A 分档的新鲜上限(0–7 天;8–20 为中档,≥21 沿用腐烂卡阈值)。
+    static let backlogAgeFreshMaxDays = 7
+
+    // MARK: 地板 C · 积压集中在哪(v4 批 3,拍板 4 的下游)
+
+    /// 地板 C 的事实:最集中的分类 + 对照组(本期完成过、当前零积压的分类
+    /// ——「都在 Work 攒,Personal 反而清完了」)。与地板 A 同约束:只报
+    /// 事实、不走冷却、不进 `shownInsights`。
+    struct BacklogCategoryFact: Sendable, Equatable {
+        /// 积压条数最多的分类(`.other` 兜底除外——它是 AI 解析失败的落点,
+        /// 把它当「最集中的领域」是噪音;全在 `.other` 时整块不渲染)。
+        let focusCategory: TodoCategory
+        let focusCount: Int
+        /// focus 分类里最老的放置天数(用户日口径,与地板 A 同尺)。
+        let focusOldestAgeDays: Int
+        /// 对照组:窗口内完成过 ≥1 条、当前积压为 0 的分类里完成数最多的
+        /// 一个(没有这样的分类时 nil,对照行不渲染)。
+        let contrastCategory: TodoCategory?
+        let contrastCount: Int
+    }
+
+    /// 地板 C 计算。零积压 / 全部落在 `.other` → nil(整块不渲染)。
+    /// focus 取积压条数最多者;并列时按 `TodoCategory.allCases` 声明序取先
+    /// (确定性,单测稳定)。严格大于比较天然实现「并列取先」。
+    static func backlogCategoryFact(
+        openTasks: [InsightOpenTask],
+        completedEvents: [InsightCompletedEvent],
+        now: Date,
+        calendar: Calendar
+    ) -> BacklogCategoryFact? {
+        var openCounts: [TodoCategory: Int] = [:]
+        for task in openTasks where task.category != .other {
+            openCounts[task.category, default: 0] += 1
+        }
+        var focusCategory: TodoCategory?
+        var focusCount = 0
+        for category in TodoCategory.allCases {
+            let count = openCounts[category] ?? 0
+            if count > focusCount {
+                focusCategory = category
+                focusCount = count
+            }
+        }
+        guard let focus = focusCategory else { return nil }
+
+        let nowDay = DayClock.startOfUserDay(for: now, calendar: calendar)
+        var focusOldest = 0
+        for task in openTasks where task.category == focus {
+            let createdDay = DayClock.startOfUserDay(for: task.createdAt, calendar: calendar)
+            let ageDays = max(0, calendar.dateComponents([.day], from: createdDay, to: nowDay).day ?? 0)
+            focusOldest = max(focusOldest, ageDays)
+        }
+
+        // 对照组:本期完成过、当前零积压的分类里完成数最多者(对照同样排除
+        // `.other`——「其他方面清完了」不是有效对照;并列同取声明序在先)。
+        var doneCounts: [TodoCategory: Int] = [:]
+        for event in completedEvents where event.category != .other {
+            doneCounts[event.category, default: 0] += 1
+        }
+        var contrastCategory: TodoCategory?
+        var contrastCount = 0
+        for category in TodoCategory.allCases {
+            guard let done = doneCounts[category], openCounts[category] == nil, done > contrastCount else { continue }
+            contrastCategory = category
+            contrastCount = done
+        }
+
+        return BacklogCategoryFact(
+            focusCategory: focus,
+            focusCount: focusCount,
+            focusOldestAgeDays: focusOldest,
+            contrastCategory: contrastCategory,
+            contrastCount: contrastCount
+        )
     }
 
     // MARK: 冷却(§2.4;阶段 4 接历史数据,本层只做纯判定)

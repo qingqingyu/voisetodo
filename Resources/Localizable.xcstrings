@@ -1,18 +1,10 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-
-    },
-    "·" : {
-
-    },
-    "「%@」" : {
-
-    },
-    "%@" : {
-
-    },
+    "" : {},
+    "·" : {},
+    "「%@」" : {},
+    "%@" : {},
     "%@ %@" : {
       "localizations" : {
         "en" : {
@@ -1431,9 +1423,21 @@
     "confirm.conflict.banner %lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld todos conflict with existing calendar events."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld todo conflicts with existing calendar events."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld todos conflict with existing calendar events."
+                }
+              }
+            }
           }
         },
         "zh-Hans" : {
@@ -3970,7 +3974,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Added %lld · %lld on other dates"
+            "value" : "Added %1$lld · %2$lld elsewhere"
           }
         },
         "zh-Hans" : {
@@ -4002,7 +4006,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Amazing! %1$lld saved, %2$lld on other days"
+            "value" : "Amazing! %1$lld saved · %2$lld elsewhere"
           }
         },
         "zh-Hans" : {
@@ -7989,6 +7993,260 @@
         }
       }
     },
+    "review.floor.backlog_age.headline_%lld" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Your %lld open to-do, by age"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Your %lld open to-dos, by age"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件没做完的事,各放了多久"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了の%lld件、それぞれ放置期間"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.bucket.fresh_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–7 days: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–7 天:%lld 件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–7日:%lld件"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.bucket.aging_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8–20 days: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8–20 天:%lld 件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8–20日:%lld件"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.bucket.old_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21+ days: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21 天以上:%lld 件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21日以上:%lld件"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.no_old_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The oldest of these %1$lld has waited %2$lld days — none past 21 yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这 %1$lld 件里放得最久的是 %2$lld 天——没有一件超过 21 天。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この%1$lld件のうち最長で%2$lld日——21日を超えたものはまだありません。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_age.item.actions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More actions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他の操作"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_flow.grew_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You added %1$lld and finished %2$lld this period — the list is growing."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期新增 %1$lld 件、完成 %2$lld 件——清单在涨。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期は%1$lld件追加して%2$lld件完了——リストは増えています。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_flow.shrank_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You finished %2$lld and added %1$lld this period — the list is shrinking."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期完成 %2$lld 件、新增 %1$lld 件——清单在缩。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期は%2$lld件完了・%1$lld件追加——リストは減っています。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_flow.flat_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You added %1$lld and finished %2$lld this period — the list held steady."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期新增 %1$lld 件、完成 %2$lld 件——进出相抵。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期は%1$lld件追加・%2$lld件完了——増減なし。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_focus.contrast_%@_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meanwhile %1$@ is all cleared — %2$lld finished this period, none left open."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "而「%1$@」这期清完了 %2$lld 件,现在一件没剩。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一方「%1$@」は今期%2$lld件片付いて、残っていません。"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_focus.line_%@_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The backlog is concentrated in %1$@ — %2$lld there, the oldest for %3$lld days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "积压最集中在「%1$@」:%2$lld 件,最久的放了 %3$lld 天"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未処理が最も多いのは「%1$@」:%2$lld件、最長で%3$lld日経過"
+          }
+        }
+      }
+    },
     "review.flow.commit.empty" : {
       "localizations" : {
         "en" : {
@@ -8194,19 +8452,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "How are things going in \"%@\" this week?"
+            "value" : "How are things going in \"%@\"?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今週、「%@」の目標は進みましたか?"
+            "value" : "「%@」の目標は進みましたか?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这周「%@」上的目标推进得怎么样?"
+            "value" : "「%@」上的目标推进得怎么样?"
           }
         }
       }
@@ -8324,9 +8582,21 @@
     "review.flow.insights.minimal_fact_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "About %lld weeks of records so far — start with this week"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "About %lld week of records so far — start with this week"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "About %lld weeks of records so far — start with this week"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -8346,9 +8616,21 @@
     "review.flow.insights.need_more.effortOrdering_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finish %lld more high-priority tasks to see whether you tackle easy or hard things first"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Finish %lld more high-priority task to see whether you tackle easy or hard things first"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Finish %lld more high-priority tasks to see whether you tackle easy or hard things first"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -8368,9 +8650,21 @@
     "review.flow.insights.need_more.energyWindow_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Log %lld more completion times to see your energy windows"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Log %lld more completion time to see your energy windows"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Log %lld more completion times to see your energy windows"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -8390,9 +8684,21 @@
     "review.flow.insights.need_more.reactiveVsPlanned_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Log %lld more completions to see whether you run reactive or planned"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Log %lld more completion to see whether you run reactive or planned"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Log %lld more completions to see whether you run reactive or planned"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -8434,9 +8740,21 @@
     "review.flow.ledger.decided_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You decided on %lld tasks"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You decided on %lld task"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You decided on %lld tasks"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -8458,7 +8776,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing decided this time — %lld left as they were"
+            "value" : "Nothing decided this time — %lld left untouched"
           }
         },
         "ja" : {
@@ -8766,7 +9084,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Of the %1$lld you pinned last time, %2$lld are done"
+            "value" : "Of the %1$lld you pinned last time, %2$lld done"
           }
         },
         "ja" : {
@@ -8832,9 +9150,21 @@
     "review.flow.rotting.age_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld days old"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld day old"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld days old"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -9608,9 +9938,21 @@
     "review.flow.triage.batch.done_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Moved %lld tasks to Later"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved %lld task to Later"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved %lld tasks to Later"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -9630,9 +9972,21 @@
     "review.flow.triage.batch.title_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another %lld tasks untouched for 30+ days"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Another %lld task untouched for 30+ days"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Another %lld tasks untouched for 30+ days"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -9698,7 +10052,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The other %lld stay untouched for now — they will be back at your next review"
+            "value" : "The rest — %lld — stay untouched for now and will be back at your next review"
           }
         },
         "ja" : {
@@ -9740,9 +10094,21 @@
     "review.flow.triage.born_days_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noted %lld days ago"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Noted %lld day ago"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Noted %lld days ago"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -9762,9 +10128,21 @@
     "review.flow.triage.deferred_a11y_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deferred %lld times"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld time"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld times"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -9874,7 +10252,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Of this session's %1$lld open items, the %2$lld most-deferred and longest-sitting are here"
+            "value" : "Open items this session: %1$lld — the %2$lld most-deferred and longest-sitting are in this deck"
           }
         },
         "ja" : {
@@ -9916,9 +10294,21 @@
     "review.flow.triage.tl_deferred_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deferred %lld times"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld time"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld times"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -10004,9 +10394,21 @@
     "review.hero.sameday_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld of them were captured and done the same day"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them was captured and done the same day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them were captured and done the same day"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -10092,9 +10494,21 @@
     "review.insight.effort.headline_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The important stuff sat %lld days before it got done"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The important stuff sat %lld day before it got done"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The important stuff sat %lld days before it got done"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -10114,9 +10528,21 @@
     "review.insight.effort.headline_positive_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Important items got done in a median of %lld days"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Important items got done in a median of %lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Important items got done in a median of %lld days"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -10136,9 +10562,21 @@
     "review.insight.effort.median_days_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "median %lld days"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "median %lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "median %lld days"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -10353,6 +10791,28 @@
         }
       }
     },
+    "review.insight.reactive.fact_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%% of what you finished this period was captured and done the same day."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这期完成的事里,%lld%% 是记下当天就做完的。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今期完了したもののうち%lld%%は、記録した当日に済ませたものです。"
+          }
+        }
+      }
+    },
     "review.insight.reactive.body_%lld_%lld" : {
       "localizations" : {
         "en" : {
@@ -10534,9 +10994,21 @@
     "review.insight.rotting.sample_note_%lld" : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Based on %lld open one-off to-dos; recurring tasks not included."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Based on %lld open one-off to-do; recurring tasks not included."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Based on %lld open one-off to-dos; recurring tasks not included."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -11924,9 +12396,7 @@
         }
       }
     },
-    "siri.complete.summary ${todo}" : {
-
-    },
+    "siri.complete.summary ${todo}" : {},
     "siri.complete.title" : {
       "localizations" : {
         "en" : {
@@ -12040,9 +12510,7 @@
         }
       }
     },
-    "siri.delete.summary ${todo}" : {
-
-    },
+    "siri.delete.summary ${todo}" : {},
     "siri.delete.title" : {
       "localizations" : {
         "en" : {
@@ -12316,9 +12784,7 @@
         }
       }
     },
-    "siri.query.summary ${status}" : {
-
-    },
+    "siri.query.summary ${status}" : {},
     "siri.query.title" : {
       "localizations" : {
         "en" : {
@@ -12544,9 +13010,7 @@
         }
       }
     },
-    "siri.summary ${transcript}" : {
-
-    },
+    "siri.summary ${transcript}" : {},
     "startup.storage_error.title" : {
       "localizations" : {
         "en" : {
@@ -12821,12 +13285,8 @@
         }
       }
     },
-    "Todo ID" : {
-
-    },
-    "Toggle Todo" : {
-
-    },
+    "Todo ID" : {},
+    "Toggle Todo" : {},
     "ui.added_success" : {
       "localizations" : {
         "en" : {
@@ -12955,12 +13415,8 @@
         }
       }
     },
-    "VoiceTodo" : {
-
-    },
-    "VT" : {
-
-    },
+    "VoiceTodo" : {},
+    "VT" : {},
     "widget.description" : {
       "localizations" : {
         "en" : {

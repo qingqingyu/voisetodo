@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import Observation
 
 // MARK: - 流程状态
@@ -26,16 +27,19 @@ final class ReviewFlowState {
 
     /// 测试可直设(导航入口统一走 advance/retreat);UI 侧只读。
     var currentStep: Step = .recap
-    /// 洞察步是否被降级阶梯跳过(<5 条完成记录 → 第 2 步直连第 4 步,§2.3)。
-    /// 在流程启动拿到 insightContext 后设定;「上一步」同理跳过。
+    /// 洞察步是否在引擎前就整步跳过(v4 拍板 5:整步跳过只保留给
+    /// **零积压 + 零完成**——此时连地板事实都算不出来;v1 的「<5 条完成 →
+    /// 整步跳过」已推翻,<5 档改为只出地板 A)。在流程启动拿到
+    /// insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
-    /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过(v3 拍板 7:空屏 +
-    /// 错误指令的占位行比不出这一步更差)。可渲染内容 = 洞察卡 / 占位行 /
-    /// 最小事实行**三块,全空才跳**(实施审阅发现 1:原判定只看 rankedResults
-    /// 空,会把占位行与 5–14 档最小事实行一起跳掉)。与 `skipsInsights` 走
-    /// 同一跳过路径;在流程启动引擎跑完后设定——**必须**在进入第 3 步之前
-    /// 定好,否则会出现「进了第 3 步再被弹走」的闪屏(引擎因此从视图
-    /// `.task` 前移至此)。
+    /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过。判定 = **地板层
+    /// 与规则层是否都空**(v4 拍板 5 连带,整体取代 2026-09-07 拍板①的
+    /// 「三块可渲染内容全空才跳」——占位行/最小事实行降级为地板块下方的
+    /// 脚注,退出判据):地板空 = 地板 A 为 nil(批 3 加 C、批 4 加 B 时同步
+    /// 扩进),规则空 = `rankedResults` 空。与 `skipsInsights` 走同一跳过
+    /// 路径;在流程启动引擎跑完后设定——**必须**在进入第 3 步之前定好,
+    /// 否则会出现「进了第 3 步再被弹走」的闪屏(引擎因此从视图 `.task`
+    /// 前移至此)。
     private(set) var skipsInsightsWhenEmpty = false
     /// 两个跳过 flag 的单一来源(导航与步骤条共用)。
     var skipsInsightsStep: Bool { skipsInsights || skipsInsightsWhenEmpty }
@@ -49,6 +53,36 @@ final class ReviewFlowState {
     private(set) var insightPlaceholders: [(id: InsightID, needMore: Int)] = []
     /// 降级阶梯的「再记 N 条」提示(5–14 档,只跑 02 时的预告;其他档 nil)。
     private(set) var ladderNeedMore: Int?
+    /// 地板 A · 积压年龄事实(v4 批 1:第 3 步的事实层,永远算得出来;
+    /// 零积压 nil = 整块不渲染)。引擎同批计算,重试随 `runInsightEngine` 重跑。
+    /// 点名行是**引擎跑时快照**——当场动作落地后视图按 `processedIDs` 过滤
+    /// 已处理条目,快照本身不回改。
+    private(set) var backlogAgeFact: InsightEngine.BacklogAgeFact?
+    /// 地板 C · 积压集中在哪(v4 批 3:最集中分类 + 对照组;全在 `.other` 或
+    /// 零积压时 nil = 整块不渲染)。快照口径同地板 A。
+    private(set) var backlogCategoryFact: InsightEngine.BacklogCategoryFact?
+    /// 地板 B · 本期进出(v4 批 4:新增/完成的净变化方向)。窗口 = 上次复盘
+    /// 至今(与第 1 步 `weekSummary` 同源,容器层 @Query 快照一次,流程中
+    /// 不重算——拆小产生的子任务不该让数字跳)。**计入整步存活判定**
+    /// (零积压 + 1–4 条完成的边缘态靠它保住第 3 步,拍板 5 的「整步跳过
+    /// 只留零积压+零完成」由此闭合)。本期零进零出 → nil(零值不渲染)。
+    private(set) var backlogFlowFact: BacklogFlowFact?
+
+    /// 地板 B 的事实(纯数字,无日期数学——放 State 侧即可测)。
+    struct BacklogFlowFact: Equatable, Sendable {
+        /// 本期新增(`ReviewAggregator.createdCount` 口径:不过滤规律——
+        /// 与第 1 步证据行同源,数字不打架)。
+        let createdCount: Int
+        /// 本期完成(`ReviewSummary.total` 口径:含规律完成记录)。
+        let completedCount: Int
+        /// 净变化 = 新增 − 完成。正 = 清单在涨,负 = 在缩。
+        var net: Int { createdCount - completedCount }
+    }
+
+    /// 规则层的事实行(v4 批 3 拍板 3:03 中间地带只报占比的一行;不走冷却、
+    /// 不进 `shownInsights`——拍板 6)。**算规则层内容**(整步存活判定),
+    /// 但不进 `rankedResults`、不出卡。
+    private(set) var insightFactLines: [InsightFactLine] = []
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -95,6 +129,10 @@ final class ReviewFlowState {
 
     /// 洞察步「跳回第 2 步对应卡片」的聚焦 id(腐烂卡点击设置,triage 步消费后清空)。
     var triageFocusID: UUID?
+    /// 地板 A「拆小」深链(v4 批 1):跳回第 2 步后对该条目**自动打开拆小
+    /// sheet**——复用第 2 步既有拆小链路(AI 候选/说一句/手写全在那一侧,
+    /// 不在洞察步重造)。与 `triageFocusID` 同值时触发,triage 步消费后清空。
+    var triageAutoSplitID: UUID?
 
     // MARK: 第 3 步 · 观察
 
@@ -149,6 +187,8 @@ final class ReviewFlowState {
     }
 
     /// 「问问自己」的领域提示分类(nil = 快照里没有任何分类可问,提示行隐藏)。
+    /// v4 批 3:改问**积压最集中**的领域(与地板 C 同口径),取代历史会话数
+    /// 轮换——见 `askDomainHintCategory(todos:)`。
     private(set) var askDomainHintCategory: TodoCategory?
 
     // MARK: Init
@@ -178,10 +218,7 @@ final class ReviewFlowState {
         // todos / previousSessions / lastPinnedIDs init 后不变,派生值一次算好,
         // 不留整份快照。
         self.lastPinnedOutcome = Self.lastPinnedOutcome(todos: todos, pinnedIDs: lastPinnedIDs)
-        self.askDomainHintCategory = Self.askDomainHintCategory(
-            todos: todos,
-            rotationSeed: previousSessions.count
-        )
+        self.askDomainHintCategory = Self.askDomainHintCategory(todos: todos)
         self.nextWeekCommitted = Self.nextWeekCommitted(
             from: todos, now: Date(), calendar: Calendar.current
         )
@@ -192,6 +229,20 @@ final class ReviewFlowState {
     /// 排期写库与候选池取数必须同一坐标系)。`nextDate` 返回自然日 0 点,
     /// 抬用户日用 `userDayStart(onNaturalDay:)`——对 0 点调 `startOfUserDay(for:)`
     /// 会掉到前一用户日(startHour > 0 时窗口左移一天)。
+    /// 「排下周」的写库落点:下一个周一的**用户日**起点(`nextDate` 返回
+    /// 自然日 0 点,必须用 `userDayStart(onNaturalDay:)` 抬——对 0 点调
+    /// `startOfUserDay(for:)` 会掉到前一用户日,startHour > 0 时落点漂到
+    /// 周日,DayClock 注释明言那是 bug)。第 2 步右滑与洞察地板 A「排下周」
+    /// 共用同一坐标系,单一来源防两处漂移。
+    static func nextMondayUserDayStart(now: Date, calendar: Calendar) -> Date? {
+        var components = DateComponents()
+        components.weekday = 2 // 周一(gregorian)
+        guard let next = calendar.nextDate(
+            after: now, matching: components, matchingPolicy: .nextTime
+        ) else { return nil }
+        return DayClock.userDayStart(onNaturalDay: next, calendar: calendar)
+    }
+
     static func nextWeekCommitted(
         from todos: [TodoItemData],
         now: Date,
@@ -227,17 +278,29 @@ final class ReviewFlowState {
         return LastPinnedOutcome(completed: completed, pending: pending)
     }
 
-    /// 领域提示轮换(2026-08-25 拍板;v3 拍板 11 排除 `.other`):只在快照中
-    /// 出现过的分类里按声明序轮换,seed = 历史会话数——每次复盘前进一格,
-    /// 不问从未使用的领域,无需新存储。`.other` 是兜底分类(AI 解析失败的
-    /// 落点),把它当提问对象等于问「其他方面怎么样」——不是问题;快照里
-    /// 只有 `.other` 时返回 nil(提示行本就有 nil 分支,整行隐藏)。
-    static func askDomainHintCategory(todos: [TodoItemData], rotationSeed: Int) -> TodoCategory? {
-        let present = TodoCategory.allCases.filter { category in
-            category != .other && todos.contains { $0.category == category }
+    /// 领域提示(v4 批 3 改口:问**积压最集中**的领域,取代 2026-08-25 的
+    /// 历史会话数轮换——与地板 C 同口径同序:未完成一次性任务里条数最多的
+    /// 分类,并列取声明序在先。第 5 步问的正是第 3 步地板 C 刚指出的那一块;
+    /// 积压不变时连续几期问同一领域是**有意的**(问题还在,plan-do-review
+    /// 闭环),不是回归)。`.other` 是兜底分类(AI 解析失败的落点),问
+    /// 「其他方面怎么样」不是问题,排除;无可问 → nil(提示行整行隐藏)。
+    /// 口径注:init 从 todos 快照算,与 `InsightEngine.backlogCategoryFact`
+    /// 的 openTasks(异步取数)同过滤条件(未完成 && 未划掉 && 一次性)。
+    static func askDomainHintCategory(todos: [TodoItemData]) -> TodoCategory? {
+        var counts: [TodoCategory: Int] = [:]
+        for todo in triageInput(from: todos) where todo.category != .other {
+            counts[todo.category, default: 0] += 1
         }
-        guard !present.isEmpty else { return nil }
-        return present[abs(rotationSeed) % present.count]
+        var pick: TodoCategory?
+        var best = 0
+        for category in TodoCategory.allCases {
+            let count = counts[category] ?? 0
+            if count > best {
+                pick = category
+                best = count
+            }
+        }
+        return pick
     }
 
     /// triage 输入过滤(拍板 4):未完成 && 未划掉 && 一次性(recurrenceRule == nil)。
@@ -301,55 +364,82 @@ final class ReviewFlowState {
         currentStep = prev
     }
 
-    /// 洞察原料就绪后设定降级阶梯(§2.3)。<5 条完成记录 → 整步跳过。
+    /// 洞察原料就绪后设定降级跳过(v4 拍板 5):整步跳过只保留给
+    /// **零积压 + 零完成**(连地板 A 都算不出来的真空态)。<5 完成(阶梯
+    /// `.skipStep`)不再整步跳——第 3 步只出地板 A(引擎侧规则照旧不跑,
+    /// 见 `runInsightEngine`)。1–4 条完成 + 零积压的边缘态不在此跳:
+    /// 引擎路径的 `skipsInsightsWhenEmpty` 会兜(地板空 + 规则不跑);
+    /// 批 4 地板 B(本期净变化)上线后这类用户有话可说,届时自然不跳。
     func configureInsightsLadder() {
         let completedCount = insightContextValue?.completedEvents.count ?? 0
-        skipsInsights = InsightEngine.ladder(completedRecordCount: completedCount) == .skipStep
+        let openCount = insightContextValue?.openTasks.count ?? 0
+        skipsInsights = completedCount == 0 && openCount == 0
     }
 
     /// 跑四条规则并落库结果(v3 拍板 7:从 `ReviewStepInsights.runEngine` 前移,
     /// 与 `configureInsightsLadder()` 同一时机由 `loadInsightContext` 调用)。
     /// 规则按 ladder 裁剪,score 降序;触发后先过冷却(§2.4):不满足任一
     /// 放行条件的本期不展示,也不进 `shownInsights` 历史。效应量**变好**的
-    /// 放行换 improving 文案。三块可渲染内容全空 → `skipsInsightsWhenEmpty`
-    /// (整步跳过,判定见属性注释)。
+    /// 放行换 improving 文案。**地板层与规则层都空** → `skipsInsightsWhenEmpty`
+    /// (整步跳过,v4 拍板 5 连带;判定见属性注释)。
     func runInsightEngine() {
         guard let context = insightContextValue else { return }
         let calendar = Calendar.current
         let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
 
-        // 降级跳过(<5 条完成记录)时引擎**不跑**(v3 拍板 7 引擎前移的语义
-        // 补丁):旧实现引擎在第 3 步视图挂载(.task)时才跑,跳过路径从不
-        // 执行、shownInsights 恒空;前移后若照跑,腐烂规则(age ≥ 21 天分支
-        // 单条即触发)会在从未展示的情况下进冷却历史并随会话持久化——
-        // 「展示过的才进冷却历史」被破坏,下期冷却把「从没看过」当
-        // 「上期看过」。结果清空(重试路径可能从 .full 落回,不留残影)。
+        // 降级档(<5 条完成)规则层**不跑**(v3 拍板 7 引擎前移的语义补丁,
+        // v4 拍板 5 后该档不再整步跳过、只出地板 A,但「规则不跑」不变):
+        // 照跑的话,腐烂规则(age ≥ 21 天分支单条即触发)会在从未展示的情况
+        // 下进冷却历史并随会话持久化——「展示过的才进冷却历史」被破坏,
+        // 下期冷却把「从没看过」当「上期看过」。结果清空(重试路径可能从
+        // .full 落回,不留残影);地板 A 照算(规则没跑 = 腐烂卡没展示,
+        // rottingShown 恒 false)。
         guard ladder != .skipStep else {
             resetShownInsights()
             rankedResults = []
             insightPlaceholders = []
             ladderNeedMore = nil
-            skipsInsightsWhenEmpty = false
+            insightFactLines = []
+            backlogAgeFact = InsightEngine.backlogAgeFact(
+                openTasks: context.openTasks,
+                now: context.to,
+                calendar: calendar,
+                rottingShown: false
+            )
+            backlogCategoryFact = InsightEngine.backlogCategoryFact(
+                openTasks: context.openTasks,
+                completedEvents: context.completedEvents,
+                now: context.to,
+                calendar: calendar
+            )
+            // 只出地板 A(+C+B):地板全空(零积压且本期零进零出)时才整步跳过——
+            // 「零积压+零完成」已被 skipsInsights 在引擎前拦下,这里兜的是
+            // 1–4 条完成 + 零积压的边缘态(有完成即 B 有净变化可说 → 不跳,
+            // 拍板 5 的「整步跳过只留零积压+零完成」由此闭合)。
+            skipsInsightsWhenEmpty = backlogAgeFact == nil
+                && backlogCategoryFact == nil
+                && backlogFlowFact == nil
             return
         }
 
         var results: [InsightResult] = []
         var newPlaceholders: [(InsightID, Int)] = []
+        var newFactLines: [InsightFactLine] = []
 
         let rotting = RottingRule().evaluate(context, calendar: calendar)
-        collect(rotting, id: .rotting, into: &results, &newPlaceholders)
+        collect(rotting, id: .rotting, into: &results, &newPlaceholders, &newFactLines)
 
         if ladder == .full {
             let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
-            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders)
+            collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders, &newFactLines)
 
             // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
             // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
             let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
-            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders)
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders, &newFactLines)
 
             let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
-            collect(energy, id: .energyWindow, into: &results, &newPlaceholders)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders, &newFactLines)
         }
 
         // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
@@ -365,16 +455,42 @@ final class ReviewFlowState {
         rankedResults = ranked
         insightPlaceholders = newPlaceholders
         ladderNeedMore = ladder.rottingOnlyNeedMore
-        // 跳过判定 = 「这一步还有没有可渲染内容」(实施审阅发现 1):第 3 步
-        // 可渲染内容有三块——洞察卡(ranked)/占位行/最小事实行,只看 ranked
-        // 空会把后两块一起跳掉(26 条完成零触发时,说真话的占位文案不可达;
-        // 5–14 档最小事实行成死代码)。占位行判定复用视图同一选条+文案单一
-        // 来源(`InsightID.firstPlaceholder` + `placeholderText`)。
-        // ⚠️ ladderNeedMore 的赋值必须在本行之前(rottingOnly 档「有内容」
-        // 全靠它),勿调换顺序。
-        let hasPlaceholderText = InsightID.firstPlaceholder(in: insightPlaceholders)
-            .flatMap { $0.id.placeholderText(needMore: $0.needMore) } != nil
-        skipsInsightsWhenEmpty = ranked.isEmpty && !hasPlaceholderText && ladderNeedMore == nil
+        insightFactLines = newFactLines
+        // 地板 A(v4 批 1):腐烂卡**实际展示**(过冷却)时点名让位——被冷却
+        // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。
+        backlogAgeFact = InsightEngine.backlogAgeFact(
+            openTasks: context.openTasks,
+            now: context.to,
+            calendar: calendar,
+            rottingShown: ranked.contains { $0.id == .rotting }
+        )
+        // 地板 C(v4 批 3):原料同批,与 A 无去重(两块说的不是一件事)。
+        backlogCategoryFact = InsightEngine.backlogCategoryFact(
+            openTasks: context.openTasks,
+            completedEvents: context.completedEvents,
+            now: context.to,
+            calendar: calendar
+        )
+        // v4 拍板 5 连带:整步存活判定改写为「地板层与规则层是否都空」,
+        // 整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行降级为
+        // 地板块下方的脚注,不再参与判定、不再单独撑起一屏。规则层含
+        // 事实行(批 3:03 中间地带),地板层含 A(批 1)、C(批 3)、B(批 4)。
+        skipsInsightsWhenEmpty = ranked.isEmpty
+            && insightFactLines.isEmpty
+            && backlogAgeFact == nil
+            && backlogCategoryFact == nil
+            && backlogFlowFact == nil
+    }
+
+    /// 地板 B 快照(容器层 @Query 算好后注入,`loadInsightContext` 时机;
+    /// 必须在 `runInsightEngine` 之前——存活判定要读它)。本期零进零出
+    /// → nil(整块不渲染、不参与判定,「新增 0 完成 0」是噪音行)。
+    func recordBacklogFlow(created: Int, completed: Int) {
+        guard created > 0 || completed > 0 else {
+            backlogFlowFact = nil
+            return
+        }
+        backlogFlowFact = BacklogFlowFact(createdCount: created, completedCount: completed)
     }
 
     /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
@@ -404,13 +520,18 @@ final class ReviewFlowState {
         _ availability: InsightAvailability,
         id: InsightID,
         into results: inout [InsightResult],
-        _ placeholders: inout [(InsightID, Int)]
+        _ placeholders: inout [(InsightID, Int)],
+        _ factLines: inout [InsightFactLine]
     ) {
         switch availability {
         case .fired(let result):
             results.append(result)
         case .placeholder(let needMore):
             placeholders.append((id, needMore))
+        case .fact(let line):
+            // v4 拍板 3+6:事实行不进 results(→ 不过冷却、不进
+            // shownInsights、不参与卡排序),单独收集供整步存活判定与渲染。
+            factLines.append(line)
         case .hidden:
             break
         }
@@ -457,11 +578,33 @@ final class ReviewFlowState {
         return false
     }
 
+    /// 洞察地板 A 当场「排下周」(v4 批 1;写库在视图层,与第 2 步右滑同一
+    /// 落点:下周一用户日起点、origin = .review)。与 `abandonFromInsight`
+    /// 同构:条目可能在卡堆或尾部,两处都清;不在(已处理过)时返回 false。
+    /// 排进的进 `scheduled` → 第 4 步候选池(「排下周」的条目天然入池,
+    /// 不依赖兜底池方案,见附带发现 2)。
+    @discardableResult
+    func scheduleFromInsight(_ todo: TodoItemData) -> Bool {
+        let existed = deck.contains { $0.id == todo.id } || tail.contains { $0.id == todo.id }
+        guard existed else { return false }
+        markScheduled(todo)
+        tail.removeAll { $0.id == todo.id }
+        return true
+    }
+
+    /// 按 id 在卡堆 ∪ 尾部找条目(洞察当场动作的写库 payload 来源)。
+    func todo(withId id: UUID) -> TodoItemData? {
+        deck.first { $0.id == id } ?? tail.first { $0.id == id }
+    }
+
     /// 拆小提交成功后调用。原任务不进撤销栈(拆小不提供 undo,拍板 7)。
+    /// v4 批 1:地板 A「拆小」深链可能指向**尾部**条目——同步清尾部
+    /// (卡堆口径的既有调用是 no-op,行为不变)。
     func markSplit(_ todo: TodoItemData) {
         processedIDs.insert(todo.id)
         splitCount += 1
         removeFromDeck(todo.id)
+        tail.removeAll { $0.id == todo.id }
     }
 
     /// 撤销最近一次划掉(unabandon 写库在视图层)。返回被撤销的任务,nil = 栈空。
@@ -662,6 +805,9 @@ final class ReviewFlowState {
             completedCount: insightContextValue?.completedEvents.count,
             ledger: ReviewLedger(
                 inputCount: ledger.inputCount,
+                // v4 批 4:积压总数落库(趋势线数据源)= init 快照,非卡堆口径的
+                // inputCount——两者语义不同,见 ReviewLedger 注释。
+                backlogCount: initialBacklogCount,
                 remainingCount: ledger.remainingCount,
                 scheduledCount: ledger.scheduledCount,
                 todayCount: ledger.todayCount,
@@ -696,6 +842,20 @@ struct ReviewFlowView: View {
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
 
     @State private var state: ReviewFlowState
+
+    // 地板 B(本期进出)的快照源(v4 批 4):窗口 = 上次复盘至今,与第 1 步
+    // `ReviewStepRecap.summary` 同一 builder/同一口径(数字不打架);在
+    // `.task` 里取一次存进 state,流程中不重算(拆小的子任务不该让数字跳)。
+    // 三个 @Query 与 Recap 的重复是有意为之——B 需要在**流程启动时**就有
+    // 数值喂存活判定,不能等第 3 步挂载。
+    @Query(
+        filter: #Predicate<TodoItem> { $0.isCompleted },
+        sort: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
+    )
+    private var completedTodosForFlow: [TodoItem]
+    @Query private var allTodosForFlow: [TodoItem]
+    @Query(sort: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)])
+    private var recurringCompletionsForFlow: [TodoOccurrenceCompletion]
 
     init(
         store: any ReviewFlowStore,
@@ -779,6 +939,8 @@ struct ReviewFlowView: View {
         let today = Date()
         let start = Calendar.current.date(byAdding: .month, value: -1, to: DayClock.startOfUserDay(for: today)) ?? today
         let end = Calendar.current.date(byAdding: .day, value: 1, to: DayClock.startOfUserDay(for: today)) ?? today
+        // 地板 B 快照先落(存活判定在 runInsightEngine 里读它)。
+        snapshotBacklogFlow(now: today)
         do {
             let context = try await store.insightContext(from: start, to: end)
             state.insightContextValue = context
@@ -797,6 +959,22 @@ struct ReviewFlowView: View {
             VoiceTodoLog.coordinator.error("review.flow.insight_load.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             state.insightLoadError = wrapped
         }
+    }
+
+    /// 地板 B 快照:与第 1 步同一 `weekSummary`(上次复盘至今,首评回落
+    /// 近 7 天)。
+    private func snapshotBacklogFlow(now: Date) {
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: state.previousSessions.last?.completedAt,
+            today: now,
+            calendar: .current,
+            allTodos: allTodosForFlow.map { $0.toData() },
+            completedTodos: completedTodosForFlow.map { $0.toData() },
+            recurringCompletions: recurringCompletionsForFlow.map {
+                (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
+            }
+        )
+        state.recordBacklogFlow(created: summary.createdCount, completed: summary.total)
     }
 
     // MARK: 错误呈现
@@ -858,6 +1036,45 @@ struct ReviewFlowView: View {
                         HapticFeedback.light()
                     } catch {
                         presentError(error)
+                    }
+                },
+                // 地板 A 当场「排下周」(v4 批 1):与第 2 步右滑同一落点/同一
+                // origin(复盘排期不记推迟);payload 从卡堆 ∪ 尾部找,其余
+                // 字段原样回写。先写库后改状态,失败只报错。
+                onScheduleTask: { todoId in
+                    guard let todo = state.todo(withId: todoId),
+                          let dueDate = ReviewFlowState.nextMondayUserDayStart(
+                              now: Date(), calendar: Calendar.current
+                          ) else { return }
+                    do {
+                        try store.updateFull(
+                            todo.id,
+                            update: TodoDetailUpdate(
+                                title: todo.title,
+                                detail: todo.detail,
+                                category: todo.category,
+                                priority: todo.priority,
+                                dueDate: dueDate,
+                                hasDueTime: false,
+                                timeBucket: todo.timeBucket,
+                                dueHint: todo.dueHint,
+                                recurrenceRule: todo.recurrenceRule
+                            ),
+                            origin: .review
+                        )
+                        _ = state.scheduleFromInsight(todo)
+                        HapticFeedback.light()
+                    } catch {
+                        presentError(error)
+                    }
+                },
+                // 地板 A「拆小」深链:跳回第 2 步聚焦对应卡片并自动开拆小
+                // sheet(复用既有链路,v4 实施注记)。
+                onSplitTask: { todoId in
+                    state.triageFocusID = todoId
+                    state.triageAutoSplitID = todoId
+                    withAnimation(WarmAnimation.springStandard) {
+                        state.retreat(toTriage: true)
                     }
                 }
             )

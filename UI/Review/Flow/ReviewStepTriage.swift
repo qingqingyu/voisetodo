@@ -315,10 +315,19 @@ struct ReviewStepTriage: View {
     // MARK: 卡片堆
 
     /// 深链聚焦:洞察腐烂卡跳回时,把对应卡片换到卡堆最前(若仍在卡堆)。
+    /// 地板 A「拆小」深链(v4 批 1)同路抵达:聚焦后自动打开该条目的拆小
+    /// sheet——条目可能在尾部(不在卡堆),此时对原条目直接开,不再依赖
+    /// 卡堆位置。
     private func applyFocusReorder() {
         guard let focus = state.triageFocusID else { return }
         state.triageFocusID = nil
         state.bringToFrontOfDeck(focus)
+        if state.triageAutoSplitID == focus {
+            state.triageAutoSplitID = nil
+            if let target = state.deck.first(where: { $0.id == focus }) ?? state.todo(withId: focus) {
+                openSplit(target)
+            }
+        }
     }
 
     /// 首卡 nudge 教学:进场后向右轻推一下,示范滑动方向(每次进入第 2 步一次)。
@@ -958,19 +967,12 @@ struct ReviewStepTriage: View {
         )
     }
 
-    /// 下一个周一的用户日起点(「排进下周」的落点)。
-    /// `nextDate` 返回的是自然日 0 点——必须用 `userDayStart(onNaturalDay:)`
-    /// 抬到用户日;对 0 点调 `startOfUserDay(for:)` 会被判回前一用户日,
-    /// startHour > 0 时「排下周」落到周日(DayClock 注释明言那是 bug)。
+    /// 下一个周一的用户日起点(「排进下周」的落点)。实现收口到
+    /// `ReviewFlowState.nextMondayUserDayStart`(v4 批 1:洞察地板 A 的
+    /// 「排下周」用同一落点,坐标系单一来源);`nextDate` 返回自然日 0 点,
+    /// 抬用户日的坑见其注释。
     private func nextMondayStart() -> Date {
-        var components = DateComponents()
-        components.weekday = 2 // 周一(gregorian)
-        let next = calendar.nextDate(
-            after: Date(),
-            matching: components,
-            matchingPolicy: .nextTime
-        ) ?? Date()
-        return DayClock.userDayStart(onNaturalDay: next, calendar: calendar)
+        ReviewFlowState.nextMondayUserDayStart(now: Date(), calendar: calendar) ?? Date()
     }
 
     // MARK: 拆小 sheet(2026-08-23 改版)
