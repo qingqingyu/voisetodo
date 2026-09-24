@@ -139,6 +139,77 @@ final class ReviewRecapSameDayTests: XCTestCase {
         XCTAssertEqual(count, 3)
     }
 
+    // MARK: - oneOffBacklogDelta(地板 B 方向源,v4 复盘审阅发现 2)
+
+    /// 一次性口径:记下(+1)/ 完成(−1)/ 划掉(−1)三路都要进方向;
+    /// 规律任务(父任务与 occurrence 完成都)不进——规律完成不清积压。
+    func testOneOffBacklogDelta_countsCreateCompleteAbandon_skipsRecurring() throws {
+        let todos = [
+            // 窗口内记下、还挂着 → +1。
+            TodoItemData(title: "新挂着", createdAt: try noon(2026, 8, 10)),
+            // 窗口外记下、窗口内完成 → −1。
+            TodoItemData(
+                title: "老任务清掉",
+                isCompleted: true,
+                completedAt: try noon(2026, 8, 12),
+                createdAt: try noon(2026, 7, 1)
+            ),
+            // 窗口内划掉 → −1(复盘自己的主要出口,混口径减法会漏掉它)。
+            TodoItemData(
+                title: "不做了",
+                createdAt: try noon(2026, 7, 20),
+                abandonedAt: try noon(2026, 8, 15)
+            ),
+            // 窗口内记下又完成 → +1 −1 = 0(两边抵消,积压确实没变)。
+            TodoItemData(
+                title: "当天闭环",
+                isCompleted: true,
+                completedAt: try noon(2026, 8, 18),
+                createdAt: try noon(2026, 8, 18)
+            ),
+            // 规律父任务:窗口内记下 → 不进方向(积压口径排除规律)。
+            TodoItemData(
+                title: "每日规律",
+                recurrenceRule: RecurrenceRule(frequency: .daily),
+                createdAt: try noon(2026, 8, 10)
+            ),
+            // 窗口外的动静一概不计。
+            TodoItemData(
+                title: "上月完成",
+                isCompleted: true,
+                completedAt: try noon(2026, 7, 2),
+                createdAt: try noon(2026, 7, 1)
+            ),
+        ]
+
+        let delta = ReviewAggregator.oneOffBacklogDelta(
+            todos,
+            from: try noon(2026, 8, 1),
+            to: try noon(2026, 9, 1),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(delta, -1, "+1 新挂 −1 完成 −1 划掉 +0 当天闭环,规律与窗外不计")
+    }
+
+    /// 拆小的净效应 = 父任务划掉(−1)+ N 条子任务记下(+N)。
+    func testOneOffBacklogDelta_splitParentAbandonedChildrenCreated() throws {
+        let splitDay = try noon(2026, 8, 10)
+        let todos = [TodoItemData(title: "原任务", createdAt: try noon(2026, 7, 1), abandonedAt: splitDay)]
+            + (0..<3).map { index in
+                TodoItemData(title: "子\(index)", createdAt: splitDay, parentTodoId: UUID())
+            }
+
+        let delta = ReviewAggregator.oneOffBacklogDelta(
+            todos,
+            from: try noon(2026, 8, 1),
+            to: try noon(2026, 9, 1),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(delta, 2, "−1 + 3 = +2")
+    }
+
     // MARK: - monthSummary 接线
 
     func testMonthSummary_sameDayCount_onlyOneOffSameDayCompletions() throws {

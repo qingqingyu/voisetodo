@@ -51,17 +51,11 @@ struct ReviewStepInsights: View {
         if let fact = state.backlogAgeFact {
             BacklogAgeFloorCard(
                 fact: fact,
-                processedIDs: state.processedIDs,
+                liveIDs: state.liveTriageIDs,
                 onAbandonTask: onAbandonTask,
                 onScheduleTask: onScheduleTask,
                 onSplitTask: onSplitTask
             )
-
-            // 脚注(v4 批 2 拍板 5 连带):占位行与最小事实行从「撑起一屏的
-            // 内容」降级为地板块下方的脚注——不再参与整步存活判定;地板与
-            // 规则都空时整步已跳,脚注不再单独出现(无孤儿态)。
-            placeholderSummaryRow
-            ladderHint(context: context)
         }
 
         // 地板 B(v4 批 4):本期进出——净变化的方向。与第 1 步成绩单的差别
@@ -75,6 +69,15 @@ struct ReviewStepInsights: View {
         if let categoryFact = state.backlogCategoryFact {
             BacklogCategoryFloorCard(fact: categoryFact)
         }
+
+        // 脚注(v4 批 2 拍板 5 连带):占位行与最小事实行从「撑起一屏的
+        // 内容」降级为地板块下方的脚注——不再参与整步存活判定;地板与
+        // 规则都空时整步已跳,脚注不再单独出现(无孤儿态)。挂在地板层
+        // **整体**之后而不是地板 A 里面——零积压 + 5–14 档完成时 B/C 仍
+        // 可在场,脚注不该随 A 的 nil 一起消失(v4 复盘审阅发现 5:那正是
+        // v3 审阅发现 1「最小事实行成死代码」的窄化重现)。
+        placeholderSummaryRow
+        ladderHint(context: context)
 
         ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
@@ -144,7 +147,9 @@ struct ReviewStepInsights: View {
 
     private func weeksOfRecords(_ context: InsightContext) -> Int {
         guard let oldest = context.completedEvents.map(\.createdAt).min() else { return 1 }
-        let days = Calendar.current.dateComponents([.day], from: oldest, to: Date()).day ?? 0
+        // 「现在」用快照的 ctx.now(发现 3 同款口径):同屏地板层年龄与这里
+        // 的周数必须同一个现在,别拿取数后的 Date() 另开一灶。
+        let days = Calendar.current.dateComponents([.day], from: oldest, to: context.now).day ?? 0
         return max(1, Int(ceil(Double(days) / 7)))
     }
 
@@ -172,9 +177,10 @@ struct ReviewStepInsights: View {
 
 // MARK: - 地板 B · 本期进出(v4 批 4,docs/todo-review-flow-v4.md)
 
-/// 一行净变化方向(新增/完成的差)。只报方向与数字,不带判断;口径与第 1 步
-/// 证据行同源(`weekSummary` 的 createdCount / total)。趋势线待 ≥3 期
-/// `ReviewLedger.backlogCount` 攒够再开(批 4 明确不做)。
+/// 一行净变化方向。只报方向与数字,不带判断;**展示数字**与第 1 步证据行
+/// 同源(`weekSummary` 的 createdCount / total),**方向**用
+/// `BacklogFlowFact.backlogDelta`(同总体口径,别拿展示数相减——见其注释)。
+/// 趋势线待 ≥3 期 `ReviewLedger.backlogCount` 攒够再开(批 4 明确不做)。
 private struct BacklogFlowFloorCard: View {
     let fact: ReviewFlowState.BacklogFlowFact
 
@@ -190,12 +196,12 @@ private struct BacklogFlowFloorCard: View {
         .accessibilityIdentifier("ReviewFlowBacklogFlowFloor")
     }
 
-    /// 方向三态:在涨 / 在缩 / 相抵(净变化的正负决定选键,数字同键序)。
+    /// 方向三态:在涨 / 在缩 / 相抵(`backlogDelta` 的正负决定选键,数字同键序)。
     private var flowLine: String {
-        if fact.net > 0 {
+        if fact.backlogDelta > 0 {
             return String(localized: "review.floor.backlog_flow.grew_\(fact.createdCount)_\(fact.completedCount)")
         }
-        if fact.net < 0 {
+        if fact.backlogDelta < 0 {
             return String(localized: "review.floor.backlog_flow.shrank_\(fact.createdCount)_\(fact.completedCount)")
         }
         return String(localized: "review.floor.backlog_flow.flat_\(fact.createdCount)_\(fact.completedCount)")
@@ -242,18 +248,22 @@ private struct BacklogCategoryFloorCard: View {
 /// 三档分布条(0–7 / 8–20 / 21+)+ 最老 3 条点名(每条带「不做了 / 排下周 /
 /// 拆小」当场动作)。只报事实、零值不渲染;腐烂卡本期展示时点名让位
 /// (`BacklogAgeFact.oldestItems` 为空),只剩分布条。点名行是引擎跑时快照,
-/// 当场动作落地后按 `processedIDs` 过滤——快照不回改,行自然消失。
+/// 按「仍在卡堆 ∪ 尾部」过滤(`liveIDs`)——已处理的与批量推「稍后」的
+/// 一起消失,快照不回改;整批撤销后随尾部回流自然重现。
 private struct BacklogAgeFloorCard: View {
     let fact: InsightEngine.BacklogAgeFact
-    /// 已处理条目过滤集(当场动作落地后点名行消失)。
-    let processedIDs: Set<UUID>
+    /// 仍在流程内(卡堆 ∪ 尾部)的条目 id。不用 `processedIDs`:批量推
+    /// 「稍后」不进 processedIDs(拍板 4),只按它过滤会点名已推稍后的条目,
+    /// 而三个当场动作在卡堆/尾部都找不到条目,全部静默失灵
+    /// (v4 复盘审阅发现 1)。
+    let liveIDs: Set<UUID>
     let onAbandonTask: (UUID) -> Void
     let onScheduleTask: (UUID) -> Void
     let onSplitTask: (UUID) -> Void
 
-    /// 快照里尚未处理的最老 3 条。
+    /// 快照里仍在流程内的最老 3 条。
     private var liveItems: [InsightEngine.BacklogAgeFact.Item] {
-        fact.oldestItems.filter { !processedIDs.contains($0.todoId) }
+        fact.oldestItems.filter { liveIDs.contains($0.todoId) }
     }
 
     var body: some View {

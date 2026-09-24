@@ -155,6 +155,30 @@ protocol InsightContextReading {
     func insightContext(from startDate: Date, to endDate: Date) async throws -> InsightContext
 }
 
+/// 复盘流程容器「地板 B」快照原料的读取能力(v4 复核修订)。与
+/// `InsightContextReading` 分列成独立能力切片:两者窗口口径不同
+/// (「上次复盘至今」 vs 洞察 30 天窗)、消费时机不同(流程启动一次 vs
+/// 第 3 步观察)——按项目的细粒度能力协议惯例(`TodoIDListing` 同款)各归
+/// 各位,不互相塞。
+/// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+protocol ReviewFlowRecapReading {
+    /// 复盘流程容器「地板 B」的快照原料(流程启动时一次,口径见
+    /// `TodoQueryActor.reviewFlowRecapInputs`)。
+    func reviewFlowRecapInputs() async throws -> ReviewFlowRecapInputs
+}
+
+/// 地板 B 快照的原料(复盘流程容器一次性取用)。三路输入与第 1 步
+/// `ReviewStepRecap` 的 `@Query` 同口径同排序——`RecapSummaryBuilder
+/// .weekSummary` 的数字必须两边一致,防同屏打架。
+struct ReviewFlowRecapInputs: Sendable {
+    /// 全部任务(含已完成;`createdInWindow` / `pendingOneOffCount` 用)。
+    let allTodos: [TodoItemData]
+    /// 已完成任务(`completedAt` 降序;完成事件与一次性完成计数用)。
+    let completedTodos: [TodoItemData]
+    /// 规律 occurrence 完成记录(`completedAt` 降序;完成事件 union 用)。
+    let recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
+}
+
 /// 全量任务 id 读取能力(阶段 4)——复盘收尾 `ReviewPinningStore.prune` 用。
 /// 不能用 `TodoListReadable.todos`(窗口化工作集)prune:窗口外的置顶 id 会被误删。
 /// 只取 id 列表,不映射 DTO,500+ 条时也只是一次轻量列存取。
@@ -173,7 +197,7 @@ protocol TodoSplitting {
 }
 
 /// 复盘五步流程需要的 store 能力集合(阶段 3,`ReviewFlowView` 的依赖类型)。
-protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, TodoSplitting, TodoIDListing {}
+protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, ReviewFlowRecapReading, TodoSplitting, TodoIDListing {}
 
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {

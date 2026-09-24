@@ -520,6 +520,12 @@ final class TodoStore:
         try await queryActor.insightContext(from: startDate, to: endDate)
     }
 
+    /// 复盘流程容器「地板 B」的快照原料(流程启动一次;读查询下沉到
+    /// `queryActor`)。口径见 `TodoQueryActor.reviewFlowRecapInputs()`;失败显式抛出。
+    func reviewFlowRecapInputs() async throws -> ReviewFlowRecapInputs {
+        try await queryActor.reviewFlowRecapInputs()
+    }
+
     /// 全量任务 id(阶段 4,`TodoIDListing`:复盘收尾 prune 置顶集合用全量 id,
     /// 不用窗口化工作集——窗口外的置顶 id 会被误删)。失败显式抛出。
     func allTodoIDs() async throws -> [UUID] {

@@ -5,7 +5,8 @@ import Foundation
 /// 判定(§2.2):未完成 && abandonedAt == nil && recurrenceRule == nil(原料
 /// `InsightContext.openTasks` 已在上游保证)且满足任一——
 ///   - 有效推迟 ≥ 3 次(deferCounts 已排除 origin == .review:复盘里的主动排期不算推迟)
-///   - `now - createdAt ≥ 21` 个用户日(`ctx.to` 兼作 now)
+///   - `now - createdAt ≥ 21` 个用户日(`ctx.now` 是现在;`ctx.to` 是窗口端点
+///     = 明天用户日起点,拿它折算年龄会系统性 +1,v4 复盘审阅发现 3)
 ///
 /// **冷启动只有 age 分支**——推迟事件表从现在起记、历史不回填,推迟分支在
 /// 数据攒起来之前恒为空(§取舍 1)。但只要 age 分支命中就照常触发:
@@ -29,7 +30,7 @@ struct RottingRule: InsightRule {
         let open = ctx.openTasks
         guard !open.isEmpty else { return .hidden }
 
-        let nowDay = DayClock.startOfUserDay(for: ctx.to, calendar: calendar)
+        let nowDay = DayClock.startOfUserDay(for: ctx.now, calendar: calendar)
         var items: [RottingVizItem] = []
         for task in open {
             let defers = ctx.deferCounts[task.todoId] ?? 0

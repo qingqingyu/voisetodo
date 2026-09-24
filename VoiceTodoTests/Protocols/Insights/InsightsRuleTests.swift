@@ -58,6 +58,7 @@ final class InsightsRuleTests: XCTestCase {
         InsightContext(
             from: daysAgo(30, from: now),
             to: now,
+            now: now,
             completedEvents: completed,
             openTasks: open,
             dueTasks: [],
@@ -429,6 +430,7 @@ final class EffortOrderingRuleTests: XCTestCase {
         InsightContext(
             from: calendar.date(byAdding: .day, value: -30, to: now)!,
             to: now,
+            now: now,
             completedEvents: completed,
             openTasks: [],
             dueTasks: [],
@@ -552,6 +554,7 @@ final class EnergyWindowRuleTests: XCTestCase {
         InsightContext(
             from: calendar.date(byAdding: .day, value: -30, to: now)!,
             to: now,
+            now: now,
             completedEvents: completed,
             openTasks: [],
             dueTasks: [],
@@ -740,13 +743,52 @@ final class BacklogAgeFloorTests: XCTestCase {
 
         // 同尺对账:RottingRule 对 atLine 条目命中 age 分支(21 用户日)。
         let ctx = InsightContext(
-            from: daysAgo(30, from: now), to: now,
+            from: daysAgo(30, from: now), to: now, now: now,
             completedEvents: [], openTasks: [openTask(title: "o", createdAt: atLine)],
             dueTasks: [], deferCounts: [:]
         )
         guard case .fired = RottingRule().evaluate(ctx, calendar: calendar) else {
             return XCTFail("21 用户日应与 RottingRule 同步命中——地板与腐烂卡分界漂移")
         }
+    }
+
+    /// 生产接线的 +1 回归(v4 复盘审阅发现 3):`InsightContext.to` 是窗口
+    /// 端点(明天用户日起点),不是「现在」——年龄一律以 `now` 为准。0 基
+    /// 20 天的条目不该进 21+ 档(修前:按 to 折算成 21,档位提前一天亮);
+    /// 21 天的照常进档并与 RottingRule 同步命中。
+    func testAgeUsesNowNotWindowEnd() throws {
+        let now = try date(2026, 8, 21, 12)
+        let tomorrowStart = calendar.date(
+            byAdding: .day, value: 1, to: DayClock.startOfUserDay(for: now, calendar: calendar)
+        )!
+
+        let twentyDays = openTask(title: "t20", createdAt: daysAgo(20, from: now))
+        let fact20 = try XCTUnwrap(fact([twentyDays], now: now))
+        XCTAssertEqual(fact20.agingCount, 1)
+        XCTAssertEqual(fact20.oldCount, 0, "0 基 20 天 → aging 档,不该被窗口端点抬进 21+")
+        XCTAssertEqual(fact20.oldestItems.first?.ageDays, 20)
+
+        let ctx20 = InsightContext(
+            from: daysAgo(30, from: now), to: tomorrowStart, now: now,
+            completedEvents: [], openTasks: [twentyDays],
+            dueTasks: [], deferCounts: [:]
+        )
+        guard case .hidden = RottingRule().evaluate(ctx20, calendar: calendar) else {
+            return XCTFail("20 用户日不该触发腐烂——to 抬一天的旧 bug")
+        }
+
+        let twentyOneDays = openTask(title: "t21", createdAt: daysAgo(21, from: now))
+        let ctx21 = InsightContext(
+            from: daysAgo(30, from: now), to: tomorrowStart, now: now,
+            completedEvents: [], openTasks: [twentyOneDays],
+            dueTasks: [], deferCounts: [:]
+        )
+        guard case .fired = RottingRule().evaluate(ctx21, calendar: calendar) else {
+            return XCTFail("21 用户日应照常命中 age 分支")
+        }
+        let fact21 = try XCTUnwrap(fact([twentyOneDays], now: now))
+        XCTAssertEqual(fact21.oldCount, 1)
+        XCTAssertEqual(fact21.oldestItems.first?.ageDays, 21)
     }
 
     /// 同年龄 id 决胜(确定性,单测稳定);未来创建的脏数据钳 0(进 fresh 档)。

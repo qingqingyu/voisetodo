@@ -194,7 +194,7 @@ protocol InsightRule: Sendable {
     var minSample: Int { get }
     /// 用指定日历评估。日界口径是 `DayClock` 用户日(§2.2 对规格的偏离:
     /// 用户可配日起始小时,洞察必须跟随,否则与首页对不上)。
-    /// `ctx.to` 兼作「现在」。
+    /// 「现在」是 `ctx.now`;`ctx.to` 是窗口端点(明天用户日起点),别再当现在用。
     func evaluate(_ ctx: InsightContext, calendar: Calendar) -> InsightAvailability
 }
 
@@ -310,11 +310,11 @@ enum InsightEngine {
     /// 地板 A 计算:三档分布 0–7 / 8–20 / 21+。零积压返回 nil(整块不渲染
     /// ——此时第 2 步卡堆也是空的,无话可说是诚实的)。
     ///
-    /// 口径:**DayClock 用户日**(`now` 兼作现在,与 `RottingRule` 的
-    /// `ctx.to` 同源)——同屏不能出现「这条 21 天」与「21+ 档 0 条」并存的
-    /// 分界漂移(v4 批 1:统一到用户日)。与 `TriageRanking.stagnationDays`
-    /// 的自然日口径**有意不同**:排序是相对序,差一天不改变「谁更久」;
-    /// 分档是对着阈值切,必须与腐烂卡同一把尺。
+    /// 口径:**DayClock 用户日**(「现在」由调用方传入,生产接线用
+    /// `InsightContext.now`,与 `RottingRule` 同源)——同屏不能出现
+    /// 「这条 21 天」与「21+ 档 0 条」并存的分界漂移(v4 批 1:统一到用户日)。
+    /// 与 `TriageRanking.stagnationDays` 的自然日口径**有意不同**:排序是
+    /// 相对序,差一天不改变「谁更久」;分档是对着阈值切,必须与腐烂卡同一把尺。
     ///
     /// - Parameter rottingShown: 腐烂卡本期是否实际展示(过冷却后的
     ///   ranked 结果,不是规则触发)。展示时点名让位——腐烂卡的列表更细

@@ -42,7 +42,14 @@ struct InsightDueTask: Sendable, Equatable {
 struct InsightContext: Sendable, Equatable {
     /// 查询区间(闭开:[from, to))。
     let from: Date
+    /// 区间开端(开区间一侧的终点)= 明天的用户日起点——只为把今天整段
+    /// 装进完成窗口,**不是「现在」**(v4 复盘审阅发现 3:拿它当现在,所有
+    /// 用户日年龄系统性 +1——今天记的算 1 天,21+ 档提前一天亮)。现在用
+    /// `now`。
     let to: Date
+    /// 「现在」(取数时刻)。规则与地板层的一切年龄计算一律以此为准
+    /// (`RottingRule` / `InsightEngine.backlogAgeFact` / `backlogCategoryFact`)。
+    let now: Date
     /// 区间内完成的一次性任务事件。
     let completedEvents: [InsightCompletedEvent]
     /// 当前未完成的一次性任务(不含已划掉)。
