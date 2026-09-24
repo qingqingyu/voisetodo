@@ -495,6 +495,21 @@ enum RecapSummaryBuilder {
         )
     }
 
+    /// `weekSummary` 的窗口边界(单一来源):[since 原始时刻, 明天用户日起点),
+    /// since == nil 回落近 7 天。提取成独立函数是因为地板 B 的方向源
+    /// (`ReviewAggregator.oneOffBacklogDelta`)必须与 weekSummary **同一窗口**
+    /// ——两边各自推导会漂(首次回落、时刻粒度两处约定都要一致)。
+    static func weekWindow(
+        since: Date?,
+        today: Date,
+        calendar: Calendar
+    ) -> (start: Date, end: Date) {
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
+        let start = since ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
+        let end = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+        return (start, end)
+    }
+
     /// 上次复盘至今的窗口(v3 拍板 1,复盘第 1 步专用)。
     ///
     /// 窗口 = [上次复盘**完成时刻**, 明天用户日起点)。起点**不折算用户日**
@@ -516,11 +531,10 @@ enum RecapSummaryBuilder {
         completedTodos: [TodoItemData],
         recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
     ) -> ReviewSummary {
+        let window = weekWindow(since: since, today: today, calendar: calendar)
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
-        // 起点用 since 原始时刻(不折算用户日,见函数注释);首次复盘回落
-        // 近 7 天(日对齐)。
-        let windowStart = since ?? (calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart)
-        let end = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+        let windowStart = window.start
+        let end = window.end
         // 展示到「今天」(闭端);统计 end 是明天 0 点(开端)——同一约定。
         // 标签用 since 的用户日(天粒度),统计下界是时刻粒度(见函数注释)。
         let sinceDay = DayClock.startOfUserDay(for: windowStart, calendar: calendar)

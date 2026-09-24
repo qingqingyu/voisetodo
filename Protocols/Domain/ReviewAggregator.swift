@@ -259,4 +259,39 @@ enum ReviewAggregator {
     static func pendingOneOffCount(_ todos: [TodoItemData]) -> Int {
         todos.filter { !$0.isCompleted && $0.abandonedAt == nil && $0.recurrenceRule == nil }.count
     }
+
+    /// 一次性口径的**积压净变化**:窗口内一次性任务的「记下 − 完成 − 划掉」
+    /// (v4 复盘审阅发现 2:地板 B 的方向源)。与 `createdInWindow` /
+    /// `summarize` 的混口径**有意不同**——那两个是第 1 步证据行的展示数字
+    /// (新增不过滤规律、完成含规律 occurrence),彼此没有算术关系,相减会说
+    /// 反话:规律习惯用户一周 21 条 occurrence 完成会被算成「清单在缩 −21」,
+    /// 而完成 occurrence 不清积压;复盘自己产生的「不做了」倒是真减积压,
+    /// 却不在那个减法里。积压(`pendingOneOffCount` 总体)的增减只由一次性
+    /// 任务的记下/完成/划掉构成——拆小 = 父任务划掉(−1)+ N 条子任务记下
+    /// (+N),同样被本函数覆盖。**已知盲区:删除与一次性↔规律互转**——被删
+    /// 的行三路事件都看不到;详情页改 recurrenceRule(`updateRecurrence`)同样
+    /// 是字段态变化无事件行,一次性转规律后其「记下 +1」从本函数消失。两类
+    /// 都会被漏计成「相抵」;有上期基线时调用方走账本差(两期 init 快照天然
+    /// 涵盖删除与互转,见 `ReviewFlowState.backlogFlowNumbers`),本函数只是
+    /// 无基线回落,盲区随之。窗口边界与 summarize 同约定:下界按
+    /// 传入时刻精确比较,上界按用户日。
+    static func oneOffBacklogDelta(
+        _ todos: [TodoItemData],
+        from startDay: Date,
+        to endDay: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        let normalizedEnd = DayClock.startOfUserDay(for: endDay, calendar: calendar)
+        func inWindow(_ instant: Date) -> Bool {
+            instant >= startDay
+                && DayClock.startOfUserDay(for: instant, calendar: calendar) < normalizedEnd
+        }
+        return todos.filter { $0.recurrenceRule == nil }.reduce(0) { delta, todo in
+            var change = 0
+            if inWindow(todo.createdAt) { change += 1 }
+            if let completedAt = todo.completedAt, inWindow(completedAt) { change -= 1 }
+            if let abandonedAt = todo.abandonedAt, inWindow(abandonedAt) { change -= 1 }
+            return delta + change
+        }
+    }
 }

@@ -219,3 +219,19 @@ v3 拍板 7 写这个判定的理由原话是「**空屏 + 错误指令的占位
 **测试基线**：`swift test` 303 例（仅既有 DST 环境红灯）；iPhone 17 Pro 模拟器 `VoiceTodoTests` 全量 700 例，仅 2 个既有环境红灯（DST / StoreKit 配置注入），零新增失败。
 
 **未做（沿方案）**：趋势线（待 ≥3 期 `backlogCount` 攒够）、真机手测 5 档矩阵 + 三语 AX5。合并 main 前须过真机。
+
+---
+
+## 复核修订（2026-09-24，七条审阅发现全核实后修复）
+
+对批 1–5 落地代码的复核发现七处问题，全部核实属实并修复：
+
+1. **地板 A 点名行误点名「已批量推稍后」的条目（高）**。批量出口不进 `processedIDs`（拍板 4），只清尾部——点名行只按 `processedIDs` 过滤，已推稍后的条目继续被点名，而三个当场动作（排下周/拆小/不做了）在卡堆与尾部都找不到条目：前两个静默无反应，第三个写库成功但行不消失、账本少算。修法：点名行改按 `liveTriageIDs`（仍在卡堆 ∪ 尾部）过滤，两类离场状态一起消失，整批撤销后随尾部回流重现。
+2. **地板 B 的方向是跨口径减法（高）**。`createdCount`（不过滤规律）− `total`（含规律 occurrence 完成）是两个总体的数字相减——规律习惯用户 21 条 occurrence 完成会被说成「清单在缩 −21」（完成 occurrence 不清积压），而复盘自己的「不做了」（真减积压）不在减法里。修法：**展示数字与方向源分家**——展示数沿用 `weekSummary`（与第 1 步同源）；方向优先用 `initialBacklogCount − 上期 ReviewLedger.backlogCount`（同一快照口径，涵盖划掉/删除等一切出口；哨兵 <0 或首次复盘回落 `ReviewAggregator.oneOffBacklogDelta`：一次性口径的记下−完成−划掉，窗口经 `weekWindow` 与 weekSummary 单一来源）。
+3. **洞察年龄系统性 +1（中）**。生产把 `InsightContext.to`（窗口端点 = 明天用户日起点）当「现在」传给 `backlogAgeFact`/`RottingRule`/`backlogCategoryFact`——今天记的算 1 天，21+ 档提前一天亮，且与第 2 步卡头（`stagnationDays(now: Date())`）同屏差 1–2 天。单测全传真实 `now`，+1 不可见。修法：`InsightContext` 加 `now` 字段（窗口端点与现在分离），规则与地板层一律用 `ctx.now`；`stagnationDays` 的注释同步改口（它被 `leadLabel` 显示成「记下 N 天了」，「只服务相对排序」的豁免不成立）；新增 `testAgeUsesNowNotWindowEnd` 回归（按生产形态构造 to = 明天起点）。
+4. **同屏「这期」指三个窗口（中）**。地板 B 的「这期」= 上次复盘至今（正确，与第 1 步同窗）；地板 C 对照组与 03 事实行的「这期」= insightContext 30 天窗。修法：后两处文案改写明「近 30 天 / in the past 30 days / 直近30日」（`backlog_focus.contrast`、`reactive.fact` 两键 × 三语）。
+5. **脚注挂在地板 A 里面，零积压时不可达（低）**。占位行与最小事实行嵌在 `if let backlogAgeFact` 内——零积压 + 5–14 档完成时 B 在场、第 3 步不跳，但最小事实行永远不出（v3 审阅发现 1 的窄化重现）。修法：脚注移到地板层（A/B/C）整体之后。
+6. **落点收口只做了三分之二（低）**。`nextWeekCommitted` 仍自行拼 weekday + userDayStart，且它的文档注释错挂在 `nextMondayUserDayStart` 头上。修法：改调 `nextMondayUserDayStart`，注释归位，过时的「与 nextMondayStart 一致」指向修正。
+7. **容器层三个全表 @Query 全期常驻（低，性能）**。`completedTodosForFlow` 无时间下界——第 2 步每次划卡写库都重跑全表重渲染容器，正是 `refreshTodos` 窗口化避开的那类成本。修法：`@Query` 三件套移除，`ReviewFlowRecapReading` 协议（独立能力切片，不塞进 `InsightContextReading`）加 `reviewFlowRecapInputs()`（`TodoQueryActor` 一次性取，口径与第 1 步 @Query 完全一致），失败与洞察原料共用显式错误路径。
+
+**验证**：`swift test` 308 例（仅既有 DST 环境红灯）；新增 `testAgeUsesNowNotWindowEnd`、`testLiveTriageIDsExcludesSomedayBatchAndProcessed`、`oneOffBacklogDelta` 两例；`recordBacklogFlow` 测试改新签名（方向与展示数允许背离）。后续审阅补强：方向源 glue 从视图提取为 `ReviewFlowState.backlogFlowNumbers` 纯函数（新增 `testBacklogFlowNumbersLedgerDeltaAndWindowFallback`，账本差/哨兵回落/首评回落三路 + 朴素差反例断言）；`oneOffBacklogDelta` 盲区注释补「一次性↔规律互转」（与删除同类，账本差路径天然涵盖）；`recordBacklogFlow` 的「零进零出」guard 注释写明只看展示数的 intentional 分支。

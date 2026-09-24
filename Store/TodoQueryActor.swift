@@ -296,6 +296,7 @@ actor TodoQueryActor {
             let context = InsightContext(
                 from: startDate,
                 to: endDate,
+                now: startedAt,
                 completedEvents: completedItems,
                 openTasks: openTasks,
                 dueTasks: dueTasks,
@@ -305,6 +306,38 @@ actor TodoQueryActor {
             return context
         } catch {
             VoiceTodoLog.store.error("query_actor.insight_context.fetch_failed range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
+    /// 复盘流程容器「地板 B」的一次性快照原料(v4 批 4 复核修订:原先挂在
+    /// 容器上的三个常驻 `@Query` 改为流程启动时取一次——`@Query` 常驻会让
+    /// 第 2 步每次划卡写库都重跑**无时间下界**的全表查询,正是
+    /// `refreshTodos` 窗口化刻意避开的那类成本)。口径与第 1 步
+    /// `ReviewStepRecap` 的 `@Query` 完全一致(数字同源,不打架)。
+    func reviewFlowRecapInputs() throws -> ReviewFlowRecapInputs {
+        let startedAt = Date()
+        // 谓词外提到显式类型局部:#Predicate 闭包在调用参数位置推不出 $0 的类型。
+        let completedDescriptor: FetchDescriptor<TodoItem> = FetchDescriptor(
+            predicate: #Predicate { $0.isCompleted },
+            sortBy: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
+        )
+        let allDescriptor: FetchDescriptor<TodoItem> = FetchDescriptor()
+        let recurringDescriptor: FetchDescriptor<TodoOccurrenceCompletion> = FetchDescriptor(
+            sortBy: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)]
+        )
+        do {
+            let inputs = ReviewFlowRecapInputs(
+                allTodos: try modelContext.fetch(allDescriptor).map { $0.toData() },
+                completedTodos: try modelContext.fetch(completedDescriptor).map { $0.toData() },
+                recurringCompletions: try modelContext.fetch(recurringDescriptor).map {
+                    (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
+                }
+            )
+            VoiceTodoLog.store.debug("query_actor.review_flow_recap_inputs.fetch_success all=\(inputs.allTodos.count) completed=\(inputs.completedTodos.count) recurring=\(inputs.recurringCompletions.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return inputs
+        } catch {
+            VoiceTodoLog.store.error("query_actor.review_flow_recap_inputs.fetch_failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }

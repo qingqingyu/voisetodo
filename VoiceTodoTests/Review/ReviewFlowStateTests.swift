@@ -132,7 +132,7 @@ final class ReviewFlowStateTests: XCTestCase {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         state.insightContextValue = InsightContext(
-            from: Date(), to: Date(),
+            from: Date(), to: Date(), now: Date(),
             completedEvents: [], openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -156,7 +156,7 @@ final class ReviewFlowStateTests: XCTestCase {
             category: .other, priority: .normal, hasDueTime: false, dueDate: nil
         )}
         state.insightContextValue = InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: events,
             openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾", category: .work)],
             dueTasks: [], deferCounts: [:]
@@ -183,7 +183,7 @@ final class ReviewFlowStateTests: XCTestCase {
             category: .other, priority: .normal, hasDueTime: false, dueDate: nil
         )}
         state.insightContextValue = InsightContext(
-            from: Date(), to: Date(),
+            from: Date(), to: Date(), now: Date(),
             completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -214,7 +214,7 @@ final class ReviewFlowStateTests: XCTestCase {
             )
         }
         state.insightContextValue = InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -260,7 +260,7 @@ final class ReviewFlowStateTests: XCTestCase {
             category: .life
         )}
         state.insightContextValue = InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: events, openTasks: open, dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -301,7 +301,7 @@ final class ReviewFlowStateTests: XCTestCase {
             category: .other, priority: .normal, hasDueTime: false, dueDate: nil
         )}
         state.insightContextValue = InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -328,7 +328,7 @@ final class ReviewFlowStateTests: XCTestCase {
             category: .other, priority: .normal, hasDueTime: false, dueDate: nil
         )}
         state.insightContextValue = InsightContext(
-            from: Date(), to: Date(),
+            from: Date(), to: Date(), now: Date(),
             completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -353,7 +353,7 @@ final class ReviewFlowStateTests: XCTestCase {
             category: .other, priority: .normal, hasDueTime: false, dueDate: nil
         )}
         state.insightContextValue = InsightContext(
-            from: Date(), to: Date(),
+            from: Date(), to: Date(), now: Date(),
             completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
         )
         state.configureInsightsLadder()
@@ -1019,6 +1019,33 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(state.splitCount, 1)
         XCTAssertTrue(state.processedIDs.contains(tailTodo.id))
     }
+
+    /// `liveTriageIDs`(地板 A 点名行的过滤集,v4 复盘审阅发现 1):批量推
+    /// 「稍后」**不进 processedIDs**(拍板 4)但必须离开点名行——否则三个
+    /// 当场动作在卡堆/尾部都找不到条目,全部静默失灵。已处理的四类去向
+    /// 同样离开;整批撤销后随尾部回流。
+    func testLiveTriageIDsExcludesSomedayBatchAndProcessed() {
+        let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        let state = ReviewFlowState(todos: fillers + [todo("tail-old", daysOld: 40)])
+
+        let tailID = state.tail[0].id
+        XCTAssertTrue(state.liveTriageIDs.contains(tailID), "前提:尾部条目在过滤集内")
+
+        // 批量推「稍后」:不进 processedIDs,但离开卡堆 ∪ 尾部 → 点名行消失。
+        state.markSomedayBatchExecuted(batch: [state.todo(withId: tailID)!])
+        XCTAssertFalse(state.processedIDs.contains(tailID), "拍板 4:推后不是决定")
+        XCTAssertFalse(state.liveTriageIDs.contains(tailID), "已推稍后——不再点名")
+        XCTAssertNil(state.todo(withId: tailID), "当场动作的写库 payload 找不到它(失灵根因)")
+
+        // 逐张决定同样离开。
+        let deckID = state.deck[0].id
+        state.markScheduled(state.deck[0])
+        XCTAssertFalse(state.liveTriageIDs.contains(deckID))
+
+        // 整批撤销:条目回尾部 → 点名行随 liveTriageIDs 重现。
+        state.undoSomedayBatch()
+        XCTAssertTrue(state.liveTriageIDs.contains(tailID))
+    }
 }
 
 // MARK: - v4 批 1 · 地板 A 状态侧接线
@@ -1031,7 +1058,7 @@ extension ReviewFlowStateTests {
         completedCount: Int = 15
     ) -> InsightContext {
         InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: (0..<completedCount).map { _ in InsightCompletedEvent(
                 todoId: UUID(), createdAt: now, completedAt: now,
                 category: .other, priority: .normal, hasDueTime: false, dueDate: nil
@@ -1085,7 +1112,7 @@ extension ReviewFlowStateTests {
         // 腐烂卡没展示,rottingShown=false)。
         let coldState = ReviewFlowState(todos: [])
         coldState.insightContextValue = InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: [],
             openTasks: [openTask(daysOld: 9, now: now)],
             dueTasks: [], deferCounts: [:]
@@ -1100,20 +1127,25 @@ extension ReviewFlowStateTests {
 
 extension ReviewFlowStateTests {
 
-    /// recordBacklogFlow:零进零出 → nil(整块不渲染、不参与判定);
-    /// 有进出 → 净变化方向派生正确。
+    /// recordBacklogFlow:零进零出 → nil(整块不渲染、不参与判定);有进出
+    /// → 展示数字与方向**分开存**(v4 复盘审阅发现 2:方向不再从展示数相减——
+    /// createdCount 不过滤规律、completedCount 含规律 occurrence,两个总体)。
     func testRecordBacklogFlowZeroActivityYieldsNil() {
         let state = ReviewFlowState(todos: [])
-        state.recordBacklogFlow(created: 0, completed: 0)
+        state.recordBacklogFlow(created: 0, completed: 0, backlogDelta: 0)
         XCTAssertNil(state.backlogFlowFact, "零进零出——「新增 0 完成 0」是噪音行")
 
-        state.recordBacklogFlow(created: 12, completed: 9)
-        XCTAssertEqual(state.backlogFlowFact?.net, 3, "净涨 3")
-        state.recordBacklogFlow(created: 4, completed: 9)
-        XCTAssertEqual(state.backlogFlowFact?.net, -5, "净缩 5")
-        state.recordBacklogFlow(created: 5, completed: 5)
-        XCTAssertEqual(state.backlogFlowFact?.net, 0, "相抵")
-        state.recordBacklogFlow(created: 0, completed: 0)
+        state.recordBacklogFlow(created: 12, completed: 9, backlogDelta: 3)
+        XCTAssertEqual(state.backlogFlowFact?.createdCount, 12)
+        XCTAssertEqual(state.backlogFlowFact?.completedCount, 9)
+        XCTAssertEqual(state.backlogFlowFact?.backlogDelta, 3, "净涨 3")
+        // 方向与展示数的朴素差**允许背离**(规律完成抬高 completed、划掉只进
+        // delta)——修前 net = created − completed 会把这类用户的方向说反。
+        state.recordBacklogFlow(created: 4, completed: 21, backlogDelta: -5)
+        XCTAssertEqual(state.backlogFlowFact?.backlogDelta, -5, "净缩 5(不是 4−21)")
+        state.recordBacklogFlow(created: 5, completed: 5, backlogDelta: 0)
+        XCTAssertEqual(state.backlogFlowFact?.backlogDelta, 0, "相抵")
+        state.recordBacklogFlow(created: 0, completed: 0, backlogDelta: 0)
         XCTAssertNil(state.backlogFlowFact, "重跑(重试路径)回落零进零出 → 清空")
     }
 
@@ -1129,11 +1161,11 @@ extension ReviewFlowStateTests {
             category: .other, priority: .normal, hasDueTime: false, dueDate: nil
         )}
         state.insightContextValue = InsightContext(
-            from: now, to: now,
+            from: now, to: now, now: now,
             completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
         )
         // 容器层顺序:快照 B 在 runInsightEngine 之前(存活判定要读它)。
-        state.recordBacklogFlow(created: 0, completed: 3)
+        state.recordBacklogFlow(created: 0, completed: 3, backlogDelta: -3)
         state.configureInsightsLadder()
         XCTAssertFalse(state.skipsInsights, "非零完成——引擎前不整步跳")
         state.runInsightEngine()
@@ -1143,6 +1175,73 @@ extension ReviewFlowStateTests {
         XCTAssertFalse(state.skipsInsightsWhenEmpty, "地板 B 在——不跳(拍板 5 字面闭合)")
         state.advance()
         XCTAssertEqual(state.currentStep, .insights, "第 3 步只出地板 B 一行")
+    }
+
+    /// 取数决策 backlogFlowNumbers(v4 复盘审阅发现 2 的 glue,State 侧纯函数):
+    /// 有效基线走跨期账本差(展示数的朴素差/窗口法都不对——规律 21 条完成
+    /// 会被说成「在缩 −21」);哨兵与无历史回落窗口法;展示数字始终
+    /// weekSummary 同源(规律父任务进 created、规律 occurrence 进 completed)。
+    /// 时间戳选位:窗口内事件落在 −2 天内(哨兵窗口 [−3d, 明日) 与首评回落
+    /// [−7d, 明日) 都含),窗口外创建落 −10 天(两个下界之外)——三路断言同值。
+    func testBacklogFlowNumbersLedgerDeltaAndWindowFallback() {
+        let now = Date()
+        let calendar = Calendar.current
+        // helper 不透传 completedAt(init 也不从 isCompleted 派生),完成时刻
+        // 必须直构;划掉的 abandonedAt 落「现在」即窗口内,helper 语义正好。
+        let completedInWindow = TodoItemData(
+            title: "窗口外记下窗口内完成",
+            isCompleted: true,
+            completedAt: calendar.date(byAdding: .day, value: -2, to: now)!,
+            createdAt: calendar.date(byAdding: .day, value: -10, to: now)!
+        )
+        let inputs = ReviewFlowRecapInputs(
+            allTodos: [
+                todo("窗口内记下的一次性", daysOld: 1),
+                todo("规律父", recurring: true, daysOld: 2),
+                completedInWindow,
+                todo("窗口外记下窗口内划掉", abandoned: true, daysOld: 10),
+            ],
+            completedTodos: [completedInWindow],
+            recurringCompletions: (0..<21).map { _ in
+                (id: UUID(), todoId: UUID(), completedAt: calendar.date(byAdding: .day, value: -1, to: now)!)
+            }
+        )
+
+        // 有效基线(上期 backlogCount = 7)→ 账本差:10 − 7 = +3。
+        // 不是窗口法(+1 新挂 −1 完成 −1 划掉 = −1),更不是展示数朴素差
+        // (2 − 22 = −20)——三条路给出三个不同答案,断言锁住中间那条。
+        let ledgerSession = ReviewSession(
+            completedAt: calendar.date(byAdding: .day, value: -3, to: now)!,
+            periodStart: now, periodEnd: now,
+            voiceNote: nil,
+            ledger: ReviewLedger(
+                inputCount: 7, backlogCount: 7, remainingCount: 0, scheduledCount: 0,
+                todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0
+            ),
+            shownInsights: []
+        )
+        let ledgerNumbers = ReviewFlowState.backlogFlowNumbers(
+            inputs: inputs, previousSessions: [ledgerSession],
+            initialBacklogCount: 10, now: now, calendar: calendar
+        )
+        XCTAssertEqual(ledgerNumbers.backlogDelta, 3, "账本差优先:10 − 7,规律/划掉不干扰")
+        XCTAssertEqual(ledgerNumbers.created, 2, "展示新增与第 1 步同源:规律父也计入")
+        XCTAssertEqual(ledgerNumbers.completed, 22, "展示完成含规律 occurrence(1 + 21)")
+
+        // 哨兵(旧 payload,reviewSession 的 ledger 不带 backlogCount → 默认 −1)
+        // 与无历史(首评)都回落窗口法:+1 记下 −1 完成 −1 划掉 = −1。
+        let sentinelSession = reviewSession(
+            completedAt: calendar.date(byAdding: .day, value: -3, to: now)!
+        )
+        for sessions in [[sentinelSession], []] {
+            let windowNumbers = ReviewFlowState.backlogFlowNumbers(
+                inputs: inputs, previousSessions: sessions,
+                initialBacklogCount: 10, now: now, calendar: calendar
+            )
+            XCTAssertEqual(windowNumbers.backlogDelta, -1, "无有效基线 → 一次性口径窗口法")
+            XCTAssertEqual(windowNumbers.created, 2)
+            XCTAssertEqual(windowNumbers.completed, 22)
+        }
     }
 
     /// buildSession 落库 backlogCount = initialBacklogCount(init 快照),

@@ -8208,19 +8208,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Meanwhile %1$@ is all cleared — %2$lld finished this period, none left open."
+            "value" : "Meanwhile %1$@ is all cleared — %2$lld finished in the past 30 days, none left open."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "而「%1$@」这期清完了 %2$lld 件,现在一件没剩。"
+            "value" : "而「%1$@」近 30 天清完了 %2$lld 件,现在一件没剩。"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一方「%1$@」は今期%2$lld件片付いて、残っていません。"
+            "value" : "一方「%1$@」は直近30日で%2$lld件片付いて、残っていません。"
           }
         }
       }
@@ -10796,19 +10796,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld%% of what you finished this period was captured and done the same day."
+            "value" : "%lld%% of what you finished in the past 30 days was captured and done the same day."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这期完成的事里,%lld%% 是记下当天就做完的。"
+            "value" : "近 30 天完成的事里,%lld%% 是记下当天就做完的。"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今期完了したもののうち%lld%%は、記録した当日に済ませたものです。"
+            "value" : "直近30日に完了したもののうち%lld%%は、記録した当日に済ませたものです。"
           }
         }
       }

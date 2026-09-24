@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import Observation
 
 // MARK: - 流程状态
@@ -55,28 +54,34 @@ final class ReviewFlowState {
     private(set) var ladderNeedMore: Int?
     /// 地板 A · 积压年龄事实(v4 批 1:第 3 步的事实层,永远算得出来;
     /// 零积压 nil = 整块不渲染)。引擎同批计算,重试随 `runInsightEngine` 重跑。
-    /// 点名行是**引擎跑时快照**——当场动作落地后视图按 `processedIDs` 过滤
-    /// 已处理条目,快照本身不回改。
+    /// 点名行是**引擎跑时快照**——当场动作落地后视图按 `liveTriageIDs`
+    /// (仍在卡堆 ∪ 尾部)过滤已离场的条目,快照本身不回改。
     private(set) var backlogAgeFact: InsightEngine.BacklogAgeFact?
     /// 地板 C · 积压集中在哪(v4 批 3:最集中分类 + 对照组;全在 `.other` 或
     /// 零积压时 nil = 整块不渲染)。快照口径同地板 A。
     private(set) var backlogCategoryFact: InsightEngine.BacklogCategoryFact?
     /// 地板 B · 本期进出(v4 批 4:新增/完成的净变化方向)。窗口 = 上次复盘
-    /// 至今(与第 1 步 `weekSummary` 同源,容器层 @Query 快照一次,流程中
-    /// 不重算——拆小产生的子任务不该让数字跳)。**计入整步存活判定**
+    /// 至今(与第 1 步 `weekSummary` 同源,容器层经 `reviewFlowRecapInputs`
+    /// 一次性取数快照,流程中不重算——拆小产生的子任务不该让数字跳)。
+    /// **计入整步存活判定**
     /// (零积压 + 1–4 条完成的边缘态靠它保住第 3 步,拍板 5 的「整步跳过
     /// 只留零积压+零完成」由此闭合)。本期零进零出 → nil(零值不渲染)。
     private(set) var backlogFlowFact: BacklogFlowFact?
 
     /// 地板 B 的事实(纯数字,无日期数学——放 State 侧即可测)。
     struct BacklogFlowFact: Equatable, Sendable {
-        /// 本期新增(`ReviewAggregator.createdCount` 口径:不过滤规律——
-        /// 与第 1 步证据行同源,数字不打架)。
+        /// 本期新增(展示数字,`ReviewAggregator.createdCount` 口径:不过滤
+        /// 规律——与第 1 步证据行同源,数字不打架)。
         let createdCount: Int
-        /// 本期完成(`ReviewSummary.total` 口径:含规律完成记录)。
+        /// 本期完成(展示数字,`ReviewSummary.total` 口径:含规律完成记录)。
         let completedCount: Int
-        /// 净变化 = 新增 − 完成。正 = 清单在涨,负 = 在缩。
-        var net: Int { createdCount - completedCount }
+        /// 积压净变化(**方向源**,与上面两个展示数不同总体,别拿它们相减——
+        /// v4 复盘审阅发现 2):优先 = 本期 `initialBacklogCount` − 上期
+        /// `ReviewLedger.backlogCount`(同一快照口径,天然涵盖划掉/删除等
+        /// 一切出口);无基线(首次复盘/旧 payload 哨兵 <0)回落
+        /// `ReviewAggregator.oneOffBacklogDelta`(一次性口径的记下−完成−划掉,
+        /// 同一窗口)。正 = 清单在涨,负 = 在缩。
+        let backlogDelta: Int
     }
 
     /// 规则层的事实行(v4 批 3 拍板 3:03 中间地带只报占比的一行;不走冷却、
@@ -117,6 +122,16 @@ final class ReviewFlowState {
     /// 已处理(排进下周 / 今天就做 / 划掉 / 拆小)的 todo id 集。
     /// 批量推「稍后」**不进**此集——推后不是逐张决定,不占决定数。
     private(set) var processedIDs: Set<UUID> = []
+
+    /// 仍在流程内(卡堆 ∪ 尾部)的条目 id——洞察地板 A 点名行的过滤集
+    /// (v4 复盘审阅发现 1)。已处理的四类去向都会离开卡堆,批量推「稍后」
+    /// 只清尾部**不进 processedIDs**(拍板 4)——点名行只按 processedIDs 过滤
+    /// 会把已推稍后的条目继续点名,而三个当场动作(排下周/拆小/不做了)在
+    /// 卡堆与尾部都找不到条目,全部静默失灵。按「仍在卡堆 ∪ 尾部」过滤,
+    /// 两类状态一起消失;整批撤销后随尾部回流,行自然重现。
+    var liveTriageIDs: Set<UUID> {
+        Set(deck.map(\.id)).union(Set(tail.map(\.id)))
+    }
 
     /// 排进下周的任务(第 4 步的候选池,保留标题供账本渲染)。
     private(set) var scheduled: [TodoItemData] = []
@@ -224,11 +239,6 @@ final class ReviewFlowState {
         )
     }
 
-    /// 快照里本来就排在下周的未完成任务。下周窗口与「排下周」的落点同语义:
-    /// 下一个周一的用户日起点起 7 天(与 ReviewStepTriage.nextMondayStart 一致,
-    /// 排期写库与候选池取数必须同一坐标系)。`nextDate` 返回自然日 0 点,
-    /// 抬用户日用 `userDayStart(onNaturalDay:)`——对 0 点调 `startOfUserDay(for:)`
-    /// 会掉到前一用户日(startHour > 0 时窗口左移一天)。
     /// 「排下周」的写库落点:下一个周一的**用户日**起点(`nextDate` 返回
     /// 自然日 0 点,必须用 `userDayStart(onNaturalDay:)` 抬——对 0 点调
     /// `startOfUserDay(for:)` 会掉到前一用户日,startHour > 0 时落点漂到
@@ -243,17 +253,18 @@ final class ReviewFlowState {
         return DayClock.userDayStart(onNaturalDay: next, calendar: calendar)
     }
 
+    /// 快照里本来就排在下周的未完成任务。下周窗口与「排下周」的落点同语义:
+    /// `nextMondayUserDayStart` 起 7 天——排期写库与候选池取数必须同一坐标系
+    /// (v4 复盘审阅发现 6:原先在这里自行拼 weekday + userDayStart,与落点
+    /// 函数两份实现,收口到单一来源)。
     static func nextWeekCommitted(
         from todos: [TodoItemData],
         now: Date,
         calendar: Calendar
     ) -> [TodoItemData] {
-        var components = DateComponents()
-        components.weekday = 2 // 周一(gregorian),与 nextMondayStart 一致
-        guard let nextMonday = calendar.nextDate(
-            after: now, matching: components, matchingPolicy: .nextTime
-        ) else { return [] }
-        let weekStart = DayClock.userDayStart(onNaturalDay: nextMonday, calendar: calendar)
+        guard let weekStart = nextMondayUserDayStart(now: now, calendar: calendar) else {
+            return []
+        }
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
         return todos.filter { todo in
             guard let due = todo.dueDate,
@@ -402,14 +413,14 @@ final class ReviewFlowState {
             insightFactLines = []
             backlogAgeFact = InsightEngine.backlogAgeFact(
                 openTasks: context.openTasks,
-                now: context.to,
+                now: context.now,
                 calendar: calendar,
                 rottingShown: false
             )
             backlogCategoryFact = InsightEngine.backlogCategoryFact(
                 openTasks: context.openTasks,
                 completedEvents: context.completedEvents,
-                now: context.to,
+                now: context.now,
                 calendar: calendar
             )
             // 只出地板 A(+C+B):地板全空(零积压且本期零进零出)时才整步跳过——
@@ -460,7 +471,7 @@ final class ReviewFlowState {
         // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。
         backlogAgeFact = InsightEngine.backlogAgeFact(
             openTasks: context.openTasks,
-            now: context.to,
+            now: context.now,
             calendar: calendar,
             rottingShown: ranked.contains { $0.id == .rotting }
         )
@@ -468,7 +479,7 @@ final class ReviewFlowState {
         backlogCategoryFact = InsightEngine.backlogCategoryFact(
             openTasks: context.openTasks,
             completedEvents: context.completedEvents,
-            now: context.to,
+            now: context.now,
             calendar: calendar
         )
         // v4 拍板 5 连带:整步存活判定改写为「地板层与规则层是否都空」,
@@ -482,15 +493,70 @@ final class ReviewFlowState {
             && backlogFlowFact == nil
     }
 
-    /// 地板 B 快照(容器层 @Query 算好后注入,`loadInsightContext` 时机;
+    /// 地板 B 的取数决策(纯函数,State 侧供单测;容器层取好原料后调用,
+    /// v4 复盘审阅发现 2)。展示数字与第 1 步同一 `weekSummary`(上次复盘
+    /// 至今,首评回落近 7 天,数字同源不打架);**方向源与其分家**——
+    /// `createdCount`(不过滤规律)与 `total`(含规律 occurrence 完成)是
+    /// 两个总体,相减会说反话(规律习惯用户 21 条 occurrence 完成会被说成
+    /// 「在缩 −21」,而完成 occurrence 不清积压)。方向:优先跨期账本差
+    /// (上期 `ReviewLedger.backlogCount` ≥ 0 时 = `initialBacklogCount − 基线`,
+    /// 两期 init 快照同一总体同一口径,天然涵盖划掉/删除等一切出口;窗口
+    /// 起算点是「上次复盘完成时刻」、基线是「上次流程开始」,相差一次会话
+    /// 时长,对方向判断无碍),无基线(首次复盘/旧 payload 哨兵 <0)回落
+    /// `ReviewAggregator.oneOffBacklogDelta`(一次性口径的记下−完成−划掉,
+    /// 窗口经 `weekWindow` 与 weekSummary 单一来源)。
+    static func backlogFlowNumbers(
+        inputs: ReviewFlowRecapInputs,
+        previousSessions: [ReviewSession],
+        initialBacklogCount: Int,
+        now: Date,
+        calendar: Calendar
+    ) -> (created: Int, completed: Int, backlogDelta: Int) {
+        let since = previousSessions.last?.completedAt
+        let summary = RecapSummaryBuilder.weekSummary(
+            since: since,
+            today: now,
+            calendar: calendar,
+            allTodos: inputs.allTodos,
+            completedTodos: inputs.completedTodos,
+            recurringCompletions: inputs.recurringCompletions
+        )
+        let backlogDelta: Int
+        if let baseline = previousSessions.last?.ledger.backlogCount, baseline >= 0 {
+            backlogDelta = initialBacklogCount - baseline
+        } else {
+            let window = RecapSummaryBuilder.weekWindow(since: since, today: now, calendar: calendar)
+            backlogDelta = ReviewAggregator.oneOffBacklogDelta(
+                inputs.allTodos,
+                from: window.start,
+                to: window.end,
+                calendar: calendar
+            )
+        }
+        return (created: summary.createdCount, completed: summary.total, backlogDelta: backlogDelta)
+    }
+
+    /// 地板 B 快照(容器层取数算好后注入,`loadInsightContext` 时机;
     /// 必须在 `runInsightEngine` 之前——存活判定要读它)。本期零进零出
     /// → nil(整块不渲染、不参与判定,「新增 0 完成 0」是噪音行)。
-    func recordBacklogFlow(created: Int, completed: Int) {
+    /// **「零进零出」只看展示数,不看 `backlogDelta`**(有意):账本差路径下
+    /// delta ≠ 0 而 0/0 可达——本期唯一动静是上次会话内的清理,发生在窗口
+    /// (上次复盘完成时刻起)之外;「这期完成 0 新增 0——清单在缩」的文案
+    /// 自相矛盾,窗口外的方向不拿「这期」口吻说,照旧 nil。窗口法路径到不了
+    /// 这个分支:abandon 只有复盘流程一个出口(`store.abandon` 的调用方全在
+    /// 流程内),落不进两次会话之间的窗口;记下/完成任一发生展示数即非零。
+    /// 方向源见 `BacklogFlowFact.backlogDelta`——展示数字(第 1 步同源)
+    /// 与方向分开传,别在视图里拿展示数相减。
+    func recordBacklogFlow(created: Int, completed: Int, backlogDelta: Int) {
         guard created > 0 || completed > 0 else {
             backlogFlowFact = nil
             return
         }
-        backlogFlowFact = BacklogFlowFact(createdCount: created, completedCount: completed)
+        backlogFlowFact = BacklogFlowFact(
+            createdCount: created,
+            completedCount: completed,
+            backlogDelta: backlogDelta
+        )
     }
 
     /// 对一条触发的洞察套冷却判定。无历史(第一次展示)直接放行;有历史按
@@ -843,20 +909,6 @@ struct ReviewFlowView: View {
 
     @State private var state: ReviewFlowState
 
-    // 地板 B(本期进出)的快照源(v4 批 4):窗口 = 上次复盘至今,与第 1 步
-    // `ReviewStepRecap.summary` 同一 builder/同一口径(数字不打架);在
-    // `.task` 里取一次存进 state,流程中不重算(拆小的子任务不该让数字跳)。
-    // 三个 @Query 与 Recap 的重复是有意为之——B 需要在**流程启动时**就有
-    // 数值喂存活判定,不能等第 3 步挂载。
-    @Query(
-        filter: #Predicate<TodoItem> { $0.isCompleted },
-        sort: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
-    )
-    private var completedTodosForFlow: [TodoItem]
-    @Query private var allTodosForFlow: [TodoItem]
-    @Query(sort: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)])
-    private var recurringCompletionsForFlow: [TodoOccurrenceCompletion]
-
     init(
         store: any ReviewFlowStore,
         splitter: (any TodoSplitterProtocol)? = nil,
@@ -939,9 +991,13 @@ struct ReviewFlowView: View {
         let today = Date()
         let start = Calendar.current.date(byAdding: .month, value: -1, to: DayClock.startOfUserDay(for: today)) ?? today
         let end = Calendar.current.date(byAdding: .day, value: 1, to: DayClock.startOfUserDay(for: today)) ?? today
-        // 地板 B 快照先落(存活判定在 runInsightEngine 里读它)。
-        snapshotBacklogFlow(now: today)
         do {
+            // 地板 B 快照先落(存活判定在 runInsightEngine 里读它)。取数走
+            // `reviewFlowRecapInputs` 一次性完成(v4 复盘审阅发现 7:原先的
+            // 容器级 @Query 全期常驻,第 2 步每次划卡写库都会重跑无时间下界
+            // 的全表查询);失败与洞察原料共用同一条显式错误路径(错误 + 重试)。
+            let recapInputs = try await store.reviewFlowRecapInputs()
+            snapshotBacklogFlow(now: today, inputs: recapInputs)
             let context = try await store.insightContext(from: start, to: end)
             state.insightContextValue = context
             state.insightLoadError = nil
@@ -961,20 +1017,21 @@ struct ReviewFlowView: View {
         }
     }
 
-    /// 地板 B 快照:与第 1 步同一 `weekSummary`(上次复盘至今,首评回落
-    /// 近 7 天)。
-    private func snapshotBacklogFlow(now: Date) {
-        let summary = RecapSummaryBuilder.weekSummary(
-            since: state.previousSessions.last?.completedAt,
-            today: now,
-            calendar: .current,
-            allTodos: allTodosForFlow.map { $0.toData() },
-            completedTodos: completedTodosForFlow.map { $0.toData() },
-            recurringCompletions: recurringCompletionsForFlow.map {
-                (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
-            }
+    /// 地板 B 快照:原料一次取齐后交 `ReviewFlowState.backlogFlowNumbers`
+    /// (展示数字与方向的分家理由、路径选择与哨兵处理都在其注释),结果注入 state。
+    private func snapshotBacklogFlow(now: Date, inputs: ReviewFlowRecapInputs) {
+        let numbers = ReviewFlowState.backlogFlowNumbers(
+            inputs: inputs,
+            previousSessions: state.previousSessions,
+            initialBacklogCount: state.initialBacklogCount,
+            now: now,
+            calendar: .current
         )
-        state.recordBacklogFlow(created: summary.createdCount, completed: summary.total)
+        state.recordBacklogFlow(
+            created: numbers.created,
+            completed: numbers.completed,
+            backlogDelta: numbers.backlogDelta
+        )
     }
 
     // MARK: 错误呈现
