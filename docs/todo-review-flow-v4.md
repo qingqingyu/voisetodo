@@ -235,3 +235,16 @@ v3 拍板 7 写这个判定的理由原话是「**空屏 + 错误指令的占位
 7. **容器层三个全表 @Query 全期常驻（低，性能）**。`completedTodosForFlow` 无时间下界——第 2 步每次划卡写库都重跑全表重渲染容器，正是 `refreshTodos` 窗口化避开的那类成本。修法：`@Query` 三件套移除，`ReviewFlowRecapReading` 协议（独立能力切片，不塞进 `InsightContextReading`）加 `reviewFlowRecapInputs()`（`TodoQueryActor` 一次性取，口径与第 1 步 @Query 完全一致），失败与洞察原料共用显式错误路径。
 
 **验证**：`swift test` 308 例（仅既有 DST 环境红灯）；新增 `testAgeUsesNowNotWindowEnd`、`testLiveTriageIDsExcludesSomedayBatchAndProcessed`、`oneOffBacklogDelta` 两例；`recordBacklogFlow` 测试改新签名（方向与展示数允许背离）。后续审阅补强：方向源 glue 从视图提取为 `ReviewFlowState.backlogFlowNumbers` 纯函数（新增 `testBacklogFlowNumbersLedgerDeltaAndWindowFallback`，账本差/哨兵回落/首评回落三路 + 朴素差反例断言）；`oneOffBacklogDelta` 盲区注释补「一次性↔规律互转」（与删除同类，账本差路径天然涵盖）；`recordBacklogFlow` 的「零进零出」guard 注释写明只看展示数的 intentional 分支。
+
+## 复核修订二轮（2026-09-24，七条修复复核后带出的两新问题 + 两 nit）
+
+对七条修复的逐条核对确认全部修对（含 `liveTriageIDs` 回流重现、`weekWindow` 单一来源、`oneOffBacklogDelta` 算入拆小等主动加做项），但发现 2 的修法本身带出两个新问题：
+
+1. **N1 · 数字与结论同句互相打脸（中高）**。方向源换了但文案键没动——`backlog_flow.grew/shrank/flat` 仍把展示数和方向词塞同一句（「这期新增 2、完成 22——清单在涨」）。展示数与方向是两个总体（发现 2 的原意），用户不知道，破折号在三语里都读成因果：完成 22 新增 2 却说在涨，用户只会认为 app 坏了。修前是「方向说反话」，修后是「方向对了但看起来像说反话」，在只报事实的卡片上未必更好。**修法：拆两行，方向由端点自证**——行 1 展示数（`backlog_flow.line`）；行 2 账本差路径给两端「积压 P → Q(±D)」（`backlog_flow.trend`，P = 上期收尾、Q = 本期开始，正与未来趋势线端点同源）；窗口法路径只有 delta，按窗口口径选「较上次复盘 ±D」（`backlog_flow.since_last`）或首评「近 7 天 ±D」（`backlog_flow.recent`，首评窗口回落近 7 天，不能说「较上次」）。方向词（在涨/在缩/相抵）删除——数字与 delta 同源后不再需要，也杜绝再次互掐。±D 符号在代码侧拼好经 %@ 进文案，三语不各养符号约定。旧三键删除。
+2. **N2 · 账本差基线错位一个会话（中）**。`backlogDelta = 本期 init − 上期 backlogCount`，而 `backlogCount` 存的是**上期流程开始**的快照；展示窗口起点却是**上期 completedAt**（流程结束）。一轮复核里「相差一次会话时长对方向判断无碍」的判断**不成立**：上期复盘内的划掉正落在错位区间，而划掉是单次改变积压最多的动作——上期 19 → 复盘划 5 → 存 19；本期 init 16，delta = −3，卡片说「这期在缩」，缩的其实是上次复盘自己干的活（`recordBacklogFlow` 的零进零出守卫只挡住 0/0 角落，created>0 时错位方向照样上屏）。**修法：加存而非改存**——`ReviewLedger` 新增 `finalBacklogCount`（容器收尾时按与 init 同口径 `pendingOneOffCount` 重数后经 `buildSession` 传入；哨兵 -1 解码兜底同 `backlogCount` 先例）；delta 改 = 本期 init − 上期 final，与展示窗口逐刻对齐。`backlogCount` 保留 init 快照语义不动（趋势线数据源已锚定，init/final 各司其职）。**过渡规则：上期旧 payload 只有 init 快照时不用它兜底**（已知错位，宁缺毋滥），直接落窗口法。真实数据此刻几乎全是哨兵，是改口径成本最低的时点。
+3. **nit 1 · `reviewFlowRecapInputs` 取了两遍全表（低，性能）**。`completedTodos` 是 `allTodos` 的子集（谓词就是 `isCompleted`，`toData()` 直传该字段），却各自 fetch + 全量映射——发现 7 省下的开销这里花回去一半。修法：单趟取全表，完成子集内存 filter + sort 派生（与第 1 步 @Query 同谓词同序），payload 不变。
+4. **nit 2 · `oneOffBacklogDelta` 对 `completedAt`/`abandonedAt` 并存的脏行双扣（极低）**。正常写入路径不产生并存；改 else-if（完成优先，一条出口只扣一次）并注明。
+
+`recordBacklogFlow` 的「零进零出」guard 保留但理由改写：N2 对齐基线后，0/0 + delta ≠ 0 仍可达——剩余路径是**删除与一次性↔规律互转**（账本两端看得见、展示数没有对应数字），没有展示数佐证的方向不拿「这期」口吻说。
+
+**验证**：`swift test` 通过；`xcodebuild` VoiceTodoTests 712 例（2 失败均为既有环境红灯：StoreKit 商品 CLI 加载不出、DST 春令时；与本次无关）。`testBacklogFlowNumbersLedgerDeltaAndWindowFallback` 重写：基线夹具改 `finalBacklogCount`（init 快照 19 vs 收尾 7，锁住「不用错位基线」过渡规则）、新增账本两端与三路 isFirstPeriod 断言；`testBuildSessionCarriesBacklogCountSnapshot` 改双积压字段；新增 `testOneOffBacklogDelta_dirtyRowWithBothTimestampsCountsOnce`。
