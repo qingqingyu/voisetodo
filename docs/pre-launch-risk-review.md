@@ -21,6 +21,9 @@
 
 ## P0：反刷限流会把付费用户一起掐掉
 
+> ✅ **已由 `2c87f33` 修复**（Pro 豁免 IP 闸门、全局预算分免费/pro 两桶）。本节保留为问题记录与修法依据。
+> **复核结果与 4 处新问题见文末「P0 修复 review（2026-09-24）」**——其中 2 处是修复本身引入的，动手前先读那一节。
+
 ### 问题
 
 三道闸门**全部在订阅档位解析之前或之外执行**，没有一道知道谁付过钱：
@@ -191,3 +194,117 @@ const ttl = Math.min(Math.max(60, Math.floor((result.expiresAt - Date.now()) / 1
 5. **配 UptimeRobot + healthchecks.io**（`ALERTING.md` 部署步骤）
 
 第 1、2 条是真正的上线阻塞项。第 4 条不做的话，出了事只能靠猜。
+
+---
+
+# P0 修复 review（2026-09-24）
+
+对 `2c87f33`（反刷闸门认订阅档位）+ `2d874a0`（测试补强）的复核。**P0 主体修好了**，但发现 4 处新问题，其中 2 处是这次改动引入的。
+
+## 复核结论：P0 主体通过
+
+实施质量高，这些我核过，不用返工：
+
+- **分桶四路独立且三条路径一致**：tripped key（`global-budget-tripped-pro`）/ DO 实例（`global-budget-pro`）/ KV 计数 / 错误码（`global_budget_exceeded_pro`），hot path、DO 增量、KV degraded 三条路径口径统一
+- **Step C 对 Pro 跳过 `refundIpDaily` 是对的**：Pro 从未扣减 ip-daily，退款会错减同 IP 免费用户的**共享**计数，反而放松免费档 IP 日限
+- **付费侧未配置 / 配错时显式记日志**，不静默跳过
+- **免费档语义逐函数等价**，无感知变化
+- `QuotaCounter` 无 key 白名单，`global-budget-pro` 可用
+- 新错误码不影响客户端（`NetworkClient.swift` 只按状态码分支，不解析 error 字符串）
+- 第三个 provider 未破坏 iOS 超时预算不变量（`MAX_ATTEMPTS=2` 使 `min(2,3)=2`，`wrangler-config.test.js` 守着）
+
+## 4 处新问题
+
+核心矛盾一句话：**豁免的理由「device 侧 `PAID_DAILY_LIMIT` 已是硬顶」只在 extract 路径成立，而豁免被应用到了所有路径。**
+
+### 新问题 1：Pro 在 split/reflect 上现在完全没有任何限流（HIGH，本次引入）
+
+`worker.js:211-217` 的 else 分支只调两道闸门：
+
+```js
+await enforceGlobalBudgetHotPath(env, requestContext, isPro);
+await enforceIpRateLimit(request, env, requestContext, isPro);
+```
+
+对 Pro 这两道全部落空：
+
+- `enforceIpRateLimit` 第一行就是 `if (isPro) return;`（`:1898`）
+- `enforceGlobalBudgetHotPath` 只**读** `global-budget-tripped-pro` 标志；而该标志只由 `enforceGlobalBudgetIncrement` 写，后者**只在 `enforceAllQuotas` 内被调用（extract 专属）**→ split/reflect 流量永不计数 → pro 桶永不 trip → 这道读永远放行
+- split/reflect 本就不占计费额度（拍板）→ 没有 device 上限
+
+**三重落空 = 一个合法 JWS 换无限模型调用，任何计数器都不记。** 改动前这条路径至少还有 `IP_RATE_PER_MINUTE=10` 兜着。
+
+豁免注释里写的「device 侧 `PAID_DAILY_LIMIT`(100/天) 本身构成单设备速度上限，IP 限速对它冗余」在 extract 上成立，**在 split/reflect 上是空话**——恰恰因为这条路径刻意不扣计费额度。
+
+commit message 里「Pro 的 split/reflect 流量不计任何桶（免费侧同缺口，系预存）」把它说成与免费侧对称的预存缺口，**但并不对称**：免费侧仍有 10/min 的 IP 刹车，Pro 侧一道都不剩。
+
+新测试 `P0: split 模式 Pro 同样豁免免费桶熔断`（`worker.test.js:1425`）断言的正是这个形状，等于把洞固化进回归防线。
+
+**修法（建议都做）：**
+
+1. split/reflect 分支也调 `enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro)`，让 pro 桶对这条路径有牙
+2. **只豁免 `enforceIpDailyLimit`**（500/天，CGNAT 误伤的真正来源），**保留 `enforceIpRateLimit` 这道每分钟突发刹车给所有档位**。10/min 对真人足够宽；若担心 CGNAT 下付费用户互相挤，给 Pro 一个更高的每分钟阈值，而不是完全豁免
+
+### 新问题 2：Pro 的 JWS 是无绑定 bearer token，豁免放大了它的价值（HIGH）
+
+`verifySubscriptionJWS` 只校验 bundleId / productId / 过期 / 证书链——**不绑定设备**。所以一个买来的 JWS 可以配任意 `X-Device-ID` 使用，而 device ID 是客户端自填的（`AIProxy/README.md` 自己也写明可伪造）。
+
+| | 改动前 | 改动后 |
+|---|---|---|
+| 共享 JWS + 轮换 device ID | 被 `IP_DAILY_LIMIT=500/天` + `IP_RATE_PER_MINUTE=10` 挡住 | 两道 IP 闸门都豁免，每设备 100/天靠轮换绕过，**只剩 `GLOBAL_PRO_DAILY_LIMIT=20000/天`** |
+| 再走 split/reflect | 同上 | 叠加新问题 1，**连 20000 都不计** |
+
+**$4.99 换到的滥用上限，从 500/天变成了无限。**
+
+还有叠加的第三层：`sub:<deviceId>` 缓存在验签之前就被读（`:1639-1657`）——`if (!jws) return free` 之后**直接查缓存，从不校验这个 jws 是否有效**。所以任意非空 JWS 字符串 + 一个缓存热的 device ID，15 分钟内直接拿 pro。这条是既存问题，但本次改动让它值钱得多。
+
+**修法：** 把 pro 判定与凭证绑定——缓存 key 掺入 JWS 的哈希，或在缓存值里存 JWS 指纹并比对，让「换设备 ID 复用同一 JWS」至少要过一次真实验签。进一步可在验签时把 device ID 纳入，限制单个订阅的并发设备数。
+
+### 新问题 3：tier 解析前置，热路径「零成本」性质被破坏（MEDIUM，本次引入）
+
+`worker.js:194` 把 `resolveSubscriptionTier` 提到了 `enforceGlobalBudgetHotPath` / `enforceIpRateLimit` **之前**（且给 split/reflect 新增了这次解析）。
+
+而 `src/subscription.js:52` 的 `verifyChain` 是**先做完整条链的 `crypto.subtle.verify` + ASN.1 解析，最后才比对根指纹**（`:55-63` 是验签循环，`:68` 才 check anchor）。验签失败也**从不缓存**。
+
+于是：一个伪造的 `X-Subscription-JWS` 能在**每个请求**上强制服务端做 N-1 次 ECDSA/RSA 验证 + 完整证书解析，**即使全局预算已经 trip、该 IP 已经超过每分钟限流**——因为那两道廉价闸门现在排在后面。`:1249` 那句「global-budget：纯读 KV tripped 标志，真正零成本」的注释不再成立。
+
+**修法：** 廉价闸门（读 tripped 标志）保持最前，tier 解析放到它之后；并在 `verifyChain` 里**先比对根指纹再做签名验证**——顺序调换不影响安全性，但把伪造链的成本从 N 次公钥运算降到一次 SHA-256。后者是独立加固，建议一并做。
+
+### 新问题 4：selector 钉头会把 half-open 的 provider 顶到最前（MEDIUM，`2d9f573` 引入）
+
+`src/selector.js:70` 的 pin 在 `combined` 上做 `findIndex` + 前移，而 `combined = [...sortedWarm, ...shuffledCold, ...sortedHalfOpen]` —— **half-open 没有被摘除，只是排在尾部**。
+
+于是被钉的 provider 一旦熔断进 half-open，pin 会把它从「最后试探」提到**每个请求的第一顺位**，正好反转熔断器的意图。
+
+docstring（`:31-33`）写的是「if the pinned provider is disabled / keyless / circuit-open, it already got dropped in step 1 and the pin is a no-op」——**漏了 half-open 这一态**，会误导下一个读代码的人。
+
+叠加 `AI_PROVIDER_MAX_ATTEMPTS="2"`：`combined.slice(0, 2)` 会把健康的第三家直接切掉。当前配置下，被钉的 `ZAI_ANTHROPIC_AIR` 半开 + `ZAI_ANTHROPIC` 正在失败但未熔断 → CLAWTO 完全进不了候选，每个请求都以已知在失败的 provider 打头，且每家 30s 超时。
+
+**修法：** pin 只对 warm/cold 生效（hoist 前确认该 provider 不在 `halfOpen` 里），并同步修正 docstring。
+
+### 附带（非阻塞）：三个 provider 只有两个独立上游
+
+`wrangler.toml` 里 `ZAI_ANTHROPIC_AIR` 与 `ZAI_ANTHROPIC` **共用同一个 url 和同一个 `secretName`**（`PROVIDER_KEY_ZAI_ANTHROPIC`），只有 model 不同。z.ai 故障或密钥轮换会同时打掉三家里的两家。
+
+配合 `MAX_ATTEMPTS=2`，一次请求的两个候选可能全是 z.ai —— 此时「failover 到另一家」是幻觉。别把 provider 数量当成冗余度。
+
+## 验证
+
+```bash
+cd AIProxy && npm test
+```
+
+新问题 1 本地可复现，最直观：
+
+```bash
+npx wrangler dev
+# 带合法 Pro JWS,以 mode=split 连打 20 次
+# 现状:全部 200,无任何计数器增长、无限流
+# 期望(修复后):撞到每分钟刹车,或 pro 桶计数增长
+```
+
+## 与告警遗留的优先级关系
+
+本节 4 条都不如 **`docs/alerting-layer-bc-review-fixes.md` 的「第二轮 review」** 紧急——那 3 处遗留经 2026-09-24 复验**一处未修**，且告警至今**没有部署**（`ALERTING.md` 实施状态仍是「待重新部署」）。
+
+上线顺序建议：**先部署告警 → 修告警 3 处遗留 → 再处理本节新问题 1/2**（这两条是成本与滥用风险，不影响正常用户体验，但会在有人发现后迅速变成账单问题）。
