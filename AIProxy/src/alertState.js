@@ -7,7 +7,12 @@
 //   - 其余 → 不推
 //
 // 存储复用 AI_PROVIDER_STATE_KV,key `alert:provider_health`,值
-//   { level: "ok"|"degraded"|"down", since: <ms>, lastNotifiedAt: <ms> }
+//   { level: "ok"|"degraded"|"down", since: <ms>, lastNotifiedAt: <ms>,
+//     lastNotifiedLevel: "ok"|"degraded"|"down" }
+// lastNotifiedAt 只负责 6h reminder 的计时;「用户最后**成功收到**的是哪个
+// level」由 lastNotifiedLevel 表达(遗留 2:恢复消息发送失败时,lastNotifiedAt
+// 的旧值会让「待补发」信号消失,恢复消息永久丢失)。旧 KV 记录无此字段,
+// 读取按 "ok" 处理(见 shouldNotify/nextRecord)。
 // `alert:` 前缀与 health: / config: 共存,跟 src/health.js / adminConfig.js 的做法一致。
 //
 // 降级原则:KV 读失败 → previous 视为 null → shouldNotify 判定为「无历史」→
@@ -49,14 +54,17 @@ export function shouldNotify(previous, current, now) {
     return { notify: true, kind: current };
   }
 
-  // 故障告警从未成功送达(上次发送失败,lastNotifiedAt 仍为 0)→ 重推。
-  // 没有这条,Telegram 偶发失败(网络抖动/超时/429)会让 degraded 告警永久
-  // 丢失(它没有 reminder 兜底),down 告警也得干等 6h reminder —— worker.js
-  // 的「送达后才写 lastNotifiedAt」正是这条规则的另一半,两边缺一不可。
-  // ok 不适用:正常状态本来就不推,lastNotifiedAt 为 0 的 ok 记录是常态
-  // (开机首跑 ok 不推,record 落盘 lastNotifiedAt=0)。
-  if (current !== "ok" && !previous.lastNotifiedAt) {
-    return { notify: true, kind: current };
+  // 用户还不知道当前 level(上次该 level 的告警没送达,或恢复消息没送达)→ 补发。
+  // lastNotifiedLevel 与 lastNotifiedAt 各司其职:前者是「送达回执」,由
+  // worker.js 按发送结果维护(送达才更新);后者只计时 reminder。把「待补发」
+  // 编码进 lastNotifiedAt(旧做法:非 ok 且 =0 才重推)在 ok 上失效——恢复
+  // 消息发送失败后 lastNotifiedAt 仍是故障时刻的旧值 ≠ 0,重推分支永远跳过,
+  // 恢复消息永久丢失(遗留 2)。
+  // 旧 KV 记录无 lastNotifiedLevel,按 "ok" 处理:稳态 ok 不推;若当时正处于
+  // down/degraded 会补推一条 —— 宁吵勿哑,且送达后只发生一次。
+  const lastNotifiedLevel = previous?.lastNotifiedLevel ?? "ok";
+  if (lastNotifiedLevel !== current) {
+    return { notify: true, kind: current === "ok" ? "recovered" : current };
   }
 
   if (current === "down" && now - (previous.lastNotifiedAt || previous.since || 0) >= REMINDER_INTERVAL_MS) {
@@ -68,12 +76,16 @@ export function shouldNotify(previous, current, now) {
 /// 由判定结果算出下一份要落盘的记录。纯函数。
 ///   - level 变化 → since 重置为 now(新状态的起点)
 ///   - 推送过 → lastNotifiedAt = now;否则沿用旧值(reminder 的 6h 窗口靠它)
+///   - decision.notify 由调用方按「是否送达」置位(worker.js:发送失败时传
+///     notify:false)→ lastNotifiedLevel 只在送达时前进到 current,未送达
+///     沿用旧回执,下次 cron 由 shouldNotify 的回执比对分支补发。
 export function nextRecord(previous, current, decision, now) {
   const levelChanged = !previous || previous.level !== current;
   return {
     level: current,
     since: levelChanged ? now : (previous.since || now),
-    lastNotifiedAt: decision.notify ? now : (previous?.lastNotifiedAt || 0)
+    lastNotifiedAt: decision.notify ? now : (previous?.lastNotifiedAt || 0),
+    lastNotifiedLevel: decision.notify ? current : (previous?.lastNotifiedLevel ?? "ok")
   };
 }
 

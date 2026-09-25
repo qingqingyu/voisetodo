@@ -138,7 +138,7 @@ function normalizeInteger(bytes) {
  * 验证 StoreKit 2 订阅 JWS。
  * @param {string} jws compact JWS
  * @param {object} opts { expectedBundleId, productIDs, rootFingerprint?, now? }
- * @returns {Promise<{productId: string, expiresAt: number}>} 校验通过返回关键声明
+ * @returns {Promise<{productId: string, expiresAt: number, subscriptionId: string|null}>} 校验通过返回关键声明
  * @throws 校验任一步失败即抛错（调用方 fail-safe 到免费档）
  */
 export async function verifySubscriptionJWS(jws, opts = {}) {
@@ -205,7 +205,15 @@ export async function verifySubscriptionJWS(jws, opts = {}) {
   if (expiresAt <= now) {
     throw new Error(`subscription.expired expiresAt=${expiresAt} now=${now}`);
   }
-  return { productId, expiresAt };
+  // 订阅标识:originalTransactionId 在一次购买(含续订、跨设备恢复)内稳定,
+  // transactionId 每次续订变化 —— 前者优先。用于按订阅维度的反滥用限速
+  // (worker.js enforceSubscriptionDailyLimit):JWS 不绑定设备,唯一不能被
+  // 客户端轮换掉的身份就是这个。缺失返回 null,调用方显式记日志跳过该层。
+  const rawSubscriptionId = payload.originalTransactionId ?? payload.transactionId;
+  const subscriptionId = (typeof rawSubscriptionId === "string" || typeof rawSubscriptionId === "number")
+    ? String(rawSubscriptionId)
+    : null;
+  return { productId, expiresAt, subscriptionId };
 }
 
 function normalizeExpiry(payload) {

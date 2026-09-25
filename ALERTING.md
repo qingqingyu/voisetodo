@@ -89,13 +89,13 @@ healthchecks.io 收不到心跳会**反过来**告警。这是唯一能覆盖「
 
 | 层 | 状态 | 说明 |
 |---|------|------|
-| B cron 熔断告警 | **已实施 + 5 处缺陷已修复，待重新部署** | 代码 + 测试已落地（`src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`）；review 发现的 5 处缺陷已按 `docs/alerting-layer-bc-review-fixes.md` 修复 |
-| C 健康探针 + 死人开关 | **已实施 + 5 处缺陷已修复，待重新部署** | 同上（`/v1/health` + `handleScheduled` 心跳） |
+| B cron 熔断告警 | **已上线（09-05）+ 一轮 5 缺陷修复已上线（09-22，版本 0157fdee）+ 二轮 3 处遗留已修（2026-09-25，随当日部署上线）** | 代码 + 测试见 `src/notify.js` / `src/alertState.js` / `runProviderHealthCheck`；一轮缺陷修复按 `docs/alerting-layer-bc-review-fixes.md`，二轮遗留（探针 secret 全缺仍绿 / 恢复消息丢失 / 日志 level 键覆盖）见同文档「第二轮 review」节 |
+| C 健康探针 + 死人开关 | **同上** | `/v1/health` + `handleScheduled` 心跳 |
 | A 客户端信标 | 待发版 | 要过审核 + 等用户升级，实际生效晚得多 |
 | A/D feedback-relay 接收端 | 待发版 | 没有层 A 发信标，先建接收端没意义 |
 | D pending 积压 | 待发版 | 随层 A 一起 |
 
-> ⚠️ **线上正在跑修复前的版本（2026-09-05 部署），需尽快 `wrangler deploy` 重新部署。** 修复前版本有 3 处会让故障变得不可见（探针把 `half-open` 当健康、secret 全缺时三层同时报绿、停用 provider 稀释故障判定）——会让人以为「没收到告警 = 没出事」。缺陷明细与修复见 **`docs/alerting-layer-bc-review-fixes.md`**（文末附实施记录）。
+> 2026-09-25 复核:一轮 5 缺陷修复已随 09-22 部署上线(`wrangler deployments list` 核实,当前线上版本 0157fdee);二轮 review 的 3 处遗留(unconfigured 探针 / lastNotifiedLevel / 日志字段)于 09-25 修复并随当日部署上线。此前本节写的「待重新部署」在 09-22 后已过期,是文档没跟上部署,不是告警没上线。
 
 **B/C 先做的理由：** 它们不依赖发版，且覆盖的「上游 AI 全挂」和「Worker/域名整个不可达」是影响面最大的两类故障。层 A 价值最高但生效最慢，两件事不冲突——B/C 先把服务端的眼睛装上。
 
@@ -231,7 +231,7 @@ sendTelegramAlert(env, text, fetchImpl = fetch) → { ok, skipped? }
 
 沿用 `src/health.js` 的形态：KV 存取 + 纯函数判定，KV 失败时降级。
 
-存储在已有的 `AI_PROVIDER_STATE_KV`，key `alert:provider_health`，值 `{ level, since, lastNotifiedAt }`。`alert:` 前缀与 `health:` / `config:` 共存，与现有做法一致。
+存储在已有的 `AI_PROVIDER_STATE_KV`，key `alert:provider_health`，值 `{ level, since, lastNotifiedAt, lastNotifiedLevel }`。`alert:` 前缀与 `health:` / `config:` 共存，与现有做法一致。`lastNotifiedAt` 只管 6h reminder 计时；`lastNotifiedLevel` 是「用户最后**成功收到**的是哪个 level」的送达回执——两个字段各司其职（二轮遗留 2：把「待补发」挤进 `lastNotifiedAt` 会让恢复消息在发送失败后永久丢失）。
 
 ```js
 classifyLevel(succeeded, total) → "ok" | "degraded" | "down"
@@ -240,7 +240,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 ```
 
 - level 变化 → 推
-- 故障告警从未成功送达（`lastNotifiedAt` 仍为 0，上次 Telegram 发送失败）→ 重推，直到送达为止。**与「送达后才写 `lastNotifiedAt`」配套**：`notifyProviderHealthTransition` 必须先发送、送达（或未配 `TELEGRAM_*` 的 skipped）才落盘 `lastNotifiedAt`；`level`/`since` 照常落盘（否则恢复消息的故障时长会算错）。只做一半没用——先发送后落盘但无重推规则，degraded 告警仍会永久丢失（它没有 reminder 兜底）；有重推规则但先落盘，重推永远不会触发。
+- **送达回执与当前 level 不一致（`lastNotifiedLevel !== current`）→ 补发**，三种 kind 统一覆盖：故障告警没送达的重推（degraded 没有 reminder 兜底，不重推就是永久丢失；down 不用干等 6h），**恢复消息没送达的补推 recovered**（旧口径按 `lastNotifiedAt` 判重推时 ok 永远轮不到，收到 🚨 的人从此以为故障还在）。**与「送达后才更新回执」配套**：`notifyProviderHealthTransition` 必须先发送、送达（或未配 `TELEGRAM_*` 的 skipped）才让 `nextRecord` 把 `lastNotifiedLevel` 推进到当前 level；`level`/`since` 照常落盘（否则恢复消息的故障时长会算错）。旧 KV 记录无此字段按 `"ok"` 解读：稳态 ok 不推，稳态 down 补推一条（宁吵勿哑，送达后只发生一次）。
 - 仍是 `down` 且距 `lastNotifiedAt` ≥ 6h → 推 `reminder`
 - 其余 → 不推
 
@@ -288,9 +288,11 @@ shouldNotify(previous, current, now) → { notify, kind }
 2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId, now)` 是 per-provider 签名，实现时遍历 `loadProviders(env)` 的结果逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
 3. **HTTP 状态码本身携带语义**：全部 provider **不健康** → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分不健康）/ `down`（全部不健康，503）/ `misconfigured`（配置非法，503）。
 
-   > **「不健康」= `open` **或** `half-open`，只有 `closed` 算健康。** `half-open` 不是独立存储的状态，是 `health.js` 的 `classifyState()` 在熔断打开、冷却期一过就返回的**读时派生状态**（默认初始冷却 10s，上限 5min），语义是「曾经挂了，尚未证明恢复」——恢复要靠 `recordSuccess` 写回 `closed`。
+   > **「不健康」= `open` **或** `half-open` **或** `unconfigured`（缺 secret / 缺 adapter），只有 `closed` 算健康。** `half-open` 不是独立存储的状态，是 `health.js` 的 `classifyState()` 在熔断打开、冷却期一过就返回的**读时派生状态**（默认初始冷却 10s，上限 5min），语义是「曾经挂了，尚未证明恢复」——恢复要靠 `recordSuccess` 写回 `closed`。
    >
    > 只判 `open` 会让探针在故障中报绿：稳态下每 30 分钟只有约 5 分钟窗口是 `open`，故障刚发生时窗口只有 10 秒；夜间无流量时不会触发新的 `recordFailure`，`half-open` 一直挂着，探针永远绿。这正是层 C-1 存在的意义所在，必须算不健康。详见 `docs/alerting-layer-bc-review-fixes.md` 缺陷 1。
+   >
+   > `unconfigured` 是二轮遗留 1 补的口径：`runProviderHealthCheck` 对缺 key 的 provider 提前 return、从不 `recordFailure`，熔断记录不存在 → `snapshot` 恒 `closed` → secret 全缺（密钥轮换贴错）时探针全绿——而 cron 层同场景判 `down`、心跳打 `/fail`，三层里恰好外部眼睛这层瞎了。缺 key 的 provider 在 entries 里标 `state: "unconfigured"`（provider id 本就在 body 里，这不是凭据泄露），与 cron 的 `probeable` 谓词同源。
 4. `Cache-Control: max-age=30` 提示拨测客户端降低轮询频率。注意 Cloudflare **默认不缓存 Worker 响应**（边缘缓存需显式用 Cache API），该头挡不住恶意轮询 —— `/v1/health` 是唯一无鉴权且读 KV 的端点，Worker 内另有 15s isolate 结果缓存兜住 KV 读频率。
 
 两条边界：

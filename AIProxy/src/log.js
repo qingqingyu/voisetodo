@@ -5,6 +5,11 @@
 //   - callers MUST NOT pass transcript or upstream response bodies
 //   - callers that log provider errors MUST pass known secret values to errorFields()
 //     so exception messages/stacks cannot leak URL-embedded credentials
+//
+// Reserved keys: `fields` spreads AFTER the envelope, so passing ts / level /
+// event in fields overwrites the envelope (a severity of `level: "down"` would
+// hide the line from level=info|warn|error queries). Never use those three keys
+// as field names — pick a distinct name (e.g. alertLevel for alert severities).
 
 export function logInfo(event, fields = {}) {
   log("info", event, fields);

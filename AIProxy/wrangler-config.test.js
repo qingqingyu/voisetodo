@@ -135,6 +135,21 @@ for (const { label, path } of CONFIGS) {
     );
   });
 
+  test(`${label}: SUBSCRIPTION_DAILY_LIMIT, if set, is a positive integer`, () => {
+    // 未配置合法(代码默认 500)。这里拦"配置了但配错":非法值会触发 worker 侧
+    // invalid_daily_limit logWarn 并回落默认 500 —— 按订阅限速不会失效,但配置
+    // 意图静默不生效,只能靠线上日志发现。与 GLOBAL_*_LIMIT 系列守同一口径。
+    const vars = readVars(path);
+    if (vars.SUBSCRIPTION_DAILY_LIMIT === undefined) return;
+
+    const value = Number(vars.SUBSCRIPTION_DAILY_LIMIT);
+    assert.ok(
+      Number.isInteger(value) && value > 0,
+      `SUBSCRIPTION_DAILY_LIMIT="${vars.SUBSCRIPTION_DAILY_LIMIT}" 不是正整数 → `
+        + "worker 侧会 logWarn 回落默认 500,订阅限速配置不生效"
+    );
+  });
+
   test(`${label}: subscription JWS verification vars are present`, () => {
     const vars = readVars(path);
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
 import { handleRequest, handleTelemetryBatch, handleScheduled, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache, _testResetAlertState, _testResetProbeCache } from "./worker.js";
 import { applyPrimaryOverride } from "./src/adminConfig.js";
-import { classifyLevel, shouldNotify } from "./src/alertState.js";
+import { classifyLevel, shouldNotify, nextRecord } from "./src/alertState.js";
 import { makeCacheKey } from "./src/extractionCache.js";
 import { HealthStore, configureHealthParams, _testResetHealthParams } from "./src/health.js";
 import { mintTestJWS } from "./src/jws-fixture.js";
@@ -1456,6 +1456,215 @@ test("P0: split 模式 Pro 同样豁免免费桶熔断", async () => {
     );
     // split 不计费(quotaState=null,无 X-Quota-* 头),此处只验证不被免费桶 503
     assert.equal(response.status, 200);
+  });
+});
+
+// 新问题 1 回归:assist 模式此前只读 trip 标志、从不计数——pro 桶标志只由
+// extract 流量写,split/reflect 永不打满它 → 付费档在 assist 模式上一道限流
+// 都没有(合法 JWS = 无限模型调用)。修复后 assist 与 extract 同口径递增本档
+// 全局预算:不计费额度(拍板)不变,计的是成本侧全局桶。
+test("assist 计入本档全局预算: Pro split 递增 pro 桶(滚动窗口口径)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "拆一下这件事", mode: "split" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro-split-count",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        GLOBAL_DAILY_LIMIT: "5",
+        GLOBAL_PRO_DAILY_LIMIT: "8",
+        RATE_LIMIT_KV: kv,
+        QUOTA_COUNTER_DO: doBinding,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      ctx,
+      jsonResponseProvider("a")
+    );
+    assert.equal(response.status, 200);
+    await ctx.awaitAll();
+    const proConsume = doBinding._calls.filter((c) => c.key === "global-budget-pro");
+    assert.equal(proConsume.length, 1, "split 必须递增 pro 全局桶");
+    assert.equal(proConsume[0].hour, "2026-05-26T12");
+    assert.equal(proConsume[0].windowHours, 6);
+    assert.equal(proConsume[0].limit, 2, "窗口内阈值 = ceil(8 × 6/24)");
+    assert.equal(doBinding._calls.some((c) => c.key === "global-budget"), false, "pro split 不碰免费桶");
+    assert.equal(doBinding._calls.some((c) => c.key === "device-quota"), false, "assist 不占计费额度(拍板不变)");
+  });
+});
+
+test("assist 计入本档全局预算: 持续 split 刷量打穿免费桶后 503(不再是零防护)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      DAILY_REQUEST_LIMIT: "5",
+      GLOBAL_DAILY_LIMIT: "4", // 窗口内阈值 = ceil(4×6/24) = 1:第 2 次即打穿
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = (device) => request({ transcript: "拆", mode: "split" }, {
+      "X-App-Token": "token", "X-Device-ID": device, "X-Local-Date": "2026-05-26"
+    });
+    // 第 1 次:计数 1,放行;第 2 次:DO 拒绝 → 写 trip 标志(本次响应仍 200,异步计数)
+    const ctx1 = makeFakeCtx();
+    const first = await handleRequest(mk("d-1"), env, ctx1, jsonResponseProvider("a"));
+    assert.equal(first.status, 200);
+    await ctx1.awaitAll();
+    const ctx2 = makeFakeCtx();
+    const second = await handleRequest(mk("d-2"), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(second.status, 200, "DO 异步计数,打穿当次仍放行");
+    await ctx2.awaitAll();
+    assert.equal(kv.values.get("global-budget-tripped:2026-05-26"), "1", "assist 流量打穿后要写 trip 标志");
+    // 第 3 次:热路径读到标志 → 503。修复前免费侧在 assist 上只剩 10/min/IP,
+    // 轮换 IP 即可绕过;现在本档全局桶把它拦下。
+    const third = await handleRequest(mk("d-3"), env, makeFakeCtx(), jsonResponseProvider("c"));
+    assert.equal(third.status, 503);
+    assert.equal((await third.json()).error, "global_budget_exceeded");
+  });
+});
+
+test("assist 计入本档全局预算: pro 桶 trip 时 Pro split 也被 503(修复前该标志对 assist 永不生效)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map([["global-budget-tripped-pro:2026-05-26", "1"]]));
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: "拆一下", mode: "split" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-pro-split-tripped",
+          "X-Local-Date": "2026-05-26",
+          "X-Subscription-JWS": jws
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        PAID_DAILY_LIMIT: "100",
+        GLOBAL_PRO_DAILY_LIMIT: "8",
+        RATE_LIMIT_KV: kv,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      jsonResponseProvider("a")
+    );
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "global_budget_exceeded_pro");
+  });
+});
+
+// 新问题 2 回归:JWS 是无绑定 bearer token,device ID 客户端自填 —— 「一个
+// 合法 JWS + 轮换 X-Device-ID」绕过一切按 device 计的配额(100/天/台对它
+// 无限叠加)。按订阅标识(originalTransactionId,JWS 自带、轮换不掉)设
+// 独立日上限后,轮换设备也逃不掉。
+test("按订阅限速: 同一 JWS 轮换 device ID,超出订阅日限被 429", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-sub-001" }
+  });
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const baseEnv = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "k",
+    DAILY_REQUEST_LIMIT: "5",
+    PAID_DAILY_LIMIT: "100",
+    SUBSCRIPTION_DAILY_LIMIT: "2",
+    RATE_LIMIT_KV: kv,
+    QUOTA_COUNTER_DO: doBinding,
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+    APP_BUNDLE_ID: "com.voicetodo.app"
+  };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const mk = (device) => request({ transcript: "a" }, {
+      "X-App-Token": "token", "X-Device-ID": device, "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+    });
+    // 轮换三个 device ID、共享同一个 JWS:前两次放行,第三次按订阅超限
+    const first = await handleRequest(mk("d-sub-a"), baseEnv, {}, jsonResponseProvider("a"));
+    assert.equal(first.status, 200);
+    const second = await handleRequest(mk("d-sub-b"), baseEnv, {}, jsonResponseProvider("b"));
+    assert.equal(second.status, 200);
+    const third = await handleRequest(mk("d-sub-c"), baseEnv, {}, jsonResponseProvider("c"));
+    assert.equal(third.status, 429);
+    const body = await third.json();
+    assert.equal(body.error, "subscription_quota_exceeded");
+    // withMockedToday 把 toISOString 冻结成固定串,tomorrowUtcDate 也被冻在
+    // 「今天」——只断言日期形状,数值正确性由非 mock 场景保证。
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(String(body.resetAt)), "resetAt 是日期");
+    assert.equal(third.headers.get("X-RateLimit-Type"), "subscription");
+    assert.ok(Number(third.headers.get("Retry-After")) > 0, "带 Retry-After");
+    // 被订阅限速拒绝的请求不得再扣 device 配额(闸门在所有扣减之前)
+    const deviceConsumes = doBinding._calls.filter((c) => c.key === "device-quota");
+    assert.equal(deviceConsumes.length, 2, "只有放行的两次扣了 device 配额");
+    // 订阅计数按订阅标识落键,三次都指向同一订阅
+    const subConsumes = doBinding._calls.filter((c) => c.key === "sub-daily");
+    assert.equal(subConsumes.length, 3);
+    assert.ok(subConsumes.every((c) => c.date === "2026-05-26" && c.limit === 2));
+  });
+});
+
+test("按订阅限速: 免费档与无标识 Pro 不经过该层", async () => {
+  // 免费:无 JWS,tier=free,直接跳过
+  const freeKv = new MemoryKV(new Map());
+  const freeDo = makeFakeQuotaCounterDO();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const free = await handleRequest(
+      request({ transcript: "a" }, { "X-App-Token": "token", "X-Device-ID": "d-free-sub", "X-Local-Date": "2026-05-26" }),
+      {
+        APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100", SUBSCRIPTION_DAILY_LIMIT: "1",
+        RATE_LIMIT_KV: freeKv, QUOTA_COUNTER_DO: freeDo
+      },
+      {},
+      jsonResponseProvider("a")
+    );
+    assert.equal(free.status, 200);
+    assert.equal(freeDo._calls.some((c) => c.key === "sub-daily"), false, "免费档不触碰订阅计数");
+  });
+
+  // Pro 但 JWS payload 无订阅标识(以及部署后 ≤15min 的旧缓存条目同形态):
+  // 显式跳过 + 记日志,不静默也不瞎猜键
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const noIdKv = new MemoryKV(new Map());
+  const noIdDo = makeFakeQuotaCounterDO();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const pro = await handleRequest(
+      request({ transcript: "a" }, {
+        "X-App-Token": "token", "X-Device-ID": "d-pro-noid", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+      }),
+      {
+        APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100", SUBSCRIPTION_DAILY_LIMIT: "1",
+        RATE_LIMIT_KV: noIdKv, QUOTA_COUNTER_DO: noIdDo,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      jsonResponseProvider("a")
+    );
+    assert.equal(pro.status, 200);
+    assert.equal(noIdDo._calls.some((c) => c.key === "sub-daily"), false, "无订阅标识时跳过该层,不瞎猜键");
   });
 });
 
@@ -5551,6 +5760,50 @@ test("health probe: open + half-open 混合 → 503 + down(两者都是不健康
   assert.equal((await response.json()).status, "down");
 });
 
+// 遗留 1 回归:缺 key/adapter 的 provider 对探针必须算不健康。runProviderHealthCheck
+// 对它们提前 return、从不 recordFailure → 熔断记录不存在 → snapshot 恒 closed,
+// 修复前探针在「Worker 活着但一个 provider 都用不了」(密钥轮换贴错)时全绿 ——
+// 这正是 UptimeRobot 这层外部眼睛最该红的场景。与 cron 探活(probeable===0 →
+// down)和 /fail 心跳口径对齐。
+test("health probe: 全部 provider 缺 secret → 503 + down,entries 标 unconfigured", async () => {
+  const kv = new MemoryKV(new Map());
+  // secrets 全缺:loadProviders 保留条目(apiKey=""),探针此前读不到熔断记录全绿
+  const env = providersEnv(
+    [
+      { id: "P1", type: "anthropic", url: "https://api.z.ai/v1/messages", model: "claude-test", priority: 1, secretName: "PROVIDER_KEY_P1" },
+      { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2" }
+    ],
+    {},
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const response = await handleRequest(probeRequest(), env, {});
+  assert.equal(response.status, 503, "一个可用的 provider 都没有,探针必须红");
+  const data = await response.json();
+  assert.equal(data.status, "down");
+  assert.deepEqual(data.providers, [
+    { id: "P1", state: "unconfigured" },
+    { id: "P2", state: "unconfigured" }
+  ]);
+});
+
+test("health probe: 部分缺 secret → 200 + degraded(缺 key 的不算健康)", async () => {
+  const kv = new MemoryKV(new Map());
+  // 只给 P1 配 key:P1 closed、P2 unconfigured → 不是 ok
+  const env = providersEnv(
+    [
+      { id: "P1", type: "anthropic", url: "https://api.z.ai/v1/messages", model: "claude-test", priority: 1, secretName: "PROVIDER_KEY_P1" },
+      { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2" }
+    ],
+    { PROVIDER_KEY_P1: "k1" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  const response = await handleRequest(probeRequest(), env, {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.status, "degraded", "缺 key 的 provider 不能把状态稀释成 ok");
+  assert.equal(data.providers.find((p) => p.id === "P2").state, "unconfigured");
+});
+
 // ALERTING.md 缺陷 3 回归:停用的 provider 不承接流量,不得出现在探针结果里,
 // 否则停用但健康的 provider 会把「唯一在跑的挂了」稀释成 degraded。
 test("health probe: 停用的 provider 不进 entries", async () => {
@@ -5693,15 +5946,17 @@ test("shouldNotify: 跃迁矩阵(注入 now 控时,不用真实时钟)", async (
     { notify: true, kind: "recovered" }
   );
   // down 持续未满 6h:不推;满 6h:推 reminder
-  const downRecently = { level: "down", since: now - 3600_000, lastNotifiedAt: now - 3600_000 };
+  // (lastNotifiedLevel 记「已送达 down」—— 回执与当前 level 一致才轮得到 reminder 计时)
+  const downRecently = { level: "down", since: now - 3600_000, lastNotifiedAt: now - 3600_000, lastNotifiedLevel: "down" };
   assert.deepEqual(shouldNotify(downRecently, "down", now), { notify: false, kind: null });
-  const downLong = { level: "down", since: now - sixHours - 1000, lastNotifiedAt: now - sixHours - 1000 };
+  const downLong = { level: "down", since: now - sixHours - 1000, lastNotifiedAt: now - sixHours - 1000, lastNotifiedLevel: "down" };
   assert.deepEqual(shouldNotify(downLong, "down", now), { notify: true, kind: "reminder" });
   // degraded 持续没有 reminder(只有 down 有)
-  const degradedLong = { level: "degraded", since: now - sixHours - 1000, lastNotifiedAt: now - sixHours - 1000 };
+  const degradedLong = { level: "degraded", since: now - sixHours - 1000, lastNotifiedAt: now - sixHours - 1000, lastNotifiedLevel: "degraded" };
   assert.deepEqual(shouldNotify(degradedLong, "degraded", now), { notify: false, kind: null });
-  // 故障告警从未成功送达(lastNotifiedAt 仍为 0,上次 Telegram 发送失败)→ 重推:
-  // degraded 没有 reminder 兜底,不重推就是永久丢失;down 不用干等 6h
+  // 送达回执与当前 level 不一致 → 补发(遗留 2:统一口径,三种 kind 都覆盖):
+  //   - 故障告警从未成功送达(lastNotifiedLevel 还停在旧值)→ 重推:
+  //     degraded 没有 reminder 兜底,不重推就是永久丢失;down 不用干等 6h
   assert.deepEqual(
     shouldNotify({ level: "degraded", since: now - 3600_000, lastNotifiedAt: 0 }, "degraded", now),
     { notify: true, kind: "degraded" },
@@ -5712,13 +5967,50 @@ test("shouldNotify: 跃迁矩阵(注入 now 控时,不用真实时钟)", async (
     { notify: true, kind: "down" },
     "从未送达的 down 重推,不用等 6h reminder"
   );
+  //   - 恢复消息发送失败(level 已是 ok,但用户最后收到的是 down)→ 补推 recovered:
+  //     旧口径(lastNotifiedAt≠0 就不重推)会把这条永久丢掉,收到 🚨 的人一直以为故障还在
+  assert.deepEqual(
+    shouldNotify({ level: "ok", since: now - 60_000, lastNotifiedAt: now - 3600_000, lastNotifiedLevel: "down" }, "ok", now),
+    { notify: true, kind: "recovered" },
+    "恢复消息未送达必须补推"
+  );
   // ok 不适用重推:正常状态本来就不推,开机首跑 ok 的记录 lastNotifiedAt 就是 0
   assert.deepEqual(
     shouldNotify({ level: "ok", since: now, lastNotifiedAt: 0 }, "ok", now),
     { notify: false, kind: null }
   );
+  // 旧 KV 记录(无 lastNotifiedLevel 字段,部署前写入)按 "ok" 处理:
+  //   - 稳态 ok → 不推(首跑 ok 不推的回归防线,防止把缺失字段当待补发)
+  assert.deepEqual(
+    shouldNotify({ level: "ok", since: now - 3600_000, lastNotifiedAt: 0 }, "ok", now),
+    { notify: false, kind: null },
+    "旧记录稳态 ok 不推"
+  );
+  //   - 稳态 down → 补推一条(宁吵勿哑;送达后 lastNotifiedLevel 前进,只发生一次)
+  assert.deepEqual(
+    shouldNotify({ level: "down", since: now - 3600_000, lastNotifiedAt: now - 3600_000 }, "down", now),
+    { notify: true, kind: "down" },
+    "旧记录稳态 down 补推一次"
+  );
   // current 为 null(skipped)一律不推
   assert.deepEqual(shouldNotify(downRecently, null, now), { notify: false, kind: null });
+});
+
+// 遗留 2 回归:nextRecord 的送达回执字段。lastNotifiedAt 只管 reminder 计时,
+// lastNotifiedLevel 只管「待补发」—— 两个字段各司其职,谁也不能兼任谁。
+test("nextRecord: 送达才推进 lastNotifiedLevel,未送达沿用旧回执", async () => {
+  const now = 1_756_900_000_000;
+  // 送达(调用方传 decision.notify=true):回执前进到 current
+  const delivered = nextRecord({ level: "ok", since: now, lastNotifiedAt: 0, lastNotifiedLevel: "ok" }, "down", { notify: true, kind: "down" }, now);
+  assert.equal(delivered.lastNotifiedLevel, "down");
+  assert.equal(delivered.lastNotifiedAt, now);
+  // 未送达(调用方按发送结果把 notify 置 false):回执不动,等下次 cron 补发
+  const failed = nextRecord({ level: "down", since: now, lastNotifiedAt: now, lastNotifiedLevel: "down" }, "ok", { notify: false, kind: null }, now);
+  assert.equal(failed.lastNotifiedLevel, "down", "恢复消息没送到,用户最后知道的还是 down");
+  assert.equal(failed.lastNotifiedAt, now, "reminder 计时沿用旧值,不受发送失败影响");
+  // 旧记录无此字段:按 "ok" 起步(与 shouldNotify 的解读一致)
+  const legacy = nextRecord({ level: "ok", since: now, lastNotifiedAt: 0 }, "degraded", { notify: true, kind: "degraded" }, now);
+  assert.equal(legacy.lastNotifiedLevel, "degraded");
 });
 
 // MARK: - 层 B/C 集成: handleScheduled 告警推送 + healthchecks.io 心跳
@@ -5812,7 +6104,7 @@ test("cron 告警: KV 读失败仍推(宁可多推,不可漏报)", async () => {
   // 预置「刚推过 down」的记录 —— KV 正常读取时 shouldNotify 会判定不推;
   // 读失败降级为无历史 → 必须推。这是漏报 > 误报的取舍,要有测试守着。
   kv.values.set("alert:provider_health", JSON.stringify({
-    level: "down", since: Date.now() - 5000, lastNotifiedAt: Date.now() - 5000
+    level: "down", since: Date.now() - 5000, lastNotifiedAt: Date.now() - 5000, lastNotifiedLevel: "down"
   }));
   const kvWithPoisonedRead = {
     values: kv.values,
@@ -5920,6 +6212,36 @@ test("cron 告警: Telegram 发送失败不写 lastNotifiedAt,下次 cron 同 le
   // 第三跑:已送达、未满 6h —— 不再重推
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
   assert.equal(telegramCalls.length, 2, "送达后同 level 未满 6h 不重推");
+});
+
+// 遗留 2 回归:恢复消息发送失败不得永久丢失。旧口径把「待补发」编码在
+// lastNotifiedAt(非 ok 且 =0),恢复失败后 lastNotifiedAt 是故障时刻的旧值 ≠ 0,
+// 重推分支永远跳过 —— 收到 🚨 的人从此一直以为故障还在。修复后靠
+// lastNotifiedLevel 回执比对,ok 同样能补发。
+test("cron 告警: 恢复消息发送失败,下次 cron 补推 recovered", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  // 第一跑:全挂 → down 送达(回执 lastNotifiedLevel=down)
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
+  assert.equal(telegramCalls.length, 1);
+
+  // 第二跑:恢复,但 Telegram 偶发 500 → recovered 没送达,回执仍停在 down
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls, telegramFail: true }));
+  assert.equal(telegramCalls.length, 2, "恢复消息尝试过一次");
+  const record = JSON.parse(kv.values.get("alert:provider_health"));
+  assert.equal(record.level, "ok", "level 照常前进");
+  assert.equal(record.lastNotifiedLevel, "down", "恢复没送达,用户最后知道的还是 down");
+
+  // 第三跑:稳态 ok,回执 ≠ 当前 level → 补推 recovered(旧口径在这里永久丢)
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
+  assert.equal(telegramCalls.length, 3, "下次 cron 补发恢复消息");
+  assert.ok(telegramCalls[2].body.text.includes("恢复"), telegramCalls[2].body.text);
+  const record3 = JSON.parse(kv.values.get("alert:provider_health"));
+  assert.equal(record3.lastNotifiedLevel, "ok", "补发送达后回执前进");
+
+  // 第四跑:回执一致,稳态 ok 不再推
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
+  assert.equal(telegramCalls.length, 3);
 });
 
 // skipped(未配 TELEGRAM_*)要当成「已处理」写入,否则每次 cron 都会重算一遍

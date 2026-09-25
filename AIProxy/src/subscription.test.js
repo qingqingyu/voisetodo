@@ -21,6 +21,26 @@ test("verifies a valid StoreKit-style JWS with anchored chain", async () => {
   const result = await verify(jws, rootFingerprint);
   assert.equal(result.productId, PRODUCTS[0]);
   assert.ok(result.expiresAt > Date.now());
+  // 无订阅标识的 payload:subscriptionId 落 null(调用方显式跳过按订阅限速,不静默)
+  assert.equal(result.subscriptionId, null);
+});
+
+// 订阅标识提取(按订阅限速的键):originalTransactionId 在一次购买内跨设备稳定,
+// 优先于每次续订都变的 transactionId;数字形态归一为字符串;两者皆缺 → null。
+test("extracts subscriptionId from payload (originalTransactionId preferred)", async () => {
+  const { jws: jwsBoth, rootFingerprint } = await mintTestJWS({
+    payload: { originalTransactionId: "tx-orig-001", transactionId: "tx-renew-009" }
+  });
+  const both = await verify(jwsBoth, rootFingerprint);
+  assert.equal(both.subscriptionId, "tx-orig-001");
+
+  const { jws: jwsRenewOnly, rootFingerprint: renewFp } = await mintTestJWS({ payload: { transactionId: "tx-renew-009" } });
+  const renewOnly = await verify(jwsRenewOnly, renewFp);
+  assert.equal(renewOnly.subscriptionId, "tx-renew-009");
+
+  const { jws: jwsNumeric, rootFingerprint: numericFp } = await mintTestJWS({ payload: { originalTransactionId: 123456789 } });
+  const numeric = await verify(jwsNumeric, numericFp);
+  assert.equal(numeric.subscriptionId, "123456789");
 });
 
 test("rejects forged JWS signature", async () => {

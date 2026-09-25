@@ -107,7 +107,9 @@ cd AIProxy && npx wrangler dev
 上线时告警与可观测性都还没就位：
 
 - **告警层 B/C 修好了但没部署。** `ALERTING.md` 状态表写着「待重新部署」，线上跑的还是 2026-09-05 那版——那版探针把 `half-open` 当健康、secret 全缺时三层全绿。
+  > ✅ 2026-09-25 更正 + 收口：一轮 5 缺陷修复实际已随 09-22 部署上线（线上版本 0157fdee，`wrangler deployments list` 核实）——当时「没部署」的判断是被 `ALERTING.md` 过期状态行误导。二轮 3 处遗留已于 09-25 修复并随当日部署上线。本条 P1 至此闭环。
 - **还有 3 处遗留缺陷未修**（`docs/alerting-layer-bc-review-fixes.md` 第二轮 review）。其中遗留 1 让 secret 全缺时 `/v1/health` 仍报 200 ok。
+  > ✅ 2026-09-25 已修（unconfigured 探针 / lastNotifiedLevel 送达回执 / 日志 alertLevel 字段），随当日部署上线。
 - **D1 遥测没开。** `wrangler.toml` 的 `TELEMETRY_DB` binding 仍是注释掉的（方案见 `docs/telemetry-d1-enablement.md`）——上线后**没有任何事后复盘数据**，想查「昨天多少人失败了」都查不了。
 - **订阅两层不一致无检测**（`docs/subscription-tier-mismatch.md`）。2026-08-20 那类「付费用户被静默降级」的 bug 会再次沉默——`wrangler.toml` 注释里记着那次是「订阅用户第 3 次录音弹免费限制墙」，靠用户反馈才发现的。
 
@@ -216,9 +218,11 @@ const ttl = Math.min(Math.max(60, Math.floor((result.expiresAt - Date.now()) / 1
 
 ## 4 处新问题
 
-核心矛盾一句话：**豁免的理由「device 侧 `PAID_DAILY_LIMIT` 已是硬顶」只在 extract 路径成立，而豁免被应用到了所有路径。**
+> **2026-09-25 状态**：新问题 1、2 已修（随当日部署上线）；新问题 3、4 仍开放。核心矛盾一句话：**豁免的理由「device 侧 `PAID_DAILY_LIMIT` 已是硬顶」只在 extract 路径成立，而豁免被应用到了所有路径。**
 
 ### 新问题 1：Pro 在 split/reflect 上现在完全没有任何限流（HIGH，本次引入）
+
+> ✅ **2026-09-25 已修**：split/reflect 分支与 extract 同口径递增本档全局预算（`enforceGlobalBudgetIncrement` 落进 assist 路径）——不计费额度（拍板）不变，计的是成本侧全局桶；持续刷量会打穿本档 trip，assist 请求被本档 503 拦下。回归测试三条（pro 桶递增 / 免费持续刷穿 503 / pro 桶 trip 拦 assist）。
 
 `worker.js:211-217` 的 else 分支只调两道闸门：
 
@@ -247,6 +251,8 @@ commit message 里「Pro 的 split/reflect 流量不计任何桶（免费侧同�
 2. **只豁免 `enforceIpDailyLimit`**（500/天，CGNAT 误伤的真正来源），**保留 `enforceIpRateLimit` 这道每分钟突发刹车给所有档位**。10/min 对真人足够宽；若担心 CGNAT 下付费用户互相挤，给 Pro 一个更高的每分钟阈值，而不是完全豁免
 
 ### 新问题 2：Pro 的 JWS 是无绑定 bearer token，豁免放大了它的价值（HIGH）
+
+> ✅ **2026-09-25 服务端抑制已落地**：新增按订阅限速——以验签 payload 的 `originalTransactionId`（一次购买内跨设备稳定、客户端轮换不掉）为键，`SUBSCRIPTION_DAILY_LIMIT`（默认 500/UTC 日，≈5 台设备打满 `PAID_DAILY_LIMIT`）封顶，超限 429 `subscription_quota_exceeded`。轮换 device ID 无效，滥用上限从「无限」压回常数。**仍开放**（后续项）：缓存掺 JWS 指纹（挡「任意非空 JWS + 缓存热 device」的 15 分钟窗口）、App Attest / DeviceCheck 设备绑定。
 
 `verifySubscriptionJWS` 只校验 bundleId / productId / 过期 / 证书链——**不绑定设备**。所以一个买来的 JWS 可以配任意 `X-Device-ID` 使用，而 device ID 是客户端自填的（`AIProxy/README.md` 自己也写明可伪造）。
 
@@ -305,6 +311,8 @@ npx wrangler dev
 ```
 
 ## 与告警遗留的优先级关系
+
+> **2026-09-25 收口**：告警 B/C 一轮修复实际已于 09-22 上线（当时本节说「没有部署」是被 `ALERTING.md` 过期状态行误导）；二轮 3 处遗留与新问题 1/2 均已于 09-25 修复并随当日部署上线。剩余开放项：新问题 3（verifyChain 先比根指纹再验签 + 廉价闸门排序）、新问题 4（selector 钉头对 half-open 生效）、「附带」节的 z.ai 双 provider 共用上游。
 
 本节 4 条都不如 **`docs/alerting-layer-bc-review-fixes.md` 的「第二轮 review」** 紧急——那 3 处遗留经 2026-09-24 复验**一处未修**，且告警至今**没有部署**（`ALERTING.md` 实施状态仍是「待重新部署」）。
 

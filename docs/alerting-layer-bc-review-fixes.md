@@ -382,6 +382,9 @@ curl -i "http://localhost:8787/v1/health"
 > `worker.js` 的 `alert.health.notified` 仍把 `level` 传进 fields（遗留 3）。
 > 同期 `ALERTING.md` 的实施状态也仍是「待重新部署」——**告警至今没上线**。
 > 上线在即，这一节的优先级高于 `docs/pre-launch-risk-review.md` 里的任何一条。
+>
+> ✅ **2026-09-25 收口**：3 处遗留已全部修复（探针 `unconfigured` 口径 / `lastNotifiedLevel` 送达回执 / 日志字段改名 `alertLevel` + `log.js` 保留键注释），随当日部署上线。
+> 另更正上一段的一条事实错误：**告警并非「至今没上线」**——一轮 5 缺陷修复已随 09-22 部署上线（线上版本 0157fdee，`wrangler deployments list` 核实），当时被 `ALERTING.md` 的过期状态行误导。「待重新部署」是文档没跟上部署，不是代码没上线。
 
 对 `7d3ea0c` 的复核。**5 处修复全部真修好了**，另发现 3 处遗留，其中 1 处说明缺陷 2 只修了三分之二。
 

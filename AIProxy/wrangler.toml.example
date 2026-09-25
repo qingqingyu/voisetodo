@@ -36,6 +36,10 @@ PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo
 # 窗口内阈值 = 日限 × 窗口长/24。持续刷量日成本天花板不变，单次打穿锁死 ≤ 窗口长。
 # 不配置则用代码默认 6。
 # GLOBAL_BUDGET_WINDOW_HOURS = "6"
+# 每订阅每天调用上限（默认 500，UTC 日）。以验签 payload 的订阅标识为键，
+# 挡「一个合法 JWS + 轮换 X-Device-ID」（按 device 计的配额对它全部失效）。
+# 超限 429 subscription_quota_exceeded，重试窗口到下个 UTC 0 点。
+# SUBSCRIPTION_DAILY_LIMIT = "500"
 # 按 IP 限流（独立于设备，挡"单 IP 轮换 X-Device-ID"）。留空则不启用。
 # 日上限需显著高于单设备额度，避免 VPN、公司网络等共享出口误伤正常用户。
 # ⚠️ 仅对免费档生效：验签通过的 Pro 请求豁免两道 IP 闸门（CGNAT 共享出口下
