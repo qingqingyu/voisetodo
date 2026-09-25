@@ -118,6 +118,23 @@ for (const { label, path } of CONFIGS) {
     );
   });
 
+  test(`${label}: GLOBAL_BUDGET_WINDOW_HOURS, if set, is an integer in 1..24`, () => {
+    // 未配置合法(代码默认 6)。这里拦"配置了但配错":非法值会触发 worker 侧
+    // invalid_window_hours logWarn 并回落默认 6 —— 熔断不会失效,但配置意图
+    // (比如想调短窗口)静默不生效,只能靠线上日志发现。上限 24 还与 DO 的
+    // storage 清理边界联动(保留两天桶,见 quota-counter.js 文件头),配 >24
+    // 会被 DO 端 validateConsumeRollingInput 拒绝(invalid_window_hours → 400)。
+    const vars = readVars(path);
+    if (vars.GLOBAL_BUDGET_WINDOW_HOURS === undefined) return;
+
+    const value = Number(vars.GLOBAL_BUDGET_WINDOW_HOURS);
+    assert.ok(
+      Number.isInteger(value) && value >= 1 && value <= 24,
+      `GLOBAL_BUDGET_WINDOW_HOURS="${vars.GLOBAL_BUDGET_WINDOW_HOURS}" 不是 1..24 的整数 → `
+        + "worker 侧会 logWarn 回落默认 6,窗口配置不生效"
+    );
+  });
+
   test(`${label}: subscription JWS verification vars are present`, () => {
     const vars = readVars(path);
 

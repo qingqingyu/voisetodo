@@ -1708,8 +1708,43 @@ function secondsUntilNextLocalDay(quotaDate) {
   return Number.isFinite(delta) && delta > 0 ? delta : 3600;
 }
 
-// 全局每日预算熔断：当天全网调用量超过 GLOBAL_DAILY_LIMIT 即对所有人返回 503，
-// 把"无限身份的分布式刷"的财务风险锁成可设的上限。
+// 距下一个 UTC 整点边界的秒数。全局预算滚动窗口的小时桶在整点翻转,
+// 老桶滚出窗口、总和才可能下降 —— 因此 trip 标志的 TTL 和 503 的 Retry-After
+// 都以它为准。从 toISOString 解析而非 Date.now() 取模,保持与配额日期同源
+// (测试用 withMockedToday 只 mock toISOString)。
+function secondsUntilNextUtcHour() {
+  const iso = new Date().toISOString();
+  const minutes = Number(iso.slice(14, 16));
+  const seconds = Number(iso.slice(17, 19));
+  const delta = 3600 - minutes * 60 - seconds;
+  return delta > 0 ? delta : 3600;
+}
+
+// 全局预算滚动窗口长(小时)。GLOBAL_BUDGET_WINDOW_HOURS 可配,合法范围 1..24;
+// 未配置 = 默认 6;配置非法记 warn 后回落默认(不静默),熔断不能因配错而失效。
+// 上限 24 与 DO 的 storage 清理边界联动(保留两天桶,见 quota-counter.js 文件头)。
+function resolveGlobalBudgetWindowHours(env, requestContext) {
+  if (env.GLOBAL_BUDGET_WINDOW_HOURS === undefined) return 6;
+  const value = Number(env.GLOBAL_BUDGET_WINDOW_HOURS);
+  if (Number.isInteger(value) && value >= 1 && value <= 24) return value;
+  logWarn("proxy.global_budget.invalid_window_hours", {
+    ...requestContext,
+    configuredWindowHours: env.GLOBAL_BUDGET_WINDOW_HOURS,
+    fallback: 6
+  });
+  return 6;
+}
+
+// 全局预算熔断:把"无限身份的分布式刷"的财务风险锁成可设的上限。
+//
+// 计量口径(2026-09-24 起):UTC 小时桶滚动窗口,窗口长 GLOBAL_BUDGET_WINDOW_HOURS
+// (默认 6h),窗口内阈值 = 日限 × windowHours/24(向上取整)。
+//   - 持续刷量时日成本天花板不变:维持窗口打满的速率 = 日限/24 每小时,
+//     一天最多打满 24/windowHours 个窗口 = 正好一个日限的量。
+//   - 单次打穿的锁死上限 ≤ 窗口长:老的小时桶逐小时滚出窗口,总和自然回落,
+//     trip 标志 TTL 只到下一个整点边界,到期即重评 —— 不再是"锁死到 UTC 0 点"
+//     (docs/pre-launch-risk-review.md 修法第 2 条:国内用户晚间打穿要等到
+//     次日早 8 点才恢复,正好覆盖使用高峰)。
 //
 // Step 7 起拆成两个独立函数,enforceAllQuotas 分别编排:
 //   - enforceGlobalBudgetHotPath:零成本前置(KV tripped 标志位)
@@ -1720,11 +1755,19 @@ function secondsUntilNextLocalDay(quotaDate) {
 // DO consume 异步进行(不阻塞响应);DO 检测到超限时写 KV 标志位,后续请求读到就 503。
 // 代价:从"真实越限"到"全网生效"有 KV 传播延迟(~60s),会超发一些 —— 但相比 KV 时代
 // "计数器根本不涨、上限形同虚设",这是从"漏"到"精确到分钟级"的改变。
+// 滚动窗口下这个代价多了一层含义:标志到期放开后到 DO 重评 re-trip 之间
+// (最坏 ~60s —— re-trip 的 KV put 跨 PoP 传播要那么久,不是秒级),每个整点
+// 边界会放行一小批未计数请求 —— 有界(免费侧被 10/min/IP 速度闸压着;能放大
+// 它的是轮换 device 的滥用形态),且换来的是熔断随实际压力逐小时松绑。
 
 // 热路径:读 KV tripped 标志位,熔断时立即 503。
 // isPro(P0):付费档读独立 pro 桶标志(global-budget-tripped-pro:<date>),
 // 免费桶 trip 不影响付费用户。未配置 GLOBAL_PRO_DAILY_LIMIT = 付费侧不设全局上限
 // (付费调用有收入覆盖的成本;device 侧 PAID_DAILY_LIMIT 仍是单设备硬顶)。
+// 标志 TTL 由写入方(enforceGlobalBudgetViaDOIncrement)定为「到下一个整点边界
+// + 传播余量」。key 仍带 UTC 日期只是历史格式延续,放行主要由 TTL 控制;
+// 例外:23 点写的标志 TTL 会越过 UTC 午夜,但午夜后热路径查的是新日期 key
+// → miss 提前放行(≤120s,有界;随即被 DO 重评 re-trip 兜住,不修)。
 async function enforceGlobalBudgetHotPath(env, requestContext, isPro = false) {
   // KV 未绑定:免费/付费桶都无法读 tripped 标志,统一跳过并记日志(同口径)。
   if (!env.RATE_LIMIT_KV) {
@@ -1748,10 +1791,14 @@ async function enforceGlobalBudgetHotPath(env, requestContext, isPro = false) {
     if (tripped === "1") {
       // 错误码独立(global_budget_exceeded_pro):客户端/运维可区分"付费侧成本上限"
       // 与"免费侧防刷熔断",不会把两者混成"服务挂了"。
+      // Retry-After = 下一个整点边界 + 120s,与 trip 标志 TTL 对齐:标志活到
+      // 整点+120s,早于它重试必然再吃 503 并拿到新的整点级 Retry-After,
+      // 守约客户端会跳过 +120s 处的 DO 重评窗口,多锁近一小时。
       logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit: proLimit, tier: "pro" });
       throw new ProxyHTTPError(503, "Service temporarily unavailable", {
         errorType: "global_budget_exceeded_pro",
-        body: { error: "global_budget_exceeded_pro" }
+        body: { error: "global_budget_exceeded_pro" },
+        headers: { "Retry-After": String(secondsUntilNextUtcHour() + 120) }
       });
     }
     return;
@@ -1768,24 +1815,33 @@ async function enforceGlobalBudgetHotPath(env, requestContext, isPro = false) {
   const trippedKey = `global-budget-tripped:${today}`;
   const tripped = await env.RATE_LIMIT_KV.get(trippedKey);
   if (tripped === "1") {
+    // Retry-After = 下一个整点边界 + 120s,与 trip 标志 TTL 对齐(理由见上方 pro 分支注释)。
     logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit });
     throw new ProxyHTTPError(503, "Service temporarily unavailable", {
       errorType: "global_budget_exceeded",
-      body: { error: "global_budget_exceeded" }
+      body: { error: "global_budget_exceeded" },
+      headers: { "Retry-After": String(secondsUntilNextUtcHour() + 120) }
     });
   }
 }
 
-// 增量路径:device/ip 都通过后调用。DO 异步 consume + 写 tripped(若超限)。
-// KV 路径(degraded)直接同步 increment。付费档计入独立 pro 桶。
+// 增量路径:device/ip 都通过后调用。DO 异步 consume-rolling + 写 tripped(若超限)。
+// KV 路径(degraded)直接同步 increment(仍按 UTC 日桶,见 enforceGlobalBudgetViaKV
+// 注释)。付费档计入独立 pro 桶。
 async function enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro = false) {
   if (!env.RATE_LIMIT_KV) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const nowIso = new Date().toISOString();
+  const today = nowIso.slice(0, 10);
+  // windowHours 只在 DO 路径用到,下沉到分支内求值 —— KV degraded 路径按日桶,
+  // 在那里对配置发 invalid_window_hours 告警是无关噪音(误导运维)。
   if (isPro) {
     const proLimit = Number(env.GLOBAL_PRO_DAILY_LIMIT || 0);
     if (!Number.isFinite(proLimit) || proLimit <= 0) return;
     if (env.QUOTA_COUNTER_DO) {
-      enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, { today, limit: proLimit, tier: "pro" });
+      enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, {
+        today, hour: nowIso.slice(0, 13), limit: proLimit,
+        windowHours: resolveGlobalBudgetWindowHours(env, requestContext), tier: "pro"
+      });
       return;
     }
     await enforceGlobalBudgetViaKV(env, requestContext, { today, limit: proLimit, tier: "pro" });
@@ -1795,7 +1851,10 @@ async function enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro = fa
   if (!Number.isFinite(limit) || limit <= 0) return;
 
   if (env.QUOTA_COUNTER_DO) {
-    enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, { today, limit });
+    enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, {
+      today, hour: nowIso.slice(0, 13), limit,
+      windowHours: resolveGlobalBudgetWindowHours(env, requestContext)
+    });
     return;
   }
   await enforceGlobalBudgetViaKV(env, requestContext, { today, limit });
@@ -1803,12 +1862,15 @@ async function enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro = fa
 
 // DO 异步增量路径:ctx.waitUntil 包好,本次响应不阻塞。
 // tier 分桶:独立 DO 实例(global-budget / global-budget-pro)+ 独立 tripped key。
+// 计量走 /consume-rolling 小时桶滚动窗口:窗口内阈值 = 日限 × windowHours/24
+// (向上取整),窗口总和由 DO 跨桶求和,老桶滚出即自然回落。
 function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
-  const { today, limit, tier = "free" } = params;
+  const { today, hour, limit, windowHours, tier = "free" } = params;
   const subjectKey = tier === "pro" ? "global-budget-pro" : "global-budget";
   const trippedKey = tier === "pro"
     ? `global-budget-tripped-pro:${today}`
     : `global-budget-tripped:${today}`;
+  const windowLimit = Math.ceil((limit * windowHours) / 24);
   if (!ctx?.waitUntil) {
     // 生产路径 ctx 必然存在;缺失表示调用方契约违反(测试 mock 不全 / 运行时异常)。
     // 显式 warn 而非静默 —— 否则 global budget 会被无声地跳过。
@@ -1824,10 +1886,10 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
       try {
         const id = env.QUOTA_COUNTER_DO.idFromName(subjectKey);
         const stub = env.QUOTA_COUNTER_DO.get(id);
-        const response = await stub.fetch(new Request("https://quota-counter.local/consume", {
+        const response = await stub.fetch(new Request("https://quota-counter.local/consume-rolling", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: subjectKey, date: today, limit, amount: 1 })
+          body: JSON.stringify({ key: subjectKey, hour, limit: windowLimit, windowHours, amount: 1 })
         }));
         if (!response.ok) {
           logWarn("proxy.global_budget.do_http_error", {
@@ -1838,19 +1900,31 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
         }
         const result = await response.json();
         if (!result.allowed) {
-          await env.RATE_LIMIT_KV.put(trippedKey, "1", { expirationTtl: 36 * 60 * 60 });
+          // TTL = 到下一个整点边界 + 2 分钟余量(时钟抖动/传播)。滚动窗口的
+          // 总和只会在整点(老桶滚出)后下降,到期放开 → 下一个请求的 DO
+          // consume 重评,仍超限则立刻 re-trip。对比旧的 36h(实际锁到 UTC 0 点),
+          // 这是"锁死窗口"从日级压到小时级的关键。
+          await env.RATE_LIMIT_KV.put(trippedKey, "1", {
+            expirationTtl: secondsUntilNextUtcHour() + 120
+          });
           logWarn("proxy.global_budget.tripped_set", {
             ...requestContext,
             today,
+            hour,
             used: result.used,
             limit,
+            windowHours,
+            windowLimit,
             tier
           });
         } else {
           logInfo("proxy.global_budget.incremented", {
             ...requestContext,
+            hour,
             used: result.used,
             limit,
+            windowHours,
+            windowLimit,
             tier,
             source: "do"
           });
@@ -1865,7 +1939,10 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
   );
 }
 
-// KV 路径(degraded / dev / test):保留 Step 5 前的 read-modify-write 语义。
+// KV 路径(degraded / dev / test):保留 Step 5 前的 read-modify-write 语义,
+// 仍按 UTC 日桶计数(不滚动)。原因:滚动窗口要跨 24 个小时桶求和,KV 的
+// 最终一致读 + 并发丢更新在这个形态下误差会叠乘;degraded 模式的目标是
+// "DO 挂了也别 fail-open",维持原语义比引入一套不精确的滚动更稳。
 async function enforceGlobalBudgetViaKV(env, requestContext, params) {
   const { today, limit, tier = "free" } = params;
   const key = tier === "pro" ? `global-quota-pro:${today}` : `global-quota:${today}`;
