@@ -6,10 +6,11 @@
 // 在 DO 内部是真正的原子操作。
 //
 // 接口(走 fetch 入口,符合 DurableObject 标准):
-//   POST /consume  { key, date, limit, amount? }  → { allowed, used, remaining, limit, taken }
-//   POST /refund   { key, date, amount? }         → { refunded, used }
-//   GET  /inspect  ?key=&date=                     → { used }
-//   POST /reset    { key, date }                   → { ok }   // 测试用,生产可关
+//   POST /consume          { key, date, limit, amount? }                → { allowed, used, remaining, limit, taken }
+//   POST /consume-rolling  { key, hour, limit, windowHours, amount? }   → { allowed, used, remaining, limit, taken }
+//   POST /refund           { key, date, amount? }                       → { refunded, used }
+//   GET  /inspect          ?key=&date=                                  → { used }
+//   POST /reset            { key, date }                                → { ok }   // 测试用,生产可关
 //
 // consume 的"部分授予"语义:当 amount > remaining 但 remaining > 0 时,返回
 //   { allowed: true, taken: <remaining>, used: <limit>, remaining: 0 }
@@ -19,6 +20,19 @@
 //
 // 计数 key 里带日期(YYYY-MM-DD),不同日期天然隔离。每天 UTC 0:05 触发 alarm 清理
 // 历史 storage,避免无限增长。alarm 在首次写入时设置,触发后再设下一个,保证持续。
+//
+// consume-rolling(全局预算熔断用):按 UTC 小时桶(YYYY-MM-DDTHH)计数,窗口 =
+// 以 hour 为终点的最近 windowHours 个桶(含当桶),consume 时先求窗口内总和再判限。
+// 命中时计数落在当前小时桶;老桶随时间自然滚出窗口,不需要显式重置 —— 这是
+// 「打穿后锁死到 UTC 0 点(国内用户最晚 ~10h)」的修复:窗口内阈值由调用方按
+// 日限 × windowHours/24 折算,持续刷量的日成本天花板不变,而单次打穿的锁死上限
+// 被压缩到 ≤ windowHours(每小时边界重评一次)。窗口内阈值折算在 worker 侧做,
+// DO 保持通用计数器职责。
+//
+// 清理边界(两套端点共用):保留「今天 + 昨天」两天的桶,只删 < 昨天 的 key。
+// 不能只保留今天 —— UTC 0:05 的 alarm 会把滚动窗口仍需要读取的「昨天的小时桶」
+// 全删掉(24h 窗口在 00:05 仍需昨天 01:00 起的桶),导致跨 UTC 0 点后窗口被
+// 低估、熔断变松。windowHours 上限 24,两天保留对任意合法窗口都够。
 //
 // alarm 链的脆弱点:依赖 CF 调度器按时触发。若某次 alarm 未触发(调度器异常),
 // 当前实例的 alarm 不会自我恢复 —— 下次 consume 不会重设 alarm(getAlarm 返回非 null
@@ -38,7 +52,7 @@ export class QuotaCounter {
     const path = url.pathname;
 
     // 路径分发先于 body 解析 —— 未知路径直接 404,不因缺 body 误报 400 invalid_json
-    if (path !== "/consume" && path !== "/refund" && path !== "/inspect" && path !== "/reset") {
+    if (path !== "/consume" && path !== "/consume-rolling" && path !== "/refund" && path !== "/inspect" && path !== "/reset") {
       return json({ error: "not_found" }, 404);
     }
 
@@ -54,6 +68,8 @@ export class QuotaCounter {
     switch (path) {
       case "/consume":
         return this.handleConsume(body);
+      case "/consume-rolling":
+        return this.handleConsumeRolling(body);
       case "/refund":
         return this.handleRefund(body);
       case "/inspect":
@@ -95,6 +111,49 @@ export class QuotaCounter {
       allowed: true,
       used: newUsed,
       remaining: limit - newUsed,
+      limit,
+      taken: take
+    });
+  }
+
+  // 滚动窗口版 consume(全局预算熔断用)。窗口 = 以 hour 为终点的最近
+  // windowHours 个 UTC 小时桶(含当桶),对窗口内全部桶求和后判限,命中则
+  // 计入当前小时桶。窗口随时间自然滚动 —— 老桶滚出窗口后总和自动回落,
+  // 不需要任何显式重置,这是"锁死到 UTC 0 点"问题的结构性修复。
+  // 跨 24 个桶的 read-sum-write 仍是原子的:DO input gate 在 storage 操作
+  // 期间不投递新事件,gets 与 put 之间只有同步代码,无交错点。
+  // 部分授予语义与 /consume 一致(当前调用方都传 amount=1,不会触发)。
+  async handleConsumeRolling(body) {
+    const validated = validateConsumeRollingInput(body);
+    if (validated.error) return json({ error: validated.error }, 400);
+    const { key, hour, limit, windowHours, amount } = validated;
+
+    const buckets = hourBucketsEndingAt(hour, windowHours);
+    const records = await Promise.all(
+      buckets.map((bucket) => this.state.storage.get(storageKeyFor(key, bucket)))
+    );
+    const windowUsed = records.reduce((sum, record) => sum + readUsedValue(record), 0);
+
+    if (windowUsed >= limit) {
+      return json({
+        allowed: false,
+        used: windowUsed,
+        remaining: 0,
+        limit,
+        taken: 0
+      });
+    }
+
+    const take = Math.min(amount, limit - windowUsed);
+    const currentStorageKey = storageKeyFor(key, hour);
+    const newUsed = readUsedValue(records[0]) + take;
+    await this.state.storage.put(currentStorageKey, { used: newUsed });
+    await this.ensureDailyAlarm(hour.slice(0, 10));
+
+    return json({
+      allowed: true,
+      used: windowUsed + take,
+      remaining: limit - windowUsed - take,
       limit,
       taken: take
     });
@@ -143,8 +202,8 @@ export class QuotaCounter {
   }
 
   // 单 DO 实例只有一个 alarm slot。在首次写入时设到次日 UTC 0:05,
-  // alarm 触发时清理所有 < today 的记录,并设下一个 alarm。
-  // 这样无论 DO 实例服务多少 key/date,都能持续清理过期数据。
+  // alarm 触发时清理所有 < 昨天 的记录(保留今天+昨天两天,见文件头「清理边界」),
+  // 并设下一个 alarm。这样无论 DO 实例服务多少 key/桶,都能持续清理过期数据。
   async ensureDailyAlarm(date) {
     const existing = await this.state.storage.getAlarm();
     if (existing !== null) return;
@@ -156,10 +215,14 @@ export class QuotaCounter {
 
   async alarm() {
     const today = todayDateString();
+    // 保留边界 = 昨天。滚动窗口最长 24h,UTC 0:05 清理时昨天的桶仍可能被读取
+    // (00:05 的 24h 窗口覆盖昨天 01:00 起的桶),删昨天会让窗口跨 UTC 0 点后
+    // 被低估。今天+昨天两天,对 windowHours ≤ 24 的任何窗口都够。
+    const cutoff = dateMinusOneDay(today);
     const list = await this.state.storage.list();
     for (const [key] of list) {
       const datePart = datePartFromStorageKey(key);
-      if (datePart && datePart < today) {
+      if (datePart && datePart < cutoff) {
         await this.state.storage.delete(key);
       }
     }
@@ -178,7 +241,24 @@ function storageKeyFor(key, date) {
   return `${date}:${key}`;
 }
 
-// storageKey 格式为 `${date}:${key}`,date 是 YYYY-MM-DD(10 字符)+冒号。
+// 以 hour(YYYY-MM-DDTHH)为终点(含)的最近 windowHours 个 UTC 小时桶,
+// 顺序为 [当前桶, 前 1h, 前 2h, ...] —— 索引 0 恒为当前桶,
+// handleConsumeRolling 依赖这一点把计数落到当前桶。
+function hourBucketsEndingAt(hour, windowHours) {
+  const hourMs = Date.parse(`${hour}:00:00.000Z`);
+  const buckets = [];
+  for (let i = 0; i < windowHours; i += 1) {
+    buckets.push(new Date(hourMs - i * 3600 * 1000).toISOString().slice(0, 13));
+  }
+  return buckets;
+}
+
+function dateMinusOneDay(date) {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) - 24 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+// storageKey 格式为 `${date}:${key}`,date 是 YYYY-MM-DD(10 字符)或
+// YYYY-MM-DDTHH(13 字符小时桶)+冒号。两种格式 slice(0,10) 都得到日期部分。
 // 返回空字符串表示格式异常(不做处理)。
 function datePartFromStorageKey(storageKey) {
   if (typeof storageKey !== "string" || storageKey.length < 11) return "";
@@ -186,7 +266,10 @@ function datePartFromStorageKey(storageKey) {
 }
 
 async function readUsed(storage, storageKey) {
-  const record = await storage.get(storageKey);
+  return readUsedValue(await storage.get(storageKey));
+}
+
+function readUsedValue(record) {
   if (!record || typeof record !== "object") return 0;
   const used = Number(record.used);
   return Number.isFinite(used) && used > 0 ? used : 0;
@@ -194,6 +277,16 @@ async function readUsed(storage, storageKey) {
 
 function isValidDate(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isValidHour(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}$/.test(value)) return false;
+  // 正则只管形状;完全解析不了的字符串(T99 点、13 月)Date.parse 返回 NaN,
+  // 若放行,hourBucketsEndingAt 里 new Date(NaN).toISOString() 会抛 RangeError,
+  // DO 以未处理异常拒绝而非 400 invalid_hour —— 在入口挡掉,保持错误显式可辨。
+  // 注:V8 对「2 月 30 日」这类日溢出是宽松滚动解析(→3 月 2 日),不返回 NaN,
+  // 会落成一个错误但隔离的桶 key,计数语义仍自洽,不做拒绝。
+  return Number.isFinite(Date.parse(`${value}:00:00.000Z`));
 }
 
 function isValidKey(value) {
@@ -219,6 +312,22 @@ function validateConsumeInput(body) {
   const amount = resolveAmount(body.amount, 1);
   if (amount === null) return { error: "invalid_amount" };
   return { key: body.key, date: body.date, limit: Math.floor(limit), amount };
+}
+
+function validateConsumeRollingInput(body) {
+  if (!body || typeof body !== "object") return { error: "invalid_body" };
+  if (!isValidKey(body.key)) return { error: "invalid_key" };
+  if (!isValidHour(body.hour)) return { error: "invalid_hour" };
+  const limit = Number(body.limit);
+  if (!Number.isFinite(limit) || limit <= 0) return { error: "invalid_limit" };
+  // windowHours 上限 24 与文件头「清理边界」联动:保留两天桶的前提是窗口 ≤ 24h。
+  const windowHours = Number(body.windowHours);
+  if (!Number.isInteger(windowHours) || windowHours < 1 || windowHours > 24) {
+    return { error: "invalid_window_hours" };
+  }
+  const amount = resolveAmount(body.amount, 1);
+  if (amount === null) return { error: "invalid_amount" };
+  return { key: body.key, hour: body.hour, limit: Math.floor(limit), windowHours, amount };
 }
 
 function validateRefundInput(body) {
@@ -254,5 +363,6 @@ export const _testInternals = {
   storageKeyFor,
   datePartFromStorageKey,
   readUsed,
-  todayDateString
+  todayDateString,
+  hourBucketsEndingAt
 };

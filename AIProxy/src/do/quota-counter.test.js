@@ -10,14 +10,15 @@
 //   3. consume amount > remaining:部分扣减(allowed=true, taken=remaining)
 //   4. refund:正常递减 / 退到 0 删 key / 退多于 used 不变负
 //   5. key/date 隔离:不同 key、不同日期互不影响
-//   6. alarm 清理:历史 storage 被删,当天保留
-//   7. 输入校验:无效 body / 缺字段 / 非法 date 都返回 400
-//   8. inspect:只读查询
-//   9. reset:测试用清零
+//   6. consume-rolling 滚动窗口:跨小时桶求和 / 打穿拒绝 / 老桶滚出恢复 / 边界
+//   7. alarm 清理:保留今天+昨天,更早删除(滚动窗口需读昨天的桶)
+//   8. 输入校验:无效 body / 缺字段 / 非法 date/hour/windowHours 都返回 400
+//   9. inspect:只读查询
+//  10. reset:测试用清零
 
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
-import { QuotaCounter } from "./quota-counter.js";
+import { QuotaCounter, _testInternals } from "./quota-counter.js";
 
 // MARK: - Fake DO infrastructure
 
@@ -80,6 +81,11 @@ function getWithQuery(path, params) {
 
 async function consume(instance, body) {
   const response = await instance.fetch(postBody("/consume", body));
+  return { status: response.status, body: await response.json() };
+}
+
+async function consumeRolling(instance, body) {
+  const response = await instance.fetch(postBody("/consume-rolling", body));
   return { status: response.status, body: await response.json() };
 }
 
@@ -248,9 +254,126 @@ test("同 key 同日期 0 时跨日切换被允许(模拟跨日恢复)", async (
   assert.equal(next.body.allowed, true);
 });
 
+// MARK: - consume-rolling(滚动窗口)
+
+test("consume-rolling 单次:计数落在当前小时桶,首次写入触发 alarm", async () => {
+  const { state, instance } = makeDO();
+  const result = await consumeRolling(instance, {
+    key: "global-budget", hour: "2026-07-26T14", limit: 100, windowHours: 6
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.allowed, true);
+  assert.equal(result.body.used, 1);
+  assert.equal(result.body.remaining, 99);
+  assert.equal(result.body.taken, 1);
+
+  // storage 落的是小时桶 key(13 字符),不是日桶
+  const stored = await state.storage.get("2026-07-26T14:global-budget");
+  assert.deepEqual(stored, { used: 1 });
+  assert.ok(state.storage.alarm !== null, "alarm should be set on first rolling consume");
+});
+
+test("consume-rolling 窗口求和:跨多个小时桶的计数一起算额度", async () => {
+  const { instance } = makeDO();
+  // 3 小时前的桶扣 3,当前小时默认 amount=1 → 窗口总和 4
+  await consumeRolling(instance, { key: "g", hour: "2026-07-26T11", limit: 10, windowHours: 6, amount: 3 });
+  const result = await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 10, windowHours: 6 });
+  assert.equal(result.body.allowed, true);
+  assert.equal(result.body.used, 4); // 3 + 1(本次 amount 默认 1)
+  assert.equal(result.body.remaining, 6);
+});
+
+test("consume-rolling 窗口总和到上限:allowed=false 且不计数", async () => {
+  const { state, instance } = makeDO();
+  await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 2, windowHours: 6, amount: 2 });
+  const blocked = await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 2, windowHours: 6 });
+  assert.equal(blocked.body.allowed, false);
+  assert.equal(blocked.body.used, 2);
+  assert.equal(blocked.body.taken, 0);
+  assert.deepEqual(await state.storage.get("2026-07-26T14:g"), { used: 2 }, "拒绝时不追加计数");
+});
+
+test("consume-rolling 老桶滚出窗口即恢复,窗口边界精确到 1 小时", async () => {
+  const { instance } = makeDO();
+  // windowHours=6, limit=1:14:00 打满并拒绝
+  await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 1, windowHours: 6 });
+  const blocked = await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 1, windowHours: 6 });
+  assert.equal(blocked.body.allowed, false);
+
+  // 19:00 的窗口 = [14:00..19:00],仍含 14:00 桶 → 拒绝
+  const stillBlocked = await consumeRolling(instance, { key: "g", hour: "2026-07-26T19", limit: 1, windowHours: 6 });
+  assert.equal(stillBlocked.body.allowed, false, "19:00 窗口仍覆盖 14:00 桶");
+
+  // 20:00 的窗口 = [15:00..20:00],14:00 桶滚出 → 恢复
+  const recovered = await consumeRolling(instance, { key: "g", hour: "2026-07-26T20", limit: 1, windowHours: 6 });
+  assert.equal(recovered.body.allowed, true, "20:00 窗口不再含 14:00 桶");
+});
+
+test("consume-rolling 跨 UTC 日滚动:昨天的桶计入今天的窗口,滚出后回落", async () => {
+  const { instance } = makeDO();
+  // 昨天 23:00 扣 1(6h 窗口在 04:00 时覆盖昨天 23:00)
+  await consumeRolling(instance, { key: "g", hour: "2026-07-25T23", limit: 1, windowHours: 6 });
+  const at4 = await consumeRolling(instance, { key: "g", hour: "2026-07-26T04", limit: 1, windowHours: 6 });
+  assert.equal(at4.body.allowed, false, "04:00 窗口 = [23:00..04:00],含昨天 23:00 桶");
+  const at5 = await consumeRolling(instance, { key: "g", hour: "2026-07-26T05", limit: 1, windowHours: 6 });
+  assert.equal(at5.body.allowed, true, "05:00 窗口 = [00:00..05:00],昨天 23:00 桶已滚出");
+});
+
+test("consume-rolling 不同 key 的窗口互不影响", async () => {
+  const { instance } = makeDO();
+  await consumeRolling(instance, { key: "global-budget", hour: "2026-07-26T14", limit: 1, windowHours: 6 });
+  const other = await consumeRolling(instance, { key: "global-budget-pro", hour: "2026-07-26T14", limit: 1, windowHours: 6 });
+  assert.equal(other.body.allowed, true);
+});
+
+test("consume-rolling hour 格式非法返回 400", async () => {
+  const { instance } = makeDO();
+  const cases = ["2026-07-26", "2026-07-26T7", "2026/07/26T14", ""];
+  for (const hour of cases) {
+    const r = await consumeRolling(instance, { key: "g", hour, limit: 10, windowHours: 6 });
+    assert.equal(r.status, 400, `hour="${hour}" 应 400`);
+    assert.equal(r.body.error, "invalid_hour");
+  }
+});
+
+test("consume-rolling hour 日历语义非法(T99点/13月)返回 400 而非抛异常", async () => {
+  const { instance } = makeDO();
+  // 正则形状通过但 Date.parse 为 NaN:放行会让 hourBucketsEndingAt 里
+  // new Date(NaN).toISOString() 抛 RangeError,DO 变 500 —— 必须在入口 400。
+  // (V8 对「2 月 30 日」是宽松滚动解析不返回 NaN,落成隔离桶 key,不在拒绝范围)
+  const cases = ["2026-07-26T99", "2026-13-01T10"];
+  for (const hour of cases) {
+    const r = await consumeRolling(instance, { key: "g", hour, limit: 10, windowHours: 6 });
+    assert.equal(r.status, 400, `hour="${hour}" 应 400`);
+    assert.equal(r.body.error, "invalid_hour");
+  }
+});
+
+test("consume-rolling windowHours 非法(0/25/1.5/缺省)返回 400", async () => {
+  const { instance } = makeDO();
+  for (const windowHours of [0, 25, 1.5]) {
+    const r = await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 10, windowHours });
+    assert.equal(r.status, 400, `windowHours=${windowHours} 应 400`);
+    assert.equal(r.body.error, "invalid_window_hours");
+  }
+  const missing = await consumeRolling(instance, { key: "g", hour: "2026-07-26T14", limit: 10 });
+  assert.equal(missing.status, 400);
+  assert.equal(missing.body.error, "invalid_window_hours");
+});
+
+test("hourBucketsEndingAt:索引 0 是当前桶,跨日/跨月正确回退", async () => {
+  const { hourBucketsEndingAt } = _testInternals;
+  const buckets = hourBucketsEndingAt("2026-07-26T02", 4);
+  assert.deepEqual(buckets, ["2026-07-26T02", "2026-07-26T01", "2026-07-26T00", "2026-07-25T23"]);
+  // 跨月边界:7 月 1 日 0 点回退 1 小时 = 6 月 30 日 23 点
+  const monthEdge = hourBucketsEndingAt("2026-07-01T00", 2);
+  assert.deepEqual(monthEdge, ["2026-07-01T00", "2026-06-30T23"]);
+});
+
 // MARK: - alarm
 
-test("alarm 清理历史日期记录,当天保留", async () => {
+test("alarm 清理保留今天+昨天(滚动窗口还需读昨天的桶),更早的删除", async () => {
   const { state, instance } = makeDO();
   // 写入三个不同日期
   await consume(instance, { key: "d", date: "2026-07-24", limit: 100, amount: 1 });
@@ -282,9 +405,10 @@ test("alarm 清理历史日期记录,当天保留", async () => {
     globalThis.Date = realDate;
   }
 
-  // 7-24、7-25 被清,7-26 留下
+  // 7-24 被清;7-25(昨天)、7-26(今天)留下 —— UTC 0 点后的滚动窗口
+  // 仍要读昨天的小时桶,删昨天会让窗口被低估、熔断变松
   assert.equal(state.storage.map.has("2026-07-24:d"), false);
-  assert.equal(state.storage.map.has("2026-07-25:d"), false);
+  assert.equal(state.storage.map.has("2026-07-25:d"), true);
   assert.equal(state.storage.map.has("2026-07-26:d"), true);
   // alarm 被重设到次日(非 null)
   assert.ok(state.storage.alarm !== null);

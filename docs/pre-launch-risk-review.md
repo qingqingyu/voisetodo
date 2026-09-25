@@ -83,6 +83,7 @@ const trippedKey = `global-budget-tripped:${today}`;
    - Pro 用户豁免 IP 闸门，或给显著更高的 IP 阈值（IP 闸门的目标是挡「单 IP 轮换 device ID 刷免费额度」，付费用户不在威胁模型里）
    - 全局预算对 Pro 单独设桶，或直接豁免——付费用户的调用是**有收入覆盖的成本**，和防刷要挡的白嫖成本性质完全不同
 2. **全局预算 trip 改为小时级滚动窗口**，或按设备本地日期分桶，避免一次打穿锁死 10 小时。
+   > ✅ 2026-09-24 已修（DO 路径）：UTC 小时桶滚动窗口，`GLOBAL_BUDGET_WINDOW_HOURS`（默认 6h），窗口内阈值 = 日限 × 窗口长/24（日成本天花板不变），trip 标志 TTL 只到下一个整点边界后重评——单次打穿的锁死上限 ≤ 窗口长，替代「锁死到 UTC 0 点」。见 `AIProxy/worker.js` `enforceGlobalBudgetViaDOIncrement` 与 `AIProxy/src/do/quota-counter.js` `/consume-rolling`。KV degraded 路径仍按日桶（fail-safe 优先于不精确的滚动）。
 3. **重新定 `GLOBAL_DAILY_LIMIT`**：按「预期 Pro 数 × 100 + 预期免费数 × 3」×（2~3 倍余量）。这个值是**成本上限，不是安全阈值**——打穿的代价（付费用户不可用 + 退款 + 差评）远大于超支那点钱。
 4. **兜底：给 Pro 用户单独的错误码与文案**，别和「服务挂了」混为一谈。至少让用户知道「不是你的问题，也不是没生效」。
 

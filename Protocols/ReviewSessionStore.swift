@@ -26,6 +26,17 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     /// 的有效事实,默认 0 会把旧会话画成零积压污染趋势;调用方按 <0 视为
     /// 「未记录」,不进趋势)。
     let backlogCount: Int
+    /// 流程**收尾时**的积压总数(v4 复核修订二轮 N2:容器在 buildSession 时
+    /// 按与 init 快照同口径——`ReviewAggregator.pendingOneOffCount`,窗口化
+    /// 工作集含全部 pending,开放性一次性任务全在窗内——重数一次)。
+    /// 地板 B 账本差路径的**基线**:`本期 init − 上期 final` 才与展示窗口
+    /// (「上次复盘完成时刻起」)对齐;`backlogCount`(init 快照)当基线会
+    /// 错位一个会话——上期复盘内的划掉/拆小落进错位区间,被记到下一期的
+    /// 「这期」头上(上期 19 → 复盘划 5 → 存 19;本期 init 16,delta = −3,
+    /// 卡片说「在缩」,缩的其实是上次复盘自己干的活)。哨兵语义同
+    /// `backlogCount`:<0 = 未记录(旧 payload / 收尾重数失败),地板 B
+    /// 此时回落窗口法,**不用已知错位的 init 快照兜底**——宁缺毋滥。
+    let finalBacklogCount: Int
     /// 处理后仍留在卡堆的(M)。
     let remainingCount: Int
     /// 排进下周。
@@ -46,6 +57,7 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     init(
         inputCount: Int,
         backlogCount: Int = -1,
+        finalBacklogCount: Int = -1,
         remainingCount: Int,
         scheduledCount: Int,
         todayCount: Int,
@@ -56,6 +68,7 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     ) {
         self.inputCount = inputCount
         self.backlogCount = backlogCount
+        self.finalBacklogCount = finalBacklogCount
         self.remainingCount = remainingCount
         self.scheduledCount = scheduledCount
         self.todayCount = todayCount
@@ -66,7 +79,7 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case inputCount, backlogCount, remainingCount, scheduledCount, todayCount
+        case inputCount, backlogCount, finalBacklogCount, remainingCount, scheduledCount, todayCount
         case abandonedCount, splitCount, pinnedCount, somedayCount
     }
 
@@ -74,6 +87,7 @@ struct ReviewLedger: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         inputCount = try container.decode(Int.self, forKey: .inputCount)
         backlogCount = try container.decodeIfPresent(Int.self, forKey: .backlogCount) ?? -1
+        finalBacklogCount = try container.decodeIfPresent(Int.self, forKey: .finalBacklogCount) ?? -1
         remainingCount = try container.decode(Int.self, forKey: .remainingCount)
         scheduledCount = try container.decode(Int.self, forKey: .scheduledCount)
         todayCount = try container.decode(Int.self, forKey: .todayCount)

@@ -77,11 +77,22 @@ final class ReviewFlowState {
         let completedCount: Int
         /// 积压净变化(**方向源**,与上面两个展示数不同总体,别拿它们相减——
         /// v4 复盘审阅发现 2):优先 = 本期 `initialBacklogCount` − 上期
-        /// `ReviewLedger.backlogCount`(同一快照口径,天然涵盖划掉/删除等
-        /// 一切出口);无基线(首次复盘/旧 payload 哨兵 <0)回落
+        /// `ReviewLedger.finalBacklogCount`(复核修订二轮 N2:收尾快照,与展示
+        /// 窗口对齐);无基线(首次复盘/旧 payload 哨兵 <0)回落
         /// `ReviewAggregator.oneOffBacklogDelta`(一次性口径的记下−完成−划掉,
         /// 同一窗口)。正 = 清单在涨,负 = 在缩。
         let backlogDelta: Int
+        /// 账本差路径的两端(复核修订二轮 N1):起点 = 上期收尾积压
+        /// (`finalBacklogCount`),终点 = 本期 `initialBacklogCount`。卡片第二行
+        /// 「积压 P → Q(±D)」用——方向由端点自证,不再另起方向词与展示数
+        /// 同句互掐。nil = 窗口法路径(首评/旧 payload),只有 delta 没有端点。
+        let ledgerStart: Int?
+        let ledgerEnd: Int?
+        /// 窗口法路径的窗口口径(仅 `ledgerStart == nil` 时被读):true = 首评
+        /// (窗口回落近 7 天);false = 有上期会话但无有效基线(上次复盘完成
+        /// 至今)。第二行文案据此选「近 7 天」/「较上次复盘」,别把首评说成
+        /// 「较上次」。
+        let isFirstPeriod: Bool
     }
 
     /// 规则层的事实行(v4 批 3 拍板 3:03 中间地带只报占比的一行;不走冷却、
@@ -499,19 +510,23 @@ final class ReviewFlowState {
     /// `createdCount`(不过滤规律)与 `total`(含规律 occurrence 完成)是
     /// 两个总体,相减会说反话(规律习惯用户 21 条 occurrence 完成会被说成
     /// 「在缩 −21」,而完成 occurrence 不清积压)。方向:优先跨期账本差
-    /// (上期 `ReviewLedger.backlogCount` ≥ 0 时 = `initialBacklogCount − 基线`,
-    /// 两期 init 快照同一总体同一口径,天然涵盖划掉/删除等一切出口;窗口
-    /// 起算点是「上次复盘完成时刻」、基线是「上次流程开始」,相差一次会话
-    /// 时长,对方向判断无碍),无基线(首次复盘/旧 payload 哨兵 <0)回落
-    /// `ReviewAggregator.oneOffBacklogDelta`(一次性口径的记下−完成−划掉,
-    /// 窗口经 `weekWindow` 与 weekSummary 单一来源)。
+    /// = 本期 `initialBacklogCount` − 上期 `ReviewLedger.finalBacklogCount`
+    /// (复核修订二轮 N2:基线改用**上期收尾**快照,与展示窗口起点「上次
+    /// 复盘完成时刻」对齐——旧口径用上期 init 快照会错位一个会话,上期
+    /// 复盘内的划掉/拆小落进错位区间,被记到本期「这期」头上;上期旧
+    /// payload 只有 init 快照,**不用已知错位的它兜底**,直接落窗口法),
+    /// 无基线回落 `ReviewAggregator.oneOffBacklogDelta`(一次性口径的
+    /// 记下−完成−划掉,窗口经 `weekWindow` 与 weekSummary 单一来源)。
+    /// 返回的 `ledgerStart/End` 是账本路径的两端(上期收尾 → 本期开始),
+    /// 供卡片「积压 P → Q(±D)」自证方向——数字与方向同源后不会再互相打架
+    /// (复核修订二轮 N1:展示数和方向词塞同一句,用户自己一减就说 app 坏了)。
     static func backlogFlowNumbers(
         inputs: ReviewFlowRecapInputs,
         previousSessions: [ReviewSession],
         initialBacklogCount: Int,
         now: Date,
         calendar: Calendar
-    ) -> (created: Int, completed: Int, backlogDelta: Int) {
+    ) -> (created: Int, completed: Int, backlogDelta: Int, ledgerStart: Int?, ledgerEnd: Int?, isFirstPeriod: Bool) {
         let since = previousSessions.last?.completedAt
         let summary = RecapSummaryBuilder.weekSummary(
             since: since,
@@ -522,8 +537,12 @@ final class ReviewFlowState {
             recurringCompletions: inputs.recurringCompletions
         )
         let backlogDelta: Int
-        if let baseline = previousSessions.last?.ledger.backlogCount, baseline >= 0 {
+        var ledgerStart: Int?
+        var ledgerEnd: Int?
+        if let baseline = previousSessions.last?.ledger.finalBacklogCount, baseline >= 0 {
             backlogDelta = initialBacklogCount - baseline
+            ledgerStart = baseline
+            ledgerEnd = initialBacklogCount
         } else {
             let window = RecapSummaryBuilder.weekWindow(since: since, today: now, calendar: calendar)
             backlogDelta = ReviewAggregator.oneOffBacklogDelta(
@@ -533,21 +552,36 @@ final class ReviewFlowState {
                 calendar: calendar
             )
         }
-        return (created: summary.createdCount, completed: summary.total, backlogDelta: backlogDelta)
+        return (
+            created: summary.createdCount,
+            completed: summary.total,
+            backlogDelta: backlogDelta,
+            ledgerStart: ledgerStart,
+            ledgerEnd: ledgerEnd,
+            isFirstPeriod: previousSessions.isEmpty
+        )
     }
 
     /// 地板 B 快照(容器层取数算好后注入,`loadInsightContext` 时机;
     /// 必须在 `runInsightEngine` 之前——存活判定要读它)。本期零进零出
     /// → nil(整块不渲染、不参与判定,「新增 0 完成 0」是噪音行)。
     /// **「零进零出」只看展示数,不看 `backlogDelta`**(有意):账本差路径下
-    /// delta ≠ 0 而 0/0 可达——本期唯一动静是上次会话内的清理,发生在窗口
-    /// (上次复盘完成时刻起)之外;「这期完成 0 新增 0——清单在缩」的文案
-    /// 自相矛盾,窗口外的方向不拿「这期」口吻说,照旧 nil。窗口法路径到不了
-    /// 这个分支:abandon 只有复盘流程一个出口(`store.abandon` 的调用方全在
-    /// 流程内),落不进两次会话之间的窗口;记下/完成任一发生展示数即非零。
-    /// 方向源见 `BacklogFlowFact.backlogDelta`——展示数字(第 1 步同源)
-    /// 与方向分开传,别在视图里拿展示数相减。
-    func recordBacklogFlow(created: Int, completed: Int, backlogDelta: Int) {
+    /// delta ≠ 0 而 0/0 仍可达——复核修订二轮 N2 对齐基线后,剩下的可达路径
+    /// 是**删除与一次性↔规律互转**:账本两端快照看得见(积压少了),展示数
+    /// 看不见(没有「删了 N」这个数);「这期完成 0 新增 0——清单在缩」依然
+    /// 自相矛盾,没有展示数佐证的方向不拿「这期」口吻说,照旧 nil。窗口法
+    /// 路径到不了这个分支:abandon 只有复盘流程一个出口(`store.abandon`
+    /// 的调用方全在流程内),落不进两次会话之间的窗口;记下/完成任一发生
+    /// 展示数即非零。方向源见 `BacklogFlowFact.backlogDelta`——展示数字
+    /// (第 1 步同源)与方向分开传,别在视图里拿展示数相减。
+    func recordBacklogFlow(
+        created: Int,
+        completed: Int,
+        backlogDelta: Int,
+        ledgerStart: Int?,
+        ledgerEnd: Int?,
+        isFirstPeriod: Bool
+    ) {
         guard created > 0 || completed > 0 else {
             backlogFlowFact = nil
             return
@@ -555,7 +589,10 @@ final class ReviewFlowState {
         backlogFlowFact = BacklogFlowFact(
             createdCount: created,
             completedCount: completed,
-            backlogDelta: backlogDelta
+            backlogDelta: backlogDelta,
+            ledgerStart: ledgerStart,
+            ledgerEnd: ledgerEnd,
+            isFirstPeriod: isFirstPeriod
         )
     }
 
@@ -859,7 +896,10 @@ final class ReviewFlowState {
 
     /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
     /// 纯函数,`VoiceTodoTests` 直测账本 → session 的映射。
-    func buildSession(completedAt: Date) -> ReviewSession {
+    /// `finalBacklogCount` 由容器在收尾时刻按 `pendingOneOffCount` 同口径重数后
+    /// 传入(v4 复核修订二轮 N2:地板 B 的跨期基线要「上期收尾」快照,与展示
+    /// 窗口起点对齐;见 `ReviewLedger.finalBacklogCount` 注释)。
+    func buildSession(completedAt: Date, finalBacklogCount: Int) -> ReviewSession {
         let ledger = ledger
         let trimmedNote = voiceAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
         return ReviewSession(
@@ -874,6 +914,7 @@ final class ReviewFlowState {
                 // v4 批 4:积压总数落库(趋势线数据源)= init 快照,非卡堆口径的
                 // inputCount——两者语义不同,见 ReviewLedger 注释。
                 backlogCount: initialBacklogCount,
+                finalBacklogCount: finalBacklogCount,
                 remainingCount: ledger.remainingCount,
                 scheduledCount: ledger.scheduledCount,
                 todayCount: ledger.todayCount,
@@ -1030,7 +1071,10 @@ struct ReviewFlowView: View {
         state.recordBacklogFlow(
             created: numbers.created,
             completed: numbers.completed,
-            backlogDelta: numbers.backlogDelta
+            backlogDelta: numbers.backlogDelta,
+            ledgerStart: numbers.ledgerStart,
+            ledgerEnd: numbers.ledgerEnd,
+            isFirstPeriod: numbers.isFirstPeriod
         )
     }
 
@@ -1248,7 +1292,13 @@ struct ReviewFlowView: View {
     /// id 会被误删)。prune 与落库都走 UserDefaults 同步写,失败显式记日志
     /// (error/warning)不阻塞收尾;流程内的 store 写失败另有 toast(见 presentError)。
     private func finishSession() {
-        let session = state.buildSession(completedAt: Date())
+        // v4 复核修订二轮 N2:收尾积压 = 与 init 快照同口径(`pendingOneOffCount`)
+        // 在收尾时刻重数。store.todos 是窗口化工作集,但窗口含**全部 pending**,
+        // 开放性一次性任务全在窗内,与 init 快照同一总体——划掉/拆小/推稍后的
+        // 写库都已反映。此计数是地板 B 下期「账本差」的基线,必须与展示窗口
+        // (上次复盘完成时刻起)对齐,见 `ReviewLedger.finalBacklogCount` 注释。
+        let finalBacklogCount = ReviewAggregator.pendingOneOffCount(store.todos)
+        let session = state.buildSession(completedAt: Date(), finalBacklogCount: finalBacklogCount)
         ReviewSessionStore.shared.append(session)
         Task { @MainActor in
             do {

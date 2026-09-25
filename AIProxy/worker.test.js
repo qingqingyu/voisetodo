@@ -1416,8 +1416,9 @@ test("P0: DO 路径 Pro 计入 global-budget-pro 桶,免费桶不被触碰", asy
     await ctx.awaitAll();
     const proConsume = doBinding._calls.filter((c) => c.key === "global-budget-pro");
     assert.equal(proConsume.length, 1);
-    assert.equal(proConsume[0].limit, 7);
-    assert.equal(proConsume[0].date, "2026-05-26");
+    // 滚动窗口口径:窗口内阈值 = ceil(7 × 6/24) = 2,桶 = 当前 UTC 小时
+    assert.equal(proConsume[0].hour, "2026-05-26T12");
+    assert.equal(proConsume[0].limit, 2);
     assert.equal(doBinding._calls.some((c) => c.key === "global-budget"), false, "免费全局桶不应被付费请求递增");
   });
 });
@@ -3474,6 +3475,9 @@ async function captureConsole(operation) {
 class MemoryKV {
   constructor(values) {
     this.values = values;
+    // key → expirationTtl(秒)。真实 KV 的 TTL 过期即失效,这里只记录不断言过期,
+    // 测试按需读取断言 TTL 值(如 global-budget trip 标志的小时级 TTL)。
+    this.ttls = new Map();
   }
 
   async get(key, options) {
@@ -3485,15 +3489,19 @@ class MemoryKV {
     return value;
   }
 
-  async put(key, value) {
+  async put(key, value, options) {
     this.values.set(key, value);
+    if (options && Number.isFinite(options.expirationTtl)) {
+      this.ttls.set(key, options.expirationTtl);
+    }
   }
 }
 
 // MARK: - Step 4 DO 路径测试基础设施
 
-// 模拟 QuotaCounter DO 的 consume + refund 逻辑(强一致 increment)。
+// 模拟 QuotaCounter DO 的 consume / consume-rolling / refund 逻辑(强一致 increment)。
 // 真实 DO 的并发串行化由平台保证,这里只是单线程模拟实现。
+// store 值直接存数字(真实 DO 存 { used } 对象,fake 只服务 worker 测试的断言口径)。
 function makeFakeQuotaCounterDO({ failOnce = false, alwaysFail = false } = {}) {
   const store = new Map();
   const calls = [];
@@ -3505,8 +3513,38 @@ function makeFakeQuotaCounterDO({ failOnce = false, alwaysFail = false } = {}) {
       if (failOnce && callCount === 1) throw new Error("DO transient error");
       const body = JSON.parse(await req.text());
       calls.push(body);
-      const storageKey = `${body.date}:${body.key}`;
       const url = new URL(req.url);
+
+      if (url.pathname === "/consume-rolling") {
+        // 与真实 DO 的 handleConsumeRolling 同语义:以 hour 为终点(含)的
+        // windowHours 个小时桶求和判限,命中计入当前小时桶。桶字符串用 getUTC*
+        // 手动格式化 —— withMockedToday mock 的是 Date.prototype.toISOString,
+        // 走 toISOString 会让所有历史桶坍缩成 mock 的固定时间戳,窗口求和失真。
+        const pad = (n) => String(n).padStart(2, "0");
+        const bucketOf = (ms) => {
+          const d = new Date(ms);
+          return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}`;
+        };
+        const hourMs = Date.parse(`${body.hour}:00:00.000Z`);
+        let windowUsed = 0;
+        for (let i = 0; i < body.windowHours; i += 1) {
+          windowUsed += store.get(`${bucketOf(hourMs - i * 3600 * 1000)}:${body.key}`) || 0;
+        }
+        if (windowUsed >= body.limit) {
+          return new Response(JSON.stringify({
+            allowed: false, used: windowUsed, remaining: 0, limit: body.limit, taken: 0
+          }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        const take = Math.min(body.amount || 1, body.limit - windowUsed);
+        const storageKey = `${body.hour}:${body.key}`;
+        store.set(storageKey, (store.get(storageKey) || 0) + take);
+        return new Response(JSON.stringify({
+          allowed: true, used: windowUsed + take, remaining: body.limit - windowUsed - take,
+          limit: body.limit, taken: take
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      const storageKey = `${body.date}:${body.key}`;
       const current = store.get(storageKey) || 0;
 
       if (url.pathname === "/refund") {
@@ -3891,6 +3929,10 @@ test("Step 6 全局预算 DO 路径:KV tripped=1 时直接 503,不调 DO", async
     assert.equal(r.status, 503);
     const body = await r.json();
     assert.equal(body.error, "global_budget_exceeded");
+    // Retry-After = 到下一个整点边界 + 120s(与 trip 标志 TTL 对齐):
+    // 12:00:00 → 3600 + 120 = 3720s。标志活到整点+120s,早于它重试必然再吃 503
+    // 并拿到新的整点级 Retry-After,守约客户端会跳过 DO 重评窗口多锁近一小时。
+    assert.equal(r.headers.get("Retry-After"), "3720");
     // tripped 热路径直接拒绝,DO 完全没被调用
     assert.equal(doBinding._calls.length, 0);
   });
@@ -3920,11 +3962,47 @@ test("Step 6 全局预算 DO 路径:KV 未 tripped 时 200,DO 异步 consume 被
     );
     assert.equal(r.status, 200);
     await ctx.awaitAll();
-    // DO consume 被调用一次,用 "global-budget" key
+    // DO consume-rolling 被调用一次,用 "global-budget" key
     assert.equal(doBinding._calls.length, 1);
     assert.equal(doBinding._calls[0].key, "global-budget");
-    assert.equal(doBinding._calls[0].limit, 5);
-    assert.equal(doBinding._calls[0].date, "2026-05-26");
+    // 滚动窗口:hour = 当前 UTC 小时桶;窗口内阈值 = ceil(日限 × windowHours/24)
+    // = ceil(5 × 6/24) = 2(未配 GLOBAL_BUDGET_WINDOW_HOURS → 代码默认 6)
+    assert.equal(doBinding._calls[0].hour, "2026-05-26T12");
+    assert.equal(doBinding._calls[0].windowHours, 6);
+    assert.equal(doBinding._calls[0].limit, 2);
+  });
+});
+
+test("全局预算滚动窗口:GLOBAL_BUDGET_WINDOW_HOURS 配置非法时回落默认 6(不静默失效)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "5",
+      // 非数字:resolveGlobalBudgetWindowHours 应记 warn 并回落 6,
+      // 而不是让熔断失效或把垃圾值透传给 DO(会被 invalid_window_hours 拒)
+      GLOBAL_BUDGET_WINDOW_HOURS: "bogus",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const r = await handleRequest(
+      request({ transcript: "a" }, {
+        "X-App-Token": "token",
+        "X-Local-Date": "2026-05-26"
+      }),
+      env,
+      ctx,
+      jsonResponseProvider("a")
+    );
+    assert.equal(r.status, 200);
+    await ctx.awaitAll();
+    assert.equal(doBinding._calls.length, 1);
+    assert.equal(doBinding._calls[0].windowHours, 6, "非法配置回落默认 6");
+    assert.equal(doBinding._calls[0].limit, 2, "窗口内阈值仍按 6h 折算:ceil(5×6/24)=2");
   });
 });
 
@@ -3959,6 +4037,91 @@ test("Step 6 全局预算 DO 路径:DO consume 返回 allowed=false 时写 KV tr
     assert.equal(r2.status, 200);
     await ctx2.awaitAll();
     assert.equal(kv.values.get("global-budget-tripped:2026-05-26"), "1");
+    // TTL = 到下一个整点边界(12:00:00 → 3600s)+ 120s 传播/抖动余量。
+    // 旧的 36h TTL 会把打穿锁死到 UTC 0 点;现在到期即重评,锁死上限 ≤ 窗口长。
+    assert.equal(kv.ttls.get("global-budget-tripped:2026-05-26"), 3720);
+  });
+});
+
+test("全局预算滚动窗口:打穿后老桶滚出窗口即恢复,不再锁死到 UTC 0 点", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    // 窗口内阈值 = ceil(4 × 6/24) = 1:第一个请求放行并计数,第二个即打穿
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "4",
+      GLOBAL_BUDGET_WINDOW_HOURS: "6",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const mk = () => request({ transcript: "a" }, {
+      "X-App-Token": "token",
+      "X-Local-Date": "2026-05-26"
+    });
+
+    const ctx1 = makeFakeCtx();
+    const r1 = await handleRequest(mk(), env, ctx1, jsonResponseProvider("a"));
+    assert.equal(r1.status, 200);
+    await ctx1.awaitAll();
+    // 计数落在当前小时桶(而非日桶)
+    assert.equal(doBinding._store.get("2026-05-26T12:global-budget"), 1);
+
+    const ctx2 = makeFakeCtx();
+    const r2 = await handleRequest(mk(), env, ctx2, jsonResponseProvider("b"));
+    assert.equal(r2.status, 200, "DO consume 异步,打穿当次仍放行");
+    await ctx2.awaitAll();
+    assert.equal(kv.values.get("global-budget-tripped:2026-05-26"), "1");
+  });
+
+  await withMockedToday("2026-05-26T12:30:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "4",
+      GLOBAL_BUDGET_WINDOW_HOURS: "6",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const r3 = await handleRequest(
+      request({ transcript: "a" }, { "X-App-Token": "token", "X-Local-Date": "2026-05-26" }),
+      env,
+      makeFakeCtx(),
+      jsonResponseProvider("c")
+    );
+    assert.equal(r3.status, 503, "trip 标志生效期内仍拒绝");
+    // Retry-After = 下一个整点 + 120s:12:30:00 → 1800 + 120 = 1920s
+    assert.equal(r3.headers.get("Retry-After"), "1920");
+  });
+
+  // 模拟 trip 标志 TTL 到期(KV 自动过期删除),时间走到 18:00:
+  // 12:00 的桶已滚出 6h 窗口(窗口覆盖 13:00..18:00),总和自然回落 → 恢复放行。
+  // 旧口径下这里要一直 503 到 2026-05-27T00:00Z(UTC 0 点)。
+  kv.values.delete("global-budget-tripped:2026-05-26");
+  await withMockedToday("2026-05-26T18:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "4",
+      GLOBAL_BUDGET_WINDOW_HOURS: "6",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const ctx4 = makeFakeCtx();
+    const r4 = await handleRequest(
+      request({ transcript: "a" }, { "X-App-Token": "token", "X-Local-Date": "2026-05-26" }),
+      env,
+      ctx4,
+      jsonResponseProvider("d")
+    );
+    assert.equal(r4.status, 200, "老桶滚出窗口 → 恢复放行");
+    await ctx4.awaitAll();
+    assert.equal(kv.values.get("global-budget-tripped:2026-05-26"), undefined, "窗口回落,未 re-trip");
+    assert.equal(doBinding._store.get("2026-05-26T18:global-budget"), 1);
   });
 });
 
