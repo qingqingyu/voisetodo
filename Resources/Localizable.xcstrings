@@ -8137,68 +8137,90 @@
         }
       }
     },
-    "review.floor.backlog_flow.grew_%lld_%lld" : {
+    "review.floor.backlog_flow.line_%lld_%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You added %1$lld and finished %2$lld this period — the list is growing."
+            "value" : "Added %1$lld · finished %2$lld this period"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这期新增 %1$lld 件、完成 %2$lld 件——清单在涨。"
+            "value" : "这期新增 %1$lld 件 · 完成 %2$lld 件"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今期は%1$lld件追加して%2$lld件完了——リストは増えています。"
+            "value" : "今期は%1$lld件追加・%2$lld件完了"
           }
         }
       }
     },
-    "review.floor.backlog_flow.shrank_%lld_%lld" : {
+    "review.floor.backlog_flow.recent_%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You finished %2$lld and added %1$lld this period — the list is shrinking."
+            "value" : "Backlog change in the last 7 days: %1$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这期完成 %2$lld 件、新增 %1$lld 件——清单在缩。"
+            "value" : "近 7 天积压变化 %1$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今期は%2$lld件完了・%1$lld件追加——リストは減っています。"
+            "value" : "直近7日間の未処理の変化:%1$@"
           }
         }
       }
     },
-    "review.floor.backlog_flow.flat_%lld_%lld" : {
+    "review.floor.backlog_flow.since_last_%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You added %1$lld and finished %2$lld this period — the list held steady."
+            "value" : "Backlog change since last review: %1$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这期新增 %1$lld 件、完成 %2$lld 件——进出相抵。"
+            "value" : "较上次复盘,积压变化 %1$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今期は%1$lld件追加・%2$lld件完了——増減なし。"
+            "value" : "前回の振り返りからの未処理の変化:%1$@"
+          }
+        }
+      }
+    },
+    "review.floor.backlog_flow.trend_%lld_%lld_%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backlog %1$lld → %2$lld (%3$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "积压 %1$lld → %2$lld(%3$@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未処理 %1$lld → %2$lld(%3$@)"
           }
         }
       }

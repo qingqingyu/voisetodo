@@ -177,34 +177,53 @@ struct ReviewStepInsights: View {
 
 // MARK: - 地板 B · 本期进出(v4 批 4,docs/todo-review-flow-v4.md)
 
-/// 一行净变化方向。只报方向与数字,不带判断;**展示数字**与第 1 步证据行
-/// 同源(`weekSummary` 的 createdCount / total),**方向**用
-/// `BacklogFlowFact.backlogDelta`(同总体口径,别拿展示数相减——见其注释)。
-/// 趋势线待 ≥3 期 `ReviewLedger.backlogCount` 攒够再开(批 4 明确不做)。
+/// 两行净变化。第一行**展示数字**(与第 1 步证据行同源的 `weekSummary`
+/// createdCount / total);第二行**方向与依据**——账本差路径给两端
+/// 「积压 P → Q(±D)」,方向由端点自证;窗口法路径只有 delta,给
+/// 「较上次复盘 / 近 7 天 ±D」。只报事实,不带判断。
+/// 复核修订二轮 N1:原先把展示数与方向词塞同一句(「新增 2、完成 22——
+/// 在涨」),两个总体不同源,用户自己一减就与结论矛盾,看起来像 app 坏了;
+/// 拆开后方向词消失,数字永远与 delta 同源。趋势线待 ≥3 期
+/// `ReviewLedger` 攒够再开(批 4 明确不做;账本路径的两端正是趋势线端点)。
 private struct BacklogFlowFloorCard: View {
     let fact: ReviewFlowState.BacklogFlowFact
 
     var body: some View {
         RecapCard {
-            Text(flowLine)
-                .font(WarmFont.body(14))
-                .foregroundColor(WarmTheme.textPrimary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                Text(String(
+                    localized: "review.floor.backlog_flow.line_\(fact.createdCount)_\(fact.completedCount)"
+                ))
+                    .font(WarmFont.body(14))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(secondLine)
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .accessibilityIdentifier("ReviewFlowBacklogFlowFloor")
     }
 
-    /// 方向三态:在涨 / 在缩 / 相抵(`backlogDelta` 的正负决定选键,数字同键序)。
-    private var flowLine: String {
-        if fact.backlogDelta > 0 {
-            return String(localized: "review.floor.backlog_flow.grew_\(fact.createdCount)_\(fact.completedCount)")
+    /// 第二行:账本差路径「积压 P → Q(±D)」两端自证;窗口法(首评/旧
+    /// payload)只有 delta——首评说「近 7 天」(窗口回落),有上期但无基线
+    /// 说「较上次复盘」。±D 在代码侧拼好(正数显式带 +),经 %@ 进文案,
+    /// 三语不必各养一套符号约定。
+    private var secondLine: String {
+        let signedDelta = fact.backlogDelta > 0 ? "+\(fact.backlogDelta)" : "\(fact.backlogDelta)"
+        if let start = fact.ledgerStart, let end = fact.ledgerEnd {
+            return String(localized: "review.floor.backlog_flow.trend_\(start)_\(end)_\(signedDelta)")
         }
-        if fact.backlogDelta < 0 {
-            return String(localized: "review.floor.backlog_flow.shrank_\(fact.createdCount)_\(fact.completedCount)")
+        if fact.isFirstPeriod {
+            return String(localized: "review.floor.backlog_flow.recent_\(signedDelta)")
         }
-        return String(localized: "review.floor.backlog_flow.flat_\(fact.createdCount)_\(fact.completedCount)")
+        return String(localized: "review.floor.backlog_flow.since_last_\(signedDelta)")
     }
 }
 

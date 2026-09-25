@@ -315,21 +315,28 @@ actor TodoQueryActor {
     /// 第 2 步每次划卡写库都重跑**无时间下界**的全表查询,正是
     /// `refreshTodos` 窗口化刻意避开的那类成本)。口径与第 1 步
     /// `ReviewStepRecap` 的 `@Query` 完全一致(数字同源,不打架)。
+    /// 复核修订二轮 nit:`completedTodos` 是 `allTodos` 的子集(谓词就是
+    /// `isCompleted`,`toData()` 对该字段直传),原先各自 fetch + 全量
+    /// `toData()` 映射等于把全表取了两遍——这里改为**一趟**取全表,
+    /// 完成子集在内存里 filter + sort 派生,payload 不变。
     func reviewFlowRecapInputs() throws -> ReviewFlowRecapInputs {
         let startedAt = Date()
-        // 谓词外提到显式类型局部:#Predicate 闭包在调用参数位置推不出 $0 的类型。
-        let completedDescriptor: FetchDescriptor<TodoItem> = FetchDescriptor(
-            predicate: #Predicate { $0.isCompleted },
-            sortBy: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
-        )
         let allDescriptor: FetchDescriptor<TodoItem> = FetchDescriptor()
         let recurringDescriptor: FetchDescriptor<TodoOccurrenceCompletion> = FetchDescriptor(
             sortBy: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)]
         )
         do {
+            let allTodos = try modelContext.fetch(allDescriptor).map { $0.toData() }
+            // 与第 1 步 `@Query` 同谓词同序(isCompleted,completedAt 降序)。
+            // 完成行的 completedAt 理论非空(完成动作必写);nil 防御排末尾,
+            // 与 SwiftData 排序的 nil 行为不构成可观测差异——weekSummary 只
+            // 按时间窗计数,不依赖顺序。
+            let completedTodos = allTodos
+                .filter { $0.isCompleted }
+                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
             let inputs = ReviewFlowRecapInputs(
-                allTodos: try modelContext.fetch(allDescriptor).map { $0.toData() },
-                completedTodos: try modelContext.fetch(completedDescriptor).map { $0.toData() },
+                allTodos: allTodos,
+                completedTodos: completedTodos,
                 recurringCompletions: try modelContext.fetch(recurringDescriptor).map {
                     (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
                 }

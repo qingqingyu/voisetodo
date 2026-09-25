@@ -271,9 +271,9 @@ enum ReviewAggregator {
     /// (+N),同样被本函数覆盖。**已知盲区:删除与一次性↔规律互转**——被删
     /// 的行三路事件都看不到;详情页改 recurrenceRule(`updateRecurrence`)同样
     /// 是字段态变化无事件行,一次性转规律后其「记下 +1」从本函数消失。两类
-    /// 都会被漏计成「相抵」;有上期基线时调用方走账本差(两期 init 快照天然
-    /// 涵盖删除与互转,见 `ReviewFlowState.backlogFlowNumbers`),本函数只是
-    /// 无基线回落,盲区随之。窗口边界与 summarize 同约定:下界按
+    /// 都会被漏计成「相抵」;有上期基线时调用方走账本差(本期 init 与上期
+    /// **收尾**两个快照天然涵盖删除与互转,见 `ReviewFlowState.backlogFlowNumbers`),
+    /// 本函数只是无基线回落,盲区随之。窗口边界与 summarize 同约定:下界按
     /// 传入时刻精确比较,上界按用户日。
     static func oneOffBacklogDelta(
         _ todos: [TodoItemData],
@@ -289,8 +289,15 @@ enum ReviewAggregator {
         return todos.filter { $0.recurrenceRule == nil }.reduce(0) { delta, todo in
             var change = 0
             if inWindow(todo.createdAt) { change += 1 }
-            if let completedAt = todo.completedAt, inWindow(completedAt) { change -= 1 }
-            if let abandonedAt = todo.abandonedAt, inWindow(abandonedAt) { change -= 1 }
+            // 完成/划掉互斥出口:else-if 防「completedAt 与 abandonedAt 并存」的
+            // 脏行双扣(一条出口被记成 −2)。正常写入路径不产生并存(完成写
+            // completedAt、划掉只作用于开放条目);真出现时按完成计——它对
+            // 积压的效应与划掉相同(都离开了开放集),扣一次即正确。
+            if let completedAt = todo.completedAt, inWindow(completedAt) {
+                change -= 1
+            } else if let abandonedAt = todo.abandonedAt, inWindow(abandonedAt) {
+                change -= 1
+            }
             return delta + change
         }
     }

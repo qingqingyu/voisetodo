@@ -210,6 +210,30 @@ final class ReviewRecapSameDayTests: XCTestCase {
         XCTAssertEqual(delta, 2, "−1 + 3 = +2")
     }
 
+    /// 脏数据防线(复核修订二轮 nit):completedAt 与 abandonedAt 并存的行
+    /// 只扣一次(完成优先)——双扣会把一条出口记成 −2。正常写入路径不产生
+    /// 并存(完成写 completedAt、划掉只作用于开放条目),这里锁的是防御行为。
+    func testOneOffBacklogDelta_dirtyRowWithBothTimestampsCountsOnce() throws {
+        let todos = [
+            TodoItemData(
+                title: "脏行",
+                isCompleted: true,
+                completedAt: try noon(2026, 8, 12),
+                createdAt: try noon(2026, 7, 1),
+                abandonedAt: try noon(2026, 8, 12)
+            ),
+        ]
+
+        let delta = ReviewAggregator.oneOffBacklogDelta(
+            todos,
+            from: try noon(2026, 8, 1),
+            to: try noon(2026, 9, 1),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(delta, -1, "一条出口只扣一次,不是 −2")
+    }
+
     // MARK: - monthSummary 接线
 
     func testMonthSummary_sameDayCount_onlyOneOffSameDayCompletions() throws {
