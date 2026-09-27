@@ -86,6 +86,22 @@ struct UITestTodoExtractor: TodoExtractorProtocol {
             )
         }
 
+        // App Store 截图套件(ScreenshotUITests)en 轮次:3 条英文待办。
+        // dueHint 用 TodoDueDateResolver 可解析的英文 token(tomorrow/tonight),
+        // "evening" 不是可解析 token,不可用。英文匹配先 lowercased
+        // (与 TodoDueDateResolver 的英文短语匹配同惯例)。
+        let enLowercased = normalized.lowercased()
+        if enLowercased.contains("bank") && enLowercased.contains("groceries") && enLowercased.contains("mom") {
+            return ExtractionResult(
+                todos: [
+                    ExtractedTodo(title: "Go to the bank", detail: "Go to the bank tomorrow", dueHint: "tomorrow", priority: .normal, categoryHint: .finance),
+                    ExtractedTodo(title: "Buy groceries", detail: "buy some groceries", dueHint: nil, priority: .normal, categoryHint: .life),
+                    ExtractedTodo(title: "Call mom", detail: "call mom tonight", dueHint: "tonight", priority: .normal, categoryHint: .social)
+                ],
+                ignored: ""
+            )
+        }
+
         if normalized.contains("银行") && normalized.contains("买菜") && normalized.contains("老妈") {
             return ExtractionResult(
                 todos: [

@@ -260,7 +260,9 @@ extension AppLaunchHelper {
             sendButton = identified
         } else {
             let byLabel = app.buttons.matching(
-                NSPredicate(format: "label IN %@", ["停止录音", "生成", "Stop Recording", "Generate"])
+                // "Stop recording" 是 a11y.stop_recording 的实际 en 文案(小写 r),
+                // "Stop Recording" 大写变体一并保留作兼容。
+                NSPredicate(format: "label IN %@", ["停止录音", "生成", "Stop recording", "Stop Recording", "Generate"])
             ).firstMatch
             XCTAssertTrue(byLabel.waitForExistence(timeout: 2.0), "录音面板发送按钮应该出现")
             sendButton = byLabel
