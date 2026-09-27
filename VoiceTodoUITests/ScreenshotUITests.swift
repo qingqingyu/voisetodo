@@ -1,7 +1,8 @@
 import XCTest
 
 /// App Store 截图套件:在 6.9" 模拟器(iPhone 17 Pro Max, 1320×2868)上
-/// 按 7 个固定画面截屏,zh-Hans / en 各一套,共 14 张。
+/// 按 6 个固定画面截屏,zh-Hans / en 各一套,共 12 张(付费墙两张因 CLI 无法
+/// 加载 StoreKit 配置改为手动补,见 runSeededFlow 尾部注释)。
 ///
 /// 运行方式:只经 `scripts/capture-screenshots.sh` 启动(它以
 /// `TEST_RUNNER_SCREENSHOT_MODE=1` 传给 xcodebuild,测试进程内读到
@@ -68,7 +69,7 @@ final class ScreenshotUITests: XCTestCase {
     // MARK: - 门禁与通用助手
 
     override func setUpWithError() throws {
-        // 截图套件允许单断言失败后继续:一次跑 14 张,某张的等待超时不应吞掉其余画面。
+        // 截图套件允许单断言失败后继续:一次跑 12 张,某张的等待超时不应吞掉其余画面。
         continueAfterFailure = true
         guard ProcessInfo.processInfo.environment["SCREENSHOT_MODE"] == "1" else {
             throw XCTSkip("截图套件只由 scripts/capture-screenshots.sh 运行(需 SCREENSHOT_MODE=1)")
@@ -93,21 +94,7 @@ final class ScreenshotUITests: XCTestCase {
             "--enable-accessibility-identifiers",
             "--reset-user-data",
         ] + extraArguments
-        // 付费墙截图需要 StoreKit 本地商品。scheme TestAction 的 StoreKit 引用在
-        // iOS 26.5 运行时 + xcodebuild CLI 下不生效(Apple 开发者论坛 826971),
-        // 改用 Xcode 同款机制:直接给 app 进程注入 SKStoreKitConfigurationPath。
-        appHelper.app.launchEnvironment["SKStoreKitConfigurationPath"] = storeKitConfigPath
         appHelper.app.launch()
-    }
-
-    /// Products.storekit 的宿主机绝对路径(#filePath 上两级 = VoiceTodo/)。
-    /// 模拟器进程可读宿主路径;截图流水线恒在本机跑,无需打进 runner 包。
-    private var storeKitConfigPath: String {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Products.storekit")
-            .path
     }
 
     /// locale 无关的首页就绪探测:任一标识出现即算就绪。
@@ -145,7 +132,7 @@ final class ScreenshotUITests: XCTestCase {
     /// 变为 'HomeRootView';且**对不存在 identifier 的 waitForExistence 会触发 XCTest
     /// 取证 dump 整棵污染树,runner 两次被 jetsam SIGKILL**(2026-09-27 复现)。
     /// 已知不受污染、可安全用 identifier 的:sheet 子树(ConfirmSheet/ExtractedTodoList/
-    /// PaywallPurchaseButton/ReviewPeriodPicker)与列表行(TodoCell_N)。
+    /// ReviewPeriodPicker)与列表行(TodoCell_N)。
     private func buttonByLabel(_ labels: [String]) -> XCUIElement {
         appHelper.app.buttons.matching(
             NSPredicate(format: "label IN %@", labels)
@@ -269,7 +256,7 @@ final class ScreenshotUITests: XCTestCase {
         }
     }
 
-    // MARK: - 组 2:种子数据主页流程(shot 03/04/05/06)
+    // MARK: - 组 2:种子数据主页流程(shot 03/04/05)
 
     func test2_HomeSeededFlow() throws {
         for pass in languagePasses {
@@ -284,7 +271,7 @@ final class ScreenshotUITests: XCTestCase {
         let app = appHelper.app
 
         // 种子解码 smoke:已知今日标题可见。若 TodoItemData schema 漂移导致静默空库,
-        // 在这里显式失败,而不是截出 14 张空状态图。
+        // 在这里显式失败,而不是截出一批空状态图。
         let knownTitle = app.staticTexts[pass.titles[0]].firstMatch
         XCTAssertTrue(knownTitle.waitForExistence(timeout: 5.0),
                       "[\(pass.suffix)] 种子待办「\(pass.titles[0])」应出现(空库=种子 JSON schema 漂移)")
@@ -327,30 +314,12 @@ final class ScreenshotUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.8)
         capture("05-review", pass: pass)
 
-        // 复盘 sheet 的关闭手势不做花活:同参数重启(数据重新种子),保证 06 的起点确定。
-        app.terminate()
-        app.launch()
-        XCTAssertTrue(waitForHomeNeutral(), "[\(pass.suffix)] 重启后首页应出现")
-        Thread.sleep(forTimeInterval: 0.6)
-
-        // Shot 06:付费墙。设置 → Upgrade Pro → 等商品加载(TestAction 需带 StoreKit
-        // 配置,由脚本注入 .xcscheme —— xcodegen 不生成 test action 的 storeKit 引用);
-        // 显式断言非错误态,StoreKit 配置失效时大声失败而不是截出 retry 页。
-        let settingsButton = buttonByLabel(["设置", "Settings"])
-        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5.0), "[\(pass.suffix)] 设置入口应出现")
-        settingsButton.tap()
-        let upgradeEntry = app.buttons["UpgradeProButton"]
-        XCTAssertTrue(upgradeEntry.waitForExistence(timeout: 5.0), "[\(pass.suffix)] 设置页 Pro 入口应出现")
-        upgradeEntry.tap()
-
-        let purchaseButton = app.buttons["PaywallPurchaseButton"]
-        XCTAssertTrue(purchaseButton.waitForExistence(timeout: 10.0), "[\(pass.suffix)] 购买按钮应出现")
-        XCTAssertTrue(purchaseButton.waitUntilEnabled(timeout: 10.0),
-                      "[\(pass.suffix)] 商品应加载完成(CTA 结束 spinner)")
-        XCTAssertFalse(app.buttons["PaywallRetryButton"].exists,
-                       "[\(pass.suffix)] 付费墙不应处于错误态(StoreKit 配置未生效?)")
-        Thread.sleep(forTimeInterval: 0.5)
-        capture("06-paywall", pass: pass)
+        // Shot 06(付费墙)不在自动套件内:CLI 驱动的 UI 测试在 iOS 26.5 模拟器上
+        // 加载不了 StoreKit 本地配置(xcodebuild 不推送 scheme 引用,开发者论坛
+        // 826971;SKStoreKitConfigurationPath/launchctl/xctestplan 均绕不过),
+        // 付费墙恒为错误态。这两张手动补:Xcode Run(GUI 下 Run action 的 StoreKit
+        // 配置生效)→ 设置 → 升级 Pro → Cmd+S,zh/en 各一张,命名 06-paywall.png
+        // 放入 screenshots/{zh,en}/ 即可与其余 12 张合套。
 
         app.terminate()
     }
