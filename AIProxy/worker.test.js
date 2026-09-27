@@ -1668,6 +1668,204 @@ test("按订阅限速: 免费档与无标识 Pro 不经过该层", async () => {
   });
 });
 
+// 第三轮 review 新发现 1:PRIVACY_POLICY.md 承诺「只持有哈希标识」——
+// originalTransactionId 是 Apple 账号绑定的永久订阅标识,不得以明文进
+// KV 缓存值 / 限速键 / 日志。哈希(与 deviceId 同一 safeDeviceId)后作为
+// 限速键同样稳定、同样轮换不掉,功能零损失。
+test("按订阅限速: 订阅标识哈希后落缓存与配额键,不出现明文(隐私政策口径)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-raw-987654321" }
+  });
+  const kv = new MemoryKV(new Map());
+  // DO 打死 → 订阅配额走 KV 回退,能直接观察 sub-quota 键里的标识形态
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request({ transcript: "a" }, {
+        "X-App-Token": "token", "X-Device-ID": "d-privacy", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+      }),
+      {
+        APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
+        RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      {},
+      jsonResponseProvider("a")
+    );
+    assert.equal(response.status, 200);
+
+    // 验签结果缓存(sub:<deviceId>)值里的 subscriptionId 只能是加盐哈希
+    const tierEntry = [...kv.values.entries()].find(([k]) => k.startsWith("sub:"));
+    assert.ok(tierEntry, "验签缓存已写入");
+    const cached = JSON.parse(tierEntry[1]);
+    assert.match(cached.subscriptionId, /^sha256:[0-9a-f]{16}$/, "缓存里的订阅标识是加盐哈希");
+    assert.ok(!tierEntry[1].includes("tx-raw-987654321"), "缓存值不得含明文订阅标识");
+
+    // KV 回退路径的配额键同样只见哈希
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("sub-quota:"));
+    assert.ok(quotaKey, "KV 回退写入了订阅配额键");
+    assert.match(quotaKey, /^sub-quota:\d{4}-\d{2}-\d{2}:sha256:[0-9a-f]{16}$/, "配额键里的订阅标识是哈希");
+  });
+});
+
+// 第三轮 review 新发现 2:assist(split/reflect,「换一批」)不占 device 计费
+// 额度、Pro 又豁免 IP 闸门 —— 订阅侧这桶是它唯一的限流。与 extract 共用一桶
+// 时,反复点「换一批」会把同一订阅所有设备的 extract 一起 429 到 UTC 0 点,
+// 而 500 的定档理由(1-3 台 × 100/天 extract)根本没算 assist。分桶后互不挤占。
+test("按订阅限速: assist 与 extract 分桶,换一批刷爆不锁 extract", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-split-bucket" }
+  });
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const baseEnv = {
+    APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+    DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
+    SUBSCRIPTION_DAILY_LIMIT: "1", SUBSCRIPTION_ASSIST_DAILY_LIMIT: "1",
+    RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+  };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const mk = (mode, device) => request(
+      mode === "extract" ? { transcript: "a" } : { transcript: "拆一下这件事", mode: "split" },
+      { "X-App-Token": "token", "X-Device-ID": device, "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws }
+    );
+    // extract 用掉自己桶的 1/1
+    const extractFirst = await handleRequest(mk("extract", "d-x1"), baseEnv, {}, jsonResponseProvider("a"));
+    assert.equal(extractFirst.status, 200);
+    // assist 第一次:extract 桶虽已满,但分桶后 assist 有自己的 1/1 → 不被连带 429
+    const assistFirst = await handleRequest(mk("split", "d-a1"), baseEnv, {}, jsonResponseProvider("a"));
+    assert.equal(assistFirst.status, 200, "assist 不吃 extract 的订阅额度");
+    // assist 第二次:自己桶满 → 429
+    const assistSecond = await handleRequest(mk("split", "d-a2"), baseEnv, {}, jsonResponseProvider("b"));
+    assert.equal(assistSecond.status, 429);
+    assert.equal((await assistSecond.json()).error, "subscription_quota_exceeded");
+    // extract 第二次:自己桶满 → 429(与 assist 桶的状态无关)
+    const extractSecond = await handleRequest(mk("extract", "d-x2"), baseEnv, {}, jsonResponseProvider("b"));
+    assert.equal(extractSecond.status, 429);
+    // 两桶各自独立计数,键与上限都分开
+    const extractConsumes = doBinding._calls.filter((c) => c.key === "sub-daily");
+    const assistConsumes = doBinding._calls.filter((c) => c.key === "sub-assist");
+    assert.equal(extractConsumes.length, 2, "extract 桶两次(放行 + 超限尝试)");
+    assert.equal(assistConsumes.length, 2, "assist 桶两次(放行 + 超限尝试)");
+    assert.ok(extractConsumes.every((c) => c.limit === 1 && c.date === "2026-05-26"));
+    assert.ok(assistConsumes.every((c) => c.limit === 1 && c.date === "2026-05-26"));
+  });
+});
+
+// 第三轮 review 新发现 4:DO 故障回退 KV 后必须 return(与 enforceDailyLimitViaDO
+// 同写法)。修复前:KV 路径记一条 source:"kv" 的 incremented 后,外层又记一条
+// source:"do" 的重复日志;RATE_LIMIT_KV 未绑定时那条重复日志还会把
+// used:undefined(JSON 序列化时键被丢弃)记进去。
+test("按订阅限速: DO 故障回退 KV 只记一条 incremented,且带 used(回退即终态)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-fallback-log" }
+  });
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO({ alwaysFail: true });
+  const lines = [];
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = (line) => lines.push(String(line));
+  console.warn = (line) => lines.push(String(line));
+  try {
+    await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+      const response = await handleRequest(
+        request({ transcript: "a" }, {
+          "X-App-Token": "token", "X-Device-ID": "d-fallback", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+        }),
+        {
+          APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+          DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
+          RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
+          SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+        },
+        {},
+        jsonResponseProvider("a")
+      );
+      assert.equal(response.status, 200, "KV degraded 路径照常放行");
+    });
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+  const incremented = lines.filter((l) => l.includes("proxy.subscription.quota.incremented"));
+  assert.equal(incremented.length, 1, `只记一条 incremented(修复前 KV/DO 各一条重复): ${incremented.join(" | ")}`);
+  assert.ok(incremented[0].includes('"used":1'), `计数值完整: ${incremented[0]}`);
+});
+
+// 第三轮 review 新发现 5:配置留空(空串/纯空白)是运维的自然动作
+// (wrangler.toml.example 相邻变量注释口径即「留空则…」),按「未设置」走默认值,
+// 不得每个请求刷 invalid warn。
+test("订阅/窗口配置留空按未设置处理:不刷 warn 且默认值生效", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-empty-config" }
+  });
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const warnLines = [];
+  const originalWarn = console.warn;
+  console.warn = (line) => warnLines.push(String(line));
+  try {
+    await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+      const ctx = makeFakeCtx();
+      const baseEnv = {
+        APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
+        GLOBAL_PRO_DAILY_LIMIT: "8",
+        SUBSCRIPTION_DAILY_LIMIT: "",        // 空串
+        SUBSCRIPTION_ASSIST_DAILY_LIMIT: " ", // 纯空白,同空串
+        GLOBAL_BUDGET_WINDOW_HOURS: "",       // 空串
+        RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+      };
+      const response = await handleRequest(
+        request({ transcript: "a" }, {
+          "X-App-Token": "token", "X-Device-ID": "d-empty-cfg", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+        }),
+        baseEnv,
+        ctx,
+        jsonResponseProvider("a")
+      );
+      assert.equal(response.status, 200);
+      // 补一条 assist(split)请求:让 SUBSCRIPTION_ASSIST_DAILY_LIMIT 的留空
+      // 值真正流经 resolveSubscriptionAssistDailyLimit(只发 extract 请求时
+      // assist resolver 不会被调用,上面的 warn 过滤对它是空转断言)。
+      const assistResponse = await handleRequest(
+        request({ transcript: "拆一下这件事", mode: "split" }, {
+          "X-App-Token": "token", "X-Device-ID": "d-empty-cfg", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+        }),
+        baseEnv,
+        ctx,
+        jsonResponseProvider("a")
+      );
+      assert.equal(assistResponse.status, 200);
+      await ctx.awaitAll();
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  const invalidWarns = warnLines.filter((l) =>
+    l.includes("invalid_daily_limit") || l.includes("invalid_assist_daily_limit") || l.includes("invalid_window_hours")
+  );
+  assert.equal(invalidWarns.length, 0, `留空不得当成非法配置刷 warn: ${invalidWarns.join(" | ")}`);
+  // 默认值真实生效(而不是 invalid 分支的「warn 后回落」):订阅桶 500、窗口 6h
+  const subConsume = doBinding._calls.find((c) => c.key === "sub-daily");
+  assert.ok(subConsume, "订阅计数发生");
+  assert.equal(subConsume.limit, 500, "SUBSCRIPTION_DAILY_LIMIT 留空 → 默认 500");
+  const assistConsume = doBinding._calls.find((c) => c.key === "sub-assist");
+  assert.ok(assistConsume, "assist 订阅计数发生");
+  assert.equal(assistConsume.limit, 500, "SUBSCRIPTION_ASSIST_DAILY_LIMIT 留空 → 默认 500");
+  const proConsume = doBinding._calls.find((c) => c.key === "global-budget-pro");
+  assert.ok(proConsume, "pro 全局桶计数发生");
+  assert.equal(proConsume.windowHours, 6, "GLOBAL_BUDGET_WINDOW_HOURS 留空 → 默认 6h 窗口");
+});
+
 test("P0: Pro 设备额度超限时不对共享 IP 计数发 refund(Step C 豁免)", async () => {
   // 回归守卫:enforceAllQuotas Step C 的 if (!isPro) 分支。pro 豁免了 ip-daily
   // (Step B 从未扣减),若回归掉守卫对它发 refund,KV 路径会把同 IP 的免费用户
@@ -3352,6 +3550,39 @@ test("selector primaryId is a no-op when the pinned provider was dropped (circui
   // OPEN 被熔断摘除 → 钉头无对象 → 回落 P5 顺序,不报错不空转
   const candidates = await pickCandidates(providers, health, Date.now(), { primaryId: "OPEN" });
   assert.deepEqual(candidates.map((p) => p.id), ["CLOSED"]);
+});
+
+// 第三轮 review 新问题 4:钉头不得把 half-open 顶到最前。half-open 被 defer
+// 到末尾是有意的(单次试探槽)——钉到最前会让每个请求的第一跳都砸向疑似
+// 未恢复的 provider;叠加 AI_PROVIDER_MAX_ATTEMPTS=2 还会把健康候选挤出候选窗。
+// 正在灰度钉头新主力(ZAI_ANTHROPIC_AIR)时,被钉者一熔断进 half-open 即活场景。
+test("selector primaryId does not promote a half-open provider to the front", async () => {
+  const providers = [
+    makeProvider({ id: "PINNED_HALF", priority: 1 }),
+    makeProvider({ id: "HEALTHY", priority: 2 })
+  ];
+  const health = stubHealthStore({
+    PINNED_HALF: { state: "half-open", ewmaLatencyMs: 0, sampleCount: 0 },
+    HEALTHY: { state: "closed", ewmaLatencyMs: 3000, sampleCount: 5 }
+  });
+  // 不钉:half-open 排末尾(既有语义,上面第一条 half-open 测试锁的就是它)
+  const withoutPin = await pickCandidates(providers, health, Date.now());
+  assert.deepEqual(withoutPin.map((p) => p.id), ["HEALTHY", "PINNED_HALF"]);
+  // 钉:被 override 的 provider 处于 half-open → 不提升,仍留末尾试探槽
+  const pinned = await pickCandidates(providers, health, Date.now(), { primaryId: "PINNED_HALF", maxAttempts: 2 });
+  assert.deepEqual(pinned.map((p) => p.id), ["HEALTHY", "PINNED_HALF"], "half-open 不被钉头提升到第一顺位");
+
+  // 候选集全是 half-open 时钉头同样不重排(按 priority 原序)
+  const providersAllHalf = [
+    makeProvider({ id: "PINNED_HALF", priority: 2 }),
+    makeProvider({ id: "OTHER_HALF", priority: 1 })
+  ];
+  const healthAllHalf = stubHealthStore({
+    PINNED_HALF: { state: "half-open", ewmaLatencyMs: 0, sampleCount: 0 },
+    OTHER_HALF: { state: "half-open", ewmaLatencyMs: 0, sampleCount: 0 }
+  });
+  const allHalf = await pickCandidates(providersAllHalf, healthAllHalf, Date.now(), { primaryId: "PINNED_HALF" });
+  assert.deepEqual(allHalf.map((p) => p.id), ["OTHER_HALF", "PINNED_HALF"], "纯 half-open 候选集钉头不重排");
 });
 
 test("HealthStore EWMA converges toward new latency samples", async () => {
@@ -6073,15 +6304,32 @@ test("cron 告警: down→ok 推恢复消息,带故障总时长", async () => {
   const telegramCalls = [];
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
 
-  // 把故障起点拨回 90 分钟前,恢复消息应带出总时长
+  // 把故障起点拨回 90 分钟前(since 与 lastOutageSince 一起,新格式记录),
+  // 恢复消息应带出总时长 —— 时长取 lastOutageSince,不取 since
   const record = JSON.parse(kv.values.get("alert:provider_health"));
-  kv.values.set("alert:provider_health", JSON.stringify({ ...record, since: Date.now() - 90 * 60000 }));
+  const outageStart = Date.now() - 90 * 60000;
+  kv.values.set("alert:provider_health", JSON.stringify({ ...record, since: outageStart, lastOutageSince: outageStart }));
 
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
   assert.equal(telegramCalls.length, 2);
   const recovered = telegramCalls[1].body.text;
   assert.ok(recovered.includes("恢复"), recovered);
   assert.ok(recovered.includes("1 小时 30 分钟"), recovered);
+});
+
+// 旧 KV 记录(部署前写入)没有 lastOutageSince:回落 since,首发路径行为不变。
+test("cron 告警: 无 lastOutageSince 的旧记录回落 since 算时长", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
+
+  const record = JSON.parse(kv.values.get("alert:provider_health"));
+  delete record.lastOutageSince;
+  kv.values.set("alert:provider_health", JSON.stringify({ ...record, since: Date.now() - 90 * 60000 }));
+
+  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
+  assert.equal(telegramCalls.length, 2);
+  assert.ok(telegramCalls[1].body.text.includes("1 小时 30 分钟"), telegramCalls[1].body.text);
 });
 
 test("cron 告警: down 持续满 6h 推 reminder", async () => {
@@ -6218,12 +6466,20 @@ test("cron 告警: Telegram 发送失败不写 lastNotifiedAt,下次 cron 同 le
 // lastNotifiedAt(非 ok 且 =0),恢复失败后 lastNotifiedAt 是故障时刻的旧值 ≠ 0,
 // 重推分支永远跳过 —— 收到 🚨 的人从此一直以为故障还在。修复后靠
 // lastNotifiedLevel 回执比对,ok 同样能补发。
-test("cron 告警: 恢复消息发送失败,下次 cron 补推 recovered", async () => {
+// 第三轮 review 新发现 3:重推文案的「故障总时长」必须取 lastOutageSince ——
+// since 在恢复落盘时已重置成恢复时刻,重推再读 since 会把「距恢复多久」报成
+// 故障时长,且每次重推越推越大(一次 5 分钟的故障会被报成几小时)。
+test("cron 告警: 恢复消息发送失败,下次 cron 补推 recovered(时长取故障起点)", async () => {
   const kv = new MemoryKV(new Map());
   const telegramCalls = [];
   // 第一跑:全挂 → down 送达(回执 lastNotifiedLevel=down)
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: ["C1", "C2"], telegramCalls }));
   assert.equal(telegramCalls.length, 1);
+
+  // 把故障起点拨回 90 分钟前,模拟一段 90 分钟的故障
+  const record1 = JSON.parse(kv.values.get("alert:provider_health"));
+  const outageStart = Date.now() - 90 * 60000;
+  kv.values.set("alert:provider_health", JSON.stringify({ ...record1, since: outageStart, lastOutageSince: outageStart }));
 
   // 第二跑:恢复,但 Telegram 偶发 500 → recovered 没送达,回执仍停在 down
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls, telegramFail: true }));
@@ -6231,13 +6487,18 @@ test("cron 告警: 恢复消息发送失败,下次 cron 补推 recovered", async
   const record = JSON.parse(kv.values.get("alert:provider_health"));
   assert.equal(record.level, "ok", "level 照常前进");
   assert.equal(record.lastNotifiedLevel, "down", "恢复没送达,用户最后知道的还是 down");
+  assert.equal(record.lastOutageSince, outageStart, "恢复未送达,lastOutageSince 保留故障起点");
+  // since 被重置成恢复时刻 —— 这正是重推不能读 since 的原因
+  assert.ok(record.since > outageStart, "since 已重置为恢复时刻");
 
   // 第三跑:稳态 ok,回执 ≠ 当前 level → 补推 recovered(旧口径在这里永久丢)
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
   assert.equal(telegramCalls.length, 3, "下次 cron 补发恢复消息");
   assert.ok(telegramCalls[2].body.text.includes("恢复"), telegramCalls[2].body.text);
+  assert.ok(telegramCalls[2].body.text.includes("1 小时 30 分钟"), `重推时长取故障起点,而不是距恢复多久: ${telegramCalls[2].body.text}`);
   const record3 = JSON.parse(kv.values.get("alert:provider_health"));
   assert.equal(record3.lastNotifiedLevel, "ok", "补发送达后回执前进");
+  assert.equal(record3.lastOutageSince, null, "恢复送达后清空故障起点");
 
   // 第四跑:回执一致,稳态 ok 不再推
   await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));

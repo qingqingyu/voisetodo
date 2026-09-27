@@ -231,7 +231,7 @@ sendTelegramAlert(env, text, fetchImpl = fetch) → { ok, skipped? }
 
 沿用 `src/health.js` 的形态：KV 存取 + 纯函数判定，KV 失败时降级。
 
-存储在已有的 `AI_PROVIDER_STATE_KV`，key `alert:provider_health`，值 `{ level, since, lastNotifiedAt, lastNotifiedLevel }`。`alert:` 前缀与 `health:` / `config:` 共存，与现有做法一致。`lastNotifiedAt` 只管 6h reminder 计时；`lastNotifiedLevel` 是「用户最后**成功收到**的是哪个 level」的送达回执——两个字段各司其职（二轮遗留 2：把「待补发」挤进 `lastNotifiedAt` 会让恢复消息在发送失败后永久丢失）。
+存储在已有的 `AI_PROVIDER_STATE_KV`，key `alert:provider_health`，值 `{ level, since, lastNotifiedAt, lastNotifiedLevel, lastOutageSince }`。`alert:` 前缀与 `health:` / `config:` 共存，与现有做法一致。`lastNotifiedAt` 只管 6h reminder 计时；`lastNotifiedLevel` 是「用户最后**成功收到**的是哪个 level」的送达回执；`lastOutageSince` 是「本次离开 ok 的起点」，recovered 文案的故障总时长用它（三轮 review 新发现 3：恢复消息首发失败后 `since` 已被重置成恢复时刻，重推再读 `since` 会把「距恢复多久」报成故障时长且越推越大；恢复送达即清，旧记录无此字段回落 `since`）——三个字段各司其职（二轮遗留 2：把「待补发」挤进 `lastNotifiedAt` 会让恢复消息在发送失败后永久丢失）。
 
 ```js
 classifyLevel(succeeded, total) → "ok" | "degraded" | "down"
@@ -240,7 +240,7 @@ shouldNotify(previous, current, now) → { notify, kind }
 ```
 
 - level 变化 → 推
-- **送达回执与当前 level 不一致（`lastNotifiedLevel !== current`）→ 补发**，三种 kind 统一覆盖：故障告警没送达的重推（degraded 没有 reminder 兜底，不重推就是永久丢失；down 不用干等 6h），**恢复消息没送达的补推 recovered**（旧口径按 `lastNotifiedAt` 判重推时 ok 永远轮不到，收到 🚨 的人从此以为故障还在）。**与「送达后才更新回执」配套**：`notifyProviderHealthTransition` 必须先发送、送达（或未配 `TELEGRAM_*` 的 skipped）才让 `nextRecord` 把 `lastNotifiedLevel` 推进到当前 level；`level`/`since` 照常落盘（否则恢复消息的故障时长会算错）。旧 KV 记录无此字段按 `"ok"` 解读：稳态 ok 不推，稳态 down 补推一条（宁吵勿哑，送达后只发生一次）。
+- **送达回执与当前 level 不一致（`lastNotifiedLevel !== current`）→ 补发**，三种 kind 统一覆盖：故障告警没送达的重推（degraded 没有 reminder 兜底，不重推就是永久丢失；down 不用干等 6h），**恢复消息没送达的补推 recovered**（旧口径按 `lastNotifiedAt` 判重推时 ok 永远轮不到，收到 🚨 的人从此以为故障还在）。**与「送达后才更新回执」配套**：`notifyProviderHealthTransition` 必须先发送、送达（或未配 `TELEGRAM_*` 的 skipped）才让 `nextRecord` 把 `lastNotifiedLevel` 推进到当前 level；`level`/`since` 照常落盘（故障总时长由 `lastOutageSince` 单独承担，不依赖 `since`）。旧 KV 记录无此字段按 `"ok"` 解读：稳态 ok 不推，稳态 down 补推一条（宁吵勿哑，送达后只发生一次）。
 - 仍是 `down` 且距 `lastNotifiedAt` ≥ 6h → 推 `reminder`
 - 其余 → 不推
 

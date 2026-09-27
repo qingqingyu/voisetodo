@@ -8,11 +8,14 @@
 //
 // 存储复用 AI_PROVIDER_STATE_KV,key `alert:provider_health`,值
 //   { level: "ok"|"degraded"|"down", since: <ms>, lastNotifiedAt: <ms>,
-//     lastNotifiedLevel: "ok"|"degraded"|"down" }
+//     lastNotifiedLevel: "ok"|"degraded"|"down", lastOutageSince: <ms|null> }
 // lastNotifiedAt 只负责 6h reminder 的计时;「用户最后**成功收到**的是哪个
 // level」由 lastNotifiedLevel 表达(遗留 2:恢复消息发送失败时,lastNotifiedAt
 // 的旧值会让「待补发」信号消失,恢复消息永久丢失)。旧 KV 记录无此字段,
 // 读取按 "ok" 处理(见 shouldNotify/nextRecord)。
+// lastOutageSince 是「本次离开 ok 的起点」:recovered 文案的故障总时长用它,
+// 不用 since(since 在恢复落盘时已被重置成恢复时刻,详见 nextRecord)。旧 KV
+// 记录无此字段,buildHealthAlertMessage 回落 since(行为不变)。
 // `alert:` 前缀与 health: / config: 共存,跟 src/health.js / adminConfig.js 的做法一致。
 //
 // 降级原则:KV 读失败 → previous 视为 null → shouldNotify 判定为「无历史」→
@@ -79,13 +82,28 @@ export function shouldNotify(previous, current, now) {
 ///   - decision.notify 由调用方按「是否送达」置位(worker.js:发送失败时传
 ///     notify:false)→ lastNotifiedLevel 只在送达时前进到 current,未送达
 ///     沿用旧回执,下次 cron 由 shouldNotify 的回执比对分支补发。
+///   - lastOutageSince = 本次「离开 ok」的起点,recovered 文案的故障总时长
+///     用它(第三轮 review 新发现 3)。与 since(level 起点)分离的原因:
+///     down→ok 且恢复消息没送达时,since 已被重置成恢复时刻,重推若再读
+///     since,算出的是「距恢复多久」且每次重推越推越大。降级↔全挂之间跃迁
+///     不重置(故障从第一次离开 ok 起算);恢复**送达**即清(下次故障重新起算)。
 export function nextRecord(previous, current, decision, now) {
   const levelChanged = !previous || previous.level !== current;
+  const wasOk = !previous || previous.level === "ok";
+  let lastOutageSince;
+  if (current !== "ok") {
+    // 进入或持续故障:首次离开 ok 置 now;降级↔全挂间跃迁沿用(整段故障一个起点)。
+    lastOutageSince = wasOk ? now : (previous.lastOutageSince ?? previous.since ?? now);
+  } else {
+    // ok:恢复消息送达即清;未送达保留,供下次 cron 重推 recovered 文案取时长。
+    lastOutageSince = decision.notify ? null : (previous?.lastOutageSince ?? null);
+  }
   return {
     level: current,
     since: levelChanged ? now : (previous.since || now),
     lastNotifiedAt: decision.notify ? now : (previous?.lastNotifiedAt || 0),
-    lastNotifiedLevel: decision.notify ? current : (previous?.lastNotifiedLevel ?? "ok")
+    lastNotifiedLevel: decision.notify ? current : (previous?.lastNotifiedLevel ?? "ok"),
+    lastOutageSince
   };
 }
 
