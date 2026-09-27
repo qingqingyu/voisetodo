@@ -279,6 +279,8 @@ private struct BacklogAgeFloorCard: View {
     let onAbandonTask: (UUID) -> Void
     let onScheduleTask: (UUID) -> Void
     let onSplitTask: (UUID) -> Void
+    /// 分布条段间缝隙。`distributionBar` 的比例分母按它扣减,两处必须同值。
+    private static let segmentSpacing: CGFloat = 2
 
     /// 快照里仍在流程内的最老 3 条。
     private var liveItems: [InsightEngine.BacklogAgeFact.Item] {
@@ -332,24 +334,30 @@ private struct BacklogAgeFloorCard: View {
     /// 自动镜像,不用绝对坐标。
     private var distributionBar: some View {
         GeometryReader { proxy in
-            HStack(spacing: 2) {
-                barSegment(count: fact.freshCount, totalWidth: proxy.size.width, color: WarmTheme.subtleControlBackground)
-                barSegment(count: fact.agingCount, totalWidth: proxy.size.width, color: WarmTheme.warning.opacity(0.7))
-                barSegment(count: fact.oldCount, totalWidth: proxy.size.width, color: WarmTheme.urgentText.opacity(0.85))
+            // 段间有缝隙:比例分母必须先扣掉缝隙总宽(可见段数 − 1 段缝隙),
+            // 三段宽 + 缝隙才恰好等于可用宽。直接拿 width 当分母,三档全非零
+            // 时必溢出 2 段缝隙(段是固定 frame 的 Capsule,压不动),下方
+            // `max(..., 6)` 的最小宽抬升会再叠加。
+            let visibleCount = [fact.freshCount, fact.agingCount, fact.oldCount].filter { $0 > 0 }.count
+            let usable = proxy.size.width - CGFloat(max(visibleCount - 1, 0)) * Self.segmentSpacing
+            HStack(spacing: Self.segmentSpacing) {
+                barSegment(count: fact.freshCount, usableWidth: usable, color: WarmTheme.subtleControlBackground)
+                barSegment(count: fact.agingCount, usableWidth: usable, color: WarmTheme.warning.opacity(0.7))
+                barSegment(count: fact.oldCount, usableWidth: usable, color: WarmTheme.urgentText.opacity(0.85))
             }
         }
         .frame(height: 10)
         .accessibilityHidden(true)
     }
 
-    private func barSegment(count: Int, totalWidth: CGFloat, color: Color) -> some View {
+    private func barSegment(count: Int, usableWidth: CGFloat, color: Color) -> some View {
         // 零值段 width 0:HStack 的 spacing 只在有可见子视图间生效,但 0 宽
         // 子视图仍占一个间隙——用 Group 条件渲染彻底不出现。
         Group {
             if count > 0 {
                 Capsule()
                     .fill(color)
-                    .frame(width: max(totalWidth * CGFloat(count) / CGFloat(max(fact.total, 1)), 6))
+                    .frame(width: max(usableWidth * CGFloat(count) / CGFloat(max(fact.total, 1)), 6))
             }
         }
     }
