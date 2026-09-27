@@ -56,6 +56,14 @@ function readVars(path) {
   return parseVars(readFileSync(path, "utf8"));
 }
 
+// 与 worker.js isUnsetEnvValue 同口径:空串/纯空白按未设置。worker 侧对
+// GLOBAL_BUDGET_WINDOW_HOURS / SUBSCRIPTION_DAILY_LIMIT / SUBSCRIPTION_ASSIST_DAILY_LIMIT
+// 把留空当「用默认值」(不刷 invalid warn),配置测试必须放行同一形态 —— 否则
+// `X = ""` 会得到「worker 正常、门禁测试红」的矛盾信号。
+function isUnsetConfigValue(value) {
+  return value === undefined || String(value).trim() === "";
+}
+
 const CONFIGS = [
   { label: "wrangler.toml (deployed)", path: new URL("./wrangler.toml", import.meta.url) },
   { label: "wrangler.toml.example", path: new URL("./wrangler.toml.example", import.meta.url) }
@@ -125,7 +133,7 @@ for (const { label, path } of CONFIGS) {
     // storage 清理边界联动(保留两天桶,见 quota-counter.js 文件头),配 >24
     // 会被 DO 端 validateConsumeRollingInput 拒绝(invalid_window_hours → 400)。
     const vars = readVars(path);
-    if (vars.GLOBAL_BUDGET_WINDOW_HOURS === undefined) return;
+    if (isUnsetConfigValue(vars.GLOBAL_BUDGET_WINDOW_HOURS)) return;
 
     const value = Number(vars.GLOBAL_BUDGET_WINDOW_HOURS);
     assert.ok(
@@ -140,13 +148,28 @@ for (const { label, path } of CONFIGS) {
     // invalid_daily_limit logWarn 并回落默认 500 —— 按订阅限速不会失效,但配置
     // 意图静默不生效,只能靠线上日志发现。与 GLOBAL_*_LIMIT 系列守同一口径。
     const vars = readVars(path);
-    if (vars.SUBSCRIPTION_DAILY_LIMIT === undefined) return;
+    if (isUnsetConfigValue(vars.SUBSCRIPTION_DAILY_LIMIT)) return;
 
     const value = Number(vars.SUBSCRIPTION_DAILY_LIMIT);
     assert.ok(
       Number.isInteger(value) && value > 0,
       `SUBSCRIPTION_DAILY_LIMIT="${vars.SUBSCRIPTION_DAILY_LIMIT}" 不是正整数 → `
         + "worker 侧会 logWarn 回落默认 500,订阅限速配置不生效"
+    );
+  });
+
+  test(`${label}: SUBSCRIPTION_ASSIST_DAILY_LIMIT, if set, is a positive integer`, () => {
+    // 未配置合法(代码默认 500)。assist 桶与 extract 桶同一校验口径:非法值
+    // 触发 invalid_assist_daily_limit logWarn 并回落默认 500 —— 限速不失效,
+    // 但配置意图静默不生效。
+    const vars = readVars(path);
+    if (isUnsetConfigValue(vars.SUBSCRIPTION_ASSIST_DAILY_LIMIT)) return;
+
+    const value = Number(vars.SUBSCRIPTION_ASSIST_DAILY_LIMIT);
+    assert.ok(
+      Number.isInteger(value) && value > 0,
+      `SUBSCRIPTION_ASSIST_DAILY_LIMIT="${vars.SUBSCRIPTION_ASSIST_DAILY_LIMIT}" 不是正整数 → `
+        + "worker 侧会 logWarn 回落默认 500,assist 桶限速配置不生效"
     );
   });
 

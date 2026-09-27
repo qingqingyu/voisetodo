@@ -19,7 +19,12 @@
 //        cold    — closed AND no latency data        → weighted random shuffle
 //        halfOpen — half-open                         → defer to end (single-trial slot)
 //   3. Concatenate: [...warm, ...cold, ...halfOpen].
-//   4. If options.primaryId matches a surviving candidate, move it to the front.
+//   4. If options.primaryId matches a surviving candidate in the warm/cold portion,
+//      move it to the front. Half-open candidates are NEVER promoted: deferring
+//      them to the end is deliberate (single-trial slot) — pinning a half-open
+//      provider to the front would make every request's first hop hit a provider
+//      that may not have recovered, and with a small maxAttempts it would squeeze
+//      healthy candidates out of the window entirely.
 //      ⚠️ 没有这一步,admin override 只是改 priority 字段,而 warm 桶按延迟排序、
 //      cold 桶排在 warm 之后 —— priority 在两条路径上都不起作用,override 静默失效
 //      (2026-09-22 生产复现:warm 的旧主力永远压住 cold 的新主力)。
@@ -29,7 +34,8 @@
 // weight-aware distribution when we don't — so cold starts don't hammer provider #1.
 // The explicit primaryId pin is the ONLY way an admin override can beat the
 // latency ordering; if the pinned provider is disabled / keyless / circuit-open,
-// it already got dropped in step 1 and the pin is a no-op (fail-safe to P5 order).
+// it already got dropped in step 1, and if it is half-open it stays deferred at
+// the end — either way the pin is a no-op (fail-safe to P5 order).
 
 const DEFAULT_MAX_ATTEMPTS = Infinity;
 
@@ -70,8 +76,13 @@ export async function pickCandidates(providerConfigs, healthStore = null, now = 
   if (options.primaryId) {
     // admin override 钉头:被 override 的 provider 强制排最前。
     // 不在 combined 里(disabled/无 key/熔断 open 已被摘除)时是 no-op,fail-safe 回落 P5 顺序。
+    // half-open 一律不钉(第三轮 review 新问题 4):它被 defer 到末尾是有意的
+    // (单次试探槽)——钉到最前会让每个请求的第一跳都砸向疑似未恢复的 provider,
+    // 叠加小的 maxAttempts 还会把健康候选挤出候选窗。正在灰度钉头新主力时,
+    // 被钉者一熔断进 half-open 就是活场景,不是理论问题。
+    const pinnable = sortedWarm.length + shuffledCold.length;
     const index = combined.findIndex((p) => p.id === options.primaryId);
-    if (index > 0) {
+    if (index > 0 && index < pinnable) {
       combined = [combined[index], ...combined.slice(0, index), ...combined.slice(index + 1)];
     }
   }

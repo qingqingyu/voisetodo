@@ -196,10 +196,15 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     const isPro = subscription.tier === "pro";
     // 按订阅限速(新问题 2):JWS 是无绑定 bearer token,device ID 又是客户端自填,
     // 「一个合法 JWS + 轮换 device」在 device 侧配额(PAID_DAILY_LIMIT/台)下无上限。
-    // 以验签 payload 的订阅标识(originalTransactionId)为键设独立日上限,挡共享
-    // JWS 滥用;正常用户(1-3 台设备)远够。免费档无 JWS,天然不经过这里。
+    // 以验签 payload 的订阅标识(哈希后的 originalTransactionId)为键设独立日上限,
+    // 挡共享 JWS 滥用;正常用户(1-3 台设备)远够。免费档无 JWS,天然不经过这里。
     // 放在所有配额扣减之前:被它拒绝时 device/ip/global 都未扣,无需补偿。
-    await enforceSubscriptionDailyLimit(env, requestContext, ctx, subscription);
+    // extract 与 assist 分桶(第三轮 review 新发现 2):assist(换一批/反思)不占
+    // device 计费额度、Pro 又豁免 IP 闸门 —— 若与 extract 共用一桶,反复点
+    // 「换一批」会把同一订阅所有设备的 extract 一起 429 到 UTC 0 点。分桶后
+    // extract 桶的 500 定档(1-3 台 × 100/天 extract)重新成立,assist 有自己
+    // 的独立桶(SUBSCRIPTION_ASSIST_DAILY_LIMIT,默认同 500),互不挤占。
+    await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
     if (mode === "extract") {
       quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription);
 
@@ -984,8 +989,15 @@ function buildHealthAlertMessage({ kind, level, succeeded, total, failedLines, p
     `${emoji} ${head}`,
     `状态: ${level.toUpperCase()}(${succeeded}/${total} provider 可用)`
   ];
-  if (kind === "recovered" && previous?.since) {
-    lines.push(`故障总时长: ${formatDuration(now - previous.since)}`);
+  if (kind === "recovered") {
+    // 故障总时长用 lastOutageSince(离开 ok 的起点),不用 since:恢复消息首发
+    // 失败后 nextRecord 已把 since 重置成恢复时刻,重推再读 since 会把「距恢复
+    // 多久」报成故障时长,且每次重推越推越大(第三轮 review 新发现 3)。
+    // 旧 KV 记录无该字段,回落 since(首发路径行为不变)。
+    const outageSince = previous?.lastOutageSince ?? previous?.since;
+    if (outageSince) {
+      lines.push(`故障总时长: ${formatDuration(now - outageSince)}`);
+    }
   } else if (kind === "reminder" && record?.since) {
     lines.push(`已持续: ${formatDuration(now - record.since)}`);
   }
@@ -1697,16 +1709,24 @@ async function resolveSubscriptionTier(request, env, requestContext) {
       productIDs: proProductIDs,
       rootFingerprint: env.SUBSCRIPTION_ROOT_SHA256 || APPLE_ROOT_CA_G3_SHA256
     });
+    // 订阅标识不落明文(第三轮 review 新发现 1):PRIVACY_POLICY.md 承诺「只持有
+    // 哈希标识」「not your Apple ID」—— originalTransactionId 正是 Apple 账号
+    // 绑定的永久订阅标识。这里一进来就过 safeDeviceId(与 deviceId 同一加盐
+    // SHA-256),下游缓存值/日志/限速键(DO 名/KV key)全部只见哈希。哈希后
+    // 同样跨设备稳定、同样轮换不掉,作为限速键功能零损失。
+    // 过渡:部署前写入的旧缓存条目(≤15min TTL)存的是明文,命中时原样透传,
+    // TTL 过完自然收口(与缺 subscriptionId 的旧条目同一过渡窗口)。
+    const subscriptionId = result.subscriptionId ? await safeDeviceId(result.subscriptionId, env) : null;
     const ttl = Math.min(Math.max(60, Math.floor((result.expiresAt - Date.now()) / 1000)), 15 * 60);
     if (env.RATE_LIMIT_KV && result.expiresAt > 0) {
       try {
-        await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify({ tier: "pro", productId: result.productId, subscriptionId: result.subscriptionId, expiresAt: result.expiresAt }), { expirationTtl: ttl });
+        await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify({ tier: "pro", productId: result.productId, subscriptionId, expiresAt: result.expiresAt }), { expirationTtl: ttl });
       } catch (error) {
         logWarn("proxy.subscription.cache_write_failed", { ...requestContext, ...errorFields(error) });
       }
     }
-    logInfo("proxy.subscription.verified", { ...requestContext, tier: "pro", productId: result.productId, subscriptionId: result.subscriptionId, verifyMs: Date.now() - verifyStart, cached: false });
-    return { tier: "pro", limit: paidLimit, productId: result.productId, subscriptionId: result.subscriptionId };
+    logInfo("proxy.subscription.verified", { ...requestContext, tier: "pro", productId: result.productId, subscriptionId, verifyMs: Date.now() - verifyStart, cached: false });
+    return { tier: "pro", limit: paidLimit, productId: result.productId, subscriptionId };
   } catch (error) {
     // fail-safe 到免费档（不 fail-open，不 500）
     logWarn("proxy.subscription.verify_failed", { ...requestContext, reason: "verify_failed", verifyMs: Date.now() - verifyStart, ...errorFields(error) });
@@ -1714,12 +1734,20 @@ async function resolveSubscriptionTier(request, env, requestContext) {
   }
 }
 
-// 按订阅日上限(SUBSCRIPTION_DAILY_LIMIT),默认 500。依据:device 侧
+// env「未设置」判定:undefined 与空串(含纯空白)同等对待。留空是运维的自然
+// 动作(wrangler.toml.example 相邻变量注释口径即「留空则…」),不该被当成
+// 非法配置每请求刷 warn(第三轮 review 新发现 5)。
+function isUnsetEnvValue(value) {
+  return value === undefined || String(value).trim() === "";
+}
+
+// 按订阅 extract 日上限(SUBSCRIPTION_DAILY_LIMIT),默认 500。依据:device 侧
 // PAID_DAILY_LIMIT = 100/天/台,一订阅正常覆盖 1-3 台设备,500 ≈ 5 台满打满烧,
-// 远超真实使用又把「一个 JWS 轮换 device」的敞口从无限压到常数。配置非法记
+// 远超真实使用又把「一个 JWS 轮换 device」的敞口从无限压到常数。只计 extract
+// (assist 有自己的桶,见 resolveSubscriptionAssistDailyLimit)。配置非法记
 // warn 回落默认(不静默失效,同 GLOBAL_BUDGET_WINDOW_HOURS 口径)。
 function resolveSubscriptionDailyLimit(env, requestContext) {
-  if (env.SUBSCRIPTION_DAILY_LIMIT === undefined) return 500;
+  if (isUnsetEnvValue(env.SUBSCRIPTION_DAILY_LIMIT)) return 500;
   const value = Number(env.SUBSCRIPTION_DAILY_LIMIT);
   if (Number.isInteger(value) && value > 0) return value;
   logWarn("proxy.subscription.invalid_daily_limit", {
@@ -1730,14 +1758,34 @@ function resolveSubscriptionDailyLimit(env, requestContext) {
   return 500;
 }
 
-// 按订阅维度的日限速(新问题 2 的服务端抑制):以验签 payload 的订阅标识为键,
-//挡「一个合法 JWS + 轮换 X-Device-ID」的无限调用 —— device 配额按 device 计,
-//全局预算按档位计,都拦不住这种形态;只有订阅标识是 JWS 自带、轮换不掉的身份。
-//口径:UTC 日(服务端真值,不受 X-Local-Date 漂移影响);不退款 —— 这是成本侧
-//反滥用闸(同全局预算),不是用户额度,上游失败不回补。超限 429
+// 按订阅 assist 日上限(SUBSCRIPTION_ASSIST_DAILY_LIMIT),默认 500。assist
+// (split/reflect,「换一批」)不占 device 计费额度、Pro 又豁免 IP 闸门 ——
+// 这个桶是 assist 流量在订阅侧唯一的限流。与 extract 分桶(第三轮 review
+// 新发现 2):共用一桶时,定档理由(1-3 台 × 100/天 extract)没算 assist,
+// 反复点「换一批」会把该订阅所有设备的 extract 一起锁到 UTC 0 点。分桶后
+// 两边互不挤占;上限口径与 extract 同级(都是一次模型调用的成本侧反滥用闸)。
+function resolveSubscriptionAssistDailyLimit(env, requestContext) {
+  if (isUnsetEnvValue(env.SUBSCRIPTION_ASSIST_DAILY_LIMIT)) return 500;
+  const value = Number(env.SUBSCRIPTION_ASSIST_DAILY_LIMIT);
+  if (Number.isInteger(value) && value > 0) return value;
+  logWarn("proxy.subscription.invalid_assist_daily_limit", {
+    ...requestContext,
+    configuredLimit: env.SUBSCRIPTION_ASSIST_DAILY_LIMIT,
+    fallback: 500
+  });
+  return 500;
+}
+
+// 按订阅维度的日限速(新问题 2 的服务端抑制):以验签 payload 的订阅标识
+//(哈希,见 resolveSubscriptionTier)为键,挡「一个合法 JWS + 轮换
+// X-Device-ID」的无限调用 —— device 配额按 device 计,全局预算按档位计,
+//都拦不住这种形态;只有订阅标识是 JWS 自带、轮换不掉的身份。
+//口径:UTC 日(服务端真值,不受 X-Local-Date 漂移影响);extract 与 assist
+//分桶(键/上限都独立,见上面两个 resolver);不退款 —— 这是成本侧反滥用闸
+//(同全局预算),不是用户额度,上游失败不回补。超限 429
 //subscription_quota_exceeded + Retry-After 到下个 UTC 0 点;客户端 classify429
 //把它落到 .rateLimited(稍后重试),语义正确,无需发版。
-async function enforceSubscriptionDailyLimit(env, requestContext, ctx, subscription) {
+async function enforceSubscriptionDailyLimit(env, requestContext, subscription, mode) {
   if (!subscription || subscription.tier !== "pro") return;
   const subscriptionId = subscription.subscriptionId;
   if (!subscriptionId) {
@@ -1746,12 +1794,20 @@ async function enforceSubscriptionDailyLimit(env, requestContext, ctx, subscript
     logWarn("proxy.subscription.cap_skipped_no_sub_id", { ...requestContext, productId: subscription.productId });
     return;
   }
-  const limit = resolveSubscriptionDailyLimit(env, requestContext);
+  // extract 与 assist 分桶:DO 名空间 / KV key 前缀 / 上限三者独立。
+  // extract 沿用 "sub-daily" 前缀,assist 走 "sub-assist",两桶互不挤占,
+  // assist 刷爆不再锁 extract。
+  // (部署影响:标识哈希化让 DO 名/KV 键后缀变化,当日既有 extract 计数器随
+  // 新实例一次性归零 —— 每订阅当天最多多放 500 次,一次性,可接受。)
+  const isAssist = mode !== "extract";
+  const limit = isAssist
+    ? resolveSubscriptionAssistDailyLimit(env, requestContext)
+    : resolveSubscriptionDailyLimit(env, requestContext);
+  const subjectKey = isAssist ? "sub-assist" : "sub-daily";
   const today = new Date().toISOString().slice(0, 10);
-  const subjectKey = "sub-daily";
   const doName = `${subjectKey}:${subscriptionId}`;
   const reject = (source, used) => {
-    logWarn("proxy.subscription.quota_exceeded", { ...requestContext, subscriptionId, used, limit, resetDate: tomorrowUtcDate(today), source });
+    logWarn("proxy.subscription.quota_exceeded", { ...requestContext, subscriptionId, used, limit, bucket: subjectKey, resetDate: tomorrowUtcDate(today), source });
     throw new ProxyHTTPError(429, "Subscription daily limit exceeded", {
       errorType: "subscription_quota_exceeded",
       rateLimitType: "subscription",
@@ -1776,17 +1832,25 @@ async function enforceSubscriptionDailyLimit(env, requestContext, ctx, subscript
       result = await response.json();
     } catch (error) {
       // DO 故障 → KV degraded(与 device 配额同策略:fail-safe 优先于 fail-open)。
+      // 回退即终态(与 enforceDailyLimitViaDO 同写法,第三轮 review 新发现 4):
+      // KV helper 自己记 incremented,这里必须 return —— 否则外层会再记一条
+      // source:"do" 的重复日志,且 RATE_LIMIT_KV 未绑定时 helper 返回裸
+      // {allowed:true},那条重复日志会把 used:undefined 记进去。
       logWarn("proxy.subscription.do_error_fallback_kv", { ...requestContext, subscriptionId, ...errorFields(error) });
-      result = await enforceSubscriptionDailyLimitViaKV(env, requestContext, subscriptionId, today, limit);
+      const fallback = await enforceSubscriptionDailyLimitViaKV(env, requestContext, subscriptionId, today, limit, subjectKey);
+      if (!fallback.allowed) {
+        reject("kv", fallback.used);
+      }
+      return;
     }
     if (!result.allowed) {
       reject("do", result.used);
     }
-    logInfo("proxy.subscription.quota.incremented", { ...requestContext, subscriptionId, used: result.used, limit, source: "do" });
+    logInfo("proxy.subscription.quota.incremented", { ...requestContext, subscriptionId, used: result.used, limit, bucket: subjectKey, source: "do" });
     return;
   }
 
-  const result = await enforceSubscriptionDailyLimitViaKV(env, requestContext, subscriptionId, today, limit);
+  const result = await enforceSubscriptionDailyLimitViaKV(env, requestContext, subscriptionId, today, limit, subjectKey);
   if (!result.allowed) {
     reject("kv", result.used);
   }
@@ -1794,19 +1858,22 @@ async function enforceSubscriptionDailyLimit(env, requestContext, ctx, subscript
 
 // KV 路径(degraded / dev / test):read-modify-write,单线程下正确,并发下漏
 // (与 device/ip 配额的 KV 路径同语义)。无 KV 绑定时显式跳过并记日志。
-async function enforceSubscriptionDailyLimitViaKV(env, requestContext, subscriptionId, today, limit) {
+// bucket 即 DO 路径的 subjectKey("sub-daily"/"sub-assist"),KV key 前缀由它
+// 派生 —— 桶名是单一事实源,同一桶在 KV key 与日志里只有一个名字。
+async function enforceSubscriptionDailyLimitViaKV(env, requestContext, subscriptionId, today, limit, bucket = "sub-daily") {
   if (!env.RATE_LIMIT_KV) {
     logWarn("proxy.subscription.cap_skipped_no_store", { ...requestContext, subscriptionId });
     return { allowed: true };
   }
-  const key = `sub-quota:${today}:${subscriptionId}`;
+  const kvPrefix = bucket === "sub-assist" ? "sub-quota-assist" : "sub-quota";
+  const key = `${kvPrefix}:${today}:${subscriptionId}`;
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= limit) {
     return { allowed: false, used: current, limit };
   }
   const used = current + 1;
   await env.RATE_LIMIT_KV.put(key, String(used), { expirationTtl: 36 * 60 * 60 });
-  logInfo("proxy.subscription.quota.incremented", { ...requestContext, subscriptionId, used, limit, source: "kv" });
+  logInfo("proxy.subscription.quota.incremented", { ...requestContext, subscriptionId, used, limit, bucket, source: "kv" });
   return { allowed: true, used, limit };
 }
 
@@ -1860,7 +1927,9 @@ function secondsUntilNextUtcHour() {
 // 未配置 = 默认 6;配置非法记 warn 后回落默认(不静默),熔断不能因配错而失效。
 // 上限 24 与 DO 的 storage 清理边界联动(保留两天桶,见 quota-counter.js 文件头)。
 function resolveGlobalBudgetWindowHours(env, requestContext) {
-  if (env.GLOBAL_BUDGET_WINDOW_HOURS === undefined) return 6;
+  // 空串 = 未设置(同 SUBSCRIPTION_DAILY_LIMIT 口径,第三轮 review 新发现 5):
+  // 留空不该每请求刷 invalid warn —— 静默用默认 6。
+  if (isUnsetEnvValue(env.GLOBAL_BUDGET_WINDOW_HOURS)) return 6;
   const value = Number(env.GLOBAL_BUDGET_WINDOW_HOURS);
   if (Number.isInteger(value) && value >= 1 && value <= 24) return value;
   logWarn("proxy.global_budget.invalid_window_hours", {

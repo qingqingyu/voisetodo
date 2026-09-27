@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { verifySubscriptionJWS, base64urlDecode } from "./subscription.js";
 import { parseCertificate } from "./asn1.js";
-import { mintTestJWS } from "./jws-fixture.js";
+import { mintTestJWS, b64url } from "./jws-fixture.js";
 
 const BUNDLE = "com.voicetodo.app";
 const PRODUCTS = ["com.voicetodo.pro.monthly", "com.voicetodo.pro.yearly"];
@@ -63,6 +63,26 @@ test("rejects subscription JWS without an expiry claim", async () => {
 test("rejects wrong root anchor", async () => {
   const { jws } = await mintTestJWS({});
   await assert.rejects(() => verify(jws, "deadbeef".repeat(8)), /root_anchor_mismatch/);
+});
+
+// 第三轮 review 新问题 3:根锚定必须先于链验签 —— 根指纹比对是一次 SHA-256,
+// 链验签是 N-1 次公钥运算。伪造 JWS(链本身也必然验不过)要先被廉价闸门
+// 拦下,不能强制烧完昂贵验签才拒绝。
+test("checks root anchor before chain signatures (cheap gate first)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({});
+  const [headerB64, payloadB64, signatureB64] = jws.split(".");
+  const header = JSON.parse(new TextDecoder().decode(base64urlDecode(headerB64)));
+  // 改坏链顶(root)证书字节:根指纹必然对不上,逐级验签也必然过不了。
+  // 锚定先行时应直接报 root_anchor_mismatch;若实现退回「先验签后锚定」,
+  // 损坏的 root 会先被当作签发者解析/验签,报出别的错 —— 测试即失败。
+  const corrupted = base64urlDecode(header.x5c[header.x5c.length - 1]);
+  corrupted[corrupted.length - 1] ^= 0xff;
+  header.x5c[header.x5c.length - 1] = b64url(corrupted);
+  const rebuiltHeader = b64url(new TextEncoder().encode(JSON.stringify(header)));
+  await assert.rejects(
+    () => verify(`${rebuiltHeader}.${payloadB64}.${signatureB64}`, rootFingerprint),
+    /root_anchor_mismatch/
+  );
 });
 
 test("rejects mismatched bundle id", async () => {

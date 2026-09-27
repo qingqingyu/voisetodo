@@ -3,7 +3,8 @@
 // 验签流程：
 //   1. 解析 compact JWS（header.payload.signature）。
 //   2. 从 header.x5c 取证书链 [leaf, intermediate, root]。
-//   3. 校验链：cert[i] 由 cert[i+1] 签发，链顶 root 的 SHA-256 等于锚定值（Apple Root CA - G3）。
+//   3. 校验链：先比对链顶 root 的 SHA-256 与锚定值（Apple Root CA - G3），
+//      一次哈希拦掉伪造链，再逐级验签 cert[i] 由 cert[i+1] 签发。
 //   4. 用 leaf 公钥校验 JWS 签名（ES256 = ECDSA P-256 SHA-256）。
 //   5. 校验 payload：bundleId、productId、expiresDate（未过期）。
 //
@@ -48,9 +49,17 @@ async function sha256Hex(buf) {
   return toHex(new Uint8Array(digest));
 }
 
-/// 校验证书链：certs[i] 由 certs[i+1] 签发，链顶等于锚定根。
+/// 校验证书链：先锚定根（一次 SHA-256），再逐级验签 certs[i] 由 certs[i+1] 签发。
 async function verifyChain(certs, rootFingerprint) {
   if (certs.length < 2) throw new Error("subscription.chain_too_short");
+  // 先锚定根再验链（第三轮 review 新问题 3）：根指纹比对只要一次 SHA-256，
+  // 链验签是 N-1 次公钥运算 —— 伪造 JWS 想在每个请求上强制昂贵验签的浪费
+  // 路径，先被廉价闸门拦掉。安全性不变：两道检查都过才放行，先后只是
+  // 失败顺序（且根不是信任锚时，链内签名验证本身已无意义）。
+  const rootFp = await sha256Hex(certs[certs.length - 1]);
+  if (rootFp !== rootFingerprint) {
+    throw new Error(`subscription.root_anchor_mismatch expected=${rootFingerprint} actual=${rootFp}`);
+  }
   // 自顶向下：root → intermediate → leaf
   for (let i = certs.length - 1; i > 0; i--) {
     const subject = parseCertificate(certs[i - 1]); // 被签者
@@ -60,13 +69,6 @@ async function verifyChain(certs, rootFingerprint) {
     const issuerKey = await importPublicKey(issuer.publicKey, alg);
     const ok = await globalThis.crypto.subtle.verify(alg, issuerKey, subject.signatureBytes, subject.tbsBytes);
     if (!ok) throw new Error(`subscription.chain_signature_invalid level=${i - 1}`);
-  }
-  // 锚定根：链顶证书的 SHA-256 必须等于信任锚。
-  const rootParsed = parseCertificate(certs[certs.length - 1]);
-  void rootParsed;
-  const rootFp = await sha256Hex(certs[certs.length - 1]);
-  if (rootFp !== rootFingerprint) {
-    throw new Error(`subscription.root_anchor_mismatch expected=${rootFingerprint} actual=${rootFp}`);
   }
 }
 
