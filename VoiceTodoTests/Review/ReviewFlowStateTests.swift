@@ -167,7 +167,7 @@ final class ReviewFlowStateTests: XCTestCase {
         state.runInsightEngine()
         XCTAssertTrue(state.rankedResults.isEmpty, "规则层照旧不跑(腐烂照跑会非空)")
         XCTAssertTrue(state.shownInsights.isEmpty, "从未展示 → 冷却历史必须为空")
-        XCTAssertTrue(state.buildSession(completedAt: now, finalBacklogCount: -1).shownInsights.isEmpty, "会话落库不带幽灵记录")
+        XCTAssertTrue(state.buildSession(completedAt: now, finalTodos: []).shownInsights.isEmpty, "会话落库不带幽灵记录")
         XCTAssertNotNil(state.backlogAgeFact, "只出地板 A")
         XCTAssertEqual(state.backlogAgeFact?.oldCount, 1)
         XCTAssertFalse(state.skipsInsightsWhenEmpty, "地板 A 在——不跳")
@@ -230,7 +230,7 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertFalse(state.skipsInsightsWhenEmpty, "规则层有事实行——不跳(拍板 3)")
         // 拍板 6:事实行不进冷却历史——shownInsights 必须为空。
         XCTAssertTrue(state.shownInsights.isEmpty, "事实行不记 shownInsights(拍板 6)")
-        XCTAssertTrue(state.buildSession(completedAt: now, finalBacklogCount: -1).shownInsights.isEmpty)
+        XCTAssertTrue(state.buildSession(completedAt: now, finalTodos: []).shownInsights.isEmpty)
         state.advance()
         XCTAssertEqual(state.currentStep, .insights, "第 3 步由事实行撑住")
         state.retreat()
@@ -484,14 +484,14 @@ extension ReviewFlowStateTests {
         state.recordPeriod(start: now.addingTimeInterval(-86_400), end: now)
         state.voiceAnswerText = "  这周想把上午留给重要的事  "
 
-        let session = state.buildSession(completedAt: now, finalBacklogCount: -1)
+        let session = state.buildSession(completedAt: now, finalTodos: [])
 
         XCTAssertEqual(session.voiceNote, "这周想把上午留给重要的事")
         XCTAssertEqual(session.shownInsights, [InsightSnapshot(id: .rotting, effectSize: 0.42, strength: .high)])
         // backlogCount = initialBacklogCount init 快照(v4 批 4;本夹具 todos 为空 → 0)。
-        // finalBacklogCount 显式哨兵(复核修订二轮 N2;ReviewLedger 默认同为 −1)。
+        // finalBacklogCount = 收尾快照重数(空快照 → 0);−1 哨兵只来自旧 payload 解码。
         XCTAssertEqual(session.ledger, ReviewLedger(
-            inputCount: 3, backlogCount: 0, finalBacklogCount: -1, remainingCount: 0, scheduledCount: 1, todayCount: 1,
+            inputCount: 3, backlogCount: 0, finalBacklogCount: 0, remainingCount: 0, scheduledCount: 1, todayCount: 1,
             abandonedCount: 1, splitCount: 0, pinnedCount: 1
         ))
         XCTAssertEqual(session.periodStart, now.addingTimeInterval(-86_400))
@@ -722,7 +722,7 @@ extension ReviewFlowStateTests {
         let state = ReviewFlowState(todos: fillers + [todo("old", daysOld: 40)])
         state.markSomedayBatchExecuted(batch: state.somedayBatchCandidates)
 
-        let session = state.buildSession(completedAt: Date(), finalBacklogCount: -1)
+        let session = state.buildSession(completedAt: Date(), finalTodos: [])
         XCTAssertEqual(session.ledger.somedayCount, 1)
     }
 
@@ -1281,21 +1281,26 @@ extension ReviewFlowStateTests {
     }
 
     /// buildSession 落库双积压字段(复核修订二轮 N2):backlogCount = init
-    /// 快照(趋势线数据源,整个会话恒定);finalBacklogCount = 容器收尾时按
-    /// 同口径重数后传入(地板 B 下期基线,与展示窗口起点对齐)。两者与卡堆
+    /// 快照(趋势线数据源,整个会话恒定);finalBacklogCount = 收尾时刻从
+    /// 注入快照按 `pendingOneOffCount` 同口径重数(地板 B 下期基线,与展示
+    /// 窗口起点对齐)——计数在 buildSession 内,容器只传快照。两者与卡堆
     /// 口径的 inputCount 三方分野(35 条积压截断后 inputCount 只数面对过的)。
     func testBuildSessionCarriesBacklogCountSnapshot() {
         let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
-        let state = ReviewFlowState(todos: fillers + (0..<27).map { todo("t\($0)", daysOld: 40 + $0) })
+        let items = fillers + (0..<27).map { todo("t\($0)", daysOld: 40 + $0) }
+        let state = ReviewFlowState(todos: items)
 
-        if let top = state.deck.first {
-            state.markAbandoned(top)
-        }
-        // 模拟容器收尾重数:35 − 1 划掉 = 34(真实值由 pendingOneOffCount 算,
-        // buildSession 只负责原样落库)。
-        let session = state.buildSession(completedAt: Date(), finalBacklogCount: 34)
+        let top = state.deck.first!
+        state.markAbandoned(top)
+        // 收尾快照(容器传 store.todos 的形状):划掉的一条已带 abandonedAt
+        // 落库;再混一条已完成与一条规律任务锁住口径——两者同样不算积压。
+        var abandonedRow = top
+        abandonedRow.abandonedAt = Date()
+        let finalTodos = items.map { $0.id == top.id ? abandonedRow : $0 }
+            + [todo("已完成", isCompleted: true, daysOld: 3), todo("规律父", recurring: true, daysOld: 3)]
+        let session = state.buildSession(completedAt: Date(), finalTodos: finalTodos)
         XCTAssertEqual(session.ledger.backlogCount, 35, "期初积压(排序前 triageInput 快照,恒定)")
-        XCTAssertEqual(session.ledger.finalBacklogCount, 34, "收尾积压(容器重数传入,划掉已反映)")
+        XCTAssertEqual(session.ledger.finalBacklogCount, 34, "收尾积压(注入快照重数:35 − 划掉 1;已完成/规律不计入)")
         XCTAssertEqual(session.ledger.inputCount, 8, "卡堆口径:7 留卡 + 1 决定——三数语义不同")
     }
 }

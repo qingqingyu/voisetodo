@@ -248,3 +248,13 @@ v3 拍板 7 写这个判定的理由原话是「**空屏 + 错误指令的占位
 `recordBacklogFlow` 的「零进零出」guard 保留但理由改写：N2 对齐基线后，0/0 + delta ≠ 0 仍可达——剩余路径是**删除与一次性↔规律互转**（账本两端看得见、展示数没有对应数字），没有展示数佐证的方向不拿「这期」口吻说。
 
 **验证**：`swift test` 通过；`xcodebuild` VoiceTodoTests 712 例（2 失败均为既有环境红灯：StoreKit 商品 CLI 加载不出、DST 春令时；与本次无关）。`testBacklogFlowNumbersLedgerDeltaAndWindowFallback` 重写：基线夹具改 `finalBacklogCount`（init 快照 19 vs 收尾 7，锁住「不用错位基线」过渡规则）、新增账本两端与三路 isFirstPeriod 断言；`testBuildSessionCarriesBacklogCountSnapshot` 改双积压字段；新增 `testOneOffBacklogDelta_dirtyRowWithBothTimestampsCountsOnce`。
+
+---
+
+## 复核三轮（2026-09-27，二轮修复复核：N1/N2/两 nit 全部确认修对，带出三件遗留）
+
+对二轮修复（546897e）逐行核对：N1 的方向词删除比「重新配对数字」更彻底（自相矛盾的前提直接消失，`recent`/`since_last` 与 `weekWindow` 回落口径对得上）；N2 的 `finalBacklogCount` 口径链（`pendingOneOffCount` 与 `triageInput` 逐字同谓词、基线时刻 = 展示窗口起点、批量推稍后不污染两端、中途退出不落库）全部成立；两 nit 修法成立。遗留三件：
+
+1. **已修 · 地板 A 分布条溢出（低）**：三段比例宽之和 = 可用宽全量，外层 `HStack(spacing: 2)` 的缝隙叠在其外——三档全非零必溢出 2×2pt，`max(..., 6)` 最小宽抬升（某档占比极低时）再叠加；段是固定 frame 的 `Capsule` 压不动，溢出段顶出卡片内边距。修法：分母先扣缝隙（`usable = width − (可见段数 − 1) × 缝隙`，缝隙提取为 `segmentSpacing` 常量防两处漂移）。已知残留：最小宽抬升在极端占比（< ~2%）下仍可能溢入内边距——单段溢出 = 6 − 比例宽，上限 ~6pt（占比趋 0），两段同时被抬升（如 1/1/N 分布）叠加至上限 ~12pt；不再叠分配逻辑——夹紧会让「可见最小宽」失去意义，且该分布罕见。
+2. **已修 · 收尾计数 glue 无测试（低但唯一数据源）**：`finishSession` 里 `pendingOneOffCount(store.todos)` 留在容器，`buildSession` 测试只传注入值——它是下期「账本差」的**唯一基线**，写错要等下次复盘以「方向说反话」暴露（恰是二轮想根除的症状）。修法：`buildSession` 参数从 `finalBacklogCount: Int` 改为注入收尾快照 `finalTodos: [TodoItemData]`（与 init 的 `todos` 同参数形状），内部按同口径自数，容器 glue 归零；`testBuildSessionCarriesBacklogCountSnapshot` 改注入「划掉一条已带 abandonedAt 落库 + 混入已完成/规律各一条」的收尾快照，计数口径进测试。
+3. **待真机 · 5 档矩阵 + 三语 AX5（唯一卡发布项）**：地板三张卡全是新 UI，只靠 `lineLimit(2)` + `minimumScaleFactor(0.7)` 兜底；最险的是 `backlog_focus.line`（三参数含分类名，日语长文案）与图例行三档并排。建议合并 App Store 提审前排一次真机过目。

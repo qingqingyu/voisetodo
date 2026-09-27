@@ -896,10 +896,14 @@ final class ReviewFlowState {
 
     /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
     /// 纯函数,`VoiceTodoTests` 直测账本 → session 的映射。
-    /// `finalBacklogCount` 由容器在收尾时刻按 `pendingOneOffCount` 同口径重数后
-    /// 传入(v4 复核修订二轮 N2:地板 B 的跨期基线要「上期收尾」快照,与展示
-    /// 窗口起点对齐;见 `ReviewLedger.finalBacklogCount` 注释)。
-    func buildSession(completedAt: Date, finalBacklogCount: Int) -> ReviewSession {
+    /// - Parameter finalTodos: 收尾时刻的 store 工作集快照(与 init 的 `todos`
+    ///   同参数形状)——`finalBacklogCount` 在此按 `ReviewAggregator.pendingOneOffCount`
+    ///   (与 init 快照同口径)重数(v4 复核修订二轮 N2:地板 B 的跨期基线要
+    ///   「上期收尾」快照,与展示窗口起点对齐,见 `ReviewLedger.finalBacklogCount`
+    ///   注释)。注入数组而非现成计数:计数是下期「账本差」的唯一基线数据源,
+    ///   口径随本函数进测试,容器只剩传快照一行,glue 归零。
+    func buildSession(completedAt: Date, finalTodos: [TodoItemData]) -> ReviewSession {
+        let finalBacklogCount = ReviewAggregator.pendingOneOffCount(finalTodos)
         let ledger = ledger
         let trimmedNote = voiceAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
         return ReviewSession(
@@ -1292,13 +1296,13 @@ struct ReviewFlowView: View {
     /// id 会被误删)。prune 与落库都走 UserDefaults 同步写,失败显式记日志
     /// (error/warning)不阻塞收尾;流程内的 store 写失败另有 toast(见 presentError)。
     private func finishSession() {
-        // v4 复核修订二轮 N2:收尾积压 = 与 init 快照同口径(`pendingOneOffCount`)
-        // 在收尾时刻重数。store.todos 是窗口化工作集,但窗口含**全部 pending**,
-        // 开放性一次性任务全在窗内,与 init 快照同一总体——划掉/拆小/推稍后的
-        // 写库都已反映。此计数是地板 B 下期「账本差」的基线,必须与展示窗口
-        // (上次复盘完成时刻起)对齐,见 `ReviewLedger.finalBacklogCount` 注释。
-        let finalBacklogCount = ReviewAggregator.pendingOneOffCount(store.todos)
-        let session = state.buildSession(completedAt: Date(), finalBacklogCount: finalBacklogCount)
+        // v4 复核修订二轮 N2:收尾积压在 buildSession 内按 init 同口径
+        // (`pendingOneOffCount`)从收尾时刻快照重数,容器只传 store.todos。
+        // 它是窗口化工作集,但窗口含**全部 pending**,开放性一次性任务全在
+        // 窗内,与 init 快照同一总体——划掉/拆小/推稍后的写库都已反映。此
+        // 计数是地板 B 下期「账本差」的基线,必须与展示窗口(上次复盘完成
+        // 时刻起)对齐,见 `ReviewLedger.finalBacklogCount` 注释。
+        let session = state.buildSession(completedAt: Date(), finalTodos: store.todos)
         ReviewSessionStore.shared.append(session)
         Task { @MainActor in
             do {
