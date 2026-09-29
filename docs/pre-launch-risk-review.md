@@ -329,6 +329,9 @@ npx wrangler dev
 
 **修得扎实，其中一处比我上轮提的方案更好。** 但有 **2 处我上轮提的问题原封未动**，以及 **5 处新问题**——其中 1 处与公开的隐私政策直接冲突。
 
+> **本节状态（2026-09-29 复验）：** 七处已由 `527d3d5` 收口，其中 **5 处完全正确**；**新发现 3（恢复时长）只修好一半**，**新发现 1（订阅 ID 哈希）的哈希实际可逆**，另带出一处部署过渡窗问题。
+> 详见文末「第四轮 review」——动手前先读那一节。
+
 ## 先更正我自己的一个错误
 
 上一轮我断言「告警至今没上线」。实施方用 `wrangler deployments list` 核实：**一轮 5 缺陷修复已随 09-22 部署上线（`0157fdee`）**。我的判断来自 `ALERTING.md` 里一行过期的状态文字。
@@ -444,3 +447,125 @@ npx wrangler dev
 3. **新发现 2（assist 吃订阅配额）** —— 定档理由与实际口径对不上，要么改数要么分桶
 4. **新问题 4（selector 钉头）** —— 正在灰度新主力，这条现在是活的
 5. 新问题 3、新发现 4/5 —— 加固与清理，可并入下一轮
+
+---
+
+# 第四轮 review（2026-09-29）
+
+对 `527d3d5`（第三轮 review 七处收口）的复核。在临时 worktree 里跑了全量：**312 测试全过**。
+
+逐条核对：**五处修法完全正确**，两处有残留，另有一处是我上轮没看到的部署过渡问题。
+
+## 复核通过（不返工）
+
+| 第三轮条目 | 修法 | 核对 |
+|---|---|---|
+| 新问题 4 selector 钉头 | `pinnable = warm.length + cold.length`，`index < pinnable` 才钉 | ✅ 与 `combined` 拼接顺序严格对应，half-open 留末尾试探槽 |
+| 新问题 3 verifyChain | 根指纹比对（一次 SHA-256）提到 N-1 次验签之前 | ✅ 安全等价（两道都过才放行；根不是信任锚时链内验签本无意义） |
+| 新发现 2 assist 吃订阅配额 | 按 mode 分桶：`sub-daily` / `sub-assist`，KV 前缀由桶名派生 | ✅ DO 名、KV 前缀、resolver、README、config test 五处一致 |
+| 新发现 4 DO 回退重复日志 | catch 分支补 `return` | ✅ 与 `enforceDailyLimitViaDO` 同形，`used: undefined` 路径消失 |
+| 新发现 5 空串配置刷 warn | `isUnsetEnvValue` 统一空串/纯空白 | ✅ 三个 resolver + config test 同口径 |
+
+`nextRecord` 的 `lastOutageSince` 状态机本身也是对的：首次离开 ok 置 `now`、降级↔全挂不重置、恢复**送达**才清、未送达保留。
+
+## 残留 1：recovered 重推的时长仍在膨胀（MEDIUM）
+
+**新发现 3 只修好了一半。**
+
+`worker.js:997`：
+
+```js
+const outageSince = previous?.lastOutageSince ?? previous?.since;
+if (outageSince) {
+  lines.push(`故障总时长: ${formatDuration(now - outageSince)}`);
+}
+```
+
+`lastOutageSince` 确实不再被重置（原问题的前半截修好了），但 **`now` 在重推路径上是「重推时刻」，不是「恢复时刻」**：
+
+- **首发路径**：`previous.level` 还是 down/degraded，`now` **就是**恢复时刻 → `now - lastOutageSince` 正确
+- **重推路径**：`previous.level` 已是 `"ok"`，`now` 是下一轮 cron 的时刻 → 算出的是 **真实故障时长 + 重推延迟**
+
+按 30 分钟 cron：一次 5 分钟的故障，首发失败后重推一次报 **35 分钟**；Telegram 挂两小时则报 **2 小时 5 分钟**，且**每次重推继续变大**——正是那条注释声称已经修掉的失效方式。
+
+**正确的值记录里已经有了**：重推时 `previous.level === "ok"`，而 `nextRecord` 在 down→ok 时把 `since` 置成了恢复时刻。
+
+```js
+// previous.level === "ok" → 重推路径,恢复发生在 previous.since
+// 否则 → 首发路径,now 即恢复时刻
+const recoveredAt = previous?.level === "ok" ? previous.since : now;
+lines.push(`故障总时长: ${formatDuration(recoveredAt - outageSince)}`);
+```
+
+**测试为什么没抓住：** `worker.test.js:6472` 把 `outageStart` 设成 `Date.now() - 90min`，然后连续跑三次 `handleScheduled`——**三次都在同一毫秒内执行**，`now - outageStart` 始终 ≈ 90 分钟，断言「1 小时 30 分钟」自然通过。生产环境第三跑发生在第二跑的 30 分钟之后，实际会输出「2 小时」。
+
+测试要在第二跑与第三跑之间**推进模拟时钟**（仓库里已有 `withMockedToday` 这类注入手段）才守得住这条。
+
+## 残留 2：哈希是可逆的，隐私修复实质上没成立（MEDIUM-HIGH）
+
+`resolveSubscriptionTier` 现在确实在验签后立刻 `safeDeviceId()`（`worker.js:1719`），缓存值 / 日志 / DO 名 / KV key 全部只见哈希。**但这个哈希拦不住任何人。**
+
+三个事实叠在一起：
+
+1. **`shortHash` 把 SHA-256 截断到 8 字节**（`worker.js:2414` 的 `.slice(0, 8)`）
+2. **盐默认回落到 `APP_TOKEN`**（`:2406`：`env.LOG_HASH_SALT || env.APP_TOKEN || "voicetodo"`），而 `LOG_HASH_SALT` 在 `wrangler.toml:80` 与 `.example` 里**都是注释掉的**
+3. **`APP_TOKEN` 随 iOS 包分发**（客户端要拿它做 `X-App-Token`），解包即可得
+
+而 `originalTransactionId` 是 Apple 的数字交易号，搜索空间只有 ~10^12 量级。**盐已知 + 空间这么小 + 摘要只有 8 字节 → 拿到日志或 KV dump 的人，几秒就能反推出明文订阅号。**
+
+这跟同一个 helper 用在 device ID 上完全不同：那是随机 UUIDv4（2^122），暴力不可行。**helper 对它原本的输入是够的，对这个新输入不够**——换输入时没有重新评估强度。
+
+于是 `PRIVACY_POLICY.md` 那句 "we only hold hashed identifiers" 实质上仍站不住：对持有 App 包的人来说，这个哈希等价于明文。
+
+**修法主要是配置，不是代码：**
+
+1. **把 `LOG_HASH_SALT` 真正设成 secret**：
+   ```bash
+   cd AIProxy && npx wrangler secret put LOG_HASH_SALT   # 值用 openssl rand -hex 32
+   ```
+   盐一旦不在 App 包里，暴力就无从下手——**这一步就足以让问题消失**
+2. 改掉 `wrangler.toml` 那行注释的误导性：当前写法让它看起来可选。对 device ID 它近乎可选，**对订阅标识它是承重的**
+3. 可选加固：对订阅标识不做 8 字节截断，用完整摘要
+
+> 换盐的副作用与哈希化本身同类：DO 名 / KV 键变化，当日计数器归零（每订阅当天最多多放一轮额度）。**建议与 `527d3d5` 同批部署，只承受一次。**
+
+## 残留 3：部署过渡窗会把明文订阅号写进存储与日志（LOW-MEDIUM）
+
+缓存读取分支（`worker.js:1692`）：
+
+```js
+subscriptionId: typeof cached.subscriptionId === "string" && cached.subscriptionId ? cached.subscriptionId : null,
+```
+
+注释写的是「旧缓存条目（本次部署前写入，TTL ≤15min）**没有** subscriptionId」。**这个前提与实际部署序列不符：**
+
+- 早于 `1d5316c` 的条目：确实没有该字段
+- **当前线上跑的 `1d5316c` 写的条目：有该字段，且是明文**
+
+所以 `527d3d5` 部署后的 ≤15 分钟里，这批明文值会被原样取出，流进 DO 名 `sub-daily:<明文>`、KV key `sub-quota:<date>:<明文>`、以及**每个 Pro 请求的日志**。
+
+影响还不止 15 分钟：那一窗口里创建的 **KV 键存到当日结束、DO 实例长期存在**，Cloudflare 日志也按其保留期留存——明文在存储里活得比过渡窗久得多。
+
+**一行修法：** `safeDeviceId()` 永远返回 `sha256:` 前缀，据此判别即可：
+
+```js
+const cachedSubId = typeof cached.subscriptionId === "string" && cached.subscriptionId.startsWith("sha256:")
+  ? cached.subscriptionId
+  : null;
+```
+
+落到 `null` 就走已有的 `cap_skipped_no_sub_id` 分支（跳过订阅限速 + 记日志），下一次完整验签自然写入哈希值。复用现成路径，零新增语义。
+
+## 建议处理顺序
+
+1. **残留 2 第 1 步（配 `LOG_HASH_SALT` secret）** —— 一条命令，是让隐私承诺真正成立的关键；与哈希化同批部署只承受一次计数器归零
+2. **残留 3（过渡窗前缀判别）** —— 一行，**赶在 `527d3d5` 部署前加进去最省事**；部署后再加就已经漏过一窗
+3. **残留 1（重推时长）** —— 告警仍在说假话；改动小，但测试要补时钟推进才守得住
+
+## 验证
+
+```bash
+cd AIProxy && npm test   # 当前 312 通过;补完时钟推进后应仍全过
+```
+
+残留 1 的回归要点：第二跑与第三跑之间推进模拟时钟 ≥ 一个 cron 间隔，断言重推文案里的时长**等于真实故障时长**，而不是含重推延迟的值。
