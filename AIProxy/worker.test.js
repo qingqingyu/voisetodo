@@ -1710,6 +1710,64 @@ test("按订阅限速: 订阅标识哈希后落缓存与配额键,不出现明�
   });
 });
 
+// 第四轮 review 残留 3:线上 1d5316c(部署于 09-25,哈希化未上线)写入的缓存
+// 条目存的是明文订阅标识,TTL ≤15min。读取分支只认写入侧的 sha256: 前缀 ——
+// 明文条目落 null 走 cap_skipped_no_sub_id(跳过订阅限速 + 记日志),明文
+// 绝不流入 DO 名 / KV key;哈希形态的缓存条目照常生效。
+test("按订阅限速: 缓存命中时明文订阅标识被丢弃,哈希形态照常计数", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-plaintext-window" }
+  });
+  const kv = new MemoryKV(new Map());
+  const inner = makeFakeQuotaCounterDO();
+  // fake DO 的 consume body 不含 subjectId(标识在 DO 名里)—— 包一层捕获
+  // idFromName 的名字,才能断言「明文不流入 DO 名」
+  const doNames = [];
+  const doBinding = {
+    idFromName(name) { doNames.push(name); return inner.idFromName(name); },
+    get(id) { return inner.get(id); },
+    _calls: inner._calls
+  };
+  const env = {
+    APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
+    // 订阅上限 2:第一、第三请求(哈希形态)各占一计;第二请求明文落 null 跳过,
+    // 若误透传会立刻 429,这个上限本身就是断言的一部分
+    DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100", SUBSCRIPTION_DAILY_LIMIT: "2",
+    RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+  };
+  const mk = () => request({ transcript: "a" }, {
+    "X-App-Token": "token", "X-Device-ID": "d-plain-window", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
+  });
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    // 第一请求:完整验签,缓存写入哈希形态(拿到真实 cacheKey 作改写基线)
+    const first = await handleRequest(mk(), env, {}, jsonResponseProvider("a"));
+    assert.equal(first.status, 200);
+    const cacheEntry = [...kv.values.entries()].find(([k]) => k.startsWith("sub:"));
+    assert.ok(cacheEntry, "验签缓存已写入");
+    const [cacheKey, baselineJson] = cacheEntry;
+    assert.match(JSON.parse(baselineJson).subscriptionId, /^sha256:[0-9a-f]{16}$/, "基线是哈希形态");
+    assert.equal(inner._calls.filter((c) => c.key === "sub-daily").length, 1, "哈希形态正常计入订阅限速");
+
+    // 把缓存值改写成明文(模拟 1d5316c 写入的旧条目),TTL 内命中
+    kv.values.set(cacheKey, JSON.stringify({ ...JSON.parse(baselineJson), subscriptionId: "tx-plaintext-window" }));
+    inner._calls.length = 0;
+    doNames.length = 0;
+    const second = await handleRequest(mk(), env, {}, jsonResponseProvider("a"));
+    assert.equal(second.status, 200);
+    assert.equal(inner._calls.filter((c) => c.key === "sub-daily").length, 0, "明文条目落 null,跳过订阅限速(cap_skipped_no_sub_id)");
+    assert.ok(doNames.every((n) => !n.includes("tx-plaintext-window")), "明文不流入任何 DO 名");
+    assert.ok([...kv.values.keys()].every((k) => !k.includes("tx-plaintext-window")), "明文不进任何 KV key");
+
+    // 改回哈希形态:同一条缓存在下一请求恢复生效
+    kv.values.set(cacheKey, baselineJson);
+    const third = await handleRequest(mk(), env, {}, jsonResponseProvider("a"));
+    assert.equal(third.status, 200);
+    assert.equal(inner._calls.filter((c) => c.key === "sub-daily").length, 1, "哈希形态的缓存条目照常计数");
+  });
+});
+
 // 第三轮 review 新发现 2:assist(split/reflect,「换一批」)不占 device 计费
 // 额度、Pro 又豁免 IP 闸门 —— 订阅侧这桶是它唯一的限流。与 extract 共用一桶
 // 时,反复点「换一批」会把同一订阅所有设备的 extract 一起 429 到 UTC 0 点,
@@ -6491,11 +6549,21 @@ test("cron 告警: 恢复消息发送失败,下次 cron 补推 recovered(时长�
   // since 被重置成恢复时刻 —— 这正是重推不能读 since 的原因
   assert.ok(record.since > outageStart, "since 已重置为恢复时刻");
 
-  // 第三跑:稳态 ok,回执 ≠ 当前 level → 补推 recovered(旧口径在这里永久丢)
-  await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
+  // 第三跑:稳态 ok,回执 ≠ 当前 level → 补推 recovered(旧口径在这里永久丢)。
+  // 第四轮 review 残留 1 回归:第三跑发生在下一轮 cron(30 分钟后)—— 三次
+  // 同毫秒执行时 now - outageStart 恒 ≈90 分钟,断言守不住;这里推进模拟时钟,
+  // 重推文案的时长必须仍等于真实故障时长,不得混入重推延迟。
+  const recoveryAt = Date.now();
+  const realDateNow = Date.now;
+  Date.now = () => recoveryAt + 30 * 60000;
+  try {
+    await handleScheduled(cronEnv({ kv }), makeCronFetch({ failIds: [], telegramCalls }));
+  } finally {
+    Date.now = realDateNow;
+  }
   assert.equal(telegramCalls.length, 3, "下次 cron 补发恢复消息");
   assert.ok(telegramCalls[2].body.text.includes("恢复"), telegramCalls[2].body.text);
-  assert.ok(telegramCalls[2].body.text.includes("1 小时 30 分钟"), `重推时长取故障起点,而不是距恢复多久: ${telegramCalls[2].body.text}`);
+  assert.ok(telegramCalls[2].body.text.includes("1 小时 30 分钟"), `重推时长等于真实故障时长,不含 30 分钟重推延迟: ${telegramCalls[2].body.text}`);
   const record3 = JSON.parse(kv.values.get("alert:provider_health"));
   assert.equal(record3.lastNotifiedLevel, "ok", "补发送达后回执前进");
   assert.equal(record3.lastOutageSince, null, "恢复送达后清空故障起点");
