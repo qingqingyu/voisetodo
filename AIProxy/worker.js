@@ -990,13 +990,16 @@ function buildHealthAlertMessage({ kind, level, succeeded, total, failedLines, p
     `状态: ${level.toUpperCase()}(${succeeded}/${total} provider 可用)`
   ];
   if (kind === "recovered") {
-    // 故障总时长用 lastOutageSince(离开 ok 的起点),不用 since:恢复消息首发
-    // 失败后 nextRecord 已把 since 重置成恢复时刻,重推再读 since 会把「距恢复
-    // 多久」报成故障时长,且每次重推越推越大(第三轮 review 新发现 3)。
-    // 旧 KV 记录无该字段,回落 since(首发路径行为不变)。
+    // 故障总时长 = 恢复时刻 - lastOutageSince(离开 ok 的起点)。终点不能一律
+    // 用 now:重推路径上(previous.level 已是 "ok")now 是「重推时刻」,直接相减
+    // 会把重推延迟也报进故障时长,且每次重推越推越大 —— 恢复发生在 previous.since
+    // (nextRecord 在 down→ok 时已把 since 重置成恢复时刻,消息没送达也重置)。
+    // 首发路径(previous.level 非 ok)now 即恢复时刻,行为不变(第四轮 review
+    // 残留 1)。旧 KV 记录无 lastOutageSince,回落 since。
     const outageSince = previous?.lastOutageSince ?? previous?.since;
     if (outageSince) {
-      lines.push(`故障总时长: ${formatDuration(now - outageSince)}`);
+      const recoveredAt = previous?.level === "ok" ? previous.since : now;
+      lines.push(`故障总时长: ${formatDuration(recoveredAt - outageSince)}`);
     }
   } else if (kind === "reminder" && record?.since) {
     lines.push(`已持续: ${formatDuration(now - record.since)}`);
@@ -1687,9 +1690,11 @@ async function resolveSubscriptionTier(request, env, requestContext) {
           tier: cached.tier,
           limit: cached.tier === "pro" ? paidLimit : freeLimit,
           productId: cached.productId,
-          // 旧缓存条目(本次部署前写入,TTL ≤15min)没有 subscriptionId:
-          // 按订阅限速层对这批条目跳过并记日志,不假装有标识。
-          subscriptionId: typeof cached.subscriptionId === "string" && cached.subscriptionId ? cached.subscriptionId : null,
+          // 旧缓存条目分两代:早于订阅限速的没有 subscriptionId;线上 1d5316c
+          // 写过明文(数字交易号)。只认写入侧的 sha256: 前缀 —— 其它形态一律
+          // 落 null,走 cap_skipped_no_sub_id 的跳过+记日志分支,明文绝不流入
+          // DO 名 / KV key / 日志(第四轮 review 残留 3)。
+          subscriptionId: typeof cached.subscriptionId === "string" && cached.subscriptionId.startsWith("sha256:") ? cached.subscriptionId : null,
           cached: true
         };
       }
@@ -1714,8 +1719,9 @@ async function resolveSubscriptionTier(request, env, requestContext) {
     // 绑定的永久订阅标识。这里一进来就过 safeDeviceId(与 deviceId 同一加盐
     // SHA-256),下游缓存值/日志/限速键(DO 名/KV key)全部只见哈希。哈希后
     // 同样跨设备稳定、同样轮换不掉,作为限速键功能零损失。
-    // 过渡:部署前写入的旧缓存条目(≤15min TTL)存的是明文,命中时原样透传,
-    // TTL 过完自然收口(与缺 subscriptionId 的旧条目同一过渡窗口)。
+    // 过渡:部署前写入的旧缓存条目(≤15min TTL)可能是明文 —— 读取分支按
+    // sha256: 前缀判别丢弃,落 null 跳过订阅限速(cap_skipped_no_sub_id),
+    // 明文不流入 DO 名 / KV key,TTL 过完自然收口。
     const subscriptionId = result.subscriptionId ? await safeDeviceId(result.subscriptionId, env) : null;
     const ttl = Math.min(Math.max(60, Math.floor((result.expiresAt - Date.now()) / 1000)), 15 * 60);
     if (env.RATE_LIMIT_KV && result.expiresAt > 0) {
