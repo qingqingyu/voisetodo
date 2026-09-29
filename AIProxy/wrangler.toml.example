@@ -53,8 +53,12 @@ PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo
 # IP_RATE_PER_MINUTE = "10"
 # 每设备每天遥测事件上限（默认 500）
 TELEMETRY_DAILY_LIMIT = "500"
-# 设备 ID 哈希 salt。生产环境强烈建议配置独立值（不复用 APP_TOKEN）。
-# 不配置时 fallback 到 APP_TOKEN，仍未配置则用 "voicetodo"（仅 dev 可接受）。
+# 标识哈希 salt（deviceId / 订阅标识共用，见 worker.js safeDeviceId）。对订阅
+# 标识是承重配置：盐若 fallback 到 APP_TOKEN（随 iOS 包分发，解包即得），
+# ~10^12 空间的 originalTransactionId 可被暴力反推，隐私承诺失效。
+# 生产环境必须 `wrangler secret put LOG_HASH_SALT`（值用 openssl rand -hex 32），
+# 而非取消注释本行 —— secret 不进 repo。仍未配置则 fallback 到 APP_TOKEN，
+# 再未配置用 "voicetodo"（仅 dev 可接受）。
 # LOG_HASH_SALT = "please-generate-a-unique-salt"
 
 # ─── 多供应商配置 ───────────────────────────────────────────────────────────
