@@ -28,6 +28,10 @@ struct HomeSelectedDayListView: View {
     /// 「没能识别」分组「重新解析」按钮入口。把 rawTranscript 再喂一遍 extractor,
     /// 成功 → 替换原 todo 为 .parsed;失败 → 保留原 todo + toast。
     let onReextract: (UUID) -> Void
+    /// 「没能识别」分组「编辑原文」按钮入口。传整条 TodoItemData(编辑 sheet 的
+    /// 初始文本需要 rawTranscript,与 onOpenTodo 传整条的模式一致)。
+    /// 编辑保存 = 新文本先落库再自动重解析(2026-10 用户决策)。
+    let onEditTranscript: (TodoItemData) -> Void
     /// 「稍后」section 拖拽排序回调。参数为用户拖完后该 section 的新顺序 todo id 数组,
     /// 调用方走 store.reorder 做局部重排(只动这组 sortOrder,不影响其他 section)。
     let onReorder: ([UUID]) -> Void
@@ -131,7 +135,7 @@ struct HomeSelectedDayListView: View {
             }
 
             // 「没能识别」分区:outcome != .parsed 的原文兜底条目。
-            // 用 UnparsedTodoCard:斜纹背景 + dashed border + 「重新解析 / 删除」按钮。
+            // 用 UnparsedTodoCard:斜纹背景 + dashed border + 「重新解析 / 编辑 / 删除」按钮。
             // 系统失败态——靠后,避免干扰主线;对应海外 app 隐藏/角落化失败条目的模式。
             if !state.unparsedTodos.isEmpty {
                 Section {
@@ -140,6 +144,7 @@ struct HomeSelectedDayListView: View {
                             todo: todo,
                             index: idx,
                             onReextract: { onReextract(todo.id) },
+                            onEdit: { onEditTranscript(todo) },
                             onDelete: { onDeleteTodo(todo.id) },
                             isReextracting: reextractingTodoIDs.contains(todo.id)
                         )

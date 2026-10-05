@@ -862,6 +862,127 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.showPaywall, "已订阅用户不应看到升级 paywall")
     }
 
+    // MARK: - 编辑原文 → 重新解析(「没能识别」卡片,2026-10 用户决策)
+
+    /// 编辑保存契约:新文本**先落库**再触发解析——extract 被调用的那一刻,
+    /// 库里必须已是新文本(永不丢话:解析失败也不丢用户编辑)。
+    ///
+    /// 条目用显式 `.unparsed`(不能用 pendingTodo:TodoItemData 的 outcome 默认
+    /// .parsed,会把"轮询等 .parsed"变成立即通过、把"断言非 .parsed"变成必然失败)。
+    private func unparsedTodo(id: UUID, transcript: String) -> TodoItemData {
+        var todo = pendingTodo(id: id, transcript: transcript)
+        todo.extractionOutcome = .unparsed
+        todo.needsAIProcessing = false
+        return todo
+    }
+
+    @discardableResult
+    private func makeEditTranscriptCoordinator(
+        store: CoordinatorTestStore,
+        extractor: DelayedExtractor = DelayedExtractor()
+    ) -> AppCoordinator {
+        AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: extractor,
+            store: store
+        )
+    }
+
+    func testEditTranscriptPersistsNewTextBeforeExtraction() async {
+        let todoId = UUID()
+        let store = CoordinatorTestStore(todos: [unparsedTodo(id: todoId, transcript: "旧原文")])
+        let extractor = DelayedExtractor()
+        // extract 进行中捕获库内 rawTranscript:证明编辑文本在解析前已落库。
+        var transcriptAtExtractTime: String?
+        extractor.onExtract = { @MainActor in
+            transcriptAtExtractTime = store.findTodo(by: todoId)?.rawTranscript
+        }
+        let coordinator = makeEditTranscriptCoordinator(store: store, extractor: extractor)
+
+        coordinator.editTranscriptAndReextract(todoID: todoId, newTranscript: "编辑后的新原文")
+
+        for _ in 0..<100 {
+            if transcriptAtExtractTime != nil { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(transcriptAtExtractTime, "编辑后的新原文", "extract 被调用时新文本必须已落库")
+    }
+
+    func testEditTranscriptExtractionFailureKeepsEditedTranscript() async {
+        let todoId = UUID()
+        let store = CoordinatorTestStore(todos: [unparsedTodo(id: todoId, transcript: "旧原文")])
+        let extractor = DelayedExtractor()
+        extractor.extractionErrors["编辑后的新原文"] = VoiceTodoError.apiResponseInvalid("forced parse failure")
+        let coordinator = makeEditTranscriptCoordinator(store: store, extractor: extractor)
+
+        coordinator.editTranscriptAndReextract(todoID: todoId, newTranscript: "编辑后的新原文")
+
+        // 等 extractor 真正被调用过(解析已失败)再断言库内状态
+        for _ in 0..<100 {
+            if extractor.extractedTranscripts.contains("编辑后的新原文") { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(extractor.extractedTranscripts, ["编辑后的新原文"])
+        XCTAssertEqual(store.findTodo(by: todoId)?.rawTranscript, "编辑后的新原文", "解析失败不得丢用户编辑")
+        XCTAssertEqual(store.findTodo(by: todoId)?.extractionOutcome, .unparsed, "失败后条目不得翻成 .parsed")
+    }
+
+    func testEditTranscriptEmptyResultKeepsUnparsedCard() async {
+        let todoId = UUID()
+        let store = CoordinatorTestStore(todos: [unparsedTodo(id: todoId, transcript: "旧原文")])
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["编辑后的新原文"] = ExtractionResult(todos: [], ignored: "")
+        let coordinator = makeEditTranscriptCoordinator(store: store, extractor: extractor)
+
+        coordinator.editTranscriptAndReextract(todoID: todoId, newTranscript: "编辑后的新原文")
+
+        await waitForToast(coordinator, message: ErrorMessages.reextractStillEmpty)
+        XCTAssertEqual(store.findTodo(by: todoId)?.rawTranscript, "编辑后的新原文")
+        XCTAssertEqual(store.findTodo(by: todoId)?.extractionOutcome, .unparsed)
+    }
+
+    func testEditTranscriptSuccessReplacesTodo() async {
+        let todoId = UUID()
+        let store = CoordinatorTestStore(todos: [unparsedTodo(id: todoId, transcript: "旧原文")])
+        let extractor = DelayedExtractor()
+        extractor.extractionResults["编辑后的新原文"] = ExtractionResult(
+            todos: [ExtractedTodo(title: "买菜", detail: "编辑后的新原文")],
+            ignored: ""
+        )
+        let coordinator = makeEditTranscriptCoordinator(store: store, extractor: extractor)
+
+        coordinator.editTranscriptAndReextract(todoID: todoId, newTranscript: "编辑后的新原文")
+
+        for _ in 0..<100 {
+            if store.findTodo(by: todoId)?.extractionOutcome == .parsed { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let replaced = store.findTodo(by: todoId)
+        XCTAssertEqual(replaced?.extractionOutcome, .parsed, "解析成功应替换为 .parsed 条目")
+        XCTAssertEqual(replaced?.title, "买菜")
+    }
+
+    func testEditTranscriptDuplicateGuardWhileReextracting() async {
+        let todoId = UUID()
+        let store = CoordinatorTestStore(todos: [unparsedTodo(id: todoId, transcript: "旧原文")])
+        let extractor = DelayedExtractor()
+        // 慢 extract:让第一次编辑的重解析保持进行中
+        extractor.delays["编辑后的新原文"] = 300_000_000
+        let coordinator = makeEditTranscriptCoordinator(store: store, extractor: extractor)
+
+        coordinator.editTranscriptAndReextract(todoID: todoId, newTranscript: "编辑后的新原文")
+        // 等第一次解析真正开始
+        for _ in 0..<100 {
+            if !extractor.extractedTranscripts.isEmpty { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        // 进行中再次编辑:被 reextractingTodoIDs 守卫拒,不触发第二次 extract
+        coordinator.editTranscriptAndReextract(todoID: todoId, newTranscript: "编辑后的新原文")
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(extractor.extractedTranscripts.count, 1, "重解析进行中重复调用必须被守卫拦截")
+    }
+
     // MARK: - Helpers
 
     private func waitForPaywallShown(_ coordinator: AppCoordinator) async {
@@ -1182,6 +1303,20 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
             todos[index].isCompleted = false
             todos[index].completedAt = nil
         }
+    }
+
+    /// 测试 mock 版编辑原文:内存三字段同步,语义与 `TodoStore.updateRawTranscript` 对齐。
+    func updateRawTranscript(_ id: UUID, transcript: String) throws {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw VoiceTodoError.apiResponseInvalid("updateRawTranscript with empty transcript")
+        }
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].title = TextUtils.truncateTitle(from: trimmed)
+        todos[index].detail = trimmed
+        todos[index].rawTranscript = trimmed
     }
 
     func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws {

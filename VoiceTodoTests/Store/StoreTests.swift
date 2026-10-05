@@ -582,6 +582,45 @@ final class StoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Test UpdateRawTranscript(「没能识别」卡片「编辑原文」保存入口)
+
+    func testUpdateRawTranscriptSyncsTitleDetailAndRawTranscript() throws {
+        // Given: 一条解析失败的原文条目
+        let created = try sut.addManualUnparsedTranscript("明天上午买菜顺便取快递", localeIdentifier: "zh-Hans")
+        let newTranscript = "明天上午买菜,顺便去邮局取快递"
+
+        // When: 编辑保存新原文
+        try sut.updateRawTranscript(created.id, transcript: newTranscript)
+
+        // Then: 三字段同步(语义对齐 manualUnparsedTranscript),
+        // outcome 不动(卡片仍留在「没能识别」分组,直到重解析成功才翻 .parsed)。
+        let updated = try XCTUnwrap(sut.todos.first { $0.id == created.id })
+        XCTAssertEqual(updated.rawTranscript, newTranscript)
+        XCTAssertEqual(updated.detail, newTranscript)
+        XCTAssertEqual(updated.title, TextUtils.truncateTitle(from: newTranscript))
+        XCTAssertEqual(updated.extractionOutcome, .unparsed)
+    }
+
+    func testUpdateRawTranscriptThrowsForMissingTodo() throws {
+        let missingId = UUID()
+
+        XCTAssertThrowsError(try sut.updateRawTranscript(missingId, transcript: "新原文")) { error in
+            XCTAssertEqual(error as? VoiceTodoError, .todoNotFound(missingId))
+        }
+    }
+
+    func testUpdateRawTranscriptThrowsForBlankTranscript() throws {
+        let created = try sut.addManualUnparsedTranscript("原文", localeIdentifier: "zh-Hans")
+
+        XCTAssertThrowsError(try sut.updateRawTranscript(created.id, transcript: "   \n ")) { error in
+            guard case VoiceTodoError.apiResponseInvalid = error else {
+                return XCTFail("期望 apiResponseInvalid,得到 \(error)")
+            }
+            // 空文本被拒后原文不得被破坏(永不丢话)
+            XCTAssertEqual(sut.todos.first { $0.id == created.id }?.rawTranscript, "原文")
+        }
+    }
+
     // MARK: - Test ReplacePendingWithExtracted [v2]
 
     func testReplacePendingWithExtracted() throws {

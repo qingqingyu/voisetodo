@@ -22,17 +22,20 @@ struct FocusableTextView: UIViewRepresentable {
     /// 不变量：baseFont 在 init 后不可变（let）。fontSize 是 struct 的不可变配置，
     /// 调用方若需换字号必须销毁重建 FocusableTextView，而非依赖 updateUIView 同步——
     /// 因为 updateUIView 不再同步 font（避免与系统 Dynamic Type 缩放冲突）。
-    /// 当前唯一调用方 BottomInputPanelView 传常量 fontSize，符合此契约。
+    /// 当前调用方(BottomInputPanelView / UnparsedTranscriptEditSheet)均传常量 fontSize，符合此契约。
     private let baseFont: UIFont
     /// 文字颜色（对齐 WarmTheme.textPrimary 浅色模式 #3D3A38）
     private let textColor: UIColor
+    /// a11y 标识。默认值保持唯一既有调用方(BottomInputPanelView / 既有 UI 测试)零改动。
+    private let accessibilityID: String
 
-    init(text: Binding<String>, fontSize: CGFloat = 17) {
+    init(text: Binding<String>, fontSize: CGFloat = 17, accessibilityIdentifier: String = "ManualInputTextView") {
         self._text = text
         self.baseFont = UIFont(name: "AvenirNext-Medium", size: fontSize)
             ?? .systemFont(ofSize: fontSize, weight: .medium)
         // #3D3A38 — WarmTheme.textPrimary 浅色模式值；UIUserInterfaceStyle 锁 Light
         self.textColor = UIColor(red: 0x3D / 255.0, green: 0x3A / 255.0, blue: 0x38 / 255.0, alpha: 1.0)
+        self.accessibilityID = accessibilityIdentifier
     }
 
     func makeUIView(context: Context) -> UITextView {
@@ -54,7 +57,7 @@ struct FocusableTextView: UIViewRepresentable {
         textView.smartDashesType = .yes
         textView.smartQuotesType = .yes
         textView.text = text
-        textView.accessibilityIdentifier = "ManualInputTextView"
+        textView.accessibilityIdentifier = accessibilityID
         // 同步初始 uiText 到 coordinator，避免首次 updateUIView 误判"用户刚改过未同步"。
         context.coordinator.lastKnownUIText = text
         // autoFocus 在 didMoveToWindow 里触发，无需此处主动 becomeFirstResponder

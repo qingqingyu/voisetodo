@@ -480,6 +480,33 @@ final class TodoStore:
         VoiceTodoLog.store.info("store.replaceTodo.success id=\(id.uuidString, privacy: .public) newCount=\(extracted.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
+    /// 只更新「没能识别」条目的转写原文(卡片「编辑原文」保存入口)。
+    /// 三字段同步赋值,语义对齐 `manualUnparsedTranscript`;`extractionOutcome` 不动
+    /// (仍非 .parsed,卡片保留在「没能识别」分组,直到重解析成功走 `replaceTodo`)。
+    /// 不触发 widget reload:unparsed 条目被 `WidgetTodoFilter` 过滤,widget 不可见;
+    /// 重解析成功后由调用方核心(`AppCoordinator.reextractCore`)里的 reload 收口。
+    /// - Throws: trim 后空文本抛 `apiResponseInvalid`;条目不存在抛 `todoNotFound`;
+    ///   持久化失败向上抛(saveOrRollback 已回滚)。
+    func updateRawTranscript(_ id: UUID, transcript: String) throws {
+        let startedAt = Date()
+        VoiceTodoLog.store.info("store.update_raw_transcript.start id=\(id.uuidString, privacy: .public) length=\(transcript.count)")
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            // UI 已禁用空保存,这里二次防御——空文本 = 调用方契约违反,显式抛而非静默 return。
+            throw VoiceTodoError.apiResponseInvalid("updateRawTranscript with empty transcript")
+        }
+        let todoItem = try findTodoItem(by: id)
+        todoItem.title = TextUtils.truncateTitle(from: trimmed)
+        todoItem.detail = trimmed
+        todoItem.rawTranscript = trimmed
+        try saveOrRollback()
+        // 增量同步内存行(与 updateFull 同模式):条目不出工作集,无需全量 refreshTodos()。
+        if let index = todos.firstIndex(where: { $0.id == id }) {
+            todos[index] = todoItem.toData()
+        }
+        VoiceTodoLog.store.info("store.update_raw_transcript.success id=\(id.uuidString, privacy: .public) length=\(trimmed.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+    }
+
     /// 更新重复规则（nil 表示关闭重复）
     /// - Parameters:
     ///   - id: 待办 ID
@@ -768,6 +795,10 @@ final class TodoStore:
                 eventEndDate: item.eventEndDate
             )
             modelContext.insert(todoItem)
+            // outcome 必须显式透传:TodoItem.extractionOutcomeRaw 默认 .parsed,
+            // 不补的话「没能识别」条目(unparsed/rawFallback)会被 seed 成 .parsed,
+            // 进错首页分组(2026-10 编辑原文 UI 测试踩中)。
+            todoItem.extractionOutcome = item.extractionOutcome
         }
 
         try saveOrRollback()
