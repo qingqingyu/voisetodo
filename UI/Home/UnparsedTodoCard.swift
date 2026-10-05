@@ -7,19 +7,26 @@ import SwiftUI
 /// - dashed border(`StrokeStyle(lineWidth: 1, dash: [4, 3])`)
 /// - 顶部小标签「原文片段」(11.5pt + 750 字重 + uppercase)
 /// - 原文文本(lineLimit 3,容纳 AX5 + 中英文长原文,与「文本截断零容忍」一致)
-/// - 底部两个按钮:「重新解析」(borderedProminent)+「删除」(bordered,destructive)
+/// - 底部三个按钮:「重新解析」(主色填充)+「编辑」(次级)+「删除」(次级,destructive);
+///   常规档横排一行,AX 档位自动竖排(SE + AX3 实测横排会阶梯错位/溢出卡片)
 ///
-/// **不做「手动编辑」** —— 用户决策锁定(Commit 7 of plan)。
-/// 失败原文的修复路径只有"再喂 AI 重解析"或"删除",不引导手动改字段。
+/// 「编辑」= 修改转写原文后重新喂给 AI 解析(2026-10 用户决策,
+/// 推翻 Commit 7 的「不做手动编辑」锁定)。失败原文的修复路径:
+/// 重新解析 / 编辑原文 / 删除。
 struct UnparsedTodoCard: View {
     let todo: TodoItemData
     let index: Int
     let onReextract: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     /// 正在重新解析时降级按钮可点性 + 显示 ProgressView。
     /// 调用方(HomeSelectedDayListView)从 `AppCoordinator.reextractingTodoIDs` 派生注入。
     var isReextracting: Bool = false
+
+    /// AX 档位切竖排:三按钮横排在 AX 字号下放不下(阶梯错位/竖排折行/溢出卡片,
+    /// SE + AX3 实测),竖排让每个按钮整行自适应(「文本截断零容忍」)。
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
@@ -37,47 +44,8 @@ struct UnparsedTodoCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("UnparsedBody_\(index)")
 
-            HStack(spacing: WarmSpacing.xs) {
-                Button(action: onReextract) {
-                    HStack(spacing: WarmSpacing.xxs) {
-                        if isReextracting {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(0.7)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        Text(String(localized: "home.unparsed.reextract"))
-                            .font(WarmFont.caption(13))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, WarmSpacing.sm)
-                    .padding(.vertical, WarmSpacing.xs)
-                    .background(
-                        RoundedRectangle(cornerRadius: WarmRadius.chip)
-                            .fill(WarmTheme.primary)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(isReextracting)
-                .accessibilityIdentifier("UnparsedReextract_\(index)")
-
-                Button(role: .destructive, action: onDelete) {
-                    Text(String(localized: "home.delete"))
-                        .font(WarmFont.caption(13))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .padding(.horizontal, WarmSpacing.sm)
-                        .padding(.vertical, WarmSpacing.xs)
-                        .background(
-                            RoundedRectangle(cornerRadius: WarmRadius.chip)
-                                .fill(WarmTheme.sketch.opacity(0.18))
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("UnparsedDelete_\(index)")
-            }
-            .padding(.top, WarmSpacing.xxs)
+            actionButtons
+                .padding(.top, WarmSpacing.xxs)
         }
         .padding(WarmSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,6 +66,95 @@ struct UnparsedTodoCard: View {
                                   trailing: WarmSpacing.lg))
         .listRowBackground(Color.clear)
         .accessibilityIdentifier("UnparsedCard_\(todo.id)")
+    }
+
+    /// 按钮区:常规档横排一行;AX 档竖排整行(横排在 AX 字号下会阶梯错位/溢出)。
+    @ViewBuilder
+    private var actionButtons: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+                reextractButton
+                editButton
+                deleteButton
+            }
+        } else {
+            HStack(spacing: WarmSpacing.xs) {
+                reextractButton
+                editButton
+                deleteButton
+            }
+        }
+    }
+
+    private var reextractButton: some View {
+        Button(action: onReextract) {
+            HStack(spacing: WarmSpacing.xxs) {
+                if isReextracting {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(String(localized: "home.unparsed.reextract"))
+                    .font(WarmFont.caption(13))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, WarmSpacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.chip)
+                    .fill(WarmTheme.primary)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isReextracting)
+        .accessibilityIdentifier("UnparsedReextract_\(index)")
+    }
+
+    /// 编辑原文:次级样式与删除同款;重解析进行中禁用(与重新解析互斥)。
+    private var editButton: some View {
+        Button(action: onEdit) {
+            HStack(spacing: WarmSpacing.xxs) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(String(localized: "home.unparsed.edit"))
+                    .font(WarmFont.caption(13))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundColor(WarmTheme.textSecondary)
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, WarmSpacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.chip)
+                    .fill(WarmTheme.sketch.opacity(0.18))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isReextracting)
+        .accessibilityIdentifier("UnparsedEdit_\(index)")
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive, action: onDelete) {
+            Text(String(localized: "home.delete"))
+                .font(WarmFont.caption(13))
+                .foregroundColor(WarmTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, WarmSpacing.sm)
+                .padding(.vertical, WarmSpacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: WarmRadius.chip)
+                        .fill(WarmTheme.sketch.opacity(0.18))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("UnparsedDelete_\(index)")
     }
 }
 

@@ -332,6 +332,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     }
 
     @State private var selectedTodo: TodoItemData?
+    /// 「没能识别」卡片「编辑原文」的编辑中条目。非 nil 时挂编辑 sheet
+    /// (`.sheet(item:)` 与 selectedTodo 的 fullScreenCover 同模式,dismiss 自动置 nil)。
+    @State private var editingUnparsedTodo: TodoItemData?
     /// 统计 pill 点击进入 ReviewView(原 NavigationLink push,移除 NavigationStack 后改 sheet)。
     @State private var showReviewFromStats = false
 
@@ -820,6 +823,20 @@ struct HomeView<Store: HomeTodoStore>: View {
                 onDismissRequest: { showCalendarSyncAsk = false }
             )
             .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        // 「没能识别」卡片「编辑原文」sheet:保存 = 新文本先落库再自动重解析
+        // (2026-10 用户决策)。dismiss 先于解析触发——收键盘后卡片随即进入
+        // reextracting 态(reextractingTodoIDs 驱动按钮禁用 + ProgressView)。
+        .sheet(item: $editingUnparsedTodo) { todo in
+            UnparsedTranscriptEditSheet(
+                todo: todo,
+                onSave: { newText in
+                    editingUnparsedTodo = nil
+                    coordinator.editTranscriptAndReextract(todoID: todo.id, newTranscript: newText)
+                }
+            )
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $selectedTodo) { todo in
@@ -1810,6 +1827,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             },
                             onPickDate: { id, date in pickTodoDate(id: id, date: date) },
                             onReextract: { id in coordinator.reextract(todoID: id) },
+                            onEditTranscript: { editingUnparsedTodo = $0 },
                             onReorder: { ids in actions.reorderTodos(ids) },
                             reextractingTodoIDs: coordinator.reextractingTodoIDs,
                             pinnedTodoIDs: pinnedTodoIDs,

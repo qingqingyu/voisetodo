@@ -74,6 +74,14 @@ protocol TodoDetailUpdating {
     /// 当 `extracted.count > 1` 时,第一条 mutate 原 todo,剩余的逐条插入,
     /// sortOrder 锚定在原 todo 的 sortOrder 之下(详见 `TodoStore.replaceTodo` 实现)。
     func replaceTodo(id: UUID, with extracted: [ExtractedTodo], rawTranscript: String?) throws
+
+    /// 只更新「没能识别」条目的转写原文(卡片「编辑原文」保存入口)。
+    /// 字段语义对齐 `TodoItem.manualUnparsedTranscript`:title 同步为截断标题、
+    /// detail 与 rawTranscript = 新全文;`extractionOutcome` 等其余字段不动
+    /// (仍保持非 .parsed,直到重解析成功才由 `replaceTodo` 翻成 .parsed)。
+    /// - Throws: trim 后为空文本抛 `apiResponseInvalid`(调用方契约违反,
+    ///   同 `replaceTodo` 空数组防御);条目不存在抛 `todoNotFound`;持久化失败向上抛。
+    func updateRawTranscript(_ id: UUID, transcript: String) throws
 }
 
 extension TodoDetailUpdating {

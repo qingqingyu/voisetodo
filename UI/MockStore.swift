@@ -84,6 +84,20 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         todos[index].extractionOutcome = .unparsed
     }
 
+    /// Mock 版编辑原文:内存三字段同步赋值,语义与 `TodoStore.updateRawTranscript` 对齐。
+    func updateRawTranscript(_ id: UUID, transcript: String) throws {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw VoiceTodoError.apiResponseInvalid("updateRawTranscript with empty transcript")
+        }
+        guard let index = todos.firstIndex(where: { $0.id == id }) else {
+            throw VoiceTodoError.todoNotFound(id)
+        }
+        todos[index].title = TextUtils.truncateTitle(from: trimmed)
+        todos[index].detail = trimmed
+        todos[index].rawTranscript = trimmed
+    }
+
     func toggleComplete(_ id: UUID) throws {
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index].isCompleted.toggle()
