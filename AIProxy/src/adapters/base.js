@@ -359,7 +359,11 @@ due_hint 始终保留用户原文。
 
 示例 22（⚠️ 标题保留地点+人名等关键信息；模糊时段「下午」用 time_bucket，不虚构钟点；参考日期 2026-07-15 周三）：
 输入："明天下午去公司跟李明开会"
-输出：{"todos":[{"title":"去公司跟李明开会","detail":"明天下午去公司跟李明开会","due_date":"2026-07-16","due_hint":"明天下午","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
+输出：{"todos":[{"title":"去公司跟李明开会","detail":"明天下午去公司跟李明开会","due_date":"2026-07-16","due_hint":"明天下午","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+示例 23（⚠️ 一句多条、各分句带**不同**时段：每条 todo 的 time_bucket 对应自己分句的时段词，不能整句共用第一个时段；参考日期 2026-07-15 周三）：
+输入："希望明天上午去上普拉提课，明天下午去公园"
+输出：{"todos":[{"title":"上普拉提课","detail":"希望明天上午去上普拉提课","due_date":"2026-07-16","due_hint":"明天上午","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"去公园","detail":"明天下午去公园","due_date":"2026-07-16","due_hint":"明天下午","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
 
 const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
 
@@ -526,7 +530,11 @@ Output: {"todos":[{"title":"Prepare proposal for Cheng Xilu","detail":"Prepare a
 
 Example 24 (⚠️ title keeps location + person names; fuzzy period "afternoon" uses time_bucket without inventing a clock time; reference date 2026-07-15 Wednesday):
 Input: "Meet Li Ming at the office tomorrow afternoon"
-Output: {"todos":[{"title":"Meet Li Ming at the office","detail":"Meet Li Ming at the office tomorrow afternoon","due_date":"2026-07-16","due_hint":"tomorrow afternoon","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
+Output: {"todos":[{"title":"Meet Li Ming at the office","detail":"Meet Li Ming at the office tomorrow afternoon","due_date":"2026-07-16","due_hint":"tomorrow afternoon","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+Example 25 (⚠️ multiple todos in one sentence with DIFFERENT fuzzy periods: each todo's time_bucket must match the period word of its OWN clause — never reuse the first period for the whole sentence; reference date 2026-07-15 Wednesday):
+Input: "I want to take a Pilates class tomorrow morning and go to the park tomorrow afternoon"
+Output: {"todos":[{"title":"Take Pilates class","detail":"I want to take a Pilates class tomorrow morning","due_date":"2026-07-16","due_hint":"tomorrow morning","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"Go to the park","detail":"go to the park tomorrow afternoon","due_date":"2026-07-16","due_hint":"tomorrow afternoon","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
 
 // 完整日语 prompt(P1)。规则结构与中文/英文 prompt 对齐,示例全部改写为日语输入。
 // 输出语言、人名保留、枚举字段英文 literal 等约束显式写在规则 10 里,防止 AI 漂移。
@@ -670,7 +678,11 @@ JSON のみを返す(説明は不要)。フォーマット:
 
 例 19(⚠️ タイトルは場所+人名などの主要な対象を保持;曖昧な時間帯「午後」は time_bucket を使い時刻を捏造しない;参照日 2026-07-15 水曜):
 入力:"明日の午後、会社で佐藤と打ち合わせ"
-出力:{"todos":[{"title":"会社で佐藤と打ち合わせ","detail":"明日の午後、会社で佐藤と打ち合わせ","due_date":"2026-07-16","due_hint":"明日の午後","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
+出力:{"todos":[{"title":"会社で佐藤と打ち合わせ","detail":"明日の午後、会社で佐藤と打ち合わせ","due_date":"2026-07-16","due_hint":"明日の午後","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}
+
+例 20(⚠️ 一文に複数のTODOがあり各節に**異なる**時間帯が付く場合:各TODOの time_bucket は自分の節の時間帯語に対応させ、文全体で最初の時間帯を使い回さない;参照日 2026-07-15 水曜):
+入力:"明日の午前にピラティスのレッスンを受けて、明日の午後は公園に行く"
+出力:{"todos":[{"title":"ピラティスのレッスンを受ける","detail":"明日の午前にピラティスのレッスンを受けて","due_date":"2026-07-16","due_hint":"明日の午前","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"公園に行く","detail":"明日の午後は公園に行く","due_date":"2026-07-16","due_hint":"明日の午後","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
 
 // Split 模式 prompts（2026-08-23 拆小改版）。与提取 prompts 的关键差异:
 // 输出是 {"steps":[...]} 而非 {"todos":[...]}；无日期/重复/分类字段；

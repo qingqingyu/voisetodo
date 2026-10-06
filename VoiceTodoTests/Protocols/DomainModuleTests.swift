@@ -612,6 +612,114 @@ final class DomainModuleTests: XCTestCase {
         XCTAssertEqual(TimeBucketResolver.effective(explicitBucket: nil, dueDate: try at(18, 0), hasDueTime: true, calendar: calendar), .evening)
     }
 
+    // MARK: - TimeBucket.inferred(fromHint:)（dueHint 时段反哺）
+
+    /// 模型漏给 time_bucket 时,客户端从 due_hint 原文反哺时段。
+    /// 覆盖用户实际踩到的场景:"明天下午去公园" → 确认页显示对、落库时段丢失。
+    func testInferredBucketParsesChineseTimeOfDayKeywords() {
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "明天上午"), .morning)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "明天下午"), .afternoon)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "今晚"), .evening)
+        // 中午/正午与 TimeBucketResolver 钟点口径一致(noon → afternoon)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "明天中午"), .afternoon)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "正午"), .afternoon)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "傍晚吃完饭"), .evening)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "深夜"), .evening)
+    }
+
+    /// MVP 三语的英文/日文词典命中;英文大小写不敏感。
+    func testInferredBucketParsesEnglishAndJapaneseKeywords() {
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "tomorrow morning"), .morning)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "Tomorrow Afternoon"), .afternoon)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "tonight"), .evening)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "明日午前"), .morning)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "明日の午後"), .afternoon)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "今夜"), .evening)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "夕方"), .evening)
+    }
+
+    /// 无时段词 / nil / 空白 → 不反哺(不能凭空造时段)。
+    func testInferredBucketReturnsNilForNoKeywordOrEmpty() {
+        XCTAssertNil(TimeBucket.inferred(fromHint: "明天"))
+        XCTAssertNil(TimeBucket.inferred(fromHint: "这周末"))
+        XCTAssertNil(TimeBucket.inferred(fromHint: "next Wednesday"))
+        XCTAssertNil(TimeBucket.inferred(fromHint: nil))
+        XCTAssertNil(TimeBucket.inferred(fromHint: "  "))
+    }
+
+    /// 区间表达多词命中 → 取文本中最先出现者(起点)。
+    func testInferredBucketPicksFirstOccurrenceWhenMultipleKeywords() {
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "上午10点到下午2点"), .morning)
+        XCTAssertEqual(TimeBucket.inferred(fromHint: "下午到晚上"), .afternoon)
+    }
+
+    /// memberwise init:time_bucket 缺失时出生点即反哺(下游落库/展示全链路继承)。
+    func testExtractedTodoBackfillsTimeBucketFromDueHintWhenModelOmitsIt() {
+        let todo = ExtractedTodo(title: "去公园", detail: "明天下午去公园", dueHint: "明天下午", categoryHint: .life)
+        XCTAssertEqual(todo.timeBucket, .afternoon)
+        XCTAssertNil(todo.dueTime)
+    }
+
+    /// AI 响应解码:time_bucket=null + due_hint="明天下午" → 反哺 afternoon。
+    func testExtractedTodoDecodingBackfillsTimeBucketFromDueHint() throws {
+        let json = """
+        {
+            "todos": [{
+                "id": "00000000-0000-0000-0000-000000000010",
+                "title": "去公园",
+                "detail": "明天下午去公园",
+                "due_date": "2026-10-07",
+                "due_hint": "明天下午",
+                "due_time": null,
+                "time_bucket": null,
+                "priority": "normal",
+                "category_hint": "life"
+            }],
+            "ignored": ""
+        }
+        """
+        let decoder = JSONCoding.makeResponseDecoder()
+
+        let result = try decoder.decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+        XCTAssertEqual(result.todos[0].timeBucket, .afternoon)
+    }
+
+    /// 解码路径的 explicit 优先(生产 decoder):模型给了 time_bucket 时反哺不得覆盖。
+    /// 回归守护:曾因 CodingKeys 显式 snake raw 与 convertFromSnakeCase 策略不匹配,
+    /// time_bucket 在生产解码里恒为 nil(模型给了也被丢,反哺变成唯一来源)。
+    func testExtractedTodoDecodingKeepsExplicitBucketOverBackfill() throws {
+        let json = """
+        {
+            "todos": [{
+                "id": "00000000-0000-0000-0000-000000000011",
+                "title": "上普拉提课",
+                "detail": "明天上午去上普拉提课",
+                "due_hint": "明天下午去公园前先上课",
+                "due_time": null,
+                "time_bucket": "morning",
+                "priority": "normal",
+                "category_hint": "health"
+            }],
+            "ignored": ""
+        }
+        """
+        let result = try JSONCoding.makeResponseDecoder().decode(ExtractionResult.self, from: try XCTUnwrap(json.data(using: .utf8)))
+        XCTAssertEqual(result.todos[0].timeBucket, .morning, "explicit time_bucket 应被生产 decoder 读到且优先于 due_hint 反哺")
+    }
+
+    /// explicit time_bucket 优先,反哺不覆盖模型的显式判断。
+    func testExtractedTodoKeepsExplicitBucketOverBackfill() {
+        let todo = ExtractedTodo(title: "去公园", detail: "明天下午去公园", dueHint: "明天下午", timeBucket: .morning, categoryHint: .life)
+        XCTAssertEqual(todo.timeBucket, .morning)
+    }
+
+    /// 钟点优先不变式:due_hint 带时段词但模型同时给了 due_time → 不反哺,
+    /// 时段由钟点在 TimeBucketResolver 推导(避免与钟点矛盾的独立时段)。
+    func testExtractedTodoSkipsBackfillWhenDueTimePresent() {
+        let todo = ExtractedTodo(title: "开会", detail: "明天下午3点开会", dueHint: "明天下午3点", dueTime: "15:00", categoryHint: .work)
+        XCTAssertNil(todo.timeBucket)
+    }
+
     // MARK: - TodoDueDateResolver (N days offset)
 
     func testDueDateResolverParsesNDaysFromNow() throws {
