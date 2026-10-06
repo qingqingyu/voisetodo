@@ -6,7 +6,7 @@
 //   3. 校验链：先比对链顶 root 的 SHA-256 与锚定值（Apple Root CA - G3），
 //      一次哈希拦掉伪造链，再逐级验签 cert[i] 由 cert[i+1] 签发。
 //   4. 用 leaf 公钥校验 JWS 签名（ES256 = ECDSA P-256 SHA-256）。
-//   5. 校验 payload：bundleId、productId、expiresDate（未过期）。
+//   5. 校验 payload：bundleId、productId、expiresDate（未过期）、revocationDate（未撤销）。
 //
 // 任一步失败 → 抛错（调用方 fail-safe 到免费档，不静默吞掉）。
 //
@@ -206,6 +206,13 @@ export async function verifySubscriptionJWS(jws, opts = {}) {
   }
   if (expiresAt <= now) {
     throw new Error(`subscription.expired expiresAt=${expiresAt} now=${now}`);
+  }
+  // 已退款 / 被撤销的交易:Apple 在撤销后签发的交易 JWS 带 revocationDate。客户端
+  // currentEntitlements 已不会再给出这类交易,但代理零信任,不依赖客户端过滤。
+  // 注意这只拦得住「撤销后签发」的 JWS;撤销前缓存下来的旧 JWS 不含此字段,
+  // 要拦它需要接 App Store Server Notifications(REFUND/REVOKE),此处不覆盖。
+  if (payload.revocationDate != null) {
+    throw new Error(`subscription.revoked revocationDate=${payload.revocationDate}`);
   }
   // 订阅标识:originalTransactionId 在一次购买(含续订、跨设备恢复)内稳定,
   // transactionId 每次续订变化 —— 前者优先。用于按订阅维度的反滥用限速

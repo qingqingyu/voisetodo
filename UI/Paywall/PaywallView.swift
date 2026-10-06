@@ -559,7 +559,8 @@ struct PaywallContent: View {
     }
 
     private var ctaDisabled: Bool {
-        showsCTASpinner || currentSelectedProduct == nil
+        // 恢复购买进行中也禁用:AppStore.sync 与购买并发会让两边的 lastError/isPro 结果互相覆盖。
+        showsCTASpinner || entitlement.isRestoring || currentSelectedProduct == nil
     }
 
     private var currentSelectedProduct: Product? {
