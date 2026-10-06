@@ -1226,11 +1226,23 @@ final class AppCoordinator: ObservableObject {
         conflictWarnings = newWarnings
     }
 
+    /// 已订阅用户被额度拦下时的 toast 文案分流（撞 Pro 上限或订阅被代理拒）。
+    /// 代理拒了这份订阅（请求带了凭证仍按 free 档计，`proxyRejectedSubscription`）
+    /// 时,「Pro 额度已用完」会把「付了钱没生效」盖住——用户实际只剩免费档额度,
+    /// 第 3 次被拦时该提示的是订阅验证问题 + 恢复购买出口,而不是额度耗尽。
+    /// `quotaUsage` 为 nil（测试未注入）时维持原 quotaExhaustedPro 文案。
+    private func proQuotaBlockedToastMessage() -> String {
+        quotaUsage?.proxyRejectedSubscription == true
+            ? ErrorMessages.subscriptionRejected
+            : ErrorMessages.quotaExhaustedPro
+    }
+
     /// 外部调用失败（含配额耗尽）后离线兜底成功的统一处理。
     /// 普通失败保留原始原因并显示准确提示；配额耗尽继续走 paywall。
     /// `triggerPaywall=true` 时额外弹出订阅页（仅配额耗尽场景）。
     /// 已订阅用户不弹升级墙（无法再升级；代理验签故障把 Pro 降级到免费档时，
-    /// 升级墙会把付费用户挡在门外），改为额度耗尽 toast 说明「为什么没解析」。
+    /// 升级墙会把付费用户挡在门外），改为额度耗尽（或订阅验证未通过）toast
+    /// 说明「为什么没解析」。
     private func handleOfflineFallbackSaved(triggerPaywall: Bool, reason: VoiceTodoError?) {
         let suppressQuotaPaywall = triggerPaywall && entitlement.isPro
         clearExtractionPresentation()
@@ -1244,7 +1256,7 @@ final class AppCoordinator: ObservableObject {
         } else if suppressQuotaPaywall {
             // 文案自带「已保留」语义，替代 savedOffline（否则订阅用户只看到
             // 「已离线保存」，不知道是额度耗尽导致本次没解析）。
-            showToast(message: ErrorMessages.quotaExhaustedPro, style: .info)
+            showToast(message: proQuotaBlockedToastMessage(), style: .info)
         } else {
             showToast(message: ErrorMessages.savedOffline, style: .info)
         }
@@ -1358,10 +1370,12 @@ final class AppCoordinator: ObservableObject {
             case .quotaExhausted(let tier, let resetAt):
                 // 配额耗尽：开 paywall 引导升级，不弹普通失败 toast。
                 // 已订阅用户不可能再「升级」——升级墙只会把付费用户挡在门外
-                // （代理验签故障把 Pro 降级到免费档时正是这种形态），改为告知额度耗尽事实。
+                // （代理验签故障把 Pro 降级到免费档时正是这种形态），改为告知额度耗尽事实；
+                // 凭证被代理拒掉时（proxyRejectedSubscription）改提示订阅验证问题。
                 if entitlement.isPro {
-                    VoiceTodoLog.coordinator.warning("coordinator.paywall.suppressed reason=already_pro tier=\(tier, privacy: .public) resetAt=\(resetAt, privacy: .public)")
-                    showToast(message: ErrorMessages.quotaExhaustedPro, style: .warning)
+                    let rejected = quotaUsage?.proxyRejectedSubscription == true
+                    VoiceTodoLog.coordinator.warning("coordinator.paywall.suppressed reason=already_pro tier=\(tier, privacy: .public) resetAt=\(resetAt, privacy: .public) rejected=\(rejected, privacy: .public)")
+                    showToast(message: proQuotaBlockedToastMessage(), style: .warning)
                 } else {
                     VoiceTodoLog.coordinator.info("coordinator.paywall.trigger reason=quota_exhausted_handled")
                     presentPaywall(source: .quotaExhausted)

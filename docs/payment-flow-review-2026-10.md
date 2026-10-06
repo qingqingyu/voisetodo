@@ -9,7 +9,7 @@
 - **不存在重复扣费路径。** 月付/年付在同一订阅组,App Store 本身不允许同组并存两份订阅
   (重复点同一商品只会弹「你已订阅」,月→年是 Apple 按比例折算的升级)。
   客户端还缺一层防连点,已补(见 2.1)。
-- **有两处会让「已付费但不生效 / 显示不对」的问题,已修**(2.2、2.3)。
+- **有两处会让「已付费但不生效 / 显示不对」的问题,已修**(2.2、2.3);后补第三处:额度显示过渡掩盖代理拒订阅(2.8,2026-10-07)。
 - 代理端配置(`APP_BUNDLE_ID` / `PRO_PRODUCT_IDS` / `PAID_DAILY_LIMIT`)与 iOS 端逐字一致,
   `wrangler-config.test.js` 已守住;315 个代理测试全绿。
 
@@ -51,6 +51,20 @@ CTA 的 `.disabled` 要等下一帧渲染才生效,连点两下会排进两个 `
 注意 S20 只能在 Xcode GUI 里跑:CLI xcodebuild 不给被测进程注入 scheme 的
 Products.storekit 配置(商品恒为空、购买按钮不渲染),测试在 CLI 下被 XCTSkip。
 
+### 2.8 「额度显示 Pro 档」的过渡会掩盖代理拒订阅(2026-10-07 修复)
+e97dbd2 的 `displayedLimit` 矛盾窗口期过渡有一个盲区:**请求已携带 `X-Subscription-JWS`,
+代理却仍按 free 档计**(验签失败 / 计费宽限期 / 已退款)时,数据形态与「订阅前的旧数据」
+一模一样(StoreKit isPro=true + free 档快照),过渡逻辑照样显示 x/100。用户实际只剩
+3 次,第 3 次被拦时只看到「Pro 额度已用完」,完全不知道订阅出了问题。离线补处理
+完成后的额度 toast 紧跟一次代理请求,最容易撞上。
+修复:`NetworkClient` 把「本次请求是否实际携带凭证」随 `X-Quota-*` 一起喂给额度模型
+(`applyQuotaHeaders(carriedSubscriptionJWS:)`),`QuotaUsage.proxyRejectedSubscription`
+据此置位——被拒时 `displayedLimit` 返回代理权威的 free 档 limit,配额耗尽 toast 改说
+「订阅验证未通过,请尝试恢复购买」(`error.subscription_rejected`,en/ja/zh-Hans),
+不再谎称 Pro 额度用完。刚订阅、还没发过请求的场景不带此标志,原过渡不受影响。
+(注:沙盒会话曾声称修过此问题,但分支被 38e43f4 覆盖,修复未落库——本次按其思路重做,
+QuotaUsageTests 的「代理拒订阅」分组即防再丢的锚。)
+
 ## 3. 已知局限(未改,需决策)
 
 ### 3.1 退款后旧 JWS 仍可用到原到期日
@@ -82,5 +96,5 @@ Products.storekit 配置(商品恒为空、购买按钮不渲染),测试在 CLI 
 | 商品加载失败 | 空态/错误卡 + 重试,CTA 不渲染,法务链接与恢复仍可点 | 同上 | 同上 | 同上 |
 | 购买中 | CTA spinner + 禁用,商品卡禁用,恢复禁用 | — | — | — |
 | 购买成功 | `purchaseSuccessCount` 驱动收起 + 成功 toast | — | — | — |
-| 已订阅 | 实时用量 → 已订阅卡(有效期至)→ 法务 + 恢复,无购买按钮 | 你已订阅 Pro | 不弹 | toast「Pro 额度已用完」,不弹 |
+| 已订阅 | 实时用量 → 已订阅卡(有效期至)→ 法务 + 恢复,无购买按钮 | 你已订阅 Pro | 不弹 | toast「Pro 额度已用完」,不弹;凭证被代理拒时改 toast「订阅验证未通过」(2.8) |
 | 订阅过期(前台) | 到期 +2s 自动退回未订阅 UI | 下次打开设置即恢复「升级」 | 恢复 | 弹付费墙 |

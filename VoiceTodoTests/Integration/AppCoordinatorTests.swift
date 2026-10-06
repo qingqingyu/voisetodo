@@ -804,7 +804,8 @@ final class AppCoordinatorTests: XCTestCase {
 
     private func makeQuotaExhaustedCoordinator(
         store: CoordinatorTestStore = CoordinatorTestStore(),
-        entitlement: EntitlementManager? = nil
+        entitlement: EntitlementManager? = nil,
+        quotaUsage: QuotaUsage? = nil
     ) -> AppCoordinator {
         let extractor = DelayedExtractor()
         extractor.extractionErrors["额度耗尽测试"] = VoiceTodoError.quotaExhausted(tier: "free", resetAt: "2026-08-21")
@@ -813,7 +814,8 @@ final class AppCoordinatorTests: XCTestCase {
             extractor: extractor,
             store: store,
             entitlement: entitlement,
-            networkIsConnectedProvider: { true }
+            networkIsConnectedProvider: { true },
+            quotaUsage: quotaUsage
         )
     }
 
@@ -833,6 +835,38 @@ final class AppCoordinatorTests: XCTestCase {
         await coordinator.processManualInput("额度耗尽测试")
 
         await waitForToast(coordinator, message: ErrorMessages.quotaExhaustedPro)
+        XCTAssertFalse(coordinator.showPaywall, "已订阅用户不应看到升级 paywall")
+    }
+
+    /// 代理拒订阅（请求带了凭证仍按 free 档计）：额度耗尽 toast 不再说
+    /// 「Pro 额度已用完」——那会把「付了钱没生效」盖住；改提示订阅验证未通过
+    /// + 恢复购买出口。同样不弹升级墙（已订阅）。
+    func testQuotaExhaustedWithRejectedSubscriptionHintsVerificationFailure() async {
+        let entitlement = EntitlementManager(enableTransactionListener: false)
+        entitlement.setEntitlementForTesting(isPro: true)
+        let quotaUsage = QuotaUsage()
+        quotaUsage.applyQuotaHeaders(
+            from: HTTPURLResponse(
+                url: URL(string: "https://proxy.test/v1/todo-extractions")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: [
+                    "X-Quota-Plan": "free",
+                    "X-Quota-Limit": "3",
+                    "X-Quota-Used": "3",
+                    "X-Quota-Remaining": "0"
+                ]
+            )!,
+            carriedSubscriptionJWS: true
+        )
+        let coordinator = makeQuotaExhaustedCoordinator(
+            entitlement: entitlement,
+            quotaUsage: quotaUsage
+        )
+
+        await coordinator.processManualInput("额度耗尽测试")
+
+        await waitForToast(coordinator, message: ErrorMessages.subscriptionRejected)
         XCTAssertFalse(coordinator.showPaywall, "已订阅用户不应看到升级 paywall")
     }
 

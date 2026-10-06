@@ -11,7 +11,11 @@ enum QuotaConfig {
 @MainActor
 protocol QuotaProviding: AnyObject {
     /// 用代理响应头更新额度（权威数据源）。无任何 `X-Quota-*` 头时保留现有本地估算。
-    func applyQuotaHeaders(from response: HTTPURLResponse)
+    /// - Parameter carriedSubscriptionJWS: 本次请求是否实际携带了订阅凭证
+    ///   （`X-Subscription-JWS` 已随请求发出）。携带凭证而代理仍按 free 档计
+    ///   = 代理拒了这份订阅（验签失败 / 计费宽限期 / 已退款），额度模型据此置
+    ///   `proxyRejectedSubscription`，展示层不得再把它当「订阅前的旧数据」过渡到 Pro 档。
+    func applyQuotaHeaders(from response: HTTPURLResponse, carriedSubscriptionJWS: Bool)
     /// 标记额度获取失败（UI 进入非权威 / error 态）。
     func markQuotaLoadFailed()
 }
@@ -44,6 +48,13 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
     @Published private(set) var isAuthoritative: Bool = false
     /// 本次离线补处理计入的条数（透明提示用）。
     @Published private(set) var backgroundIncluded: Int = 0
+    /// 代理拒绝订阅：最近一次权威更新来自一次**携带了** `X-Subscription-JWS` 的请求，
+    /// 代理却仍按 free 档计（验签失败 / 计费宽限期 / 已退款）。
+    /// 此时 StoreKit 本地 isPro 与代理快照的矛盾**不是**「订阅前的旧数据」，
+    /// `displayedLimit` 不得过渡到 Pro 常量——用户实际只剩免费档额度，
+    /// 显示 x/100 会掩盖「付了钱没生效」。代理重新按 Pro 计（如下一次请求
+    /// 恢复购买生效后）自动翻回 false。
+    @Published private(set) var proxyRejectedSubscription = false
     @Published private(set) var loadState: LoadState = .empty
 
     /// 上次本地估算所基于的日期（YYYY-MM-DD，设备时区）。跨 0 点清零本地估算。
@@ -57,7 +68,7 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
 
     // MARK: - QuotaProviding
 
-    func applyQuotaHeaders(from response: HTTPURLResponse) {
+    func applyQuotaHeaders(from response: HTTPURLResponse, carriedSubscriptionJWS: Bool) {
         let planRaw = response.value(forHTTPHeaderField: "X-Quota-Plan")
         let limitStr = response.value(forHTTPHeaderField: "X-Quota-Limit")
         let usedStr = response.value(forHTTPHeaderField: "X-Quota-Used")
@@ -69,13 +80,20 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
             return
         }
         isAuthoritative = true
-        if let planRaw { plan = Plan(rawValue: planRaw) ?? .free }
+        if let planRaw {
+            plan = Plan(rawValue: planRaw) ?? .free
+            // 拒绝判定只在代理明确表态 free 时做：带了凭证 + 代理仍说 free = 被拒；
+            // 代理没给 plan 的部分头不臆断（维持既有状态，等下一次明确表态），
+            // 未知档位值（如未来新增 tier）只回落 `.free` 供展示，不算明确表态
+            // free——置拒绝标志会谎报「订阅验证未通过」。
+            proxyRejectedSubscription = carriedSubscriptionJWS && planRaw == Plan.free.rawValue
+        }
         if let l = limitStr.flatMap(Int.init) { limit = l }
         if let u = usedStr.flatMap(Int.init) { used = u }
         if let r = remainingStr.flatMap(Int.init) { remaining = r }
         if let resetDate { self.resetDate = resetDate }
         loadState = .success
-        VoiceTodoLog.network.info("quota.update plan=\(planRaw ?? "nil", privacy: .public) used=\(usedStr ?? "nil", privacy: .public) remaining=\(remainingStr ?? "nil", privacy: .public) reset=\(resetDate ?? "nil", privacy: .public) authoritative=true")
+        VoiceTodoLog.network.info("quota.update plan=\(planRaw ?? "nil", privacy: .public) used=\(usedStr ?? "nil", privacy: .public) remaining=\(remainingStr ?? "nil", privacy: .public) reset=\(resetDate ?? "nil", privacy: .public) rejected=\(self.proxyRejectedSubscription, privacy: .public) authoritative=true")
     }
 
     func markQuotaLoadFailed() {
@@ -91,6 +109,11 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
     /// 返回 `NetworkConfig.proDailyLimit` 过渡，避免已订阅用户在 paywall 看到
     /// 「已订阅」状态卡与「x/3」免费额度自相矛盾。其余情况返回权威/估算 limit。
     ///
+    /// **例外：代理拒订阅**（`proxyRejectedSubscription`，请求带了凭证代理仍回
+    /// free 档）不在此过渡之列——那不是旧数据，是订阅验证被拒的现行事实，
+    /// 显示 Pro 常量会让用户以为还有 100 次，第 3 次被拦时只看到「额度已用完」，
+    /// 完全不知道订阅出了问题。此时返回代理权威的 free 档 limit。
+    ///
     /// `used` 由调用方保留：代理配额 key（`quota:<date>:<device>`）不分档位，
     /// 免费期用量在订阅后同样计入当天配额，旧 used 对 Pro 档仍然准确。
     /// 窗口在下一次 `applyQuotaHeaders` 后自动消失，调用方无需清理。
@@ -98,12 +121,13 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
     /// 已知偏差：①若 `PAID_DAILY_LIMIT`（wrangler.toml）改配置而客户端常量未随
     /// 版本同步，窗口期显示偏小（如 x/100 vs 实际 x/200），首次使用后被权威值
     /// 纠正，双端同步前提下不存在此方向的「承诺偏大」。②反向场景：订阅过期后
-    /// `isPro` 停留 stale-true 而代理权威快照已翻 free 时，本方法短暂返回 Pro 常量
-    /// （显示偏大）—— 与 `comparisonCard` 分流同口径跟随 StoreKit 本地判定，
+    /// `isPro` 停留 stale-true 而代理权威快照已翻 free 时（`X-Quota-Plan: free`
+    /// 且该请求未带凭证，不算「被拒」），本方法短暂返回 Pro 常量（显示偏大）——
+    /// 与 `comparisonCard` 分流同口径跟随 StoreKit 本地判定，
     /// paywall 的 `refresh()` 翻正后自动消失，仅影响展示不影响执行。
     /// 双端同步约定见 Constants.swift。
     func displayedLimit(storeKitIsPro: Bool) -> Int {
-        guard storeKitIsPro, !isPro else { return limit }
+        guard storeKitIsPro, !isPro, !proxyRejectedSubscription else { return limit }
         return NetworkConfig.proDailyLimit
     }
 
@@ -139,6 +163,7 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
         resetDate = nil
         plan = .free
         isAuthoritative = false
+        proxyRejectedSubscription = false
         backgroundIncluded = 0
         loadState = .empty
         localEstimateDate = Self.currentLocalDate()

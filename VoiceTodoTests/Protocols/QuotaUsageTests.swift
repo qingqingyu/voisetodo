@@ -43,7 +43,7 @@ final class QuotaUsageTests: XCTestCase {
             "X-Quota-Used": "7",
             "X-Quota-Remaining": "93",
             "X-Quota-Reset-Date": "2026-05-26"
-        ]))
+        ]), carriedSubscriptionJWS: false)
 
         XCTAssertTrue(sut.isPro)
         XCTAssertTrue(sut.isAuthoritative)
@@ -62,7 +62,7 @@ final class QuotaUsageTests: XCTestCase {
             "X-Quota-Limit": "2",
             "X-Quota-Used": "2",
             "X-Quota-Remaining": "0"
-        ]))
+        ]), carriedSubscriptionJWS: false)
 
         XCTAssertFalse(sut.isPro)
         XCTAssertEqual(sut.plan, .free)
@@ -79,7 +79,7 @@ final class QuotaUsageTests: XCTestCase {
         sut.applyQuotaHeaders(from: Self.response(headers: [
             "X-Quota-Plan": "free",
             "X-Quota-Limit": "100"
-        ]))
+        ]), carriedSubscriptionJWS: false)
 
         XCTAssertEqual(sut.limit, 100)
     }
@@ -88,7 +88,7 @@ final class QuotaUsageTests: XCTestCase {
 
     func testNoQuotaHeadersKeepsLocalEstimate() {
         let sut = QuotaUsage()
-        sut.applyQuotaHeaders(from: Self.response(headers: ["Content-Type": "application/json"]))
+        sut.applyQuotaHeaders(from: Self.response(headers: ["Content-Type": "application/json"]), carriedSubscriptionJWS: false)
 
         XCTAssertFalse(sut.isAuthoritative, "没有任何 X-Quota-* 头时不得声称权威")
         XCTAssertEqual(sut.limit, NetworkConfig.freeDailyLimit)
@@ -105,7 +105,7 @@ final class QuotaUsageTests: XCTestCase {
             "X-Quota-Plan": "free",
             "X-Quota-Used": "5",
             "X-Quota-Limit": "100"
-        ]))
+        ]), carriedSubscriptionJWS: false)
         sut.recordLocalUsageIncrement()
 
         XCTAssertEqual(sut.used, 5, "权威值到位后，本地估算不应再自增")
@@ -124,7 +124,7 @@ final class QuotaUsageTests: XCTestCase {
             "X-Quota-Limit": "3",
             "X-Quota-Used": "1",
             "X-Quota-Remaining": "2"
-        ]))
+        ]), carriedSubscriptionJWS: false)
 
         XCTAssertEqual(
             sut.displayedLimit(storeKitIsPro: true),
@@ -145,7 +145,7 @@ final class QuotaUsageTests: XCTestCase {
             "X-Quota-Plan": "pro",
             "X-Quota-Limit": "150",
             "X-Quota-Used": "2"
-        ]))
+        ]), carriedSubscriptionJWS: false)
 
         XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), 150)
     }
@@ -157,7 +157,7 @@ final class QuotaUsageTests: XCTestCase {
             "X-Quota-Plan": "free",
             "X-Quota-Limit": "3",
             "X-Quota-Used": "1"
-        ]))
+        ]), carriedSubscriptionJWS: false)
 
         XCTAssertEqual(sut.displayedLimit(storeKitIsPro: false), 3)
     }
@@ -170,6 +170,97 @@ final class QuotaUsageTests: XCTestCase {
 
         XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), NetworkConfig.proDailyLimit)
         XCTAssertEqual(sut.displayedLimit(storeKitIsPro: false), NetworkConfig.freeDailyLimit)
+    }
+
+    // MARK: - 代理拒订阅（带了凭证仍回免费档）
+
+    /// 请求携带了订阅凭证（carriedSubscriptionJWS=true），代理仍按 free 档计：
+    /// StoreKit 本地 isPro 与代理快照的矛盾**不是**「订阅前的旧数据」，而是代理
+    /// 拒了这份订阅（验签失败 / 计费宽限期 / 已退款）。此时 displayedLimit 不得
+    /// 过渡到 Pro 常量——用户实际只剩免费档额度，显示 x/100 会掩盖「付了钱没生效」。
+    /// （2026-10 沙盒会话提出此修复但分支被覆盖未落库，本组测试锁住语义防再丢。）
+    func testProxyRejectedSubscriptionShowsProxyLimitNotProConstant() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3",
+            "X-Quota-Used": "2",
+            "X-Quota-Remaining": "1"
+        ]), carriedSubscriptionJWS: true)
+
+        XCTAssertTrue(sut.proxyRejectedSubscription)
+        XCTAssertEqual(
+            sut.displayedLimit(storeKitIsPro: true),
+            3,
+            "被拒后剩余的是免费档额度，不得显示 Pro 常量 \(NetworkConfig.proDailyLimit)"
+        )
+    }
+
+    /// 下一次代理按 Pro 计（如恢复购买生效后的请求）拒绝状态自动翻回，
+    /// 权威值恢复显示——「被拒 → 恢复」的完整弧线。
+    func testProxyRejectedSubscriptionClearsWhenProxyAcceptsAgain() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3"
+        ]), carriedSubscriptionJWS: true)
+        XCTAssertTrue(sut.proxyRejectedSubscription)
+
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "pro",
+            "X-Quota-Limit": "150"
+        ]), carriedSubscriptionJWS: true)
+
+        XCTAssertFalse(sut.proxyRejectedSubscription)
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), 150)
+    }
+
+    /// 未携带凭证的 free 档是正常免费用户，不算「被拒」；
+    /// 矛盾窗口期过渡（displayedLimit 过渡到 Pro 常量）照旧生效。
+    func testFreePlanWithoutCredentialsIsNotRejection() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3"
+        ]), carriedSubscriptionJWS: false)
+
+        XCTAssertFalse(sut.proxyRejectedSubscription)
+        XCTAssertEqual(
+            sut.displayedLimit(storeKitIsPro: true),
+            NetworkConfig.proDailyLimit,
+            "未携带凭证的 free 快照仍是矛盾窗口期形态，照旧过渡到 Pro 常量"
+        )
+    }
+
+    /// 无 X-Quota-Plan 的部分头不做拒绝判定：代理没表态档位时不臆断恢复，
+    /// 维持既有状态等下一次明确表态（宁可持续提示被拒，不可假称已恢复）。
+    func testPartialHeadersWithoutPlanDoNotAffectRejectionState() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3"
+        ]), carriedSubscriptionJWS: true)
+        XCTAssertTrue(sut.proxyRejectedSubscription)
+
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Used": "9"
+        ]), carriedSubscriptionJWS: true)
+
+        XCTAssertTrue(sut.proxyRejectedSubscription, "代理未表态档位时拒绝状态维持")
+        XCTAssertEqual(sut.used, 9)
+    }
+
+    /// 未知档位值（如未来代理新增 tier）只回落 `.free` 供展示,不算「明确表态
+    /// free」——置拒绝标志会让 toast 谎报「订阅验证未通过」。
+    func testUnknownPlanValueIsNotExplicitFreeRejection() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "team",
+            "X-Quota-Limit": "50"
+        ]), carriedSubscriptionJWS: true)
+
+        XCTAssertFalse(sut.proxyRejectedSubscription, "未知档位不是明确表态 free,不得置拒绝标志")
+        XCTAssertEqual(sut.plan, .free, "展示回落语义保持既有行为")
     }
 
     // MARK: - Helpers
