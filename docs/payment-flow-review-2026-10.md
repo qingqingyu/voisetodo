@@ -11,7 +11,7 @@
   客户端还缺一层防连点,已补(见 2.1)。
 - **有两处会让「已付费但不生效 / 显示不对」的问题,已修**(2.2、2.3)。
 - 代理端配置(`APP_BUNDLE_ID` / `PRO_PRODUCT_IDS` / `PAID_DAILY_LIMIT`)与 iOS 端逐字一致,
-  `wrangler-config.test.js` 已守住;314 个代理测试全绿。
+  `wrangler-config.test.js` 已守住;315 个代理测试全绿。
 
 ## 2. 本次已修
 
@@ -45,8 +45,11 @@ CTA 的 `.disabled` 要等下一帧渲染才生效,连点两下会排进两个 `
 `AppStore.sync()` 抛 `StoreKitError.userCancelled` 时静默,不再显示错误。
 
 ### 2.7 已订阅用户在设置页仍看到「升级 VoiceTodo Pro」
-入口文案/图标随 `isPro` 切到「你已订阅 Pro」(复用 `paywall.subscribed.title`,无新文案)。
-付费墙导航标题未改:S13 UI 测试以该导航栏消失作为「购买后收起」的信号,随 isPro 改标题会让断言假通过。
+入口文案/图标随 `isPro` 切到「你已订阅 Pro」(复用 `paywall.subscribed.title`,补齐了缺失的 ja 译文)。
+付费墙导航标题未改:S20 UI 测试(ScenarioTests.swift)以 `navigationBars["升级 VoiceTodo Pro"]`
+消失作为「购买后收起」的信号,随 isPro 改标题会让断言假通过(paywall 未关也判为已关)。
+注意 S20 只能在 Xcode GUI 里跑:CLI xcodebuild 不给被测进程注入 scheme 的
+Products.storekit 配置(商品恒为空、购买按钮不渲染),测试在 CLI 下被 XCTSkip。
 
 ## 3. 已知局限(未改,需决策)
 

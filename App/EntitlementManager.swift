@@ -278,7 +278,10 @@ final class EntitlementManager: ObservableObject {
     // MARK: - 恢复购买（App Store 审核必需入口）
 
     func restorePurchases() async {
-        guard !isRestoring, !isPurchasing else { return }
+        guard !isRestoring, !isPurchasing else {
+            VoiceTodoLog.app.info("entitlement.restore_ignored reason=in_flight")
+            return
+        }
         isRestoring = true
         lastError = nil
         defer { isRestoring = false }

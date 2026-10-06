@@ -63,10 +63,14 @@ struct HomeSettingsSheet: View {
                         dismiss()
                     } label: {
                         HStack {
-                            Label(
-                                String(localized: isPro ? "paywall.subscribed.title" : "paywall.title"),
-                                systemImage: isPro ? "checkmark.seal.fill" : "sparkles"
-                            )
+                            Label {
+                                Text(String(localized: isPro ? "paywall.subscribed.title" : "paywall.title"))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                                    .layoutPriority(1)
+                            } icon: {
+                                Image(systemName: isPro ? "checkmark.seal.fill" : "sparkles")
+                            }
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.secondary)
