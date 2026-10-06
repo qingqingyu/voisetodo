@@ -52,6 +52,15 @@ final class EntitlementManager: ObservableObject {
     private var isLoadingProducts = false
 
     private var transactionListener: Task<Void, Never>?
+    /// refreshEntitlements 串行链:每次调用排在上一次之后执行。
+    /// 购买弹窗收起时 scenePhase 回到 .active 会触发一次刷新,与 purchase() 自己的
+    /// 刷新并发;并发时若前者(快照取于交易落地前)晚于后者写回,会把刚买到的 isPro 覆盖回 false。
+    /// 串行后「后发起的一定后快照、后写回」,且每个调用方 await 返回时看到的都是落定状态
+    /// (restorePurchases 紧接着读 isPro 判断「无可恢复」依赖这一点)。
+    private var entitlementRefreshChain: Task<Bool, Never>?
+    /// 订阅到期时刻的兜底刷新。到期(用户已取消续订)不会经 Transaction.updates 推送,
+    /// App 一直在前台时 isPro 会停在 stale-true;到点主动重读一次 currentEntitlements。
+    private var expirationRefreshTask: Task<Void, Never>?
 
     enum ProductLoadState: Equatable {
         case loading
@@ -74,6 +83,7 @@ final class EntitlementManager: ObservableObject {
 
     deinit {
         transactionListener?.cancel()
+        expirationRefreshTask?.cancel()
     }
 
     // MARK: - 加载
@@ -149,23 +159,58 @@ final class EntitlementManager: ObservableObject {
     /// 重读当前生效订阅。返回权益是否发生变化。
     @discardableResult
     func refreshEntitlements() async -> Bool {
+        let previous = entitlementRefreshChain
+        let task = Task { [weak self] () -> Bool in
+            _ = await previous?.value
+            guard let self else { return false }
+            return await self.performEntitlementRefresh()
+        }
+        entitlementRefreshChain = task
+        return await task.value
+    }
+
+    private func performEntitlementRefresh() async -> Bool {
         var foundPro = false
         var jws: String?
         var expiration: Date?
-        // currentEntitlements 只返回当前生效（未过期）的权益，无需额外过期校验。
+        // currentEntitlements 只返回当前生效（未过期、未退款）的权益。撤销/升级两道过滤是防御:
+        // 代理零信任会拒掉带 revocationDate 的 JWS,客户端不该把它当 Pro 发出去。
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             guard Self.productIDs.contains(transaction.productID) else { continue }
+            guard transaction.revocationDate == nil, !transaction.isUpgraded else { continue }
+            // 多条时取到期最晚的一条(JWS 与「有效期至」同源),不依赖遍历顺序。
+            if foundPro, let current = expiration,
+               (transaction.expirationDate ?? .distantPast) <= current {
+                continue
+            }
             foundPro = true
             jws = result.jwsRepresentation
             expiration = transaction.expirationDate
         }
+        scheduleExpirationRefresh(at: expiration)
         let changed = isPro != foundPro || jwsString != jws || subscriptionExpirationDate != expiration
         isPro = foundPro
         jwsString = jws
         subscriptionExpirationDate = expiration
         VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) changed=\(changed)")
         return changed
+    }
+
+    /// 在订阅到期时刻(+2s 余量)重读一次权益。续订成功会经 Transaction.updates 推送并重排本任务;
+    /// 只有「已取消续订、到点过期」这条路径需要它。沙盒下月付 5 分钟一续,过期在前台很常见。
+    private func scheduleExpirationRefresh(at expiration: Date?) {
+        expirationRefreshTask?.cancel()
+        expirationRefreshTask = nil
+        // 已过到期时刻仍在 currentEntitlements 里(计费宽限期)时不排:否则每 2s 自我重排成忙循环。
+        // 宽限期结束会经 Transaction.updates 推送,回前台也会重读。
+        guard let expiration, expiration > Date() else { return }
+        let delay = expiration.timeIntervalSinceNow + 2
+        expirationRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            await self.refreshEntitlements()
+        }
     }
 
     private func listenForTransactionUpdates() -> Task<Void, Never> {
@@ -187,6 +232,12 @@ final class EntitlementManager: ObservableObject {
     // MARK: - 购买
 
     func purchase(_ product: Product) async {
+        // 重入守卫(在第一个 await 之前同步判定):CTA 的 disabled 要等下一帧渲染才生效,
+        // 连点两下会排进两个 purchase Task,第二个在这里被挡掉,不会叠出第二个系统购买弹窗。
+        guard !isPurchasing, !isRestoring else {
+            VoiceTodoLog.app.info("entitlement.purchase_ignored reason=in_flight productID=\(product.id, privacy: .public)")
+            return
+        }
         isPurchasing = true
         lastError = nil
         defer { isPurchasing = false }
@@ -227,6 +278,7 @@ final class EntitlementManager: ObservableObject {
     // MARK: - 恢复购买（App Store 审核必需入口）
 
     func restorePurchases() async {
+        guard !isRestoring, !isPurchasing else { return }
         isRestoring = true
         lastError = nil
         defer { isRestoring = false }
@@ -237,6 +289,9 @@ final class EntitlementManager: ObservableObject {
                 lastError = ErrorMessages.paywallRestoreNothing
             }
             VoiceTodoLog.app.info("entitlement.restore_done isPro=\(self.isPro)")
+        } catch StoreKitError.userCancelled {
+            // 用户在 Apple 账户验证弹窗点了取消:不是失败,不报错。
+            VoiceTodoLog.app.info("entitlement.restore_cancelled")
         } catch {
             VoiceTodoLog.app.error("entitlement.restore_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             lastError = ErrorMessages.paywallRestoreFailed

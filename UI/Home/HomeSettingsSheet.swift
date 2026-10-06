@@ -30,6 +30,9 @@ struct HomeSettingsSheet: View {
 
     private let vocabularyStore: UserVocabularyStore
     private let onUpgradePro: () -> Void
+    /// 已订阅时入口文案改为「你已订阅 Pro」,不再对付费用户显示「升级」。
+    /// 取 sheet 弹出时刻的值即可:购买发生在付费墙里,而点入口会先收起本 sheet。
+    private let isPro: Bool
     private let onImportFromCalendar: () -> Void
     /// 数据体检回调(DEBUG-only UI,Release 下为默认空实现)。
     /// 由 HomeView 注入:取全量库 → `DataHealthAnalyzer.analyze` → os_log 打印。
@@ -39,12 +42,14 @@ struct HomeSettingsSheet: View {
         calendarWriteModeRaw: Binding<String>,
         vocabularyStore: UserVocabularyStore = .shared,
         onUpgradePro: @escaping () -> Void = {},
+        isPro: Bool = false,
         onImportFromCalendar: @escaping () -> Void = {},
         onRunDataDiagnostics: @escaping () -> Void = {}
     ) {
         _calendarWriteModeRaw = calendarWriteModeRaw
         self.vocabularyStore = vocabularyStore
         self.onUpgradePro = onUpgradePro
+        self.isPro = isPro
         self.onImportFromCalendar = onImportFromCalendar
         self.onRunDataDiagnostics = onRunDataDiagnostics
     }
@@ -58,7 +63,10 @@ struct HomeSettingsSheet: View {
                         dismiss()
                     } label: {
                         HStack {
-                            Label(String(localized: "paywall.title"), systemImage: "sparkles")
+                            Label(
+                                String(localized: isPro ? "paywall.subscribed.title" : "paywall.title"),
+                                systemImage: isPro ? "checkmark.seal.fill" : "sparkles"
+                            )
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.secondary)

@@ -30,6 +30,9 @@ final class AppCoordinator: ObservableObject {
     private let extractor: any TodoExtractorProtocol
     /// 订阅状态(判断 isPro 跳过付费墙自动引导)。@MainActor 注入,init 后只读 isPro。
     private let entitlement: EntitlementManager
+    /// 只读透出订阅状态给视图(设置页 Pro 入口文案)。非 @Published:读取时取当前值,
+    /// 不驱动 coordinator 的视图刷新。
+    var isProSubscriber: Bool { entitlement.isPro }
     private let calendarWriteModeProvider: () -> CalendarWriteMode
     private let vocabularyStore: UserVocabularyStore
     private let correctionTracker = CorrectionTracker.shared

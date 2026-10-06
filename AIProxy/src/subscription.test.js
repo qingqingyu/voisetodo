@@ -55,6 +55,11 @@ test("rejects expired subscription", async () => {
   await assert.rejects(() => verify(jws, rootFingerprint), /expired/);
 });
 
+test("rejects revoked (refunded) subscription", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ payload: { revocationDate: Date.now() - 3600000, revocationReason: 0 } });
+  await assert.rejects(() => verify(jws, rootFingerprint), /revoked/);
+});
+
 test("rejects subscription JWS without an expiry claim", async () => {
   const { jws, rootFingerprint } = await mintTestJWS({ payload: { expiresDateMS: null } });
   await assert.rejects(() => verify(jws, rootFingerprint), /expires_missing/);

@@ -745,6 +745,7 @@ struct HomeView<Store: HomeTodoStore>: View {
             HomeSettingsSheet(
                 calendarWriteModeRaw: $calendarWriteModeRaw,
                 onUpgradePro: { coordinator.presentPaywall(source: .manual) },
+                isPro: coordinator.isProSubscriber,
                 onImportFromCalendar: {
                     showSettingsSheet = false
                     showCalendarImport = true
