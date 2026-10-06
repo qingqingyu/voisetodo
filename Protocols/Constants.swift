@@ -71,9 +71,16 @@ enum NetworkConfig {
     /// 与 `AIProxy/wrangler.toml` 的 `DAILY_REQUEST_LIMIT` 对应。
     /// 2026-08-30 随代理 deploy 同步 2→3（PROMOTION_PLAN §2.1 拍板口径）。
     static let freeDailyLimit: Int = 3
-    /// Pro 档每日上限（paywall 对比卡展示用）。与 `AIProxy/wrangler.toml` 的
-    /// `PAID_DAILY_LIMIT` 对应。Pro **不是无限**，UI 不得宣称无限。
+    /// Pro 档每日上限（paywall 对比卡 + 矛盾窗口期实时用量卡的过渡显示用，
+    /// 见 `QuotaUsage.displayedLimit`）。Pro **不是无限**，UI 不得宣称无限。
     /// 订阅后的真实上限以代理返回的 `X-Quota-Limit` 为准。
+    ///
+    /// ⚠️ 与 `AIProxy/wrangler.toml` 的 `PAID_DAILY_LIMIT` **手动双端同步**，
+    /// 无任何自动机制：改任一侧必须同步另一侧。生效路径不对称 —— 代理侧
+    /// `wrangler deploy` 即时全量生效，本常量要随 App 发版 + 用户升级才生效。
+    /// 不同步只影响展示（对比卡 / 矛盾窗口期），额度执行永远以代理为准；
+    /// 窗口期偏差方向为「显示 ≤ 实际」，首次使用后被 `X-Quota-Limit` 纠正。
+    /// 先例：freeDailyLimit 2→3 于 2026-08-30 双端同步。
     static let proDailyLimit: Int = 100
 
     private static func configuredValue(environmentKey: String, infoPlistKey: String) -> String? {

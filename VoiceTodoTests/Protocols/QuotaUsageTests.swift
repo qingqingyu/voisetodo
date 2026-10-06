@@ -111,6 +111,67 @@ final class QuotaUsageTests: XCTestCase {
         XCTAssertEqual(sut.used, 5, "权威值到位后，本地估算不应再自增")
     }
 
+    // MARK: - 矛盾窗口期展示过渡（displayedLimit）
+
+    /// 刚订阅（StoreKit 已 Pro）但代理响应未到：quotaUsage 仍是订阅前的
+    /// free 档权威快照（订阅成功不产生代理请求，X-Quota-* 只随下一次提取
+    /// 响应到达）。此窗口期实时卡显示 X/proDailyLimit，而非 X/3 与
+    /// 「已订阅」状态卡自相矛盾（2026-10 沙盒真机复现）。
+    func testDisplayedLimitUsesProConstantDuringEntitlementGap() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3",
+            "X-Quota-Used": "1",
+            "X-Quota-Remaining": "2"
+        ]))
+
+        XCTAssertEqual(
+            sut.displayedLimit(storeKitIsPro: true),
+            NetworkConfig.proDailyLimit,
+            "矛盾窗口期应过渡到 Pro 档常量，而不是沿用 free 档权威快照"
+        )
+        // used 由调用方保留权威值：配额 key 不分档位，免费期用量在订阅后仍计入
+        XCTAssertEqual(sut.used, 1)
+    }
+
+    /// 代理权威快照追上（下一次提取请求后）窗口消失，返回权威值。
+    /// limit 用与 `proDailyLimit`（100）错开的 150：若实现退化为
+    /// 「storeKitIsPro 时无条件返回常量」，150≠100 会让本测试失败，
+    /// 从而真正锁住「权威优先于常量」的语义。
+    func testDisplayedLimitReturnsAuthoritativeValueOnceProxyCaughtUp() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "pro",
+            "X-Quota-Limit": "150",
+            "X-Quota-Used": "2"
+        ]))
+
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), 150)
+    }
+
+    /// 未订阅：不动用 Pro 常量，返回原 limit（权威或本地后备）。
+    func testDisplayedLimitIgnoresProConstantWhenNotSubscribed() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3",
+            "X-Quota-Used": "1"
+        ]))
+
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: false), 3)
+    }
+
+    /// 重启场景：quotaUsage 不持久化，重新初始化为非权威 free 后备
+    /// （used=0/limit=3），已订阅用户不应看到退化的「0/3」。
+    func testDisplayedLimitCoversNonAuthoritativeRestartState() {
+        let sut = QuotaUsage()
+        XCTAssertFalse(sut.isAuthoritative)
+
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), NetworkConfig.proDailyLimit)
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: false), NetworkConfig.freeDailyLimit)
+    }
+
     // MARK: - Helpers
 
     private static func response(headers: [String: String]) -> HTTPURLResponse {

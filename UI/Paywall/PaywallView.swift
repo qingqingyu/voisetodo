@@ -298,8 +298,16 @@ struct PaywallContent: View {
 
     /// Pro 档也是有限额度，与免费档同样显示「已用 used/limit」。
     /// `limit` 由代理 `X-Quota-Limit` 提供（Pro 时为 `PAID_DAILY_LIMIT`）。
+    /// 矛盾窗口期（刚订阅、代理响应未到）经 `displayedLimit` 过渡到 Pro 常量，
+    /// 数字与「已订阅」状态卡不再自相矛盾 —— 上方 `comparisonCard` 分流容错
+    /// （任一处为 Pro 即走实时用量卡）的另一半修复：只修「走哪张卡」不够，
+    /// 卡里的数字也要跟着档位走。
     private var liveUsageText: String {
-        String(format: String(localized: "quota.today_used"), quotaUsage.used, quotaUsage.limit)
+        String(
+            format: String(localized: "quota.today_used"),
+            quotaUsage.used,
+            quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+        )
     }
 
     private var quotaErrorPill: some View {
