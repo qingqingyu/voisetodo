@@ -219,6 +219,38 @@ test("system prompt instructs extracting structured due_time and time_bucket (zh
   }
 });
 
+// 一句多条各带不同时段("明天上午A，明天下午B")时,轻量模型(air 档)曾只把时段
+// 写进 due_hint、漏掉第二条的 time_bucket → 客户端确认页显示对、落库时段丢失。
+// 事后查明该 bug 的主因在客户端解码键不匹配(Models.swift CodingKeys 与
+// convertFromSnakeCase 策略冲突,已在客户端修复);prompt 示例保留为"模型真漏给"
+// 场景的防御。示例 23/25/20(中/英/日)教模型按分句分别给 time_bucket;此断言防止示例被误删。
+test("system prompt covers per-clause time_bucket for multi-todo sentences (zh + en + ja)", async () => {
+  for (const [locale, transcript, guard] of [
+    ["zh-Hans", "明天上午去上普拉提课，明天下午去公园", "不能整句共用第一个时段"],
+    ["en-US", "pilates tomorrow morning and park tomorrow afternoon", "never reuse the first period"],
+    ["ja-JP", "明日の午前にピラティス、明日の午後は公園", "最初の時間帯を使い回さない"]
+  ]) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token" }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("开会") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    assert.ok(systemMessage.includes(guard), `locale=${locale} 应包含分句时段守卫句`);
+  }
+});
+
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。

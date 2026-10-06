@@ -199,19 +199,25 @@ struct ExtractedTodo: Identifiable, Codable {
     /// (与 localeIdentifier 同待遇)。
     var dueDateUserEdited: Bool = false
 
+    // 键名必须用隐式 camelCase：生产解码统一走 `JSONCoding.makeResponseDecoder()`
+    // 的 `.convertFromSnakeCase`——该策略把 JSON 的 snake 键(due_date/time_bucket…)
+    // 转成 camelCase 后再按 rawValue 查找。若这里写显式 snake rawValue，查找键与
+    // 转换后的存储键永不相等，字段会被 decodeIfPresent 静默解成 nil(曾导致模型的
+    // time_bucket/due_date/reminder_* 在生产 100% 丢失、靠下游兜底掩盖)。
+    // encode 输出随之是 camelCase(仅测试/日志消费，无线上契约)。
     private enum CodingKeys: String, CodingKey {
         case id
         case title
         case detail
-        case dueDate = "due_date"
+        case dueDate
         case dueHint
         case dueTime
-        case timeBucket = "time_bucket"
+        case timeBucket
         case recurrenceRule
         case recurrenceEnd  // 仅用于 init(from:) 解码 AI 返回的结构化截止边界
-        case reminderTimes = "reminder_times"
-        case reminderOffsetMinutes = "reminder_offset_minutes"
-        case dueDateBasis = "due_date_basis"
+        case reminderTimes
+        case reminderOffsetMinutes
+        case dueDateBasis
         case priority
         case categoryHint
     }
@@ -264,7 +270,13 @@ struct ExtractedTodo: Identifiable, Codable {
         self.dueTime = Self.sanitizeDueTime(dueTime)
         // 明确钟点与模糊时段互斥。即使上游模型异常同时返回两者，
         // 也优先保留可精确执行的钟点，避免展示和分组发生冲突。
-        self.timeBucket = self.dueTime == nil && timeBucket != .anytime ? timeBucket : nil
+        // 模型漏给 time_bucket 时用 due_hint 原文反哺("明天下午"→afternoon),
+        // 防止确认页显示对、落库后时段丢失(详见 TimeBucket.resolved(explicit:hint:hasDueTime:))。
+        self.timeBucket = TimeBucket.resolved(
+            explicit: timeBucket,
+            hint: self.dueHint,
+            hasDueTime: self.dueTime != nil
+        )
         self.recurrenceRule = RecurrenceRuleResolver.ruleWithInferredEndDate(
             recurrenceRule,
             dueHint: dueHint,
@@ -352,9 +364,13 @@ struct ExtractedTodo: Identifiable, Codable {
         let rawDueTime = try container.decodeIfPresent(String.self, forKey: .dueTime)
         dueTime = Self.sanitizeDueTime(rawDueTime)
         // 上游可能没有完全遵守 JSON 约束；明确钟点优先，丢弃冲突的模糊时段。
-        timeBucket = dueTime == nil
-            ? TimeBucket.explicit(from: try container.decodeIfPresent(String.self, forKey: .timeBucket))
-            : nil
+        // explicit 优先;模型漏给 time_bucket 时用 due_hint 原文反哺("明天下午"→afternoon),
+        // 防止确认页显示对、落库后时段丢失(详见 TimeBucket.resolved(explicit:hint:hasDueTime:))。
+        timeBucket = TimeBucket.resolved(
+            explicit: TimeBucket.explicit(from: try container.decodeIfPresent(String.self, forKey: .timeBucket)),
+            hint: dueHint,
+            hasDueTime: dueTime != nil
+        )
         // 结构化截止边界（模型归一化产出，只分类不算日期）；malformed 一律吞成 nil，不炸整条解码。
         let recurrenceEnd = (try? container.decodeIfPresent(RecurrenceEnd.self, forKey: .recurrenceEnd)) ?? nil
         // 重复起始日：优先用 AI 算好的 dueDate，其次文本解析，无则回落今天。

@@ -154,6 +154,33 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(saved.timeBucket, .evening)
     }
 
+    /// 模型漏给 time_bucket、只有 due_hint="晚上"(轻量档常见) → 出生点反哺 evening,
+    /// 落库后等效显式 bucket:补今天 0 点 + 时段保留,落进「今日/晚上」而非 Unscheduled。
+    /// 复现用户场景:"解析页显示对、点 Add 后上午/下午信息丢失"。
+    func testAddTodoBackfillsTimeBucketFromDueHintWhenModelOmittedIt() throws {
+        let extractedTodo = ExtractedTodo(
+            title: "晚上去健身",
+            detail: "晚上去健身",
+            dueHint: "晚上",
+            categoryHint: .health
+        )
+        XCTAssertEqual(extractedTodo.timeBucket, .evening)
+
+        try sut.add(extractedTodo)
+        sut.refreshTodos()
+
+        let saved = try XCTUnwrap(sut.todos.first)
+        let savedDueDate = try XCTUnwrap(saved.dueDate, "反哺的 bucket 应触发「时段⇒今天」补今天")
+        let calendar = Calendar.current
+        XCTAssertEqual(
+            calendar.startOfDay(for: savedDueDate),
+            calendar.startOfDay(for: Date()),
+            "补的 dueDate 应是今天 0 点"
+        )
+        XCTAssertFalse(saved.hasDueTime)
+        XCTAssertEqual(saved.timeBucket, .evening)
+    }
+
     func testAddRollbackDoesNotPersistFailedInsertOnLaterSave() throws {
         let gate = SaveFailureGate()
         sut = TodoStore(modelContext: modelContext, saveAction: gate.save)
