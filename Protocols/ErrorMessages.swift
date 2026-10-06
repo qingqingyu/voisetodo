@@ -26,6 +26,11 @@ enum ErrorMessages {
     /// 触发条件：quotaExhausted 时 `EntitlementManager.isPro == true`。
     /// 与 quotaExhausted 的区别：不含「免费」字样（订阅用户看到会困惑），并说明转写已保留。
     static let quotaExhaustedPro = String(localized: "error.quota_exhausted_pro")
+    /// 已订阅用户被代理按免费档拦截且**凭证被拒**（请求带了 `X-Subscription-JWS`
+    /// 代理仍回 free 档：验签失败/计费宽限期/已退款，见 `QuotaUsage.proxyRejectedSubscription`）。
+    /// 与 quotaExhaustedPro 的区别：额度并没有「用完」，是订阅验证出了问题——
+    /// 提示恢复购买出口，而不是让用户误以为 Pro 额度耗尽干等到明天。
+    static let subscriptionRejected = String(localized: "error.subscription_rejected")
     static let serviceBusy = String(localized: "error.service_busy")
     static let apiError = String(localized: "error.api_error")
     /// `apiResponseInvalid` case 关联值常用的 detail 字符串——被 NetworkClient 8 个失败路径

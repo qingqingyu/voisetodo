@@ -76,9 +76,13 @@ final class NetworkClient {
         let startedAt = Date()
         VoiceTodoLog.network.info("proxy.request.start id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) stream=false mode=\(mode ?? "extract", privacy: .public) locale=\(localeIdentifier, privacy: .public) vocabularyHints=\(vocabularyHints.count) personalHints=\(personalHints != nil, privacy: .public) \(VoiceTodoLog.textSummary(transcript), privacy: .public) endpoint=\(self.endpointSummary(), privacy: .public)")
 
+        let subscriptionJWS = await subscriptionJWSProvider()
+        // 与 buildProxyRequest 的发送条件同口径：只有非空 JWS 才真的发出凭证头。
+        // 供额度模型区分「订阅前的旧 free 快照」与「带了凭证仍被代理按 free 计」
+        // （后者 = 代理拒了这份订阅，展示层不得再过渡到 Pro 档）。
+        let carriedSubscriptionJWS = !(subscriptionJWS?.isEmpty ?? true)
         let request: URLRequest
         do {
-            let subscriptionJWS = await subscriptionJWSProvider()
             request = try buildProxyRequest(
                 transcript: transcript,
                 localeIdentifier: localeIdentifier,
@@ -117,7 +121,7 @@ final class NetworkClient {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             VoiceTodoLog.network.error("proxy.request.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) rateLimitType=\(httpResponse.value(forHTTPHeaderField: "X-RateLimit-Type") ?? "nil", privacy: .public) responseBytes=\(data.count) bodyChars=\(errorMessage.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             // 配额耗尽的 429 也携带 X-Quota-* 头，先喂给额度模型再抛错。
-            await pushQuotaHeaders(httpResponse)
+            await pushQuotaHeaders(httpResponse, carriedSubscriptionJWS: carriedSubscriptionJWS)
             if httpResponse.statusCode == 429 {
                 throw Self.classify429(httpResponse, body: data)
             }
@@ -130,7 +134,7 @@ final class NetworkClient {
             throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
         }
 
-        await pushQuotaHeaders(httpResponse)
+        await pushQuotaHeaders(httpResponse, carriedSubscriptionJWS: carriedSubscriptionJWS)
 
         guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
             VoiceTodoLog.network.error("proxy.request.empty_response id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) responseBytes=\(data.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
@@ -160,6 +164,8 @@ final class NetworkClient {
                 var receivedDone = false
                 do {
                     let subscriptionJWS = await subscriptionJWSProvider()
+                    // 同非流式路径：凭证是否真的随请求发出，喂给额度模型做拒绝判定。
+                    let carriedSubscriptionJWS = !(subscriptionJWS?.isEmpty ?? true)
                     let request = try buildProxyRequest(
                         transcript: transcript,
                         localeIdentifier: localeIdentifier,
@@ -180,7 +186,7 @@ final class NetworkClient {
                     }
                     guard (200...299).contains(httpResponse.statusCode) else {
                         VoiceTodoLog.network.error("proxy.stream.http_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) rateLimitType=\(httpResponse.value(forHTTPHeaderField: "X-RateLimit-Type") ?? "nil", privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-                        await pushQuotaHeaders(httpResponse)
+                        await pushQuotaHeaders(httpResponse, carriedSubscriptionJWS: carriedSubscriptionJWS)
                         if httpResponse.statusCode == 429 {
                             throw Self.classify429(httpResponse, body: nil)
                         }
@@ -192,7 +198,7 @@ final class NetworkClient {
                         }
                         throw VoiceTodoError.apiResponseInvalid(ErrorMessages.apiResponseInvalidDetail)
                     }
-                    await pushQuotaHeaders(httpResponse)
+                    await pushQuotaHeaders(httpResponse, carriedSubscriptionJWS: carriedSubscriptionJWS)
                     VoiceTodoLog.network.info("proxy.stream.connected id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) status=\(httpResponse.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
                     for try await line in bytes.lines {
@@ -310,9 +316,11 @@ final class NetworkClient {
     }
 
     /// 把代理 `X-Quota-*` 响应头推送给额度模型（权威数据源）。
-    private func pushQuotaHeaders(_ response: HTTPURLResponse) async {
+    /// `carriedSubscriptionJWS`：本次请求是否实际携带了订阅凭证，额度模型据此
+    /// 区分「订阅前的旧 free 快照」与「带了凭证仍被代理按 free 计」（后者是被拒）。
+    private func pushQuotaHeaders(_ response: HTTPURLResponse, carriedSubscriptionJWS: Bool) async {
         guard let quotaProvider else { return }
-        await quotaProvider.applyQuotaHeaders(from: response)
+        await quotaProvider.applyQuotaHeaders(from: response, carriedSubscriptionJWS: carriedSubscriptionJWS)
     }
 
     /// 区分配额耗尽（quota_exceeded → paywall）、出口 IP 当日配额（ip_daily → 离线兜底 + 明日再试）、

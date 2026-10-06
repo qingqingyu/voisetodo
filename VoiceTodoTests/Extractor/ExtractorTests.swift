@@ -684,6 +684,126 @@ extension ExtractorTests {
         }
     }
 
+    // MARK: - 额度头推送 × 订阅凭证是否随请求携带
+
+    /// NetworkClient 必须把「本次请求是否携带 X-Subscription-JWS」随 X-Quota-* 一起
+    /// 喂给额度模型：带了凭证而代理仍回 free 档 = 代理拒了这份订阅（验签失败 /
+    /// 计费宽限期 / 退款），展示层据此不再过渡到 Pro 档（QuotaUsage.proxyRejectedSubscription）。
+    @MainActor
+    func testQuotaHeadersCarrySubscriptionPresenceToQuotaModel() async throws {
+        URLProtocolStub.reset()
+        let quotaUsage = QuotaUsage()
+        let client = NetworkClient(
+            session: Self.stubSession,
+            proxyEndpoint: "https://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id",
+            subscriptionJWSProvider: { "signed-jws" },
+            quotaProvider: quotaUsage
+        )
+        URLProtocolStub.responses.append(.success(
+            statusCode: 200,
+            body: "{\"todos\":[],\"ignored\":\"\"}",
+            headers: ["X-Quota-Plan": "free", "X-Quota-Limit": "3", "X-Quota-Remaining": "2"]
+        ))
+
+        _ = try await client.callTodoExtractionProxy(transcript: "凭证被拒", localeIdentifier: "zh-Hans")
+
+        XCTAssertTrue(quotaUsage.proxyRejectedSubscription, "带凭证 + free 档 = 被拒")
+        XCTAssertEqual(quotaUsage.displayedLimit(storeKitIsPro: true), 3, "被拒后不得显示 Pro 常量")
+    }
+
+    /// 未携带凭证（provider 返回 nil / 空）的 free 档是正常免费用户，不置拒绝标志。
+    @MainActor
+    func testQuotaHeadersWithoutCredentialsDoNotFlagRejection() async throws {
+        URLProtocolStub.reset()
+        let quotaUsage = QuotaUsage()
+        let client = NetworkClient(
+            session: Self.stubSession,
+            proxyEndpoint: "https://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id",
+            subscriptionJWSProvider: { nil },
+            quotaProvider: quotaUsage
+        )
+        URLProtocolStub.responses.append(.success(
+            statusCode: 200,
+            body: "{\"todos\":[],\"ignored\":\"\"}",
+            headers: ["X-Quota-Plan": "free", "X-Quota-Limit": "3"]
+        ))
+
+        _ = try await client.callTodoExtractionProxy(transcript: "免费用户", localeIdentifier: "zh-Hans")
+
+        XCTAssertFalse(quotaUsage.proxyRejectedSubscription)
+    }
+
+    /// 配额耗尽的 429 也先喂额度头再抛错——被拒订阅用户撞上限时（生产中最常见的
+    /// 消费路径），quotaUsage 在 handleError/toast 之前就已带上拒绝标志。
+    @MainActor
+    func testQuotaExhausted429PushesHeadersWithSubscriptionPresence() async throws {
+        URLProtocolStub.reset()
+        let quotaUsage = QuotaUsage()
+        let client = NetworkClient(
+            session: Self.stubSession,
+            proxyEndpoint: "https://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id",
+            subscriptionJWSProvider: { "signed-jws" },
+            quotaProvider: quotaUsage
+        )
+        URLProtocolStub.responses.append(.success(
+            statusCode: 429,
+            body: #"{"error":"quota_exceeded","tier":"free","remaining":0,"resetAt":"2026-05-26"}"#,
+            headers: [
+                "X-RateLimit-Type": "quota",
+                "X-Quota-Plan": "free",
+                "X-Quota-Limit": "3",
+                "X-Quota-Reset-Date": "2026-05-26"
+            ]
+        ))
+
+        do {
+            _ = try await client.callTodoExtractionProxy(transcript: "被拒撞上限", localeIdentifier: "zh-Hans")
+            XCTFail("应抛出配额耗尽错误")
+        } catch let error as VoiceTodoError {
+            XCTAssertEqual(error, .quotaExhausted(tier: "free", resetAt: "2026-05-26"))
+            XCTAssertTrue(quotaUsage.proxyRejectedSubscription, "429 路径的额度头推送也要带凭证状态")
+        }
+    }
+
+    /// 流式路径同样要把「凭证是否随请求携带」喂给额度模型——非流式三个用例
+    /// 护不住流式闭包:重构时丢掉 carriedSubscriptionJWS 计算,只有这里会红。
+    @MainActor
+    func testStreamingQuotaHeadersCarrySubscriptionPresenceToQuotaModel() async throws {
+        URLProtocolStub.reset()
+        let quotaUsage = QuotaUsage()
+        let client = NetworkClient(
+            session: Self.stubSession,
+            proxyEndpoint: "https://proxy.test/v1/todo-extractions",
+            appToken: "test-app-token",
+            deviceIdentifier: "test-device-id",
+            subscriptionJWSProvider: { "signed-jws" },
+            quotaProvider: quotaUsage
+        )
+        URLProtocolStub.responses.append(.success(
+            statusCode: 200,
+            body: "data: {\"delta\":\"{\\\"todos\\\":[],\\\"ignored\\\":\\\"\\\"}\"}\n\ndata: [DONE]\n\n",
+            headers: ["X-Quota-Plan": "free", "X-Quota-Limit": "3", "X-Quota-Remaining": "2"]
+        ))
+
+        for try await _ in client.callTodoExtractionProxyStreaming(transcript: "流式凭证被拒", localeIdentifier: "zh-Hans") {}
+
+        XCTAssertTrue(quotaUsage.proxyRejectedSubscription, "流式连接响应的额度头推送也要带凭证状态")
+        XCTAssertEqual(quotaUsage.displayedLimit(storeKitIsPro: true), 3, "被拒后不得显示 Pro 常量")
+    }
+
+    /// URLProtocolStub 会话的共享构造（额度头推送测试用）。
+    private static var stubSession: URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        return URLSession(configuration: configuration)
+    }
+
     /// 传输类失败应重试，随后成功。
     func testTransportFailureRetriesThenSucceeds() async throws {
         mockNetworkClient.enqueueFailure(URLError(.networkConnectionLost))

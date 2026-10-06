@@ -3269,6 +3269,28 @@
         }
       }
     },
+    "error.subscription_rejected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscription verification failed. Your transcript is saved; free quota applies. Try restoring your purchase."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブスクリプションを検証できませんでした。文字起こしは保存済みです。購入の復元をお試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅验证未通过，已按免费额度处理。转写已保留，请尝试恢复购买"
+          }
+        }
+      }
+    },
     "error.transcript_too_long" : {
       "localizations" : {
         "en" : {
