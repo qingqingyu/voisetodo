@@ -83,6 +83,30 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
         VoiceTodoLog.network.warning("quota.update_failed authoritative=false loadState=error")
     }
 
+    // MARK: - 展示过渡（矛盾窗口期）
+
+    /// 展示用 limit。**矛盾窗口期** —— StoreKit 已判定 Pro（`EntitlementManager.isPro`，
+    /// 订阅成功本地即时生效）而本模型仍是订阅前的 free 档快照（代理 `X-Quota-*`
+    /// 只在下一次提取请求的响应到达，订阅成功本身不产生任何代理请求）——
+    /// 返回 `NetworkConfig.proDailyLimit` 过渡，避免已订阅用户在 paywall 看到
+    /// 「已订阅」状态卡与「x/3」免费额度自相矛盾。其余情况返回权威/估算 limit。
+    ///
+    /// `used` 由调用方保留：代理配额 key（`quota:<date>:<device>`）不分档位，
+    /// 免费期用量在订阅后同样计入当天配额，旧 used 对 Pro 档仍然准确。
+    /// 窗口在下一次 `applyQuotaHeaders` 后自动消失，调用方无需清理。
+    ///
+    /// 已知偏差：①若 `PAID_DAILY_LIMIT`（wrangler.toml）改配置而客户端常量未随
+    /// 版本同步，窗口期显示偏小（如 x/100 vs 实际 x/200），首次使用后被权威值
+    /// 纠正，双端同步前提下不存在此方向的「承诺偏大」。②反向场景：订阅过期后
+    /// `isPro` 停留 stale-true 而代理权威快照已翻 free 时，本方法短暂返回 Pro 常量
+    /// （显示偏大）—— 与 `comparisonCard` 分流同口径跟随 StoreKit 本地判定，
+    /// paywall 的 `refresh()` 翻正后自动消失，仅影响展示不影响执行。
+    /// 双端同步约定见 Constants.swift。
+    func displayedLimit(storeKitIsPro: Bool) -> Int {
+        guard storeKitIsPro, !isPro else { return limit }
+        return NetworkConfig.proDailyLimit
+    }
+
     // MARK: - 本地估算（无权威头时的后备）
 
     /// 记一次本地估算的用量增加（如离线补处理成功一条）。仅在非权威态下驱动 UI。

@@ -28,6 +28,12 @@ DAILY_REQUEST_LIMIT = "3"
 # Pro 档每设备每天调用上限。订阅验签（X-Subscription-JWS）通过后按此值放行。
 # ⚠️ 不配置此项 = Pro 订阅完全无效：resolveSubscriptionTier 的 hasPaidLimit 为 false
 #    时直接返回 free 档，连 JWS 都不验签，付费用户和免费用户拿到完全一样的额度。
+# ⚠️ 改此值必须同步 iOS 客户端 Protocols/Constants.swift 的 proDailyLimit
+#    （手动双端同步，无自动机制）。生效路径不对称：本值 deploy 即时全量生效，
+#    客户端常量要等 App 发版 + 用户升级。额度执行永远以本值为准，客户端常量
+#    只影响 paywall 对比卡与「刚订阅、代理响应未到」矛盾窗口期的展示数字
+#    （QuotaUsage.displayedLimit）；不同步 → 窗口期展示偏差，首次使用后被
+#    X-Quota-Limit 权威值纠正。
 PAID_DAILY_LIMIT = "100"
 # ─── 订阅 JWS 验签（Pro 档判定）──────────────────────────────────────────────
 # 两个值必须与 iOS 端逐字一致：bundle = project.yml 主 target 的

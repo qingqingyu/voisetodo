@@ -617,8 +617,15 @@ final class AppCoordinator: ObservableObject {
             for _ in 0..<recoveryCount { quotaUsage.recordLocalUsageIncrement(background: true) }
         }
         // Pro 档也是有限额度，两档统一显示「已用 used/limit」。
+        // limit 经 displayedLimit 过渡：补处理响应缺 X-Quota-* 头（非权威态）且
+        // 用户已订阅时，避免「已用 x/3」的免费档数字对订阅用户造成困惑 —— 与
+        // paywall 实时用量卡同一口径。
         let used = quotaUsage.used
-        var message = String(format: String(localized: "quota.today_used"), used, quotaUsage.limit)
+        var message = String(
+            format: String(localized: "quota.today_used"),
+            used,
+            quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+        )
         if recoveryCount > 0 {
             message += " " + String(format: String(localized: "quota.including_background"), recoveryCount)
         }
