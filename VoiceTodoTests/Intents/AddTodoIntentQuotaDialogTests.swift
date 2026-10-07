@@ -50,4 +50,23 @@ final class AddTodoIntentQuotaDialogTests: XCTestCase {
             .freeExhausted
         )
     }
+
+    /// snippet 卡片与口播同口径:被拒时覆盖为「订阅验证未通过」,其余沿用 errorDescription(nil)。
+    func testSnippetMessageOverridesOnlyForRejectedSubscription() {
+        XCTAssertEqual(
+            AddTodoIntent.fallbackSnippetMessage(
+                for: .quotaExhausted(tier: "free", resetAt: ""), carriedSubscriptionJWS: true),
+            ErrorMessages.subscriptionRejected
+        )
+        XCTAssertNil(AddTodoIntent.fallbackSnippetMessage(
+            for: .quotaExhausted(tier: "free", resetAt: ""), carriedSubscriptionJWS: false))
+        XCTAssertNil(AddTodoIntent.fallbackSnippetMessage(
+            for: .quotaExhausted(tier: "pro", resetAt: ""), carriedSubscriptionJWS: true))
+        // 未知档位即使带了凭证也不覆盖 —— 与 testUnknownTierIsNotTreatedAsRejection
+        // 同口径：snippet 层不得谎报「订阅验证未通过」。
+        XCTAssertNil(AddTodoIntent.fallbackSnippetMessage(
+            for: .quotaExhausted(tier: "team", resetAt: ""), carriedSubscriptionJWS: true))
+        XCTAssertNil(AddTodoIntent.fallbackSnippetMessage(for: .networkUnavailable, carriedSubscriptionJWS: true))
+        XCTAssertNil(AddTodoIntent.fallbackSnippetMessage(for: nil, carriedSubscriptionJWS: true))
+    }
 }

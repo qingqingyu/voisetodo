@@ -71,6 +71,15 @@ Siri 路径同口径收口(2026-10-07 二次):`AddTodoIntent` 的 quotaExhausted
 (无「免费」字样),其余→`error.quota_exhausted`;`VoiceTodoError.errorDescription`
 对 tier=="pro" 同步改 Pro 口径(Siri snippet 等直接消费 errorDescription 的通用面)。
 
+2.8 收尾两处(2026-10-07 三次):
+- Siri snippet 卡片与口播不一致:被拒时口播「订阅验证未通过」,卡片却渲染
+  `errorDescription`(tier=="free" 恒为「今日免费额度已用完」)。`AddTodoIntentView`
+  增加 `fallbackMessage` 覆盖,`AddTodoIntent.fallbackSnippetMessage` 与口播同一判定。
+- 被拒标志在换凭证后不清:按提示恢复购买 / 重新订阅成功后,`proxyRejectedSubscription`
+  仍是旧凭证的判定,付费墙继续显示 x/3 直到下一次提取请求。`VoiceTodoApp` 监听
+  `entitlementManager.jwsString` 变为新的非空值时调 `QuotaUsage.clearSubscriptionRejection()`,
+  回到「刚订阅、代理未表态」的过渡态。
+
 ## 3. 已知局限(未改,需决策)
 
 ### 3.1 退款后旧 JWS 仍可用到原到期日

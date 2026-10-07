@@ -6,6 +6,8 @@ import AppIntents
 struct AddTodoIntentView: View {
     let todos: [ExtractedTodo]
     let fallbackError: VoiceTodoError?
+    /// 覆盖 `fallbackError.errorDescription` 的文案(被拒订阅等需要请求上下文才能定的口径)。
+    var fallbackMessage: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -51,7 +53,7 @@ struct AddTodoIntentView: View {
                 HStack(spacing: 4) {
                     Image(systemName: fallbackError == .networkUnavailable ? "wifi.slash" : "exclamationmark.triangle")
                         .font(.system(size: 12))
-                    Text(fallbackError.errorDescription ?? ErrorMessages.unexpectedError)
+                    Text(fallbackMessage ?? fallbackError.errorDescription ?? ErrorMessages.unexpectedError)
                         .font(.system(size: 13))
                 }
                 .foregroundStyle(.orange)

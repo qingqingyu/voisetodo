@@ -155,6 +155,15 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
         }
     }
 
+    /// 订阅凭证换了(重新购买 / 恢复购买 / 续订):上一次「被拒」判定针对的是旧凭证,
+    /// 新凭证尚未经代理表态 —— 回到「刚订阅、代理响应未到」的过渡态,
+    /// 否则用户按提示恢复购买成功后,付费墙仍显示 x/3,直到下一次提取请求。
+    func clearSubscriptionRejection() {
+        guard proxyRejectedSubscription else { return }
+        proxyRejectedSubscription = false
+        VoiceTodoLog.network.info("quota.subscription_rejection_cleared reason=credential_changed")
+    }
+
     /// 重置为初始空态（如切换账号 / 调试）。
     func reset() {
         used = 0
