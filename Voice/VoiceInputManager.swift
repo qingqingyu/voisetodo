@@ -308,11 +308,32 @@ final class VoiceInputManager: VoiceInputProtocol {
         // 这样可以确保 transcript 是最终识别结果
     }
 
+    /// 非用户触发的录音收尾(到达时长上限 / 识别器自行给出最终结果)。
+    /// 有转写就走与静音自动提交同一条路径:置 `didAutoFinishDueToSilence` → UI 触发
+    /// handlePanelSend → stopRecordingAndProcess 送解析;action-button 流程则由
+    /// waitForAutoStop 接手。没有转写才直接停——没有可丢的内容。
+    /// 曾经这里直接 stopRecording():isRecording 落下却无人接手转写,用户随后点发送
+    /// 只得到「录音未活跃」,整段话(最长 90 秒)既没解析也没落库。
+    private func autoFinishRecording(reason: String) {
+        guard !transcript.isEmpty else {
+            stopRecording()
+            return
+        }
+        VoiceTodoLog.voice.info("recording.auto_finish id=\(self.recordingSessionID ?? "none", privacy: .public) reason=\(reason, privacy: .public) transcriptChars=\(self.transcript.count)")
+        didAutoFinishDueToSilence = true
+        finishRecording()
+    }
+
     // MARK: - Recognition Pipeline
 
     /// 创建识别请求并启动识别任务
     /// 从 startRecording() 提取，便于中断恢复时复用
     private func startRecognition(recognizer: SFSpeechRecognizer) throws {
+        // 本次识别任务所属的录音会话。回调派发到主线程时比对:被 cancel 的旧任务
+        // 仍可能晚到一次(取消错误 / 残留 partial),此时若用户已开始新一轮录音,
+        // 单靠 isRecording 守卫会把旧回调误认成新会话的——收掉新录音或覆盖新转写。
+        let sessionID = recordingSessionID
+
         // 清理旧的识别任务
         recognitionTask?.cancel()
         recognitionTask = nil
@@ -331,6 +352,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                 // 更新转写文本（派发到主线程，确保 @Published 属性线程安全）
                 let newTranscript = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
+                    guard self.recordingSessionID == sessionID else { return }
                     self.transcript = newTranscript
                     self.updateLiveActivity(transcript: newTranscript)
                 }
@@ -338,7 +360,8 @@ final class VoiceInputManager: VoiceInputProtocol {
                 // 如果是最终结果，停止录音（派发到主线程避免与 processAudioMetrics 竞态）
                 if result.isFinal {
                     DispatchQueue.main.async {
-                        VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count)")
+                        guard self.recordingSessionID == sessionID else { return }
+                        VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count) requested=\(self.hasFinishedRecording)")
                         let durationMS = self.recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
                         Telemetry.record(.recordingOutcome(outcome: .success, durationMS: durationMS, transcript: self.transcript))
                         // 通知外部订阅者:本次录音成功完成(用于付费墙第 N 次引导等累计计数)。
@@ -347,7 +370,13 @@ final class VoiceInputManager: VoiceInputProtocol {
                         if !newTranscript.isEmpty {
                             self.recordingSuccessSubject.send(())
                         }
-                        self.stopRecording()
+                        if self.hasFinishedRecording {
+                            self.stopRecording()
+                        } else {
+                            // 用户还没说完、识别器就自行收尾(服务端识别单任务约 1 分钟上限等):
+                            // 直接 stopRecording 会让这段转写无人接手,走自然收尾路径送解析。
+                            self.autoFinishRecording(reason: "unrequested_final")
+                        }
                     }
                 }
             }
@@ -357,8 +386,9 @@ final class VoiceInputManager: VoiceInputProtocol {
                 if isFinal {
                     // 识别终止且伴随错误，设置错误状态让 UI 可感知
                     DispatchQueue.main.async {
-                        // 已被看门狗/正常停止收敛时，忽略陈旧的取消回调，避免覆盖既有错误
-                        guard self.isRecording else { return }
+                        // 已被看门狗/正常停止收敛时，忽略陈旧的取消回调，避免覆盖既有错误；
+                        // 会话比对挡住「旧任务的取消回调晚到、误杀新一轮录音」。
+                        guard self.isRecording, self.recordingSessionID == sessionID else { return }
                         // 识别器初始化失败（模拟器缺 Siri asset / runtime 故障）映射为
                         // speechRecognitionUnavailable，让上层能自动切键盘 fallback，
                         // 而不是弹"录音失败"toast 让用户干瞪眼。
@@ -672,7 +702,7 @@ final class VoiceInputManager: VoiceInputProtocol {
             VoiceTodoLog.voice.info("recording.max_duration_reached id=\(self.recordingSessionID ?? "none", privacy: .public) maxSeconds=\(VoiceConstants.maxRecordingSeconds)")
             let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
             Telemetry.record(.recordingOutcome(outcome: .maxDurationReached, durationMS: durationMS, transcript: transcript))
-            stopRecording()
+            autoFinishRecording(reason: "max_duration")
             return
         }
 
