@@ -167,9 +167,19 @@ struct AddTodoIntent: AppIntent {
                 dialog = "error.ip_rate_limited"
             case .serviceUnavailable:
                 dialog = "error.service_busy"
-            case .quotaExhausted:
-                // 「今日免费额度已用完，已离线保存」——文案已存在，与 App 内同源
-                dialog = "error.quota_exhausted"
+            case .quotaExhausted(let tier, _):
+                // 与 App 内 AppCoordinator.proQuotaBlockedToastMessage 同口径的分流：
+                // 被拒订阅用户听到「订阅验证未通过/恢复购买」而非「免费额度用完」，
+                // Pro 用户不听到「免费」字样。intent 进程没有 QuotaUsage 实例可读
+                // 拒绝标志，改用错误自带的 tier（代理计费口径）+ 本次是否携带凭证判定。
+                switch Self.quotaExhaustedDialog(tier: tier, carriedSubscriptionJWS: !(subscriptionJWS?.isEmpty ?? true)) {
+                case .subscriptionRejected:
+                    dialog = "error.subscription_rejected"
+                case .proExhausted:
+                    dialog = "error.quota_exhausted_pro"
+                case .freeExhausted:
+                    dialog = "error.quota_exhausted"
+                }
             default:
                 dialog = "siri.result.extract_failed"
             }
@@ -210,6 +220,31 @@ struct AddTodoIntent: AppIntent {
         let entitlements = EntitlementManager(enableTransactionListener: false)
         await entitlements.refreshEntitlements()
         return entitlements.jwsString
+    }
+
+    /// quotaExhausted 时 Siri 口播文案的三分流（App 内对应
+    /// `AppCoordinator.proQuotaBlockedToastMessage`）。intent 进程没有 `QuotaUsage`
+    /// 实例可读拒绝标志，改用错误自带的 tier（代理计费口径，worker.js
+    /// quota_exceeded 的 429 body）+ 本次请求是否实际携带凭证判定。
+    enum QuotaExhaustedDialog: Equatable {
+        /// 带了凭证仍按 free 计 = 订阅被代理拒（验签失败/宽限期/退款）→ 提示恢复购买。
+        case subscriptionRejected
+        /// 按 pro 计的用户撞 Pro 上限（不含「免费」字样）。
+        case proExhausted
+        /// 真免费用户。
+        case freeExhausted
+    }
+
+    /// 按代理计费口径（tier）+ 本次是否携带凭证分流 quotaExhausted 的 Siri 口播文案。
+    ///
+    /// 判定与 `QuotaUsage.applyQuotaHeaders` 的 `proxyRejectedSubscription` 同口径
+    /// （带了凭证 + 代理明确按 free 计 = 被拒）。已知限制：tier 在 `NetworkClient`
+    /// 构造错误时已兜底成 `"free"`，代理**未表态**档位（现网 worker 两条
+    /// quota_exceeded 路径 body 恒带 tier，仅代理回归时可能出现）会被折叠成
+    /// free 口径——与 App 侧「未表态不臆断」原则的偏差以文案口径为限。
+    static func quotaExhaustedDialog(tier: String, carriedSubscriptionJWS: Bool) -> QuotaExhaustedDialog {
+        if carriedSubscriptionJWS, tier == "free" { return .subscriptionRejected }
+        return tier == "pro" ? .proExhausted : .freeExhausted
     }
 
     private static func todosWithInputLocale(_ todos: [ExtractedTodo], localeIdentifier: String) -> [ExtractedTodo] {
