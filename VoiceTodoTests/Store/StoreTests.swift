@@ -42,6 +42,51 @@ final class StoreTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - Schema V1 基线(1.0 发版冻结)
+
+    /// 1.0 发版时的存储字段快照:实体名 → [属性名: 是否 Optional]。
+    /// 这个测试挂了 = 改动了已发布的存储结构。先读 docs/swiftdata-schema-v1-baseline.md:
+    /// 轻量迁移能覆盖的(新增 Optional / 带默认值字段)更新本快照即可;
+    /// 改类型 / 改名 / 删字段 / 改关系,必须先把 V1 冻结进 VersionedSchema 再动。
+    func testSchemaMatchesFrozenV1Baseline() {
+        let frozenV1: [String: [String: Bool]] = [
+            "TodoItem": [
+                "id": false, "title": false, "detail": true, "dueHint": true, "dueDate": true,
+                "hasDueTime": false, "timeBucketRaw": true, "recurrenceFrequencyRaw": true,
+                "recurrenceWeekdaysRaw": true, "recurrenceDayOfMonth": true, "recurrenceEndDate": true,
+                "recurrenceInterval": false, "reminderTimesRaw": true, "reminderOffsetMinutes": true,
+                "priorityRaw": false, "categoryRaw": false, "isCompleted": false, "completedAt": true,
+                "createdAt": false, "rawTranscript": true, "needsAIProcessing": false, "sortOrder": false,
+                "systemCalendarEventIdentifier": true, "localeIdentifier": true,
+                "extractionOutcomeRaw": false, "sourceRaw": false, "parentCalendarEventIdentifier": true,
+                "eventEndDate": true, "abandonedAt": true, "parentTodoId": true
+            ],
+            "TodoOccurrenceCompletion": [
+                "occurrenceKey": false, "id": false, "todoId": false, "occurrenceDate": false, "completedAt": false
+            ],
+            "VoiceCaptureRecord": [
+                "id": false, "transcript": false, "createdAt": false, "statusRaw": false, "sourceRaw": false,
+                "localeIdentifier": false, "generatedTodoCount": false, "generatedTodoIDsRaw": false,
+                "pendingTodoID": true, "errorMessage": true
+            ],
+            "TaskEvent": [
+                "id": false, "todoId": false, "typeRaw": false, "fromDate": true, "toDate": true,
+                "at": false, "originRaw": false
+            ]
+        ]
+
+        var actual: [String: [String: Bool]] = [:]
+        for entity in VoiceTodoSchema.schema.entities {
+            XCTAssertTrue(entity.relationships.isEmpty, "\(entity.name) 新增了关系,超出 V1 基线,见 docs/swiftdata-schema-v1-baseline.md")
+            actual[entity.name] = Dictionary(uniqueKeysWithValues: entity.attributes.map { ($0.name, $0.isOptional) })
+        }
+
+        XCTAssertEqual(Set(actual.keys), Set(frozenV1.keys), "实体集合与 V1 基线不一致")
+        for (name, attributes) in frozenV1 {
+            XCTAssertEqual(actual[name], attributes, "\(name) 的存储字段与 V1 基线不一致,见 docs/swiftdata-schema-v1-baseline.md")
+        }
+    }
+
     // MARK: - P6: 缓存失效契约
 
     func testRefreshIfStaleSkipsWhenVersionUnchanged() {

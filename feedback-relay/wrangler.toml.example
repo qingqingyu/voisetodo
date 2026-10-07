@@ -15,6 +15,16 @@ workers_dev = true
 # 这里不存放任何敏感值。客户端通过 X-App-Token 携带的 token,
 # 必须与 AIProxy 用的 APP_TOKEN 完全一致(同一个 App 的客户端身份)。
 # 用 `wrangler secret put APP_TOKEN` 注入。
+# 全局每小时反馈上限(按 D1 归档条数计),默认 30。
+# FEEDBACK_HOURLY_LIMIT = "30"
+
+# ─── 单 IP 限流 ─────────────────────────────────────────────────────────────
+# Workers Rate Limiting binding,同一 IP 每 60 秒最多 3 条。
+# namespace_id 在本账号内唯一即可(自定义整数字符串)。不配则只剩全局闸门。
+[[ratelimits]]
+name = "FEEDBACK_IP_LIMITER"
+namespace_id = "1101"
+simple = { limit = 3, period = 60 }
 
 # ─── D1 反馈归档 ────────────────────────────────────────────────────────────
 # 创建:`wrangler d1 create voicetodo-feedback`
