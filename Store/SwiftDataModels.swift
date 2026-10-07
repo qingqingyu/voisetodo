@@ -635,6 +635,8 @@ private extension Array where Element: Hashable {
 /// App 与 Widget / AppIntent 共享的 SwiftData schema。
 /// 任何 @Model 类型变更都必须在此处同步注册，避免双处字面量不同步导致
 /// `ModelContainer` 初始化时抛 schema mismatch。
+/// 1.0 发版即冻结为 V1:存储字段改动先读 docs/swiftdata-schema-v1-baseline.md
+/// (`StoreTests.testSchemaMatchesFrozenV1Baseline` 守护)。
 enum VoiceTodoSchema {
     /// 当前 App 注册的所有 SwiftData @Model 类型。
     static let schema = Schema([

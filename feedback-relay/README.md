@@ -52,6 +52,9 @@ cp wrangler.toml.example wrangler.toml
 
 打开 `wrangler.toml`,把 `database_id = "your-d1-database-id-here"` 替换成上一步拿到的 ID。
 
+**已部署过的旧 `wrangler.toml`**:把模板里的 `[[ratelimits]]` 段(单 IP 限流)补进去再 deploy。
+不补也能跑,只是只剩全局每小时闸门。
+
 ### 4. 初始化 D1 schema
 
 ```bash
@@ -147,6 +150,17 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN
 
 旧 token 即刻失效。本仓库的 README/示例从不写入真实 token,所以 git 历史里没有泄露点,这一步只是额外保险。
 
+## 速率限制
+
+`APP_TOKEN` 在 App 包里,可被提取,所以 token 校验只挡得住随手扫端点的。校验通过后、读 body 前再过两道:
+
+| 闸门 | 实现 | 默认 | 超限 |
+|---|---|---|---|
+| 单 IP | Rate Limiting binding `FEEDBACK_IP_LIMITER`(`CF-Connecting-IP`) | 3 条 / 60 秒 | 429 `scope=ip` |
+| 全局 | D1 最近 1 小时归档条数 | 30 条 / 小时(`FEEDBACK_HOURLY_LIMIT` 覆盖) | 429 `scope=global` |
+
+被拒的请求不归档、不推 Telegram。闸门自身出错一律放行(反馈是低风险写入)。客户端把 429 当普通发送失败处理。
+
 ## 失败行为
 
 - **客户端 → Worker 网络故障**:客户端显示"反馈发送失败",建议稍后重试(用户重试可双倍补单,D1 端会去重靠 `received_at` 窗口)
@@ -178,10 +192,9 @@ npx wrangler tail voicetodo-feedback
 - `feedback.telegram_failed` - Telegram 推送失败(看 `error` 字段)
 - `feedback.archive_failed` - D1 写失败
 - `feedback.auth.failed` - APP_TOKEN 校验失败(注意:可能有人在扫端点)
+- `feedback.rate_limited` - 被限流(`scope=ip|global`;持续出现 `global` 说明 token 可能已泄露,考虑 rotate)
 
 ## 没做的事(故意不做的)
 
 - **不存截图到 D1**:Telegram 本身是存储,Worker 端不重复存。如果想做反馈 dashboard 再考虑
-- **不做速率限制**:APP_TOKEN 校验已经挡住外部乱灌,App 内的反馈频率上限放在客户端(后续可加)
-- **不做 worker.test.js**:第一版跑通主链路,后续再加。AIProxy 的 worker.test.js 模式可参考
 - **不做 SMTP 邮件兜底**:Telegram 一条渠道够用

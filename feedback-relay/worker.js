@@ -11,6 +11,10 @@ const MAX_SCREENSHOT_BYTES = 3 * 1024 * 1024; // 单张截图 3MB 上限(Telegra
 const MAX_DESCRIPTION_CHARS = 4000;
 const MAX_TRANSCRIPT_CHARS = 1000; // 上下文 transcript 截断
 const MAX_TITLE_CHARS = 200;
+// 全局每小时上限(按 D1 已归档条数计)。APP_TOKEN 在 App 包里可被提取,
+// 没有这道闸门时拿到 token 就能无限刷 Telegram 推送 + 灌满 D1。
+// 正常反馈量远低于此;可用 FEEDBACK_HOURLY_LIMIT 覆盖。
+const DEFAULT_HOURLY_LIMIT = 30;
 
 const VALID_TYPES = new Set([
   "translation",   // 翻译问题
@@ -46,6 +50,13 @@ export async function handleRequest(request, env, ctx) {
   if (authError) {
     log("warn", "feedback.auth.failed", { reason: authError.reason });
     return authError.response;
+  }
+
+  // 限流放在读 body 之前:被拒的请求不付流式读取 5MB 的代价
+  const limited = await enforceRateLimits(request, env);
+  if (limited) {
+    log("warn", "feedback.rate_limited", { scope: limited.scope });
+    return jsonResponse({ error: "rate_limited", scope: limited.scope }, 429);
   }
 
   const declaredLength = Number(request.headers.get("content-length") || "0");
@@ -149,6 +160,42 @@ function validateAppToken(request, env) {
     };
   }
   return null;
+}
+
+// 两道闸门,任一超限返回 { scope }:
+// - ip:Workers Rate Limiting binding `FEEDBACK_IP_LIMITER`(按 CF-Connecting-IP,
+//   配置见 wrangler.toml.example)。未绑定则跳过——旧部署不会因缺 binding 挂掉。
+// - global:D1 最近一小时归档条数 >= 上限。挡换 IP 刷量,也护住 Telegram 推送。
+// 限流自身出错一律放行(fail-open):反馈是低风险写入,不能因为闸门故障丢用户反馈。
+export async function enforceRateLimits(request, env) {
+  if (env.FEEDBACK_IP_LIMITER) {
+    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    try {
+      const { success } = await env.FEEDBACK_IP_LIMITER.limit({ key: ip });
+      if (!success) return { scope: "ip" };
+    } catch (error) {
+      log("warn", "feedback.rate_limit.ip_check_failed", errorFields(error));
+    }
+  }
+
+  if (env.FEEDBACK_DB) {
+    const limit = resolveHourlyLimit(env);
+    try {
+      const row = await env.FEEDBACK_DB.prepare(
+        "SELECT COUNT(*) AS n FROM feedback WHERE received_at > ?"
+      ).bind(Date.now() - 60 * 60 * 1000).first();
+      if (Number(row?.n ?? 0) >= limit) return { scope: "global" };
+    } catch (error) {
+      log("warn", "feedback.rate_limit.global_check_failed", errorFields(error));
+    }
+  }
+
+  return null;
+}
+
+function resolveHourlyLimit(env) {
+  const parsed = Number.parseInt(String(env.FEEDBACK_HOURLY_LIMIT ?? "").trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HOURLY_LIMIT;
 }
 
 async function readPayload(request) {
