@@ -32,10 +32,13 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
-    /// 购买成功计数(只增不减的事件信号,与 isPro 状态解耦)。paywall 收起与成功 toast 观察它:
+    /// 购买成功计数(只增不减的事件信号,与 isPro 状态解耦)。付费墙「订阅成功」反馈观察它:
     /// isPro 在订阅过期后可能停留在 stale-true,二次购买成功时无 false→true 跳变,
-    /// 靠 isPro 跳变驱动收起会漏(2026-08 二次订阅「成功但不收起」事故根因之一)。
+    /// 靠 isPro 跳变驱动反馈会漏(2026-08 二次订阅「成功但不收起」事故根因之一)。
     @Published private(set) var purchaseSuccessCount = 0
+    /// 最近一次刷新是否「有本 App 订阅、但验签不过、且没有任何可信订阅」。
+    /// 用于购买返回非成功时给出可行动的提示(恢复购买),而不是静默。
+    private var hasUnverifiedEntitlement = false
     /// 当前 Apple ID 是否还能享受该订阅组的介绍性优惠（免费试用）。
     /// 老用户退订后重订将为 false —— 此时必须隐藏试用文案（App Store 审核要求）。
     @Published private(set) var isEligibleForIntroOffer = false
@@ -175,8 +178,23 @@ final class EntitlementManager: ObservableObject {
         var expiration: Date?
         // currentEntitlements 只返回当前生效（未过期、未退款）的权益。撤销/升级两道过滤是防御:
         // 代理零信任会拒掉带 revocationDate 的 JWS,客户端不该把它当 Pro 发出去。
+        var unverifiedCount = 0
         for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else { continue }
+            let transaction: Transaction
+            switch result {
+            case .verified(let verified):
+                transaction = verified
+            case .unverified(let unverified, let error):
+                guard Self.productIDs.contains(unverified.productID) else { continue }
+                // 旧代码这里静默 continue:StoreKit 明明认为已订阅(再点购买弹「你已订阅」),
+                // App 却按未订阅渲染,且日志里毫无痕迹。至少要留痕,才能区分「没买到」与「验签失败」。
+                VoiceTodoLog.app.warning("entitlement.entitlement_unverified productID=\(unverified.productID, privacy: .public) environment=\(unverified.environment.rawValue, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                guard Self.trustsUnverifiedLocally(unverified) else {
+                    unverifiedCount += 1
+                    continue
+                }
+                transaction = unverified
+            }
             guard Self.productIDs.contains(transaction.productID) else { continue }
             guard transaction.revocationDate == nil, !transaction.isUpgraded else { continue }
             // 多条时取到期最晚的一条(JWS 与「有效期至」同源),不依赖遍历顺序。
@@ -188,13 +206,27 @@ final class EntitlementManager: ObservableObject {
             jws = result.jwsRepresentation
             expiration = transaction.expirationDate
         }
+        hasUnverifiedEntitlement = !foundPro && unverifiedCount > 0
         scheduleExpirationRefresh(at: expiration)
         let changed = isPro != foundPro || jwsString != jws || subscriptionExpirationDate != expiration
         isPro = foundPro
         jwsString = jws
         subscriptionExpirationDate = expiration
-        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) changed=\(changed)")
+        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed)")
         return changed
+    }
+
+    /// 验签失败的权益是否仍在本地按 Pro 渲染。仅 DEBUG + Xcode 本地 StoreKit 环境:
+    /// Command+R 真机调试时交易由 Xcode 本地证书签发,端侧验签可能不过,
+    /// 不放行就会出现「系统说已订阅、App 显示未订阅」。只影响客户端 UI ——
+    /// 代理锚定 Apple 根证书,Xcode 签发的 JWS 本来就按免费档处理(见 docs/payment-test-plan.md)。
+    /// Release 构建永远不信任未验签交易(Xcode 环境交易也不可能出现在 TestFlight/App Store)。
+    private static func trustsUnverifiedLocally(_ transaction: Transaction) -> Bool {
+        #if DEBUG
+        return transaction.environment == .xcode
+        #else
+        return false
+        #endif
     }
 
     /// 在订阅到期时刻(+2s 余量)重读一次权益。续订成功会经 Transaction.updates 推送并重排本任务;
@@ -224,6 +256,8 @@ final class EntitlementManager: ObservableObject {
                 case .unverified(let transaction, let error):
                     // 不 finish、不授信,但必须留痕 —— 静默丢弃会让续订/到账的验签异常无从归因。
                     VoiceTodoLog.app.warning("entitlement.transaction_unverified transactionID=\(transaction.id) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    // 是否授信由 performEntitlementRefresh 统一判定(DEBUG + Xcode 环境放行),这里只触发重读。
+                    await self.refreshEntitlements()
                 }
             }
         }
@@ -241,6 +275,7 @@ final class EntitlementManager: ObservableObject {
         isPurchasing = true
         lastError = nil
         defer { isPurchasing = false }
+        let wasPro = isPro
         do {
             let outcome = try await product.purchase()
             switch outcome {
@@ -251,6 +286,7 @@ final class EntitlementManager: ObservableObject {
                     await refreshEntitlements()
                     purchaseSuccessCount += 1
                     VoiceTodoLog.app.info("entitlement.purchase_success productID=\(product.id, privacy: .public) isPro=\(self.isPro)")
+                    return
                 case .unverified(let transaction, let error):
                     // 端侧 StoreKit 验签失败:不 finish(不可信交易不授信也不消费,Apple
                     // checkVerified 范式),显式报错而非静默 —— 旧代码这里什么都不做还照打
@@ -272,6 +308,23 @@ final class EntitlementManager: ObservableObject {
         } catch {
             VoiceTodoLog.app.error("entitlement.purchase_failed productID=\(product.id, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             lastError = ErrorMessages.paywallPurchaseFailed
+        }
+        await reconcileAfterNonSuccessPurchase(productID: product.id, wasPro: wasPro)
+    }
+
+    /// 购买没有走到「verified 成功」时,以 StoreKit 当前权益为准再对账一次。
+    /// 典型场景:App 的 isPro 是 stale-false,用户再点购买,系统弹「你已订阅」后
+    /// purchase() 返回取消/失败 —— 此前 App 什么都不做,用户只能从系统弹窗得知已订阅。
+    /// 对账后发现已是 Pro → 按购买成功处理(付费墙原地切到「订阅成功」);
+    /// 仍不是 Pro 但存在验签失败的订阅 → 明确提示恢复购买,不再静默。
+    private func reconcileAfterNonSuccessPurchase(productID: String, wasPro: Bool) async {
+        await refreshEntitlements()
+        if isPro, !wasPro {
+            lastError = nil
+            purchaseSuccessCount += 1
+            VoiceTodoLog.app.info("entitlement.purchase_reconciled productID=\(productID, privacy: .public)")
+        } else if !isPro, hasUnverifiedEntitlement, lastError == nil {
+            lastError = ErrorMessages.paywallPurchaseUnverified
         }
     }
 

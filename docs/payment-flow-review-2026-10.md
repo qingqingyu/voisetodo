@@ -80,6 +80,25 @@ Siri 路径同口径收口(2026-10-07 二次):`AddTodoIntent` 的 quotaExhausted
   `entitlementManager.jwsString` 变为新的非空值时调 `QuotaUsage.clearSubscriptionRejection()`,
   回到「刚订阅、代理未表态」的过渡态。
 
+### 2.9 已订阅却显示未订阅 + 买完当前页无成功反馈(2026-10-07)
+用户真机(scheme 挂 Products.storekit,系统弹窗显示 `[Environment: Xcode]`)报告:
+① 订阅成功后从设置进付费墙仍是免费档购买 UI(`0/3`、商品列表);
+② 买完当前页没有任何「成功」反馈,再点一次购买才由系统弹「你已订阅」告知。
+两条现象同源:StoreKit 认为已订阅,但 `currentEntitlements` 里那条交易没有通过
+`.verified` 过滤,`isPro` 恒为 false;旧代码对 `.unverified` 权益静默 `continue`,日志无痕。
+- `performEntitlementRefresh`:验签失败的本 App 订阅一律留痕
+  `entitlement.entitlement_unverified`(含 environment 与错误);**仅 DEBUG + Xcode 环境**
+  本地按 Pro 渲染(Release 永不信任未验签交易;代理锚定 Apple 根证书,Xcode 签发 JWS
+  本来就按免费档计,不影响计费)。`Transaction.updates` 的 unverified 也触发重读。
+- `purchase()`:未走到 verified 成功(取消 / 抛错 / unverified / 未知)时以
+  `currentEntitlements` 再对账一次——原来不是 Pro、对账后是 Pro → 按购买成功处理
+  (覆盖「系统弹你已订阅」那一下);仍不是 Pro 但有验签失败的订阅 → 提示恢复购买。
+- 付费墙:购买/恢复成功**不再自动收起 + 主视图 toast**(sheet 下层的 toast 本就被盖住),
+  改为原地切到已订阅态,购买成功时状态卡标题为「订阅成功」并做 VoiceOver 播报,用户点 × 关闭。
+  S20 Step 6 同步改为断言原地出现 `PaywallSubscribedCard`。
+- 注意:Xcode 本地 StoreKit 下额度仍会是免费档 `x/3`(代理验签不过,见 payment-test-plan
+  「大坑」),要看到 `x/100` 必须走沙盒账号或 TestFlight。
+
 ## 3. 已知局限(未改,需决策)
 
 ### 3.1 退款后旧 JWS 仍可用到原到期日
@@ -110,6 +129,6 @@ Siri 路径同口径收口(2026-10-07 二次):`AddTodoIntent` 的 quotaExhausted
 | 未订阅 | 对比胶囊/用量 → 价值卡 → 商品 → CTA(试用资格决定文案)→ 法务 + 恢复 | 升级 VoiceTodo Pro | 首次 wow / 第 5 次录音 / 耗尽,14 天冷却 | 弹付费墙 |
 | 商品加载失败 | 空态/错误卡 + 重试,CTA 不渲染,法务链接与恢复仍可点 | 同上 | 同上 | 同上 |
 | 购买中 | CTA spinner + 禁用,商品卡禁用,恢复禁用 | — | — | — |
-| 购买成功 | `purchaseSuccessCount` 驱动收起 + 成功 toast | — | — | — |
+| 购买成功 | `purchaseSuccessCount` 驱动原地切到已订阅态(标题「订阅成功」),不自动收起(2.9) | — | — | — |
 | 已订阅 | 实时用量 → 已订阅卡(有效期至)→ 法务 + 恢复,无购买按钮 | 你已订阅 Pro | 不弹 | toast「Pro 额度已用完」,不弹;凭证被代理拒时改 toast「订阅验证未通过」(2.8) |
 | 订阅过期(前台) | 到期 +2s 自动退回未订阅 UI | 下次打开设置即恢复「升级」 | 恢复 | 弹付费墙 |
