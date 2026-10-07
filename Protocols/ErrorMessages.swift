@@ -23,7 +23,8 @@ enum ErrorMessages {
     static let ipRateLimited = String(localized: "error.ip_rate_limited")
     static let quotaExhausted = String(localized: "error.quota_exhausted")
     /// 已订阅用户撞当日额度上限：不弹升级墙（已无法再升级），改为告知额度耗尽事实。
-    /// 触发条件：quotaExhausted 时 `EntitlementManager.isPro == true`。
+    /// 触发条件：① quotaExhausted 时 `EntitlementManager.isPro == true`（App 内 toast 分流）；
+    /// ② `VoiceTodoError.errorDescription` 对 tier=="pro" 的通用面（如 Siri snippet）。
     /// 与 quotaExhausted 的区别：不含「免费」字样（订阅用户看到会困惑），并说明转写已保留。
     static let quotaExhaustedPro = String(localized: "error.quota_exhausted_pro")
     /// 已订阅用户被代理按免费档拦截且**凭证被拒**（请求带了 `X-Subscription-JWS`

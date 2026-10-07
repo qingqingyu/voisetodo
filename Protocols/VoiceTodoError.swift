@@ -84,8 +84,13 @@ enum VoiceTodoError: LocalizedError, Equatable, Sendable {
             return ErrorMessages.rateLimited
         case .ipRateLimited:
             return ErrorMessages.ipRateLimited
-        case .quotaExhausted:
-            return ErrorMessages.quotaExhausted
+        case .quotaExhausted(let tier, _):
+            // tier 是代理计费口径的权威快照（worker.js quota_exceeded 的 429 body/头）：
+            // 按 pro 计的用户撞上限不得看到「免费」字样（Siri snippet 等直接消费
+            // errorDescription 的通用面；App 内 toast 另有 AppCoordinator 的
+            // isPro/被拒三分流）。tier==free 时无论凭证是否被拒都维持免费口径——
+            // 「订阅验证未通过」提示由持有凭证/拒绝标志信息的高层负责。
+            return tier == "pro" ? ErrorMessages.quotaExhaustedPro : ErrorMessages.quotaExhausted
         case .serviceUnavailable:
             return ErrorMessages.serviceBusy
         case .apiServerError:

@@ -64,6 +64,12 @@ e97dbd2 的 `displayedLimit` 矛盾窗口期过渡有一个盲区:**请求已携
 不再谎称 Pro 额度用完。刚订阅、还没发过请求的场景不带此标志,原过渡不受影响。
 (注:沙盒会话曾声称修过此问题,但分支被 38e43f4 覆盖,修复未落库——本次按其思路重做,
 QuotaUsageTests 的「代理拒订阅」分组即防再丢的锚。)
+Siri 路径同口径收口(2026-10-07 二次):`AddTodoIntent` 的 quotaExhausted 口播原恒为
+「今日免费额度已用完」——intent 进程没有 QuotaUsage 实例可读拒绝标志(quotaProvider
+有意留空),改用错误自带 tier(代理计费口径)+ 本次是否携带凭证三分流:被拒→
+`error.subscription_rejected`(恢复购买出口),按 pro 计→`error.quota_exhausted_pro`
+(无「免费」字样),其余→`error.quota_exhausted`;`VoiceTodoError.errorDescription`
+对 tier=="pro" 同步改 Pro 口径(Siri snippet 等直接消费 errorDescription 的通用面)。
 
 ## 3. 已知局限(未改,需决策)
 

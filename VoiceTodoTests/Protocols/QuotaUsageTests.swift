@@ -263,6 +263,23 @@ final class QuotaUsageTests: XCTestCase {
         XCTAssertEqual(sut.plan, .free, "展示回落语义保持既有行为")
     }
 
+    // MARK: - quotaExhausted 文案的档位口径（errorDescription）
+
+    /// errorDescription 是 Siri snippet 等直接消费 errorDescription 的通用面数据源，
+    /// tier 是代理计费口径的权威快照：按 pro 计的用户撞上限不得看到「免费」字样；
+    /// 按 free 计（含凭证被拒——被拒提示由持有凭证信息的高层，如 Siri 对话框
+    /// 三分流 / App 内 toast 分流负责）维持免费口径。
+    func testQuotaExhaustedErrorDescriptionFollowsProxyTier() {
+        XCTAssertEqual(
+            VoiceTodoError.quotaExhausted(tier: "pro", resetAt: "2026-05-26").errorDescription,
+            ErrorMessages.quotaExhaustedPro
+        )
+        XCTAssertEqual(
+            VoiceTodoError.quotaExhausted(tier: "free", resetAt: "2026-05-26").errorDescription,
+            ErrorMessages.quotaExhausted
+        )
+    }
+
     // MARK: - Helpers
 
     private static func response(headers: [String: String]) -> HTTPURLResponse {
