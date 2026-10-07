@@ -81,6 +81,11 @@ struct AddTodoIntent: AppIntent {
             )
         }
 
+        // snippet 卡片文案与口播同口径:被拒订阅时卡片也要显示「订阅验证未通过」,
+        // 否则 Siri 说「请恢复购买」、卡片却写「今日免费额度已用完」。
+        let carriedSubscriptionJWS = !(subscriptionJWS?.isEmpty ?? true)
+        let fallbackMessage = Self.fallbackSnippetMessage(for: fallbackError, carriedSubscriptionJWS: carriedSubscriptionJWS)
+
         guard !extractedTodos.isEmpty else {
             VoiceTodoLog.intent.info("intent.add.no_todos id=\(intentID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return .result(
@@ -98,7 +103,7 @@ struct AddTodoIntent: AppIntent {
             Telemetry.record(.intentFailed(operation: "add", stage: "container"))
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
+                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError, fallbackMessage: fallbackMessage)
             )
         }
 
@@ -109,7 +114,7 @@ struct AddTodoIntent: AppIntent {
             VoiceTodoLog.intent.error("intent.add.fetch_min_sort_order.blocked_save id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
+                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError, fallbackMessage: fallbackMessage)
             )
         }
         var baseSortOrder = minSortOrder - 1
@@ -147,7 +152,7 @@ struct AddTodoIntent: AppIntent {
             Telemetry.record(.intentFailed(operation: "add", stage: "save"))
             return .result(
                 dialog: "siri.result.save_failed",
-                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
+                view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError, fallbackMessage: fallbackMessage)
             )
         }
 
@@ -172,7 +177,7 @@ struct AddTodoIntent: AppIntent {
                 // 被拒订阅用户听到「订阅验证未通过/恢复购买」而非「免费额度用完」，
                 // Pro 用户不听到「免费」字样。intent 进程没有 QuotaUsage 实例可读
                 // 拒绝标志，改用错误自带的 tier（代理计费口径）+ 本次是否携带凭证判定。
-                switch Self.quotaExhaustedDialog(tier: tier, carriedSubscriptionJWS: !(subscriptionJWS?.isEmpty ?? true)) {
+                switch Self.quotaExhaustedDialog(tier: tier, carriedSubscriptionJWS: carriedSubscriptionJWS) {
                 case .subscriptionRejected:
                     dialog = "error.subscription_rejected"
                 case .proExhausted:
@@ -189,7 +194,7 @@ struct AddTodoIntent: AppIntent {
 
         return .result(
             dialog: dialog,
-            view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError)
+            view: AddTodoIntentView(todos: extractedTodos, fallbackError: fallbackError, fallbackMessage: fallbackMessage)
         )
     }
 
@@ -245,6 +250,15 @@ struct AddTodoIntent: AppIntent {
     static func quotaExhaustedDialog(tier: String, carriedSubscriptionJWS: Bool) -> QuotaExhaustedDialog {
         if carriedSubscriptionJWS, tier == "free" { return .subscriptionRejected }
         return tier == "pro" ? .proExhausted : .freeExhausted
+    }
+
+    /// snippet 卡片的兜底文案覆盖。只有「订阅被代理拒」需要覆盖:`VoiceTodoError.errorDescription`
+    /// 对 tier=="free" 恒为免费口径(它不知道请求是否带了凭证);其余情况返回 nil 沿用 errorDescription。
+    static func fallbackSnippetMessage(for error: VoiceTodoError?, carriedSubscriptionJWS: Bool) -> String? {
+        guard case .quotaExhausted(let tier, _) = error,
+              quotaExhaustedDialog(tier: tier, carriedSubscriptionJWS: carriedSubscriptionJWS) == .subscriptionRejected
+        else { return nil }
+        return ErrorMessages.subscriptionRejected
     }
 
     private static func todosWithInputLocale(_ todos: [ExtractedTodo], localeIdentifier: String) -> [ExtractedTodo] {

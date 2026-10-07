@@ -280,6 +280,22 @@ final class QuotaUsageTests: XCTestCase {
         )
     }
 
+    /// 凭证换了(恢复购买/重新购买)后清掉旧凭证的被拒判定,回到过渡态显示 Pro 常量。
+    func testClearSubscriptionRejectionRestoresTransitionDisplay() {
+        let sut = QuotaUsage()
+        sut.applyQuotaHeaders(from: Self.response(headers: [
+            "X-Quota-Plan": "free",
+            "X-Quota-Limit": "3",
+            "X-Quota-Used": "1"
+        ]), carriedSubscriptionJWS: true)
+        XCTAssertTrue(sut.proxyRejectedSubscription)
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), 3)
+
+        sut.clearSubscriptionRejection()
+        XCTAssertFalse(sut.proxyRejectedSubscription)
+        XCTAssertEqual(sut.displayedLimit(storeKitIsPro: true), NetworkConfig.proDailyLimit)
+    }
+
     // MARK: - Helpers
 
     private static func response(headers: [String: String]) -> HTTPURLResponse {

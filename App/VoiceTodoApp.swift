@@ -259,6 +259,10 @@ struct VoiceTodoApp: App {
                 .onChange(of: scenePhase) { oldPhase, newPhase in
                     handleScenePhaseChange(newPhase)
                 }
+                // 新订阅凭证(重新购买/恢复/续订)出现时清掉针对旧凭证的「被拒」判定。
+                .onChange(of: entitlementManager.jwsString) { _, newJWS in
+                    if newJWS != nil { quotaUsage.clearSubscriptionRejection() }
+                }
                 // ✅ 处理 URL Scheme（自建快捷指令 voicetodo://record、Widget 深链等）
                 .onOpenURL { url in
                     handleOpenURL(url)
