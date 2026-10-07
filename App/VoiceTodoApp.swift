@@ -244,7 +244,6 @@ struct VoiceTodoApp: App {
                     PaywallView()
                         .environmentObject(entitlementManager)
                         .environmentObject(quotaUsage)
-                        .environmentObject(coordinator)
                 }
                 .toast(
                     message: coordinator.toastMessage,
