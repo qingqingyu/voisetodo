@@ -6749,22 +6749,6 @@
         }
       }
     },
-    "paywall.pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Purchase pending"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "购买待处理，请稍后"
-          }
-        }
-      }
-    },
     "paywall.period.month" : {
       "localizations" : {
         "en" : {
@@ -13790,6 +13774,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 设置 → Apple ID → 订阅 中取消"
+          }
+        }
+      }
+    },
+    "paywall.pending_approval" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent for approval. Pro turns on automatically once approved."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "承認をリクエストしました。承認されると自動で有効になります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已提交，等待家长批准后自动生效"
           }
         }
       }

@@ -639,19 +639,38 @@ struct PaywallContent: View {
 
     /// 购买/恢复失败的显式反馈(错误显式传播):`.success` 态下 `lastError` 此前无处渲染,
     /// 购买失败、验签失败(unverified)、恢复无可恢复项都会静默无反馈。
-    /// `paywall.pending` 也共用此行(中性提示文案)。purchase/restore 开始时会清 lastError,
+    /// 「等待批准」(paywallPending)是中性提示,不走警示色——家长 Ask to Buy 期间
+    /// 显示成错误会让用户以为交易出了问题。purchase/restore 开始时会清 lastError,
     /// 双 isPurchasing/isRestoring 守卫只是兜底防飞行中显示陈旧错误。
     @ViewBuilder
     private var inlineErrorText: some View {
         if !entitlement.isPurchasing, !entitlement.isRestoring, let error = entitlement.lastError {
-            Text(error)
-                .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundColor(WarmTheme.warning)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
+            if error == ErrorMessages.paywallPending {
+                HStack(spacing: WarmSpacing.xxs) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .accessibilityHidden(true)
+                    Text(error)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
+                }
                 .padding(.horizontal, WarmSpacing.lg)
                 .accessibilityIdentifier("PaywallInlineError")
+            } else {
+                Text(error)
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.warning)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .accessibilityIdentifier("PaywallInlineError")
+            }
         }
     }
 

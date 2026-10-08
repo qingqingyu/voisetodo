@@ -55,6 +55,10 @@ final class EntitlementManager: ObservableObject {
     /// `productLoadState == .loading` 已能反映此状态,但 UI 可能在 .empty/.error 时
     /// 也尝试触发 refresh,此标志提供显式护栏。
     private var isLoadingProducts = false
+    /// 最近一次购买是否停在「等待批准」(家长 Ask to Buy)。批准经 Transaction.updates
+    /// 到账、isPro 翻正后据此补一次成功信号(purchaseSuccessCount += 1,只加一次);
+    /// 任何直接购买/恢复成功都会清掉它,防止后续无关的续订推送重复计成功。
+    private var hasPendingPurchase = false
 
     private var transactionListener: Task<Void, Never>?
     /// refreshEntitlements 串行链:每次调用排在上一次之后执行。
@@ -286,6 +290,14 @@ final class EntitlementManager: ObservableObject {
                 case .verified(let transaction):
                     await transaction.finish()
                     await self.refreshEntitlements()
+                    // Ask to Buy 批准到账:补发购买成功信号(付费墙还开着则显示成功态;
+                    // 已关闭则 onDismiss 快照判定早已结束,计数增加无副作用)。
+                    // 拒绝路径不产生 active 交易、isPro 不翻,不会走到这里。
+                    if self.hasPendingPurchase, self.isPro {
+                        self.hasPendingPurchase = false
+                        self.purchaseSuccessCount += 1
+                        VoiceTodoLog.app.info("entitlement.purchase_approved_after_pending")
+                    }
                 case .unverified(let transaction, let error):
                     // 不 finish、不授信,但必须留痕 —— 静默丢弃会让续订/到账的验签异常无从归因。
                     VoiceTodoLog.app.warning("entitlement.transaction_unverified transactionID=\(transaction.id) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -317,6 +329,9 @@ final class EntitlementManager: ObservableObject {
                 case .verified(let transaction):
                     await transaction.finish()
                     await refreshEntitlements()
+                    // 直接购买成功:清掉可能残留的 pending 标志,防止后续无关的
+                    // 续订推送(Transaction.updates)重复计成功。
+                    hasPendingPurchase = false
                     if !isPro {
                         // StoreKit 已给出验签通过的成功交易,权益重读却没反映出来:以这笔交易为准,
                         // 否则付费墙停在购买态、用户付了钱看不到任何变化。
@@ -336,9 +351,12 @@ final class EntitlementManager: ObservableObject {
             case .userCancelled:
                 VoiceTodoLog.app.info("entitlement.purchase_cancelled productID=\(product.id, privacy: .public)")
             case .pending:
-                // 等待审批 / 家庭共享等，updates 监听会在最终状态刷新
+                // 等待审批 / 家庭共享等，updates 监听会在最终状态刷新。
+                // 置 hasPendingPurchase:批准经 Transaction.updates 到账、权益翻 Pro 后
+                // 补一次 purchaseSuccessCount,付费墙若还开着就能走成功态(任务书条目 2a.4)。
                 VoiceTodoLog.app.info("entitlement.purchase_pending productID=\(product.id, privacy: .public)")
-                lastError = String(localized: "paywall.pending")
+                hasPendingPurchase = true
+                lastError = ErrorMessages.paywallPending
             @unknown default:
                 // 未来 SDK 新增 outcome 时编译兜底:显式留痕 + 用户可见反馈,不静默。
                 VoiceTodoLog.app.warning("entitlement.purchase_unknown_outcome productID=\(product.id, privacy: .public)")
@@ -390,6 +408,8 @@ final class EntitlementManager: ObservableObject {
             try await AppStore.sync()
             await refreshEntitlements()
             if isPro {
+                // 恢复成功同样清 pending 标志(口径与直接购买成功一致)。
+                hasPendingPurchase = false
                 restoreSuccessCount += 1
             } else {
                 lastError = ErrorMessages.paywallRestoreNothing

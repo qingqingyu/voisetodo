@@ -112,4 +112,7 @@ enum ErrorMessages {
     static let paywallRestoring = String(localized: "paywall.restoring")
     static let paywallRestoreFailed = String(localized: "paywall.restore_failed")
     static let paywallRestoreNothing = String(localized: "paywall.restore_nothing")
+    /// 购买停在「等待批准」(家长 Ask to Buy 等):中性提示,不是错误——
+    /// 说明原因(已提交)和下一步(批准后自动生效),inlineErrorText 用中性色渲染。
+    static let paywallPending = String(localized: "paywall.pending_approval")
 }
