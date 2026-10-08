@@ -14,7 +14,7 @@
 | 1 | 高 | P2 | `App/CalendarSyncService.swift:171` × `App/SystemCalendarWriter.swift:87` | replace 的「写新」被 writer 首写幂等过滤吞掉,编辑已同步待办 = 删旧事件 + 不写新事件,日历镜像静默丢失且永不自愈(标识仍指旧事件,后续编辑永远 skip) | 用户开启日历同步后,编辑任意一条已同步待办(改名/改时间) | 已证实(代码链 + 红→绿回归测试) | **已修**(副本清旧标识再写新;mock 忠实化后 `testReplaceRemovesOldEventAndWritesNewEvent` 承载回归,无修复时 3 断言全红) |
 | 2 | 高 | P1 | `App/Intents/AddTodoIntent.swift:144`(修复前行号) | Siri 新增带提醒待办后不排通知——intent 写库不走活着的 TodoStore,`$todos` 不发布,不开 App 提醒永远不响 | 用户对 Siri 说「明天 9 点提醒我 X」,之后不打开 App | 已证实(调用链穷尽:save 后仅 markExternalDataChanged + reload) | **已修**(落库后逐条 `IntentNotificationReconciler.reconcile`,与 CompleteTodoIntent 同模式) |
 | 3 | 中 | P1 | `App/Intents/DeleteTodoIntent.swift:89`(修复前行号) | Siri 删除待办不撤已排提醒,提醒照响到原定时刻,直到下次开 App 全量对账 | Siri 删除一条已排提醒的待办,提醒时刻前不开 App | 已证实 | **已修**(新增 `IntentNotificationReconciler.removeNotifications` + 调用 + 2 条 spy 测试) |
-| 4 | 中 | P0 | `Store/TodoStore.swift:944` | `refreshIfStale` 先 fetch 数据、后回读版本号,窗口内的外部写(save+mark)被吸收进 lastSynced,主 App 漏看这次写直到再下一次外部写 | 回前台刷新期间(毫秒级窗口)Widget/Siri 恰好写库 | 已证实(时序推演;窗口窄) | **已修**(进门快照版本号随 `refreshTodos(syncedExternalChangeVersion:)` 落账) |
+| 4 | 中 | P0 | `Store/TodoStore.swift:951` | `refreshIfStale` 先 fetch 数据、后回读版本号,窗口内的外部写(save+mark)被吸收进 lastSynced,主 App 漏看这次写直到再下一次外部写 | 回前台刷新期间(毫秒级窗口)Widget/Siri 恰好写库 | 已证实(时序推演;窗口窄) | **已修**(进门快照版本号随 `refreshTodos(syncedExternalChangeVersion:)` 落账) |
 | 5 | 中 | P1 | `Protocols/Domain/NotificationPlanner.swift:97-100` | repeating 全保留 + 一次性填剩余额度(默认 60):重复项多的用户,一次性**近期**提醒被静默挤掉 | 用户有 60+ 条带钟点的重复待办,再新建一次性提醒 | 已证实(纯函数逻辑) | 不修(理由:重复项优先是既定取舍,改排序语义需产品拍板;建议上线后遥测 pending 满额比例再定) |
 | 6 | 中 | P1 | `UI/Home/HomeSettingsSheet.swift:182` | 系统通知权限 denied/未决与 App 内开关显示不同步,无「提醒不会响」提示 | 用户拒绝通知权限,或在系统设置关闭后回 App 看 | 已证实 | 不修(UI 改动需设计拍板;reconcile 侧已正确:denied 清空、notDetermined 懒申请) |
 | 7 | 低 | P0 | `Store/SwiftDataModels.swift:509` × `App/Intents/ToggleTodoIntent.swift:163` | 双进程同日完成同一重复待办可插两条同 `occurrenceKey` 记录(`@Attribute(.unique)` 不拦,`addBatch` 注释已自认),残留后难以通过 toggle 清干净 | 主 App 与 Widget 在互相看不见对方完成记录的瞬间各自完成同一条 | 推断(依赖 SwiftData 跨进程 fetch 时序) | 不修(窗口极窄;日志可观测 `findCompletion` 重复) |
@@ -37,8 +37,8 @@
 | # | 检查点 | 结论 | 证据 |
 |---|---|---|---|
 | 1 | 并发写同一条待办的结果 | **无法从代码完全判断(需真机)**;代码层事实:无冲突检测、无合并逻辑,SwiftData/SQLite 行级串行,按脏字段 last-writer-wins,只有存储级错误会抛;intent 侧 save 失败有日志 + widget 60s 错误提示(Siri 返回失败对话) | `ToggleTodoIntent.swift:63-71`、`AddTodoIntent.swift:150-157` |
-| 2 | 主 App 陈旧内存覆盖「已完成」 | **不成立(编辑路径)**:`updateFull` 不写 `isCompleted`(仅 recurrence 重建分支重置,是既有约定),不存在「编辑保存把已完成覆盖回未完成」;真正的未知在主 App 长生命周期 context 对已注册对象是否返回跨进程新值 → 需真机(清单 #6)。附带发现 #4(TOCTOU)已修 | `Store/TodoStore.swift:313-345`、重读时机=`TodoStore.swift:944` + `ToggleTodoIntent.swift:44` |
-| 3 | 时间戳版本号同毫秒/时钟回拨漏检 | **不成立(原问法)**:Double 时间戳亚微秒分辨率,两进程同值概率可忽略;`!=` 比较对回拨免疫。**成立(相邻问题)**:fetch→回读吸收窗口 = 发现 #4,已修 | `AppGroupConfig.swift:59-65`、`TodoStore.swift:944-954` |
+| 2 | 主 App 陈旧内存覆盖「已完成」 | **不成立(编辑路径)**:`updateFull` 不写 `isCompleted`(仅 recurrence 重建分支重置,是既有约定),不存在「编辑保存把已完成覆盖回未完成」;真正的未知在主 App 长生命周期 context 对已注册对象是否返回跨进程新值 → 需真机(清单 #6)。附带发现 #4(TOCTOU)已修 | `Store/TodoStore.swift:313-345`、重读时机=`TodoStore.swift:951` + `ToggleTodoIntent.swift:44` |
+| 3 | 时间戳版本号同毫秒/时钟回拨漏检 | **不成立(原问法)**:Double 时间戳亚微秒分辨率,两进程同值概率可忽略;`!=` 比较对回拨免疫。**成立(相邻问题)**:fetch→回读吸收窗口 = 发现 #4,已修 | `AppGroupConfig.swift:59-65`、`TodoStore.swift:951-962` |
 | 4 | `nonisolated(unsafe)` 容器缓存竞态 | **不成立**:`NSLock` 全程包住检查+建+缓存,`nonisolated(unsafe)` 仅在锁内读写;连点两次也串行建一个容器 | `AppGroupModelContainerProvider.swift:10-37` |
 | 5 | 只读容器读到旧快照 | **代码层不成立**:每次查询新建 `ModelContext`(行不缓存),容器缓存不缓存数据;跨进程 WAL 提交可见性属系统行为 → 真机(清单 #6) | `QueryTodosIntent.swift:62`、`TodoEntityQuery.swift:35/62/94`、`TodoWidgetProvider.swift:100` |
 | 6 | widget 交互错误用户看不到/残留 | **不成立**:widget 本体渲染(medium/compact 两处),60s 保留自动过期(timeline 挂到期条目),下次成功即清 | `TodoWidgetComponents.swift:134/243`、`TodoWidgetProvider.swift:80-85`、`WidgetConfig.interactionErrorRetention=60`(`Constants.swift:190`)、`ToggleTodoIntent.swift:43` |
