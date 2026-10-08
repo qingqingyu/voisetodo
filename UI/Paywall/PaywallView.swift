@@ -684,37 +684,43 @@ struct PaywallContent: View {
     /// - 商品加载失败 (`.empty`/`.error`) → 不渲染(由 productList 的 stateMessage 接管)
     @ViewBuilder
     private var purchaseCTA: some View {
-        if let successEvent {
-            successCTA(successEvent)
-        } else {
-            Button {
-                guard let product = currentSelectedProduct else { return }
-                Task { await entitlement.purchase(product) }
-            } label: {
-                HStack(spacing: WarmSpacing.xs) {
-                    if showsCTASpinner {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Text(ctaTitle)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
+        Group {
+            if let successEvent {
+                successCTA(successEvent)
+            } else {
+                Button {
+                    guard let product = currentSelectedProduct else { return }
+                    Task { await entitlement.purchase(product) }
+                } label: {
+                    HStack(spacing: WarmSpacing.xs) {
+                        if showsCTASpinner {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text(ctaTitle)
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule()
+                            .fill(WarmTheme.primary)
+                            .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                    )
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    Capsule()
-                        .fill(WarmTheme.primary)
-                        .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
-                )
+                .disabled(ctaDisabled)
+                .accessibilityIdentifier("PaywallPurchaseButton")
+                .padding(.horizontal, WarmSpacing.lg)
             }
-            .disabled(ctaDisabled)
-            .accessibilityIdentifier("PaywallPurchaseButton")
-            .padding(.horizontal, WarmSpacing.lg)
         }
+        // 任务书条目 1.2:CTA ↔ 成功态的切换要 0.25s 过渡。动画必须挂在包含
+        // if/else 的父层——挂在 successCTA 自身时,该视图出现首帧 value 已是
+        // 新值、没有变化事件,插入/移除过渡不会播(切换会直接跳变)。
+        .animation(.easeOut(duration: 0.25), value: successEvent)
     }
 
     /// 成功态 CTA:原地变绿(WarmTheme.success 底 + checkmark + 「已升级为 Pro / 已恢复 Pro」)。
@@ -744,7 +750,6 @@ struct PaywallContent: View {
         }
         .buttonStyle(UndimmedButtonStyle())
         .disabled(true)
-        .animation(.easeOut(duration: 0.25), value: successEvent)
         .accessibilityIdentifier("PaywallPurchaseButton")
         // UI 测试以 value == "success" 判断成功态(S20 Step 6)。
         .accessibilityValue("success")

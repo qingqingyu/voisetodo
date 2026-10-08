@@ -234,6 +234,10 @@ final class AppCoordinator: ObservableObject {
     /// 冷却时长:用户拒绝后 14 天内不再主动弹。
     private let paywallCooldown: TimeInterval = 14 * 24 * 3600
 
+    /// presentPaywall 时记下的快照(purchaseCount, restoreCount, source)。
+    /// 非持久状态:只在 sheet 展示期间存在,onDismiss 消费后清空。
+    private var paywallPresentationSnapshot: (purchaseCount: Int, restoreCount: Int, source: PaywallSource)?
+
     /// 所有 paywall 曝光的唯一入口。来源统一进遥测(`paywall_shown`),
     /// 四来源可区分——这是「wow 后立即弹 vs 撞墙后弹」弹点决策
     /// (docs/onboarding-first-voice-trial.md §1.5.1)的度量基础。
@@ -257,17 +261,15 @@ final class AppCoordinator: ObservableObject {
         showPaywall = true
     }
 
-    /// presentPaywall 时记下的快照(purchaseCount, restoreCount, source)。
-    /// 非持久状态:只在 sheet 展示期间存在,onDismiss 消费后清空。
-    private var paywallPresentationSnapshot: (purchaseCount: Int, restoreCount: Int, source: PaywallSource)?
-
     /// 付费墙 sheet 收起后的统一处理(手动 × 与成功态自动收起都走这里,判定不依赖
     /// 关闭方式):
     /// 1. 本次 sheet 期间购买/恢复成功 → 主界面弹成功 toast。toast 挂在主视图上,
     ///    sheet 已收起不会被盖住;也不必让 PaywallView 依赖 coordinator。
-    /// 2. 来源为配额耗尽且购买成功变 Pro → 接着跑 pending 恢复,让用户「刚才那句话」
-    ///    不用重说(任务书条目 3b)。pending 只在回前台时处理,App 内购买收起付费墙
-    ///    原本不会触发——这里补上。复用 handleAppForeground 的全部守卫,不绕过。
+    /// 2. 来源为配额耗尽且购买/恢复成功变 Pro → 接着跑 pending 恢复,让用户「刚才
+    ///    那句话」不用重说(任务书条目 3b)。判定复用 1.5 的「任一成功计数增加」——
+    ///    换机重装后走「恢复购买」回到 Pro 的用户同样不该重说那句话。
+    ///    pending 只在回前台时处理,App 内购买收起付费墙原本不会触发——这里补上。
+    ///    复用 handleAppForeground 的全部守卫,不绕过。
     func handlePaywallDismissed() {
         guard let snapshot = paywallPresentationSnapshot else { return }
         paywallPresentationSnapshot = nil
@@ -278,9 +280,9 @@ final class AppCoordinator: ObservableObject {
             message: purchased ? ErrorMessages.paywallPurchaseSucceeded : ErrorMessages.paywallRestoreSucceeded,
             style: .success
         )
-        // 仅「配额耗尽来源 + 购买成功 + 已是 Pro」触发:.manual 来源的购买、
-        // 恢复购买、取消/失败后关闭都不跑 pending(任务书 3b 验收)。
-        if purchased, snapshot.source == .quotaExhausted, entitlement.isPro {
+        // 仅「配额耗尽来源 + 任一成功计数增加 + 已是 Pro」触发:.manual 来源的
+        // 购买/恢复、取消/失败后关闭都不跑 pending(任务书 3b 验收)。
+        if snapshot.source == .quotaExhausted, entitlement.isPro {
             VoiceTodoLog.coordinator.info("coordinator.paywall.resume_pending source=quota_exhausted")
             Task { await handleAppForeground() }
         }

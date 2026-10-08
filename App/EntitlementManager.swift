@@ -244,7 +244,9 @@ final class EntitlementManager: ObservableObject {
         activeProductID = selectedTransaction?.productID
         isInIntroOffer = selectedTransaction?.offerType == .introductory
         willAutoRenew = await renewalWillAutoRenew(for: selectedTransaction)
-        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed) willAutoRenew=\(String(describing: self.willAutoRenew), privacy: .public)")
+        // willAutoRenew 打裸值(true/false/nil),不套 Optional(...) 包装,key=value 好解析。
+        let willAutoRenewLabel = willAutoRenew.map(String.init(describing:)) ?? "nil"
+        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed) willAutoRenew=\(willAutoRenewLabel, privacy: .public)")
         return changed
     }
 

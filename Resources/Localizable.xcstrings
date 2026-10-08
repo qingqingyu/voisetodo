@@ -6757,6 +6757,12 @@
             "value" : "month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6771,6 +6777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "year"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年"
           }
         },
         "zh-Hans" : {
@@ -7184,6 +7196,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Today: %1$d/%2$d used"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d を使用"
           }
         },
         "zh-Hans" : {
