@@ -24,6 +24,14 @@ final class EntitlementManager: ObservableObject {
     /// 当前生效订阅的到期时间（自动续期开启时即下次续期日）。
     /// 付费墙"已订阅"态用它展示「有效期至 X」。无生效订阅时为 nil。
     @Published private(set) var subscriptionExpirationDate: Date?
+    /// 当前生效订阅对应的商品 ID(年付/月付)。仅供已订阅状态页展示方案名与价格,
+    /// 不参与权益判定;随 performEntitlementRefresh 选定交易时一并赋值。
+    @Published private(set) var activeProductID: String?
+    /// 当前生效订阅是否处于介绍性优惠(免费试用)期(transaction.offerType == .introductory)。
+    @Published private(set) var isInIntroOffer = false
+    /// 自动续费是否开启。nil = 读取不到(商品未加载 / status 缺失 / 验签不过),
+    /// UI 遇 nil 回退「有效期至 X」文案。
+    @Published private(set) var willAutoRenew: Bool?
     @Published private(set) var products: [Product] = []
     /// 初始为 .loading —— 首帧应显示 spinner 而不是「加载失败」卡片。
     /// 真正的空/错误态由 loadProducts() 落定。
@@ -182,6 +190,9 @@ final class EntitlementManager: ObservableObject {
         var foundPro = false
         var jws: String?
         var expiration: Date?
+        // 选定的那条交易:除 JWS/到期时间外,还供已订阅状态页展示元数据
+        // (activeProductID / isInIntroOffer / willAutoRenew)。选择逻辑与 JWS 同源。
+        var selectedTransaction: Transaction?
         // currentEntitlements 只返回当前生效（未过期、未退款）的权益。撤销/升级两道过滤是防御:
         // 代理零信任会拒掉带 revocationDate 的 JWS,客户端不该把它当 Pro 发出去。
         var unverifiedCount = 0
@@ -211,6 +222,7 @@ final class EntitlementManager: ObservableObject {
             foundPro = true
             jws = result.jwsRepresentation
             expiration = transaction.expirationDate
+            selectedTransaction = transaction
         }
         if !foundPro, let fallback = await latestActiveSubscription() {
             // currentEntitlements 没给出、但 latest(for:) 有未过期的订阅:真机实测购买成功后
@@ -219,6 +231,7 @@ final class EntitlementManager: ObservableObject {
             foundPro = true
             jws = fallback.jws
             expiration = fallback.transaction.expirationDate
+            selectedTransaction = fallback.transaction
         }
         hasUnverifiedEntitlement = !foundPro && unverifiedCount > 0
         scheduleExpirationRefresh(at: expiration)
@@ -226,8 +239,46 @@ final class EntitlementManager: ObservableObject {
         isPro = foundPro
         jwsString = jws
         subscriptionExpirationDate = expiration
-        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed)")
+        // 已订阅状态页的展示元数据(任务书条目 4):随选定交易一并赋值,
+        // 只读展示用途,不影响上面的权益判定与 changed 语义。
+        activeProductID = selectedTransaction?.productID
+        isInIntroOffer = selectedTransaction?.offerType == .introductory
+        willAutoRenew = await renewalWillAutoRenew(for: selectedTransaction)
+        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed) willAutoRenew=\(String(describing: self.willAutoRenew), privacy: .public)")
         return changed
+    }
+
+    /// 从 `Product.subscription.status` 读选定交易的 `renewalInfo.willAutoRenew`。
+    /// 商品未加载(启动期只刷权益不加载商品)/status 里找不到该交易/renewalInfo
+    /// 验签不过时返回 nil,UI 回退「有效期至 X」。
+    private func renewalWillAutoRenew(for transaction: Transaction?) async -> Bool? {
+        guard let transaction else { return nil }
+        for product in products where product.id == transaction.productID {
+            do {
+                for status in try await product.subscription?.status ?? [] {
+                    let statusTransaction: Transaction
+                    switch status.transaction {
+                    case .verified(let verified):
+                        statusTransaction = verified
+                    case .unverified:
+                        continue
+                    }
+                    guard statusTransaction.id == transaction.id else { continue }
+                    switch status.renewalInfo {
+                    case .verified(let info):
+                        return info.willAutoRenew
+                    case .unverified:
+                        return nil
+                    }
+                }
+            } catch {
+                // 显式留痕不静默:status 读不到时日期文案会退回「有效期至 X」,
+                // 有这条日志才能区分「真读不到」与「没走到」。
+                VoiceTodoLog.app.warning("entitlement.renewal_info_failed productID=\(transaction.productID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                return nil
+            }
+        }
+        return nil
     }
 
     /// 兜底:逐个商品读 `Transaction.latest(for:)`,取未撤销、未升级、未过期的那条

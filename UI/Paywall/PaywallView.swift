@@ -181,6 +181,8 @@ struct PaywallContent: View {
     /// 当前选中的商品 ID。productList 加载后默认选年付;找不到则取排序后的第一个。
     /// 购买期间用户仍可点其它卡片切换 —— A 点已要求此时所有卡 disabled,实际不会改值。
     @State private var selectedProductID: String?
+    /// 系统订阅管理页(.manageSubscriptionsSheet)是否展示。关闭后重读权益。
+    @State private var showManageSubscriptions = false
 
     var body: some View {
         VStack(spacing: WarmSpacing.sm) {
@@ -188,12 +190,13 @@ struct PaywallContent: View {
             // 整页切换会把按钮、商品列表一并抽走,「页面突然变了」反而像出错。
             // 约 1 秒后 sheet 收起,下次再进付费墙自然走已订阅状态卡。
             if entitlement.isPro && successEvent == nil {
-                // 已订阅:不再出现购买选项 —— 展示订阅状态卡(含有效期)。
+                // 已订阅:不再出现购买选项 —— 展示订阅状态卡(方案/价格/续费状态)+ 管理订阅。
                 // 价值主张/商品列表/购买 CTA 都只服务「未订阅 → 转化」,对已订阅者是噪音。
                 // refresh() 仍无条件跑:isPro 若是 stale-true(订阅实际已过期),
                 // refreshEntitlements 会翻回 false,本分支自动退回完整购买 UI。
                 comparisonCard
                 subscribedStatusCard
+                manageSubscriptionButton
                 if entitlement.lastError != ErrorMessages.paywallProductsLoadFailed {
                     // 错误显式传播:恢复购买失败(离线时 AppStore.sync 抛错)必须可见。
                     // 只排除商品加载错误 —— 本分支不渲染商品,加载失败对已订阅者是噪音;
@@ -383,7 +386,7 @@ struct PaywallContent: View {
 
     /// 已订阅状态卡:`isPro == true` 时替代价值主张 + 商品列表 + 购买 CTA。
     /// 已订阅用户进付费墙不该再看到购买选项(点了也只能从 StoreKit 系统弹窗得知
-    /// 订阅已生效到几号),直接告知订阅状态与有效期。
+    /// 订阅已生效到几号),直接告知订阅状态:方案与价格、按续费状态区分的日期行。
     /// 到期时间来自 `Transaction.currentEntitlements` 的 `expirationDate`
     /// (自动续期开启时即下次续期日);理论上有订阅必有值,nil 时只降级不显示日期行。
     private var subscribedStatusCard: some View {
@@ -397,22 +400,133 @@ struct PaywallContent: View {
                 .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            if let expiration = entitlement.subscriptionExpirationDate {
-                Text(String(localized: "paywall.subscribed.expires \(expiration.formatted(date: .abbreviated, time: .omitted))"))
+            if let plan = subscribedPlanText {
+                // 方案行:「Pro 年付 · ¥39.99/年」。displayName/displayPrice 全取 StoreKit,
+                // 商品未加载(activeProductID 对不上 products)时不显示该行。
+                Text(plan)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
                     .foregroundColor(WarmTheme.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
+            subscribedDateText
         }
         .frame(maxWidth: .infinity)
         .padding(WarmSpacing.md)
         .background(WarmTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
         .padding(.horizontal, WarmSpacing.lg)
-        // combine:整卡作为一个 a11y 元素(标题+日期合并朗读),UI 测试按 id 定位。
+        // combine:整卡作为一个 a11y 元素(标题+方案+日期合并朗读),UI 测试按 id 定位。
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("PaywallSubscribedCard")
+    }
+
+    /// 选定商品(读不到 → nil):已订阅状态页的方案/价格展示元数据都从它来。
+    private var subscribedProduct: Product? {
+        guard let id = entitlement.activeProductID else { return nil }
+        return entitlement.products.first(where: { $0.id == id })
+    }
+
+    /// 「¥39.99/年」价格段:displayPrice + 本地化周期单位(三语下 "/" 分隔一致,直接插值)。
+    private var subscribedPricePeriodText: String? {
+        guard let product = subscribedProduct else { return nil }
+        return "\(product.displayPrice)/\(paywallPeriodUnit(for: product))"
+    }
+
+    /// 方案行文本:「Pro 年付 · ¥39.99/年」。
+    private var subscribedPlanText: String? {
+        guard let product = subscribedProduct,
+              let pricePeriod = subscribedPricePeriodText else { return nil }
+        return String(
+            format: String(localized: "paywall.subscribed.plan %@ %@"),
+            product.displayName,
+            pricePeriod
+        )
+    }
+
+    /// 日期行,按续费状态区分(任务书条目 4.2):
+    /// - 试用中且会续费 →「免费试用至 X，之后按 ¥39.99/年 收费」;
+    /// - 已付费且会续费 →「下次续费 X」;
+    /// - 已关闭自动续费 →「有效期至 X，到期后不再续费」;
+    /// - willAutoRenew 读取不到(nil)→ 退回「有效期至 X」。
+    /// 试用中但商品读不到(拼不出价格)时退「下次续费 X」,仍比裸日期多一层语义。
+    @ViewBuilder
+    private var subscribedDateText: some View {
+        if let expiration = entitlement.subscriptionExpirationDate {
+            let dateText = expiration.formatted(date: .abbreviated, time: .omitted)
+            switch entitlement.willAutoRenew {
+            case .some(true):
+                if entitlement.isInIntroOffer, let pricePeriod = subscribedPricePeriodText {
+                    Text(String(
+                        format: String(localized: "paywall.subscribed.trial_renews %@ %@"),
+                        dateText,
+                        pricePeriod
+                    ))
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                } else {
+                    Text(String(
+                        format: String(localized: "paywall.subscribed.next_renewal %@"),
+                        dateText
+                    ))
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            case .some(false):
+                Text(String(
+                    format: String(localized: "paywall.subscribed.expires_no_renew %@"),
+                    dateText
+                ))
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            case .none:
+                Text(String(localized: "paywall.subscribed.expires \(dateText)"))
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+    }
+
+    /// 「管理订阅」主按钮:打开系统订阅管理页(切换月/年、取消续费都在这里)。
+    /// 关闭后重读权益——用户可能刚取消续费或换了方案,日期行要跟着变(任务书条目 4.4)。
+    /// iOS 26 SDK 的 manageSubscriptionsSheet(isPresented:) 已无 onDismiss 参数,
+    /// 用自定义 Binding 在置回 false 时触发刷新,语义等价。
+    private var manageSubscriptionButton: some View {
+        Button {
+            showManageSubscriptions = true
+        } label: {
+            Text(String(localized: "paywall.manage_subscription"))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(WarmTheme.primary)
+                        .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                )
+        }
+        .accessibilityIdentifier("PaywallManageSubscriptionButton")
+        .padding(.horizontal, WarmSpacing.lg)
+        .manageSubscriptionsSheet(isPresented: Binding(
+            get: { showManageSubscriptions },
+            set: { showing in
+                showManageSubscriptions = showing
+                if !showing {
+                    Task { await entitlement.refreshEntitlements() }
+                }
+            }
+        ))
     }
 
     // MARK: - Value Props
