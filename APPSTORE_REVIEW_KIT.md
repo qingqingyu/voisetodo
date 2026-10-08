@@ -162,7 +162,7 @@ https://qingqingyu.github.io/voicetodo-privacy/
 - [ ] 产品 1: `com.qingqingyu.voicetodo.pro.monthly` — 月订阅 **$4.99**(已有代码引用,`App/EntitlementManager.swift:17`,**ID 不可再改**)
 - [ ] 产品 2: `com.qingqingyu.voicetodo.pro.yearly` — 年订阅 **$39.99**(`App/EntitlementManager.swift:18`)
 - [ ] 两个产品都配 Intro Offer: Free Trial(天数见 §3.3)
-- [ ] 本地化(至少 en): 显示名 + 描述,措辞与 paywall 一致(「higher daily AI allowance」,不写 unlimited)
+- [ ] 本地化(en/zh-Hans/ja,与 app 上线语言一致): 显示名 + 描述,措辞与 paywall 一致(「higher daily AI allowance」,不写 unlimited);`VoiceTodo/Products.storekit` 已同步三语显示名可作对照
 - [ ] 分市场定价: 以 $4.99 美区为锚,ASC 自动换算后过一遍主要市场(GB/CA/AU/DE/FR/JP)有无离谱值
 - [ ] 税务表单(ASC → 协议、税务和银行业务)已填,否则无法收订阅
 
