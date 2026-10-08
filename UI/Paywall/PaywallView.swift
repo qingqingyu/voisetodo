@@ -198,6 +198,10 @@ struct PaywallContent: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
 
+    /// 默认选中的商品 ID(产品建议推年付,不是硬要求——以后想改推月付改这一行即可)。
+    /// 只在「当前没有有效选中」时生效;用户手动选过的方案不会被覆盖。
+    static let defaultProductID = EntitlementManager.yearlyProductID
+
     /// 当前选中的商品 ID。productList 加载后默认选年付;找不到则取排序后的第一个。
     /// 购买期间用户仍可点其它卡片切换 —— A 点已要求此时所有卡 disabled,实际不会改值。
     @State private var selectedProductID: String?
@@ -232,14 +236,16 @@ struct PaywallContent: View {
             Spacer(minLength: WarmSpacing.xxs)
         }
         .task { await entitlement.refresh() }
-        .onChange(of: entitlement.products) { _, newProducts in
+        // initial: true —— 二次打开付费墙时商品早已加载、数组没变,普通 onChange 不触发,
+        // 之前会导致没有任何卡片高亮(用户截图里的选中态 bug)。让首次出现也走默认选中逻辑。
+        .onChange(of: entitlement.products, initial: true) { _, newProducts in
             // 购买飞行中不重置选中 —— refresh 可能由 transaction listener 触发,
             // 此时改 selectedProductID 会让用户感知到选中漂移。
             guard !entitlement.isPurchasing else { return }
             // 当前选中无效(首次加载/重试后商品变化/选中商品已不存在)时重置:
-            // 默认年付,找不到则取排序后第一个。products 已按价格升序排好。
+            // 默认年付,找不到则取第一个。products 已按价格升序排好。
             if selectedProductID == nil || !newProducts.contains(where: { $0.id == selectedProductID }) {
-                selectedProductID = newProducts.first(where: { $0.id == EntitlementManager.yearlyProductID })?.id
+                selectedProductID = newProducts.first(where: { $0.id == Self.defaultProductID })?.id
                     ?? newProducts.first?.id
             }
         }
@@ -474,7 +480,10 @@ struct PaywallContent: View {
             )
         case .success:
             VStack(spacing: WarmSpacing.sm) {
-                ForEach(entitlement.products, id: \.id) { product in
+                // 视图层排序:默认方案(年付)置顶,其余维持 manager 的价格升序。
+                // 不改 entitlement.products 本身的顺序 —— checkIntroOffer 等
+                // 逻辑依赖 manager 侧的稳定序。
+                ForEach(displayOrderedProducts, id: \.id) { product in
                     ProductCard(
                         product: product,
                         isSelected: product.id == selectedProductID,
@@ -486,6 +495,15 @@ struct PaywallContent: View {
             }
             .padding(.horizontal, WarmSpacing.lg)
         }
+    }
+
+    /// 商品展示序:默认方案(年付)在前,其余按 manager 的价格升序。
+    /// 只影响渲染顺序,不动 `entitlement.products`。
+    private var displayOrderedProducts: [Product] {
+        guard let preferred = entitlement.products.first(where: { $0.id == Self.defaultProductID }) else {
+            return entitlement.products
+        }
+        return [preferred] + entitlement.products.filter { $0.id != Self.defaultProductID }
     }
 
     /// `.empty` 态副文案:有网但商品空 → 中性"无法连接 App Store";无网 → 提示检查网络。
@@ -623,7 +641,7 @@ struct PaywallContent: View {
             return product
         }
         // fallback: 默认年付,找不到则取排序后第一个
-        return entitlement.products.first(where: { $0.id == EntitlementManager.yearlyProductID })
+        return entitlement.products.first(where: { $0.id == Self.defaultProductID })
             ?? entitlement.products.first
     }
 
@@ -731,6 +749,13 @@ private struct ProductCard: View {
         product.id == EntitlementManager.yearlyProductID
     }
 
+    /// 年付折合月价(「约 ¥3.33/月」):`price / 12` 用 StoreKit 的 `priceFormatStyle`
+    /// 格式化,币种/小数位跟随店面,不手写价格。月付不显示。
+    private var monthlyEquivalentPrice: String? {
+        guard isYearly else { return nil }
+        return product.priceFormatStyle.format(product.price / 12)
+    }
+
     private var periodUnit: String {
         isYearly
             ? String(localized: "paywall.period.year")
@@ -787,6 +812,14 @@ private struct ProductCard: View {
                         .foregroundColor(WarmTheme.textMuted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                    if let perMonth = monthlyEquivalentPrice {
+                        // 年付折合月价:让「省 33%」的直觉落到每月花销上。
+                        Text(String(localized: "paywall.yearly_per_month \(perMonth)"))
+                            .font(.system(size: 10, weight: .regular, design: .rounded))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
                 }
             }
             .padding(WarmSpacing.sm)

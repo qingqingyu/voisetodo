@@ -13737,6 +13737,28 @@
           }
         }
       }
+    },
+    "paywall.yearly_per_month %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "~%1$@/mo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "約 %1$@/月"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约 %1$@/月"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
