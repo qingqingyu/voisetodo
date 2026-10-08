@@ -41,6 +41,8 @@ struct UIDemoView: View {
                             .navigationTitle("空状态示例")
                             .environmentObject(AppCoordinator.preview)
                             .environmentObject(PermissionManager())
+                            .environmentObject(EntitlementManager(enableTransactionListener: false))
+                            .environmentObject(QuotaUsage())
                     }
 
                     NavigationLink("HomeView - 有数据") {
@@ -48,6 +50,8 @@ struct UIDemoView: View {
                             .navigationTitle("有数据示例")
                             .environmentObject(AppCoordinator.preview)
                             .environmentObject(PermissionManager())
+                            .environmentObject(EntitlementManager(enableTransactionListener: false))
+                            .environmentObject(QuotaUsage())
                     }
                 }
 

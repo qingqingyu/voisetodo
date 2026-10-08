@@ -13915,6 +13915,94 @@
           }
         }
       }
+    },
+    "home.quota_pill.free %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today %1$d/%2$d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d"
+          }
+        }
+      }
+    },
+    "home.quota_pill.pro %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro · %1$d/%2$d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro · %1$d/%2$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro · %1$d/%2$d"
+          }
+        }
+      }
+    },
+    "home.quota_pill.a11y.free %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used %1$d of %2$d today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d 回使用済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日已用 %1$d 次，共 %2$d 次"
+          }
+        }
+      }
+    },
+    "home.quota_pill.a11y.pro %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro member, used %1$d of %2$d today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro メンバー、今日 %1$d/%2$d 回使用済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 会员，今日已用 %1$d 次，共 %2$d 次"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
