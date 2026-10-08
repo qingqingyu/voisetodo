@@ -1,176 +1,234 @@
-# 付费墙购买后体验——逐条改造说明(2026-10-08)
+# 付费墙购买后体验——逐条改造说明(v2,2026-10-08)
 
 > 交给实现方的任务书。每条写明 **现状 → 怎么改 → 要达到的效果(验收)**。
-> 标「✅ 已实现」的条目代码已在 main(`abd30cc`),实现方只需**按验收项核对、不要重写**;
-> 标「🔧 待实现」的才是本次要改的。改完由 Claude review。
+> v2 依据产品原型调整:成功反馈从「整页遮罩」改为「CTA 原地变绿 + 额度 3→100」,
+> 新增首页额度胶囊、Pro 状态页、按钮下价格说明、年付默认置顶。
+> 标「✅ 保留」的是 main(`abd30cc`)已有、本次不动的行为;「🔧」是本次要改的。改完由 Claude review。
 
 ## 0. 通用约束(所有条目都适用)
 
-- **不要改动** `App/EntitlementManager.swift` 里权益判定的核心逻辑(`performEntitlementRefresh`
-  的过滤与 `latest(for:)` 兜底、`purchase()` 的对账、DEBUG + Xcode 环境放行)。需要新信号就**加**
-  `@Published` 属性/方法,不要改已有分支的语义。
-- 新增用户可见文案一律进 `Resources/Localizable.xcstrings`,**en / ja / zh-Hans 三语齐全**,
-  代码里用 `String(localized:)` 或在 `Protocols/ErrorMessages.swift` 加常量,不许硬编码。
-- 日志用 `VoiceTodoLog.<category>`,事件名 `模块.动作 key=value` 风格(参照现有 `entitlement.*`、
-  `coordinator.*`)。
-- 注释用中文,写「为什么」,与周边代码密度一致。
-- 付费墙入口只能走 `AppCoordinator.presentPaywall(source:)`,不许直接写 `showPaywall = true`。
-- 每条改完同步 `docs/payment-flow-review-2026-10.md` 第 4 节状态表;涉及购买流程的改动同步
-  `VoiceTodoUITests/ScenarioTests.swift` 的 S20。
-- 新逻辑能单测的放 `VoiceTodoTests/`(`EntitlementManager.setEntitlementForTesting` 是 DEBUG 测试注入口)。
+- **不要改动** `App/EntitlementManager.swift` 里权益判定的核心逻辑:`performEntitlementRefresh`
+  的过滤与 `Transaction.latest(for:)` 兜底、`purchase()` 的 verified 成功直接设权益与非成功对账、
+  DEBUG + Xcode 环境放行未验签交易。需要新信号就**加** `@Published` 属性/方法,不改已有分支语义。
+- **成功反馈只认事件计数**(`purchaseSuccessCount` / `restoreSuccessCount`),**不许改回依赖
+  `isPro` 跳变**——这是用户截图「付了钱页面不动」的根因(权益没刷出来时 isPro 不翻)。
+- **文案「统一」指跟随系统语言统一,不是写死中文**。App 已有 en / ja / zh-Hans 三语;新增文案进
+  `Resources/Localizable.xcstrings` 三语齐全,代码用 `String(localized:)` 或 `Protocols/ErrorMessages.swift`
+  常量,不许硬编码中文。原型里的中文即 zh-Hans 的取值。
+- 价格、周期一律取 StoreKit 的 `Product`(`displayPrice`、`priceFormatStyle`、`subscription`),
+  **不许手写 ¥39.99、7 天**——各国店面币种和价格不同,试用时长以 `introductoryOffer.period` 为准。
+- 日志用 `VoiceTodoLog.<category>`,事件名 `模块.动作 key=value`;注释中文、写「为什么」。
+- 付费墙入口只能走 `AppCoordinator.presentPaywall(source:)`。
+- 每条改完同步 `docs/payment-flow-review-2026-10.md` 第 4 节状态表;购买流程改动同步
+  `VoiceTodoUITests/ScenarioTests.swift` 的 S20(UI 测试强制 zh,断言可用中文)。
+- 原型是交互参考,**视觉以现有 WarmTheme 设计语言为准**(颜色 `WarmTheme.*`、间距 `WarmSpacing.*`、
+  圆角 `WarmRadius.*`),不要引入新色值。
 
 ---
 
-## 1. 购买成功立刻有明确反馈 ✅ 已实现
+## 1. 购买成功:CTA 原地变绿 → 额度 3→100 → 约 1 秒后收起 → toast 🔧
 
-**现状**:`UI/Paywall/PaywallView.swift` 的 `successOverlay`——`purchaseSuccessCount` 变化即整页盖上
-对勾 +「已升级为 Pro」+ 有效期,`.sensoryFeedback(.success)` 触感,VoiceOver 播报。
-不依赖 `isPro` 是否已翻正(旧实现依赖它,权益没刷出来时页面毫无变化——用户截图的问题)。
-
-**验收**:
-- 系统购买弹窗点确认、弹窗消失后 **≤ 0.5 秒** 内付费墙出现成功遮罩,下层购买按钮不可再点。
-- 真机能感到一次成功震动;VoiceOver 开启时朗读「已升级为 Pro」。
-- 系统弹「你已订阅」后 App 对账为 Pro,同样出现成功遮罩(不是停在购买页)。
-
-## 2. 约 1 秒后自动关闭付费墙 ✅ 已实现(关闭部分) / 🔧 待实现(继续原操作)
-
-### 2a. 自动关闭 ✅
-**现状**:`PaywallView` 的 `.task(id: successEvent)` 1.5 秒后 `dismiss()`。
-**验收**:遮罩出现约 1.5 秒后付费墙自动收起,回到打开前的页面;期间用户手动点 × 也正常关闭、不崩。
-
-### 2b. 因额度用完弹出的付费墙,买完继续原操作 🔧
-
-**现状**:额度耗尽时 `AppCoordinator.handleOfflineFallbackSaved` 已把本次输入**存成 pending 条目**
-(toast「已离线保存」),再 `presentPaywall(source: .quotaExhausted)`。pending 只会在下次
-scenePhase 回到 `.active` 时由 `handleAppForeground()` → `PendingRecoveryFlow` 处理。
-购买发生在 App 内,付费墙收起后不会触发回前台,用户刚才说的那句话要等下次切 App 才被解析。
+**现状**:`UI/Paywall/PaywallView.swift` 用整页 `successOverlay`(对勾 +「已升级为 Pro」)盖住付费墙,
+1.5 秒后 `dismiss()`,收起后无 toast。
 
 **怎么改**:
-1. `AppCoordinator` 记住最近一次付费墙来源(`presentPaywall` 里已有 `source`,存一个
-   `private(set) var lastPaywallSource: PaywallSource?`)。
-2. 加 `func handlePaywallDismissedAfterPurchase()`:若来源是 `.quotaExhausted` 且
-   `entitlement.isPro == true`,调 `await handleAppForeground()` 处理 pending;打日志
-   `coordinator.paywall.resume_pending source=quota_exhausted`。
-3. 触发点:`PaywallView` 成功遮罩的自动 `dismiss()` 之后(PaywallView 当前没有 coordinator,
-   需在 `VoiceTodoApp` 的 paywall sheet 上重新注入 `.environmentObject(coordinator)`,
-   或改用 `.sheet(isPresented:onDismiss:)` 在 onDismiss 里判断「本次是否成功购买」再调用)。
-   推荐 `onDismiss` 方案:不让 PaywallView 依赖 coordinator。需要一个「本次 sheet 期间购买成功过」
-   的标志——可在 `presentPaywall` 时记下当时的 `entitlement.purchaseSuccessCount`,
-   onDismiss 时比较是否增加。
-4. `handleAppForeground` 自带 `isRecording / showConfirmSheet` 等守卫,直接复用,不要绕过。
+1. **删除** `PaywallView` 的 `successOverlay` 及其 `.overlay` 挂载;保留 `successEvent` 状态、
+   `.sensoryFeedback(.success, …)`、VoiceOver 播报、`.task(id:)` 定时收起的骨架。
+2. `successEvent` 需要传给 `PaywallContent`(参数或 `@Binding`),`purchaseCTA` 在
+   `successEvent != nil` 时渲染成功态:
+   - 底色 `WarmTheme.success`,内容 `checkmark` 图标 + 文案(购买:`paywall.purchase_success`
+     「已升级为 Pro」;恢复:`paywall.restore_success`「已恢复 Pro」);
+   - 不可点(`.disabled(true)`,但**不要**降透明度——成功态要醒目);
+   - 状态切换用 `.easeOut(0.25)` 过渡,`accessibilityIdentifier` 保持 `PaywallPurchaseButton`,
+     成功态额外加 `accessibilityValue("success")` 供 UI 测试判断。
+   - 商品卡同时 disabled(沿用 `isPurchasing` 的弱化样式即可),防止成功态期间再选方案。
+3. 顶部额度胶囊同步升档:`comparisonCard` 在 `successEvent != nil` 时一律走 `liveUsageCard`,
+   上限取 `NetworkConfig.proDailyLimit`(即「今日已用 2/100」)。数字变化加
+   `.contentTransition(.numericText())`。**不要**为此改 `QuotaUsage`——成功态是本次会话的
+   展示覆盖,代理权威头到来后由 `displayedLimit` 正常接管。
+4. 收起时机:成功态出现后 **1.0 秒** `dismiss()`(原 1.5 秒)。
+5. 收起后弹 toast「已升级为 Pro」/「已恢复 Pro」(style `.success`):
+   在 `App/VoiceTodoApp.swift` 的 paywall `.sheet` 改用 `onDismiss:`,由 `AppCoordinator`
+   判断「本次 sheet 期间成功计数是否增加」(在 `presentPaywall` 时记下两个计数的快照,
+   onDismiss 比较),增加了就 `showToast`。这样 toast 挂在主视图上、sheet 已收起,不会被盖住;
+   也不必让 PaywallView 依赖 coordinator。第 3 条(2b)的「继续原操作」复用同一个 onDismiss 判定。
+6. 用户在成功态 1 秒内手动点 ×:正常关闭,toast 照弹(onDismiss 判定不依赖谁触发的关闭)。
 
 **验收**:
-- 免费档用满 3 次 → 第 4 次录音 → toast「已离线保存」+ 付费墙 → 购买成功 → 遮罩 → 自动收起 →
-  **不切后台**,几秒内刚才那句话被解析,走正常确认流程(ConfirmSheet 或直接入列,与正常录音一致)。
-- 手动从设置打开付费墙购买(`.manual` 来源):收起后**不**触发 pending 处理。
-- 购买取消 / 失败后关闭付费墙:**不**触发。
-- 注意 Xcode 本地 StoreKit 下代理验签不过、仍按免费档计(见 `docs/payment-test-plan.md`「大坑」),
-  这条的端到端验收**必须用沙盒账号**,否则 pending 处理会再次撞额度耗尽。
+- 系统购买弹窗确认、弹窗消失后 ≤ 0.5 秒内 CTA 变绿「✓ 已升级为 Pro」,伴随一次成功震动;
+  顶部胶囊同时变为「今日已用 x/100」。
+- 约 1 秒后付费墙自动收起,主界面弹「已升级为 Pro」toast;首页额度胶囊(第 3 条)已是 Pro 档。
+- 系统弹「你已订阅」后 App 对账为 Pro:同样走上述成功态(不是停在购买页)。
+- 权益重读未反映交易(日志 `entitlement.purchase_entitlement_missing`)时成功态照常出现。
+- VoiceOver:成功时朗读「已升级为 Pro」;成功态按钮朗读为不可用的「已升级为 Pro」。
+- S20 Step 6 改为:断言 `PaywallPurchaseButton` 的 value 变为 `success` → 付费墙 10 秒内消失 →
+  主界面出现「已升级为 Pro」toast。
 
-## 3. 全局状态同步——首页可见 Pro 🔧 待实现
+## 2. 其它结果的反馈 🔧(取消/失败已有,pending 与 restore 调整)
 
-**现状**:`entitlement.isPro` 是全局共享的 `@Published`,设置页入口已随之切到「你已订阅 Pro」
-(`UI/Home/HomeSettingsSheet.swift`)。但**首页没有任何额度或 Pro 标识**,买完回到首页看不出变化。
-额度数字只在付费墙顶部胶囊里(`quota.today_used`,数值来自 `QuotaUsage.displayedLimit`,
-订阅后、代理响应前已过渡显示 Pro 档上限)。
+| 结果 | 页面反应 | 现状 |
+|---|---|---|
+| 用户取消 | 恢复原样,无提示、无震动,CTA 立即可点 | ✅ 保留 |
+| 失败 | 行内警示色「购买失败，请稍后重试」,CTA 可再点 | ✅ 保留 |
+| 验签失败 | 行内「购买凭证校验失败，请稍后重试或恢复购买」 | ✅ 保留 |
+| 等待批准 | 见 2a 🔧 | 现为警示色「购买待处理，请稍后」 |
+| 恢复成功 | 与第 1 条同款成功态(按钮「✓ 已恢复 Pro」)→ 收起 → toast | 🔧 现为遮罩 |
+| 无可恢复 | 行内「未找到可恢复的订阅」,不收起 | ✅ 保留 |
+| 恢复失败 | 行内「恢复失败」 | ✅ 保留 |
 
-**怎么改**(克制,只加一个小标识,不做额度面板):
-1. `UI/Home/HomeView.swift` 头部标题行,设置齿轮 `settingsButton` 左侧,`entitlement.isPro` 为 true 时
-   显示小胶囊「PRO」(`WarmTheme.primary` 描边或浅底,字号 11 semibold rounded,高 ≤ 20pt)。
-   用 `@EnvironmentObject EntitlementManager` 或 `coordinator.isProSubscriber`,与现有写法一致。
-2. 胶囊可点 → `coordinator.presentPaywall(source: .manual)`(付费墙已订阅态会显示有效期)。
-3. 加 `accessibilityIdentifier("HomeProBadge")`,a11y label 用新文案 `home.pro_badge`
-   (en "Pro member" / zh-Hans "Pro 会员" / ja "Pro メンバー")。
-4. 不要在首页加「x/100」额度数字:Pro 档 100 条/天几乎用不满,常驻数字是噪音。
+### 2a. 等待批准(家长「询问购买」)
+1. `ErrorMessages` 加 `paywallPending`,`EntitlementManager` 的 `.pending` 改用它。
+2. 文案说明原因和下一步:zh-Hans「已提交，等待家长批准后自动生效」/
+   en「Sent for approval. Pro turns on automatically once approved.」/
+   ja「承認をリクエストしました。承認されると自動で有効になります」。
+3. `inlineErrorText` 对该值用 `WarmTheme.textSecondary` + 前置 `clock` 图标(中性,不像出错)。
+4. 批准后若付费墙仍开着要走成功态:`EntitlementManager` 加 `private var hasPendingPurchase`,
+   `.pending` 时置 true;`listenForTransactionUpdates` 刷新后若 `hasPendingPurchase && isPro`
+   → `purchaseSuccessCount += 1` 并清标志(只加一次,防重复成功态)。
 
-**验收**:
-- 未订阅:首页无 PRO 胶囊,头部布局与现在像素级一致(跑 `ScreenshotUITests` 对比)。
-- 购买成功、付费墙自动收起后,回到首页**立即**出现 PRO 胶囊(无需重启/切后台)。
-- 订阅到期(沙盒月付 5 分钟)后,前台停留中胶囊在到期 +2 秒内消失(依赖已有的到期重读)。
-- SE 尺寸 + 最大动态字号下标题行不截断、不换行错位。
-- S20 Step 6 之后加断言:`HomeProBadge` 存在。
+**验收**(`Products.storekit` 的 `_askToBuyEnabled` 临时改 true,**不要提交**):
+点购买 → 灰色带时钟的「已提交，等待家长批准后自动生效」,无成功态、无震动 →
+Xcode Transaction Manager 批准 → 付费墙仍开着则出现成功态并收起;已关闭则首页胶囊变 Pro。
+拒绝 → 保持购买态,不得出现成功态。
 
-## 4. 用户取消 → 静默留在页面 ✅ 已实现
-**现状**:`purchase()` 的 `.userCancelled` 不设 `lastError`。
-**验收**:系统购买弹窗点「取消」→ 付费墙保持原样,无错误行、无震动、CTA 立即可再点。
+### 2b. 恢复购买
+第 1 条改完后恢复成功自然复用成功态,只需确认按钮文案为「✓ 已恢复 Pro」、toast 为「已恢复 Pro」。
 
-## 5. Pending(家长「询问购买」)→ 中性提示「等待批准」 🔧 待实现(小改)
+## 3. 首页额度胶囊 + 额度用完后买完继续原操作 🔧
 
-**现状**:`purchase()` 的 `.pending` 设 `lastError = String(localized: "paywall.pending")`
-(zh「购买待处理，请稍后」/ en「Purchase pending」),由 `PaywallContent.inlineErrorText`
-以 **警示色** `WarmTheme.warning` 渲染——看起来像出错。批准后 `Transaction.updates` 会刷新权益。
+### 3a. 首页额度胶囊(新增)
+**现状**:首页没有任何额度/Pro 显示(额度只在付费墙顶部),买完回首页看不出变化。
 
 **怎么改**:
-1. `ErrorMessages` 加常量 `paywallPending`,`EntitlementManager` 改用它赋值(值不变)。
-2. 文案改为更明确的「等待批准」:zh-Hans「已提交,等待批准后自动生效」、
-   en「Waiting for approval. Pro activates once approved.」、ja「承認待ちです。承認されると自動で有効になります」。
-3. `inlineErrorText` 里 `lastError == ErrorMessages.paywallPending` 时用 `WarmTheme.textSecondary`
-   并前置 `clock` 图标;其它错误保持警示色。
-4. 批准后若付费墙仍开着:应走成功反馈。现在 `Transaction.updates` 只刷新 `isPro`、不增
-   `purchaseSuccessCount`,所以**不会**出遮罩。在 `EntitlementManager` 记一个
-   `private var hasPendingPurchase`(`.pending` 时置 true),`listenForTransactionUpdates`
-   里刷新后若 `hasPendingPurchase && isPro` → `purchaseSuccessCount += 1` 并清标志。
-
-**验收**(Xcode 本地 StoreKit:`Products.storekit` 的 `_askToBuyEnabled` 临时改 true,别提交):
-- 点购买 → 付费墙显示灰色带时钟图标的「已提交,等待批准后自动生效」,**无成功遮罩、无震动**。
-- 在 Xcode Transaction Manager 里批准 → 付费墙(若仍开着)出现成功遮罩并自动收起;
-  若已关闭,下次打开付费墙为已订阅态,首页出现 PRO 胶囊。
-- 拒绝 → 付费墙保持购买态,提示行不变或清除均可,不得显示成功。
-
-## 6. 失败 → 简短错误 + 可重试 ✅ 已实现
-**现状**:抛错 → `paywall.purchase_failed`「购买失败，请稍后重试」警示色行内显示,CTA 恢复可点;
-验签失败 → `paywall.purchase_unverified` 并提示恢复购买。
-**验收**:`_failTransactionsEnabled = true`(临时)→ 点购买 → 出现「购买失败，请稍后重试」,
-再点 CTA 能重新弹系统购买框。
-
-## 7. Restore Purchases 给出结果 ✅ 已实现
-**现状**:成功 → 同一成功遮罩「已恢复 Pro」并自动收起(`restoreSuccessCount`);
-无可恢复 → 行内「未找到可恢复的订阅」;Apple ID 验证点取消 → 静默;其它错误 →「恢复失败」。
-**验收**:已订阅账号在购买态点「恢复购买」→ 遮罩「已恢复 Pro」→ 收起;
-未订阅账号点 → 行内「未找到可恢复的订阅」,不收起。
-
-## 8. 已是 Pro 再打开付费墙 → 显示状态而非购买按钮 ✅ 已实现
-**现状**:`PaywallContent` 的 `entitlement.isPro` 分支:实时用量 → `PaywallSubscribedCard`
-(「你已订阅 Pro」+ 有效期)→ 法务 + 恢复,无购买按钮。
-**验收**:订阅后从设置进付费墙,看到已订阅卡与「有效期至 X」,没有商品列表和 CTA。
-
-## 9. 「只 finish 没更新状态 / 没监听 Transaction.updates」 ✅ 该判断不成立
-代码在 `purchase()` 里 `finish()` 后会 `refreshEntitlements()`,App 启动即监听
-`Transaction.updates`(`listenForTransactionUpdates`)。用户截图那次的真实原因是权益重读没反映出
-这笔交易,已用「以成功交易直接设权益 + `Transaction.latest(for:)` 兜底」修复,并留了
-`entitlement.purchase_entitlement_missing` / `entitlement.refresh_fallback_latest` 日志。
-**无需改动**;实现方真机复测时若看到这两条日志,请把日志附在 PR 里。
-
-## 10. 中英混排 🔧 待实现(配置 + 上架清单,无业务代码)
-
-**现状**:截图里标题/卖点/按钮是英文(App 本地化跟随系统语言,正确),套餐名「Pro 月付」与描述
-是中文——这两段来自 StoreKit 商品元数据,不是 App 文案:
-- Xcode 本地测试:取自 `VoiceTodo/Products.storekit` 的 `"_locale" : "zh_CN"`(Xcode 只按这个
-  Default Localization 出商品文案,不跟随设备语言)。
-- 上架后:取自 App Store Connect 里每个订阅商品的本地化,按用户语言/店面下发。
-
-**怎么改**:
-1. 不改代码。`Products.storekit` 的 `_locale` **保持 zh_CN**(主力市场),在
-   `docs/payment-test-plan.md` 补一句:测英文界面时在 Xcode 打开 Products.storekit →
-   Editor → Default Localization 临时切 English (US),**不要提交**该改动。
-2. `app-store-submit-checklist.md` 增加检查项:两个订阅商品 + 订阅组在 ASC 均填写
-   **English (U.S.) 与 简体中文** 的显示名称和描述(与 Products.storekit 里两套文案一致),
-   如上架日本区再加日语。
-3. 顺带核对:`ProductCard` 的「/ month」「/ year」与「Save 33%」走的是 App 本地化,不受此影响。
+1. `UI/Home/HomeView.swift` 头部标题行、`settingsButton` 左侧加额度胶囊:
+   - 免费:「今日 2/3」(复用 `quota.today_used` 或新增短文案 `home.quota_pill`);
+   - Pro:「Pro · 2/100」,`WarmTheme.primary` 浅底;
+   - 数值来自 `QuotaUsage.used` 与 `displayedLimit(storeKitIsPro: entitlement.isPro)`,
+     与付费墙同口径;`quotaUsage.loadState == .error` 或尚无数据时显示「Pro」/ 隐藏数字,不显示错误。
+2. 点胶囊 → `coordinator.presentPaywall(source: .manual)`(Pro 时进入第 4 条状态页)。
+3. `accessibilityIdentifier("HomeQuotaPill")`,a11y label 读完整句(「今日已用 2 次,共 3 次」/
+   「Pro 会员,今日已用 2 次,共 100 次」)。
+4. 不要挤压标题:SE + 最大动态字号下胶囊可只显示「Pro」或数字,标题行不得截断。
 
 **验收**:
-- 设备英文 + Products.storekit 切 English 时,付费墙商品名为「Pro Monthly / Pro Yearly」,
-  整页无中文。
-- 设备中文 + 默认 zh_CN 时整页中文。
-- 上架清单里有上述 ASC 本地化检查项。
+- 免费档首页显示「今日 x/3」,每次录音成功后数字更新。
+- 购买成功、付费墙收起后**立即**变为「Pro · x/100」(无需重启/切后台)。
+- 沙盒月付到期后,前台停留中胶囊在到期 +2 秒内回落为免费档。
+- 未订阅时头部其余元素位置不变(跑 `ScreenshotUITests` 对比)。
+
+### 3b. 额度用完弹出的付费墙,买完继续原操作
+**现状**:额度耗尽时 `AppCoordinator.handleOfflineFallbackSaved` 已把输入存为 pending,再
+`presentPaywall(source: .quotaExhausted)`;pending 只在回前台 `handleAppForeground()` 时处理,
+App 内购买后收起付费墙不会触发。
+
+**怎么改**:第 1 条第 5 步的 onDismiss 判定里,若「本次成功计数增加」且 `presentPaywall` 记下的
+来源是 `.quotaExhausted` 且 `entitlement.isPro`,`Task { await handleAppForeground() }`,
+日志 `coordinator.paywall.resume_pending source=quota_exhausted`。复用其守卫,不要绕过。
+
+**验收**(**必须沙盒账号**:Xcode 本地 StoreKit 的 JWS 代理验签不过,仍按免费档计,
+见 `docs/payment-test-plan.md`「大坑」):免费用满 → 第 4 次录音 →「已离线保存」+ 付费墙 →
+购买 → 成功态 → 收起 → **不切后台**几秒内刚才那句被解析,走正常确认流程。
+`.manual` 来源购买、或取消/失败后关闭:均不触发。
+
+## 4. 已是 Pro:「你已是 Pro」状态页 🔧(在现有已订阅态上补全)
+
+**现状**:`PaywallContent` 的 `entitlement.isPro` 分支 = 实时用量胶囊 + `PaywallSubscribedCard`
+(「你已订阅 Pro」+「有效期至 X」)+ 法务 + 恢复,无购买按钮。缺方案名、试用/收费日期区分、管理订阅。
+
+**怎么改**:
+1. `EntitlementManager` 加只读 `@Published` 字段(在 `performEntitlementRefresh` 选定交易时一并赋值,
+   不改选择逻辑):`activeProductID: String?`、`isInIntroOffer: Bool`(`transaction.offerType == .introductory`)、
+   `willAutoRenew: Bool?`(取对应 `Product.subscription?.status` 里该交易的 `renewalInfo.willAutoRenew`;
+   取不到为 nil)。
+2. 状态卡内容(自上而下):
+   - 标题「你已是 Pro」(更新 `paywall.subscribed.title` 的 zh-Hans 取值即可,en/ja 同步);
+   - 方案:「Pro 年付 · ¥39.99/年」(`Product.displayName` + `displayPrice` + 周期);
+   - 日期一行,三种情况:
+     - 试用中且会续费:「免费试用至 10月15日，之后按 ¥39.99/年 收费」;
+     - 已付费且会续费:「下次续费 2027年10月8日」;
+     - 已关闭自动续费:「有效期至 X，到期后不再续费」;
+     - `willAutoRenew == nil`:退回现有「有效期至 X」。
+   - 今日用量:「今日已用 2/100」(就是顶部实时用量胶囊,保留即可)。
+3. 底部主按钮「管理订阅」:`.manageSubscriptionsSheet(isPresented:)`(iOS 15+),
+   `accessibilityIdentifier("PaywallManageSubscriptionButton")`;下面保留法务链接与「恢复购买」。
+4. 管理订阅页关闭后调 `entitlement.refreshEntitlements()`(用户可能刚取消续费或切换方案)。
+
+**验收**:
+- 订阅后点首页胶囊或设置入口:看到「你已是 Pro」、方案与价格、正确的日期文案、今日用量,
+  **没有**商品列表和购买按钮。
+- 试用期账号显示「免费试用至 …，之后按 … 收费」;在管理订阅里取消续费、关闭后,
+  日期行变为「到期后不再续费」。
+- 「管理订阅」能打开系统订阅管理页(真机/沙盒;模拟器 Xcode StoreKit 下打开测试管理页)。
+
+## 5. 价格说明放在按钮下方 🔧
+
+**现状**:CTA 下方 `legalText` 是通用句子(「试用结束后自动续费。可随时在 设置 → Apple ID → 订阅 中取消」),
+不含所选方案的价格。
+
+**怎么改**:
+1. `legalText` 改为按**当前选中商品**拼:
+   - 有试用资格:`paywall.legal.trial_then_price`「试用 %1$@ 后按 %2$@/%3$@ 自动续费，可随时取消」
+     (时长取 `introOfferPeriod.formattedLocalizedPeriod()`,价格 `displayPrice`,周期「年/月」);
+   - 无资格:`paywall.legal.price_autorenew`「%1$@/%2$@，自动续费，可随时取消」;
+   - 第二行保留取消路径「在 设置 → Apple ID → 订阅 中取消」。
+2. 切换选中方案时文案即时更新;仍只在 `productLoadState == .success && !isCheckingIntroOffer` 时渲染
+   (沿用 C 点防抖)。
+3. 合规:不可截断,`lineLimit(3)` + `minimumScaleFactor(0.85)` 预算保留;字号可从 11 提到 12,
+   但需保证 S18「一屏装下」UI 测试仍通过。
+
+**验收**:选年付显示「试用 7 天后按 ¥39.99/年 自动续费，可随时取消」;切月付立即变为
+「… ¥4.99/月 …」;无试用资格账号显示「¥39.99/年，自动续费，可随时取消」;
+SE 尺寸 CTA 与价格说明无需滚动可见。
+
+## 6. 年付默认选中、置顶,显示折合月价 🔧
+
+**现状**:`EntitlementManager.loadProducts` 按价格升序 → 月付在上;默认选中年付的逻辑只在
+`onChange(of: entitlement.products)` 里——**再次打开付费墙时商品已加载、数组没变,onChange 不触发,
+`selectedProductID` 为 nil,没有任何卡片高亮**(现有 bug,用户截图可见选中态与预期不符)。
+
+**怎么改**:
+1. 排序改在视图层:`productList` 渲染时年付在前(`yearlyProductID` 优先,其余按价格),
+   **不改** `EntitlementManager.products` 的顺序(其它地方可能依赖)。
+2. 初始选中修复:`onChange(of: entitlement.products, initial: true)`(iOS 17+),
+   让首次出现时也走默认年付逻辑。
+3. 年付卡价格下方加折合月价:「约 ¥3.33/月」——`product.price / 12` 用
+   `product.priceFormatStyle` 格式化,文案 `paywall.yearly_per_month`(%@ 占位)。
+   保留「Save 33%」角标(已有 `paywall.yearly_save`)。
+4. 默认推年付是产品建议,不是硬要求:把「默认选中哪个」收敛成一个常量
+   (如 `PaywallContent.defaultProductID = EntitlementManager.yearlyProductID`),以后改一行即可。
+
+**验收**:每次打开付费墙(含第二次及以后)年付都在上方且默认高亮;年付卡显示「约 ¥3.33/月」;
+CTA 与第 5 条价格说明对应年付;点月付后高亮、CTA、价格说明一起切换。
+
+## 7. 中英混排(配置 + 上架清单,无业务代码) 🔧
+
+**现状**:截图里商品名「Pro 月付」与描述是中文、其余英文——商品元数据来自 StoreKit,不是 App 文案:
+Xcode 本地测试取 `VoiceTodo/Products.storekit` 的 `"_locale" : "zh_CN"`(不跟随设备语言);
+上架后取 App Store Connect 各商品的本地化。
+
+**怎么改**:
+1. `Products.storekit` 的 `_locale` 保持 zh_CN;`docs/payment-test-plan.md` 补说明:测英文界面时在
+   Xcode 打开 Products.storekit → Editor → Default Localization 临时切 English (US),不要提交。
+2. `app-store-submit-checklist.md` 加检查项:两个订阅商品与订阅组在 ASC 填写 English (U.S.) 与
+   简体中文的显示名称和描述(与 Products.storekit 两套文案一致),上架日本区再加日语。
+
+**验收**:设备中文 + zh_CN 配置整页中文;设备英文 + 临时切 English 配置整页英文;清单有该项。
+
+## 8. 已核实、无需改动
+
+- 「购买后只 `finish()` 没更新状态 / 没监听 `Transaction.updates`」:不成立。`purchase()` 在
+  `finish()` 后 `refreshEntitlements()`,启动即 `listenForTransactionUpdates()`。截图问题的真实原因
+  是权益重读未反映交易,已以「verified 交易直接设权益 + `latest(for:)` 兜底」修复,
+  日志 `entitlement.purchase_entitlement_missing` / `entitlement.refresh_fallback_latest`。
+  真机复测若出现这两条日志,请附在 PR 里。
 
 ---
 
 ## 交付与 review
 
-- 一条一个 commit(`feat(paywall): …` / `fix(paywall): …`),在单独分支上做,不直接推 main。
-- PR 描述按本文编号列出每条「改了什么 / 怎么验的」,真机验收附截图或录屏
-  (尤其 2b、3、5)。
-- Review 时重点看:是否碰了第 0 节禁止改动的权益逻辑;新文案三语是否齐全;
-  2b 是否会在非购买场景误触发 pending 处理;5 的 pending→批准路径是否会重复计成功
-  (遮罩出现两次)。
+- 在单独分支上做,一条一个 commit(`feat(paywall): …` / `fix(paywall): …`),不直接推 main。
+- 建议顺序:6(含选中 bug)→ 5 → 1 → 2 → 4 → 3a → 3b → 7。1 与 3b 共用 onDismiss 判定,先做 1。
+- PR 描述按本文编号列出「改了什么 / 怎么验的」,真机验收附截图或录屏(尤其 1、2a、3、4)。
+- Review 重点:是否碰了第 0 节禁止改动的权益逻辑;成功反馈是否仍只认事件计数;
+  新文案三语是否齐全、价格是否全部来自 StoreKit;3b 是否会在非购买场景误触发 pending 处理;
+  2a 批准路径是否会重复计成功;6 的初始选中在「第二次打开付费墙」时是否生效。
