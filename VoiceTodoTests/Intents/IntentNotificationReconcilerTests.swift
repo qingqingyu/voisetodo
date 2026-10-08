@@ -130,6 +130,36 @@ final class IntentNotificationReconcilerTests: XCTestCase {
         XCTAssertTrue(spy.added[0].repeats)
     }
 
+    // MARK: - 删除撤销(removeNotifications)
+
+    /// 删除待办后撤销其全部已排通知:前缀族内变体(有界展开 -d / weekly -w)全删,
+    /// 别人的标识不动。已删待办不走 reconcile(todoID:)(那条会 todo_not_found 直接返回)。
+    func testRemoveNotificationsDeletesAllVariantsOnly() async {
+        let id = UUID()
+        let other = UUID()
+        let expanded = Self.identifier(of: id) + "-d20260823"
+        let weekly = Self.identifier(of: id) + "-w3"
+        let pending = [Self.identifier(of: other), expanded, weekly, Self.identifier(of: id)]
+        let spy = SpyNotificationPort(pending: pending)
+
+        await IntentNotificationReconciler.removeNotifications(todoID: id, port: spy)
+
+        XCTAssertEqual(spy.removed.sorted(), [expanded, Self.identifier(of: id), weekly].sorted())
+        XCTAssertTrue(spy.added.isEmpty, "删除撤销只删不排")
+    }
+
+    /// 没有已排通知时是 no-op:不发起移除调用。
+    func testRemoveNotificationsNoPendingIsNoop() async {
+        let id = UUID()
+        let other = UUID()
+        let spy = SpyNotificationPort(pending: [Self.identifier(of: other)])
+
+        await IntentNotificationReconciler.removeNotifications(todoID: id, port: spy)
+
+        XCTAssertTrue(spy.removed.isEmpty)
+        XCTAssertTrue(spy.added.isEmpty)
+    }
+
     // MARK: - 开关镜像(AppGroupConfig)
 
     func testNotificationsEnabledMirrorRoundTripAndFallback() throws {

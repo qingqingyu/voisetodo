@@ -88,6 +88,10 @@ struct DeleteTodoIntent: AppIntent {
 
         AppGroupConfig.markExternalDataChanged()
         WidgetCenter.shared.reloadAllTimelines()
+        // 撤销该待办已排提醒:同 Toggle/Complete 的洞——intent 写库不走活着的
+        // TodoStore,$todos 不发布,主 App 不回前台就不会对账,已删待办的提醒
+        // 会照响到原定时刻。这里在 intent 进程内就地撤销(只删不排)。
+        await IntentNotificationReconciler.removeNotifications(todoID: todoID, port: UNNotificationPort())
         VoiceTodoLog.intent.info("intent.delete.success id=\(intentID, privacy: .public) todoID=\(todo.id.uuidString, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         return .result(dialog: "siri.delete.success \(todo.title)")
     }

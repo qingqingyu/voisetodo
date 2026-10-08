@@ -168,11 +168,17 @@ final class CalendarSyncService {
         }
 
         // 工作集窗口化后用 findTodo 查库,以命中窗口外的项(见 docs/completed-todos-performance.md Step 2)
-        guard let updated = store.findTodo(by: todoID) else {
+        guard var updated = store.findTodo(by: todoID) else {
             VoiceTodoLog.calendar.warning("calendar.update.write_skipped todoID=\(todoID.uuidString, privacy: .public) reason=todo_missing sourceID=\(sourceID, privacy: .public)")
             return .skipped(.replace)
         }
 
+        // 真实 writer 只写 systemCalendarEventIdentifier == nil 的待办(批量首写的
+        // 幂等过滤,SystemCalendarWriter.writeEvents)。replace 语义是"删旧写新",
+        // 待办此刻还带着旧标识,不过滤副本会被跳过 → 演变成"删旧不写新",镜像静默
+        // 丢失且不自愈。这里在**副本**上清掉旧标识让新事件可写;成功后由
+        // persistSystemCalendarResults 落新 ID,失败时 store 里的旧标识原样保留(可重试)。
+        updated.systemCalendarEventIdentifier = nil
         let writeResult = await write(todos: [updated], sourceID: sourceID)
         if writeResult.status == .failed {
             // 写新失败：旧事件未动，store 里 oldEventIdentifier 也未变，下次编辑可重试

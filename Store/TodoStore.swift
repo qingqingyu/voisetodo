@@ -891,12 +891,24 @@ final class TodoStore:
 
     // MARK: - Internal Methods
 
+    /// 刷新 todos 工作集(协议 `TodoRefreshing` 的无参形态,等价 fetch 后回读版本号)。
+    func refreshTodos() {
+        refreshTodos(syncedExternalChangeVersion: nil)
+    }
+
     /// 刷新 todos 工作集(从数据库重新加载)。
     /// 工作集 = 全部未完成 + 近 `completedWindowDays` 天的已完成。
     /// 初始化时及 app 回前台时调用(同步 Widget 在 Extension 进程中的修改)。
     /// 窗口外的已完成项仍在库里,由 `TodoQueryActor` 按需查询(见
     /// docs/completed-todos-performance.md Step 3)。
-    func refreshTodos() {
+    /// - Parameter syncedExternalChangeVersion: 同步到 `lastSyncedExternalChangeVersion`
+    ///   的版本号快照。传 nil 时在 fetch 后回读(旧语义)。`refreshIfStale` 必须传
+    ///   **进门时**读到的版本号:外部写标记(markExternalDataChanged)总是先 save 后
+    ///   mark,若 fetch 之后才回读版本号,"fetch 数据 → 外部 save+mark → 回读版本"
+    ///   这个窗口内的外部写会被吸收进 lastSynced(数据没读到、版本却对上了),
+    ///   下次 refreshIfStale 判定无变化而跳过——主 App 漏看这次外部写直到再下一次
+    ///   外部写。快照进门版本最多导致一次多余的重读,方向安全。
+    func refreshTodos(syncedExternalChangeVersion: Double?) {
         let startedAt = Date()
         let cutoff = DayClock.startOfUserDay(for: Date())
             .addingTimeInterval(-Double(Self.completedWindowDays) * 86_400)
@@ -923,7 +935,7 @@ final class TodoStore:
             // 两批各自有序,合并后按 sortOrder 重排,保持与原实现一致的全局顺序
             todos = items.sorted { $0.sortOrder < $1.sortOrder }.map { $0.toData() }
             // 仅在 fetch 成功后同步版本号;失败时不推进,保证下次 refreshIfStale 仍会重试
-            lastSyncedExternalChangeVersion = AppGroupConfig.currentExternalChangeVersion()
+            lastSyncedExternalChangeVersion = syncedExternalChangeVersion ?? AppGroupConfig.currentExternalChangeVersion()
             VoiceTodoLog.store.debug("store.refresh.success count=\(self.todos.count) windowDays=\(Self.completedWindowDays) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } catch {
             VoiceTodoLog.store.error("store.refresh.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
@@ -935,13 +947,16 @@ final class TodoStore:
     /// - Returns: 是否实际执行了刷新。
     @discardableResult
     func refreshIfStale(force: Bool = false) -> Bool {
+        // 版本号在 fetch 前快照并随 refreshTodos 落账,关闭
+        // "fetch 数据 → 外部 save+mark → 回读版本"窗口内外部写被吸收的漏检
+        // (详见 refreshTodos(syncedExternalChangeVersion:) 文档注释)。
         let version = AppGroupConfig.currentExternalChangeVersion()
         guard force || version != lastSyncedExternalChangeVersion else {
             VoiceTodoLog.store.debug("store.refresh_if_stale.skip version=\(version)")
             return false
         }
         VoiceTodoLog.store.info("store.refresh_if_stale.refresh force=\(force) old=\(self.lastSyncedExternalChangeVersion) new=\(version)")
-        refreshTodos()
+        refreshTodos(syncedExternalChangeVersion: version)
         return true
     }
 

@@ -98,6 +98,19 @@ enum IntentNotificationReconciler {
             VoiceTodoLog.notification.info("intent.reconcile.added todoID=\(todo.id.uuidString, privacy: .public) count=\(planned.count, privacy: .public)")
         }
     }
+
+    /// 撤销指定待办的全部已排通知(删除待办后调用;只删不排)。
+    /// 与 `reconcile(todoID:context:...)` 的区别:那条要求待办仍在库里(re-fetch 最新
+    /// 状态),待办已删时会走 `todo_not_found` 直接返回、不删任何通知——删除场景必须
+    /// 用本入口。前缀匹配覆盖一次性/重复/有界展开全部标识变体。
+    static func removeNotifications(todoID: UUID, port: Port) async {
+        let prefix = NotificationPlanner.identifierPrefix + todoID.uuidString
+        let pending = await port.pendingIdentifiers()
+        let ours = pending.filter { $0.hasPrefix(prefix) }
+        guard !ours.isEmpty else { return }
+        await port.removePending(identifiers: ours)
+        VoiceTodoLog.notification.info("intent.reconcile.removed_deleted todoID=\(todoID.uuidString, privacy: .public) count=\(ours.count, privacy: .public)")
+    }
 }
 
 /// 生产端口:直连 `UNUserNotificationCenter`。

@@ -147,6 +147,21 @@ struct AddTodoIntent: AppIntent {
             WidgetCenter.shared.reloadAllTimelines()
             VoiceTodoLog.intent.info("intent.add.save_success id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             Telemetry.record(.todoSaved(source: .siriAdd, count: extractedTodos.count))
+            // 落库后就地排提醒:intent 写库走自己的 ModelContext,活着的 TodoStore 的
+            // $todos 不发布 → 主 App 的 TodoNotificationSync 感知不到。用户对 Siri 说
+            // "明天 9 点提醒我 X",不开 App 的话提醒永远不会排——这里按最新落库状态
+            // 逐条对账(与 CompleteTodoIntent 同模式)。权限 notDetermined 时只删不加,
+            // 不在 Siri 上下文弹权限窗;App 首次前台对账时再懒申请。
+            if fallbackError == nil {
+                for todo in extractedTodos {
+                    await IntentNotificationReconciler.reconcile(
+                        todoID: todo.id,
+                        context: context,
+                        enabled: AppGroupConfig.notificationsEnabledInStandard(),
+                        port: UNNotificationPort()
+                    )
+                }
+            }
         } catch {
             VoiceTodoLog.intent.error("intent.add.save_failed id=\(intentID, privacy: .public) todoCount=\(extractedTodos.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             Telemetry.record(.intentFailed(operation: "add", stage: "save"))
