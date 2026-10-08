@@ -43,6 +43,11 @@
           "description" : "VoiceTodo Pro: higher daily voice quota",
           "displayName" : "VoiceTodo Pro",
           "locale" : "en_US"
+        },
+        {
+          "description" : "VoiceTodo Pro：1日の音声整理枠が拡大",
+          "displayName" : "VoiceTodo Pro",
+          "locale" : "ja"
         }
       ],
       "name" : "Pro",
@@ -93,6 +98,11 @@
               "description" : "Billed annually. Save ~33% vs monthly.",
               "displayName" : "Pro Yearly",
               "locale" : "en_US"
+            },
+            {
+              "description" : "年額自動更新。月額より約33%お得",
+              "displayName" : "Pro 年間プラン",
+              "locale" : "ja"
             }
           ],
           "productID" : "com.qingqingyu.voicetodo.pro.yearly",
@@ -150,6 +160,11 @@
               "description" : "Billed monthly. Cancel anytime.",
               "displayName" : "Pro Monthly",
               "locale" : "en_US"
+            },
+            {
+              "description" : "月額自動更新。いつでもキャンセル可能",
+              "displayName" : "Pro 月額プラン",
+              "locale" : "ja"
             }
           ],
           "productID" : "com.qingqingyu.voicetodo.pro.monthly",

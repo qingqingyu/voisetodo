@@ -6159,6 +6159,12 @@
             "value" : "Your subscription keeps this app actively maintained"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたのサブスクリプションが開発を支えます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6173,6 +6179,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Support indie development"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "個人開発を応援"
           }
         },
         "zh-Hans" : {
@@ -6191,26 +6203,16 @@
             "value" : "Continue only if you love it — cancel anytime"
           }
         },
-        "zh-Hans" : {
+        "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "满意才续费,可随时取消"
-          }
-        }
-      }
-    },
-    "onboarding.pro.bullet.trial.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "7-day free trial"
+            "value" : "気に入ったら継続 — いつでもキャンセルできます"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "7 天免费试用"
+            "value" : "满意才续费,可随时取消"
           }
         }
       }
@@ -6570,28 +6572,18 @@
         }
       }
     },
-    "paywall.card.trial_included" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Includes 7-day free trial"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "含 7 天免费试用"
-          }
-        }
-      }
-    },
     "paywall.close" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
           }
         },
         "zh-Hans" : {
@@ -6610,6 +6602,12 @@
             "value" : "Free"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無料版"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6625,6 +6623,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld / day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1日 %lld 回"
           }
         },
         "zh-Hans" : {
@@ -6660,6 +6664,12 @@
             "value" : "Pro"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 版"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6674,6 +6684,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start %@ free trial"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の無料体験を開始"
           }
         },
         "zh-Hans" : {
@@ -6692,6 +6708,12 @@
             "value" : "Subscribe to Pro"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro を購読"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6708,6 +6730,12 @@
             "value" : "Privacy Policy"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシーポリシー"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6722,6 +6750,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terms of Use"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用規約"
           }
         },
         "zh-Hans" : {
@@ -6801,6 +6835,12 @@
             "value" : "You're offline. Check your connection and try again."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフラインです。接続を確認して再試行してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6815,6 +6855,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retry"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行"
           }
         },
         "zh-Hans" : {
@@ -6833,6 +6879,12 @@
             "value" : "Can't reach the App Store right now. Please try again in a moment."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App Store に接続できません。しばらくしてから再試行してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6847,6 +6899,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't load subscription plans"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブスクリプションを読み込めません"
           }
         },
         "zh-Hans" : {
@@ -6865,6 +6923,12 @@
             "value" : "Something went wrong. Please try again later."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込みに失敗しました。しばらくしてから再試行してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6879,6 +6943,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Purchase failed. Please try again later."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "購入に失敗しました。しばらくしてから再試行してください"
           }
         },
         "zh-Hans" : {
@@ -6919,6 +6989,12 @@
             "value" : "Purchase verification failed. Please try again or restore purchases."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "購入の検証に失敗しました。再試行または購入を復元してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6935,6 +7011,12 @@
             "value" : "Restore Purchases"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "購入を復元"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6949,6 +7031,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restore failed. Please try again later."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復元に失敗しました。しばらくしてから再試行してください"
           }
         },
         "zh-Hans" : {
@@ -7009,6 +7097,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restoring…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復元中…"
           }
         },
         "zh-Hans" : {
@@ -7073,6 +7167,12 @@
             "value" : "Upgrade to VoiceTodo Pro"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo Pro にアップグレード"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7106,6 +7206,12 @@
             "value" : "Save 33%"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "33%お得"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7137,6 +7243,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quota unavailable"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用枠を取得できません"
           }
         },
         "zh-Hans" : {
@@ -7186,6 +7298,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "(estimated)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（推定）"
           }
         },
         "zh-Hans" : {
@@ -14068,6 +14186,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "订阅验证未通过，Pro 额度暂未生效。请尝试恢复购买。"
+          }
+        }
+      }
+    },
+    "paywall.card.trial_included %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Includes %@ free trial"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の無料体験を含む"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "含 %@ 免费试用"
+          }
+        }
+      }
+    },
+    "onboarding.pro.bullet.trial.title %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ free trial"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の無料体験"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 免费试用"
           }
         }
       }
