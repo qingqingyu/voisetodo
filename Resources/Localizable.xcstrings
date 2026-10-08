@@ -6206,7 +6206,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "満足したらだけ継続 — いつでもキャンセル可能"
+            "value" : "気に入ったら継続 — いつでもキャンセルできます"
           }
         },
         "zh-Hans" : {
@@ -7209,7 +7209,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "33% お得"
+            "value" : "33%お得"
           }
         },
         "zh-Hans" : {
