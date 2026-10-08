@@ -240,7 +240,11 @@ struct VoiceTodoApp: App {
                 .environmentObject(permissionManager)
                 .environmentObject(entitlementManager)
                 .environmentObject(quotaUsage)
-                .sheet(isPresented: $coordinator.showPaywall) {
+                .sheet(isPresented: $coordinator.showPaywall, onDismiss: {
+                    // sheet 收起后的成功判定/toast/继续原操作都收口在 coordinator:
+                    // toast 挂在主视图上,此时 sheet 已收起不会被盖住(任务书条目 1.5)。
+                    coordinator.handlePaywallDismissed()
+                }) {
                     PaywallView()
                         .environmentObject(entitlementManager)
                         .environmentObject(quotaUsage)

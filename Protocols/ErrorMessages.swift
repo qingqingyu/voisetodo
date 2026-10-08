@@ -100,9 +100,9 @@ enum ErrorMessages {
     // Paywall / 订阅相关
     static let paywallPurchaseFailed = String(localized: "paywall.purchase_failed")
     /// 购买成功反馈:购买成功信号(EntitlementManager.purchaseSuccessCount)驱动付费墙
-    /// 成功遮罩(并作 VoiceOver 播报),停留约 1.5 秒后自动收起。
+    /// CTA 原地变绿(并作 VoiceOver 播报),约 1 秒后自动收起;收起后主界面 toast 复用同一条文案。
     static let paywallPurchaseSucceeded = String(localized: "paywall.purchase_success")
-    /// 恢复购买成功反馈(EntitlementManager.restoreSuccessCount),与购买成功同一遮罩。
+    /// 恢复购买成功反馈(EntitlementManager.restoreSuccessCount),与购买成功同一 CTA 成功态。
     static let paywallRestoreSucceeded = String(localized: "paywall.restore_success")
     /// 购买返回 unverified(端侧 StoreKit 验签失败):不能授信,提示重试或恢复购买。
     static let paywallPurchaseUnverified = String(localized: "paywall.purchase_unverified")
@@ -112,4 +112,7 @@ enum ErrorMessages {
     static let paywallRestoring = String(localized: "paywall.restoring")
     static let paywallRestoreFailed = String(localized: "paywall.restore_failed")
     static let paywallRestoreNothing = String(localized: "paywall.restore_nothing")
+    /// 购买停在「等待批准」(家长 Ask to Buy 等):中性提示,不是错误——
+    /// 说明原因(已提交)和下一步(批准后自动生效),inlineErrorText 用中性色渲染。
+    static let paywallPending = String(localized: "paywall.pending_approval")
 }

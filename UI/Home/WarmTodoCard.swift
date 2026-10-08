@@ -522,4 +522,6 @@ struct WarmCheckmarkShape: Shape {
 #Preview {
     HomeView(store: MockStore.preview)
         .environmentObject(AppCoordinator.preview)
+        .environmentObject(EntitlementManager(enableTransactionListener: false))
+        .environmentObject(QuotaUsage())
 }

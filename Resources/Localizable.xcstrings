@@ -6700,38 +6700,6 @@
         }
       }
     },
-    "paywall.legal.autorenew" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trial ends, then auto-renews. Cancel anytime in Settings → Apple ID → Subscriptions."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "试用期结束后自动续费。可随时在「系统设置 → Apple ID → 订阅」取消。"
-          }
-        }
-      }
-    },
-    "paywall.legal.autorenew_no_trial" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto-renews until canceled. Cancel anytime in Settings → Apple ID → Subscriptions."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "订阅后自动续费，可随时在「系统设置 → Apple ID → 订阅」取消。"
-          }
-        }
-      }
-    },
     "paywall.legal.privacy_link" : {
       "localizations" : {
         "en" : {
@@ -6781,28 +6749,18 @@
         }
       }
     },
-    "paywall.pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Purchase pending"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "购买待处理，请稍后"
-          }
-        }
-      }
-    },
     "paywall.period.month" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "month"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
           }
         },
         "zh-Hans" : {
@@ -6819,6 +6777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "year"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年"
           }
         },
         "zh-Hans" : {
@@ -7055,13 +7019,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Valid until %@"
+            "value" : "Valid until %1$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有效期至 %@"
+            "value" : "有效期至 %1$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@まで有効"
           }
         }
       }
@@ -7072,19 +7042,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You're already subscribed to Pro"
+            "value" : "You're already on Pro"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pro を購読済み"
+            "value" : "すでに Pro です"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你已订阅 Pro"
+            "value" : "你已是 Pro"
           }
         }
       }
@@ -7226,6 +7196,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Today: %1$d/%2$d used"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d を使用"
           }
         },
         "zh-Hans" : {
@@ -13734,6 +13710,314 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新失败，请打开 App 同步"
+          }
+        }
+      }
+    },
+    "paywall.yearly_per_month %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "~%1$@/mo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "約 %1$@/月"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约 %1$@/月"
+          }
+        }
+      }
+    },
+    "paywall.legal.trial_then_price" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After your %1$@ free trial, auto-renews at %2$@/%3$@. Cancel anytime."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@の無料体験後、%2$@/%3$@で自動更新されます。いつでもキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试用 %1$@ 后按 %2$@/%3$@ 自动续费，可随时取消"
+          }
+        }
+      }
+    },
+    "paywall.legal.price_autorenew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@/%2$@, auto-renews. Cancel anytime."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@/%2$@、自動更新されます。いつでもキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@/%2$@，自动续费，可随时取消"
+          }
+        }
+      }
+    },
+    "paywall.legal.cancel_path" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel in Settings → Apple ID → Subscriptions."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「設定 → Apple ID → サブスクリプション」でキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 设置 → Apple ID → 订阅 中取消"
+          }
+        }
+      }
+    },
+    "paywall.pending_approval" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent for approval. Pro turns on automatically once approved."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "承認をリクエストしました。承認されると自動で有効になります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已提交，等待家长批准后自动生效"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.plan %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.trial_renews %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free trial until %1$@, then charged %2$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@まで無料体験、その後は%2$@で課金されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免费试用至 %1$@，之后按 %2$@ 收费"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.next_renewal %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next renewal %1$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次回更新日 %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次续费 %1$@"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.expires_no_renew %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valid until %1$@. Won’t auto-renew after."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@まで有効。期限後は更新されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至 %1$@，到期后不再续费"
+          }
+        }
+      }
+    },
+    "paywall.manage_subscription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Subscription"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブスクリプションを管理"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理订阅"
+          }
+        }
+      }
+    },
+    "home.quota_pill.free %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today %1$d/%2$d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d"
+          }
+        }
+      }
+    },
+    "home.quota_pill.pro %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro · %1$d/%2$d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro · %1$d/%2$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro · %1$d/%2$d"
+          }
+        }
+      }
+    },
+    "home.quota_pill.a11y.free %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used %1$d of %2$d today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日 %1$d/%2$d 回使用済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日已用 %1$d 次，共 %2$d 次"
+          }
+        }
+      }
+    },
+    "home.quota_pill.a11y.pro %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro member, used %1$d of %2$d today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro メンバー、今日 %1$d/%2$d 回使用済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 会员，今日已用 %1$d 次，共 %2$d 次"
           }
         }
       }

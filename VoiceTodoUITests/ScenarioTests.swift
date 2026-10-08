@@ -923,11 +923,20 @@ final class ScenarioTests: XCTestCase {
         }
         XCTAssertTrue(confirmed, "应出现并可确认 StoreKit 购买弹窗(实际弹窗: \(appHelper.app.alerts.debugDescription))")
 
-        // Step 6: 购买成功 → 付费墙盖上成功遮罩(「已升级为 Pro」),约 1.5s 后自动收起。
-        let successOverlay = appHelper.app.descendants(matching: .any)
-            .matching(identifier: "PaywallSuccessOverlay").firstMatch
-        XCTAssertTrue(successOverlay.waitForExistence(timeout: 10.0), "购买成功后付费墙应立即显示成功反馈")
-        XCTAssertTrue(paywallNavBar.waitForNonExistence(timeout: 10.0), "成功反馈后付费墙应自动关闭")
+        // Step 6: 购买成功 → CTA 原地变绿「✓ 已升级为 Pro」(value=success),
+        // 约 1s 后付费墙自动收起,主界面弹「已升级为 Pro」toast(任务书条目 1)。
+        var turnedSuccess = false
+        for _ in 0..<50 {
+            if (purchaseButton.value as? String) == "success" { turnedSuccess = true; break }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        XCTAssertTrue(
+            turnedSuccess,
+            "购买成功后 CTA 应变为成功态(value=success),实际 value=\(purchaseButton.value ?? "nil")"
+        )
+        XCTAssertTrue(paywallNavBar.waitForNonExistence(timeout: 10.0), "成功态约 1 秒后付费墙应自动关闭")
+        let successToast = appHelper.app.staticTexts["已升级为 Pro"]
+        XCTAssertTrue(successToast.waitForExistence(timeout: 5.0), "付费墙收起后主界面应弹「已升级为 Pro」toast")
 
         // Step 7: 回归断言——onboarding 不得重新出现(用户报告:欢迎页又播了一遍)。
         // 观察窗口放宽到 6s,覆盖 sheet 重呈现动画与延迟弹层。

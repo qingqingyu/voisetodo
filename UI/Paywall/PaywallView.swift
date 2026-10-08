@@ -28,7 +28,8 @@ struct PaywallView: View {
     @EnvironmentObject private var quotaUsage: QuotaUsage
     @Environment(\.dismiss) private var dismiss
 
-    /// 购买/恢复成功的反馈事件。非 nil 时整页盖上成功遮罩、触发成功触感,约 1.5 秒后自动收起。
+    /// 购买/恢复成功的反馈事件。非 nil 时 CTA 原地变绿、触发成功触感,约 1.0 秒后自动收起;
+    /// 收起后由 `AppCoordinator.handlePaywallDismissed` 在主界面补成功 toast。
     @State private var successEvent: SuccessEvent?
 
     enum SuccessEvent: Equatable {
@@ -83,7 +84,7 @@ struct PaywallView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    PaywallContent()
+                    PaywallContent(successEvent: successEvent)
                         .padding(.vertical, WarmSpacing.xs)
                         // 测自然内容高(含上下外边距,在钩子之前):一屏化改造的回归哨兵,
                         // 超预算时 S18 读 PaywallContentFits 断言失败并显示差值。
@@ -127,15 +128,10 @@ struct PaywallView: View {
                 }
             }
         }
-        // 成功反馈直接画在付费墙上(先前「先 dismiss 再在主视图弹 toast」:toast 被 sheet 盖住,
-        // 成功信号一丢就毫无反馈),停留片刻再自动收起,回到用户原来的操作。
-        .overlay {
-            if let successEvent {
-                successOverlay(successEvent)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: successEvent)
+        // 成功反馈画在 CTA 本身上(原地变绿):用户视线不用挪,顶部额度胶囊同时升到
+        // Pro 档,「买到了什么」一眼可见。整页遮罩会打断操作且盖住额度变化,已弃用
+        // (v2 任务书条目 1)。约 1 秒后收起;toast 由 AppCoordinator 在 sheet
+        // onDismiss 后弹——挂在主视图上,不会被本 sheet 盖住。
         .sensoryFeedback(.success, trigger: successEvent) { _, new in new != nil }
         .onChange(of: entitlement.purchaseSuccessCount) { _, _ in
             showSuccess(.purchased)
@@ -145,7 +141,7 @@ struct PaywallView: View {
         }
         .task(id: successEvent) {
             guard successEvent != nil else { return }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             dismiss()
         }
@@ -154,32 +150,6 @@ struct PaywallView: View {
     private func showSuccess(_ event: SuccessEvent) {
         successEvent = event
         AccessibilityNotification.Announcement(event.message).post()
-    }
-
-    /// 成功遮罩:大号对勾 + 「已升级为 Pro / 已恢复 Pro」+ 有效期。挡住下层购买按钮,防止重复点击。
-    private func successOverlay(_ event: SuccessEvent) -> some View {
-        ZStack {
-            WarmTheme.background.opacity(0.96).ignoresSafeArea()
-            VStack(spacing: WarmSpacing.sm) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64, weight: .medium))
-                    .foregroundColor(WarmTheme.success)
-                    .accessibilityHidden(true)
-                Text(event.message)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .multilineTextAlignment(.center)
-                if let expiration = entitlement.subscriptionExpirationDate {
-                    Text(String(localized: "paywall.subscribed.expires \(expiration.formatted(date: .abbreviated, time: .omitted))"))
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                        .foregroundColor(WarmTheme.textSecondary)
-                }
-            }
-            .padding(WarmSpacing.lg)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("PaywallSuccessOverlay")
     }
 }
 
@@ -198,19 +168,35 @@ struct PaywallContent: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
 
+    /// 购买/恢复成功事件(来自 PaywallView)。非 nil 时:
+    /// - 未订阅分支保持渲染(CTA 原地变绿而不是整页切走,反馈出现在用户刚点的按钮上);
+    /// - 顶部额度胶囊升到 Pro 档上限(NetworkConfig.proDailyLimit);
+    /// - 商品卡弱化禁用,防止成功窗口内再选方案。
+    let successEvent: PaywallView.SuccessEvent?
+
+    /// 默认选中的商品 ID(产品建议推年付,不是硬要求——以后想改推月付改这一行即可)。
+    /// 只在「当前没有有效选中」时生效;用户手动选过的方案不会被覆盖。
+    static let defaultProductID = EntitlementManager.yearlyProductID
+
     /// 当前选中的商品 ID。productList 加载后默认选年付;找不到则取排序后的第一个。
     /// 购买期间用户仍可点其它卡片切换 —— A 点已要求此时所有卡 disabled,实际不会改值。
     @State private var selectedProductID: String?
+    /// 系统订阅管理页(.manageSubscriptionsSheet)是否展示。关闭后重读权益。
+    @State private var showManageSubscriptions = false
 
     var body: some View {
         VStack(spacing: WarmSpacing.sm) {
-            if entitlement.isPro {
-                // 已订阅:不再出现购买选项 —— 展示订阅状态卡(含有效期)。
+            // 成功窗口内不切已订阅分支:反馈要落在用户刚点的那颗 CTA 上(变绿),
+            // 整页切换会把按钮、商品列表一并抽走,「页面突然变了」反而像出错。
+            // 约 1 秒后 sheet 收起,下次再进付费墙自然走已订阅状态卡。
+            if entitlement.isPro && successEvent == nil {
+                // 已订阅:不再出现购买选项 —— 展示订阅状态卡(方案/价格/续费状态)+ 管理订阅。
                 // 价值主张/商品列表/购买 CTA 都只服务「未订阅 → 转化」,对已订阅者是噪音。
                 // refresh() 仍无条件跑:isPro 若是 stale-true(订阅实际已过期),
                 // refreshEntitlements 会翻回 false,本分支自动退回完整购买 UI。
                 comparisonCard
                 subscribedStatusCard
+                manageSubscriptionButton
                 if entitlement.lastError != ErrorMessages.paywallProductsLoadFailed {
                     // 错误显式传播:恢复购买失败(离线时 AppStore.sync 抛错)必须可见。
                     // 只排除商品加载错误 —— 本分支不渲染商品,加载失败对已订阅者是噪音;
@@ -232,14 +218,16 @@ struct PaywallContent: View {
             Spacer(minLength: WarmSpacing.xxs)
         }
         .task { await entitlement.refresh() }
-        .onChange(of: entitlement.products) { _, newProducts in
+        // initial: true —— 二次打开付费墙时商品早已加载、数组没变,普通 onChange 不触发,
+        // 之前会导致没有任何卡片高亮(用户截图里的选中态 bug)。让首次出现也走默认选中逻辑。
+        .onChange(of: entitlement.products, initial: true) { _, newProducts in
             // 购买飞行中不重置选中 —— refresh 可能由 transaction listener 触发,
             // 此时改 selectedProductID 会让用户感知到选中漂移。
             guard !entitlement.isPurchasing else { return }
             // 当前选中无效(首次加载/重试后商品变化/选中商品已不存在)时重置:
-            // 默认年付,找不到则取排序后第一个。products 已按价格升序排好。
+            // 默认年付,找不到则取第一个。products 已按价格升序排好。
             if selectedProductID == nil || !newProducts.contains(where: { $0.id == selectedProductID }) {
-                selectedProductID = newProducts.first(where: { $0.id == EntitlementManager.yearlyProductID })?.id
+                selectedProductID = newProducts.first(where: { $0.id == Self.defaultProductID })?.id
                     ?? newProducts.first?.id
             }
         }
@@ -262,7 +250,10 @@ struct PaywallContent: View {
     private var comparisonCard: some View {
         if quotaUsage.loadState == .error {
             quotaErrorPill
-        } else if quotaUsage.isPro || entitlement.isPro {
+        } else if successEvent != nil || quotaUsage.isPro || entitlement.isPro {
+            // 成功窗口内一律走实时用量卡:刚买到手就让「已用 x/3 → x/100」的跳变
+            // 立即可见(任务书条目 1.3)。这是本次会话的展示覆盖,不改 QuotaUsage——
+            // 代理权威头到来后由 displayedLimit 正常接管。
             liveUsageCard
         } else if quotaUsage.used == 0 {
             freeVsProComparisonPill
@@ -335,6 +326,9 @@ struct PaywallContent: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
                 .layoutPriority(1)
+                // 购买成功 x/3 → x/100 的跳变用数字滚动呈现(任务书条目 1.3)。
+                .contentTransition(.numericText())
+                .animation(.easeOut(duration: 0.25), value: liveUsageText)
             if !quotaUsage.isAuthoritative {
                 Text(String(localized: "quota.non_authoritative"))
                     .font(.system(size: 12, weight: .regular, design: .rounded))
@@ -357,10 +351,15 @@ struct PaywallContent: View {
     /// （任一处为 Pro 即走实时用量卡）的另一半修复：只修「走哪张卡」不够，
     /// 卡里的数字也要跟着档位走。
     private var liveUsageText: String {
-        String(
+        let limit = successEvent != nil
+            // 成功窗口内的展示覆盖:一律按 Pro 上限显示,让「买到了什么」立即可见
+            // (任务书条目 1.3)。代理权威头到来后由 displayedLimit 正常接管。
+            ? NetworkConfig.proDailyLimit
+            : quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+        return String(
             format: String(localized: "quota.today_used"),
             quotaUsage.used,
-            quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+            limit
         )
     }
 
@@ -387,7 +386,7 @@ struct PaywallContent: View {
 
     /// 已订阅状态卡:`isPro == true` 时替代价值主张 + 商品列表 + 购买 CTA。
     /// 已订阅用户进付费墙不该再看到购买选项(点了也只能从 StoreKit 系统弹窗得知
-    /// 订阅已生效到几号),直接告知订阅状态与有效期。
+    /// 订阅已生效到几号),直接告知订阅状态:方案与价格、按续费状态区分的日期行。
     /// 到期时间来自 `Transaction.currentEntitlements` 的 `expirationDate`
     /// (自动续期开启时即下次续期日);理论上有订阅必有值,nil 时只降级不显示日期行。
     private var subscribedStatusCard: some View {
@@ -401,22 +400,133 @@ struct PaywallContent: View {
                 .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            if let expiration = entitlement.subscriptionExpirationDate {
-                Text(String(localized: "paywall.subscribed.expires \(expiration.formatted(date: .abbreviated, time: .omitted))"))
+            if let plan = subscribedPlanText {
+                // 方案行:「Pro 年付 · ¥39.99/年」。displayName/displayPrice 全取 StoreKit,
+                // 商品未加载(activeProductID 对不上 products)时不显示该行。
+                Text(plan)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
                     .foregroundColor(WarmTheme.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
+            subscribedDateText
         }
         .frame(maxWidth: .infinity)
         .padding(WarmSpacing.md)
         .background(WarmTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: WarmRadius.card))
         .padding(.horizontal, WarmSpacing.lg)
-        // combine:整卡作为一个 a11y 元素(标题+日期合并朗读),UI 测试按 id 定位。
+        // combine:整卡作为一个 a11y 元素(标题+方案+日期合并朗读),UI 测试按 id 定位。
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("PaywallSubscribedCard")
+    }
+
+    /// 选定商品(读不到 → nil):已订阅状态页的方案/价格展示元数据都从它来。
+    private var subscribedProduct: Product? {
+        guard let id = entitlement.activeProductID else { return nil }
+        return entitlement.products.first(where: { $0.id == id })
+    }
+
+    /// 「¥39.99/年」价格段:displayPrice + 本地化周期单位(三语下 "/" 分隔一致,直接插值)。
+    private var subscribedPricePeriodText: String? {
+        guard let product = subscribedProduct else { return nil }
+        return "\(product.displayPrice)/\(paywallPeriodUnit(for: product))"
+    }
+
+    /// 方案行文本:「Pro 年付 · ¥39.99/年」。
+    private var subscribedPlanText: String? {
+        guard let product = subscribedProduct,
+              let pricePeriod = subscribedPricePeriodText else { return nil }
+        return String(
+            format: String(localized: "paywall.subscribed.plan %@ %@"),
+            product.displayName,
+            pricePeriod
+        )
+    }
+
+    /// 日期行,按续费状态区分(任务书条目 4.2):
+    /// - 试用中且会续费 →「免费试用至 X，之后按 ¥39.99/年 收费」;
+    /// - 已付费且会续费 →「下次续费 X」;
+    /// - 已关闭自动续费 →「有效期至 X，到期后不再续费」;
+    /// - willAutoRenew 读取不到(nil)→ 退回「有效期至 X」。
+    /// 试用中但商品读不到(拼不出价格)时退「下次续费 X」,仍比裸日期多一层语义。
+    @ViewBuilder
+    private var subscribedDateText: some View {
+        if let expiration = entitlement.subscriptionExpirationDate {
+            let dateText = expiration.formatted(date: .abbreviated, time: .omitted)
+            switch entitlement.willAutoRenew {
+            case .some(true):
+                if entitlement.isInIntroOffer, let pricePeriod = subscribedPricePeriodText {
+                    Text(String(
+                        format: String(localized: "paywall.subscribed.trial_renews %@ %@"),
+                        dateText,
+                        pricePeriod
+                    ))
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                } else {
+                    Text(String(
+                        format: String(localized: "paywall.subscribed.next_renewal %@"),
+                        dateText
+                    ))
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            case .some(false):
+                Text(String(
+                    format: String(localized: "paywall.subscribed.expires_no_renew %@"),
+                    dateText
+                ))
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            case .none:
+                Text(String(localized: "paywall.subscribed.expires \(dateText)"))
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+    }
+
+    /// 「管理订阅」主按钮:打开系统订阅管理页(切换月/年、取消续费都在这里)。
+    /// 关闭后重读权益——用户可能刚取消续费或换了方案,日期行要跟着变(任务书条目 4.4)。
+    /// iOS 26 SDK 的 manageSubscriptionsSheet(isPresented:) 已无 onDismiss 参数,
+    /// 用自定义 Binding 在置回 false 时触发刷新,语义等价。
+    private var manageSubscriptionButton: some View {
+        Button {
+            showManageSubscriptions = true
+        } label: {
+            Text(String(localized: "paywall.manage_subscription"))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(WarmTheme.primary)
+                        .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                )
+        }
+        .accessibilityIdentifier("PaywallManageSubscriptionButton")
+        .padding(.horizontal, WarmSpacing.lg)
+        .manageSubscriptionsSheet(isPresented: Binding(
+            get: { showManageSubscriptions },
+            set: { showing in
+                showManageSubscriptions = showing
+                if !showing {
+                    Task { await entitlement.refreshEntitlements() }
+                }
+            }
+        ))
     }
 
     // MARK: - Value Props
@@ -474,11 +584,16 @@ struct PaywallContent: View {
             )
         case .success:
             VStack(spacing: WarmSpacing.sm) {
-                ForEach(entitlement.products, id: \.id) { product in
+                // 视图层排序:默认方案(年付)置顶,其余维持 manager 的价格升序。
+                // 不改 entitlement.products 本身的顺序 —— checkIntroOffer 等
+                // 逻辑依赖 manager 侧的稳定序。
+                ForEach(displayOrderedProducts, id: \.id) { product in
                     ProductCard(
                         product: product,
                         isSelected: product.id == selectedProductID,
-                        isPurchasing: entitlement.isPurchasing,
+                        // 成功窗口内同样弱化禁用,防止约 1 秒的展示期内再选方案
+                        // (沿用购买中的弱化样式,任务书条目 1.2)。
+                        isPurchasing: entitlement.isPurchasing || successEvent != nil,
                         showsTrialIncluded: entitlement.isEligibleForIntroOffer,
                         action: { selectedProductID = product.id }
                     )
@@ -486,6 +601,15 @@ struct PaywallContent: View {
             }
             .padding(.horizontal, WarmSpacing.lg)
         }
+    }
+
+    /// 商品展示序:默认方案(年付)在前,其余按 manager 的价格升序。
+    /// 只影响渲染顺序,不动 `entitlement.products`。
+    private var displayOrderedProducts: [Product] {
+        guard let preferred = entitlement.products.first(where: { $0.id == Self.defaultProductID }) else {
+            return entitlement.products
+        }
+        return [preferred] + entitlement.products.filter { $0.id != Self.defaultProductID }
     }
 
     /// `.empty` 态副文案:有网但商品空 → 中性"无法连接 App Store";无网 → 提示检查网络。
@@ -560,50 +684,112 @@ struct PaywallContent: View {
     /// - 商品加载失败 (`.empty`/`.error`) → 不渲染(由 productList 的 stateMessage 接管)
     @ViewBuilder
     private var purchaseCTA: some View {
-        Button {
-            guard let product = currentSelectedProduct else { return }
-            Task { await entitlement.purchase(product) }
-        } label: {
-            HStack(spacing: WarmSpacing.xs) {
-                if showsCTASpinner {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Text(ctaTitle)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+        Group {
+            if let successEvent {
+                successCTA(successEvent)
+            } else {
+                Button {
+                    guard let product = currentSelectedProduct else { return }
+                    Task { await entitlement.purchase(product) }
+                } label: {
+                    HStack(spacing: WarmSpacing.xs) {
+                        if showsCTASpinner {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text(ctaTitle)
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule()
+                            .fill(WarmTheme.primary)
+                            .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                    )
                 }
+                .disabled(ctaDisabled)
+                .accessibilityIdentifier("PaywallPurchaseButton")
+                .padding(.horizontal, WarmSpacing.lg)
+            }
+        }
+        // 任务书条目 1.2:CTA ↔ 成功态的切换要 0.25s 过渡。动画必须挂在包含
+        // if/else 的父层——挂在 successCTA 自身时,该视图出现首帧 value 已是
+        // 新值、没有变化事件,插入/移除过渡不会播(切换会直接跳变)。
+        .animation(.easeOut(duration: 0.25), value: successEvent)
+    }
+
+    /// 成功态 CTA:原地变绿(WarmTheme.success 底 + checkmark + 「已升级为 Pro / 已恢复 Pro」)。
+    /// 反馈出现在用户刚点的按钮上,视线不用挪(任务书条目 1.2)。
+    /// disabled 语义保留(成功窗口内不可再购买),但用 UndimmedButtonStyle 绕开系统
+    /// 对 disabled 按钮的降透明度——成功态必须醒目。
+    private func successCTA(_ event: PaywallView.SuccessEvent) -> some View {
+        Button {} label: {
+            HStack(spacing: WarmSpacing.xs) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .accessibilityHidden(true)
+                Text(event.message)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(
                 Capsule()
-                    .fill(WarmTheme.primary)
-                    .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                    .fill(WarmTheme.success)
+                    .shadow(color: WarmTheme.success.opacity(0.3), radius: 8, y: 4)
             )
         }
-        .disabled(ctaDisabled)
+        .buttonStyle(UndimmedButtonStyle())
+        .disabled(true)
         .accessibilityIdentifier("PaywallPurchaseButton")
+        // UI 测试以 value == "success" 判断成功态(S20 Step 6)。
+        .accessibilityValue("success")
         .padding(.horizontal, WarmSpacing.lg)
     }
 
     /// 购买/恢复失败的显式反馈(错误显式传播):`.success` 态下 `lastError` 此前无处渲染,
     /// 购买失败、验签失败(unverified)、恢复无可恢复项都会静默无反馈。
-    /// `paywall.pending` 也共用此行(中性提示文案)。purchase/restore 开始时会清 lastError,
+    /// 「等待批准」(paywallPending)是中性提示,不走警示色——家长 Ask to Buy 期间
+    /// 显示成错误会让用户以为交易出了问题。purchase/restore 开始时会清 lastError,
     /// 双 isPurchasing/isRestoring 守卫只是兜底防飞行中显示陈旧错误。
     @ViewBuilder
     private var inlineErrorText: some View {
         if !entitlement.isPurchasing, !entitlement.isRestoring, let error = entitlement.lastError {
-            Text(error)
-                .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundColor(WarmTheme.warning)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
+            if error == ErrorMessages.paywallPending {
+                HStack(spacing: WarmSpacing.xxs) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .accessibilityHidden(true)
+                    Text(error)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
+                }
                 .padding(.horizontal, WarmSpacing.lg)
                 .accessibilityIdentifier("PaywallInlineError")
+            } else {
+                Text(error)
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.warning)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, WarmSpacing.lg)
+                    .accessibilityIdentifier("PaywallInlineError")
+            }
         }
     }
 
@@ -623,7 +809,7 @@ struct PaywallContent: View {
             return product
         }
         // fallback: 默认年付,找不到则取排序后第一个
-        return entitlement.products.first(where: { $0.id == EntitlementManager.yearlyProductID })
+        return entitlement.products.first(where: { $0.id == Self.defaultProductID })
             ?? entitlement.products.first
     }
 
@@ -653,23 +839,50 @@ struct PaywallContent: View {
         }
     }
 
-    /// App Store 审核要求的自动续费合规说明。
-    /// 有试用资格 → paywall.legal.autorenew (含试用期结束后...)
-    /// 无试用资格 → paywall.legal.autorenew_no_trial (只讲自动续费)
+    /// App Store 审核要求的自动续费合规说明(价格随选中方案即时更新):
+    /// 第一行价格条款(试用资格决定文案),第二行取消路径。
+    /// 价格/周期一律取当前选中商品的 StoreKit 数据,不手写 ¥39.99 / 7 天——
+    /// 各店面币种价格不同,试用时长以 introductoryOffer.period 为准。
     private var legalText: some View {
-        Text(String(localized: legalKey))
-            .font(.system(size: 11, weight: .regular, design: .rounded))
-            .foregroundColor(WarmTheme.textMuted)
-            .multilineTextAlignment(.center)
-            // 合规文案不可截断:en autorenew 84 字符,AX 大字号下需 3 行,
-            // lineLimit(2)+0.85 缩放兜不住会出 "..."(审核风险),保持 3 行预算。
-            .lineLimit(3)
-            .minimumScaleFactor(0.85)
-            .padding(.horizontal, WarmSpacing.lg)
+        VStack(spacing: WarmSpacing.xxs) {
+            Text(legalPriceLine)
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.textMuted)
+                .multilineTextAlignment(.center)
+                // 合规文案不可截断:en 长文案 AX 大字号下需 3 行,
+                // lineLimit(2)+0.85 缩放兜不住会出 "..."(审核风险),保持 3 行预算。
+                .lineLimit(3)
+                .minimumScaleFactor(0.85)
+            Text(String(localized: "paywall.legal.cancel_path"))
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.textMuted)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, WarmSpacing.lg)
     }
 
-    private var legalKey: String.LocalizationValue {
-        entitlement.isEligibleForIntroOffer ? "paywall.legal.autorenew" : "paywall.legal.autorenew_no_trial"
+    /// 价格条款行:有试用资格 →「试用 N 天后按 ¥xx/年 自动续费，可随时取消」;
+    /// 无资格 →「¥xx/年，自动续费，可随时取消」。切换选中方案时随 body 即时更新。
+    private var legalPriceLine: String {
+        // legalBlock 只在 productLoadState == .success 时渲染 legalText,
+        // 这里取不到选中商品属于防御性兜底,给空串防呆。
+        guard let product = currentSelectedProduct else { return "" }
+        let periodUnit = paywallPeriodUnit(for: product)
+        if entitlement.isEligibleForIntroOffer, let period = entitlement.introOfferPeriod {
+            return String(
+                format: String(localized: "paywall.legal.trial_then_price"),
+                period.formattedLocalizedPeriod(),
+                product.displayPrice,
+                periodUnit
+            )
+        }
+        return String(
+            format: String(localized: "paywall.legal.price_autorenew"),
+            product.displayPrice,
+            periodUnit
+        )
     }
 
     /// App Store 审核指南 3.1.2:自动续订订阅的付费墙必须提供隐私政策与使用条款的可点链接。
@@ -716,6 +929,28 @@ struct PaywallContent: View {
     }
 }
 
+// MARK: - 计费周期单位
+
+/// 商品的本地化计费周期单位(「年」/「月」)。年付=年,其余(月付)=月。
+/// 价格条款行(legalPriceLine)与商品卡(ProductCard)共用同一口径。
+/// @MainActor:引用 EntitlementManager.yearlyProductID(@MainActor 隔离的常量)。
+@MainActor
+private func paywallPeriodUnit(for product: Product) -> String {
+    product.id == EntitlementManager.yearlyProductID
+        ? String(localized: "paywall.period.year")
+        : String(localized: "paywall.period.month")
+}
+
+// MARK: - 不降透明度的按钮样式
+
+/// 只透传 label 的按钮样式。系统 ButtonStyle 在 disabled 时会给内容降透明度,
+/// 成功态 CTA 需要保持醒目(任务书条目 1.2),禁用语义交给 Button.disabled。
+private struct UndimmedButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
 // MARK: - Product Card
 
 /// 商品卡:点击切换 selectedProductID(选择语义,不再触发购买)。
@@ -731,10 +966,15 @@ private struct ProductCard: View {
         product.id == EntitlementManager.yearlyProductID
     }
 
+    /// 年付折合月价(「约 ¥3.33/月」):`price / 12` 用 StoreKit 的 `priceFormatStyle`
+    /// 格式化,币种/小数位跟随店面,不手写价格。月付不显示。
+    private var monthlyEquivalentPrice: String? {
+        guard isYearly else { return nil }
+        return product.priceFormatStyle.format(product.price / 12)
+    }
+
     private var periodUnit: String {
-        isYearly
-            ? String(localized: "paywall.period.year")
-            : String(localized: "paywall.period.month")
+        paywallPeriodUnit(for: product)
     }
 
     var body: some View {
@@ -787,6 +1027,14 @@ private struct ProductCard: View {
                         .foregroundColor(WarmTheme.textMuted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                    if let perMonth = monthlyEquivalentPrice {
+                        // 年付折合月价:让「省 33%」的直觉落到每月花销上。
+                        Text(String(localized: "paywall.yearly_per_month \(perMonth)"))
+                            .font(.system(size: 10, weight: .regular, design: .rounded))
+                            .foregroundColor(WarmTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
                 }
             }
             .padding(WarmSpacing.sm)

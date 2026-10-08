@@ -172,6 +172,10 @@ struct HomeView<Store: HomeTodoStore>: View {
     @ObservedObject var store: Store
     @EnvironmentObject private var coordinator: AppCoordinator
     @EnvironmentObject private var permissionManager: PermissionManager
+    /// 额度胶囊(任务书条目 3a)需要订阅状态与用量:Pro 判定优先 StoreKit 本地
+    /// (entitlement),额度数字以代理权威快照(quotaUsage)为准,与付费墙同口径。
+    @EnvironmentObject private var entitlement: EntitlementManager
+    @EnvironmentObject private var quotaUsage: QuotaUsage
     /// 动态效果减弱开关。沿用 OnboardingView 的处理:动画用 motionAnim() 包一层,
     /// 开启时返回 nil 让 SwiftUI 直接跳终值,不播。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1026,6 +1030,7 @@ struct HomeView<Store: HomeTodoStore>: View {
 
                 Spacer()
 
+                homeQuotaPill
                 settingsButton
             }
 
@@ -1562,6 +1567,107 @@ struct HomeView<Store: HomeTodoStore>: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("HomeSettingsButton")
         .accessibilityLabel(String(localized: "settings.title"))
+    }
+
+    // MARK: - 首页额度胶囊(任务书条目 3a)
+
+    /// 首页额度胶囊:免费「今日 2/3」/ Pro「Pro · 2/100」,点击进付费墙
+    /// (Pro 时是「你已是 Pro」状态页)。买完订阅回到首页能立即看到档位变化。
+    private var quotaPillIsPro: Bool {
+        // 与付费墙 comparisonCard 同口径:StoreKit 本地判定与代理快照任一为 Pro 即按 Pro 展示
+        // (刚订阅、代理响应未到的矛盾窗口期不显示免费档数字)。
+        entitlement.isPro || quotaUsage.isPro
+    }
+
+    /// Pro 恒渲染(数据缺位退「Pro」);免费档仅在拿到权威额度数据(.success)时渲染——
+    /// .loading/.empty 时显示「0/3」没有信息量,.error 时不显示不可信的数字也不显示错误。
+    private var quotaPillShouldRender: Bool {
+        quotaPillIsPro || quotaUsage.loadState == .success
+    }
+
+    @ViewBuilder
+    private var homeQuotaPill: some View {
+        if quotaPillShouldRender {
+            Button {
+                coordinator.presentPaywall(source: .manual)
+            } label: {
+                // SE + 最大动态字号下不挤压标题(标题 layoutPriority(1)):
+                // ViewThatFits 自动退短文案——免费只留数字,Pro 只留「Pro」。
+                ViewThatFits(in: .horizontal) {
+                    quotaPillText(showsShortForm: false)
+                    quotaPillText(showsShortForm: true)
+                }
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(quotaPillIsPro ? WarmTheme.primaryText : WarmTheme.textSecondary)
+                .padding(.horizontal, WarmSpacing.xs)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule().fill(
+                        quotaPillIsPro
+                            ? WarmTheme.primary.opacity(0.12)
+                            : WarmTheme.secondaryBackground
+                    )
+                )
+                // hit target 撑到 HIG 44pt(视觉胶囊 ~24pt),与齿轮按钮同款显式声明。
+                .frame(minHeight: WarmSize.touch)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("HomeQuotaPill")
+            .accessibilityLabel(quotaPillAccessibilityLabel)
+        }
+    }
+
+    /// 胶囊文本。showsShortForm=true 为窄空间退化:免费只留「2/3」,Pro 只留「Pro」
+    /// (Pro 数据缺位时短长两个形态都只有「Pro」,ViewThatFits 自然二选一)。
+    private func quotaPillText(showsShortForm: Bool) -> some View {
+        let limit = quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+        let hasNumbers = quotaUsage.loadState == .success
+        let text: String
+        if quotaPillIsPro {
+            if hasNumbers, !showsShortForm {
+                text = String(
+                    format: String(localized: "home.quota_pill.pro %lld %lld"),
+                    quotaUsage.used,
+                    limit
+                )
+            } else {
+                // 「Pro」是档位品牌名,三语一致,直接字面量。
+                text = "Pro"
+            }
+        } else if showsShortForm {
+            // 纯数字+斜杠,无语言差异。
+            text = "\(quotaUsage.used)/\(limit)"
+        } else {
+            text = String(
+                format: String(localized: "home.quota_pill.free %lld %lld"),
+                quotaUsage.used,
+                limit
+            )
+        }
+        return Text(text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// a11y 完整朗读:「Pro 会员，今日已用 2 次，共 100 次」/「今日已用 2 次，共 3 次」。
+    /// 数据缺位时只读「Pro」,不拼数字。
+    private var quotaPillAccessibilityLabel: String {
+        guard quotaUsage.loadState == .success else { return "Pro" }
+        let limit = quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+        if quotaPillIsPro {
+            return String(
+                format: String(localized: "home.quota_pill.a11y.pro %lld %lld"),
+                quotaUsage.used,
+                limit
+            )
+        }
+        return String(
+            format: String(localized: "home.quota_pill.a11y.free %lld %lld"),
+            quotaUsage.used,
+            limit
+        )
     }
 
     // MARK: - Recording Overlay
@@ -3169,5 +3275,7 @@ extension HomeView {
     HomeView(store: MockStore.preview)
         .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
         .environmentObject(AppCoordinator.preview)
+        .environmentObject(EntitlementManager(enableTransactionListener: false))
+        .environmentObject(QuotaUsage())
 }
 

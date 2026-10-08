@@ -234,6 +234,10 @@ final class AppCoordinator: ObservableObject {
     /// 冷却时长:用户拒绝后 14 天内不再主动弹。
     private let paywallCooldown: TimeInterval = 14 * 24 * 3600
 
+    /// presentPaywall 时记下的快照(purchaseCount, restoreCount, source)。
+    /// 非持久状态:只在 sheet 展示期间存在,onDismiss 消费后清空。
+    private var paywallPresentationSnapshot: (purchaseCount: Int, restoreCount: Int, source: PaywallSource)?
+
     /// 所有 paywall 曝光的唯一入口。来源统一进遥测(`paywall_shown`),
     /// 四来源可区分——这是「wow 后立即弹 vs 撞墙后弹」弹点决策
     /// (docs/onboarding-first-voice-trial.md §1.5.1)的度量基础。
@@ -245,8 +249,43 @@ final class AppCoordinator: ObservableObject {
     /// 路径没有 `canAutoTriggerPaywall` 的 `!showPaywall` 守卫)。
     func presentPaywall(source: PaywallSource) {
         guard !showPaywall else { return }
+        // 记下成功计数快照与来源:sheet onDismiss 时据此判定「本次付费墙期间是否
+        // 购买/恢复成功」(任务书条目 1.5/3b)。判定只认事件计数,不依赖 isPro 跳变
+        // ——权益重读滞后时 isPro 不翻,toast 会漏。
+        paywallPresentationSnapshot = (
+            entitlement.purchaseSuccessCount,
+            entitlement.restoreSuccessCount,
+            source
+        )
         Telemetry.record(.paywallShown(source: source))
         showPaywall = true
+    }
+
+    /// 付费墙 sheet 收起后的统一处理(手动 × 与成功态自动收起都走这里,判定不依赖
+    /// 关闭方式):
+    /// 1. 本次 sheet 期间购买/恢复成功 → 主界面弹成功 toast。toast 挂在主视图上,
+    ///    sheet 已收起不会被盖住;也不必让 PaywallView 依赖 coordinator。
+    /// 2. 来源为配额耗尽且购买/恢复成功变 Pro → 接着跑 pending 恢复,让用户「刚才
+    ///    那句话」不用重说(任务书条目 3b)。判定复用 1.5 的「任一成功计数增加」——
+    ///    换机重装后走「恢复购买」回到 Pro 的用户同样不该重说那句话。
+    ///    pending 只在回前台时处理,App 内购买收起付费墙原本不会触发——这里补上。
+    ///    复用 handleAppForeground 的全部守卫,不绕过。
+    func handlePaywallDismissed() {
+        guard let snapshot = paywallPresentationSnapshot else { return }
+        paywallPresentationSnapshot = nil
+        let purchased = entitlement.purchaseSuccessCount > snapshot.purchaseCount
+        let restored = entitlement.restoreSuccessCount > snapshot.restoreCount
+        guard purchased || restored else { return }
+        showToast(
+            message: purchased ? ErrorMessages.paywallPurchaseSucceeded : ErrorMessages.paywallRestoreSucceeded,
+            style: .success
+        )
+        // 仅「配额耗尽来源 + 任一成功计数增加 + 已是 Pro」触发:.manual 来源的
+        // 购买/恢复、取消/失败后关闭都不跑 pending(任务书 3b 验收)。
+        if snapshot.source == .quotaExhausted, entitlement.isPro {
+            VoiceTodoLog.coordinator.info("coordinator.paywall.resume_pending source=quota_exhausted")
+            Task { await handleAppForeground() }
+        }
     }
 
     /// 自动弹付费墙的公共守卫:已付费 / 14 天冷却内 / 已在展示,任一即拦截。
