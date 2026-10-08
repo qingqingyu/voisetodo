@@ -923,15 +923,11 @@ final class ScenarioTests: XCTestCase {
         }
         XCTAssertTrue(confirmed, "应出现并可确认 StoreKit 购买弹窗(实际弹窗: \(appHelper.app.alerts.debugDescription))")
 
-        // Step 6: 购买成功 → 付费墙原地切到已订阅态(标题「订阅成功」),购买按钮消失,
-        // 不自动收起(用户报告:买完当前页没有任何成功反馈)。手动点 × 关闭。
-        let successCard = appHelper.app.descendants(matching: .any)
-            .matching(identifier: "PaywallSubscribedCard").firstMatch
-        XCTAssertTrue(successCard.waitForExistence(timeout: 10.0), "购买成功后付费墙应原地显示已订阅状态卡")
-        XCTAssertTrue(successCard.label.contains("订阅成功"), "购买成功后状态卡标题应为「订阅成功」,实际: \(successCard.label)")
-        XCTAssertFalse(appHelper.app.buttons["PaywallPurchaseButton"].exists, "购买成功后不应再显示购买按钮")
-        paywallNavBar.buttons["关闭"].tap()
-        XCTAssertTrue(paywallNavBar.waitForNonExistence(timeout: 5.0), "点 × 后付费墙应关闭")
+        // Step 6: 购买成功 → 付费墙盖上成功遮罩(「已升级为 Pro」),约 1.5s 后自动收起。
+        let successOverlay = appHelper.app.descendants(matching: .any)
+            .matching(identifier: "PaywallSuccessOverlay").firstMatch
+        XCTAssertTrue(successOverlay.waitForExistence(timeout: 10.0), "购买成功后付费墙应立即显示成功反馈")
+        XCTAssertTrue(paywallNavBar.waitForNonExistence(timeout: 10.0), "成功反馈后付费墙应自动关闭")
 
         // Step 7: 回归断言——onboarding 不得重新出现(用户报告:欢迎页又播了一遍)。
         // 观察窗口放宽到 6s,覆盖 sheet 重呈现动画与延迟弹层。

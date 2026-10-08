@@ -32,10 +32,12 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
-    /// 购买成功计数(只增不减的事件信号,与 isPro 状态解耦)。付费墙「订阅成功」反馈观察它:
+    /// 购买成功计数(只增不减的事件信号,与 isPro 状态解耦)。付费墙成功反馈观察它:
     /// isPro 在订阅过期后可能停留在 stale-true,二次购买成功时无 false→true 跳变,
     /// 靠 isPro 跳变驱动反馈会漏(2026-08 二次订阅「成功但不收起」事故根因之一)。
     @Published private(set) var purchaseSuccessCount = 0
+    /// 恢复购买成功计数(恢复后确认为 Pro 时 +1)。付费墙据此给出「已恢复 Pro」反馈后收起。
+    @Published private(set) var restoreSuccessCount = 0
     /// 最近一次刷新是否「有本 App 订阅、但验签不过、且没有任何可信订阅」。
     /// 用于购买返回非成功时给出可行动的提示(恢复购买),而不是静默。
     private var hasUnverifiedEntitlement = false
@@ -206,6 +208,14 @@ final class EntitlementManager: ObservableObject {
             jws = result.jwsRepresentation
             expiration = transaction.expirationDate
         }
+        if !foundPro, let fallback = await latestActiveSubscription() {
+            // currentEntitlements 没给出、但 latest(for:) 有未过期的订阅:真机实测购买成功后
+            // 权益仍显示免费档(系统弹窗却说已订阅),留痕以便确认是哪条路径漏的。
+            VoiceTodoLog.app.warning("entitlement.refresh_fallback_latest productID=\(fallback.transaction.productID, privacy: .public) environment=\(fallback.transaction.environment.rawValue, privacy: .public)")
+            foundPro = true
+            jws = fallback.jws
+            expiration = fallback.transaction.expirationDate
+        }
         hasUnverifiedEntitlement = !foundPro && unverifiedCount > 0
         scheduleExpirationRefresh(at: expiration)
         let changed = isPro != foundPro || jwsString != jws || subscriptionExpirationDate != expiration
@@ -214,6 +224,29 @@ final class EntitlementManager: ObservableObject {
         subscriptionExpirationDate = expiration
         VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed)")
         return changed
+    }
+
+    /// 兜底:逐个商品读 `Transaction.latest(for:)`,取未撤销、未升级、未过期的那条
+    /// (授信规则与 currentEntitlements 相同)。多条取到期最晚。
+    private func latestActiveSubscription() async -> (transaction: Transaction, jws: String)? {
+        var best: (transaction: Transaction, jws: String)?
+        let now = Date()
+        for productID in Self.productIDs {
+            guard let result = await Transaction.latest(for: productID) else { continue }
+            let transaction: Transaction
+            switch result {
+            case .verified(let verified):
+                transaction = verified
+            case .unverified(let unverified, _):
+                guard Self.trustsUnverifiedLocally(unverified) else { continue }
+                transaction = unverified
+            }
+            guard transaction.revocationDate == nil, !transaction.isUpgraded,
+                  let expirationDate = transaction.expirationDate, expirationDate > now else { continue }
+            if let current = best?.transaction.expirationDate, expirationDate <= current { continue }
+            best = (transaction, result.jwsRepresentation)
+        }
+        return best
     }
 
     /// 验签失败的权益是否仍在本地按 Pro 渲染。仅 DEBUG + Xcode 本地 StoreKit 环境:
@@ -284,6 +317,12 @@ final class EntitlementManager: ObservableObject {
                 case .verified(let transaction):
                     await transaction.finish()
                     await refreshEntitlements()
+                    if !isPro {
+                        // StoreKit 已给出验签通过的成功交易,权益重读却没反映出来:以这笔交易为准,
+                        // 否则付费墙停在购买态、用户付了钱看不到任何变化。
+                        VoiceTodoLog.app.warning("entitlement.purchase_entitlement_missing productID=\(product.id, privacy: .public) transactionID=\(transaction.id)")
+                        applyPurchasedEntitlement(transaction, jws: verification.jwsRepresentation)
+                    }
                     purchaseSuccessCount += 1
                     VoiceTodoLog.app.info("entitlement.purchase_success productID=\(product.id, privacy: .public) isPro=\(self.isPro)")
                     return
@@ -312,10 +351,19 @@ final class EntitlementManager: ObservableObject {
         await reconcileAfterNonSuccessPurchase(productID: product.id, wasPro: wasPro)
     }
 
+    /// 直接以刚购买成功(已验签)的交易设置权益。下次 refreshEntitlements 会按 StoreKit 重新落定。
+    private func applyPurchasedEntitlement(_ transaction: Transaction, jws: String) {
+        isPro = true
+        jwsString = jws
+        subscriptionExpirationDate = transaction.expirationDate
+        hasUnverifiedEntitlement = false
+        scheduleExpirationRefresh(at: transaction.expirationDate)
+    }
+
     /// 购买没有走到「verified 成功」时,以 StoreKit 当前权益为准再对账一次。
     /// 典型场景:App 的 isPro 是 stale-false,用户再点购买,系统弹「你已订阅」后
     /// purchase() 返回取消/失败 —— 此前 App 什么都不做,用户只能从系统弹窗得知已订阅。
-    /// 对账后发现已是 Pro → 按购买成功处理(付费墙原地切到「订阅成功」);
+    /// 对账后发现已是 Pro → 按购买成功处理(付费墙显示成功反馈后收起);
     /// 仍不是 Pro 但存在验签失败的订阅 → 明确提示恢复购买,不再静默。
     private func reconcileAfterNonSuccessPurchase(productID: String, wasPro: Bool) async {
         await refreshEntitlements()
@@ -341,7 +389,9 @@ final class EntitlementManager: ObservableObject {
         do {
             try await AppStore.sync()
             await refreshEntitlements()
-            if !isPro {
+            if isPro {
+                restoreSuccessCount += 1
+            } else {
                 lastError = ErrorMessages.paywallRestoreNothing
             }
             VoiceTodoLog.app.info("entitlement.restore_done isPro=\(self.isPro)")

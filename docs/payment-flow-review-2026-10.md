@@ -99,6 +99,18 @@ Siri 路径同口径收口(2026-10-07 二次):`AddTodoIntent` 的 quotaExhausted
 - 注意:Xcode 本地 StoreKit 下额度仍会是免费档 `x/3`(代理验签不过,见 payment-test-plan
   「大坑」),要看到 `x/100` 必须走沙盒账号或 TestFlight。
 
+### 2.10 购买成功后页面仍是购买态(2026-10-08)
+真机复测:系统弹窗已提示订阅成功,付费墙仍是完整购买 UI(连试用资格都是购买前的旧值)。
+2.9 的「原地切已订阅态」依赖 `isPro` 翻正,权益重读没反映出这笔交易时等于无反馈。
+- `purchase()` verified 成功后若重读仍非 Pro,直接以该交易设置权益(`entitlement.purchase_entitlement_missing`)。
+- `performEntitlementRefresh` 在 `currentEntitlements` 无结果时用 `Transaction.latest(for:)`
+  兜底(`entitlement.refresh_fallback_latest`),避免下一次刷新又翻回免费档。
+- 付费墙:成功反馈改为整页遮罩(对勾 +「已升级为 Pro」+ 有效期)+ `.success` 触感 +
+  VoiceOver 播报,1.5s 后自动收起;恢复购买成功同款(「已恢复 Pro」)。不再依赖 isPro。
+- en 文案「3 / per day」→「3 / day」。
+- 商品名/描述中英混排:来自 Products.storekit 的 `_locale: zh_CN`(Xcode 本地测试按该语言出商品文案),
+  上架后由 App Store Connect 按用户语言下发,需确保 ASC 填了 en / zh-Hans 本地化。
+
 ## 3. 已知局限(未改,需决策)
 
 ### 3.1 退款后旧 JWS 仍可用到原到期日
@@ -129,6 +141,7 @@ Siri 路径同口径收口(2026-10-07 二次):`AddTodoIntent` 的 quotaExhausted
 | 未订阅 | 对比胶囊/用量 → 价值卡 → 商品 → CTA(试用资格决定文案)→ 法务 + 恢复 | 升级 VoiceTodo Pro | 首次 wow / 第 5 次录音 / 耗尽,14 天冷却 | 弹付费墙 |
 | 商品加载失败 | 空态/错误卡 + 重试,CTA 不渲染,法务链接与恢复仍可点 | 同上 | 同上 | 同上 |
 | 购买中 | CTA spinner + 禁用,商品卡禁用,恢复禁用 | — | — | — |
-| 购买成功 | `purchaseSuccessCount` 驱动原地切到已订阅态(标题「订阅成功」),不自动收起(2.9) | — | — | — |
+| 购买成功 | 成功遮罩「已升级为 Pro」+ 有效期 + success 触感,约 1.5s 自动收起(2.10) | — | — | — |
+| 恢复成功 | 同一遮罩「已恢复 Pro」后自动收起;无可恢复项 → 行内「未找到可恢复的订阅」 | — | — | — |
 | 已订阅 | 实时用量 → 已订阅卡(有效期至)→ 法务 + 恢复,无购买按钮 | 你已订阅 Pro | 不弹 | toast「Pro 额度已用完」,不弹;凭证被代理拒时改 toast「订阅验证未通过」(2.8) |
 | 订阅过期(前台) | 到期 +2s 自动退回未订阅 UI | 下次打开设置即恢复「升级」 | 恢复 | 弹付费墙 |
