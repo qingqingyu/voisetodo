@@ -50,6 +50,13 @@ L2 沙盒验。DEBUG `setEntitlementForTesting` 注入的 isPro 也只影响客�
 `_failTransactionsEnabled`（购买失败）、`_askToBuyEnabled`（Ask to Buy）、
 `_timeRate`（加速时间流）、`_storeKitErrors`（指定错误注入）。
 
+**商品文案语言（中英混排的来源）**：`Products.storekit` 的 `_locale` 固定 `zh_CN`，
+**不跟随设备/模拟器语言**——本地测试时商品名/描述（「Pro 年付」「每月自动续费…」）
+恒为中文，而付费墙其余 UI 文案跟随系统语言，英文系统截图里会中英混排。这不是 App
+文案 bug；上架后商品文案来自 App Store Connect 的商品本地化，随用户店面语言下发。
+要测整页英文：Xcode 打开 Products.storekit → 底部 Editor → Default Localization
+临时切 English (US)，**测完切回 zh_CN，不要提交该改动**。
+
 ## 2. 已有自动化守卫（提测前跑一遍，勿人肉重测）
 
 ```bash
