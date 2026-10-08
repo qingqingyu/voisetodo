@@ -110,14 +110,17 @@
 | `App/CalendarSyncService.swift` | #1:replace 在副本上清旧标识再写新 |
 | `App/Intents/AddTodoIntent.swift` | #2:落库后逐条就地排提醒 |
 | `App/Intents/IntentNotificationReconciler.swift` | #3:新增 `removeNotifications(todoID:port:)` |
-| `App/Intents/DeleteTodoIntent.swift` | #3:删除落库后撤提醒 |
-| `Store/TodoStore.swift` | #4:`refreshTodos(syncedExternalChangeVersion:)` + `refreshIfStale` 进门快照 |
+| `App/Intents/DeleteTodoIntent.swift` | #3:删除落库后撤提醒;review 修复:头部注释纠偏(#8 指出的「与主流程一致」失实表述与漂移行号) |
+| `Store/TodoStore.swift` | #4:`refreshTodos(syncedExternalChangeVersion:)` + `refreshIfStale` 进门快照;review 修复:无参 `refreshTodos()` 同样进门快照(8 个进程内调用点的同型吸收窗口一并关闭),参数收成非 Optional |
 | `VoiceTodoTests/Integration/CalendarSyncServiceTests.swift` | mock 忠实化(复刻真实过滤)+ 回归注释 |
 | `VoiceTodoTests/Intents/IntentNotificationReconcilerTests.swift` | `removeNotifications` 2 条 spy 测试 |
+| `VoiceTodoTests/Store/StoreTests.swift` | #4 快照落账红绿测试(review 补:回退成 fetch 后回读语义时变红) |
 
-测试:`CalendarSyncServiceTests`(8)+ `IntentNotificationReconcilerTests`(11)全绿;
+测试:`CalendarSyncServiceTests`(8)+ `IntentNotificationReconcilerTests`(10)+
+`StoreTests`(68,含 #4 快照落账测试)全绿;
 #1 回归测试已做红绿验证(还原修复后 3 断言失败,形态与线上 bug 一致:status=skipped、
-receivedTodos 空、identifier 停留 event-old)。全量单测(iPhone 17 Pro 模拟器)47 套件,
+receivedTodos 空、identifier 停留 event-old);#4 快照落账测试同样红绿验证
+(回退成 fetch 后回读语义时 1 断言失败)。全量单测(iPhone 17 Pro 模拟器)47 套件,
 45 通过、2 失败均为**既有环境红灯**,与本次改动无关:`TodoDueDateShifterTests`
 DST 用例(worktree 环境已知问题)、`ProductsStorekitGuardTests`(xcodebuild CLI
 注入不了 StoreKit 配置,已知限制)。本次触及模块对应的套件(Store / Calendar /

@@ -96,6 +96,28 @@ final class StoreTests: XCTestCase {
         XCTAssertFalse(sut.refreshIfStale(force: false), "版本未变化应跳过")
     }
 
+    /// refreshTodos(syncedExternalChangeVersion:) 必须把**传入的进门快照**落账为
+    /// lastSyncedExternalChangeVersion,不得在 fetch 后回读当前版本——否则
+    /// "fetch 数据 → 外部 save+mark → 回读版本"窗口内的外部写被吸收,主 App 漏读
+    /// 到下一次外部写(补审发现 #4 的可单测面;回退成回读语义时本测试变红)。
+    func testRefreshTodosLandsEntrySnapshotVersionNotPostFetchRead() {
+        // 进门快照:刷新前的当前版本
+        let entrySnapshot = AppGroupConfig.currentExternalChangeVersion()
+        XCTAssertTrue(sut.refreshIfStale(force: true), "前置:先同步到当前版本")
+
+        // 快照之后、refreshTodos 内部 fetch 前后任一时刻,外部进程落了一次写 + mark
+        AppGroupConfig.markExternalDataChanged()
+
+        // 以进门快照刷新(模拟 refreshIfStale 的进门读传递语义)
+        sut.refreshTodos(syncedExternalChangeVersion: entrySnapshot)
+
+        // 快照落账 ⇒ 版本差仍在 ⇒ 下次 refreshIfStale 必须再刷(而非吸收后跳过)
+        XCTAssertTrue(
+            sut.refreshIfStale(force: false),
+            "fetch 后才落地的外部写不得被吸收进 lastSynced"
+        )
+    }
+
     // MARK: - Test Add
 
     func testAddTodo() throws {

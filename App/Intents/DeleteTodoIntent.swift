@@ -5,9 +5,12 @@ import WidgetKit
 /// Siri App Intent:删除指定待办。
 ///
 /// 删除时同步清理所有 `TodoOccurrenceCompletion` 记录(重复任务的历史完成记录),
-/// 保持与 `TodoStore.delete` 的数据完整性约定一致(`Store/TodoStore.swift:163`)。
-/// 不处理系统日历事件清理 —— `TodoStore.delete` 本身也不做这件事,后续若加全局日历同步
-/// 清理能力应与 App 主流程同步演化,不在 Siri intent 里独立实现。
+/// 保持与 `TodoStore.delete` 的数据完整性约定一致(`delete` 内 `deleteCompletions(for:)`)。
+/// 不处理系统日历事件清理:store 层的 `TodoStore.delete` 不碰 EventKit,但主 App 的
+/// 完整删除路径 `AppCoordinator.deleteTodo` **会**经 CalendarSyncService 清理镜像事件;
+/// intent 不复刻它,是补审拍板(复刻需把 EventKit 权限请求引入 Siri 上下文,
+/// 见 docs/review-findings-unreviewed-modules.md #8)——代价是 Siri 删除留孤儿事件,
+/// 待后续前台孤儿对账收口,不在 Siri intent 里独立实现。
 struct DeleteTodoIntent: AppIntent {
     static var title: LocalizedStringResource = "siri.delete.title"
     static var description = IntentDescription("siri.delete.description")
