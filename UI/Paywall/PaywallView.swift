@@ -28,7 +28,8 @@ struct PaywallView: View {
     @EnvironmentObject private var quotaUsage: QuotaUsage
     @Environment(\.dismiss) private var dismiss
 
-    /// 购买/恢复成功的反馈事件。非 nil 时整页盖上成功遮罩、触发成功触感,约 1.5 秒后自动收起。
+    /// 购买/恢复成功的反馈事件。非 nil 时 CTA 原地变绿、触发成功触感,约 1.0 秒后自动收起;
+    /// 收起后由 `AppCoordinator.handlePaywallDismissed` 在主界面补成功 toast。
     @State private var successEvent: SuccessEvent?
 
     enum SuccessEvent: Equatable {
@@ -83,7 +84,7 @@ struct PaywallView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    PaywallContent()
+                    PaywallContent(successEvent: successEvent)
                         .padding(.vertical, WarmSpacing.xs)
                         // 测自然内容高(含上下外边距,在钩子之前):一屏化改造的回归哨兵,
                         // 超预算时 S18 读 PaywallContentFits 断言失败并显示差值。
@@ -127,15 +128,10 @@ struct PaywallView: View {
                 }
             }
         }
-        // 成功反馈直接画在付费墙上(先前「先 dismiss 再在主视图弹 toast」:toast 被 sheet 盖住,
-        // 成功信号一丢就毫无反馈),停留片刻再自动收起,回到用户原来的操作。
-        .overlay {
-            if let successEvent {
-                successOverlay(successEvent)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: successEvent)
+        // 成功反馈画在 CTA 本身上(原地变绿):用户视线不用挪,顶部额度胶囊同时升到
+        // Pro 档,「买到了什么」一眼可见。整页遮罩会打断操作且盖住额度变化,已弃用
+        // (v2 任务书条目 1)。约 1 秒后收起;toast 由 AppCoordinator 在 sheet
+        // onDismiss 后弹——挂在主视图上,不会被本 sheet 盖住。
         .sensoryFeedback(.success, trigger: successEvent) { _, new in new != nil }
         .onChange(of: entitlement.purchaseSuccessCount) { _, _ in
             showSuccess(.purchased)
@@ -145,7 +141,7 @@ struct PaywallView: View {
         }
         .task(id: successEvent) {
             guard successEvent != nil else { return }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             dismiss()
         }
@@ -154,32 +150,6 @@ struct PaywallView: View {
     private func showSuccess(_ event: SuccessEvent) {
         successEvent = event
         AccessibilityNotification.Announcement(event.message).post()
-    }
-
-    /// 成功遮罩:大号对勾 + 「已升级为 Pro / 已恢复 Pro」+ 有效期。挡住下层购买按钮,防止重复点击。
-    private func successOverlay(_ event: SuccessEvent) -> some View {
-        ZStack {
-            WarmTheme.background.opacity(0.96).ignoresSafeArea()
-            VStack(spacing: WarmSpacing.sm) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64, weight: .medium))
-                    .foregroundColor(WarmTheme.success)
-                    .accessibilityHidden(true)
-                Text(event.message)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .multilineTextAlignment(.center)
-                if let expiration = entitlement.subscriptionExpirationDate {
-                    Text(String(localized: "paywall.subscribed.expires \(expiration.formatted(date: .abbreviated, time: .omitted))"))
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                        .foregroundColor(WarmTheme.textSecondary)
-                }
-            }
-            .padding(WarmSpacing.lg)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("PaywallSuccessOverlay")
     }
 }
 
@@ -198,6 +168,12 @@ struct PaywallContent: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
 
+    /// 购买/恢复成功事件(来自 PaywallView)。非 nil 时:
+    /// - 未订阅分支保持渲染(CTA 原地变绿而不是整页切走,反馈出现在用户刚点的按钮上);
+    /// - 顶部额度胶囊升到 Pro 档上限(NetworkConfig.proDailyLimit);
+    /// - 商品卡弱化禁用,防止成功窗口内再选方案。
+    let successEvent: PaywallView.SuccessEvent?
+
     /// 默认选中的商品 ID(产品建议推年付,不是硬要求——以后想改推月付改这一行即可)。
     /// 只在「当前没有有效选中」时生效;用户手动选过的方案不会被覆盖。
     static let defaultProductID = EntitlementManager.yearlyProductID
@@ -208,7 +184,10 @@ struct PaywallContent: View {
 
     var body: some View {
         VStack(spacing: WarmSpacing.sm) {
-            if entitlement.isPro {
+            // 成功窗口内不切已订阅分支:反馈要落在用户刚点的那颗 CTA 上(变绿),
+            // 整页切换会把按钮、商品列表一并抽走,「页面突然变了」反而像出错。
+            // 约 1 秒后 sheet 收起,下次再进付费墙自然走已订阅状态卡。
+            if entitlement.isPro && successEvent == nil {
                 // 已订阅:不再出现购买选项 —— 展示订阅状态卡(含有效期)。
                 // 价值主张/商品列表/购买 CTA 都只服务「未订阅 → 转化」,对已订阅者是噪音。
                 // refresh() 仍无条件跑:isPro 若是 stale-true(订阅实际已过期),
@@ -268,7 +247,10 @@ struct PaywallContent: View {
     private var comparisonCard: some View {
         if quotaUsage.loadState == .error {
             quotaErrorPill
-        } else if quotaUsage.isPro || entitlement.isPro {
+        } else if successEvent != nil || quotaUsage.isPro || entitlement.isPro {
+            // 成功窗口内一律走实时用量卡:刚买到手就让「已用 x/3 → x/100」的跳变
+            // 立即可见(任务书条目 1.3)。这是本次会话的展示覆盖,不改 QuotaUsage——
+            // 代理权威头到来后由 displayedLimit 正常接管。
             liveUsageCard
         } else if quotaUsage.used == 0 {
             freeVsProComparisonPill
@@ -341,6 +323,9 @@ struct PaywallContent: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
                 .layoutPriority(1)
+                // 购买成功 x/3 → x/100 的跳变用数字滚动呈现(任务书条目 1.3)。
+                .contentTransition(.numericText())
+                .animation(.easeOut(duration: 0.25), value: liveUsageText)
             if !quotaUsage.isAuthoritative {
                 Text(String(localized: "quota.non_authoritative"))
                     .font(.system(size: 12, weight: .regular, design: .rounded))
@@ -363,10 +348,15 @@ struct PaywallContent: View {
     /// （任一处为 Pro 即走实时用量卡）的另一半修复：只修「走哪张卡」不够，
     /// 卡里的数字也要跟着档位走。
     private var liveUsageText: String {
-        String(
+        let limit = successEvent != nil
+            // 成功窗口内的展示覆盖:一律按 Pro 上限显示,让「买到了什么」立即可见
+            // (任务书条目 1.3)。代理权威头到来后由 displayedLimit 正常接管。
+            ? NetworkConfig.proDailyLimit
+            : quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+        return String(
             format: String(localized: "quota.today_used"),
             quotaUsage.used,
-            quotaUsage.displayedLimit(storeKitIsPro: entitlement.isPro)
+            limit
         )
     }
 
@@ -487,7 +477,9 @@ struct PaywallContent: View {
                     ProductCard(
                         product: product,
                         isSelected: product.id == selectedProductID,
-                        isPurchasing: entitlement.isPurchasing,
+                        // 成功窗口内同样弱化禁用,防止约 1 秒的展示期内再选方案
+                        // (沿用购买中的弱化样式,任务书条目 1.2)。
+                        isPurchasing: entitlement.isPurchasing || successEvent != nil,
                         showsTrialIncluded: entitlement.isEligibleForIntroOffer,
                         action: { selectedProductID = product.id }
                     )
@@ -578,32 +570,70 @@ struct PaywallContent: View {
     /// - 商品加载失败 (`.empty`/`.error`) → 不渲染(由 productList 的 stateMessage 接管)
     @ViewBuilder
     private var purchaseCTA: some View {
-        Button {
-            guard let product = currentSelectedProduct else { return }
-            Task { await entitlement.purchase(product) }
-        } label: {
-            HStack(spacing: WarmSpacing.xs) {
-                if showsCTASpinner {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Text(ctaTitle)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+        if let successEvent {
+            successCTA(successEvent)
+        } else {
+            Button {
+                guard let product = currentSelectedProduct else { return }
+                Task { await entitlement.purchase(product) }
+            } label: {
+                HStack(spacing: WarmSpacing.xs) {
+                    if showsCTASpinner {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text(ctaTitle)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(WarmTheme.primary)
+                        .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                )
+            }
+            .disabled(ctaDisabled)
+            .accessibilityIdentifier("PaywallPurchaseButton")
+            .padding(.horizontal, WarmSpacing.lg)
+        }
+    }
+
+    /// 成功态 CTA:原地变绿(WarmTheme.success 底 + checkmark + 「已升级为 Pro / 已恢复 Pro」)。
+    /// 反馈出现在用户刚点的按钮上,视线不用挪(任务书条目 1.2)。
+    /// disabled 语义保留(成功窗口内不可再购买),但用 UndimmedButtonStyle 绕开系统
+    /// 对 disabled 按钮的降透明度——成功态必须醒目。
+    private func successCTA(_ event: PaywallView.SuccessEvent) -> some View {
+        Button {} label: {
+            HStack(spacing: WarmSpacing.xs) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .accessibilityHidden(true)
+                Text(event.message)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(
                 Capsule()
-                    .fill(WarmTheme.primary)
-                    .shadow(color: WarmTheme.primary.opacity(0.3), radius: 8, y: 4)
+                    .fill(WarmTheme.success)
+                    .shadow(color: WarmTheme.success.opacity(0.3), radius: 8, y: 4)
             )
         }
-        .disabled(ctaDisabled)
+        .buttonStyle(UndimmedButtonStyle())
+        .disabled(true)
+        .animation(.easeOut(duration: 0.25), value: successEvent)
         .accessibilityIdentifier("PaywallPurchaseButton")
+        // UI 测试以 value == "success" 判断成功态(S20 Step 6)。
+        .accessibilityValue("success")
         .padding(.horizontal, WarmSpacing.lg)
     }
 
@@ -771,6 +801,16 @@ private func paywallPeriodUnit(for product: Product) -> String {
     product.id == EntitlementManager.yearlyProductID
         ? String(localized: "paywall.period.year")
         : String(localized: "paywall.period.month")
+}
+
+// MARK: - 不降透明度的按钮样式
+
+/// 只透传 label 的按钮样式。系统 ButtonStyle 在 disabled 时会给内容降透明度,
+/// 成功态 CTA 需要保持醒目(任务书条目 1.2),禁用语义交给 Button.disabled。
+private struct UndimmedButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
 }
 
 // MARK: - Product Card
