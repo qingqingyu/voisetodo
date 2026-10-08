@@ -565,10 +565,13 @@ struct PaywallContent: View {
     private var valuePropsList: some View {
         VStack(spacing: WarmSpacing.sm) {
             // 查询期间不渲染试用卡,避免查完前后「无试用 ↔ 有试用」抖动 (C 点)。
-            if !entitlement.isCheckingIntroOffer && entitlement.isEligibleForIntroOffer {
+            // 试用时长从 StoreKit 的 introOfferPeriod 插值(与 CTA/法务行/商品卡同口径,
+            // 不手写「7 天」)。
+            if !entitlement.isCheckingIntroOffer && entitlement.isEligibleForIntroOffer,
+               let trialPeriod = entitlement.introOfferPeriod {
                 ValuePropCard(
                     emoji: "🎁",
-                    title: String(localized: "onboarding.pro.bullet.trial.title"),
+                    title: String(localized: "onboarding.pro.bullet.trial.title \(trialPeriod.formattedLocalizedPeriod())"),
                     description: String(localized: "onboarding.pro.bullet.trial.desc"),
                     compact: true
                 )
@@ -1039,8 +1042,10 @@ private struct ProductCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .layoutPriority(1)
-                    if showsTrialIncluded {
-                        Text(String(localized: "paywall.card.trial_included"))
+                    // 试用时长从该商品自身的 introductoryOffer 取(与 CTA/法务行同口径),
+                    // 不手写「7 天」—— ASC 后台改试用时长时这里自动跟随。
+                    if showsTrialIncluded, let offer = product.subscription?.introductoryOffer {
+                        Text(String(localized: "paywall.card.trial_included \(offer.period.formattedLocalizedPeriod())"))
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundColor(WarmTheme.success)
                             .lineLimit(1)
