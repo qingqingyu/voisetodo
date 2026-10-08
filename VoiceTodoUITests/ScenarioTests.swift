@@ -938,6 +938,13 @@ final class ScenarioTests: XCTestCase {
         let successToast = appHelper.app.staticTexts["已升级为 Pro"]
         XCTAssertTrue(successToast.waitForExistence(timeout: 5.0), "付费墙收起后主界面应弹「已升级为 Pro」toast")
 
+        // Step 6.5: 购买成功回到主界面,首页额度胶囊应出现(StoreKit 本地 isPro 即渲染;
+        // Xcode 本地 StoreKit 交易端侧验签不过,DEBUG 按 Pro 放行——见
+        // EntitlementManager.trustsUnverifiedLocally;额度数据缺位时胶囊只显「Pro」,
+        // 代理被拒时改警示样式,两种形态都满足本断言)。
+        let quotaPill = appHelper.app.buttons["HomeQuotaPill"]
+        XCTAssertTrue(quotaPill.waitForExistence(timeout: 5.0), "购买成功后首页应出现额度胶囊(HomeQuotaPill)")
+
         // Step 7: 回归断言——onboarding 不得重新出现(用户报告:欢迎页又播了一遍)。
         // 观察窗口放宽到 6s,覆盖 sheet 重呈现动画与延迟弹层。
         let onboardingReappeared = appHelper.onboardingView.waitForExistence(timeout: 6.0)

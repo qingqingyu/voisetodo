@@ -196,6 +196,9 @@ struct PaywallContent: View {
                 // refreshEntitlements 会翻回 false,本分支自动退回完整购买 UI。
                 comparisonCard
                 subscribedStatusCard
+                if quotaUsage.proxyRejectedSubscription {
+                    subscriptionRejectedHint
+                }
                 manageSubscriptionButton
                 if entitlement.lastError != ErrorMessages.paywallProductsLoadFailed {
                     // 错误显式传播:恢复购买失败(离线时 AppStore.sync 抛错)必须可见。
@@ -529,6 +532,30 @@ struct PaywallContent: View {
         ))
     }
 
+    /// 订阅被代理拒的警示行(`QuotaUsage.proxyRejectedSubscription`:请求带了凭证、
+    /// 代理仍按 free 档计——验签失败/计费宽限期/已退款)。此时 StoreKit 说已订阅、
+    /// 实际只剩免费额度,状态页若只说「你已是 Pro」,用户会以为一切正常,直到撞上
+    /// 免费额度才从 toast 得知。给出原因与出口——「恢复购买」按钮就在下方法务块。
+    /// 代理重新按 Pro 计(下次请求的响应头)后本行自动消失。
+    /// 首页额度胶囊同状态改警示样式,与这里互为呼应。
+    private var subscriptionRejectedHint: some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(WarmTheme.warning)
+                .accessibilityHidden(true)
+            Text(String(localized: "paywall.subscribed.rejected_hint"))
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.warning)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, WarmSpacing.lg)
+        .accessibilityIdentifier("PaywallSubscriptionRejectedHint")
+    }
+
     // MARK: - Value Props
 
     /// 价值主张:quota 卡已删(一屏化去重 —— 额度信息由对比胶囊表达);
@@ -758,28 +785,17 @@ struct PaywallContent: View {
 
     /// 购买/恢复失败的显式反馈(错误显式传播):`.success` 态下 `lastError` 此前无处渲染,
     /// 购买失败、验签失败(unverified)、恢复无可恢复项都会静默无反馈。
-    /// 「等待批准」(paywallPending)是中性提示,不走警示色——家长 Ask to Buy 期间
-    /// 显示成错误会让用户以为交易出了问题。purchase/restore 开始时会清 lastError,
+    /// 「等待批准」(paywallPending)与「订阅状态已是最新」(paywallRestoreUpToDate)是
+    /// 中性提示,不走警示色——前者显示成错误会让用户以为交易出了问题,后者本来就不是
+    /// 失败(已订阅用户点恢复的对账结论)。purchase/restore 开始时会清 lastError,
     /// 双 isPurchasing/isRestoring 守卫只是兜底防飞行中显示陈旧错误。
     @ViewBuilder
     private var inlineErrorText: some View {
         if !entitlement.isPurchasing, !entitlement.isRestoring, let error = entitlement.lastError {
             if error == ErrorMessages.paywallPending {
-                HStack(spacing: WarmSpacing.xxs) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .accessibilityHidden(true)
-                    Text(error)
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                        .layoutPriority(1)
-                }
-                .padding(.horizontal, WarmSpacing.lg)
-                .accessibilityIdentifier("PaywallInlineError")
+                neutralInlineInfo(icon: "clock", text: error)
+            } else if error == ErrorMessages.paywallRestoreUpToDate {
+                neutralInlineInfo(icon: "checkmark", text: error)
             } else {
                 Text(error)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
@@ -791,6 +807,25 @@ struct PaywallContent: View {
                     .accessibilityIdentifier("PaywallInlineError")
             }
         }
+    }
+
+    /// 行内中性提示(灰):图标 + 文案,不占警示色。paywallPending / paywallRestoreUpToDate 共用。
+    private func neutralInlineInfo(icon: String, text: String) -> some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(WarmTheme.textSecondary)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, WarmSpacing.lg)
+        .accessibilityIdentifier("PaywallInlineError")
     }
 
     /// CTA 是否显示 spinner:资格查询中 或 购买中。

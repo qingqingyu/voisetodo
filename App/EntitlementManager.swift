@@ -27,7 +27,7 @@ final class EntitlementManager: ObservableObject {
     /// 当前生效订阅对应的商品 ID(年付/月付)。仅供已订阅状态页展示方案名与价格,
     /// 不参与权益判定;随 performEntitlementRefresh 选定交易时一并赋值。
     @Published private(set) var activeProductID: String?
-    /// 当前生效订阅是否处于介绍性优惠(免费试用)期(transaction.offerType == .introductory)。
+    /// 当前生效订阅是否处于介绍性优惠(免费试用)期(transaction.offer?.type == .introductory)。
     @Published private(set) var isInIntroOffer = false
     /// 自动续费是否开启。nil = 读取不到(商品未加载 / status 缺失 / 验签不过),
     /// UI 遇 nil 回退「有效期至 X」文案。
@@ -44,7 +44,9 @@ final class EntitlementManager: ObservableObject {
     /// isPro 在订阅过期后可能停留在 stale-true,二次购买成功时无 false→true 跳变,
     /// 靠 isPro 跳变驱动反馈会漏(2026-08 二次订阅「成功但不收起」事故根因之一)。
     @Published private(set) var purchaseSuccessCount = 0
-    /// 恢复购买成功计数(恢复后确认为 Pro 时 +1)。付费墙据此给出「已恢复 Pro」反馈后收起。
+    /// 恢复购买成功计数(**恢复前不是 Pro**、恢复后确认为 Pro 时 +1)。付费墙据此给出
+    /// 「已恢复 Pro」反馈后收起。原本已订阅的用户点恢复只是对账,不计数——计了会让
+    /// 已订阅状态页闪回购买页播 1 秒成功态再收起,已付费用户看着像出了错。
     @Published private(set) var restoreSuccessCount = 0
     /// 最近一次刷新是否「有本 App 订阅、但验签不过、且没有任何可信订阅」。
     /// 用于购买返回非成功时给出可行动的提示(恢复购买),而不是静默。
@@ -75,6 +77,9 @@ final class EntitlementManager: ObservableObject {
     /// 串行后「后发起的一定后快照、后写回」,且每个调用方 await 返回时看到的都是落定状态
     /// (restorePurchases 紧接着读 isPro 判断「无可恢复」依赖这一点)。
     private var entitlementRefreshChain: Task<Bool, Never>?
+    /// willAutoRenew 异步读的代际号:每轮刷新自增,回填前校验仍是最新一代,
+    /// 慢网下旧一轮读完成时新一轮已发起,其结果作废——防旧值覆盖新值。
+    private var willAutoRenewReadGeneration = 0
     /// 订阅到期时刻的兜底刷新。到期(用户已取消续订)不会经 Transaction.updates 推送,
     /// App 一直在前台时 isPro 会停在 stale-true;到点主动重读一次 currentEntitlements。
     private var expirationRefreshTask: Task<Void, Never>?
@@ -242,12 +247,39 @@ final class EntitlementManager: ObservableObject {
         // 已订阅状态页的展示元数据(任务书条目 4):随选定交易一并赋值,
         // 只读展示用途,不影响上面的权益判定与 changed 语义。
         activeProductID = selectedTransaction?.productID
-        isInIntroOffer = selectedTransaction?.offerType == .introductory
-        willAutoRenew = await renewalWillAutoRenew(for: selectedTransaction)
-        // willAutoRenew 打裸值(true/false/nil),不套 Optional(...) 包装,key=value 好解析。
-        let willAutoRenewLabel = willAutoRenew.map(String.init(describing:)) ?? "nil"
-        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed) willAutoRenew=\(willAutoRenewLabel, privacy: .public)")
+        isInIntroOffer = selectedTransaction?.offer?.type == .introductory
+        // willAutoRenew 不能 await 在这里:读取要联网问 App Store(见 refreshWillAutoRenew),
+        // 而购买成功路径要等本方法返回才 purchaseSuccessCount += 1(CTA 变绿),
+        // 串在刷新里会把成功反馈拖到这次网络往返之后。改为异步读到再回填。
+        refreshWillAutoRenew(for: selectedTransaction)
+        VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed) willAutoRenew=deferred")
         return changed
+    }
+
+    /// 异步读自动续费状态并回填。`Product.SubscriptionInfo.status` 可能联网问
+    /// App Store,await 在 performEntitlementRefresh 里会拖慢它的所有调用方——
+    /// 购买成功(等刷新返回才计成功数,CTA 变绿要 ≤0.5s)、恢复购买、
+    /// Transaction.updates 监听、到期重读;断网时还会让每次刷新多记一条
+    /// renewal_info_failed 警告。读到再回填,日期行短暂停留在上一值/回退文案,
+    /// 属可接受的展示延迟(纯展示元数据,不影响权益判定)。
+    /// 晚到的旧读按代际丢弃;无选定交易(未订阅)时同步置 nil,不做无谓的网络读。
+    private func refreshWillAutoRenew(for transaction: Transaction?) {
+        willAutoRenewReadGeneration += 1
+        let generation = willAutoRenewReadGeneration
+        guard let transaction else {
+            willAutoRenew = nil
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let value = await self.renewalWillAutoRenew(for: transaction)
+            let isLatest = generation == self.willAutoRenewReadGeneration
+            // willAutoRenew 打裸值(true/false/nil),不套 Optional(...) 包装,key=value 好解析。
+            let label = value.map(String.init(describing:)) ?? "nil"
+            VoiceTodoLog.app.info("entitlement.renewal_info willAutoRenew=\(label, privacy: .public) latest=\(isLatest, privacy: .public)")
+            guard isLatest else { return }
+            self.willAutoRenew = value
+        }
     }
 
     /// 从 `Product.subscription.status` 读选定交易的 `renewalInfo.willAutoRenew`。
@@ -457,17 +489,26 @@ final class EntitlementManager: ObservableObject {
         isRestoring = true
         lastError = nil
         defer { isRestoring = false }
+        // 恢复前是否已是 Pro:已订阅用户点「恢复购买」是对账(确认订阅仍在),
+        // 不是一次「恢复成功」事件。若照样计成功,已订阅状态页会闪回购买页播
+        // 1 秒绿色成功态再收起——已付费用户突然看到购买页,像出了错。
+        // 改为只给行内中性「订阅状态已是最新」,页面保持在状态页。
+        let wasPro = isPro
         do {
             try await AppStore.sync()
             await refreshEntitlements()
             if isPro {
                 // 恢复成功同样清 pending 标志(口径与直接购买成功一致)。
                 hasPendingPurchase = false
-                restoreSuccessCount += 1
+                if wasPro {
+                    lastError = ErrorMessages.paywallRestoreUpToDate
+                } else {
+                    restoreSuccessCount += 1
+                }
             } else {
                 lastError = ErrorMessages.paywallRestoreNothing
             }
-            VoiceTodoLog.app.info("entitlement.restore_done isPro=\(self.isPro)")
+            VoiceTodoLog.app.info("entitlement.restore_done isPro=\(self.isPro) wasPro=\(wasPro)")
         } catch StoreKitError.userCancelled {
             // 用户在 Apple 账户验证弹窗点了取消:不是失败,不报错。
             VoiceTodoLog.app.info("entitlement.restore_cancelled")
