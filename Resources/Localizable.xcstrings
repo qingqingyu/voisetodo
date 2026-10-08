@@ -6700,38 +6700,6 @@
         }
       }
     },
-    "paywall.legal.autorenew" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trial ends, then auto-renews. Cancel anytime in Settings → Apple ID → Subscriptions."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "试用期结束后自动续费。可随时在「系统设置 → Apple ID → 订阅」取消。"
-          }
-        }
-      }
-    },
-    "paywall.legal.autorenew_no_trial" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto-renews until canceled. Cancel anytime in Settings → Apple ID → Subscriptions."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "订阅后自动续费，可随时在「系统设置 → Apple ID → 订阅」取消。"
-          }
-        }
-      }
-    },
     "paywall.legal.privacy_link" : {
       "localizations" : {
         "en" : {
@@ -13756,6 +13724,72 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "约 %1$@/月"
+          }
+        }
+      }
+    },
+    "paywall.legal.trial_then_price" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After your %1$@ free trial, auto-renews at %2$@/%3$@. Cancel anytime."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@の無料体験後、%2$@/%3$@で自動更新されます。いつでもキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试用 %1$@ 后按 %2$@/%3$@ 自动续费，可随时取消"
+          }
+        }
+      }
+    },
+    "paywall.legal.price_autorenew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@/%2$@, auto-renews. Cancel anytime."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@/%2$@、自動更新されます。いつでもキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@/%2$@，自动续费，可随时取消"
+          }
+        }
+      }
+    },
+    "paywall.legal.cancel_path" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel in Settings → Apple ID → Subscriptions."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「設定 → Apple ID → サブスクリプション」でキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 设置 → Apple ID → 订阅 中取消"
           }
         }
       }

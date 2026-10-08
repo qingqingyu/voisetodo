@@ -671,23 +671,50 @@ struct PaywallContent: View {
         }
     }
 
-    /// App Store 审核要求的自动续费合规说明。
-    /// 有试用资格 → paywall.legal.autorenew (含试用期结束后...)
-    /// 无试用资格 → paywall.legal.autorenew_no_trial (只讲自动续费)
+    /// App Store 审核要求的自动续费合规说明(价格随选中方案即时更新):
+    /// 第一行价格条款(试用资格决定文案),第二行取消路径。
+    /// 价格/周期一律取当前选中商品的 StoreKit 数据,不手写 ¥39.99 / 7 天——
+    /// 各店面币种价格不同,试用时长以 introductoryOffer.period 为准。
     private var legalText: some View {
-        Text(String(localized: legalKey))
-            .font(.system(size: 11, weight: .regular, design: .rounded))
-            .foregroundColor(WarmTheme.textMuted)
-            .multilineTextAlignment(.center)
-            // 合规文案不可截断:en autorenew 84 字符,AX 大字号下需 3 行,
-            // lineLimit(2)+0.85 缩放兜不住会出 "..."(审核风险),保持 3 行预算。
-            .lineLimit(3)
-            .minimumScaleFactor(0.85)
-            .padding(.horizontal, WarmSpacing.lg)
+        VStack(spacing: WarmSpacing.xxs) {
+            Text(legalPriceLine)
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.textMuted)
+                .multilineTextAlignment(.center)
+                // 合规文案不可截断:en 长文案 AX 大字号下需 3 行,
+                // lineLimit(2)+0.85 缩放兜不住会出 "..."(审核风险),保持 3 行预算。
+                .lineLimit(3)
+                .minimumScaleFactor(0.85)
+            Text(String(localized: "paywall.legal.cancel_path"))
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundColor(WarmTheme.textMuted)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, WarmSpacing.lg)
     }
 
-    private var legalKey: String.LocalizationValue {
-        entitlement.isEligibleForIntroOffer ? "paywall.legal.autorenew" : "paywall.legal.autorenew_no_trial"
+    /// 价格条款行:有试用资格 →「试用 N 天后按 ¥xx/年 自动续费，可随时取消」;
+    /// 无资格 →「¥xx/年，自动续费，可随时取消」。切换选中方案时随 body 即时更新。
+    private var legalPriceLine: String {
+        // legalBlock 只在 productLoadState == .success 时渲染 legalText,
+        // 这里取不到选中商品属于防御性兜底,给空串防呆。
+        guard let product = currentSelectedProduct else { return "" }
+        let periodUnit = paywallPeriodUnit(for: product)
+        if entitlement.isEligibleForIntroOffer, let period = entitlement.introOfferPeriod {
+            return String(
+                format: String(localized: "paywall.legal.trial_then_price"),
+                period.formattedLocalizedPeriod(),
+                product.displayPrice,
+                periodUnit
+            )
+        }
+        return String(
+            format: String(localized: "paywall.legal.price_autorenew"),
+            product.displayPrice,
+            periodUnit
+        )
     }
 
     /// App Store 审核指南 3.1.2:自动续订订阅的付费墙必须提供隐私政策与使用条款的可点链接。
@@ -734,6 +761,18 @@ struct PaywallContent: View {
     }
 }
 
+// MARK: - 计费周期单位
+
+/// 商品的本地化计费周期单位(「年」/「月」)。年付=年,其余(月付)=月。
+/// 价格条款行(legalPriceLine)与商品卡(ProductCard)共用同一口径。
+/// @MainActor:引用 EntitlementManager.yearlyProductID(@MainActor 隔离的常量)。
+@MainActor
+private func paywallPeriodUnit(for product: Product) -> String {
+    product.id == EntitlementManager.yearlyProductID
+        ? String(localized: "paywall.period.year")
+        : String(localized: "paywall.period.month")
+}
+
 // MARK: - Product Card
 
 /// 商品卡:点击切换 selectedProductID(选择语义,不再触发购买)。
@@ -757,9 +796,7 @@ private struct ProductCard: View {
     }
 
     private var periodUnit: String {
-        isYearly
-            ? String(localized: "paywall.period.year")
-            : String(localized: "paywall.period.month")
+        paywallPeriodUnit(for: product)
     }
 
     var body: some View {
