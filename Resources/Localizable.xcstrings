@@ -6624,7 +6624,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld / per day"
+            "value" : "%lld / day"
           }
         },
         "zh-Hans" : {
@@ -6930,13 +6930,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Subscription successful"
+            "value" : "You're now on Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro にアップグレードしました"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "订阅成功"
+            "value" : "已升级为 Pro"
           }
         }
       }
@@ -7001,6 +7007,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未找到可恢复的订阅"
+          }
+        }
+      }
+    },
+    "paywall.restore_success" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro restored"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro を復元しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复 Pro"
           }
         }
       }

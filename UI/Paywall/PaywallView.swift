@@ -28,6 +28,21 @@ struct PaywallView: View {
     @EnvironmentObject private var quotaUsage: QuotaUsage
     @Environment(\.dismiss) private var dismiss
 
+    /// 购买/恢复成功的反馈事件。非 nil 时整页盖上成功遮罩、触发成功触感,约 1.5 秒后自动收起。
+    @State private var successEvent: SuccessEvent?
+
+    enum SuccessEvent: Equatable {
+        case purchased
+        case restored
+
+        var message: String {
+            switch self {
+            case .purchased: return ErrorMessages.paywallPurchaseSucceeded
+            case .restored: return ErrorMessages.paywallRestoreSucceeded
+            }
+        }
+    }
+
     /// 一屏化:ScrollView 视口高度。初值 .infinity 表示「尚未测得」,
     /// 拿到真值前不参与 contentFits 判定。挂在 ScrollView 自身测,
     /// 高度由容器决定、与内容无关,不会形成布局反馈环。
@@ -112,9 +127,59 @@ struct PaywallView: View {
                 }
             }
         }
-        // 购买/恢复成功后不自动收起:PaywallContent 原地切到已订阅态(购买成功时标题为
-        // 「订阅成功」),用户当场看到结果,自己点 × 关闭。旧做法「先 dismiss 再在主视图弹
-        // toast」一旦成功信号没到就毫无反馈;toast 挂在 sheet 下层,sheet 不收起时也看不见。
+        // 成功反馈直接画在付费墙上(先前「先 dismiss 再在主视图弹 toast」:toast 被 sheet 盖住,
+        // 成功信号一丢就毫无反馈),停留片刻再自动收起,回到用户原来的操作。
+        .overlay {
+            if let successEvent {
+                successOverlay(successEvent)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: successEvent)
+        .sensoryFeedback(.success, trigger: successEvent) { _, new in new != nil }
+        .onChange(of: entitlement.purchaseSuccessCount) { _, _ in
+            showSuccess(.purchased)
+        }
+        .onChange(of: entitlement.restoreSuccessCount) { _, _ in
+            showSuccess(.restored)
+        }
+        .task(id: successEvent) {
+            guard successEvent != nil else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            dismiss()
+        }
+    }
+
+    private func showSuccess(_ event: SuccessEvent) {
+        successEvent = event
+        AccessibilityNotification.Announcement(event.message).post()
+    }
+
+    /// 成功遮罩:大号对勾 + 「已升级为 Pro / 已恢复 Pro」+ 有效期。挡住下层购买按钮,防止重复点击。
+    private func successOverlay(_ event: SuccessEvent) -> some View {
+        ZStack {
+            WarmTheme.background.opacity(0.96).ignoresSafeArea()
+            VStack(spacing: WarmSpacing.sm) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 64, weight: .medium))
+                    .foregroundColor(WarmTheme.success)
+                    .accessibilityHidden(true)
+                Text(event.message)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .multilineTextAlignment(.center)
+                if let expiration = entitlement.subscriptionExpirationDate {
+                    Text(String(localized: "paywall.subscribed.expires \(expiration.formatted(date: .abbreviated, time: .omitted))"))
+                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                        .foregroundColor(WarmTheme.textSecondary)
+                }
+            }
+            .padding(WarmSpacing.lg)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("PaywallSuccessOverlay")
     }
 }
 
@@ -132,10 +197,6 @@ struct PaywallView: View {
 struct PaywallContent: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
-
-    /// 本次打开付费墙期间是否刚购买成功:已订阅卡标题由「你已订阅 Pro」换成「订阅成功」。
-    /// 由 `purchaseSuccessCount` 事件驱动(含「系统提示已订阅」后的对账成功),与 isPro 解耦。
-    @State private var justSubscribed = false
 
     /// 当前选中的商品 ID。productList 加载后默认选年付;找不到则取排序后的第一个。
     /// 购买期间用户仍可点其它卡片切换 —— A 点已要求此时所有卡 disabled,实际不会改值。
@@ -171,10 +232,6 @@ struct PaywallContent: View {
             Spacer(minLength: WarmSpacing.xxs)
         }
         .task { await entitlement.refresh() }
-        .onChange(of: entitlement.purchaseSuccessCount) { _, _ in
-            withAnimation(.easeOut(duration: 0.25)) { justSubscribed = true }
-            AccessibilityNotification.Announcement(ErrorMessages.paywallPurchaseSucceeded).post()
-        }
         .onChange(of: entitlement.products) { _, newProducts in
             // 购买飞行中不重置选中 —— refresh 可能由 transaction listener 触发,
             // 此时改 selectedProductID 会让用户感知到选中漂移。
@@ -339,7 +396,7 @@ struct PaywallContent: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundColor(WarmTheme.success)
                 .accessibilityHidden(true)
-            Text(justSubscribed ? ErrorMessages.paywallPurchaseSucceeded : String(localized: "paywall.subscribed.title"))
+            Text(String(localized: "paywall.subscribed.title"))
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(1)
