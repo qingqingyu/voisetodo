@@ -6967,6 +6967,12 @@
             "value" : "No purchases to restore."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復元できるサブスクリプションが見つかりませんでした。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14018,6 +14024,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pro 会员，今日已用 %1$d 次，共 %2$d 次"
+          }
+        }
+      }
+    },
+    "paywall.restore_up_to_date" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your subscription is already up to date."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブスクリプションの状態は最新です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅状态已是最新"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.rejected_hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscription verification failed. Pro quota is not active yet. Try restoring your purchase."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブスクリプションを検証できませんでした。Pro の枠はまだ有効になっていません。購入の復元をお試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅验证未通过，Pro 额度暂未生效。请尝试恢复购买。"
           }
         }
       }
