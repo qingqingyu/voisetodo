@@ -67,6 +67,9 @@ final class CalendarSyncServiceTests: XCTestCase {
     }
 
     func testReplaceRemovesOldEventAndWritesNewEvent() async {
+        // 回归测试(mock 忠实化后承载):待办带旧标识时,replace 必须仍写出新事件。
+        // 修复前 CalendarSyncService.replace 把带旧标识的待办原样传给 writeEvents,
+        // 被真实 writer 的幂等过滤跳过 → "删旧不写新",镜像静默丢失。
         var item = TodoItemData(title: "替换日历", dueHint: "后天", dueDate: Date())
         item.systemCalendarEventIdentifier = "event-old"
         let store = CalendarSyncTestStore(todos: [item])
@@ -195,11 +198,22 @@ private final class CalendarSyncTestWriter: SystemCalendarWritingProtocol {
     }
 
     func writeEvents(for todos: [TodoItemData]) async throws -> [SystemCalendarWriteResult] {
-        receivedTodos.append(contentsOf: todos)
+        // 忠实复刻真实 SystemCalendarWriter.writeEvents 的可写过滤(除 EKEventStore
+        // 依赖外):只写 source == .voice、systemCalendarEventIdentifier == nil 且
+        // mapper 能产出草稿(有 dueDate 或 recurrence)的待办。此前 mock 来者不拒,
+        // 导致「replace 传入带旧标识的待办被真实 writer 过滤、新事件永远写不出」的
+        // bug 测试全绿——mock 必须复刻真实实现的过滤/钳制,否则测试在验证一个
+        // 不存在的系统(见方案 §5 评审)。
+        let writableTodos = todos.filter {
+            $0.source == .voice
+                && $0.systemCalendarEventIdentifier == nil
+                && SystemCalendarEventMapper.draft(from: $0) != nil
+        }
+        receivedTodos.append(contentsOf: writableTodos)
         if let writeError {
             throw writeError
         }
-        return todos.map {
+        return writableTodos.map {
             SystemCalendarWriteResult(todoId: $0.id, eventIdentifier: "event-\($0.id.uuidString)")
         }
     }
