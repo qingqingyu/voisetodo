@@ -46,6 +46,10 @@ struct AddTodoIntent: AppIntent {
                 try context.save()
                 AppGroupConfig.markExternalDataChanged()
                 WidgetCenter.shared.reloadAllTimelines()
+                // 与主存库路径同口径:consent gate 的原文保存也计入 siri 保存遥测
+                // (原文未解析,不是 todoSaved 的 parsed 语义,但「siri 说的话落了库」
+                // 这一事件与 fallbackError 路径一致,漏记会让 siriAdd 来源少算)。
+                Telemetry.record(.todoSaved(source: .siriAdd, count: 1))
             } catch {
                 VoiceTodoLog.intent.error("intent.add.ai_consent_save_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
                 Telemetry.record(.intentFailed(operation: "add", stage: "container"))

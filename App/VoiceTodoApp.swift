@@ -265,7 +265,9 @@ struct VoiceTodoApp: App {
                         onDecline: { coordinator.handleAIConsentDismissed(granted: false) }
                     )
                     .padding(.vertical, WarmSpacing.lg)
-                    .presentationDetents([.height(420)])
+                    // 两档可拖:常规字号 430 一屏;AX 大字号(ja/en 长文案)放不下时
+                    // 用户可上拖到 large——固定单档会在动态字体下裁掉同意按钮。
+                    .presentationDetents([.height(430), .large])
                 }
                 .toast(
                     message: coordinator.toastMessage,

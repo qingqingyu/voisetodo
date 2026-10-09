@@ -14459,6 +14459,28 @@
           }
         }
       }
+    },
+    "aiconsent.view_policy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Privacy Policy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシーポリシーを見る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看隐私政策"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

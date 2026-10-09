@@ -1388,8 +1388,8 @@ struct OnboardingView: View {
                 )
             }
             .accessibilityIdentifier("NextButton")
-            // AI 披露未同意时禁用「下一步」(见按钮注释);禁用态对 a11y 暴露
-            // value,UI 测试可断言 gate 生效。
+            // AI 披露未同意时禁用「下一步」(见按钮注释);UI 测试经
+            // AIConsentAgreeButton 的存在性断言 gate 生效。
             .disabled(currentStep == .voicePermissions && !aiConsentGranted)
         }
         .padding(.horizontal, 24)

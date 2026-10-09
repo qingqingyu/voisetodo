@@ -954,6 +954,13 @@ final class AppCoordinator: ObservableObject {
     /// flowKey 区分日志事件名与 requestPath("reextract" / "edit_reextract"),
     /// 原有 reextract 日志键在 flowKey="reextract" 下逐行保持不变。
     private func reextractCore(todoID: UUID, transcript: String, locale: Locale, flowKey: String, flowID: String) async {
+        // AI 同意 gate:重解析同样把转写文本发往第三方 AI。新装用户到不了这里
+        // (未同意过不了 onboarding),但升级残留用户(hasCompletedOnboarding=true
+        // 且 consent=false)可达——用户主动点击场景,弹披露卡并挂起,同意后继续。
+        guard await ensureAIConsent() else {
+            VoiceTodoLog.coordinator.info("coordinator.\(flowKey, privacy: .public).blocked reason=ai_consent")
+            return
+        }
         do {
             let result = try await VoiceTodoLog.$requestPath.withValue(flowKey) {
                 try await extractor.extract(from: transcript, locale: locale)

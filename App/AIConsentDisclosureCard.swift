@@ -14,6 +14,7 @@ struct AIConsentDisclosureCard: View {
     let onDecline: () -> Void
 
     @State private var showsDeclineDialog = false
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: WarmSpacing.md) {
@@ -75,8 +76,11 @@ struct AIConsentDisclosureCard: View {
                 isPresented: $showsDeclineDialog,
                 titleVisibility: .visible
             ) {
-                // 「仍不同意」语义交调用方;dialog 文案里同时给隐私政策出口,
-                // 用户不必先同意才能看政策(知情才有有效同意)。
+                // 隐私政策出口直接放进 dialog:用户不必先「我再想想」绕回卡片才能看
+                // 政策——知情才有有效同意(dialog 盖住了卡上的 Link)。
+                Button(String(localized: "aiconsent.view_policy")) {
+                    openURL(PaywallLegal.privacyPolicyURL)
+                }
                 Button(String(localized: "aiconsent.still_decline"), role: .destructive, action: onDecline)
                 Button(String(localized: "aiconsent.reconsider"), role: .cancel) {}
             } message: {
