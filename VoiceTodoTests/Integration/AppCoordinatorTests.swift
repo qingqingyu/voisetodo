@@ -5,6 +5,18 @@ import XCTest
 
 @MainActor
 final class AppCoordinatorTests: XCTestCase {
+    override func setUp() async throws {
+        // 2026-10-09 AI 同意 gate:本类大量用例直接调 processManualInput /
+        // handleAppForeground / startRecording——未同意会被 gate 挂起(等披露卡
+        // 决议)或防御性跳过。统一预置「已同意」解锁既有路径;gate 行为本身由
+        // AIConsentGateTests 专测(含挂起/恢复/跳过)。
+        AppGroupConfig.setAIConsentGranted(true)
+    }
+
+    override func tearDown() async throws {
+        AppGroupConfig.setAIConsentGranted(false)
+    }
+
     func testHandleAppForegroundKeepsPendingOrderWhenExtractionsFinishOutOfOrder() async throws {
         let store = CoordinatorTestStore(todos: [
             pendingTodo(id: UUID(), transcript: "first pending"),
@@ -1498,5 +1510,129 @@ private final class CoordinatorTestSystemCalendarWriter: SystemCalendarWritingPr
         if let removeError {
             throw removeError
         }
+    }
+}
+
+// MARK: - AI 同意 gate(2026-10-09 合规:转写文本发第三方 AI 前须显式同意)
+
+/// 专项覆盖:`ensureAIConsent` 的挂起/恢复语义、已同意直通、
+/// `handleAppForeground` 的防御性跳过、`AppGroupConfig` 同意标志读写缺省语义。
+/// 真实 App Group suite 在测试宿主内可写;每用例自管状态,tearDown 统一清。
+@MainActor
+final class AIConsentGateTests: XCTestCase {
+    override func tearDown() async throws {
+        AppGroupConfig.setAIConsentGranted(false)
+    }
+
+    private func makeCoordinator(store: CoordinatorTestStore = CoordinatorTestStore(todos: [])) -> AppCoordinator {
+        AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store
+        )
+    }
+
+    private func pendingTodoItem(transcript: String) -> TodoItemData {
+        TodoItemData(
+            id: UUID(),
+            title: transcript,
+            detail: transcript,
+            rawTranscript: transcript,
+            needsAIProcessing: true
+        )
+    }
+
+    /// 已同意:立即放行,不弹披露卡(零打扰)。
+    func testEnsureAIConsentGrantedPassesImmediatelyWithoutSheet() async {
+        AppGroupConfig.setAIConsentGranted(true)
+        let coordinator = makeCoordinator()
+
+        let granted = await coordinator.ensureAIConsent()
+
+        XCTAssertTrue(granted, "已同意应直接放行")
+        XCTAssertFalse(coordinator.showAIConsent, "已同意时不得弹披露卡")
+    }
+
+    /// 未同意:挂起调用方并上屏披露卡;用户同意 → resume(true) 且写入 App Group。
+    func testEnsureAIConsentSuspendsUntilUserGrants() async throws {
+        AppGroupConfig.setAIConsentGranted(false)
+        let coordinator = makeCoordinator()
+
+        let pending = Task { await coordinator.ensureAIConsent() }
+        let deadline = Date().addingTimeInterval(2.0)
+        while !coordinator.showAIConsent && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(coordinator.showAIConsent, "未同意时应弹披露卡(调用方挂起)")
+
+        coordinator.handleAIConsentDismissed(granted: true)
+        let granted = await pending.value
+
+        XCTAssertTrue(granted, "同意后挂起方应以 true 恢复")
+        XCTAssertTrue(AppGroupConfig.aiConsentGranted(), "同意必须写入 App Group(供 Siri 扩展读取)")
+        XCTAssertFalse(coordinator.showAIConsent, "决议后披露卡应收起")
+    }
+
+    /// 未同意且用户拒绝:resume(false),同意标志保持 false(下次入口再弹)。
+    func testEnsureAIConsentDeclineResumesFalse() async throws {
+        AppGroupConfig.setAIConsentGranted(false)
+        let coordinator = makeCoordinator()
+
+        let pending = Task { await coordinator.ensureAIConsent() }
+        let deadline = Date().addingTimeInterval(2.0)
+        while !coordinator.showAIConsent && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        coordinator.handleAIConsentDismissed(granted: false)
+        let granted = await pending.value
+
+        XCTAssertFalse(granted, "拒绝后挂起方应以 false 恢复(本次操作取消)")
+        XCTAssertFalse(AppGroupConfig.aiConsentGranted(), "拒绝不得写入同意")
+    }
+
+    /// sheet 兜底路径(按钮已决议后 onDismiss 再入):幂等,不覆盖已写入的同意。
+    func testDismissedTwiceIsIdempotent() async throws {
+        AppGroupConfig.setAIConsentGranted(false)
+        let coordinator = makeCoordinator()
+
+        let pending = Task { await coordinator.ensureAIConsent() }
+        let deadline = Date().addingTimeInterval(2.0)
+        while !coordinator.showAIConsent && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        coordinator.handleAIConsentDismissed(granted: true)
+        _ = await pending.value
+        // 模拟 SwiftUI sheet onDismiss 在按钮路径之后的兜底再入(误报 granted: false)
+        coordinator.handleAIConsentDismissed(granted: false)
+
+        XCTAssertTrue(AppGroupConfig.aiConsentGranted(), "兜底再入不得把已写入的同意翻回 false")
+    }
+
+    /// 前台 pending 恢复的防御 gate:Siri 未同意存的原文回前台时不发往 AI。
+    func testHandleAppForegroundSkipsPendingWithoutConsent() async {
+        AppGroupConfig.setAIConsentGranted(false)
+        let store = CoordinatorTestStore(todos: [pendingTodoItem(transcript: "siri 未同意时说的原文")])
+        let coordinator = makeCoordinator(store: store)
+
+        await coordinator.handleAppForeground()
+
+        XCTAssertFalse(coordinator.showConfirmSheet, "未同意时 pending 不得发往 AI(静默跳过,不弹卡)")
+        XCTAssertFalse(coordinator.showAIConsent, "防御 gate 是静默跳过,不应弹披露卡")
+    }
+
+    /// 同意标志读写与缺省语义(注入临时 suite,不依赖真实 App Group 残留):
+    /// 缺省 false = 显式同意原则,不做隐式默认同意。
+    func testConsentFlagDefaultAndReadWrite() {
+        let suiteName = "AIConsentGateTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertFalse(AppGroupConfig.aiConsentGranted(defaults: defaults), "从未写入必须缺省 false")
+        AppGroupConfig.setAIConsentGranted(true, defaults: defaults)
+        XCTAssertTrue(AppGroupConfig.aiConsentGranted(defaults: defaults))
+        AppGroupConfig.setAIConsentGranted(false, defaults: defaults)
+        XCTAssertFalse(AppGroupConfig.aiConsentGranted(defaults: defaults))
     }
 }

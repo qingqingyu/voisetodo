@@ -448,6 +448,8 @@ final class ScenarioTests: XCTestCase {
         // UI 测试下权限默认 mock 为「已授权」,合并页不显示授权按钮,直接「下一步」即可。
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        // 2026-10-09 AI 同意 gate:权限页先显示披露卡,「下一步」在同意前禁用。
+        XCTAssertTrue(appHelper.agreeAIConsent(), "权限页应先显示 AI 披露卡并可同意")
 
         // Step 5: 权限页 → 完成页(Pro 付费墙已移出 onboarding,改为首次 wow 后弹,方案 §3.5)。
         // 从权限页到完成页经过 speechLanguage → [actionButton] → completion
@@ -512,7 +514,8 @@ final class ScenarioTests: XCTestCase {
                       "应进入演示页")
         appHelper.nextButton.tap()
 
-        // Step 3: 尝试授权（Mock 返回 denied）
+        // Step 3: 先过 AI 披露同意(未同意时权限卡不渲染),再尝试授权（Mock 返回 denied）
+        XCTAssertTrue(appHelper.agreeAIConsent(), "权限页应先显示 AI 披露卡并可同意")
         let authorizeButton = appHelper.app.buttons["AuthorizeMicButton"]
         XCTAssertTrue(authorizeButton.waitForExistence(timeout: 2.0), "应进入权限合并页")
         authorizeButton.tap()
@@ -544,6 +547,8 @@ final class ScenarioTests: XCTestCase {
                       "应进入演示页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        // 2026-10-09 AI 同意 gate:权限页先显示披露卡,「下一步」在同意前禁用。
+        XCTAssertTrue(appHelper.agreeAIConsent(), "权限页应先显示 AI 披露卡并可同意")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
@@ -815,6 +820,8 @@ final class ScenarioTests: XCTestCase {
                       "应进入演示页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        // 2026-10-09 AI 同意 gate:权限页先显示披露卡,「下一步」在同意前禁用。
+        XCTAssertTrue(appHelper.agreeAIConsent(), "权限页应先显示 AI 披露卡并可同意")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")
@@ -867,6 +874,8 @@ final class ScenarioTests: XCTestCase {
                       "应进入演示页")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.staticTexts["说出你的待办"].waitForExistence(timeout: 2.0), "应进入权限合并页")
+        // 2026-10-09 AI 同意 gate:权限页先显示披露卡,「下一步」在同意前禁用。
+        XCTAssertTrue(appHelper.agreeAIConsent(), "权限页应先显示 AI 披露卡并可同意")
         appHelper.nextButton.tap()
         XCTAssertTrue(appHelper.app.otherElements["OnboardingSpeechLanguageStep"].waitForExistence(timeout: 2.0),
                       "应进入语音识别语言页")

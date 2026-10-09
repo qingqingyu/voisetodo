@@ -74,6 +74,10 @@ final class AppCoordinator: ObservableObject {
     let audioLevelPublisher: AnyPublisher<Float, Never>
     /// 配额耗尽或用户手动进入时弹出订阅页。
     @Published var showPaywall = false
+    /// AI 处理同意披露卡(运行时 gate)。onboarding 跳过/未走完同意的用户,
+    /// 首次触发发送入口(录音/键盘输入)时弹出;由 `ensureAIConsent()` 收口,
+    /// 不要直接写本字段——挂起的调用方要经 continuation 一起 resume。
+    @Published var showAIConsent = false
     /// 语音输入不可用（识别器初始化失败 / 资源缺失）时设为 true，通知 UI 自动切键盘模式。
     /// UI 监听到 true 后应 switchInputPanelMode(toKeyboard: true) 并复位为 false。
     @Published var voiceInputFallbackToKeyboard = false
@@ -288,6 +292,50 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// 挂起中的 AI 同意 gate 调用。非 nil 表示披露卡正在展示;同一时刻只允许
+    /// 一个挂起方,后来的入口调用直接判「未同意」返回,不排队。
+    private var aiConsentContinuation: CheckedContinuation<Bool, Never>?
+
+    /// AI 处理同意 gate(5.1.1:转写文本将发往第三方 AI 服务商,发送前须取得同意)。
+    ///
+    /// 所有主 App 的发送入口(`startRecording` 录音、`processManualInput` 键盘输入)
+    /// 都必须先过本方法;已同意立即返回 true(零开销),未同意弹披露卡并**挂起调用方**,
+    /// 卡关闭时以用户决定 resume——同意后原操作无缝继续,不同意则本次操作取消。
+    ///
+    /// `handleAIConsentDismissed` 不存在时(卡被系统方式收起,如 sheet 被下拉关闭)
+    /// 由 VoiceTodoApp 的 sheet onDismiss 兜底 resume(false)。
+    @discardableResult
+    func ensureAIConsent() async -> Bool {
+        if AppGroupConfig.aiConsentGranted() { return true }
+        VoiceTodoLog.coordinator.info("coordinator.ai_consent.gate_shown")
+        return await withCheckedContinuation { continuation in
+            if aiConsentContinuation != nil {
+                // 已有挂起方(披露卡在屏):本次调用不排队,直接按未同意放回。
+                VoiceTodoLog.coordinator.warning("coordinator.ai_consent.gate_reentrant dropped=true")
+                continuation.resume(returning: false)
+                return
+            }
+            aiConsentContinuation = continuation
+            showAIConsent = true
+        }
+    }
+
+    /// 披露卡关闭的统一出口(同意按钮 / 仍不同意 / sheet 兜底收起都走这里)。
+    /// `granted` 即用户在卡上的最终决定;同意写存储,并 resume 挂起方。
+    /// 幂等:按钮路径处理后 SwiftUI 的 sheet onDismiss 兜底会再进一次——
+    /// 此时挂起方已消费(nil),只重复置 showAIConsent=false,不误记日志、不重复 resume。
+    func handleAIConsentDismissed(granted: Bool) {
+        if granted {
+            AppGroupConfig.setAIConsentGranted(true)
+        }
+        showAIConsent = false
+        if let continuation = aiConsentContinuation {
+            VoiceTodoLog.coordinator.info("coordinator.ai_consent.resolved granted=\(granted, privacy: .public)")
+            continuation.resume(returning: granted)
+            aiConsentContinuation = nil
+        }
+    }
+
     /// 自动弹付费墙的公共守卫:已付费 / 14 天冷却内 / 已在展示,任一即拦截。
     /// 通过则写入冷却起始时间戳(拦截时不写,避免把「配额耗尽刚弹过」误记为冷却起点)。
     private func canAutoTriggerPaywall(now: TimeInterval) -> Bool {
@@ -350,6 +398,12 @@ final class AppCoordinator: ObservableObject {
     func startRecording() async -> Bool {
         guard !voiceInput.isRecording else {
             VoiceTodoLog.coordinator.warning("coordinator.recording.start_ignored reason=already_recording")
+            return false
+        }
+        // AI 同意 gate:录音的终点是转写文本发往第三方 AI 服务商,起步前先取得同意
+        // (Action Button 冷启动路径同样经此,覆盖绕过 onboarding 的入口)。
+        guard await ensureAIConsent() else {
+            VoiceTodoLog.coordinator.info("coordinator.recording.start_blocked reason=ai_consent")
             return false
         }
         let flowID = VoiceTodoLog.makeID("coord-record")
@@ -553,6 +607,11 @@ final class AppCoordinator: ObservableObject {
             VoiceTodoLog.coordinator.warning("coordinator.manual_input.ignored isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) showConfirmSheet=\(self.showConfirmSheet) isProcessingTranscript=\(self.isProcessingTranscript)")
             return
         }
+        // AI 同意 gate:键盘输入与语音走同一条 AI 解析链路,同样须先取得同意。
+        guard await ensureAIConsent() else {
+            VoiceTodoLog.coordinator.info("coordinator.manual_input.blocked reason=ai_consent")
+            return
+        }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         VoiceTodoLog.coordinator.info("coordinator.manual_input.start \(VoiceTodoLog.textSummary(trimmed), privacy: .public)")
@@ -568,6 +627,13 @@ final class AppCoordinator: ObservableObject {
         }
         guard !isRecording, !isAutoProcessing, !isProcessingTranscript, !showConfirmSheet else {
             VoiceTodoLog.coordinator.debug("coordinator.foreground.ignored isRecording=\(self.isRecording) isAutoProcessing=\(self.isAutoProcessing) isProcessingTranscript=\(self.isProcessingTranscript) showConfirmSheet=\(self.showConfirmSheet)")
+            return
+        }
+        // AI 同意防御 gate(静默跳过,不弹卡):Siri 在未同意时会存 pending 原文,
+        // 用户回到 App 但尚未过披露同意(onboarding 未完成/被系统方式收起)时,
+        // 恢复流程不得把原文发往 AI——等同意后下次前台自然补跑。
+        guard AppGroupConfig.aiConsentGranted() else {
+            VoiceTodoLog.coordinator.info("coordinator.foreground.pending_skipped reason=ai_consent")
             return
         }
 

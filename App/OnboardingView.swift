@@ -59,6 +59,11 @@ struct OnboardingView: View {
     @EnvironmentObject private var entitlement: EntitlementManager
 
     @State private var currentStepIndex = 0
+
+    /// AI 处理同意状态(App Group,主 App 与 Siri 扩展共用)。未同意时权限步
+    /// 只渲染披露卡(AIConsentDisclosureCard),不出现系统权限申请与 Skip——
+    /// 先取得「数据发给第三方 AI」的知情同意,再谈设备权限。
+    @State private var aiConsentGranted = AppGroupConfig.aiConsentGranted()
     // 用 Set 而非单个值:两张权限卡可独立授权,各自 spinner 互不覆盖。
     @State private var requestingPermissionTypes: Set<PermissionRequestType> = []
 
@@ -509,13 +514,32 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // 隐私说明 —— 放在卡片上方,用户点授权按钮之前就读得到
-            privacyNote(String(localized: "onboarding.voice.privacy"))
-                .padding(.top, isCompact ? 0 : 4)
+            if !aiConsentGranted {
+                // 5.1.1 同意 gate:转写文本将发往第三方 AI 服务商,发送前必须
+                // 取得知情同意。未同意时不渲染权限卡与 Skip——系统权限申请
+                // 也一并押后(权限弹窗不等于对本披露的同意)。
+                AIConsentDisclosureCard(
+                    onAgree: {
+                        AppGroupConfig.setAIConsentGranted(true)
+                        aiConsentGranted = true
+                    },
+                    onDecline: {
+                        // 留在本步重新考虑:decline dialog 已说明「不同意则无法
+                        // 使用语音整理」的诚实后果,并提供隐私政策出口——不提供
+                        // 绕过披露的路径。
+                    }
+                )
+                .padding(.top, isCompact ? 0 : 14)
                 .offset(y: contentOffset)
                 .opacity(contentOpacity)
+            } else {
+                // 隐私说明 —— 同意后常驻(口径与披露卡一致),用户点授权按钮之前仍读得到
+                privacyNote(String(localized: "onboarding.voice.privacy"))
+                    .padding(.top, isCompact ? 0 : 4)
+                    .offset(y: contentOffset)
+                    .opacity(contentOpacity)
 
-            VStack(spacing: isCompact ? 12 : 14) {
+                VStack(spacing: isCompact ? 12 : 14) {
                 permissionCard(
                     systemName: "mic.fill",
                     title: String(localized: "onboarding.mic.card_title"),
@@ -548,23 +572,24 @@ struct OnboardingView: View {
             .offset(y: contentOffset)
             .opacity(contentOpacity)
 
-            // Skip 文字链接 —— 灰色小号居中,不抢导航位。
-            // 两项权限都已开启时隐藏:此时「跳过」语义为空,留着只会误导
-            // (点了还会误标 markSkippedInOnboarding,触发后续不必要的重问)。
-            if !permissionManager.allPermissionsGranted {
-                Button {
-                    permissionManager.markSkippedInOnboarding()
-                    nextStep()
-                } label: {
-                    Text(String(localized: "onboarding.button.skip"))
-                        .font(WarmFont.body(14))
-                        .foregroundColor(sketchColor.opacity(0.6))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.vertical, 6)
+                // Skip 文字链接 —— 灰色小号居中,不抢导航位。
+                // 两项权限都已开启时隐藏:此时「跳过」语义为空,留着只会误导
+                // (点了还会误标 markSkippedInOnboarding,触发后续不必要的重问)。
+                if !permissionManager.allPermissionsGranted {
+                    Button {
+                        permissionManager.markSkippedInOnboarding()
+                        nextStep()
+                    } label: {
+                        Text(String(localized: "onboarding.button.skip"))
+                            .font(WarmFont.body(14))
+                            .foregroundColor(sketchColor.opacity(0.6))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.vertical, 6)
+                    }
+                    .accessibilityIdentifier("SkipVoicePermissionsButton")
+                    .padding(.top, 2)
                 }
-                .accessibilityIdentifier("SkipVoicePermissionsButton")
-                .padding(.top, 2)
             }
         }
     }
@@ -1334,6 +1359,8 @@ struct OnboardingView: View {
 
             // 前进/完成按钮。所有步骤(包括权限页)始终可用 —— 权限被拒不该卡住 onboarding,
             // 用户随时能在「设置 - 语音权限」里重新开启(跳转系统设置)。
+            // 例外:权限步未同意 AI 处理披露时禁用 —— 同意是数据发送的前置条件,
+            // 不允许「下一步」带过披露卡(用户拍板显式同意,2026-10-09)。
             Button(action: nextStep) {
                 HStack(spacing: 8) {
                     Text(buttonTitle)
@@ -1361,6 +1388,9 @@ struct OnboardingView: View {
                 )
             }
             .accessibilityIdentifier("NextButton")
+            // AI 披露未同意时禁用「下一步」(见按钮注释);禁用态对 a11y 暴露
+            // value,UI 测试可断言 gate 生效。
+            .disabled(currentStep == .voicePermissions && !aiConsentGranted)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, isCompact ? 16 : 24)

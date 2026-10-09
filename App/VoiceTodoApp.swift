@@ -59,11 +59,16 @@ struct VoiceTodoApp: App {
             // 日历延后询问的一次性 flag 一并清:重置语义 = 全新安装,flag 残留会让
             // 带 --calendar-ask 的场景(S16)在同一模拟器重跑时 sheet 永不弹出。
             UserDefaults.standard.removeObject(forKey: CalendarWriteMode.deferredAskShownKey)
+            // AI 同意标志一并清:重置 = 全新安装,必须重新走披露同意。
+            AppGroupConfig.setAIConsentGranted(false)
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 
         if uiTestOptions.skipOnboarding {
             UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+            // 跳过 onboarding = 测试环境所有引导视为已完成,AI 同意同理预置,
+            // 否则首次录音/键盘输入会被同意 gate 的 sheet 打断既有场景断言。
+            AppGroupConfig.setAIConsentGranted(true)
         }
 
         let schema = VoiceTodoSchema.schema
@@ -248,6 +253,19 @@ struct VoiceTodoApp: App {
                     PaywallView()
                         .environmentObject(entitlementManager)
                         .environmentObject(quotaUsage)
+                }
+                // AI 处理同意披露卡(运行时 gate 的 sheet 形态)。onDismiss 是
+                // 「系统方式收起(下拉)」的兜底出口:按钮路径已在
+                // handleAIConsentDismissed 内 resume 挂起方,这里幂等再入只是保险。
+                .sheet(isPresented: $coordinator.showAIConsent, onDismiss: {
+                    coordinator.handleAIConsentDismissed(granted: false)
+                }) {
+                    AIConsentDisclosureCard(
+                        onAgree: { coordinator.handleAIConsentDismissed(granted: true) },
+                        onDecline: { coordinator.handleAIConsentDismissed(granted: false) }
+                    )
+                    .padding(.vertical, WarmSpacing.lg)
+                    .presentationDetents([.height(420)])
                 }
                 .toast(
                     message: coordinator.toastMessage,
