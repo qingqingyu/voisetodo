@@ -173,6 +173,23 @@ for (const { label, path } of CONFIGS) {
     );
   });
 
+  test(`${label}: SUBSCRIPTION_GRACE_DAYS, if set, is an integer in 0..60`, () => {
+    // 未配置合法(代码默认 0 = 宽限关闭,与「ASC 宽限期保持关闭」的既往决策一致)。
+    // 这里拦"配置了但配错":非数字/负数触发 worker 侧 invalid_grace_days logWarn
+    // 回落 0,配置意图静默不生效。上限 60:ASC Billing Grace Period 的可选天数
+    // 最长 60 天,更大的值只会是笔误(如多打一个 0 → 1000 天 ≈ 给所有过期订阅
+    // 永久放行,放大退款/过期滥用面),worker 侧只校验 finite && >= 0 拦不住。
+    const vars = readVars(path);
+    if (isUnsetConfigValue(vars.SUBSCRIPTION_GRACE_DAYS)) return;
+
+    const value = Number(vars.SUBSCRIPTION_GRACE_DAYS);
+    assert.ok(
+      Number.isInteger(value) && value >= 0 && value <= 60,
+      `SUBSCRIPTION_GRACE_DAYS="${vars.SUBSCRIPTION_GRACE_DAYS}" 不是 0..60 的整数 → `
+        + "worker 侧会 logWarn 回落 0(配置意图不生效),或给出超出 ASC 宽限期选项的放行窗口"
+    );
+  });
+
   test(`${label}: subscription JWS verification vars are present`, () => {
     const vars = readVars(path);
 

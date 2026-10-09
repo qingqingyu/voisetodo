@@ -8,7 +8,7 @@ import SwiftUI
 /// app 级 sheet(docs/onboarding-first-voice-trial.md §3.5)。
 /// 日历同步页已删(2026-08-23):改为首次确认带日期待办后由主页弹一次性询问
 /// (CalendarSyncAskSheet)——在用户刚看到日期被识别出来的那一刻请求价值。
-private enum OnboardingStep: CaseIterable {
+private enum OnboardingStep: String, CaseIterable {
     case welcome
     case demo
     case voicePermissions
@@ -227,6 +227,8 @@ struct OnboardingView: View {
             // sheet 首次出现时检查权限状态(整个 onboarding 期间 sheet 只 appear 一次)。
             permissionManager.checkCurrentStatus()
             animateContentIn()
+            // 漏斗第二环分步埋点:首步到达。后续步骤走 onChange(of: currentStepIndex)。
+            Telemetry.record(.onboardingStep(step: currentStep.rawValue))
         }
         .onChange(of: scenePhase) { _, phase in
             // 后续回前台:用户跳到系统设置授权日历/麦克风后切回 App,sheet 不会重新 appear,
@@ -236,6 +238,7 @@ struct OnboardingView: View {
         }
         .onChange(of: currentStepIndex) {
             animateContentIn()
+            Telemetry.record(.onboardingStep(step: currentStep.rawValue))
         }
         .accessibilityIdentifier("OnboardingView")
     }

@@ -55,6 +55,30 @@ test("rejects expired subscription", async () => {
   await assert.rejects(() => verify(jws, rootFingerprint), /expired/);
 });
 
+// 计费宽限裕量(ASC Billing Grace Period 对齐):宽限内放行、超宽限拒绝、
+// 非法 grace 值按 0(不因配置错误放大放行窗口)。
+test("honors gracePeriodMS for billing grace period alignment", async () => {
+  const day = 86400000;
+  // 过期 1 天,grace 2 天 → 宽限内放行(App 端宽限期中 currentEntitlements 仍返回交易)
+  const withinGrace = await mintTestJWS({ payload: { expiresDateMS: Date.now() - 1 * day } });
+  const ok = await verify(withinGrace.jws, withinGrace.rootFingerprint, { gracePeriodMS: 2 * day });
+  assert.ok(ok.expiresAt <= Date.now(), "expiresAt should be in the past (grace window)");
+
+  // 过期 3 天,grace 2 天 → 超宽限,仍拒绝
+  const pastGrace = await mintTestJWS({ payload: { expiresDateMS: Date.now() - 3 * day } });
+  await assert.rejects(
+    () => verify(pastGrace.jws, pastGrace.rootFingerprint, { gracePeriodMS: 2 * day }),
+    /expired/
+  );
+
+  // 负数 grace 按无效处理 → 0:过期即拒,不因配置错误额外放行
+  const negative = await mintTestJWS({ payload: { expiresDateMS: Date.now() - 1000 } });
+  await assert.rejects(
+    () => verify(negative.jws, negative.rootFingerprint, { gracePeriodMS: -1 * day }),
+    /expired/
+  );
+});
+
 test("rejects revoked (refunded) subscription", async () => {
   const { jws, rootFingerprint } = await mintTestJWS({ payload: { revocationDate: Date.now() - 3600000, revocationReason: 0 } });
   await assert.rejects(() => verify(jws, rootFingerprint), /revoked/);

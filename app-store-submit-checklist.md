@@ -128,6 +128,7 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 | **订阅组本地化** | zh-Hans：`VoiceTodo Pro` / 「更高的每日语音整理额度」；en (U.S.)：`VoiceTodo Pro` / "higher daily voice quota"——**与 Products.storekit 的 subscriptionGroups.localizations 两套逐字一致** |
 | **商品本地化** | zh-Hans：`Pro 年付` /「每年自动续费，比月付省约 33%」、`Pro 月付` /「每月自动续费，可随时取消」；en (U.S.)：`Pro Yearly` / "Billed annually. Save ~33% vs monthly."、`Pro Monthly` / "Billed monthly. Cancel anytime."——**与 Products.storekit 两套逐字一致**（否则付费墙中英混排：商品文案来自 ASC，UI 文案来自 App）。上架日本区时再加日语一套 |
 | 商品审核截图 | 每个商品 1 张付费墙截图（就用 3.1 里的 Paywall 截图） |
+| **Billing Grace Period（计费宽限期）** | **保持关闭（默认）**。这是技术决策不是漏配：代理验签只认 JWS 的 `expiresDate`，宽限期内 App 显示 Pro、AI 却按免费 3 次/天放行，两端不一致（docs/payment-flow-review-2026-10.md §3.2）。若将来要开，须**同一天数**配置 AIProxy 的 `SUBSCRIPTION_GRACE_DAYS`（wrangler.toml，代理已支持按裕量放行），只开 ASC 不配代理 = 不一致回归 |
 
 注意：ASC 价格按**销售地区税前/税后**展示，$4.99/$39.99 是美区基准价（2026-08-18 用户确认的真实定价，与 Products.storekit 一致），其他地区 ASC 自动生成本地价（可再手动微调）。
 

@@ -226,6 +226,8 @@ struct VoiceTodoApp: App {
         // BGTask 必须在 App 启动早期同步注册（before scene starts）
         TelemetryUploader.shared.registerBackgroundTask()
         TelemetryUploader.shared.scheduleNextRun()
+        // MetricKit 崩溃/卡顿诊断:越早注册越好,崩溃 payload 在下次启动交付
+        CrashDiagnosticsSubscriber.shared.start()
         VoiceTodoLog.app.info("app.init.finished durationMS=\(VoiceTodoLog.durationMS(since: appStart)) storageError=\(storageError != nil)")
         // app_launch 遥测：coldLaunch 区分靠 scenePhase（此处视为冷启动，热启动不重新 init）
         Telemetry.record(.appLaunch(coldLaunch: true, hasCompletedOnboarding: hasCompletedOnboarding))

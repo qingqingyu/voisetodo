@@ -44,6 +44,14 @@ PAID_DAILY_LIMIT = "100"
 # wrangler-config.test.js 会拿 iOS 源码交叉校验这两个值。
 APP_BUNDLE_ID = "com.qingqingyu.voicetodo"
 PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo.pro.yearly"
+# 订阅验签的计费宽限裕量（天，默认 0 = 关闭）。⚠️ 与 ASC 后台订阅组的
+# Billing Grace Period 设置联动：ASC 开启宽限期后，宽限期内客户端
+# currentEntitlements 仍返回过期交易（App 显示 Pro），代理严格按 expiresAt
+# 拒绝会出现「显示 Pro、AI 只有免费 3 次/天」的两端不一致——届时把本值
+# 设成与 ASC 相同的天数即可对齐。JWS 不含 renewalInfo，代理无法区分
+# 「宽限期」与「已过期」，只能按时间裕量放行；ASC 宽限期保持关闭时
+# 本值必须为 0（>0 会给所有过期订阅额外放行窗口，放大退款/过期滥用面）。
+SUBSCRIPTION_GRACE_DAYS = "0"
 # 全局每天调用上限：当天全网**免费档**调用超过即熔断 503（只影响免费档，见下条），
 # 把分布式刷量的账单锁成可设上限。
 # 估算：5000 次 × (输入 ~1-2k tok + 输出 500 tok) × z.ai 单价 ≈ 日账单天花板

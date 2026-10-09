@@ -1668,13 +1668,16 @@ async function resolveSubscriptionTier(request, env, requestContext) {
   const paidLimit = Number(env.PAID_DAILY_LIMIT);
   const hasPaidLimit = Number.isFinite(paidLimit) && paidLimit > 0;
   const jws = request.headers.get("X-Subscription-JWS");
+  // 计费宽限裕量(ms):验签的过期判定与 KV 缓存命中判定共用同一口径,
+  // 避免出现「验签放行(宽限内)、缓存判过期」的双标。默认 0 = 关闭。
+  const gracePeriodMS = resolveSubscriptionGraceMS(env, requestContext);
 
   // 无 JWS 或未配 Pro 上限 → 免费档
   if (!jws || !hasPaidLimit) {
     return { tier: "free", limit: freeLimit, productId: null };
   }
 
-  // KV 缓存：命中且订阅未过期直接用（避免每请求都做 ES256 + 链校验）
+  // KV 缓存：命中且订阅未过期(含宽限裕量)直接用（避免每请求都做 ES256 + 链校验）
   const cacheKey = `sub:${requestContext.deviceId}`;
   if (env.RATE_LIMIT_KV) {
     try {
@@ -1684,7 +1687,7 @@ async function resolveSubscriptionTier(request, env, requestContext) {
         && cached.tier === "pro"
         && typeof cached.expiresAt === "number"
         && Number.isFinite(cached.expiresAt)
-        && cached.expiresAt > Date.now()
+        && cached.expiresAt + gracePeriodMS > Date.now()
       ) {
         return {
           tier: cached.tier,
@@ -1712,7 +1715,8 @@ async function resolveSubscriptionTier(request, env, requestContext) {
     const result = await verifySubscriptionJWS(jws, {
       expectedBundleId: env.APP_BUNDLE_ID || "com.voicetodo.app",
       productIDs: proProductIDs,
-      rootFingerprint: env.SUBSCRIPTION_ROOT_SHA256 || APPLE_ROOT_CA_G3_SHA256
+      rootFingerprint: env.SUBSCRIPTION_ROOT_SHA256 || APPLE_ROOT_CA_G3_SHA256,
+      gracePeriodMS
     });
     // 订阅标识不落明文(第三轮 review 新发现 1):PRIVACY_POLICY.md 承诺「只持有
     // 哈希标识」「not your Apple ID」—— originalTransactionId 正是 Apple 账号
@@ -1745,6 +1749,29 @@ async function resolveSubscriptionTier(request, env, requestContext) {
 // 非法配置每请求刷 warn(第三轮 review 新发现 5)。
 function isUnsetEnvValue(value) {
   return value === undefined || String(value).trim() === "";
+}
+
+// 订阅验签的计费宽限裕量(SUBSCRIPTION_GRACE_DAYS,天)→ 毫秒。默认 0 = 关闭。
+// 仅当 ASC 后台打开了 Billing Grace Period 才需要配置,且天数必须与 ASC 一致:
+// 宽限期内客户端 currentEntitlements 仍返回交易(App 显示 Pro),代理按
+// expiresAt + 裕量放行才能两端一致(JWS 不含 renewalInfo,代理无法精确感知
+// 宽限期,只能按时间裕量,见 src/subscription.js verifySubscriptionJWS 注释)。
+// 配置非法记 warn 回落 0(同 SUBSCRIPTION_DAILY_LIMIT 口径,不静默失效)。
+function resolveSubscriptionGraceMS(env, requestContext) {
+  if (isUnsetEnvValue(env.SUBSCRIPTION_GRACE_DAYS)) return 0;
+  const days = Number(env.SUBSCRIPTION_GRACE_DAYS);
+  // isInteger 与 SUBSCRIPTION_DAILY_LIMIT 口径逐字一致(ASC 宽限期选项本就是整数天,
+  // 小数天没有合法用例);上限 60 由 wrangler-config.test.js 守门,这里不重复——
+  // 避免「worker 正常、门禁红」之外的第三种口径。
+  if (Number.isInteger(days) && days >= 0) {
+    return days * 24 * 3600 * 1000;
+  }
+  logWarn("proxy.subscription.invalid_grace_days", {
+    ...requestContext,
+    configuredDays: env.SUBSCRIPTION_GRACE_DAYS,
+    fallback: 0
+  });
+  return 0;
 }
 
 // 按订阅 extract 日上限(SUBSCRIPTION_DAILY_LIMIT),默认 500。依据:device 侧

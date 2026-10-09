@@ -54,6 +54,7 @@
 		31CA9EFFB74F85A3C1BB4DEA /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 947C63A1377F2827A65730A8 /* README.md */; };
 		32B910EC56E8BF866097B097 /* AddTodoIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E4E1B928CA49D1A33174EB /* AddTodoIntent.swift */; };
 		344E8EFF4E6C080E0AA15770 /* SystemCalendarWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 071416DF494EE930B122B90D /* SystemCalendarWriter.swift */; };
+		3460C678CD2BB540A3757AA4 /* CrashDiagnosticsSubscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623A41FC68421A3677C015D9 /* CrashDiagnosticsSubscriber.swift */; };
 		34B97EDBBEDBA6524C0ABA58 /* TodoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6489BAC5A05355E3E29FC8F /* TodoDetailView.swift */; };
 		35692E679C1A43B18A8CE5E6 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FCC7CF9C78E37CFC3E7565A /* OnboardingView.swift */; };
 		37BB21060C722754F8959EA2 /* ExpandMonthHintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF66639D7D5600F7F4DEEB6E /* ExpandMonthHintView.swift */; };
@@ -375,6 +376,7 @@
 		5E53F2E7063A19CACE9CCE54 /* SystemCalendarReadingProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarReadingProtocol.swift; sourceTree = "<group>"; };
 		604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ValuePropCard.swift; sourceTree = "<group>"; };
 		60BCF24EA61F52842519A1D6 /* HomeMonthHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMonthHeaderView.swift; sourceTree = "<group>"; };
+		623A41FC68421A3677C015D9 /* CrashDiagnosticsSubscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashDiagnosticsSubscriber.swift; sourceTree = "<group>"; };
 		6299BCD42E1E0B76E14054E8 /* ChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipView.swift; sourceTree = "<group>"; };
 		62D88AFE0345B2D1856DD67E /* DayClockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayClockTests.swift; sourceTree = "<group>"; };
 		62DBD06A9F0879BAA041D2E1 /* BottomTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomTabBar.swift; sourceTree = "<group>"; };
@@ -806,6 +808,7 @@
 				D24795F4689C91579626B05E /* ActionButtonCapability.swift */,
 				6CA04499669316BDDE7603DC /* AppCoordinator.swift */,
 				81578DF6D6865F537FD3EBAE /* CalendarSyncService.swift */,
+				623A41FC68421A3677C015D9 /* CrashDiagnosticsSubscriber.swift */,
 				0E4BF2A213AB8BD127DAB20B /* EntitlementManager.swift */,
 				180D44F636BC72F7283BB347 /* IMPLEMENTATION_SUMMARY.md */,
 				DA666835F8CA9864517E3A2D /* LocalNotificationScheduler.swift */,
@@ -1233,6 +1236,7 @@
 				9696E47C733767930DA56955 /* ConfirmSheetView.swift in Sources */,
 				94206DCCFA169987EA250B03 /* Constants.swift in Sources */,
 				A8D699210955F41BCB471176 /* CorrectionTracker.swift in Sources */,
+				3460C678CD2BB540A3757AA4 /* CrashDiagnosticsSubscriber.swift in Sources */,
 				B37971A9DC2455E1C3CDA5D5 /* DataHealthDiagnostics.swift in Sources */,
 				ACFA81667F9F54766A5ED2B2 /* DayClock.swift in Sources */,
 				C652EA7FE3542F97852D21F6 /* DeleteTodoIntent.swift in Sources */,
