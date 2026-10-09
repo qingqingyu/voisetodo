@@ -152,6 +152,22 @@ https://qingqingyu.github.io/voicetodo-privacy/
 
 `TELEMETRY.md` 的「App Store Connect 隐私问卷」章节已同步更新(2026-08-15,改为指向本表),两份内档口径一致。
 
+### 2.4 第三方 AI 披露与发送前同意(2026-10-09 走查结论与实现)
+
+**判定**:转写文本经自建代理转发第三方 AI 服务商(z.ai/clawto,`AIProxy/wrangler.toml`,admin 可切换)属于「数据发给第三方 AI 处理」——按审核指南 5.1.1 须发送前告知并取得同意。隐私标签**类别不变**(AI 服务商为 processor 形态,已并入 §2.2 Other User Content / App Functionality / Not Linked / Not Tracking);**同意动作**(2026-10-09 实现):
+
+| 路径 | gate 位置 |
+|---|---|
+| Onboarding 权限步 | `AIConsentDisclosureCard`(未同意时不渲染权限卡与 Skip;不同意→诚实说明,无绕过路径) |
+| 录音(Action Button 含冷启动) | `AppCoordinator.startRecording` → `ensureAIConsent()` |
+| 键盘输入 | `AppCoordinator.processManualInput` → `ensureAIConsent()` |
+| 前台 pending 恢复 | `handleAppForeground` 防御性静默跳过(未同意不发) |
+| Siri AddTodoIntent | 扩展进程读 `AppGroupConfig.aiConsentGranted`;未同意→原文存 pending(永不丢话)+ dialog 引导进 app |
+
+- 同意标志:`aiProcessingConsentGranted`(App Group UserDefaults,`Store/AppGroupConfig.swift`),缺省 false,不做隐式默认同意。
+- 披露口径(单一事实源 `aiconsent.body`,三语):文字经服务器转发第三方 AI 服务商;音频不存储;不用于训练。政策页同步泛称(不再点名具体 AI 厂商,实际 provider 以 wrangler.toml 为准)。
+- **答辩口径**(若审核问「数据发给 AI?」):app 内发送前有显式披露与同意(onboarding + 运行时 gate),Siri 路径未同意不发送;隐私政策 §Transcript text 描述同一链路与留存;隐私标签按 processor 形态并入 Other User Content,不关联身份、不追踪。
+
 ---
 
 ## 3. IAP / 订阅配置清单(App Store Connect)
