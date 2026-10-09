@@ -429,6 +429,13 @@ struct ExtractedTodo: Identifiable, Codable {
         )
         priority = Priority.tolerant(try container.decodeIfPresent(String.self, forKey: .priority))
         categoryHint = TodoCategory.tolerant(try container.decodeIfPresent(String.self, forKey: .categoryHint))
+        // due_date_basis:AI 自报的 due_date 来源,applyDueDateBasisFilter 白名单的输入。
+        // 回归教训:这里曾漏赋值——Optional 存储属性被 Swift 隐式置 nil,生产解码
+        // 100% 丢 basis,白名单把所有 AI 日期当"非 user_explicit"清空
+        // (确认页卡片显示日期、Add 后落「选日期」的展示/落库分裂)。
+        // malformed 枚举(模型本地化字面量)decode 会 throw,吞成 nil 走保守路径,
+        // 与 priority/category 的容错口径一致。
+        dueDateBasis = (try? container.decodeIfPresent(DueDateBasis.self, forKey: .dueDateBasis)) ?? nil
         localeIdentifier = nil
     }
 }

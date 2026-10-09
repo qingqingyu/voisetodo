@@ -791,8 +791,11 @@ final class AppCoordinator: ObservableObject {
                 combinedRawTranscript = nil
                 activeInputTranscript = nil
             } else {
-                // 正常在线流程：直接添加
-                try store.addBatch(todos, localeIdentifier: activeInputLocaleIdentifier)
+                // 正常在线流程：直接添加。rawTranscript 用确认页展示的原文——
+                // basisFilter 对非 user_explicit 的 dueDate 用原文兜底反校验,
+                // 与上面 pending 分支的 replacePendingBatchWithExtracted 同口径,
+                // 避免「卡片显示日期、保存后被清空成选日期」的展示/落库分裂。
+                try store.addBatch(todos, rawTranscript: confirmSheetTranscript, localeIdentifier: activeInputLocaleIdentifier)
                 VoiceTodoLog.coordinator.info("coordinator.confirm.added_batch id=\(confirmID, privacy: .public) todoCount=\(todos.count)")
                 activeInputTranscript = nil
             }

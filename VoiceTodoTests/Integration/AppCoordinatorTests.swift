@@ -176,6 +176,28 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(writer.receivedTodos.isEmpty)
     }
 
+    /// 在线确认路径必须把确认页原文透传给 addBatch(basisFilter 的 transcript 兜底输入)。
+    /// 回归:此前 addBatch 不收 rawTranscript,非 user_explicit 的 dueDate 无兜底被清空,
+    /// 出现「卡片显示后天/这周日/三天后,Add 后变选日期」的展示/落库分裂。
+    func testConfirmTodosOnlinePathPassesSheetTranscriptToAddBatch() {
+        let store = CoordinatorTestStore()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store
+        )
+        // activeInputTranscript 为空时 confirmSheetTranscript 兜底到 transcript——
+        // 断言的就是 confirmTodos 读取确认页原文这一行为,与生产同路径。
+        coordinator.transcript = "后天早上取快递"
+
+        let success = coordinator.confirmTodos([
+            ExtractedTodo(title: "取快递", detail: "后天早上取快递", dueHint: "后天早上")
+        ])
+
+        XCTAssertTrue(success)
+        XCTAssertEqual(store.lastAddBatchRawTranscript, "后天早上取快递")
+    }
+
     func testConfirmTodosWithSystemCalendarModeWritesSavedTodos() async {
         let store = CoordinatorTestStore()
         let writer = CoordinatorTestSystemCalendarWriter()
@@ -1232,6 +1254,7 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
     var onUpdateIdentifier: (() -> Void)?
     var identifierUpdateError: Error?
     var addBatchError: Error?
+    var lastAddBatchRawTranscript: String?
     var replaceError: Error?
     var pendingItemsError: Error?
 
@@ -1265,6 +1288,13 @@ private final class CoordinatorTestStore: AppCoordinatorTodoStore, PendingRecove
             },
             at: 0
         )
+    }
+
+    /// 在线确认路径新签名:记录收到的 rawTranscript 供断言(confirmTodos 必须
+    /// 把确认页原文透传给 basisFilter 的 transcript 兜底)。
+    func addBatch(_ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws {
+        lastAddBatchRawTranscript = rawTranscript
+        try addBatch(items, localeIdentifier: localeIdentifier)
     }
 
     func addImportedBatch(_ items: [TodoItemData]) throws {

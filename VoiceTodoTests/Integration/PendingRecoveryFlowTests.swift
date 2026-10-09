@@ -313,6 +313,7 @@ private final class PendingRecoveryTestStore: PendingRecoveryTodoStore {
     func add(_ item: ExtractedTodo) throws {}
     func addBatch(_ items: [ExtractedTodo]) throws {}
     func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {}
+    func addBatch(_ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws {}
     func addRawTranscript(_ transcript: String, localeIdentifier: String?) throws -> TodoItemData {
         TodoItemData(
             title: transcript,

@@ -43,6 +43,12 @@ class MockStore: HomeTodoStore, AppCoordinatorTodoStore, PendingRecoveryTodoStor
         )
     }
 
+    /// Mock/预览不做 basisFilter(`TodoItemData(from:)` 本就无过滤),rawTranscript
+    /// 无消费方——委托 locale 版本保持协议形状完整。
+    func addBatch(_ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws {
+        try addBatch(items, localeIdentifier: localeIdentifier)
+    }
+
     func addImportedBatch(_ items: [TodoItemData]) throws {
         todos.insert(contentsOf: items.reversed(), at: 0)
     }
