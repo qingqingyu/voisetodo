@@ -44,6 +44,12 @@
             "value" : "VoiceTodo needs calendar access to add your todos, read events, and detect scheduling conflicts."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoは、予定の追加・イベントの読み取り・時間の重複確認のためにカレンダーを使用します"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -58,13 +64,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "VoiceTodo needs microphone access to record your voice."
+            "value" : "VoiceTodo uses the microphone to record your speech, which is converted into todo items."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoはマイクを使って音声を録音し、タスクに変換します"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "VoiceTodo 需要麦克风来录制你的语音"
+            "value" : "VoiceTodo 使用麦克风录制你的语音，并转换为待办事项"
           }
         }
       }
@@ -75,13 +87,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "VoiceTodo needs speech recognition access to understand your voice commands."
+            "value" : "VoiceTodo uses speech recognition to transcribe your speech into text, which is organized into todo items."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoは音声認識を使って話した内容を文字に起こし、タスクに整理します"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "VoiceTodo 需要语音识别权限来理解你的语音指令"
+            "value" : "VoiceTodo 使用语音识别将你的语音转写成文字，并整理成待办事项"
           }
         }
       }

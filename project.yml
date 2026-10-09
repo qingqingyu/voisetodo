@@ -115,8 +115,9 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
           UISceneConfigurations: {}
-        NSSpeechRecognitionUsageDescription: "VoiceTodo needs speech recognition access to understand your voice commands."
-        NSMicrophoneUsageDescription: "VoiceTodo needs microphone access to record your voice."
+        # 5.1.1 用途说明须具体:说清「录语音→转成待办」,别写循环/含糊表述;三语文案见 VoiceTodo/InfoPlist.xcstrings
+        NSSpeechRecognitionUsageDescription: "VoiceTodo uses speech recognition to transcribe your speech into text, which is organized into todo items."
+        NSMicrophoneUsageDescription: "VoiceTodo uses the microphone to record your speech, which is converted into todo items."
         NSCalendarsUsageDescription: "VoiceTodo needs calendar access to add your todos, read events, and detect scheduling conflicts."
         UIBackgroundModes:
           - audio
