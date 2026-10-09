@@ -1,32 +1,35 @@
 import SwiftUI
 
-/// Unscheduled 底部抽屉:Calendar tab 选中日视图的底部 fixed 容器。
+/// Unscheduled 底部抽屉:Calendar tab 月历区(展开态网格/折叠态列表)底部的 fixed 容器。
 ///
 /// 折叠态:只露 grabber + header(标题 + count + chevron.up)
 /// 展开态:grabber + header + ScrollView(渲染 unscheduled tasks)
 ///
 /// **功能范围**:
-/// - 卡片 `.draggable`:拖到 DayTimeline bucket slot 排程(dueDate + bucket)
-/// - drawer `.dropDestination`:从 timeline 反向拖回 → 清 dueDate 回 unscheduled
+/// - 卡片 `.draggable`:拖到月网格日期格排程(dueDate),长按菜单移 bucket/明天
+/// - drawer `.dropDestination`:反向拖回落点,命中清 dueDate 回 unscheduled
+///   (组件能力保留;当前 HomeView 与列表互补挂载,排程卡片区与 drawer 不同屏,
+///   该路径暂无可达拖拽源——见 HomeView 挂载处注释)
 /// - 折叠态命中 drop 时自动展开,让用户看清释放点
 /// - 卡片不挂 swipe delete(用 tap 进详情页删除代替)
 /// - 折叠/展开只走点击 chevron(不做 drag 手势,简化)
 ///
 /// **定位**:调用方在外层 `ZStack(alignment: .bottom)` 中把 drawer 作为第二个子 view 挂在
-/// Timeline 之上(不是 `.overlay`)——这样 drawer 与 Timeline 共享同一个剪裁 frame,
-/// 避免 drawer 超出 Calendar tab 列表区。drawer 自身不处理 safeAreaInset(VoiceFAB 占了)。
+/// 月历内容之上(不是 `.overlay`)——这样 drawer 与月历区共享同一个剪裁 frame,
+/// 避免 drawer 超出 Calendar tab 内容区。drawer 自身不处理 safeAreaInset(VoiceFAB 占了)。
 struct UnscheduledDrawer: View {
     let todos: [TodoItemData]
     @Binding var isExpanded: Bool
     @Binding var cardAppeared: Set<UUID>
     let onToggleTodo: (UUID) -> Void
     let onOpenTodo: (TodoItemData) -> Void
-    /// 反向拖拽(timeline → drawer):清 dueDate 回 unscheduled。
+    /// 反向拖拽(排程区 → drawer):清 dueDate 回 unscheduled。
     /// 调用方(`HomeView`)实现 `unassignTodoFromDay`。
     let onDropToUnscheduled: (UUID) -> Void
-    /// 调用方(HomeView)所在 ZStack 的可用高度,等于 Calendar tab 内容区的 `listHeight`。
+    /// 调用方(HomeView)所在 ZStack 的可用高度(月历区 ZStack 即整个日历区高度,
+    /// 传 GeometryReader 的 `proxy.size.height`)。
     /// **契约**:必须传真实 ZStack height(非 0、非 .infinity),否则小屏下 clamp 失效。
-    /// drawer 内部用此值 clamp 展开态内容区,避免占满整个 timeline 视野。
+    /// drawer 内部用此值 clamp 展开态内容区,避免占满整个日历视野。
     let availableHeight: CGFloat
     /// 长按 context menu:unscheduled 卡片移到选中日的某 bucket(同时设 dueDate + bucket)。
     let onMoveToBucket: (UUID, TimeBucket) -> Void
@@ -49,7 +52,7 @@ struct UnscheduledDrawer: View {
     /// Grabber capsule 视觉高度(5pt)。`expandedTotalHeight` 计算和 grabber 渲染
     /// 共用此值,调整时两处同步。
     private static let grabberCapsuleHeight: CGFloat = 5
-    /// Drawer 内容区与 ZStack 顶部之间留的缓冲,避免 drawer 顶部完全贴 timeline 第一张卡片。
+    /// Drawer 内容区与 ZStack 顶部之间留的缓冲,避免 drawer 顶部完全贴月历区第一张卡片。
     private static let expandedContentBottomGap: CGFloat = 8
     /// 展开态 drawer 占用的总垂直空间(grabber + header + 内容区上限)。
     /// 调用方用来补偿 Timeline ScrollView 的 bottom inset。
@@ -106,7 +109,7 @@ struct UnscheduledDrawer: View {
             .fill(WarmTheme.secondaryBackground)
         )
         .shadow(color: WarmTheme.shadowMedium, radius: 24, x: 0, y: -6)
-        // 反向拖拽落点:timeline 卡片拖回 drawer → 清 dueDate。
+        // 反向拖拽落点:排程区卡片拖回 drawer → 清 dueDate。
         // 命中时若折叠态自动展开,让用户看清释放区域。
         .dropDestination(for: String.self) { items, _ in
             guard let idString = items.first, let id = UUID(uuidString: idString) else { return false }
@@ -139,7 +142,7 @@ struct UnscheduledDrawer: View {
 
     /// 展开态内容区高度上限,受可用空间 `availableHeight` 约束:
     /// 小屏 / Dynamic Type AX 档位下,ZStack 内容区可能比 `expandedMaxHeight` 还小,
-    /// 不 clamp 会让 drawer 占满整个 timeline 视野。转发到 static 版以复用计算。
+    /// 不 clamp 会让 drawer 占满整个日历视野。转发到 static 版以复用计算。
     private var expandedContentMaxHeight: CGFloat {
         Self.expandedContentMaxHeight(for: availableHeight)
     }
@@ -220,7 +223,7 @@ struct UnscheduledDrawer: View {
 
     // MARK: - Cards
 
-    /// Unscheduled 卡片。复用 WarmTodoCard,挂 `.draggable` 拖到 timeline bucket slot 排程。
+    /// Unscheduled 卡片。复用 WarmTodoCard,挂 `.draggable` 拖到月网格日期格排程。
     /// 删除走详情页(不挂 swipeActions,本阶段简化)。
     /// 拖拽预览用 emoji + 标题的紧凑 capsule,跟 HomeSelectedDayListView 现有风格一致。
     ///

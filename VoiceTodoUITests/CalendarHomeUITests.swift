@@ -50,4 +50,71 @@ final class CalendarHomeUITests: XCTestCase {
             "下午任务应显示 15:00 时间标签"
         )
     }
+
+    /// 「稍后」抽屉回归(2026-07-23 54502fb 重构把 UnscheduledDrawer 从 Calendar tab
+    /// 摘除后,月历展开态「稍后」待办零可见入口;本用例锁住恢复后的行为):
+    /// 1. Calendar tab 展开态:dueDate=nil 且无时间信号的待办 → 抽屉常驻可见,可展开看卡片;
+    /// 2. 上滑折叠月历:抽屉让位卸载,列表「稍后」分区接管。
+    /// seed 里同时放一条有日期任务,保证月历与列表都有对照内容。
+    func testUnscheduledDrawerVisibleInExpandedMonthAndYieldsToCollapsedList() throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let todos = [
+            UITestTodoPayload(title: "稍后任务甲", createdAt: today, sortOrder: -1),
+            UITestTodoPayload(title: "今日已排任务", dueDate: today, createdAt: today, sortOrder: -2),
+        ]
+        appHelper.launchWithPresetTodos(todos)
+        appHelper.waitForAppReady()
+
+        // tab identifier 在本测试环境被 a11y 污染(ScreenshotUITests 同款坑),label 直查。
+        let calendarTab = appHelper.app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["日历", "Calendar"])
+        ).firstMatch
+        XCTAssertTrue(calendarTab.waitForExistence(timeout: 3), "Calendar tab 按钮应存在")
+        calendarTab.tap()
+
+        // drawer 的 identifier 被容器 'HomeRootView' 污染(诊断 dump 确认,同 tab button
+        // 的坑),改用 a11y label 查询:折叠态 toggle label=「展开稍后」,展开态翻转为
+        // 「收起稍后」(a11y.drawer.expand / collapse)。grabber 与 header 两个 button
+        // 共用 label,firstMatch 任取其一皆可触发 toggleExpanded。
+        // label 查询做双语兼容,与上方 tab 查询同口径(en: Expand Later / Collapse Later)。
+        let expandToggle = appHelper.app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["展开稍后", "Expand Later"])
+        ).firstMatch
+        XCTAssertTrue(
+            expandToggle.waitForExistence(timeout: 5),
+            "月历展开态应显示「稍后」抽屉(回归修复)"
+        )
+
+        // 点开抽屉:稍后待办卡片可见。
+        expandToggle.tap()
+        XCTAssertTrue(
+            appHelper.app.staticTexts["稍后任务甲"].waitForExistence(timeout: 2),
+            "抽屉展开后应显示稍后待办卡片"
+        )
+
+        // 收起:toggle label 翻转为「收起稍后」(en: Collapse Later)。
+        let collapseToggle = appHelper.app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["收起稍后", "Collapse Later"])
+        ).firstMatch
+        XCTAssertTrue(collapseToggle.waitForExistence(timeout: 2), "展开后 toggle 应翻转为「收起稍后」")
+        collapseToggle.tap()
+
+        // 上滑折叠月历:拖拽发生在网格上部(dy 0.35→0.2,位移 > collapseTravelDistance),
+        // 避开抽屉占用的下半屏。折叠后抽屉卸载,列表「稍后」分区出现。
+        let window = appHelper.app.windows.firstMatch
+        let dragStart = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        let dragEnd = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+        dragStart.press(forDuration: 0.05, thenDragTo: dragEnd)
+
+        XCTAssertTrue(
+            expandToggle.waitForNonExistence(timeout: 3),
+            "折叠态列表接管后抽屉应卸载(「稍后」由列表分区承担,双处显示会重复)"
+        )
+        XCTAssertTrue(
+            appHelper.app.staticTexts.matching(
+                NSPredicate(format: "label IN %@", ["稍后", "Later"])
+            ).firstMatch.waitForExistence(timeout: 3),
+            "折叠列表应显示「稍后」分区 header"
+        )
+    }
 }

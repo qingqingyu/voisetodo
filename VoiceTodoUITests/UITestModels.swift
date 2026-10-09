@@ -15,6 +15,12 @@ struct UITestTodoPayload: Codable, Equatable {
     let rawTranscript: String?
     let needsAIProcessing: Bool
     let sortOrder: Int
+    /// App 端 `TodoItemData` 的**非 Optional** 字段:合成 Codable 对非 Optional 键用
+    /// `decode`(缺键即 keyNotFound → `VoiceTodoApp.init` 的 fatalError,app 启动即崩)。
+    /// 必须随 payload 编码;类型用镜像枚举(同 `UITestPriority`/`UITestCategory` 模式,
+    /// rawValue 与 App 端 `ExtractionOutcome`/`TodoSource` 对齐),传错值编译期即报。
+    let extractionOutcome: UITestExtractionOutcome
+    let source: UITestSource
 
     init(
         id: UUID = UUID(),
@@ -30,7 +36,9 @@ struct UITestTodoPayload: Codable, Equatable {
         createdAt: Date = Date(),
         rawTranscript: String? = nil,
         needsAIProcessing: Bool = false,
-        sortOrder: Int = 0
+        sortOrder: Int = 0,
+        extractionOutcome: UITestExtractionOutcome = .parsed,
+        source: UITestSource = .voice
     ) {
         self.id = id
         self.title = title
@@ -46,12 +54,29 @@ struct UITestTodoPayload: Codable, Equatable {
         self.rawTranscript = rawTranscript
         self.needsAIProcessing = needsAIProcessing
         self.sortOrder = sortOrder
+        self.extractionOutcome = extractionOutcome
+        self.source = source
     }
 }
 
 enum UITestPriority: String, Codable {
     case high
     case normal
+}
+
+/// `ExtractionOutcome`(Protocols/Domain/ExtractionOutcome.swift)的镜像:
+/// UI 测试 target 不编译 app 源码,rawValue 必须逐字对齐 App 端解码值。
+enum UITestExtractionOutcome: String, Codable {
+    case parsed
+    case rawFallback
+    case unparsed
+}
+
+/// `TodoSource`(Protocols/Domain/TodoSource.swift)的镜像,rawValue 对齐同上。
+enum UITestSource: String, Codable {
+    case voice
+    case calendarImport
+    case collaboration
 }
 
 enum UITestCategory: String, Codable {
