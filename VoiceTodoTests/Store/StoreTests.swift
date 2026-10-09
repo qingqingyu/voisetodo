@@ -384,7 +384,9 @@ final class StoreTests: XCTestCase {
     // MARK: - due_date_basis 落库回归(确认页显示对、Add 后变「选日期」)
 
     /// 生产解码链端到端回归:AI JSON 带正确 due_date + due_date_basis="user_explicit",
-    /// 在线确认路径 addBatch(不传 transcript)后日期必须落库。
+    /// 旧签名 addBatch(不传 transcript,手动/UIDemo 等路径)后日期必须落库。
+    /// (生产在线确认路径已改传 transcript,由 AppCoordinatorTests 的
+    /// testConfirmTodosOnlinePathPassesSheetTranscriptToAddBatch 锁定。)
     /// 根因 1:ExtractedTodo.init(from:) 漏解码 due_date_basis(Optional 隐式 nil),
     /// 白名单把所有 AI 日期当"非 user_explicit"无兜底清空。
     func testAddBatchKeepsDecodedUserExplicitDueDateWithoutTranscript() throws {
