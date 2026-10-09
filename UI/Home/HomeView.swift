@@ -580,7 +580,9 @@ struct HomeView<Store: HomeTodoStore>: View {
 
     /// 今日清空检测(§5 + 复核「四处必须钉死的口径」):
     /// 1. 真今天:`DayClock.isSameUserDay(selectedDate, Date())` —— 翻到历史日期补勾不庆祝;
-    /// 2. 分母复用 `selectedDayStats()`,与顶部进度圆环同源,不另写一套(圆环满 = 彩带);
+    /// 2. 分母复用 `selectedDayStats()`,与顶部进度圆环同源,不另写一套(圆环满 = 彩带)。
+    ///    2026-10-09 口径收紧:Later(稍后)/ Pick a date(待定日期)未清空时圆环不满,
+    ///    不再出现「庆祝全做完但页面还躺着任务」的矛盾;
     /// 3. 只在 toggle 落库成功后检测 —— abandon/删除/Widget/详情页路径一律不放彩带;
     /// 4. 延时 250ms:等 `.task(id:)` 把缓存标记为 stale(calendarCacheStale),让 stats 走 store.todos 兜底读到新值。
     private func scheduleTodayClearCelebrationCheck() {
@@ -1251,25 +1253,45 @@ struct HomeView<Store: HomeTodoStore>: View {
             completed = onDay.filter { $0.isCompleted }.count
             total = onDay.count
         }
-        // 把「今日完成的无日期任务」算进圆环。口径与 HomeCalendarState.completedUnscheduledTodos
+        // 「稍后」(Later) + 「待定日期」(Pick a date)两组未完成条目计入进度条
+        // (2026-10-09 拍板):进度条口径 = 列表可见条目——这两个分区在任意选中日都渲染,
+        // 统计恒计入(与「已完成无日期任务按选中日计入」对称);unparsed 不计入。
+        // 两组直接从 store.todos 现算:分组只依赖条目自身字段,与月历缓存无关,
+        // 不随 calendarCacheStale 分叉(勾选/取消即时反映到圆环)。
+        // 谓词与 HomeCalendarState init 分组共用(isLaterActiveTodo),单一来源防漂移。
+        let laterCounts = HomeCalendarState.laterActiveCounts(
+            todos: store.todos,
+            deferredCompletionIDs: deferredCompletionIDs
+        )
+        total += laterCounts.total
+        completed += laterCounts.completed
+
+        // 「选中日完成的无日期任务」也计入(变量名沿用 Today;基准是 selectedDate 折算的
+        // 用户日,翻历史日时统计跟随历史日)。口径与 HomeCalendarState.completedUnscheduledTodos
         // 同源(同一个 DayClock.isSameUserDay 判断),所以圆环 +1 与「已完成」section 里多出来
         // 的那一条是同一个 todo。total 和 completed 同步 +1,避免 completed > total 的负进度。
+        // **排除 deferredCompletionIDs**:原地保留(0.75s)期间的条目已在上面的
+        // laterActiveCounts 里同时计入 total 与 completed,这里再计会双计;
+        // 归档(移出集合)后由本段接上,计数平滑交接。
         let completedDayStart = DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)
         let completedUnscheduledToday: Int
         if calendarCacheStale {
             // stale 窗口期 completedUnscheduledByDay 也是旧值(如刚勾/刚取消的无日期任务
             // 还躺在旧桶里或还没进桶),与上面 occurrences 一样走 store.todos 兜底。
             // 口径 = HomeCalendarState.completedUnscheduledTodos 的 fallback filter
-            // (谓词上移至 HomeCalendarState.isCompletedUnscheduled,单一来源防漂移),
-            // 但**不排除 deferredCompletionIDs**——原地保留的条目已完成,统计要计入。
+            // (谓词上移至 HomeCalendarState.isCompletedUnscheduled,单一来源防漂移)。
             completedUnscheduledToday = store.todos.filter {
                 HomeCalendarState.isCompletedUnscheduled($0, onUserDay: completedDayStart, calendar: calendar)
+                    && !deferredCompletionIDs.contains($0.id)
             }.count
         } else {
-            // 查表(O(1)),字面上就是 HomeCalendarState.completedUnscheduledTodos 的同源数据,
-            // 不再是两处各自维护的等价判断。详见 docs/completed-todos-performance.md Step 3e。
+            // 查表(O(1)),字面上就是 HomeCalendarState.completedUnscheduledTodos 的同源数据
+            // (init 查表分支同样排除 deferred),不再是两处各自维护的等价判断。
+            // 详见 docs/completed-todos-performance.md Step 3e。
             let completedDayKey = TodoOccurrenceData.dayKey(for: completedDayStart, calendar: calendar)
-            completedUnscheduledToday = completedUnscheduledByDay[completedDayKey]?.count ?? 0
+            completedUnscheduledToday = (completedUnscheduledByDay[completedDayKey] ?? [])
+                .filter { !deferredCompletionIDs.contains($0.id) }
+                .count
         }
         total += completedUnscheduledToday
         completed += completedUnscheduledToday
