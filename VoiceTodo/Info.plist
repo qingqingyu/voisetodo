@@ -40,9 +40,9 @@
 	<key>NSCalendarsUsageDescription</key>
 	<string>VoiceTodo needs calendar access to add your todos, read events, and detect scheduling conflicts.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VoiceTodo needs microphone access to record your voice.</string>
+	<string>VoiceTodo uses the microphone to record your speech, which is converted into todo items.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>VoiceTodo needs speech recognition access to understand your voice commands.</string>
+	<string>VoiceTodo uses speech recognition to transcribe your speech into text, which is organized into todo items.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
