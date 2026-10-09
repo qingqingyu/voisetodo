@@ -242,4 +242,4 @@ https://qingqingyu.github.io/voicetodo-privacy/
 1. ~~`PrivacyInfo.xcprivacy` 低估声明~~ → **已修正**(2026-08-15,§2.3 plist 已应用,随版本提交)
 2. ~~trial 3 天/7 天冲突~~ → **已拍板 7 天并全局统一**(2026-08-15,§3.3;剩 ASC 后台人工配置一项)
 3. ~~`TELEMETRY.md` 问卷章节与新口径矛盾~~ → **已修正**(2026-08-15,该章节改为指向 §2 答案表)
-4. ~~权限用途说明含糊:mic 是循环表述("record your voice" 没说用来做什么)、speech 写 "voice commands" 与实际(待办转写)不符、`InfoPlist.xcstrings` 三键全缺 ja~~ → **已修正**(2026-10-09,`project.yml` + 再生成 `Info.plist` + `InfoPlist.xcstrings` 改 en/zh-Hans、补 ja;日历 en/zh 本就具体仅补 ja。注意:`Resources/Localizable.xcstrings` 488/764 键缺 ja 是独立的更大缺口,不在本次范围)
+4. ~~权限用途说明含糊:mic 是循环表述("record your voice" 没说用来做什么)、speech 写 "voice commands" 与实际(待办转写)不符、`InfoPlist.xcstrings` 三键全缺 ja~~ → **已修正**(2026-10-09,`project.yml` + 再生成 `Info.plist` + `InfoPlist.xcstrings` 改 en/zh-Hans、补 ja;日历 en/zh 本就具体仅补 ja。注意:`Resources/Localizable.xcstrings` 501/776 键缺 ja(2026-10-09 清点,随新增键会增长)是独立的更大缺口,不在本次范围)

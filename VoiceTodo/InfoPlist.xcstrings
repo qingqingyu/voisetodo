@@ -76,7 +76,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "VoiceTodo 使用麦克风录制你的语音，并转换为待办事项"
+            "value" : "VoiceTodo 使用麦克风录制你的语音，并转换为待办事项。"
           }
         }
       }
@@ -99,7 +99,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "VoiceTodo 使用语音识别将你的语音转写成文字，并整理成待办事项"
+            "value" : "VoiceTodo 使用语音识别将你的语音转写成文字，并整理成待办事项。"
           }
         }
       }
