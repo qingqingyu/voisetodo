@@ -14,7 +14,7 @@ VoiceTodo 的遥测系统采集**匿名诊断数据**用于线上质量监控和
 ```
 iOS App                                AIProxy Cloudflare Worker
 ─────────────                          ─────────────────────────
-调用点（9 个事件）                       POST /v1/telemetry/events
+调用点（见下方「核心事件」两表）         POST /v1/telemetry/events
   ↓                                       ↓
 Telemetry.record(event)                 validate X-App-Token
   ↓                                       ↓
@@ -27,7 +27,7 @@ BGProcessingTask                          ↓
                                        （90 天 Cron GC）
 ```
 
-## 9 个核心事件
+## 核心事件
 
 ### A 类：功能使用
 
@@ -40,6 +40,13 @@ BGProcessingTask                          ↓
 | `todo_saved` | Todo 保存 | `source: confirm / siri_add`, `count` |
 | `first_voice_trial` | 首次语音试用引导进度 | `stage: armed / hint_shown / dismissed / completed` |
 | `paywall_shown` | paywall 曝光 | `source: first_wow / recording_count / quota_exhausted / manual` |
+| `onboarding_step` | onboarding 进入某步(含首步) | `step: welcome / demo / voicePermissions / speechLanguage / actionButton / completion`(actionButton 仅支持的机型出现;用户点「后退」再前进会重复记同一 step,分析按 step 去重) |
+| `purchase_initiated` | 用户点购买 CTA | `productID` |
+| `purchase_succeeded` | 购买成功 | `productID`, `path: direct / reconciled / pending_approval` |
+| `purchase_failed` | 购买失败 | `productID`, `reason: unverified / unknown_outcome / 错误 case 名` |
+| `purchase_cancelled` | 用户在系统弹窗取消购买 | `productID` |
+| `purchase_pending` | 等待家长审批(Ask to Buy) | `productID` |
+| `restore_outcome` | 恢复购买结果 | `outcome: recovered / already_pro / nothing / cancelled / failed` |
 
 #### `first_voice_trial` 口径限制（分析必读）
 
@@ -68,6 +75,23 @@ BGProcessingTask                          ↓
 | `extract_failed` | AI 抽取失败 | `reason: case 名`, `attempt` |
 | `widget_load_failed` | Widget 读取失败 | `reason: case 名` |
 | `intent_failed` | AppIntent 失败 | `operation: add / toggle`, `stage: container / fetch_todo / fetch_completion / save / unknown` |
+| `extractor_circuit_changed` | 客户端熔断器状态迁移 | `state: opened / closed / reset`, `reason` |
+| `mx_diagnostics` | MetricKit 崩溃/卡顿诊断交付(每日聚合,下次启动送达,仅真机) | `crashes`, `hangs`, `diskWrites`, `cpuExceptions`(计数,不含堆栈) |
+
+#### 核心转化漏斗(事件串联)
+
+下载 → 完成引导 → 第一次语音记录 → 看到 paywall → 付费:
+
+1. `app_launch(hasCompletedOnboarding=false)` — 首次启动(下载的代理指标)
+2. `onboarding_step` → `first_voice_trial(stage=armed)` — 引导分步与完成
+3. `recording_started` / `recording_outcome(outcome=success)` — 第一次语音记录
+4. `paywall_shown(source=...)` — paywall 曝光
+5. `purchase_initiated` → `purchase_succeeded`(或 `purchase_cancelled` / `purchase_failed` / `purchase_pending`) — 付费转化
+
+> `purchase_succeeded` 已知窄窗竞态:`pending`(Ask to Buy)路径下,购买后立即执行的
+> 对账与 `Transaction.updates` 推送可能对同一笔购买各记一条(`reconciled` +
+> `pending_approval`),窗口毫秒级、真实审批间隔为分钟~小时级,概率趋近于零。
+> 分析口径:按 `sessionID` + `productID` 短窗去重(与 `onboarding_step` 按 step 去重对称)。
 
 ## PII 红线
 

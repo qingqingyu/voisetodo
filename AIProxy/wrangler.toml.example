@@ -24,6 +24,11 @@ PAID_DAILY_LIMIT = "100"
 # （com.voicetodo.*）与本 app 不匹配。wrangler-config.test.js 有断言守着。
 APP_BUNDLE_ID = "com.qingqingyu.voicetodo"
 PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo.pro.yearly"
+# 订阅验签的计费宽限裕量（天，留空/0 = 关闭）。仅当 ASC 后台订阅组开启了
+# Billing Grace Period 才需要配置，且天数必须与 ASC 一致——宽限期内客户端
+# 仍显示 Pro，代理按 expiresAt + 裕量放行才能两端一致。ASC 宽限期关闭时
+# 保持 0（>0 会给过期订阅额外放行窗口）。留空默认 0。
+# SUBSCRIPTION_GRACE_DAYS = "0"
 # 全局每天调用上限：当天全网**免费档**调用超过即熔断 503（只影响免费档，Pro 走独立桶），
 # 把分布式刷量的账单锁成可设上限。留空则不启用。
 # 建议按你的日预算反推：GLOBAL_DAILY_LIMIT ×(输入≈1-2k + 输出 500 tok)× 单价 = 日账单天花板。

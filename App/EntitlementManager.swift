@@ -381,6 +381,7 @@ final class EntitlementManager: ObservableObject {
                     if self.hasPendingPurchase, self.isPro {
                         self.hasPendingPurchase = false
                         self.purchaseSuccessCount += 1
+                        Telemetry.record(.purchaseSucceeded(productID: transaction.productID, path: PurchaseSucceededPath.pendingApproval))
                         VoiceTodoLog.app.info("entitlement.purchase_approved_after_pending")
                     }
                 case .unverified(let transaction, let error):
@@ -406,6 +407,7 @@ final class EntitlementManager: ObservableObject {
         lastError = nil
         defer { isPurchasing = false }
         let wasPro = isPro
+        Telemetry.record(.purchaseInitiated(productID: product.id))
         do {
             let outcome = try await product.purchase()
             switch outcome {
@@ -424,6 +426,7 @@ final class EntitlementManager: ObservableObject {
                         applyPurchasedEntitlement(transaction, jws: verification.jwsRepresentation)
                     }
                     purchaseSuccessCount += 1
+                    Telemetry.record(.purchaseSucceeded(productID: product.id, path: PurchaseSucceededPath.direct))
                     VoiceTodoLog.app.info("entitlement.purchase_success productID=\(product.id, privacy: .public) isPro=\(self.isPro)")
                     return
                 case .unverified(let transaction, let error):
@@ -431,23 +434,28 @@ final class EntitlementManager: ObservableObject {
                     // checkVerified 范式),显式报错而非静默 —— 旧代码这里什么都不做还照打
                     // 成功日志,正是「提示成功但不收起/不生效」的直接根因之一。
                     VoiceTodoLog.app.error("entitlement.purchase_unverified productID=\(product.id, privacy: .public) transactionID=\(transaction.id) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    Telemetry.record(.purchaseFailed(productID: product.id, reason: "unverified"))
                     lastError = ErrorMessages.paywallPurchaseUnverified
                 }
             case .userCancelled:
+                Telemetry.record(.purchaseCancelled(productID: product.id))
                 VoiceTodoLog.app.info("entitlement.purchase_cancelled productID=\(product.id, privacy: .public)")
             case .pending:
                 // 等待审批 / 家庭共享等，updates 监听会在最终状态刷新。
                 // 置 hasPendingPurchase:批准经 Transaction.updates 到账、权益翻 Pro 后
                 // 补一次 purchaseSuccessCount,付费墙若还开着就能走成功态(任务书条目 2a.4)。
+                Telemetry.record(.purchasePending(productID: product.id))
                 VoiceTodoLog.app.info("entitlement.purchase_pending productID=\(product.id, privacy: .public)")
                 hasPendingPurchase = true
                 lastError = ErrorMessages.paywallPending
             @unknown default:
                 // 未来 SDK 新增 outcome 时编译兜底:显式留痕 + 用户可见反馈,不静默。
+                Telemetry.record(.purchaseFailed(productID: product.id, reason: "unknown_outcome"))
                 VoiceTodoLog.app.warning("entitlement.purchase_unknown_outcome productID=\(product.id, privacy: .public)")
                 lastError = ErrorMessages.paywallPurchaseFailed
             }
         } catch {
+            Telemetry.record(.purchaseFailed(productID: product.id, reason: Telemetry.reason(for: error)))
             VoiceTodoLog.app.error("entitlement.purchase_failed productID=\(product.id, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             lastError = ErrorMessages.paywallPurchaseFailed
         }
@@ -473,6 +481,7 @@ final class EntitlementManager: ObservableObject {
         if isPro, !wasPro {
             lastError = nil
             purchaseSuccessCount += 1
+            Telemetry.record(.purchaseSucceeded(productID: productID, path: PurchaseSucceededPath.reconciled))
             VoiceTodoLog.app.info("entitlement.purchase_reconciled productID=\(productID, privacy: .public)")
         } else if !isPro, hasUnverifiedEntitlement, lastError == nil {
             lastError = ErrorMessages.paywallPurchaseUnverified
@@ -501,18 +510,23 @@ final class EntitlementManager: ObservableObject {
                 // 恢复成功同样清 pending 标志(口径与直接购买成功一致)。
                 hasPendingPurchase = false
                 if wasPro {
+                    Telemetry.record(.restoreOutcome(outcome: RestoreOutcomeValue.alreadyPro))
                     lastError = ErrorMessages.paywallRestoreUpToDate
                 } else {
+                    Telemetry.record(.restoreOutcome(outcome: RestoreOutcomeValue.recovered))
                     restoreSuccessCount += 1
                 }
             } else {
+                Telemetry.record(.restoreOutcome(outcome: RestoreOutcomeValue.nothing))
                 lastError = ErrorMessages.paywallRestoreNothing
             }
             VoiceTodoLog.app.info("entitlement.restore_done isPro=\(self.isPro) wasPro=\(wasPro)")
         } catch StoreKitError.userCancelled {
             // 用户在 Apple 账户验证弹窗点了取消:不是失败,不报错。
+            Telemetry.record(.restoreOutcome(outcome: RestoreOutcomeValue.cancelled))
             VoiceTodoLog.app.info("entitlement.restore_cancelled")
         } catch {
+            Telemetry.record(.restoreOutcome(outcome: RestoreOutcomeValue.failed))
             VoiceTodoLog.app.error("entitlement.restore_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             lastError = ErrorMessages.paywallRestoreFailed
         }

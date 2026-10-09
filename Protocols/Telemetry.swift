@@ -111,6 +111,24 @@ enum TelemetryEvent {
     /// （PROMOTION_PLAN.md :33 偏差决策）的度量基础——没有来源维度，
     /// A/B 弹点效果永远测不出来。
     case paywallShown(source: PaywallSource)
+    /// A8: onboarding 分步到达。漏斗第二环的分步可见性——此前只有终点
+    /// （first_voice_trial armed），哪一步流失看不见。每次「进入」记一次:
+    /// 用户点后退再前进会对同一 step 重复记(分析按 step 去重,不按事件数)。
+    case onboardingStep(step: String)
+    /// A9-A13: 购买漏斗。漏斗最后一环（paywall_shown → 付费）此前完全断头:
+    /// EntitlementManager 零遥测,上线后无法归因「点买未成」是取消/失败/待审批。
+    /// cancelled / pending 与 failed 分开记(口径同 ExtractOutcome.cancelled:
+    /// 取消与待审批不是故障,混进 failed 会污染失败率)。
+    case purchaseInitiated(productID: String)
+    case purchaseSucceeded(productID: String, path: String)
+    case purchaseFailed(productID: String, reason: String)
+    case purchaseCancelled(productID: String)
+    case purchasePending(productID: String)
+    /// A14: 恢复购买结果(换设备路径的付费观察点)。
+    case restoreOutcome(outcome: String)
+    /// B6: MetricKit 崩溃/卡顿诊断计数(CrashDiagnosticsSubscriber)。
+    /// 上线前的崩溃监控兜底——ASC 崩溃报告有 24h+ 延迟且需用户共享诊断。
+    case mxDiagnostics(crashes: Int, hangs: Int, diskWrites: Int, cpuExceptions: Int)
 
     /// 事件名，对应 D1 `event_name` 列。
     var name: String {
@@ -127,6 +145,14 @@ enum TelemetryEvent {
         case .extractorCircuitChanged: return "extractor_circuit_changed"
         case .firstVoiceTrial: return "first_voice_trial"
         case .paywallShown: return "paywall_shown"
+        case .onboardingStep: return "onboarding_step"
+        case .purchaseInitiated: return "purchase_initiated"
+        case .purchaseSucceeded: return "purchase_succeeded"
+        case .purchaseFailed: return "purchase_failed"
+        case .purchaseCancelled: return "purchase_cancelled"
+        case .purchasePending: return "purchase_pending"
+        case .restoreOutcome: return "restore_outcome"
+        case .mxDiagnostics: return "mx_diagnostics"
         }
     }
 
@@ -184,6 +210,33 @@ enum TelemetryEvent {
             return ["stage": stage]
         case let .paywallShown(source):
             return ["source": source.rawValue]
+        case let .onboardingStep(step):
+            return ["step": step]
+        case let .purchaseInitiated(productID):
+            return ["productID": productID]
+        case let .purchaseSucceeded(productID, path):
+            return [
+                "productID": productID,
+                "path": path
+            ]
+        case let .purchaseFailed(productID, reason):
+            return [
+                "productID": productID,
+                "reason": reason
+            ]
+        case let .purchaseCancelled(productID):
+            return ["productID": productID]
+        case let .purchasePending(productID):
+            return ["productID": productID]
+        case let .restoreOutcome(outcome):
+            return ["outcome": outcome]
+        case let .mxDiagnostics(crashes, hangs, diskWrites, cpuExceptions):
+            return [
+                "crashes": String(crashes),
+                "hangs": String(hangs),
+                "diskWrites": String(diskWrites),
+                "cpuExceptions": String(cpuExceptions)
+            ]
         }
     }
 }
@@ -249,6 +302,31 @@ enum FirstVoiceTrialStage {
     static let dismissed = "dismissed"
     /// 首次语音待办已落库（wow 发生）。
     static let completed = "completed"
+}
+
+/// `purchaseSucceeded` 事件的 path 取值。三条成功路径分开,
+/// 「点 CTA → 成功」的转化分析才能解释 direct 缺口(审批延迟/对账补偿)。
+enum PurchaseSucceededPath {
+    /// `purchase()` verified 直接成功。
+    static let direct = "direct"
+    /// 非成功返回后对账发现已是 Pro(系统弹「你已订阅」场景)。
+    static let reconciled = "reconciled"
+    /// Ask to Buy 家长批准经 `Transaction.updates` 到账。
+    static let pendingApproval = "pending_approval"
+}
+
+/// `restoreOutcome` 事件的 outcome 取值。
+enum RestoreOutcomeValue {
+    /// 恢复前不是 Pro、恢复后确认为 Pro(真正的换设备恢复)。
+    static let recovered = "recovered"
+    /// 恢复前已是 Pro(点恢复只是对账,不是恢复事件)。
+    static let alreadyPro = "already_pro"
+    /// 无可恢复订阅。
+    static let nothing = "nothing"
+    /// 用户在 Apple 账户验证弹窗取消。
+    static let cancelled = "cancelled"
+    /// `AppStore.sync()` 抛错。
+    static let failed = "failed"
 }
 
 // MARK: - Bundle 辅助

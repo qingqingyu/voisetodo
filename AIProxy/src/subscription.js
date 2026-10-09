@@ -139,7 +139,12 @@ function normalizeInteger(bytes) {
 /**
  * 验证 StoreKit 2 订阅 JWS。
  * @param {string} jws compact JWS
- * @param {object} opts { expectedBundleId, productIDs, rootFingerprint?, now? }
+ * @param {object} opts { expectedBundleId, productIDs, rootFingerprint?, now?, gracePeriodMS? }
+ *   gracePeriodMS: 计费宽限期裕量(毫秒,默认 0=关闭)。ASC 开启 Billing Grace Period
+ *   时宽限期内 StoreKit 仍向客户端返回已过期的交易(App 显示 Pro),若代理严格按
+ *   expiresAt 拒绝,会出现「App 显示 Pro、AI 只有免费档」的两端不一致——把该值
+ *   设为与 ASC 宽限期相同的天数即可对齐。JWS(transaction JWS)不含 renewalInfo,
+ *   代理无法区分「宽限期」与「已过期」,只能按时间裕量放行,这是本方案的边界。
  * @returns {Promise<{productId: string, expiresAt: number, subscriptionId: string|null}>} 校验通过返回关键声明
  * @throws 校验任一步失败即抛错（调用方 fail-safe 到免费档）
  */
@@ -148,6 +153,10 @@ export async function verifySubscriptionJWS(jws, opts = {}) {
   const now = typeof opts.now === "number" ? opts.now : Date.now();
   const expectedBundleId = opts.expectedBundleId;
   const productIDs = opts.productIDs || [];
+  const gracePeriodMS =
+    typeof opts.gracePeriodMS === "number" && Number.isFinite(opts.gracePeriodMS) && opts.gracePeriodMS >= 0
+      ? opts.gracePeriodMS
+      : 0;
 
   const parts = String(jws).split(".");
   if (parts.length !== 3) throw new Error("subscription.jws_malformed");
@@ -204,8 +213,8 @@ export async function verifySubscriptionJWS(jws, opts = {}) {
   if (!(typeof expiresAt === "number" && Number.isFinite(expiresAt))) {
     throw new Error("subscription.expires_missing");
   }
-  if (expiresAt <= now) {
-    throw new Error(`subscription.expired expiresAt=${expiresAt} now=${now}`);
+  if (expiresAt + gracePeriodMS <= now) {
+    throw new Error(`subscription.expired expiresAt=${expiresAt} now=${now} graceMS=${gracePeriodMS}`);
   }
   // 已退款 / 被撤销的交易:Apple 在撤销后签发的交易 JWS 带 revocationDate。客户端
   // currentEntitlements 已不会再给出这类交易,但代理零信任,不依赖客户端过滤。
