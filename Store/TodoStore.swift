@@ -110,9 +110,19 @@ final class TodoStore:
     }
 
     func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws {
+        try addBatch(items, rawTranscript: nil, localeIdentifier: localeIdentifier)
+    }
+
+    /// 在线确认路径的批量添加:与 `replacePendingBatchWithExtracted` 同口径传 rawTranscript,
+    /// 让 `TodoItem.from` 的 applyDueDateBasisFilter 能用原文兜底反校验 AI basis
+    /// (basis 非 user_explicit 时扫原文算日期,而不是无兜底清空)。
+    /// 旧签名调用方(手动构造/测试/UIDemo)不传 transcript,继续走保守清空语义;
+    /// Siri AddTodoIntent 不走 addBatch,自建 context 直接调
+    /// `TodoItem.from(extracted, rawTranscript:)`,原文已带上。
+    func addBatch(_ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws {
         let startedAt = Date()
         let fallbackLocaleIdentifier = resolveLocaleIdentifier(localeIdentifier, fallback: Locale.current.identifier)
-        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(fallbackLocaleIdentifier, privacy: .public) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
+        VoiceTodoLog.store.info("store.add_batch.start count=\(items.count) extractID=\(VoiceTodoLog.extractID ?? "none", privacy: .public) locale=\(fallbackLocaleIdentifier, privacy: .public) rawTranscriptChars=\(rawTranscript?.count ?? -1) ids=\(VoiceTodoLog.idsSummary(items.map(\.id)), privacy: .public)")
         #if DEBUG
         logAddBatchDiag(items: items)
         #endif
@@ -130,7 +140,7 @@ final class TodoStore:
                 VoiceTodoLog.store.warning("store.add_batch.skip_duplicate id=\(item.id.uuidString, privacy: .public) existingTitle=\(existing.title, privacy: .public)")
                 continue
             }
-            let todoItem = TodoItem.from(item)
+            let todoItem = TodoItem.from(item, rawTranscript: rawTranscript)
             todoItem.sortOrder = baseSortOrder
             todoItem.localeIdentifier = resolveLocaleIdentifier(localeIdentifier ?? item.localeIdentifier, fallback: fallbackLocaleIdentifier)
             baseSortOrder -= 1

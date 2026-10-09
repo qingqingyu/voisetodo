@@ -32,6 +32,13 @@ protocol TodoBatchAdding {
 
     /// 批量添加（确认界面用），保留输入时的语言标识。
     func addBatch(_ items: [ExtractedTodo], localeIdentifier: String?) throws
+
+    /// 批量添加（确认界面用），携带输入原文与语言标识。
+    ///
+    /// rawTranscript 供 `TodoItem.from` 的 due_date_basis 双层过滤做 transcript 兜底——
+    /// 在线确认路径与 `replacePendingBatchWithExtracted`（离线恢复）同口径，
+    /// 避免"确认页卡片显示日期、保存后被 basis 白名单清空"的展示/落库分裂。
+    func addBatch(_ items: [ExtractedTodo], rawTranscript: String?, localeIdentifier: String?) throws
 }
 
 /// 待办创建能力。

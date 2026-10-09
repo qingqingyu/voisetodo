@@ -381,6 +381,47 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(sut.todos.map(\.localeIdentifier), ["en-US", "en-US"])
     }
 
+    // MARK: - due_date_basis 落库回归(确认页显示对、Add 后变「选日期」)
+
+    /// 生产解码链端到端回归:AI JSON 带正确 due_date + due_date_basis="user_explicit",
+    /// 在线确认路径 addBatch(不传 transcript)后日期必须落库。
+    /// 根因 1:ExtractedTodo.init(from:) 漏解码 due_date_basis(Optional 隐式 nil),
+    /// 白名单把所有 AI 日期当"非 user_explicit"无兜底清空。
+    func testAddBatchKeepsDecodedUserExplicitDueDateWithoutTranscript() throws {
+        let json = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000041","title":"取快递","detail":"后天早上取快递","due_date":"2026-10-11","due_hint":"后天早上","due_date_basis":"user_explicit"}],"ignored":""}
+        """
+        let todos = try JSONCoding.makeResponseDecoder()
+            .decode(ExtractionResult.self, from: XCTUnwrap(json.data(using: .utf8))).todos
+
+        try sut.addBatch(todos)
+
+        let saved = try XCTUnwrap(sut.todos.first { $0.title == "取快递" })
+        let savedDay = try XCTUnwrap(saved.dueDate)
+        let calendar = Calendar(identifier: .gregorian)
+        let expected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 11)))
+        XCTAssertTrue(calendar.isDate(savedDay, inSameDayAs: expected))
+    }
+
+    /// 根因 2 的双层兜底回归:AI 漏标 basis(字段缺失→nil)时,addBatch(rawTranscript:)
+    /// 用原文扫日期恢复,与 replacePendingBatchWithExtracted(离线恢复路径)同口径。
+    /// 覆盖用户实测踩坑短语"后天"(TodoDueDateResolver 支持:今天+2)。
+    func testAddBatchRawTranscriptSalvagesRelativeDateWhenBasisMissing() throws {
+        let json = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000042","title":"取快递","detail":"后天早上取快递","due_date":"2026-10-11","due_hint":"后天早上"}],"ignored":""}
+        """
+        let todos = try JSONCoding.makeResponseDecoder()
+            .decode(ExtractionResult.self, from: XCTUnwrap(json.data(using: .utf8))).todos
+
+        try sut.addBatch(todos, rawTranscript: "后天早上取快递", localeIdentifier: nil)
+
+        let saved = try XCTUnwrap(sut.todos.first { $0.title == "取快递" })
+        let savedDay = try XCTUnwrap(saved.dueDate, "basis 缺失 + 原文含明确时间词,应兜底恢复日期")
+        let calendar = Calendar.current
+        let expected = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: Date())))
+        XCTAssertTrue(calendar.isDate(savedDay, inSameDayAs: expected))
+    }
+
     // MARK: - Test ToggleComplete
 
     func testToggleComplete() throws {

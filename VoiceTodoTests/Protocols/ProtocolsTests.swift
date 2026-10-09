@@ -140,6 +140,33 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertNil(ExtractedTodo(title: "开会", reminderOffsetMinutes: 9999).reminderOffsetMinutes)
     }
 
+    /// due_date_basis 解码回归:`init(from:)` 曾漏赋值该字段(Optional 存储属性被
+    /// Swift 隐式置 nil),生产解码 100% 丢 basis → applyDueDateBasisFilter 的
+    /// user_explicit 白名单分支在生产上永不可达,AI 日期在 confirm 落库时被清空。
+    /// 用生产 decoder(convertFromSnakeCase)保持解码路径与线上一致。
+    func testExtractedTodoDecodesDueDateBasis() throws {
+        func decode(_ basisJSON: String) throws -> DueDateBasis? {
+            let json = """
+            {"todos":[{"id":"00000000-0000-0000-0000-000000000031","title":"取快递","due_date":"2026-10-11","due_date_basis":\(basisJSON)}],"ignored":""}
+            """
+            let data = try XCTUnwrap(json.data(using: .utf8))
+            return try JSONCoding.makeResponseDecoder().decode(ExtractionResult.self, from: data).todos[0].dueDateBasis
+        }
+        try XCTAssertEqual(decode(#""user_explicit""#), .userExplicit)
+        try XCTAssertEqual(decode(#""title_mention""#), .titleMention)
+        try XCTAssertEqual(decode(#""inferred""#), .inferred)
+        try XCTAssertNil(decode("null"), "显式 null → nil")
+        // malformed(prompt 规则 10 警告的"模型本地化枚举")→ 吞成 nil 走保守路径,不炸整条解码
+        try XCTAssertNil(decode(#""用户明确""#))
+
+        // 字段缺失(旧 AI 响应)→ nil
+        let missing = """
+        {"todos":[{"id":"00000000-0000-0000-0000-000000000032","title":"取快递","due_date":"2026-10-11"}],"ignored":""}
+        """
+        let result = try JSONCoding.makeResponseDecoder().decode(ExtractionResult.self, from: XCTUnwrap(missing.data(using: .utf8)))
+        XCTAssertNil(result.todos[0].dueDateBasis)
+    }
+
     // MARK: - 默认提前提醒(全局默认回填)
 
     /// effectiveDefaultOffset:键缺失/0/负数/超界脏值一律降级为准时(nil)。
