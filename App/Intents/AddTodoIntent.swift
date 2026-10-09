@@ -27,6 +27,42 @@ struct AddTodoIntent: AppIntent {
                 view: AddTodoIntentView(todos: [], fallbackError: nil)
             )
         }
+        let inputLocale = Locale.current
+
+        // 5.1.1 AI 同意 gate:转写文本将经我们的服务器发往第三方 AI 服务商,
+        // 未同意前 intent 进程不发请求(扩展进程无 UI 可弹披露卡)。话不丢:
+        // 原文按 pending 草稿落库(needsAIProcessing = true),用户打开 App
+        // 完成披露同意后,前台恢复流程(PendingRecoveryFlow)原地解析成待办
+        // ——与离线/额度耗尽兜底同一条「原文先存、后续升级」链路。
+        guard AppGroupConfig.aiConsentGranted() else {
+            VoiceTodoLog.intent.info("intent.add.ai_consent_missing id=\(intentID, privacy: .public)")
+            do {
+                let container = try AppGroupModelContainerProvider.writable()
+                let context = ModelContext(container)
+                let item = TodoItem.rawTranscript(trimmed)
+                item.localeIdentifier = inputLocale.identifier
+                item.sortOrder = try fetchMinSortOrder(context: context) - 1
+                context.insert(item)
+                try context.save()
+                AppGroupConfig.markExternalDataChanged()
+                WidgetCenter.shared.reloadAllTimelines()
+                // 与主存库路径同口径:consent gate 的原文保存也计入 siri 保存遥测
+                // (原文未解析,不是 todoSaved 的 parsed 语义,但「siri 说的话落了库」
+                // 这一事件与 fallbackError 路径一致,漏记会让 siriAdd 来源少算)。
+                Telemetry.record(.todoSaved(source: .siriAdd, count: 1))
+            } catch {
+                VoiceTodoLog.intent.error("intent.add.ai_consent_save_failed id=\(intentID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                Telemetry.record(.intentFailed(operation: "add", stage: "container"))
+                return .result(
+                    dialog: "siri.result.save_failed",
+                    view: AddTodoIntentView(todos: [], fallbackError: nil)
+                )
+            }
+            return .result(
+                dialog: "siri.result.consent_required",
+                view: AddTodoIntentView(todos: [], fallbackError: nil)
+            )
+        }
 
         // 订阅凭证：Siri 走的是独立构造的 NetworkClient，默认 subscriptionJWSProvider
         // 是 { nil }，不注入的话 Pro 用户经 Siri 的每一句都会被代理按免费档计费。
@@ -43,7 +79,6 @@ struct AddTodoIntent: AppIntent {
         )
         var extractedTodos: [ExtractedTodo]
         var fallbackError: VoiceTodoError?
-        let inputLocale = Locale.current
 
         do {
             let result = try await VoiceTodoLog.$requestPath.withValue("siri") {

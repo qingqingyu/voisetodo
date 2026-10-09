@@ -2,9 +2,15 @@
   Publication source for https://qingqingyu.github.io/voicetodo-privacy/ (deployed 2026-08-16, GitHub Pages)
   Placeholders in [BRACKETS] resolved 2026-08-22 against the live page — see APPSTORE_REVIEW_KIT.md §0.
   ⚠️ 线上页尚无 Effective date 行,源文件已填 2026-08-16;下次更新线上页时同步补上。
-  Every factual claim below was verified against the code as of 2026-08-15:
+  Every factual claim below was verified against the code as of 2026-08-15
+  (provider wording generalized 2026-10-09: policy no longer names specific
+  AI vendors; actual providers live in AIProxy/wrangler.toml and may be
+  switched via admin config — naming them here would go stale, see
+  APPSTORE_REVIEW_KIT.md §2.4):
   - audio: Apple Speech framework, no on-device-only flag (Voice/VoiceInputManager.swift)
-  - transcript: sent to AIProxy (Cloudflare Worker), forwarded to Anthropic/OpenAI/Google
+  - transcript: sent to AIProxy (Cloudflare Worker), forwarded to third-party AI providers
+  - consent: transcript must not be sent before the user agrees to AI processing
+    (AppGroupConfig.aiConsentGrantedKey gate, onboarding disclosure + runtime sheet + Siri gate)
   - result cache: KV, TTL 1h, key = one-way hash (AIProxy/src/extractionCache.js)
   - todos/calendar: local only (SwiftData, EventKit)
   - subscription: StoreKit 2 JWS verified server-side, {tier, productId, expiresAt} cached in KV
@@ -15,7 +21,7 @@
 
 # Privacy Policy
 
-**Effective date:** 2026-08-16
+**Effective date:** 2026-10-09
 
 This policy explains what data VoiceTodo ("the app") handles, where it goes, and how long it is kept. It applies to the VoiceTodo iOS app operated by an independent developer ("we", "us").
 
@@ -42,7 +48,9 @@ Voice capture and speech recognition are handled by Apple's Speech framework. De
 
 ### Transcript text
 
-After speech recognition, the transcript (text) is sent over an encrypted connection to our server — hosted on Cloudflare — which forwards it to an AI provider (such as Anthropic, OpenAI, or Google, depending on availability) to structure it into to-dos.
+Before any transcript leaves your device, the app asks for your agreement: a disclosure explains that the text is sent to our server and to a third-party AI provider. Nothing is sent until you agree. If you decline, the voice features stay unavailable (raw text captured by Siri shortcuts is kept on your device until you agree).
+
+After speech recognition, the transcript (text) is sent over an encrypted connection to our server — hosted on Cloudflare — which forwards it to a third-party AI provider to structure it into to-dos. We may switch AI providers as we adjust the service; whichever provider we use, the terms below apply.
 
 - The transcript is processed in real time. We do not log or archive it.
 - Under the commercial API terms of the AI providers we use, content submitted via their APIs is not used to train their models.
@@ -102,7 +110,7 @@ A hashed device identifier is also used to enforce the daily free-tier limit and
 
 - **Apple** — speech recognition, App Store distribution, in-app purchase processing
 - **Cloudflare** — hosts our server infrastructure
-- **AI providers — such as Anthropic, OpenAI, or Google** — receive the transcript text to structure it into to-dos
+- **Third-party AI providers** — receive the transcript text to structure it into to-dos. We may switch providers as we adjust the service; the terms in this policy apply regardless of which provider is used.
 
 Each processes data under its own privacy policy. We only send them what is needed to perform the function described above.
 

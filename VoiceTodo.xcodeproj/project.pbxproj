@@ -57,6 +57,7 @@
 		34B97EDBBEDBA6524C0ABA58 /* TodoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6489BAC5A05355E3E29FC8F /* TodoDetailView.swift */; };
 		35692E679C1A43B18A8CE5E6 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FCC7CF9C78E37CFC3E7565A /* OnboardingView.swift */; };
 		37BB21060C722754F8959EA2 /* ExpandMonthHintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF66639D7D5600F7F4DEEB6E /* ExpandMonthHintView.swift */; };
+		3852F21D05A05BC09630EF54 /* AIConsentDisclosureCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4330E147EB1675B27ADE0963 /* AIConsentDisclosureCard.swift */; };
 		3948A1055B12A8EF83E6F717 /* DayClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79AC32962B30F2731167C4C9 /* DayClock.swift */; };
 		3A438D3019911BC5C714C97F /* ToggleTodoIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 437110FA8FB9C002DB8EB91A /* ToggleTodoIntent.swift */; };
 		3B3107364CF56EB9AF4F4747 /* ReviewStepTriage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98BEC5C86D074C537C414D13 /* ReviewStepTriage.swift */; };
@@ -351,6 +352,7 @@
 		3E51B798662E8477BAEAC3DB /* AudioSessionHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionHelper.swift; sourceTree = "<group>"; };
 		3ED689A1D8E8ED9FA0980831 /* CompletionFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionFeedback.swift; sourceTree = "<group>"; };
 		41DFCFCAA748A498A5A2A0CC /* JSONCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCoding.swift; sourceTree = "<group>"; };
+		4330E147EB1675B27ADE0963 /* AIConsentDisclosureCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConsentDisclosureCard.swift; sourceTree = "<group>"; };
 		43589A601B187AFAC389117A /* TodoWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetProvider.swift; sourceTree = "<group>"; };
 		437110FA8FB9C002DB8EB91A /* ToggleTodoIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToggleTodoIntent.swift; sourceTree = "<group>"; };
 		4455F3A533EBC9A5F6D50202 /* UnparsedEditUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnparsedEditUITests.swift; sourceTree = "<group>"; };
@@ -804,6 +806,7 @@
 			children = (
 				C68B9E8D9C285A479DD07033 /* Intents */,
 				D24795F4689C91579626B05E /* ActionButtonCapability.swift */,
+				4330E147EB1675B27ADE0963 /* AIConsentDisclosureCard.swift */,
 				6CA04499669316BDDE7603DC /* AppCoordinator.swift */,
 				81578DF6D6865F537FD3EBAE /* CalendarSyncService.swift */,
 				0E4BF2A213AB8BD127DAB20B /* EntitlementManager.swift */,
@@ -1207,6 +1210,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3852F21D05A05BC09630EF54 /* AIConsentDisclosureCard.swift in Sources */,
 				902B88B962DCE8379B151B08 /* ActionButtonCapability.swift in Sources */,
 				CAD798E81935FFDDAC4621B8 /* ActionButtonLaunchSignal.swift in Sources */,
 				32B910EC56E8BF866097B097 /* AddTodoIntent.swift in Sources */,

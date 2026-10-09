@@ -19,6 +19,13 @@ enum AppGroupConfig {
     /// intent 局部通知对账(`IntentNotificationReconciler`)在扩展内通过本镜像
     /// 尊重全局 OFF。缺省(从未写入)= true,与"用户从未拨过开关"的默认语义一致。
     static let notificationsEnabledMirrorKey = "todoNotificationsEnabledMirror"
+
+    /// 「转写文本发送第三方 AI 处理」用户同意标志的 App Group 键。
+    /// 主 App 在 onboarding 披露卡 / 运行时 gate 弹卡写入;Siri(AddTodoIntent)
+    /// 在扩展进程发 AI 请求前读取——扩展进程读不到主 App 的 standard defaults,
+    /// 只有 App Group 能跨进程传递。缺省(从未写入)= false:不做隐式默认同意,
+    /// 所有用户都须经披露卡显式同意(上线前合规拍板 2026-10-08)。
+    static let aiConsentGrantedKey = "aiProcessingConsentGranted"
     private static let widgetInteractionErrorTimestampKey = "VoiceTodoWidgetInteractionErrorTimestamp"
     private static let widgetInteractionErrorOperationKey = "VoiceTodoWidgetInteractionErrorOperation"
     private static let widgetInteractionErrorTodoIDKey = "VoiceTodoWidgetInteractionErrorTodoID"
@@ -149,6 +156,24 @@ enum AppGroupConfig {
             todoID: todoID,
             messageKey: defaults.string(forKey: widgetInteractionErrorMessageKey) ?? WidgetInteractionError.defaultMessageKey
         )
+    }
+
+    /// 写入「转写文本发送第三方 AI 处理」的同意结果(披露卡 agree 按钮调用)。
+    /// `defaults` 仅供测试注入临时 suite;生产走共享容器。
+    static func setAIConsentGranted(_ granted: Bool, defaults: UserDefaults? = nil) {
+        let target = defaults ?? sharedDefaults()
+        guard let target else {
+            VoiceTodoLog.widget.warning("app_group.defaults_unavailable kind=setAIConsentGranted identifier=\(identifier, privacy: .public)")
+            return
+        }
+        target.set(granted, forKey: aiConsentGrantedKey)
+    }
+
+    /// 读「转写文本发送第三方 AI 处理」同意状态;从未写入时回退 false(须显式同意)。
+    /// 主 App 与 Siri 扩展进程共用本读取口。`defaults` 仅供测试注入。
+    static func aiConsentGranted(defaults: UserDefaults? = nil) -> Bool {
+        let source = defaults ?? sharedDefaults()
+        return source?.object(forKey: aiConsentGrantedKey) as? Bool ?? false
     }
 
     /// 镜像「到点提醒」总开关到 App Group(设置页拨动时调用)。

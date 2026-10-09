@@ -211,6 +211,22 @@ extension AppLaunchHelper {
         app.otherElements["OnboardingView"]
     }
 
+    /// AI 处理披露卡「同意并继续」按钮(onboarding 权限步未同意时渲染;
+    /// identifier 由 AIConsentDisclosureCard 暴露,onboarding 内嵌与运行时
+    /// gate sheet 共用同一标识)。
+    var aiConsentAgreeButton: XCUIElement {
+        app.buttons["AIConsentAgreeButton"]
+    }
+
+    /// onboarding 权限步先过 AI 披露同意:未同意时「下一步」禁用、权限卡
+    /// 与 Skip 不渲染(2026-10-09 合规 gate)。返回按钮是否存在并点击。
+    @discardableResult
+    func agreeAIConsent(timeout: TimeInterval = 2.0) -> Bool {
+        guard aiConsentAgreeButton.waitForExistence(timeout: timeout) else { return false }
+        aiConsentAgreeButton.tap()
+        return true
+    }
+
     /// 下一步按钮（引导中）
     var nextButton: XCUIElement {
         let identifierMatch = app.buttons["NextButton"]

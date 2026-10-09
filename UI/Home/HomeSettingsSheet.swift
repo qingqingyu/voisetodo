@@ -295,6 +295,18 @@ struct HomeSettingsSheet: View {
                         .minimumScaleFactor(0.7)
                 }
                 #endif
+                Section {
+                    // 隐私政策常驻入口(与付费墙法务链接同一 URL):5.1.1 披露的
+                    // 日常可触达性——用户不必回到付费墙才能查看数据去向说明。
+                    Link(
+                        destination: PaywallLegal.privacyPolicyURL
+                    ) {
+                        Label(
+                            String(localized: "settings.privacy_policy"),
+                            systemImage: "hand.raised"
+                        )
+                    }
+                }
             }
             .sheet(isPresented: $showFeedbackSheet) {
                 FeedbackSheet()

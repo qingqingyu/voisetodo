@@ -6368,13 +6368,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple turns your voice into text; only that text goes to our server to parse your todos."
+            "value" : "Text is sent to our server and a third-party AI provider. No audio is stored, nothing is used for training."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "语音由 Apple 转成文字，只有文字会发到服务器解析成待办"
+            "value" : "文字将发送到服务器并由第三方 AI 解析，音频不存储、不用于训练"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストはサーバーとサードパーティのAIに送信されます。音声は保存せず、学習にも使いません"
           }
         }
       }
@@ -14230,6 +14236,248 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 免费试用"
+          }
+        }
+      }
+    },
+    "aiconsent.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How AI processing works"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI処理について"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 处理说明"
+          }
+        }
+      }
+    },
+    "aiconsent.body" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After Apple converts your voice to text, that text is sent to our server and forwarded to a third-party AI provider to structure your todos. Audio is never stored, and your content is never used to train AI."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声はAppleによってテキストに変換され、そのテキストは当社のサーバー経由でサードパーティのAIプロバイダーに送信され、ToDoとして整理されます。音声は保存されず、内容もAIの学習には使われません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音由 Apple 转成文字后，文字将发送到我们的服务器，并转发给第三方 AI 服务商解析成待办。音频不会存储，内容不用于训练 AI。"
+          }
+        }
+      }
+    },
+    "aiconsent.agree" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agree & Continue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意して続行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意并继续"
+          }
+        }
+      }
+    },
+    "aiconsent.decline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decline"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意しない"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不同意"
+          }
+        }
+      }
+    },
+    "aiconsent.decline_title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agreement needed to continue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続行には同意が必要です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要同意才能使用语音整理"
+          }
+        }
+      }
+    },
+    "aiconsent.decline_body" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turning speech into structured todos requires sending the text to a third-party AI provider. Without agreeing, voice organizing won't be available. Your saved todos stay on your device."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声をToDoに整理するには、テキストをサードパーティのAIプロバイダーへ送信する必要があります。同意しない場合、音声整理はご利用いただけません。保存済みのToDoは端末内に残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把语音整理成待办，需要把文字发给第三方 AI 服务商处理。不同意则无法使用语音整理；你已保存的待办仍只留在本机。"
+          }
+        }
+      }
+    },
+    "aiconsent.still_decline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still Decline"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意しない"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍不同意"
+          }
+        }
+      }
+    },
+    "aiconsent.reconsider" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Let Me Reconsider"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度考える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我再想想"
+          }
+        }
+      }
+    },
+    "siri.result.consent_required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved as raw text. Open VoiceTodo and agree to AI processing to have it turned into todos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原文を保存しました。VoiceTodoでAI処理に同意すると、ToDoに整理されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已记录原文。打开 VoiceTodo 并同意 AI 处理后，会自动整理成待办。"
+          }
+        }
+      }
+    },
+    "settings.privacy_policy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy Policy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシーポリシー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私政策"
+          }
+        }
+      }
+    },
+    "aiconsent.view_policy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Privacy Policy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシーポリシーを見る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看隐私政策"
           }
         }
       }
