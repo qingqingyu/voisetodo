@@ -471,7 +471,7 @@ final class EffortOrderingRuleTests: XCTestCase {
         guard case let .fact(line) = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
             return XCTFail("01-B 3 vs 2 天应降为事实行")
         }
-        XCTAssertTrue(line.text.contains("review.insight.effort.fact_3_2_4_4"), "中位 3/2 样本 4/4: \(line.text)")
+        XCTAssertEqual(line.signature, "effortOrdering|3|2|4|4", "中位 3/2 样本 4/4")
     }
 
     /// 01-C 正向:高优中位 ≤ 其他 → improving。
@@ -597,7 +597,7 @@ final class EnergyWindowRuleTests: XCTestCase {
         guard case let .fact(line) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
             return XCTFail("05-B 下午高峰+深夜腿应出深夜事实行")
         }
-        XCTAssertTrue(line.text.contains("review.insight.energy.fact_late_2_2"), "\(line.text)")
+        XCTAssertEqual(line.signature, "energyWindow.late|2|2")
     }
 
     /// 05-C 带钟点高优仅 1 件(<minHighTimed=2)→ 深夜腿不成立 → 峰值
@@ -610,7 +610,7 @@ final class EnergyWindowRuleTests: XCTestCase {
         guard case let .fact(line) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
             return XCTFail("05-C 单件高优应回落峰值事实行")
         }
-        XCTAssertTrue(line.text.contains("review.insight.energy.fact_peak_"), "\(line.text)")
+        XCTAssertTrue(line.signature.hasPrefix("energyWindow.peak|"), line.signature)
     }
 
     /// 05-D 完成记录 3–14 → 峰值事实行(不再 placeholder;v5 拍板 5+
@@ -621,7 +621,7 @@ final class EnergyWindowRuleTests: XCTestCase {
         guard case let .fact(line) = EnergyWindowRule().evaluate(makeContext(now: now, completed: five), calendar: calendar) else {
             return XCTFail("05-D n=5 应出峰值事实行")
         }
-        XCTAssertTrue(line.text.contains("review.insight.energy.fact_peak_9_5"), "\(line.text)")
+        XCTAssertEqual(line.signature, "energyWindow.peak|9|5")
 
         let two = (0..<2).map { _ in filler(now: now) }
         guard case let .placeholder(needMore) = EnergyWindowRule().evaluate(makeContext(now: now, completed: two), calendar: calendar) else {
@@ -933,7 +933,7 @@ extension InsightsRuleTests {
             return XCTFail("中间地带应降为 .fact,得到 \(result)")
         }
         // 测试环境缺 catalog 时 String(localized:) 回落键名——按键名断言插值
-        XCTAssertTrue(line.text.contains("review.insight.effort.fact_3_2_3_3"), "事实行应含两组中位与样本: \(line.text)")
+        XCTAssertEqual(line.signature, "effortOrdering|3|2|3|3", "结构化标识含两组中位与样本(E4,环境无关)")
         XCTAssertEqual(line.id, .effortOrdering)
     }
 
@@ -955,7 +955,7 @@ extension InsightsRuleTests {
         guard case let .fact(line) = result else {
             return XCTFail("n=3 无深夜腿应出峰值事实,得到 \(result)")
         }
-        XCTAssertTrue(line.text.contains("review.insight.energy.fact_peak_2_3"), "应报 0..23 全窗峰值 2 点: \(line.text)")
+        XCTAssertEqual(line.signature, "energyWindow.peak|2|3", "应报 0..23 全窗峰值 2 点(E3)")
     }
 
     /// E2:深夜占比事实与 fired 同分母(带钟点高优任务数),n=3(<15 不 fired)
@@ -982,7 +982,7 @@ extension InsightsRuleTests {
         guard case let .fact(line) = result else {
             return XCTFail("深夜腿满足应优先出深夜事实,得到 \(result)")
         }
-        XCTAssertTrue(line.text.contains("review.insight.energy.fact_late_2_2"), "分母应为带钟点高优数(2),非完成总数: \(line.text)")
+        XCTAssertEqual(line.signature, "energyWindow.late|2|2", "分母应为带钟点高优数(2),非完成总数(E2)")
     }
 
     /// 回归:fired 两腿判定不因 3-lite 改动漂移(n=15 晨峰 + 深夜排期)。

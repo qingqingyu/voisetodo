@@ -132,6 +132,10 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
     let ledger: ReviewLedger
     /// 第 3 步展示过的洞察快照(冷却判定用)。未到洞察步(降级跳过)时为空数组。
     let shownInsights: [InsightSnapshot]
+    /// 第 3 步事实行的结构化标识(v5 E4:规则 id+关键数字)。D7「与上期相同」
+    /// 跨期比较用——不比较本地化文本。nil = 旧会话/本期无事实行(合成
+    /// Codable 对 Optional 走 decodeIfPresent,旧 payload 解码为 nil)。
+    let factSignatures: [String]?
 
     init(
         id: UUID = UUID(),
@@ -142,7 +146,8 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
         completedCount: Int? = nil,
         topics: [ReviewTopic]? = nil,
         ledger: ReviewLedger,
-        shownInsights: [InsightSnapshot]
+        shownInsights: [InsightSnapshot],
+        factSignatures: [String]? = nil
     ) {
         self.id = id
         self.completedAt = completedAt
@@ -153,6 +158,7 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
         self.topics = topics
         self.ledger = ledger
         self.shownInsights = shownInsights
+        self.factSignatures = factSignatures
     }
 }
 

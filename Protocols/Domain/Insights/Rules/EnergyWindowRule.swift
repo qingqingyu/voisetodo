@@ -102,14 +102,16 @@ struct EnergyWindowRule: InsightRule {
                 id: id,
                 text: String(
                     localized: "review.insight.energy.fact_late_\(lateCount)_\(highDueHours.count)"
-                )
+                ),
+                signature: "energyWindow.late|\(lateCount)|\(highDueHours.count)"
             ))
         }
         return .fact(InsightFactLine(
             id: id,
             text: String(
                 localized: "review.insight.energy.fact_peak_\(factPeakHour)_\(events.count)"
-            )
+            ),
+            signature: "energyWindow.peak|\(factPeakHour)|\(events.count)"
         ))
     }
 }

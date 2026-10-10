@@ -93,10 +93,35 @@ struct ReviewStepInsights: View {
             )
         }
 
-        // 规则层事实行(v4 批 3 拍板 3:03 中间地带只报占比;排在洞察卡后——
-        // 极端模式的警报先说,中性事实收尾)。
+        // 规则层事实行(v4 批 3 拍板 3:03 中间地带;v5 3-lite 扩 01/05 全档。
+        // 排在洞察卡后——极端模式的警报先说,中性事实收尾;D1 中性样式 =
+        // caption 灰,不用警示色)。D7:与上期相同(signature 命中)的行尾
+        // 追加弱化「与上期相同」后缀——仍重述不折叠(v4 拍板 1)。
         ForEach(state.insightFactLines, id: \.id) { line in
-            Text(line.text)
+            HStack(alignment: .firstTextBaseline, spacing: WarmSpacing.xxs) {
+                Text(line.text)
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+                if line.sameAsPrevious {
+                    Text(String(localized: "review.insight.fact.same_as_last"))
+                        .font(WarmFont.caption(11))
+                        .foregroundColor(WarmTheme.textMuted.opacity(0.7))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+
+        // D6(v5):skipStep 档且完成 <3 条——一行窗口声明,规则层的合法
+        // 表面(与地板 A/C 同屏,不空屏;设计口径非遗漏,见 v5 确认不动表旁注)。
+        if state.showsSparseWindowNote {
+            Text(String(localized: "review.flow.insights.sparse_note"))
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
                 .lineLimit(2)

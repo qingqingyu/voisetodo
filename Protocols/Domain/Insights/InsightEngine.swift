@@ -106,10 +106,18 @@ enum InsightAvailability: Sendable {
     case hidden
 }
 
-/// 03 中间地带的一行事实(v4 拍板 3):文案构造时已本地化,仅展示用、不落库。
+/// 规则层的一行事实(v4 拍板 3 起,03 中间地带;v5 3-lite 扩到 01/05 单腿):
+/// 文案构造时已本地化,仅展示用。`signature` 是结构化标识(规则 id+关键数字,
+/// E4)——D7「与上期相同」跨期比较用它,不比较本地化文本(用户切语言/翻译
+/// 修订会让文本比较失效)。
 struct InsightFactLine: Sendable, Equatable {
     let id: InsightID
     let text: String
+    /// 结构化标识,如 `"energyWindow.peak|9|5"`。落进 `ReviewSession.factSignatures`。
+    let signature: String
+    /// D7:与上期事实完全相同(signature 命中上期集合)→ 渲染层行尾加弱化
+    /// 「与上期相同」后缀。仍重述、不折叠、不冷却(v4 拍板 1 口径)。
+    var sameAsPrevious: Bool = false
 }
 
 // MARK: - 结果与图数据

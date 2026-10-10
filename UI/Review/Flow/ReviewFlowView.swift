@@ -97,8 +97,13 @@ final class ReviewFlowState {
 
     /// 规则层的事实行(v4 批 3 拍板 3:03 中间地带只报占比的一行;不走冷却、
     /// 不进 `shownInsights`——拍板 6)。**算规则层内容**(整步存活判定),
-    /// 但不进 `rankedResults`、不出卡。
+    /// 但不进 `rankedResults`、不出卡。v5 3-lite 扩到 01/05 全档;D7 命中
+    /// 上期 signature 的行带 `sameAsPrevious` 标记。
     private(set) var insightFactLines: [InsightFactLine] = []
+
+    /// D6(v5):skipStep 档且完成记录 <3 条——规则层合法表面=一行窗口声明
+    /// (与地板 A/C 同屏,不空屏)。渲染层据此显示 sparse 说明行。
+    private(set) var showsSparseWindowNote: Bool = false
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -409,59 +414,35 @@ final class ReviewFlowState {
         let calendar = Calendar.current
         let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
 
-        // 降级档(<5 条完成)规则层**不跑**(v3 拍板 7 引擎前移的语义补丁,
-        // v4 拍板 5 后该档不再整步跳过、只出地板 A,但「规则不跑」不变):
-        // 照跑的话,腐烂规则(age ≥ 21 天分支单条即触发)会在从未展示的情况
-        // 下进冷却历史并随会话持久化——「展示过的才进冷却历史」被破坏,
-        // 下期冷却把「从没看过」当「上期看过」。结果清空(重试路径可能从
-        // .full 落回,不留残影);地板 A 照算(规则没跑 = 腐烂卡没展示,
-        // rottingShown 恒 false)。
-        guard ladder != .skipStep else {
-            resetShownInsights()
-            rankedResults = []
-            insightPlaceholders = []
-            ladderNeedMore = nil
-            insightFactLines = []
-            backlogAgeFact = InsightEngine.backlogAgeFact(
-                openTasks: context.openTasks,
-                now: context.now,
-                calendar: calendar,
-                rottingShown: false
-            )
-            backlogCategoryFact = InsightEngine.backlogCategoryFact(
-                openTasks: context.openTasks,
-                completedEvents: context.completedEvents,
-                now: context.now,
-                calendar: calendar
-            )
-            // 只出地板 A(+C+B):地板全空(零积压且本期零进零出)时才整步跳过——
-            // 「零积压+零完成」已被 skipsInsights 在引擎前拦下,这里兜的是
-            // 1–4 条完成 + 零积压的边缘态(有完成即 B 有净变化可说 → 不跳,
-            // 拍板 5 的「整步跳过只留零积压+零完成」由此闭合)。
-            skipsInsightsWhenEmpty = backlogAgeFact == nil
-                && backlogCategoryFact == nil
-                && backlogFlowFact == nil
-            return
-        }
-
         var results: [InsightResult] = []
         var newPlaceholders: [(InsightID, Int)] = []
         var newFactLines: [InsightFactLine] = []
 
-        let rotting = RottingRule().evaluate(context, calendar: calendar)
-        collect(rotting, id: .rotting, into: &results, &newPlaceholders, &newFactLines)
+        // E1(v5 3-lite):skipStep 档(<5 条完成)rotting **不评估**——照跑的
+        // 话 age ≥21 分支单条即触发,会在从未展示的情况下进冷却历史并随会话
+        // 持久化,下期冷却把「从没看过」当「上期看过」(v3 拍板 7 的冷却
+        // 不变量,继续成立)。01/05 在该档**仅收集 .fact**(E1),fired 留给
+        // .full(v3 拍板不动)。
+        if ladder != .skipStep {
+            let rotting = RottingRule().evaluate(context, calendar: calendar)
+            collect(rotting, id: .rotting, into: &results, &newPlaceholders, &newFactLines)
+        }
+
+        // 01/05 全档评估(v5 3-lite:事实行自带 ≥3/两组各≥3 阈值,任何档位
+        // 都可出——C1 冷启动夹具=skipStep 档 3 条完成有 05 峰值事实行)。
+        let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
+        let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
+        if ladder == .full {
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders, &newFactLines)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders, &newFactLines)
+        } else {
+            if case let .fact(line) = effort { newFactLines.append(line) }
+            if case let .fact(line) = energy { newFactLines.append(line) }
+        }
 
         if ladder == .full {
             let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
             collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders, &newFactLines)
-
-            // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
-            // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
-            let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
-            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders, &newFactLines)
-
-            let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
-            collect(energy, id: .energyWindow, into: &results, &newPlaceholders, &newFactLines)
         }
 
         // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
@@ -470,16 +451,34 @@ final class ReviewFlowState {
         }
         let ranked = InsightEngine.rank(cooled)
         // 展示过的才进冷却历史(被过滤掉的不记)。重跑先清空:上一轮展示过、
-        // 这一轮被冷却过滤的洞察不该留在历史里。
+        // 这一轮被冷却过滤的洞察不该留在历史里。skipStep 档 results 恒空 →
+        // ranked 恒空 → shownInsights 恒空数组(E1 断言口径)。
         resetShownInsights()
         ranked.forEach { recordShownInsight($0) }
 
+        // D7「与上期相同」(E4):与上期会话的 factSignatures 逐条比 signature,
+        // 命中则标记——渲染层加弱化后缀。仍重述不折叠不冷却(v4 拍板 1)。
+        let previousSignatures = previousSessions.last?.factSignatures
+        if let previousSignatures {
+            newFactLines = newFactLines.map { line in
+                var line = line
+                line.sameAsPrevious = previousSignatures.contains(line.signature)
+                return line
+            }
+        }
+
         rankedResults = ranked
-        insightPlaceholders = newPlaceholders
+        // D5(v5):占位行仅在规则层(fired+fact)整空时兜底,否则隐藏——
+        // 规则层已有内容时再冒「样本不足」会自相矛盾。
+        insightPlaceholders = (ranked.isEmpty && newFactLines.isEmpty) ? newPlaceholders : []
         ladderNeedMore = ladder.rottingOnlyNeedMore
         insightFactLines = newFactLines
+        // D6(v5):skipStep 档且完成 <3 条——规则层合法表面只剩一行窗口声明
+        // (05 事实阈值未到,占位行不属该档口径),与地板 A/C 同屏,不空屏。
+        showsSparseWindowNote = ladder == .skipStep && context.completedEvents.count < 3
         // 地板 A(v4 批 1):腐烂卡**实际展示**(过冷却)时点名让位——被冷却
-        // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。
+        // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。skipStep
+        // 档 rotting 未评估=未展示,rottingShown 恒 false(E1)。
         backlogAgeFact = InsightEngine.backlogAgeFact(
             openTasks: context.openTasks,
             now: context.now,
@@ -496,7 +495,7 @@ final class ReviewFlowState {
         // v4 拍板 5 连带:整步存活判定改写为「地板层与规则层是否都空」,
         // 整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行降级为
         // 地板块下方的脚注,不再参与判定、不再单独撑起一屏。规则层含
-        // 事实行(批 3:03 中间地带),地板层含 A(批 1)、C(批 3)、B(批 4)。
+        // 事实行(v5:01/05 全档),地板层含 A(批 1)、C(批 3)、B(批 4)。
         skipsInsightsWhenEmpty = ranked.isEmpty
             && insightFactLines.isEmpty
             && backlogAgeFact == nil
@@ -927,7 +926,10 @@ final class ReviewFlowState {
                 pinnedCount: ledger.pinnedCount,
                 somedayCount: ledger.somedayCount
             ),
-            shownInsights: shownInsights
+            shownInsights: shownInsights,
+            // E4(v5):事实行结构化标识落库——D7 下期「与上期相同」比较用。
+            // 无事实行存 nil(旧 payload 同为 nil,口径一致)。
+            factSignatures: insightFactLines.isEmpty ? nil : insightFactLines.map(\.signature)
         )
     }
 }

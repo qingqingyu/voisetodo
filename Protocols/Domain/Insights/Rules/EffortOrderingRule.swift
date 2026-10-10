@@ -85,7 +85,8 @@ struct EffortOrderingRule: InsightRule {
                 id: id,
                 text: String(
                     localized: "review.insight.effort.fact_\(highMedian)_\(otherMedian)_\(highCount)_\(otherCount)"
-                )
+                ),
+                signature: "effortOrdering|\(highMedian)|\(otherMedian)|\(highCount)|\(otherCount)"
             ))
         }
 

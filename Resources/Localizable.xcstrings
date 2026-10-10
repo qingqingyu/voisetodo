@@ -14574,6 +14574,52 @@
           }
         }
       }
+    },
+    "review.insight.fact.same_as_last" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "same as last time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回と同じ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与上期相同"
+          }
+        }
+      }
+    },
+    "review.flow.insights.sparse_note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fewer than 3 tasks completed this window — more to see next time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間の完了は3件未満。次のふりかえりでもっと見えるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个窗口完成的还不到 3 条——先继续用，下次复盘有更多可说。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
