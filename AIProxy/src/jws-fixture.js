@@ -25,6 +25,13 @@ function encInt(n) {
   if (bytes[0] & 0x80) bytes.unshift(0);
   return encTLV(0x02, Buffer.from(bytes));
 }
+/// 无符号大端字节 → DER INTEGER(去前导零,最高位为 1 时补 0x00)。
+function encDerInt(bytes) {
+  let b = Buffer.from(bytes);
+  while (b.length > 1 && b[0] === 0) b = b.subarray(1);
+  if (b[0] & 0x80) b = Buffer.concat([Buffer.from([0]), b]);
+  return encTLV(0x02, b);
+}
 function encSeq(...parts) { return encTLV(0x30, Buffer.concat(parts)); }
 function encSet(...parts) { return encTLV(0x31, Buffer.concat(parts)); }
 function encOID(oid) {
@@ -58,8 +65,11 @@ async function mintCert(subjectKey, issuerKey, { commonName, serial }) {
     name(commonName),
     Buffer.from(spki)
   );
-  const sigDer = new Uint8Array(await subtle.sign({ name: "ECDSA", hash: "SHA-384" }, issuerKey.privateKey, tbs));
-  return Buffer.from(encSeq(tbs, sigAlgId, encBitString(Buffer.from(sigDer))));
+  // 证书签名按 X.509 标准存 DER(Ecdsa-Sig-Value),与 Apple 真实链同形。
+  // 此前直接塞 subtle.sign 的 raw r||s,掩盖了 verifyChain 不转 DER 的 bug。
+  const sigRaw = signatureToRaw(await subtle.sign({ name: "ECDSA", hash: "SHA-384" }, issuerKey.privateKey, tbs), 48);
+  const sigDer = encSeq(encDerInt(sigRaw.subarray(0, 48)), encDerInt(sigRaw.subarray(48)));
+  return Buffer.from(encSeq(tbs, sigAlgId, encBitString(sigDer)));
 }
 
 export function b64url(buf) {

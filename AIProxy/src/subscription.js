@@ -67,7 +67,13 @@ async function verifyChain(certs, rootFingerprint) {
     const alg = algorithmForSigOID(subject.signatureAlgorithmOID);
     if (!alg) throw new Error(`subscription.unsupported_sig_alg ${subject.signatureAlgorithmOID}`);
     const issuerKey = await importPublicKey(issuer.publicKey, alg);
-    const ok = await globalThis.crypto.subtle.verify(alg, issuerKey, subject.signatureBytes, subject.tbsBytes);
+    // X.509 证书里的 ECDSA 签名是 DER(Ecdsa-Sig-Value),WebCrypto verify 只收
+    // raw r||s(Workers 与 Node 均如此)。直接喂 DER 恒为 false —— 真实 Apple 链
+    // 全被拒成 chain_signature_invalid,付费用户静默落免费档。
+    const signature = alg.name === "ECDSA"
+      ? ecdsaDerToRaw(subject.signatureBytes, ecdsaComponentLength(issuer.publicKey))
+      : subject.signatureBytes;
+    const ok = await globalThis.crypto.subtle.verify(alg, issuerKey, signature, subject.tbsBytes);
     if (!ok) throw new Error(`subscription.chain_signature_invalid level=${i - 1}`);
   }
 }
@@ -97,6 +103,29 @@ async function importPublicKey(spki, alg) {
     );
   }
   throw new Error(`subscription.unknown_key_alg ${spki.algorithmOID}`);
+}
+
+/// 签发者曲线 → ECDSA r/s 定长字节数(P-256 = 32,P-384 = 48)。
+function ecdsaComponentLength(spki) {
+  if (spki.curveOID === OID_P256) return 32;
+  if (spki.curveOID === OID_P384) return 48;
+  throw new Error(`subscription.unknown_ec_curve ${spki.curveOID}`);
+}
+
+/// ECDSA 签名从 DER(SEQUENCE { r INTEGER, s INTEGER })转为 raw r||s,每段左补零到 halfLen。
+function ecdsaDerToRaw(der, halfLen) {
+  const seq = readTLV(der, 0);
+  if (der[0] !== 0x30 || seq.next !== der.length) throw new Error("subscription.cert_sig_malformed");
+  const ints = children(der, seq);
+  if (ints.length !== 2 || ints.some((n) => n.tag !== 0x02)) throw new Error("subscription.cert_sig_malformed");
+  const out = new Uint8Array(halfLen * 2);
+  ints.forEach((n, i) => {
+    let bytes = n.view;
+    while (bytes.length > halfLen && bytes[0] === 0x00) bytes = bytes.subarray(1);
+    if (bytes.length > halfLen) throw new Error("subscription.cert_sig_malformed");
+    out.set(bytes, i * halfLen + (halfLen - bytes.length));
+  });
+  return out;
 }
 
 /// ECDSA 签名从 raw r||s 转为 DER（JWS 用 raw 格式，WebCrypto 需 DER）。
