@@ -1094,11 +1094,31 @@ final class AppCoordinator: ObservableObject {
         VoiceTodoLog.coordinator.info("coordinator.todo.update_detail.saved id=\(id.uuidString, privacy: .public) hasDueDate=\(update.dueDate != nil) explicitTimeBucket=\(update.timeBucket?.rawValue ?? "nil", privacy: .public) hasDetail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
 
         let shouldSyncSystemCalendar = calendarWriteModeProvider() == .appAndSystemCalendar
-        if oldTodo?.systemCalendarEventIdentifier != nil || shouldSyncSystemCalendar {
+        let oldEventIdentifier = oldTodo?.systemCalendarEventIdentifier
+        // 已有镜像时，仅当镜像内容（title/notes/起止/重复规则，即 mapper.draft 覆盖的
+        // 字段）变化才删旧写新——只改优先级/分类/提醒提前量/跨天结束日等不进事件的
+        // 字段不再触发重建（重建会让事件标识变化，系统日历侧的既有关联失效）。
+        // 无镜像但开了同步：维持既有行为，编辑即补建镜像。
+        // 关了同步（appOnly）且内容未变时同样跳过：镜像事件保留到下次内容性编辑
+        // 或删除待办才清理（deleteTodo 无论模式都会兜底删事件），与「无内容变化
+        // 不折腾事件」同口径。
+        let shouldRebuildMirror: Bool
+        if oldEventIdentifier != nil {
+            shouldRebuildMirror = SystemCalendarEventMapper.mirrorContentChanged(
+                from: oldTodo,
+                to: store.findTodo(by: id)
+            )
+            if !shouldRebuildMirror {
+                VoiceTodoLog.calendar.debug("calendar.update.rebuild_skipped reason=mirror_content_unchanged todoID=\(id.uuidString, privacy: .public)")
+            }
+        } else {
+            shouldRebuildMirror = shouldSyncSystemCalendar
+        }
+        if shouldRebuildMirror {
             observeCalendarSync(
                 calendarSyncService.enqueueReplace(
                     todoID: id,
-                    oldEventIdentifier: oldTodo?.systemCalendarEventIdentifier,
+                    oldEventIdentifier: oldEventIdentifier,
                     shouldWriteNewEvent: shouldSyncSystemCalendar,
                     sourceID: id.uuidString
                 )

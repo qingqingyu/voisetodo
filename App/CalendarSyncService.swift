@@ -190,13 +190,34 @@ final class CalendarSyncService {
             )
         }
 
-        // 写新成功：现在安全地删旧事件。失败不影响主流程（新事件已就位）。
+        // 写新成功或被跳过后：现在安全地删旧事件。
         if let oldEventIdentifier {
             do {
                 try await writer.removeEvents(identifiers: [oldEventIdentifier])
                 VoiceTodoLog.calendar.info("calendar.update.removed_old_after_write todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public)")
             } catch {
                 VoiceTodoLog.calendar.warning("calendar.update.remove_old_failed_after_write todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                // 写新成功路径：删旧失败只容忍为孤儿旧事件（新镜像已就位、标识已是
+                // 新 ID，不影响 todo 呈现），不失败。写新被跳过路径没有新事件兜底：
+                // 旧事件此刻还活着（removeEvents 只对「存在但删不掉」抛错，missing
+                // 不抛），若仍清空标识，活事件将永久失联成幽灵事件（且下次补日期会
+                // 建出重复事件）——必须显式失败，保留标识供下次内容性编辑重试删。
+                if writeResult.status == .skipped {
+                    return .failed(.replace, error: error)
+                }
+            }
+            // 写新被跳过（典型：编辑后草稿为 nil——删掉日期且无重复规则，无事件可写）
+            // 且旧镜像已移除（删成功或本就 missing）：清空 store 里的旧标识。否则残留
+            // 死 ID——它指向已删除的事件，后续每次内容性编辑都会带着它重跑一遍
+            // 「删不存在的旧事件」。写新成功时不清：persistSystemCalendarResults 已落新标识。
+            if writeResult.status == .skipped {
+                do {
+                    try store.updateSystemCalendarEventIdentifier(nil, for: todoID)
+                    VoiceTodoLog.calendar.info("calendar.update.cleared_identifier_after_skip todoID=\(todoID.uuidString, privacy: .public)")
+                } catch {
+                    VoiceTodoLog.calendar.error("calendar.update.clear_identifier_failed todoID=\(todoID.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    return .failed(.replace, error: error)
+                }
             }
         }
 

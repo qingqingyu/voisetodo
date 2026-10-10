@@ -154,6 +154,89 @@ final class CalendarSyncServiceTests: XCTestCase {
         XCTAssertTrue(writer.receivedTodos.isEmpty, "appOnly 模式不应写新事件")
         XCTAssertNil(store.systemCalendarEventIdentifiers[item.id])
     }
+
+    /// 编辑后草稿为 nil（删掉日期且无重复规则）→ writer 过滤跳过写新 → 删旧事件后
+    /// 必须清空 store 残留标识。修复前旧标识留在库里，死 ID 指向已删除的事件，
+    /// 后续每次内容性编辑都带着它重跑一遍「删不存在的旧事件」。
+    func testReplaceClearsStaleIdentifierWhenNewEventNotWritable() async {
+        var item = TodoItemData(title: "删掉日期", dueHint: "今天", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-old"
+        // 编辑后落库状态：无日期、无重复规则 → mapper.draft == nil → writer 过滤
+        var undated = item
+        undated.dueHint = nil
+        undated.dueDate = nil
+        undated.hasDueTime = false
+        let store = CalendarSyncTestStore(todos: [undated])
+        let writer = CalendarSyncTestWriter()
+        let service = CalendarSyncService(store: store, writer: writer)
+
+        let result = await service.enqueueReplace(
+            todoID: item.id,
+            oldEventIdentifier: "event-old",
+            shouldWriteNewEvent: true,
+            sourceID: "test-undated"
+        ).value
+
+        XCTAssertEqual(result.status, .skipped)
+        XCTAssertTrue(writer.receivedTodos.isEmpty, "无草稿可写，不应写新事件")
+        XCTAssertEqual(writer.removedIdentifiers, ["event-old"], "旧镜像事件应被删除")
+        XCTAssertNil(store.systemCalendarEventIdentifiers[item.id], "残留死 ID 必须清空")
+    }
+
+    /// 清残留标识失败必须显式失败（错误显式传播原则），不能静默吞掉留死 ID；
+    /// 失败时原标识保留，待下次内容性编辑（如加回日期）或删除待办时自愈——
+    /// 纯标题等不产生草稿差异的编辑在 updateTodoDetail 门控下不会再排队 replace。
+    func testReplaceFailsWhenStaleIdentifierClearFails() async {
+        var item = TodoItemData(title: "清ID失败", dueHint: "今天", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-old"
+        var undated = item
+        undated.dueHint = nil
+        undated.dueDate = nil
+        undated.hasDueTime = false
+        let store = CalendarSyncTestStore(todos: [undated])
+        store.identifierUpdateError = VoiceTodoError.storageWriteFailed("identifier failed")
+        let writer = CalendarSyncTestWriter()
+        let service = CalendarSyncService(store: store, writer: writer)
+
+        let result = await service.enqueueReplace(
+            todoID: item.id,
+            oldEventIdentifier: "event-old",
+            shouldWriteNewEvent: true,
+            sourceID: "test-clear-failed"
+        ).value
+
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertTrue(result.shouldShowFailureToast)
+        XCTAssertEqual(writer.removedIdentifiers, ["event-old"])
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old", "清空失败时保留原值，待下次内容性编辑自愈")
+    }
+
+    /// 写新被跳过 + 删旧事件失败（事件存在但删不掉）：必须显式失败并保留标识。
+    /// 旧事件此刻还活着，若照样清空标识，活事件将永久失联成幽灵事件（下次补日期
+    /// 还会建出重复事件）；保留标识供下次内容性编辑重试删。
+    func testReplaceFailsWhenOldEventRemovalFailsOnSkipPath() async {
+        var item = TodoItemData(title: "删不掉旧事件", dueHint: "今天", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-old"
+        var undated = item
+        undated.dueHint = nil
+        undated.dueDate = nil
+        undated.hasDueTime = false
+        let store = CalendarSyncTestStore(todos: [undated])
+        let writer = CalendarSyncTestWriter(removeError: VoiceTodoError.storageWriteFailed("remove failed"))
+        let service = CalendarSyncService(store: store, writer: writer)
+
+        let result = await service.enqueueReplace(
+            todoID: item.id,
+            oldEventIdentifier: "event-old",
+            shouldWriteNewEvent: true,
+            sourceID: "test-remove-old-failed"
+        ).value
+
+        XCTAssertEqual(result.status, .failed, "活事件未删成,清标识会让它永久失联,必须失败")
+        XCTAssertTrue(result.shouldShowFailureToast)
+        XCTAssertEqual(writer.removedIdentifiers, ["event-old"], "删旧应被尝试")
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-old", "标识必须保留供重试")
+    }
 }
 
 @MainActor
