@@ -137,5 +137,14 @@ Reconciler / PendingRecovery / SystemCalendarWriter / WidgetFilter)全部通过�
 
 | # | 问题 | 位置 | 修复 | 回归测试 |
 |---|------|------|------|---------|
-| A | 任何一次详情编辑都重建日历事件:已同步待办只改优先级/分类/提醒提前量/跨天结束日等不进事件的字段,照样删旧事件+建新事件(事件标识变化) | `App/AppCoordinator.swift` `updateTodoDetail` | 已有镜像时用 `SystemCalendarEventMapper.mirrorContentChanged`(新旧 draft 比对)门控重建;无镜像+同步开启维持「编辑即补建」既有行为 | `SystemCalendarWriterTests` 4 条(非事件字段 false / 事件字段 true / 双侧无草稿 false / 状态缺失 true) |
-| B | 删掉日期后库里残留已删事件 ID:replace 的写新被 writer 草稿过滤跳过(无日期无重复)→ 删旧事件成功,但 store 的 `systemCalendarEventIdentifier` 未清空,死 ID 指向已删除事件,后续编辑反复重跑「删不存在的旧事件」 | `App/CalendarSyncService.swift` `replace` | 写新被跳过且旧镜像已移除时,清空 store 残留标识;清空失败显式返回 `.failed`(下次编辑可重试),写新成功时不清(persist 已落新 ID) | `CalendarSyncServiceTests` 2 条(跳过路径清空 / 清空失败传播) |
+| A | 任何一次详情编辑都重建日历事件:已同步待办只改优先级/分类/提醒提前量/跨天结束日等不进事件的字段,照样删旧事件+建新事件(事件标识变化) | `App/AppCoordinator.swift` `updateTodoDetail` | 已有镜像时用 `SystemCalendarEventMapper.mirrorContentChanged`(新旧 draft 比对)门控重建;无镜像+同步开启维持「编辑即补建」既有行为 | `SystemCalendarWriterTests` 4 条(非事件字段 false / 事件字段 true / 双侧无草稿 false / 状态缺失 true)+ `AppCoordinatorTests` 2 条接线测试(非事件字段不 enqueue / 事件字段仍删旧写新) |
+| B | 删掉日期后库里残留已删事件 ID:replace 的写新被 writer 草稿过滤跳过(无日期无重复)→ 删旧事件成功,但 store 的 `systemCalendarEventIdentifier` 未清空,死 ID 指向已删除事件,后续编辑反复重跑「删不存在的旧事件」 | `App/CalendarSyncService.swift` `replace` | 写新被跳过且旧镜像已移除时,清空 store 残留标识;清空失败或删旧失败(活事件还在,清标识会令其永久失联)均显式返回 `.failed` 保留标识,下次内容性编辑可自愈;写新成功时不清(persist 已落新 ID) | `CalendarSyncServiceTests` 3 条(跳过路径清空 / 清空失败传播 / 删旧失败保留标识) |
+
+已知残留(拍板接受):A 的门控使「无草稿态(删了日期)下的纯标题编辑」不再排队
+replace——此类编辑无法顺带清理死 ID(含 B 清 ID 失败的残留与线上遗留死 ID),
+自愈点=下次内容性编辑(如加回日期)或删除待办。死 ID 无日历侧影响(事件已删,
+`removeEvents` 对 missing 只警告不抛,`deleteTodo` 兜底)。appOnly 模式下非内容
+编辑也不再触发惰性清理,镜像事件保留至下次内容性编辑或删除,同「无内容变化不
+折腾事件」口径。另:切换 app 语言后既有镜像事件的 notes 页脚(`notes_source`
+单行文案)保持旧语言,直到下次内容性编辑才刷新——纯外观残留,根治需 locale
+指纹或活事件比对,代价不成比例,不修。

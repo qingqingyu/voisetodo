@@ -406,6 +406,86 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(writer.removedIdentifiers.isEmpty)
     }
 
+    /// fix A 门控接线(已有镜像 + 同步开启):只改不进事件的字段(优先级)不得
+    /// 触发镜像重建——writer 零写入、零删旧,store 标识原样。mapper 的纯比对
+    /// 逻辑由 SystemCalendarWriterTests 覆盖,本用例锁 coordinator 接线
+    /// (门控条件、更新后回读 findTodo 的传参方向)。
+    func testUpdateTodoDetailSkipsMirrorRebuildForNonEventFieldEdit() async throws {
+        var item = TodoItemData(title: "买牛奶", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-abc"
+        let store = CoordinatorTestStore(todos: [item])
+        let writer = CoordinatorTestSystemCalendarWriter()
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            systemCalendarWriter: writer,
+            calendarWriteModeProvider: { .appAndSystemCalendar }
+        )
+
+        try coordinator.updateTodoDetail(
+            item.id,
+            update: TodoDetailUpdate(
+                title: item.title,
+                detail: nil,
+                category: nil,
+                priority: .high,
+                dueDate: item.dueDate,
+                hasDueTime: false,
+                timeBucket: nil,
+                dueHint: nil,
+                recurrenceRule: nil
+            )
+        )
+
+        // 门控跳过时 updateTodoDetail 内不会 enqueue 任何日历任务;让出一拍
+        // 给「若被误 enqueue 的任务」执行机会,防假绿。
+        await Task.yield()
+        XCTAssertTrue(writer.receivedTodos.isEmpty, "非事件字段编辑不应触发镜像重建写新")
+        XCTAssertTrue(writer.removedIdentifiers.isEmpty, "非事件字段编辑不应删旧镜像事件")
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-abc", "镜像标识不应被改动")
+    }
+
+    /// fix A 门控接线(已有镜像 + 同步开启):内容性编辑(标题)仍触发删旧写新,
+    /// 新事件标识回写 store。
+    func testUpdateTodoDetailRebuildsMirrorForContentEdit() async throws {
+        var item = TodoItemData(title: "买牛奶", dueDate: Date())
+        item.systemCalendarEventIdentifier = "event-abc"
+        let store = CoordinatorTestStore(todos: [item])
+        let writer = CoordinatorTestSystemCalendarWriter()
+        let mirrorWritten = expectation(description: "new mirror event written")
+        let oldRemoved = expectation(description: "old mirror event removed")
+        writer.onWrite = { mirrorWritten.fulfill() }
+        writer.onRemove = { oldRemoved.fulfill() }
+        let coordinator = AppCoordinator(
+            voiceInput: CoordinatorTestVoiceInput(),
+            extractor: DelayedExtractor(),
+            store: store,
+            systemCalendarWriter: writer,
+            calendarWriteModeProvider: { .appAndSystemCalendar }
+        )
+
+        try coordinator.updateTodoDetail(
+            item.id,
+            update: TodoDetailUpdate(
+                title: "买脱脂牛奶",
+                detail: nil,
+                category: nil,
+                priority: nil,
+                dueDate: item.dueDate,
+                hasDueTime: false,
+                timeBucket: nil,
+                dueHint: nil,
+                recurrenceRule: nil
+            )
+        )
+
+        await fulfillment(of: [mirrorWritten, oldRemoved], timeout: 1)
+        XCTAssertEqual(writer.removedIdentifiers, ["event-abc"], "旧镜像事件应被删除")
+        XCTAssertEqual(writer.receivedTodos.map(\.id), [item.id], "新镜像事件应被写入")
+        XCTAssertEqual(store.systemCalendarEventIdentifiers[item.id], "event-\(item.id.uuidString)", "新事件标识应回写 store")
+    }
+
     func testUpdateTodoDetailPersistsTimeBucketThroughStoreContract() throws {
         let item = TodoItemData(title: "晚上健身")
         let store = CoordinatorTestStore(todos: [item])

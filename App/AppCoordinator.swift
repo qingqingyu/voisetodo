@@ -1099,6 +1099,9 @@ final class AppCoordinator: ObservableObject {
         // 字段）变化才删旧写新——只改优先级/分类/提醒提前量/跨天结束日等不进事件的
         // 字段不再触发重建（重建会让事件标识变化，系统日历侧的既有关联失效）。
         // 无镜像但开了同步：维持既有行为，编辑即补建镜像。
+        // 关了同步（appOnly）且内容未变时同样跳过：镜像事件保留到下次内容性编辑
+        // 或删除待办才清理（deleteTodo 无论模式都会兜底删事件），与「无内容变化
+        // 不折腾事件」同口径。
         let shouldRebuildMirror: Bool
         if oldEventIdentifier != nil {
             shouldRebuildMirror = SystemCalendarEventMapper.mirrorContentChanged(
