@@ -1,7 +1,8 @@
 # 上线前补审结果:小组件 / Siri / 本地提醒 / 系统日历
 
 > 2026-10-08 执行,依据 `docs/review-plan-unreviewed-modules.md`(含同日 §0 评审修订)。
-> 分支:`claude/pre-launch-review-jy86zk`,不合 main,待人工编译 + 真机验证。
+> 状态:全部改动已于 2026-10-08 经 `dcebd66` 合入 main 并随 origin/main 推送;
+> §3 真机验证清单(12 条)仍待执行。§6 为 2026-10-10 后续 review 修复(A/B),在 `shangqian` 分支。
 > 方法:按方案 §5「先读后判」——每个结论追到全部调用方与兜底路径;单测可证明的
 > 修复均已红绿验证(先证红、后修绿);依赖系统行为的只出结论与复现步骤。
 
@@ -102,7 +103,7 @@
 
 ---
 
-## 5. 本次改动清单(全部在本分支,未合 main)
+## 5. 本次改动清单(已于 2026-10-08 经 `dcebd66` 合入 main)
 
 | 文件 | 改动 |
 |---|---|
@@ -125,3 +126,16 @@ receivedTodos 空、identifier 停留 event-old);#4 快照落账测试同样红�
 DST 用例(worktree 环境已知问题)、`ProductsStorekitGuardTests`(xcodebuild CLI
 注入不了 StoreKit 配置,已知限制)。本次触及模块对应的套件(Store / Calendar /
 Reconciler / PendingRecovery / SystemCalendarWriter / WidgetFilter)全部通过。
+
+---
+
+## 6. 后续 review 修复(2026-10-10,`shangqian` 分支)
+
+> 上线前 review 对 #1 修复后的代码追加两处发现,当日修复。红绿验证:
+> B 的回归测试在还原修复时 `testReplaceClearsStaleIdentifierWhenNewEventNotWritable`
+> 断言「identifier 清空」失败(死 ID 残留),与线上形态一致。
+
+| # | 问题 | 位置 | 修复 | 回归测试 |
+|---|------|------|------|---------|
+| A | 任何一次详情编辑都重建日历事件:已同步待办只改优先级/分类/提醒提前量/跨天结束日等不进事件的字段,照样删旧事件+建新事件(事件标识变化) | `App/AppCoordinator.swift` `updateTodoDetail` | 已有镜像时用 `SystemCalendarEventMapper.mirrorContentChanged`(新旧 draft 比对)门控重建;无镜像+同步开启维持「编辑即补建」既有行为 | `SystemCalendarWriterTests` 4 条(非事件字段 false / 事件字段 true / 双侧无草稿 false / 状态缺失 true) |
+| B | 删掉日期后库里残留已删事件 ID:replace 的写新被 writer 草稿过滤跳过(无日期无重复)→ 删旧事件成功,但 store 的 `systemCalendarEventIdentifier` 未清空,死 ID 指向已删除事件,后续编辑反复重跑「删不存在的旧事件」 | `App/CalendarSyncService.swift` `replace` | 写新被跳过且旧镜像已移除时,清空 store 残留标识;清空失败显式返回 `.failed`(下次编辑可重试),写新成功时不清(persist 已落新 ID) | `CalendarSyncServiceTests` 2 条(跳过路径清空 / 清空失败传播) |

@@ -190,13 +190,26 @@ final class CalendarSyncService {
             )
         }
 
-        // 写新成功：现在安全地删旧事件。失败不影响主流程（新事件已就位）。
+        // 写新成功或被跳过后：现在安全地删旧事件。失败不影响主流程（新事件已就位）。
         if let oldEventIdentifier {
             do {
                 try await writer.removeEvents(identifiers: [oldEventIdentifier])
                 VoiceTodoLog.calendar.info("calendar.update.removed_old_after_write todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public)")
             } catch {
                 VoiceTodoLog.calendar.warning("calendar.update.remove_old_failed_after_write todoID=\(todoID.uuidString, privacy: .public) eventID=\(oldEventIdentifier, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            }
+            // 写新被跳过（典型：编辑后草稿为 nil——删掉日期且无重复规则，无事件可写）
+            // 而旧镜像已移除：必须同步清空 store 里的旧标识。否则残留死 ID——它指向
+            // 已删除的事件，后续每次内容性编辑都会带着它重跑一遍「删不存在的旧事件」。
+            // 写新成功时不清：persistSystemCalendarResults 已落新标识。
+            if writeResult.status == .skipped {
+                do {
+                    try store.updateSystemCalendarEventIdentifier(nil, for: todoID)
+                    VoiceTodoLog.calendar.info("calendar.update.cleared_identifier_after_skip todoID=\(todoID.uuidString, privacy: .public)")
+                } catch {
+                    VoiceTodoLog.calendar.error("calendar.update.clear_identifier_failed todoID=\(todoID.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                    return .failed(.replace, error: error)
+                }
             }
         }
 

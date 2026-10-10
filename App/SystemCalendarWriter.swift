@@ -64,6 +64,17 @@ enum SystemCalendarEventMapper {
         )
     }
 
+    /// 两次状态之间镜像事件内容是否变化（决定是否需要删旧写新重建日历镜像）。
+    ///
+    /// draft 覆盖镜像事件的全部内容（title/notes/起止/isAllDay/重复规则），
+    /// draft 相等即事件内容相等——只改不进事件的字段（优先级/分类/提醒提前量/
+    /// 跨天结束日等）不应触发重建（重建 = 删旧事件 + 建新事件，事件标识会变）。
+    /// 任一侧状态缺失按「有变化」处理：宁可多一次重建，不漏一次镜像更新。
+    static func mirrorContentChanged(from old: TodoItemData?, to new: TodoItemData?) -> Bool {
+        guard let old, let new else { return true }
+        return draft(from: old) != draft(from: new)
+    }
+
     /// 定时事件的默认时长（无结束时间线索时）：1 小时。
     static let defaultTimedDuration: TimeInterval = 3600
 }
