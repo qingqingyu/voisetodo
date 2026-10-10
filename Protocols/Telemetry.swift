@@ -129,6 +129,13 @@ enum TelemetryEvent {
     /// B6: MetricKit 崩溃/卡顿诊断计数(CrashDiagnosticsSubscriber)。
     /// 上线前的崩溃监控兜底——ASC 崩溃报告有 24h+ 延迟且需用户共享诊断。
     case mxDiagnostics(crashes: Int, hangs: Int, diskWrites: Int, cpuExceptions: Int)
+    /// A15-A17: 复盘漏斗三环(v5 T1/E8 口径)。入口曝光(session 去重)→
+    /// 开始流程(init)→ 完成复盘(finishSession)。GTM 后「复盘有没有人用、
+    /// 走没走完」的唯一数据来源——拍板 4(入口发现性)裁决依据。
+    /// 参数只含布尔/数字,绝不带笔记文本(PII 红线)。
+    case reviewEntryImpression(hasPending: Bool)
+    case reviewFlowStarted(pendingCount: Int)
+    case reviewFlowFinished(decidedCount: Int, durationMS: Int)
 
     /// 事件名，对应 D1 `event_name` 列。
     var name: String {
@@ -153,6 +160,9 @@ enum TelemetryEvent {
         case .purchasePending: return "purchase_pending"
         case .restoreOutcome: return "restore_outcome"
         case .mxDiagnostics: return "mx_diagnostics"
+        case .reviewEntryImpression: return "review_entry_impression"
+        case .reviewFlowStarted: return "review_flow_started"
+        case .reviewFlowFinished: return "review_flow_finished"
         }
     }
 
@@ -236,6 +246,15 @@ enum TelemetryEvent {
                 "hangs": String(hangs),
                 "diskWrites": String(diskWrites),
                 "cpuExceptions": String(cpuExceptions)
+            ]
+        case let .reviewEntryImpression(hasPending):
+            return ["hasPending": String(hasPending)]
+        case let .reviewFlowStarted(pendingCount):
+            return ["pendingCount": String(pendingCount)]
+        case let .reviewFlowFinished(decidedCount, durationMS):
+            return [
+                "decidedCount": String(decidedCount),
+                "durationMS": String(durationMS)
             ]
         }
     }
@@ -327,6 +346,29 @@ enum RestoreOutcomeValue {
     static let cancelled = "cancelled"
     /// `AppStore.sync()` 抛错。
     static let failed = "failed"
+}
+
+/// 复盘漏斗的入口曝光去重(v5 T1/E8 口径):`review_entry_impression` 按
+/// **app 会话**只记一次——同一启动内反复进出统计页不刷量,曝光的分析口径
+/// 是「这次启动见过入口的用户数」,不是页面浏览量。`Telemetry.sessionID`
+/// 每 app 启动新建,静态标志的生命周期与之天然对齐(app 重启即重置)。
+/// started/finished 不去重:每次流程各记一枚,漏斗分子按流程数计。
+enum ReviewFunnelMetrics {
+    private static var entryImpressionRecordedThisSession = false
+
+    /// 曝光是否已记(本 app 会话内)。测试断言用。
+    static var isEntryImpressionRecorded: Bool { entryImpressionRecordedThisSession }
+
+    /// 重置去重标志。**仅测试用**——生产代码永不调用,标志生命周期=一次 app 会话。
+    static func resetForTesting() { entryImpressionRecordedThisSession = false }
+
+    /// 记入口卡曝光,本会话首次调用生效,之后无操作。
+    /// - Parameter hasPending: 入口卡 N 是否 >0(与卡文案同口径的过滤器产物)。
+    static func recordEntryImpressionOnce(hasPending: Bool) {
+        guard !entryImpressionRecordedThisSession else { return }
+        entryImpressionRecordedThisSession = true
+        Telemetry.record(.reviewEntryImpression(hasPending: hasPending))
+    }
 }
 
 // MARK: - Bundle 辅助

@@ -952,6 +952,9 @@ struct ReviewFlowView: View {
     /// 笔记照存,下期退化为纯文本。
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
 
+    /// 复盘漏斗 A17 的时长起点(v5 T1/E8):init 记,finishSession 算 durationMS。
+    private var startedAt = Date()
+
     @State private var state: ReviewFlowState
 
     init(
@@ -973,6 +976,13 @@ struct ReviewFlowView: View {
             previousSessions: ReviewSessionStore.shared.allSessions(),
             lastPinnedIDs: ReviewPinningStore.shared.pinnedIDs()
         ))
+        // 复盘漏斗 A16(v5 T1/E8 口径):开始=本视图 init(用户点入口卡
+        // 「开始」→ fullScreenCover 创建)。pendingCount 与入口卡/卡堆输入
+        // 同口径(拍板 4)。startedAt 供 finish 记 durationMS。
+        Telemetry.record(.reviewFlowStarted(
+            pendingCount: ReviewFlowState.triageInput(from: store.todos).count
+        ))
+        startedAt = Date()
     }
 
     var body: some View {
@@ -1304,6 +1314,13 @@ struct ReviewFlowView: View {
         // 时刻起)对齐,见 `ReviewLedger.finalBacklogCount` 注释。
         let session = state.buildSession(completedAt: Date(), finalTodos: store.todos)
         ReviewSessionStore.shared.append(session)
+        // 复盘漏斗 A17(v5 T1/E8 口径):完成=finishSession。decidedCount 用
+        // 账本同口径(排下周+今天就做+不做了+拆小,拍板 4);durationMS 从
+        // init 起算。参数只数字,无笔记文本。
+        Telemetry.record(.reviewFlowFinished(
+            decidedCount: state.decidedCount,
+            durationMS: Int(Date().timeIntervalSince(startedAt) * 1000)
+        ))
         Task { @MainActor in
             do {
                 let allIDs = Set(try await store.allTodoIDs())

@@ -324,3 +324,40 @@ final class TelemetrySettingsTests: XCTestCase {
         return defaults
     }
 }
+
+    // MARK: - 复盘漏斗（v5 T1 / E8 口径）
+
+    func testReviewFunnelEventNamesMatchSpec() {
+        XCTAssertEqual(TelemetryEvent.reviewEntryImpression(hasPending: true).name, "review_entry_impression")
+        XCTAssertEqual(TelemetryEvent.reviewFlowStarted(pendingCount: 3).name, "review_flow_started")
+        XCTAssertEqual(TelemetryEvent.reviewFlowFinished(decidedCount: 2, durationMS: 4500).name, "review_flow_finished")
+    }
+
+    func testReviewFunnelParamsAreNumericOnly() {
+        // E8 口径:参数脱敏——只允许布尔/数字,绝不带笔记文本
+        let impression = TelemetryEvent.reviewEntryImpression(hasPending: true).params
+        XCTAssertEqual(impression["hasPending"], "true")
+
+        let started = TelemetryEvent.reviewFlowStarted(pendingCount: 7).params
+        XCTAssertEqual(started["pendingCount"], "7")
+
+        let finished = TelemetryEvent.reviewFlowFinished(decidedCount: 2, durationMS: 4500).params
+        XCTAssertEqual(finished["decidedCount"], "2")
+        XCTAssertEqual(finished["durationMS"], "4500")
+    }
+
+    /// E8 口径:入口曝光按 app 会话去重——同一次启动反复进统计页只记一次。
+    func testEntryImpressionDedupedPerSession() {
+        ReviewFunnelMetrics.resetForTesting()
+        XCTAssertFalse(ReviewFunnelMetrics.isEntryImpressionRecorded)
+
+        ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: false)
+        XCTAssertTrue(ReviewFunnelMetrics.isEntryImpressionRecorded)
+
+        // 第二次调用必须是无操作(标志不变);再次 reset 后才允许重记
+        ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: true)
+        XCTAssertTrue(ReviewFunnelMetrics.isEntryImpressionRecorded)
+
+        ReviewFunnelMetrics.resetForTesting()
+        XCTAssertFalse(ReviewFunnelMetrics.isEntryImpressionRecorded)
+    }
