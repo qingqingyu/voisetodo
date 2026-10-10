@@ -78,7 +78,15 @@ struct EffortOrderingRule: InsightRule {
                 localized: "review.insight.effort.body_positive_\(highMedian)_\(otherMedian)_\(highCount)_\(otherCount)"
             )
         } else {
-            return .hidden
+            // 中间地带(v5 拍板 1·3-lite):从 hidden 降为一行事实——只报两组
+            // 中位天数,不带判断;样本量随文案给出(F5 同族口径)。渲染层按
+            // D1 三层视觉语言用中性样式;不走冷却、不记 shownInsights(v4 拍板 6)。
+            return .fact(InsightFactLine(
+                id: id,
+                text: String(
+                    localized: "review.insight.effort.fact_\(highMedian)_\(otherMedian)_\(highCount)_\(otherCount)"
+                )
+            ))
         }
 
         let score = InsightEngine.score(normalizedEffect: effect, sampleCount: n, minSample: minSample)

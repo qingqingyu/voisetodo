@@ -14505,6 +14505,75 @@
           }
         }
       }
+    },
+    "review.insight.effort.fact_%lld_%lld_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "High-priority tasks took %lld days, others %lld (n=%lld/%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要なタスクは%lld日、その他は%lld日（各%lld/%lld件）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要的事 %lld 天做完，其他 %lld 天（各 %lld/%lld 条）"
+          }
+        }
+      }
+    },
+    "review.insight.energy.fact_peak_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most tasks were completed around %lld:00 (n=%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了のピークは%lld時頃（%lld件）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成高峰在 %lld 点（%lld 条记录）"
+          }
+        }
+      }
+    },
+    "review.insight.energy.fact_late_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld timed high-priority tasks are scheduled after 22:00"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻付けの重要タスク %lld/%lld 件が22時以降"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "带钟点的重要任务 %lld/%lld 件排在 22 点后"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
