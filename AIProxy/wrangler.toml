@@ -21,6 +21,13 @@ routes = [
 #   docs/telemetry-d1-enablement.md)+ 新增 ZAI_ANTHROPIC_AIR provider(p3)
 #   + admin 灰度切 primary→glm-4.5-air(评测三关全过,成本 -93%,PROMOTION_PLAN
 #   §2.1 已闭环)。回滚 = DELETE /v1/admin/providers/primary。
+#   2026-09-30 部署(版本 28a0dd3e):告警链路第三/四轮 review 修复落地
+#   (送达回执 lastNotifiedLevel/重推时长取恢复时刻/明文缓存判别)。〔当时
+#   漏记,2026-10-10 补登〕
+#   2026-10-10 部署(版本 877b3b3f):证书链 ECDSA 签名先 DER→raw 再验
+#   (d934b46)——修复真实 Apple 签发的订阅 JWS 验签必败→付费用户全被判
+#   免费档;jws-fixture 改标准 DER 防回归(npm test 318/318)。生效验证:
+#   带订阅真机录音一次,响应头 X-Quota-Plan 应为 pro。回滚 = wrangler rollback。
 #   DAILY_REQUEST_LIMIT = "3"     PAID_DAILY_LIMIT = "100"
 #
 # 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
