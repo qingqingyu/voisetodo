@@ -660,7 +660,7 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(state.processedIDs.count, 1)
     }
 
-    /// 批量候选门槛:停滞 ≥ 30 天 **且** AI 识别成功(.parsed)。
+    /// 批量候选门槛:停滞 ≥ 21 用户天(v5 拍板 3,supersede 30 天)**且** AI 识别成功(.parsed)。
     /// `.rawFallback` 清了三字段也只落「没能识别」,不进候选。
     /// 批量候选只看尾部(排序后第 9 名起),不满 8 条没有尾部也就没有候选。
     func testSomedayBatchCandidatesFilter() {

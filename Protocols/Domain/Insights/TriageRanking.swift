@@ -13,8 +13,12 @@ import Foundation
 enum TriageRanking {
     /// 卡堆规模(拍板 1):排序后取前 8。
     static let deckSize = 8
-    /// 批量出口门槛(拍板 3):尾部里停滞 ≥ 30 天的才提供一键推「稍后」。
-    static let batchStagnationDays = 30
+    /// 批量出口门槛(v5 拍板 3,supersede v2 的 30 天):尾部里停滞 ≥ 21 天
+    /// 才提供一键推「稍后」——与地板 A 的 21+ 档(RottingRule.ageThresholdDays)
+    /// 同尺同数:地板点名说「该处理了」,出口就能给动作,系统只说一套话
+    /// (21 天没动 = 要么处理,要么承认稍后)。`extractionOutcome == .parsed`
+    /// 门槛保留(不承诺做不到的落点)。
+    static let batchStagnationDays = 21
 
     /// 字典序排序:推迟次数 desc → 停滞天数 desc → id(确定性决胜,单测稳定)。
     /// - Parameters:
@@ -39,22 +43,24 @@ enum TriageRanking {
         }
     }
 
-    /// 停滞天数(创建日到 now 的整日数;未来创建的脏数据钳 0)。
+    /// 停滞天数(创建的用户日到 now 的用户日整日数;未来创建的脏数据钳 0)。
     ///
-    /// ⚠️ 口径备注(v4 批 1,2026-09-24 复核修订):这里算的是**自然日**
-    /// (`calendar.dateComponents` 直差、时刻截断),洞察侧的年龄口径
-    /// (`RottingRule` / `InsightEngine.backlogAgeFact`)是 **DayClock 用户日**
-    /// (日界切换)——两者在 startHour > 0 的边界会差一天。消费方有两类:
-    /// ① 卡堆/候选池排序(差一天不改变「谁更久」,无感);② 第 2 步卡头
-    /// `leadLabel` 把它**显示**成「记下 N 天了」——与第 3 步地板 A 的用户日
-    /// 年龄同屏能差 1 天,是已知的显示口径差,不是排序问题;洞察分档对着
-    /// 21 天阈值**切档**,必须与腐烂卡同一把尺,本函数不参与。
+    /// 口径(v5 E7,2026-10-11 起):**DayClock 用户日**——与 `RottingRule` /
+    /// `InsightEngine.backlogAgeFact` 同一把尺。v4 时代这里是自然日,卡头
+    /// 「记下 N 天了」与第 3 步地板 A 的用户日年龄同屏会差 1 天(已知显示
+    /// 口径差);批量出口门槛对齐 21 天后,「地板 A 说 21+ 天、出口按自然日
+    /// 还差一天收不了」的错位会以 ±1 天形式重现——根因修复=口径统一,
+    /// 全部 5 个调用方(rank 排序 / somedayBatch 批量资格 / preexisting 排序 /
+    /// 卡头显示 / scheduled 排序)随本函数一致切换,卡头显示差 1 天的旧毛刺
+    /// 随之消失(预期收益)。
     static func stagnationDays(
         of todo: TodoItemData,
         now: Date,
         calendar: Calendar = .current
     ) -> Int {
-        max(0, calendar.dateComponents([.day], from: todo.createdAt, to: now).day ?? 0)
+        let createdDay = DayClock.startOfUserDay(for: todo.createdAt, calendar: calendar)
+        let nowDay = DayClock.startOfUserDay(for: now, calendar: calendar)
+        return max(0, calendar.dateComponents([.day], from: createdDay, to: nowDay).day ?? 0)
     }
 
     /// 单键排序:停滞天数 desc → id 决胜(v3 拍板 8,第 4 步候选池)。

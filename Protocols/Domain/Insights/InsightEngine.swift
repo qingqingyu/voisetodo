@@ -321,8 +321,8 @@ enum InsightEngine {
     /// 口径:**DayClock 用户日**(「现在」由调用方传入,生产接线用
     /// `InsightContext.now`,与 `RottingRule` 同源)——同屏不能出现
     /// 「这条 21 天」与「21+ 档 0 条」并存的分界漂移(v4 批 1:统一到用户日)。
-    /// 与 `TriageRanking.stagnationDays` 的自然日口径**有意不同**:排序是
-    /// 相对序,差一天不改变「谁更久」;分档是对着阈值切,必须与腐烂卡同一把尺。
+    /// `TriageRanking.stagnationDays` 已于 v5 E7 同步切换为用户日——全仓
+    /// 一把尺,旧的「自然日 vs 用户日同屏差 1 天」显示毛刺随之消失。
     ///
     /// - Parameter rottingShown: 腐烂卡本期是否实际展示(过冷却后的
     ///   ranked 结果,不是规则触发)。展示时点名让位——腐烂卡的列表更细
