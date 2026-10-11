@@ -10827,13 +10827,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Another %lld task untouched for 30+ days"
+                  "value" : "Another %lld task untouched for 21+ days"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Another %lld tasks untouched for 30+ days"
+                  "value" : "Another %lld tasks untouched for 21+ days"
                 }
               }
             }
@@ -10842,13 +10842,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "他に %lld 件、30 日以上手をつけていません"
+            "value" : "他に %lld 件、21 日以上手をつけていません"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "另有 %lld 件超过 30 天没碰过"
+            "value" : "另有 %lld 件超过 21 天没碰过"
           }
         }
       }

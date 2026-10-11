@@ -353,6 +353,11 @@ enum RestoreOutcomeValue {
 /// 是「这次启动见过入口的用户数」,不是页面浏览量。`Telemetry.sessionID`
 /// 每 app 启动新建,静态标志的生命周期与之天然对齐(app 重启即重置)。
 /// started/finished 不去重:每次流程各记一枚,漏斗分子按流程数计。
+///
+/// `@MainActor`:标志是可变静态状态,唯一生产调用点在视图 onAppear(主
+/// 线程)——标注把「只能主线程碰」从约定升为编译期约束,防未来非主线程
+/// 调用点静默竞态。
+@MainActor
 enum ReviewFunnelMetrics {
     private static var entryImpressionRecordedThisSession = false
 

@@ -211,7 +211,7 @@ struct ReviewStepTriage: View {
         Spacer()
     }
 
-    // MARK: 批量出口(2026-09-01 拍板 3:尾部停滞 ≥ 30 天的一键推「稍后」)
+    // MARK: 批量出口(v5 拍板 3:尾部停滞 ≥ 21 用户天的一键推「稍后」,与地板 A 同尺)
 
     /// 尾部三态:可推「稍后」的一批 → 出口行;刚推完 → 结果 + 整批撤销行;
     /// 两种都没有 → 只剩「其余 N 件先不动」的说明行(防误以为全处理了)。
@@ -241,7 +241,8 @@ struct ReviewStepTriage: View {
         }
     }
 
-    /// 出口行:条数写明在标题里(「另外 27 件超过 30 天没碰过」),
+    /// 出口行:条数写明在标题里(「另外 27 件超过 21 天没碰过」,键
+    /// `review.flow.triage.batch.title_`,门槛=`TriageRanking.batchStagnationDays`),
     /// 尾部胶囊是动作暗示(与回顾页入口卡同一模式)。
     private func batchExitRow(count: Int) -> some View {
         Button {

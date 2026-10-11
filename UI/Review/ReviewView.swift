@@ -136,11 +136,15 @@ struct ReviewView: View {
             .onAppear {
                 loadReviewNotes()
                 // 复盘漏斗 A15(v5 T1/E8):入口卡随本页常驻,页出现即曝光;
-                // 按 app 会话去重——反复进出统计页不刷量。
-                let pendingCount = allTodos.filter { item in
-                    !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
-                }.count
-                ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: pendingCount > 0)
+                // 按 app 会话去重——反复进出统计页不刷量。store 为 nil 时
+                // 入口卡不渲染(设置深链/preview 路径),没见过入口的用户
+                // 不得进曝光分母(口径=「见过入口的用户数」)。
+                if store != nil {
+                    let pendingCount = allTodos.filter { item in
+                        !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
+                    }.count
+                    ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: pendingCount > 0)
+                }
             }
             // 复盘流程收尾(fullScreenCover 落下)会写入新会话——此刻重读,
             // 时间线立即出现刚写的那条。

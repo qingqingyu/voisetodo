@@ -28,7 +28,8 @@ final class ReviewFlowState {
     var currentStep: Step = .recap
     /// 洞察步是否在引擎前就整步跳过(v4 拍板 5:整步跳过只保留给
     /// **零积压 + 零完成**——此时连地板事实都算不出来;v1 的「<5 条完成 →
-    /// 整步跳过」已推翻,<5 档改为只出地板 A)。在流程启动拿到
+    /// 整步跳过」已推翻,<5 档出地板 A + 05 峰值事实行(≥3 条完成)或
+    /// D6 窗口声明)。在流程启动拿到
     /// insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
     /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过。判定 = **地板层
@@ -114,8 +115,9 @@ final class ReviewFlowState {
     /// 进 `tail`(批量出口候选 / 原样留着)。
     private(set) var deck: [TodoItemData]
 
-    /// 排序尾部(不进卡堆,docs v2「第 2 步」):其中停滞 ≥ 30 天且 AI 识别成功
-    /// 的走批量出口,其余既不进卡堆也不进批量出口——「不动」也是合法状态,
+    /// 排序尾部(不进卡堆,docs v2「第 2 步」):其中停滞 ≥ 21 用户天
+    /// (v5 拍板 3,与地板 A 同尺)且 AI 识别成功的走批量出口,其余既不进
+    /// 卡堆也不进批量出口——「不动」也是合法状态,
     /// UI 必须把这个说清楚,否则用户以为「其他都被处理了」。
     private(set) var tail: [TodoItemData] = []
 
@@ -393,10 +395,10 @@ final class ReviewFlowState {
 
     /// 洞察原料就绪后设定降级跳过(v4 拍板 5):整步跳过只保留给
     /// **零积压 + 零完成**(连地板 A 都算不出来的真空态)。<5 完成(阶梯
-    /// `.skipStep`)不再整步跳——第 3 步只出地板 A(引擎侧规则照旧不跑,
-    /// 见 `runInsightEngine`)。1–4 条完成 + 零积压的边缘态不在此跳:
-    /// 引擎路径的 `skipsInsightsWhenEmpty` 会兜(地板空 + 规则不跑);
-    /// 批 4 地板 B(本期净变化)上线后这类用户有话可说,届时自然不跳。
+    /// `.skipStep`)不再整步跳——第 3 步出地板 A + 01/05 事实行(E1:该档
+    /// 仅收集 `.fact`、rotting 不评估,见 `runInsightEngine`)。1–4 条完成 +
+    /// 零积压的边缘态不在此跳:引擎路径的 `skipsInsightsWhenEmpty` 会兜
+    /// (地板空 + 规则层整空才跳;3–4 条完成有 05 峰值事实行,通常不跳)。
     func configureInsightsLadder() {
         let completedCount = insightContextValue?.completedEvents.count ?? 0
         let openCount = insightContextValue?.openTasks.count ?? 0
@@ -743,9 +745,9 @@ final class ReviewFlowState {
 
     // MARK: 第 2 步 · 批量出口(拍板 3:复用「稍后」,不新增 somedayAt 终态)
 
-    /// 尾部里可一键推「稍后」的:停滞 ≥ 30 天 **且** AI 识别成功。
-    /// `.rawFallback` / `.unparsed` 即使清了三字段也只落「没能识别」而不是
-    /// 「稍后」,不承诺做不到的落点,排除在外。
+    /// 尾部里可一键推「稍后」的:停滞 ≥ 21 用户天(v5 拍板 3,与地板 A 的
+    /// 21+ 档同尺)**且** AI 识别成功。`.rawFallback` / `.unparsed` 即使清了
+    /// 三字段也只落「没能识别」而不是「稍后」,不承诺做不到的落点,排除在外。
     var somedayBatchCandidates: [TodoItemData] {
         tail.filter {
             TriageRanking.stagnationDays(of: $0, now: Date()) >= TriageRanking.batchStagnationDays
@@ -764,7 +766,7 @@ final class ReviewFlowState {
     /// 推后不是「决定」(拍板 4),也不是划掉。
     ///
     /// 参数传**实际写入的批**,不在此二次求值 `somedayBatchCandidates`——
-    /// 它依赖 `Date()`,与视图侧取批两次求值可能错位(边界跨 30 天门槛时
+    /// 它依赖 `Date()`,与视图侧取批两次求值可能错位(边界跨 21 天门槛时
     /// 快照与落库不是同一批)。部分失败时视图侧只传成功子集:快照严格等于
     /// 已落库的条目,未写入的留在尾部可重推(重推幂等,已清的再清是 no-op)。
     func markSomedayBatchExecuted(batch: [TodoItemData]) {
@@ -954,8 +956,14 @@ struct ReviewFlowView: View {
     /// 笔记照存,下期退化为纯文本。
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
 
-    /// 复盘漏斗 A17 的时长起点(v5 T1/E8):init 记,finishSession 算 durationMS。
-    private var startedAt = Date()
+    /// 复盘漏斗 A17 的时长起点(v5 T1/E8):首次创建时记,finishSession 算
+    /// durationMS。必须 `@State`——fullScreenCover 的 content 闭包会随父视图
+    /// body 重评估重新执行 init(复盘内每次写库都触发 ReviewView 的 @Query
+    /// 更新),普通存储属性会被重置,时长会塌缩到最后一次决定的时刻。
+    @State private var startedAt = Date()
+    /// 收尾重入护栏:dismiss 动画完成前连点「完成」会让 finishSession 跑两次
+    /// (session 双追加 + `review_flow_finished` 双记),首跑即锁死。
+    @State private var hasFinishedSession = false
 
     @State private var state: ReviewFlowState
 
@@ -978,13 +986,12 @@ struct ReviewFlowView: View {
             previousSessions: ReviewSessionStore.shared.allSessions(),
             lastPinnedIDs: ReviewPinningStore.shared.pinnedIDs()
         ))
-        // 复盘漏斗 A16(v5 T1/E8 口径):开始=本视图 init(用户点入口卡
-        // 「开始」→ fullScreenCover 创建)。pendingCount 与入口卡/卡堆输入
-        // 同口径(拍板 4)。startedAt 供 finish 记 durationMS。
-        Telemetry.record(.reviewFlowStarted(
-            pendingCount: ReviewFlowState.triageInput(from: store.todos).count
-        ))
-        startedAt = Date()
+        // 复盘漏斗 A16(v5 T1/E8 口径):开始=本视图呈现(用户点入口卡
+        // 「开始」→ fullScreenCover 创建)。**不能记在 init**——cover 的
+        // content 闭包随父视图 body 重评估会重复执行 init(复盘内每次写库
+        // 都触发 ReviewView 的 @Query 更新),记在 init 会让每个决定多记
+        // 一枚 started(TELEMETRY.md「每次流程各记一枚」被打破)。埋点
+        // 因此移入 body 的 `.task`(每次呈现只跑一次),见 `recordFlowStarted`。
     }
 
     var body: some View {
@@ -1037,7 +1044,17 @@ struct ReviewFlowView: View {
                 }
             }
         }
+        .task { recordFlowStarted() }
         .task { await loadInsightContext() }
+    }
+
+    /// 复盘漏斗 A16(v5 T1/E8):开始=流程呈现,`.task` 每次呈现只跑一次
+    /// (父 body 重评估不重跑,身份不变)。pendingCount 与入口卡/卡堆输入
+    /// 同口径(拍板 4)。参数只数字。
+    private func recordFlowStarted() {
+        Telemetry.record(.reviewFlowStarted(
+            pendingCount: ReviewFlowState.triageInput(from: store.todos).count
+        ))
     }
 
     // MARK: 数据加载
@@ -1308,6 +1325,9 @@ struct ReviewFlowView: View {
     /// id 会被误删)。prune 与落库都走 UserDefaults 同步写,失败显式记日志
     /// (error/warning)不阻塞收尾;流程内的 store 写失败另有 toast(见 presentError)。
     private func finishSession() {
+        // 重入护栏:dismiss 动画窗口内的双击只允许跑一次(见属性注释)。
+        guard !hasFinishedSession else { return }
+        hasFinishedSession = true
         // v4 复核修订二轮 N2:收尾积压在 buildSession 内按 init 同口径
         // (`pendingOneOffCount`)从收尾时刻快照重数,容器只传 store.todos。
         // 它是窗口化工作集,但窗口含**全部 pending**,开放性一次性任务全在
@@ -1318,7 +1338,7 @@ struct ReviewFlowView: View {
         ReviewSessionStore.shared.append(session)
         // 复盘漏斗 A17(v5 T1/E8 口径):完成=finishSession。decidedCount 用
         // 账本同口径(排下周+今天就做+不做了+拆小,拍板 4);durationMS 从
-        // init 起算。参数只数字,无笔记文本。
+        // 首次创建(@State 快照,不随重置)起算。参数只数字,无笔记文本。
         Telemetry.record(.reviewFlowFinished(
             decidedCount: state.decidedCount,
             durationMS: Int(Date().timeIntervalSince(startedAt) * 1000)

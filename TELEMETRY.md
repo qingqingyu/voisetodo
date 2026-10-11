@@ -47,8 +47,8 @@ BGProcessingTask                          ↓
 | `purchase_cancelled` | 用户在系统弹窗取消购买 | `productID` |
 | `purchase_pending` | 等待家长审批(Ask to Buy) | `productID` |
 | `restore_outcome` | 恢复购买结果 | `outcome: recovered / already_pro / nothing / cancelled / failed` |
-| `review_entry_impression` | 回顾页出现(入口卡曝光,**按 app 会话去重**) | `hasPending: Bool` |
-| `review_flow_started` | 复盘流程 init(点「开始」) | `pendingCount: Int` |
+| `review_entry_impression` | 回顾页出现(入口卡曝光,**按 app 会话去重**;仅入口卡实际渲染时记) | `hasPending: Bool` |
+| `review_flow_started` | 复盘流程首次呈现(点「开始」→ cover 创建) | `pendingCount: Int` |
 | `review_flow_finished` | 复盘收尾 finishSession | `decidedCount: Int`, `durationMS: Int` |
 
 #### `first_voice_trial` 口径限制（分析必读）
@@ -102,11 +102,16 @@ BGProcessingTask                          ↓
 `review_flow_finished`(每次收尾一枚):
 
 - **曝光是「本次启动见过入口的用户数」,不是页面浏览量**——同一 app 会话反复进出统计页
-  只记一次(去重标志生命周期=一次启动)。started/finished 不去重,分子按流程数计。
+  只记一次(去重标志生命周期=一次启动);入口卡不渲染的路径(设置深链注入不了
+  store)不记,没见过入口不进分母。started/finished 不去重,分子按流程数计。
+- **started 记在流程视图首次呈现(`.task`),不记在 init**——fullScreenCover 的
+  内容闭包随父视图 body 重评估会重复执行 init(复盘内每次写库都触发回顾页
+  `@Query` 更新),记 init 会让一个流程刷多枚 started。每次呈现一枚,
+  「点了开始但没走完」以 started-without-finished 形式可见(漏斗流失口径)。
 - `pendingCount`(started)与入口卡 N、卡堆输入同口径:未完成 && 未划掉 && 一次性。
 - `decidedCount`(finished)= 账本「决定了 N 件」口径:排下周 + 今天就做 + 不做了 +
   拆小;批量推「稍后」不计(拍板 4)。
-- `durationMS`(finished)= 流程 init → finishSession,含用户中途停留。
+- `durationMS`(finished)= 流程首次呈现 → finishSession,含用户中途停留。
 - 参数只有布尔/数字,**绝不带笔记文本**(PII 红线同全局)。
 
 ## PII 红线
