@@ -6835,3 +6835,36 @@ test("deep-read E5: prompt 注入事实 JSON 且不含本地化文案(anthropic 
     assert.ok(capturedSystem.includes("numbers"), "要求 numbers 回引块(E5)");
   });
 });
+
+test("deep-read E11: DEEP_READ_DAILY_LIMIT 配置非法值 → 跳过限额(fail-open 记日志),不 500", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-10-11T12:00:00.000Z", async () => {
+    const headers = {
+      "X-App-Token": "token",
+      "X-Device-ID": "dev-deepread-invalid-limit",
+      "X-Local-Date": "2026-10-11"
+    };
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv,
+      // NaN:此前会静默失效(Number("abc")=NaN,比较恒 false);现在应显式
+      // 跳过+logWarn(invalid_limit),请求本身照常放行(不因配置错误 500)。
+      DEEP_READ_DAILY_LIMIT: "abc",
+      APP_BUNDLE_ID: "com.voicetodo.app"
+    };
+    for (let i = 0; i < 3; i++) {
+      const ok = await handleRequest(
+        request({ transcript: "{}", mode: "deep-read" }, headers),
+        env, ctx, jsonResponseProvider("a")
+      );
+      assert.equal(ok.status, 200, "配错限额值不挡请求(fail-open+日志),也不 500");
+    }
+    // 配置非法 → 限额不生效:KV 里无 deepread 键(未计数)。
+    const deepReadKeys = [...kv.values.entries()].filter(([k]) => k.startsWith("deepread:")).map(([k]) => k);
+    assert.equal(deepReadKeys.length, 0, "invalid_limit 跳过计数: " + JSON.stringify([...kv.values.entries()]));
+  });
+});

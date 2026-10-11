@@ -1656,6 +1656,12 @@ async function enforceDeepReadLimit(request, env, requestContext) {
     return;
   }
   const limit = Number(env.DEEP_READ_DAILY_LIMIT || 10);
+  // 与 enforceDailyLimit 的 invalid_limit 同口径:配错值(非数字/负数)时
+  // NaN 比较恒 false,限额会**静默失效**——记日志跳过,不静默吞配置错误。
+  if (!Number.isFinite(limit) || limit < 0) {
+    logWarn("proxy.deepread.limit_skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.DEEP_READ_DAILY_LIMIT });
+    return;
+  }
   const { date: quotaDate } = resolveQuotaDate(request, requestContext);
   const quotaKey = `deepread:${quotaDate}:${requestContext.deviceId}`;
   const current = Number(await env.RATE_LIMIT_KV.get(quotaKey) || "0");

@@ -294,19 +294,26 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                 cleanedText.removeSubrange(range)
             }
             let decoded = try JSONDecoder().decode(DeepReadResponse.self, from: Data(cleanedText.utf8))
-            // E5:逐 id 精确比对(含"至少回引一条"约束)
-            guard GroundingValidator.isGrounded(numbers: decoded.numbers, facts: facts.byID) else {
-                VoiceTodoLog.extractor.error("deepread.ungrounded id=\(readID, privacy: .public)")
-                return nil
-            }
-            // 事实<3 条的降级固定文案(代理侧约定):观察无信息量,不当卡片显示
+            // 事实<3 条的降级固定文案(代理侧约定)先判——sparse 是**合法降级**
+            // (numbers={}),先过 E5 会被记成 ungrounded 错误,两种语义在日志里
+            // 混淆(排障时无法区分「样本不足」与「接地失败」)。
             let sparseMarkers = ["这期完成记录还太少", "Not enough completed records", "今期は完了記録がまだ少ない"]
             if sparseMarkers.contains(where: decoded.observation.contains) {
                 VoiceTodoLog.extractor.info("deepread.sparse id=\(readID, privacy: .public)")
                 return nil
             }
+            // E5:逐 id 精确比对(含"至少回引一条"约束)
+            guard GroundingValidator.isGrounded(numbers: decoded.numbers, facts: facts.byID) else {
+                VoiceTodoLog.extractor.error("deepread.ungrounded id=\(readID, privacy: .public)")
+                return nil
+            }
             VoiceTodoLog.extractor.info("deepread.success id=\(readID, privacy: .public) numbers=\(decoded.numbers.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-            return DeepReadObservationData(observation: decoded.observation, draft: decoded.draft)
+            // E11:AI 草稿入笔记设长度上限(模型违约超长在此硬顶,prompt 的
+            // ≤20 字约束不是防线)。
+            return DeepReadObservationData(
+                observation: decoded.observation,
+                draft: String(decoded.draft.prefix(DeepReadConfig.draftMaxLength))
+            )
         } catch {
             VoiceTodoLog.extractor.error("deepread.failed id=\(readID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             return nil

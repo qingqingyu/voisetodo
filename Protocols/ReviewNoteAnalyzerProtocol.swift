@@ -27,8 +27,17 @@ protocol DeepReadObservationProtocol {
 struct DeepReadObservationData: Sendable, Equatable {
     /// 2-3 句接地观察(只含已核实事实的数字)。
     let observation: String
-    /// 笔记草稿引导(第 5 步预填,≤20 字;空串=无草稿)。
+    /// 笔记草稿引导(第 5 步预填,prompt 约束 ≤20 字,客户端按
+    /// `DeepReadConfig.draftMaxLength` 硬顶;空串=无草稿)。
     let draft: String
+}
+
+/// 深读配置常量(v5 T5)。
+enum DeepReadConfig {
+    /// AI 草稿入笔记的长度上限(E11:「AI 草稿入 voiceNote 设长度上限,
+    /// 与手打输入同尺」——手打路径无硬限,此值是防模型违约超长输出的
+    /// 客户端硬顶,宽松于 prompt 的 ≤20 字,覆盖三语最长的日文约束)。
+    static let draftMaxLength = 60
 }
 
 /// AI 提取的一条关注点草稿:text 保留用户原话关键短语;category/timeBucket 是

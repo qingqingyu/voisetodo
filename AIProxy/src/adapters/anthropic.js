@@ -9,7 +9,7 @@
 //   - content_block_delta  -> { delta: { text } }
 //   - message_stop         -> terminal
 
-import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, buildDeepReadPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, buildDeepReadPrompt, DEEP_READ_USER_MESSAGE, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // Anthropic error bodies that indicate a model-side fix (just retry against the next
 // provider, whose model may not have this problem). Anything else in 400/422 is treated
@@ -61,7 +61,7 @@ export const anthropicAdapter = {
                 // v5 T5/E5:用户消息=事实 JSON(prompt 模板+消息角色分工同 gemini)
                 ? buildDeepReadPrompt(locale, transcript)
                 : buildSystemPrompt(locale, vocabularyHints, today, personalHints),
-          messages: [{ role: "user", content: mode === "deep-read" ? "Please analyze the facts above." : transcript }]
+          messages: [{ role: "user", content: mode === "deep-read" ? DEEP_READ_USER_MESSAGE : transcript }]
         })
       }
     };

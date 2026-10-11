@@ -79,13 +79,6 @@ struct ReviewStepInsights: View {
         placeholderSummaryRow
         ladderHint(context: context)
 
-        // 深读卡(v5 T5 批 3,D4):仅就绪后整体出现,无骨架屏——nil/失败/
-        // 未接地=整卡不渲染。位置在警报卡之后、中性事实行之前(综合观察
-        // 夹在两者语义层之间)。E5 保证 observation 只含已核实数字。
-        if let deepRead = state.deepReadResult {
-            deepReadCard(deepRead)
-        }
-
         ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
                 result: result,
@@ -98,6 +91,13 @@ struct ReviewStepInsights: View {
                     onAbandonTask(todoId)
                 } : nil
             )
+        }
+
+        // 深读卡(v5 T5 批 3,D4):仅就绪后整体出现,无骨架屏——nil/失败/
+        // 未接地=整卡不渲染。位置在警报卡之后、中性事实行之前(综合观察
+        // 夹在两者语义层之间)。E5 保证 observation 只含已核实数字。
+        if let deepRead = state.deepReadResult {
+            deepReadCard(deepRead)
         }
 
         // 规则层事实行(v4 批 3 拍板 3:03 中间地带;v5 3-lite 扩 01/05 全档。

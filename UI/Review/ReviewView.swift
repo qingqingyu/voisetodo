@@ -76,6 +76,8 @@ struct ReviewView: View {
     var voiceInput: (any VoiceInputProtocol)? = nil
     /// 笔记语义对照提取器(2026-08-23)。nil → 收尾不做 AI 分析。
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
+    /// 深读观察器(v5 T5)。nil → 第 3 步无 AI 观察卡、第 5 步无草稿预填。
+    var deepReader: (any DeepReadObservationProtocol)? = nil
 
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
@@ -158,7 +160,8 @@ struct ReviewView: View {
                     store: store,
                     splitter: splitter,
                     voiceInput: voiceInput,
-                    noteAnalyzer: noteAnalyzer
+                    noteAnalyzer: noteAnalyzer,
+                    deepReader: deepReader
                 )
             }
         }

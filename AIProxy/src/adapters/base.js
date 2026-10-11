@@ -903,3 +903,7 @@ export function buildDeepReadPrompt(locale, factsJSON) {
       : ENGLISH_DEEP_READ_PROMPT;
   return template.replace("{FACTS_JSON}", factsJSON);
 }
+
+// deep-read 的 user 消息(facts 已全量在 system prompt 里,user 侧只需一句
+// 驱动语;gemini/anthropic 共用,不进 E5 校验,仅触发补全)。
+export const DEEP_READ_USER_MESSAGE = "Please analyze the facts above.";

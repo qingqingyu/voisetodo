@@ -106,12 +106,29 @@ final class ReviewFlowState {
     /// (与地板 A/C 同屏,不空屏)。渲染层据此显示 sparse 说明行。
     private(set) var showsSparseWindowNote: Bool = false
 
-    /// 深读观察结果(v5 T5 批 3):第 3 步就绪后异步取回(D4:仅就绪后整体
+    /// 深读观察结果(v5 T5 批 3):第 3 步呈现时异步取回(D4:仅就绪后整体
     /// 出现,无骨架屏——nil/失败=不显示)。draft 供第 5 步笔记预填(D9)。
-    var deepReadResult: DeepReadObservationData? = nil
+    /// 写入收口在 `recordDeepReadResult`(与其他 private(set) 状态同款封装)。
+    private(set) var deepReadResult: DeepReadObservationData? = nil
 
-    /// 深读事实层(v5 T5/AF1):引擎与地板跑完后并行收集——纯 id+值,零本地
-    /// 本地化文案,发代理与 E5 接地校验共用(见 DeepReadFacts.swift)。
+    /// 深读结果唯一写入口(`loadDeepReadObservation` 调用;nil=降级不显示)。
+    func recordDeepReadResult(_ result: DeepReadObservationData?) {
+        deepReadResult = result
+    }
+
+    /// 深读是否已尝试过(无论成败):深读挂在第 3 步 `.task` 上,用户从
+    /// 第 2 步回跳再进会让 task 重跑——不设防会把 E11 限额(10/天)烧在
+    /// 重复拉取上;一次会话只拉一次,失败不重试(D4 降级口径)。
+    private(set) var hasAttemptedDeepRead = false
+
+    /// 深读尝试标记置位(`loadDeepReadObservation` 确认要发请求时调用;
+    /// 写入口收口与其他 private(set) 状态同款)。
+    func markDeepReadAttempted() {
+        hasAttemptedDeepRead = true
+    }
+
+    /// 深读事实层(v5 T5/AF1):`refreshDeepReadFacts()` 在深读拉取前收集——
+    /// 纯 id+值,零本地化文案,发代理与 E5 接地校验共用(见 DeepReadFacts.swift)。
     /// 趋势素材(方向 1):近 3 期 finalBacklogCount 序列一并入 facts。
     private(set) var deepReadFacts: DeepReadFactsPayload = DeepReadFactsPayload(facts: [])
 
@@ -512,10 +529,20 @@ final class ReviewFlowState {
             && backlogAgeFact == nil
             && backlogCategoryFact == nil
             && backlogFlowFact == nil
+    }
 
-        // 深读事实层(v5 T5/AF1):与渲染同源收集——地板 A/B/C、规则层事实
-        // signature(已含关键数字)、完成/积压端点、账本方向、近 3 期趋势。
-        // 值一律字符串化;id 稳定(E5 精确比对依据)。
+    /// 深读事实层收集(v5 T5/AF1):与渲染同源——地板 A/B/C、完成/积压端点、
+    /// 账本方向、近 3 期趋势。值一律字符串化;id 语义自解释且稳定(E5 精确
+    /// 比对依据,也是模型理解事实的唯一线索——纯 id+值,无本地化文案)。
+    /// **时点=深读拉取前**(第 3 步呈现时,见 `loadDeepReadObservation`),
+    /// 不是引擎跑完时:`decidedCount` 是 computed(随第 2 步划卡递增),
+    /// 流程开始时恒 0,引擎时点收集会发给模型一个失真事实。
+    /// fileprivate:同文件的 `loadDeepReadObservation` 是唯一调用方。
+    fileprivate func refreshDeepReadFacts() {
+        guard let context = insightContextValue else {
+            deepReadFacts = DeepReadFactsPayload(facts: [])
+            return
+        }
         var collected: [DeepReadFact] = []
         if let age = backlogAgeFact {
             collected.append(contentsOf: [
@@ -542,12 +569,16 @@ final class ReviewFlowState {
         }
         collected.append(DeepReadFact(id: "completed_oneoff", value: String(context.completedEvents.count)))
         collected.append(DeepReadFact(id: "decided_count", value: String(decidedCount)))
-        // 趋势(方向 1):近 3 期收尾积压(旧 payload 哨兵 -1 跳过)。
+        // 趋势(方向 1):近 3 期收尾积压(旧 payload 哨兵 -1 跳过)。id 按
+        // 「距今 N 期」命名(旧→新排列,序列不满 3 期时从更小的 N 起)——
+        // trend_0/1/2 这类纯序号没有时间方向语义,模型只能猜,猜反则趋势
+        // 解读反向;语义化 id 是零成本的方向约定。
         let trend = previousSessions
             .suffix(3)
             .compactMap { $0.ledger.finalBacklogCount >= 0 ? $0.ledger.finalBacklogCount : nil }
-        for (offset, value) in trend.enumerated() {
-            collected.append(DeepReadFact(id: "trend_\(offset)", value: String(value)))
+        for (index, value) in trend.enumerated() {
+            let periodsAgo = trend.count - index
+            collected.append(DeepReadFact(id: "backlog_\(periodsAgo)_periods_ago", value: String(value)))
         }
         deepReadFacts = DeepReadFactsPayload(facts: collected)
     }
@@ -1110,9 +1141,6 @@ struct ReviewFlowView: View {
         }
         .task { recordFlowStarted() }
         .task { await loadInsightContext() }
-        // 深读(v5 T5):洞察原料与事实层就绪后异步拉——D4 无骨架屏,回来
-        // 才整体出现;与 loadInsightContext 分开 .task,不阻塞首屏。
-        .task { await loadDeepReadObservation() }
         // E6 呈现镜像(必须):根级同意 sheet 在本 fullScreenCover 常驻期间
         // 无法呈现(UKit 单 presenter 单模态,实验证实)——不镜像的话,未同意
         // 用户在复盘内点麦克风无任何反应,且 `ensureAIConsent` 的 continuation
@@ -1137,18 +1165,38 @@ struct ReviewFlowView: View {
         )
     }
 
-    /// 深读拉取(v5 T5 批 3):事实层就绪(引擎已跑)后调代理 deep-read;
-    /// 任何失败(网络/未知 mode/不接地/限额 429)→ nil 不显示,D4 口径。
-    /// 代理未部署 deep-read 时按 invalid mode 400 落 catch,同样静默降级。
+    /// 深读拉取(v5 T5 批 3):**第 3 步首次呈现时**触发(挂在
+    /// `ReviewStepInsights` 的 `.task` 上)——此刻引擎必已跑完
+    /// (`skipsInsightsWhenEmpty` 在进本步前定好),`decidedCount` 也已随
+    /// 第 2 步划卡落定;任何失败(网络/未知 mode/不接地/限额 429)→ nil
+    /// 不显示,D4 口径。代理未部署 deep-read 时按 invalid mode 400 落
+    /// catch,同样静默降级。
     private func loadDeepReadObservation() async {
         guard let deepReader else { return }
-        // 引擎可能尚未跑完(与 loadInsightContext 并行的 .task)——等一拍
-        // 拿到事实;0 条事实不值得调(代理侧也有 <3 降级,这里省一次调用)。
+        // 一次会话只拉一次:第 3 步回跳重进会重跑 .task,重复拉取白烧
+        // E11 限额(10/天);失败不重试(D4 降级口径)。
+        guard !state.hasAttemptedDeepRead else { return }
+        // E6(三入口同 gate 的深读路):未同意 AI 披露就不发任何内容给代理
+        // ——facts 虽是聚合数字,也属「本次会话发往代理的内容」。与录音/
+        // 笔记路径同源判 `AppGroupConfig.aiConsentGranted()`(`ensureAIConsent`
+        // 内部同一查询);不弹卡打断——深读是后台增强,未同意=本期不显示,
+        // 用户日后同意(如首页录音弹卡)后下期自然恢复。
+        guard AppGroupConfig.aiConsentGranted() else {
+            VoiceTodoLog.coordinator.info("review.deepread.skipped reason=ai_consent")
+            return
+        }
+        // 事实层此刻现收集(decidedCount 等以拉取时点为准);<3 条不值得调
+        // (代理侧也有 <3 降级,这里省一次调用)。
+        state.refreshDeepReadFacts()
         guard state.deepReadFacts.facts.count >= 3 else { return }
-        state.deepReadResult = await deepReader.deepReadObservation(
+        // 确认要发请求才置位——未同意/事实不足都没消耗限额,不挡「用户
+        // 中途同意后回跳重进」的重试路。
+        state.markDeepReadAttempted()
+        let result = await deepReader.deepReadObservation(
             facts: state.deepReadFacts,
             locale: .current
         )
+        state.recordDeepReadResult(result)
     }
 
     /// 复盘漏斗 A16(v5 T1/E8):开始=流程呈现,`.task` 每次呈现只跑一次
@@ -1319,6 +1367,11 @@ struct ReviewFlowView: View {
                     }
                 }
             )
+            // 深读(v5 T5):第 3 步呈现时拉——此刻引擎已跑完、decidedCount 已
+            // 随划卡落定(事实不失真);不能挂在根视图 .task(与
+            // loadInsightContext 并发启动时事实层恒空,深读永不触发)。
+            // D4 无骨架屏,回来才整体出现;回跳重进由 hasAttemptedDeepRead 挡。
+            .task { await loadDeepReadObservation() }
         case .commit:
             ReviewStepCommit(state: state)
         case .ledger:

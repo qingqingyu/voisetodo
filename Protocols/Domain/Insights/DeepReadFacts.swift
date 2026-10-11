@@ -11,9 +11,9 @@ struct DeepReadFact: Codable, Sendable, Equatable {
     let value: String
 }
 
-/// 客户端侧已核实的事实集合。构造口在 `ReviewFlowState.deepReadFacts`
-/// (引擎跑完后并行收集);发给代理的 prompt 与本地校验器共用同一份——
-/// 代理被要求在输出里原样回引它用到的 `id: value`(`numbers` 块),
+/// 客户端侧已核实的事实集合。构造口在 `ReviewFlowState.refreshDeepReadFacts()`
+/// (深读拉取前收集,时点见其注释);发给代理的 prompt 与本地校验器共用
+/// 同一份——代理被要求在输出里原样回引它用到的 `id: value`(`numbers` 块),
 /// `GroundingValidator` 逐条对回。
 struct DeepReadFactsPayload: Codable, Sendable, Equatable {
     let facts: [DeepReadFact]

@@ -14,6 +14,9 @@ struct ReviewStepLedger: View {
     /// 草稿是否仍是 AI 原样(D9:用户一动笔即退场)。init 播种:预填发生
     /// 在 onAppear(此时 deepReadResult 可能还没回来,种子恒 false,预填时再置)。
     @State private var showingAIDraftHint = false
+    /// 是否已预填过(D9「首次进入且笔记为空」):用户手动清空笔记后回跳
+    /// 再进第 5 步,onAppear 会重跑——不设防会把用户刚删掉的草稿塞回去。
+    @State private var hasPrefilledAIDraft = false
     /// 「问问自己」麦克风(v5 T4/D8 同款复用)。nil → 麦克风行不渲染
     /// (注入链缺失/降级),手打兜底始终在场。
     var voiceInput: (any VoiceInputProtocol)? = nil
@@ -339,11 +342,13 @@ struct ReviewStepLedger: View {
     /// voiceNote 的就是用户看到的原文(D9:「AI 草稿(你保留的)」由 hint
     /// 行承担披露,不再另设 noteSource 字段——预填后原文可见,保存即确认)。
     private func prefillAIDraftIfNeeded() {
-        guard state.voiceAnswerText.isEmpty,
+        guard !hasPrefilledAIDraft,
+              state.voiceAnswerText.isEmpty,
               let draft = state.deepReadResult?.draft,
               !draft.isEmpty else { return }
         state.voiceAnswerText = draft
         showingAIDraftHint = true
+        hasPrefilledAIDraft = true
     }
 
     private func adoptTranscriptIntoNote(_ text: String) {
