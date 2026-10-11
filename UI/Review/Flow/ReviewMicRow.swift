@@ -20,6 +20,9 @@ struct ReviewMicRow: View {
     let onAdopt: (String) -> Void
     /// 录音中断/错误时的部分转写预填(E10)。nil = 旧行为(不采纳)。
     var onAdoptPartialOnError: ((String) -> Void)? = nil
+    /// AI 同意 gate(E6:录音的终点是转写进 AI 处理链,起步前先取得同意——
+    /// 与首页 startRecording 同口径)。nil = 调用方环境无 coordinator(单测)。
+    var ensureConsent: (() async -> Bool)? = nil
 
     /// isRecording 的本地镜像(onAppear 播种 + publisher 同步)。
     @State private var isRecording = false
@@ -87,6 +90,9 @@ struct ReviewMicRow: View {
     private var idleRow: some View {
         Button {
             Task { @MainActor in
+                // E6:未同意先弹披露卡(挂起→同意后无缝继续本次录音);拒绝则
+                // 本次不录,不静默——按钮还在,用户随时可再试。
+                if let ensureConsent, await !ensureConsent() { return }
                 do {
                     try await voiceInput.startRecording()
                 } catch {

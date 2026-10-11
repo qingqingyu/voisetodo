@@ -38,6 +38,8 @@ struct ReviewStepTriage: View {
     /// 复盘内麦克风(与首页共用同一实例——复盘全屏时首页录音不可能并发,无会话冲突)。
     /// nil 时「说一句」行隐藏。
     let voiceInput: (any VoiceInputProtocol)?
+    /// AI 同意 gate(E6):录音起步前过 coordinator.ensureAIConsent。
+    var ensureConsent: (() async -> Bool)? = nil
 
     @State private var splitTarget: TodoItemData?
     /// 候选加载状态机:idle(未打开)→ loading → ready / failed(AI 失败 → 降级手写)。
@@ -1008,7 +1010,8 @@ struct ReviewStepTriage: View {
                                     voiceInput: voiceInput,
                                     hint: String(localized: "review.flow.split.mic.hint"),
                                     onError: onError,
-                                    onAdopt: { adoptVoiceTranscript($0) }
+                                    onAdopt: { adoptVoiceTranscript($0) },
+                                    ensureConsent: ensureConsent
                                 )
                             }
 

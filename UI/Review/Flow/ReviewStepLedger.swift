@@ -16,6 +16,8 @@ struct ReviewStepLedger: View {
     var voiceInput: (any VoiceInputProtocol)? = nil
     /// 错误显式传播(S2:权限拒绝/转写失败如实上报,降级手打不静默)。
     var onError: (Error) -> Void = { _ in }
+    /// AI 同意 gate(E6 三入口同 gate:录音起步前)。
+    var ensureConsent: (() async -> Bool)? = nil
 
     private let calendar = Calendar.current
 
@@ -259,7 +261,9 @@ struct ReviewStepLedger: View {
                         onError: onError,
                         onAdopt: { adoptTranscriptIntoNote($0) },
                         // E10:中断/错误时已说出的部分转写预填笔记框,不丢弃。
-                        onAdoptPartialOnError: { adoptTranscriptIntoNote($0) }
+                        onAdoptPartialOnError: { adoptTranscriptIntoNote($0) },
+                        // E6:录音起点过同意 gate(与首页 startRecording 同口径)。
+                        ensureConsent: ensureConsent
                     )
                 }
 

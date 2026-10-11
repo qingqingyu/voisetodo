@@ -1152,7 +1152,8 @@ struct ReviewFlowView: View {
                 onError: { presentError($0) },
                 onUndoToast: { coordinator.showToast(message: $0, style: .info) },
                 splitter: splitter,
-                voiceInput: voiceInput
+                voiceInput: voiceInput,
+                ensureConsent: { await coordinator.ensureAIConsent() }
             )
         case .insights:
             ReviewStepInsights(
@@ -1221,7 +1222,8 @@ struct ReviewFlowView: View {
             ReviewStepLedger(
                 state: state,
                 voiceInput: voiceInput,
-                onError: { presentError($0) }
+                onError: { presentError($0) },
+                ensureConsent: { await coordinator.ensureAIConsent() }
             )
         }
     }
@@ -1372,6 +1374,13 @@ struct ReviewFlowView: View {
               let context = state.insightContextValue else { return }
         let calendar = Calendar.current
         Task { @MainActor in
+            // E6(v5 三入口同 gate 的第三路):手打/语音笔记发往代理前过同意——
+            // 流程正在收尾,披露卡经 coordinator 全局 sheet 呈现;拒绝则本期
+            // 不做语义对照(笔记照存,下期退化纯文本,与离线失败同口径)。
+            guard await coordinator.ensureAIConsent() else {
+                VoiceTodoLog.coordinator.info("review.note.analyze_skipped reason=ai_consent")
+                return
+            }
             do {
                 let drafts = try await noteAnalyzer.analyzeNoteTopics(note: note, locale: .current)
                 let topics = drafts.prefix(3).map { draft in
