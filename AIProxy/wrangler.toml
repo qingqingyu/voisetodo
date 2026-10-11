@@ -28,6 +28,14 @@ routes = [
 #   (d934b46)——修复真实 Apple 签发的订阅 JWS 验签必败→付费用户全被判
 #   免费档;jws-fixture 改标准 DER 防回归(npm test 318/318)。生效验证:
 #   带订阅真机录音一次,响应头 X-Quota-Plan 应为 pro。回滚 = wrangler rollback。
+#   2026-10-11 部署(版本 fe623db5):复盘 v5 深读模式上线——mode 白名单加
+#   "deep-read" + enforceDeepReadLimit(KV deepread:<date>:<device>,独立于
+#   extract/assist 桶,默认 10/天/设备,超限 429 deepread_limit_exceeded;
+#   DEEP_READ_DAILY_LIMIT env 可覆盖)+ 三语深读提示词(adapters)。随 iOS
+#   端 v5 合入(3a3afa8)部署,现有线上版本不发 deep-read 请求,零影响;
+#   新端未部署时代码 400 自动降级,本次部署即启用前置完成。生效验证:
+#   新构建真机复盘走到第 3 步,深读卡渲染(需 AI 同意已授;探活
+#   /v1/health=200 + 无 token deep-read 401 已过)。回滚 = wrangler rollback。
 #   DAILY_REQUEST_LIMIT = "3"     PAID_DAILY_LIMIT = "100"
 #
 # 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
