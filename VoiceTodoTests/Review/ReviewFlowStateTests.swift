@@ -51,6 +51,36 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertEqual(result.map(\.title), ["open one-shot", "another open"])
     }
 
+    // MARK: triage 输入过滤(v5.1 冷启动拍板:已排未来用户日不进决定人口)
+
+    /// 已排到未来用户日(冷启动典型:刚排好明天)的不进决定人口——已排期
+    /// =已有去向,复盘不再问;今天到点(哪怕 23:59)与无日期的照进。
+    func testTriageInputExcludesFutureDatedTasks() {
+        let cal = Calendar.current
+        let now = cal.date(bySettingHour: 12, minute: 0, second: 0, of: Date())!
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: now)!
+        let todayLate = cal.date(bySettingHour: 23, minute: 59, second: 0, of: Date())!
+        let yesterday = cal.date(byAdding: .day, value: -1, to: now)!
+
+        let input = [
+            todo("no date"),                              // ✓ 无日期=漂着
+            todo("due today late", dueDate: todayLate),   // ✓ 今天到点不算未来
+            todo("overdue", daysOld: 3, dueDate: yesterday), // ✓ 过期
+            todo("due tomorrow", dueDate: tomorrow),      // ✗ 已排未来(v5.1)
+        ]
+        let result = ReviewFlowState.triageInput(from: input, now: now)
+        XCTAssertEqual(result.map(\.title), ["no date", "due today late", "overdue"])
+
+        // 冷启动场景:全部已排未来 → 决定人口为空,第 2 步走既有空态。
+        let coldStart = [todo("tomorrow a", dueDate: tomorrow), todo("tomorrow b", dueDate: tomorrow)]
+        XCTAssertTrue(ReviewFlowState.triageInput(from: coldStart, now: now).isEmpty)
+
+        // 谓词单点:用户日口径(startHour>0 时 0 点边界不漂)。
+        XCTAssertFalse(TriageRanking.isFutureDated(dueDate: nil, now: now))
+        XCTAssertFalse(TriageRanking.isFutureDated(dueDate: todayLate, now: now, calendar: cal))
+        XCTAssertTrue(TriageRanking.isFutureDated(dueDate: tomorrow, now: now, calendar: cal))
+    }
+
     // MARK: 步骤闸门(2026-08-22 拍板放宽:至少选 1 件)
 
     func testCommitGateRequiresAtLeastOneSelection() {
@@ -926,28 +956,35 @@ extension ReviewFlowStateTests {
 
     /// 候选池并集 + 去重:本来就在下周的未处理条目进池;本会话「今天就做/
     /// 不做了/拆小」处理过的下周条目退出;右滑即时写库不产生双行(审阅缺口 B)。
+    /// v5.1 口径:已排未来不进卡堆——「处理过的下周条目」改由 state 直驱
+    /// (`markToday`/`markAbandoned` 本就不要求条目在卡堆;任何 UI 路径调
+    /// 它们都该被池子的 processedIDs 去重挡下,不变量与取条途径无关)。
     func testCommitPoolUnionsAndDedups() {
         let calendar = Calendar.current
         let nextMonday = calendar.nextDate(
             after: Date(), matching: DateComponents(weekday: 2), matchingPolicy: .nextTime
         )!
         let nextWednesday = calendar.date(byAdding: .day, value: 2, to: nextMonday)!
+        let preexisting = todo("本来就在下周", daysOld: 20, dueDate: nextWednesday)
+        let todayPicked = todo("今天做-原本在下周", daysOld: 8, dueDate: nextWednesday)
+        let dropped = todo("划掉-原本在下周", daysOld: 6, dueDate: nextWednesday)
         let state = ReviewFlowState(todos: [
-            todo("本来就在下周", daysOld: 20, dueDate: nextWednesday),
+            preexisting, todayPicked, dropped,
             todo("swipeA", daysOld: 15),
             todo("swipeB", daysOld: 10),
-            todo("今天做-原本在下周", daysOld: 8, dueDate: nextWednesday),
-            todo("划掉-原本在下周", daysOld: 6, dueDate: nextWednesday),
         ])
 
-        // 第 2 步:右滑两张 + 今天一张 + 划掉一张(按标题取,避免顺序假设)。
+        // 口径前提(v5.1):已排未来的三条不进卡堆,决定人口只剩两张无日期卡。
+        XCTAssertEqual(state.deck.map(\.title).sorted(), ["swipeA", "swipeB"])
+
+        // 第 2 步:右滑两张(按标题取);下周条目 state 直驱(见方法注释)。
         func deckItem(_ title: String) -> TodoItemData {
             state.deck.first { $0.title == title }!
         }
         state.markScheduled(deckItem("swipeA"))
         state.markScheduled(deckItem("swipeB"))
-        state.markToday(deckItem("今天做-原本在下周"))
-        state.markAbandoned(deckItem("划掉-原本在下周"))
+        state.markToday(todayPicked)
+        state.markAbandoned(dropped)
 
         XCTAssertEqual(state.scheduled.map(\.title).sorted(), ["swipeA", "swipeB"])
         XCTAssertEqual(state.preexistingNextWeek.map(\.title), ["本来就在下周"])

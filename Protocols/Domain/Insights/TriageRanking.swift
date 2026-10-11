@@ -63,6 +63,25 @@ enum TriageRanking {
         return max(0, calendar.dateComponents([.day], from: createdDay, to: nowDay).day ?? 0)
     }
 
+    /// 是否已排到未来用户日(v5.1 冷启动拍板,2026-10-11):dueDate 所在
+    /// 用户日 > now 所在用户日。已排期=已有去向,复盘不进「决定人口」
+    /// (`triageInput` 过滤;入口卡 N / 卡堆 / 账本 input 同口径)——对已排
+    /// 明天的条目给「排下周/稍后」本质是拆用户刚做的计划,不只是多余。
+    /// 地板 A/B 的总数与净变化**不走此过滤**(InsightContext.openTasks
+    /// 全口径),两处数字差由地板 A 的 sample_note 说明。无日期=漂着,
+    /// 照进;今天到点(哪怕 23:59)不算未来。
+    /// 口径:DayClock 用户日(v5 E7 同尺),与 stagnationDays 同一把尺。
+    static func isFutureDated(
+        dueDate: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let dueDate else { return false }
+        let dueDay = DayClock.startOfUserDay(for: dueDate, calendar: calendar)
+        let nowDay = DayClock.startOfUserDay(for: now, calendar: calendar)
+        return dueDay > nowDay
+    }
+
     /// 单键排序:停滞天数 desc → id 决胜(v3 拍板 8,第 4 步候选池)。
     /// 与 `rank` 的区别:不带推迟次数主键——第 4 步排序的是「从池子里挑焦点」
     /// 的呈现顺序,不是卡堆的处理优先级;停滞天数是现成且有意义的代理

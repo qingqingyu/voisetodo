@@ -380,8 +380,13 @@ private struct BacklogAgeFloorCard: View {
 
                 // 「说真话」行:21+ 档为 0 时不开一扇锁着的门,报最久的实际天数
                 // (v4 方案;腐烂卡自己有话可说时不再叠加,判定收在 fact 里)。
+                // v5.1 冷启动拍板:最久 0 天(全部都是本用户日新建,典型=刚下载
+                // 排好明天计划就进复盘的新用户)换 all_recent 句式——「最久的
+                // 放了 0 天」数字诚实但读着像故障;≥1 天维持原句。
                 if fact.showsNoOldLine {
-                    Text(String(localized: "review.floor.backlog_age.no_old_\(fact.total)_\(fact.oldestAgeDays)"))
+                    Text(String(localized: fact.oldestAgeDays == 0
+                        ? "review.floor.backlog_age.all_recent_\(fact.total)"
+                        : "review.floor.backlog_age.no_old_\(fact.total)_\(fact.oldestAgeDays)"))
                         .font(WarmFont.caption(12))
                         .foregroundColor(WarmTheme.textMuted)
                         .lineLimit(2)

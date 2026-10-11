@@ -358,9 +358,21 @@ final class ReviewFlowState {
         return pick
     }
 
-    /// triage 输入过滤(拍板 4):未完成 && 未划掉 && 一次性(recurrenceRule == nil)。
-    static func triageInput(from todos: [TodoItemData]) -> [TodoItemData] {
-        todos.filter { !$0.isCompleted && $0.abandonedAt == nil && $0.recurrenceRule == nil }
+    /// triage 输入过滤(拍板 4;v5.1 冷启动拍板:已排未来用户日不进决定人口):
+    /// 未完成 && 未划掉 && 一次性 && 非已排未来。deck / tail /
+    /// initialBacklogCount / 入口卡 N / 埋点 pendingCount 全部同源本函数。
+    /// 地板 A/B 的总数与净变化不走此过滤(全口径,见 sample_note)。
+    static func triageInput(
+        from todos: [TodoItemData],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [TodoItemData] {
+        todos.filter { todo in
+            !todo.isCompleted
+                && todo.abandonedAt == nil
+                && todo.recurrenceRule == nil
+                && !TriageRanking.isFutureDated(dueDate: todo.dueDate, now: now, calendar: calendar)
+        }
     }
 
     // MARK: 步骤闸门

@@ -8821,6 +8821,28 @@
         }
       }
     },
+    "review.floor.backlog_age.all_recent_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All %lld were added recently"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この%lld件はどれも最近追加したものです"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这 %lld 件都还是最近加的"
+          }
+        }
+      }
+    },
     "review.floor.backlog_age.bucket.aging_%lld" : {
       "localizations" : {
         "en" : {
@@ -11849,13 +11871,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Based on %lld open one-off to-do; recurring tasks not included."
+                  "value" : "Based on %lld open one-off to-do; recurring tasks not included; ones scheduled for later aren't up for decision this time."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Based on %lld open one-off to-dos; recurring tasks not included."
+                  "value" : "Based on %lld open one-off to-dos; recurring tasks not included; ones scheduled for later aren't up for decision this time."
                 }
               }
             }
@@ -11864,13 +11886,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未完了の単発タスク%lld件に基づくものです。定期的なタスクは含まれません。"
+            "value" : "未完了の単発タスク%lld件に基づくものです。定期的なタスクは含まず、今後の日付に予定済みのものは今回の決定対象外です。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基于 %lld 条未完成的一次性任务,不含规律任务。"
+            "value" : "基于 %lld 条未完成的一次性任务,不含规律任务;其中已排到未来的本次不请你决定。"
           }
         }
       }

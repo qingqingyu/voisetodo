@@ -142,9 +142,7 @@ struct ReviewView: View {
                 // 入口卡不渲染(设置深链/preview 路径),没见过入口的用户
                 // 不得进曝光分母(口径=「见过入口的用户数」)。
                 if store != nil {
-                    let pendingCount = allTodos.filter { item in
-                        !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
-                    }.count
+                    let pendingCount = decidablePendingCount
                     ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: pendingCount > 0)
                 }
             }
@@ -179,11 +177,19 @@ struct ReviewView: View {
     /// 是内部模型泄漏(用户没有这个分类);「回顾近 30 天」消歧义移进流程第 1 步;
     /// 「上次复盘日期」也移第 1 步(从 previousSessions 取,不再外部注入)。
     /// N == 0 时空态文案「都清完了,看看这一个月」——卡不消失,回顾本身仍有价值。
+    /// 入口卡 N 的口径(v5.1 冷启动拍板):与流程侧 `ReviewFlowState.triageInput`
+    /// 同人口——已排未来用户日的不算「等你决定」(已排期=已有去向)。曝光
+    /// 埋点 hasPending 同用本值,单一来源防两处漂移。
+    private var decidablePendingCount: Int {
+        allTodos.filter { item in
+            !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
+                && !TriageRanking.isFutureDated(dueDate: item.dueDate, now: Date(), calendar: calendar)
+        }.count
+    }
+
     @ViewBuilder
     private var reviewFlowEntryCard: some View {
-        let pendingCount = allTodos.filter { item in
-            !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
-        }.count
+        let pendingCount = decidablePendingCount
         let hasPending = pendingCount > 0
 
         Button {
