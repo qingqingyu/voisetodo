@@ -79,6 +79,13 @@ struct ReviewStepInsights: View {
         placeholderSummaryRow
         ladderHint(context: context)
 
+        // 深读卡(v5 T5 批 3,D4):仅就绪后整体出现,无骨架屏——nil/失败/
+        // 未接地=整卡不渲染。位置在警报卡之后、中性事实行之前(综合观察
+        // 夹在两者语义层之间)。E5 保证 observation 只含已核实数字。
+        if let deepRead = state.deepReadResult {
+            deepReadCard(deepRead)
+        }
+
         ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
             InsightCardView(
                 result: result,
@@ -129,6 +136,52 @@ struct ReviewStepInsights: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// 深读卡(v5 T5):RecapCard 容器 + 「AI 观察」标题 + badge「来自你的数字」
+    /// + observation 正文 + 底注「由本期已核实的事实生成」。中性样式(D1:
+    /// 不用警示色);VoiceOver 整卡 combine。
+    private func deepReadCard(_ data: DeepReadObservationData) -> some View {
+        RecapCard {
+            VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+                HStack(alignment: .top, spacing: WarmSpacing.xs) {
+                    Text(String(localized: "review.flow.insights.deepread.title"))
+                        .font(WarmFont.headline(15))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .layoutPriority(1)
+
+                    Spacer(minLength: WarmSpacing.xxs)
+
+                    Text(String(localized: "review.flow.insights.deepread.badge"))
+                        .font(WarmFont.caption(10))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, WarmSpacing.xs)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().stroke(WarmTheme.textMuted.opacity(0.4), lineWidth: 0.5)
+                        )
+                }
+
+                Text(data.observation)
+                    .font(WarmFont.body(14))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(6)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(String(localized: "review.flow.insights.deepread.hint"))
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("ReviewDeepReadCard")
     }
 
     /// 占位行(v3 拍板 7:仍然只出一行——拍板 6 反对的是四行堆叠——但这一行

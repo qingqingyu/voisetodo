@@ -15,6 +15,22 @@ protocol ReviewNoteAnalyzerProtocol {
     func analyzeNoteTopics(note: String, locale: Locale) async throws -> [ReviewTopicDraft]
 }
 
+/// 深读观察协议(v5 T5 批 3):把本期已核实事实发给代理 deep-read 模式,
+/// 返回经 E5 接地校验的观察(任何失败返回 nil,D4:整卡不显示)。
+/// 与 `ReviewNoteAnalyzerProtocol` 分开——深读的输入是结构化事实而非用户
+/// 笔记,失败语义也不同(增强降级 vs 抛错)。
+protocol DeepReadObservationProtocol {
+    func deepReadObservation(facts: DeepReadFactsPayload, locale: Locale) async -> DeepReadObservationData?
+}
+
+/// 深读产出(E5 校验通过后的可显示形态)。
+struct DeepReadObservationData: Sendable, Equatable {
+    /// 2-3 句接地观察(只含已核实事实的数字)。
+    let observation: String
+    /// 笔记草稿引导(第 5 步预填,≤20 字;空串=无草稿)。
+    let draft: String
+}
+
 /// AI 提取的一条关注点草稿:text 保留用户原话关键短语;category/timeBucket 是
 /// AI 的语义映射(nil = 该话题没有可统计维度)。
 struct ReviewTopicDraft: Sendable, Equatable {

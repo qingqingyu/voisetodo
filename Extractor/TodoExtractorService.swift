@@ -1,7 +1,7 @@
 import Foundation
 
 /// 待办提取服务
-final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, ReviewNoteAnalyzerProtocol {
+final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, ReviewNoteAnalyzerProtocol, DeepReadObservationProtocol {
     // MARK: - Properties
 
     private let networkClient: NetworkClient
@@ -262,6 +262,54 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
         } catch {
             VoiceTodoLog.extractor.error("reflect.failed id=\(analyzeID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw error
+        }
+    }
+
+    /// deep-read 模式响应体:{observation,draft,numbers}。numbers 是模型
+    /// 回引的事实 id→值(E5),必须逐 id 与请求侧 facts 精确相等。
+    private struct DeepReadResponse: Decodable {
+        let observation: String
+        let draft: String
+        let numbers: [String: String]
+    }
+
+    /// 调深读模式并做 E5 接地校验。facts = 本地已核实事实(发代理 prompt
+    /// 与本地校验共用一份);失败/不接地返回 nil——深读是增强,任何失败
+    /// 静默降级为不显示(D4:绝不空话兜底),日志留痕不静默吞错。
+    func deepReadObservation(facts: DeepReadFactsPayload, locale: Locale) async -> DeepReadObservationData? {
+        let readID = VoiceTodoLog.makeID("deepread")
+        let startedAt = Date()
+        let factsJSON = String(data: (try? JSONEncoder().encode(facts)) ?? Data(), encoding: .utf8) ?? "{}"
+        do {
+            let responseText = try await networkClient.callTodoExtractionProxy(
+                transcript: factsJSON,
+                localeIdentifier: locale.identifier,
+                mode: "deep-read"
+            )
+            var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let range = cleanedText.range(of: "^```(?:json|JSON)?\\s*\\n", options: .regularExpression) {
+                cleanedText.removeSubrange(range)
+            }
+            if let range = cleanedText.range(of: "\\n\\s*```\\s*$", options: .regularExpression) {
+                cleanedText.removeSubrange(range)
+            }
+            let decoded = try JSONDecoder().decode(DeepReadResponse.self, from: Data(cleanedText.utf8))
+            // E5:逐 id 精确比对(含"至少回引一条"约束)
+            guard GroundingValidator.isGrounded(numbers: decoded.numbers, facts: facts.byID) else {
+                VoiceTodoLog.extractor.error("deepread.ungrounded id=\(readID, privacy: .public)")
+                return nil
+            }
+            // 事实<3 条的降级固定文案(代理侧约定):观察无信息量,不当卡片显示
+            let sparseMarkers = ["这期完成记录还太少", "Not enough completed records", "今期は完了記録がまだ少ない"]
+            if sparseMarkers.contains(where: decoded.observation.contains) {
+                VoiceTodoLog.extractor.info("deepread.sparse id=\(readID, privacy: .public)")
+                return nil
+            }
+            VoiceTodoLog.extractor.info("deepread.success id=\(readID, privacy: .public) numbers=\(decoded.numbers.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return DeepReadObservationData(observation: decoded.observation, draft: decoded.draft)
+        } catch {
+            VoiceTodoLog.extractor.error("deepread.failed id=\(readID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            return nil
         }
     }
 

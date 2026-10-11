@@ -106,6 +106,10 @@ final class ReviewFlowState {
     /// (与地板 A/C 同屏,不空屏)。渲染层据此显示 sparse 说明行。
     private(set) var showsSparseWindowNote: Bool = false
 
+    /// 深读观察结果(v5 T5 批 3):第 3 步就绪后异步取回(D4:仅就绪后整体
+    /// 出现,无骨架屏——nil/失败=不显示)。draft 供第 5 步笔记预填(D9)。
+    var deepReadResult: DeepReadObservationData? = nil
+
     /// 深读事实层(v5 T5/AF1):引擎与地板跑完后并行收集——纯 id+值,零本地
     /// 本地化文案,发代理与 E5 接地校验共用(见 DeepReadFacts.swift)。
     /// 趋势素材(方向 1):近 3 期 finalBacklogCount 序列一并入 facts。
@@ -1010,6 +1014,9 @@ struct ReviewFlowView: View {
     /// 笔记语义对照的提取器(2026-08-23,任务 #4)。nil → 收尾不做 AI 分析,
     /// 笔记照存,下期退化为纯文本。
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
+    /// 深读观察器(v5 T5 批 3)。nil → 第 3 步无 AI 观察卡、第 5 步无草稿
+    /// 预填(与 noteAnalyzer 同注入链,AppCoordinator 组装)。
+    var deepReader: (any DeepReadObservationProtocol)? = nil
 
     /// 复盘漏斗 A17 的时长起点(v5 T1/E8):首次创建时记,finishSession 算
     /// durationMS。必须 `@State`——fullScreenCover 的 content 闭包会随父视图
@@ -1026,12 +1033,14 @@ struct ReviewFlowView: View {
         store: any ReviewFlowStore,
         splitter: (any TodoSplitterProtocol)? = nil,
         voiceInput: (any VoiceInputProtocol)? = nil,
-        noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
+        noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil,
+        deepReader: (any DeepReadObservationProtocol)? = nil
     ) {
         self.store = store
         self.splitter = splitter
         self.voiceInput = voiceInput
         self.noteAnalyzer = noteAnalyzer
+        self.deepReader = deepReader
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
         // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 /
         // 跨期对照的数据源,阶段 4);上次置顶 id 同批快照(setPinned 整体
@@ -1101,6 +1110,9 @@ struct ReviewFlowView: View {
         }
         .task { recordFlowStarted() }
         .task { await loadInsightContext() }
+        // 深读(v5 T5):洞察原料与事实层就绪后异步拉——D4 无骨架屏,回来
+        // 才整体出现;与 loadInsightContext 分开 .task,不阻塞首屏。
+        .task { await loadDeepReadObservation() }
         // E6 呈现镜像(必须):根级同意 sheet 在本 fullScreenCover 常驻期间
         // 无法呈现(UKit 单 presenter 单模态,实验证实)——不镜像的话,未同意
         // 用户在复盘内点麦克风无任何反应,且 `ensureAIConsent` 的 continuation
@@ -1122,6 +1134,20 @@ struct ReviewFlowView: View {
             isPresented: $coordinator.showToast,
             actionTitle: coordinator.toastActionTitle,
             action: coordinator.toastAction
+        )
+    }
+
+    /// 深读拉取(v5 T5 批 3):事实层就绪(引擎已跑)后调代理 deep-read;
+    /// 任何失败(网络/未知 mode/不接地/限额 429)→ nil 不显示,D4 口径。
+    /// 代理未部署 deep-read 时按 invalid mode 400 落 catch,同样静默降级。
+    private func loadDeepReadObservation() async {
+        guard let deepReader else { return }
+        // 引擎可能尚未跑完(与 loadInsightContext 并行的 .task)——等一拍
+        // 拿到事实;0 条事实不值得调(代理侧也有 <3 降级,这里省一次调用)。
+        guard state.deepReadFacts.facts.count >= 3 else { return }
+        state.deepReadResult = await deepReader.deepReadObservation(
+            facts: state.deepReadFacts,
+            locale: .current
         )
     }
 
