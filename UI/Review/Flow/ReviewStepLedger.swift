@@ -15,7 +15,9 @@ struct ReviewStepLedger: View {
     /// (注入链缺失/降级),手打兜底始终在场。
     var voiceInput: (any VoiceInputProtocol)? = nil
     /// 错误显式传播(S2:权限拒绝/转写失败如实上报,降级手打不静默)。
-    var onError: (Error) -> Void = { _ in }
+    /// 必传无默认——默认 `{ _ in }` 会静默吞错,与 S2 矛盾(与
+    /// `ReviewStepTriage.onError` 同口径)。
+    let onError: (Error) -> Void
     /// AI 同意 gate(E6 三入口同 gate:录音起步前)。
     var ensureConsent: (() async -> Bool)? = nil
 

@@ -98,3 +98,28 @@ struct AIConsentDisclosureCard: View {
         .accessibilityIdentifier("AIConsentCard")
     }
 }
+
+/// 披露卡的 sheet 形态(构造单一来源,两处挂载共用):
+/// - 根挂载(`VoiceTodoApp`,cover/sheet 之外的六路径);
+/// - 复盘内的**镜像挂载**(`ReviewFlowView` 与拆小 sheet)。镜像的原因:
+///   根级 sheet 在 fullScreenCover 常驻期间无法呈现(UKit「一个 presenter
+///   同时只呈现一个模态」,复盘 cover 由根呈现——已实验证实),不镜像的
+///   gate 在复盘内是死路:点按无反应,且 `ensureAIConsent` 的 continuation
+///   永不 resume,后续所有 gate 调用被重入护栏判 false 直到重启。
+///   同一 binding 多层镜像时,只有最深一层未占用的 presenting 上下文会
+///   实际呈现,不会双弹。决议仍收口在 `handleAIConsentDismissed`
+///   (同意写存储 + resume 挂起方,幂等)。
+struct AIConsentSheet: View {
+    @EnvironmentObject private var coordinator: AppCoordinator
+
+    var body: some View {
+        AIConsentDisclosureCard(
+            onAgree: { coordinator.handleAIConsentDismissed(granted: true) },
+            onDecline: { coordinator.handleAIConsentDismissed(granted: false) }
+        )
+        .padding(.vertical, WarmSpacing.lg)
+        // 两档可拖:常规字号 430 一屏;AX 大字号(ja/en 长文案)放不下时
+        // 用户可上拖到 large——固定单档会在动态字体下裁掉同意按钮。
+        .presentationDetents([.height(430), .large])
+    }
+}

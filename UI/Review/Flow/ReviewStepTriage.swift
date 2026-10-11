@@ -21,6 +21,9 @@ struct ReviewStepTriage: View {
     let store: any ReviewFlowStore
     let onError: (Error) -> Void
     let onUndoToast: (String) -> Void
+    /// 披露卡/toast 的镜像挂载需要(见 `splitSheet` 内两段镜像注释);
+    /// 步骤视图经环境取 coordinator 与 HomeView 同惯例(CLAUDE.md DI 节)。
+    @EnvironmentObject private var coordinator: AppCoordinator
 
     /// 滑动触发阈值:位移 85pt **或**速度 800pt/s 任一达标;stamp 从 24pt 起淡入。
     private static let distanceThreshold: CGFloat = 85
@@ -1037,6 +1040,25 @@ struct ReviewStepTriage: View {
             .onDisappear {
                 stopSplitSession()
             }
+            // E6 呈现镜像(第二层):拆小 sheet 本身占了复盘 cover 的 presenting
+            // 上下文——cover 层镜像在这里也弹不出来,披露卡必须镜像到拆小内容
+            // 里才能呈现(实验证实:拆小内容内镜像可正常弹出)。决议仍走
+            // coordinator 统一出口。
+            .sheet(isPresented: $coordinator.showAIConsent, onDismiss: {
+                coordinator.handleAIConsentDismissed(granted: false)
+            }) {
+                AIConsentSheet()
+                    .environmentObject(coordinator)
+            }
+            // toast 镜像(第二层):cover 层 toast 被拆小 sheet 遮挡,麦克风
+            // 错误(S2)须在拆小内容里镜像才可见。
+            .toast(
+                message: coordinator.toastMessage,
+                style: coordinator.toastStyle,
+                isPresented: $coordinator.showToast,
+                actionTitle: coordinator.toastActionTitle,
+                action: coordinator.toastAction
+            )
         }
         .presentationDetents([.large])
         .accessibilityIdentifier("ReviewFlowSplitSheet")

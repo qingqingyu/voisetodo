@@ -1421,4 +1421,57 @@ extension ReviewFlowStateTests {
         let session = state.buildSession(completedAt: now, finalTodos: [])
         XCTAssertEqual(session.factSignatures, [lastSig])
     }
+
+    // MARK: D2 对质区数据源(v5 S6:nil/短/长三态)
+
+    /// S6:「对质区 nil/短/长三态」——nil 态(无会话/全部没写笔记 → nil;
+    /// 最近一期没写但更早写过 → 取更早那期,「最近非空」即上期的诚实口径)。
+    func testLastConfrontationNoteNilStates() {
+        let now = Date()
+        func session(_ note: String?) -> ReviewSession {
+            ReviewSession(
+                completedAt: now, periodStart: now, periodEnd: now, voiceNote: note,
+                ledger: ReviewLedger(inputCount: 0, remainingCount: 0, scheduledCount: 0, todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0),
+                shownInsights: []
+            )
+        }
+        XCTAssertNil(ReviewFlowState.lastConfrontationNote(sessions: []), "无会话 → nil")
+        XCTAssertNil(ReviewFlowState.lastConfrontationNote(sessions: [session(nil), session(nil)]), "全部没写 → nil")
+        XCTAssertNil(
+            ReviewFlowState.lastConfrontationNote(sessions: [session("   \n\t")]),
+            "纯空白笔记视同没写(判定 trim 后非空),不渲染空对质卡"
+        )
+        XCTAssertEqual(
+            ReviewFlowState.lastConfrontationNote(sessions: [session(nil), session("上期写过")]),
+            "上期写过",
+            "最近一期没写、更早写过 → 取最近非空(间隔漂移的诚实口径)"
+        )
+    }
+
+    /// S6:短态/长态——提取函数返回去首尾空白的原文,不截断(收起 4 行是
+    /// 渲染层 `lineLimit` 的职责,对质价值在完整原话,数据层不得先剪)。
+    func testLastConfrontationNoteShortAndLongReturnVerbatim() {
+        let now = Date()
+        func session(_ note: String) -> ReviewSession {
+            ReviewSession(
+                completedAt: now, periodStart: now, periodEnd: now, voiceNote: note,
+                ledger: ReviewLedger(inputCount: 0, remainingCount: 0, scheduledCount: 0, todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0),
+                shownInsights: []
+            )
+        }
+        XCTAssertEqual(ReviewFlowState.lastConfrontationNote(sessions: [session("少记一点")]), "少记一点", "短笔记原样")
+        XCTAssertEqual(
+            ReviewFlowState.lastConfrontationNote(sessions: [session("  上期写过 \n")]),
+            "上期写过",
+            "仅去首尾空白,不动内容"
+        )
+
+        let longNote = (0..<20).map { "第 \($0) 行:这期想专注在最重要的事上,少开新坑。" }.joined(separator: "\n")
+        XCTAssertEqual(ReviewFlowState.lastConfrontationNote(sessions: [session(longNote)]), longNote, "长笔记全文原样,不在数据层截断")
+        XCTAssertEqual(
+            ReviewFlowState.lastConfrontationNote(sessions: [session("很早的一期"), session(longNote)]),
+            longNote,
+            "多期都有笔记 → 取最近一期"
+        )
+    }
 }

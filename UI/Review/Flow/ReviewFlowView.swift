@@ -895,6 +895,18 @@ final class ReviewFlowState {
         return note
     }
 
+    /// D2 对质区数据源(v5):最近一条非空复盘笔记——间隔漂移时「最近非空」
+    /// 即「上期」的诚实口径;上期没写 → nil(对质区整块隐藏,不放占位)。
+    /// 非空判定用 trim 后口径(纯空白的笔记视同没写——否则渲染出看不见
+    /// 正文的对质卡,还会遮蔽更早的真实笔记),返回去首尾空白的原文,
+    /// 不做长度裁剪(收起=4 行、长文展开由视图层 `lineLimit` 承担)。
+    /// 提取为静态纯函数供容器调用与单测(S6:对质区 nil/短/长三态)。
+    static func lastConfrontationNote(sessions: [ReviewSession]) -> String? {
+        sessions.last(where: { note in
+            (note.voiceNote ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        })?.voiceNote?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
     /// 纯函数,`VoiceTodoTests` 直测账本 → session 的映射。
     /// - Parameter finalTodos: 收尾时刻的 store 工作集快照(与 init 的 `todos`
@@ -1046,6 +1058,28 @@ struct ReviewFlowView: View {
         }
         .task { recordFlowStarted() }
         .task { await loadInsightContext() }
+        // E6 呈现镜像(必须):根级同意 sheet 在本 fullScreenCover 常驻期间
+        // 无法呈现(UKit 单 presenter 单模态,实验证实)——不镜像的话,未同意
+        // 用户在复盘内点麦克风无任何反应,且 `ensureAIConsent` 的 continuation
+        // 永不 resume,重入护栏会把后续所有 gate(含首页录音)判 false 直到重启。
+        // 拆小 sheet 场景另有一层镜像(见 `ReviewStepTriage.splitSheet`);决议
+        // 仍走 coordinator 统一出口,同一 binding 多层只有最深未占用上下文会弹。
+        .sheet(isPresented: $coordinator.showAIConsent, onDismiss: {
+            coordinator.handleAIConsentDismissed(granted: false)
+        }) {
+            AIConsentSheet()
+                .environmentObject(coordinator)
+        }
+        // toast 镜像:根级 toast overlay 被本 cover 全屏遮挡,不镜像则流程内
+        // 错误(S2:store 写失败/麦克风失败)用户不可见。绑定同一 coordinator
+        // 状态,cover 内这层是唯一可见实例。
+        .toast(
+            message: coordinator.toastMessage,
+            style: coordinator.toastStyle,
+            isPresented: $coordinator.showToast,
+            actionTitle: coordinator.toastActionTitle,
+            action: coordinator.toastAction
+        )
     }
 
     /// 复盘漏斗 A16(v5 T1/E8):开始=流程呈现,`.task` 每次呈现只跑一次
@@ -1141,9 +1175,9 @@ struct ReviewFlowView: View {
                 lastPinnedOutcome: state.lastPinnedOutcome.map { outcome in
                     (completed: outcome.completed, pending: outcome.pending)
                 },
-                // D2(v5):上期笔记原话对质——最近一条非空笔记(间隔漂移时
-                // 最近非空即「上期」的诚实口径;上期没写→nil 整块隐藏)。
-                lastNote: state.previousSessions.last(where: { ($0.voiceNote ?? "").isEmpty == false })?.voiceNote
+                // D2(v5):上期笔记原话对质(提取逻辑收口在
+                // `lastConfrontationNote(sessions:)`,供单测 S6 三态)。
+                lastNote: ReviewFlowState.lastConfrontationNote(sessions: state.previousSessions)
             )
         case .triage:
             ReviewStepTriage(
@@ -1360,27 +1394,48 @@ struct ReviewFlowView: View {
                 VoiceTodoLog.coordinator.error("review.flow.finish.prune_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             }
         }
-        analyzeNoteTopicsInBackground(session: session)
-        dismiss()
+        Task { @MainActor in
+            // E6(v5 三入口同 gate 的第三路):键盘/语音笔记发往代理前过同意。
+            // gate 必须在 dismiss **之前**——同意卡唯一可靠的呈现路径是本
+            // cover 常驻期间的镜像 sheet(实验证实);dismiss 动画进行中根层
+            // 与镜像层都弹不出(UIKit 过渡死区),事后 binding 停在 true 也
+            // 不重试,挂起的 continuation 会把重入护栏武装——后续所有 gate
+            // (含首页录音)判 false 直到重启。拒绝则本期不做语义对照(笔记
+            // 照存,下期退化纯文本,与离线失败同口径)。
+            if noteAnalysisWillRun(session) {
+                guard await coordinator.ensureAIConsent() else {
+                    VoiceTodoLog.coordinator.info("review.note.analyze_skipped reason=ai_consent")
+                    dismiss()
+                    return
+                }
+            }
+            dismiss()
+            analyzeNoteTopicsInBackground(session: session)
+        }
+    }
+
+    /// 收尾 gate 的前置判定:笔记语义对照是否会实际发起。提取器缺失 / 没写
+    /// 笔记 / 洞察原料缺失(降级跳过)时本期不调用代理,也就不该弹同意卡——
+    /// gate 只在「确有内容要发往代理」时出现(E6 按本次会话是否有内容发往
+    /// 代理收口),与 `analyzeNoteTopicsInBackground` 的入参 guard 同条件。
+    private func noteAnalysisWillRun(_ session: ReviewSession) -> Bool {
+        noteAnalyzer != nil
+            && (session.voiceNote ?? "").isEmpty == false
+            && state.insightContextValue != nil
     }
 
     /// 收尾后的语义对照提取(2026-08-23 拍板,任务 #4):存完会话立刻异步做
     /// 一次 AI 分析(不计费),把「关注点 + 当期计数」按 id 回写进会话;下次
     /// 复盘纯本地拼对照。失败只记日志——对照是增强,离线/失败退化为纯文本
     /// 笔记(拍板口径);洞察原料缺失(降级跳过)时本期计数算不了,同样跳过。
+    /// E6(v5)同意 gate 在调用方(`finishSession`)dismiss 前已过——本函数
+    /// 只做网络调用,不再呈现任何 UI。
     private func analyzeNoteTopicsInBackground(session: ReviewSession) {
         guard let noteAnalyzer,
               let note = session.voiceNote,
               let context = state.insightContextValue else { return }
         let calendar = Calendar.current
         Task { @MainActor in
-            // E6(v5 三入口同 gate 的第三路):手打/语音笔记发往代理前过同意——
-            // 流程正在收尾,披露卡经 coordinator 全局 sheet 呈现;拒绝则本期
-            // 不做语义对照(笔记照存,下期退化纯文本,与离线失败同口径)。
-            guard await coordinator.ensureAIConsent() else {
-                VoiceTodoLog.coordinator.info("review.note.analyze_skipped reason=ai_consent")
-                return
-            }
             do {
                 let drafts = try await noteAnalyzer.analyzeNoteTopics(note: note, locale: .current)
                 let topics = drafts.prefix(3).map { draft in

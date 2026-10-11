@@ -76,7 +76,12 @@ struct ReviewMicRow: View {
             // 录音出错(含停止后紧跟的错误事件):如实上报(错误显式传播,不静默);
             // E10:部分转写不丢——onAdoptPartialOnError 在场时预填给调用方。
             guard let error, wasListening || pendingAdoptText != nil else { return }
-            let partial = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 恢复源必须含 pendingAdoptText:中断/watchdog 路径(VoiceInputManager
+            // 先置 isRecording=false 再设 error,同栈)里,上面的 isRecording=false
+            // 处理器已把部分转写搬进 pendingAdoptText 并清空 liveText——只读
+            // liveText 会让 E10 在最典型的中断场景反而丢话。
+            let partial = (pendingAdoptText ?? liveText)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             wasListening = false
             liveText = ""
             pendingAdoptText = nil
