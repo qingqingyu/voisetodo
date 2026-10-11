@@ -81,6 +81,22 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertTrue(TriageRanking.isFutureDated(dueDate: tomorrow, now: now, calendar: cal))
     }
 
+    /// v5.1 口径分家:`initialBacklogCount`(决定人口,② 屏 lede / noneDecided)
+    /// 排除已排未来;`fullBacklogCount`(地板 B 账本差端点 / 落库 backlogCount)
+    /// 全口径不排除——账本差两端(本期端点 vs 上期 finalBacklogCount)必须同
+    /// 口径,否则已排未来会被跨期相减算成「清单在缩」的幻影(v5.1 审阅发现 1,
+    /// 拍板:地板 A/B 总数与净变化维持全口径不动)。
+    func testBacklogCountsSplitCalibers() {
+        let cal = Calendar.current
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: Date())!
+        let state = ReviewFlowState(todos: [
+            todo("漂着"),
+            todo("已排明天", dueDate: tomorrow),
+        ])
+        XCTAssertEqual(state.initialBacklogCount, 1, "决定人口:已排未来不进")
+        XCTAssertEqual(state.fullBacklogCount, 2, "全口径:地板 B 端点/落库口径含已排未来")
+    }
+
     // MARK: 步骤闸门(2026-08-22 拍板放宽:至少选 1 件)
 
     func testCommitGateRequiresAtLeastOneSelection() {
@@ -1278,7 +1294,7 @@ extension ReviewFlowStateTests {
         )
         let ledgerNumbers = ReviewFlowState.backlogFlowNumbers(
             inputs: inputs, previousSessions: [ledgerSession],
-            initialBacklogCount: 10, now: now, calendar: calendar
+            fullBacklogCount: 10, now: now, calendar: calendar
         )
         XCTAssertEqual(ledgerNumbers.backlogDelta, 3, "账本差优先:本期 init 10 − 上期收尾 7,规律/划掉不干扰")
         XCTAssertEqual(ledgerNumbers.created, 2, "展示新增与第 1 步同源:规律父也计入")
@@ -1314,7 +1330,7 @@ extension ReviewFlowStateTests {
         for testCase in windowCases {
             let windowNumbers = ReviewFlowState.backlogFlowNumbers(
                 inputs: inputs, previousSessions: testCase.sessions,
-                initialBacklogCount: 10, now: now, calendar: calendar
+                fullBacklogCount: 10, now: now, calendar: calendar
             )
             XCTAssertEqual(windowNumbers.backlogDelta, -1, "\(testCase.label):无有效基线 → 一次性口径窗口法")
             XCTAssertEqual(windowNumbers.created, 2)
@@ -1324,15 +1340,23 @@ extension ReviewFlowStateTests {
         }
     }
 
-    /// buildSession 落库双积压字段(复核修订二轮 N2):backlogCount = init
-    /// 快照(趋势线数据源,整个会话恒定);finalBacklogCount = 收尾时刻从
-    /// 注入快照按 `pendingOneOffCount` 同口径重数(地板 B 下期基线,与展示
-    /// 窗口起点对齐)——计数在 buildSession 内,容器只传快照。两者与卡堆
-    /// 口径的 inputCount 三方分野(35 条积压截断后 inputCount 只数面对过的)。
+    /// buildSession 落库双积压字段(复核修订二轮 N2):backlogCount = **全口径**
+    /// init 快照(`fullBacklogCount`,趋势线数据源,整个会话恒定;v5.1 起与
+    /// 决定人口的 `initialBacklogCount` 分家——已排未来计入积压、不进决定);
+    /// finalBacklogCount = 收尾时刻从注入快照按 `pendingOneOffCount` 同口径
+    /// 重数(地板 B 下期基线,与展示窗口起点对齐)——计数在 buildSession 内,
+    /// 容器只传快照。两者与卡堆口径的 inputCount 三方分野(35 条积压截断后
+    /// inputCount 只数面对过的)。
     func testBuildSessionCarriesBacklogCountSnapshot() {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date())!
         let fillers = (0..<8).map { todo("filler\($0)", daysOld: 100 + $0) }
+        // 已排明天的一条:全口径(36)计入、决定人口(35)不进——锁住 v5.1 分家。
         let items = fillers + (0..<27).map { todo("t\($0)", daysOld: 40 + $0) }
+            + [todo("已排明天", daysOld: 1, dueDate: tomorrow)]
         let state = ReviewFlowState(todos: items)
+        XCTAssertEqual(state.initialBacklogCount, 35, "决定人口:已排未来不进卡堆口径")
+        XCTAssertEqual(state.fullBacklogCount, 36, "全口径:含已排未来")
 
         let top = state.deck.first!
         state.markAbandoned(top)
@@ -1343,8 +1367,8 @@ extension ReviewFlowStateTests {
         let finalTodos = items.map { $0.id == top.id ? abandonedRow : $0 }
             + [todo("已完成", isCompleted: true, daysOld: 3), todo("规律父", recurring: true, daysOld: 3)]
         let session = state.buildSession(completedAt: Date(), finalTodos: finalTodos)
-        XCTAssertEqual(session.ledger.backlogCount, 35, "期初积压(排序前 triageInput 快照,恒定)")
-        XCTAssertEqual(session.ledger.finalBacklogCount, 34, "收尾积压(注入快照重数:35 − 划掉 1;已完成/规律不计入)")
+        XCTAssertEqual(session.ledger.backlogCount, 36, "期初积压·全口径 init 快照(含已排未来),与收尾同口径")
+        XCTAssertEqual(session.ledger.finalBacklogCount, 35, "收尾积压(注入快照重数:36 − 划掉 1;已完成/规律不计入)")
         XCTAssertEqual(session.ledger.inputCount, 8, "卡堆口径:7 留卡 + 1 决定——三数语义不同")
     }
 }

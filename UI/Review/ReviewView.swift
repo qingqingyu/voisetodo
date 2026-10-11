@@ -169,24 +169,22 @@ struct ReviewView: View {
 
     // MARK: Review Flow Entry
 
+    /// 入口卡 N 的口径(v5.1 冷启动拍板):与流程侧 `ReviewFlowState.triageInput`
+    /// 同人口——已排未来用户日的不算「等你决定」(已排期=已有去向);委托同一
+    /// 函数取数,谓词不二写。曝光埋点 hasPending 同用本值,单一来源防两处漂移。
+    private var decidablePendingCount: Int {
+        ReviewFlowState.triageInput(
+            from: allTodos.map { $0.toData() }
+        ).count
+    }
+
     /// 复盘入口卡(2026-08-23 拍板改版):一行动作行——icon + 「N 件事等你决定」
-    /// + 尾部胶囊「开始 →」。N = 未完成 && abandonedAt == nil && recurrenceRule == nil
-    /// 的一次性任务数(与第 2 步卡片堆输入同一口径,拍板 4)。
+    /// + 尾部胶囊「开始 →」。N = `decidablePendingCount`(决定人口,拍板 4 + v5.1)。
     ///
     /// 改版动机:旧三行卡(title/pending/scope)读起来像信息展示,且「一次性任务」
     /// 是内部模型泄漏(用户没有这个分类);「回顾近 30 天」消歧义移进流程第 1 步;
     /// 「上次复盘日期」也移第 1 步(从 previousSessions 取,不再外部注入)。
     /// N == 0 时空态文案「都清完了,看看这一个月」——卡不消失,回顾本身仍有价值。
-    /// 入口卡 N 的口径(v5.1 冷启动拍板):与流程侧 `ReviewFlowState.triageInput`
-    /// 同人口——已排未来用户日的不算「等你决定」(已排期=已有去向)。曝光
-    /// 埋点 hasPending 同用本值,单一来源防两处漂移。
-    private var decidablePendingCount: Int {
-        allTodos.filter { item in
-            !item.isCompleted && item.abandonedAt == nil && item.recurrenceRule == nil
-                && !TriageRanking.isFutureDated(dueDate: item.dueDate, now: Date(), calendar: calendar)
-        }.count
-    }
-
     @ViewBuilder
     private var reviewFlowEntryCard: some View {
         let pendingCount = decidablePendingCount

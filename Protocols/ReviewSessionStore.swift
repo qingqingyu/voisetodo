@@ -20,8 +20,10 @@ struct ReviewLedger: Codable, Sendable, Equatable {
     /// `backlogCount`(v4 批 4 对齐注释与实现:本字段历史上注释写成
     /// 「流程开始时的待处理一次性任务数(N)」,与实现不符)。
     let inputCount: Int
-    /// 流程开始时的积压总数(v4 批 4,地板 B 趋势线的数据源;=
-    /// `ReviewFlowState.initialBacklogCount` init 快照,整个会话恒定)。
+    /// 流程开始时的积压总数·**全口径**(`ReviewAggregator.pendingOneOffCount`
+    /// init 快照,含已排未来;v4 批 4,地板 B 趋势线的数据源;v5.1 起 =
+    /// `ReviewFlowState.fullBacklogCount`——决定人口口径的 `initialBacklogCount`
+    /// 排除已排未来,与 `finalBacklogCount` 不同口径,不能互减,整个会话恒定)。
     /// 旧 payload 无此键——自定义解码默认 **-1**(哨兵:0 是「本期零积压」
     /// 的有效事实,默认 0 会把旧会话画成零积压污染趋势;调用方按 <0 视为
     /// 「未记录」,不进趋势)。

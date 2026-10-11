@@ -8826,7 +8826,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All %lld were added recently"
+            "value" : "All %lld added recently"
           }
         },
         "ja" : {
