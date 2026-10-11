@@ -111,4 +111,40 @@ final class TriageRankingTests: XCTestCase {
             0
         )
     }
+
+    // MARK: - v5 E7(用户日口径)+ 拍板 3(门槛 21 天)
+
+    override func tearDown() {
+        DayClock.appGroupDefaults.removeObject(forKey: DayClock.startHourKey)
+        super.tearDown()
+    }
+
+    /// E7:停滞天数走 DayClock 用户日——startHour=3 时,前一天 23:50 记下、
+    /// 当天 01:30 查看,自然日差 21 但用户日只差 20(01:30 还属「昨晚」那
+    /// 个用户日)。批量出口与地板 A 用同一把尺,不再 ±1 天错位。
+    func testStagnationDays_usesUserDayNotNaturalDay() {
+        DayClock.appGroupDefaults.set(3, forKey: DayClock.startHourKey)
+        let created = calendar.date(from: DateComponents(year: 2026, month: 9, day: 10, hour: 23, minute: 50))!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 1, minute: 30))!
+        XCTAssertEqual(TriageRanking.stagnationDays(of: todo("x", createdOn: created), now: now, calendar: calendar), 20,
+                       "用户日差 20(自然日会是 21)——E7 与地板 A 同尺")
+    }
+
+    /// 拍板 3:批量出口门槛 = 21 用户日(v2 的 30 天被 supersede)。
+    /// 恰 20 不收、恰 21 收、22 收——F6 边界夹具。
+    func testBatchThreshold_21UserDaysBoundary() {
+        let now = self.now(2026, 10, 1)
+        func age(_ days: Int) -> Int {
+            TriageRanking.stagnationDays(
+                of: todo("d\(days)", createdOn: calendar.date(byAdding: .day, value: -days, to: now)!),
+                now: now, calendar: calendar
+            )
+        }
+        XCTAssertEqual(age(20), 20)
+        XCTAssertEqual(age(21), 21)
+        XCTAssertEqual(age(22), 22)
+        XCTAssertEqual(TriageRanking.batchStagnationDays, 21, "门槛已从 30 改 21(拍板 3)")
+        XCTAssertTrue(age(21) >= TriageRanking.batchStagnationDays, "恰 21 → 可批量")
+        XCTAssertFalse(age(20) >= TriageRanking.batchStagnationDays, "20 → 不可批量")
+    }
 }

@@ -74,7 +74,8 @@ struct ReactiveVsPlannedRule: InsightRule {
             // `InsightAvailability.fact`)。
             return .fact(InsightFactLine(
                 id: id,
-                text: String(localized: "review.insight.reactive.fact_\(percent)")
+                text: String(localized: "review.insight.reactive.fact_\(percent)"),
+                signature: "reactiveVsPlanned|\(percent)"
             ))
         }
 

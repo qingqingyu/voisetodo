@@ -21,6 +21,9 @@ struct ReviewStepTriage: View {
     let store: any ReviewFlowStore
     let onError: (Error) -> Void
     let onUndoToast: (String) -> Void
+    /// 披露卡/toast 的镜像挂载需要(见 `splitSheet` 内两段镜像注释);
+    /// 步骤视图经环境取 coordinator 与 HomeView 同惯例(CLAUDE.md DI 节)。
+    @EnvironmentObject private var coordinator: AppCoordinator
 
     /// 滑动触发阈值:位移 85pt **或**速度 800pt/s 任一达标;stamp 从 24pt 起淡入。
     private static let distanceThreshold: CGFloat = 85
@@ -38,6 +41,8 @@ struct ReviewStepTriage: View {
     /// 复盘内麦克风(与首页共用同一实例——复盘全屏时首页录音不可能并发,无会话冲突)。
     /// nil 时「说一句」行隐藏。
     let voiceInput: (any VoiceInputProtocol)?
+    /// AI 同意 gate(E6):录音起步前过 coordinator.ensureAIConsent。
+    var ensureConsent: (() async -> Bool)? = nil
 
     @State private var splitTarget: TodoItemData?
     /// 候选加载状态机:idle(未打开)→ loading → ready / failed(AI 失败 → 降级手写)。
@@ -211,7 +216,7 @@ struct ReviewStepTriage: View {
         Spacer()
     }
 
-    // MARK: 批量出口(2026-09-01 拍板 3:尾部停滞 ≥ 30 天的一键推「稍后」)
+    // MARK: 批量出口(v5 拍板 3:尾部停滞 ≥ 21 用户天的一键推「稍后」,与地板 A 同尺)
 
     /// 尾部三态:可推「稍后」的一批 → 出口行;刚推完 → 结果 + 整批撤销行;
     /// 两种都没有 → 只剩「其余 N 件先不动」的说明行(防误以为全处理了)。
@@ -241,7 +246,8 @@ struct ReviewStepTriage: View {
         }
     }
 
-    /// 出口行:条数写明在标题里(「另外 27 件超过 30 天没碰过」),
+    /// 出口行:条数写明在标题里(「另外 27 件超过 21 天没碰过」,键
+    /// `review.flow.triage.batch.title_`,门槛=`TriageRanking.batchStagnationDays`),
     /// 尾部胶囊是动作暗示(与回顾页入口卡同一模式)。
     private func batchExitRow(count: Int) -> some View {
         Button {
@@ -1003,10 +1009,12 @@ struct ReviewStepTriage: View {
                             }
 
                             if let voiceInput, splitPhase != .loading {
-                                SplitMicRow(
+                                ReviewMicRow(
                                     voiceInput: voiceInput,
+                                    hint: String(localized: "review.flow.split.mic.hint"),
                                     onError: onError,
-                                    onAdopt: { adoptVoiceTranscript($0) }
+                                    onAdopt: { adoptVoiceTranscript($0) },
+                                    ensureConsent: ensureConsent
                                 )
                             }
 
@@ -1032,6 +1040,25 @@ struct ReviewStepTriage: View {
             .onDisappear {
                 stopSplitSession()
             }
+            // E6 呈现镜像(第二层):拆小 sheet 本身占了复盘 cover 的 presenting
+            // 上下文——cover 层镜像在这里也弹不出来,披露卡必须镜像到拆小内容
+            // 里才能呈现(实验证实:拆小内容内镜像可正常弹出)。决议仍走
+            // coordinator 统一出口。
+            .sheet(isPresented: $coordinator.showAIConsent, onDismiss: {
+                coordinator.handleAIConsentDismissed(granted: false)
+            }) {
+                AIConsentSheet()
+                    .environmentObject(coordinator)
+            }
+            // toast 镜像(第二层):cover 层 toast 被拆小 sheet 遮挡,麦克风
+            // 错误(S2)须在拆小内容里镜像才可见。
+            .toast(
+                message: coordinator.toastMessage,
+                style: coordinator.toastStyle,
+                isPresented: $coordinator.showToast,
+                actionTitle: coordinator.toastActionTitle,
+                action: coordinator.toastAction
+            )
         }
         .presentationDetents([.large])
         .accessibilityIdentifier("ReviewFlowSplitSheet")
@@ -1284,154 +1311,3 @@ struct SplitCandidate: Identifiable {
 /// 存在类型满足不了 `@ObservedObject` 的泛型约束(Swift 限制),协议已把状态
 /// 全部暴露为 Publisher,镜像订阅是等价且唯一干净的路。
 /// 注意:录音只能在真机验证(CLAUDE.md 模拟器限制)。
-private struct SplitMicRow: View {
-    let voiceInput: any VoiceInputProtocol
-    let onError: (Error) -> Void
-    let onAdopt: (String) -> Void
-
-    /// isRecording 的本地镜像(onAppear 播种 + publisher 同步)。
-    @State private var isRecording = false
-    /// 本次监听期间累积的转写。不直接读 `voiceInput.transcript`——那里可能留着
-    /// 首页上一次录音的旧文本,只有监听开始后的 publisher 事件才是本次的。
-    @State private var liveText = ""
-    @State private var wasListening = false
-    /// 录音停止后的待采纳转写(error 事件在下一个 runloop 前可将其清空作废)。
-    @State private var pendingAdoptText: String?
-
-    var body: some View {
-        Group {
-            if isRecording {
-                listeningRow
-            } else {
-                idleRow
-            }
-        }
-        .onAppear {
-            // 行可能出现在录音已开始之后(如候选加载完成时):播种当前态
-            isRecording = voiceInput.isRecording
-        }
-        .onReceive(voiceInput.isRecordingPublisher) { recording in
-            isRecording = recording
-            if recording {
-                wasListening = true
-                liveText = ""
-                pendingAdoptText = nil
-            } else if wasListening {
-                // 结束(手动停/静音自动停):进入待采纳态。VoiceInputManager 的错误路径
-                // (中断/watchdog)是先置 isRecording=false 再设 error——同一个调用栈里
-                // error 事件会紧跟着到,这里延后一个 runloop 再决定采纳还是报错,
-                // 避免把不完整转写当结果、又把错误吞掉。
-                wasListening = false
-                let final = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
-                liveText = ""
-                guard !final.isEmpty else { return }
-                pendingAdoptText = final
-                DispatchQueue.main.async {
-                    guard let text = pendingAdoptText else { return } // error 路径已清空
-                    pendingAdoptText = nil
-                    onAdopt(text)
-                }
-            }
-        }
-        .onReceive(voiceInput.transcriptPublisher) { text in
-            guard wasListening else { return }
-            liveText = text
-        }
-        .onReceive(voiceInput.errorPublisher) { error in
-            // 录音出错(含停止后紧跟的错误事件):不采纳、如实上报(错误显式传播,不静默)
-            guard let error, wasListening || pendingAdoptText != nil else { return }
-            wasListening = false
-            liveText = ""
-            pendingAdoptText = nil
-            onError(error)
-        }
-    }
-
-    private var idleRow: some View {
-        Button {
-            Task { @MainActor in
-                do {
-                    try await voiceInput.startRecording()
-                } catch {
-                    onError(error)
-                }
-            }
-        } label: {
-            HStack(spacing: WarmSpacing.sm) {
-                Label(String(localized: "review.flow.split.mic.say"), systemImage: "mic.fill")
-                    .font(WarmFont.headline(13))
-                    .foregroundColor(WarmTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                Spacer(minLength: WarmSpacing.xs)
-
-                Text(String(localized: "review.flow.split.mic.hint"))
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .layoutPriority(1)
-            }
-            .padding(WarmSpacing.sm)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
-                    .fill(WarmTheme.cardBackground)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var listeningRow: some View {
-        HStack(spacing: WarmSpacing.sm) {
-            Image(systemName: "mic.fill")
-                .font(.system(size: 16))
-                .foregroundColor(WarmTheme.urgentText)
-
-            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                Text(verbatim: liveText.isEmpty
-                    ? String(localized: "review.flow.split.mic.listening")
-                    : liveText)
-                    .font(WarmFont.body(14))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-
-                HStack(spacing: WarmSpacing.md) {
-                    // 手动「说完了」:等 isFinal 最终转写后自动停止 → 采纳
-                    Button(String(localized: "review.flow.split.mic.done")) {
-                        voiceInput.finishRecording()
-                    }
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .buttonStyle(.plain)
-
-                    Button(String(localized: "review.flow.split.mic.cancel")) {
-                        voiceInput.cancelRecordingByUser()
-                        wasListening = false
-                        liveText = ""
-                        pendingAdoptText = nil
-                    }
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .buttonStyle(.plain)
-                }
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.textMuted)
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(WarmSpacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
-                .fill(WarmTheme.cardBackground)
-        )
-    }
-}

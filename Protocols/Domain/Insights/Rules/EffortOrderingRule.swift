@@ -6,7 +6,8 @@ import Foundation
 /// 用户日跨度中位数:
 ///   - high ≥ max(other × 2, 2 天) → 触发警示(重要的事拖得明显更久)
 ///   - high ≤ other → 触发正向(重要的事没被拖——复盘不能只报坏消息,§2.4)
-///   - 中间地带 → hidden(没有可行动的信号就不说)
+///   - 中间地带 → 一行事实(v5 拍板 1·3-lite:从 hidden 降为 `.fact`,
+///     只报两组中位天数,不带判断;样本量随文案给出)
 ///
 /// minSample = 6(两组各 3)。confidence/strength 用**较稀缺组**的样本量而非
 /// 总完成数——决定中位数可信度的是小组。
@@ -78,7 +79,16 @@ struct EffortOrderingRule: InsightRule {
                 localized: "review.insight.effort.body_positive_\(highMedian)_\(otherMedian)_\(highCount)_\(otherCount)"
             )
         } else {
-            return .hidden
+            // 中间地带(v5 拍板 1·3-lite):从 hidden 降为一行事实——只报两组
+            // 中位天数,不带判断;样本量随文案给出(F5 同族口径)。渲染层按
+            // D1 三层视觉语言用中性样式;不走冷却、不记 shownInsights(v4 拍板 6)。
+            return .fact(InsightFactLine(
+                id: id,
+                text: String(
+                    localized: "review.insight.effort.fact_\(highMedian)_\(otherMedian)_\(highCount)_\(otherCount)"
+                ),
+                signature: "effortOrdering|\(highMedian)|\(otherMedian)|\(highCount)|\(otherCount)"
+            ))
         }
 
         let score = InsightEngine.score(normalizedEffect: effect, sampleCount: n, minSample: minSample)

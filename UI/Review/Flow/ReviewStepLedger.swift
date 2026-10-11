@@ -11,6 +11,21 @@ import SwiftUI
 ///   动线也顺)。答案持久化不变(`ReviewFlowState.voiceAnswerText`,阶段 4)。
 struct ReviewStepLedger: View {
     @Bindable var state: ReviewFlowState
+    /// 草稿是否仍是 AI 原样(D9:用户一动笔即退场)。init 播种:预填发生
+    /// 在 onAppear(此时 deepReadResult 可能还没回来,种子恒 false,预填时再置)。
+    @State private var showingAIDraftHint = false
+    /// 是否已预填过(D9「首次进入且笔记为空」):用户手动清空笔记后回跳
+    /// 再进第 5 步,onAppear 会重跑——不设防会把用户刚删掉的草稿塞回去。
+    @State private var hasPrefilledAIDraft = false
+    /// 「问问自己」麦克风(v5 T4/D8 同款复用)。nil → 麦克风行不渲染
+    /// (注入链缺失/降级),手打兜底始终在场。
+    var voiceInput: (any VoiceInputProtocol)? = nil
+    /// 错误显式传播(S2:权限拒绝/转写失败如实上报,降级手打不静默)。
+    /// 必传无默认——默认 `{ _ in }` 会静默吞错,与 S2 矛盾(与
+    /// `ReviewStepTriage.onError` 同口径)。
+    let onError: (Error) -> Void
+    /// AI 同意 gate(E6 三入口同 gate:录音起步前)。
+    var ensureConsent: (() async -> Bool)? = nil
 
     private let calendar = Calendar.current
 
@@ -33,6 +48,13 @@ struct ReviewStepLedger: View {
             }
             .padding(.horizontal, WarmSpacing.lg)
             .padding(.bottom, WarmSpacing.xxl)
+        }
+        .onAppear { prefillAIDraftIfNeeded() }
+        .onChange(of: state.voiceAnswerText) { _, newValue in
+            // 用户动笔(与预填不同)→ AI 草稿标记退场;清空也退场
+            if showingAIDraftHint, newValue != state.deepReadResult?.draft {
+                showingAIDraftHint = false
+            }
         }
     }
 
@@ -247,6 +269,19 @@ struct ReviewStepLedger: View {
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if let voiceInput {
+                    ReviewMicRow(
+                        voiceInput: voiceInput,
+                        hint: String(localized: "review.flow.note.mic.hint"),
+                        onError: onError,
+                        onAdopt: { adoptTranscriptIntoNote($0) },
+                        // E10:中断/错误时已说出的部分转写预填笔记框,不丢弃。
+                        onAdoptPartialOnError: { adoptTranscriptIntoNote($0) },
+                        // E6:录音起点过同意 gate(与首页 startRecording 同口径)。
+                        ensureConsent: ensureConsent
+                    )
+                }
+
                 if let category = state.askDomainHintCategory {
                     Text(String(
                         format: String(localized: "review.flow.insights.ask.domain_hint"),
@@ -254,6 +289,14 @@ struct ReviewStepLedger: View {
                     ))
                         .font(WarmFont.caption(12))
                         .foregroundColor(WarmTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+
+                if showingAIDraftHint {
+                    Text(String(localized: "review.flow.note.draft.hint"))
+                        .font(WarmFont.caption(11))
+                        .foregroundColor(WarmTheme.textMuted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
@@ -289,6 +332,32 @@ struct ReviewStepLedger: View {
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    /// 转写采纳进「问问自己」笔记框(v5 T4):已有内容则换行接续——笔记是
+    /// 自由文本,多段转写逐行追加比挤一行可读;VoiceOver 由 TextEditor 承载。
+    /// AI 草稿预填(v5 T5/D9):首次进入且笔记为空+深读草稿非空 → 预填并
+    /// 挂标记;用户改/删/说一句(voiceAnswerText 变化)标记退场。存进
+    /// voiceNote 的就是用户看到的原文(D9:「AI 草稿(你保留的)」由 hint
+    /// 行承担披露,不再另设 noteSource 字段——预填后原文可见,保存即确认)。
+    private func prefillAIDraftIfNeeded() {
+        guard !hasPrefilledAIDraft,
+              state.voiceAnswerText.isEmpty,
+              let draft = state.deepReadResult?.draft,
+              !draft.isEmpty else { return }
+        state.voiceAnswerText = draft
+        showingAIDraftHint = true
+        hasPrefilledAIDraft = true
+    }
+
+    private func adoptTranscriptIntoNote(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if state.voiceAnswerText.isEmpty {
+            state.voiceAnswerText = trimmed
+        } else {
+            state.voiceAnswerText += "\n" + trimmed
         }
     }
 }

@@ -10827,13 +10827,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Another %lld task untouched for 30+ days"
+                  "value" : "Another %lld task untouched for 21+ days"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Another %lld tasks untouched for 30+ days"
+                  "value" : "Another %lld tasks untouched for 21+ days"
                 }
               }
             }
@@ -10842,13 +10842,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "他に %lld 件、30 日以上手をつけていません"
+            "value" : "他に %lld 件、21 日以上手をつけていません"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "另有 %lld 件超过 30 天没碰过"
+            "value" : "另有 %lld 件超过 21 天没碰过"
           }
         }
       }
@@ -14502,6 +14502,282 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新失败，请打开 App 同步"
+          }
+        }
+      }
+    },
+    "review.insight.effort.fact_%lld_%lld_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "High-priority tasks took %lld days, others %lld (n=%lld/%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要なタスクは%lld日、その他は%lld日（各%lld/%lld件）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要的事 %lld 天做完，其他 %lld 天（各 %lld/%lld 条）"
+          }
+        }
+      }
+    },
+    "review.insight.energy.fact_peak_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most tasks were completed around %lld:00 (n=%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了のピークは%lld時頃（%lld件）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成高峰在 %lld 点（%lld 条记录）"
+          }
+        }
+      }
+    },
+    "review.insight.energy.fact_late_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld timed high-priority tasks are scheduled after 22:00"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻付けの重要タスク %lld/%lld 件が22時以降"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "带钟点的重要任务 %lld/%lld 件排在 22 点后"
+          }
+        }
+      }
+    },
+    "review.insight.fact.same_as_last" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "same as last time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回と同じ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与上期相同"
+          }
+        }
+      }
+    },
+    "review.flow.insights.sparse_note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fewer than 3 tasks completed this window — more to see next time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間の完了は3件未満。次のふりかえりでもっと見えるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个窗口完成的还不到 3 条——先继续用，下次复盘有更多可说。"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_note.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You wrote last time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のふりかえりメモ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上期你写了"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_note.expand_hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Double-tap to expand or collapse"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダブルタップで開閉"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点两下展开或收起"
+          }
+        }
+      }
+    },
+    "review.flow.note.mic.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speak a thought — it goes straight into the note"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話した内容がそのままメモに入ります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说一句，想法直接进笔记"
+          }
+        }
+      }
+    },
+    "review.flow.insights.deepread.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Observation"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 観察"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 观察"
+          }
+        }
+      }
+    },
+    "review.flow.insights.deepread.badge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "from your numbers"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたの数字から"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自你的数字"
+          }
+        }
+      }
+    },
+    "review.flow.insights.deepread.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated from this period's verified facts"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間の検証済み事実から生成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由本期已核实的事实生成"
+          }
+        }
+      }
+    },
+    "review.flow.note.draft.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI draft — edit or clear, saved as yours"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 下書き——編集・削除可、あなたのメモとして保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 草稿——可改可删，保存为你的笔记"
           }
         }
       }

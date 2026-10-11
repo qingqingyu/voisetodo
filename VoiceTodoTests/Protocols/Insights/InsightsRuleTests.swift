@@ -461,15 +461,17 @@ final class EffortOrderingRuleTests: XCTestCase {
         XCTAssertEqual(result.strength, .lowData)
     }
 
-    /// 01-B 中间地带:高优 3 天 vs 其他 2 天 → hidden。
-    func test01B_mildGap_hidden() throws {
+    /// 01-B 中间地带:高优 3 天 vs 其他 2 天 → 事实行(v5 拍板 1·3-lite,
+    /// 推翻 v1 的「中间地带 hidden」;只报数字不带判断)。
+    func test01B_mildGap_factLine() throws {
         let now = try date(2026, 8, 21)
         let high = [2, 3, 3, 4].map { event(createdDaysAgo: 10, spanDays: $0, priority: .high, now: now) }
         let other = [1, 2, 2, 3].map { event(createdDaysAgo: 10, spanDays: $0, priority: .normal, now: now) }
         let ctx = makeContext(now: now, completed: high + other)
-        guard case .hidden = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
-            return XCTFail("01-B 3 vs 2 天应 hidden")
+        guard case let .fact(line) = EffortOrderingRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("01-B 3 vs 2 天应降为事实行")
         }
+        XCTAssertEqual(line.signature, "effortOrdering|3|2|4|4", "中位 3/2 样本 4/4")
     }
 
     /// 01-C 正向:高优中位 ≤ 其他 → improving。
@@ -584,38 +586,48 @@ final class EnergyWindowRuleTests: XCTestCase {
         XCTAssertEqual(result.strength, .lowData)
     }
 
-    /// 05-B 高峰在下午 → hidden(上半句不成立,组合洞察宁漏报不误报)。
-    func test05B_afternoonPeak_hidden() throws {
+    /// 05-B 高峰在下午 → fired 不出(两腿缺一);深夜腿成立 → 深夜事实行
+    /// (v5 3-lite:单腿不再整条沉默)。
+    func test05B_afternoonPeak_lateFact() throws {
         let now = try date(2026, 8, 21, 15)
         var events: [InsightCompletedEvent] = (0..<13).map { _ in filler(now: now) }
         events.append(try timedHigh(now: now, dueHour: 22))
         events.append(try timedHigh(now: now, dueHour: 23))
         let ctx = makeContext(now: now, completed: events)
-        guard case .hidden = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
-            return XCTFail("05-B 下午高峰应 hidden")
+        guard case let .fact(line) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("05-B 下午高峰+深夜腿应出深夜事实行")
         }
+        XCTAssertEqual(line.signature, "energyWindow.late|2|2")
     }
 
-    /// 05-C 带钟点的高优仅 1 件 → hidden(下半句样本不足,整条不说)。
-    func test05C_singleHighTimed_hidden() throws {
+    /// 05-C 带钟点高优仅 1 件(<minHighTimed=2)→ 深夜腿不成立 → 峰值
+    /// 事实行(v5 3-lite:样本足够时报峰值,不再整条沉默)。
+    func test05C_singleHighTimed_peakFact() throws {
         let now = try date(2026, 8, 21, 9)
         var events: [InsightCompletedEvent] = (0..<14).map { _ in filler(now: now) }
         events.append(try timedHigh(now: now, dueHour: 22))
         let ctx = makeContext(now: now, completed: events)
-        guard case .hidden = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
-            return XCTFail("05-C 单件高优应 hidden")
+        guard case let .fact(line) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
+            return XCTFail("05-C 单件高优应回落峰值事实行")
         }
+        XCTAssertTrue(line.signature.hasPrefix("energyWindow.peak|"), line.signature)
     }
 
-    /// 05-D 完成记录 < 15 → placeholder 写清还差几条。
-    func test05D_tooFewCompletions_placeholder() throws {
+    /// 05-D 完成记录 3–14 → 峰值事实行(不再 placeholder;v5 拍板 5+
+    /// D5——占位行只在规则层整空时兜底)。n<3 仍 placeholder(C1 事实阈值)。
+    func test05D_tooFewCompletions_factThenPlaceholder() throws {
         let now = try date(2026, 8, 21, 9)
-        let events = (0..<5).map { _ in filler(now: now) }
-        let ctx = makeContext(now: now, completed: events)
-        guard case let .placeholder(needMore) = EnergyWindowRule().evaluate(ctx, calendar: calendar) else {
-            return XCTFail("05-D 应 placeholder")
+        let five = (0..<5).map { _ in filler(now: now) }
+        guard case let .fact(line) = EnergyWindowRule().evaluate(makeContext(now: now, completed: five), calendar: calendar) else {
+            return XCTFail("05-D n=5 应出峰值事实行")
         }
-        XCTAssertEqual(needMore, 10)
+        XCTAssertEqual(line.signature, "energyWindow.peak|9|5")
+
+        let two = (0..<2).map { _ in filler(now: now) }
+        guard case let .placeholder(needMore) = EnergyWindowRule().evaluate(makeContext(now: now, completed: two), calendar: calendar) else {
+            return XCTFail("05-D n<3 应 placeholder")
+        }
+        XCTAssertEqual(needMore, 13)
     }
 }
 
@@ -894,5 +906,109 @@ final class BacklogCategoryFloorTests: XCTestCase {
         // 什么都没完成过 → 无对照(fact 仍出 focus 行)。
         let noDone = try XCTUnwrap(fact(open_, now: now))
         XCTAssertNil(noDone.contrastCategory)
+    }
+}
+
+extension InsightsRuleTests {
+    // MARK: - v5 3-lite 事实行(01/05 中间地带降 .fact)
+
+    /// 01 中间地带:高优中位 3 天 vs 其他 2 天(3 < max(2×2,2)=4,不触发
+    /// 警示;3 > 2,不触发正向)→ 事实行只报两组中位,不带判断。
+    func test01MiddleZone_fallsToFactWithBothMedians() throws {
+        let now = try date(2026, 8, 21)
+        // 确定性夹具:高优组跨度 {3,3,3}、其他组 {2,2,2}
+        func spanEvent(priority: Priority, span: Int) -> InsightCompletedEvent {
+            InsightCompletedEvent(
+                todoId: UUID(), createdAt: daysAgo(span + 5, from: now),
+                completedAt: daysAgo(5, from: now),
+                category: .life, priority: priority, hasDueTime: false, dueDate: nil
+            )
+        }
+        let high = (1...3).map { _ in spanEvent(priority: .high, span: 3) }
+        let other = (1...3).map { _ in spanEvent(priority: .normal, span: 2) }
+        let ctx = makeContext(now: now, completed: high + other)
+
+        let result = EffortOrderingRule().evaluate(ctx, calendar: calendar)
+        guard case let .fact(line) = result else {
+            return XCTFail("中间地带应降为 .fact,得到 \(result)")
+        }
+        // 测试环境缺 catalog 时 String(localized:) 回落键名——按键名断言插值
+        XCTAssertEqual(line.signature, "effortOrdering|3|2|3|3", "结构化标识含两组中位与样本(E4,环境无关)")
+        XCTAssertEqual(line.id, .effortOrdering)
+    }
+
+    /// E3:峰值事实扫描 0...23——三条 2:00 完成的记录必须报真实峰值 2 点,
+    /// 不被 fired 的 5...23 窗口吞掉。
+    func test05PeakFact_scansFull24Hours() throws {
+        let now = try date(2026, 8, 21, 12)
+        let completedAt = try date(2026, 8, 20, 2, 0)
+        let events = (1...3).map { _ in
+            InsightCompletedEvent(
+                todoId: UUID(), createdAt: daysAgo(9, from: now),
+                completedAt: completedAt,
+                category: .life, priority: .normal, hasDueTime: false, dueDate: nil
+            )
+        }
+        let ctx = makeContext(now: now, completed: events)
+
+        let result = EnergyWindowRule().evaluate(ctx, calendar: calendar)
+        guard case let .fact(line) = result else {
+            return XCTFail("n=3 无深夜腿应出峰值事实,得到 \(result)")
+        }
+        XCTAssertEqual(line.signature, "energyWindow.peak|2|3", "应报 0..23 全窗峰值 2 点(E3)")
+    }
+
+    /// E2:深夜占比事实与 fired 同分母(带钟点高优任务数),n=3(<15 不 fired)
+    /// 两条 23:00 排期的高优 → 2/2。
+    func test05LateFact_usesFiredDenominator() throws {
+        let now = try date(2026, 8, 21, 12)
+        func timed(high: Bool, dueHour: Int?) -> InsightCompletedEvent {
+            InsightCompletedEvent(
+                todoId: UUID(), createdAt: daysAgo(9, from: now),
+                completedAt: daysAgo(1, from: now),
+                category: .life, priority: high ? .high : .normal,
+                hasDueTime: dueHour != nil,
+                dueDate: dueHour.map { calendar.date(bySettingHour: $0, minute: 0, second: 0, of: now)! }
+            )
+        }
+        let events = [
+            timed(high: true, dueHour: 23),
+            timed(high: true, dueHour: 23),
+            timed(high: false, dueHour: nil)
+        ]
+        let ctx = makeContext(now: now, completed: events)
+
+        let result = EnergyWindowRule().evaluate(ctx, calendar: calendar)
+        guard case let .fact(line) = result else {
+            return XCTFail("深夜腿满足应优先出深夜事实,得到 \(result)")
+        }
+        XCTAssertEqual(line.signature, "energyWindow.late|2|2", "分母应为带钟点高优数(2),非完成总数(E2)")
+    }
+
+    /// 回归:fired 两腿判定不因 3-lite 改动漂移(n=15 晨峰 + 深夜排期)。
+    func test05FiredUnchanged_afterFactBranches() throws {
+        let now = try date(2026, 8, 21, 12)
+        var events: [InsightCompletedEvent] = (1...15).map { _ in
+            InsightCompletedEvent(
+                todoId: UUID(), createdAt: daysAgo(9, from: now),
+                completedAt: calendar.date(bySettingHour: 10, minute: 0, second: 0, of: daysAgo(1, from: now))!,
+                category: .life, priority: .normal, hasDueTime: false, dueDate: nil
+            )
+        }
+        events += (1...2).map { _ in
+            InsightCompletedEvent(
+                todoId: UUID(), createdAt: daysAgo(9, from: now),
+                completedAt: daysAgo(1, from: now),
+                category: .life, priority: .high,
+                hasDueTime: true,
+                dueDate: calendar.date(bySettingHour: 23, minute: 0, second: 0, of: now)!
+            )
+        }
+        let ctx = makeContext(now: now, completed: events)
+
+        let result = EnergyWindowRule().evaluate(ctx, calendar: calendar)
+        guard case .fired = result else {
+            return XCTFail("两腿成立仍应 fired,得到 \(result)")
+        }
     }
 }

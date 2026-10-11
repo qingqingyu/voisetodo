@@ -221,10 +221,12 @@ final class ReviewFlowStateTests: XCTestCase {
         state.runInsightEngine()
         XCTAssertFalse(state.skipsInsights, "15 条完成,非零完成不整步降级")
         XCTAssertTrue(state.rankedResults.isEmpty, "四条规则零卡(1/3 落中间带、无高优、无钟点)")
-        XCTAssertEqual(state.insightPlaceholders.count, 1, "占位行数据仍在(作脚注)")
-        XCTAssertEqual(state.insightPlaceholders.first?.id, .effortOrdering, "唯一占位:高优组缺口")
-        XCTAssertEqual(state.insightFactLines.count, 1, "03 中间地带 → 一行事实")
-        XCTAssertEqual(state.insightFactLines.first?.id, .reactiveVsPlanned)
+        // v5 D5:01 占位(高优组缺口)被隐藏——规则层已有事实行,再冒「样本不足」
+        // 自相矛盾;数据仍收集,展示层为空。
+        XCTAssertTrue(state.insightPlaceholders.isEmpty, "D5:规则层非空 → 占位行隐藏")
+        // v5 3-lite:05 峰值事实行(无钟点高优→峰值腿)+ 03 中间地带事实,共两行。
+        XCTAssertEqual(state.insightFactLines.count, 2, "03 中间 + 05 峰值(v5 全档事实)")
+        XCTAssertEqual(Set(state.insightFactLines.map(\.id)), [.reactiveVsPlanned, .energyWindow])
         XCTAssertNil(state.backlogAgeFact, "零积压 → 地板 A 空")
         XCTAssertNil(state.backlogCategoryFact, "零积压 → 地板 C 空")
         XCTAssertFalse(state.skipsInsightsWhenEmpty, "规则层有事实行——不跳(拍板 3)")
@@ -310,17 +312,20 @@ final class ReviewFlowStateTests: XCTestCase {
         XCTAssertTrue(state.rankedResults.isEmpty, "四条规则全 hidden(零卡)")
         XCTAssertTrue(state.insightPlaceholders.isEmpty, "两组各 ≥3,effort 无占位")
         XCTAssertNil(state.ladderNeedMore, ".full 档无阶梯提示")
-        XCTAssertEqual(state.insightFactLines.count, 1, "救火 5/15≈0.33 落中间带 → 一行事实")
+        // v5 3-lite:01 中间地带(高优 3 天 vs 其他 2 天)+ 05 峰值 + 03 中间,三行。
+        XCTAssertEqual(state.insightFactLines.count, 3, "01 中间 + 05 峰值 + 03 中间(v5 全档事实)")
+        XCTAssertEqual(Set(state.insightFactLines.map(\.id)),
+                       [.effortOrdering, .energyWindow, .reactiveVsPlanned])
         XCTAssertFalse(state.skipsInsightsWhenEmpty, ".full 档零积压由 03 事实行撑住(批 3 语义)")
         state.advance()
         XCTAssertEqual(state.currentStep, .insights, "第 3 步由事实行撑住")
     }
 
-    /// 5–14 档 + 零积压(v3 时代最小事实行曾撑住第 3 步,实施审阅发现 1
-    /// 受害者 B):拍板 5 后占位行/最小事实行退出判据——地板空 + 规则空
-    /// → 整步跳过(脚注不单独撑屏;批 4 地板 B 上线后该态有净变化可说,
-    /// 届时自然不跳)。ladderNeedMore 仍算出(有地板时作脚注)。
-    func testRottingOnlyLadderNoBacklogSkipsViaEmptyFloors() {
+    /// 5–14 档 + 零积压(v5 3-lite 改口径):05 峰值事实行全档在场——该态
+    /// 规则层不再为空,第 3 步由事实行撑住,不再整步跳过(推翻拍板 5 时代的
+    /// 「空地板+空规则→跳」;零积压+零完成的真空态仍被 skipsInsights 拦)。
+    /// ladderNeedMore 仍算出(作脚注)。
+    func testRottingOnlyLadderNoBacklogKeepsStepViaEnergyFact() {
         let state = ReviewFlowState(todos: [])
         state.currentStep = .triage
         let events = (0..<8).map { _ in InsightCompletedEvent(
@@ -335,12 +340,14 @@ final class ReviewFlowStateTests: XCTestCase {
         state.runInsightEngine()
         XCTAssertFalse(state.skipsInsights, "8 条完成(非零)→ 不整步降级")
         XCTAssertTrue(state.rankedResults.isEmpty, "腐烂不触发(无未完成任务)")
-        XCTAssertTrue(state.insightPlaceholders.isEmpty, "rottingOnly 档其余规则不跑")
+        XCTAssertTrue(state.insightPlaceholders.isEmpty, "占位行兜底只在规则层整空——此处 05 事实在场")
         XCTAssertEqual(state.ladderNeedMore, 7, "15 − 8 = 7(数据仍算,作脚注)")
         XCTAssertNil(state.backlogAgeFact, "零积压 → 地板空")
-        XCTAssertTrue(state.skipsInsightsWhenEmpty, "地板空 + 规则空——跳(最小事实行退出判据)")
+        // v5:05 峰值事实行(n=8 ≥3)在场 → 规则层非空 → 不跳
+        XCTAssertFalse(state.skipsInsightsWhenEmpty, "05 事实行撑住第 3 步(v5)")
+        XCTAssertEqual(state.insightFactLines.first?.id, .energyWindow)
         state.advance()
-        XCTAssertEqual(state.currentStep, .commit)
+        XCTAssertEqual(state.currentStep, .insights, "第 3 步由 05 事实行撑住(v5)")
     }
 
     /// 引擎有结果 → 第 3 步照常出现(15 条全部「记下当天做完」→ 救火占比
@@ -653,7 +660,7 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(state.processedIDs.count, 1)
     }
 
-    /// 批量候选门槛:停滞 ≥ 30 天 **且** AI 识别成功(.parsed)。
+    /// 批量候选门槛:停滞 ≥ 21 用户天(v5 拍板 3,supersede 30 天)**且** AI 识别成功(.parsed)。
     /// `.rawFallback` 清了三字段也只落「没能识别」,不进候选。
     /// 批量候选只看尾部(排序后第 9 名起),不满 8 条没有尾部也就没有候选。
     func testSomedayBatchCandidatesFilter() {
@@ -1302,5 +1309,169 @@ extension ReviewFlowStateTests {
         XCTAssertEqual(session.ledger.backlogCount, 35, "期初积压(排序前 triageInput 快照,恒定)")
         XCTAssertEqual(session.ledger.finalBacklogCount, 34, "收尾积压(注入快照重数:35 − 划掉 1;已完成/规律不计入)")
         XCTAssertEqual(session.ledger.inputCount, 8, "卡堆口径:7 留卡 + 1 决定——三数语义不同")
+    }
+}
+
+// MARK: - v5 3-lite 阶梯门控(E1 冷却不变量 / D5 占位兜底 / D6 极瘦屏 / D7 跨期标注)
+
+extension ReviewFlowStateTests {
+    /// E1 + C1 验收夹具:skipStep 档(3 条完成+有积压)——rotting 不评估
+    /// (shownInsights 空,冷却不变量),但 05 峰值事实行照出(n≥3)。
+    func testSkipStep_collectsEnergyFactButNotRotting() {
+        let state = ReviewFlowState(todos: [])
+        let now = Date()
+        let staleSince = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
+        let events = (0..<3).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now, now: now,
+            completedEvents: events,
+            openTasks: [InsightOpenTask(todoId: UUID(), createdAt: staleSince, dueDate: nil, title: "烂尾", category: .work)],
+            dueTasks: [], deferCounts: [:]
+        )
+        state.runInsightEngine()
+        // C1:05 峰值事实行(n=3 ≥ 3)
+        XCTAssertEqual(state.insightFactLines.count, 1, "3 条完成应出 05 峰值事实行")
+        XCTAssertEqual(state.insightFactLines.first?.id, .energyWindow)
+        XCTAssertTrue(state.insightFactLines.first!.signature.hasPrefix("energyWindow.peak|"), "结构化标识(E4)")
+        // E1:rotting 不评估,fired 收集为零 → 冷却历史为空
+        XCTAssertTrue(state.rankedResults.isEmpty, "skipStep 档 fired 丢弃")
+        XCTAssertTrue(state.shownInsights.isEmpty, "<5 完成+21 天积压 → shownInsights 必须为空数组")
+        XCTAssertFalse(state.showsSparseWindowNote, "n=3 ≥ 3 → 非 D6 极瘦屏")
+        XCTAssertNotNil(state.backlogAgeFact, "地板 A 在")
+    }
+
+    /// D6:skipStep 且完成 <3 条——窗口声明行开,事实行为空,占位不出现。
+    func testSkipStep_sparseWindowNoteWhenFewerThan3Completions() {
+        let state = ReviewFlowState(todos: [])
+        let now = Date()
+        let events = (0..<2).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now, now: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.runInsightEngine()
+        XCTAssertTrue(state.showsSparseWindowNote, "n<3 → D6 窗口声明行")
+        XCTAssertTrue(state.insightFactLines.isEmpty, "05 事实阈值未到")
+        XCTAssertTrue(state.insightPlaceholders.isEmpty, "D5/D6:占位行不属该档口径")
+    }
+
+    /// D5:规则层有内容(fired 或 fact)→ 占位行隐藏;整空才兜底。
+    func testFullTier_placeholdersHiddenWhenFactsPresent() {
+        let state = ReviewFlowState(todos: [])
+        let now = Date()
+        // 15 条普通完成(高优组 0 <3 → 01 出 placeholder);同刻完成 → 03 ratio 100% fired。
+        let events = (0..<15).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        state.insightContextValue = InsightContext(
+            from: now, to: now, now: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.runInsightEngine()
+        // .full 档:03 fired + 05 峰值事实行在场
+        XCTAssertFalse(state.rankedResults.isEmpty, "03 同刻完成应 fired")
+        XCTAssertFalse(state.insightFactLines.isEmpty, "05 峰值事实行(n=15)")
+        XCTAssertTrue(state.insightPlaceholders.isEmpty, "D5:01 的 placeholder 被隐藏(规则层非空)")
+    }
+
+    /// D7 + E4:上期会话 factSignatures 命中本期 signature → sameAsPrevious;
+    /// buildSession 把本期 signatures 落库。
+    func testSameAsPrevious_markedViaStructuredSignature() {
+        let now = Date()
+        let events = (0..<3).map { _ in InsightCompletedEvent(
+            todoId: UUID(), createdAt: now, completedAt: now,
+            category: .other, priority: .normal, hasDueTime: false, dueDate: nil
+        )}
+        let peakHour = Calendar.current.component(.hour, from: now)
+        let lastSig = "energyWindow.peak|\(peakHour)|3"
+        let previous = ReviewSession(
+            completedAt: now, periodStart: now, periodEnd: now, voiceNote: nil,
+            ledger: ReviewLedger(inputCount: 0, remainingCount: 0, scheduledCount: 0, todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0),
+            shownInsights: [],
+            factSignatures: [lastSig, "effortOrdering|3|2|3|3"]
+        )
+        let state = ReviewFlowState(todos: [], previousSessions: [previous], lastPinnedIDs: [])
+        state.insightContextValue = InsightContext(
+            from: now, to: now, now: now,
+            completedEvents: events, openTasks: [], dueTasks: [], deferCounts: [:]
+        )
+        state.runInsightEngine()
+        XCTAssertEqual(state.insightFactLines.first?.sameAsPrevious, true, "signature 命中上期 → 标记")
+
+        // 变了一个数字(上期 n=3→本期仍 3,但换 hour 即不命中):直接换上期集合验证不命中
+        let previousDifferent = ReviewSession(
+            completedAt: now, periodStart: now, periodEnd: now, voiceNote: nil,
+            ledger: ReviewLedger(inputCount: 0, remainingCount: 0, scheduledCount: 0, todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0),
+            shownInsights: [],
+            factSignatures: ["energyWindow.peak|\((peakHour + 1) % 24)|3"]
+        )
+        let state2 = ReviewFlowState(todos: [], previousSessions: [previousDifferent], lastPinnedIDs: [])
+        state2.insightContextValue = state.insightContextValue
+        state2.runInsightEngine()
+        XCTAssertEqual(state2.insightFactLines.first?.sameAsPrevious, false, "数字不同 → 不标记")
+
+        // 落库:buildSession 写入本期 signatures(E4)
+        let session = state.buildSession(completedAt: now, finalTodos: [])
+        XCTAssertEqual(session.factSignatures, [lastSig])
+    }
+
+    // MARK: D2 对质区数据源(v5 S6:nil/短/长三态)
+
+    /// S6:「对质区 nil/短/长三态」——nil 态(无会话/全部没写笔记 → nil;
+    /// 最近一期没写但更早写过 → 取更早那期,「最近非空」即上期的诚实口径)。
+    func testLastConfrontationNoteNilStates() {
+        let now = Date()
+        func session(_ note: String?) -> ReviewSession {
+            ReviewSession(
+                completedAt: now, periodStart: now, periodEnd: now, voiceNote: note,
+                ledger: ReviewLedger(inputCount: 0, remainingCount: 0, scheduledCount: 0, todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0),
+                shownInsights: []
+            )
+        }
+        XCTAssertNil(ReviewFlowState.lastConfrontationNote(sessions: []), "无会话 → nil")
+        XCTAssertNil(ReviewFlowState.lastConfrontationNote(sessions: [session(nil), session(nil)]), "全部没写 → nil")
+        XCTAssertNil(
+            ReviewFlowState.lastConfrontationNote(sessions: [session("   \n\t")]),
+            "纯空白笔记视同没写(判定 trim 后非空),不渲染空对质卡"
+        )
+        XCTAssertEqual(
+            ReviewFlowState.lastConfrontationNote(sessions: [session(nil), session("上期写过")]),
+            "上期写过",
+            "最近一期没写、更早写过 → 取最近非空(间隔漂移的诚实口径)"
+        )
+    }
+
+    /// S6:短态/长态——提取函数返回去首尾空白的原文,不截断(收起 4 行是
+    /// 渲染层 `lineLimit` 的职责,对质价值在完整原话,数据层不得先剪)。
+    func testLastConfrontationNoteShortAndLongReturnVerbatim() {
+        let now = Date()
+        func session(_ note: String) -> ReviewSession {
+            ReviewSession(
+                completedAt: now, periodStart: now, periodEnd: now, voiceNote: note,
+                ledger: ReviewLedger(inputCount: 0, remainingCount: 0, scheduledCount: 0, todayCount: 0, abandonedCount: 0, splitCount: 0, pinnedCount: 0),
+                shownInsights: []
+            )
+        }
+        XCTAssertEqual(ReviewFlowState.lastConfrontationNote(sessions: [session("少记一点")]), "少记一点", "短笔记原样")
+        XCTAssertEqual(
+            ReviewFlowState.lastConfrontationNote(sessions: [session("  上期写过 \n")]),
+            "上期写过",
+            "仅去首尾空白,不动内容"
+        )
+
+        let longNote = (0..<20).map { "第 \($0) 行:这期想专注在最重要的事上,少开新坑。" }.joined(separator: "\n")
+        XCTAssertEqual(ReviewFlowState.lastConfrontationNote(sessions: [session(longNote)]), longNote, "长笔记全文原样,不在数据层截断")
+        XCTAssertEqual(
+            ReviewFlowState.lastConfrontationNote(sessions: [session("很早的一期"), session(longNote)]),
+            longNote,
+            "多期都有笔记 → 取最近一期"
+        )
     }
 }

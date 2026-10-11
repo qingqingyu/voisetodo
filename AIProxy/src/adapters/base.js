@@ -845,3 +845,65 @@ export function buildReflectPrompt(locale) {
   }
   return ENGLISH_REFLECT_PROMPT;
 }
+
+// Deep-read 模式 prompts(v5 T5/E5,docs/todo-review-flow-v5.md)。输入是
+// 客户端已核实的事实(id→值 JSON),不是自由文本;输出必须带 numbers 块
+// (原样回引用到的事实 id→值),客户端逐 id 精确比对(D4:对不上→整卡
+// 不显示)。观察只准复述/关联给出的事实,禁止引入任何未在事实中的数字。
+const CHINESE_DEEP_READ_PROMPT = `你是复盘观察助手。用户刚完成一次周复盘,下面是这次复盘的已核实事实(全部来自本地统计,编号->值):
+
+{FACTS_JSON}
+
+基于这些事实,输出:
+1. observation: 2-3 句观察,把事实串起来讲(比如积压趋势、完成节奏、拖延集中处)。规则:只准引用上面给出的事实和数字,禁止引入任何未列出的数字;禁止说教或建议,只陈述观察
+2. draft: 一句给用户的笔记草稿引导(问句或半句,≤20 字,基于观察最值得问的点)
+3. numbers: 原样回引你在 observation 里用到的每个事实("编号":"值",必须与输入完全一致)
+
+只返回 JSON:{"observation":"…","draft":"…","numbers":{"backlog_now":"5"}}
+
+事实不足 3 条时,observation 直接写"这期完成记录还太少,先继续用",draft 写空字符串,numbers 返回 {}。`;
+
+const ENGLISH_DEEP_READ_PROMPT = `You are a review observation assistant. The user just finished a weekly review. Below are verified facts from local statistics (id -> value):
+
+{FACTS_JSON}
+
+Based on these facts, output:
+1. observation: 2-3 sentences connecting the facts (backlog trend, completion rhythm, where stalling concentrates). Rules: cite ONLY the facts and numbers given above; never introduce a number not listed; no advice or preaching, observations only
+2. draft: one note-draft prompt for the user (a question or half-sentence, ≤15 words, the most worth-asking point from the observation)
+3. numbers: echo back every fact you cited in observation ("id":"value", must match the input exactly)
+
+Return JSON only: {"observation":"…","draft":"…","numbers":{"backlog_now":"5"}}
+
+If fewer than 3 facts, write observation as "Not enough completed records this period yet — keep going", draft as empty string, numbers as {}.`;
+
+const JAPANESE_DEEP_READ_PROMPT = `あなたはふりかえり観察アシスタントです。ユーザーが週次ふりかえりを終えた直後です。以下はローカル統計から検証済みの事実(id -> 値)です:
+
+{FACTS_JSON}
+
+これらの事実に基づいて出力してください:
+1. observation: 事実を絡めた 2-3 文の観察(バックログ傾向、完了リズム、停滞が集中する場所)。ルール:上記の事実と数字のみ引用可。載っていない数字の導入禁止。説教や助言は禁止、観察のみ
+2. draft: ユーザー向けのメモ下書きの誘い(疑問文または半文、20文字以内、観察から最も問う価値のある点)
+3. numbers: observation で引用した各事実をそのままエコー("id":"値"、入力と完全一致必須)
+
+JSON のみ返す:{"observation":"…","draft":"…","numbers":{"backlog_now":"5"}}
+
+事実が 3 件未満の場合、observation は「今期は完了記録がまだ少ない。続けよう」、draft は空文字列、numbers は {}。`;
+
+/**
+ * Deep-read 模式 system prompt(v5 T5/E5)。factsJSON 由 worker 注入
+ * (客户端 POST 的 transcript 字段携带 facts 的 JSON 序列化)。
+ * @param {"zh"|"ja"|string} locale
+ * @param {string} factsJSON 已序列化的事实 JSON(原样嵌入,不转译)
+ */
+export function buildDeepReadPrompt(locale, factsJSON) {
+  const template = locale === "zh"
+    ? CHINESE_DEEP_READ_PROMPT
+    : locale === "ja"
+      ? JAPANESE_DEEP_READ_PROMPT
+      : ENGLISH_DEEP_READ_PROMPT;
+  return template.replace("{FACTS_JSON}", factsJSON);
+}
+
+// deep-read 的 user 消息(facts 已全量在 system prompt 里,user 侧只需一句
+// 驱动语;gemini/anthropic 共用,不进 E5 校验,仅触发补全)。
+export const DEEP_READ_USER_MESSAGE = "Please analyze the facts above.";

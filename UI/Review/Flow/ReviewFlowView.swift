@@ -28,7 +28,8 @@ final class ReviewFlowState {
     var currentStep: Step = .recap
     /// 洞察步是否在引擎前就整步跳过(v4 拍板 5:整步跳过只保留给
     /// **零积压 + 零完成**——此时连地板事实都算不出来;v1 的「<5 条完成 →
-    /// 整步跳过」已推翻,<5 档改为只出地板 A)。在流程启动拿到
+    /// 整步跳过」已推翻,<5 档出地板 A + 05 峰值事实行(≥3 条完成)或
+    /// D6 窗口声明)。在流程启动拿到
     /// insightContext 后设定;「上一步」同理跳过。
     private(set) var skipsInsights = false
     /// 洞察步是否因「引擎跑完这一步无可渲染内容」整步跳过。判定 = **地板层
@@ -97,8 +98,39 @@ final class ReviewFlowState {
 
     /// 规则层的事实行(v4 批 3 拍板 3:03 中间地带只报占比的一行;不走冷却、
     /// 不进 `shownInsights`——拍板 6)。**算规则层内容**(整步存活判定),
-    /// 但不进 `rankedResults`、不出卡。
+    /// 但不进 `rankedResults`、不出卡。v5 3-lite 扩到 01/05 全档;D7 命中
+    /// 上期 signature 的行带 `sameAsPrevious` 标记。
     private(set) var insightFactLines: [InsightFactLine] = []
+
+    /// D6(v5):skipStep 档且完成记录 <3 条——规则层合法表面=一行窗口声明
+    /// (与地板 A/C 同屏,不空屏)。渲染层据此显示 sparse 说明行。
+    private(set) var showsSparseWindowNote: Bool = false
+
+    /// 深读观察结果(v5 T5 批 3):第 3 步呈现时异步取回(D4:仅就绪后整体
+    /// 出现,无骨架屏——nil/失败=不显示)。draft 供第 5 步笔记预填(D9)。
+    /// 写入收口在 `recordDeepReadResult`(与其他 private(set) 状态同款封装)。
+    private(set) var deepReadResult: DeepReadObservationData? = nil
+
+    /// 深读结果唯一写入口(`loadDeepReadObservation` 调用;nil=降级不显示)。
+    func recordDeepReadResult(_ result: DeepReadObservationData?) {
+        deepReadResult = result
+    }
+
+    /// 深读是否已尝试过(无论成败):深读挂在第 3 步 `.task` 上,用户从
+    /// 第 2 步回跳再进会让 task 重跑——不设防会把 E11 限额(10/天)烧在
+    /// 重复拉取上;一次会话只拉一次,失败不重试(D4 降级口径)。
+    private(set) var hasAttemptedDeepRead = false
+
+    /// 深读尝试标记置位(`loadDeepReadObservation` 确认要发请求时调用;
+    /// 写入口收口与其他 private(set) 状态同款)。
+    func markDeepReadAttempted() {
+        hasAttemptedDeepRead = true
+    }
+
+    /// 深读事实层(v5 T5/AF1):`refreshDeepReadFacts()` 在深读拉取前收集——
+    /// 纯 id+值,零本地化文案,发代理与 E5 接地校验共用(见 DeepReadFacts.swift)。
+    /// 趋势素材(方向 1):近 3 期 finalBacklogCount 序列一并入 facts。
+    private(set) var deepReadFacts: DeepReadFactsPayload = DeepReadFactsPayload(facts: [])
 
     // MARK: 第 2 步 · 卡片堆
 
@@ -109,8 +141,9 @@ final class ReviewFlowState {
     /// 进 `tail`(批量出口候选 / 原样留着)。
     private(set) var deck: [TodoItemData]
 
-    /// 排序尾部(不进卡堆,docs v2「第 2 步」):其中停滞 ≥ 30 天且 AI 识别成功
-    /// 的走批量出口,其余既不进卡堆也不进批量出口——「不动」也是合法状态,
+    /// 排序尾部(不进卡堆,docs v2「第 2 步」):其中停滞 ≥ 21 用户天
+    /// (v5 拍板 3,与地板 A 同尺)且 AI 识别成功的走批量出口,其余既不进
+    /// 卡堆也不进批量出口——「不动」也是合法状态,
     /// UI 必须把这个说清楚,否则用户以为「其他都被处理了」。
     private(set) var tail: [TodoItemData] = []
 
@@ -388,10 +421,10 @@ final class ReviewFlowState {
 
     /// 洞察原料就绪后设定降级跳过(v4 拍板 5):整步跳过只保留给
     /// **零积压 + 零完成**(连地板 A 都算不出来的真空态)。<5 完成(阶梯
-    /// `.skipStep`)不再整步跳——第 3 步只出地板 A(引擎侧规则照旧不跑,
-    /// 见 `runInsightEngine`)。1–4 条完成 + 零积压的边缘态不在此跳:
-    /// 引擎路径的 `skipsInsightsWhenEmpty` 会兜(地板空 + 规则不跑);
-    /// 批 4 地板 B(本期净变化)上线后这类用户有话可说,届时自然不跳。
+    /// `.skipStep`)不再整步跳——第 3 步出地板 A + 01/05 事实行(E1:该档
+    /// 仅收集 `.fact`、rotting 不评估,见 `runInsightEngine`)。1–4 条完成 +
+    /// 零积压的边缘态不在此跳:引擎路径的 `skipsInsightsWhenEmpty` 会兜
+    /// (地板空 + 规则层整空才跳;3–4 条完成有 05 峰值事实行,通常不跳)。
     func configureInsightsLadder() {
         let completedCount = insightContextValue?.completedEvents.count ?? 0
         let openCount = insightContextValue?.openTasks.count ?? 0
@@ -409,59 +442,35 @@ final class ReviewFlowState {
         let calendar = Calendar.current
         let ladder = InsightEngine.ladder(completedRecordCount: context.completedEvents.count)
 
-        // 降级档(<5 条完成)规则层**不跑**(v3 拍板 7 引擎前移的语义补丁,
-        // v4 拍板 5 后该档不再整步跳过、只出地板 A,但「规则不跑」不变):
-        // 照跑的话,腐烂规则(age ≥ 21 天分支单条即触发)会在从未展示的情况
-        // 下进冷却历史并随会话持久化——「展示过的才进冷却历史」被破坏,
-        // 下期冷却把「从没看过」当「上期看过」。结果清空(重试路径可能从
-        // .full 落回,不留残影);地板 A 照算(规则没跑 = 腐烂卡没展示,
-        // rottingShown 恒 false)。
-        guard ladder != .skipStep else {
-            resetShownInsights()
-            rankedResults = []
-            insightPlaceholders = []
-            ladderNeedMore = nil
-            insightFactLines = []
-            backlogAgeFact = InsightEngine.backlogAgeFact(
-                openTasks: context.openTasks,
-                now: context.now,
-                calendar: calendar,
-                rottingShown: false
-            )
-            backlogCategoryFact = InsightEngine.backlogCategoryFact(
-                openTasks: context.openTasks,
-                completedEvents: context.completedEvents,
-                now: context.now,
-                calendar: calendar
-            )
-            // 只出地板 A(+C+B):地板全空(零积压且本期零进零出)时才整步跳过——
-            // 「零积压+零完成」已被 skipsInsights 在引擎前拦下,这里兜的是
-            // 1–4 条完成 + 零积压的边缘态(有完成即 B 有净变化可说 → 不跳,
-            // 拍板 5 的「整步跳过只留零积压+零完成」由此闭合)。
-            skipsInsightsWhenEmpty = backlogAgeFact == nil
-                && backlogCategoryFact == nil
-                && backlogFlowFact == nil
-            return
-        }
-
         var results: [InsightResult] = []
         var newPlaceholders: [(InsightID, Int)] = []
         var newFactLines: [InsightFactLine] = []
 
-        let rotting = RottingRule().evaluate(context, calendar: calendar)
-        collect(rotting, id: .rotting, into: &results, &newPlaceholders, &newFactLines)
+        // E1(v5 3-lite):skipStep 档(<5 条完成)rotting **不评估**——照跑的
+        // 话 age ≥21 分支单条即触发,会在从未展示的情况下进冷却历史并随会话
+        // 持久化,下期冷却把「从没看过」当「上期看过」(v3 拍板 7 的冷却
+        // 不变量,继续成立)。01/05 在该档**仅收集 .fact**(E1),fired 留给
+        // .full(v3 拍板不动)。
+        if ladder != .skipStep {
+            let rotting = RottingRule().evaluate(context, calendar: calendar)
+            collect(rotting, id: .rotting, into: &results, &newPlaceholders, &newFactLines)
+        }
+
+        // 01/05 全档评估(v5 3-lite:事实行自带 ≥3/两组各≥3 阈值,任何档位
+        // 都可出——C1 冷启动夹具=skipStep 档 3 条完成有 05 峰值事实行)。
+        let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
+        let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
+        if ladder == .full {
+            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders, &newFactLines)
+            collect(energy, id: .energyWindow, into: &results, &newPlaceholders, &newFactLines)
+        } else {
+            if case let .fact(line) = effort { newFactLines.append(line) }
+            if case let .fact(line) = energy { newFactLines.append(line) }
+        }
 
         if ladder == .full {
             let reactive = ReactiveVsPlannedRule().evaluate(context, calendar: calendar)
             collect(reactive, id: .reactiveVsPlanned, into: &results, &newPlaceholders, &newFactLines)
-
-            // 2026-08-23 拍板:01 先易后难 + 05 精力窗口启用(04 对谁失约违反
-            // 反 gaming 章程继续搁置,06 周内衰减待 ≥4 完整周)。
-            let effort = EffortOrderingRule().evaluate(context, calendar: calendar)
-            collect(effort, id: .effortOrdering, into: &results, &newPlaceholders, &newFactLines)
-
-            let energy = EnergyWindowRule().evaluate(context, calendar: calendar)
-            collect(energy, id: .energyWindow, into: &results, &newPlaceholders, &newFactLines)
         }
 
         // 冷却过滤(§2.4):02 腐烂占比 / 03 救火占比都是「越小越好」。
@@ -470,16 +479,34 @@ final class ReviewFlowState {
         }
         let ranked = InsightEngine.rank(cooled)
         // 展示过的才进冷却历史(被过滤掉的不记)。重跑先清空:上一轮展示过、
-        // 这一轮被冷却过滤的洞察不该留在历史里。
+        // 这一轮被冷却过滤的洞察不该留在历史里。skipStep 档 results 恒空 →
+        // ranked 恒空 → shownInsights 恒空数组(E1 断言口径)。
         resetShownInsights()
         ranked.forEach { recordShownInsight($0) }
 
+        // D7「与上期相同」(E4):与上期会话的 factSignatures 逐条比 signature,
+        // 命中则标记——渲染层加弱化后缀。仍重述不折叠不冷却(v4 拍板 1)。
+        let previousSignatures = previousSessions.last?.factSignatures
+        if let previousSignatures {
+            newFactLines = newFactLines.map { line in
+                var line = line
+                line.sameAsPrevious = previousSignatures.contains(line.signature)
+                return line
+            }
+        }
+
         rankedResults = ranked
-        insightPlaceholders = newPlaceholders
+        // D5(v5):占位行仅在规则层(fired+fact)整空时兜底,否则隐藏——
+        // 规则层已有内容时再冒「样本不足」会自相矛盾。
+        insightPlaceholders = (ranked.isEmpty && newFactLines.isEmpty) ? newPlaceholders : []
         ladderNeedMore = ladder.rottingOnlyNeedMore
         insightFactLines = newFactLines
+        // D6(v5):skipStep 档且完成 <3 条——规则层合法表面只剩一行窗口声明
+        // (05 事实阈值未到,占位行不属该档口径),与地板 A/C 同屏,不空屏。
+        showsSparseWindowNote = ladder == .skipStep && context.completedEvents.count < 3
         // 地板 A(v4 批 1):腐烂卡**实际展示**(过冷却)时点名让位——被冷却
-        // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。
+        // 扣掉的本期不展示,地板照常点名(核心回归场景:屏不空)。skipStep
+        // 档 rotting 未评估=未展示,rottingShown 恒 false(E1)。
         backlogAgeFact = InsightEngine.backlogAgeFact(
             openTasks: context.openTasks,
             now: context.now,
@@ -496,12 +523,64 @@ final class ReviewFlowState {
         // v4 拍板 5 连带:整步存活判定改写为「地板层与规则层是否都空」,
         // 整体取代 2026-09-07 拍板①的三块判定——占位行/最小事实行降级为
         // 地板块下方的脚注,不再参与判定、不再单独撑起一屏。规则层含
-        // 事实行(批 3:03 中间地带),地板层含 A(批 1)、C(批 3)、B(批 4)。
+        // 事实行(v5:01/05 全档),地板层含 A(批 1)、C(批 3)、B(批 4)。
         skipsInsightsWhenEmpty = ranked.isEmpty
             && insightFactLines.isEmpty
             && backlogAgeFact == nil
             && backlogCategoryFact == nil
             && backlogFlowFact == nil
+    }
+
+    /// 深读事实层收集(v5 T5/AF1):与渲染同源——地板 A/B/C、完成/积压端点、
+    /// 账本方向、近 3 期趋势。值一律字符串化;id 语义自解释且稳定(E5 精确
+    /// 比对依据,也是模型理解事实的唯一线索——纯 id+值,无本地化文案)。
+    /// **时点=深读拉取前**(第 3 步呈现时,见 `loadDeepReadObservation`),
+    /// 不是引擎跑完时:`decidedCount` 是 computed(随第 2 步划卡递增),
+    /// 流程开始时恒 0,引擎时点收集会发给模型一个失真事实。
+    /// fileprivate:同文件的 `loadDeepReadObservation` 是唯一调用方。
+    fileprivate func refreshDeepReadFacts() {
+        guard let context = insightContextValue else {
+            deepReadFacts = DeepReadFactsPayload(facts: [])
+            return
+        }
+        var collected: [DeepReadFact] = []
+        if let age = backlogAgeFact {
+            collected.append(contentsOf: [
+                DeepReadFact(id: "backlog_total", value: String(age.total)),
+                DeepReadFact(id: "backlog_fresh", value: String(age.freshCount)),
+                DeepReadFact(id: "backlog_aging", value: String(age.agingCount)),
+                DeepReadFact(id: "backlog_old", value: String(age.oldCount)),
+            ])
+        }
+        if let flow = backlogFlowFact {
+            collected.append(contentsOf: [
+                DeepReadFact(id: "created_count", value: String(flow.createdCount)),
+                DeepReadFact(id: "completed_count", value: String(flow.completedCount)),
+                DeepReadFact(id: "backlog_delta", value: String(flow.backlogDelta)),
+            ])
+            if let start = flow.ledgerStart, let end = flow.ledgerEnd {
+                collected.append(DeepReadFact(id: "backlog_prev", value: String(start)))
+                collected.append(DeepReadFact(id: "backlog_now", value: String(end)))
+            }
+        }
+        if let category = backlogCategoryFact {
+            collected.append(DeepReadFact(id: "focus_category", value: category.focusCategory.rawValue))
+            collected.append(DeepReadFact(id: "focus_count", value: String(category.focusCount)))
+        }
+        collected.append(DeepReadFact(id: "completed_oneoff", value: String(context.completedEvents.count)))
+        collected.append(DeepReadFact(id: "decided_count", value: String(decidedCount)))
+        // 趋势(方向 1):近 3 期收尾积压(旧 payload 哨兵 -1 跳过)。id 按
+        // 「距今 N 期」命名(旧→新排列,序列不满 3 期时从更小的 N 起)——
+        // trend_0/1/2 这类纯序号没有时间方向语义,模型只能猜,猜反则趋势
+        // 解读反向;语义化 id 是零成本的方向约定。
+        let trend = previousSessions
+            .suffix(3)
+            .compactMap { $0.ledger.finalBacklogCount >= 0 ? $0.ledger.finalBacklogCount : nil }
+        for (index, value) in trend.enumerated() {
+            let periodsAgo = trend.count - index
+            collected.append(DeepReadFact(id: "backlog_\(periodsAgo)_periods_ago", value: String(value)))
+        }
+        deepReadFacts = DeepReadFactsPayload(facts: collected)
     }
 
     /// 地板 B 的取数决策(纯函数,State 侧供单测;容器层取好原料后调用,
@@ -744,9 +823,9 @@ final class ReviewFlowState {
 
     // MARK: 第 2 步 · 批量出口(拍板 3:复用「稍后」,不新增 somedayAt 终态)
 
-    /// 尾部里可一键推「稍后」的:停滞 ≥ 30 天 **且** AI 识别成功。
-    /// `.rawFallback` / `.unparsed` 即使清了三字段也只落「没能识别」而不是
-    /// 「稍后」,不承诺做不到的落点,排除在外。
+    /// 尾部里可一键推「稍后」的:停滞 ≥ 21 用户天(v5 拍板 3,与地板 A 的
+    /// 21+ 档同尺)**且** AI 识别成功。`.rawFallback` / `.unparsed` 即使清了
+    /// 三字段也只落「没能识别」而不是「稍后」,不承诺做不到的落点,排除在外。
     var somedayBatchCandidates: [TodoItemData] {
         tail.filter {
             TriageRanking.stagnationDays(of: $0, now: Date()) >= TriageRanking.batchStagnationDays
@@ -765,7 +844,7 @@ final class ReviewFlowState {
     /// 推后不是「决定」(拍板 4),也不是划掉。
     ///
     /// 参数传**实际写入的批**,不在此二次求值 `somedayBatchCandidates`——
-    /// 它依赖 `Date()`,与视图侧取批两次求值可能错位(边界跨 30 天门槛时
+    /// 它依赖 `Date()`,与视图侧取批两次求值可能错位(边界跨 21 天门槛时
     /// 快照与落库不是同一批)。部分失败时视图侧只传成功子集:快照严格等于
     /// 已落库的条目,未写入的留在尾部可重推(重推幂等,已清的再清是 no-op)。
     func markSomedayBatchExecuted(batch: [TodoItemData]) {
@@ -894,6 +973,18 @@ final class ReviewFlowState {
         return note
     }
 
+    /// D2 对质区数据源(v5):最近一条非空复盘笔记——间隔漂移时「最近非空」
+    /// 即「上期」的诚实口径;上期没写 → nil(对质区整块隐藏,不放占位)。
+    /// 非空判定用 trim 后口径(纯空白的笔记视同没写——否则渲染出看不见
+    /// 正文的对质卡,还会遮蔽更早的真实笔记),返回去首尾空白的原文,
+    /// 不做长度裁剪(收起=4 行、长文展开由视图层 `lineLimit` 承担)。
+    /// 提取为静态纯函数供容器调用与单测(S6:对质区 nil/短/长三态)。
+    static func lastConfrontationNote(sessions: [ReviewSession]) -> String? {
+        sessions.last(where: { note in
+            (note.voiceNote ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        })?.voiceNote?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
     /// 纯函数,`VoiceTodoTests` 直测账本 → session 的映射。
     /// - Parameter finalTodos: 收尾时刻的 store 工作集快照(与 init 的 `todos`
@@ -927,7 +1018,10 @@ final class ReviewFlowState {
                 pinnedCount: ledger.pinnedCount,
                 somedayCount: ledger.somedayCount
             ),
-            shownInsights: shownInsights
+            shownInsights: shownInsights,
+            // E4(v5):事实行结构化标识落库——D7 下期「与上期相同」比较用。
+            // 无事实行存 nil(旧 payload 同为 nil,口径一致)。
+            factSignatures: insightFactLines.isEmpty ? nil : insightFactLines.map(\.signature)
         )
     }
 }
@@ -951,6 +1045,18 @@ struct ReviewFlowView: View {
     /// 笔记语义对照的提取器(2026-08-23,任务 #4)。nil → 收尾不做 AI 分析,
     /// 笔记照存,下期退化为纯文本。
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
+    /// 深读观察器(v5 T5 批 3)。nil → 第 3 步无 AI 观察卡、第 5 步无草稿
+    /// 预填(与 noteAnalyzer 同注入链,AppCoordinator 组装)。
+    var deepReader: (any DeepReadObservationProtocol)? = nil
+
+    /// 复盘漏斗 A17 的时长起点(v5 T1/E8):首次创建时记,finishSession 算
+    /// durationMS。必须 `@State`——fullScreenCover 的 content 闭包会随父视图
+    /// body 重评估重新执行 init(复盘内每次写库都触发 ReviewView 的 @Query
+    /// 更新),普通存储属性会被重置,时长会塌缩到最后一次决定的时刻。
+    @State private var startedAt = Date()
+    /// 收尾重入护栏:dismiss 动画完成前连点「完成」会让 finishSession 跑两次
+    /// (session 双追加 + `review_flow_finished` 双记),首跑即锁死。
+    @State private var hasFinishedSession = false
 
     @State private var state: ReviewFlowState
 
@@ -958,12 +1064,14 @@ struct ReviewFlowView: View {
         store: any ReviewFlowStore,
         splitter: (any TodoSplitterProtocol)? = nil,
         voiceInput: (any VoiceInputProtocol)? = nil,
-        noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
+        noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil,
+        deepReader: (any DeepReadObservationProtocol)? = nil
     ) {
         self.store = store
         self.splitter = splitter
         self.voiceInput = voiceInput
         self.noteAnalyzer = noteAnalyzer
+        self.deepReader = deepReader
         // 工作集快照在 init 一次取齐:卡堆输入不随后续 store 写入回流
         // (拆小产生的子任务不该再弹回卡堆)。历史会话同批注入(冷却 /
         // 跨期对照的数据源,阶段 4);上次置顶 id 同批快照(setPinned 整体
@@ -973,6 +1081,12 @@ struct ReviewFlowView: View {
             previousSessions: ReviewSessionStore.shared.allSessions(),
             lastPinnedIDs: ReviewPinningStore.shared.pinnedIDs()
         ))
+        // 复盘漏斗 A16(v5 T1/E8 口径):开始=本视图呈现(用户点入口卡
+        // 「开始」→ fullScreenCover 创建)。**不能记在 init**——cover 的
+        // content 闭包随父视图 body 重评估会重复执行 init(复盘内每次写库
+        // 都触发 ReviewView 的 @Query 更新),记在 init 会让每个决定多记
+        // 一枚 started(TELEMETRY.md「每次流程各记一枚」被打破)。埋点
+        // 因此移入 body 的 `.task`(每次呈现只跑一次),见 `recordFlowStarted`。
     }
 
     var body: some View {
@@ -1025,7 +1139,73 @@ struct ReviewFlowView: View {
                 }
             }
         }
+        .task { recordFlowStarted() }
         .task { await loadInsightContext() }
+        // E6 呈现镜像(必须):根级同意 sheet 在本 fullScreenCover 常驻期间
+        // 无法呈现(UKit 单 presenter 单模态,实验证实)——不镜像的话,未同意
+        // 用户在复盘内点麦克风无任何反应,且 `ensureAIConsent` 的 continuation
+        // 永不 resume,重入护栏会把后续所有 gate(含首页录音)判 false 直到重启。
+        // 拆小 sheet 场景另有一层镜像(见 `ReviewStepTriage.splitSheet`);决议
+        // 仍走 coordinator 统一出口,同一 binding 多层只有最深未占用上下文会弹。
+        .sheet(isPresented: $coordinator.showAIConsent, onDismiss: {
+            coordinator.handleAIConsentDismissed(granted: false)
+        }) {
+            AIConsentSheet()
+                .environmentObject(coordinator)
+        }
+        // toast 镜像:根级 toast overlay 被本 cover 全屏遮挡,不镜像则流程内
+        // 错误(S2:store 写失败/麦克风失败)用户不可见。绑定同一 coordinator
+        // 状态,cover 内这层是唯一可见实例。
+        .toast(
+            message: coordinator.toastMessage,
+            style: coordinator.toastStyle,
+            isPresented: $coordinator.showToast,
+            actionTitle: coordinator.toastActionTitle,
+            action: coordinator.toastAction
+        )
+    }
+
+    /// 深读拉取(v5 T5 批 3):**第 3 步首次呈现时**触发(挂在
+    /// `ReviewStepInsights` 的 `.task` 上)——此刻引擎必已跑完
+    /// (`skipsInsightsWhenEmpty` 在进本步前定好),`decidedCount` 也已随
+    /// 第 2 步划卡落定;任何失败(网络/未知 mode/不接地/限额 429)→ nil
+    /// 不显示,D4 口径。代理未部署 deep-read 时按 invalid mode 400 落
+    /// catch,同样静默降级。
+    private func loadDeepReadObservation() async {
+        guard let deepReader else { return }
+        // 一次会话只拉一次:第 3 步回跳重进会重跑 .task,重复拉取白烧
+        // E11 限额(10/天);失败不重试(D4 降级口径)。
+        guard !state.hasAttemptedDeepRead else { return }
+        // E6(三入口同 gate 的深读路):未同意 AI 披露就不发任何内容给代理
+        // ——facts 虽是聚合数字,也属「本次会话发往代理的内容」。与录音/
+        // 笔记路径同源判 `AppGroupConfig.aiConsentGranted()`(`ensureAIConsent`
+        // 内部同一查询);不弹卡打断——深读是后台增强,未同意=本期不显示,
+        // 用户日后同意(如首页录音弹卡)后下期自然恢复。
+        guard AppGroupConfig.aiConsentGranted() else {
+            VoiceTodoLog.coordinator.info("review.deepread.skipped reason=ai_consent")
+            return
+        }
+        // 事实层此刻现收集(decidedCount 等以拉取时点为准);<3 条不值得调
+        // (代理侧也有 <3 降级,这里省一次调用)。
+        state.refreshDeepReadFacts()
+        guard state.deepReadFacts.facts.count >= 3 else { return }
+        // 确认要发请求才置位——未同意/事实不足都没消耗限额,不挡「用户
+        // 中途同意后回跳重进」的重试路。
+        state.markDeepReadAttempted()
+        let result = await deepReader.deepReadObservation(
+            facts: state.deepReadFacts,
+            locale: .current
+        )
+        state.recordDeepReadResult(result)
+    }
+
+    /// 复盘漏斗 A16(v5 T1/E8):开始=流程呈现,`.task` 每次呈现只跑一次
+    /// (父 body 重评估不重跑,身份不变)。pendingCount 与入口卡/卡堆输入
+    /// 同口径(拍板 4)。参数只数字。
+    private func recordFlowStarted() {
+        Telemetry.record(.reviewFlowStarted(
+            pendingCount: ReviewFlowState.triageInput(from: store.todos).count
+        ))
     }
 
     // MARK: 数据加载
@@ -1111,7 +1291,10 @@ struct ReviewFlowView: View {
                 lastReviewDate: state.previousSessions.last?.completedAt,
                 lastPinnedOutcome: state.lastPinnedOutcome.map { outcome in
                     (completed: outcome.completed, pending: outcome.pending)
-                }
+                },
+                // D2(v5):上期笔记原话对质(提取逻辑收口在
+                // `lastConfrontationNote(sessions:)`,供单测 S6 三态)。
+                lastNote: ReviewFlowState.lastConfrontationNote(sessions: state.previousSessions)
             )
         case .triage:
             ReviewStepTriage(
@@ -1120,7 +1303,8 @@ struct ReviewFlowView: View {
                 onError: { presentError($0) },
                 onUndoToast: { coordinator.showToast(message: $0, style: .info) },
                 splitter: splitter,
-                voiceInput: voiceInput
+                voiceInput: voiceInput,
+                ensureConsent: { await coordinator.ensureAIConsent() }
             )
         case .insights:
             ReviewStepInsights(
@@ -1183,10 +1367,20 @@ struct ReviewFlowView: View {
                     }
                 }
             )
+            // 深读(v5 T5):第 3 步呈现时拉——此刻引擎已跑完、decidedCount 已
+            // 随划卡落定(事实不失真);不能挂在根视图 .task(与
+            // loadInsightContext 并发启动时事实层恒空,深读永不触发)。
+            // D4 无骨架屏,回来才整体出现;回跳重进由 hasAttemptedDeepRead 挡。
+            .task { await loadDeepReadObservation() }
         case .commit:
             ReviewStepCommit(state: state)
         case .ledger:
-            ReviewStepLedger(state: state)
+            ReviewStepLedger(
+                state: state,
+                voiceInput: voiceInput,
+                onError: { presentError($0) },
+                ensureConsent: { await coordinator.ensureAIConsent() }
+            )
         }
     }
 
@@ -1296,6 +1490,9 @@ struct ReviewFlowView: View {
     /// id 会被误删)。prune 与落库都走 UserDefaults 同步写,失败显式记日志
     /// (error/warning)不阻塞收尾;流程内的 store 写失败另有 toast(见 presentError)。
     private func finishSession() {
+        // 重入护栏:dismiss 动画窗口内的双击只允许跑一次(见属性注释)。
+        guard !hasFinishedSession else { return }
+        hasFinishedSession = true
         // v4 复核修订二轮 N2:收尾积压在 buildSession 内按 init 同口径
         // (`pendingOneOffCount`)从收尾时刻快照重数,容器只传 store.todos。
         // 它是窗口化工作集,但窗口含**全部 pending**,开放性一次性任务全在
@@ -1304,6 +1501,13 @@ struct ReviewFlowView: View {
         // 时刻起)对齐,见 `ReviewLedger.finalBacklogCount` 注释。
         let session = state.buildSession(completedAt: Date(), finalTodos: store.todos)
         ReviewSessionStore.shared.append(session)
+        // 复盘漏斗 A17(v5 T1/E8 口径):完成=finishSession。decidedCount 用
+        // 账本同口径(排下周+今天就做+不做了+拆小,拍板 4);durationMS 从
+        // 首次创建(@State 快照,不随重置)起算。参数只数字,无笔记文本。
+        Telemetry.record(.reviewFlowFinished(
+            decidedCount: state.decidedCount,
+            durationMS: Int(Date().timeIntervalSince(startedAt) * 1000)
+        ))
         Task { @MainActor in
             do {
                 let allIDs = Set(try await store.allTodoIDs())
@@ -1312,14 +1516,42 @@ struct ReviewFlowView: View {
                 VoiceTodoLog.coordinator.error("review.flow.finish.prune_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             }
         }
-        analyzeNoteTopicsInBackground(session: session)
-        dismiss()
+        Task { @MainActor in
+            // E6(v5 三入口同 gate 的第三路):键盘/语音笔记发往代理前过同意。
+            // gate 必须在 dismiss **之前**——同意卡唯一可靠的呈现路径是本
+            // cover 常驻期间的镜像 sheet(实验证实);dismiss 动画进行中根层
+            // 与镜像层都弹不出(UIKit 过渡死区),事后 binding 停在 true 也
+            // 不重试,挂起的 continuation 会把重入护栏武装——后续所有 gate
+            // (含首页录音)判 false 直到重启。拒绝则本期不做语义对照(笔记
+            // 照存,下期退化纯文本,与离线失败同口径)。
+            if noteAnalysisWillRun(session) {
+                guard await coordinator.ensureAIConsent() else {
+                    VoiceTodoLog.coordinator.info("review.note.analyze_skipped reason=ai_consent")
+                    dismiss()
+                    return
+                }
+            }
+            dismiss()
+            analyzeNoteTopicsInBackground(session: session)
+        }
+    }
+
+    /// 收尾 gate 的前置判定:笔记语义对照是否会实际发起。提取器缺失 / 没写
+    /// 笔记 / 洞察原料缺失(降级跳过)时本期不调用代理,也就不该弹同意卡——
+    /// gate 只在「确有内容要发往代理」时出现(E6 按本次会话是否有内容发往
+    /// 代理收口),与 `analyzeNoteTopicsInBackground` 的入参 guard 同条件。
+    private func noteAnalysisWillRun(_ session: ReviewSession) -> Bool {
+        noteAnalyzer != nil
+            && (session.voiceNote ?? "").isEmpty == false
+            && state.insightContextValue != nil
     }
 
     /// 收尾后的语义对照提取(2026-08-23 拍板,任务 #4):存完会话立刻异步做
     /// 一次 AI 分析(不计费),把「关注点 + 当期计数」按 id 回写进会话;下次
     /// 复盘纯本地拼对照。失败只记日志——对照是增强,离线/失败退化为纯文本
     /// 笔记(拍板口径);洞察原料缺失(降级跳过)时本期计数算不了,同样跳过。
+    /// E6(v5)同意 gate 在调用方(`finishSession`)dismiss 前已过——本函数
+    /// 只做网络调用,不再呈现任何 UI。
     private func analyzeNoteTopicsInBackground(session: ReviewSession) {
         guard let noteAnalyzer,
               let note = session.voiceNote,

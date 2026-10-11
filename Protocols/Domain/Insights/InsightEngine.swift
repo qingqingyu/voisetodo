@@ -106,10 +106,18 @@ enum InsightAvailability: Sendable {
     case hidden
 }
 
-/// 03 中间地带的一行事实(v4 拍板 3):文案构造时已本地化,仅展示用、不落库。
+/// 规则层的一行事实(v4 拍板 3 起,03 中间地带;v5 3-lite 扩到 01/05 单腿):
+/// 文案构造时已本地化,仅展示用。`signature` 是结构化标识(规则 id+关键数字,
+/// E4)——D7「与上期相同」跨期比较用它,不比较本地化文本(用户切语言/翻译
+/// 修订会让文本比较失效)。
 struct InsightFactLine: Sendable, Equatable {
     let id: InsightID
     let text: String
+    /// 结构化标识,如 `"energyWindow.peak|9|5"`。落进 `ReviewSession.factSignatures`。
+    let signature: String
+    /// D7:与上期事实完全相同(signature 命中上期集合)→ 渲染层行尾加弱化
+    /// 「与上期相同」后缀。仍重述、不折叠、不冷却(v4 拍板 1 口径)。
+    var sameAsPrevious: Bool = false
 }
 
 // MARK: - 结果与图数据
@@ -251,18 +259,20 @@ enum InsightEngine {
     /// 第 3 步(观察步)按完成记录数的降级阶梯。v1 只有 02/03(拍板 2),
     /// 未实现的 01/04/05/06 **不**产生占位行。
     enum Ladder: Sendable, Equatable {
-        /// 完成记录 < 5:**规则层不跑,第 3 步只出地板 A**(v4 拍板 5;v1 的
-        /// 「整个第 3 步跳过」已被推翻——地板 A 只依赖 `openTasks`,与完成了
-        /// 几条无关,攒了积压的新用户恰恰最需要看到积压年龄)。整步跳过只保留
-        /// 给「零积压 + 零完成」,判定在 `ReviewFlowState.configureInsightsLadder`。
+        /// 完成记录 < 5(v5 E1:01/05 照评估但**仅收集 `.fact`**,rotting 不评估
+        /// ——防从未展示的洞察进冷却历史;v4 拍板 5 的「不再整步跳」继续成立,
+        /// 第 3 步出地板 A + 05 峰值事实行(≥3 条完成)或 D6 窗口声明)。
+        /// 整步跳过只保留给「零积压 + 零完成」,判定在
+        /// `ReviewFlowState.configureInsightsLadder`。
         case skipStep
-        /// 5–14:只跑洞察 02;`needMore` = 距离 03 启用还差几条(占位文案「再记 N 条」)。
+        /// 5–14:rotting 照跑,01/05 收集事实行(fired 仍留给 full,v3 拍板);
+        /// `needMore` = 距离 full 档还差几条(占位文案「再记 N 条」)。
         case rottingOnly(needMore: Int)
-        /// ≥ 15:02 + 03 齐跑,未达阈值的不显示。
+        /// ≥ 15:四条规则齐跑,未达阈值的不显示(中间地带降事实行,v5 3-lite)。
         case full
     }
 
-    /// 降级阶梯判定。边界含义:<5 跳过整步;5–14 只有 02;≥15 跑 02+03。
+    /// 降级阶梯判定。边界含义:<5 低数据档;<15 rotting-only;≥15 全量。
     /// 5 与 15 来自文档 §2.3 表格原文。
     static func ladder(completedRecordCount: Int) -> Ladder {
         if completedRecordCount < 5 { return .skipStep }
@@ -313,8 +323,8 @@ enum InsightEngine {
     /// 口径:**DayClock 用户日**(「现在」由调用方传入,生产接线用
     /// `InsightContext.now`,与 `RottingRule` 同源)——同屏不能出现
     /// 「这条 21 天」与「21+ 档 0 条」并存的分界漂移(v4 批 1:统一到用户日)。
-    /// 与 `TriageRanking.stagnationDays` 的自然日口径**有意不同**:排序是
-    /// 相对序,差一天不改变「谁更久」;分档是对着阈值切,必须与腐烂卡同一把尺。
+    /// `TriageRanking.stagnationDays` 已于 v5 E7 同步切换为用户日——全仓
+    /// 一把尺,旧的「自然日 vs 用户日同屏差 1 天」显示毛刺随之消失。
     ///
     /// - Parameter rottingShown: 腐烂卡本期是否实际展示(过冷却后的
     ///   ranked 结果,不是规则触发)。展示时点名让位——腐烂卡的列表更细

@@ -161,7 +161,10 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     //     用户私密内容,绝不能进共享缓存——与 personalHints 不缓存同口径)
     //   - 不支持 stream(iOS 端固定 stream:false)
     const rawMode = payload.mode == null ? "" : String(payload.mode);
-    if (rawMode !== "" && rawMode !== "extract" && rawMode !== "split" && rawMode !== "reflect") {
+    // v5 T5:deep-read(深读)——assist 家族第三个模式,同不计费不缓存;E11
+    // 独立限额在下方 enforceDeepReadLimit(与 reflect/split 分开,深读
+    // prompt 更重,单独设闸)。
+    if (rawMode !== "" && rawMode !== "extract" && rawMode !== "split" && rawMode !== "reflect" && rawMode !== "deep-read") {
       return finishRequest(new Response("Invalid mode", { status: 400 }), requestContext, {
         reason: "invalid_mode",
         mode: rawMode
@@ -170,7 +173,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     const mode = rawMode || "extract";
     if (mode !== "extract" && stream) {
       return finishRequest(
-        new Response("split/reflect modes do not support streaming", { status: 400 }),
+        new Response("split/reflect/deep-read modes do not support streaming", { status: 400 }),
         requestContext,
         { reason: "assist_stream_unsupported" }
       );
@@ -230,6 +233,11 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       // 同口径递增本档全局预算——不计费额度(用户拍板)不变,计的是**成本**侧
       // 的全局桶,持续刷量会把本档熔断,assist 请求也就被本档 trip 拦下。
       await enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro);
+      // E11(v5 T5):deep-read 额外过独立日限额(prompt 重,单独设闸);
+      // split/reflect 维持原状(不计费、无独立限额)。
+      if (mode === "deep-read") {
+        await enforceDeepReadLimit(request, env, requestContext);
+      }
       logInfo("proxy.assist.quota_skipped", { ...requestContext, mode });
     }
 
@@ -1633,6 +1641,45 @@ async function enforceDailyLimitViaKV(env, requestContext, _ctx, params) {
   const remaining = Math.max(0, limit - used);
   logInfo("proxy.quota.incremented", { ...requestContext, quotaKey, quotaDate, dateSource, plan: tier, productId, limit, used, remaining, source: "kv" });
   return { skipped: false, plan: tier, limit, used, remaining, resetDate: quotaDate };
+}
+
+// E11(v5 T5):deep-read 独立日限额——assist 家族里 reflect/split 维持
+// 「全局预算熔断+IP 短窗」照常生效但不占计费;deep-read prompt 更重
+// (facts JSON 全量入 system),单独设闸防单设备高频刷。KV 键独立
+// (deepread:<date>:<device>),上限 DEEP_READ_DAILY_LIMIT(默认 10,
+// 免费/Pro 同——它不是计费额度,是成本护栏)。未配置 KV → 跳过(记日志,
+// 与 quota.skipped 同口径)。429 语义与计费额度一致(iOS 侧按 assist
+// 失败=降级不显示处理,不弹付费墙)。
+async function enforceDeepReadLimit(request, env, requestContext) {
+  if (!env.RATE_LIMIT_KV) {
+    logInfo("proxy.deepread.limit_skipped", { ...requestContext, reason: "not_configured" });
+    return;
+  }
+  const limit = Number(env.DEEP_READ_DAILY_LIMIT || 10);
+  // 与 enforceDailyLimit 的 invalid_limit 同口径:配错值(非数字/负数)时
+  // NaN 比较恒 false,限额会**静默失效**——记日志跳过,不静默吞配置错误。
+  if (!Number.isFinite(limit) || limit < 0) {
+    logWarn("proxy.deepread.limit_skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.DEEP_READ_DAILY_LIMIT });
+    return;
+  }
+  const { date: quotaDate } = resolveQuotaDate(request, requestContext);
+  const quotaKey = `deepread:${quotaDate}:${requestContext.deviceId}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(quotaKey) || "0");
+  if (current >= limit) {
+    logWarn("proxy.deepread.limit_exceeded", { ...requestContext, quotaKey, current, limit });
+    throw new ProxyHTTPError(429, "Deep-read daily limit exceeded", {
+      errorType: "deepread_limit_exceeded",
+      rateLimitType: "deepread",
+      body: { error: "deepread_limit_exceeded", remaining: 0, resetAt: quotaDate },
+      headers: {
+        "X-RateLimit-Type": "deepread",
+        "Retry-After": String(secondsUntilNextLocalDay(quotaDate))
+      }
+    });
+  }
+  const used = current + 1;
+  await env.RATE_LIMIT_KV.put(quotaKey, String(used), { expirationTtl: 36 * 60 * 60 });
+  logInfo("proxy.deepread.incremented", { ...requestContext, quotaKey, used, limit, remaining: Math.max(0, limit - used) });
 }
 
 // 解析配额日期：优先信任客户端 X-Local-Date（设备时区 YYYY-MM-DD），但做格式与漂移校验。

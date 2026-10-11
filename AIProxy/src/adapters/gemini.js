@@ -12,7 +12,7 @@
 // provider layer NOT to log URLs and on the request layer NOT to echo upstream URLs
 // back to the client. Never add `attempt.url` to a log payload.
 
-import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, buildDeepReadPrompt, DEEP_READ_USER_MESSAGE, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 const GEMINI_MODEL_CONFIG_KEYWORDS = [
   "model not found",
@@ -53,8 +53,11 @@ export const geminiAdapter = {
             ? buildSplitPrompt(locale)
             : mode === "reflect"
               ? buildReflectPrompt(locale)
-              : buildSystemPrompt(locale, vocabularyHints, today, personalHints) }] },
-          contents: [{ role: "user", parts: [{ text: transcript }] }],
+              : mode === "deep-read"
+                // v5 T5/E5:deep-read 的用户消息就是事实 JSON,prompt 只差模板
+                ? buildDeepReadPrompt(locale, transcript)
+                : buildSystemPrompt(locale, vocabularyHints, today, personalHints) }] },
+          contents: [{ role: "user", parts: [{ text: mode === "deep-read" ? DEEP_READ_USER_MESSAGE : transcript }] }],
           generationConfig: {
             temperature: 0,
             // 与 anthropic.js max_tokens:8192 保持一致(输出上限取满,推迟

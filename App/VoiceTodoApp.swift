@@ -177,10 +177,13 @@ struct VoiceTodoApp: App {
         // reviewNoteAnalyzer(笔记语义对照)同源同实例。
         let reviewSplitter: (any TodoSplitterProtocol)?
         let reviewNoteAnalyzer: (any ReviewNoteAnalyzerProtocol)?
+        let reviewDeepReader: (any DeepReadObservationProtocol)?
         if uiTestOptions.isUITesting {
             extractor = UITestTodoExtractor(options: uiTestOptions)
             reviewSplitter = nil
             reviewNoteAnalyzer = nil
+            // UI 测试不注入深读:第 3 步无 AI 观察卡(确定性渲染,不依赖网络)。
+            reviewDeepReader = nil
         } else {
             // NetworkClient 注入订阅 JWS provider 与额度模型（构造器注入，保持依赖反转）
             let networkClient = NetworkClient(
@@ -191,6 +194,8 @@ struct VoiceTodoApp: App {
             extractor = extractorService
             reviewSplitter = extractorService
             reviewNoteAnalyzer = extractorService
+            // 深读观察(v5 T5)同源同实例(四协议)。
+            reviewDeepReader = extractorService
         }
 
         // 独立持有 Store（同时共享给 Coordinator 和 HomeView）
@@ -206,7 +211,8 @@ struct VoiceTodoApp: App {
             entitlement: entitlementManager,
             quotaUsage: quotaUsage,
             reviewSplitter: reviewSplitter,
-            reviewNoteAnalyzer: reviewNoteAnalyzer
+            reviewNoteAnalyzer: reviewNoteAnalyzer,
+            reviewDeepReader: reviewDeepReader
         )
         _coordinator = StateObject(wrappedValue: coordinator)
 
@@ -259,17 +265,13 @@ struct VoiceTodoApp: App {
                 // AI 处理同意披露卡(运行时 gate 的 sheet 形态)。onDismiss 是
                 // 「系统方式收起(下拉)」的兜底出口:按钮路径已在
                 // handleAIConsentDismissed 内 resume 挂起方,这里幂等再入只是保险。
+                // 卡片构造收口在 `AIConsentSheet`(复盘 cover/拆小 sheet 内还有
+                // 镜像挂载,见其注释)。
                 .sheet(isPresented: $coordinator.showAIConsent, onDismiss: {
                     coordinator.handleAIConsentDismissed(granted: false)
                 }) {
-                    AIConsentDisclosureCard(
-                        onAgree: { coordinator.handleAIConsentDismissed(granted: true) },
-                        onDecline: { coordinator.handleAIConsentDismissed(granted: false) }
-                    )
-                    .padding(.vertical, WarmSpacing.lg)
-                    // 两档可拖:常规字号 430 一屏;AX 大字号(ja/en 长文案)放不下时
-                    // 用户可上拖到 large——固定单档会在动态字体下裁掉同意按钮。
-                    .presentationDetents([.height(430), .large])
+                    AIConsentSheet()
+                        .environmentObject(coordinator)
                 }
                 .toast(
                     message: coordinator.toastMessage,
