@@ -6716,3 +6716,122 @@ test("cron: 未配告警 secrets 时打不到任何真实网络端点", async ()
   await handleScheduled(cronEnv({ kv, telegram: false }), fetchImpl);
   // 不抛错即通过
 });
+
+// MARK: - v5 T5 deep-read 模式(E5 数字块提示词 + E11 独立日限额)
+
+test("deep-read: 合法 mode 通过 assist 路径且不占计费额度(E5)", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-10-11T12:00:00.000Z", async () => {
+    const response = await handleRequest(
+      request(
+        { transcript: JSON.stringify({ facts: [{ id: "backlog_now", value: "5" }] }), mode: "deep-read" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-deepread-basic",
+          "X-Local-Date": "2026-10-11"
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        DAILY_REQUEST_LIMIT: "5",
+        RATE_LIMIT_KV: kv,
+        DEEP_READ_DAILY_LIMIT: "3",
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      ctx,
+      jsonResponseProvider("a")
+    );
+    assert.equal(response.status, 200);
+    // E11:KV 里只有 deepread 键(递增到 1),计费额度键(deepread 之外
+    // quota:* 前缀)不出现——deep-read 不占计费额度。
+    const keys = [];
+    for (const entry of kv.values.entries()) {
+      keys.push(entry[0]);
+    }
+    const deepReadKeys = keys.filter((k) => k.startsWith("deepread:2026-10-11:"));
+    const quotaKeys = keys.filter((k) => k.startsWith("quota:"));
+    assert.equal(deepReadKeys.length, 1, "deepread 键恰好一个: " + JSON.stringify(keys));
+    assert.equal(await kv.get(deepReadKeys[0]), "1");
+    assert.equal(quotaKeys.length, 0, "不计费:无 quota 键 " + JSON.stringify(keys));
+  });
+});
+
+test("deep-read E11: 独立限额打满 → 429 deepread_limit_exceeded", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-10-11T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      DAILY_REQUEST_LIMIT: "5",
+      RATE_LIMIT_KV: kv,
+      DEEP_READ_DAILY_LIMIT: "2",
+      APP_BUNDLE_ID: "com.voicetodo.app"
+    };
+    const headers = {
+      "X-App-Token": "token",
+      "X-Device-ID": "dev-deepread-limit",
+      "X-Local-Date": "2026-10-11"
+    };
+    // 两次通过(限额 2)
+    for (let i = 0; i < 2; i++) {
+      const ok = await handleRequest(
+        request({ transcript: "{}", mode: "deep-read" }, headers),
+        env, ctx, jsonResponseProvider("a")
+      );
+      assert.equal(ok.status, 200);
+    }
+    // 第三次 → 429,错误类型 deepread_limit_exceeded,X-RateLimit-Type: deepread
+    const blocked = await handleRequest(
+      request({ transcript: "{}", mode: "deep-read" }, headers),
+      env, ctx, jsonResponseProvider("a")
+    );
+    assert.equal(blocked.status, 429);
+    assert.equal(blocked.headers.get("X-RateLimit-Type"), "deepread");
+    const body = JSON.parse(await blocked.text());
+    assert.equal(body.error, "deepread_limit_exceeded");
+    // 计费额度不受影响:同一设备随后的 extract 请求照常(不限流,quota 键独立)
+    const extract = await handleRequest(
+      request({ transcript: "明天三点开会" }, headers),
+      env, ctx, jsonResponseProvider("a")
+    );
+    assert.equal(extract.status, 200);
+  });
+});
+
+test("deep-read E5: prompt 注入事实 JSON 且不含本地化文案(anthropic system)", async () => {
+  let capturedSystem = null;
+  const provider = async (url, init) => {
+    const body = JSON.parse(init.body);
+    capturedSystem = body.system;
+    return jsonResponse({ content: [{ type: "text", text: '{"observation":"ok","draft":"?","numbers":{}}' }] });
+  };
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-10-11T12:00:00.000Z", async () => {
+    await handleRequest(
+      request(
+        { transcript: JSON.stringify({ facts: [{ id: "backlog_now", value: "5" }] }), mode: "deep-read" },
+        {
+          "X-App-Token": "token",
+          "X-Device-ID": "dev-deepread-prompt",
+          "X-Local-Date": "2026-10-11"
+        }
+      ),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "anthropic",
+        ANTHROPIC_API_KEY: "k",
+        RATE_LIMIT_KV: new MemoryKV(new Map()),
+        APP_BUNDLE_ID: "com.voicetodo.app"
+      },
+      ctx,
+      provider
+    );
+    assert.ok(capturedSystem.includes('"backlog_now"'), "system prompt 嵌入事实 JSON");
+    assert.ok(capturedSystem.includes("numbers"), "要求 numbers 回引块(E5)");
+  });
+});

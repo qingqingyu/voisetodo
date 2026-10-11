@@ -106,6 +106,11 @@ final class ReviewFlowState {
     /// (与地板 A/C 同屏,不空屏)。渲染层据此显示 sparse 说明行。
     private(set) var showsSparseWindowNote: Bool = false
 
+    /// 深读事实层(v5 T5/AF1):引擎与地板跑完后并行收集——纯 id+值,零本地
+    /// 本地化文案,发代理与 E5 接地校验共用(见 DeepReadFacts.swift)。
+    /// 趋势素材(方向 1):近 3 期 finalBacklogCount 序列一并入 facts。
+    private(set) var deepReadFacts: DeepReadFactsPayload = DeepReadFactsPayload(facts: [])
+
     // MARK: 第 2 步 · 卡片堆
 
     /// triage 输入快照:未完成 && abandonedAt == nil && recurrenceRule == nil 的
@@ -503,6 +508,44 @@ final class ReviewFlowState {
             && backlogAgeFact == nil
             && backlogCategoryFact == nil
             && backlogFlowFact == nil
+
+        // 深读事实层(v5 T5/AF1):与渲染同源收集——地板 A/B/C、规则层事实
+        // signature(已含关键数字)、完成/积压端点、账本方向、近 3 期趋势。
+        // 值一律字符串化;id 稳定(E5 精确比对依据)。
+        var collected: [DeepReadFact] = []
+        if let age = backlogAgeFact {
+            collected.append(contentsOf: [
+                DeepReadFact(id: "backlog_total", value: String(age.total)),
+                DeepReadFact(id: "backlog_fresh", value: String(age.freshCount)),
+                DeepReadFact(id: "backlog_aging", value: String(age.agingCount)),
+                DeepReadFact(id: "backlog_old", value: String(age.oldCount)),
+            ])
+        }
+        if let flow = backlogFlowFact {
+            collected.append(contentsOf: [
+                DeepReadFact(id: "created_count", value: String(flow.createdCount)),
+                DeepReadFact(id: "completed_count", value: String(flow.completedCount)),
+                DeepReadFact(id: "backlog_delta", value: String(flow.backlogDelta)),
+            ])
+            if let start = flow.ledgerStart, let end = flow.ledgerEnd {
+                collected.append(DeepReadFact(id: "backlog_prev", value: String(start)))
+                collected.append(DeepReadFact(id: "backlog_now", value: String(end)))
+            }
+        }
+        if let category = backlogCategoryFact {
+            collected.append(DeepReadFact(id: "focus_category", value: category.focusCategory.rawValue))
+            collected.append(DeepReadFact(id: "focus_count", value: String(category.focusCount)))
+        }
+        collected.append(DeepReadFact(id: "completed_oneoff", value: String(context.completedEvents.count)))
+        collected.append(DeepReadFact(id: "decided_count", value: String(decidedCount)))
+        // 趋势(方向 1):近 3 期收尾积压(旧 payload 哨兵 -1 跳过)。
+        let trend = previousSessions
+            .suffix(3)
+            .compactMap { $0.ledger.finalBacklogCount >= 0 ? $0.ledger.finalBacklogCount : nil }
+        for (offset, value) in trend.enumerated() {
+            collected.append(DeepReadFact(id: "trend_\(offset)", value: String(value)))
+        }
+        deepReadFacts = DeepReadFactsPayload(facts: collected)
     }
 
     /// 地板 B 的取数决策(纯函数,State 侧供单测;容器层取好原料后调用,
