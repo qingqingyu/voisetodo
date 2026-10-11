@@ -50,6 +50,15 @@ struct ReviewStepLedger: View {
             .padding(.bottom, WarmSpacing.xxl)
         }
         .onAppear { prefillAIDraftIfNeeded() }
+        .onDisappear {
+            // 第 5 步在录时退出(返回上一步/xmark 关闭/完成落 cover)要停录音
+            // ——录音机与首页共享同一实例(coordinator.reviewVoiceInput),不复
+            // 位会把「还在收音」泄漏给封面下的首页,直到静音 watchdog 超时才停。
+            // 与拆小 sheet 的 stopSplitSession(v4)同一模式,同一理由。
+            if voiceInput?.isRecording == true {
+                voiceInput?.cancelRecordingByUser()
+            }
+        }
         .onChange(of: state.voiceAnswerText) { _, newValue in
             // 用户动笔(与预填不同)→ AI 草稿标记退场;清空也退场
             if showingAIDraftHint, newValue != state.deepReadResult?.draft {
