@@ -12,6 +12,13 @@ struct ReviewStepRecap: View {
     /// 上次定的重点在本期快照里的结局(2026-08-25 轻修:plan-do-review 闭环)。
     /// nil(上次没置顶过)时该行隐藏。
     var lastPinnedOutcome: (completed: Int, pending: Int)? = nil
+    /// 上期笔记原话(v5 D2 对质区):最近一条非空复盘笔记,容器从
+    /// previousSessions 取。nil(上期没写)时整块隐藏——没写就没得对质,
+    /// 不放占位。版面顺序=先本期事实(Hero/证据行)后上期原话(D2)。
+    var lastNote: String? = nil
+    /// 对质区展开态(默认收 4 行,点击展开全文——长笔记的「原话」不能截死,
+    /// 对质价值就在完整原话)。
+    @State private var noteExpanded = false
 
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
@@ -56,6 +63,14 @@ struct ReviewStepRecap: View {
                     heroContent: RecapHeroContent.make(lastPinnedOutcome: lastPinnedOutcome)
                 )
                 RecapEvidenceRow(summary: summary)
+
+                // 对质区(v5 D2):「上期你写了」+中性引用——先本期事实后上期
+                // 原话;框架文案禁差距评判语句(验收=负面笔记首屏无指责性表述),
+                // 引用样式中性(左侧细线+原文 verbatim,不是引用语气的弯引号
+                // 装饰——克制,原话自己说话)。
+                if let lastNote {
+                    lastNoteCard(lastNote)
+                }
             }
             .padding(.horizontal, WarmSpacing.lg)
             .padding(.bottom, WarmSpacing.xxl)
@@ -87,5 +102,42 @@ struct ReviewStepRecap: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// 对质区卡(D2/D9):全量原话逐条 lineLimit+minimumScaleFactor(文本
+    /// 布局规则),点按展开/收起;VoiceOver 整块 combine 成一句。
+    private func lastNoteCard(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+            Text(String(localized: "review.flow.recap.last_note.title"))
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            HStack(alignment: .top, spacing: WarmSpacing.sm) {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(WarmTheme.textMuted.opacity(0.4))
+                    .frame(width: 2)
+
+                Text(verbatim: note)
+                    .font(WarmFont.body(14))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .lineLimit(noteExpanded ? nil : 4)
+                    .minimumScaleFactor(noteExpanded ? 1 : 0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+            }
+        }
+        .padding(WarmSpacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.card, style: .continuous)
+                .fill(WarmTheme.cardBackground)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(WarmAnimation.springStandard) { noteExpanded.toggle() } }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(String(localized: "review.flow.recap.last_note.expand_hint"))
+        .accessibilityIdentifier("ReviewRecapLastNote")
     }
 }

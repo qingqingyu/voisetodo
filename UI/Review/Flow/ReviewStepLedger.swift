@@ -11,6 +11,11 @@ import SwiftUI
 ///   动线也顺)。答案持久化不变(`ReviewFlowState.voiceAnswerText`,阶段 4)。
 struct ReviewStepLedger: View {
     @Bindable var state: ReviewFlowState
+    /// 「问问自己」麦克风(v5 T4/D8 同款复用)。nil → 麦克风行不渲染
+    /// (注入链缺失/降级),手打兜底始终在场。
+    var voiceInput: (any VoiceInputProtocol)? = nil
+    /// 错误显式传播(S2:权限拒绝/转写失败如实上报,降级手打不静默)。
+    var onError: (Error) -> Void = { _ in }
 
     private let calendar = Calendar.current
 
@@ -247,6 +252,17 @@ struct ReviewStepLedger: View {
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if let voiceInput {
+                    ReviewMicRow(
+                        voiceInput: voiceInput,
+                        hint: String(localized: "review.flow.note.mic.hint"),
+                        onError: onError,
+                        onAdopt: { adoptTranscriptIntoNote($0) },
+                        // E10:中断/错误时已说出的部分转写预填笔记框,不丢弃。
+                        onAdoptPartialOnError: { adoptTranscriptIntoNote($0) }
+                    )
+                }
+
                 if let category = state.askDomainHintCategory {
                     Text(String(
                         format: String(localized: "review.flow.insights.ask.domain_hint"),
@@ -289,6 +305,18 @@ struct ReviewStepLedger: View {
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    /// 转写采纳进「问问自己」笔记框(v5 T4):已有内容则换行接续——笔记是
+    /// 自由文本,多段转写逐行追加比挤一行可读;VoiceOver 由 TextEditor 承载。
+    private func adoptTranscriptIntoNote(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if state.voiceAnswerText.isEmpty {
+            state.voiceAnswerText = trimmed
+        } else {
+            state.voiceAnswerText += "\n" + trimmed
         }
     }
 }

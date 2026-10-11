@@ -1140,7 +1140,10 @@ struct ReviewFlowView: View {
                 lastReviewDate: state.previousSessions.last?.completedAt,
                 lastPinnedOutcome: state.lastPinnedOutcome.map { outcome in
                     (completed: outcome.completed, pending: outcome.pending)
-                }
+                },
+                // D2(v5):上期笔记原话对质——最近一条非空笔记(间隔漂移时
+                // 最近非空即「上期」的诚实口径;上期没写→nil 整块隐藏)。
+                lastNote: state.previousSessions.last(where: { ($0.voiceNote ?? "").isEmpty == false })?.voiceNote
             )
         case .triage:
             ReviewStepTriage(
@@ -1215,7 +1218,11 @@ struct ReviewFlowView: View {
         case .commit:
             ReviewStepCommit(state: state)
         case .ledger:
-            ReviewStepLedger(state: state)
+            ReviewStepLedger(
+                state: state,
+                voiceInput: voiceInput,
+                onError: { presentError($0) }
+            )
         }
     }
 
