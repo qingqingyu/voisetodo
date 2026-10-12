@@ -503,7 +503,7 @@ struct PaywallContent: View {
                         .minimumScaleFactor(0.8)
                 }
             case .some(false):
-                subscribedNoRenewExpiryText(expiration: expiration)
+                subscribedNoRenewExpiryText(expiration: expiration, dateText: dateText)
             case .none:
                 Text(String(localized: "paywall.subscribed.expires \(dateText)"))
                     .font(.system(size: 13, weight: .regular, design: .rounded))
@@ -519,7 +519,9 @@ struct PaywallContent: View {
     /// - >7 天 → 沿用「有效期至 X，到期后不再续费」+ `textSecondary`。
     /// 只在临期时提醒:真实用户取消年付后多数还有几个月有效期,全时段倒计时是焦虑噪音;
     /// 红色在本 App 语义是错误,不用。已过期的旧订阅理论上翻不进 isPro 分支,防御性并入「今天」。
-    private func subscribedNoRenewExpiryText(expiration: Date) -> some View {
+    /// - Parameter dateText: 调用方(`subscribedDateText`)已格式化好的日期串,
+    ///   >7 天段直接复用,与其它日期行保持同一格式来源。
+    private func subscribedNoRenewExpiryText(expiration: Date, dateText: String) -> some View {
         let days = Self.calendarDaysUntil(expiration, now: .now, calendar: .current)
         let text: String
         let color: Color
@@ -538,7 +540,7 @@ struct PaywallContent: View {
         default:
             text = String(
                 format: String(localized: "paywall.subscribed.expires_no_renew %@"),
-                expiration.formatted(date: .abbreviated, time: .omitted)
+                dateText
             )
             color = WarmTheme.textSecondary
         }
