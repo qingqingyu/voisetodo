@@ -112,7 +112,7 @@ struct PaywallView: View {
             } action: { _, newHeight in
                 viewportHeight = newHeight
             }
-            .navigationTitle(Text(String(localized: "paywall.title")))
+            .navigationTitle(Text(String(localized: navigationTitleKey)))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -147,6 +147,15 @@ struct PaywallView: View {
         }
     }
 
+    /// 导航标题文案:已订阅(且非成功窗口)用「VoiceTodo Pro」,否则沿用「升级」。
+    /// 条件必须与 `PaywallContent` 的已订阅分支一致——成功窗口内页面仍停在购买 UI,
+    /// 标题也要留在「升级」,不得闪成已订阅页。
+    private var navigationTitleKey: String.LocalizationValue {
+        entitlement.isPro && successEvent == nil
+            ? "paywall.title.subscribed"
+            : "paywall.title"
+    }
+
     private func showSuccess(_ event: SuccessEvent) {
         successEvent = event
         AccessibilityNotification.Announcement(event.message).post()
@@ -159,8 +168,8 @@ struct PaywallView: View {
 /// 历史上有 onboarding 内嵌与其形态 enum,已删)。
 ///
 /// 渲染顺序(自上而下):
-/// - 已订阅(`entitlement.isPro`):`comparisonCard(实时用量) → subscribedStatusCard → legalBlock`
-/// - 未订阅:`comparisonCard → valuePropsList → productList → [purchaseCTA] → legalBlock`
+/// - 已订阅(`entitlement.isPro`):`comparisonCard(实时用量) → subscribedStatusCard → legalBlock(无价格披露)`
+/// - 未订阅:`comparisonCard → valuePropsList → productList → [purchaseCTA] → legalBlock(含价格披露)`
 ///
 /// 一屏化(2026-08):删掉 header(副标题与导航标题/CTA 信息重复)与 quota 价值卡
 /// (额度信息由对比胶囊表达),区块间距 lg→sm,保证 SE 级视口下 CTA 无需滚动即可见。
@@ -207,7 +216,11 @@ struct PaywallContent: View {
                     // 按值比较即按错误来源过滤(lastError 均来自 ErrorMessages 常量赋值)。
                     inlineErrorText
                 }
-                legalBlock
+                // 已订阅分支不渲染价格披露(legalText):那段是购买前的自动续费披露,
+                // 价格取「当前选中方案」(默认年付),不是用户实际订阅的商品——月付用户
+                // 会看到年付价格、已关续费的用户会看到 "auto-renews",都与状态卡矛盾
+                // (外部 review 第 1 条)。隐私/条款链接与恢复购买保留。
+                legalBlock(showsPriceDisclosure: false)
             } else {
                 comparisonCard
                 valuePropsList
@@ -216,7 +229,7 @@ struct PaywallContent: View {
                     purchaseCTA
                     inlineErrorText
                 }
-                legalBlock
+                legalBlock(showsPriceDisclosure: true)
             }
             Spacer(minLength: WarmSpacing.xxs)
         }
@@ -413,6 +426,16 @@ struct PaywallContent: View {
                     .minimumScaleFactor(0.8)
             }
             subscribedDateText
+            if entitlement.willAutoRenew == false {
+                // 到期后说明行(仅已关续费):Pro 只提升每日额度,如实只说额度变化,
+                // 不列「失去的功能」——那是编造,且有 2.3 误导风险。数字取常量,不写死 3。
+                Text(String(localized: "paywall.subscribed.after_expiry_free \(NetworkConfig.freeDailyLimit)"))
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(WarmSpacing.md)
@@ -450,7 +473,7 @@ struct PaywallContent: View {
     /// 日期行,按续费状态区分(任务书条目 4.2):
     /// - 试用中且会续费 →「免费试用至 X，之后按 ¥39.99/年 收费」;
     /// - 已付费且会续费 →「下次续费 X」;
-    /// - 已关闭自动续费 →「有效期至 X，到期后不再续费」;
+    /// - 已关闭自动续费 → 7 天内「今天/明天/X 天后到期」+ 警示色,其余「有效期至 X，到期后不再续费」;
     /// - willAutoRenew 读取不到(nil)→ 退回「有效期至 X」。
     /// 试用中但商品读不到(拼不出价格)时退「下次续费 X」,仍比裸日期多一层语义。
     @ViewBuilder
@@ -480,14 +503,7 @@ struct PaywallContent: View {
                         .minimumScaleFactor(0.8)
                 }
             case .some(false):
-                Text(String(
-                    format: String(localized: "paywall.subscribed.expires_no_renew %@"),
-                    dateText
-                ))
-                    .font(.system(size: 13, weight: .regular, design: .rounded))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                subscribedNoRenewExpiryText(expiration: expiration)
             case .none:
                 Text(String(localized: "paywall.subscribed.expires \(dateText)"))
                     .font(.system(size: 13, weight: .regular, design: .rounded))
@@ -498,15 +514,61 @@ struct PaywallContent: View {
         }
     }
 
+    /// 已关续费的日期行:按剩余日历天分档。
+    /// - ≤7 天 → 相对说法(今天/明天/X 天后到期)+ `warningText` 警示色;
+    /// - >7 天 → 沿用「有效期至 X，到期后不再续费」+ `textSecondary`。
+    /// 只在临期时提醒:真实用户取消年付后多数还有几个月有效期,全时段倒计时是焦虑噪音;
+    /// 红色在本 App 语义是错误,不用。已过期的旧订阅理论上翻不进 isPro 分支,防御性并入「今天」。
+    private func subscribedNoRenewExpiryText(expiration: Date) -> some View {
+        let days = Self.calendarDaysUntil(expiration, now: .now, calendar: .current)
+        let text: String
+        let color: Color
+        switch days {
+        case ...0:
+            // ≤0 含防御分支:isPro stale-true 时可能短暂渲染已过日期,
+            // 说「今天到期」比抛裸负数安全。
+            text = String(localized: "paywall.subscribed.expires_today_no_renew")
+            color = WarmTheme.warningText
+        case 1:
+            text = String(localized: "paywall.subscribed.expires_tomorrow_no_renew")
+            color = WarmTheme.warningText
+        case 2...7:
+            text = String(localized: "paywall.subscribed.expires_in_days_no_renew \(days)")
+            color = WarmTheme.warningText
+        default:
+            text = String(
+                format: String(localized: "paywall.subscribed.expires_no_renew %@"),
+                expiration.formatted(date: .abbreviated, time: .omitted)
+            )
+            color = WarmTheme.textSecondary
+        }
+        return Text(text)
+            .font(.system(size: 13, weight: .regular, design: .rounded))
+            .foregroundColor(color)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+    }
+
+    /// 到期日距今的日历天数(今天 = 0,已过 = 负数)。
+    /// 按 `startOfDay` 差算,不用秒数除 86400——夏令时切换日实际只有 23/25 小时,
+    /// 秒数除法会差一天。`now`/`calendar` 注入,便于单测跨天/跨月/跨夏令时。
+    static func calendarDaysUntil(_ date: Date, now: Date, calendar: Calendar) -> Int {
+        calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
+    }
+
     /// 「管理订阅」主按钮:打开系统订阅管理页(切换月/年、取消续费都在这里)。
-    /// 关闭后重读权益——用户可能刚取消续费或换了方案,日期行要跟着变(任务书条目 4.4)。
+    /// 已关续费时文案改「重新开启自动续费」——按钮如实描述点下去会发生什么:
+    /// 用户在系统页做的是重新打开自动续费,不是重新购买;此时 Pro 仍有效,
+    /// 「Resume Pro」类文案暗示 Pro 已停,与状态卡矛盾(外部 review 第 4 条)。
+    /// 关闭后重读权益——用户可能刚取消续费或换了方案,日期行要跟着变(任务书条目 4.4);
+    /// 重新开启续费后 willAutoRenew 翻回 true,按钮/日期行/说明行随之恢复。
     /// iOS 26 SDK 的 manageSubscriptionsSheet(isPresented:) 已无 onDismiss 参数,
     /// 用自定义 Binding 在置回 false 时触发刷新,语义等价。
     private var manageSubscriptionButton: some View {
         Button {
             showManageSubscriptions = true
         } label: {
-            Text(String(localized: "paywall.manage_subscription"))
+            Text(String(localized: manageSubscriptionLabelKey))
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
                 .lineLimit(1)
@@ -530,6 +592,14 @@ struct PaywallContent: View {
                 }
             }
         ))
+    }
+
+    /// 主按钮文案:已关续费(willAutoRenew == false)→「重新开启自动续费」;
+    /// 续费中/未知(nil)→「管理订阅」。nil 不推断,按现状处理。
+    private var manageSubscriptionLabelKey: String.LocalizationValue {
+        entitlement.willAutoRenew == false
+            ? "paywall.manage_subscription.turn_on_renew"
+            : "paywall.manage_subscription"
     }
 
     /// 订阅被代理拒的警示行(`QuotaUsage.proxyRejectedSubscription`:请求带了凭证、
@@ -867,9 +937,11 @@ struct PaywallContent: View {
     /// xxs 换取一屏预算。legalText 仍只在商品加载成功且 intro 资格查询落定后渲染
     /// (C 点防抖,依赖 isEligibleForIntroOffer 分流);链接与恢复不依赖商品加载结果
     /// (3.1.2:商品加载失败时付费墙仍可见,链接也必须可点)。
-    private var legalBlock: some View {
+    /// `showsPriceDisclosure == false`(已订阅分支)时只留链接与恢复——价格披露
+    /// 服务购买决策,对已订阅者是错误信息(见 body 已订阅分支注释)。
+    private func legalBlock(showsPriceDisclosure: Bool) -> some View {
         VStack(spacing: WarmSpacing.xxs) {
-            if entitlement.productLoadState == .success && !entitlement.isCheckingIntroOffer {
+            if showsPriceDisclosure && entitlement.productLoadState == .success && !entitlement.isCheckingIntroOffer {
                 legalText
             }
             legalLinks
