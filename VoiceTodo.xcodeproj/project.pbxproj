@@ -266,6 +266,7 @@
 		FCF1488C2894F56B1AFCE0A0 /* GroupedCardRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14BFFE9BFB2C6D74E181445 /* GroupedCardRow.swift */; };
 		FD26AF83E638F51BEDB8C439 /* ReviewStepInsights.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7345620F56FD794E9FF96EC0 /* ReviewStepInsights.swift */; };
 		FD4238448CE0B11A6B7A7925 /* TodoDueTimeResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239912F44BD7AA2A97D45F5F /* TodoDueTimeResolver.swift */; };
+		FE0B546BA687A26A60D8C8B6 /* PaywallExpiryDaysTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE73F1C9F4DD74C26F731A14 /* PaywallExpiryDaysTests.swift */; };
 		FE7EEEA993FA5EC3D03D3021 /* RecurrenceRuleResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A256A46D624FE82D6C3ED3CB /* RecurrenceRuleResolver.swift */; };
 /* End PBXBuildFile section */
 
@@ -465,6 +466,7 @@
 		AC981BF525760D925DDE5884 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		ACE8E927A8B4BDB097F09BCC /* DetailKeyboardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailKeyboardUITests.swift; sourceTree = "<group>"; };
 		ADA9B1DC522D3039EB104860 /* TodoItemFromBasisFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoItemFromBasisFilterTests.swift; sourceTree = "<group>"; };
+		AE73F1C9F4DD74C26F731A14 /* PaywallExpiryDaysTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallExpiryDaysTests.swift; sourceTree = "<group>"; };
 		AF32D0A780F2FD9AC0D9F154 /* TriageRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageRanking.swift; sourceTree = "<group>"; };
 		B04EE0D5AC197C730AD1D61E /* CalendarSyncAskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncAskSheet.swift; sourceTree = "<group>"; };
 		B089B83D18F62D12A4885791 /* PersonalGlossaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalGlossaryView.swift; sourceTree = "<group>"; };
@@ -580,6 +582,7 @@
 				2C27460E635A54244B6D78AB /* HomeCalendarPeriodVisibilityTests.swift */,
 				A5636BCAAC1BD72AC5880FC0 /* HomeCalendarStateGroupingTests.swift */,
 				80D688C7A4292E80E400FC3E /* MarqueePhaseTests.swift */,
+				AE73F1C9F4DD74C26F731A14 /* PaywallExpiryDaysTests.swift */,
 				0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */,
 			);
 			path = UI;
@@ -1408,6 +1411,7 @@
 				A8E5F6B53344DD5FC5E8AE82 /* IntentNotificationReconcilerTests.swift in Sources */,
 				63F321766DAFAE037C69AC27 /* MarqueePhaseTests.swift in Sources */,
 				5339F1253CE23AD9B4791F03 /* ModelContainerStartupPolicyTests.swift in Sources */,
+				FE0B546BA687A26A60D8C8B6 /* PaywallExpiryDaysTests.swift in Sources */,
 				7B4ED59EC96A3365DF1A84AE /* PendingRecoveryFlowTests.swift in Sources */,
 				B1E3FC7CFA283CF502389501 /* PermissionManagerTests.swift in Sources */,
 				EA7D4972C0860DA591925945 /* ProductsStorekitGuardTests.swift in Sources */,
