@@ -463,6 +463,198 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
         XCTAssertTrue(archived.unscheduledTodos.contains { $0.id == later.id })
     }
 
+    // MARK: - 进度条口径:「稍后」/「待定日期」计入(2026-10-09 拍板)
+
+    /// `hasTimeSignal`:timeBucket / 非空 dueHint(含空白串判空)任一命中即真,
+    /// 空串与 nil 同义(批量出口清日期写空串,见 testBatchExitClearedFieldsLandInUnscheduled)。
+    func testHasTimeSignalClassification() throws {
+        XCTAssertTrue(HomeCalendarState.hasTimeSignal(makeTodo(title: "a", timeBucket: .afternoon, dueDate: nil)))
+        XCTAssertTrue(HomeCalendarState.hasTimeSignal(makeTodo(title: "b", dueHint: "等会儿", dueDate: nil)))
+        XCTAssertFalse(HomeCalendarState.hasTimeSignal(makeTodo(title: "c", dueDate: nil)))
+        XCTAssertFalse(HomeCalendarState.hasTimeSignal(makeTodo(title: "d", dueHint: "  ", dueDate: nil)))
+        XCTAssertFalse(HomeCalendarState.hasTimeSignal(makeTodo(title: "e", dueHint: "", dueDate: nil)))
+    }
+
+    /// `isLaterActiveTodo` 排除项:有日期安排 / unparsed / 已放弃 / 已归档完成
+    /// 均不属于「稍后 + 待定日期」母集;deferred 原地保留的已完成条目属于。
+    func testIsLaterActiveTodoExclusions() throws {
+        var abandoned = makeTodo(title: "划掉的", dueDate: nil)
+        abandoned.abandonedAt = today
+
+        XCTAssertTrue(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "稍后", dueDate: nil), deferredCompletionIDs: []
+        ))
+        XCTAssertTrue(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "待定", timeBucket: .morning, dueDate: nil), deferredCompletionIDs: []
+        ))
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "有日期", dueDate: today), deferredCompletionIDs: []
+        ), "有日期任务走当日 occurrence 统计,不计 later")
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "没识别", dueDate: nil, extractionOutcome: .rawFallback),
+            deferredCompletionIDs: []
+        ), "unparsed 不计入进度条(2026-10-09 拍板)")
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(abandoned, deferredCompletionIDs: []))
+        let archivedDone = makeTodo(title: "已完成", dueDate: nil, isCompleted: true, completedAt: today)
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(archivedDone, deferredCompletionIDs: []))
+        XCTAssertTrue(HomeCalendarState.isLaterActiveTodo(
+            archivedDone, deferredCompletionIDs: [archivedDone.id]
+        ), "deferred 原地保留期间仍属 later 母集")
+    }
+
+    /// `laterActiveCounts` 的 deferred 交接不变量:勾选瞬间(条目在 deferred 集合内)
+    /// total 与 completed 同步计入,圆环前进;归档(移出集合)后 later 侧让位,
+    /// 由「当日完成的无日期任务」段接上——两侧合计恒定,不双计。
+    func testLaterActiveCountsDeferredHandoff() throws {
+        let doneDeferred = makeTodo(title: "刚勾的", dueDate: nil, isCompleted: true, completedAt: today)
+        let pending = makeTodo(title: "还没做", dueDate: nil)
+
+        // 勾选瞬间(0.75s 原地保留期内):2 条都在 later,其中 1 条已完成。
+        let during = HomeCalendarState.laterActiveCounts(
+            todos: [doneDeferred, pending], deferredCompletionIDs: [doneDeferred.id]
+        )
+        XCTAssertEqual(during.total, 2)
+        XCTAssertEqual(during.completed, 1)
+
+        // 归档后(移出 deferred):later 侧只剩未完成那条,已完成让位给
+        // selectedDayStats 的 completedUnscheduledToday 段(排除 deferred,见其注释)。
+        let after = HomeCalendarState.laterActiveCounts(
+            todos: [doneDeferred, pending], deferredCompletionIDs: []
+        )
+        XCTAssertEqual(after.total, 1)
+        XCTAssertEqual(after.completed, 0)
+    }
+
+    /// 统计与分组的一致性:同一输入下,`laterActiveCounts.total` 恒等于
+    /// `unscheduledTodos + pendingDateTodos` 两分区条数之和——进度条分母与列表
+    /// 可见条目严格同源,防两处口径再漂移。
+    func testLaterActiveCountsMatchGroupingSections() throws {
+        let todos = [
+            makeTodo(title: "稍后A", dueDate: nil),
+            makeTodo(title: "稍后B", dueDate: nil),
+            makeTodo(title: "待定A", timeBucket: .evening, dueDate: nil),
+            makeTodo(title: "有日期", dueDate: today),
+            makeTodo(title: "没识别", dueDate: nil, extractionOutcome: .unparsed),
+            makeTodo(title: "归档完成", dueDate: nil, isCompleted: true, completedAt: today)
+        ]
+        let state = HomeCalendarState.makeForTests(todos: todos, selectedDate: today, calendar: calendar)
+        let counts = HomeCalendarState.laterActiveCounts(todos: todos, deferredCompletionIDs: [])
+
+        XCTAssertEqual(
+            counts.total,
+            state.unscheduledTodos.count + state.pendingDateTodos.count
+        )
+        XCTAssertEqual(counts.total, 3)
+        XCTAssertEqual(counts.completed, 0)
+    }
+
+    // MARK: - 月历今天格子注入(2026-10-13 拍板)
+
+    /// 注入命中:「稍后」+「待定日期」条目以 occurrence 形态进今天 bucket,
+    /// 且只进今天(其他天零污染)。
+    func testInjectsLaterAndPendingDateIntoTodayCell() throws {
+        let later = makeTodo(title: "稍后买猫砂", dueDate: nil)
+        let pending = makeTodo(title: "下午寄快递", timeBucket: .afternoon, dueDate: nil)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later, pending],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        let injected = state.occurrencesByDay[todayKey] ?? []
+        XCTAssertEqual(injected.count, 2)
+        XCTAssertEqual(Set(injected.map(\.todo.id)), Set([later.id, pending.id]))
+        // 注入 occurrence 的元数据:挂今天、未完成、非跨天。
+        XCTAssertTrue(injected.allSatisfy { $0.occurrenceDate == today })
+        XCTAssertTrue(injected.allSatisfy { !$0.isCompleted && !$0.isSpanning })
+        // 只进今天:整个字典再无其他 key。
+        XCTAssertEqual(Set(state.occurrencesByDay.keys), Set([todayKey]))
+    }
+
+    /// 跨月守卫:注入的「今天」不在可见 42 天窗口 → 不注入任何格子。
+    func testNoInjectionWhenTodayOutsideVisibleMonth() throws {
+        let later = makeTodo(title: "稍后买猫砂", dueDate: nil)
+        let nextMonth = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 24, hour: 12))
+        )
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later],
+            selectedDate: today,
+            calendar: calendar,
+            now: nextMonth
+        )
+
+        XCTAssertTrue(state.occurrencesByDay.isEmpty)
+    }
+
+    /// 双显示防护:selectedOccurrences(当日 tier 数据源)不含注入条目——
+    /// Today 列表已由「稍后/待定日期」独立分区渲染;同时有日期条目照常进。
+    func testSelectedOccurrencesExcludesInjectedEntries() throws {
+        let later = makeTodo(title: "稍后买猫砂", dueDate: nil)
+        let timed = makeTodo(title: "有日期", dueDate: today, hasDueTime: true)
+        let timedOccurrence = TodoOccurrenceData(todo: timed, occurrenceDate: today, isCompleted: false)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later, timed],
+            selectedDate: today,
+            occurrencesByDay: [todayKey: [timedOccurrence]],
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        // 格子侧:今天 bucket = 1 条有日期 + 1 条注入。
+        XCTAssertEqual(state.occurrencesByDay[todayKey]?.count, 2)
+        // 列表侧:当日 tier 只有有日期那条,注入条目不重复出现。
+        XCTAssertEqual(state.selectedOccurrences.map(\.todo.id), [timed.id])
+        XCTAssertEqual(state.uncompletedOccurrences.map(\.todo.id), [timed.id])
+        let tierIDs = state.tieredUncompletedOccurrences.flatMap { $0.items.map(\.todo.id) }
+        XCTAssertEqual(tierIDs, [timed.id])
+    }
+
+    /// deferred 原地保留:勾选后 0.75s 内条目仍注入今天格子且 isCompleted=true
+    /// (格子灰显,与列表分区原地保留行为一致);归档后随分组移除消失。
+    func testDeferredCompletionInjectedAsCompleted() throws {
+        let justChecked = makeTodo(title: "刚勾的", dueDate: nil, isCompleted: true, completedAt: today)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [justChecked],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0),
+            deferredCompletionIDs: [justChecked.id]
+        )
+
+        let injected = state.occurrencesByDay[todayKey] ?? []
+        XCTAssertEqual(injected.count, 1)
+        XCTAssertEqual(injected.first?.todo.id, justChecked.id)
+        XCTAssertTrue(injected.first?.isCompleted ?? false)
+    }
+
+    /// 空守卫:无「稍后/待定日期」条目时 occurrencesByDay 与传入值恒等
+    /// (注入零开销,不额外创建 key)。
+    func testEmptyLaterSectionsLeaveOccurrencesByDayUntouched() throws {
+        let timed = makeTodo(title: "有日期", dueDate: today)
+        let occurrence = TodoOccurrenceData(todo: timed, occurrenceDate: today, isCompleted: false)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [timed],
+            selectedDate: today,
+            occurrencesByDay: [todayKey: [occurrence]],
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        XCTAssertEqual(state.occurrencesByDay[todayKey]?.count, 1)
+        XCTAssertEqual(state.occurrencesByDay[todayKey]?.first?.todo.id, timed.id)
+    }
+
     // MARK: - Helpers
 
     private func makeDate(hour: Int, minute: Int) -> Date {

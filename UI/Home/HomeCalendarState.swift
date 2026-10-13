@@ -84,6 +84,7 @@ struct HomeCalendarState {
             occurrencesByDay: occurrencesByDay,
             completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar,
+            today: calendar.startOfDay(for: now),
             deferredCompletionIDs: deferredCompletionIDs
         )
     }
@@ -113,6 +114,7 @@ struct HomeCalendarState {
             occurrencesByDay: occurrencesByDay,
             completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar,
+            today: calendar.startOfDay(for: now),
             deferredCompletionIDs: deferredCompletionIDs
         )
     }
@@ -135,6 +137,48 @@ struct HomeCalendarState {
         guard todo.dueDate == nil, todo.recurrenceRule == nil, todo.isCompleted else { return false }
         guard let completedAt = todo.completedAt else { return false }
         return DayClock.isSameUserDay(completedAt, userDayStart, calendar: calendar)
+    }
+
+    /// 「时间信号」判定:`timeBucket != nil` 或 `dueHint` 非空。
+    /// 单一口径来源:「待定日期」vs「稍后」两分组的拆分依据(init)与
+    /// `HomeView.selectedDayStats()` 的进度条统计共用,防两处各自漂移。
+    static func hasTimeSignal(_ todo: TodoItemData) -> Bool {
+        if todo.timeBucket != nil { return true }
+        let hint = todo.dueHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !hint.isEmpty
+    }
+
+    /// 条目是否属于未完成的「稍后 / 待定日期」母集(无日期安排 + parsed + 未放弃,
+    /// 含 deferred 原地保留的已完成条目)。
+    /// 单一口径来源:init 的 `parsedIncomplete` 过滤与
+    /// `HomeView.selectedDayStats()` 的进度条统计共用。
+    static func isLaterActiveTodo(
+        _ todo: TodoItemData,
+        deferredCompletionIDs: Set<UUID>
+    ) -> Bool {
+        guard todo.dueDate == nil, todo.recurrenceRule == nil else { return false }
+        guard todo.abandonedAt == nil, todo.extractionOutcome == .parsed else { return false }
+        return !todo.isCompleted || deferredCompletionIDs.contains(todo.id)
+    }
+
+    /// 进度条口径的「稍后 / 待定日期」侧统计:这两组未完成条目计入顶部进度条的
+    /// total / completed(2026-10-09 拍板:进度条 = 列表可见条目,任意选中日均计入;
+    /// unparsed 不计入)。
+    ///
+    /// deferred 原地保留条目(isCompleted 且仍在 deferredCompletionIDs 集合内)
+    /// **同时计入 total 与 completed**:勾选瞬间圆环前进;0.75s 归档后它离开本组、
+    /// 由调用方把「当日完成的无日期任务」(须排除 deferred)接上,计数平滑交接不双计。
+    static func laterActiveCounts(
+        todos: [TodoItemData],
+        deferredCompletionIDs: Set<UUID>
+    ) -> (total: Int, completed: Int) {
+        let laterActive = todos.filter {
+            isLaterActiveTodo($0, deferredCompletionIDs: deferredCompletionIDs)
+        }
+        return (
+            total: laterActive.count,
+            completed: laterActive.filter { $0.isCompleted }.count
+        )
     }
 
     func dayState(for day: Date) -> HomeCalendarDayState {
@@ -170,13 +214,13 @@ struct HomeCalendarState {
         occurrencesByDay: [String: [TodoOccurrenceData]],
         completedUnscheduledByDay: [String: [TodoItemData]]? = nil,
         calendar: Calendar,
+        today: Date,
         deferredCompletionIDs: Set<UUID> = []
     ) {
         self.selectedDate = selectedDate
         self.visibleMonthAnchor = visibleMonthAnchor
         self.visibleDays = visibleDays
         self.weekHeaderDays = weekHeaderDays
-        self.occurrencesByDay = occurrencesByDay
         // 无安排任务(dueDate==nil + recurrenceRule==nil)按"时间信号 + outcome + 完成态"拆四路:
         //   未完成 + outcome != .parsed         → 「没能识别」(unparsedTodos)
         //   未完成 + .parsed + 有时间信号        → 「待定日期」(pendingDateTodos)
@@ -193,17 +237,13 @@ struct HomeCalendarState {
         // (防御性过滤:生产路径 store.todos 谓词已排除,测试工厂可喂原始数组)。
         self.unparsedTodos = noSchedule
             .filter { !$0.isCompleted && $0.abandonedAt == nil && $0.extractionOutcome != .parsed }
-        let parsedIncomplete = noSchedule.filter { todo in
-            (todo.abandonedAt == nil && todo.extractionOutcome == .parsed)
-                && (!todo.isCompleted || deferredCompletionIDs.contains(todo.id))
+        // 谓词上移至静态方法(isLaterActiveTodo / hasTimeSignal):init 分组与
+        // HomeView.selectedDayStats() 进度条统计共用同一口径,防两处各自漂移。
+        let parsedIncomplete = noSchedule.filter {
+            Self.isLaterActiveTodo($0, deferredCompletionIDs: deferredCompletionIDs)
         }
-        let hasTimeSignal: (TodoItemData) -> Bool = { todo in
-            if todo.timeBucket != nil { return true }
-            let hint = todo.dueHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return !hint.isEmpty
-        }
-        self.pendingDateTodos = parsedIncomplete.filter(hasTimeSignal)
-        self.unscheduledTodos = parsedIncomplete.filter { !hasTimeSignal($0) }
+        self.pendingDateTodos = parsedIncomplete.filter { Self.hasTimeSignal($0) }
+        self.unscheduledTodos = parsedIncomplete.filter { !Self.hasTimeSignal($0) }
         // 无日期任务按「完成日」归档(对照:有日期任务按计划日)。`completedAt == nil`
         // 的历史数据不显示在任何一天。详见 docs/completed-unscheduled-todo-placement.md。
         //
@@ -233,6 +273,9 @@ struct HomeCalendarState {
         self.hasTodos = !todos.isEmpty
         self.calendar = calendar
 
+        // selectedOccurrences 从**原始** occurrencesByDay 取(不含下面的注入):
+        // Today 列表「当日 tier」只消费有日期任务的展开管线,「稍后」「待定日期」
+        // 由列表独立分区渲染——注入条目若再进这里会双行。
         let selectedOccurrences = Self.occurrences(on: selectedDate, in: occurrencesByDay, calendar: calendar)
         self.selectedOccurrences = selectedOccurrences
         // 当日 occurrence 同样按 deferred 拆:集合内的已完成条目留在「当日 tier」
@@ -244,6 +287,33 @@ struct HomeCalendarState {
         self.completedOccurrences = selectedOccurrences.filter {
             $0.isCompleted && !deferredCompletionIDs.contains($0.todo.id)
         }
+
+        // 「稍后」+「待定日期」注入今天的月历格子(2026-10-13 拍板):这两组无日期
+        // 任务此前在月历零可见入口(格子只渲染 occurrencesByDay 有日期任务,抽屉形态
+        // 已被用户否决)。注入后下游自动生效:dayState 格子事件条(按分类配色、无钟点
+        // 无 hour 前缀)、HomeMonthHeaderView 注水法行高分配(读 occurrencesByDay 计数)、
+        // slicedEvents 排序(hasDueTime=false 自然排有钟点条目后)、WeekStripCard 圆点
+        // 与图例、VoiceOver 朗读。
+        // 挂"今天"格(与 Today tab 同屏可见一致);翻到其他月(今天不在 42 天窗口)
+        // 不注入,翻回本月恢复。isCompleted 跟随 todo——deferred 原地保留期灰显,
+        // 0.75s 归档后随分组移除消失;state 每次 body 从 store.todos 现算,勾选即时
+        // 反映,不等月历缓存重查。
+        var monthGridOccurrencesByDay = occurrencesByDay
+        let injectable = unscheduledTodos + pendingDateTodos
+        if !injectable.isEmpty,
+           let firstVisibleDay = visibleDays.first, let lastVisibleDay = visibleDays.last,
+           today >= firstVisibleDay, today <= lastVisibleDay {
+            let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+            monthGridOccurrencesByDay[todayKey] = (monthGridOccurrencesByDay[todayKey] ?? [])
+                + injectable.map { todo in
+                    TodoOccurrenceData(
+                        todo: todo,
+                        occurrenceDate: today,
+                        isCompleted: todo.isCompleted
+                    )
+                }
+        }
+        self.occurrencesByDay = monthGridOccurrencesByDay
     }
 
     private func occurrences(on day: Date) -> [TodoOccurrenceData] {
