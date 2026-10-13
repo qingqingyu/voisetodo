@@ -32,6 +32,12 @@ final class EntitlementManager: ObservableObject {
     /// 自动续费是否开启。nil = 读取不到(商品未加载 / status 缺失 / 验签不过),
     /// UI 遇 nil 回退「有效期至 X」文案。
     @Published private(set) var willAutoRenew: Bool?
+    /// 下次续期将切换到的商品 ID(月付/年付)。用户在系统订阅管理页选了「下次续期时切换」后,
+    /// renewalInfo.autoRenewPreference 指向新方案、当前交易仍旧方案,期间不提示会让用户
+    /// 以为下次仍按旧方案扣费。仅续费中(willAutoRenew == true)且 preference ≠ 当前商品时
+    /// 非 nil;已关续费时 StoreKit 可能残留旧 preference,归一为 nil 不显示。纯展示元数据,
+    /// 不参与权益判定。
+    @Published private(set) var pendingRenewalProductID: String?
     @Published private(set) var products: [Product] = []
     /// 初始为 .loading —— 首帧应显示 spinner 而不是「加载失败」卡片。
     /// 真正的空/错误态由 loadProducts() 落定。
@@ -77,8 +83,9 @@ final class EntitlementManager: ObservableObject {
     /// 串行后「后发起的一定后快照、后写回」,且每个调用方 await 返回时看到的都是落定状态
     /// (restorePurchases 紧接着读 isPro 判断「无可恢复」依赖这一点)。
     private var entitlementRefreshChain: Task<Bool, Never>?
-    /// willAutoRenew 异步读的代际号:每轮刷新自增,回填前校验仍是最新一代,
-    /// 慢网下旧一轮读完成时新一轮已发起,其结果作废——防旧值覆盖新值。
+    /// 续费元数据(willAutoRenew/待切换方案)异步读的代际号:每轮刷新自增,
+    /// 回填前校验仍是最新一代,慢网下旧一轮读完成时新一轮已发起,其结果作废
+    /// ——防旧值覆盖新值。
     private var willAutoRenewReadGeneration = 0
     /// 订阅到期时刻的兜底刷新。到期(用户已取消续订)不会经 Transaction.updates 推送,
     /// App 一直在前台时 isPro 会停在 stale-true;到点主动重读一次 currentEntitlements。
@@ -248,45 +255,61 @@ final class EntitlementManager: ObservableObject {
         // 只读展示用途,不影响上面的权益判定与 changed 语义。
         activeProductID = selectedTransaction?.productID
         isInIntroOffer = selectedTransaction?.offer?.type == .introductory
-        // willAutoRenew 不能 await 在这里:读取要联网问 App Store(见 refreshWillAutoRenew),
+        // willAutoRenew 不能 await 在这里:读取要联网问 App Store(见 refreshRenewalMetadata),
         // 而购买成功路径要等本方法返回才 purchaseSuccessCount += 1(CTA 变绿),
         // 串在刷新里会把成功反馈拖到这次网络往返之后。改为异步读到再回填。
-        refreshWillAutoRenew(for: selectedTransaction)
+        refreshRenewalMetadata(for: selectedTransaction)
         VoiceTodoLog.app.info("entitlement.refresh isPro=\(foundPro) hasJWS=\(jws != nil) unverified=\(unverifiedCount) changed=\(changed) willAutoRenew=deferred")
         return changed
     }
 
-    /// 异步读自动续费状态并回填。`Product.SubscriptionInfo.status` 可能联网问
-    /// App Store,await 在 performEntitlementRefresh 里会拖慢它的所有调用方——
+    /// 异步读续费展示元数据(willAutoRenew + 待切换方案)并回填。`Product.SubscriptionInfo.status`
+    /// 可能联网问 App Store,await 在 performEntitlementRefresh 里会拖慢它的所有调用方——
     /// 购买成功(等刷新返回才计成功数,CTA 变绿要 ≤0.5s)、恢复购买、
     /// Transaction.updates 监听、到期重读;断网时还会让每次刷新多记一条
     /// renewal_info_failed 警告。读到再回填,日期行短暂停留在上一值/回退文案,
     /// 属可接受的展示延迟(纯展示元数据,不影响权益判定)。
     /// 晚到的旧读按代际丢弃;无选定交易(未订阅)时同步置 nil,不做无谓的网络读。
-    private func refreshWillAutoRenew(for transaction: Transaction?) {
+    private func refreshRenewalMetadata(for transaction: Transaction?) {
         willAutoRenewReadGeneration += 1
         let generation = willAutoRenewReadGeneration
         guard let transaction else {
             willAutoRenew = nil
+            pendingRenewalProductID = nil
             return
         }
         Task { [weak self] in
             guard let self else { return }
-            let value = await self.renewalWillAutoRenew(for: transaction)
+            let snapshot = await self.readRenewalInfo(for: transaction)
             let isLatest = generation == self.willAutoRenewReadGeneration
             // willAutoRenew 打裸值(true/false/nil),不套 Optional(...) 包装,key=value 好解析。
-            let label = value.map(String.init(describing:)) ?? "nil"
-            VoiceTodoLog.app.info("entitlement.renewal_info willAutoRenew=\(label, privacy: .public) latest=\(isLatest, privacy: .public)")
+            let label = snapshot.willAutoRenew.map(String.init(describing:)) ?? "nil"
+            VoiceTodoLog.app.info("entitlement.renewal_info willAutoRenew=\(label, privacy: .public) pending=\(snapshot.autoRenewPreference ?? "nil", privacy: .public) latest=\(isLatest, privacy: .public)")
             guard isLatest else { return }
-            self.willAutoRenew = value
+            self.willAutoRenew = snapshot.willAutoRenew
+            // 待切换归一:仅续费中且 preference 指向其它商品时才发布;已关续费时
+            // StoreKit 可能残留上一次的 preference,发布出去会显示错误的切换提示。
+            let pending = snapshot.willAutoRenew == true
+                && snapshot.autoRenewPreference != nil
+                && snapshot.autoRenewPreference != transaction.productID
+                ? snapshot.autoRenewPreference
+                : nil
+            self.pendingRenewalProductID = pending
         }
     }
 
-    /// 从 `Product.subscription.status` 读选定交易的 `renewalInfo.willAutoRenew`。
+    /// 续费展示元数据快照,来自 `Product.subscription.status` 的 `renewalInfo`。
+    private struct RenewalInfoSnapshot {
+        /// 自动续费是否开启。nil = 读取不到(status 缺失/验签不过)。
+        let willAutoRenew: Bool?
+        /// 下次续期将切换到的商品 ID(renewalInfo.autoRenewPreference)。nil = 无待切换或读不到。
+        let autoRenewPreference: String?
+    }
+
+    /// 从 `Product.subscription.status` 读选定交易的续费元数据。
     /// 商品未加载(启动期只刷权益不加载商品)/status 里找不到该交易/renewalInfo
-    /// 验签不过时返回 nil,UI 回退「有效期至 X」。
-    private func renewalWillAutoRenew(for transaction: Transaction?) async -> Bool? {
-        guard let transaction else { return nil }
+    /// 验签不过时两字段均为 nil,UI 回退「有效期至 X」、不显示待切换行。
+    private func readRenewalInfo(for transaction: Transaction) async -> RenewalInfoSnapshot {
         for product in products where product.id == transaction.productID {
             do {
                 for status in try await product.subscription?.status ?? [] {
@@ -300,19 +323,22 @@ final class EntitlementManager: ObservableObject {
                     guard statusTransaction.id == transaction.id else { continue }
                     switch status.renewalInfo {
                     case .verified(let info):
-                        return info.willAutoRenew
+                        return RenewalInfoSnapshot(
+                            willAutoRenew: info.willAutoRenew,
+                            autoRenewPreference: info.autoRenewPreference
+                        )
                     case .unverified:
-                        return nil
+                        return RenewalInfoSnapshot(willAutoRenew: nil, autoRenewPreference: nil)
                     }
                 }
             } catch {
                 // 显式留痕不静默:status 读不到时日期文案会退回「有效期至 X」,
                 // 有这条日志才能区分「真读不到」与「没走到」。
                 VoiceTodoLog.app.warning("entitlement.renewal_info_failed productID=\(transaction.productID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-                return nil
+                return RenewalInfoSnapshot(willAutoRenew: nil, autoRenewPreference: nil)
             }
         }
-        return nil
+        return RenewalInfoSnapshot(willAutoRenew: nil, autoRenewPreference: nil)
     }
 
     /// 兜底:逐个商品读 `Transaction.latest(for:)`,取未撤销、未升级、未过期的那条
