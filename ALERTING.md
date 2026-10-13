@@ -279,14 +279,14 @@ shouldNotify(previous, current, now) → { notify, kind }
 接受 `GET` 和 `HEAD`（UptimeRobot 可能用 HEAD），其余方法 405。
 
 ```json
-{ "status": "ok", "providers": [{ "id": "ZAI_ANTHROPIC", "state": "closed" }], "ts": 1756900000000 }
+{ "status": "ok", "subscription": "configured", "providers": [{ "id": "ZAI_ANTHROPIC", "state": "closed" }], "ts": 1756900000000 }
 ```
 
 四条硬约束：
 
 1. **不复用 `handleAdminGetProviders`。** 那个返回 `type` / `model` / `priority` / `timeoutMs` / 完整 `health` 快照。新写精简版，**只出 `id` + `state`**，其余一律不出。
 2. **不调用上游 AI。** 只读 KV 里的熔断状态——`src/health.js` 的 `snapshot(providerId, now)` 是 per-provider 签名，实现时遍历 `loadProviders(env)` 的结果逐个取。否则这个无鉴权端点会变成刷爆 AI 账单的入口。
-3. **HTTP 状态码本身携带语义**：全部 provider **不健康** → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分不健康）/ `down`（全部不健康，503）/ `misconfigured`（配置非法，503）。
+3. **HTTP 状态码本身携带语义**：全部 provider **不健康**，或订阅验签配置（`PRO_PRODUCT_IDS` / `APP_BUNDLE_ID`）缺失 → 503，否则 200。这样拨测服务不用解析 body 就能告警。body 的 `status` 字段取值：`ok` / `degraded`（部分不健康）/ `down`（全部不健康或订阅配置缺失，503）/ `misconfigured`（配置非法，503）。
 
    > **「不健康」= `open` **或** `half-open` **或** `unconfigured`（缺 secret / 缺 adapter），只有 `closed` 算健康。** `half-open` 不是独立存储的状态，是 `health.js` 的 `classifyState()` 在熔断打开、冷却期一过就返回的**读时派生状态**（默认初始冷却 10s，上限 5min），语义是「曾经挂了，尚未证明恢复」——恢复要靠 `recordSuccess` 写回 `closed`。
    >
@@ -295,9 +295,10 @@ shouldNotify(previous, current, now) → { notify, kind }
    > `unconfigured` 是二轮遗留 1 补的口径：`runProviderHealthCheck` 对缺 key 的 provider 提前 return、从不 `recordFailure`，熔断记录不存在 → `snapshot` 恒 `closed` → secret 全缺（密钥轮换贴错）时探针全绿——而 cron 层同场景判 `down`、心跳打 `/fail`，三层里恰好外部眼睛这层瞎了。缺 key 的 provider 在 entries 里标 `state: "unconfigured"`（provider id 本就在 body 里，这不是凭据泄露），与 cron 的 `probeable` 谓词同源。
 4. `Cache-Control: max-age=30` 提示拨测客户端降低轮询频率。注意 Cloudflare **默认不缓存 Worker 响应**（边缘缓存需显式用 Cache API），该头挡不住恶意轮询 —— `/v1/health` 是唯一无鉴权且读 KV 的端点，Worker 内另有 15s isolate 结果缓存兜住 KV 读频率。
 
-两条边界：
+三条边界：
 
 - `loadProviders` 抛错（`PROVIDERS` 配置非法）→ **503 + `status: "misconfigured"`，不是 500**。对拨测服务而言「服务不可用」比「服务器错误」语义更准。
+- **订阅验签配置（`PRO_PRODUCT_IDS` / `APP_BUNDLE_ID`）缺失/留空 → 503 + `down` + `subscription: "unconfigured"`**（providers 全 closed 也红）。此时 Pro 验签必败、付费用户被 fail-safe 降级到免费档 —— 2026-08-20 事故的形态（靠用户投诉才发现）。worker.js 无代码默认值兜底：宁让拨测立刻红，不静默降级。
 - `AI_PROVIDER_STATE_KV` 未绑定 → 照常返回，`state` 取内存态默认值 `closed`。
 - **只列 `enabled !== false` 的 provider**，与层 B 的探活口径、`selector.js` 的 `pickCandidates` 三处一致。停用项既不承接流量也不该出现在探针结果里。
 
@@ -386,6 +387,7 @@ Telegram 与心跳调用靠注入的 `fetchImpl` 按 URL 前缀分流拦截（`a
 **`/v1/health`**
 
 - 全 closed → 200 + `status: "ok"`；部分不健康 → 200 + `"degraded"`；全部不健康 → **503**。**必须各有一条 half-open 用例**（部分 half-open → degraded；全 half-open → 503；open + half-open 混合 → 503）——只测 open 守不住「half-open 算不健康」这条口径
+- 订阅验签配置缺失 → **503 + `down` + `subscription: "unconfigured"`**（providers 全 closed 也必须红）——守「付费静默降级要告警」这条口径
 - 停用的 provider 不出现在 `entries` 里；全部停用 → 503 + `down`（与 cron 探活/心跳口径一致）
 - 不带 `X-App-Token` 也能访问（回归防线：别哪天被挪到 auth 后面）
 - **body 里搜不到 `secretName` / provider url / model**——直接 `assert.ok(!text.includes("api.z.ai"))`。这是安全断言，必须有

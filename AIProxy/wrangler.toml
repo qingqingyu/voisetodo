@@ -56,6 +56,8 @@ PAID_DAILY_LIMIT = "100"
 # monthlyProductID / yearlyProductID。任一不匹配 → verifySubscriptionJWS 抛
 # bundle_mismatch / product_mismatch → fail-safe 免费档，付费用户被静默降级
 # （2026-08-20 真机复现：订阅用户第 3 次录音弹免费限制墙的根因）。
+# 缺失/留空没有代码默认值兜底 → 验签必败免费档 + logError config_missing，
+# 且 /v1/health 报 subscription unconfigured（503，拨测立即告警）。
 # wrangler-config.test.js 会拿 iOS 源码交叉校验这两个值。
 APP_BUNDLE_ID = "com.qingqingyu.voicetodo"
 PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo.pro.yearly"

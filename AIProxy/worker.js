@@ -854,7 +854,8 @@ let probeCache = freshProbeCache();
 ///      完整 health 快照,还带 ADMIN_TOKEN 鉴权。这里只出 id + state,其余一律不出。
 ///   2. 不调用上游 AI,只读 HealthStore 熔断状态(KV 未绑定时回退内存态,
 ///      state 默认 closed)—— 无鉴权端点绝不能变成刷爆 AI 账单的入口。
-///   3. HTTP 状态码本身携带语义:全部 provider open → 503,否则 200。
+///   3. HTTP 状态码本身携带语义:全部 provider 不健康,或订阅验签配置
+///      (PRO_PRODUCT_IDS / APP_BUNDLE_ID)缺失 → 503,否则 200。
 ///      拨测服务不用解析 body 就能告警。
 ///   4. Cache-Control: max-age=30 提示拨测客户端别高频轮询;服务端由上面的
 ///      isolate 内缓存兜住 KV 读频率(见 PROBE_CACHE_TTL_MS 注释)。
@@ -888,8 +889,14 @@ async function handlePublicHealthProbe(request, env, requestContext) {
     // 配置非法 → 503 + misconfigured(不是 500):对拨测服务「服务不可用」比
     // 「服务器错误」语义更准,且 loadProviders 对空数组同样抛错,不会漏成 200。
     // 不写缓存:配置修复(重 deploy)后应立即反映,不该再吃 15s 旧错误。
+    // subscription 字段照常输出,保持响应体形状与主路径一致(诊断时不用猜)。
     return finishRequest(
-      healthProbeResponse(503, JSON.stringify({ status: "misconfigured", providers: [], ts: checkedAt }), request.method),
+      healthProbeResponse(503, JSON.stringify({
+        status: "misconfigured",
+        subscription: isSubscriptionConfigured(env) ? "configured" : "unconfigured",
+        providers: [],
+        ts: checkedAt
+      }), request.method),
       requestContext,
       { reason: "health_probe_misconfigured" }
     );
@@ -918,14 +925,21 @@ async function handlePublicHealthProbe(request, env, requestContext) {
   // closed。只判 open 的话,稳态下每 30min 只有约 5min 窗口报 503,夜间无
   // 流量时探针永远绿。
   const unhealthy = (s) => s === "open" || s === "half-open" || s === "unconfigured";
+  // 订阅验签配置(PRO_PRODUCT_IDS / APP_BUNDLE_ID)任一缺失/留空 →
+  // subscription 标 "unconfigured",且整体判 down/503。此时 Pro 验签必败
+  // (resolveSubscriptionTier fail-safe 免费档),免费链路仍可用,但付费
+  // 用户会被静默降级 —— 2026-08-20 事故的形态,靠用户投诉才知道就晚了。
+  // 与 provider 缺 secret 的 "unconfigured" 同一状态词、同一不健康口径;
+  // 与请求路径共用 isSubscriptionConfigured 谓词,两处判定不漂移。
+  const subscription = isSubscriptionConfigured(env) ? "configured" : "unconfigured";
   // 不加 entries.length > 0 守卫:entries 为空只可能来自「全部 provider 停用」
   // (loadProviders 对空 PROVIDERS 抛错走 misconfigured),那也是 100% 不可用,
   // 空数组上 every() 的空真判定恰好给出 down,与 cron 探活(probeable===0 →
   // down)和 /fail 心跳口径一致。
-  const allBad = entries.every((e) => unhealthy(e.state));
+  const allBad = entries.every((e) => unhealthy(e.state)) || subscription === "unconfigured";
   const status = allBad ? "down" : entries.some((e) => unhealthy(e.state)) ? "degraded" : "ok";
   const httpStatus = allBad ? 503 : 200;
-  const body = JSON.stringify({ status, providers: entries, ts: now });
+  const body = JSON.stringify({ status, subscription, providers: entries, ts: now });
   probeCache = { expiresAt: now + PROBE_CACHE_TTL_MS, status: httpStatus, body, probeStatus: status };
   return finishRequest(
     healthProbeResponse(httpStatus, body, request.method),
@@ -1707,6 +1721,23 @@ function resolveQuotaDate(request, requestContext) {
   return { date: raw, source: "client_local" };
 }
 
+// 解析 PRO_PRODUCT_IDS(逗号分隔)。缺失/留空/纯空白 → [](按未设置处理)。
+// resolveSubscriptionTier 与 /v1/health 探针共用,保证两处「缺配置」判定
+// 不会漂移(探针只判 env 真值的话," " 会被当成已配置,与请求路径不一致)。
+function parseProProductIDs(env) {
+  return env.PRO_PRODUCT_IDS
+    ? String(env.PRO_PRODUCT_IDS).split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+}
+
+// 订阅验签配置是否齐全(APP_BUNDLE_ID 与 PRO_PRODUCT_IDS 都已设置)。
+// /v1/health 探针(两处)与 resolveSubscriptionTier 三处共用同一谓词,
+// 「缺配置」判定绝不漂移;bundle 半边用 isUnsetEnvValue(纯空白同未设置,
+// 与其余配置的留空口径一致),不裸用真值判定(" " 是 truthy 会漏网)。
+function isSubscriptionConfigured(env) {
+  return !isUnsetEnvValue(env.APP_BUNDLE_ID) && parseProProductIDs(env).length > 0;
+}
+
 // 判定订阅档位：读 X-Subscription-JWS → 验签（零信任）→ Pro / 免费档。
 // fail-safe 到免费档：无 JWS / 过期 / 验签失败 / 产品 ID 不匹配 / bundle 不匹配 一律按免费并记日志，
 // 绝不 fail-open（不默认当已付费）。验签结果 KV 缓存以分摊单请求成本。
@@ -1721,6 +1752,25 @@ async function resolveSubscriptionTier(request, env, requestContext) {
 
   // 无 JWS 或未配 Pro 上限 → 免费档
   if (!jws || !hasPaidLimit) {
+    return { tier: "free", limit: freeLimit, productId: null };
+  }
+
+  // 验签配置缺失 → 显式报错 + fail-safe 免费档,不回退任何硬编码默认值。
+  // 旧默认值(com.voicetodo.pro.* / com.voicetodo.app)与本 app 实际 ID
+  // (com.qingqingyu.voicetodo.*)不一致:配置一丢验签必败,付费用户被静默
+  // 降级成免费档(2026-08-20 真机事故的形态),且默认值会随商品 ID 演进
+  // (如加终身会员)悄悄过时。放在 KV 缓存读之前:验签已不可能,缓存里的
+  // 旧 pro 授权一并失效,配置丢失/恢复都即时生效。/v1/health 同步标
+  // subscription: unconfigured(503),拨测立刻看见,不等用户投诉。
+  // 留空按未设置处理(PRO_PRODUCT_IDS 空串/纯逗号解析为 [],APP_BUNDLE_ID
+  // 空串/纯空白走 isUnsetEnvValue),与其余配置的留空口径一致。
+  const proProductIDs = parseProProductIDs(env);
+  if (!isSubscriptionConfigured(env)) {
+    logError("proxy.subscription.config_missing", {
+      ...requestContext,
+      hasBundleId: !isUnsetEnvValue(env.APP_BUNDLE_ID),
+      hasProductIds: proProductIDs.length > 0
+    });
     return { tier: "free", limit: freeLimit, productId: null };
   }
 
@@ -1756,11 +1806,8 @@ async function resolveSubscriptionTier(request, env, requestContext) {
   // 零信任验签：ES256 签名 + x5c 链锚定 Apple Root CA - G3 + payload 声明
   const verifyStart = Date.now();
   try {
-    const proProductIDs = env.PRO_PRODUCT_IDS
-      ? String(env.PRO_PRODUCT_IDS).split(",").map((s) => s.trim()).filter(Boolean)
-      : ["com.voicetodo.pro.monthly", "com.voicetodo.pro.yearly"];
     const result = await verifySubscriptionJWS(jws, {
-      expectedBundleId: env.APP_BUNDLE_ID || "com.voicetodo.app",
+      expectedBundleId: String(env.APP_BUNDLE_ID),
       productIDs: proProductIDs,
       rootFingerprint: env.SUBSCRIPTION_ROOT_SHA256 || APPLE_ROOT_CA_G3_SHA256,
       gracePeriodMS
