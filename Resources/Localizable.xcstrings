@@ -7198,6 +7198,28 @@
         }
       }
     },
+    "paywall.manage_subscription.turn_on_renew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Auto-Renew"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動更新をオンにする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新开启自动续费"
+          }
+        }
+      }
+    },
     "paywall.monthly" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7589,6 +7611,28 @@
         }
       }
     },
+    "paywall.subscribed.after_expiry_free %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After that, you’ll be on Free: %lld per day."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限後は無料版(1日%lld回)に戻ります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到期后回到免费版：每天 %lld 次"
+          }
+        }
+      }
+    },
     "paywall.subscribed.expires %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7612,6 +7656,28 @@
         }
       }
     },
+    "paywall.subscribed.expires_in_days_no_renew %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires in %lld days. Won’t auto-renew."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あと%lld日で期限切れ。自動更新されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 天后到期，到期后不再续费"
+          }
+        }
+      }
+    },
     "paywall.subscribed.expires_no_renew %@" : {
       "localizations" : {
         "en" : {
@@ -7630,6 +7696,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "有效期至 %1$@，到期后不再续费"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.expires_today_no_renew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires today. Won’t auto-renew."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日で期限切れ。自動更新されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天到期，到期后不再续费"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.expires_tomorrow_no_renew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires tomorrow. Won’t auto-renew."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日で期限切れ。自動更新されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天到期，到期后不再续费"
           }
         }
       }
@@ -7763,6 +7873,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "升级 VoiceTodo Pro"
+          }
+        }
+      }
+    },
+    "paywall.title.subscribed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo Pro"
           }
         }
       }
@@ -8822,6 +8954,7 @@
       }
     },
     "review.floor.backlog_age.all_recent_%lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8966,6 +9099,7 @@
       }
     },
     "review.floor.backlog_age.no_old_%lld_%lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9407,6 +9541,75 @@
         }
       }
     },
+    "review.flow.insights.deepread.badge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "from your numbers"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたの数字から"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自你的数字"
+          }
+        }
+      }
+    },
+    "review.flow.insights.deepread.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated from this period's verified facts"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間の検証済み事実から生成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由本期已核实的事实生成"
+          }
+        }
+      }
+    },
+    "review.flow.insights.deepread.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Observation"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 観察"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 观察"
+          }
+        }
+      }
+    },
     "review.flow.insights.improving" : {
       "localizations" : {
         "en" : {
@@ -9605,6 +9808,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "历次复盘,你说过"
+          }
+        }
+      }
+    },
+    "review.flow.insights.sparse_note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fewer than 3 tasks completed this window — more to see next time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間の完了は3件未満。次のふりかえりでもっと見えるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个窗口完成的还不到 3 条——先继续用，下次复盘有更多可说。"
           }
         }
       }
@@ -9885,6 +10111,52 @@
         }
       }
     },
+    "review.flow.note.draft.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI draft — edit or clear, saved as yours"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 下書き——編集・削除可、あなたのメモとして保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 草稿——可改可删，保存为你的笔记"
+          }
+        }
+      }
+    },
+    "review.flow.note.mic.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speak a thought — it goes straight into the note"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話した内容がそのままメモに入ります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说一句，想法直接进笔记"
+          }
+        }
+      }
+    },
     "review.flow.reactive.legend.planned" : {
       "localizations" : {
         "en" : {
@@ -9925,6 +10197,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "救火"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_note.expand_hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Double-tap to expand or collapse"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダブルタップで開閉"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点两下展开或收起"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_note.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You wrote last time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のふりかえりメモ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上期你写了"
           }
         }
       }
@@ -11363,6 +11681,29 @@
         }
       }
     },
+    "review.insight.effort.fact_%lld_%lld_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "High-priority tasks took %lld days, others %lld (n=%lld/%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要なタスクは%lld日、その他は%lld日（各%lld/%lld件）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要的事 %lld 天做完，其他 %lld 天（各 %lld/%lld 条）"
+          }
+        }
+      }
+    },
     "review.insight.effort.headline_%lld" : {
       "localizations" : {
         "en" : {
@@ -11575,6 +11916,52 @@
         }
       }
     },
+    "review.insight.energy.fact_late_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld timed high-priority tasks are scheduled after 22:00"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻付けの重要タスク %lld/%lld 件が22時以降"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "带钟点的重要任务 %lld/%lld 件排在 22 点后"
+          }
+        }
+      }
+    },
+    "review.insight.energy.fact_peak_%lld_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most tasks were completed around %lld:00 (n=%lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了のピークは%lld時頃（%lld件）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成高峰在 %lld 点（%lld 条记录）"
+          }
+        }
+      }
+    },
     "review.insight.energy.headline" : {
       "localizations" : {
         "en" : {
@@ -11659,6 +12046,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成时刻 %1$lld 条 · 带钟点的重要任务 %2$lld 件,不含规律任务"
+          }
+        }
+      }
+    },
+    "review.insight.fact.same_as_last" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "same as last time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回と同じ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与上期相同"
           }
         }
       }
@@ -14017,6 +14427,9 @@
         }
       }
     },
+    "success" : {
+
+    },
     "suggestion.banner_changed_to" : {
       "localizations" : {
         "en" : {
@@ -14524,414 +14937,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新失败，请打开 App 同步"
-          }
-        }
-      }
-    },
-    "review.insight.effort.fact_%lld_%lld_%lld_%lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "High-priority tasks took %lld days, others %lld (n=%lld/%lld)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重要なタスクは%lld日、その他は%lld日（各%lld/%lld件）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重要的事 %lld 天做完，其他 %lld 天（各 %lld/%lld 条）"
-          }
-        }
-      }
-    },
-    "review.insight.energy.fact_peak_%lld_%lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Most tasks were completed around %lld:00 (n=%lld)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完了のピークは%lld時頃（%lld件）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成高峰在 %lld 点（%lld 条记录）"
-          }
-        }
-      }
-    },
-    "review.insight.energy.fact_late_%lld_%lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld of %lld timed high-priority tasks are scheduled after 22:00"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時刻付けの重要タスク %lld/%lld 件が22時以降"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "带钟点的重要任务 %lld/%lld 件排在 22 点后"
-          }
-        }
-      }
-    },
-    "review.insight.fact.same_as_last" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "same as last time"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回と同じ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "与上期相同"
-          }
-        }
-      }
-    },
-    "review.flow.insights.sparse_note" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fewer than 3 tasks completed this window — more to see next time."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この期間の完了は3件未満。次のふりかえりでもっと見えるようになります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这个窗口完成的还不到 3 条——先继续用，下次复盘有更多可说。"
-          }
-        }
-      }
-    },
-    "review.flow.recap.last_note.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You wrote last time"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回のふりかえりメモ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上期你写了"
-          }
-        }
-      }
-    },
-    "review.flow.recap.last_note.expand_hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Double-tap to expand or collapse"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダブルタップで開閉"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "轻点两下展开或收起"
-          }
-        }
-      }
-    },
-    "review.flow.note.mic.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speak a thought — it goes straight into the note"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "話した内容がそのままメモに入ります"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "说一句，想法直接进笔记"
-          }
-        }
-      }
-    },
-    "review.flow.insights.deepread.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Observation"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 観察"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 观察"
-          }
-        }
-      }
-    },
-    "review.flow.insights.deepread.badge" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "from your numbers"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "あなたの数字から"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "来自你的数字"
-          }
-        }
-      }
-    },
-    "review.flow.insights.deepread.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generated from this period's verified facts"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この期間の検証済み事実から生成"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "由本期已核实的事实生成"
-          }
-        }
-      }
-    },
-    "review.flow.note.draft.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI draft — edit or clear, saved as yours"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 下書き——編集・削除可、あなたのメモとして保存"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 草稿——可改可删，保存为你的笔记"
-          }
-        }
-      }
-    },
-    "paywall.title.subscribed" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "VoiceTodo Pro"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "VoiceTodo Pro"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "VoiceTodo Pro"
-          }
-        }
-      }
-    },
-    "paywall.subscribed.expires_today_no_renew" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expires today. Won’t auto-renew."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本日で期限切れ。自動更新されません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "今天到期，到期后不再续费"
-          }
-        }
-      }
-    },
-    "paywall.subscribed.expires_tomorrow_no_renew" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expires tomorrow. Won’t auto-renew."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "明日で期限切れ。自動更新されません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "明天到期，到期后不再续费"
-          }
-        }
-      }
-    },
-    "paywall.subscribed.expires_in_days_no_renew %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expires in %lld days. Won’t auto-renew."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "あと%lld日で期限切れ。自動更新されません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 天后到期，到期后不再续费"
-          }
-        }
-      }
-    },
-    "paywall.subscribed.after_expiry_free %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "After that, you’ll be on Free: %lld per day."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "期限後は無料版(1日%lld回)に戻ります"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "到期后回到免费版：每天 %lld 次"
-          }
-        }
-      }
-    },
-    "paywall.manage_subscription.turn_on_renew" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn On Auto-Renew"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動更新をオンにする"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新开启自动续费"
           }
         }
       }
