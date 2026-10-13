@@ -463,6 +463,91 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
         XCTAssertTrue(archived.unscheduledTodos.contains { $0.id == later.id })
     }
 
+    // MARK: - 进度条口径:「稍后」/「待定日期」计入(2026-10-09 拍板)
+
+    /// `hasTimeSignal`:timeBucket / 非空 dueHint(含空白串判空)任一命中即真,
+    /// 空串与 nil 同义(批量出口清日期写空串,见 testBatchExitClearedFieldsLandInUnscheduled)。
+    func testHasTimeSignalClassification() throws {
+        XCTAssertTrue(HomeCalendarState.hasTimeSignal(makeTodo(title: "a", timeBucket: .afternoon, dueDate: nil)))
+        XCTAssertTrue(HomeCalendarState.hasTimeSignal(makeTodo(title: "b", dueHint: "等会儿", dueDate: nil)))
+        XCTAssertFalse(HomeCalendarState.hasTimeSignal(makeTodo(title: "c", dueDate: nil)))
+        XCTAssertFalse(HomeCalendarState.hasTimeSignal(makeTodo(title: "d", dueHint: "  ", dueDate: nil)))
+        XCTAssertFalse(HomeCalendarState.hasTimeSignal(makeTodo(title: "e", dueHint: "", dueDate: nil)))
+    }
+
+    /// `isLaterActiveTodo` 排除项:有日期安排 / unparsed / 已放弃 / 已归档完成
+    /// 均不属于「稍后 + 待定日期」母集;deferred 原地保留的已完成条目属于。
+    func testIsLaterActiveTodoExclusions() throws {
+        var abandoned = makeTodo(title: "划掉的", dueDate: nil)
+        abandoned.abandonedAt = today
+
+        XCTAssertTrue(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "稍后", dueDate: nil), deferredCompletionIDs: []
+        ))
+        XCTAssertTrue(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "待定", timeBucket: .morning, dueDate: nil), deferredCompletionIDs: []
+        ))
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "有日期", dueDate: today), deferredCompletionIDs: []
+        ), "有日期任务走当日 occurrence 统计,不计 later")
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(
+            makeTodo(title: "没识别", dueDate: nil, extractionOutcome: .rawFallback),
+            deferredCompletionIDs: []
+        ), "unparsed 不计入进度条(2026-10-09 拍板)")
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(abandoned, deferredCompletionIDs: []))
+        let archivedDone = makeTodo(title: "已完成", dueDate: nil, isCompleted: true, completedAt: today)
+        XCTAssertFalse(HomeCalendarState.isLaterActiveTodo(archivedDone, deferredCompletionIDs: []))
+        XCTAssertTrue(HomeCalendarState.isLaterActiveTodo(
+            archivedDone, deferredCompletionIDs: [archivedDone.id]
+        ), "deferred 原地保留期间仍属 later 母集")
+    }
+
+    /// `laterActiveCounts` 的 deferred 交接不变量:勾选瞬间(条目在 deferred 集合内)
+    /// total 与 completed 同步计入,圆环前进;归档(移出集合)后 later 侧让位,
+    /// 由「当日完成的无日期任务」段接上——两侧合计恒定,不双计。
+    func testLaterActiveCountsDeferredHandoff() throws {
+        let doneDeferred = makeTodo(title: "刚勾的", dueDate: nil, isCompleted: true, completedAt: today)
+        let pending = makeTodo(title: "还没做", dueDate: nil)
+
+        // 勾选瞬间(0.75s 原地保留期内):2 条都在 later,其中 1 条已完成。
+        let during = HomeCalendarState.laterActiveCounts(
+            todos: [doneDeferred, pending], deferredCompletionIDs: [doneDeferred.id]
+        )
+        XCTAssertEqual(during.total, 2)
+        XCTAssertEqual(during.completed, 1)
+
+        // 归档后(移出 deferred):later 侧只剩未完成那条,已完成让位给
+        // selectedDayStats 的 completedUnscheduledToday 段(排除 deferred,见其注释)。
+        let after = HomeCalendarState.laterActiveCounts(
+            todos: [doneDeferred, pending], deferredCompletionIDs: []
+        )
+        XCTAssertEqual(after.total, 1)
+        XCTAssertEqual(after.completed, 0)
+    }
+
+    /// 统计与分组的一致性:同一输入下,`laterActiveCounts.total` 恒等于
+    /// `unscheduledTodos + pendingDateTodos` 两分区条数之和——进度条分母与列表
+    /// 可见条目严格同源,防两处口径再漂移。
+    func testLaterActiveCountsMatchGroupingSections() throws {
+        let todos = [
+            makeTodo(title: "稍后A", dueDate: nil),
+            makeTodo(title: "稍后B", dueDate: nil),
+            makeTodo(title: "待定A", timeBucket: .evening, dueDate: nil),
+            makeTodo(title: "有日期", dueDate: today),
+            makeTodo(title: "没识别", dueDate: nil, extractionOutcome: .unparsed),
+            makeTodo(title: "归档完成", dueDate: nil, isCompleted: true, completedAt: today)
+        ]
+        let state = HomeCalendarState.makeForTests(todos: todos, selectedDate: today, calendar: calendar)
+        let counts = HomeCalendarState.laterActiveCounts(todos: todos, deferredCompletionIDs: [])
+
+        XCTAssertEqual(
+            counts.total,
+            state.unscheduledTodos.count + state.pendingDateTodos.count
+        )
+        XCTAssertEqual(counts.total, 3)
+        XCTAssertEqual(counts.completed, 0)
+    }
+
     // MARK: - Helpers
 
     private func makeDate(hour: Int, minute: Int) -> Date {
