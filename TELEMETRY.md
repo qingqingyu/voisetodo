@@ -108,7 +108,8 @@ BGProcessingTask                          ↓
   内容闭包随父视图 body 重评估会重复执行 init(复盘内每次写库都触发回顾页
   `@Query` 更新),记 init 会让一个流程刷多枚 started。每次呈现一枚,
   「点了开始但没走完」以 started-without-finished 形式可见(漏斗流失口径)。
-- `pendingCount`(started)与入口卡 N、卡堆输入同口径:未完成 && 未划掉 && 一次性。
+- `pendingCount`(started)与入口卡 N、卡堆输入同口径(=`ReviewFlowState.triageInput`):
+  未完成 && 未划掉 && 一次性 && **非已排未来**(v5.1 决定人口,已排用户日=已有去向不进)。
 - `decidedCount`(finished)= 账本「决定了 N 件」口径:排下周 + 今天就做 + 不做了 +
   拆小;批量推「稍后」不计(拍板 4)。
 - `durationMS`(finished)= 流程首次呈现 → finishSession,含用户中途停留。
