@@ -279,8 +279,12 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
     func deepReadObservation(facts: DeepReadFactsPayload, locale: Locale) async -> DeepReadObservationData? {
         let readID = VoiceTodoLog.makeID("deepread")
         let startedAt = Date()
-        let factsJSON = String(data: (try? JSONEncoder().encode(facts)) ?? Data(), encoding: .utf8) ?? "{}"
         do {
+            // 事实 JSON 序列化放进 do:失败显式走 catch 记日志降级(D4),
+            // 不以 try? + "{}" 默认值掩盖——空 facts 发给代理会白烧一次深读限额。
+            // UTF-8 转换用总函数 String(decoding:as:)(JSONEncoder 产物必为合法
+            // UTF-8,无失败分支需要兜底)。
+            let factsJSON = String(decoding: try JSONEncoder().encode(facts), as: UTF8.self)
             let responseText = try await networkClient.callTodoExtractionProxy(
                 transcript: factsJSON,
                 localeIdentifier: locale.identifier,
