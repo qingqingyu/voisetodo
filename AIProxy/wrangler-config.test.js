@@ -195,16 +195,16 @@ for (const { label, path } of CONFIGS) {
 
     assert.ok(
       typeof vars.APP_BUNDLE_ID === "string" && vars.APP_BUNDLE_ID.length > 0,
-      "APP_BUNDLE_ID 缺失 → worker.js 回退默认值 com.voicetodo.app,与本 app 的"
-        + " bundle 不匹配 → verifySubscriptionJWS 抛 bundle_mismatch → fail-safe 免费档,"
-        + "已订阅用户被静默降级(免费额度 + 撞墙弹升级 paywall)"
+      "APP_BUNDLE_ID 缺失 → worker.js 无默认值兜底,验签必败 fail-safe 免费档"
+        + "(已订阅用户被降级:免费额度 + 撞墙弹升级 paywall),"
+        + "且 /v1/health 报 subscription unconfigured(503)"
     );
     const proIDs = String(vars.PRO_PRODUCT_IDS || "")
       .split(",").map((s) => s.trim()).filter(Boolean);
     assert.ok(
       proIDs.length >= 1 && proIDs.every((id) => /^[\w.]+$/.test(id)),
       `PRO_PRODUCT_IDS="${vars.PRO_PRODUCT_IDS}" 不是非空的逗号分隔产品 ID 列表 → `
-        + "worker.js 回退默认值 com.voicetodo.pro.* → 真实订阅验签抛 product_mismatch → 免费档"
+        + "worker.js 无默认值兜底 → 验签必败 fail-safe 免费档,/v1/health 报 unconfigured(503)"
     );
   });
 }

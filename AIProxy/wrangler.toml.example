@@ -20,8 +20,9 @@ PAID_DAILY_LIMIT = "100"
 # PRODUCT_BUNDLE_IDENTIFIER，产品 ID = App/EntitlementManager.swift 的
 # monthlyProductID / yearlyProductID。任一不匹配 → verifySubscriptionJWS 抛
 # bundle_mismatch / product_mismatch → fail-safe 免费档，付费用户被静默降级
-# （已付费却拿到免费额度、撞墙弹升级 paywall）。必须配置，worker.js 的默认值
-# （com.voicetodo.*）与本 app 不匹配。wrangler-config.test.js 有断言守着。
+# （已付费却拿到免费额度、撞墙弹升级 paywall）。必须配置：缺失/留空没有代码
+# 默认值兜底 → 验签必败免费档 + logError config_missing，且 /v1/health 报
+# subscription unconfigured（503，拨测告警）。wrangler-config.test.js 有断言守着。
 APP_BUNDLE_ID = "com.qingqingyu.voicetodo"
 PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo.pro.yearly"
 # 订阅验签的计费宽限裕量（天，留空/0 = 关闭）。仅当 ASC 后台订阅组开启了

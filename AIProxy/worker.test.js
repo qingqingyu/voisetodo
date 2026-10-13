@@ -1153,7 +1153,7 @@ test("Pro JWS raises tier to paid limit", async () => {
         PAID_DAILY_LIMIT: "100",
         RATE_LIMIT_KV: kv,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("复习") }] })
@@ -1201,7 +1201,10 @@ test("invalid JWS fails safe to free tier (not 500, not pro)", async () => {
         ANTHROPIC_API_KEY: "k",
         DAILY_REQUEST_LIMIT: "5",
         PAID_DAILY_LIMIT: "100",
-        RATE_LIMIT_KV: kv
+        RATE_LIMIT_KV: kv,
+        // 验签配置必须齐全:本用例测的是「JWS 本身非法 → 验签失败」,缺配置
+        // 会走 config_missing 分支,同样免费档但测不到验签失败路径。
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
@@ -1209,6 +1212,87 @@ test("invalid JWS fails safe to free tier (not 500, not pro)", async () => {
     // fail-safe：不 500，按免费档放行
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("X-Quota-Plan"), "free");
+    assert.equal(response.headers.get("X-Quota-Limit"), "5");
+  });
+});
+
+// worker.js 已删除验签配置的硬编码兜底默认值(旧默认值 com.voicetodo.pro.* /
+// com.voicetodo.app 与本 app 实际 ID 不一致,配置一丢付费用户被静默降级,
+// 2026-08-20 事故形态)。缺配置必须:fail-safe 免费档 + error 日志,不静默。
+test("验签配置缺失 → fail-safe 免费档 + config_missing error 日志(无默认值兜底)", async () => {
+  const { jws } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const logs = await captureConsole(async () => {
+      const response = await handleRequest(
+        request(
+          { transcript: "x" },
+          { "X-App-Token": "token", "X-Device-ID": "d-nocfg", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws }
+        ),
+        {
+          APP_TOKEN: "token",
+          AI_PROVIDER: "anthropic",
+          ANTHROPIC_API_KEY: "k",
+          DAILY_REQUEST_LIMIT: "5",
+          PAID_DAILY_LIMIT: "100",
+          RATE_LIMIT_KV: kv
+          // 故意不配 APP_BUNDLE_ID / PRO_PRODUCT_IDS:模拟 wrangler.toml [vars] 丢失
+        },
+        {},
+        async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
+      );
+      assert.equal(response.status, 200, "缺配置不 500,按免费档照常放行");
+      assert.equal(response.headers.get("X-Quota-Plan"), "free", "付费 JWS 也不放行 Pro");
+      assert.equal(response.headers.get("X-Quota-Limit"), "5");
+    });
+    const missing = logs.filter((l) => l.includes("proxy.subscription.config_missing"));
+    assert.equal(missing.length, 1, "恰好一条 config_missing 日志: " + missing.join(" | "));
+    assert.ok(missing[0].includes('"level":"error"'), "error 级别显式报错,不是静默: " + missing[0]);
+  });
+});
+
+// config_missing 检查必须先于 KV 缓存读(worker.js 该分支注释声称的设计):
+// 配置缺失时缓存里的旧 pro 授权一并失效。若重构把检查挪到缓存读之后,
+// 本用例预置的 pro 缓存条目会重新放行 Pro(未验签先放行 = fail-open),
+// 断言即红。
+test("验签配置缺失时 KV 里的旧 pro 缓存不生效(config_missing 检查先于缓存读)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({ productId: "com.voicetodo.pro.yearly" });
+  const kv = new MemoryKV(new Map());
+  const configuredEnv = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "anthropic",
+    ANTHROPIC_API_KEY: "k",
+    DAILY_REQUEST_LIMIT: "5",
+    PAID_DAILY_LIMIT: "100",
+    RATE_LIMIT_KV: kv,
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+    APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
+  };
+  const headers = { "X-App-Token": "token", "X-Device-ID": "dev-cfg-order", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    // 预热:配置齐全,验签通过并写入 pro 缓存(模拟事故前已落在线上 KV 的授权)
+    const warm = await handleRequest(
+      request({ transcript: "a" }, headers),
+      configuredEnv,
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("a") }] })
+    );
+    assert.equal(warm.headers.get("X-Quota-Plan"), "pro", "预热:pro 缓存条目已写入");
+    assert.ok([...kv.values.keys()].some((k) => k.startsWith("sub:")), "sub: 缓存 key 存在");
+
+    // 同一 device + 同一 JWS,但验签配置丢失([vars] 丢失形态)。
+    // 缓存条目此刻仍在有效期内 —— 只能靠检查顺序挡住它。
+    const strippedEnv = { ...configuredEnv };
+    delete strippedEnv.APP_BUNDLE_ID;
+    delete strippedEnv.PRO_PRODUCT_IDS;
+    const response = await handleRequest(
+      request({ transcript: "b" }, headers),
+      strippedEnv,
+      {},
+      async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("b") }] })
+    );
+    assert.equal(response.status, 200, "缺配置不 500");
+    assert.equal(response.headers.get("X-Quota-Plan"), "free", "旧 pro 缓存在配置缺失时不得重新放行 Pro");
     assert.equal(response.headers.get("X-Quota-Limit"), "5");
   });
 });
@@ -1224,7 +1308,7 @@ test("Pro JWS verification result is cached in KV", async () => {
     PAID_DAILY_LIMIT: "100",
     RATE_LIMIT_KV: kv,
     SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-    APP_BUNDLE_ID: "com.voicetodo.app"
+    APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
   };
   const headers = { "X-App-Token": "token", "X-Device-ID": "dev-cached", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws };
   await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
@@ -1249,7 +1333,7 @@ test("subscription cache entries without a future expiresAt are ignored", async 
     PAID_DAILY_LIMIT: "100",
     RATE_LIMIT_KV: kv,
     SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-    APP_BUNDLE_ID: "com.voicetodo.app"
+    APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
   };
   const headers = { "X-App-Token": "token", "X-Device-ID": "dev-expiry-cache", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws };
   await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
@@ -1297,7 +1381,7 @@ test("P0: Pro 不被免费桶全局熔断误伤,计数进独立 pro 桶", async 
         GLOBAL_PRO_DAILY_LIMIT: "20",
         RATE_LIMIT_KV: kv,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] })
@@ -1334,7 +1418,7 @@ test("P0: pro 桶独立 trip → 503 错误码 global_budget_exceeded_pro", asyn
         GLOBAL_PRO_DAILY_LIMIT: "20",
         RATE_LIMIT_KV: kv,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       failingFetch
@@ -1358,7 +1442,7 @@ test("P0: Pro 豁免 IP 每分钟限流,免费档同 IP 仍被限", async () => 
       IP_RATE_PER_MINUTE: "1",
       RATE_LIMIT_KV: kv,
       SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-      APP_BUNDLE_ID: "com.voicetodo.app"
+      APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
     };
     const provider = async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] });
     const ip = { "CF-Connecting-IP": "9.9.9.9", "X-App-Token": "token", "X-Local-Date": "2026-05-26" };
@@ -1394,7 +1478,7 @@ test("P0: Pro 豁免 IP 每日限流,免费档同 IP 仍被限", async () => {
       IP_DAILY_LIMIT: "1",
       RATE_LIMIT_KV: kv,
       SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-      APP_BUNDLE_ID: "com.voicetodo.app"
+      APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
     };
     const provider = async () => jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] });
     const ip = { "CF-Connecting-IP": "9.9.9.9", "X-App-Token": "token", "X-Local-Date": "2026-05-26" };
@@ -1431,7 +1515,7 @@ test("P0: DO 路径 Pro 计入 global-budget-pro 桶,免费桶不被触碰", asy
       RATE_LIMIT_KV: kv,
       QUOTA_COUNTER_DO: doBinding,
       SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-      APP_BUNDLE_ID: "com.voicetodo.app"
+      APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
     };
     const r = await handleRequest(
       request({ transcript: "a" }, {
@@ -1481,7 +1565,7 @@ test("P0: split 模式 Pro 同样豁免免费桶熔断", async () => {
         // 有意不配置 GLOBAL_PRO_DAILY_LIMIT:付费侧未设全局上限 = 直接跳过熔断
         RATE_LIMIT_KV: kv,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       jsonResponseProvider("a")
@@ -1522,7 +1606,7 @@ test("assist 计入本档全局预算: Pro split 递增 pro 桶(滚动窗口口�
         RATE_LIMIT_KV: kv,
         QUOTA_COUNTER_DO: doBinding,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       ctx,
       jsonResponseProvider("a")
@@ -1596,7 +1680,7 @@ test("assist 计入本档全局预算: pro 桶 trip 时 Pro split 也被 503(修
         GLOBAL_PRO_DAILY_LIMIT: "8",
         RATE_LIMIT_KV: kv,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       jsonResponseProvider("a")
@@ -1627,7 +1711,7 @@ test("按订阅限速: 同一 JWS 轮换 device ID,超出订阅日限被 429", a
     RATE_LIMIT_KV: kv,
     QUOTA_COUNTER_DO: doBinding,
     SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-    APP_BUNDLE_ID: "com.voicetodo.app"
+    APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
   };
   await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
     const mk = (device) => request({ transcript: "a" }, {
@@ -1690,7 +1774,7 @@ test("按订阅限速: 免费档与无标识 Pro 不经过该层", async () => {
         APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
         DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100", SUBSCRIPTION_DAILY_LIMIT: "1",
         RATE_LIMIT_KV: noIdKv, QUOTA_COUNTER_DO: noIdDo,
-        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       jsonResponseProvider("a")
@@ -1721,7 +1805,7 @@ test("按订阅限速: 订阅标识哈希后落缓存与配额键,不出现明�
         APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
         DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
         RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
-        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       jsonResponseProvider("a")
@@ -1767,7 +1851,7 @@ test("按订阅限速: 缓存命中时明文订阅标识被丢弃,哈希形态�
     // 若误透传会立刻 429,这个上限本身就是断言的一部分
     DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100", SUBSCRIPTION_DAILY_LIMIT: "2",
     RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
-    SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
   };
   const mk = () => request({ transcript: "a" }, {
     "X-App-Token": "token", "X-Device-ID": "d-plain-window", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws
@@ -1816,7 +1900,7 @@ test("按订阅限速: assist 与 extract 分桶,换一批刷爆不锁 extract",
     DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
     SUBSCRIPTION_DAILY_LIMIT: "1", SUBSCRIPTION_ASSIST_DAILY_LIMIT: "1",
     RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
-    SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+    SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
   };
   await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
     const mk = (mode, device) => request(
@@ -1872,7 +1956,7 @@ test("按订阅限速: DO 故障回退 KV 只记一条 incremented,且带 used(�
           APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k",
           DAILY_REQUEST_LIMIT: "5", PAID_DAILY_LIMIT: "100",
           RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
-          SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+          SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
         },
         {},
         jsonResponseProvider("a")
@@ -1912,7 +1996,7 @@ test("订阅/窗口配置留空按未设置处理:不刷 warn 且默认值生效
         SUBSCRIPTION_ASSIST_DAILY_LIMIT: " ", // 纯空白,同空串
         GLOBAL_BUDGET_WINDOW_HOURS: "",       // 空串
         RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding,
-        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app"
+        SUBSCRIPTION_ROOT_SHA256: rootFingerprint, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       };
       const response = await handleRequest(
         request({ transcript: "a" }, {
@@ -1974,7 +2058,7 @@ test("P0: Pro 设备额度超限时不对共享 IP 计数发 refund(Step C 豁�
       IP_DAILY_LIMIT: "10",
       RATE_LIMIT_KV: kv,
       SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-      APP_BUNDLE_ID: "com.voicetodo.app"
+      APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
     };
     const headers = {
       "X-App-Token": "token",
@@ -2025,7 +2109,7 @@ test("P0: pro 桶 KV 增量超限 → 503 global_budget_exceeded_pro(增量路�
         GLOBAL_PRO_DAILY_LIMIT: "20",
         RATE_LIMIT_KV: kv,
         SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
-        APP_BUNDLE_ID: "com.voicetodo.app"
+        APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
       },
       {},
       failingFetch
@@ -5985,6 +6069,11 @@ function probeEnv(kv, extra = {}) {
     ],
     { PROVIDER_KEY_P1: "k1", PROVIDER_KEY_P2: "k2" },
     {
+      // 订阅验签配置齐全:本组用例只测 provider 侧状态;配置缺失会让探针
+      // 因 subscription unconfigured 变 503,掩盖要测的东西(缺配置场景
+      // 另有专门用例)。
+      APP_BUNDLE_ID: "com.voicetodo.app",
+      PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly",
       ...(kv ? { AI_PROVIDER_STATE_KV: kv } : {}),
       ...extra
     }
@@ -6095,7 +6184,7 @@ test("health probe: 全部 provider 缺 secret → 503 + down,entries 标 unconf
       { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2" }
     ],
     {},
-    { AI_PROVIDER_STATE_KV: kv }
+    { AI_PROVIDER_STATE_KV: kv, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly" }
   );
   const response = await handleRequest(probeRequest(), env, {});
   assert.equal(response.status, 503, "一个可用的 provider 都没有,探针必须红");
@@ -6107,6 +6196,35 @@ test("health probe: 全部 provider 缺 secret → 503 + down,entries 标 unconf
   ]);
 });
 
+// 订阅验签配置(PRO_PRODUCT_IDS / APP_BUNDLE_ID)缺失 → 探针 503 + down +
+// subscription: "unconfigured"。这是 2026-08-20 事故(付费用户被静默降级,
+// 靠用户投诉才发现)的探测防线:providers 全 closed 也要红,拨测按状态码
+// 就能告警。与 provider 缺 secret 的 "unconfigured" 同一状态词、同一口径。
+test("health probe: 订阅验签配置缺失 → 503 + down + subscription unconfigured(providers 全 closed 也红)", async () => {
+  const kv = new MemoryKV(new Map());
+  // 缺 PRO_PRODUCT_IDS(APP_BUNDLE_ID 仍在):留空/丢失等价于没配
+  const env = probeEnv(kv);
+  delete env.PRO_PRODUCT_IDS;
+  const red = await handleRequest(probeRequest(), env, {});
+  assert.equal(red.status, 503, "付费验签配置丢失 = 付费功能 100% 不可用,探针必须红");
+  const redBody = await red.json();
+  assert.equal(redBody.status, "down");
+  assert.equal(redBody.subscription, "unconfigured");
+  assert.deepEqual(redBody.providers, [
+    { id: "P1", state: "closed" },
+    { id: "P2", state: "closed" }
+  ], "providers 全 closed 也不稀释:订阅配置缺失独立判 down");
+
+  // 对照:配置齐全 → 200 + ok + subscription configured。
+  // 探针有 15s isolate 缓存,同测试内第二发必须先清。
+  _testResetProbeCache();
+  const green = await handleRequest(probeRequest(), probeEnv(new MemoryKV(new Map())), {});
+  assert.equal(green.status, 200);
+  const greenBody = await green.json();
+  assert.equal(greenBody.status, "ok");
+  assert.equal(greenBody.subscription, "configured");
+});
+
 test("health probe: 部分缺 secret → 200 + degraded(缺 key 的不算健康)", async () => {
   const kv = new MemoryKV(new Map());
   // 只给 P1 配 key:P1 closed、P2 unconfigured → 不是 ok
@@ -6116,7 +6234,7 @@ test("health probe: 部分缺 secret → 200 + degraded(缺 key 的不算健康)
       { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2" }
     ],
     { PROVIDER_KEY_P1: "k1" },
-    { AI_PROVIDER_STATE_KV: kv }
+    { AI_PROVIDER_STATE_KV: kv, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly" }
   );
   const response = await handleRequest(probeRequest(), env, {});
   assert.equal(response.status, 200);
@@ -6135,7 +6253,7 @@ test("health probe: 停用的 provider 不进 entries", async () => {
       { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2" }
     ],
     { PROVIDER_KEY_P1: "k1", PROVIDER_KEY_P2: "k2" },
-    { AI_PROVIDER_STATE_KV: kv }
+    { AI_PROVIDER_STATE_KV: kv, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly" }
   );
   const response = await handleRequest(probeRequest(), env, {});
   assert.equal(response.status, 200);
@@ -6152,7 +6270,7 @@ test("health probe: 全部停用 → 503 + down(与 cron 探活/心跳口径一�
       { id: "P2", type: "openai", url: "https://p2.test/v1/chat/completions", model: "gpt-test", priority: 2, secretName: "PROVIDER_KEY_P2", enabled: false }
     ],
     { PROVIDER_KEY_P1: "k1", PROVIDER_KEY_P2: "k2" },
-    { AI_PROVIDER_STATE_KV: kv }
+    { AI_PROVIDER_STATE_KV: kv, APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly" }
   );
   const response = await handleRequest(probeRequest(), env, {});
   assert.equal(response.status, 503, "全部停用 = 100% 不可用,探针必须红");
@@ -6180,7 +6298,11 @@ test("health probe: PROVIDERS 非法 → 503 + misconfigured,不是 500", async 
     {}
   );
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).status, "misconfigured");
+  const body = await response.json();
+  assert.equal(body.status, "misconfigured");
+  // misconfigured 分支也带 subscription 字段(本用例未配验签 → unconfigured),
+  // 守「响应体形状与主路径一致」——拨测诊断时不用猜字段是否存在。
+  assert.equal(body.subscription, "unconfigured");
 });
 
 test("health probe: POST → 405", async () => {
