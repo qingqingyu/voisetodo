@@ -411,7 +411,7 @@ struct PaywallContent: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundColor(WarmTheme.success)
                 .accessibilityHidden(true)
-            Text(String(localized: "paywall.subscribed.title"))
+            Text(subscribedTitleText)
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(1)
@@ -426,6 +426,7 @@ struct PaywallContent: View {
                     .minimumScaleFactor(0.8)
             }
             subscribedDateText
+            pendingSwitchText
             if entitlement.willAutoRenew == false {
                 // 到期后说明行(仅已关续费):Pro 只提升每日额度,如实只说额度变化,
                 // 不列「失去的功能」——那是编造,且有 2.3 误导风险。数字取常量,不写死 3。
@@ -470,8 +471,53 @@ struct PaywallContent: View {
         )
     }
 
+    /// 状态卡标题:已关续费且 ≤7 天到期(黄色警告带)时改「Pro 有效期至 X」——
+    /// 即将失去时还写「你已是 Pro」,与下方警示日期行语气矛盾(外部建议第 3 条)。
+    /// 其余(续费中/未知/已关续费但 >7 天)保持「你已是 Pro」。days < 0(已过期
+    /// stale-true)同样落入警告带,显示带日期版本。
+    private var subscribedTitleText: String {
+        if entitlement.willAutoRenew == false,
+           let expiration = entitlement.subscriptionExpirationDate,
+           Self.calendarDaysUntil(expiration, now: .now, calendar: .current) <= Self.nearExpiryWarningDayLimit {
+            let dateText = expiration.formatted(date: .abbreviated, time: .omitted)
+            return String(
+                format: String(localized: "paywall.subscribed.title_until_expiry %@"),
+                dateText
+            )
+        }
+        return String(localized: "paywall.subscribed.title")
+    }
+
+    /// 待切换行(仅续费中且下次续期换方案):「将于 X 切换为 Pro 年付(¥298/年)」。
+    /// 用户在系统订阅管理页选了「下次续期时切换」后,当前交易仍旧方案、
+    /// renewalInfo.autoRenewPreference 指向新方案,不提示会让用户以为下次仍按旧价扣费
+    /// (外部建议第 1 条)。X = 下次续期日(即 subscriptionExpirationDate);新方案
+    /// 名与价格从 products 按 pendingRenewalProductID 查,查不到不显示(nil 不推断,
+    /// 与方案行同口径)。
+    @ViewBuilder
+    private var pendingSwitchText: some View {
+        if entitlement.willAutoRenew == true,
+           let pendingID = entitlement.pendingRenewalProductID,
+           pendingID != entitlement.activeProductID,
+           let expiration = entitlement.subscriptionExpirationDate,
+           let product = entitlement.products.first(where: { $0.id == pendingID }) {
+            Text(String(
+                format: String(localized: "paywall.subscribed.switching_plan %@ %@ %@"),
+                expiration.formatted(date: .abbreviated, time: .omitted),
+                product.displayName,
+                "\(product.displayPrice)/\(paywallPeriodUnit(for: product))"
+            ))
+            .font(.system(size: 13, weight: .regular, design: .rounded))
+            .foregroundColor(WarmTheme.textSecondary)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+        }
+    }
+
     /// 日期行,按续费状态区分(任务书条目 4.2):
     /// - 试用中且会续费 →「免费试用至 X，之后按 ¥39.99/年 收费」;
+    ///   有待切换方案时退「下次续费 X」——价格让待切换行说,见 .some(true) 分支注释;
     /// - 已付费且会续费 →「下次续费 X」;
     /// - 已关闭自动续费 → 7 天内「今天/明天/X 天后到期」+ 警示色,其余「有效期至 X，到期后不再续费」;
     /// - willAutoRenew 读取不到(nil)→ 退回「有效期至 X」。
@@ -482,7 +528,11 @@ struct PaywallContent: View {
             let dateText = expiration.formatted(date: .abbreviated, time: .omitted)
             switch entitlement.willAutoRenew {
             case .some(true):
-                if entitlement.isInIntroOffer, let pricePeriod = subscribedPricePeriodText {
+                // 有待切换方案时不走试用价格文案:「试用至 X 之后按 当前方案价 收费」
+                // 与下方待切换行「将于 X 切换为新方案(新价)」对同一续期时点的价格陈述
+                // 矛盾——实际按新方案价扣费。退「下次续费 X」,不替用户猜价格。
+                let hasPendingPlanSwitch = entitlement.pendingRenewalProductID != nil
+                if !hasPendingPlanSwitch, entitlement.isInIntroOffer, let pricePeriod = subscribedPricePeriodText {
                     Text(String(
                         format: String(localized: "paywall.subscribed.trial_renews %@ %@"),
                         dateText,
@@ -515,26 +565,34 @@ struct PaywallContent: View {
     }
 
     /// 已关续费的日期行:按剩余日历天分档。
-    /// - ≤7 天 → 相对说法(今天/明天/X 天后到期)+ `warningText` 警示色;
+    /// - <0(已过期)→「有效期至 X，到期后不再续费」+ `warningText`(日期已过还说
+    ///   「今天到期」是错的,改显示具体日期);
+    /// - 0(今天)/1(明天)/2…7 → 相对说法 + `warningText` 警示色;
     /// - >7 天 → 沿用「有效期至 X，到期后不再续费」+ `textSecondary`。
     /// 只在临期时提醒:真实用户取消年付后多数还有几个月有效期,全时段倒计时是焦虑噪音;
-    /// 红色在本 App 语义是错误,不用。已过期的旧订阅理论上翻不进 isPro 分支,防御性并入「今天」。
+    /// 红色在本 App 语义是错误,不用。已过期的旧订阅理论上翻不进 isPro 分支(refresh
+    /// 会翻回 false),本分支只为 stale-true 的短暂窗口兜底。
     /// - Parameter dateText: 调用方(`subscribedDateText`)已格式化好的日期串,
-    ///   >7 天段直接复用,与其它日期行保持同一格式来源。
+    ///   >7 天与已过期段直接复用,与其它日期行保持同一格式来源。
     private func subscribedNoRenewExpiryText(expiration: Date, dateText: String) -> some View {
         let days = Self.calendarDaysUntil(expiration, now: .now, calendar: .current)
         let text: String
         let color: Color
         switch days {
-        case ...0:
-            // ≤0 含防御分支:isPro stale-true 时可能短暂渲染已过日期,
-            // 说「今天到期」比抛裸负数安全。
+        case ..<0:
+            // 已过期(isPro stale-true 的短暂窗口):显示具体日期,不说「今天到期」。
+            text = String(
+                format: String(localized: "paywall.subscribed.expires_no_renew %@"),
+                dateText
+            )
+            color = WarmTheme.warningText
+        case 0:
             text = String(localized: "paywall.subscribed.expires_today_no_renew")
             color = WarmTheme.warningText
         case 1:
             text = String(localized: "paywall.subscribed.expires_tomorrow_no_renew")
             color = WarmTheme.warningText
-        case 2...7:
+        case 2...Self.nearExpiryWarningDayLimit:
             text = String(localized: "paywall.subscribed.expires_in_days_no_renew \(days)")
             color = WarmTheme.warningText
         default:
@@ -557,6 +615,12 @@ struct PaywallContent: View {
     static func calendarDaysUntil(_ date: Date, now: Date, calendar: Calendar) -> Int {
         calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
     }
+
+    /// 已关续费的「临期警告带」天数上限(0...此值 → 相对说法/具体日期 + 警示色,
+    /// 标题也换「Pro 有效期至 X」;超过则维持原色与「你已是 Pro」)。
+    /// 标题(subscribedTitleText)与日期行(subscribedNoRenewExpiryText)共用,
+    /// 两带必须同宽,否则标题警示而日期行不警示(或反之)。
+    static let nearExpiryWarningDayLimit = 7
 
     /// 「管理订阅」主按钮:打开系统订阅管理页(切换月/年、取消续费都在这里)。
     /// 已关续费时文案改「重新开启自动续费」——按钮如实描述点下去会发生什么:

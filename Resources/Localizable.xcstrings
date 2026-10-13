@@ -14935,6 +14935,50 @@
           }
         }
       }
+    },
+    "paywall.subscribed.title_until_expiry %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro until %1$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro は %1$@ まで"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 有效期至 %1$@"
+          }
+        }
+      }
+    },
+    "paywall.subscribed.switching_plan %@ %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switching to %2$@ (%3$@) on %1$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ に %2$@（%3$@）へ切り替わります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将于 %1$@ 切换为 %2$@（%3$@）"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
