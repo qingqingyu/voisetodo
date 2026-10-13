@@ -548,6 +548,113 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
         XCTAssertEqual(counts.completed, 0)
     }
 
+    // MARK: - 月历今天格子注入(2026-10-13 拍板)
+
+    /// 注入命中:「稍后」+「待定日期」条目以 occurrence 形态进今天 bucket,
+    /// 且只进今天(其他天零污染)。
+    func testInjectsLaterAndPendingDateIntoTodayCell() throws {
+        let later = makeTodo(title: "稍后买猫砂", dueDate: nil)
+        let pending = makeTodo(title: "下午寄快递", timeBucket: .afternoon, dueDate: nil)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later, pending],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        let injected = state.occurrencesByDay[todayKey] ?? []
+        XCTAssertEqual(injected.count, 2)
+        XCTAssertEqual(Set(injected.map(\.todo.id)), Set([later.id, pending.id]))
+        // 注入 occurrence 的元数据:挂今天、未完成、非跨天。
+        XCTAssertTrue(injected.allSatisfy { $0.occurrenceDate == today })
+        XCTAssertTrue(injected.allSatisfy { !$0.isCompleted && !$0.isSpanning })
+        // 只进今天:整个字典再无其他 key。
+        XCTAssertEqual(Set(state.occurrencesByDay.keys), Set([todayKey]))
+    }
+
+    /// 跨月守卫:注入的「今天」不在可见 42 天窗口 → 不注入任何格子。
+    func testNoInjectionWhenTodayOutsideVisibleMonth() throws {
+        let later = makeTodo(title: "稍后买猫砂", dueDate: nil)
+        let nextMonth = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 24, hour: 12))
+        )
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later],
+            selectedDate: today,
+            calendar: calendar,
+            now: nextMonth
+        )
+
+        XCTAssertTrue(state.occurrencesByDay.isEmpty)
+    }
+
+    /// 双显示防护:selectedOccurrences(当日 tier 数据源)不含注入条目——
+    /// Today 列表已由「稍后/待定日期」独立分区渲染;同时有日期条目照常进。
+    func testSelectedOccurrencesExcludesInjectedEntries() throws {
+        let later = makeTodo(title: "稍后买猫砂", dueDate: nil)
+        let timed = makeTodo(title: "有日期", dueDate: today, hasDueTime: true)
+        let timedOccurrence = TodoOccurrenceData(todo: timed, occurrenceDate: today, isCompleted: false)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [later, timed],
+            selectedDate: today,
+            occurrencesByDay: [todayKey: [timedOccurrence]],
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        // 格子侧:今天 bucket = 1 条有日期 + 1 条注入。
+        XCTAssertEqual(state.occurrencesByDay[todayKey]?.count, 2)
+        // 列表侧:当日 tier 只有有日期那条,注入条目不重复出现。
+        XCTAssertEqual(state.selectedOccurrences.map(\.todo.id), [timed.id])
+        XCTAssertEqual(state.uncompletedOccurrences.map(\.todo.id), [timed.id])
+        let tierIDs = state.tieredUncompletedOccurrences.flatMap { $0.items.map(\.todo.id) }
+        XCTAssertEqual(tierIDs, [timed.id])
+    }
+
+    /// deferred 原地保留:勾选后 0.75s 内条目仍注入今天格子且 isCompleted=true
+    /// (格子灰显,与列表分区原地保留行为一致);归档后随分组移除消失。
+    func testDeferredCompletionInjectedAsCompleted() throws {
+        let justChecked = makeTodo(title: "刚勾的", dueDate: nil, isCompleted: true, completedAt: today)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [justChecked],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0),
+            deferredCompletionIDs: [justChecked.id]
+        )
+
+        let injected = state.occurrencesByDay[todayKey] ?? []
+        XCTAssertEqual(injected.count, 1)
+        XCTAssertEqual(injected.first?.todo.id, justChecked.id)
+        XCTAssertTrue(injected.first?.isCompleted ?? false)
+    }
+
+    /// 空守卫:无「稍后/待定日期」条目时 occurrencesByDay 与传入值恒等
+    /// (注入零开销,不额外创建 key)。
+    func testEmptyLaterSectionsLeaveOccurrencesByDayUntouched() throws {
+        let timed = makeTodo(title: "有日期", dueDate: today)
+        let occurrence = TodoOccurrenceData(todo: timed, occurrenceDate: today, isCompleted: false)
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [timed],
+            selectedDate: today,
+            occurrencesByDay: [todayKey: [occurrence]],
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        XCTAssertEqual(state.occurrencesByDay[todayKey]?.count, 1)
+        XCTAssertEqual(state.occurrencesByDay[todayKey]?.first?.todo.id, timed.id)
+    }
+
     // MARK: - Helpers
 
     private func makeDate(hour: Int, minute: Int) -> Date {

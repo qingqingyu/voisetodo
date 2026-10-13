@@ -84,6 +84,7 @@ struct HomeCalendarState {
             occurrencesByDay: occurrencesByDay,
             completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar,
+            today: calendar.startOfDay(for: now),
             deferredCompletionIDs: deferredCompletionIDs
         )
     }
@@ -113,6 +114,7 @@ struct HomeCalendarState {
             occurrencesByDay: occurrencesByDay,
             completedUnscheduledByDay: completedUnscheduledByDay,
             calendar: calendar,
+            today: calendar.startOfDay(for: now),
             deferredCompletionIDs: deferredCompletionIDs
         )
     }
@@ -212,13 +214,13 @@ struct HomeCalendarState {
         occurrencesByDay: [String: [TodoOccurrenceData]],
         completedUnscheduledByDay: [String: [TodoItemData]]? = nil,
         calendar: Calendar,
+        today: Date,
         deferredCompletionIDs: Set<UUID> = []
     ) {
         self.selectedDate = selectedDate
         self.visibleMonthAnchor = visibleMonthAnchor
         self.visibleDays = visibleDays
         self.weekHeaderDays = weekHeaderDays
-        self.occurrencesByDay = occurrencesByDay
         // 无安排任务(dueDate==nil + recurrenceRule==nil)按"时间信号 + outcome + 完成态"拆四路:
         //   未完成 + outcome != .parsed         → 「没能识别」(unparsedTodos)
         //   未完成 + .parsed + 有时间信号        → 「待定日期」(pendingDateTodos)
@@ -271,6 +273,9 @@ struct HomeCalendarState {
         self.hasTodos = !todos.isEmpty
         self.calendar = calendar
 
+        // selectedOccurrences 从**原始** occurrencesByDay 取(不含下面的注入):
+        // Today 列表「当日 tier」只消费有日期任务的展开管线,「稍后」「待定日期」
+        // 由列表独立分区渲染——注入条目若再进这里会双行。
         let selectedOccurrences = Self.occurrences(on: selectedDate, in: occurrencesByDay, calendar: calendar)
         self.selectedOccurrences = selectedOccurrences
         // 当日 occurrence 同样按 deferred 拆:集合内的已完成条目留在「当日 tier」
@@ -282,6 +287,33 @@ struct HomeCalendarState {
         self.completedOccurrences = selectedOccurrences.filter {
             $0.isCompleted && !deferredCompletionIDs.contains($0.todo.id)
         }
+
+        // 「稍后」+「待定日期」注入今天的月历格子(2026-10-13 拍板):这两组无日期
+        // 任务此前在月历零可见入口(格子只渲染 occurrencesByDay 有日期任务,抽屉形态
+        // 已被用户否决)。注入后下游自动生效:dayState 格子事件条(按分类配色、无钟点
+        // 无 hour 前缀)、HomeMonthHeaderView 注水法行高分配(读 occurrencesByDay 计数)、
+        // slicedEvents 排序(hasDueTime=false 自然排有钟点条目后)、WeekStripCard 圆点
+        // 与图例、VoiceOver 朗读。
+        // 挂"今天"格(与 Today tab 同屏可见一致);翻到其他月(今天不在 42 天窗口)
+        // 不注入,翻回本月恢复。isCompleted 跟随 todo——deferred 原地保留期灰显,
+        // 0.75s 归档后随分组移除消失;state 每次 body 从 store.todos 现算,勾选即时
+        // 反映,不等月历缓存重查。
+        var monthGridOccurrencesByDay = occurrencesByDay
+        let injectable = unscheduledTodos + pendingDateTodos
+        if !injectable.isEmpty,
+           let firstVisibleDay = visibleDays.first, let lastVisibleDay = visibleDays.last,
+           today >= firstVisibleDay, today <= lastVisibleDay {
+            let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+            monthGridOccurrencesByDay[todayKey] = (monthGridOccurrencesByDay[todayKey] ?? [])
+                + injectable.map { todo in
+                    TodoOccurrenceData(
+                        todo: todo,
+                        occurrenceDate: today,
+                        isCompleted: todo.isCompleted
+                    )
+                }
+        }
+        self.occurrencesByDay = monthGridOccurrencesByDay
     }
 
     private func occurrences(on day: Date) -> [TodoOccurrenceData] {
