@@ -1,0 +1,745 @@
+<title>VoiceTodo Review A2</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+=====================================================================
+ 给阅读这份文件的人 / AI：这是什么
+=====================================================================
+VoiceTodo「每周复盘」5 步流程的视觉改版原型，版本 A2。
+- 样子：沿用原型 A（单字体、单强调色、白卡片、灰底），并按 6 条视觉建议调整。
+- 逻辑：全部按 App 现有规则（UI/Review/Flow/*.swift 与 docs/todo-review-flow-v*.md），
+  不采用 A 里改掉的规则（算式、只留一条洞察、无 3 件上限、AI 建议不预填、可改复盘日期）。
+- 文案：中文/英文取自 Resources/Localizable.xcstrings 现有键；标【新文案】的是本原型新增或改写，
+  落地时要补 zh/en/ja 三语。
+- 每一步右侧（手机上点「看改动」）列出：相对 A 的视觉调整、恢复的现有规则、需要新增的东西。
+- 示例数据是编的，不是真实用户数据；录音、拆小是模拟的。
+=====================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap">
+<style>
+/* Layout: phone frame with change notes beside it on desktop, full-bleed on phones. Tokens map 1:1 to WarmTheme in UI/Shared/DesignSystem.swift. */
+:root{
+  --stage:#E7E9ED;            /* page around the phone */
+  --bg:#F4F5F7;               /* WarmTheme.background */
+  --card:#FFFFFF;             /* WarmTheme.cardBackground */
+  --ink:#1E2A3A;              /* textPrimary */
+  --muted:#5C6A7A;            /* textSecondary */
+  --faint:#8E97A4;            /* textMuted */
+  --line:#EAECEF;             /* rowHairline */
+  --chip:#F3F4F6;             /* subtleControlBackground */
+  --accent:#FF8A6B;           /* primary: only for things you can tap */
+  --accent-ink:#C44F35;       /* primaryText */
+  --accent-soft:#FFEDE7;
+  --on-accent:#FFFFFF;
+  --danger:#C43B40;           /* urgentText */
+  --action:#2A3445;           /* ink: neutral action icons */
+  --good:#4E9A55;
+  --toast:#1E2A3A; --toast-ink:#F4F5F7;
+  --shadow:0 1px 2px rgba(30,42,58,.05),0 6px 18px rgba(30,42,58,.06);
+  --font:"Avenir Next","Nunito Sans",-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --stage:#0F1012; --bg:#1A1C1E; --card:#26282B; --ink:#DCE1E7; --muted:#9AA3B1; --faint:#737C89;
+  --line:#34373C; --chip:#32353A; --accent:#FF8A6B; --accent-ink:#FFB5A0; --accent-soft:#3B2924; --on-accent:#1A1210;
+  --danger:#FFB3B5; --action:#C9D0D8; --good:#8FD093; --toast:#DCE1E7; --toast-ink:#1A1C1E; --shadow:none; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --stage:#0F1012; --bg:#1A1C1E; --card:#26282B; --ink:#DCE1E7; --muted:#9AA3B1; --faint:#737C89;
+  --line:#34373C; --chip:#32353A; --accent:#FF8A6B; --accent-ink:#FFB5A0; --accent-soft:#3B2924; --on-accent:#1A1210;
+  --danger:#FFB3B5; --action:#C9D0D8; --good:#8FD093; --toast:#DCE1E7; --toast-ink:#1A1C1E; --shadow:none; color-scheme:dark}
+
+html,body{height:100%}
+body{background:var(--stage);color:var(--ink);font-family:var(--font);font-size:16px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}
+button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* stage */
+.stage{min-height:100%;display:flex;flex-direction:column;align-items:center;gap:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
+.proto-bar{width:100%;max-width:840px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted)}
+.proto-bar .name{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proto-bar b{color:var(--ink);font-weight:700}
+.bar-right{display:flex;gap:8px;align-items:center;flex:none}
+.seg{display:inline-flex;background:var(--card);border-radius:999px;padding:3px;box-shadow:var(--shadow)}
+.seg button{height:28px;padding:0 12px;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.notes-btn{display:none;height:34px;padding:0 14px;border-radius:999px;background:var(--card);color:var(--ink);font-weight:700;font-size:13px;box-shadow:var(--shadow);white-space:nowrap}
+.wrap{display:flex;gap:28px;align-items:flex-start;justify-content:center;width:100%;max-width:840px}
+.phone{width:390px;height:820px;flex:none;border-radius:44px;background:var(--bg);overflow:hidden;position:relative;
+  box-shadow:0 0 0 10px #16181C,0 30px 60px rgba(0,0,0,.22);display:flex;flex-direction:column}
+.notes{flex:1;min-width:0;max-width:380px;padding-top:6px}
+.notes h3{margin:0 0 4px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.notes h2{margin:0 0 14px;font-size:20px;text-wrap:balance}
+.notes h4{margin:16px 0 6px;font-size:13px;color:var(--ink)}
+.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:7px;color:var(--muted);line-height:1.55;font-size:14px}
+.notes li b{color:var(--ink)}
+@media (max-width:860px){
+  .stage{padding-block:8px 0;gap:8px;height:100%}
+  .notes{display:none}
+  .notes-btn{display:inline-block}
+  .wrap{flex:1;min-height:0}
+  .phone{width:100%;max-width:440px;height:100%;border-radius:22px 22px 0 0;box-shadow:none}
+}
+
+/* app chrome */
+.top{padding:14px 16px 8px;display:grid;grid-template-columns:44px 1fr 44px;align-items:center}
+.round{width:44px;height:44px;border-radius:50%;background:var(--card);display:grid;place-items:center;box-shadow:var(--shadow)}
+.round svg{width:20px;height:20px}
+.round:disabled{opacity:.35;cursor:default}
+.top h1{margin:0;text-align:center;font-size:17px;font-weight:700}
+.prog{display:flex;gap:6px;padding:4px 16px 0}
+.prog i{flex:1;height:4px;border-radius:2px;background:var(--line)}
+.prog i.on{background:var(--accent)}
+.scroll{flex:1;overflow-y:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:12px}
+.foot{padding:8px 16px 18px;display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.primary{height:54px;border-radius:27px;background:var(--accent);color:var(--on-accent);font-weight:800;font-size:17px}
+.primary:disabled{background:var(--line);color:var(--faint);cursor:default}
+.secondary{height:50px;border-radius:25px;background:var(--card);color:var(--ink);font-weight:700;font-size:15px;box-shadow:var(--shadow)}
+.gate{font-size:13px;color:var(--muted);text-align:center;margin:0}
+
+/* type scale: h-1 (one per step, Recap/Insights hero) > h-2 (other step titles) > h-3 (card titles) */
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+:lang(zh) .eyebrow{letter-spacing:0;text-transform:none;font-size:13px}
+.h-1{font-size:24px;font-weight:800;line-height:1.3;margin:4px 0 0;text-wrap:balance}
+.h-2{font-size:19px;font-weight:700;line-height:1.35;margin:4px 0 0;text-wrap:balance}
+.h-3{font-size:16px;font-weight:700;line-height:1.4;margin:0}
+/* Chinese headlines break at punctuation, not mid-word ("件重/点") */
+:lang(zh) .h-1,:lang(zh) .h-2{word-break:keep-all;overflow-wrap:anywhere}
+.lead{font-size:14px;color:var(--muted);line-height:1.55;margin:0}
+.small{font-size:12.5px;color:var(--faint);line-height:1.5;margin:0}
+.card{background:var(--card);border-radius:18px;padding:18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+.chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:8px;background:var(--chip);color:var(--muted);font-size:12.5px;font-weight:700;white-space:nowrap}
+.chip svg{width:12px;height:12px}
+.chip.pin{color:var(--accent-ink)}
+.scope{text-align:center;display:flex;flex-direction:column;gap:2px}
+.scope .a{font-size:13px;color:var(--muted)}
+.scope .b{font-size:12px;color:var(--faint)}
+
+/* recap */
+.pinned{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:12px;border-top:1px solid var(--line)}
+.pinned-row{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
+.pinned-row .mk{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;margin-top:1px}
+.pinned-row.done .mk{background:var(--good);color:var(--card)}
+.pinned-row.open .mk{border:2px solid var(--faint)}
+.pinned-row.done .tx{color:var(--muted)}
+.pinned-row .st{margin-left:auto;flex:none;font-size:12.5px;color:var(--faint);padding-top:2px}
+.stats{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:8px}
+.stat{background:var(--card);border-radius:16px;padding:14px 12px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat b{font-size:24px;font-weight:800;line-height:1.15}
+.stat span{font-size:13px;color:var(--muted)}
+.stat.key{background:var(--ink);color:var(--bg);box-shadow:none}
+.stat.key b{font-size:28px}
+.stat.key span{color:var(--bg);opacity:.75}
+.stat-cap{display:grid;grid-template-columns:2fr 1.25fr;gap:8px;font-size:12px;color:var(--faint);margin-top:-4px;padding:0 4px}
+.stat-cap span:last-child{text-align:left}
+.quote{border-left:2px solid var(--line);padding-left:12px;line-height:1.6;font-size:15px;color:var(--muted);margin:0;white-space:pre-wrap}
+.quote.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.linkish{align-self:flex-start;font-size:13px;font-weight:700;color:var(--accent-ink);padding:4px 0}
+
+/* catch up */
+.deck-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.deck{position:relative;margin-top:2px}
+.tcard{position:relative;z-index:1;background:var(--card);border-radius:20px;padding:18px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:12px;transition:transform .26s ease,opacity .26s ease}
+.under{position:absolute;left:12px;right:12px;bottom:-8px;height:24px;border-radius:0 0 18px 18px;background:var(--line);z-index:0}
+.tcard.out-left{transform:translateX(-115%) rotate(-7deg);opacity:0}
+.tcard.out-right{transform:translateX(115%) rotate(7deg);opacity:0}
+.tcard.out-up{transform:translateY(-36px);opacity:0}
+.thead{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.thead .lead-label{font-size:13px;color:var(--muted)}
+.tcard h2{margin:0;font-size:19px;line-height:1.4;font-weight:700}
+.tl{display:flex;align-items:center;gap:6px}
+.tl i{width:6px;height:6px;border-radius:50%;background:var(--faint);flex:none}
+.tl i.o{background:transparent;border:2px solid var(--accent-ink);width:11px;height:11px}
+.tl s{flex:1;height:1px;background:var(--line)}
+.tl-label{font-size:12px;font-weight:700;color:var(--accent-ink);text-align:right;margin-top:-6px}
+.said{display:flex;gap:8px;color:var(--faint);font-size:13.5px;line-height:1.5}
+.said svg{flex:none;width:14px;height:14px;margin-top:3px;fill:var(--faint)}
+.actions{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:14px}
+.act{display:flex;flex-direction:column;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--muted);min-width:0}
+.act .c{width:56px;height:56px;border-radius:50%;background:var(--card);display:grid;place-items:center;box-shadow:var(--shadow)}
+.act svg{width:22px;height:22px}
+.act.drop svg{color:var(--danger)}
+.act:not(.drop) svg{color:var(--action)}
+.act:active .c{transform:scale(.94)}
+.act .l{text-align:center;line-height:1.25}
+.toast{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--toast);color:var(--toast-ink);border-radius:14px;padding:11px 14px;font-size:14px}
+.toast span{min-width:0}
+.toast button{color:var(--accent);font-weight:800;flex:none}
+.batch{display:flex;align-items:center;gap:12px}
+.batch .ic{width:20px;height:20px;color:var(--muted);flex:none}
+.batch .t{flex:1;min-width:0;font-size:14.5px;font-weight:700;line-height:1.4}
+.pill-btn{flex:none;height:34px;padding:0 14px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:13.5px;font-weight:800}
+.text-btn{flex:none;font-size:14px;font-weight:800;color:var(--accent-ink);padding:6px 2px}
+.alldone{align-items:center;text-align:center;padding:26px 18px}
+.alldone .tick{width:52px;height:52px;border-radius:50%;background:var(--chip);display:grid;place-items:center;color:var(--good)}
+
+/* insights */
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;display:flex;gap:2px}
+.bar i{display:block;height:100%}
+.legend{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.legend b{color:var(--ink)}
+.legend .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:1px}
+.foot-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-top:1px solid var(--line);padding-top:10px}
+.signal{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted);font-weight:700;white-space:nowrap}
+.signal svg{width:14px;height:12px}
+.section{display:flex;flex-direction:column;gap:8px}
+.section + .section{border-top:1px solid var(--line);padding-top:14px;margin-top:4px}
+.section .v{font-size:15px;line-height:1.5}
+.oldest{display:flex;flex-direction:column}
+.old-row{display:flex;align-items:center;gap:10px;padding:8px 0}
+.old-row + .old-row{border-top:1px solid var(--line)}
+.old-row .t{flex:1;min-width:0;font-size:14.5px}
+.old-row .d{font-size:12.5px;color:var(--faint);white-space:nowrap}
+.more{width:32px;height:32px;border-radius:50%;background:var(--chip);display:grid;place-items:center;color:var(--ink);flex:none}
+.more svg{width:16px;height:16px}
+.fact{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;font-size:13px;color:var(--faint);padding:0 4px}
+.fact em{font-style:normal;opacity:.75;font-size:12px}
+.ai-tag{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);font-weight:700}
+.ai-tag svg{width:12px;height:12px}
+
+/* next week */
+.group-title{display:flex;justify-content:space-between;align-items:baseline;margin:6px 2px 0}
+.pick{display:flex;align-items:center;gap:14px;background:var(--card);border-radius:16px;padding:15px 16px;box-shadow:var(--shadow);text-align:left;width:100%;transition:opacity .2s}
+.pick .dot{width:24px;height:24px;border-radius:50%;border:2px solid var(--faint);flex:none;display:grid;place-items:center;color:var(--on-accent)}
+.pick.on .dot{background:var(--accent);border-color:var(--accent)}
+.pick .dot svg{width:14px;height:14px;opacity:0}
+.pick.on .dot svg{opacity:1}
+.pick .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pick .t b{font-size:16px;font-weight:700;line-height:1.4}
+.pick .from{font-size:12.5px;color:var(--faint)}
+.pick:disabled{opacity:.45;cursor:default}
+.empty{font-size:14px;color:var(--faint);padding:4px 2px;margin:0}
+
+/* ledger */
+.summary{display:flex;flex-direction:column;gap:3px;padding:2px 4px}
+.summary b{font-size:16px}
+.ask{gap:12px}
+.draft-tag{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);font-weight:700}
+.draft-tag svg{width:13px;height:13px;color:var(--accent-ink)}
+.input{position:relative;background:var(--bg);border:1.5px solid var(--line);border-radius:16px;transition:border-color .2s}
+.input:focus-within{border-color:var(--accent)}
+.input.rec{border-color:var(--accent)}
+.input textarea{width:100%;min-height:124px;resize:none;border:0;background:transparent;padding:14px 14px 64px;font:inherit;font-size:16px;color:var(--ink);line-height:1.55;display:block;outline:none}
+.input textarea::placeholder{color:var(--faint)}
+.mic{position:absolute;right:10px;bottom:10px;width:48px;height:48px;border-radius:50%;background:var(--accent);display:grid;place-items:center;color:var(--on-accent);box-shadow:0 4px 12px rgba(255,138,107,.35)}
+.mic svg{width:22px;height:22px}
+.mic.rec{animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,138,107,.5)}100%{box-shadow:0 0 0 14px rgba(255,138,107,0)}}
+.listening{position:absolute;left:14px;bottom:20px;right:72px;display:flex;align-items:center;gap:12px;font-size:14px;color:var(--accent-ink);font-weight:700}
+.listening button{color:var(--muted);font-weight:700}
+.note-item{display:flex;flex-direction:column;gap:4px}
+.note-item + .note-item{border-top:1px solid var(--line);padding-top:12px}
+.note-item .d{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--faint);font-weight:700}
+.note-item p{margin:0;line-height:1.6;font-size:15px;white-space:pre-wrap}
+.compare{font-size:12.5px;color:var(--muted);margin:2px 0 0}
+.next-line{display:flex;justify-content:center;align-items:center;gap:6px;font-size:13px;color:var(--faint);padding:4px 0 8px}
+.next-line svg{width:15px;height:15px}
+
+/* sheet */
+.scrim{position:absolute;inset:0;background:rgba(10,12,16,.4);opacity:0;pointer-events:none;transition:opacity .2s;z-index:5}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:24px 24px 0 0;padding:10px 20px 24px;transform:translateY(105%);transition:transform .28s ease;z-index:6;max-height:84%;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.open .scrim{opacity:1;pointer-events:auto}
+.open .sheet{transform:none}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 6px;flex:none}
+.sheet h3{margin:0;font-size:18px}
+.sheet p{color:var(--muted);line-height:1.55;margin:0;font-size:15px}
+.opt{display:flex;align-items:center;gap:12px;width:100%;padding:13px 2px;border-bottom:1px solid var(--line);font-weight:700;text-align:left;font-size:15px}
+.opt .dot{width:22px;height:22px;border-radius:6px;border:2px solid var(--faint);flex:none;display:grid;place-items:center;color:var(--on-accent)}
+.opt.on .dot{background:var(--accent);border-color:var(--accent)}
+.opt .dot svg{width:12px;height:12px;opacity:0}
+.opt.on .dot svg{opacity:1}
+.opt.danger{color:var(--danger)}
+.notes-sheet h4{margin:12px 0 4px;font-size:14px}
+.notes-sheet ul{padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px;color:var(--muted);line-height:1.55;font-size:14px}
+.notes-sheet b{color:var(--ink)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="stage">
+  <div class="proto-bar">
+    <span class="name"><b>复盘 A2</b> · 第 <span id="stepNum" class="tnum">1</span>/5 步</span>
+    <span class="bar-right">
+      <span class="seg" role="group" aria-label="Language">
+        <button type="button" id="lzh" aria-pressed="true">中</button>
+        <button type="button" id="len" aria-pressed="false">EN</button>
+      </span>
+      <button class="notes-btn" id="notesBtn" type="button">看改动</button>
+    </span>
+  </div>
+  <div class="wrap">
+    <div class="phone" id="phone" lang="zh">
+      <header class="top">
+        <button class="round" id="backBtn" type="button" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 id="title"></h1>
+        <button class="round" id="closeBtn" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="prog" id="prog"><i></i><i></i><i></i><i></i><i></i></div>
+      <main class="scroll" id="screen"></main>
+      <footer class="foot" id="foot"></footer>
+      <div class="scrim" id="scrim"></div>
+      <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+    </div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+</div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const IC={
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  cut:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1L20 20M8.1 15.9L20 4"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  quote:'<svg viewBox="0 0 24 24"><path d="M4 18v-5c0-4 2-7 6-8l1 2c-2 .8-3 2.4-3 4h3v7H4zm9 0v-5c0-4 2-7 6-8l1 2c-2 .8-3 2.4-3 4h3v7h-7z"/></svg>',
+  mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/></svg>',
+  stop:'<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.6L19.5 9l-5.7 1.6L12 16l-1.8-5.4L4.5 9l5.7-1.4z"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 3l6 6-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z"/></svg>',
+  tray:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.5 2.5h5L16 13h4M4 13l2.5-7h11L20 13v6H4z"/><path d="M12 3v7M9 7.5l3 3 3-3"/></svg>',
+  dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  signal:'<svg viewBox="0 0 14 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5.5" y="4" width="3" height="8" rx="1"/><rect x="11" y="0" width="3" height="12" rx="1"/></svg>'
+};
+
+/* ---------- copy: [zh, en]. ★ = new or rewritten copy (needs zh/en/ja) ---------- */
+let lang='zh';
+const S={
+  step:[['回顾','处理没做完的','观察','下周三件事','收尾账本'],['Recap','Catch Up','Insights','Next Week','Ledger']],
+  next:['下一步','Next'], done:['完成复盘','Done'],
+  scopeSince:['上次复盘以来','Since your last review'], lastReview:['上次复盘：10月12日','Last review: Oct 12'],
+  pinEyebrow:['上次定的重点','Last time’s focus'],                                       // ★
+  pinHero:(n,d)=>[`上次定的 ${n} 件重点，做完了 ${d} 件`,`You picked ${n} to focus on. ${d} done.`][L()], // ★ rewrite of pinned_outcome_hero
+  pinDone:['做完了','Done'], pinOpen:['还没做完','Not yet'],                                    // ★
+  sStats:['上次复盘以来','Since last review'], sAll:['全部积压','Whole backlog'],               // ★
+  done_:['本期完成','Done'], added:['新增','Added'], pending:['还挂着','Still open'],
+  sameDay:n=>[`其中 ${n} 件是当天记下、当天做完的`,`${n} of them were captured and done the same day`][L()],
+  sameDayJ:['相当一部分事是记下当天就做完的——清单更像收件箱，不像计划表','Quite a few were done the same day you noted them — this list works like an inbox, not a planner'],
+  lastNote:['上期你写了','You wrote last time'], expand:['展开全文','Show all'], collapse:['收起','Show less'],
+  lede:['一条一条决定。划走，或者点下面的按钮；不动的就是留着。','Decide one at a time. Swipe, or tap the buttons below. Untouched cards stay.'],
+  poolIntro:(a,b)=>[`本次 ${a} 件积压里，推迟最多、放得最久的 ${b} 件在这儿`,`Open items this session: ${a} — the ${b} most-deferred and longest-sitting are in this deck`][L()],
+  lastPinned:['上次重点','Last focus'],
+  deferred:n=>[`已推迟 ${n} 次`,`Deferred ${n} time${n>1?'s':''}`][L()],
+  bornDays:n=>[`记下 ${n} 天了`,`Noted ${n} day${n>1?'s':''} ago`][L()],
+  aDrop:['不做了','Not doing'], aToday:['今天就做','Do today'], aSplit:['拆小','Split'], aKeep:['排下周','Next week'],
+  dropped:t=>[`已划掉：${t}`,`Dropped: ${t}`][L()],                                           // ★ toast text
+  undo:['撤销上一张','Undo last'], restored:['已恢复','Restored'],
+  batchTitle:n=>[`另有 ${n} 件超过 21 天没碰过`,`Another ${n} tasks untouched for 21+ days`][L()],
+  batchAct:['推到「稍后」','Move to Later'], batchDone:n=>[`已把 ${n} 件推到「稍后」`,`Moved ${n} tasks to Later`][L()],
+  batchUndo:['撤销','Undo'],
+  untouched:n=>[`余下 ${n} 件这次不动——下次复盘还会回来`,`The rest — ${n} — stay untouched for now and will be back at your next review`][L()],
+  skipNext:n=>[`剩下 ${n} 张先留着，下一步`,`Leave the other ${n} for now`][L()],   // ★ secondary footer while cards remain
+  allDone:n=>[`这 ${n} 张都决定好了`,`All ${n} cards decided`][L()],                          // ★
+  splitTitle:['拆小任务','Split Task'], splitCand:['先拆成三步试试','Start with these three steps'],
+  splitSubmit:n=>[`拆成 ${n} 条`,`Split into ${n}`][L()], cancel:['取消','Cancel'],
+  // insights
+  win30:['近 30 天','Last 30 days'],
+  reactiveH:n=>[`${n}% 的事是当场救火`,`${n}% of your to-dos are firefighting`][L()],
+  reactiveLegR:['救火','Reactive'], reactiveLegP:['计划','Planned'],
+  reactiveNote:n=>[`基于 ${n} 条一次性完成记录，不含规律任务。`,`Based on ${n} completed one-off to-dos; recurring tasks not included.`][L()],
+  strong:['信号强','Strong signal'],
+  aiTitle:['AI 观察','AI Observation'], aiBadge:['来自你的数字','from your numbers'],
+  aiText:['积压从 25 件降到 19 件，这期完成的 12 件里有 8 件是工作。剩下的 19 件里，工作还占 12 件。','Your backlog went from 25 to 19. Work was 8 of the 12 you finished, and it is still 12 of the 19 left.'],
+  listTitle:['你的清单','Your list'],                                                         // ★ card that groups floor A/B/C
+  flowLine:(a,b)=>[`这期新增 ${a} 件 · 完成 ${b} 件`,`Added ${a} · finished ${b} this period`][L()],
+  flowTrend:(a,b,d)=>[`积压 ${a} → ${b}（${d}）`,`Backlog ${a} → ${b} (${d})`][L()],
+  ageH:n=>[`${n} 件没做完的事，各放了多久`,`Your ${n} open to-dos, by age`][L()],
+  b1:n=>[`0–7 天：${n} 件`,`0–7 days: ${n}`][L()], b2:n=>[`8–20 天：${n} 件`,`8–20 days: ${n}`][L()], b3:n=>[`21 天以上：${n} 件`,`21+ days: ${n}`][L()],
+  oldestDays:n=>[`${n} 天了`,`${n} days old`][L()], moreActs:['更多操作','More actions'],
+  focusLine:(c,n,d)=>[`积压最集中在「${c}」：${n} 件，最久的放了 ${d} 天`,`The backlog is concentrated in ${c} — ${n} there, the oldest for ${d} days`][L()],
+  factPeak:(h,n)=>[`完成高峰在 ${h} 点（${n} 条记录）`,`Most tasks were completed around ${h}:00 (n=${n})`][L()],
+  sameAsLast:['与上期相同','same as last time'],
+  // next week
+  commitHint:['下周你要认真做哪几件？选中的会在下次复盘里被点名','Which ones will you seriously tackle next week? Picked ones get called out in your next review'],
+  focusGroup:['下周重点','Focus'], otherGroup:['也排在下周','Also next week'],                // ★
+  cap:n=>[`${n}/3`,`${n}/3`][L()], capHint:['最多选 3 件','Up to 3'],                          // ★
+  fromNow:['你刚排进下周的','Just scheduled for next week'], fromBefore:['已排在下周','Already on next week'],
+  tapToFocus:['点下面的任务，设为重点','Tap a task below to make it a focus'],                 // ★
+  gate:['至少选 1 件才能继续','Pick at least 1 to continue'],
+  commitEmpty:['还没有排进下周的任务','Nothing scheduled for next week yet'],
+  // ledger
+  decided:n=>[`你决定了 ${n} 件`,`You decided on ${n} task${n>1?'s':''}`][L()],
+  decidedNone:n=>[`这次一件都没决定，${n} 件原样留着`,`Nothing decided this time — ${n} left untouched`][L()],
+  caption:['你的每个决定，都在这串数字里','Your decisions, in numbers'],
+  dToday:n=>[`今天做 ${n}`,`Today ${n}`][L()], dSplit:n=>[`拆小 ${n}`,`Split ${n}`][L()], dKeep:n=>[`下周 ${n}`,`Next week ${n}`][L()],
+  dDrop:n=>[`不做了 ${n}`,`Dropped ${n}`][L()], dSomeday:n=>[`推后 ${n}`,`Later ${n}`][L()], dPin:n=>[`置顶 ${n}`,`Pinned ${n}`][L()],
+  someday:n=>[`另有 ${n} 件推到以后`,`Another ${n} moved to Later`][L()],
+  askEyebrow:['问问自己','Ask yourself'],
+  askQ:['「工作」上的目标推进得怎么样？','How are things going in “Work”?'],
+  placeholder:['随便写两句，或点麦克风说','A line or two, or tap the mic'],                     // ★ (mentions mic)
+  draftTag:['AI 草稿：可改可删。原样保存会标成「AI 草稿」','AI draft: edit or clear it. Saved as-is, it stays marked as an AI draft'], // ★ replaces note.draft.hint
+  draft:['工作占了 19 件里的 12 件，下周我想先放下……','Work is 12 of my 19. Next week I want to let go of…'],
+  promise:['下次复盘会给你看','We’ll bring this back at your next review'],
+  listening:['在听…','Listening…'], recCancel:['取消','Cancel'],
+  spoken:['确实有点多，下周想留两个晚上给自己的事。','It is a lot. I want two evenings next week for my own things.'],
+  notesTitle:['历次复盘，你说过','What you said in past reviews'],
+  aiKept:['AI 草稿（你保留的）','AI draft (you kept it)'],                                      // ★ D9 label
+  compare:(c,a,b)=>[`本期 ${c} ${a} 件（上期 ${b} 件）`,`${a} items this period vs ${b} last period (${c})`][L()],
+  nextReview:['下次复盘：10月19日 周一','Next review: Mon, Oct 19'],
+  finTitle:['复盘完成','Review done'],                                                           // ★ prototype end state
+  finSaved:['你写的这段话会在下次复盘时出现。','What you wrote will come back at your next review.'],
+  finAI:['这段笔记是原样保留的 AI 草稿，下次会标成「AI 草稿（你保留的）」。','This note is an unedited AI draft. Next time it shows as “AI draft (you kept it)”.'],
+  finEmpty:['这次没写笔记，没有保存任何文字。','No note this time, so no text was saved.'],
+  restart:['从头再看一遍','Start over'],
+  cat:{Work:['工作','Work'],Life:['生活','Life'],Health:['健康','Health']}
+};
+function L(){return lang==='zh'?0:1}
+function t(k,...a){const v=S[k];return typeof v==='function'?v(...a):v[L()]}
+const CAT=c=>S.cat[c][L()];
+
+/* ---------- example data (one consistent snapshot; not real user data) ---------- */
+const BACKLOG=19, DECK_SIZE=8;
+const PINNED=[{t:'交季度报告',done:true},{t:'找时间理发',done:false}];
+const DECK=[ // already ranked: most deferred, then longest sitting
+  {t:'找时间理发',cat:'Life',days:16,defer:3,pin:true,said:'这周找时间去理个发'},
+  {t:'重庆的脚本调试',cat:'Work',days:6,defer:1,said:'重庆的脚本调试，然后山西昨天关的委托单位要去看一下'},
+  {t:'约牙医',cat:'Health',days:12,defer:0,said:'约一下牙医，牙有点酸'},
+  {t:'更新测试环境的报文配置',cat:'Work',days:9,defer:0,said:''},
+  {t:'整理对账差异清单',cat:'Work',days:5,defer:0,said:'把这周对账的差异整理一个清单'},
+  {t:'回复数据迁移的邮件',cat:'Work',days:2,defer:0,said:'数据迁移那封邮件记得回'},
+  {t:'去山西看一下昨天关的委托单位',cat:'Work',days:1,defer:0,said:'重庆的脚本调试，然后山西昨天关的委托单位要去看一下'},
+  {t:'买猫粮',cat:'Life',days:1,defer:0,said:'猫粮快没了'}
+];
+const BATCH=[{t:'整理旧电脑里的照片',days:34},{t:'研究个税专项附加扣除',days:27},{t:'给阳台装个晾衣架',days:23}];
+const PREEXISTING=['交周报','准备季度复盘会的材料'];
+const SPLIT_CANDS=['列出要改的报文字段','改测试环境配置','跑一遍回归用例'];
+const LAST_NOTE='工作的事太多了，下周想先把重庆的脚本收尾。\n周末尽量不看工作消息。';
+const NOTES_HIST=[
+  {d:['10月12日','Oct 12'],text:LAST_NOTE,ai:false,compare:true},
+  {d:['10月5日','Oct 5'],text:'工作占了 9 件，我想先放下……',ai:true},
+  {d:['9月28日','Sep 28'],text:'周末不想再看工作消息，试试关通知。',ai:false}
+];
+
+/* ---------- state ---------- */
+let step=0;
+let deckPos=0, decisions=[], undoStack=[], toast=null;
+let batchDone=false, noteExpanded=false;
+let focus=[];
+let note='', noteIsDraft=false, prefilled=false, recording=false;
+
+const NOTES=[
+ {name:['回顾','Recap'],
+  adj:['<b>任务名不进大标题</b>：标题只说「上次定的 2 件重点，做完了 1 件」，任务名在下面逐条列出，带 ✓ / ○。长任务名只会自己换行，不会把标题拆碎。',
+       '<b>三个数字按窗口分组</b>：「本期完成 / 新增」标「上次复盘以来」，「还挂着」单独一块、深色底突出，标「全部积压」。一眼能看出两组数字口径不同。',
+       '<b>大标题只用一级</b>：这一屏只有标题是 24pt，其余都降级。'],
+  keep:['不写「25 + 6 − 12 = 19」算式：删除、转成规律任务、已排到未来都会让它对不上。',
+        '保留「其中 N 件当天记下、当天做完」和判词（当天完成占比 > 40% 才出）。',
+        '「上期你写了」超过 4 行折叠，点「展开全文」看完整原话。'],
+  add:['列出上次置顶任务的名字（ReviewFlowState.lastPinnedIDs 已有）。','标题新文案，需补三语。']},
+ {name:['处理没做完的','Catch Up'],
+  adj:['<b>四个按钮同样大小</b>（A 的样子），只有「不做了」用红色，其余三个深灰，删除和推进一眼分开。',
+       '<b>底部按钮分两态</b>：还有卡没处理时是白底次级按钮「剩下 N 张先留着，下一步」；全部处理完才变成珊瑚色主按钮。',
+       '卡片背后只露一条边，不透出下一张的文字。'],
+  keep:['一次最多 8 张；积压多时说明「推迟最多、放得最久的 8 件在这儿」。',
+        '撤销只针对「不做了」（v2 拍板 7）；其他三个动作没有撤销条。',
+        '尾部超过 21 天没碰过的可以一键「推到「稍后」」，推完可整批撤销。',
+        '「余下 N 件这次不动」说明行；随时可以进下一步。',
+        '卡头保留「上次重点」标记、「已推迟 N 次 / 记下 N 天了」、推迟时间轴、语音原话。'],
+  add:['真机最大字号（AX5）下，四个按钮改成 2×2 两行。','底部次级按钮文案需补三语。']},
+ {name:['观察','Insights'],
+  adj:['<b>「信号强」不再是红色胶囊</b>：改成卡片底部样本说明旁的灰色小字加信号图标，不可点，看起来也不像按钮。不做 A 的 How we know 面板。',
+       '<b>标题和正文不再重复 61%</b>：卡片里只剩标题、比例条（带件数）和样本说明。',
+       '<b>地板 A / B / C 合并成一张「你的清单」卡</b>，每段自带窗口说明。',
+       '规则卡放到最前：现有代码注释写明卡片顺序不表示重要性，这只是视觉调整。'],
+  keep:['多张卡并存：规则卡、AI 观察、清单事实、事实行，不砍成一条。',
+        '年龄分布只有全部在 0–7 天时才改成一句话（现有 all_recent 文案）。',
+        '最久的 3 件带「更多操作」（不做了 / 排下周 / 拆小）。',
+        '事实行是灰色小字，与上期相同时行尾加「与上期相同」。'],
+  add:['卡片正文去掉重复百分比，属于文案调整。']},
+ {name:['下周三件事','Next Week'],
+  adj:['<b>按 A 分成「下周重点」和「也排在下周」两组</b>，来源写在每项下方。',
+       '<b>去掉右侧「Focus」标签</b>：勾选圆圈和分组已经说明了。'],
+  keep:['最多选 3 件：选满后其余项变灰、点不动，组标题显示 n/3。',
+        '至少选 1 件才能继续，按钮上方有「至少选 1 件才能继续」；候选池为空时直接放行。',
+        '「已排在下周（还没选为重点）」改成每项下面的来源小字「已排在下周」，不再出现自相矛盾的组标题。'],
+  add:['两个组标题和「点下面的任务，设为重点」需补三语。']},
+ {name:['收尾账本','Ledger'],
+  adj:['<b>顶部小结改成一段文字</b>，不再用三个胶囊。「推后 N」只在明细里出现一次（现有代码明细和单独一行各写一遍）。',
+       '<b>问题在上、输入框在下</b>；麦克风是输入框里的实心圆按钮，录音时变成停止键，左侧显示「在听…」和取消。',
+       '<b>下次复盘改成一行灰字</b>，不做成按钮，因为日期固定在下周一。'],
+  keep:['AI 草稿照现有规则预填，输入框上方标明是 AI 草稿；一改动标记就消失。',
+        '<b>原样保存的草稿在历次笔记里标「AI 草稿（你保留的）」</b>：这是 v5 D9 的规则，现在代码漏了这个标记。',
+        '历次笔记全部显示、不截断（不是 A 的最多 2 条）；最新一条下面带「本期 vs 上期」对照行。',
+        '下次复盘固定下周一（v5 拍板 4）。'],
+  add:['草稿 60 字符硬截断要改成按词或句子截断（TodoExtractorService.swift:319）。','笔记需要一个来源字段，用来记「AI 草稿原样保存」。']}
+];
+
+/* ---------- shell ---------- */
+function setFoot(h){$('#foot').innerHTML=h}
+function go(n){step=Math.max(0,Math.min(4,n));closeSheet();render();$('#screen').scrollTop=0}
+function render(){
+  $('#phone').lang=lang==='zh'?'zh':'en';
+  $('#title').textContent=t('step')[step];
+  $('#stepNum').textContent=step+1;
+  $('#backBtn').disabled=step===0;
+  [...$('#prog').children].forEach((el,i)=>el.classList.toggle('on',i<=step));
+  renderNotes();
+  [recap,catchup,insights,nextweek,ledger][step]();
+}
+function notesHTML(){
+  const n=NOTES[step];
+  return `<h4>相对 A 的视觉调整</h4><ul>${n.adj.map(i=>`<li>${i}</li>`).join('')}</ul>
+    <h4>按现有规则（A 里改掉的，这版恢复）</h4><ul>${n.keep.map(i=>`<li>${i}</li>`).join('')}</ul>
+    <h4>落地时要新增</h4><ul>${n.add.map(i=>`<li>${i}</li>`).join('')}</ul>`;
+}
+function renderNotes(){
+  $('#notes').innerHTML=`<h3>改了什么 · ${step+1}/5</h3><h2>${NOTES[step].name[0]}</h2>${notesHTML()}`;
+}
+
+/* ---------- 1. Recap ---------- */
+function recap(){
+  const doneN=PINNED.filter(p=>p.done).length;
+  const long=LAST_NOTE.split('\n').length>1||LAST_NOTE.length>60;
+  $('#screen').innerHTML=`
+  <div class="scope"><span class="a">${t('scopeSince')}</span><span class="b">${t('lastReview')}</span></div>
+  <div class="card">
+    <div class="eyebrow">${t('pinEyebrow')}</div>
+    <p class="h-1">${t('pinHero',PINNED.length,doneN)}</p>
+    <div class="pinned">${PINNED.map(p=>`
+      <div class="pinned-row ${p.done?'done':'open'}"><span class="mk">${p.done?IC.check.replace('stroke-width="3.2"','stroke-width="3.6" width="12" height="12"'):''}</span>
+      <span class="tx">${esc(p.t)}</span><span class="st">${p.done?t('pinDone'):t('pinOpen')}</span></div>`).join('')}
+    </div>
+  </div>
+  <div class="stats tnum">
+    <div class="stat"><b>12</b><span>${t('done_')}</span></div>
+    <div class="stat"><b>6</b><span>${t('added')}</span></div>
+    <div class="stat key"><b>${BACKLOG}</b><span>${t('pending')}</span></div>
+  </div>
+  <div class="stat-cap"><span>${t('sStats')}</span><span>${t('sAll')}</span></div>
+  <div class="card" style="gap:6px">
+    <p class="h-3">${t('sameDay',7)}</p>
+    <p class="lead">${t('sameDayJ')}</p>
+  </div>
+  <div class="card">
+    <div class="eyebrow">${t('lastNote')}</div>
+    <p class="quote ${noteExpanded?'':'clamp'}">${esc(LAST_NOTE)}</p>
+    ${long?`<button class="linkish" type="button" id="exp">${noteExpanded?t('collapse'):t('expand')}</button>`:''}
+  </div>`;
+  if($('#exp'))$('#exp').onclick=()=>{noteExpanded=!noteExpanded;recap()};
+  setFoot(`<button class="primary" type="button" id="next">${t('next')}</button>`);
+  $('#next').onclick=()=>go(1);
+}
+
+/* ---------- 2. Catch up ---------- */
+const ACTS=[
+  {k:'drop',ic:'x',cls:'drop',out:'out-left'},
+  {k:'today',ic:'sun',cls:'',out:'out-up'},
+  {k:'split',ic:'cut',cls:'',out:'out-up'},
+  {k:'keep',ic:'arrow',cls:'',out:'out-right'}
+];
+const ACT_LABEL={drop:'aDrop',today:'aToday',split:'aSplit',keep:'aKeep'};
+function untouchedTail(){return BACKLOG-DECK.length-BATCH.length}
+function catchup(){
+  const left=DECK.length-deckPos;
+  let deck='';
+  if(left>0){
+    const c=DECK[deckPos];
+    const lead=c.defer>0?t('deferred',c.defer):t('bornDays',c.days);
+    const tl=c.defer>0?`<div><div class="tl"><i></i>${'<s></s><i style="opacity:.5"></i>'.repeat(Math.min(c.defer,4))}<s></s><i class="o"></i></div></div><div class="tl-label">${t('deferred',c.defer)}</div>`:'';
+    deck=`
+    <div class="deck-head"><span class="eyebrow">${t('step')[1]}</span><span class="eyebrow tnum">${deckPos+1} / ${DECK.length}</span></div>
+    <div class="deck">
+      ${left>1?'<div class="under"></div>':''}
+      <div class="tcard" id="top">
+        <div class="thead"><span class="chip">${CAT(c.cat)}</span>${c.pin?`<span class="chip pin">${IC.pin}${t('lastPinned')}</span>`:''}${c.defer>0?'':`<span class="lead-label">${lead}</span>`}</div>
+        <h2>${esc(c.t)}</h2>
+        ${tl}
+        ${c.said?`<div class="said">${IC.quote}<span>${esc(c.said)}</span></div>`:''}
+      </div>
+    </div>
+    <div class="actions">${ACTS.map((a,i)=>`<button class="act ${a.cls}" type="button" data-a="${i}"><span class="c">${IC[a.ic]}</span><span class="l">${t(ACT_LABEL[a.k])}</span></button>`).join('')}</div>`;
+  }else{
+    deck=`<div class="card alldone"><div class="tick">${IC.check.replace('stroke="currentColor"','stroke="currentColor" width="26" height="26"')}</div>
+      <p class="h-2" style="margin:0">${t('allDone',DECK.length)}</p></div>`;
+  }
+  const toastHTML=toast?`<div class="toast" role="status"><span>${esc(toast.msg)}</span>${toast.undo?`<button type="button" id="undo">${t('undo')}</button>`:''}</div>`:'';
+  const batch=batchDone
+    ?`<div class="card"><div class="batch"><span class="ic">${IC.tray}</span><span class="t" style="font-weight:600;color:var(--muted)">${t('batchDone',BATCH.length)}</span><button class="text-btn" type="button" id="bundo">${t('batchUndo')}</button></div></div>`
+    :`<div class="card"><div class="batch"><span class="ic">${IC.tray}</span><span class="t">${t('batchTitle',BATCH.length)}</span><button class="pill-btn" type="button" id="bdo">${t('batchAct')}</button></div></div>`;
+  $('#screen').innerHTML=`
+    <p class="lead">${t('lede')}</p>
+    ${BACKLOG>DECK_SIZE?`<p class="small" style="margin-top:-6px">${t('poolIntro',BACKLOG,DECK_SIZE)}</p>`:''}
+    ${deck}${toastHTML}
+    <div style="height:4px"></div>
+    ${batch}
+    <p class="small" style="padding:0 4px">${t('untouched',untouchedTail())}</p>`;
+  document.querySelectorAll('.act').forEach(b=>b.onclick=()=>decide(ACTS[+b.dataset.a]));
+  // the undo button only shows right after a drop, so the dropped card is the one just behind deckPos
+  if($('#undo'))$('#undo').onclick=()=>{if(!undoStack.length)return;undoStack.pop();decisions.pop();deckPos--;toast={msg:t('restored'),undo:false};catchup()};
+  if($('#bdo'))$('#bdo').onclick=()=>{batchDone=true;catchup()};
+  if($('#bundo'))$('#bundo').onclick=()=>{batchDone=false;catchup()};
+  if(left>0) setFoot(`<button class="secondary" type="button" id="next">${t('skipNext',left)}</button>`);
+  else setFoot(`<button class="primary" type="button" id="next">${t('next')}</button>`);
+  $('#next').onclick=()=>go(2);
+}
+function decide(a){
+  if(a.k==='split'){openSplit();return}
+  commitDecision(a);
+}
+function commitDecision(a){
+  const card=$('#top'); if(!card)return;
+  card.classList.add(a.out);
+  decisions.push({i:deckPos,k:a.k,t:DECK[deckPos].t});
+  if(a.k==='drop'){undoStack.push(deckPos);toast={msg:t('dropped',DECK[deckPos].t),undo:true}}
+  else toast=null;
+  setTimeout(()=>{deckPos++;catchup()},220);
+}
+function openSplit(){
+  let sel=new Set([0,1,2]);
+  const draw=()=>{
+    openSheet(`<div class="grab"></div><h3>${t('splitTitle')}</h3>
+      <p class="small">${esc(DECK[deckPos].t)}</p>
+      <div class="eyebrow" style="margin-top:6px">${t('splitCand')}</div>
+      <div>${SPLIT_CANDS.map((c,i)=>`<button class="opt ${sel.has(i)?'on':''}" type="button" data-i="${i}"><span class="dot">${IC.check}</span>${esc(c)}</button>`).join('')}</div>
+      <button class="primary" type="button" id="splitGo" ${sel.size?'':'disabled'}>${t('splitSubmit',sel.size)}</button>
+      <button class="secondary" type="button" id="splitNo" style="box-shadow:none">${t('cancel')}</button>`);
+    document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;sel.has(i)?sel.delete(i):sel.add(i);draw()});
+    $('#splitGo').onclick=()=>{if(!sel.size)return;closeSheet();commitDecision(ACTS[2])};
+    $('#splitNo').onclick=closeSheet;
+  };
+  draw();
+}
+
+/* ---------- 3. Insights ---------- */
+function insights(){
+  const pct=61, same=20, planned=13;
+  const oldest=BATCH;
+  $('#screen').innerHTML=`
+  <div class="card">
+    <div class="eyebrow">${t('win30')}</div>
+    <p class="h-1">${t('reactiveH',pct)}</p>
+    <div class="bar" style="margin-top:6px"><i style="width:${pct}%;background:var(--accent)"></i><i style="flex:1;background:var(--faint);opacity:.45"></i></div>
+    <div class="legend tnum"><span><span class="sw" style="background:var(--accent)"></span>${t('reactiveLegR')} <b>${same}</b></span><span><span class="sw" style="background:var(--faint);opacity:.6"></span>${t('reactiveLegP')} <b>${planned}</b></span></div>
+    <div class="foot-row"><p class="small">${t('reactiveNote',same+planned)}</p><span class="signal">${IC.signal}${t('strong')}</span></div>
+  </div>
+  <div class="card">
+    <div class="ai-tag">${IC.spark}${t('aiTitle')} · <span style="font-weight:600;color:var(--faint)">${t('aiBadge')}</span></div>
+    <p style="margin:0;line-height:1.6;font-size:15px">${t('aiText')}</p>
+  </div>
+  <div class="card">
+    <p class="h-3">${t('listTitle')}</p>
+    <div class="section">
+      <div class="eyebrow">${t('sStats')}</div>
+      <div class="v tnum">${t('flowLine',6,12)}</div>
+      <div class="v tnum" style="font-weight:700">${t('flowTrend',25,19,'−6')}</div>
+    </div>
+    <div class="section">
+      <div class="eyebrow">${t('ageH',BACKLOG)}</div>
+      <div class="bar"><i style="width:${13/19*100}%;background:var(--faint);opacity:.45"></i><i style="width:${3/19*100}%;background:var(--faint);opacity:.75"></i><i style="flex:1;background:var(--ink)"></i></div>
+      <div class="legend tnum" style="font-size:12.5px"><span>${t('b1',13)}</span><span>${t('b2',3)}</span><span><b>${t('b3',3)}</b></span></div>
+      <div class="oldest">${oldest.map((o,i)=>`<div class="old-row"><span class="t">${esc(o.t)}</span><span class="d tnum">${t('oldestDays',o.days)}</span><button class="more" type="button" data-i="${i}" aria-label="${t('moreActs')}">${IC.dots}</button></div>`).join('')}</div>
+    </div>
+    <div class="section">
+      <div class="v">${t('focusLine',CAT('Work'),12,9)}</div>
+    </div>
+  </div>
+  <div class="fact tnum"><span>${t('factPeak',21,14)}</span><em>· ${t('sameAsLast')}</em></div>`;
+  document.querySelectorAll('.more').forEach(b=>b.onclick=()=>{
+    const o=oldest[+b.dataset.i];
+    openSheet(`<div class="grab"></div><h3>${esc(o.t)}</h3>
+      <button class="opt" type="button" data-c>${t('aKeep')}</button>
+      <button class="opt" type="button" data-c>${t('aSplit')}</button>
+      <button class="opt danger" type="button" data-c>${t('aDrop')}</button>
+      <button class="secondary" type="button" data-c style="box-shadow:none;margin-top:4px">${t('cancel')}</button>`);
+    document.querySelectorAll('[data-c]').forEach(x=>x.onclick=closeSheet);
+  });
+  setFoot(`<button class="primary" type="button" id="next">${t('next')}</button>`);
+  $('#next').onclick=()=>go(3);
+}
+
+/* ---------- 4. Next week ---------- */
+function pool(){
+  const now=decisions.filter(d=>d.k==='keep').map(d=>({t:d.t,from:'fromNow'}));
+  return [...now,...PREEXISTING.map(x=>({t:x,from:'fromBefore'}))];
+}
+function nextweek(){
+  const all=pool();
+  focus=focus.filter(f=>all.some(x=>x.t===f));
+  const full=focus.length>=3;
+  const item=x=>{const on=focus.includes(x.t);return `<button class="pick ${on?'on':''}" type="button" data-t="${esc(x.t)}" ${(!on&&full)?'disabled':''}><span class="dot">${IC.check}</span><span class="t"><b>${esc(x.t)}</b><span class="from">${t(x.from)}</span></span></button>`};
+  if(!all.length){
+    $('#screen').innerHTML=`<p class="empty" style="text-align:center;padding-top:40px">${t('commitEmpty')}</p>`;
+  }else{
+    const f=focus.map(ft=>all.find(x=>x.t===ft)), rest=all.filter(x=>!focus.includes(x.t));
+    $('#screen').innerHTML=`
+    <p class="lead">${t('commitHint')}</p>
+    <div class="group-title"><span class="eyebrow">${t('focusGroup')}</span><span class="eyebrow tnum">${t('cap',focus.length)}</span></div>
+    ${f.length?f.map(item).join(''):`<p class="empty">${t('tapToFocus')}</p>`}
+    <div class="group-title"><span class="eyebrow">${t('otherGroup')}</span>${full?`<span class="small">${t('capHint')}</span>`:''}</div>
+    ${rest.length?rest.map(item).join(''):''}`;
+  }
+  document.querySelectorAll('.pick').forEach(b=>b.onclick=()=>{const v=b.dataset.t;const i=focus.indexOf(v);if(i>=0)focus.splice(i,1);else if(focus.length<3)focus.push(v);nextweek()});
+  const ok=!all.length||focus.length>0;
+  setFoot(`${ok?'':`<p class="gate">${t('gate')}</p>`}<button class="primary" type="button" id="next" ${ok?'':'disabled'}>${t('next')}</button>`);
+  $('#next').onclick=()=>{if(ok)go(4)};
+}
+
+/* ---------- 5. Ledger ---------- */
+function ledger(){
+  if(!prefilled&&!note){note=t('draft');noteIsDraft=true;prefilled=true}
+  const cnt=k=>decisions.filter(d=>d.k===k).length;
+  const decided=decisions.length;
+  const frags=[cnt('today')&&t('dToday',cnt('today')),cnt('split')&&t('dSplit',cnt('split')),cnt('keep')&&t('dKeep',cnt('keep')),cnt('drop')&&t('dDrop',cnt('drop')),batchDone&&t('dSomeday',BATCH.length),focus.length&&t('dPin',focus.length)].filter(Boolean);
+  const summary=decided
+    ?`<b>${t('decided',decided)}</b><span class="small">${frags.join(' · ')}</span>`
+    :(batchDone?`<b>${t('someday',BATCH.length)}</b>`:`<b>${t('decidedNone',BACKLOG)}</b>`);
+  $('#screen').innerHTML=`
+  <div class="summary">${summary}</div>
+  <div class="card ask">
+    <div class="eyebrow">${t('askEyebrow')}</div>
+    <p class="h-2" style="margin:0">${t('askQ')}</p>
+    <div class="draft-tag" id="dtag" ${noteIsDraft?'':'hidden'}>${IC.spark}<span>${t('draftTag')}</span></div>
+    <div class="input ${recording?'rec':''}">
+      <textarea id="refl" placeholder="${t('placeholder')}" aria-label="${t('askQ')}">${esc(note)}</textarea>
+      ${recording?`<div class="listening"><span>${t('listening')}</span><button type="button" id="recx">${t('recCancel')}</button></div>`:''}
+      <button class="mic ${recording?'rec':''}" type="button" id="mic" aria-label="${recording?t('listening'):'Mic'}">${recording?IC.stop:IC.mic}</button>
+    </div>
+    <p class="small">${t('promise')}</p>
+  </div>
+  <div class="card">
+    <div class="eyebrow">${t('notesTitle')}</div>
+    ${NOTES_HIST.map(n=>`<div class="note-item"><div class="d"><span>${n.d[L()]}</span>${n.ai?`<span class="chip">${t('aiKept')}</span>`:''}</div><p>${esc(n.text)}</p>${n.compare?`<p class="compare tnum">${t('compare',CAT('Work'),8,5)}</p>`:''}</div>`).join('')}
+  </div>
+  <div class="next-line">${IC.clock}<span>${t('nextReview')}</span></div>`;
+  const ta=$('#refl');
+  ta.oninput=()=>{note=ta.value;if(noteIsDraft){noteIsDraft=false;$('#dtag').hidden=true}};
+  $('#mic').onclick=()=>{
+    if(!recording){recording=true;ledger();return}
+    recording=false;
+    const s=t('spoken'); note=note?note+'\n'+s:s; noteIsDraft=false; ledger();
+  };
+  if($('#recx'))$('#recx').onclick=()=>{recording=false;ledger()};
+  setFoot(`<button class="primary" type="button" id="done">${t('done')}</button>`);
+  $('#done').onclick=()=>{
+    const msg=!note.trim()?t('finEmpty'):(noteIsDraft?t('finAI'):t('finSaved'));
+    openSheet(`<div class="grab"></div><h3>${t('finTitle')}</h3><p>${msg}</p><p class="small">${t('nextReview')}</p>
+      <button class="primary" type="button" id="restart" style="margin-top:6px">${t('restart')}</button>`);
+    $('#restart').onclick=()=>{closeSheet();reset()};
+  };
+}
+
+/* ---------- misc ---------- */
+function reset(){
+  deckPos=0;decisions=[];undoStack=[];toast=null;batchDone=false;noteExpanded=false;focus=[];
+  note='';noteIsDraft=false;prefilled=false;recording=false;go(0);
+}
+function openSheet(html){$('#sheet').innerHTML=html;$('#phone').classList.add('open')}
+function closeSheet(){$('#phone').classList.remove('open')}
+$('#scrim').onclick=closeSheet;
+$('#backBtn').onclick=()=>{if(step>0)go(step-1)};
+$('#closeBtn').onclick=()=>reset();
+$('#notesBtn').onclick=()=>{openSheet(`<div class="grab"></div><div class="notes-sheet"><h3>改了什么 · ${NOTES[step].name[0]}</h3>${notesHTML()}</div><button class="primary" type="button" id="nOk" style="margin-top:8px">好</button>`);$('#nOk').onclick=closeSheet};
+function setLang(l){
+  lang=l;$('#lzh').setAttribute('aria-pressed',l==='zh');$('#len').setAttribute('aria-pressed',l==='en');
+  if(noteIsDraft)note=t('draft');
+  render();
+}
+$('#lzh').onclick=()=>setLang('zh');
+$('#len').onclick=()=>setLang('en');
+render();
+})();
+</script>
