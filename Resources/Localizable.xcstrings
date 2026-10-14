@@ -9308,19 +9308,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Already on next week (not picked as focus)"
+            "value" : "Already on next week"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "来週に入っている(重点は未選択)"
+            "value" : "来週に入っている"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已排在下周(还没选为重点)"
+            "value" : "已排在下周"
           }
         }
       }
@@ -9486,19 +9486,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A line or two is enough"
+            "value" : "A line or two, or tap the mic"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "二、三行で構いません"
+            "value" : "二、三行で。マイクで話しても OK"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "随便写两句"
+            "value" : "随便写两句,或点麦克风说"
           }
         }
       }
@@ -10123,19 +10123,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI draft — edit or clear, saved as yours"
+            "value" : "AI draft: edit or clear it. Saved as-is, it stays marked as an AI draft"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 下書き——編集・削除可、あなたのメモとして保存"
+            "value" : "AI 下書き:編集・削除できます。そのまま保存すると「AI 下書き」と表示されます"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 草稿——可改可删，保存为你的笔记"
+            "value" : "AI 草稿:可改可删。原样保存会标成「AI 草稿」"
           }
         }
       }
@@ -10280,19 +10280,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Of the %1$lld you pinned last time, %2$lld done"
+            "value" : "You picked %1$lld to focus on. %2$lld done."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前回決めた %1$lld 件のうち、%2$lld 件が完了"
+            "value" : "前回決めた重点 %1$lld 件のうち、%2$lld 件が完了"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上次定的 %1$lld 件,%2$lld 件做完了"
+            "value" : "上次定的 %1$lld 件重点,做完了 %2$lld 件"
           }
         }
       }
@@ -14987,6 +14987,398 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将于 %1$@ 切换为 %2$@（%3$@）"
+          }
+        }
+      }
+    },
+    "review.flow.recap.pinned.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last time’s focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の重点"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次定的重点"
+          }
+        }
+      }
+    },
+    "review.flow.recap.pinned.done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "做完了"
+          }
+        }
+      }
+    },
+    "review.flow.recap.pinned.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没做完"
+          }
+        }
+      }
+    },
+    "review.flow.recap.stats.window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since last review"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の振り返り以降"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次复盘以来"
+          }
+        }
+      }
+    },
+    "review.flow.recap.stats.backlog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whole backlog"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了すべて"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部积压"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_note.expand" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show all"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全文を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开全文"
+          }
+        }
+      }
+    },
+    "review.flow.recap.last_note.collapse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show less"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起"
+          }
+        }
+      }
+    },
+    "review.flow.triage.dropped_%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dropped: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "やめた:%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已划掉:%@"
+          }
+        }
+      }
+    },
+    "review.flow.triage.next_leave_%lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Leave the other %lld for now"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Leave the other %lld for now"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "残り %lld 枚はそのままで次へ"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "剩下 %lld 张先留着,下一步"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "review.flow.insights.list.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your list"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたのリスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的清单"
+          }
+        }
+      }
+    },
+    "review.flow.commit.group.focus" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来週の重点"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下周重点"
+          }
+        }
+      }
+    },
+    "review.flow.commit.group.others" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also next week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ほかの来週分"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也排在下周"
+          }
+        }
+      }
+    },
+    "review.flow.commit.tap_to_focus" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a task below to make it a focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下のタスクをタップして重点に"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点下面的任务,设为重点"
+          }
+        }
+      }
+    },
+    "review.flow.commit.cap_hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to 3"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大 3 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多选 3 件"
+          }
+        }
+      }
+    },
+    "review.flow.note.mic.a11y" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answer by voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声で答える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用语音回答"
+          }
+        }
+      }
+    },
+    "review.notes.ai_kept" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI draft (you kept it)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 下書き(そのまま保存)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 草稿(你保留的)"
           }
         }
       }
