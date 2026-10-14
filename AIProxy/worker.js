@@ -209,6 +209,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // 的独立桶(SUBSCRIPTION_ASSIST_DAILY_LIMIT,默认同 500),互不挤占。
     await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
     if (mode === "extract") {
+      // 闸门(全局熔断 + ip-rate)保持在订阅桶之后、计费扣减之前——与 Step A 抽出前
+      // 的原顺序一致;Commit 2 会把闸门前移到 cache lookup 之前、计费后移到 cache miss 之后。
+      await enforceAbuseGates(request, env, requestContext, isPro);
       quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription);
 
       // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
@@ -225,8 +228,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       // split 不占计费额度(拍板),但保留反滥用护栏:全局预算熔断 + ip 短窗速率限流。
       // 不计费 ≠ 零防护——跳过这两层会让外部无成本刷模型调用。
       // 付费档与 extract 模式同口径豁免两道 IP 闸门 / 走 pro 熔断桶。
-      await enforceGlobalBudgetHotPath(env, requestContext, isPro);
-      await enforceIpRateLimit(request, env, requestContext, isPro);
+      await enforceAbuseGates(request, env, requestContext, isPro);
       // assist 模式此前只读 trip 标志、从不计数:pro 桶的标志只由 extract 流量
       // 写,split/reflect 永不打满它 → 付费档在 assist 模式上一道限流都没有
       // (新问题 1:合法 JWS 换无限模型调用,任何计数器都不记)。现在与 extract
@@ -1292,11 +1294,22 @@ function validateAppToken(request, env) {
   };
 }
 
+// 反滥用闸门(原 enforceAllQuotas Step A):global-budget 熔断标志(KV tripped,
+// 纯读边缘缓存)+ ip-rate 限流(KV RMW,会扣计数,故意不补偿 —— 这是反刷维度,
+// 被这里拒绝也算消耗一次"尝试机会")。
+// 抽出为独立函数的原因:extract 模式需要"闸门前置、计费后置"——缓存命中(extraction
+// cache)零模型成本,不该扣任何计费桶,但仍要过反滥用闸门;assist 分支(split/reflect/
+// deep-read)原先手写这两行,统一收口到这里。
+async function enforceAbuseGates(request, env, requestContext, isPro) {
+  await enforceGlobalBudgetHotPath(env, requestContext, isPro);
+  await enforceIpRateLimit(request, env, requestContext, isPro);
+}
+
 // 计费编排:Step 7 重排后的统一入口。
 //
 // 设计原则:
-//   1. 前置检查先行:global-budget 熔断标志(KV tripped,纯读边缘缓存)+ ip-rate 限流
-//      (KV RMW,会扣计数,故意不补偿 —— 这是反刷维度,被这里拒绝也算消耗一次"尝试机会")
+//   1. ~~前置检查先行~~ Step A(全局熔断 + ip-rate)已上提到 handler 的
+//      enforceAbuseGates(缓存命中也要过闸门,但不再消耗计费桶)
 //   2. device + ip-daily 并行扣减(Promise.allSettled),延迟从 2× 串行往返压到 1×
 //   3. 失败补偿:一个 allow 一个 deny 时,给 allow 的发 refund(DO refund 原子,
 //      KV refund 在 dev/test 单线程下 OK)
@@ -1306,10 +1319,11 @@ function validateAppToken(request, env) {
 // (检查在 increment 之前,平台保证原子)。所以 refund 只在"fulfilled + 对方 rejected"
 // 时触发,不会出现"两个都 reject 还要 refund"的情况。
 //
-// 注意:ip-rate 在 Step A 已 increment,即使后续 device reject 也**不 refund** ——
-// 这是有意为之,ip-rate 是反"短时间内高频尝试"的维度,被它拒绝或被它放行后再被其他维度
-// 拒绝,都应消耗一次 ip-rate 配额,避免攻击者用"device 配额耗尽重试"绕过 ip-rate。
-async function enforceAllQuotas(request, env, requestContext, ctx, subscription) {
+// 注意:ip-rate 在 enforceAbuseGates 已 increment,即使后续 device reject 也
+// **不 refund** —— 这是有意为之,ip-rate 是反"短时间内高频尝试"的维度,被它拒绝或
+// 被它放行后再被其他维度拒绝,都应消耗一次 ip-rate 配额,避免攻击者用
+// "device 配额耗尽重试"绕过 ip-rate。
+async function enforceAllQuotas(request, env, requestContext, ctx, subscription, precomputedDate) {
   // 订阅档位由 handler 在闸门之前解析并注入(见调用处注释,P0)。缺参时原地解析,
   // 保持本函数可独立调用(测试/未来调用方)。
   // 分流规则:
@@ -1321,15 +1335,9 @@ async function enforceAllQuotas(request, env, requestContext, ctx, subscription)
   const sub = subscription ?? await resolveSubscriptionTier(request, env, requestContext);
   const isPro = sub.tier === "pro";
 
-  // Step A: 前置检查
-  // - global-budget:纯读 KV tripped 标志,真正零成本
-  // - ip-rate:KV RMW,会扣计数(有意不补偿,见上方注释)
-  await enforceGlobalBudgetHotPath(env, requestContext, isPro);
-  await enforceIpRateLimit(request, env, requestContext, isPro);
-
   // Step B: device + ip-daily 并行扣减
   const [deviceResult, ipResult] = await Promise.allSettled([
-    enforceDailyLimit(request, env, requestContext, ctx, sub),
+    enforceDailyLimit(request, env, requestContext, ctx, sub, precomputedDate),
     enforceIpDailyLimit(request, env, requestContext, ctx, isPro)
   ]);
 
@@ -1517,10 +1525,12 @@ async function refundQuotaCounterDO(env, subjectKey, subjectId, date, logEvent) 
 // DO 故障(fetch 抛错 / 非 200)自动回退到 KV 路径并 log warn —— KV 虽有丢失更新,
 // 但单线程下仍正确,作为 degraded 模式比纯 fail-open 安全。
 // 测试/dev 环境不绑定 DO 时直接走 KV 路径,行为与 Step 3 前一致。
-async function enforceDailyLimit(request, env, requestContext, ctx, subscription) {
+async function enforceDailyLimit(request, env, requestContext, ctx, subscription, precomputedDate) {
   // 即使配额未启用也预先解析 quotaDate，让调用方（today 注入）能复用而无需重复调用
-  // resolveQuotaDate（避免重复漂移校验日志）。
-  const { date: quotaDate, source } = resolveQuotaDate(request, requestContext);
+  // resolveQuotaDate（避免重复漂移校验日志）。precomputedDate 是调用方已解析的
+  // { date, source }（与 subscription 注入同模式）——缓存命中判断需要在扣费之前拿到
+  // quotaDate 做 cache key，扣费时复用同一份，保证每请求恰好解析一次。
+  const { date: quotaDate, source } = precomputedDate ?? resolveQuotaDate(request, requestContext);
   if (!env.RATE_LIMIT_KV || !env.DAILY_REQUEST_LIMIT) {
     logInfo("proxy.quota.skipped", { ...requestContext, reason: "not_configured" });
     return { skipped: true, resetDate: quotaDate, dateSource: source };
