@@ -103,11 +103,13 @@ struct RottingTaskListView: View {
 
 // MARK: - 洞察 03 · 救火比率条
 
-/// 救火占比横条(v1 两图之一)。一段式比率条 + 两端图例:
+/// 救火占比横条(v1 两图之一;v6:图例带两组件数「救火 20 · 计划 13」——
+/// 卡片不渲染 body 后,件数只在这里出现)。一段式比率条 + 两端图例:
 /// 填充段 = 救火(ratio),余段 = 计划。SwiftUI 原生绘制,不引 Swift Charts。
 struct ReactiveRatioBarView: View {
     let ratio: Double
-    let sampleCount: Int
+    let reactiveCount: Int
+    let plannedCount: Int
 
     var body: some View {
         VStack(spacing: WarmSpacing.xs) {
@@ -124,17 +126,22 @@ struct ReactiveRatioBarView: View {
             .frame(height: 12)
 
             HStack(spacing: WarmSpacing.md) {
-                legendDot(color: WarmTheme.primary.opacity(0.85), label: String(localized: "review.flow.reactive.legend.reactive"))
-                legendDot(color: WarmTheme.subtleControlBackground, label: String(localized: "review.flow.reactive.legend.planned"))
+                legendEntry(
+                    color: WarmTheme.primary.opacity(0.85),
+                    label: String(localized: "review.flow.reactive.legend.reactive"),
+                    count: reactiveCount
+                )
+                legendEntry(
+                    color: WarmTheme.subtleControlBackground,
+                    label: String(localized: "review.flow.reactive.legend.planned"),
+                    count: plannedCount
+                )
                 Spacer(minLength: 0)
-                Text(verbatim: "\(sampleCount)")
-                    .font(WarmFont.caption(11))
-                    .foregroundColor(WarmTheme.textMuted)
             }
         }
     }
 
-    private func legendDot(color: Color, label: String) -> some View {
+    private func legendEntry(color: Color, label: String, count: Int) -> some View {
         HStack(spacing: WarmSpacing.xxs) {
             Circle()
                 .fill(color)
@@ -144,7 +151,13 @@ struct ReactiveRatioBarView: View {
                 .foregroundColor(WarmTheme.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            Text(verbatim: "\(count)")
+                .font(WarmFont.caption(11))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

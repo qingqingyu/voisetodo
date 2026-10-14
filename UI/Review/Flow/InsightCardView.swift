@@ -1,44 +1,39 @@
 import SwiftUI
 
-/// 洞察卡容器(阶段 3,§阶段 3 · 第 3 步)。
-/// 布局约定:右上角信号强度标签、右下角样本量说明。
+/// 洞察卡容器(阶段 3,§阶段 3 · 第 3 步;v6 A2 视觉改版)。
+/// 布局约定(v6):标题在左(第一张规则卡一级 24pt,其余二级 19pt);强度
+/// 不再是右上角胶囊——挪到底部样本说明行右侧的灰字 + 信号图标,不可点、
+/// 看起来也不像按钮。正文不截断(§1.3)。
 /// (2026-08-22 拍板:「存成规则」按钮移除——回访砍掉后规则只剩展示+计数,整链路删除。)
 /// 入场动画复用 `CardEntranceModifier` 的 stagger 模式(滚动进入视野时播)。
 struct InsightCardView: View {
     let result: InsightResult
+    /// v6:第一张规则卡标题用一级字号(每步最多一个一级,§1.2)。
+    var isLeadingCard: Bool = false
     /// 腐烂卡的任务点击 → 跳回第 2 步对应卡片(仅 rotting 卡传入非 nil)。
     var onOpenTask: ((UUID) -> Void)? = nil
     /// 腐烂卡任务行尾「不做了」当场动作(2026-09-01 v2,仅 rotting 卡传入)。
     var onAbandonTask: ((UUID) -> Void)? = nil
 
     @State private var appeared = false
-    /// 折叠机制保留但 v1 常空载(§阶段 3):强信号默认展开,其余折叠成「还有 N 个观察」。
-    /// v1 只有两张卡,暂不启用折叠,字段留给规则扩到 4+ 条时接 A/B。
-    @State private var expanded = true
 
     var body: some View {
         RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.md) {
-                HStack(alignment: .top, spacing: WarmSpacing.sm) {
-                    Text(result.headline)
-                        .font(WarmFont.headline(16))
-                        .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
-
-                    Spacer(minLength: WarmSpacing.xs)
-
-                    strengthBadge
-                }
-
-                Text(result.body)
-                    .font(WarmFont.body(14))
-                    .foregroundColor(WarmTheme.textSecondary)
-                    .lineLimit(4)
-                    .minimumScaleFactor(0.7)
+                Text(result.headline)
+                    .font(isLeadingCard ? WarmFont.title(24) : WarmFont.headline(19))
+                    .foregroundColor(WarmTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+
+                // v6 §2 第 3 步:救火/计划卡不渲染 body——标题已有百分比,
+                // 同页出现两次「61%」是重复;其余规则卡 body 照旧(不截断)。
+                if result.id != .reactiveVsPlanned {
+                    Text(result.body)
+                        .font(WarmFont.body(14))
+                        .foregroundColor(WarmTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 vizView
 
@@ -54,15 +49,16 @@ struct InsightCardView: View {
                         .flipsForRightToLeftLayoutDirection(true)
                 }
 
-                HStack(alignment: .bottom) {
+                HStack(alignment: .firstTextBaseline) {
                     Text(result.sampleNote)
                         .font(WarmFont.caption(11))
                         .foregroundColor(WarmTheme.textMuted)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
 
                     Spacer(minLength: WarmSpacing.xs)
+
+                    signalLabel
                 }
             }
         }
@@ -74,17 +70,23 @@ struct InsightCardView: View {
         .accessibilityIdentifier("ReviewFlowInsightCard_\(result.id.rawValue)")
     }
 
-    // MARK: 强度标签(右上)
+    // MARK: 强度(底部样本行右侧,v6)
 
-    private var strengthBadge: some View {
-        Text(strengthText)
-            .font(WarmFont.caption(10))
-            .foregroundColor(badgeColor)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .padding(.horizontal, WarmSpacing.xs)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(badgeColor.opacity(0.12)))
+    /// 灰字 + 信号图标(三档文案不变:信号强/中/数据偏少),一律 `textMuted`,
+    /// 不可点——全局视觉规则 1:不可点的标签不用警示色作底/描边/文字。
+    private var signalLabel: some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "cellbars")
+                .font(.system(size: 11, weight: .semibold))
+                .flipsForRightToLeftLayoutDirection(true)
+
+            Text(strengthText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .font(WarmFont.caption(12))
+        .foregroundColor(WarmTheme.textMuted)
+        .accessibilityElement(children: .combine)
     }
 
     private var strengthText: String {
@@ -92,14 +94,6 @@ struct InsightCardView: View {
         case .high: return String(localized: "review.flow.strength.high")
         case .medium: return String(localized: "review.flow.strength.medium")
         case .lowData: return String(localized: "review.flow.strength.low_data")
-        }
-    }
-
-    private var badgeColor: Color {
-        switch result.strength {
-        case .high: return WarmTheme.urgentText
-        case .medium: return WarmTheme.warningText
-        case .lowData: return WarmTheme.textMuted
         }
     }
 
@@ -113,7 +107,13 @@ struct InsightCardView: View {
         case .rotting(let items):
             RottingTaskListView(items: items, onOpenTask: onOpenTask, onAbandonTask: onAbandonTask)
         case .reactiveVsPlanned(let ratio, let sampleCount):
-            ReactiveRatioBarView(ratio: ratio, sampleCount: sampleCount)
+            // ratio = 救火/总数,两组件数由它精确还原(v6:图例带件数)。
+            let reactive = Int((ratio * Double(sampleCount)).rounded())
+            ReactiveRatioBarView(
+                ratio: ratio,
+                reactiveCount: reactive,
+                plannedCount: sampleCount - reactive
+            )
         case .effortOrdering(let highDays, let otherDays, let highCount, let otherCount):
             EffortOrderingBarsView(
                 highDays: highDays,

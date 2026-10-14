@@ -1,16 +1,15 @@
 import SwiftUI
 
-/// 第 3 步 · 观察(阶段 3;2026-09-01 v2 改版:只留洞察;v3 拍板 7:只读 State)。
+/// 第 3 步 · 观察(阶段 3;2026-09-01 v2 改版:只留洞察;v3 拍板 7:只读 State;
+/// v6 A2 视觉改版:规则卡最前,地板 A/B/C 合成「你的清单」卡)。
 ///
 /// 引擎已在流程启动时跑完(`ReviewFlowState.runInsightEngine`,与
 /// `configureInsightsLadder()` 同一时机——空结果在进本步之前就定好整步跳过,
 /// 不会出现「进了第 3 步再被弹走」的闪屏);本视图只读
 /// `state.rankedResults` / `insightPlaceholders` / `ladderNeedMore`,
 /// 失败态展示错误 + 重试(重试随 `loadInsightContext` 重跑引擎)。
-///
-/// 「历次笔记」卡与「问问自己」输入框已随迁第 5 步(2026-09-02 实施补注:
-/// 收尾带「下次复盘会给你看」承诺,且洞察步被降级跳过时第 3 步整步不出,
-/// 承诺需要收尾位兜底)。
+/// 卡片顺序不承载「谁更重要」的判断(既有口径);出卡条件、冷却、跳步
+/// 逻辑全不变(R6)。
 struct ReviewStepInsights: View {
     @Bindable var state: ReviewFlowState
     let onRetryInsights: () -> Void
@@ -43,45 +42,15 @@ struct ReviewStepInsights: View {
 
     // MARK: 卡片
 
+    /// v6 A2 顺序:规则卡(`rankedResults`)→ 深读卡 →「你的清单」卡(地板
+    /// B/A/C 合并)→ 占位/阶梯提示 → 事实行 → 稀疏声明。代码注释口径不变:
+    /// 顺序不承载重要性;出卡条件全不变(R6)。
     @ViewBuilder
     private func cards(context: InsightContext) -> some View {
-        // 地板层(v4:事实永远算得出来,兜住警报层集体沉默的空屏)先出,
-        // 规则层洞察卡随后——极端模式的警报比事实更值得被先看到时,用户
-        // 可以滚动;两层的相对顺序不承载「谁更重要」的判断。
-        if let fact = state.backlogAgeFact {
-            BacklogAgeFloorCard(
-                fact: fact,
-                liveIDs: state.liveTriageIDs,
-                onAbandonTask: onAbandonTask,
-                onScheduleTask: onScheduleTask,
-                onSplitTask: onSplitTask
-            )
-        }
-
-        // 地板 B(v4 批 4):本期进出——净变化的方向。与第 1 步成绩单的差别
-        // 在语气:这里回答「清单在缩还是在涨」。零进零出 → nil 不渲染。
-        if let flow = state.backlogFlowFact {
-            BacklogFlowFloorCard(fact: flow)
-        }
-
-        // 地板 C(v4 批 3):积压集中在哪——直接指向「该砍哪边」的事实,
-        // 与第 5 步领域提示同口径(问的正是这一块)。
-        if let categoryFact = state.backlogCategoryFact {
-            BacklogCategoryFloorCard(fact: categoryFact)
-        }
-
-        // 脚注(v4 批 2 拍板 5 连带):占位行与最小事实行从「撑起一屏的
-        // 内容」降级为地板块下方的脚注——不再参与整步存活判定;地板与
-        // 规则都空时整步已跳,脚注不再单独出现(无孤儿态)。挂在地板层
-        // **整体**之后而不是地板 A 里面——零积压 + 5–14 档完成时 B/C 仍
-        // 可在场,脚注不该随 A 的 nil 一起消失(v4 复盘审阅发现 5:那正是
-        // v3 审阅发现 1「最小事实行成死代码」的窄化重现)。
-        placeholderSummaryRow
-        ladderHint(context: context)
-
-        ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { _, result in
+        ForEach(Array(state.rankedResults.enumerated()), id: \.element.id) { index, result in
             InsightCardView(
                 result: result,
+                isLeadingCard: index == 0,
                 onOpenTask: result.id == .rotting ? { todoId in
                     // 腐烂卡任务跳回第 2 步对应卡片(§阶段 3)。
                     state.triageFocusID = todoId
@@ -94,16 +63,26 @@ struct ReviewStepInsights: View {
         }
 
         // 深读卡(v5 T5 批 3,D4):仅就绪后整体出现,无骨架屏——nil/失败/
-        // 未接地=整卡不渲染。位置在警报卡之后、中性事实行之前(综合观察
-        // 夹在两者语义层之间)。E5 保证 observation 只含已核实数字。
+        // 未接地=整卡不渲染。E5 保证 observation 只含已核实数字。
         if let deepRead = state.deepReadResult {
             deepReadCard(deepRead)
         }
 
+        // 「你的清单」卡(v6):地板 B(本期进出)→ 地板 A(年龄分布 + 最久
+        // 3 件 + 更多操作)→ 地板 C(积压集中在哪)合成一张卡,段间细分隔线;
+        // 某段 nil 不出该段,三段都 nil 整卡不出。各段内容、文案、当场动作不变。
+        yourListCard
+
+        // 脚注(v4 批 2 拍板 5 连带):占位行与最小事实行是规则层空了才有的
+        // 脚注——不再参与整步存活判定;地板与规则都空时整步已跳,脚注不再
+        // 单独出现(无孤儿态)。
+        placeholderSummaryRow
+        ladderHint(context: context)
+
         // 规则层事实行(v4 批 3 拍板 3:03 中间地带;v5 3-lite 扩 01/05 全档。
-        // 排在洞察卡后——极端模式的警报先说,中性事实收尾;D1 中性样式 =
-        // caption 灰,不用警示色)。D7:与上期相同(signature 命中)的行尾
-        // 追加弱化「与上期相同」后缀——仍重述不折叠(v4 拍板 1)。
+        // 中性样式收尾(D1:caption 灰,不用警示色)。D7:与上期相同
+        // (signature 命中)的行尾追加弱化「与上期相同」后缀——仍重述不折叠
+        // (v4 拍板 1)。
         ForEach(state.insightFactLines, id: \.id) { line in
             HStack(alignment: .firstTextBaseline, spacing: WarmSpacing.xxs) {
                 Text(line.text)
@@ -138,39 +117,85 @@ struct ReviewStepInsights: View {
         }
     }
 
-    /// 深读卡(v5 T5):RecapCard 容器 + 「AI 观察」标题 + badge「来自你的数字」
-    /// + observation 正文 + 底注「由本期已核实的事实生成」。中性样式(D1:
+    // MARK: 「你的清单」卡(v6)
+
+    /// 地板 B/A/C 的组合卡。段序 = B(本期进出,带小标题「上次复盘以来」)
+    /// → A(年龄分布 + 最久 3 件 + 更多操作)→ C(积压集中在哪);分隔线只画
+    /// 在段与段之间(首段紧贴标题)。出段条件与单独成卡时一致(nil = 不出),
+    /// 三段全 nil 整卡不出。
+    @ViewBuilder
+    private var yourListCard: some View {
+        let flow = state.backlogFlowFact
+        let age = state.backlogAgeFact
+        let categoryFact = state.backlogCategoryFact
+        if flow != nil || age != nil || categoryFact != nil {
+            RecapCard {
+                VStack(alignment: .leading, spacing: WarmSpacing.md) {
+                    Text(String(localized: "review.flow.insights.list.title"))
+                        .font(WarmFont.headline(16))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let flow {
+                        BacklogFlowSection(fact: flow)
+                    }
+
+                    if let age {
+                        if flow != nil { listSectionDivider }
+                        backlogAgeSection(age)
+                    }
+
+                    if let categoryFact {
+                        if flow != nil || age != nil { listSectionDivider }
+                        BacklogCategorySection(fact: categoryFact)
+                    }
+                }
+            }
+            .accessibilityIdentifier("ReviewFlowYourListCard")
+        }
+    }
+
+    private var listSectionDivider: some View {
+        Rectangle()
+            .fill(WarmTheme.rowHairline)
+            .frame(height: 1)
+    }
+
+    /// 地板 A 段(点名行按 `liveTriageIDs` 过滤已离场条目,口径见
+    /// `BacklogAgeFloorCard` 原注释)。
+    private func backlogAgeSection(_ fact: InsightEngine.BacklogAgeFact) -> some View {
+        BacklogAgeSection(
+            fact: fact,
+            liveIDs: state.liveTriageIDs,
+            onAbandonTask: onAbandonTask,
+            onScheduleTask: onScheduleTask,
+            onSplitTask: onSplitTask
+        )
+    }
+
+    /// 深读卡(v5 T5;v6 样式对齐 A2):「AI 观察 · 来自你的数字」灰色小标题
+    /// + 正文(不截断)+ 底注「由本期已核实的事实生成」。中性样式(D1:
     /// 不用警示色);VoiceOver 整卡 combine。
     private func deepReadCard(_ data: DeepReadObservationData) -> some View {
         RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.sm) {
-                HStack(alignment: .top, spacing: WarmSpacing.xs) {
+                HStack(spacing: WarmSpacing.xxs) {
                     Text(String(localized: "review.flow.insights.deepread.title"))
-                        .font(WarmFont.headline(15))
-                        .foregroundColor(WarmTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .layoutPriority(1)
 
-                    Spacer(minLength: WarmSpacing.xxs)
+                    Text(verbatim: "·")
 
                     Text(String(localized: "review.flow.insights.deepread.badge"))
-                        .font(WarmFont.caption(10))
-                        .foregroundColor(WarmTheme.textMuted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .padding(.horizontal, WarmSpacing.xs)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().stroke(WarmTheme.textMuted.opacity(0.4), lineWidth: 0.5)
-                        )
                 }
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textMuted)
 
                 Text(data.observation)
-                    .font(WarmFont.body(14))
+                    .font(WarmFont.body(15))
                     .foregroundColor(WarmTheme.textSecondary)
-                    .lineLimit(6)
-                    .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(String(localized: "review.flow.insights.deepread.hint"))
@@ -253,40 +278,34 @@ struct ReviewStepInsights: View {
 
 }
 
-// MARK: - 地板 B · 本期进出(v4 批 4,docs/todo-review-flow-v4.md)
+// MARK: - 地板 B · 本期进出(v4 批 4;v6 并入「你的清单」卡)
 
-/// 两行净变化。第一行**展示数字**(与第 1 步证据行同源的 `weekSummary`
-/// createdCount / total);第二行**方向与依据**——账本差路径给两端
-/// 「积压 P → Q(±D)」,方向由端点自证;窗口法路径只有 delta,给
-/// 「较上次复盘 / 近 7 天 ±D」。只报事实,不带判断。
-/// 复核修订二轮 N1:原先把展示数与方向词塞同一句(「新增 2、完成 22——
-/// 在涨」),两个总体不同源,用户自己一减就与结论矛盾,看起来像 app 坏了;
-/// 拆开后方向词消失,数字永远与 delta 同源。趋势线待 ≥3 期
-/// `ReviewLedger` 攒够再开(批 4 明确不做;账本路径的两端正是趋势线端点)。
-private struct BacklogFlowFloorCard: View {
+/// 两行净变化(v6:不再单独成卡,是「你的清单」卡的段;小标题
+/// 「上次复盘以来」由组合卡提供,与本段展示窗口同口径)。
+/// 第一行**展示数字**(与第 1 步证据行同源的 `weekSummary` createdCount /
+/// total);第二行**方向与依据**——账本差路径给两端「积压 P → Q(±D)」,
+/// 方向由端点自证;窗口法路径只有 delta。只报事实,不带判断。
+/// 复核修订二轮 N1:展示数与方向分家,两个总体不同源,塞同一句会互相打架。
+private struct BacklogFlowSection: View {
     let fact: ReviewFlowState.BacklogFlowFact
 
     var body: some View {
-        RecapCard {
-            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                Text(String(
-                    localized: "review.floor.backlog_flow.line_\(fact.createdCount)_\(fact.completedCount)"
-                ))
-                    .font(WarmFont.body(14))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+            ReviewEyebrow(text: String(localized: "review.flow.recap.stats.window"))
 
-                Text(secondLine)
-                    .font(WarmFont.caption(12))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(String(
+                localized: "review.floor.backlog_flow.line_\(fact.createdCount)_\(fact.completedCount)"
+            ))
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(secondLine)
+                .font(WarmFont.caption(12))
+                .foregroundColor(WarmTheme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityIdentifier("ReviewFlowBacklogFlowFloor")
+        .accessibilityElement(children: .combine)
     }
 
     /// 第二行:账本差路径「积压 P → Q(±D)」两端自证;窗口法(首评/旧
@@ -305,49 +324,43 @@ private struct BacklogFlowFloorCard: View {
     }
 }
 
-// MARK: - 地板 C · 积压集中在哪(v4 批 3,docs/todo-review-flow-v4.md)
+// MARK: - 地板 C · 积压集中在哪(v4 批 3;v6 并入「你的清单」卡)
 
 /// 最集中分类一行 + 对照组一行(本期完成过、当前零积压的领域)。只报事实;
-/// 口径说明由上方地板 A 的 sample_note 承载(A 恒先渲染且必在场)。
-private struct BacklogCategoryFloorCard: View {
+/// 口径说明由地板 A 段的 sample_note 承载(A 段必在场时口径自然说清)。
+private struct BacklogCategorySection: View {
     let fact: InsightEngine.BacklogCategoryFact
 
     var body: some View {
-        RecapCard {
-            VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-                Text(String(
-                    localized: "review.floor.backlog_focus.line_\(fact.focusCategory.displayName)_\(fact.focusCount)_\(fact.focusOldestAgeDays)"
-                ))
-                    .font(WarmFont.body(14))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+            Text(String(
+                localized: "review.floor.backlog_focus.line_\(fact.focusCategory.displayName)_\(fact.focusCount)_\(fact.focusOldestAgeDays)"
+            ))
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                if let contrast = fact.contrastCategory {
-                    Text(String(
-                        localized: "review.floor.backlog_focus.contrast_\(contrast.displayName)_\(fact.contrastCount)"
-                    ))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.textMuted)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            if let contrast = fact.contrastCategory {
+                Text(String(
+                    localized: "review.floor.backlog_focus.contrast_\(contrast.displayName)_\(fact.contrastCount)"
+                ))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .accessibilityIdentifier("ReviewFlowBacklogFocusFloor")
+        .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - 地板 A · 积压年龄(v4 批 1,docs/todo-review-flow-v4.md)
+// MARK: - 地板 A · 积压年龄(v4 批 1;v6 并入「你的清单」卡)
 
 /// 三档分布条(0–7 / 8–20 / 21+)+ 最老 3 条点名(每条带「不做了 / 排下周 /
 /// 拆小」当场动作)。只报事实、零值不渲染;腐烂卡本期展示时点名让位
 /// (`BacklogAgeFact.oldestItems` 为空),只剩分布条。点名行是引擎跑时快照,
 /// 按「仍在卡堆 ∪ 尾部」过滤(`liveIDs`)——已处理的与批量推「稍后」的
 /// 一起消失,快照不回改;整批撤销后随尾部回流自然重现。
-private struct BacklogAgeFloorCard: View {
+private struct BacklogAgeSection: View {
     let fact: InsightEngine.BacklogAgeFact
     /// 仍在流程内(卡堆 ∪ 尾部)的条目 id。不用 `processedIDs`:批量推
     /// 「稍后」不进 processedIDs(拍板 4),只按它过滤会点名已推稍后的条目,
@@ -366,47 +379,39 @@ private struct BacklogAgeFloorCard: View {
     }
 
     var body: some View {
-        RecapCard {
-            VStack(alignment: .leading, spacing: WarmSpacing.md) {
-                Text(String(localized: "review.floor.backlog_age.headline_\(fact.total)"))
-                    .font(WarmFont.headline(16))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: WarmSpacing.md) {
+            Text(String(localized: "review.floor.backlog_age.headline_\(fact.total)"))
+                .font(WarmFont.headline(16))
+                .foregroundColor(WarmTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                distributionBar
-                legendRow
+            distributionBar
+            legendRow
 
-                // 「说真话」行:21+ 档为 0 时不开一扇锁着的门,报最久的实际天数
-                // (v4 方案;腐烂卡自己有话可说时不再叠加,判定收在 fact 里)。
-                // v5.1 冷启动拍板:最久 0 天(全部都是本用户日新建,典型=刚下载
-                // 排好明天计划就进复盘的新用户)换 all_recent 句式——「最久的
-                // 放了 0 天」数字诚实但读着像故障;≥1 天维持原句。
-                if fact.showsNoOldLine {
-                    Text(String(localized: fact.oldestAgeDays == 0
-                        ? "review.floor.backlog_age.all_recent_\(fact.total)"
-                        : "review.floor.backlog_age.no_old_\(fact.total)_\(fact.oldestAgeDays)"))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.textMuted)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if !liveItems.isEmpty {
-                    oldestList
-                }
-
-                // 口径说明与腐烂卡同款(§2.2):总数与首页「待处理」差规律任务时,
-                // 这里说清楚,数字不打架。
-                Text(String(localized: "review.insight.rotting.sample_note_\(fact.total)"))
-                    .font(WarmFont.caption(11))
+            // 「说真话」行:21+ 档为 0 时不开一扇锁着的门,报最久的实际天数
+            // (v4 方案;腐烂卡自己有话可说时不再叠加,判定收在 fact 里)。
+            // v5.1 冷启动拍板:最久 0 天(全部都是本用户日新建,典型=刚下载
+            // 排好明天计划就进复盘的新用户)换 all_recent 句式——「最久的
+            // 放了 0 天」数字诚实但读着像故障;≥1 天维持原句。
+            if fact.showsNoOldLine {
+                Text(String(localized: fact.oldestAgeDays == 0
+                    ? "review.floor.backlog_age.all_recent_\(fact.total)"
+                    : "review.floor.backlog_age.no_old_\(fact.total)_\(fact.oldestAgeDays)"))
+                    .font(WarmFont.caption(12))
                     .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if !liveItems.isEmpty {
+                oldestList
+            }
+
+            // 口径说明与腐烂卡同款(§2.2):总数与首页「待处理」差规律任务时,
+            // 这里说清楚,数字不打架。
+            Text(String(localized: "review.insight.rotting.sample_note_\(fact.total)"))
+                .font(WarmFont.caption(11))
+                .foregroundColor(WarmTheme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityIdentifier("ReviewFlowBacklogAgeFloor")
     }
