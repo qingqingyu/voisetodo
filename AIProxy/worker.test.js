@@ -5747,6 +5747,95 @@ test("配额未启用时空结果不产生退款噪声", async () => {
   });
 });
 
+// ─── 流式空结果退款(2026-10 修复): 主录音路径(流式)与非流式同口径 ───
+
+test("流式 todos=[] → 退 device 额度", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "3",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-stream-empty", "X-Local-Date": "2026-05-26" };
+    const response = await handleRequest(
+      request({ transcript: "纯闲聊", locale: "zh-Hans", stream: true }, headers),
+      env,
+      {},
+      async () => sseResponse([
+        `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: '{"todos":[],"ignored":"最近好累"}' } })}`,
+        `data: ${JSON.stringify({ type: "message_stop" })}`
+      ])
+    );
+    assert.equal(response.status, 200);
+    // 必须真正消费 body——空结果退款发生在流末尾(onSuccess,enqueue [DONE] 之前)
+    const body = await response.text();
+    assert.ok(body.includes("data: [DONE]"));
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应已写入 quota key");
+    assert.equal(kv.values.get(quotaKey), "0", "流式空结果应退款归零");
+  });
+});
+
+test("流式坏 JSON(fullText 拼不出合法 JSON)→ 退 device 额度", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "3",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-stream-bad", "X-Local-Date": "2026-05-26" };
+    const response = await handleRequest(
+      request({ transcript: "坏流输出", locale: "zh-Hans", stream: true }, headers),
+      env,
+      {},
+      async () => sseResponse([
+        `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: "not json " } })}`,
+        `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: "at all" } })}`,
+        `data: ${JSON.stringify({ type: "message_stop" })}`
+      ])
+    );
+    assert.equal(response.status, 200);
+    await response.text();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应已写入 quota key");
+    assert.equal(kv.values.get(quotaKey), "0", "流式坏 JSON 应退款归零");
+  });
+});
+
+test("流式正常结果(todos 非空)→ 不退款(回归)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "3",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-stream-ok", "X-Local-Date": "2026-05-26" };
+    const response = await handleRequest(
+      request({ transcript: "买牛奶", locale: "zh-Hans", stream: true }, headers),
+      env,
+      {},
+      async () => sseResponse([
+        `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: extractionJSON("买牛奶") } })}`,
+        `data: ${JSON.stringify({ type: "message_stop" })}`
+      ])
+    );
+    assert.equal(response.status, 200);
+    await response.text();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应已写入 quota key");
+    assert.equal(kv.values.get(quotaKey), "1", "正常结果照常扣费,不退款");
+  });
+});
+
 // ─── P3: scheduled health check ────────────────────────────────────────
 
 test("handleScheduled: 上游 200 时调 recordSuccess", async () => {

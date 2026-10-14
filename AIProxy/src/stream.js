@@ -25,6 +25,11 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
   let chunkCount = 0;
   let emittedCount = 0;
   let emittedChars = 0;
+  // 全文累积(原始增量拼接,可能带 markdown fence):流式响应头早已发出,唯一能判断
+  // 「这次流到底给没给出待办」的位置是流末尾——调用方(worker.js onSuccess)拿
+  // fullText 做空结果判定(todos=[] → 退 device 额度)。上限受 provider max_tokens
+  // 与单行 64KB 限制约束,内存可忽略。
+  let fullText = "";
   const startedAt = Date.now();
 
   return new ReadableStream({
@@ -53,6 +58,7 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
             if (normalized.text) {
               emittedCount += 1;
               emittedChars += normalized.text.length;
+              fullText += normalized.text;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: normalized.text })}\n\n`));
             }
             if (normalized.done) {
@@ -98,7 +104,11 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
       }
 
       if (sendDone) {
-        await runLifecycleCallback("success", lifecycle.onSuccess, provider, requestContext);
+        await runLifecycleCallback("success", lifecycle.onSuccess, provider, requestContext, null, {
+          emittedCount,
+          emittedChars,
+          fullText
+        });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
         logInfo("proxy.provider.stream_success", {
@@ -108,6 +118,7 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
           chunkCount,
           emittedCount,
           emittedChars,
+          fullTextChars: fullText.length,
           durationMs: Date.now() - startedAt
         });
       }
@@ -115,9 +126,10 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
   });
 }
 
-// stats = { emittedCount, emittedChars }:已经推给客户端的 todo 数 / 字符数。
-// 调用方(worker.js 的 onFailure)据此判断"响应头已 200 但一个字都没给" vs
-// "已经给了部分可用结果",前者要退配额、后者不退。
+// stats = { emittedCount, emittedChars, fullText }:已经推给客户端的 todo 数 /
+// 字符数 / 完整文本拼接。调用方(worker.js)据此判断:
+//   - onFailure:"响应头已 200 但一个字都没给" vs "已给部分可用结果",前者退配额
+//   - onSuccess:fullText 解析不出非空 todos(空结果)→ 退 device 配额(2026-10 修复)
 async function runLifecycleCallback(kind, callback, provider, requestContext, error, stats) {
   if (!callback) return;
   try {

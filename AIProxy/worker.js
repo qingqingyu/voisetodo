@@ -390,7 +390,22 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         result.adapter,
         requestContext,
         {
-          onSuccess: result.confirmSuccess,
+          // 空结果退款(2026-10 修复):流末尾拿 stats.fullText 判定,解析不出非空
+          // todos = 用户没拿到价值,退 device 额度——与非流式路径同口径。响应头
+          // (含 X-Quota-*)早已发出,退款不反映在本次响应,客户端下一次请求拿到
+          // 修正后的数值(与 onFailure 退款同一先例)。发生在 enqueue [DONE] 之前,
+          // 空结果场景多一次 DO 往返(约 10-50ms),用户等的是空列表,可接受。
+          // 回调抛错会被 runLifecycleCallback 内部 catch,不会卡死流。
+          onSuccess: async (_error, stats) => {
+            await result.confirmSuccess();
+            if (mode !== "extract") return;
+            const outcome = classifyExtractOutcome(stats?.fullText ?? "");
+            if (!outcome.hasTodos) {
+              const reason = outcome.parseOk ? "empty_todos" : "unparseable_output";
+              logInfo("proxy.extract.empty_outcome", { ...requestContext, reason, stream: true, fullTextChars: (stats?.fullText ?? "").length });
+              await refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx, quotaState, reason);
+            }
+          },
           // 流已经开始后失败:响应头(含 X-Quota-*)早就发出去了,无法改。
           // 只有"一个字都没给"才等于用户什么也没拿到 → 退配额。
           // emittedCount > 0 说明客户端已收到可用 todo,而客户端的 partial_fallback
