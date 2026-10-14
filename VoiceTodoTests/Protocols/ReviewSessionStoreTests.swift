@@ -165,6 +165,62 @@ final class ReviewSessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions[0].ledger.pinnedCount, 1)
     }
 
+    /// v6 §3.2:旧 payload 无 `voiceNoteIsUneditedAIDraft` 键 → 解码为 nil
+    /// (视为用户写的,不挂「AI 草稿」chip)。
+    func testOldPayloadWithoutDraftFlagDecodesAsNil() throws {
+        let id = UUID()
+        let json = """
+        [{
+          "id": "\(id.uuidString)",
+          "completedAt": "2026-08-01T09:00:00Z",
+          "periodStart": "2026-07-25T00:00:00Z",
+          "periodEnd": "2026-08-01T00:00:00Z",
+          "voiceNote": "上期写过",
+          "ledger": {
+            "inputCount": 3, "remainingCount": 1, "scheduledCount": 1, "todayCount": 0,
+            "abandonedCount": 1, "splitCount": 0, "pinnedCount": 1
+          },
+          "shownInsights": []
+        }]
+        """
+        let result = ReviewSessionStore.parse(Data(json.utf8))
+        guard case .success(let sessions) = result else {
+            return XCTFail("旧 payload 应解码成功: \(result)")
+        }
+        XCTAssertEqual(sessions[0].voiceNote, "上期写过")
+        XCTAssertNil(sessions[0].voiceNoteIsUneditedAIDraft, "旧 payload 无该键 → nil = 视为用户写的")
+    }
+
+    /// v6 §3.2:新标记的读写往返(true / false / nil 三态各自存活)。
+    func testDraftFlagRoundTripsThroughStore() throws {
+        let notes: [(note: String?, flag: Bool?)] = [
+            ("草稿原样", true),
+            ("用户改过", false),
+            (nil, nil),
+        ]
+        let sessions = notes.map { note, flag in
+            ReviewSession(
+                completedAt: Date(),
+                periodStart: Date(),
+                periodEnd: Date(),
+                voiceNote: note,
+                voiceNoteIsUneditedAIDraft: flag,
+                ledger: ReviewLedger(
+                    inputCount: 1, remainingCount: 0, scheduledCount: 1, todayCount: 0,
+                    abandonedCount: 0, splitCount: 0, pinnedCount: 0
+                ),
+                shownInsights: []
+            )
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(sessions)
+        guard case .success(let decoded) = ReviewSessionStore.parse(data) else {
+            return XCTFail("编码后应可解码")
+        }
+        XCTAssertEqual(decoded.map(\.voiceNoteIsUneditedAIDraft), [true, false, nil])
+    }
+
     // MARK: - 冷却接真历史(§2.4)
 
     private func cooldownInput(

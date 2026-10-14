@@ -124,6 +124,12 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
     let periodEnd: Date
     /// 第 3 步「问问自己」的回答(空输入存 nil)。
     let voiceNote: String?
+    /// 该笔记是否是**原样保存的 AI 草稿**(v6 §3.2):true = 收尾时笔记与深读
+    /// 草稿 trim 后完全相同;false = 用户写/改过;nil = 没写笔记(或旧 payload,
+    /// 合成 Codable 对 Optional 走 decodeIfPresent,旧会话解码为 nil = 视为
+    /// 用户写的)。展示端据此挂「AI 草稿(你保留的)」chip——v5 D9 只呈现
+    /// 用户确认内容或明示来源,原样草稿冒充「用户写的」违背该口径。
+    let voiceNoteIsUneditedAIDraft: Bool?
     /// 当期完成数(一次性任务口径;洞察步被降级跳过时无法统计 → nil)。
     /// 旧会话无此字段,解码为 nil。
     let completedCount: Int?
@@ -145,6 +151,7 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
         periodStart: Date,
         periodEnd: Date,
         voiceNote: String?,
+        voiceNoteIsUneditedAIDraft: Bool? = nil,
         completedCount: Int? = nil,
         topics: [ReviewTopic]? = nil,
         ledger: ReviewLedger,
@@ -156,6 +163,7 @@ struct ReviewSession: Codable, Sendable, Equatable, Identifiable {
         self.periodStart = periodStart
         self.periodEnd = periodEnd
         self.voiceNote = voiceNote
+        self.voiceNoteIsUneditedAIDraft = voiceNoteIsUneditedAIDraft
         self.completedCount = completedCount
         self.topics = topics
         self.ledger = ledger

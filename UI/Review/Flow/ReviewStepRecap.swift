@@ -16,6 +16,9 @@ struct ReviewStepRecap: View {
     /// previousSessions 取。nil(上期没写)时整块隐藏——没写就没得对质,
     /// 不放占位。版面顺序=先本期事实(Hero/证据行)后上期原话(D2)。
     var lastNote: String? = nil
+    /// 上期笔记是否为原样保存的 AI 草稿(v6 §3.2):true 时小标题旁挂
+    /// 「AI 草稿(你保留的)」chip——原样草稿冒充「用户写的」违背 v5 D9。
+    var lastNoteIsUneditedAIDraft: Bool = false
     /// 对质区展开态(默认收 4 行,点击展开全文——长笔记的「原话」不能截死,
     /// 对质价值就在完整原话)。
     @State private var noteExpanded = false
@@ -108,11 +111,19 @@ struct ReviewStepRecap: View {
     /// 布局规则),点按展开/收起;VoiceOver 整块 combine 成一句。
     private func lastNoteCard(_ note: String) -> some View {
         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
-            Text(String(localized: "review.flow.recap.last_note.title"))
-                .font(WarmFont.caption(12))
-                .foregroundColor(WarmTheme.textMuted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            HStack(spacing: WarmSpacing.sm) {
+                Text(String(localized: "review.flow.recap.last_note.title"))
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
+
+                // §3.2:原样保存的 AI 草稿在小标题旁挂来源 chip。
+                if lastNoteIsUneditedAIDraft {
+                    AIKeptDraftChip()
+                }
+            }
 
             HStack(alignment: .top, spacing: WarmSpacing.sm) {
                 RoundedRectangle(cornerRadius: 1, style: .continuous)

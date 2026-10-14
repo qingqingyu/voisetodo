@@ -374,6 +374,9 @@ struct ReviewNotesEntry: Equatable, Identifiable {
     let date: Date
     let note: String
     let handledCount: Int
+    /// 是否为原样保存的 AI 草稿(v6 §3.2):展示端据此挂「AI 草稿(你保留的)」
+    /// chip。旧 payload 无标记(nil)按用户写的处理。
+    let isUneditedAIDraft: Bool
     /// 语义对照关注点(收尾后异步回写;nil = 未提取/失败/旧会话)。
     let topics: [ReviewTopic]?
 
@@ -390,6 +393,7 @@ struct ReviewNotesEntry: Equatable, Identifiable {
                 date: session.completedAt,
                 note: note,
                 handledCount: session.ledger.inputCount,
+                isUneditedAIDraft: session.voiceNoteIsUneditedAIDraft ?? false,
                 topics: session.topics
             )
         }
@@ -397,6 +401,26 @@ struct ReviewNotesEntry: Equatable, Identifiable {
         .sorted { lhs, rhs in
             lhs.date == rhs.date ? lhs.id.uuidString > rhs.id.uuidString : lhs.date > rhs.date
         }
+    }
+}
+
+/// 「AI 草稿(你保留的)」chip(v6 §3.2):标记原样保存的 AI 草稿,不复读
+/// 「用户写的」。灰底灰字(全局视觉规则 1:不可点标签不用珊瑚/警示色)。
+/// `ReviewNotesListView`(两页共用)与第 1 步「上期你写了」小标题旁共用。
+struct AIKeptDraftChip: View {
+    var body: some View {
+        Text(String(localized: "review.notes.ai_kept"))
+            .font(WarmFont.caption(11))
+            .foregroundColor(WarmTheme.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, WarmSpacing.sm)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                    .fill(WarmTheme.subtleControlBackground)
+            )
+            .accessibilityLabel(String(localized: "review.notes.ai_kept"))
     }
 }
 
@@ -426,6 +450,12 @@ struct ReviewNotesListView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .layoutPriority(1)
+
+                // §3.2:原样保存的 AI 草稿在日期旁挂来源 chip(两页共用本视图,
+                // 标记在回顾页同样显示是预期行为)。
+                if entry.isUneditedAIDraft {
+                    AIKeptDraftChip()
+                }
 
                 Text(String(localized: "review.notes.row.handled_\(entry.handledCount)"))
                     .font(WarmFont.caption(11))

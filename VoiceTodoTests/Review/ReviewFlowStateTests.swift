@@ -519,6 +519,60 @@ extension ReviewFlowStateTests {
         XCTAssertTrue(ReviewNotesEntry.make(from: []).isEmpty)
     }
 
+    /// `ReviewNotesEntry.make` 透传 AI 草稿标记(v6 §3.2):true 的条目带
+    /// chip;nil(旧 payload)按 false——展示端单一口径「有标记才挂 chip」。
+    /// 夹具日期拉开一天,避开同刻 tie-break 的 id 定序(排序是新→旧)。
+    func testReviewNotesEntryMakeCarriesAIDraftFlag() {
+        func flaggedSession(_ note: String, flag: Bool?, daysAgo: Int) -> ReviewSession {
+            ReviewSession(
+                completedAt: Date(timeIntervalSinceNow: -Double(daysAgo) * 86_400),
+                periodStart: Date(),
+                periodEnd: Date(),
+                voiceNote: note,
+                voiceNoteIsUneditedAIDraft: flag,
+                ledger: ReviewLedger(
+                    inputCount: 1, remainingCount: 0, scheduledCount: 1, todayCount: 0,
+                    abandonedCount: 0, splitCount: 0, pinnedCount: 0
+                ),
+                shownInsights: []
+            )
+        }
+        let entries = ReviewNotesEntry.make(from: [
+            flaggedSession("旧会话", flag: nil, daysAgo: 2),
+            flaggedSession("用户写的", flag: false, daysAgo: 1),
+            flaggedSession("草稿原样", flag: true, daysAgo: 0),
+        ])
+        XCTAssertEqual(entries.map(\.note), ["草稿原样", "用户写的", "旧会话"], "新→旧")
+        XCTAssertEqual(entries.map(\.isUneditedAIDraft), [true, false, false], "nil(旧 payload)按用户写的处理")
+    }
+
+    /// buildSession 的 AI 草稿三态(v6 §3.2):原样草稿 true / 改过 false /
+    /// 空 nil。比对口径 = trim 后完全相同。
+    func testBuildSessionFlagsUneditedAIDraft() {
+        let draft = DeepReadObservationData(observation: "obs", draft: "  工作占了 12 件,下周先放下 ")
+
+        // 没写笔记 → nil。
+        let empty = ReviewFlowState(todos: [])
+        XCTAssertNil(empty.buildSession(completedAt: Date(), finalTodos: []).voiceNoteIsUneditedAIDraft)
+
+        // 预填原样保存(空白差异不算改动,trim 后相同)→ true。
+        let kept = ReviewFlowState(todos: [])
+        kept.recordDeepReadResult(draft)
+        kept.voiceAnswerText = " 工作占了 12 件,下周先放下 \n"
+        XCTAssertTrue(kept.buildSession(completedAt: Date(), finalTodos: []).voiceNoteIsUneditedAIDraft!)
+
+        // 用户改过 → false。
+        let edited = ReviewFlowState(todos: [])
+        edited.recordDeepReadResult(draft)
+        edited.voiceAnswerText = "工作占了 12 件,下周想先放下别的"
+        XCTAssertEqual(edited.buildSession(completedAt: Date(), finalTodos: []).voiceNoteIsUneditedAIDraft, false)
+
+        // 没有深读草稿(降级)但写了笔记 → false(用户写的)。
+        let noDraft = ReviewFlowState(todos: [])
+        noDraft.voiceAnswerText = "全是自己写的"
+        XCTAssertEqual(noDraft.buildSession(completedAt: Date(), finalTodos: []).voiceNoteIsUneditedAIDraft, false)
+    }
+
     func testBuildSessionMapsLedgerNoteAndInsights() {
         let now = Date()
         let state = ReviewFlowState(todos: [])

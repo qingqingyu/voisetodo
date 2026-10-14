@@ -1011,9 +1011,19 @@ final class ReviewFlowState {
     /// 不做长度裁剪(收起=4 行、长文展开由视图层 `lineLimit` 承担)。
     /// 提取为静态纯函数供容器调用与单测(S6:对质区 nil/短/长三态)。
     static func lastConfrontationNote(sessions: [ReviewSession]) -> String? {
-        sessions.last(where: { note in
+        lastConfrontationEntry(sessions: sessions)?.note
+    }
+
+    /// D2 对质区的完整数据(v6 §3.2):最近一条非空笔记 + 它是否为原样保存的
+    /// AI 草稿(第 1 步「上期你写了」小标题旁挂来源 chip 用)。选择逻辑与
+    /// `lastConfrontationNote` 单一来源。
+    static func lastConfrontationEntry(sessions: [ReviewSession]) -> (note: String, isUneditedAIDraft: Bool)? {
+        guard let session = sessions.last(where: { note in
             (note.voiceNote ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        })?.voiceNote?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }), let note = session.voiceNote?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return nil
+        }
+        return (note: note, isUneditedAIDraft: session.voiceNoteIsUneditedAIDraft ?? false)
     }
 
     /// 收尾落库:从 State 组装 `ReviewSession`(`ReviewLedger` 从 `ledger` 映射)。
@@ -1033,6 +1043,10 @@ final class ReviewFlowState {
             periodStart: periodStart,
             periodEnd: periodEnd,
             voiceNote: trimmedNote.isEmpty ? nil : trimmedNote,
+            // v6 §3.2:原样保存的 AI 草稿要能被识别——保存的笔记 trim 后与深读
+            // 草稿 trim 后完全相同 → true(下期展示端挂「AI 草稿(你保留的)」chip);
+            // 改过 → false;没写 → nil(旧 payload 同为 nil,视为用户写的)。
+            voiceNoteIsUneditedAIDraft: uneditedAIDraftFlag(note: trimmedNote),
             // 洞察步被降级跳过时原料为 nil → 完成数不可统计,存 nil(2026-08-23)。
             completedCount: insightContextValue?.completedEvents.count,
             ledger: ReviewLedger(
@@ -1056,6 +1070,17 @@ final class ReviewFlowState {
             // 无事实行存 nil(旧 payload 同为 nil,口径一致)。
             factSignatures: insightFactLines.isEmpty ? nil : insightFactLines.map(\.signature)
         )
+    }
+
+    /// §3.2 的三态判定(纯函数供单测):笔记为空 → nil;与深读草稿(同样
+    /// trim 后)完全相同 → true;其余 → false。
+    private func uneditedAIDraftFlag(note trimmedNote: String) -> Bool? {
+        guard !trimmedNote.isEmpty else { return nil }
+        guard let draft = deepReadResult?.draft
+                .trimmingCharacters(in: .whitespacesAndNewlines), !draft.isEmpty else {
+            return false
+        }
+        return trimmedNote == draft
     }
 }
 
@@ -1326,8 +1351,10 @@ struct ReviewFlowView: View {
                     (completed: outcome.completed, pending: outcome.pending)
                 },
                 // D2(v5):上期笔记原话对质(提取逻辑收口在
-                // `lastConfrontationNote(sessions:)`,供单测 S6 三态)。
-                lastNote: ReviewFlowState.lastConfrontationNote(sessions: state.previousSessions)
+                // `lastConfrontationEntry(sessions:)`,供单测 S6 三态;
+                // §3.2 连带把「是否原样 AI 草稿」一起带给第 1 步)。
+                lastNote: ReviewFlowState.lastConfrontationEntry(sessions: state.previousSessions)?.note,
+                lastNoteIsUneditedAIDraft: ReviewFlowState.lastConfrontationEntry(sessions: state.previousSessions)?.isUneditedAIDraft ?? false
             )
         case .triage:
             ReviewStepTriage(
