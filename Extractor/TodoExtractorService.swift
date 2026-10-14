@@ -313,10 +313,11 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
             }
             VoiceTodoLog.extractor.info("deepread.success id=\(readID, privacy: .public) numbers=\(decoded.numbers.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             // E11:AI 草稿入笔记设长度上限(模型违约超长在此硬顶,prompt 的
-            // ≤20 字约束不是防线)。
+            // ≤20 字约束不是防线);v6 §3.1:超长按词/句边界截断,无断点丢弃
+            // (不显示半截词),见 `DeepReadConfig.clampedDraft`。
             return DeepReadObservationData(
                 observation: decoded.observation,
-                draft: String(decoded.draft.prefix(DeepReadConfig.draftMaxLength))
+                draft: DeepReadConfig.clampedDraft(decoded.draft)
             )
         } catch {
             VoiceTodoLog.extractor.error("deepread.failed id=\(readID, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")

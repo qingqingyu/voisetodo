@@ -38,6 +38,41 @@ enum DeepReadConfig {
     /// 与手打输入同尺」——手打路径无硬限,此值是防模型违约超长输出的
     /// 客户端硬顶,宽松于 prompt 的 ≤20 字,覆盖三语最长的日文约束)。
     static let draftMaxLength = 60
+
+    /// 超长草稿的合法截断点(v6 §3.1):句末标点 / 空白 / 中日文标点。
+    /// 英文提示词允许 ≤15 词,常超 60 字符,`prefix` 硬截会出「the weig」
+    /// 这类半截词——截断必须落在词/句边界上。
+    private static let draftBreakCharacters: Set<Character> = [
+        // 句末标点
+        "。", ".", "!", "！", "?", "？", "…",
+        // 中日文标点(逗号、顿号、分号、冒号、右括号引号)
+        "，", ",", "、", "；", ";", "：", ":",
+        "）", ")", "」", "』", "》", "】",
+        // 空白(半角/全角空格、换行)
+        " ", "　", "\n", "\t",
+    ]
+
+    /// 草稿长度硬顶(v6 §3.1):未超长原样返回;超长时在**上限内**最后一个
+    /// 断点字符(含该字符)截断并去尾部空白;上限内找不到断点 → 空串
+    /// (丢弃整条,不显示半截词)。不改提示词、不改上限数值(E11 与手打同尺)。
+    static func clampedDraft(_ draft: String) -> String {
+        guard draft.count > draftMaxLength else { return draft }
+        let head = draft.prefix(draftMaxLength)
+        guard let breakIndex = head.lastIndex(where: { draftBreakCharacters.contains($0) }) else {
+            return ""
+        }
+        let truncated = head[...breakIndex]
+        return trimmedTrailingWhitespace(truncated)
+    }
+
+    /// 去尾部空白(断点是空格/换行时,截完后尾巴上不该再挂着空白)。
+    private static func trimmedTrailingWhitespace(_ text: Substring) -> String {
+        var result = text
+        while let last = result.last, last.isWhitespace {
+            result = result.dropLast()
+        }
+        return String(result)
+    }
 }
 
 /// AI 提取的一条关注点草稿:text 保留用户原话关键短语;category/timeBucket 是
