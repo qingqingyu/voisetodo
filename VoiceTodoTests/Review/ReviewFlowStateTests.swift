@@ -660,6 +660,27 @@ extension ReviewFlowStateTests {
         XCTAssertNil(state.lastPinnedOutcome)
     }
 
+    /// v6 逐条列表快照:与结局计数同口径(已删除不列);排序 = 已完成在前
+    /// (A2 原型示例序),组内保持快照序。
+    func testLastPinnedTasksSnapshotAndOrdering() {
+        let openFirst = todo("还开着的 A")
+        let done = todo("做完的", isCompleted: true)
+        let openSecond = todo("还开着的 B")
+        let deletedID = UUID()
+        let state = ReviewFlowState(
+            todos: [openFirst, done, openSecond],
+            lastPinnedIDs: [openFirst.id, done.id, openSecond.id, deletedID]
+        )
+
+        XCTAssertEqual(
+            state.lastPinnedTasks.map(\.title),
+            ["做完的", "还开着的 A", "还开着的 B"],
+            "已完成在前,组内保持快照序;已删除的置顶 id 不列(与计数同口径)"
+        )
+        XCTAssertEqual(state.lastPinnedTasks.map(\.isCompleted), [true, false, false])
+        XCTAssertEqual(state.lastPinnedTasks.count, state.lastPinnedOutcome!.completed + state.lastPinnedOutcome!.pending)
+    }
+
     // MARK: 领域提示(v4 批 3 改口:问积压最集中的领域,与地板 C 同口径;
     // 2026-08-25 的历史会话数轮换退役)
 

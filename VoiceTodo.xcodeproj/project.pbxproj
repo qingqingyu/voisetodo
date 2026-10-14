@@ -174,6 +174,7 @@
 		9DB44F03B96C73F8E7AF5EDD /* ScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1FD54AB7296F161F504393 /* ScreenshotUITests.swift */; };
 		9E85428D6867C0A1C58EB615 /* ReviewAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118F9CBFB082C7C28CF837C9 /* ReviewAggregator.swift */; };
 		9E91B10EA0BBC7B3473E8730 /* ReactiveVsPlannedRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3054450B6874574D7087EDEB /* ReactiveVsPlannedRule.swift */; };
+		A16FF1E291F7B7DDCF21D574 /* ReviewFlowVisuals.swift in Sources */ = {isa = PBXBuildFile; fileRef = D117058AA5646F72A17BE872 /* ReviewFlowVisuals.swift */; };
 		A2037F0570F3E95ABFB14393 /* TodoWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8139C012D57AB42C26331270 /* TodoWidgetView.swift */; };
 		A359FD2543D6B2C2404A29BC /* AddTodoIntentQuotaDialogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB3FB790A1CE8BDBAB13B69F /* AddTodoIntentQuotaDialogTests.swift */; };
 		A4690AF940DA8DC273FCF293 /* StoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF15A5145BE507157378E89D /* StoreTests.swift */; };
@@ -503,6 +504,7 @@
 		CF66639D7D5600F7F4DEEB6E /* ExpandMonthHintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandMonthHintView.swift; sourceTree = "<group>"; };
 		D10503F26732612C40E41705 /* QueryTodosIntentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryTodosIntentView.swift; sourceTree = "<group>"; };
 		D10F79656D9ED5A820EBC053 /* TranscriptProcessingFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptProcessingFlowTests.swift; sourceTree = "<group>"; };
+		D117058AA5646F72A17BE872 /* ReviewFlowVisuals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFlowVisuals.swift; sourceTree = "<group>"; };
 		D1C4931B1519F494E94C7C73 /* BottomSafeAreaReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSafeAreaReader.swift; sourceTree = "<group>"; };
 		D240169FCFEEABE325D822BB /* TodoSpanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoSpanTests.swift; sourceTree = "<group>"; };
 		D24795F4689C91579626B05E /* ActionButtonCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButtonCapability.swift; sourceTree = "<group>"; };
@@ -703,6 +705,7 @@
 				3CD65717391B25A5E68E1C18 /* InsightCardView.swift */,
 				D5E01F24C96AFB1508D0C1DD /* InsightVizViews.swift */,
 				83A47D14BAA1CD85069C0793 /* ReviewFlowView.swift */,
+				D117058AA5646F72A17BE872 /* ReviewFlowVisuals.swift */,
 				05466B447CD1A05AA58CB6D0 /* ReviewMicRow.swift */,
 				E216C999522CD36DCFD3EB8C /* ReviewStepCommit.swift */,
 				7345620F56FD794E9FF96EC0 /* ReviewStepInsights.swift */,
@@ -1318,6 +1321,7 @@
 				9A7AE69A8FBDF842C66C6FEA /* RelativeDueLabel.swift in Sources */,
 				9E85428D6867C0A1C58EB615 /* ReviewAggregator.swift in Sources */,
 				1219A007DBE5A7305F67D533 /* ReviewFlowView.swift in Sources */,
+				A16FF1E291F7B7DDCF21D574 /* ReviewFlowVisuals.swift in Sources */,
 				204004D74631EB999AB14A3F /* ReviewMicRow.swift in Sources */,
 				F125E73B91AD66A1301B545E /* ReviewNoteAnalyzerProtocol.swift in Sources */,
 				06C106EDFC0BD1DBD4A656C8 /* ReviewNotificationScheduler.swift in Sources */,

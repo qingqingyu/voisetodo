@@ -250,6 +250,19 @@ final class ReviewFlowState {
     /// 上次定的重点在本期快照里的结局(nil = 上次没置顶过,第 1 步结局行隐藏)。
     private(set) var lastPinnedOutcome: LastPinnedOutcome?
 
+    /// 上次置顶任务的逐条快照(v6 视觉改版:主卡标题下逐条列出,不再嵌进
+    /// 标题)。init 与 `lastPinnedOutcome` 同批从 todos 快照数出:已删除的
+    /// 置顶 id 不列(与结局计数同口径);排序 = 已完成在前(原型 A2 的示例
+    /// 序,与「做完了 M 件」的先抑后扬读法一致),组内保持快照序。
+    private(set) var lastPinnedTasks: [LastPinnedTask]
+
+    /// 一条上次置顶任务的展示快照(标题 + 结局)。
+    struct LastPinnedTask: Equatable, Sendable, Identifiable {
+        let id: UUID
+        let title: String
+        let isCompleted: Bool
+    }
+
     /// 上次定的重点的结局(第 1 步结局行的数据源)。
     struct LastPinnedOutcome: Equatable, Sendable {
         /// 已完成(不在卡堆里,只能从原始快照数出来)。
@@ -291,6 +304,7 @@ final class ReviewFlowState {
         // todos / previousSessions / lastPinnedIDs init 后不变,派生值一次算好,
         // 不留整份快照。
         self.lastPinnedOutcome = Self.lastPinnedOutcome(todos: todos, pinnedIDs: lastPinnedIDs)
+        self.lastPinnedTasks = Self.lastPinnedTasks(todos: todos, pinnedIDs: lastPinnedIDs)
         self.askDomainHintCategory = Self.askDomainHintCategory(todos: todos)
         self.nextWeekCommitted = Self.nextWeekCommitted(
             from: todos, now: Date(), calendar: Calendar.current
@@ -345,6 +359,20 @@ final class ReviewFlowState {
         }
         guard completed > 0 || pending > 0 else { return nil }
         return LastPinnedOutcome(completed: completed, pending: pending)
+    }
+
+    /// 上次置顶任务的逐条快照(v6):与 `lastPinnedOutcome` 同过滤(已删除不
+    /// 列),供第 1 步主卡的逐条列表(✓/○ + 任务名 + 灰字结局)。纯函数供单测。
+    static func lastPinnedTasks(todos: [TodoItemData], pinnedIDs: Set<UUID>) -> [LastPinnedTask] {
+        guard !pinnedIDs.isEmpty else { return [] }
+        let found = todos.compactMap { todo -> LastPinnedTask? in
+            guard pinnedIDs.contains(todo.id) else { return nil }
+            return LastPinnedTask(id: todo.id, title: todo.title, isCompleted: todo.isCompleted)
+        }
+        // 已完成在前(见属性注释);组内保持快照序(stable sort)。
+        return found.sorted { lhs, rhs in
+            lhs.isCompleted && !rhs.isCompleted
+        }
     }
 
     /// 领域提示(v4 批 3 改口:问**积压最集中**的领域,取代 2026-08-25 的
@@ -1350,6 +1378,8 @@ struct ReviewFlowView: View {
                 lastPinnedOutcome: state.lastPinnedOutcome.map { outcome in
                     (completed: outcome.completed, pending: outcome.pending)
                 },
+                // v6:主卡逐条列表的数据源(init 快照派生,与结局计数同口径)。
+                lastPinnedTasks: state.lastPinnedTasks,
                 // D2(v5):上期笔记原话对质(提取逻辑收口在
                 // `lastConfrontationEntry(sessions:)`,供单测 S6 三态;
                 // §3.2 连带把「是否原样 AI 草稿」一起带给第 1 步)。
@@ -1502,16 +1532,19 @@ struct ReviewFlowView: View {
             } label: {
                 Text(bottomButtonTitle)
                     .font(WarmFont.headline(16))
-                    .foregroundColor(.white)
+                    .foregroundColor(bottomUsesSecondaryStyle ? WarmTheme.textPrimary : .white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity)
                     .frame(height: WarmSize.touch)
                     .padding(.horizontal, WarmSpacing.lg)
                     .background(
-                        Capsule().fill(
-                            state.canAdvanceCurrentStep ? WarmTheme.primary : WarmTheme.divider
-                        )
+                        Capsule()
+                            .fill(bottomButtonFill)
+                            .shadow(
+                                color: bottomUsesSecondaryStyle ? WarmTheme.shadowLight : .clear,
+                                radius: 6, x: 0, y: 3
+                            )
                     )
                     .padding(.horizontal, WarmSpacing.lg)
             }
@@ -1525,8 +1558,25 @@ struct ReviewFlowView: View {
     private var bottomButtonTitle: String {
         switch state.currentStep {
         case .ledger: return String(localized: "review.flow.done")
+        // v6 §2 第 2 步:卡堆未清空时主按钮换次级文案「剩下 N 张先留着,
+        // 下一步」(N=卡堆剩余张数);点击行为不变(R5:随时可进下一步)。
+        case .triage where !state.deck.isEmpty:
+            return String(localized: "review.flow.triage.next_leave_\(state.deck.count)")
         default: return String(localized: "review.flow.next")
         }
+    }
+
+    /// 仅第 2 步的两态:卡堆未清空 → 白底次级样式;清空后(及其他步骤)→
+    /// 珊瑚色主按钮。
+    private var bottomUsesSecondaryStyle: Bool {
+        state.currentStep == .triage && !state.deck.isEmpty
+    }
+
+    private var bottomButtonFill: Color {
+        if !state.canAdvanceCurrentStep {
+            return WarmTheme.divider
+        }
+        return bottomUsesSecondaryStyle ? WarmTheme.cardBackground : WarmTheme.primary
     }
 
     private func advanceFromCurrentStep() {

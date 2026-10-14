@@ -44,6 +44,9 @@ struct ReviewStepTriage: View {
     /// AI 同意 gate(E6):录音起步前过 coordinator.ensureAIConsent。
     var ensureConsent: (() async -> Bool)? = nil
 
+    /// AX 字号判定(v6 §1.6:第 2 步四钮在大字号下排 2×2)。
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     @State private var splitTarget: TodoItemData?
     /// 候选加载状态机:idle(未打开)→ loading → ready / failed(AI 失败 → 降级手写)。
     @State private var splitPhase: SplitPhase = .idle
@@ -74,10 +77,6 @@ struct ReviewStepTriage: View {
             poolIntroRow
             ledeText
 
-            if !state.abandonedStack.isEmpty {
-                undoButton
-            }
-
             if state.deck.isEmpty {
                 emptyDeck
             } else {
@@ -85,6 +84,11 @@ struct ReviewStepTriage: View {
                 deckView
                 pad
                 Spacer(minLength: WarmSpacing.xs)
+            }
+
+            // v6:撤销从独立文字按钮改成卡堆下方的深色提示条(见 droppedToastBar)。
+            if !state.abandonedStack.isEmpty {
+                droppedToastBar
             }
 
             batchSection
@@ -175,33 +179,56 @@ struct ReviewStepTriage: View {
 
     // MARK: 撤销
 
-    /// 「撤销上一张」:unabandon 最近一次划掉(拍板 7:只覆盖「不做了」)。
-    private var undoButton: some View {
-        Button {
-            guard let todo = state.popAbandonForUndo() else { return }
-            do {
-                try store.unabandon(todo.id)
-                HapticFeedback.light()
-                onUndoToast(String(localized: "review.flow.triage.undo_done"))
-            } catch {
-                // 写库失败:状态回滚(重新入栈、移出卡堆前端之外的位置保持一致),
-                // 错误如实上报,不静默。
-                state.markAbandoned(todo)
-                onError(error)
+    /// 「已划掉:任务名」深色提示条 + 右侧「撤销上一张」(v6 A2:撤销只覆盖
+    /// 「不做了」,R3/拍板 7 不变;样式从独立文字按钮换成卡堆下方的提示条,
+    /// 撤销成功后沿用现有 toast「已恢复」)。
+    private var droppedToastBar: some View {
+        let lastDropped = state.abandonedStack.last
+        return HStack(spacing: WarmSpacing.md) {
+            Text(String(
+                localized: "review.flow.triage.dropped_\(lastDropped?.title ?? "")"
+            ))
+                .font(WarmFont.body(14))
+                .foregroundColor(WarmTheme.background)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+
+            Spacer(minLength: WarmSpacing.xs)
+
+            Button {
+                undoLastAbandon()
+            } label: {
+                Text(String(localized: "review.flow.triage.undo"))
+                    .font(WarmFont.headline(14))
+                    .foregroundColor(WarmTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-        } label: {
-            Label(
-                String(localized: "review.flow.triage.undo"),
-                systemImage: "arrow.uturn.backward"
-            )
-            .flipsForRightToLeftLayoutDirection(true)
-            .font(WarmFont.caption(13))
-            .foregroundColor(WarmTheme.primaryText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ReviewFlowTriageUndo")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("ReviewFlowTriageUndo")
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                .fill(WarmTheme.textPrimary)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    /// unabandon 最近一次划掉(拍板 7:只覆盖「不做了」)。
+    private func undoLastAbandon() {
+        guard let todo = state.popAbandonForUndo() else { return }
+        do {
+            try store.unabandon(todo.id)
+            HapticFeedback.light()
+            onUndoToast(String(localized: "review.flow.triage.undo_done"))
+        } catch {
+            // 写库失败:状态回滚(重新入栈、移出卡堆前端之外的位置保持一致),
+            // 错误如实上报,不静默。
+            state.markAbandoned(todo)
+            onError(error)
+        }
     }
 
     @ViewBuilder
@@ -262,8 +289,6 @@ struct ReviewStepTriage: View {
                     Text(String(localized: "review.flow.triage.batch.title_\(count)"))
                         .font(WarmFont.headline(14))
                         .foregroundColor(WarmTheme.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
 
@@ -287,34 +312,35 @@ struct ReviewStepTriage: View {
     }
 
     /// 刚推完:结果一行 + 整批撤销(拍板 7 的唯一扩展——一键操作没有 undo
-    /// 不可接受)。撤销入口只在此处,会话收尾后不再提供。
+    /// 不可接受)。撤销入口只在此处,会话收尾后不再提供。v6:包进卡片
+    /// (A2 原型:与出口行同款容器),文案与逻辑不变。
     private var batchDoneRow: some View {
         let count = state.somedayUndoSnapshot?.count ?? 0
-        return HStack(spacing: WarmSpacing.md) {
-            Label(
-                String(localized: "review.flow.triage.batch.done_\(count)"),
-                systemImage: "tray.and.arrow.down"
-            )
-            .font(WarmFont.caption(13))
-            .foregroundColor(WarmTheme.textSecondary)
-            .lineLimit(2)
-            .minimumScaleFactor(0.7)
-            .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(1)
+        return RecapCard {
+            HStack(spacing: WarmSpacing.md) {
+                Label(
+                    String(localized: "review.flow.triage.batch.done_\(count)"),
+                    systemImage: "tray.and.arrow.down"
+                )
+                .font(WarmFont.caption(13))
+                .foregroundColor(WarmTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
 
-            Spacer(minLength: WarmSpacing.xs)
+                Spacer(minLength: WarmSpacing.xs)
 
-            Button {
-                undoBatchSomeday()
-            } label: {
-                Text(String(localized: "review.flow.triage.batch.undo"))
-                    .font(WarmFont.headline(13))
-                    .foregroundColor(WarmTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                Button {
+                    undoBatchSomeday()
+                } label: {
+                    Text(String(localized: "review.flow.triage.batch.undo"))
+                        .font(WarmFont.headline(13))
+                        .foregroundColor(WarmTheme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ReviewFlowTriageBatchUndo")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("ReviewFlowTriageBatchUndo")
         }
     }
 
@@ -346,24 +372,15 @@ struct ReviewStepTriage: View {
 
     private var deckView: some View {
         ZStack {
-            // 第三层:纯色卡背,只给厚度感。
-            if state.deck.count > 2 {
-                RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
-                    .fill(WarmTheme.cardBackground)
-                    .shadow(color: WarmTheme.shadowLight, radius: 8, x: 0, y: 4)
-                    .padding(.horizontal, WarmSpacing.xl + WarmSpacing.md)
-                    .offset(y: WarmSpacing.xl)
-                    .opacity(0.38)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-
-            // 第二层:露一点边 + 内容,给「还有下一张」的厚度感。
+            // v6 A2:卡堆背后只露一条底边(纯色块,不透出下一张的内容)——
+            // 原双层 ghost 卡(第二层透出下一张文字)弃用。
             if state.deck.count > 1 {
-                cardContent(state.deck[1])
-                    .padding(.horizontal, WarmSpacing.xl)
-                    .offset(y: WarmSpacing.md)
-                    .opacity(0.6)
+                RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                    .fill(WarmTheme.rowHairline)
+                    .frame(height: 22)
+                    .padding(.horizontal, WarmSpacing.sm)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .offset(y: WarmSpacing.sm)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -490,10 +507,8 @@ struct ReviewStepTriage: View {
                 cardHead(todo)
 
                 Text(todo.title)
-                    .font(WarmFont.headline(17))
+                    .font(WarmFont.headline(19))
                     .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
 
                 timeline(todo)
@@ -646,74 +661,94 @@ struct ReviewStepTriage: View {
 
     // MARK: 底部按钮 pad(位置 = 手势方向)
 
-    /// 四钮同构(v3 拍板 4):中段两个从 `Label` 胶囊(窄屏下 title 会被两侧
-    /// 56pt 圆钮挤塌成纯图标,文案三语俱全但读不到)改成与方向钮同款
-    /// 「图标圆 + 下方小标签」——视觉层级靠尺寸分(两侧 56 / 中段 44),不靠
-    /// 有无标签分;中段两个拿 `layoutPriority(1)`,四个动作名任何语言下可读。
+    /// 四钮同尺寸(v6 A2,推翻 v3 拍板 4 的「靠尺寸分层级」:统一 56pt,
+    /// 层级靠颜色分——「不做了」红 `urgentText`,其余三个深灰 `ink`,
+    /// 不再用 `primaryText`,浅色下它与红色太近)。标签不截断;
+    /// AX 字号下排 2×2(先例 HomeSelectedDayListView)。
+    @ViewBuilder
     private var pad: some View {
-        HStack(spacing: WarmSpacing.md) {
-            padRoundButton(
-                icon: "xmark",
-                label: String(localized: "review.flow.triage.action.drop"),
-                color: WarmTheme.urgentText,
-                id: "ReviewFlowTriageDrop"
-            ) {
-                if let top = state.deck.first, !isFlying { abandon(top) }
-            }
-
-            padRoundButton(
-                icon: "sun.max",
-                label: String(localized: "review.flow.triage.action.today"),
-                color: WarmTheme.primaryText,
-                id: "ReviewFlowTriageToday",
-                circleSize: 44,
-                iconSize: 17
-            ) {
-                if let top = state.deck.first, !isFlying { doToday(top) }
-            }
-            .layoutPriority(1)
-
-            padRoundButton(
-                icon: "scissors",
-                label: String(localized: "review.flow.triage.action.split"),
-                color: WarmTheme.primaryText,
-                id: "ReviewFlowTriageSplit",
-                circleSize: 44,
-                iconSize: 17
-            ) {
-                if let top = state.deck.first, !isFlying { openSplit(top) }
-            }
-            .layoutPriority(1)
-
-            padRoundButton(
-                icon: "arrow.right",
-                label: String(localized: "review.flow.triage.action.keep"),
-                color: WarmTheme.primaryText,
-                id: "ReviewFlowTriageKeep"
-            ) {
-                if let top = state.deck.first, !isFlying { scheduleToNextWeek(top) }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: WarmSpacing.md) {
+                    HStack(spacing: WarmSpacing.xl) {
+                        padDropButton
+                        padTodayButton
+                    }
+                    HStack(spacing: WarmSpacing.xl) {
+                        padSplitButton
+                        padKeepButton
+                    }
+                }
+            } else {
+                HStack(spacing: WarmSpacing.md) {
+                    padDropButton
+                    padTodayButton
+                    padSplitButton
+                    padKeepButton
+                }
             }
         }
         .padding(.horizontal, WarmSpacing.lg)
     }
 
-    /// 方向性圆钮(✕/→):56pt 白底圆 + 图标 + 底部小标签;中段中性钮
-    /// (今天就做/拆小)复用同结构,44pt(v3 拍板 4 同构布局)。
+    private var padDropButton: some View {
+        padRoundButton(
+            icon: "xmark",
+            label: String(localized: "review.flow.triage.action.drop"),
+            color: WarmTheme.urgentText,
+            id: "ReviewFlowTriageDrop"
+        ) {
+            if let top = state.deck.first, !isFlying { abandon(top) }
+        }
+    }
+
+    private var padTodayButton: some View {
+        padRoundButton(
+            icon: "sun.max",
+            label: String(localized: "review.flow.triage.action.today"),
+            color: WarmTheme.ink,
+            id: "ReviewFlowTriageToday"
+        ) {
+            if let top = state.deck.first, !isFlying { doToday(top) }
+        }
+    }
+
+    private var padSplitButton: some View {
+        padRoundButton(
+            icon: "scissors",
+            label: String(localized: "review.flow.triage.action.split"),
+            color: WarmTheme.ink,
+            id: "ReviewFlowTriageSplit"
+        ) {
+            if let top = state.deck.first, !isFlying { openSplit(top) }
+        }
+    }
+
+    private var padKeepButton: some View {
+        padRoundButton(
+            icon: "arrow.right",
+            label: String(localized: "review.flow.triage.action.keep"),
+            color: WarmTheme.ink,
+            id: "ReviewFlowTriageKeep"
+        ) {
+            if let top = state.deck.first, !isFlying { scheduleToNextWeek(top) }
+        }
+    }
+
+    /// 圆钮(56pt 白底圆 + 图标 + 底部小标签;v6:四钮同尺寸,标签不截断)。
     private func padRoundButton(
         icon: String,
         label: String,
         color: Color,
         id: String,
-        circleSize: CGFloat = 56,
-        iconSize: CGFloat = 22,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: iconSize, weight: .semibold))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(color)
-                    .frame(width: circleSize, height: circleSize)
+                    .frame(width: 56, height: 56)
                     .background(
                         Circle()
                             .fill(WarmTheme.cardBackground)
@@ -724,8 +759,8 @@ struct ReviewStepTriage: View {
                 Text(label)
                     .font(WarmFont.caption(11))
                     .foregroundColor(WarmTheme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .buttonStyle(.plain)
