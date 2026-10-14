@@ -3350,13 +3350,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Still couldn't parse. Try editing manually."
+            "value" : "No todos were detected. Edit the text or delete it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクは検出されませんでした。編集するか、削除してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仍然识别不出,点一下手动改。"
+            "value" : "没识别出待办。可以编辑原文，或直接删除。"
           }
         }
       }

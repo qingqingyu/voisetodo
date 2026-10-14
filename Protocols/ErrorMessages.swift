@@ -80,7 +80,9 @@ enum ErrorMessages {
     /// 录音模式发送时录音已不在活动状态——给用户明确反馈而不是静默关闭面板。
     static let recordingNotActive = String(localized: "ui.recording_not_active")
 
-    /// 「没能识别」分组「重新解析」后 AI 仍解析不出结构。提示用户原文片段保留、可继续手动处理。
+    /// 「没能识别」分组「重新解析」后仍无待办(2026-10 语义修正:多为模型判定该文本
+    /// 无可提取行动项,不是解析故障)。中性告知 + 指向卡片自带的编辑/删除出口,
+    /// 措辞与 noTodosCardSaved("没识别出待办")对齐,避免用户误判为服务/订阅问题。
     static let reextractStillEmpty = String(localized: "error.reextract.empty")
 
     /// 带参数的格式化方法
