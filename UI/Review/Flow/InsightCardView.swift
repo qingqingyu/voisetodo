@@ -54,11 +54,12 @@ struct InsightCardView: View {
                         .font(WarmFont.caption(11))
                         .foregroundColor(WarmTheme.textMuted)
                         .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
 
                     Spacer(minLength: WarmSpacing.xs)
 
-                    signalLabel
+                    // 短标签固定宽度(不让长样本说明把它挤成省略号;长说明在
+                    // 剩余宽度内自然换行)。
+                    signalLabel.fixedSize()
                 }
             }
         }

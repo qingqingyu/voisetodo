@@ -151,8 +151,8 @@ struct ReviewStepRecap: View {
                 .font(WarmFont.body(15))
                 .foregroundColor(task.isCompleted ? WarmTheme.textSecondary : WarmTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
+
+            Spacer(minLength: WarmSpacing.xs)
 
             Text(String(localized: task.isCompleted
                 ? "review.flow.recap.pinned.done"
@@ -160,6 +160,7 @@ struct ReviewStepRecap: View {
                 .font(WarmFont.caption(12))
                 .foregroundColor(WarmTheme.textMuted)
                 .padding(.top, 2)
+                .fixedSize()
         }
         .accessibilityElement(children: .combine)
     }

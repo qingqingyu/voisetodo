@@ -163,7 +163,6 @@ struct ReviewStepCommit: View {
                             .font(WarmFont.headline(16))
                             .foregroundColor(WarmTheme.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .layoutPriority(1)
 
                         Text(source)
                             .font(WarmFont.caption(12))

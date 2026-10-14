@@ -72,26 +72,17 @@ struct ReviewStepTriage: View {
     private let calendar = Calendar.current
 
     var body: some View {
-        VStack(spacing: WarmSpacing.md) {
-            headerRow
-            poolIntroRow
-            ledeText
-
-            if state.deck.isEmpty {
-                emptyDeck
+        // AX 字号(v6 §1.6):内容总高会超过一屏——固定 VStack 会把底部主按钮
+        // 挤出屏幕,改成 ScrollView(可滚到 toast/批量出口);常规字号维持原
+        // 固定布局(卡堆 + 按钮一屏尽收,是这一步的设计)。
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView {
+                    triageContent
+                }
             } else {
-                Spacer(minLength: WarmSpacing.xs)
-                deckView
-                pad
-                Spacer(minLength: WarmSpacing.xs)
+                triageContent
             }
-
-            // v6:撤销从独立文字按钮改成卡堆下方的深色提示条(见 droppedToastBar)。
-            if !state.abandonedStack.isEmpty {
-                droppedToastBar
-            }
-
-            batchSection
         }
         .sheet(item: $splitTarget) { todo in
             splitSheet(todo)
@@ -114,6 +105,31 @@ struct ReviewStepTriage: View {
             playNudgeOnce()
         }
         .onChange(of: state.triageFocusID) { _, _ in applyFocusReorder() }
+    }
+
+    /// 第 2 步主体(常规字号 = 固定布局;AX 字号由 body 包进 ScrollView)。
+    private var triageContent: some View {
+        VStack(spacing: WarmSpacing.md) {
+            headerRow
+            poolIntroRow
+            ledeText
+
+            if state.deck.isEmpty {
+                emptyDeck
+            } else {
+                Spacer(minLength: WarmSpacing.xs)
+                deckView
+                pad
+                Spacer(minLength: WarmSpacing.xs)
+            }
+
+            // v6:撤销从独立文字按钮改成卡堆下方的深色提示条(见 droppedToastBar)。
+            if !state.abandonedStack.isEmpty {
+                droppedToastBar
+            }
+
+            batchSection
+        }
     }
 
     // MARK: 头部(标题 + 计数)
@@ -191,7 +207,6 @@ struct ReviewStepTriage: View {
                 .font(WarmFont.body(14))
                 .foregroundColor(WarmTheme.background)
                 .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(1)
 
             Spacer(minLength: WarmSpacing.xs)
 
@@ -201,8 +216,7 @@ struct ReviewStepTriage: View {
                 Text(String(localized: "review.flow.triage.undo"))
                     .font(WarmFont.headline(14))
                     .foregroundColor(WarmTheme.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .fixedSize()
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ReviewFlowTriageUndo")
@@ -290,14 +304,12 @@ struct ReviewStepTriage: View {
                         .font(WarmFont.headline(14))
                         .foregroundColor(WarmTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
 
                     Spacer(minLength: WarmSpacing.xs)
 
                     HStack(spacing: WarmSpacing.xxs) {
                         Text(String(localized: "review.flow.triage.batch.action"))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                            .fixedSize()
                     }
                     .font(WarmFont.headline(13))
                     .foregroundColor(.white)
