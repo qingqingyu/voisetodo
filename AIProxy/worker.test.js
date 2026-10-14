@@ -5652,6 +5652,101 @@ test("无 CACHE_RESULT_KV 时同 transcript 两次请求照常扣费(计费不�
   });
 });
 
+// ─── 空结果退款(2026-10 修复): todos=[] 或坏 JSON = 用户没拿到价值,不烧 device 额度 ──
+
+test("非流式 todos=[] → 退 device 额度(模型判定无待办不烧额度)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "3",
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-empty-todos", "X-Local-Date": "2026-05-26" };
+    const emptyFetch = async () => jsonResponse({ content: [{ type: "text", text: '{"todos":[],"ignored":"最近好累"}' }] });
+    const r = await handleRequest(request({ transcript: "纯闲聊" }, headers), env, {}, emptyFetch);
+    assert.equal(r.status, 200, "空结果仍是 200(客户端自行呈现「没能识别」卡片)");
+    const body = await r.json();
+    assert.equal(body.todos.length, 0);
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应写 quota key(KV 退款路径归零写 \"0\",不删 key)");
+    assert.equal(kv.values.get(quotaKey), "0", "空结果应退款归零");
+  });
+});
+
+test("非流式坏 JSON → 退款且不写缓存(坏输出没有缓存价值)", async () => {
+  const cacheKv = makeFakeKV();
+  const rateKv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "3",
+      RATE_LIMIT_KV: rateKv,
+      CACHE_RESULT_KV: cacheKv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-bad-json", "X-Local-Date": "2026-05-26" };
+    const badFetch = async () => jsonResponse({ content: [{ type: "text", text: "not json at all" }] });
+    const r = await handleRequest(request({ transcript: "坏输出" }, headers), env, { waitUntil() {} }, badFetch);
+    assert.equal(r.status, 200, "现状:坏文本原样 200 返回(客户端 jsonParsingFailed 走确定性错误落卡)");
+    const quotaKey = [...rateKv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应写 quota key");
+    assert.equal(rateKv.values.get(quotaKey), "0", "坏 JSON 应退款归零");
+    await Promise.resolve();
+    const cacheKeys = Object.keys(cacheKv.store).filter((k) => k.startsWith("cache:"));
+    assert.equal(cacheKeys.length, 0, "坏 JSON 不应写缓存(缓存会把坏结果钉死 1h)");
+  });
+});
+
+test("todos=[] 照写缓存:第二次同请求命中缓存,零成本零扣费", async () => {
+  const cacheKv = makeFakeKV();
+  const rateKv = new MemoryKV(new Map());
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { CACHE_RESULT_KV: cacheKv, RATE_LIMIT_KV: rateKv, DAILY_REQUEST_LIMIT: "3" }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: '{"todos":[],"ignored":""}' }] });
+  };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-empty-cache", "X-Local-Date": "2026-05-26" };
+    const r1 = await handleRequest(request({ transcript: "空结果缓存" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(r1.status, 200);
+    assert.equal(upstreamCallCount, 1);
+    await Promise.resolve();
+    const r2 = await handleRequest(request({ transcript: "空结果缓存" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(r2.status, 200);
+    assert.equal(upstreamCallCount, 1, "第二次命中缓存,不调上游(temperature=0 同输入同输出)");
+    const body = await r2.json();
+    assert.equal(body.todos.length, 0, "缓存返回的仍是空结果");
+    const quotaKey = [...rateKv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "第一次请求应写 quota key");
+    assert.equal(rateKv.values.get(quotaKey), "0", "两次后额度仍为 0(第一次退款,第二次命中缓存不扣)");
+  });
+});
+
+test("配额未启用时空结果不产生退款噪声", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      // 故意不配 DAILY_REQUEST_LIMIT → enforceDailyLimit skipped
+      RATE_LIMIT_KV: kv
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-empty-skip", "X-Local-Date": "2026-05-26" };
+    const emptyFetch = async () => jsonResponse({ content: [{ type: "text", text: '{"todos":[],"ignored":""}' }] });
+    const r = await handleRequest(request({ transcript: "a" }, headers), env, {}, emptyFetch);
+    assert.equal(r.status, 200);
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("quota:"));
+    assert.equal(quotaKey, undefined, "配额未启用时不该因退款凭空写出 quota key");
+  });
+});
+
 // ─── P3: scheduled health check ────────────────────────────────────────
 
 test("handleScheduled: 上游 200 时调 recordSuccess", async () => {

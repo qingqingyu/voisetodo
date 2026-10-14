@@ -2,6 +2,7 @@ import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
 import { AlertStateStore, classifyLevel, shouldNotify, nextRecord } from "./src/alertState.js";
 import { ExtractionCacheStore, makeCacheKey } from "./src/extractionCache.js";
 import { getAdapter } from "./src/adapters/index.js";
+import { stripMarkdownFence } from "./src/adapters/base.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore, configureHealthParams } from "./src/health.js";
@@ -438,12 +439,26 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
 
     const text = result.bodyResult.text;
+    // 空结果判定(2026-10 修复):todos=[] 或坏 JSON = 用户没拿到价值,退 device 额度。
+    // assist 模式(split/reflect/deep-read)响应形状不同且不计费,extractOutcome 保持 null 不判。
+    let extractOutcome = null;
+    if (mode === "extract") {
+      extractOutcome = classifyExtractOutcome(text);
+      if (!extractOutcome.hasTodos) {
+        const reason = extractOutcome.parseOk ? "empty_todos" : "unparseable_output";
+        logInfo("proxy.extract.empty_outcome", { ...requestContext, reason, stream: false, responseChars: text.length });
+        await refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx, quotaState, reason);
+      }
+    }
     // Cache write: 非流式 + 成功响应。异步写不阻塞响应(ctx.waitUntil)。
     // cacheKey 在前面 cache lookup 时计算(只在 cacheable 时非 null)。
+    // 空结果写缓存策略:todos=[] 照写(temperature=0 同输入同输出,配合缓存命中
+    // 不扣费,重复请求零成本);坏 JSON 不写(可能是 provider 输出畸变,重试有机会好,
+    // 缓存会把坏结果钉死 1h)。
     // ctx 可能没有 waitUntil(单元测试传 {} 兜底),用可选链避免抛错。
-    if (cacheKey && text && typeof ctx?.waitUntil === "function") {
+    if (cacheKey && text && extractOutcome?.parseOk !== false && typeof ctx?.waitUntil === "function") {
       ctx.waitUntil(sharedExtractionCache.set(cacheKey, text));
-    } else if (cacheKey && text) {
+    } else if (cacheKey && text && extractOutcome?.parseOk !== false) {
       // 测试或老 runtime 没 waitUntil:同步触发但忽略 promise(fire-and-forget)。
       // .set 内部已有 try/catch + logWarn,这里 .catch 只兜底防 unhandled rejection
       // (CLAUDE.md:错误显式传播 — 不静默吞,但 set 内部已显式 log,此处 outer catch 防的是
@@ -452,6 +467,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         logWarn("extraction_cache.outer_write_failed", { ...requestContext, ...errorFields(error) });
       });
     }
+    // 空结果仍是 provider 层成功(200 + 完整文本),照常记健康,不走 confirmFailure——
+    // 空结果反映模型/prompt 质量,不是 provider 可用性问题,计入熔断会误摘健康 provider。
     await result.confirmSuccess();
     logInfo("proxy.provider.text_success", { ...requestContext, provider: result.provider.type, responseChars: text.length });
     return finishRequest(new Response(text, {
@@ -1496,6 +1513,42 @@ async function refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, 
     logInfo("proxy.quota.refunded_upstream_failure", { ...requestContext, reason });
   } catch (error) {
     logWarn("proxy.quota.refund_upstream_failure_failed", {
+      ...requestContext,
+      reason,
+      ...errorFields(error)
+    });
+  }
+}
+
+// 判定 extract 输出是否给了用户价值:剥 fence → JSON.parse → todos 为非空数组。
+// 口径与 iOS TodoExtractorService.parseResponse 同源(客户端 decode 失败/空 todos
+// 都表现为「没能识别」卡片 + reextract 空结果 toast)。代理端取保守子集:
+// parse 失败或 todos 空 → 无价值 → 退款。反方向(代理判有价值但客户端 decode 失败,
+// 如字段 schema 不匹配)不退——少退比多退安全,滥用面更小。
+// 幂等剥 fence:非流式 text 已被 adapter extractText 剥过(再剥是 no-op),流式
+// fullText 是原始增量拼接、可能带 fence,统一再剥一次。
+function classifyExtractOutcome(text) {
+  try {
+    const parsed = JSON.parse(stripMarkdownFence(text));
+    return { parseOk: true, hasTodos: Array.isArray(parsed?.todos) && parsed.todos.length > 0 };
+  } catch {
+    return { parseOk: false, hasTodos: false };
+  }
+}
+
+// 空结果退款(2026-10 修复):模型判定无待办(todos=[])或输出坏 JSON 时,用户没拿到
+// 任何价值,device 额度不该被烧。与上游失败退款同边界——只退 device 桶;
+// ip-rate/ip-daily/订阅桶/全局预算是反滥用+成本闸,照扣不退(故意提交无意义
+// transcript 白拿模型调用的敞口与既有 upstream-failure 退款相同,四层天花板兜底)。
+// reason 分 empty_todos(模型行为,盯模型指标)与 unparseable_output(adapter/prompt
+// 质量问题)两个值——监控口径分开,不互相污染。
+async function refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx, quotaState, reason) {
+  if (!quotaState || quotaState.skipped) return;
+  try {
+    await refundDeviceQuota(request, env, requestContext, ctx);
+    logInfo("proxy.quota.refunded_empty_outcome", { ...requestContext, reason });
+  } catch (error) {
+    logWarn("proxy.quota.refund_empty_outcome_failed", {
       ...requestContext,
       reason,
       ...errorFields(error)
