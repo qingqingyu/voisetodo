@@ -5529,6 +5529,129 @@ test("cache KV 未绑定时静默不工作(不影响业务)", async () => {
   assert.equal(upstreamCallCount, 1, "无 KV binding 时走真实调用");
 });
 
+// ─── P2 补充: cache hit 不扣计费(2026-10 修复) ──────────────────────────
+// 修复前扣费在 cache lookup 之前:命中缓存=零模型成本却扣 device 额度
+// (免费档一天 3 次,反复点「重新解析」就烧光全天额度)。
+
+test("cache hit 不扣 device 计费桶且响应不带 X-Quota 头", async () => {
+  const cacheKv = makeFakeKV();
+  const rateKv = new MemoryKV(new Map());
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { CACHE_RESULT_KV: cacheKv, RATE_LIMIT_KV: rateKv, DAILY_REQUEST_LIMIT: "3" }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-cache", "X-Local-Date": "2026-05-26" };
+    // 第一次:cache miss,调上游,扣 1
+    const r1 = await handleRequest(request({ transcript: "测试cache计费" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(r1.status, 200);
+    assert.equal(upstreamCallCount, 1, "第一次应调上游");
+    assert.equal(r1.headers.get("X-Quota-Used"), "1", "第一次 miss 应扣 1");
+    await Promise.resolve();
+    // 第二次同请求:cache hit,零成本——不扣费、不带 X-Quota 头
+    const r2 = await handleRequest(request({ transcript: "测试cache计费" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(r2.status, 200);
+    assert.equal(upstreamCallCount, 1, "第二次应走 cache");
+    assert.equal(r2.headers.get("X-Quota-Plan"), null, "cache hit 未扣费,不带 X-Quota-Plan 头");
+    // quota key 仍用客户端本地日期(注入日期回归)且只扣了第一次
+    const quotaKey = [...rateKv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "第一次请求应写 quota key");
+    assert.ok(quotaKey.includes("sha256:"), "quota key 应使用设备摘要");
+    assert.equal(rateKv.values.get(quotaKey), "1", "cache hit 不应再扣计费桶(仍为 1)");
+  });
+});
+
+test("cache hit 不扣订阅桶(Pro 档)", async () => {
+  const { jws, rootFingerprint } = await mintTestJWS({
+    productId: "com.voicetodo.pro.yearly",
+    payload: { originalTransactionId: "tx-sub-cache" }
+  });
+  const cacheKv = makeFakeKV();
+  const rateKv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    {
+      CACHE_RESULT_KV: cacheKv, RATE_LIMIT_KV: rateKv, QUOTA_COUNTER_DO: doBinding,
+      DAILY_REQUEST_LIMIT: "3", PAID_DAILY_LIMIT: "100", SUBSCRIPTION_DAILY_LIMIT: "500",
+      SUBSCRIPTION_ROOT_SHA256: rootFingerprint,
+      APP_BUNDLE_ID: "com.voicetodo.app", PRO_PRODUCT_IDS: "com.voicetodo.pro.monthly,com.voicetodo.pro.yearly"
+    }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-sub-cache", "X-Local-Date": "2026-05-26", "X-Subscription-JWS": jws };
+    const r1 = await handleRequest(request({ transcript: "测试sub桶cache" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(r1.status, 200);
+    await Promise.resolve();
+    const r2 = await handleRequest(request({ transcript: "测试sub桶cache" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(r2.status, 200);
+    assert.equal(upstreamCallCount, 1, "第二次走 cache");
+    // 订阅桶(反滥用闸)只在 miss 时扣一次;device 桶同理
+    assert.equal(doBinding._calls.filter((c) => c.key === "sub-daily").length, 1, "cache hit 不应消耗订阅桶");
+    assert.equal(doBinding._calls.filter((c) => c.key === "device-quota").length, 1, "cache hit 不应消耗 device 桶");
+  });
+});
+
+test("cache hit 仍过 ip-rate 反滥用闸门(闸门在 cache lookup 之前)", async () => {
+  const cacheKv = makeFakeKV();
+  const rateKv = new MemoryKV(new Map());
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { CACHE_RESULT_KV: cacheKv, RATE_LIMIT_KV: rateKv, IP_RATE_PER_MINUTE: "1" }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  const headers = { "X-App-Token": "token", "X-Device-ID": "dev-ipgate", "X-Local-Date": "2026-05-26" };
+  // 第一次:miss 成功(写 cache + ip-rate 计 1)
+  const r1 = await handleRequest(request({ transcript: "测试ip闸门" }, headers), env, { waitUntil() {} }, fetchImpl);
+  assert.equal(r1.status, 200);
+  await Promise.resolve();
+  // 第二次同请求:即使走 cache 也要过 ip-rate(每分钟 1 次已用完)→ 429
+  const r2 = await handleRequest(request({ transcript: "测试ip闸门" }, headers), env, { waitUntil() {} }, fetchImpl);
+  assert.equal(r2.status, 429, "cache hit 仍受 ip-rate 闸门约束");
+  assert.equal(r2.headers.get("X-RateLimit-Type"), "velocity");
+  assert.equal(upstreamCallCount, 1, "两次都未再调上游(第二次被闸门拒,不是模型调用)");
+});
+
+test("无 CACHE_RESULT_KV 时同 transcript 两次请求照常扣费(计费不依赖 cache 配置)", async () => {
+  const rateKv = new MemoryKV(new Map());
+  let upstreamCallCount = 0;
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { RATE_LIMIT_KV: rateKv, DAILY_REQUEST_LIMIT: "3" }
+  );
+  const fetchImpl = async () => {
+    upstreamCallCount += 1;
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("todo") }] });
+  };
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const headers = { "X-App-Token": "token", "X-Device-ID": "dev-nocache", "X-Local-Date": "2026-05-26" };
+    await handleRequest(request({ transcript: "无缓存计费" }, headers), env, { waitUntil() {} }, fetchImpl);
+    await handleRequest(request({ transcript: "无缓存计费" }, headers), env, { waitUntil() {} }, fetchImpl);
+    assert.equal(upstreamCallCount, 2);
+    const quotaKey = [...rateKv.values.keys()].find((k) => k.startsWith("quota:2026-05-26:"));
+    assert.ok(quotaKey, "应写 quota key");
+    assert.equal(rateKv.values.get(quotaKey), "2", "无 cache 时两次请求都应扣费");
+  });
+});
+
 // ─── P3: scheduled health check ────────────────────────────────────────
 
 test("handleScheduled: 上游 200 时调 recordSuccess", async () => {

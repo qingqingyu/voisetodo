@@ -182,10 +182,13 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
 
     // split/reflect 不计费:quotaState 保持 null(quotaHeaders /
     // refundDeviceQuotaOnUpstreamFailure 都对 null 安全,无需分支守卫)。
-    // 反滥用护栏(全局预算熔断 + ip 短窗限流)对两种模式照常生效——
+    // extract 模式缓存命中同样不扣计费桶(2026-10 修复:命中=零模型成本),
+    // quotaState 也保持 null——反滥用闸门照过,计费移到 cache miss 之后。
+    // 反滥用护栏(全局预算熔断 + ip 短窗限流)对所有模式照常生效——
     // 不计费 ≠ 零防护。提取模式照旧三层配额 + today 不变量。
     let quotaState = null;
     let todayDate = null;
+    let resolvedQuotaDate = null;
     // 订阅档位在所有配额/反滥用闸门之前解析一次(docs/pre-launch-risk-review.md P0):
     // 此前三道闸门(全局熔断/IP 每分钟/IP 每日)全部执行在 tier 解析之前,付费用户
     // 会被免费档的熔断 503 / IP 限流 429 一起误伤。现在付费档豁免两道 IP 闸门,
@@ -197,38 +200,20 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     const subscription = await resolveSubscriptionTier(request, env, requestContext);
     requestContext.subscriptionTier = subscription.tier;
     const isPro = subscription.tier === "pro";
-    // 按订阅限速(新问题 2):JWS 是无绑定 bearer token,device ID 又是客户端自填,
-    // 「一个合法 JWS + 轮换 device」在 device 侧配额(PAID_DAILY_LIMIT/台)下无上限。
-    // 以验签 payload 的订阅标识(哈希后的 originalTransactionId)为键设独立日上限,
-    // 挡共享 JWS 滥用;正常用户(1-3 台设备)远够。免费档无 JWS,天然不经过这里。
-    // 放在所有配额扣减之前:被它拒绝时 device/ip/global 都未扣,无需补偿。
-    // extract 与 assist 分桶(第三轮 review 新发现 2):assist(换一批/反思)不占
-    // device 计费额度、Pro 又豁免 IP 闸门 —— 若与 extract 共用一桶,反复点
-    // 「换一批」会把同一订阅所有设备的 extract 一起 429 到 UTC 0 点。分桶后
-    // extract 桶的 500 定档(1-3 台 × 100/天 extract)重新成立,assist 有自己
-    // 的独立桶(SUBSCRIPTION_ASSIST_DAILY_LIMIT,默认同 500),互不挤占。
-    await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
+    // 反滥用闸门前置(extract 与 assist 公共,原 enforceAllQuotas Step A):
+    // 缓存命中零模型成本、不扣计费桶,但仍是请求压力,闸门照过。
+    // 顺序语义变化:原顺序是订阅桶→闸门,现为闸门→(cache)→订阅桶——
+    // 被熔断 503 / velocity 429 拒绝的请求不再消耗订阅桶(反滥用收紧)。
+    await enforceAbuseGates(request, env, requestContext, isPro);
     if (mode === "extract") {
-      // 闸门(全局熔断 + ip-rate)保持在订阅桶之后、计费扣减之前——与 Step A 抽出前
-      // 的原顺序一致;Commit 2 会把闸门前移到 cache lookup 之前、计费后移到 cache miss 之后。
-      await enforceAbuseGates(request, env, requestContext, isPro);
-      quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription);
-
-      // enforceDailyLimit 现在总会返回 resetDate（无论是否 skipped），
-      // 直接复用作为 today 注入 prompt，避免重复调用 resolveQuotaDate 产生重复漂移校验日志。
-      // 防御性检查：若未来 enforceDailyLimit 重构遗漏 resetDate，立即抛错而非静默注入 undefined。
-      todayDate = quotaState.resetDate;
-      if (!todayDate) {
-        throw new ProxyHTTPError(500, "enforceDailyLimit returned no resetDate", {
-          errorType: "invariant_violation",
-          body: { error: "invariant_violation", detail: "resetDate missing" }
-        });
-      }
+      // 计费日期在 cache lookup 之前解析(resolveQuotaDate 纯函数、无写副作用):
+      // cache key 含 today;cache miss 后把同一份注入 enforceAllQuotas,
+      // 保证每请求恰好解析一次(漂移校验日志不重复)。
+      resolvedQuotaDate = resolveQuotaDate(request, requestContext);
+      todayDate = resolvedQuotaDate.date;
     } else {
-      // split 不占计费额度(拍板),但保留反滥用护栏:全局预算熔断 + ip 短窗速率限流。
-      // 不计费 ≠ 零防护——跳过这两层会让外部无成本刷模型调用。
-      // 付费档与 extract 模式同口径豁免两道 IP 闸门 / 走 pro 熔断桶。
-      await enforceAbuseGates(request, env, requestContext, isPro);
+      // 按订阅限速:订阅桶对 assist 照旧扣(设计与分桶说明见下方 extract 计费块)。
+      await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
       // assist 模式此前只读 trip 标志、从不计数:pro 桶的标志只由 extract 流量
       // 写,split/reflect 永不打满它 → 付费档在 assist 模式上一道限流都没有
       // (新问题 1:合法 JWS 换无限模型调用,任何计数器都不记)。现在与 extract
@@ -320,6 +305,33 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
             ...quotaHeaders(quotaState)
           }
         }), requestContext, { reason: "cache_hit", responseChars: cached.length });
+      }
+    }
+
+    // ── 计费块(2026-10 修复:下移到 cache miss 之后)─────────────────────────
+    // 缓存命中(上方 return)零模型成本,不扣任何计费桶,响应也不带 X-Quota-*
+    // (quotaState=null → quotaHeaders 返回 {},客户端保留本地估算,两端口径一致)。
+    // 按订阅限速(新问题 2):JWS 是无绑定 bearer token,device ID 又是客户端自填,
+    // 「一个合法 JWS + 轮换 device」在 device 侧配额(PAID_DAILY_LIMIT/台)下无上限。
+    // 以验签 payload 的订阅标识(哈希后的 originalTransactionId)为键设独立日上限,
+    // 挡共享 JWS 滥用;正常用户(1-3 台设备)远够。免费档无 JWS,天然不经过这里。
+    // 放在所有配额扣减之前:被它拒绝时 device/ip/global 都未扣,无需补偿。
+    // extract 与 assist 分桶(第三轮 review 新发现 2):assist(换一批/反思)不占
+    // device 计费额度、Pro 又豁免 IP 闸门 —— 若与 extract 共用一桶,反复点
+    // 「换一批」会把同一订阅所有设备的 extract 一起 429 到 UTC 0 点。分桶后
+    // extract 桶的 500 定档(1-3 台 × 100/天 extract)重新成立,assist 有自己
+    // 的独立桶(SUBSCRIPTION_ASSIST_DAILY_LIMIT,默认同 500),互不挤占。
+    if (mode === "extract") {
+      await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
+      quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription, resolvedQuotaDate);
+      // 防御性检查(原 today 不变量):注入的 resolvedQuotaDate.date 必须原样穿透
+      // enforceDailyLimit 的返回值——resetDate 既用于 today 注入 prompt 也用于
+      // quotaHeaders,不一致说明内部重构破坏了注入契约,立即抛错而非静默错位。
+      if (quotaState.resetDate !== todayDate) {
+        throw new ProxyHTTPError(500, "enforceDailyLimit resetDate mismatch", {
+          errorType: "invariant_violation",
+          body: { error: "invariant_violation", detail: "resetDate mismatch" }
+        });
       }
     }
 
