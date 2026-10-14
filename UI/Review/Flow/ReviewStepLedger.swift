@@ -1,14 +1,17 @@
 import SwiftUI
 
-/// 第 5 步 · 收尾账本(v2 改版 2026-09-01,docs/todo-review-flow-v2.md「第 5 步」:
-/// 收尾是确认,不是审判)。
+/// 第 5 步 · 收尾账本(v2 改版 2026-09-01;v6 A2 视觉改版:顶部小结去卡改
+/// 一段左对齐文字、「问问自己」卡重排 + 麦克风内嵌输入框、历次笔记全文、
+/// 下次复盘一行灰字)。收尾是确认,不是审判——数字口径与出卡条件全不变
+/// (拍板 4:v3 拍板 10 三态;R10:下次复盘固定下周一,不可改)。
 ///
-/// - 主角「你决定了 N 件」(N = 逐张决定四去向之和);批量推后单独一行,不合并。
-/// - 决策明细降级成一行小字,**零值不渲染**;全零时整张卡不出。
-/// - 「历次笔记」卡与「问问自己」输入框从第 3 步随迁至此(2026-09-02 实施补注:
-///   承诺「下次复盘会给你看」的兑现位在流程内必须可见——洞察步被降级跳过时
-///   第 3 步整步不出,放在那里承诺会落空;放在收尾,回看上次→写下这次,
-///   动线也顺)。答案持久化不变(`ReviewFlowState.voiceAnswerText`,阶段 4)。
+/// - 「你决定了 N 件」(三级标题)+ 明细一行灰字,零值不出;全零态文案不变。
+///   「推后 N」只在明细里出现一次:`.decided` 态不再单独渲染 someday_ 行
+///   (`.batchOnly` 态仍用它当主句)。`summary_caption` 去掉。
+/// - 「问问自己」卡:小标题 → 领域问题(二级)→ AI 草稿标记行 → 输入框
+///   (麦克风内嵌右下角)→ 灰字「下次复盘会给你看」。
+/// - 历次笔记全文显示(与回顾页共用 `ReviewNotesListView`,参数化全文)。
+/// - 答案持久化不变(`ReviewFlowState.voiceAnswerText`,阶段 4)。
 struct ReviewStepLedger: View {
     @Bindable var state: ReviewFlowState
     /// 草稿是否仍是 AI 原样(D9:用户一动笔即退场)。init 播种:预填发生
@@ -17,8 +20,9 @@ struct ReviewStepLedger: View {
     /// 是否已预填过(D9「首次进入且笔记为空」):用户手动清空笔记后回跳
     /// 再进第 5 步,onAppear 会重跑——不设防会把用户刚删掉的草稿塞回去。
     @State private var hasPrefilledAIDraft = false
-    /// 「问问自己」麦克风(v5 T4/D8 同款复用)。nil → 麦克风行不渲染
-    /// (注入链缺失/降级),手打兜底始终在场。
+    /// 「问问自己」麦克风(v5 T4/D8 同款复用;v6:外观换成输入框内嵌,
+    /// 状态机共用 `ReviewMicSession`)。nil → 麦克风不渲染(注入链缺失/
+    /// 降级),手打兜底始终在场。
     var voiceInput: (any VoiceInputProtocol)? = nil
     /// 错误显式传播(S2:权限拒绝/转写失败如实上报,降级手打不静默)。
     /// 必传无默认——默认 `{ _ in }` 会静默吞错,与 S2 矛盾(与
@@ -26,6 +30,9 @@ struct ReviewStepLedger: View {
     let onError: (Error) -> Void
     /// AI 同意 gate(E6 三入口同 gate:录音起步前)。
     var ensureConsent: (() async -> Bool)? = nil
+
+    /// 内嵌麦克风的会话状态(与拆小 sheet 的 ReviewMicRow 同一状态机)。
+    @State private var micSession: ReviewMicSession?
 
     private let calendar = Calendar.current
 
@@ -41,15 +48,18 @@ struct ReviewStepLedger: View {
     var body: some View {
         ScrollView {
             VStack(spacing: WarmSpacing.lg) {
-                summaryCard
-                crossPeriodCard
+                summarySection
                 askYourselfSection
-                nextReviewCard
+                crossPeriodCard
+                nextReviewLine
             }
             .padding(.horizontal, WarmSpacing.lg)
             .padding(.bottom, WarmSpacing.xxl)
         }
-        .onAppear { prefillAIDraftIfNeeded() }
+        .onAppear {
+            prefillAIDraftIfNeeded()
+            prepareMicSession()
+        }
         .onDisappear {
             // 第 5 步在录时退出(返回上一步/xmark 关闭/完成落 cover)要停录音
             // ——录音机与首页共享同一实例(coordinator.reviewVoiceInput),不复
@@ -67,76 +77,73 @@ struct ReviewStepLedger: View {
         }
     }
 
-    // MARK: 主卡(拍板 4:决定了 N 件,批量推后单独一行;v3 拍板 10:永远在)
+    /// 内嵌麦克风会话:注入链在场时创建(外观 overlay 从这里取)。
+    private func prepareMicSession() {
+        guard micSession == nil, let voiceInput else { return }
+        micSession = ReviewMicSession(voiceInput: voiceInput)
+    }
 
-    /// 三态(v3 拍板 10,修发现 D):判定收敛在 `state.ledgerCardContent`
-    /// (含边界:全零且零积压不出卡),本视图只按态渲染。
-    /// (注:全零态不渲染 `summary_caption`——那句「你的每个决定,都在这串
-    /// 数字里」在零决定下自相矛盾,文案三语均为决定语义。)
+    // MARK: 顶部小结(v6:去卡,一段左对齐文字)
+
+    /// 三态判定收敛在 `state.ledgerCardContent`(v3 拍板 10;边界:全零且
+    /// 零积压不出),本视图只按态渲染。`.decided` → 「你决定了 N 件」(三级)
+    /// + 明细一行灰字;`.batchOnly` → someday_ 句当主句;`.noneDecided` →
+    /// 全零态文案不变。`summary_caption` 不再显示。
     @ViewBuilder
-    private var summaryCard: some View {
-        let ledger = state.ledger
+    private var summarySection: some View {
         switch state.ledgerCardContent {
-        case .decided, .batchOnly:
-            // 内部两个 if(decidedCount / somedayCount)与判定态同源:
-            // .decided → 判词行 + caption;.batchOnly → 只批量行。
-            RecapCard {
-                VStack(spacing: WarmSpacing.xs) {
-                    if state.decidedCount > 0 {
-                        Text(String(localized: "review.flow.ledger.decided_\(state.decidedCount)"))
-                            .font(WarmFont.headline(17))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
-                            .fixedSize(horizontal: false, vertical: true)
+        case .decided:
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                Text(String(localized: "review.flow.ledger.decided_\(state.decidedCount)"))
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                        Text(String(localized: "review.flow.ledger.summary_caption"))
-                            .font(WarmFont.caption(12))
-                            .foregroundColor(WarmTheme.textMuted)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
-                    }
-
-                    // 批量推后单独一行:与逐张决定分开计数、分开庆祝。
-                    if ledger.somedayCount > 0 {
-                        Text(String(localized: "review.flow.ledger.someday_\(ledger.somedayCount)"))
-                            .font(WarmFont.caption(13))
-                            .foregroundColor(WarmTheme.textSecondary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if !detailFragments.isEmpty {
-                        Text(verbatim: detailFragments.joined(separator: " · "))
-                            .font(WarmFont.caption(12))
-                            .foregroundColor(WarmTheme.textMuted)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                if !detailFragments().isEmpty {
+                    Text(verbatim: detailFragments().joined(separator: " · "))
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, WarmSpacing.xxs)
+        case .batchOnly:
+            // 零决定但有批量推后 → 只出批量行(someday_ 在此仍是主句;主句已
+            // 说「推后」,明细不再重复它——「推后 N」整屏只出现一次)。
+            VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                Text(String(localized: "review.flow.ledger.someday_\(state.ledger.somedayCount)"))
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !detailFragments(excludingSomeday: true).isEmpty {
+                    Text(verbatim: detailFragments(excludingSomeday: true).joined(separator: " · "))
+                        .font(WarmFont.caption(12))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, WarmSpacing.xxs)
         case .noneDecided:
             // 全零态(v3 拍板 10):N 用 init 快照(与 ② 屏 lede 同源同恒定),
-            // 回答「那 25 件去哪了」;不加 caption——见上方注释。
-            RecapCard {
-                Text(String(localized: "review.flow.ledger.decided_none_\(state.initialBacklogCount)"))
-                    .font(WarmFont.headline(17))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            // 回答「那 25 件去哪了」;文案不变。
+            Text(String(localized: "review.flow.ledger.decided_none_\(state.initialBacklogCount)"))
+                .font(WarmFont.headline(16))
+                .foregroundColor(WarmTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, WarmSpacing.xxs)
         case .omitted:
             EmptyView()
         }
     }
 
     /// 决策明细一行小字:只拼非零片段(docs v2 例:「今天做 2 · 拆小 1 · 下周 3 · 推后 27」)。
-    private var detailFragments: [String] {
+    /// v6:「推后 N」只在明细里出现一次(decided 态不再叠加 someday_ 单独行;
+    /// batchOnly 态主句已是 someday_,经 `excludingSomeday` 再排除一次)。
+    private func detailFragments(excludingSomeday: Bool = false) -> [String] {
         let ledger = state.ledger
         var parts: [String] = []
         if ledger.todayCount > 0 {
@@ -151,7 +158,7 @@ struct ReviewStepLedger: View {
         if ledger.abandonedCount > 0 {
             parts.append(String(localized: "review.flow.ledger.detail.abandoned_\(ledger.abandonedCount)"))
         }
-        if ledger.somedayCount > 0 {
+        if ledger.somedayCount > 0, !excludingSomeday {
             parts.append(String(localized: "review.flow.ledger.detail.someday_\(ledger.somedayCount)"))
         }
         if ledger.pinnedCount > 0 {
@@ -160,33 +167,32 @@ struct ReviewStepLedger: View {
         return parts
     }
 
-    private var nextReviewCard: some View {
-        RecapCard {
-            HStack(spacing: WarmSpacing.md) {
-                Image(systemName: "clock")
-                    .font(.system(size: 18))
-                    .foregroundColor(WarmTheme.primary)
+    // MARK: 下次复盘(v6:去卡,居中一行灰字 + 时钟图标,不可点——R10)
 
-                Text(String(
-                    localized: "review.flow.ledger.next_review_\(nextReviewDate.formatted(.dateTime.month().day().weekday(.abbreviated)))"
-                ))
-                    .font(WarmFont.body(14))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .layoutPriority(1)
+    private var nextReviewLine: some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Image(systemName: "clock")
+                .font(.system(size: 14))
+                .flipsForRightToLeftLayoutDirection(true)
 
-                Spacer(minLength: 0)
-            }
+            Text(String(
+                localized: "review.flow.ledger.next_review_\(nextReviewDate.formatted(.dateTime.month().day().weekday(.abbreviated)))"
+            ))
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .font(WarmFont.caption(13))
+        .foregroundColor(WarmTheme.textMuted)
+        .frame(maxWidth: .infinity)
+        .padding(.top, WarmSpacing.xxs)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: 历次笔记卡(2026-08-23 拍板「全量可见」;2026-09-02 从第 3 步随迁至此)
 
-    /// 「历次复盘,你说过」:全部写过笔记的会话,新→旧。没有笔记时不显示。
-    /// 最新一条若带语义对照关注点(收尾 AI 提取回写),在其下渲染对照行
-    /// (「本期 N 件(上期 M 件)」纯本地现算);洞察原料缺失(降级跳过 /
-    /// 加载失败)时对照行不出,笔记列表照常。
+    /// 「历次复盘,你说过」:全部写过笔记的会话,新→旧,v6 全文显示。没有
+    /// 笔记时不显示。最新一条若带语义对照关注点(收尾 AI 提取回写),在其下
+    /// 渲染对照行(「本期 N 件(上期 M 件)」纯本地现算);洞察原料缺失
+    /// (降级跳过/加载失败)时对照行不出,笔记列表照常。
     @ViewBuilder
     private var crossPeriodCard: some View {
         let entries = ReviewNotesEntry.make(from: state.previousSessions)
@@ -200,7 +206,7 @@ struct ReviewStepLedger: View {
                         .minimumScaleFactor(0.7)
                         .flipsForRightToLeftLayoutDirection(true)
 
-                    ReviewNotesListView(entries: entries)
+                    ReviewNotesListView(entries: entries, showsFullText: true)
 
                     if let topics = entries.first?.topics, !topics.isEmpty,
                        let context = state.insightContextValue {
@@ -238,8 +244,7 @@ struct ReviewStepLedger: View {
                     ))
                     .font(WarmFont.caption(12))
                     .foregroundColor(WarmTheme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -261,95 +266,114 @@ struct ReviewStepLedger: View {
         return ""
     }
 
-    // MARK: 问问自己(2026-09-01 从第 3 步随迁;收尾才填,且说明会被回看)
+    // MARK: 问问自己(v6 A2:小标题 → 领域问题 → 草稿标记 → 输入框(内嵌麦克风)→ 承诺)
 
-    /// 「问问自己」:纯文字输入(accessibility 兜底 + 唯一入口,见类型注释)。
-    /// 答案存 `state.voiceAnswerText`(阶段 4 持久化)。标题下有领域提示行
-    /// (2026-08-25 轻修④):只在快照出现过的分类里按历史会话数轮换——
-    /// 承接实际复盘「心里过一遍分领域进度」的口问习惯。随输入框一起搬到
-    /// 第 5 步(留在第 3 步等于轻修④跟着输入框一起失效)。
+    /// 「问问自己」卡:有领域提示时小标题「问问自己」+ 二级标题 = 领域问题;
+    /// 无领域提示时用「问问自己」本身作标题、不重复小标题。AI 草稿标记行
+    /// (仅预填且未改动,灰色 + 小星标)在输入框上方;麦克风是输入框右下角
+    /// 的珊瑚色实心圆按钮。答案存 `state.voiceAnswerText`(阶段 4 持久化)。
     private var askYourselfSection: some View {
         RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.sm) {
-                Text(String(localized: "review.flow.insights.ask.title"))
-                    .font(WarmFont.headline(15))
-                    .foregroundColor(WarmTheme.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let voiceInput {
-                    ReviewMicRow(
-                        voiceInput: voiceInput,
-                        hint: String(localized: "review.flow.note.mic.hint"),
-                        onError: onError,
-                        onAdopt: { adoptTranscriptIntoNote($0) },
-                        // E10:中断/错误时已说出的部分转写预填笔记框,不丢弃。
-                        onAdoptPartialOnError: { adoptTranscriptIntoNote($0) },
-                        // E6:录音起点过同意 gate(与首页 startRecording 同口径)。
-                        ensureConsent: ensureConsent
-                    )
-                }
-
                 if let category = state.askDomainHintCategory {
+                    ReviewEyebrow(text: String(localized: "review.flow.insights.ask.title"))
+
                     Text(String(
                         format: String(localized: "review.flow.insights.ask.domain_hint"),
                         category.displayName
                     ))
-                        .font(WarmFont.caption(12))
-                        .foregroundColor(WarmTheme.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .font(WarmFont.headline(19))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(String(localized: "review.flow.insights.ask.title"))
+                        .font(WarmFont.headline(19))
+                        .foregroundColor(WarmTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if showingAIDraftHint {
-                    Text(String(localized: "review.flow.note.draft.hint"))
-                        .font(WarmFont.caption(11))
-                        .foregroundColor(WarmTheme.textMuted)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                    // AI 草稿标记行(D9:用户一动笔即退场):灰色 + 小星标。
+                    HStack(spacing: WarmSpacing.xxs) {
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 11))
+
+                        Text(String(localized: "review.flow.note.draft.hint"))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
+                    }
+                    .font(WarmFont.caption(12))
+                    .foregroundColor(WarmTheme.textSecondary)
+                    .accessibilityIdentifier("ReviewFlowAIDraftHint")
                 }
 
-                TextEditor(text: $state.voiceAnswerText)
-                    .font(WarmFont.body(14))
-                    .frame(minHeight: 72)
-                    .scrollContentBackground(.hidden)
-                    .padding(WarmSpacing.xs)
-                    .background(
-                        RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
-                            .fill(WarmTheme.inputFieldBackground)
-                    )
-                    .overlay(alignment: .topLeading) {
-                        if state.voiceAnswerText.isEmpty {
-                            Text(String(localized: "review.flow.insights.ask.placeholder"))
-                                .font(WarmFont.caption(12))
-                                .foregroundColor(WarmTheme.textMuted)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.7)
-                                .padding(WarmSpacing.sm)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .accessibilityIdentifier("ReviewFlowAskYourself")
+                noteEditor
 
                 // 具体承诺(docs v2:「放最后、且说清楚会被回看,才有填的理由」):
                 // 收尾语义对照会把这句话提取成关注点,下次复盘跨期对照行兑现。
                 Text(String(localized: "review.flow.insights.ask.promise"))
                     .font(WarmFont.caption(11))
                     .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// 笔记输入框(麦克风内嵌右下角;录音中左下「在听…」+「取消」)。
+    private var noteEditor: some View {
+        TextEditor(text: $state.voiceAnswerText)
+            .font(WarmFont.body(16))
+            .frame(minHeight: 124)
+            .scrollContentBackground(.hidden)
+            .padding(.leading, WarmSpacing.sm)
+            .padding(.top, WarmSpacing.sm)
+            .padding(.trailing, WarmSpacing.sm)
+            .padding(.bottom, 60)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                    .fill(WarmTheme.inputFieldBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                            .strokeBorder(
+                                micSession?.isRecording == true ? WarmTheme.primary : WarmTheme.rowHairline,
+                                lineWidth: micSession?.isRecording == true ? 1.5 : 1
+                            )
+                    )
+            )
+            .overlay(alignment: .topLeading) {
+                if state.voiceAnswerText.isEmpty {
+                    Text(String(localized: "review.flow.insights.ask.placeholder"))
+                        .font(WarmFont.body(14))
+                        .foregroundColor(WarmTheme.textMuted)
+                        .padding(WarmSpacing.sm)
+                        .padding(.top, WarmSpacing.xxs)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let micSession {
+                    ReviewMicInputOverlay(session: micSession)
+                        .padding(WarmSpacing.xs)
+                        .onAppear {
+                            micSession.bind(
+                                onError: onError,
+                                onAdopt: { adoptTranscriptIntoNote($0) },
+                                // E10:中断/错误时已说出的部分转写预填笔记框,不丢弃。
+                                onAdoptPartialOnError: { adoptTranscriptIntoNote($0) },
+                                // E6:录音起点过同意 gate(与首页 startRecording 同口径)。
+                                ensureConsent: ensureConsent
+                            )
+                        }
+                }
+            }
+            .accessibilityIdentifier("ReviewFlowAskYourself")
     }
 
     /// 转写采纳进「问问自己」笔记框(v5 T4):已有内容则换行接续——笔记是
     /// 自由文本,多段转写逐行追加比挤一行可读;VoiceOver 由 TextEditor 承载。
     /// AI 草稿预填(v5 T5/D9):首次进入且笔记为空+深读草稿非空 → 预填并
     /// 挂标记;用户改/删/说一句(voiceAnswerText 变化)标记退场。存进
-    /// voiceNote 的就是用户看到的原文(D9:「AI 草稿(你保留的)」由 hint
-    /// 行承担披露,不再另设 noteSource 字段——预填后原文可见,保存即确认)。
+    /// voiceNote 的原文是否为原样草稿,由 buildSession 的 §3.2 判定落库。
     private func prefillAIDraftIfNeeded() {
         guard !hasPrefilledAIDraft,
               state.voiceAnswerText.isEmpty,

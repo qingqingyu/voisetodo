@@ -424,9 +424,13 @@ struct AIKeptDraftChip: View {
     }
 }
 
-/// 历次复盘笔记列表:回顾页时间线与复盘流程第 3 步共用(别复制两份)。
+/// 历次复盘笔记列表:回顾页时间线与复盘流程第 5 步共用(别复制两份)。
+/// v6 §2 第 5 步:复盘流程内全文显示(`showsFullText = true`);回顾页默认
+/// 4 行折叠——两页共用但外观参数化(先例 `promotesSameDay`),回顾页零变化。
 struct ReviewNotesListView: View {
     let entries: [ReviewNotesEntry]
+    /// true = 每条笔记全文显示(复盘第 5 步);false = 4 行折叠(回顾页)。
+    var showsFullText: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: WarmSpacing.md) {
@@ -467,8 +471,8 @@ struct ReviewNotesListView: View {
             Text(entry.note)
                 .font(WarmFont.body(14))
                 .foregroundColor(WarmTheme.textSecondary)
-                .lineLimit(4)
-                .minimumScaleFactor(0.7)
+                .lineLimit(showsFullText ? nil : 4)
+                .minimumScaleFactor(showsFullText ? 1 : 0.7)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
