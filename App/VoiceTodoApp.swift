@@ -166,6 +166,19 @@ struct VoiceTodoApp: App {
                 VoiceTodoLog.app.error("app.ui_test.seed_failed count=\(uiTestOptions.presetTodos.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             }
         }
+        // 复盘截图种子(v6):历史会话 + 上次置顶(--preset-review-data)。
+        // 解码失败与 todos-data 同口径 fatalError——schema 漂移不允许静默空历史。
+        if uiTestOptions.isUITesting, let seedError = uiTestOptions.presetReviewDataDecodeError {
+            VoiceTodoLog.app.critical("app.ui_test.preset_review_decode_failed error=\(VoiceTodoLog.errorSummary(seedError), privacy: .public)")
+            fatalError("Invalid UI test preset review data: \(seedError)")
+        }
+        if let reviewSeed = uiTestOptions.presetReviewData {
+            // 先清空再播种:App Group UserDefaults 不随 --reset-user-data 清,
+            // 不清空会跨启动累积(重复会话 + 数据串语言)。
+            ReviewSessionStore.shared.resetForUITests()
+            reviewSeed.sessions.forEach { ReviewSessionStore.shared.append($0) }
+            ReviewPinningStore.shared.setPinned(Set(reviewSeed.pinnedIDs))
+        }
 
         // 初始化依赖
         let entitlementManager = EntitlementManager()

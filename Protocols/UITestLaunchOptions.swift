@@ -15,6 +15,11 @@ struct UITestLaunchOptions {
     let scenario: String?
     let presetTodos: [TodoItemData]
     let presetTodosDecodeError: Error?
+    /// 复盘截图套件(v6)的会话/置顶种子(`--preset-review-data=<json>`,
+    /// shape 见 `UITestReviewSeed`)。解码失败与 todos-data 同口径:显式记错,
+    /// app 启动 fatalError(UI 测试种子的 schema 漂移不允许静默空库)。
+    let presetReviewData: UITestReviewSeed?
+    let presetReviewDataDecodeError: Error?
 
     static let current = UITestLaunchOptions()
 
@@ -31,6 +36,27 @@ struct UITestLaunchOptions {
 
         scenario = arguments.first(where: { $0.hasPrefix("--scenario=") })
             .map { String($0.dropFirst("--scenario=".count)) }
+
+        if let reviewArgument = arguments.first(where: { $0.hasPrefix("--preset-review-data=") }) {
+            let json = String(reviewArgument.dropFirst("--preset-review-data=".count))
+            if let data = json.data(using: .utf8) {
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
+                    presetReviewData = try decoder.decode(UITestReviewSeed.self, from: data)
+                    presetReviewDataDecodeError = nil
+                } catch {
+                    presetReviewData = nil
+                    presetReviewDataDecodeError = error
+                }
+            } else {
+                presetReviewData = nil
+                presetReviewDataDecodeError = VoiceTodoError.apiResponseInvalid("Invalid --preset-review-data UTF-8")
+            }
+        } else {
+            presetReviewData = nil
+            presetReviewDataDecodeError = nil
+        }
 
         let presetTodosRequested = arguments.contains("--preset-todos")
         if let todosArgument = arguments.first(where: { $0.hasPrefix("--todos-data=") }) {
@@ -84,4 +110,12 @@ struct UITestLaunchOptions {
             return "明天去银行"
         }
     }
+}
+
+/// `--preset-review-data` 的载荷(v6 复盘截图套件):历史会话(升序追加)
+/// + 上次置顶 id 集。会话 JSON 直接用 `ReviewSession` 的 Codable 形状
+/// (iso8601 日期);置顶 id 必须指向同批 `--todos-data` 种子里的待办。
+struct UITestReviewSeed: Decodable {
+    let sessions: [ReviewSession]
+    let pinnedIDs: [UUID]
 }

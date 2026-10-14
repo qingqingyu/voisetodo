@@ -243,6 +243,21 @@ final class ReviewSessionStore {
 
     // MARK: 写入
 
+    /// UI 测试种子钩子(v6 截图套件):清空全部会话——`--reset-user-data` 只
+    /// 清 SwiftData,不清 App Group UserDefaults;不清空的话,跨启动/跨语言
+    /// 轮次的 `--preset-review-data` 会累积(同 id 会话重复追加、数据串语言)。
+    /// 与 append 同锁同 defaults;生产代码不调用。
+    func resetForUITests() {
+        guard let defaults else {
+            VoiceTodoLog.app.warning("review_session.uitest_reset.failed reason=defaults_unavailable")
+            return
+        }
+        lock.withLock {
+            defaults.removeObject(forKey: Self.sessionsKey)
+        }
+        VoiceTodoLog.app.info("review_session.uitest_reset.success")
+    }
+
     /// 收尾落库:追加一条会话并按容量裁剪(保留最近 `capacity` 条)。
     /// defaults 不可用时打 warning 显式记录,不静默假装成功。
     func append(_ session: ReviewSession) {
