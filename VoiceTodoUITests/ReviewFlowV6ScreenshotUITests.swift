@@ -194,9 +194,13 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
         XCTAssertTrue(waitForPrimary(pass), "[\(pass.suffix)] 第 1 步主按钮应出现")
         Thread.sleep(forTimeInterval: 0.6)
         capture("v6-step1", pass: pass)
-        // 滚动到底:上期你写了 + 展开按钮。
+        // 滚动到底:数字块竖排(AX)+ 上期你写了 + 展开按钮。
         swipeUp(app)
         capture("v6-step1b", pass: pass)
+        if isAX {
+            swipeUp(app)
+            capture("v6-step1c", pass: pass)
+        }
 
         // 第 2 步:卡堆(置顶卡带头像 chip + 原话)→ 划掉一张出撤销提示条 →
         // 再排一张进下周(第 4 步的「你刚排进下周的」来源)。
@@ -212,7 +216,13 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
             tapElement(dropButton)
             Thread.sleep(forTimeInterval: 1.0) // 飞出动画 + 提示条落位
         }
+        // AX 档内容可滚:先滚一屏让 2×2 按钮区入镜,再补一张滚到底(批量出口)。
+        if isAX { swipeUp(app) }
         capture("v6-step2b", pass: pass)
+        if isAX {
+            swipeUp(app)
+            capture("v6-step2c", pass: pass)
+        }
         let keepButton = app.buttons.matching(
             NSPredicate(format: "label IN %@", pass.keepLabels)
         ).firstMatch

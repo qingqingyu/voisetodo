@@ -251,8 +251,8 @@ struct ReviewStepRecap: View {
         }
     }
 
-    /// 窗口说明行:常规字号 = 左说明对前两块(2/3 宽)、右说明对第三块;
-    /// AX 字号 = 两行左对齐(块已竖排)。
+    /// 窗口说明行:常规字号 = 左说明对前两块、右说明右对齐到第三块末缘
+    /// (等分弹性会把右说明错位到第二块下,review 走查发现);AX = 两行左对齐。
     private var statCaptions: some View {
         let windowCaption = Text(String(localized: "review.flow.recap.stats.window"))
         let backlogCaption = Text(String(localized: "review.flow.recap.stats.backlog"))
@@ -265,15 +265,16 @@ struct ReviewStepRecap: View {
             } else {
                 HStack(spacing: WarmSpacing.xs) {
                     windowCaption
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                    Spacer(minLength: WarmSpacing.xs)
                     backlogCaption
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .font(WarmFont.caption(12))
         .foregroundColor(WarmTheme.textMuted)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// 普通统计块:大数字(24pt)+ 标签,白卡。
