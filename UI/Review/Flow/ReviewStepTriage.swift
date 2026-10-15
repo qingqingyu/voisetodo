@@ -46,6 +46,8 @@ struct ReviewStepTriage: View {
 
     /// AX 字号判定(v6 §1.6:第 2 步四钮在大字号下排 2×2)。
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// 撤销提示条的深色模式描边判定(二轮 review 可选 3)。
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var splitTarget: TodoItemData?
     /// 候选加载状态机:idle(未打开)→ loading → ready / failed(AI 失败 → 降级手写)。
@@ -76,9 +78,12 @@ struct ReviewStepTriage: View {
         // 或带撤销条/长引文时总高会超过一屏,把底部主按钮挤出屏幕;常规大屏
         // 下内容顶部对齐、观感与原固定布局一致(Spacer 在滚动容器内退化为
         // 最小间距,空态改用 padding 居中补偿)。
+        // basedOnSize(二轮 review):内容放得下时不回弹——否则左右滑卡片的
+        // 手势一歪就带着整页上下晃。
         ScrollView {
             triageContent
         }
+        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         .sheet(item: $splitTarget) { todo in
             splitSheet(todo)
         }
@@ -222,8 +227,14 @@ struct ReviewStepTriage: View {
         .padding(.horizontal, WarmSpacing.md)
         .padding(.vertical, WarmSpacing.sm)
         .background(
+            // 深色模式下 #1E2A3A 与页面底 #1A1C1E 明度接近,加一圈细描边
+            // 区分轮廓(二轮 review 可选 3);浅色模式本身强对比,不加。
             RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
                 .fill(Color(hex: "1E2A3A"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                        .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.14) : .clear, lineWidth: 1)
+                )
         )
         .accessibilityElement(children: .contain)
     }

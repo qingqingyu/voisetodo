@@ -277,7 +277,8 @@ struct ReviewStepRecap: View {
         .foregroundColor(WarmTheme.textMuted)
     }
 
-    /// 普通统计块:大数字(24pt)+ 标签,白卡。
+    /// 普通统计块:大数字(24pt)+ 标签,白卡。maxHeight 弹性使同行三块等高
+    /// (某块标签换行时不参差;HStack 以最高兄弟定行高)。
     private func statBlock(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
             Text(verbatim: value)
@@ -291,7 +292,7 @@ struct ReviewStepRecap: View {
                 .foregroundColor(WarmTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, WarmSpacing.sm)
         .padding(.vertical, WarmSpacing.sm)
         .background(
@@ -315,7 +316,7 @@ struct ReviewStepRecap: View {
                 .foregroundColor(WarmTheme.background.opacity(0.75))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, WarmSpacing.sm)
         .padding(.vertical, WarmSpacing.sm)
         .background(

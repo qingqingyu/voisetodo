@@ -117,6 +117,11 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
     private var scope: String {
         ProcessInfo.processInfo.environment["V6_SCOPE"] ?? "flow"
     }
+    /// 滑卡手势验证(真机轮):右滑排下周一张、左滑划掉一张并截证据图
+    /// (二轮 review 意见 1 的手势回归验证)。
+    private var swipeMode: Bool {
+        ProcessInfo.processInfo.environment["V6_SWIPE"] == "1"
+    }
 
     override func setUpWithError() throws {
         continueAfterFailure = true
@@ -209,6 +214,16 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
         XCTAssertTrue(triageCard.waitForExistence(timeout: 8.0), "[\(pass.suffix)] 第 2 步卡堆应出现")
         Thread.sleep(forTimeInterval: 0.8) // nudge 教学动画落定
         capture("v6-step2", pass: pass)
+        if swipeMode {
+            // 右滑 = 排下周(手势方向教学一致);等飞出动画落定后截证据。
+            triageCard.swipeRight()
+            Thread.sleep(forTimeInterval: 1.2)
+            capture("v6-step2-swipe-right", pass: pass)
+            // 左滑 = 不做了;撤销提示条随划掉出现。
+            triageCard.swipeLeft(velocity: .fast)
+            Thread.sleep(forTimeInterval: 1.2)
+            capture("v6-step2-swipe-left", pass: pass)
+        }
         let dropButton = app.buttons.matching(
             NSPredicate(format: "label IN %@", pass.dropLabels)
         ).firstMatch
