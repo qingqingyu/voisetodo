@@ -359,8 +359,9 @@ struct ReviewStepRecap: View {
     /// 原样保存的 AI 草稿在小标题旁挂 chip(§3.2)。
     private func lastNoteCard(_ note: String) -> some View {
         // 与原型同尺的「可能超 4 行」判定:多段或超 60 字符才给展开按钮——
-        // 短笔记的「展开全文」是噪音。
-        let isLong = note.contains("\n") || note.count > 60
+        // 短笔记的「展开全文」是噪音。AX 字号恒给入口:放大后 40+ 字就会超
+        // 4 行,不给入口 = 原话被 lineLimit(4) 永久截死(§1.6/D2)。
+        let isLong = note.contains("\n") || note.count > 60 || dynamicTypeSize.isAccessibilitySize
         return RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.xs) {
                 HStack(spacing: WarmSpacing.sm) {

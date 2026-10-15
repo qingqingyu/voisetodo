@@ -1046,8 +1046,8 @@ final class ReviewFlowState {
     /// AI 草稿(第 1 步「上期你写了」小标题旁挂来源 chip 用)。选择逻辑与
     /// `lastConfrontationNote` 单一来源。
     static func lastConfrontationEntry(sessions: [ReviewSession]) -> (note: String, isUneditedAIDraft: Bool)? {
-        guard let session = sessions.last(where: { note in
-            (note.voiceNote ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        guard let session = sessions.last(where: { candidate in
+            (candidate.voiceNote ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         }), let note = session.voiceNote?.trimmingCharacters(in: .whitespacesAndNewlines) else {
             return nil
         }
@@ -1373,6 +1373,8 @@ struct ReviewFlowView: View {
     private var stepContent: some View {
         switch state.currentStep {
         case .recap:
+            // 对质区数据一次取全(note + §3.2 草稿标记同源,别重复遍历会话)。
+            let lastEntry = ReviewFlowState.lastConfrontationEntry(sessions: state.previousSessions)
             ReviewStepRecap(
                 lastReviewDate: state.previousSessions.last?.completedAt,
                 lastPinnedOutcome: state.lastPinnedOutcome.map { outcome in
@@ -1383,8 +1385,8 @@ struct ReviewFlowView: View {
                 // D2(v5):上期笔记原话对质(提取逻辑收口在
                 // `lastConfrontationEntry(sessions:)`,供单测 S6 三态;
                 // §3.2 连带把「是否原样 AI 草稿」一起带给第 1 步)。
-                lastNote: ReviewFlowState.lastConfrontationEntry(sessions: state.previousSessions)?.note,
-                lastNoteIsUneditedAIDraft: ReviewFlowState.lastConfrontationEntry(sessions: state.previousSessions)?.isUneditedAIDraft ?? false
+                lastNote: lastEntry?.note,
+                lastNoteIsUneditedAIDraft: lastEntry?.isUneditedAIDraft ?? false
             )
         case .triage:
             ReviewStepTriage(
@@ -1560,7 +1562,9 @@ struct ReviewFlowView: View {
         case .ledger: return String(localized: "review.flow.done")
         // v6 §2 第 2 步:卡堆未清空时主按钮换次级文案「剩下 N 张先留着,
         // 下一步」(N=卡堆剩余张数);点击行为不变(R5:随时可进下一步)。
-        case .triage where !state.deck.isEmpty:
+        // 判定复用 `bottomUsesSecondaryStyle`——文案与样式必须同源,两处
+        // 各写一份会漂移成「次级文案配珊瑚主色」。
+        case .triage where bottomUsesSecondaryStyle:
             return String(localized: "review.flow.triage.next_leave_\(state.deck.count)")
         default: return String(localized: "review.flow.next")
         }

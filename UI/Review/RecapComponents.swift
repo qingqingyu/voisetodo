@@ -162,6 +162,8 @@ struct RecapStatsRow: View {
 /// v3 拍板 3:Done/Added 已同窗(拍板 1),Still open 是全时段口径——
 /// 差异必须说出口,补一行 caption 说明;**不写减法算式**(Added − Done
 /// 不是任何真实集合,算式上屏就是新的自相矛盾)。
+/// ⚠️ v6 起第 1 步改用自带 `statsSection`(分窗口三块),本组件**暂无调用方**
+/// ——回顾页用的是 `RecapStatsRow`,不是它;按 R11「共用组件不删」拍板保留。
 struct RecapEvidenceRow: View {
     let summary: ReviewSummary
 
