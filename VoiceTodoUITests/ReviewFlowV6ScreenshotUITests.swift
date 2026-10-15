@@ -216,11 +216,13 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
         capture("v6-step2", pass: pass)
         if swipeMode {
             // 右滑 = 排下周(手势方向教学一致);等飞出动画落定后截证据。
-            triageCard.swipeRight()
+            // XCUIElement.swipeRight() 实测不触发卡面的 DragGesture
+            // (计数/张数纹丝不动),改带速度的坐标拖拽(85pt 阈值 + 800pt/s)。
+            dragCard(triageCard, toward: 1)
             Thread.sleep(forTimeInterval: 1.2)
             capture("v6-step2-swipe-right", pass: pass)
             // 左滑 = 不做了;撤销提示条随划掉出现。
-            triageCard.swipeLeft(velocity: .fast)
+            dragCard(triageCard, toward: -1)
             Thread.sleep(forTimeInterval: 1.2)
             capture("v6-step2-swipe-left", pass: pass)
         }
@@ -275,6 +277,18 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
         capture("v6-step5b", pass: pass)
 
         app.terminate()
+    }
+
+    /// 卡面横向拖拽(toward: +1 右 / −1 左)。用 window 坐标 + .fast 速度,
+    /// 保证越过 85pt 距离阈值或 800pt/s 速度阈值之一(触发排下周/不做了)。
+    private func dragCard(_ card: XCUIElement, toward: CGFloat) {
+        let window = appHelper.app.windows.firstMatch
+        let frame = card.frame
+        let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: frame.midX - toward * 40, dy: frame.midY))
+        let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: frame.midX + toward * 280, dy: frame.midY))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0.05)
     }
 
     /// 步骤内滚动(上滑一屏,看折叠线以下的内容)。
