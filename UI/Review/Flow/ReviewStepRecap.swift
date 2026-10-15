@@ -26,6 +26,9 @@ struct ReviewStepRecap: View {
     /// 「原话」不能截死,对质价值就在完整原话)。
     @State private var noteExpanded = false
 
+    /// AX 字号判定(v6 §1.6:三数字块在大字号下竖排)。
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
         sort: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
@@ -203,50 +206,74 @@ struct ReviewStepRecap: View {
 
     // MARK: 三个数字(v6:分窗口成组)
 
-    /// 一行三块:「本期完成」「新增」白卡 +「还挂着」深色重点块(稍宽)。
-    /// 下方一行灰色说明,左对前两块「上次复盘以来」,右对第三块「全部积压」
-    /// (R1:两组口径不同必须说出口;**不写算式**)。
-    /// 原 `review.stat.pending_note` 说明行不再显示(回顾页不受影响)。
+    /// 一行三块:「本期完成」「新增」白卡 +「还挂着」深色重点块(稍宽——
+    /// 深色底向两侧间隙各外扩 WarmSpacing.xs)。下方一行灰色说明,左对前两块
+    /// 「上次复盘以来」,右对第三块「全部积压」(R1:两组口径不同必须说出口;
+    /// **不写算式**)。原 `review.stat.pending_note` 说明行不再显示(回顾页不受影响)。
+    /// 高度随文字增长(无固定 frame);AX 字号下三块竖排、说明两行(§1.6)。
     private var statsSection: some View {
-        VStack(spacing: WarmSpacing.xs) {
-            GeometryReader { proxy in
-                let unit = (proxy.size.width - WarmSpacing.xs * 2) / 3.25
-                HStack(spacing: WarmSpacing.xs) {
-                    statBlock(
-                        value: "\(summary.total)",
-                        label: String(localized: "review.stat.done")
-                    )
-                    .frame(width: unit)
-
-                    statBlock(
-                        value: "\(summary.createdCount)",
-                        label: String(localized: "review.stat.created")
-                    )
-                    .frame(width: unit)
-
-                    keyStatBlock(
-                        value: "\(summary.pendingOneOffCount)",
-                        label: String(localized: "review.stat.pending")
-                    )
-                    .frame(width: unit * 1.25)
+        VStack(alignment: .leading, spacing: WarmSpacing.xs) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: WarmSpacing.xs) {
+                        statBlock(
+                            value: "\(summary.total)",
+                            label: String(localized: "review.stat.done")
+                        )
+                        statBlock(
+                            value: "\(summary.createdCount)",
+                            label: String(localized: "review.stat.created")
+                        )
+                        keyStatBlock(
+                            value: "\(summary.pendingOneOffCount)",
+                            label: String(localized: "review.stat.pending")
+                        )
+                    }
+                } else {
+                    HStack(spacing: WarmSpacing.xs) {
+                        statBlock(
+                            value: "\(summary.total)",
+                            label: String(localized: "review.stat.done")
+                        )
+                        statBlock(
+                            value: "\(summary.createdCount)",
+                            label: String(localized: "review.stat.created")
+                        )
+                        keyStatBlock(
+                            value: "\(summary.pendingOneOffCount)",
+                            label: String(localized: "review.stat.pending")
+                        )
+                    }
                 }
             }
-            .frame(height: 76)
 
-            GeometryReader { proxy in
-                let unit = (proxy.size.width - WarmSpacing.xs * 2) / 3.25
-                HStack(spacing: WarmSpacing.xs) {
-                    Text(String(localized: "review.flow.recap.stats.window"))
-                        .frame(width: unit * 2 + WarmSpacing.xs, alignment: .leading)
-
-                    Text(String(localized: "review.flow.recap.stats.backlog"))
-                        .frame(width: unit * 1.25, alignment: .leading)
-                }
-            }
-            .frame(height: 16)
-            .font(WarmFont.caption(12))
-            .foregroundColor(WarmTheme.textMuted)
+            statCaptions
         }
+    }
+
+    /// 窗口说明行:常规字号 = 左说明对前两块(2/3 宽)、右说明对第三块;
+    /// AX 字号 = 两行左对齐(块已竖排)。
+    private var statCaptions: some View {
+        let windowCaption = Text(String(localized: "review.flow.recap.stats.window"))
+        let backlogCaption = Text(String(localized: "review.flow.recap.stats.backlog"))
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+                    windowCaption
+                    backlogCaption
+                }
+            } else {
+                HStack(spacing: WarmSpacing.xs) {
+                    windowCaption
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    backlogCaption
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .font(WarmFont.caption(12))
+        .foregroundColor(WarmTheme.textMuted)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// 普通统计块:大数字(24pt)+ 标签,白卡。
@@ -261,10 +288,9 @@ struct ReviewStepRecap: View {
             Text(label)
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.horizontal, WarmSpacing.sm)
         .padding(.vertical, WarmSpacing.sm)
         .background(
@@ -286,15 +312,16 @@ struct ReviewStepRecap: View {
             Text(label)
                 .font(WarmFont.caption(13))
                 .foregroundColor(WarmTheme.background.opacity(0.75))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.horizontal, WarmSpacing.sm)
         .padding(.vertical, WarmSpacing.sm)
         .background(
+            // 「稍宽」:深色底向两侧间隙各外扩 xxs,无固定几何(块宽随布局弹性分摊)。
             RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
                 .fill(WarmTheme.textPrimary)
+                .padding(.horizontal, -WarmSpacing.xxs)
         )
     }
 

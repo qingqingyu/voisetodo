@@ -72,17 +72,12 @@ struct ReviewStepTriage: View {
     private let calendar = Calendar.current
 
     var body: some View {
-        // AX 字号(v6 §1.6):内容总高会超过一屏——固定 VStack 会把底部主按钮
-        // 挤出屏幕,改成 ScrollView(可滚到 toast/批量出口);常规字号维持原
-        // 固定布局(卡堆 + 按钮一屏尽收,是这一步的设计)。
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                ScrollView {
-                    triageContent
-                }
-            } else {
-                triageContent
-            }
+        // review 修订:任何字号都放 ScrollView——固定 VStack 在小屏(iPhone SE)
+        // 或带撤销条/长引文时总高会超过一屏,把底部主按钮挤出屏幕;常规大屏
+        // 下内容顶部对齐、观感与原固定布局一致(Spacer 在滚动容器内退化为
+        // 最小间距,空态改用 padding 居中补偿)。
+        ScrollView {
+            triageContent
         }
         .sheet(item: $splitTarget) { todo in
             splitSheet(todo)
@@ -198,6 +193,9 @@ struct ReviewStepTriage: View {
     /// 「已划掉:任务名」深色提示条 + 右侧「撤销上一张」(v6 A2:撤销只覆盖
     /// 「不做了」,R3/拍板 7 不变;样式从独立文字按钮换成卡堆下方的提示条,
     /// 撤销成功后沿用现有 toast「已恢复」)。
+    /// 底色是**两种外观模式共用的固定深墨蓝**(review 修订:原先用自适应
+    /// `textPrimary`,深色模式下变浅灰底,珊瑚色「撤销」对比度不足 4.5:1;
+    /// 固定 #1E2A3A 上白字 ≈14.5:1、珊瑚字 ≈6.3:1,均达标)。
     private var droppedToastBar: some View {
         let lastDropped = state.abandonedStack.last
         return HStack(spacing: WarmSpacing.md) {
@@ -205,7 +203,7 @@ struct ReviewStepTriage: View {
                 localized: "review.flow.triage.dropped_\(lastDropped?.title ?? "")"
             ))
                 .font(WarmFont.body(14))
-                .foregroundColor(WarmTheme.background)
+                .foregroundColor(.white)
                 .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: WarmSpacing.xs)
@@ -225,7 +223,7 @@ struct ReviewStepTriage: View {
         .padding(.vertical, WarmSpacing.sm)
         .background(
             RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
-                .fill(WarmTheme.textPrimary)
+                .fill(Color(hex: "1E2A3A"))
         )
         .accessibilityElement(children: .contain)
     }
@@ -247,14 +245,15 @@ struct ReviewStepTriage: View {
 
     @ViewBuilder
     private var emptyDeck: some View {
-        Spacer()
+        // ScrollView 内弹性 Spacer 会塌陷,改固定留白让空态不贴顶。
         EmptyStateView(
             icon: "checkmark.seal",
             message: String(localized: "review.flow.triage.empty"),
             iconSize: 40,
             opacity: 0.6
         )
-        Spacer()
+        .padding(.top, WarmSpacing.xxxl)
+        .padding(.bottom, WarmSpacing.xxl)
     }
 
     // MARK: 批量出口(v5 拍板 3:尾部停滞 ≥ 21 用户天的一键推「稍后」,与地板 A 同尺)

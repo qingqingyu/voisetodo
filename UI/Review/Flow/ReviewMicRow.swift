@@ -348,7 +348,7 @@ struct ReviewMicInputOverlay: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(String(localized: session.isRecording
-            ? "review.flow.split.mic.listening"
+            ? "review.flow.split.mic.done"
             : "review.flow.note.mic.a11y"))
         .accessibilityIdentifier("ReviewFlowLedgerMic")
         .animation(WarmAnimation.springStandard, value: session.isRecording)

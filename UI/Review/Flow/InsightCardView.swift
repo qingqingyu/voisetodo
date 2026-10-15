@@ -77,7 +77,7 @@ struct InsightCardView: View {
     /// 不可点——全局视觉规则 1:不可点的标签不用警示色作底/描边/文字。
     private var signalLabel: some View {
         HStack(spacing: WarmSpacing.xxs) {
-            Image(systemName: "cellbars")
+            Image(systemName: "cellularbars")
                 .font(.system(size: 11, weight: .semibold))
                 .flipsForRightToLeftLayoutDirection(true)
 

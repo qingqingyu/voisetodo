@@ -175,7 +175,9 @@ struct ReviewStepCommit: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(disabled)
         .opacity(disabled ? 0.45 : 1)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityIdentifier("ReviewFlowCommitRow_\(todo.id.uuidString)")
     }
 

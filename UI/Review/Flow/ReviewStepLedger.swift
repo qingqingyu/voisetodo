@@ -320,6 +320,9 @@ struct ReviewStepLedger: View {
     }
 
     /// 笔记输入框(麦克风内嵌右下角;录音中左下「在听…」+「取消」)。
+    /// 背景/描边放 `NoteEditorBackground`(观察 session 的子视图)——本视图
+    /// 对 `micSession` 只持普通 @State,不订阅其 @Published,录音态的边框
+    /// 变色必须由子视图自渲染(review 修订 5)。
     private var noteEditor: some View {
         TextEditor(text: $state.voiceAnswerText)
             .font(WarmFont.body(16))
@@ -329,17 +332,13 @@ struct ReviewStepLedger: View {
             .padding(.top, WarmSpacing.sm)
             .padding(.trailing, WarmSpacing.sm)
             .padding(.bottom, 60)
-            .background(
-                RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
-                    .fill(WarmTheme.inputFieldBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
-                            .strokeBorder(
-                                micSession?.isRecording == true ? WarmTheme.primary : WarmTheme.rowHairline,
-                                lineWidth: micSession?.isRecording == true ? 1.5 : 1
-                            )
-                    )
-            )
+            .background {
+                if let micSession {
+                    NoteEditorBackground(session: micSession)
+                } else {
+                    NoteEditorBackground.plain
+                }
+            }
             .overlay(alignment: .topLeading) {
                 if state.voiceAnswerText.isEmpty {
                     Text(String(localized: "review.flow.insights.ask.placeholder"))
@@ -367,6 +366,37 @@ struct ReviewStepLedger: View {
                 }
             }
             .accessibilityIdentifier("ReviewFlowAskYourself")
+    }
+
+    // MARK: 输入框背景(review 修订 5:子视图观察 session,边框随录音态变色)
+
+    /// 输入框背景 + 描边:录音中描边变珊瑚色(1.5pt),否则发丝线。
+    private struct NoteEditorBackground: View {
+        @ObservedObject var session: ReviewMicSession
+
+        /// 无麦克风(注入链缺失)时的静态背景。
+        static var plain: some View {
+            Self.shape(
+                strokeColor: WarmTheme.rowHairline,
+                lineWidth: 1
+            )
+        }
+
+        var body: some View {
+            Self.shape(
+                strokeColor: session.isRecording ? WarmTheme.primary : WarmTheme.rowHairline,
+                lineWidth: session.isRecording ? 1.5 : 1
+            )
+        }
+
+        private static func shape(strokeColor: Color, lineWidth: CGFloat) -> some View {
+            RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                .fill(WarmTheme.inputFieldBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: WarmRadius.section, style: .continuous)
+                        .strokeBorder(strokeColor, lineWidth: lineWidth)
+                )
+        }
     }
 
     /// 转写采纳进「问问自己」笔记框(v5 T4):已有内容则换行接续——笔记是
