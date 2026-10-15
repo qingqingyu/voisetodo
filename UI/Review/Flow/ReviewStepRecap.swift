@@ -244,6 +244,10 @@ struct ReviewStepRecap: View {
                             label: String(localized: "review.stat.pending")
                         )
                     }
+                    // 三轮 review:ScrollView 会对子视图提无限高,只靠
+                    // maxHeight: .infinity 兄弟间不会互相撑到等高;fixedSize
+                    // 让 HStack 以理想高度(最高兄弟)落地,块内弹性随之生效。
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
