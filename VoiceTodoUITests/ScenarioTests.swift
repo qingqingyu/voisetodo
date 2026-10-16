@@ -21,7 +21,8 @@ final class ScenarioTests: XCTestCase {
             "test_S18_firstVoiceTrial_hintToWowPaywall",
             "test_S18a_firstVoiceTrial_todayToastBranch",
             "test_S18b_firstVoiceTrial_genericToastBranch",
-            "test_S19_firstVoiceTrial_micDenied_noHint"
+            "test_S19_firstVoiceTrial_micDenied_noHint",
+            "test_S21_settings_redeemCodeEntry_exists"
             // S20 不进默认列表:CLI xcodebuild 不给被测进程注入 scheme 的 StoreKit
             // 配置(商品恒为空,购买按钮不渲染),只能在 Xcode GUI 里跑
             // (TestAction 已手挂 Products.storekit,见 scheme)。RUN_LEGACY_SCENARIOS=1 可启用。
@@ -981,6 +982,27 @@ final class ScenarioTests: XCTestCase {
             .matching(identifier: "PaywallSubscribedCard").firstMatch
         XCTAssertTrue(subscribedCard.waitForExistence(timeout: 10.0), "已订阅再进付费墙应显示已订阅状态卡")
         XCTAssertFalse(appHelper.app.buttons["PaywallPurchaseButton"].exists, "已订阅用户不应再看到购买按钮")
+    }
+
+    // MARK: - S21: 兑换码入口
+
+    /// 场景 S21: 设置页兑换码入口存在
+    /// 只断言入口渲染,不 tap——模拟器/沙盒环境无法拉起系统优惠码面板
+    /// (`presentOfferCodeRedeemSheet` 只在真实环境可用),兑换行为上线后用真实码验证。
+    func test_S21_settings_redeemCodeEntry_exists() {
+        // Step 1: 跳过 onboarding 直接进主界面
+        appHelper.launchWithCompletedOnboarding()
+        appHelper.waitForAppReady()
+
+        // Step 2: 打开设置。设置齿轮的 identifier 会被 HomeRootView 污染
+        // (见 ScreenshotUITests buttonByLabel 注释),走 homeHeader 的 label 兜底。
+        let settingsButton = appHelper.homeHeader
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5.0), "主界面应出现设置入口")
+        settingsButton.tap()
+
+        // Step 3: 兑换码入口在 Pro 区块内
+        let redeemButton = appHelper.app.buttons["RedeemCodeButton"]
+        XCTAssertTrue(redeemButton.waitForExistence(timeout: 5.0), "设置页应有兑换码入口")
     }
 
     // MARK: - S14: 紧急单条待办

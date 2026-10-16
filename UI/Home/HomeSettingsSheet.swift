@@ -1,4 +1,6 @@
+import StoreKit
 import SwiftUI
+import UIKit
 
 struct HomeSettingsSheet: View {
     @Binding var calendarWriteModeRaw: String
@@ -27,6 +29,11 @@ struct HomeSettingsSheet: View {
     @State private var showClearConfirmation = false
     @State private var didClearLearningData = false
     @State private var showFeedbackSheet = false
+    /// 兑换码面板拉起失败时的用户可见错误(nil = 不弹 alert)。
+    @State private var redeemErrorMessage: String?
+    /// 兑换面板请求进行中——防双击并发:第二次 `presentOfferCodeRedeemSheet`
+    /// 会因面板已在呈现而抛错,给用户弹误导性的「失败」alert。
+    @State private var isPresentingRedeemSheet = false
 
     private let vocabularyStore: UserVocabularyStore
     private let onUpgradePro: () -> Void
@@ -79,6 +86,22 @@ struct HomeSettingsSheet: View {
                         }
                     }
                     .accessibilityIdentifier("UpgradeProButton")
+
+                    // 兑换码入口(App Store Connect 的 Offer Code):拉起苹果官方兑换面板。
+                    // 已订阅用户也保留入口——优惠码同样可以面向存量/流失订阅者发放。
+                    Button {
+                        presentOfferCodeRedeemSheet()
+                    } label: {
+                        Label {
+                            Text(String(localized: "settings.redeem_code"))
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.8)
+                                .layoutPriority(1)
+                        } icon: {
+                            Image(systemName: "giftcard")
+                        }
+                    }
+                    .accessibilityIdentifier("RedeemCodeButton")
                 } header: {
                     Text(String(localized: "settings.upgrade_pro.header"))
                 }
@@ -333,6 +356,17 @@ struct HomeSettingsSheet: View {
             } message: {
                 Text(String(localized: "settings.personalization.clear_confirm.message"))
             }
+            .alert(
+                String(localized: "settings.redeem_code"),
+                isPresented: Binding(
+                    get: { redeemErrorMessage != nil },
+                    set: { if !$0 { redeemErrorMessage = nil } }
+                )
+            ) {
+                Button(String(localized: "feedback.error.ok")) { redeemErrorMessage = nil }
+            } message: {
+                Text(redeemErrorMessage ?? "")
+            }
             .onChange(of: isPersonalizedRecognitionEnabled) { _, _ in
                 didClearLearningData = false
             }
@@ -349,6 +383,35 @@ struct HomeSettingsSheet: View {
 
     private var dayStartHourFormatted: String {
         String(format: "%02d:00", dayStartHour)
+    }
+
+    /// 拉起苹果官方优惠码兑换面板(App Store Connect 生成的 Offer Code)。
+    /// 面板、校验、入账全由系统处理;兑换成功经 `Transaction.updates` 推送,
+    /// `EntitlementManager` 已监听,Pro 自动解锁,这里无需额外权益逻辑。
+    /// 注意:沙盒与本地 StoreKit 测试环境无法兑换优惠码——`presentOfferCodeRedeemSheet`
+    /// 可能直接抛错(走 alert 提示),真实兑换只能上线后验证。
+    /// 两条失败路径(scene 缺失 / StoreKit 抛错)用户只看通用文案,
+    /// 具体原因入 `VoiceTodoLog` 日志供线上排障区分。
+    private func presentOfferCodeRedeemSheet() {
+        guard !isPresentingRedeemSheet else { return }
+        isPresentingRedeemSheet = true
+        let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = windowScenes.first(where: { $0.activationState == .foregroundActive })
+            ?? windowScenes.first else {
+            VoiceTodoLog.ui.error("settings.redeem.present_failed reason=scene_not_found")
+            isPresentingRedeemSheet = false
+            redeemErrorMessage = ErrorMessages.redeemCodeFailed
+            return
+        }
+        Task {
+            do {
+                try await AppStore.presentOfferCodeRedeemSheet(in: scene)
+            } catch {
+                VoiceTodoLog.ui.error("settings.redeem.present_failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+                redeemErrorMessage = ErrorMessages.redeemCodeFailed
+            }
+            isPresentingRedeemSheet = false
+        }
     }
 }
 

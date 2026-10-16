@@ -120,4 +120,9 @@ enum ErrorMessages {
     /// 购买停在「等待批准」(家长 Ask to Buy 等):中性提示,不是错误——
     /// 说明原因(已提交)和下一步(批准后自动生效),inlineErrorText 用中性色渲染。
     static let paywallPending = String(localized: "paywall.pending_approval")
+
+    /// 兑换码系统面板拉起失败(拿不到前台 windowScene,或 StoreKit
+    /// `presentOfferCodeRedeemSheet` 抛错——沙盒/本地 StoreKit 环境本就无法兑换优惠码)。
+    /// 设置页 alert 用。
+    static let redeemCodeFailed = String(localized: "error.redeem_code_failed")
 }
