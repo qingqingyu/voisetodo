@@ -248,7 +248,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 月历 occurrence 缓存：由后台 `queryActor` 异步加载，主线程不再做 SwiftData fetch/展开。
     /// `.task(id:)` 在 visibleMonthAnchor / store.todos / occurrenceRevision 变化时刷新。
     @State private var monthOccurrences: [String: [TodoOccurrenceData]] = [:]
-    /// 已完成的无安排任务,按用户日 dayKey 分桶(供 HomeCalendarState.completedUnscheduledTodos 查表)。
+    /// 已完成的无安排任务,按用户日 dayKey 分桶。两个消费方(同一份数据,同口径):
+    /// 底部「已完成」分区查表(HomeCalendarState.completedUnscheduledTodos)+
+    /// 月历格子完成态注入(init 内按完成日挂格,2026-10-16 起)。
     /// 由 `.task(id:)` 跟 `groupedCalendarOccurrences` 一起加载,覆盖整月范围(两端放宽 1 天,
     /// 防 `VoiceTodoDayStartHour > 0` 时边界天漏掉)。详见 docs/completed-todos-performance.md Step 3c。
     @State private var completedUnscheduledByDay: [String: [TodoItemData]] = [:]
@@ -2081,12 +2083,10 @@ struct HomeView<Store: HomeTodoStore>: View {
                         to: completedRangeEnd
                     )
                     if Task.isCancelled { throw CancellationError() }
-                    completedUnscheduledByDay = Dictionary(grouping: completed) { todo -> String in
-                        let userDayStart = DayClock.startOfUserDay(
-                            for: todo.completedAt ?? .distantPast,
-                            calendar: calendar
-                        )
-                        return TodoOccurrenceData.dayKey(for: userDayStart, calendar: calendar)
+                    // dayKey 折算与 HomeCalendarState 完成态注入 fallback 共用单一来源
+                    // (completedUnscheduledDayKey),防两处分桶口径各自漂移。
+                    completedUnscheduledByDay = Dictionary(grouping: completed) { todo in
+                        HomeCalendarState.completedUnscheduledDayKey(for: todo, calendar: calendar)
                     }
                 } catch is CancellationError {
                     throw CancellationError()

@@ -617,7 +617,8 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
     }
 
     /// deferred 原地保留:勾选后 0.75s 内条目仍注入今天格子且 isCompleted=true
-    /// (格子灰显,与列表分区原地保留行为一致);归档后随分组移除消失。
+    /// (格子灰显,与列表分区原地保留行为一致);归档后由「月历完成态注入」测试组
+    /// 接管(完成日格子 isCompleted=true,不再消失)。
     func testDeferredCompletionInjectedAsCompleted() throws {
         let justChecked = makeTodo(title: "刚勾的", dueDate: nil, isCompleted: true, completedAt: today)
         let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
@@ -653,6 +654,160 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
 
         XCTAssertEqual(state.occurrencesByDay[todayKey]?.count, 1)
         XCTAssertEqual(state.occurrencesByDay[todayKey]?.first?.todo.id, timed.id)
+    }
+
+    // MARK: - 月历完成态注入(2026-10-16 修复:完成不再"消失")
+
+    /// 归档后(fallback 路径):已完成的无安排条目按完成日注入今天格子,
+    /// isCompleted=true 走格子完成态渲染(灰底+删除线),不再随分组移除消失。
+    func testCompletedLaterInjectedIntoTodayCellAfterArchive() throws {
+        let archived = makeTodo(
+            title: "已完成的稍后",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: makeDate(hour: 10, minute: 30)
+        )
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [archived],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        let injected = state.occurrencesByDay[todayKey] ?? []
+        XCTAssertEqual(injected.count, 1)
+        XCTAssertEqual(injected.first?.todo.id, archived.id)
+        XCTAssertTrue(injected.first?.isCompleted ?? false)
+    }
+
+    /// 查表路径(生产 completedUnscheduledByDay):与 fallback 同口径注入完成日格子;
+    /// 同 bucket 内 deferred 条目被排除(它仍由未完成注入挂今天),不双条。
+    func testCompletedLaterInjectedFromLookupTableWithoutDeferredDuplication() throws {
+        let archived = makeTodo(
+            title: "归档完成",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: makeDate(hour: 10, minute: 30)
+        )
+        let justChecked = makeTodo(
+            title: "刚勾的",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: makeDate(hour: 11, minute: 0)
+        )
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [archived, justChecked],
+            selectedDate: today,
+            completedUnscheduledByDay: [todayKey: [archived, justChecked]],
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0),
+            deferredCompletionIDs: [justChecked.id]
+        )
+
+        // justChecked 由未完成注入挂今天(deferred 原地保留),archived 由完成态注入:
+        // 今天 bucket 恰好 2 条,各一条,无双注。
+        let injected = state.occurrencesByDay[todayKey] ?? []
+        XCTAssertEqual(injected.count, 2)
+        let byID = Dictionary(injected.map { ($0.todo.id, $0) }, uniquingKeysWith: { first, _ in first })
+        XCTAssertEqual(byID[archived.id]?.isCompleted, true)
+        XCTAssertEqual(byID[justChecked.id]?.isCompleted, true)
+    }
+
+    /// 历史完成日:条目挂到完成那天的格子,不挂今天(翻到含完成日的月可见灰条)。
+    func testCompletedLaterInjectedIntoHistoricalDayCell() throws {
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let archived = makeTodo(
+            title: "昨天完成的稍后",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: yesterday
+        )
+        let todayKey = TodoOccurrenceData.dayKey(for: today, calendar: calendar)
+        let yesterdayKey = TodoOccurrenceData.dayKey(for: yesterday, calendar: calendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [archived],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        let injected = state.occurrencesByDay[yesterdayKey] ?? []
+        XCTAssertEqual(injected.count, 1)
+        XCTAssertEqual(injected.first?.todo.id, archived.id)
+        XCTAssertTrue(injected.first?.isCompleted ?? false)
+        XCTAssertTrue(injected.allSatisfy { $0.occurrenceDate == yesterday })
+        XCTAssertNil(state.occurrencesByDay[todayKey])
+    }
+
+    /// 窗口守卫:完成日在 42 天可视窗口之外 → 不注入任何格子。
+    func testCompletedLaterOutsideVisibleWindowNotInjected() throws {
+        let longAgo = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 5, day: 1, hour: 10))
+        )
+        let archived = makeTodo(
+            title: "很久以前完成的",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: longAgo
+        )
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [archived],
+            selectedDate: today,
+            calendar: calendar,
+            now: makeDate(hour: 12, minute: 0)
+        )
+
+        XCTAssertTrue(state.occurrencesByDay.isEmpty)
+    }
+
+    /// 用户日归日(注入口径):startHour=3 时凌晨 1:30 完成的无安排任务属前一用户日
+    /// ——注入挂 7/23 格子,不挂 7/24 今天。与底部分区
+    /// `testCompletedUnscheduledTodoAt1AMHour3_belongsToPreviousUserDay` 同一归日口径,
+    /// 锁住注入块的 `completedUnscheduledDayKey` 折算不被退化回自然日比较。
+    func testCompletedLaterInjectionAt1AMHour3_belongsToPreviousUserDayCell() throws {
+        DayClock.setStartHour(3)
+        var shanghaiCalendar = Calendar(identifier: .gregorian)
+        shanghaiCalendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+
+        let completedAt = try XCTUnwrap(shanghaiCalendar.date(
+            from: DateComponents(year: 2026, month: 7, day: 24, hour: 1, minute: 30)
+        ))
+        let todo = makeTodo(
+            title: "凌晨做完的稍后任务",
+            dueDate: nil,
+            isCompleted: true,
+            completedAt: completedAt
+        )
+        let day23 = try XCTUnwrap(
+            shanghaiCalendar.date(from: DateComponents(year: 2026, month: 7, day: 23))
+        )
+        let day24 = try XCTUnwrap(
+            shanghaiCalendar.date(from: DateComponents(year: 2026, month: 7, day: 24, hour: 12))
+        )
+        let prevUserDayKey = TodoOccurrenceData.dayKey(for: day23, calendar: shanghaiCalendar)
+        let todayKey = TodoOccurrenceData.dayKey(for: day24, calendar: shanghaiCalendar)
+
+        let state = HomeCalendarState.makeForTests(
+            todos: [todo],
+            selectedDate: day24,
+            calendar: shanghaiCalendar,
+            now: day24
+        )
+
+        let injected = state.occurrencesByDay[prevUserDayKey] ?? []
+        XCTAssertEqual(injected.count, 1)
+        XCTAssertEqual(injected.first?.todo.id, todo.id)
+        XCTAssertTrue(injected.first?.isCompleted ?? false)
+        XCTAssertNil(
+            state.occurrencesByDay[todayKey],
+            "startHour=3 时凌晨 1:30 完成应归前一用户日格子,不挂今天"
+        )
     }
 
     // MARK: - Helpers

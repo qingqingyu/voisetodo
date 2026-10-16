@@ -139,6 +139,22 @@ struct HomeCalendarState {
         return DayClock.isSameUserDay(completedAt, userDayStart, calendar: calendar)
     }
 
+    /// 已完成无安排任务按「完成用户日」折算的 dayKey:completedAt → startOfUserDay → y-M-d。
+    /// 单一口径来源:完成态月历注入的 fallback 分桶(init)与 HomeView `.task` 里
+    /// `completedUnscheduledByDay` 的构建共用,防两处各自漂移(同 `isCompletedUnscheduled`
+    /// / `hasTimeSignal` 上移的动机)。`completedAt == nil` 折算 distantPast——dayKey
+    /// 不落任何可见自然日,等效跳过;调用方按各自语义另行过滤。
+    static func completedUnscheduledDayKey(
+        for todo: TodoItemData,
+        calendar: Calendar
+    ) -> String {
+        let userDayStart = DayClock.startOfUserDay(
+            for: todo.completedAt ?? .distantPast,
+            calendar: calendar
+        )
+        return TodoOccurrenceData.dayKey(for: userDayStart, calendar: calendar)
+    }
+
     /// 「时间信号」判定:`timeBucket != nil` 或 `dueHint` 非空。
     /// 单一口径来源:「待定日期」vs「稍后」两分组的拆分依据(init)与
     /// `HomeView.selectedDayStats()` 的进度条统计共用,防两处各自漂移。
@@ -295,9 +311,8 @@ struct HomeCalendarState {
         // slicedEvents 排序(hasDueTime=false 自然排有钟点条目后)、WeekStripCard 圆点
         // 与图例、VoiceOver 朗读。
         // 挂"今天"格(与 Today tab 同屏可见一致);翻到其他月(今天不在 42 天窗口)
-        // 不注入,翻回本月恢复。isCompleted 跟随 todo——deferred 原地保留期灰显,
-        // 0.75s 归档后随分组移除消失;state 每次 body 从 store.todos 现算,勾选即时
-        // 反映,不等月历缓存重查。
+        // 不注入,翻回本月恢复。isCompleted 跟随 todo——deferred 原地保留期灰显;
+        // state 每次 body 从 store.todos 现算,勾选即时反映,不等月历缓存重查。
         var monthGridOccurrencesByDay = occurrencesByDay
         let injectable = unscheduledTodos + pendingDateTodos
         if !injectable.isEmpty,
@@ -312,6 +327,48 @@ struct HomeCalendarState {
                         isCompleted: todo.isCompleted
                     )
                 }
+        }
+
+        // 已完成的无安排任务按「完成日」注入对应格子(2026-10-16 修复):此前注入源
+        // 只有未完成的「稍后/待定日期」两组,条目完成后 0.75s 归档离开分组,格子事件条
+        // 直接消失——用户看到的表现是"完成即删除",而非有日期任务那样留在原计划日格子
+        // 灰显。现在已完成条目按 completedAt 用户日挂到对应格子(isCompleted=true,走
+        // 格子既有完成态渲染:中性灰底 + 灰字 + 删除线),与底部「已完成」分区同口径
+        // (completedUnscheduledTodos 同源数据、不分 outcome;completedAt==nil 的历史
+        // 数据不挂任何天)。deferred 原地保留期条目仍由上面的未完成注入挂今天(灰显),
+        // 此处排除防双条;0.75s 归档瞬间改由这里按完成日接管,同格无缝衔接不闪没。
+        // 完成日在 42 天窗口外(翻到其他月)不注入,翻回含完成日的月恢复。
+        let completedInjectableByDay: [String: [TodoItemData]]
+        if let completedUnscheduledByDay {
+            completedInjectableByDay = completedUnscheduledByDay
+        } else {
+            // Fallback:nil 时从 noSchedule 现算(测试 / 未升级的调用方),
+            // 分桶与桶内排序(completedAt 倒序)均与 HomeView completedUnscheduledByDay
+            // 的构建完全一致——dayKey 折算共用 completedUnscheduledDayKey,
+            // 预排序对齐 store.completedUnscheduled 查询的排序,同日多条时
+            // 两条路径桶内顺序一致。
+            completedInjectableByDay = Dictionary(
+                grouping: noSchedule
+                    .filter { $0.isCompleted && $0.completedAt != nil }
+                    .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+            ) { todo in
+                Self.completedUnscheduledDayKey(for: todo, calendar: calendar)
+            }
+        }
+        if !completedInjectableByDay.isEmpty {
+            let visibleDayByKey = Dictionary(
+                visibleDays.map { (TodoOccurrenceData.dayKey(for: $0, calendar: calendar), $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            for (dayKey, completedTodos) in completedInjectableByDay {
+                guard let day = visibleDayByKey[dayKey] else { continue }
+                let nonDeferred = completedTodos.filter { !deferredCompletionIDs.contains($0.id) }
+                guard !nonDeferred.isEmpty else { continue }
+                monthGridOccurrencesByDay[dayKey] = (monthGridOccurrencesByDay[dayKey] ?? [])
+                    + nonDeferred.map { todo in
+                        TodoOccurrenceData(todo: todo, occurrenceDate: day, isCompleted: true)
+                    }
+            }
         }
         self.occurrencesByDay = monthGridOccurrencesByDay
     }
