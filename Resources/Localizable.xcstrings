@@ -1961,6 +1961,12 @@
             "value" : "Today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1977,6 +1983,12 @@
             "value" : "Tomorrow"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1991,6 +2003,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yesterday"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨日"
           }
         },
         "zh-Hans" : {
@@ -15423,6 +15441,116 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法打开兑换码页面，请稍后再试。"
+          }
+        }
+      }
+    },
+    "home.added_toast.all_elsewhere_named %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld todos saved to %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld件を%2$@に登録しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 件事都记到 %2$@ 了"
+          }
+        }
+      }
+    },
+    "home.added_toast.all_elsewhere_multi %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld todos saved across %2$lld days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld件を%2$lld日間に登録しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已记好 %1$lld 件事 · 在 %2$lld 个日期"
+          }
+        }
+      }
+    },
+    "home.added_toast.elsewhere_named %lld %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added %1$lld · %2$lld on %3$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld件を追加・%2$lld件は%3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 %1$lld 条 · %2$lld 条在 %3$@"
+          }
+        }
+      }
+    },
+    "home.added_toast.first_trial_all_elsewhere_named %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amazing! %1$lld todos saved to %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すごい!%1$lld件を%2$@に登録しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太棒了!%1$lld 件事都记到 %2$@ 了"
+          }
+        }
+      }
+    },
+    "home.added_toast.first_trial_all_elsewhere_multi %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amazing! %1$lld todos across %2$lld days"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すごい!%1$lld件を%2$lld日間に登録しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太棒了!已记好 %1$lld 件事 · 在 %2$lld 个日期"
           }
         }
       }

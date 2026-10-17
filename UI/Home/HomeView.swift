@@ -1442,17 +1442,21 @@ struct HomeView<Store: HomeTodoStore>: View {
         showCalendarSyncAsk = true
     }
 
-    /// 成功添加后的底部 toast。统计落别处的条目数,选「已添加 N 条」或分流版「N 条 + M 条在其他日期」。
-    /// 跨天条目 / Reduce Motion / Calendar tab 不可见三种静默失败场景都靠 toast 兜底反馈。
+    /// 成功添加后的底部 toast。统计落别处的条目数,按去向分布分流文案:
     ///
-    /// `celebrate == true`(首次 wow,§3.4g)时在通用文案之上**叠加**庆祝语义,
-    /// 不替换分流逻辑——mixed batch 里落别日那条的「M 条在其他日期」不能被吞掉:
+    /// | 条件 | 常规文案 | 首次 wow 文案 | action |
+    /// |---|---|---|---|
+    /// | 整批全别日·同一天 | `all_elsewhere_named`(点名日期) | `first_trial_all_elsewhere_named` | 「去看看」跳该日 |
+    /// | 整批全别日·分布多天 | `all_elsewhere_multi` | `first_trial_all_elsewhere_multi` | 「去看看」跳首条 |
+    /// | 混合批次·别处全同一天 | `elsewhere_named`(点名日期) | `first_trial_elsewhere` | 常规无 / wow「去看看」 |
+    /// | 混合批次·别处分布多天 | `elsewhere` | `first_trial_elsewhere` | 常规无 / wow「去看看」 |
+    /// | 无别日、含无日期条目 | `added_toast` | `first_trial_generic`(不点名「今天」) | 无 |
+    /// | 全部落当前日 | `added_toast` | `first_trial`(纯庆祝) | 无 |
     ///
-    /// | 条件 | 文案 | action |
-    /// |---|---|---|
-    /// | 含别日条目 | `first_trial_elsewhere`(庆祝 + 保留分流) | 「去看看」跳别日 |
-    /// | 无别日、含无日期条目 | `first_trial_generic`(不点名「今天」) | 无 |
-    /// | 全部落今天 | `first_trial`(纯庆祝) | 无 |
+    /// 「整批全别日」(`onSelectedDay == 0`)是用户最容易受惊的场景:当前列表不会有
+    /// 任何揭晓动画,页面看起来「什么都没发生」,旧文案还会显示「已添加 0 条」——
+    /// 所以点名具体去向(TodoRelativeDateFormatter,与 ConfirmSheet 分组标题同源)
+    /// 并给「去看看」出口。混合批次部分条目在眼前可见,不弹按钮避免打扰。
     ///
     /// 无日期条目计入 `onSelectedDay`(沿用现有口径),但庆祝文案一旦点名「今天」
     /// 对它们就说不通(它们落「稍后」分区)——所以单独给 generic 分支。
@@ -1477,24 +1481,38 @@ struct HomeView<Store: HomeTodoStore>: View {
             return todo.dueDate == nil
         }
         let onSelectedDay = ids.count - elsewhere
+        // 别处条目按用户日去重得到去向日期集:恰好一天可点名,多天才退回「N 个日期」。
+        let elsewhereDayStarts = Set(elsewhereIds.compactMap { id in
+            todosById[id]?.dueDate.map { calendar.startOfDay(for: $0) }
+        })
+        let singleElsewhereDayName: String? = elsewhereDayStarts.count == 1
+            ? elsewhereDayStarts.first.map { TodoRelativeDateFormatter.format($0) }
+            : nil
         // 「去看看」的跳转目标:第一条落别日的 dueDate(selectDay 会归一到当天零点)。
         let firstElsewhereDueDate = elsewhereIds.compactMap { todosById[$0]?.dueDate }.first
+        // 整批都不在当前查看日:当前列表零揭晓动画,必须点名去向 + 给出口。
+        let allElsewhere = onSelectedDay == 0 && elsewhere > 0
 
         if celebrate {
-            if elsewhere > 0 {
+            if allElsewhere {
+                if let dayName = singleElsewhereDayName {
+                    addedToastMessage = String(
+                        format: String(localized: "home.added_toast.first_trial_all_elsewhere_named %lld %@"),
+                        elsewhere, dayName
+                    )
+                } else {
+                    addedToastMessage = String(
+                        format: String(localized: "home.added_toast.first_trial_all_elsewhere_multi %lld %lld"),
+                        elsewhere, elsewhereDayStarts.count
+                    )
+                }
+                attachGoLookAction(to: firstElsewhereDueDate)
+            } else if elsewhere > 0 {
                 addedToastMessage = String(
                     format: String(localized: "home.added_toast.first_trial_elsewhere %lld %lld"),
                     onSelectedDay, elsewhere
                 )
-                addedToastActionTitle = String(localized: "home.added_toast.go_look")
-                if let jumpTarget = firstElsewhereDueDate {
-                    addedToastAction = {
-                        // 必须切到 calendar tab:today tab 的 onChange 会 jumpToToday()
-                        // 把日期拽回今天,跨日跳转在 today tab 站不住。
-                        selectedBottomTab = .calendar
-                        selectDay(jumpTarget)
-                    }
-                }
+                attachGoLookAction(to: firstElsewhereDueDate)
             } else if hasUnscheduled {
                 addedToastMessage = String(localized: "home.added_toast.first_trial_generic")
                 addedToastActionTitle = nil
@@ -1505,14 +1523,36 @@ struct HomeView<Store: HomeTodoStore>: View {
                 addedToastAction = nil
             }
         } else {
-            addedToastActionTitle = nil
-            addedToastAction = nil
-            if elsewhere > 0 {
-                addedToastMessage = String(
-                    format: String(localized: "home.added_toast.elsewhere %lld %lld"),
-                    onSelectedDay, elsewhere
-                )
+            if allElsewhere {
+                if let dayName = singleElsewhereDayName {
+                    addedToastMessage = String(
+                        format: String(localized: "home.added_toast.all_elsewhere_named %lld %@"),
+                        elsewhere, dayName
+                    )
+                } else {
+                    addedToastMessage = String(
+                        format: String(localized: "home.added_toast.all_elsewhere_multi %lld %lld"),
+                        elsewhere, elsewhereDayStarts.count
+                    )
+                }
+                attachGoLookAction(to: firstElsewhereDueDate)
+            } else if elsewhere > 0 {
+                addedToastActionTitle = nil
+                addedToastAction = nil
+                if let dayName = singleElsewhereDayName {
+                    addedToastMessage = String(
+                        format: String(localized: "home.added_toast.elsewhere_named %lld %lld %@"),
+                        onSelectedDay, elsewhere, dayName
+                    )
+                } else {
+                    addedToastMessage = String(
+                        format: String(localized: "home.added_toast.elsewhere %lld %lld"),
+                        onSelectedDay, elsewhere
+                    )
+                }
             } else {
+                addedToastActionTitle = nil
+                addedToastAction = nil
                 addedToastMessage = String(
                     format: String(localized: "home.added_toast %lld"),
                     ids.count
@@ -1522,6 +1562,24 @@ struct HomeView<Store: HomeTodoStore>: View {
         // 递增 token 让 ToastModifier 重置 dismiss 计时,连续添加时每条都享完整 duration。
         addedToastToken += 1
         addedToastVisible = true
+    }
+
+    /// 给添加成功 toast 挂「去看看」按钮:点按跳到 `jumpTarget` 那天。
+    /// 必须切到 calendar tab:today tab 的 onChange 会 jumpToToday()
+    /// 把日期拽回今天,跨日跳转在 today tab 站不住。
+    /// `jumpTarget == nil` 时不挂按钮(调用方保证整批全别日时必有非 nil 目标,
+    /// 此 nil 分支仅为防御 elsewhereIds 与 dueDate 解析不一致的意外态)。
+    private func attachGoLookAction(to jumpTarget: Date?) {
+        guard let jumpTarget else {
+            addedToastActionTitle = nil
+            addedToastAction = nil
+            return
+        }
+        addedToastActionTitle = String(localized: "home.added_toast.go_look")
+        addedToastAction = {
+            selectedBottomTab = .calendar
+            selectDay(jumpTarget)
+        }
     }
 
     /// 标题行下方统计入口:点击进 ReviewView(替代老右上角胶囊)。
