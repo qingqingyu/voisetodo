@@ -20,6 +20,12 @@
             "state" : "new",
             "value" : "%1$@ %2$@"
           }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
         }
       }
     },
@@ -28,6 +34,12 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
+            "value" : "%1$lld / %2$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "%1$lld / %2$lld"
           }
         }
@@ -39,6 +51,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Expand Month"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月表示に広げる"
           }
         },
         "zh-Hans" : {
@@ -58,6 +76,12 @@
             "value" : "Calendar view mode"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダー表示モード"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -72,6 +96,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edits time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻を編集"
           }
         },
         "zh-Hans" : {
@@ -112,6 +142,12 @@
             "value" : "Completed"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -126,6 +162,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d recurring task(s)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "うち%d件が繰り返し"
           }
         },
         "zh-Hans" : {
@@ -144,6 +186,12 @@
             "value" : "Tap to select this day"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップしてこの日を選択"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -158,6 +206,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクなし"
           }
         },
         "zh-Hans" : {
@@ -176,6 +230,12 @@
             "value" : "Open %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を開く"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -190,6 +250,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Out of month"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月以外"
           }
         },
         "zh-Hans" : {
@@ -208,6 +274,12 @@
             "value" : "%d more pending"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他%d件"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -222,6 +294,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : ", "
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "、"
           }
         },
         "zh-Hans" : {
@@ -240,6 +318,12 @@
             "value" : "Today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -254,6 +338,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d todo(s)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件のタスク"
           }
         },
         "zh-Hans" : {
@@ -272,6 +362,12 @@
             "value" : "Delete"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -286,6 +382,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete this todo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスクを削除"
           }
         },
         "zh-Hans" : {
@@ -305,6 +407,12 @@
             "value" : "Switches between list and grid display"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストとグリッド表示を切り替えます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -321,6 +429,12 @@
             "value" : "Collapse Later"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「後で」を折りたたむ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -335,6 +449,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Expand Later"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「後で」を展開"
           }
         },
         "zh-Hans" : {
@@ -354,6 +474,12 @@
             "value" : "%1$@, %2$d task(s)"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@、%2$d件のタスク"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -369,6 +495,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drop the task here to assign it to this time slot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここにドロップするとこの時間帯に追加されます"
           }
         },
         "zh-Hans" : {
@@ -388,6 +520,12 @@
             "value" : "Tap to edit todo title"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップしてタイトルを編集"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -402,6 +540,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tap to edit this task"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップしてこのタスクを編集"
           }
         },
         "zh-Hans" : {
@@ -420,6 +564,12 @@
             "value" : "First voice trial: tap the mic button and say something to create a to-do"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初回の音声トライ:マイクボタンをタップして一言話すだけでタスクを作成できます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -434,6 +584,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "High priority"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高優先度"
           }
         },
         "zh-Hans" : {
@@ -452,6 +608,12 @@
             "value" : "mark as complete"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了にする"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -466,6 +628,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "mark as incomplete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了に戻す"
           }
         },
         "zh-Hans" : {
@@ -485,6 +653,12 @@
             "value" : "Microphone illustration"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクのイラスト"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -499,6 +673,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Next month"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翌月"
           }
         },
         "zh-Hans" : {
@@ -517,6 +697,12 @@
             "value" : "Next week"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翌週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -531,6 +717,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not completed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了"
           }
         },
         "zh-Hans" : {
@@ -549,6 +741,12 @@
             "value" : "Opens the system permission request"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムの権限リクエストが表示されます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -563,6 +761,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens Settings to enable the permission"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定アプリで権限を有効にします"
           }
         },
         "zh-Hans" : {
@@ -581,6 +785,12 @@
             "value" : "Onboarding progress"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オンボーディングの進行状況"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -595,6 +805,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recognition language selection"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認識言語の選択"
           }
         },
         "zh-Hans" : {
@@ -613,6 +829,12 @@
             "value" : "Previous month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前の月"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -629,6 +851,12 @@
             "value" : "Previous week"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前の週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -643,6 +871,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording duration: %lld seconds"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音時間:%lld秒"
           }
         },
         "zh-Hans" : {
@@ -662,6 +896,12 @@
             "value" : "Tap to start recording your todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップして録音を開始し、タスクを話してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -677,6 +917,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start voice input"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力を開始"
           }
         },
         "zh-Hans" : {
@@ -696,6 +942,12 @@
             "value" : "Tap to stop recording and organize todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップで録音を停止してタスクを整理します"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -710,6 +962,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stop recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を停止"
           }
         },
         "zh-Hans" : {
@@ -729,6 +987,12 @@
             "value" : "Due time"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -744,6 +1008,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Set time for tasks in this slot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この時間帯のタスクに時刻を設定"
           }
         },
         "zh-Hans" : {
@@ -762,6 +1032,12 @@
             "value" : "Back to this month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月に戻る"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -776,6 +1052,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back to this week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週に戻る"
           }
         },
         "zh-Hans" : {
@@ -794,6 +1076,12 @@
             "value" : "Tap to %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップして%@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -810,6 +1098,12 @@
             "value" : "Tap to view details"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップして詳細を表示"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -824,6 +1118,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Swipe down here to expand the full month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここで下にスワイプすると月表示に展開します。"
           }
         },
         "zh-Hans" : {
@@ -1040,6 +1340,12 @@
             "value" : "Import from Calendar…"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーから読み込む…"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1054,6 +1360,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calendar read access is required to import events."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イベントを読み込むにはカレンダーの読み取り権限が必要です。"
           }
         },
         "zh-Hans" : {
@@ -1072,6 +1384,12 @@
             "value" : "No calendar events in this range"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間のカレンダーイベントはありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1086,6 +1404,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d events"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件のイベント"
           }
         },
         "zh-Hans" : {
@@ -1104,6 +1428,12 @@
             "value" : "Import %d"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件を読み込む"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1118,6 +1448,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Could not load calendar events."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーイベントを読み込めませんでした。"
           }
         },
         "zh-Hans" : {
@@ -1136,6 +1472,12 @@
             "value" : "Loading calendar events…"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーイベントを読み込み中…"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1150,6 +1492,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Selected events have no importable titles."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したイベントに読み込み可能なタイトルがありません。"
           }
         },
         "zh-Hans" : {
@@ -1168,6 +1516,12 @@
             "value" : "This Month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1182,6 +1536,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
           }
         },
         "zh-Hans" : {
@@ -1200,6 +1560,12 @@
             "value" : "This Week"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1214,6 +1580,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imported %d todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件のタスクを読み込みました"
           }
         },
         "zh-Hans" : {
@@ -1232,6 +1604,12 @@
             "value" : "Time Range"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期間"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1246,6 +1624,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import from Calendar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーから読み込む"
           }
         },
         "zh-Hans" : {
@@ -1264,6 +1648,12 @@
             "value" : "Turn On Sync"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同期をオンにする"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1278,6 +1668,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not Now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あとで"
           }
         },
         "zh-Hans" : {
@@ -1297,6 +1693,12 @@
             "value" : "Month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1312,6 +1714,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週"
           }
         },
         "zh-Hans" : {
@@ -1330,6 +1738,12 @@
             "value" : "Move to time slot"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯に移動"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1344,6 +1758,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move to tomorrow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日に移動"
           }
         },
         "zh-Hans" : {
@@ -1516,6 +1936,12 @@
             "value" : "Cancel"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1530,6 +1956,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除"
           }
         },
         "zh-Hans" : {
@@ -1570,6 +2002,12 @@
             "value" : "Save"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1584,6 +2022,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件を追加"
           }
         },
         "zh-Hans" : {
@@ -1602,6 +2046,12 @@
             "value" : "Cancel"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1616,6 +2066,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Collapse"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "折りたたむ"
           }
         },
         "zh-Hans" : {
@@ -1644,6 +2100,12 @@
                 }
               }
             }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件のタスクがカレンダーイベントと時間が重なっています。"
           }
         },
         "zh-Hans" : {
@@ -1682,6 +2144,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notes and recurrence can be edited in detail page after adding"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモと繰り返しは追加後、詳細ページで編集できます"
           }
         },
         "zh-Hans" : {
@@ -1766,6 +2234,12 @@
             "value" : "To be scheduled"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日程未定"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1782,6 +2256,12 @@
             "value" : "Tap a card to edit · ✕ to delete"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カードをタップして編集 · ✕ で削除"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1796,6 +2276,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "入力し直す"
           }
         },
         "zh-Hans" : {
@@ -1815,6 +2301,12 @@
             "value" : "Recognizing more todos..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "さらにタスクを認識中..."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1831,6 +2323,12 @@
             "value" : "Recognizing — editable when done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認識中 — 完了後に編集できます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1845,6 +2343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Still recognizing..."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認識中..."
           }
         },
         "zh-Hans" : {
@@ -1864,6 +2368,12 @@
             "value" : "Confirm Todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクの確認"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1879,6 +2389,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todo title"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクのタイトル"
           }
         },
         "zh-Hans" : {
@@ -1897,6 +2413,12 @@
             "value" : "Voice Transcript"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の文字起こし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1911,6 +2433,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Less"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
           }
         },
         "zh-Hans" : {
@@ -1929,6 +2457,12 @@
             "value" : "More"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続きを見る"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1943,6 +2477,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Urgent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "緊急"
           }
         },
         "zh-Hans" : {
@@ -2028,6 +2568,12 @@
             "value" : "High priority"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高優先度"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2043,6 +2589,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Total todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクの合計"
           }
         },
         "zh-Hans" : {
@@ -2062,6 +2614,12 @@
             "value" : "Uncompleted"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2076,6 +2634,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付を追加"
           }
         },
         "zh-Hans" : {
@@ -2094,6 +2658,12 @@
             "value" : "Add time"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻を追加"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2108,6 +2678,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cancel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
           }
         },
         "zh-Hans" : {
@@ -2148,6 +2724,12 @@
             "value" : "Confirm Delete"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除の確認"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2163,6 +2745,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Created"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成日時"
           }
         },
         "zh-Hans" : {
@@ -2182,6 +2770,12 @@
             "value" : "Created %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成:%@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2196,6 +2790,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除"
           }
         },
         "zh-Hans" : {
@@ -2214,6 +2814,12 @@
             "value" : "Delete This Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスクを削除"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2228,6 +2834,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete failed. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除できませんでした。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -2246,6 +2858,12 @@
             "value" : "This cannot be undone"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元に戻せません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2260,6 +2878,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deleted"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除しました"
           }
         },
         "zh-Hans" : {
@@ -2279,6 +2903,12 @@
             "value" : "Discard"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "破棄"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2294,6 +2924,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "e.g. tomorrow, by Wednesday"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例:明日、水曜まで"
           }
         },
         "zh-Hans" : {
@@ -2313,6 +2949,12 @@
             "value" : "Mark as Done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了にする"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2327,6 +2969,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pending AI processing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI整理待ち"
           }
         },
         "zh-Hans" : {
@@ -2345,6 +2993,12 @@
             "value" : "Add notes..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモを追加..."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2359,6 +3013,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "High"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高"
           }
         },
         "zh-Hans" : {
@@ -2377,6 +3037,12 @@
             "value" : "Low"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2391,6 +3057,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Normal"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通常"
           }
         },
         "zh-Hans" : {
@@ -2432,6 +3104,12 @@
             "value" : "Save"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2446,6 +3124,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save failed: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存に失敗:%@"
           }
         },
         "zh-Hans" : {
@@ -2464,6 +3148,12 @@
             "value" : "Saved"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2478,6 +3168,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Category"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カテゴリ"
           }
         },
         "zh-Hans" : {
@@ -2497,6 +3193,12 @@
             "value" : "Due Date"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2512,6 +3214,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Due Date Hint"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日時の手がかり"
           }
         },
         "zh-Hans" : {
@@ -2530,6 +3238,12 @@
             "value" : "Notes"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2546,6 +3260,12 @@
             "value" : "Priority"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "優先度"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2560,6 +3280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Repeat"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繰り返し"
           }
         },
         "zh-Hans" : {
@@ -2579,6 +3305,12 @@
             "value" : "Time period"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2593,6 +3325,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Title"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイトル"
           }
         },
         "zh-Hans" : {
@@ -2611,6 +3349,12 @@
             "value" : "Start date"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2625,6 +3369,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間"
           }
         },
         "zh-Hans" : {
@@ -2643,6 +3393,12 @@
             "value" : "Todo Details"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクの詳細"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2659,6 +3415,12 @@
             "value" : "Todo title"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクのタイトル"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2673,6 +3435,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "From your voice: \"%@\""
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声から:\"%@\""
           }
         },
         "zh-Hans" : {
@@ -2692,6 +3460,12 @@
             "value" : "Release to drop"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離すとここに置かれます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2706,6 +3480,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Overdue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限超過"
           }
         },
         "zh-Hans" : {
@@ -2724,6 +3504,12 @@
             "value" : "Today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2738,6 +3524,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tomorrow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日"
           }
         },
         "zh-Hans" : {
@@ -2757,6 +3549,12 @@
             "value" : "Try a clearer phrase, like “buy milk tomorrow morning” or “study vocabulary every day for the next 7 days.”"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もっとはっきりした言い方を試してみてください。例えば「明日の午前10時に牛乳を買う」「今後7日間、毎日単語を覚える」。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2772,6 +3570,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try Again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "入力し直す"
           }
         },
         "zh-Hans" : {
@@ -2790,6 +3594,12 @@
             "value" : "No todos found"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクが見つかりませんでした"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2804,6 +3614,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hold the mic below to speak your first task"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下のマイクを長押しして、最初のタスクを話してください"
           }
         },
         "zh-Hans" : {
@@ -2823,6 +3639,12 @@
             "value" : "Nothing scheduled for this day"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この日はまだ予定がありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2838,6 +3660,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nothing scheduled today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の予定はありません"
           }
         },
         "zh-Hans" : {
@@ -2856,6 +3684,12 @@
             "value" : "No todos yet\nTap the record button to start"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクはまだありません\n録音ボタンを押して始めましょう"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2870,6 +3704,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speak or type — I'll turn it into tasks."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話しても、打っても — タスクにまとめます。"
           }
         },
         "zh-Hans" : {
@@ -2889,6 +3729,12 @@
             "value" : "Start Recording"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を開始"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2906,6 +3752,12 @@
             "value" : "Type Instead"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーボードで入力"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2920,6 +3772,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Say what you want to do today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日やりたいことを話してみましょう"
           }
         },
         "zh-Hans" : {
@@ -2939,6 +3797,12 @@
             "value" : "Switch to list view to see all todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リスト表示に切り替えるとすべてのタスクが見えます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2954,6 +3818,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No timed events this week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週の時刻付きイベントはありません"
           }
         },
         "zh-Hans" : {
@@ -2972,6 +3842,12 @@
             "value" : "No todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクなし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2988,6 +3864,12 @@
             "value" : "No todos today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日のタスクはありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3002,6 +3884,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Our service hiccuped. Please try again shortly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバーで一時的な問題が発生しました。しばらくしてからもう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3021,6 +3909,12 @@
             "value" : "Too many requests. Please try again later."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リクエストが多すぎます。しばらくしてからもう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3036,6 +3930,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Processing failed (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "処理に失敗しました(%@)"
           }
         },
         "zh-Hans" : {
@@ -3054,6 +3954,12 @@
             "value" : "Something went wrong on our end"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバー側で問題が発生しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3068,6 +3974,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Something went wrong on our end. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバー側で問題が発生しました。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3086,6 +3998,12 @@
             "value" : "Request timed out. Please try again later."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リクエストがタイムアウトしました。しばらくしてからもう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3100,6 +4018,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording was interrupted. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音が中断されました。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3118,6 +4042,12 @@
             "value" : "AI service is unstable right now. Saved offline — please try again shortly."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AIサービスが不安定なため、オフラインで保存しました。しばらくしてからもう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3132,6 +4062,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't calculate the date. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付の計算に失敗しました。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3172,6 +4108,12 @@
             "value" : "Today's call limit reached. Saved offline — please try again tomorrow."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日の利用回数が上限に達しました。オフラインで保存したので、また明日お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3187,6 +4129,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't read the response (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結果を読み込めませんでした(%@)"
           }
         },
         "zh-Hans" : {
@@ -3205,6 +4153,12 @@
             "value" : "Couldn't read the result. Please try again."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結果を読み込めませんでした。もう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3219,6 +4173,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your original words are saved under Couldn't parse — no need to repeat them."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話した内容は「認識できず」に保存済みです。言い直す必要はありません。"
           }
         },
         "zh-Hans" : {
@@ -3237,6 +4197,12 @@
             "value" : "VoiceTodo needs the mic to record. You can enable it in Settings."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音にはマイクの権限が必要です。設定でオンにしてください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3251,6 +4217,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No connection — please check your network and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続できません — ネットワークを確認して、もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3269,6 +4241,12 @@
             "value" : "No todos were detected. Your original words are saved under Couldn't parse."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクは検出されませんでした。話した内容は「認識できず」に保存済みです。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3285,6 +4263,12 @@
             "value" : "The transcript so far has been saved for later."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここまでの内容は保存済みです。後で自動的に整理されます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3299,6 +4283,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Today's free quota is used up. Saved it for you offline — we'll retry later."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日の無料枠を使い切りました。オフラインで保存しておきました。後で自動的に処理します。"
           }
         },
         "zh-Hans" : {
@@ -3339,6 +4329,12 @@
             "value" : "Whoa, slow down a bit — try again in a moment."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "少し間をおいてから、もう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3353,6 +4349,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording failed. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音に失敗しました。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3393,6 +4395,12 @@
             "value" : "Our servers are a bit busy — try again shortly."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバーが混み合っています。しばらくしてからもう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3407,6 +4415,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shared data could not be initialized. Please restart the app; if it still fails, reinstall it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有データを初期化できませんでした。アプリを再起動してください。改善しない場合は再インストールしてください。"
           }
         },
         "zh-Hans" : {
@@ -3425,6 +4439,12 @@
             "value" : "VoiceTodo needs speech recognition. You can enable it in Settings."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識の権限が必要です。設定でオンにしてください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3441,6 +4461,12 @@
             "value" : "Speech recognition isn't available right now. Try again later."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識を今は利用できません。しばらくしてからもう一度お試しください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3455,6 +4481,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't save. Try again?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存できませんでした。もう一度試しますか?"
           }
         },
         "zh-Hans" : {
@@ -3474,6 +4506,12 @@
             "value" : "Couldn't read your todos (%@)"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを読み込めませんでした(%@)"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3489,6 +4527,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't save your todos (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを保存できませんでした(%@)"
           }
         },
         "zh-Hans" : {
@@ -3529,6 +4573,12 @@
             "value" : "That's a lot to process at once. Try sending fewer items at a time."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一度の内容が多すぎて処理しきれません。少しずつ分けて送ってみてください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3543,6 +4593,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Something went wrong. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "問題が発生しました。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -3957,6 +5013,12 @@
             "value" : "e.g. every Friday, within 3 days, end of month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例:毎週金曜、3日以内、月末"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3971,6 +5033,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "e.g. Starlight Gym, XX Tower"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例:スターライトジム、〇〇タワー"
           }
         },
         "zh-Hans" : {
@@ -3989,6 +5057,12 @@
             "value" : "Add Phrase"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フレーズを追加"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4003,6 +5077,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "e.g. the usual place, the office"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例:いつもの場所、会社、レポート提出"
           }
         },
         "zh-Hans" : {
@@ -4021,6 +5101,12 @@
             "value" : "Saying \"%1$@\" will be understood as \"%2$@\""
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」と言ったら「%2$@」と理解します"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4035,6 +5121,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saying \"%1$@\" will default to %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」と言ったら %2$@ に設定します"
           }
         },
         "zh-Hans" : {
@@ -4053,6 +5145,12 @@
             "value" : "Default time"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトの時刻"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4067,6 +5165,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Means"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開後"
           }
         },
         "zh-Hans" : {
@@ -4085,6 +5189,12 @@
             "value" : "Your phrase"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたのフレーズ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4099,6 +5209,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "種類"
           }
         },
         "zh-Hans" : {
@@ -4117,6 +5233,12 @@
             "value" : "Alias"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別名"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4131,6 +5253,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Time rule"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間ルール"
           }
         },
         "zh-Hans" : {
@@ -4149,6 +5277,12 @@
             "value" : "You haven't taught any phrases yet. Tap + to add one so the AI understands the way you speak."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだフレーズを登録していません。右上の + から追加して、AIにあなたの言い方を覚えさせましょう。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4163,6 +5297,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alias"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別名"
           }
         },
         "zh-Hans" : {
@@ -4181,6 +5321,12 @@
             "value" : "Time rule"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間ルール"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4195,6 +5341,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "My Phrases"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイフレーズ"
           }
         },
         "zh-Hans" : {
@@ -4213,6 +5365,12 @@
             "value" : "Added %lld"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件追加しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4227,6 +5385,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Added %1$lld · %2$lld elsewhere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld件追加 · 他の日付に%2$lld件"
           }
         },
         "zh-Hans" : {
@@ -4245,6 +5409,12 @@
             "value" : "Amazing! It's on today's list"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すごい!今日のリストに入れました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4259,6 +5429,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Amazing! %1$lld saved · %2$lld elsewhere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すごい!%1$lld件を記録、他の日付に%2$lld件"
           }
         },
         "zh-Hans" : {
@@ -4277,6 +5453,12 @@
             "value" : "Amazing! It's on your list"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すごい!リストに入れました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4291,6 +5473,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Take a Look"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "見てみる"
           }
         },
         "zh-Hans" : {
@@ -4309,6 +5497,12 @@
             "value" : "\"%@\" → %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" → %@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4320,6 +5514,12 @@
     "home.assigned_to_date" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" → %@"
+          }
+        },
+        "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "\"%@\" → %@"
@@ -4342,6 +5542,12 @@
             "value" : "Back to today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日に戻る"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4356,6 +5562,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't open your todos. Give it another try?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカルのタスクを開けませんでした。もう一度試しますか?"
           }
         },
         "zh-Hans" : {
@@ -4374,6 +5586,12 @@
             "value" : "Couldn't load todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクの読み込みに失敗"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4390,6 +5608,12 @@
             "value" : "Loading your todos..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーのタスクを読み込み中..."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4404,6 +5628,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cancel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
           }
         },
         "zh-Hans" : {
@@ -4444,6 +5674,12 @@
             "value" : "No time"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻なし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4460,6 +5696,12 @@
             "value" : "Completed"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4474,6 +5716,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除"
           }
         },
         "zh-Hans" : {
@@ -4493,6 +5741,12 @@
             "value" : "Grid"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グリッド"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4508,6 +5762,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "List"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リスト"
           }
         },
         "zh-Hans" : {
@@ -4527,6 +5787,12 @@
             "value" : "Tap the Action Button or the mic below\nand tell me what you need to do today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アクションボタンか下のマイクを押して\n今日やることを話してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4542,6 +5808,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nothing planned today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の予定はありません"
           }
         },
         "zh-Hans" : {
@@ -4560,6 +5832,12 @@
             "value" : "Call Mom tonight at eight"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今夜8時に母に電話"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4576,6 +5854,12 @@
             "value" : "Got it"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "わかった"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4590,6 +5874,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tap the mic button and just say it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクボタンを押して、ひとこと話してみて"
           }
         },
         "zh-Hans" : {
@@ -4609,6 +5899,12 @@
             "value" : "Afternoon! 🌈"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "こんにちは 🌈"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4624,6 +5920,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Evening! 🌙"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "こんばんは 🌙"
           }
         },
         "zh-Hans" : {
@@ -4643,6 +5945,12 @@
             "value" : "Morning! ☀️"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "おはよう ☀️"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4658,6 +5966,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Still up? 💫"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ起きてる? 💫"
           }
         },
         "zh-Hans" : {
@@ -4677,6 +5991,12 @@
             "value" : "Midday! 🌤"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お昼です 🌤"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4693,6 +6013,12 @@
             "value" : "Listening..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聴いています..."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4707,6 +6033,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "\"%@\" moved to tomorrow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" を明日に移動しました"
           }
         },
         "zh-Hans" : {
@@ -4726,6 +6058,12 @@
             "value" : "Pick a date or drag onto the calendar."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付が未定のタスクです。「日付を選択」で決めるか、長押しでカレンダーにドラッグしてください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4742,6 +6080,12 @@
             "value" : "Pick date"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付を選択"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4756,6 +6100,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Needs a date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付未定"
           }
         },
         "zh-Hans" : {
@@ -4796,6 +6146,12 @@
             "value" : "Date"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4810,6 +6166,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pick date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付を選択"
           }
         },
         "zh-Hans" : {
@@ -4828,6 +6190,12 @@
             "value" : "Done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4842,6 +6210,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻"
           }
         },
         "zh-Hans" : {
@@ -4860,6 +6234,12 @@
             "value" : "Edit time"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻を編集"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4874,6 +6254,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sorting things out..."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理しています..."
           }
         },
         "zh-Hans" : {
@@ -4981,6 +6367,12 @@
             "value" : "Start Recording"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を開始"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4995,6 +6387,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld/%lld done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld/%lld 完了"
           }
         },
         "zh-Hans" : {
@@ -5014,6 +6412,12 @@
             "value" : "All done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5028,6 +6432,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ALL DAY"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "終日"
           }
         },
         "zh-Hans" : {
@@ -5046,6 +6456,12 @@
             "value" : "AFTERNOON"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "午後"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5060,6 +6476,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "EVENING"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "夜"
           }
         },
         "zh-Hans" : {
@@ -5078,6 +6500,12 @@
             "value" : "MORNING"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "午前"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5094,6 +6522,12 @@
             "value" : "BY TIME"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻あり"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5108,6 +6542,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "\"%@\" set to %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" を %@ に設定しました"
           }
         },
         "zh-Hans" : {
@@ -5127,6 +6567,12 @@
             "value" : "No tasks to assign a time to in this slot"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この時間帯に時刻を設定できるタスクはありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5142,6 +6588,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Set time…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻を設定…"
           }
         },
         "zh-Hans" : {
@@ -5161,6 +6613,12 @@
             "value" : "Today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5176,6 +6634,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "件のタスク"
           }
         },
         "zh-Hans" : {
@@ -5194,6 +6658,12 @@
             "value" : "\"%@\" moved to Later"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" を「後で」に戻しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5208,6 +6678,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Later"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "後で"
           }
         },
         "zh-Hans" : {
@@ -5248,6 +6724,12 @@
             "value" : "Edit"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編集"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5262,6 +6744,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saving re-runs AI extraction on this text"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存するとこのテキストでAI抽出を再実行します"
           }
         },
         "zh-Hans" : {
@@ -5280,6 +6768,12 @@
             "value" : "Save & Re-extract"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存して再解析"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5294,6 +6788,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edit Transcript"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを編集"
           }
         },
         "zh-Hans" : {
@@ -5313,6 +6813,12 @@
             "value" : "Tap re-extract or delete."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完全なタスクとして解析できませんでした。再解析または削除をタップしてください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5327,6 +6833,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Re-extract"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再解析"
           }
         },
         "zh-Hans" : {
@@ -5345,6 +6857,12 @@
             "value" : "Couldn't parse"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認識できず"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5359,6 +6877,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Raw fragment"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元テキスト"
           }
         },
         "zh-Hans" : {
@@ -5378,6 +6902,12 @@
             "value" : "Nothing planned"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "予定なし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5392,6 +6922,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fri"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "金"
           }
         },
         "zh-Hans" : {
@@ -5410,6 +6946,12 @@
             "value" : "Mon"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5426,6 +6968,12 @@
             "value" : "Sat"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "土"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5440,6 +6988,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sun"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日"
           }
         },
         "zh-Hans" : {
@@ -5459,6 +7013,12 @@
             "value" : "This week"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5474,6 +7034,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This Week %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週 %@"
           }
         },
         "zh-Hans" : {
@@ -5492,6 +7058,12 @@
             "value" : "Thu"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "木"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5506,6 +7078,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
           }
         },
         "zh-Hans" : {
@@ -5525,6 +7103,12 @@
             "value" : "Today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5539,6 +7123,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tomorrow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日"
           }
         },
         "zh-Hans" : {
@@ -5557,6 +7147,12 @@
             "value" : "Tue"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "火"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5573,6 +7169,12 @@
             "value" : "Later"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "後で"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5587,6 +7189,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "水"
           }
         },
         "zh-Hans" : {
@@ -5606,6 +7214,12 @@
             "value" : "%lld done this week"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今週%lld件完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5620,6 +7234,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Listening..."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聴いています..."
           }
         },
         "zh-Hans" : {
@@ -5638,6 +7258,12 @@
             "value" : "Listening to your voice..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたの声を聴いています..."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5652,6 +7278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音中"
           }
         },
         "zh-Hans" : {
@@ -5670,6 +7302,12 @@
             "value" : "VoiceTodo Recording"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodo 録音中"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5684,6 +7322,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止しました"
           }
         },
         "zh-Hans" : {
@@ -5702,6 +7346,12 @@
             "value" : "Generate"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5717,6 +7367,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI will split this text into todos you can confirm."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AIがこのテキストを確認できるタスクに分割します。"
           }
         },
         "zh-Hans" : {
@@ -5801,6 +7457,12 @@
             "value" : "Set VoiceTodo as the Action Button shortcut\nOne press to start recording"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoをアクションボタンに設定\nボタン一押しで録音開始"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5815,6 +7477,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Come back here and tap \"Got it\" when done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定が終わったらここに戻って「わかった」をタップ"
           }
         },
         "zh-Hans" : {
@@ -5833,6 +7501,12 @@
             "value" : "Press here"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここを押して"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5847,6 +7521,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を開く"
           }
         },
         "zh-Hans" : {
@@ -5865,6 +7545,12 @@
             "value" : "Find Action Button"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「アクションボタン」を見つける"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5879,6 +7565,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Select Shortcut"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「ショートカット」を選択"
           }
         },
         "zh-Hans" : {
@@ -5897,6 +7589,12 @@
             "value" : "Choose VoiceTodo → Start Recording"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「VoiceTodo」→「録音を開始」を選ぶ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5911,6 +7609,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Set Up Quick Record"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クイック録音を設定"
           }
         },
         "zh-Hans" : {
@@ -5930,6 +7634,12 @@
             "value" : "OK, Authorize VoiceTodo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK、VoiceTodoに許可する"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5944,6 +7654,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戻る"
           }
         },
         "zh-Hans" : {
@@ -5962,6 +7678,12 @@
             "value" : "Allow Microphone Access"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクへのアクセスを許可"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5976,6 +7698,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allow Speech Recognition"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識を許可"
           }
         },
         "zh-Hans" : {
@@ -5994,6 +7722,12 @@
             "value" : "Got it"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "わかった"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6008,6 +7742,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Next"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次へ"
           }
         },
         "zh-Hans" : {
@@ -6026,6 +7766,12 @@
             "value" : "Skip for now"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あとで"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6040,6 +7786,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try a Sentence"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ひとこと試す"
           }
         },
         "zh-Hans" : {
@@ -6058,6 +7810,12 @@
             "value" : "Calendar access was declined, so todos will stay in the app. You can turn it on later in Settings."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーの権限が得られなかったため、タスクはアプリ内にのみ保存されます。あとで設定でオンにできます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6072,6 +7830,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos with a date can also appear in the iOS Calendar app, alongside your other events."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付付きのタスクは、iOSのカレンダーにも他の予定と並んで表示できます。"
           }
         },
         "zh-Hans" : {
@@ -6090,6 +7854,12 @@
             "value" : "Events are written to your default calendar on this device only."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イベントはこの端末のデフォルトカレンダーにのみ書き込まれ、アップロードされません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6104,6 +7874,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sync to your Calendar?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーと同期しますか?"
           }
         },
         "zh-Hans" : {
@@ -6122,6 +7898,12 @@
             "value" : "Just speak — date, time, and items are sorted for you"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ただ話すだけ — 日付も時刻も、やることも整理します"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6136,6 +7918,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“Meeting with the team at 3 tomorrow, and pick up some milk”"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「明日の午後3時に会議、ついでに牛乳を買う」"
           }
         },
         "zh-Hans" : {
@@ -6154,6 +7942,12 @@
             "value" : "One sentence, neatly done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ひとことで、きれいにまとまる"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6168,6 +7962,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Team meeting"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会議"
           }
         },
         "zh-Hans" : {
@@ -6186,6 +7986,12 @@
             "value" : "Tomorrow 3:00 PM"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日 15:00"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6200,6 +8006,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pick up milk"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "牛乳を買う"
           }
         },
         "zh-Hans" : {
@@ -6218,6 +8030,12 @@
             "value" : "Pro unlocked — thanks for the support!"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proが有効になりました。ありがとうございます!"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6232,6 +8050,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Now tap the orange mic button and just say it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オレンジのマイクボタンをタップして、ひとこと話してみて"
           }
         },
         "zh-Hans" : {
@@ -6250,6 +8074,12 @@
             "value" : "One Last Thing"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後にひとつだけ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6264,6 +8094,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tap the mic and speak your todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクをタップして、タスクを話す"
           }
         },
         "zh-Hans" : {
@@ -6282,6 +8118,12 @@
             "value" : "Speak It"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話すだけ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6296,6 +8138,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI organizes them into a clear list"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AIがわかりやすいリストに整理"
           }
         },
         "zh-Hans" : {
@@ -6314,6 +8162,12 @@
             "value" : "Get Organized"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "きれいに整理"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6330,6 +8184,12 @@
             "value" : "See your todos on lock screen and home screen widgets"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクはロック画面とホーム画面のウィジェットに表示できます"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6344,6 +8204,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stay Visible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いつでも見える"
           }
         },
         "zh-Hans" : {
@@ -6363,6 +8229,12 @@
             "value" : "Great, permission granted!"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許可がおりました!"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6379,6 +8251,12 @@
             "value" : "Lets VoiceTodo hear you"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoがあなたの声を聞くために使います"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6393,6 +8271,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Microphone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイク"
           }
         },
         "zh-Hans" : {
@@ -6412,6 +8296,12 @@
             "value" : "So we can hear what you say"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたの話す声を「聞く」ために必要です"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6426,6 +8316,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Microphone enabled"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクはオンです"
           }
         },
         "zh-Hans" : {
@@ -6445,6 +8341,12 @@
             "value" : "We Need Your Microphone"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクが必要です"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6459,6 +8361,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を開く"
           }
         },
         "zh-Hans" : {
@@ -6565,6 +8473,12 @@
             "value" : "Currently: %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在:%@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6579,6 +8493,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pick the language you'll record todos in. You can change it anytime in Settings."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを録音する言語を選んでください。あとで設定からいつでも変更できます。"
           }
         },
         "zh-Hans" : {
@@ -6597,6 +8517,12 @@
             "value" : "How will you speak?"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どの言語で話しますか?"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6613,6 +8539,12 @@
             "value" : "Turns your voice into text"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたの声をテキストに変換します"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6627,6 +8559,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speech Recognition"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識"
           }
         },
         "zh-Hans" : {
@@ -6646,6 +8584,12 @@
             "value" : "To turn your speech into text"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話したことを文字にするために必要です"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6660,6 +8604,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speech recognition enabled"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識はオンです"
           }
         },
         "zh-Hans" : {
@@ -6679,6 +8629,12 @@
             "value" : "Speech Recognition Needed"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識が必要です"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6693,6 +8649,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tap once, say it, done."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップして、話して、完了。"
           }
         },
         "zh-Hans" : {
@@ -6733,6 +8695,12 @@
             "value" : "Speak your todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを話そう"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6747,6 +8715,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hi, welcome to"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "こんにちは、"
           }
         },
         "zh-Hans" : {
@@ -6765,6 +8739,12 @@
             "value" : "Close"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6779,6 +8759,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
           }
         },
         "zh-Hans" : {
@@ -6797,6 +8783,12 @@
             "value" : "Tap to record a todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップしてタスクを録音"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6811,6 +8803,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switched to typing — what do you need to do today?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーボード入力に切り替わりました。今日やることを入力してください。"
           }
         },
         "zh-Hans" : {
@@ -6829,6 +8827,12 @@
             "value" : "Listening..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聴いています"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6845,6 +8849,12 @@
             "value" : "· What do you need to do today?"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· 今日やることを話してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6859,6 +8869,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try voice again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度音声で"
           }
         },
         "zh-Hans" : {
@@ -6878,6 +8894,12 @@
             "value" : "Send to AI"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AIに送信"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6894,6 +8916,12 @@
             "value" : "Switch to keyboard"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーボードに切り替え"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6908,6 +8936,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switch to voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声に切り替え"
           }
         },
         "zh-Hans" : {
@@ -7014,6 +9048,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "per day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1日あたり"
           }
         },
         "zh-Hans" : {
@@ -7251,6 +9291,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Monthly"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月額"
           }
         },
         "zh-Hans" : {
@@ -7932,6 +9978,12 @@
             "value" : "Yearly"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年額"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7993,6 +10045,12 @@
             "value" : "No usage yet today"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の利用はまだありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8031,6 +10089,12 @@
             "value" : "incl. %1$d offline recoveries"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフライン再処理%1$d件を含む"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8046,6 +10110,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loading quota"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用枠を読み込み中"
           }
         },
         "zh-Hans" : {
@@ -8108,6 +10178,12 @@
             "value" : "Every 2 weeks"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隔週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8122,6 +10198,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Every 2 weeks %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隔週 %@"
           }
         },
         "zh-Hans" : {
@@ -8140,6 +10222,12 @@
             "value" : "Daily"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8154,6 +10242,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "End Date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "終了日"
           }
         },
         "zh-Hans" : {
@@ -8172,6 +10266,12 @@
             "value" : "Set End Date"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "終了日を設定"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8186,6 +10286,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Monthly on day %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎月%lld日"
           }
         },
         "zh-Hans" : {
@@ -8204,6 +10310,12 @@
             "value" : "Day"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8218,6 +10330,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎月"
           }
         },
         "zh-Hans" : {
@@ -8236,6 +10354,12 @@
             "value" : "of each month"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8250,6 +10374,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Monthly"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎月"
           }
         },
         "zh-Hans" : {
@@ -8268,6 +10398,12 @@
             "value" : "None"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繰り返しなし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8283,6 +10419,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "From %1$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@から"
           }
         },
         "zh-Hans" : {
@@ -8521,6 +10663,12 @@
             "value" : "Every 3 weeks"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3週間ごと"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8535,6 +10683,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Every 3 weeks %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3週間ごと %@"
           }
         },
         "zh-Hans" : {
@@ -8554,6 +10708,12 @@
             "value" : "Enter a day from 1 to 31"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1から31の間で日を入力してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8568,6 +10728,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose at least one day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "少なくとも1日選んでください"
           }
         },
         "zh-Hans" : {
@@ -8586,6 +10752,12 @@
             "value" : "Weekly %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎週 %@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8600,6 +10772,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Every %1$lld weeks %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld週間ごと %2$@"
           }
         },
         "zh-Hans" : {
@@ -8618,6 +10796,12 @@
             "value" : "Every %lld weeks"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld週間ごと"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8634,6 +10818,12 @@
             "value" : "Weekly"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎週"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8648,6 +10838,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ · until %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@まで"
           }
         },
         "zh-Hans" : {
@@ -8754,6 +10950,12 @@
             "value" : "Allow Access"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アクセスを許可"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8768,6 +10970,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "To turn your voice into todos, we need to hear you and recognize your speech."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声をタスクにするには、音声を聞き取り、認識する必要があります。"
           }
         },
         "zh-Hans" : {
@@ -8786,6 +10994,12 @@
             "value" : "Microphone — to capture your voice"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイク — あなたの声を録音するために"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8800,6 +11014,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あとで"
           }
         },
         "zh-Hans" : {
@@ -8818,6 +11038,12 @@
             "value" : "Speech Recognition — to convert speech to text"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識 — 声を文字に変換するために"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8832,6 +11058,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "VoiceTodo needs microphone access"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoはマイクへのアクセスが必要です"
           }
         },
         "zh-Hans" : {
@@ -12868,6 +15100,12 @@
             "value" : "App + system Calendar"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ + カレンダー"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12882,6 +15120,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "App calendar only"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ内のみ"
           }
         },
         "zh-Hans" : {
@@ -12900,6 +15144,12 @@
             "value" : "Save destination"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存先"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12914,6 +15164,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cancel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
           }
         },
         "zh-Hans" : {
@@ -12932,6 +15188,12 @@
             "value" : "System Calendar still uses natural midnight (00:00)."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムのカレンダー(標準カレンダーアプリ)は引き続き0:00切り替えです。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12946,6 +15208,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hours before this time still belong to the previous day. Useful for night owls, shift workers, and freelancers."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この時刻より前は前の日として扱います。夜型・シフト勤務・フリーランスの方に便利です。"
           }
         },
         "zh-Hans" : {
@@ -12964,6 +15232,12 @@
             "value" : "New day begins at"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい一日の始まり"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12978,6 +15252,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Day starts at"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一日の開始時刻"
           }
         },
         "zh-Hans" : {
@@ -13065,6 +15345,12 @@
             "value" : "Done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13147,6 +15433,12 @@
             "value" : "My Phrases"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイフレーズ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13207,6 +15499,12 @@
             "value" : "Send a local notification when a timed to-do is due."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時刻付きのタスクは、時間になるとローカル通知を受け取ります。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13221,6 +15519,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reminders"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リマインダー"
           }
         },
         "zh-Hans" : {
@@ -13239,6 +15543,12 @@
             "value" : "Time reminders"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間のリマインド"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13253,6 +15563,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Off"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ"
           }
         },
         "zh-Hans" : {
@@ -13271,6 +15587,12 @@
             "value" : "VoiceTodo needs both microphone and speech recognition to record todos. Tap to manage in system settings."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクの録音にはマイクと音声認識が必要です。タップしてシステム設定で管理できます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13285,6 +15607,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "On"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オン"
           }
         },
         "zh-Hans" : {
@@ -13303,6 +15631,12 @@
             "value" : "Voice Permissions"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の権限"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13317,6 +15651,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Microphone & Speech Recognition"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクと音声認識"
           }
         },
         "zh-Hans" : {
@@ -13335,6 +15675,12 @@
             "value" : "Clear local learning data"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学習データを消去"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13349,6 +15695,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消去"
           }
         },
         "zh-Hans" : {
@@ -13367,6 +15719,12 @@
             "value" : "This deletes saved common words on this device. Todos are not deleted."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この端末に保存されたよく使う単語を削除します。タスクは削除されません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13381,6 +15739,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear local learning data?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学習データを消去しますか?"
           }
         },
         "zh-Hans" : {
@@ -13399,6 +15763,12 @@
             "value" : "Cleared"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消去しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13413,6 +15783,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Learns common words from confirmed todos on this device to improve speech recognition and organization. A few keywords may be sent when processing todos; full history is not sent."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確定したタスクからよく使う単語をこの端末内で学習し、認識と整理の精度を上げます。処理時に一部のキーワードを送信することがあります。履歴全体は送信しません。"
           }
         },
         "zh-Hans" : {
@@ -13431,6 +15807,12 @@
             "value" : "Personalized recognition"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーソナライズ認識"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13445,6 +15827,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Personalized recognition"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーソナライズ認識"
           }
         },
         "zh-Hans" : {
@@ -13485,6 +15873,12 @@
             "value" : "Review"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ふりかえり"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13499,6 +15893,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Follow system"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムに従う"
           }
         },
         "zh-Hans" : {
@@ -13517,6 +15917,12 @@
             "value" : "English"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英語"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13531,6 +15937,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Japanese"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日本語"
           }
         },
         "ja-JP" : {
@@ -13555,6 +15967,12 @@
             "value" : "Recognition language"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認識言語"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13569,6 +15987,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chinese (supports Chinese-English mix)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中国語(中国語・英語混在対応)"
           }
         },
         "zh-Hans" : {
@@ -13653,6 +16077,12 @@
             "value" : "Settings"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13667,6 +16097,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Upgrade to Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proにアップグレード"
           }
         },
         "zh-Hans" : {
@@ -13685,6 +16121,12 @@
             "value" : "Mark a todo as done"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを完了にします"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13699,6 +16141,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't mark it as done. Please try in the app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了にできませんでした。アプリ内で試してください。"
           }
         },
         "zh-Hans" : {
@@ -13717,6 +16165,12 @@
             "value" : "This task doesn't occur today."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスクは今日はありません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13731,6 +16185,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't find that todo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのタスクは見つかりませんでした。"
           }
         },
         "zh-Hans" : {
@@ -13749,6 +16209,12 @@
             "value" : "Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13763,6 +16229,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Marked '%@' as done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」を完了にしました"
           }
         },
         "zh-Hans" : {
@@ -13780,6 +16252,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mark todo done: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを完了にする:%@"
           }
         },
         "zh-Hans" : {
@@ -13801,6 +16279,12 @@
             "value" : "Complete Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13815,6 +16299,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete a todo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを削除します"
           }
         },
         "zh-Hans" : {
@@ -13833,6 +16323,12 @@
             "value" : "Couldn't delete it. Please try in the app."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除できませんでした。アプリ内で試してください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13847,6 +16343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "That todo is already gone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのタスクはすでにありません。"
           }
         },
         "zh-Hans" : {
@@ -13865,6 +16367,12 @@
             "value" : "Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13879,6 +16387,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deleted '%@'"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」を削除しました"
           }
         },
         "zh-Hans" : {
@@ -13896,6 +16410,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete todo: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを削除:%@"
           }
         },
         "zh-Hans" : {
@@ -13917,6 +16437,12 @@
             "value" : "Delete Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを削除"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13931,6 +16457,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク"
           }
         },
         "zh-Hans" : {
@@ -13949,6 +16481,12 @@
             "value" : "Quickly add todos by voice"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声ですばやくタスクを記録"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13963,6 +16501,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open VoiceTodo and start recording right away"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoを開いてすぐ録音を開始します"
           }
         },
         "zh-Hans" : {
@@ -13981,6 +16525,12 @@
             "value" : "Start Recording"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を開始"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13995,6 +16545,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add Todo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを追加"
           }
         },
         "zh-Hans" : {
@@ -14013,6 +16569,12 @@
             "value" : "Content"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内容"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14027,6 +16589,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Get your todo list"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクリストを取得"
           }
         },
         "zh-Hans" : {
@@ -14045,6 +16613,12 @@
             "value" : "No matching todos."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致するタスクはありません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14059,6 +16633,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't read your todos. Please open the app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを読み込めませんでした。アプリを開いてください。"
           }
         },
         "zh-Hans" : {
@@ -14077,6 +16657,12 @@
             "value" : "Status"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状態"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14091,6 +16677,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You have %lld todo(s)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件のタスクがあります"
           }
         },
         "zh-Hans" : {
@@ -14109,6 +16701,12 @@
             "value" : "All"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14123,6 +16721,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Completed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
           }
         },
         "zh-Hans" : {
@@ -14141,6 +16745,12 @@
             "value" : "Incomplete"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14155,6 +16765,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todo status"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクの状態"
           }
         },
         "zh-Hans" : {
@@ -14172,6 +16788,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Get todos: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを取得:%@"
           }
         },
         "zh-Hans" : {
@@ -14193,6 +16815,12 @@
             "value" : "Get Todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを取得"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14207,6 +16835,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Added %lld todo(s)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件のタスクを追加しました"
           }
         },
         "zh-Hans" : {
@@ -14247,6 +16881,12 @@
             "value" : "No todos recognized"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクは認識されませんでした"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14261,6 +16901,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't turn that into a todo. Please add it in the app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクにできませんでした。アプリで追加してください。"
           }
         },
         "zh-Hans" : {
@@ -14279,6 +16925,12 @@
             "value" : "%lld more..."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他%lld件..."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14293,6 +16945,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No network. Saved using local rules."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフラインのため、ローカルルールで保存しました。"
           }
         },
         "zh-Hans" : {
@@ -14311,6 +16969,12 @@
             "value" : "Got the keyword. Please finish it in the app."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーワードを記録しました。アプリで仕上げてください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14325,6 +16989,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "View in App"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリで見る"
           }
         },
         "zh-Hans" : {
@@ -14343,6 +17013,12 @@
             "value" : "Complete Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14357,6 +17033,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete Todo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを削除"
           }
         },
         "zh-Hans" : {
@@ -14375,6 +17057,12 @@
             "value" : "Get Todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを取得"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14389,6 +17077,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start Recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を開始"
           }
         },
         "zh-Hans" : {
@@ -14407,6 +17101,12 @@
             "value" : "Add Todo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを追加"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14422,6 +17122,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add todo: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを追加:%@"
           }
         },
         "zh-Hans" : {
@@ -14443,6 +17149,12 @@
             "value" : "Unable to open todo data"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクデータを開けません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14462,6 +17174,12 @@
             "value" : "to"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "に"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14476,6 +17194,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You often change"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "よく"
           }
         },
         "zh-Hans" : {
@@ -14494,6 +17218,12 @@
             "value" : "Remember this phrase?"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このフレーズを覚えますか?"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14508,6 +17238,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あとで"
           }
         },
         "zh-Hans" : {
@@ -14526,6 +17262,12 @@
             "value" : "Remember"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覚える"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14540,6 +17282,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Date hint: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日時の手がかり:%@"
           }
         },
         "zh-Hans" : {
@@ -14558,6 +17306,12 @@
             "value" : "From VoiceTodo"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceTodoから"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14572,6 +17326,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calendar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダー"
           }
         },
         "zh-Hans" : {
@@ -14591,6 +17351,12 @@
             "value" : "Home"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ホーム"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14605,6 +17371,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
           }
         },
         "zh-Hans" : {
@@ -14624,6 +17396,12 @@
             "value" : "Time period"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14638,6 +17416,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Afternoon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "午後"
           }
         },
         "zh-Hans" : {
@@ -14656,6 +17440,12 @@
             "value" : "Anytime"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いつでも"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14670,6 +17460,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Evening"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "夜"
           }
         },
         "zh-Hans" : {
@@ -14688,6 +17484,12 @@
             "value" : "Morning"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "午前"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14702,6 +17504,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を開く"
           }
         },
         "zh-Hans" : {
@@ -14726,6 +17534,12 @@
             "value" : "Added to todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクに追加しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14740,6 +17554,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finish onboarding before using quick recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クイック録音を使う前にオンボーディングを完了してください"
           }
         },
         "zh-Hans" : {
@@ -14758,6 +17578,12 @@
             "value" : "No todos detected"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクは検出されませんでした"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14772,6 +17598,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld todo(s) organized. Tap to review."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件のタスクを整理しました。タップして確認。"
           }
         },
         "zh-Hans" : {
@@ -14790,6 +17622,12 @@
             "value" : "Please grant microphone and speech recognition permissions first"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先にマイクと音声認識の権限を許可してください"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14804,6 +17642,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording is not active. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音の準備ができていません。もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -14822,6 +17666,12 @@
             "value" : "Raw transcript saved. Will be organized when back online."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元の記録を保存しました。オンラインに戻ると自動で整理します。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14836,6 +17686,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saved in the app, but could not write to Calendar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリには保存されましたが、カレンダーに書き込めませんでした。"
           }
         },
         "zh-Hans" : {
@@ -14860,6 +17716,12 @@
             "value" : "View your recent todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近のタスクを表示"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14874,6 +17736,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク"
           }
         },
         "zh-Hans" : {
@@ -14892,6 +17760,12 @@
             "value" : "Load failed"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込みに失敗"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14906,6 +17780,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loading"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込み中"
           }
         },
         "zh-Hans" : {
@@ -14924,6 +17804,12 @@
             "value" : "No todos"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクなし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14938,6 +17824,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク"
           }
         },
         "zh-Hans" : {
@@ -14955,6 +17847,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't update. Open the app to sync."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新できませんでした。アプリを開いて同期してください。"
           }
         },
         "zh-Hans" : {
