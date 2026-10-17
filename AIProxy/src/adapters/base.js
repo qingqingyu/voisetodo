@@ -294,7 +294,7 @@ due_hint 始终保留用户原文。
 
 示例 7（相对日期换算，假设参考日期 2026-07-12 周日）：
 输入："下周三交房租"
-输出：{"todos":[{"title":"交房租","detail":"下周三交房租","due_date":"2026-07-15","due_hint":"下周三","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
+输出：{"todos":[{"title":"交房租","detail":"下周三交房租","due_date":"2026-07-22","due_hint":"下周三","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
 
 示例 8（N天后换算，假设参考日期 2026-07-12）：
 输入："三天后下午3点开会"
@@ -457,7 +457,7 @@ Output: {"todos":[{"title":"Take medicine","detail":"every day at 8pm until end 
 
 Example 7 (relative date computation, assume reference date 2026-07-12 Sunday):
 Input: "Remind me to pay the rent next Wednesday"
-Output: {"todos":[{"title":"Pay rent","detail":"pay the rent next Wednesday","due_date":"2026-07-15","due_hint":"next Wednesday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
+Output: {"todos":[{"title":"Pay rent","detail":"pay the rent next Wednesday","due_date":"2026-07-22","due_hint":"next Wednesday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
 
 Example 8 (N days from now, assume reference date 2026-07-12):
 Input: "I have a meeting at 3pm three days from now"
@@ -631,7 +631,7 @@ JSON のみを返す(説明は不要)。フォーマット:
 
 例 7(相対日付の計算、参照日 2026-07-12 日曜と仮定):
 入力:"来週の水曜日に家賃を払う"
-出力:{"todos":[{"title":"家賃を払う","detail":"来週の水曜日に家賃を払う","due_date":"2026-07-15","due_hint":"来週の水曜日","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
+出力:{"todos":[{"title":"家賃を払う","detail":"来週の水曜日に家賃を払う","due_date":"2026-07-22","due_hint":"来週の水曜日","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"finance"}],"ignored":""}
 
 例 8(N日後、参照日 2026-07-12 と仮定):
 入力:"3日後の午後3時に会議"

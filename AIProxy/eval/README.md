@@ -30,7 +30,7 @@
 cd AIProxy
 cp wrangler.toml wrangler.eval.toml
 # 编辑 wrangler.eval.toml:
-#   [vars] DAILY_REQUEST_LIMIT = "200"   # 必须 ≥ case 数 + 重试余量(72+),否则跑一半 429
+#   [vars] DAILY_REQUEST_LIMIT = "200"   # 必须 ≥ case 数 + 重试余量(75+),否则跑一半 429
 #   PROVIDERS = [ ...只留你要测的这一条,model 改成候选... ]
 npx wrangler dev -c wrangler.eval.toml   # 默认 http://localhost:8787
 ```
@@ -82,8 +82,8 @@ node run.mjs --replay results/glm-air-<ts>.json
 
 ### 4.1 过关线(en + zh + ja,已知困难白名单)
 
-1. case 全对率 **≥ 98%**(72 条剔除白名单 2 条后 70 条里最多错 1)
-2. **已知困难白名单**(不进分母,失败只记录不 gate):`zh-017`(基线与候选同错,golden 可能过严,待 §4.2 流程复核)、`ja-014`(「今度」歧义;2026-09-22 sonnet 基线 18 条 ja 全对,air 独错此条——证明可做对,留作 prompt 改进抓手)
+1. case 全对率 **≥ 98%**(75 条剔除白名单 2 条后 73 条里最多错 1)
+2. **已知困难白名单**(不进分母,失败只记录不 gate):`zh-017`(基线与候选同错,golden 可能过严,待 §4.2 流程复核)、`ja-014`(「今度」歧义;2026-09-22 sonnet 基线 ja 16/16 全对(另 2 条 infra 未计分),air 独错此条——证明可做对,留作 prompt 改进抓手)
 3. 相对 Sonnet 基线:case 全对率差距 **≤ 1pp**(基线不满分时按相对差距判)
 4. **日期/重复组零回归**:`due_date`、`due_time`、`recurrence_rule` 三列字段准确率不得低于基线
 
@@ -132,10 +132,11 @@ node eval/run.mjs --endpoint http://localhost:8787 --token <APP_TOKEN> --label g
 
 跑完按 §4.1 过关线评分 + §5 表拍板;若模型名 404,去 Z.AI console 查 anthropic 端点可用模型名(README §1.1)。
 
-## 6. 日文就绪判读(ja 18 条,2026-10-17 已转正进 gate)
+## 6. 日文就绪判读(ja 19 条,2026-10-17 已转正进 gate)
 
 ja golden 已与 en/zh 口径逐条对齐审校(重复组 due null、fuzzy 周末→due null+user_explicit、title_mention→due_hint null、裸曜日=即将到来的那个、曜日编号按 Apple 约定、月底 case 打 end-of-month tag),provisional 标记已移除,与 en+zh 同过关线。
 转正时(2026-10-17)用 `--replay` 对 09-22 两轮留档重评验证闸门:glm-4.5-air ja 17/18(仅错 `ja-014`,已列 §4.1 白名单)、sonnet 基线 ja 16/16 全对——说明 prompt 能力上限足够,air 的 ja 掉档仅集中在「今度」歧义一条。`ja-015`(敬体)、标题语言保持(soft 的 title 列)继续观察。
+⚠️ 2026-10-17 审查修复:三语 prompt 示例 7 的「下周三」输出原为周一始算法的 2026-07-15,已改为周日始口径的 2026-07-22——属 few-shot 变更,按 §7 规则 09-22 留档与新 prompt 结果不可比,周二实跑需按新 prompt 重跑全模型。
 
 ja 过关 ≠ 日文市场开放(还差母语审,见 PROMOTION_PLAN 附则 3);ja 不过关也不影响英文市场上线。
 
