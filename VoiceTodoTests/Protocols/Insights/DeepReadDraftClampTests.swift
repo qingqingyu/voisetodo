@@ -1,6 +1,8 @@
 import XCTest
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 #if canImport(VoiceTodoProtocols)
 @testable import VoiceTodoProtocols
 #else
@@ -71,7 +73,10 @@ final class DeepReadDraftClampTests: XCTestCase {
     /// 信号图标符号可用性(review 修订 4):InsightCardView 底部的强度图标
     /// 用 `cellularbars`——`cellbars` 实测不存在(本护栏首跑即红),符号
     /// 缺失时视图渲染空白;若再换符号,同步改这里的断言与视图。
+    /// UIKit 在 macOS 协议测试目标不可用,整测例按项目惯例编译剔除。
+    #if canImport(UIKit)
     func testSignalStrengthSFSymbolExists() {
         XCTAssertNotNil(UIImage(systemName: "cellularbars"), "SF Symbol cellularbars 应存在;缺失则视图与这里同步换")
     }
+    #endif
 }
