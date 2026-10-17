@@ -18452,6 +18452,50 @@
           }
         }
       }
+    },
+    "settings.ja_beta.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Japanese support is in beta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日本語版はベータ版です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日语支持为 Beta 版"
+          }
+        }
+      }
+    },
+    "settings.ja_beta.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Japanese is AI-processed and may occasionally sound unnatural. Tap to send feedback."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI処理のため、不自然な表現があるかもしれません。タップしてフィードバックを送れます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日语由 AI 处理,偶有不自然的表述。点击可发送反馈。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -190,6 +190,33 @@ struct HomeSettingsSheet: View {
                     Text(String(localized: "settings.day_start_hour.title"))
                 }
 
+                // 日文 Beta 标签(计划书 docs/mvp-japanese-launch/plan.md §6.1-A 最小版):
+                // 仅日文系统用户可见;点击进现有 FeedbackSheet,翻译问题分类现成
+                // (feedback.type.translation)。首启 modal 等主动开日本市场时再做。
+                if Locale.current.identifier.hasPrefix("ja") {
+                    Section {
+                        Button {
+                            showFeedbackSheet = true
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(String(localized: "settings.ja_beta.title"), systemImage: "info.circle.fill")
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                                Text(String(localized: "settings.ja_beta.message"))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                                    .lineLimit(3)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("JaBetaBanner")
+                    }
+                }
+
                 Section(String(localized: "settings.speech_language.title")) {
                     Picker(String(localized: "settings.speech_language.title"), selection: $speechRecognitionLanguage) {
                         ForEach(SpeechRecognitionLanguage.allCases) { lang in
