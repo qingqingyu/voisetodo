@@ -3,7 +3,7 @@
     "schema_version": 1,
     "anchor_today": "2026-01-07",
     "anchor_weekday": "Wednesday",
-    "notes": "评测集:AI 抽取质量对比(Sonnet 基线 vs 便宜模型)。golden 的 due_date 全部按 today=2026-01-07(周三)换算为绝对日期(authoring 锚);runner 每次 run 在 UTC 今天 ±1 天内动态选周三作锚(worker 对 X-Local-Date 只容忍 ±1 天漂移),并把 golden 日期按锚偏移平移,end-of-month tag 的 case 重算为锚当月最后一天。字段口径严格镜像 AIProxy/src/adapters/base.js 的 few-shot 示例(如:tonight→user_explicit+bucket、这周末→due null+user_explicit、title_mention→due_hint null、裸星期几=即将到来的那个)。weekday 按 Apple 约定 1=周日..7=周六,周从周一开始。ja 用例 2026-10-17 审校转正:golden 口径与 en/zh 逐条对齐(重复组 due null、fuzzy 周末→due null+user_explicit、title_mention→due_hint null、裸曜日=即将到来的那个),与 en+zh 同过关线。"
+    "notes": "评测集:AI 抽取质量对比(Sonnet 基线 vs 便宜模型)。golden 的 due_date 全部按 today=2026-01-07(周三)换算为绝对日期(authoring 锚);runner 每次 run 在 UTC 今天 ±1 天内动态选周三作锚(worker 对 X-Local-Date 只容忍 ±1 天漂移),并把 golden 日期按锚偏移平移,end-of-month tag 的 case 重算为锚当月最后一天。字段口径严格镜像 AIProxy/src/adapters/base.js 的 few-shot 示例(如:tonight→user_explicit+bucket、这周末→due null+user_explicit、title_mention→due_hint null、裸星期几=即将到来的那个)。weekday 按 Apple 约定 1=周日..7=周六,周从周日开始(2026-10-17 由周一 ISO 改为周日,与 App 周视图及三语系统日历默认一致;存量 golden 在周三 authoring 锚下两种周制结果相同,无需改写)。ja 用例 2026-10-17 审校转正:golden 口径与 en/zh 逐条对齐(重复组 due null、fuzzy 周末→due null+user_explicit、title_mention→due_hint null、裸曜日=即将到来的那个),与 en+zh 同过关线。"
   },
   "cases": [
     {"id": "en-001", "locale": "en", "transcript": "Remind me to buy groceries", "tags": ["single", "no-date"],
@@ -84,6 +84,8 @@
      "golden": {"todos": [{"title": "Water the plants", "detail": "every Sunday at 9am", "due_date": null, "due_hint": "every Sunday at 9am", "due_time": "09:00", "time_bucket": null, "recurrence_rule": {"frequency": "weekly", "interval": 1, "weekdays": [1], "day_of_month": null, "end_date": null}, "recurrence_end": null, "reminder_times": null, "due_date_basis": null, "priority": "normal", "category_hint": "life"}], "ignored": ""}},
     {"id": "en-030", "locale": "en", "transcript": "Remind me to call grandma this weekend", "tags": ["single", "fuzzy-weekend"],
      "golden": {"todos": [{"title": "Call grandma", "detail": "this weekend", "due_date": null, "due_hint": "this weekend", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "social"}], "ignored": ""}},
+    {"id": "en-031", "locale": "en", "transcript": "Call mom next Sunday", "tags": ["single", "next-weekday", "sunday-boundary"],
+     "golden": {"todos": [{"title": "Call mom", "detail": "next Sunday", "due_date": "2026-01-11", "due_hint": "next Sunday", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "social"}], "ignored": ""}},
     {"id": "zh-001", "locale": "zh", "transcript": "帮我记一下买菜", "tags": ["single", "no-date"],
      "golden": {"todos": [{"title": "买菜", "detail": "帮我记一下买菜", "due_date": null, "due_hint": null, "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": null, "priority": "normal", "category_hint": "life"}], "ignored": ""}},
     {"id": "zh-002", "locale": "zh", "transcript": "明天下午3点开会", "tags": ["single", "relative-date", "clock"],
@@ -141,6 +143,8 @@
      "golden": {"todos": [{"title": "把报告交给经理", "detail": "明天把报告交给经理", "due_date": "2026-01-08", "due_hint": "明天", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "work"}], "ignored": ""}},
     {"id": "zh-024", "locale": "zh", "transcript": "明天练 IELTS 口语", "tags": ["single", "mixed-language", "vocabulary-hints"], "vocabularyHints": ["IELTS"],
      "golden": {"todos": [{"title": "练 IELTS 口语", "detail": "明天练 IELTS 口语", "due_date": "2026-01-08", "due_hint": "明天", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "study"}], "ignored": ""}},
+    {"id": "zh-025", "locale": "zh", "transcript": "下周日给妈妈打电话", "tags": ["single", "next-weekday", "sunday-boundary"],
+     "golden": {"todos": [{"title": "给妈妈打电话", "detail": "下周日给妈妈打电话", "due_date": "2026-01-11", "due_hint": "下周日", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "social"}], "ignored": ""}},
     {"id": "ja-001", "locale": "ja", "transcript": "明日の午後3時に会議", "tags": ["single", "relative-date", "clock"],
      "golden": {"todos": [{"title": "会議", "detail": "明日の午後3時", "due_date": "2026-01-08", "due_hint": "明日の午後3時", "due_time": "15:00", "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "work"}], "ignored": ""}},
     {"id": "ja-002", "locale": "ja", "transcript": "牛乳を買う", "tags": ["single", "no-date"],
@@ -184,6 +188,8 @@
     {"id": "ja-017", "locale": "ja", "transcript": "毎週日曜日の朝9時に英語のレッスンがある", "tags": ["single", "recurrence", "weekly", "clock"],
      "golden": {"todos": [{"title": "英語のレッスン", "detail": "毎週日曜日の朝9時", "due_date": null, "due_hint": "毎週日曜日の朝9時", "due_time": "09:00", "time_bucket": null, "recurrence_rule": {"frequency": "weekly", "interval": 1, "weekdays": [1], "day_of_month": null, "end_date": null}, "recurrence_end": null, "reminder_times": null, "due_date_basis": null, "priority": "normal", "category_hint": "study"}], "ignored": ""}},
     {"id": "ja-018", "locale": "ja", "transcript": "明日、Ankiのデッキを復習する", "tags": ["single", "mixed-language", "vocabulary-hints"], "vocabularyHints": ["Anki"],
-     "golden": {"todos": [{"title": "Ankiのデッキを復習する", "detail": "明日、Ankiのデッキを復習する", "due_date": "2026-01-08", "due_hint": "明日", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "study"}], "ignored": ""}}
+     "golden": {"todos": [{"title": "Ankiのデッキを復習する", "detail": "明日、Ankiのデッキを復習する", "due_date": "2026-01-08", "due_hint": "明日", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "study"}], "ignored": ""}},
+    {"id": "ja-019", "locale": "ja", "transcript": "来週の日曜日に母に電話する", "tags": ["single", "next-weekday", "sunday-boundary"],
+     "golden": {"todos": [{"title": "母に電話する", "detail": "来週の日曜日に母に電話する", "due_date": "2026-01-11", "due_hint": "来週の日曜日", "due_time": null, "time_bucket": null, "recurrence_rule": null, "recurrence_end": null, "reminder_times": null, "due_date_basis": "user_explicit", "priority": "normal", "category_hint": "social"}], "ignored": ""}}
   ]
 }
