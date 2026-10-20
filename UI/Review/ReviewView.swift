@@ -105,6 +105,11 @@ struct ReviewView: View {
     /// 随 `loadReviewNotes()` 的同一次 `allSessions()` 一并赋值,不单独再读。
     @State private var lastReviewDate: Date?
 
+    /// 内容字号判定(2026-10-19):入口卡在 xL 起切竖排——fixedSize 胶囊占宽
+    /// 过大,横排会把左侧文案挤出可视区(截图实测 AX5+en 主文案被压没;CoreText
+    /// 实测非 AX 的 xL/xxL 档 en/ja 主文案 2 行×0.7 缩放下限也超预算,同机制)。
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private let calendar = Calendar.current
 
     var body: some View {
@@ -179,7 +184,8 @@ struct ReviewView: View {
     }
 
     /// 复盘入口卡(2026-08-23 拍板改版):一行动作行——icon + 「N 件事等你决定」
-    /// + 尾部胶囊「开始 →」。N = `decidablePendingCount`(决定人口,拍板 4 + v5.1)。
+    /// + 尾部胶囊「开始复盘 →」(2026-10-19 文案改版,点明去向并与「完成复盘」
+    /// 对仗)。N = `decidablePendingCount`(决定人口,拍板 4 + v5.1)。
     ///
     /// 改版动机:旧三行卡(title/pending/scope)读起来像信息展示,且「一次性任务」
     /// 是内部模型泄漏(用户没有这个分类);「回顾近 30 天」消歧义移进流程第 1 步;
@@ -194,63 +200,104 @@ struct ReviewView: View {
             showReviewFlow = true
         } label: {
             RecapCard {
-                HStack(spacing: WarmSpacing.md) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 22))
-                        .foregroundColor(WarmTheme.primary)
-
-                    VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
-                        Text(String(localized: hasPending
-                            ? "review.flow.entry.pending_\(pendingCount)"
-                            : "review.flow.entry.empty"))
-                            .font(WarmFont.headline(15))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        // 范围标(2026-09-04 拍板 B1;2026-09-07 修正口径):点进流程
-                        // 前就锚定窗口口径——割裂感发生在点之前。锚定对象是**流程**的
-                        // 窗口(v3 拍板 1:上次复盘至今,首次复盘回落近 7 天),不是本页
-                        // 统计窗口——两窗有意分叉,Hero 的「近 30 天」属
-                        // `fixedWindowSummary`,与此处无关。键与三元判断和第 1 步
-                        // `ReviewStepRecap.scopeHeader` 同源,别让两处漂移。
-                        // 信息层级刻意低于主文案,不加第三行/图标,
-                        // 不要退回 8-23 否掉的「信息展示卡」。
-                        Text(String(localized: lastReviewDate != nil
-                            ? "review.flow.recap.scope_since"
-                            : "review.flow.recap.scope_first"))
-                            .font(WarmFont.caption(11))
-                            .foregroundColor(WarmTheme.textMuted)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                if dynamicTypeSize >= .xLarge {
+                    // xL 起竖排(2026-10-19):fixedSize 胶囊占宽过大,横排会把左侧
+                    // 文案挤出可视区(AX5+en 截图实测主文案被压没;CoreText 实测
+                    // 393pt 下 xxL 档 en 主文案 2 行×0.7 下限 117pt > 实得 97pt,
+                    // 375pt 机型 xL 即超)——竖排让文案占整行宽,胶囊换行置底。
+                    // DynamicTypeSize 的 Comparable 序把 AX1-5 排在 xxxL 之上,
+                    // 本门槛天然覆盖全部 AX 档。
+                    VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+                        HStack(spacing: WarmSpacing.md) {
+                            entryIcon()
+                            entryTexts(hasPending: hasPending, pendingCount: pendingCount)
+                        }
+                        entryCapsule(hasPending: hasPending)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .layoutPriority(1)
+                } else {
+                    HStack(spacing: WarmSpacing.md) {
+                        entryIcon()
+                        entryTexts(hasPending: hasPending, pendingCount: pendingCount)
+                            .layoutPriority(1)
 
-                    Spacer(minLength: WarmSpacing.xs)
-
-                    // 尾部胶囊是动作暗示:这一行是「进去做事」,不是信息展示。
-                    HStack(spacing: WarmSpacing.xxs) {
-                        Text(String(localized: "review.flow.entry.action"))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .flipsForRightToLeftLayoutDirection(true)
+                        Spacer(minLength: WarmSpacing.xs)
+                        entryCapsule(hasPending: hasPending)
                     }
-                    .font(WarmFont.headline(13))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, WarmSpacing.md)
-                    .padding(.vertical, WarmSpacing.xs)
-                    .background(
-                        Capsule().fill(hasPending ? WarmTheme.primary : WarmTheme.primary.opacity(0.75))
-                    )
                 }
             }
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("ReviewFlowEntryCard")
+    }
+
+    /// 入口卡图标——「有事要批改/决定」的心智锚。
+    private func entryIcon() -> some View {
+        Image(systemName: "square.and.pencil")
+            .font(.system(size: 22))
+            .foregroundColor(WarmTheme.primary)
+    }
+
+    /// 入口卡文案区:主文案(N 件事等你决定)+ 范围标。
+    ///
+    /// 范围标(2026-09-04 拍板 B1;2026-09-07 修正口径):点进流程前就锚定窗口
+    /// 口径——割裂感发生在点之前。锚定对象是**流程**的窗口(v3 拍板 1:上次复盘
+    /// 至今,首次复盘回落近 7 天),不是本页统计窗口——两窗有意分叉,Hero 的
+    /// 「近 30 天」属 `fixedWindowSummary`,与此处无关。键与三元判断和第 1 步
+    /// `ReviewStepRecap.scopeHeader` 同源,别让两处漂移。信息层级刻意低于主文案,
+    /// 不加第三行/图标,不要退回 8-23 否掉的「信息展示卡」。
+    /// AX 档隐藏(2026-10-19):en AX5 下 caption 缩放后仍超整行宽
+    /// (「Since your last revi…」实测截断)——非必要元素让位(零容忍规则);
+    /// 口径信息点进流程第 1 步 `scopeHeader` 同键再现,不丢信息。
+    /// `pendingCount` 由调用方单次捕获传入——`decidablePendingCount` 是 O(全表)
+    /// 计算属性,主文案键插值与 hasPending 判定共值,不求值两次。
+    private func entryTexts(hasPending: Bool, pendingCount: Int) -> some View {
+        VStack(alignment: .leading, spacing: WarmSpacing.xxs) {
+            Text(String(localized: hasPending
+                ? "review.flow.entry.pending_\(pendingCount)"
+                : "review.flow.entry.empty"))
+                .font(WarmFont.headline(15))
+                .foregroundColor(WarmTheme.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !dynamicTypeSize.isAccessibilitySize {
+                Text(String(localized: lastReviewDate != nil
+                    ? "review.flow.recap.scope_since"
+                    : "review.flow.recap.scope_first"))
+                    .font(WarmFont.caption(11))
+                    .foregroundColor(WarmTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+    }
+
+    /// 尾部胶囊是动作暗示:这一行是「进去做事」,不是信息展示。
+    ///
+    /// fixedSize(2026-10-19):胶囊绝不退让,横排下左侧 priority-1 文字换行让位
+    /// (PendingDateTodoRow 同款拍板模式)——否则大字号下左侧先占满,胶囊文字被
+    /// 压成残影(用户截图中「! →」即「Start」被挤剩的笔画)。xL 起胶囊占宽过大会
+    /// 反噬左侧,由外层切竖排兜底。
+    private func entryCapsule(hasPending: Bool) -> some View {
+        HStack(spacing: WarmSpacing.xxs) {
+            Text(String(localized: "review.flow.entry.action"))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Image(systemName: "arrow.right")
+                .font(.system(size: 12, weight: .semibold))
+                .flipsForRightToLeftLayoutDirection(true)
+        }
+        .fixedSize()
+        .font(WarmFont.headline(13))
+        .foregroundColor(.white)
+        .padding(.horizontal, WarmSpacing.md)
+        .padding(.vertical, WarmSpacing.xs)
+        .background(
+            Capsule().fill(hasPending ? WarmTheme.primary : WarmTheme.primary.opacity(0.75))
+        )
     }
 
     // MARK: - Computed
