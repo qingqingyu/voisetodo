@@ -64,8 +64,9 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
 /// 转换为 `CompletionEvent` 数组后调 `ReviewAggregator.summarize`。
 ///
 /// 阶段 3 增补:复盘入口卡(2026-08-23 拍板改版为「N 件事等你决定」一行动作行,
-/// 点击 fullScreenCover 呈现五步流程 `ReviewFlowView`)——有数据时位于 `content`
-/// 统计行之后,空态置顶。日常随手看统计和郑重坐下来复盘是两种心智,不混。
+/// 点击 fullScreenCover 呈现五步流程 `ReviewFlowView`)——非空态与空态均置顶
+/// (2026-10-19 拍板,原「统计行之后」废止)。日常随手看统计和郑重坐下来复盘
+/// 是两种心智,不混。
 struct ReviewView: View {
     /// 复盘流程需要的 store 能力。nil(默认)时入口卡隐藏——settings 深链与
     /// preview 不注入也能编译渲染;HomeView 的两处 sheet 注入真实 store。
@@ -117,9 +118,9 @@ struct ReviewView: View {
             PaperTextureBackground()
 
             ScrollView {
-                // 顺序(2026-08-23 拍板):有数据时先情绪回报(Hero/统计)再派活
-                // (入口卡在 `content` 内、统计行之后);空态仍入口卡置顶——
-                // 新用户没有完成记录,行动入口必须第一眼可见。
+                // 顺序(2026-10-19 拍板):入口卡两态均置顶(原 8-23 的
+                // 「先情绪回报再派活」废止)——Unpile 定位下决定动作优先于
+                // 统计展示;新用户行动入口第一眼可见的心智保持不变。
                 VStack(spacing: WarmSpacing.lg) {
                     if fixedWindowSummary.total == 0 {
                         if store != nil {
@@ -434,15 +435,17 @@ struct ReviewView: View {
 
     private var content: some View {
         VStack(spacing: WarmSpacing.lg) {
+            // 入口卡置顶(2026-10-19 拍板):与空态位置一致,决定动作成为第一屏
+            // 焦点——Unpile 定位「不堆积+复盘」,入口优先于成绩单展示。
+            if store != nil {
+                reviewFlowEntryCard
+            }
+
             // Hero/Stats 固定近 30 天(拍板 A):picker 只管下方图表区,
             // 切周/月不再牵动成绩单——窗口口径见 docs/review-window-tab-decoupling.md。
             RecapHeroSection(summary: fixedWindowSummary)
 
             RecapStatsRow(summary: fixedWindowSummary)
-
-            if store != nil {
-                reviewFlowEntryCard
-            }
 
             // ── picker 辖区从这里开始(内联,不再吸顶):只管图表,不管上方成绩单 ──
             periodPicker
