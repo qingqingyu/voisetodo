@@ -115,8 +115,43 @@ TELEMETRY_DAILY_LIMIT = "500"
 # secret 不落本文件,此行保持注释。
 # LOG_HASH_SALT = "please-generate-a-unique-salt"
 
-# ─── Provider 路由（z.ai Anthropic 兼容端点） ───────────────────────────────
-# 密钥不写在此处，通过 `wrangler secret put PROVIDER_KEY_ZAI_ANTHROPIC` 注入。
+# ─── Provider 路由（z.ai Anthropic 兼容端点 + OpenAI 兼容中转） ────────────────
+# 密钥不写在此处，通过 `wrangler secret put <secretName>` 注入。
+#
+# ⚠️ 2026-10-20 Sonnet 条目换独立 key（PROVIDER_KEY_ZAI_ANTHROPIC_2，已验证
+#   200/TTFB 1.25s）：原先 Sonnet 与 glm-4.5-air 共用一把 key，z.ai 侧限流共享，
+#   glm-air 429 后 failover 到 Sonnet = 白撞同一限流池直接耗尽 2 次尝试（10-18
+#   key 轮换事故「全线 503」的实证形态）。换独立 key 后第二跳落独立配额。
+#   ⚠️ 前提待确认：若 z.ai 限流为账号级且新旧 key 同属一个账号，隔离不成立
+#   （需在 z.ai 控制台确认两 key 的账号归属/限流粒度）。部署前线上仍引用旧名
+#   PROVIDER_KEY_ZAI_ANTHROPIC（旧 key 继续工作），零中间态。⚠️ 部署时序：先
+#   `wrangler secret put PROVIDER_KEY_ZAI_ANTHROPIC_2`（secret put 会连带上传本地
+#   配置，secret+新 toml 原子生效）；若先 deploy 新 toml 再补 secret，间隙内
+#   Sonnet apiKey 空 → selector 过滤，候选只剩 AIR 一跳（failover 深度 2→1）。
+#
+# ⚠️ 2026-10-19 CLAWTO/GETTOKEN 改版（均 enabled:false，评测结论见下）：
+#   - 旧 CLAWTO(gpt-5.4-mini, api.clawto.link) 自 10-18 key 轮换事故起 404，
+#     cron 探活每 30min 记一次失败 → 永久熔断循环（「尸体在轮换里」，/v1/health
+#     曾长期报 degraded）。本次换 key + 换模型 gpt-5.6-sol。
+#   - 实测（2026-10-19，共 12 次请求）：两中转均活、SSE 格式与 openaiAdapter 兼容，
+#     但 clawto 6 测 5 成、流式/非流式首块 10.2/12.5/39.7s（gpt-5.6-sol 为推理型，
+#     思考先于首块；中转还注入 ~4.4k token 包装，成本需按服务商 console 校准）；
+#     gettoken 6 测 2 成，失败形态含 30.4s 后才吐 upstream_error。直接开 = 部分请求被
+#     timeoutMs=30s 掐死 → timeout 计熔断 → 重演尸体循环。
+#   - 评测结论（2026-10-20，results/gpt-5.6-sol-2026-10-20T01-35-31）：**不开闸，
+#     两条目长期保持 enabled:false，扩容走 z.ai 提额**。全对率 94.3%（线 ≥98%）/
+#     en+zh 口径 95.1%（39/41，差 2.9pp，en 双败 = en-009 + en-027
+#     due_date_basis 误标 user_explicit）/ vs 现役 air -2.9pp（air 为 09-22 旧
+#     prompt 留档，严格按 §7 口径不可比；仅日期组 67/67 过）；
+#     infra_error 22/75=29%（13 次 clawto 上游「illegal short-input distillation」
+#     内容过滤 400→non-retryable 502 直 throw，短句重灾区）；延迟 mean 18.4s /
+#     p95 39.9s 超本条目 timeoutMs=30s 预算；en-009 reminder_times 12 小时制换算错
+#     （下午3点→03:00，凌晨响铃级）。gettoken 未测（同模型同过滤体系概率高，且
+#     自身 6 测 2 成）。admin 接口改不了 enabled —— 若未来重新评估要翻 true，
+#     必须改本文件 redeploy。
+#   - secretName 换新名（V2/GETTOKEN）：部署前老线上配置仍引用旧名
+#     PROVIDER_KEY_CLAWTO_OPENAI（旧 key，条目已死），新 secret 设了也不生效，
+#     零中间态风险。
 PROVIDERS = '''
 [
   {
@@ -127,18 +162,29 @@ PROVIDERS = '''
     "priority": 1,
     "weight": 10,
     "enabled": true,
-    "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC",
+    "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC_2",
     "timeoutMs": 30000
   },
   {
     "id": "CLAWTO_OPENAI",
     "type": "openai",
     "url": "https://api.clawto.link/v1/chat/completions",
-    "model": "gpt-5.4-mini",
+    "model": "gpt-5.6-sol",
     "priority": 2,
     "weight": 10,
-    "enabled": true,
-    "secretName": "PROVIDER_KEY_CLAWTO_OPENAI",
+    "enabled": false,
+    "secretName": "PROVIDER_KEY_CLAWTO_V2",
+    "timeoutMs": 30000
+  },
+  {
+    "id": "GETTOKEN_OPENAI",
+    "type": "openai",
+    "url": "https://api.gettoken.dev/v1/chat/completions",
+    "model": "gpt-5.6-sol",
+    "priority": 4,
+    "weight": 10,
+    "enabled": false,
+    "secretName": "PROVIDER_KEY_GETTOKEN",
     "timeoutMs": 30000
   },
   {
