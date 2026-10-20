@@ -1179,7 +1179,12 @@ async function runProviderHealthCheck(env, fetchImpl) {
   const activeProviders = providers.filter((p) => p.enabled !== false);
   const probeTranscript = "test";
   const probeLocale = "en";
-  const probeTimeoutMs = 10_000;
+  // 2026-10-19: 10s → 35s。gpt-5.6-sol 类推理型中转（clawto/gettoken）流式首块
+  // 实测 10-40s，10s 超时必把活着的 provider 判死 → recordFailure 循环打进熔断
+  // （「尸体在轮换里」的形成机制，与 CLAWTO 404 同型）。35s 覆盖 timeoutMs=30s
+  // 的 provider 预算；快 provider（zai ~6s）不受影响，代价只是 down 判定慢一点
+  // —— cron 后台场景无感。
+  const probeTimeoutMs = 35_000;
   // buildSystemPrompt 需要 today 字段(YYYY-MM-DD),health check 无 quota 流程,
   // 用 UTC 当天日期兜底。probe 只测连通性,不关心相对日期解析准确。
   const probeToday = new Date().toISOString().slice(0, 10);
@@ -1197,10 +1202,14 @@ async function runProviderHealthCheck(env, fetchImpl) {
 
     const startedAt = Date.now();
     try {
+      // stream: true（2026-10-19）：响应头到达即视为存活——与非流式「等完整
+      // 生成」相比，判定信号变成首字节时延，与生产流式路径的用户体感一致
+      // （recordSuccess 的 EWMA 语义随之从「完整往返」变为「首块时延」，selector
+      // 排序只会更贴近真实体验）。
       const { url, init } = adapter.buildRequest({
         transcript: probeTranscript,
         locale: probeLocale,
-        stream: false,
+        stream: true,
         provider,
         today: probeToday,
         abortSignal: null
@@ -1210,6 +1219,20 @@ async function runProviderHealthCheck(env, fetchImpl) {
         signal: AbortSignal.timeout(probeTimeoutMs)
       });
       const durationMs = Date.now() - startedAt;
+
+      // 探活只消费响应头，body 不读：显式 cancel 释放上游连接（无论成败），
+      // 否则每 30 分钟每家 provider 挂一条未读流。cancel 失败只 log——探活
+      // 判定只依赖响应头，连接清理失败不改变健康结论。
+      if (response.body) {
+        try {
+          await response.body.cancel();
+        } catch (cancelError) {
+          logWarn("health_check.probe_body_cancel_failed", {
+            providerId: provider.id,
+            ...errorFields(cancelError)
+          });
+        }
+      }
 
       if (response.ok) {
         await sharedHealthStore.recordSuccess(provider.id, durationMs);

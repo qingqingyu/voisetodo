@@ -5866,12 +5866,19 @@ test("handleScheduled: 上游 500 时调 recordFailure", async () => {
     { K1: "k1" },
     { AI_PROVIDER_STATE_KV: kv }
   );
-  const fetchImpl = async () => new Response("upstream error", { status: 500 });
+  let bodyCancelled = false;
+  const fetchImpl = async () => new Response(
+    // body 须用 ReadableStream 构造才能观测 cancel(字符串 body 的 cancel 无从断言)。
+    // 顺带锁定:探活的 body cancel 在 ok 判定之前,失败响应同样释放连接。
+    new ReadableStream({ cancel() { bodyCancelled = true; } }),
+    { status: 500 }
+  );
   await handleScheduled(env, fetchImpl);
   // 失败应被记录(连续失败到阈值才熔断,这里只 1 次,仍 closed 但 lastErrorType 应有值)
   const store = new HealthStore({ kv });
   const record = await store.load("A");
   assert.equal(record.lastErrorType, "http_500");
+  assert.equal(bodyCancelled, true, "非 2xx 响应也必须 cancel body(cancel 在 ok 判定之前)");
 });
 
 test("handleScheduled: fetch 抛 timeout 时 recordFailure + errorType=timeout", async () => {
@@ -5915,6 +5922,37 @@ test("handleScheduled: 多 provider 并行 ping,单个失败不影响其他", as
   await handleScheduled(env, fetchImpl);
   // 两个都被调了(并行,互不影响)
   assert.deepEqual(calledIds.sort(), ["A", "B"]);
+});
+
+// 2026-10-19 探活行为锁定:流式 + 响应头到达即 cancel。改回非流式(等完整生成)
+// 会让推理型中转(gpt-5.6-sol 类,流式首块 10-40s)在 probeTimeout 内拿不到响应,
+// 活 provider 被 recordFailure 循环打进熔断 —— 10-18 CLAWTO「尸体在轮换里」同型事故。
+test("handleScheduled: 探活走流式且拿到响应头后 cancel body", async () => {
+  const kv = makeFakeKV();
+  const env = providersEnv(
+    [{ id: "A", type: "openai", url: "https://a.example/v1/chat/completions", model: "m", priority: 1, secretName: "K1" }],
+    { K1: "k1" },
+    { AI_PROVIDER_STATE_KV: kv }
+  );
+  let probeBody = null;
+  let bodyCancelled = false;
+  const fetchImpl = async (url, init) => {
+    probeBody = JSON.parse(init.body);
+    // SSE 形态:响应头 200,body 是一条不主动推数据的流
+    const body = new ReadableStream({
+      cancel() { bodyCancelled = true; }
+    });
+    return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  };
+  await handleScheduled(env, fetchImpl);
+  assert.equal(probeBody.stream, true, "探活必须走流式:响应头到达即存活信号,非流式会被完整生成耗时拖死");
+  assert.equal(bodyCancelled, true, "探活只消费响应头,拿到后必须 cancel body 释放上游连接");
+  const store = new HealthStore({ kv });
+  const snapshot = await store.snapshot("A");
+  assert.equal(snapshot.state, "closed", "响应头 200 = 存活,应记成功");
+  // state 断言单独判不出「记没记成功」:freshRecord 默认就是 closed,单次
+  // recordFailure 也还是 closed(未到熔断阈值)。sampleCount 才能证明 recordSuccess 真的跑了。
+  assert.equal(snapshot.sampleCount, 1, "200 响应头必须调 recordSuccess(sampleCount 0→1)");
 });
 
 test("handleScheduled: AI_PROVIDER_STATE_KV 未绑定时静默跳过", async () => {
