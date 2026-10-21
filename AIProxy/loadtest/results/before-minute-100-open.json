@@ -1,0 +1,98 @@
+{
+  "scenario": "minute-100-open",
+  "label": "before",
+  "users": 100,
+  "mode": "minute",
+  "gates": "open",
+  "upstreamLimits": {
+    "AIR": 10,
+    "SONNET": 10
+  },
+  "balanceExhausted": [],
+  "scale": 10,
+  "wallMsSim": 6539,
+  "wallMsReal": 65390,
+  "immediateSuccessRate": 1,
+  "finalSuccessRate": 1,
+  "pendingRate": 0,
+  "trailing": null,
+  "failureKinds": {},
+  "attemptsHistogram": {
+    "1": 100,
+    "2": 0,
+    "3": 0
+  },
+  "latencyP50SimMs": 609,
+  "latencyP95SimMs": 659,
+  "successLatencyP50SimMs": 609,
+  "successLatencyP95SimMs": 659,
+  "upstream": {
+    "AIR": {
+      "requests": 100,
+      "busy429": 10,
+      "quota429": 0,
+      "success": 90
+    },
+    "SONNET": {
+      "requests": 10,
+      "busy429": 0,
+      "quota429": 0,
+      "success": 10
+    }
+  },
+  "workerFailures": {
+    "ZAI_ANTHROPIC_AIR|status_429": 10
+  },
+  "circuit": {
+    "opened": 0,
+    "reopened": 0,
+    "closed": 0,
+    "openSimMs": {},
+    "openRealMs": {}
+  },
+  "finalHealthRecords": {
+    "ZAI_ANTHROPIC_AIR": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 579.0764234009455,
+      "sampleCount": 90,
+      "lastSuccessAt": 1792554887733,
+      "lastFailureAt": 1792554886838,
+      "lastErrorType": "",
+      "updatedAt": 1792554887733
+    },
+    "ZAI_ANTHROPIC": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 610.7747186699999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554887450,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554887450
+    }
+  },
+  "zeroAttempt503": 0,
+  "eventCounts": {
+    "proxy.request.received": 100,
+    "proxy.auth.ok": 100,
+    "proxy.payload.accepted": 100,
+    "proxy.global_budget.skipped": 100,
+    "proxy.quota.local_date_invalid": 100,
+    "proxy.providers.primary_override_applied": 100,
+    "proxy.quota.skipped": 100,
+    "proxy.provider.call_start": 110,
+    "proxy.provider.fetch_start": 110,
+    "proxy.provider.fetch_done": 110,
+    "proxy.provider.call_success": 100,
+    "proxy.request.finished": 100,
+    "proxy.provider.stream_done": 100,
+    "proxy.provider.stream_success": 100,
+    "proxy.provider.call_failed": 10,
+    "proxy.provider.failover": 10
+  }
+}

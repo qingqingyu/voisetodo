@@ -1,0 +1,112 @@
+{
+  "scenario": "burst-200-open",
+  "label": "before",
+  "users": 200,
+  "mode": "burst",
+  "gates": "open",
+  "upstreamLimits": {
+    "AIR": 10,
+    "SONNET": 10
+  },
+  "balanceExhausted": [],
+  "scale": 10,
+  "wallMsSim": 678,
+  "wallMsReal": 6780,
+  "immediateSuccessRate": 0.1,
+  "finalSuccessRate": 0.1,
+  "pendingRate": 0.9,
+  "trailing": null,
+  "failureKinds": {
+    "exhausted_status_503": 180
+  },
+  "attemptsHistogram": {
+    "1": 20,
+    "2": 0,
+    "3": 180
+  },
+  "latencyP50SimMs": 393,
+  "latencyP95SimMs": 627,
+  "successLatencyP50SimMs": 627,
+  "successLatencyP95SimMs": 678,
+  "upstream": {
+    "AIR": {
+      "requests": 15,
+      "busy429": 5,
+      "quota429": 0,
+      "success": 10
+    },
+    "SONNET": {
+      "requests": 15,
+      "busy429": 5,
+      "quota429": 0,
+      "success": 10
+    }
+  },
+  "workerFailures": {
+    "ZAI_ANTHROPIC_AIR|status_429": 5,
+    "ZAI_ANTHROPIC|status_429": 5
+  },
+  "circuit": {
+    "opened": 2,
+    "reopened": 0,
+    "closed": 2,
+    "openSimMs": {
+      "ZAI_ANTHROPIC_AIR": 544,
+      "ZAI_ANTHROPIC": 547
+    },
+    "openRealMs": {
+      "ZAI_ANTHROPIC_AIR": 5440,
+      "ZAI_ANTHROPIC": 5470
+    }
+  },
+  "finalHealthRecords": {
+    "ZAI_ANTHROPIC_AIR": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 620.9122193599999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554880474,
+      "lastFailureAt": 1792554879816,
+      "lastErrorType": "",
+      "updatedAt": 1792554880474
+    },
+    "ZAI_ANTHROPIC": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 640.7649062599999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554880472,
+      "lastFailureAt": 1792554879821,
+      "lastErrorType": "",
+      "updatedAt": 1792554880472
+    }
+  },
+  "zeroAttempt503": 535,
+  "eventCounts": {
+    "proxy.request.received": 560,
+    "proxy.auth.ok": 560,
+    "proxy.payload.accepted": 560,
+    "proxy.global_budget.skipped": 560,
+    "proxy.quota.local_date_invalid": 560,
+    "proxy.providers.primary_override_applied": 560,
+    "proxy.quota.skipped": 560,
+    "proxy.provider.call_start": 30,
+    "proxy.provider.fetch_start": 30,
+    "proxy.provider.fetch_done": 30,
+    "proxy.provider.call_failed": 10,
+    "proxy.provider.failover": 5,
+    "proxy.circuit.opened": 2,
+    "proxy.provider.all_failed": 5,
+    "proxy.request.http_error": 5,
+    "proxy.request.finished": 560,
+    "proxy.selector.no_candidates": 535,
+    "proxy.provider.call_success": 20,
+    "proxy.provider.stream_done": 20,
+    "proxy.circuit.closed": 2,
+    "proxy.provider.stream_success": 20
+  }
+}

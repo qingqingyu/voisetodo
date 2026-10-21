@@ -1,0 +1,98 @@
+{
+  "scenario": "burst-20-open",
+  "label": "after",
+  "users": 20,
+  "mode": "burst",
+  "gates": "open",
+  "upstreamLimits": {
+    "AIR": 10,
+    "SONNET": 10
+  },
+  "balanceExhausted": [],
+  "scale": 10,
+  "wallMsSim": 721,
+  "wallMsReal": 7210,
+  "immediateSuccessRate": 1,
+  "finalSuccessRate": 1,
+  "pendingRate": 0,
+  "failureKinds": {},
+  "attemptsHistogram": {
+    "1": 20,
+    "2": 0,
+    "3": 0
+  },
+  "latencyP50SimMs": 634,
+  "latencyP95SimMs": 686,
+  "successLatencyP50SimMs": 634,
+  "successLatencyP95SimMs": 686,
+  "upstream": {
+    "AIR": {
+      "requests": 20,
+      "busy429": 10,
+      "quota429": 0,
+      "success": 10
+    },
+    "SONNET": {
+      "requests": 10,
+      "busy429": 0,
+      "quota429": 0,
+      "success": 10
+    }
+  },
+  "workerFailures": {
+    "ZAI_ANTHROPIC_AIR|status_429": 10
+  },
+  "circuit": {
+    "opened": 0,
+    "reopened": 0,
+    "closed": 0,
+    "openSimMs": {},
+    "openRealMs": {}
+  },
+  "finalHealthRecords": {
+    "ZAI_ANTHROPIC_AIR": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 621.9740909589999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554635812,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554635812
+    },
+    "ZAI_ANTHROPIC": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 640.8520430429999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554635816,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554635816
+    }
+  },
+  "zeroAttempt503": 0,
+  "eventCounts": {
+    "proxy.request.received": 20,
+    "proxy.auth.ok": 20,
+    "proxy.payload.accepted": 20,
+    "proxy.global_budget.skipped": 20,
+    "proxy.quota.local_date_invalid": 20,
+    "proxy.cold_start.warmup": 1,
+    "proxy.providers.primary_override_applied": 20,
+    "proxy.quota.skipped": 20,
+    "proxy.provider.call_start": 30,
+    "proxy.provider.fetch_start": 30,
+    "proxy.provider.fetch_done": 30,
+    "proxy.provider.call_failed": 10,
+    "proxy.provider.failover": 10,
+    "proxy.provider.call_success": 20,
+    "proxy.request.finished": 20,
+    "proxy.provider.stream_done": 20,
+    "proxy.provider.stream_success": 20
+  }
+}

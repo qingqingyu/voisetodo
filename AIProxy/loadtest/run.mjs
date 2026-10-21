@@ -188,7 +188,8 @@ function makeFakeQuotaCounterDO() {
 function makeLogCollector({ verbose }) {
   const events = new Map(); // "event" -> count
   const failures = new Map(); // "providerId|errorType" -> count
-  const circuit = { opened: 0, reopened: 0, closed: 0, openMsByProvider: { AIR: 0, SONNET: 0 }, openSince: { AIR: null, SONNET: null } };
+  // 键是真实 providerId(如 ZAI_ANTHROPIC_AIR),动态创建
+  const circuit = { opened: 0, reopened: 0, closed: 0, openMsByProvider: {}, openSince: {} };
   let noCandidates503 = 0;
   const originals = {
     log: console.log,
@@ -206,8 +207,9 @@ function makeLogCollector({ verbose }) {
     } else if (name === "proxy.circuit.opened" || name === "proxy.circuit.reopened") {
       if (name === "proxy.circuit.opened") circuit.opened += 1;
       else circuit.reopened += 1;
-      if (circuit.openSince[parsed.providerId] === null || circuit.openSince[parsed.providerId] === undefined) {
+      if (circuit.openSince[parsed.providerId] == null) {
         circuit.openSince[parsed.providerId] = Date.now();
+        circuit.openMsByProvider[parsed.providerId] = circuit.openMsByProvider[parsed.providerId] || 0;
       }
     } else if (name === "proxy.circuit.closed") {
       circuit.closed += 1;
@@ -305,7 +307,7 @@ function buildEnv({ gates, rateKv, stateKv, doBinding }) {
   };
 }
 
-async function runScenario({ name, label, users, mode, gates, limitAir, limitSonnet, balanceExhausted, seed, verbose }) {
+async function runScenario({ name, label, users, mode, gates, limitAir, limitSonnet, balanceExhausted, seed, verbose, trailingUsers = 0, trailingDelaySimMs = 0 }) {
   // 模块级单例隔离(同 worker.test.js beforeEach 语义)
   _testResetHealth();
   _testResetAdminConfig();
@@ -353,10 +355,11 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
   // 客户端真实重试策略(TodoExtractorService):最多 3 次;退避 1s/2s + 0~30% 抖动
   // (×1/SCALE);503/5xx 重试;429 quota/ip_daily 不重试;velocity 429 仅当
   // retryAfter ≤ 8s 时重试。
-  async function virtualUser(i, arriveAt) {
-    const outcome = { user: i, success: false, attemptsUsed: 0, firstTrySuccess: false, durationMs: 0, failureKind: null };
+  async function virtualUser(i, arriveAt, isTrailing = false) {
+    const outcome = { user: i, success: false, attemptsUsed: 0, firstTrySuccess: false, durationMs: 0, failureKind: null, trailing: isTrailing };
     const startReal = Date.now();
     let nextDelayOverrideMs = null;
+    let lastStatus = null;
     for (let attempt = 0; attempt <= 2; attempt++) {
       if (attempt > 0) {
         let delayMs;
@@ -378,6 +381,7 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
         outcome.failureKind = `client_throw:${error?.name || "unknown"}`;
         break;
       }
+      lastStatus = response.status;
       const bodyText = await response.text();
       if (response.status === 200) {
         outcome.success = true;
@@ -406,6 +410,10 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
       break;
     }
     outcome.durationMs = Date.now() - startReal;
+    if (!outcome.success && outcome.failureKind === null) {
+      // 重试全部耗尽(503/5xx 连续)→ 客户端原文落 pending,前台恢复再补解析
+      outcome.failureKind = `exhausted_status_${lastStatus}`;
+    }
     userResults.push(outcome);
     void arriveAt;
   }
@@ -414,6 +422,15 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
   const userPromises = [];
   if (mode === "burst") {
     for (let i = 0; i < users; i++) userPromises.push(virtualUser(i, scenarioStart));
+    // 尾随用户:主峰后 delaySimMs(模拟 ms)到达——度量「高峰刚过,代理是否还
+    // 活着」。改前的伤害面正是这里:熔断冷却期(10s)内到达的用户吃 0 尝试 503。
+    if (trailingUsers > 0) {
+      const delayMs = trailingDelaySimMs / SCALE;
+      for (let j = 0; j < trailingUsers; j++) {
+        const idx = users + j;
+        userPromises.push(sleep(delayMs).then(() => virtualUser(idx, scenarioStart + delayMs, true)));
+      }
+    }
   } else {
     // 一分钟内均匀到达(60s 真实 → 60_000/SCALE 模拟)
     const windowMs = 60_000 / SCALE;
@@ -428,16 +445,19 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
   const collected = collector.done();
   collector.restore();
 
-  // ── 统计 ──
-  const success = userResults.filter((u) => u.success);
-  const pending = userResults.filter((u) => !u.success);
-  const durations = userResults.map((u) => u.durationMs).sort((a, b) => a - b);
+  // ── 统计 ──(主峰口径:成功率/直方图/分位数只算主峰用户;尾随用户单列)
+  const mainUsers = userResults.filter((u) => !u.trailing);
+  const success = mainUsers.filter((u) => u.success);
+  const pending = mainUsers.filter((u) => !u.success);
+  const durations = mainUsers.map((u) => u.durationMs).sort((a, b) => a - b);
   const successDurations = success.map((u) => u.durationMs).sort((a, b) => a - b);
   const pick = (sorted, q) => (sorted.length === 0 ? null : sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]);
   const failureKinds = {};
   for (const u of pending) failureKinds[u.failureKind] = (failureKinds[u.failureKind] || 0) + 1;
   const attemptsHistogram = { 1: 0, 2: 0, 3: 0 };
-  for (const u of userResults) attemptsHistogram[u.attemptsUsed] += 1;
+  for (const u of mainUsers) attemptsHistogram[u.attemptsUsed] += 1;
+  const trailingUsersTotal = userResults.filter((u) => u.trailing);
+  const trailingSuccess = trailingUsersTotal.filter((u) => u.success).length;
 
   const result = {
     scenario: name,
@@ -453,6 +473,9 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
     immediateSuccessRate: success.filter((u) => u.firstTrySuccess).length / users,
     finalSuccessRate: success.length / users,
     pendingRate: pending.length / users,
+    trailing: trailingUsersTotal.length
+      ? { users: trailingUsersTotal.length, successRate: trailingSuccess / trailingUsersTotal.length }
+      : null,
     failureKinds,
     attemptsHistogram,
     latencyP50SimMs: pick(durations, 0.5),
@@ -467,6 +490,12 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
       closed: collected.circuit.closed,
       openSimMs: collected.circuit.openMsByProvider,
       openRealMs: Object.fromEntries(Object.entries(collected.circuit.openMsByProvider).map(([k, v]) => [k, v * SCALE]))
+    },
+    // 场景结束时的熔断记录快照(health:<id> KV 原文):state/consecutiveFailures/
+    // lastErrorType 是「是否被计入熔断」的直接证据
+    finalHealthRecords: {
+      ZAI_ANTHROPIC_AIR: JSON.parse((await stateKv.get("health:ZAI_ANTHROPIC_AIR")) || "null"),
+      ZAI_ANTHROPIC: JSON.parse((await stateKv.get("health:ZAI_ANTHROPIC")) || "null")
     },
     zeroAttempt503: collected.noCandidates503,
     eventCounts: Object.fromEntries(collected.events)
@@ -484,6 +513,7 @@ const { values: args } = parseArgs({
     "limit-sonnet": { type: "string", default: "10" },
     balance: { type: "boolean", default: false }, // 单场景:--balance-exhausted AIR 的快捷方式
     matrix: { type: "boolean", default: false },
+    trailing: { type: "boolean", default: false },
     label: { type: "string", default: "adhoc" },
     seed: { type: "string", default: "42" },
     verbose: { type: "boolean", default: false }
@@ -496,11 +526,14 @@ mkdirSync(resultsDir, { recursive: true });
 
 function printSummary(r) {
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
+  const openS = Object.entries(r.circuit.openRealMs)
+    .map(([id, ms]) => `${id.replace("ZAI_ANTHROPIC", "S").replace("_AIR", "")}=${(Number(ms) / 1000).toFixed(1)}s`)
+    .join(" ");
   console.error(
     `[${r.label}] ${r.scenario}: 即时 ${pct(r.immediateSuccessRate)} / 最终 ${pct(r.finalSuccessRate)} / pending ${pct(r.pendingRate)}` +
     ` | AIR req=${r.upstream.AIR.requests} 429busy=${r.upstream.AIR.busy429} 429quota=${r.upstream.AIR.quota429} ok=${r.upstream.AIR.success}` +
     ` | SONNET req=${r.upstream.SONNET.requests} 429busy=${r.upstream.SONNET.busy429} ok=${r.upstream.SONNET.success}` +
-    ` | 熔断 open=${r.circuit.opened} reopen=${r.circuit.reopened} 时长(真实s) AIR=${(r.circuit.openRealMs.AIR / 1000).toFixed(1)} SONNET=${(r.circuit.openRealMs.SONNET / 1000).toFixed(1)}` +
+    ` | 熔断 open=${r.circuit.opened} reopen=${r.circuit.reopened} 时长(真实s) ${openS || "无"}` +
     ` | 0尝试503=${r.zeroAttempt503} | P95(真实s)=${(r.latencyP95SimMs * SCALE / 1000).toFixed(1)}`
   );
 }
@@ -529,6 +562,10 @@ async function main() {
   }
   if (args.balance) {
     scenarios.push({ name: "burst-100-air-exhausted", users: 100, mode: "burst", gates: "open", balanceExhausted: new Set(["AIR"]) });
+  }
+  if (args.trailing) {
+    // 主峰 100 人 + 5s(模拟)后 20 个尾随用户:度量熔断冷却期内的伤害面
+    scenarios.push({ name: "burst-100-trail20", users: 100, mode: "burst", gates: "open", balanceExhausted: new Set(), trailingUsers: 20, trailingDelaySimMs: 5000 });
   }
   if (!args.matrix && !args.balance) {
     scenarios.push({

@@ -1,0 +1,102 @@
+{
+  "scenario": "burst-200-prodgates",
+  "label": "after",
+  "users": 200,
+  "mode": "burst",
+  "gates": "prod",
+  "upstreamLimits": {
+    "AIR": 10,
+    "SONNET": 10
+  },
+  "balanceExhausted": [],
+  "scale": 10,
+  "wallMsSim": 666,
+  "wallMsReal": 6660,
+  "immediateSuccessRate": 0.1,
+  "finalSuccessRate": 0.1,
+  "pendingRate": 0.9,
+  "failureKinds": {
+    "exhausted_status_503": 180
+  },
+  "attemptsHistogram": {
+    "1": 20,
+    "2": 0,
+    "3": 180
+  },
+  "latencyP50SimMs": 400,
+  "latencyP95SimMs": 616,
+  "successLatencyP50SimMs": 616,
+  "successLatencyP95SimMs": 666,
+  "upstream": {
+    "AIR": {
+      "requests": 560,
+      "busy429": 550,
+      "quota429": 0,
+      "success": 10
+    },
+    "SONNET": {
+      "requests": 550,
+      "busy429": 540,
+      "quota429": 0,
+      "success": 10
+    }
+  },
+  "workerFailures": {
+    "ZAI_ANTHROPIC_AIR|status_429": 550,
+    "ZAI_ANTHROPIC|status_429": 540
+  },
+  "circuit": {
+    "opened": 0,
+    "reopened": 0,
+    "closed": 0,
+    "openSimMs": {},
+    "openRealMs": {}
+  },
+  "finalHealthRecords": {
+    "ZAI_ANTHROPIC_AIR": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 620.2438778039999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554660977,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554660977
+    },
+    "ZAI_ANTHROPIC": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 640.5133101239999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554660975,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554660975
+    }
+  },
+  "zeroAttempt503": 0,
+  "eventCounts": {
+    "proxy.request.received": 560,
+    "proxy.auth.ok": 560,
+    "proxy.payload.accepted": 560,
+    "proxy.global_budget.skipped": 560,
+    "proxy.quota.local_date_invalid": 560,
+    "proxy.providers.primary_override_applied": 560,
+    "proxy.quota.skipped": 560,
+    "proxy.provider.call_start": 1110,
+    "proxy.provider.fetch_start": 1110,
+    "proxy.provider.fetch_done": 1110,
+    "proxy.provider.call_failed": 1090,
+    "proxy.provider.failover": 550,
+    "proxy.provider.all_failed": 540,
+    "proxy.request.http_error": 540,
+    "proxy.request.finished": 560,
+    "proxy.provider.call_success": 20,
+    "proxy.provider.stream_done": 20,
+    "proxy.provider.stream_success": 20
+  }
+}

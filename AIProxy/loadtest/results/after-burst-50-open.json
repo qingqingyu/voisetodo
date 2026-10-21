@@ -1,0 +1,102 @@
+{
+  "scenario": "burst-50-open",
+  "label": "after",
+  "users": 50,
+  "mode": "burst",
+  "gates": "open",
+  "upstreamLimits": {
+    "AIR": 10,
+    "SONNET": 10
+  },
+  "balanceExhausted": [],
+  "scale": 10,
+  "wallMsSim": 675,
+  "wallMsReal": 6750,
+  "immediateSuccessRate": 0.4,
+  "finalSuccessRate": 0.4,
+  "pendingRate": 0.6,
+  "failureKinds": {
+    "exhausted_status_503": 30
+  },
+  "attemptsHistogram": {
+    "1": 20,
+    "2": 0,
+    "3": 30
+  },
+  "latencyP50SimMs": 417,
+  "latencyP95SimMs": 671,
+  "successLatencyP50SimMs": 621,
+  "successLatencyP95SimMs": 673,
+  "upstream": {
+    "AIR": {
+      "requests": 110,
+      "busy429": 100,
+      "quota429": 0,
+      "success": 10
+    },
+    "SONNET": {
+      "requests": 100,
+      "busy429": 90,
+      "quota429": 0,
+      "success": 10
+    }
+  },
+  "workerFailures": {
+    "ZAI_ANTHROPIC_AIR|status_429": 100,
+    "ZAI_ANTHROPIC|status_429": 90
+  },
+  "circuit": {
+    "opened": 0,
+    "reopened": 0,
+    "closed": 0,
+    "openSimMs": {},
+    "openRealMs": {}
+  },
+  "finalHealthRecords": {
+    "ZAI_ANTHROPIC_AIR": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 620.8467434179998,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554636491,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554636491
+    },
+    "ZAI_ANTHROPIC": {
+      "state": "closed",
+      "consecutiveFailures": 0,
+      "openedAt": 0,
+      "cooldownMs": 0,
+      "ewmaLatencyMs": 640.3826802069999,
+      "sampleCount": 10,
+      "lastSuccessAt": 1792554636493,
+      "lastFailureAt": 0,
+      "lastErrorType": "",
+      "updatedAt": 1792554636493
+    }
+  },
+  "zeroAttempt503": 0,
+  "eventCounts": {
+    "proxy.request.received": 110,
+    "proxy.auth.ok": 110,
+    "proxy.payload.accepted": 110,
+    "proxy.global_budget.skipped": 110,
+    "proxy.quota.local_date_invalid": 110,
+    "proxy.providers.primary_override_applied": 110,
+    "proxy.quota.skipped": 110,
+    "proxy.provider.call_start": 210,
+    "proxy.provider.fetch_start": 210,
+    "proxy.provider.fetch_done": 210,
+    "proxy.provider.call_failed": 190,
+    "proxy.provider.failover": 100,
+    "proxy.provider.all_failed": 90,
+    "proxy.request.http_error": 90,
+    "proxy.request.finished": 110,
+    "proxy.provider.call_success": 20,
+    "proxy.provider.stream_done": 20,
+    "proxy.provider.stream_success": 20
+  }
+}
