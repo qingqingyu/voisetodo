@@ -140,7 +140,7 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
       attempts.push(attempt);
       recordAttempts(requestContext, attempts, provider.id);
       logProviderFailure(provider, attempt, classification, requestContext, responseError, undefined, hasNext);
-      if (classification.retryable && healthStore) {
+      if (classification.retryable && healthStore && classification.countsTowardCircuit !== false) {
         await healthStore.recordFailure(provider.id, classification.errorType);
       }
       if (classification.errorType === "auth") {
@@ -190,7 +190,13 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
       attempts.push(attempt);
       recordAttempts(requestContext, attempts, provider.id);
       logProviderFailure(provider, attempt, classification, requestContext, null, response.status, hasNext);
-      if (classification.retryable && healthStore) {
+      // countsTowardCircuit === false 表示「上游此刻忙」(429 并发/速率,z.ai 1302/1305):
+      // failover 照走、attempt 照记(便于 D1 统计上游忙次数),但不计熔断。
+      // 注意也不 recordSuccess —— 不计熔断 ≠ 记成功:瞬间返回的 429 记成功会让
+      // selector 的延迟 EWMA 误判这家「极快」而压更多流量(任务书 §5 风险 1)。
+      // 余额/额度耗尽的 429(z.ai 1113)在 base.js 被归为 quota_exhausted,
+      // countsTowardCircuit 未设为 false → 照旧计熔断(不会自愈,熔断才不白打)。
+      if (classification.retryable && healthStore && classification.countsTowardCircuit !== false) {
         await healthStore.recordFailure(provider.id, classification.errorType);
       }
       if (classification.errorType === "auth") {
