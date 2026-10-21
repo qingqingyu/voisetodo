@@ -3584,6 +3584,251 @@ test("HealthStore works without KV (in-memory only)", async () => {
   assert.equal(await healthStore.circuitState("A"), "open");
 });
 
+// MARK: - 429 忙/额度耗尽分类(docs/concurrency-hardening-task.md §1)
+//
+// 429 的两种含义处置不同:「此刻忙」(并发/速率,z.ai 1302/1305)不计熔断——
+// 它会自愈,计入熔断会把几十秒的并发高峰放大成「两家全 open → 0 尝试 503」;
+// 「余额/额度耗尽」(z.ai 1113)不会自愈,必须熔断,否则每个请求都先白打一次。
+// 错误体出处:docs.z.ai/api-reference/api-code(1113/1302/1305 三条)。
+
+// z.ai 真实 429 错误体形状(Anthropic 兼容端点同样携带 code/message 文案)
+function busy429Response() {
+  return new Response(
+    JSON.stringify({ type: "error", error: { type: "rate_limit_error", code: "1302", message: "Rate limit reached for requests" } }),
+    { status: 429, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+function quota429Response() {
+  return new Response(
+    JSON.stringify({ type: "error", error: { type: "rate_limit_error", code: "1113", message: "Insufficient balance or no resource package. Please recharge." } }),
+    { status: 429, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 与生产同构:admin 钉头主力(线上 2026-09-22 起 AIR 被钉为第一候选)。不钉的话,
+// B 首次成功即变 warm,延迟感知 selector 会把 cold 的 A 排到后面,后续请求不打 A。
+async function pinnedProvidersEnv(kv, providers, secrets, extra = {}) {
+  await kv.put("config:providers_primary", JSON.stringify({ primaryId: "A", updatedAt: Date.now(), updatedBy: "test" }));
+  return providersEnv(providers, secrets, { AI_PROVIDER_STATE_KV: kv, ...extra });
+}
+
+test("429(忙)不计熔断:主力连续 10 次 429 仍 closed,每次 failover 备胎且备胎成功", async () => {
+  const kv = new MemoryKV(new Map());
+  const calls = { a: 0, b: 0 };
+  const env = await pinnedProvidersEnv(
+    kv,
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { CIRCUIT_OPEN_THRESHOLD: "5", CIRCUIT_INITIAL_COOLDOWN_MS: "10000" }
+  );
+  const fetchImpl = async (url) => {
+    if (String(url).includes("a.example")) {
+      calls.a += 1;
+      return busy429Response();
+    }
+    calls.b += 1;
+    return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+  };
+
+  for (let i = 0; i < 10; i++) {
+    const response = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+    assert.equal(response.status, 200, `第 ${i + 1} 次请求应 failover 到 B 成功`);
+  }
+
+  assert.equal(calls.a, 10, "忙 429 不计熔断 → A 不应被摘除,10 次都是第一候选");
+  assert.equal(calls.b, 10, "每次都应 failover 到 B");
+  assert.equal(await kv.get("health:A"), null, "忙 429 不应给 A 写入任何熔断记录");
+});
+
+test("429(余额耗尽)计入熔断:连续 5 次 1113 余额耗尽 429 → 熔断 open", async () => {
+  const kv = new MemoryKV(new Map());
+  const calls = { a: 0, b: 0 };
+  const env = await pinnedProvidersEnv(
+    kv,
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { CIRCUIT_OPEN_THRESHOLD: "5", CIRCUIT_INITIAL_COOLDOWN_MS: "10000" }
+  );
+  const fetchImpl = async (url) => {
+    if (String(url).includes("a.example")) {
+      calls.a += 1;
+      return quota429Response();
+    }
+    calls.b += 1;
+    return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+  };
+
+  for (let i = 0; i < 5; i++) {
+    const response = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+    assert.equal(response.status, 200);
+  }
+  assert.equal(calls.a, 5);
+  const record = JSON.parse(await kv.get("health:A"));
+  assert.equal(record.state, "open", "余额耗尽 429 必须计入熔断");
+  assert.equal(record.consecutiveFailures, 5);
+
+  // 第 6 次:A 已 open,不应再被打(否则每个请求都先白打一次必败的 429)
+  const sixth = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+  assert.equal(sixth.status, 200);
+  assert.equal(calls.a, 5, "熔断 open 期间 A 应被摘除");
+  assert.equal(calls.b, 6);
+});
+
+test("half-open 试探遇 429(忙):不重新 open、冷却不翻倍,下一次请求仍能再试探", async () => {
+  const kv = new MemoryKV(new Map());
+  const calls = { a: 0 };
+  // 单 provider:A 是唯一候选,试探请求必然落在 A 上(双 provider 时 half-open 被
+  // defer 到末尾,健康的 B 会先接住请求,试探根本不会发生)
+  const env = providersEnv(
+    [{ id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 }],
+    { PROVIDER_KEY_A: "k-a" },
+    // 冷却 50ms 便于在真实时钟下走到 half-open;threshold 用生产默认 5
+    { AI_PROVIDER_STATE_KV: kv, CIRCUIT_OPEN_THRESHOLD: "5", CIRCUIT_INITIAL_COOLDOWN_MS: "50", CIRCUIT_MAX_COOLDOWN_MS: "300000" }
+  );
+  let aMode = "500"; // "500" | "busy429" | "success"
+  const fetchImpl = async () => {
+    calls.a += 1;
+    if (aMode === "500") return new Response("error", { status: 500 });
+    if (aMode === "busy429") return busy429Response();
+    return jsonResponse({ content: [{ type: "text", text: extractionJSON("x") }] });
+  };
+
+  // 5×500 → open(cooldownMs=50)
+  for (let i = 0; i < 5; i++) {
+    const response = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+    assert.equal(response.status, 503);
+  }
+  const openedRecord = JSON.parse(await kv.get("health:A"));
+  assert.equal(openedRecord.state, "open");
+  const openedAt = openedRecord.openedAt;
+
+  await sleepMs(60); // > 50ms 冷却 → half-open
+
+  // 试探 1:half-open 槽位遇忙 429
+  aMode = "busy429";
+  const trial1 = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+  assert.equal(trial1.status, 503, "唯一 provider 忙 429 → 503");
+  assert.equal(calls.a, 6, "half-open 试探应打到 A");
+
+  const afterTrial = JSON.parse(await kv.get("health:A"));
+  assert.equal(afterTrial.cooldownMs, 50, "忙 429 不应使冷却翻倍");
+  assert.equal(afterTrial.openedAt, openedAt, "忙 429 不应重新 open(openedAt 不变)");
+  assert.equal(afterTrial.consecutiveFailures, 5, "忙 429 不应增加连续失败计数");
+
+  // 试探 2(紧随其后):仍应能再试探——half-open 是「单次试探槽」,不是死锁
+  const trial2 = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+  assert.equal(trial2.status, 503);
+  assert.equal(calls.a, 7, "忙 429 后 half-open 不应卡死,下一次请求仍能试探");
+
+  // 试探 3:上游有空位 → 试探成功 → 熔断闭合(恢复正常路径)
+  aMode = "success";
+  const trial3 = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+  assert.equal(trial3.status, 200);
+  assert.equal(calls.a, 8);
+  const closedRecord = JSON.parse(await kv.get("health:A"));
+  assert.equal(closedRecord.state, "closed", "试探成功后熔断应闭合");
+});
+
+test("主力+备胎都 429(忙):本次请求 503,但两家都不被熔断摘除", async () => {
+  const kv = new MemoryKV(new Map());
+  const calls = { a: 0, b: 0 };
+  const env = await pinnedProvidersEnv(
+    kv,
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { CIRCUIT_OPEN_THRESHOLD: "5", CIRCUIT_INITIAL_COOLDOWN_MS: "10000" }
+  );
+  const fetchImpl = async (url) => {
+    if (String(url).includes("a.example")) {
+      calls.a += 1;
+    } else {
+      calls.b += 1;
+    }
+    return busy429Response();
+  };
+
+  for (let i = 0; i < 6; i++) {
+    const response = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+    assert.equal(response.status, 503, "两家都忙 429 → 本次请求 503");
+  }
+
+  assert.equal(calls.a, 6, "忙 429 不熔断 → 第 6 次请求主力 A 仍是第一候选(没被摘除)");
+  assert.equal(calls.b, 6, "备胎 B 同样没被摘除");
+});
+
+test("回归:5xx 连续 5 次仍会熔断(忙 429 豁免不误伤原有行为)", async () => {
+  const kv = new MemoryKV(new Map());
+  const calls = { a: 0, b: 0 };
+  const env = await pinnedProvidersEnv(
+    kv,
+    [
+      { id: "A", type: "anthropic", url: "https://a.example/v1/messages", model: "m", priority: 1 },
+      { id: "B", type: "openai", url: "https://b.example/v1/chat/completions", model: "m", priority: 2 }
+    ],
+    { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+    { CIRCUIT_OPEN_THRESHOLD: "5", CIRCUIT_INITIAL_COOLDOWN_MS: "10000" }
+  );
+  const fetchImpl = async (url) => {
+    if (String(url).includes("a.example")) {
+      calls.a += 1;
+      return new Response("error", { status: 500 });
+    }
+    calls.b += 1;
+    return jsonResponse({ choices: [{ message: { content: extractionJSON("x") } }] });
+  };
+
+  for (let i = 0; i < 5; i++) {
+    const response = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+    assert.equal(response.status, 200);
+  }
+  const record = JSON.parse(await kv.get("health:A"));
+  assert.equal(record.state, "open", "5xx 仍应触发熔断");
+  assert.equal(record.consecutiveFailures, 5);
+
+  // 第 6 次:A 被摘除,只剩 B
+  const sixth = await handleRequest(request({ transcript: "x" }, { "X-App-Token": "token" }), env, {}, fetchImpl);
+  assert.equal(sixth.status, 200);
+  assert.equal(calls.a, 5, "熔断 open 期间 A 应被摘除");
+  assert.equal(calls.b, 6);
+});
+
+test("分类:z.ai 429 错误体——忙→status_429 不计熔断;余额耗尽→quota_exhausted 计熔断(三个 adapter 同判定)", async () => {
+  const busyBody = JSON.stringify({ type: "error", error: { type: "rate_limit_error", code: "1302", message: "Rate limit reached for requests" } });
+  const overloadedBody = JSON.stringify({ type: "error", error: { type: "rate_limit_error", code: "1305", message: "The service may be temporarily overloaded, please try again later." } });
+  const quotaEnBody = JSON.stringify({ type: "error", error: { type: "rate_limit_error", code: "1113", message: "Insufficient balance or no resource package. Please recharge." } });
+  const quotaZhBody = JSON.stringify({ error: { code: "1113", message: "您的账户已欠费，请充值后重试" } });
+
+  for (const adapter of [anthropicAdapter, openaiAdapter, geminiAdapter]) {
+    const busy = adapter.isRetryable({ status: 429, bodyText: busyBody });
+    assert.equal(busy.retryable, true, `${adapter.type}: 忙 429 仍可 failover`);
+    assert.equal(busy.errorType, "status_429", `${adapter.type}: 忙 429 保持 status_429(便于上线后统计上游忙次数)`);
+    assert.equal(busy.countsTowardCircuit, false, `${adapter.type}: 忙 429 不计熔断`);
+
+    const overloaded = adapter.isRetryable({ status: 429, bodyText: overloadedBody });
+    assert.equal(overloaded.errorType, "status_429", `${adapter.type}: 1305 过载按「忙」处理`);
+
+    const quotaEn = adapter.isRetryable({ status: 429, bodyText: quotaEnBody });
+    assert.equal(quotaEn.retryable, true, `${adapter.type}: 余额耗尽 429 仍可 failover`);
+    assert.equal(quotaEn.errorType, "quota_exhausted", `${adapter.type}: 余额耗尽 → quota_exhausted`);
+    assert.notEqual(quotaEn.countsTowardCircuit, false, `${adapter.type}: 余额耗尽计熔断`);
+
+    const quotaZh = adapter.isRetryable({ status: 429, bodyText: quotaZhBody });
+    assert.equal(quotaZh.errorType, "quota_exhausted", `${adapter.type}: 中文欠费文案同样命中`);
+  }
+});
+
 // MARK: - P5: latency-aware selector
 
 function makeProvider(overrides) {

@@ -5,7 +5,9 @@
 //   - buildRequest({transcript, locale, vocabularyHints, stream, provider, today, personalHints, abortSignal}) -> {url, init}
 //   - extractText(json)          : pull text from a non-streaming provider response
 //   - parseSSEEvent(rawData)     : convert one upstream SSE payload into {done, text}
-//   - isRetryable({status, bodyText, error}) -> {retryable, errorType}
+//   - isRetryable({status, bodyText, error}) -> {retryable, errorType, countsTowardCircuit?}
+//     countsTowardCircuit 仅在 false 时有意义(429「忙」):failover 照走但不计熔断;
+//     其余失败(5xx/timeout/auth/quota_exhausted…)不设该字段 = 照旧计熔断。
 //
 // buildRequest is the only place an adapter touches credentials/headers/body, so the
 // upstream fetch contract (URL + standard RequestInit) stays in one place per provider.
@@ -52,7 +54,13 @@ const AUTH_REASON_PATTERNS = [
   ["expired", ["expired", "token has expired", "已过期"]],
   ["insufficient_balance", [
     "insufficient balance", "insufficient_quota", "exceeded your current quota",
-    "billing", "arrearage", "余额不足", "欠费"
+    "billing", "arrearage", "余额不足", "欠费",
+    // z.ai 429/1113 官方文案(docs.z.ai/api-reference/api-code):
+    //   en: "Insufficient balance or no resource package. Please recharge."
+    //   zh(智谱): "您的账户已欠费，请充值后重试"
+    // 带引号的 "1113" 匹配 JSON 错误体里的错误码字段("code":"1113"),
+    // 引号界定避免误伤正文里恰好出现的裸数字。
+    "no resource package", "please recharge", "请充值", "\"1113\""
   ]],
   ["region_blocked", [
     "unsupported_country_region_territory", "not available in your", "region", "country", "地区"
@@ -92,8 +100,23 @@ export function classifyHttpRetryable({ status, bodyText, errorType }, modelConf
   if (status === 401 || status === 403) {
     return { retryable: true, errorType: "auth", authReason: classifyAuthReason(bodyText) };
   }
-  if (status === 408 || status === 429) {
+  if (status === 408) {
     return { retryable: true, errorType: `status_${status}` };
+  }
+  if (status === 429) {
+    // 429 的两种含义处置不同(2026-10-21 并发加固,docs/concurrency-hardening-task.md §1):
+    //   - 「忙」(并发/速率打满,z.ai 1302/1305)→ 会自愈,不计熔断。计入熔断会把
+    //     几十秒的并发高峰放大成「两家全 open → 数分钟内 0 尝试直接 503」。
+    //   - 「余额/额度耗尽」(z.ai 1113)→ 不会自愈,必须熔断,否则每个请求都先
+    //     白打一次必败的 429。
+    // 区分复用 classifyAuthReason 的 insufficient_balance 关键词组(单一事实源,
+    // 分类集中在本函数决定 countsTowardCircuit,provider.js 只消费,health.js
+    // 不按 errorType 字符串特判)。匹配不到宁可当「忙」:最坏是每个请求多白打
+    // 一次很快返回的 429;把认不出的余额耗尽误判成「坏」会误摘健康 provider。
+    if (classifyAuthReason(bodyText) === "insufficient_balance") {
+      return { retryable: true, errorType: "quota_exhausted", countsTowardCircuit: true };
+    }
+    return { retryable: true, errorType: "status_429", countsTowardCircuit: false };
   }
   if (status >= 500 && status < 600) {
     return { retryable: true, errorType: `status_${status}` };
