@@ -2,8 +2,14 @@
 // AI 抽取质量评测 runner(零依赖,Node >= 18)。
 //
 // 用法:
-//   发送 + 评分:
+//   发送 + 评分(经部署/本地 wrangler dev 的 HTTP 端点):
 //     node run.mjs --endpoint http://localhost:8787 --token <APP_TOKEN> --label baseline-sonnet
+//   进程内直连指定 provider 条目(A4,换服务商评测;不起 wrangler、不走已部署代理):
+//     OPENROUTER_KEY=sk-or-... node run.mjs --provider-file providers/openrouter-glm-4.5-air.json \
+//        --key-env OPENROUTER_KEY --label or-glm-air
+//     (--provider-file 是不含 key 的条目描述;key 只从 env 读,不进仓库/命令行)
+//   对比表(把多轮 scored.json 合成一张服务商对比表):
+//     node run.mjs --table results/a.scored.json results/b.scored.json ...
 //   断点续跑(跳过上次已完成 case):
 //     node run.mjs ... --resume
 //   只重放评分(不花钱重跑):
@@ -62,12 +68,27 @@ function parseArgs(argv) {
       case "--resume": args.resume = true; break;
       case "--gap": args.gapMs = nextFiniteNumber("--gap"); break;
       case "--timeout": args.timeoutMs = nextFiniteNumber("--timeout"); break;
+      case "--provider-file": args.providerFile = next(); break;
+      case "--key-env": args.keyEnv = next(); break;
+      case "--table":
+        // --table f1 f2 f3:一个 flag 后跟多个文件(遇到下一个 -- 停)
+        args.table = args.table || [];
+        args.table.push(next());
+        while (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
+          args.table.push(argv[++i]);
+        }
+        break;
       default: throw new Error(`未知参数: ${a}`);
     }
   }
+  if (args.table) return args;
   if (args.replay) return args;
+  if (args.providerFile) {
+    if (!args.label) throw new Error("--provider-file 模式也需要 --label");
+    return args;
+  }
   if (!args.endpoint || !args.token || !args.label) {
-    throw new Error("需要 --endpoint --token --label(或用 --replay <file> 只重放评分)");
+    throw new Error("需要 --endpoint --token --label(或 --provider-file <json> [--key-env VAR],或 --replay <file>)");
   }
   if (!/^[a-zA-Z0-9._-]+$/.test(args.label)) throw new Error(`--label 非法: ${args.label}`);
   return args;
@@ -192,24 +213,112 @@ const SOFT_FIELDS = ["title", "time_bucket", "recurrence_end"];
 
 // ---------- 发送层 ----------
 
-async function sendOne(endpoint, token, deviceId, anchorToday, c, timeoutMs) {
+// 进程内 transport(A4):直接 import worker 的 handleRequest,fetchImpl 用真实
+// global fetch 打上游 —— 与生产完全同一套 adapter/分类/failover 代码,唯一区别是
+// 不经已部署代理(env 是本地构造的,只有目标 provider 一条 + 免费额度全开)。
+// key 从 env 变量读(默认 EVAL_PROVIDER_KEY),不进命令行(ps 可见)不进仓库。
+async function makeInProcessTransport(providerFile, keyEnvName) {
+  const apiKey = process.env[keyEnvName];
+  if (!apiKey) {
+    throw new Error(`环境变量 ${keyEnvName} 未设置:进程内评测的 provider key 只从 env 读(不写进 --provider-file / 命令行)`);
+  }
+  const { handleRequest, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache, _testResetAlertState, _testResetProbeCache } = await import("../worker.js");
+  // 进程内模式的降噪:worker 每请求打 10+ 行 JSON 日志(生产走 wrangler tails,
+  // 这里会淹没评测报告)。只过滤结构化日志行,run.mjs 自身的报告输出不受影响。
+  const originalLog = console.log;
+  console.log = (value) => {
+    const line = String(value);
+    if (line.startsWith("{") && line.includes("\"event\"")) return;
+    originalLog(value);
+  };
+  // 单例隔离:同 worker.test.js beforeEach 语义;每次 run 一个干净 HealthStore
+  _testResetHealth();
+  _testResetAdminConfig();
+  _testResetExtractionCache();
+  _testResetAlertState();
+  _testResetProbeCache();
+  const raw = JSON.parse(readFileSync(providerFile, "utf8"));
+  if (!raw.url || !raw.model || !raw.type) {
+    throw new Error(`--provider-file 需要 type/url/model 字段(不含 key): ${providerFile}`);
+  }
+  const providerMeta = {
+    file: providerFile,
+    type: raw.type,
+    url: raw.url,
+    model: raw.model,
+    extraHeaders: raw.extraHeaders ?? null,
+    extraBody: raw.extraBody ?? null,
+    disableResponseFormat: raw.disableResponseFormat === true,
+    maxConcurrencyPerKey: raw.maxConcurrencyPerKey ?? null,
+    timeoutMs: raw.timeoutMs ?? null
+  };
+  const env = {
+    APP_TOKEN: "eval-inprocess",
+    PROVIDERS: JSON.stringify([{
+      id: "EVAL_TARGET",
+      priority: 1,
+      weight: 1,
+      enabled: true,
+      ...raw,
+      secretName: "EVAL_PROVIDER_KEY"
+    }]),
+    EVAL_PROVIDER_KEY: apiKey,
+    // 单条目 + 1 次尝试:失败即 infra_error,不混样(README §1.1 同理由)
+    AI_PROVIDER_MAX_ATTEMPTS: "1"
+    // 故意不绑 RATE_LIMIT_KV / AI_PROVIDER_STATE_KV / QUOTA_COUNTER_DO / CACHE_RESULT_KV:
+    // 本地跑不受生产配额/熔断/缓存影响;X-Quota-Reset-Date 头缺失时锚校验自动跳过
+  };
+  const send = async (deviceId, anchorToday, c, timeoutMs) => {
+    const body = { transcript: c.transcript, locale: c.locale, stream: true };
+    if (c.vocabularyHints) body.vocabularyHints = c.vocabularyHints;
+    if (c.personalHints) body.personalHints = c.personalHints;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await handleRequest(
+        new Request("https://eval.inprocess/v1/todo-extractions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-App-Token": "eval-inprocess",
+            "X-Device-ID": deviceId,
+            "X-Local-Date": anchorToday
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        }),
+        env,
+        { waitUntil() {} },
+        fetch
+      );
+      return res;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  return { send, providerMeta };
+}
+
+async function sendOne(endpoint, token, deviceId, anchorToday, c, timeoutMs, transport = null) {
   const body = { transcript: c.transcript, locale: c.locale, stream: true };
   if (c.vocabularyHints) body.vocabularyHints = c.vocabularyHints;
   if (c.personalHints) body.personalHints = c.personalHints;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${endpoint.replace(/\/$/, "")}/v1/todo-extractions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-App-Token": token,
-        "X-Device-ID": deviceId,
-        "X-Local-Date": anchorToday
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
+    const res = transport
+      ? await transport.send(deviceId, anchorToday, c, timeoutMs)
+      : await fetch(`${endpoint.replace(/\/$/, "")}/v1/todo-extractions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-App-Token": token,
+          "X-Device-ID": deviceId,
+          "X-Local-Date": anchorToday
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       return { ok: false, httpStatus: res.status, error: { type: res.status === 429 ? "rate_limited" : "infra_error", message: `HTTP ${res.status}: ${text.slice(0, 300)}` } };
@@ -442,6 +551,7 @@ function scoreAll(dataset, resultsFile) {
     soft: softStats,
     latency: {
       mean: latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null,
+      p50: latencies.length ? latencies[Math.floor(latencies.length * 0.5)] : null,
       p95: latencies.length ? latencies[Math.floor(latencies.length * 0.95)] : null,
       max: latencies.length ? latencies[latencies.length - 1] : null
     },
@@ -467,7 +577,7 @@ function printReport(r, infra) {
   }
   const fmtMs = (v) => (v == null ? "n/a" : `${v}ms`);
   const fmtChars = (v) => (v == null ? "n/a" : `${v} chars`);
-  console.log(`\n延迟: mean ${fmtMs(r.latency.mean)} / p95 ${fmtMs(r.latency.p95)} / max ${fmtMs(r.latency.max)}   响应均长: ${fmtChars(r.avgResponseChars)}`);
+  console.log(`\n延迟: mean ${fmtMs(r.latency.mean)} / p50 ${fmtMs(r.latency.p50)} / p95 ${fmtMs(r.latency.p95)} / max ${fmtMs(r.latency.max)}   响应均长: ${fmtChars(r.avgResponseChars)}`);
   if (r.failures.length) {
     console.log(`\n失败 case(${r.failures.length}):`);
     for (const f of r.failures) {
@@ -497,6 +607,13 @@ function findLatestResults(label) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  // --table:把多轮 scored.json 合成对比表(服务商 × 模型 × 开关 → 准确率/P50/P95)
+  if (args.table) {
+    printComparisonTable(args.table);
+    return 0;
+  }
+
   const datasetPath = args.dataset ?? DEFAULT_DATASET;
   const rawDataset = JSON.parse(readFileSync(datasetPath, "utf8"));
 
@@ -509,7 +626,7 @@ async function main() {
     const report = scoreAll(dataset, resultsFile);
     printReport(report, resultsFile.cases.filter((c) => !c.ok).length);
     const outFile = args.replay.replace(/\.json$/, ".scored.json");
-    writeFileSync(outFile, JSON.stringify({ anchorToday: anchor, report, generatedAt: new Date().toISOString() }, null, 2));
+    writeFileSync(outFile, JSON.stringify({ anchorToday: anchor, ...(resultsFile.providerMeta ? { providerMeta: resultsFile.providerMeta } : {}), report, generatedAt: new Date().toISOString() }, null, 2));
     console.log(`\n评分已写入: ${outFile}(锚: ${anchor})`);
     return 0;
   }
@@ -546,13 +663,21 @@ async function main() {
   const dataset = shiftGoldenDates(rawDataset, anchor);
   console.log(`日期锚: ${anchor}(golden 按 authoring 锚 ${rawDataset.meta.anchor_today} 平移)`);
 
+  // 进程内模式:构造 transport(校验 key/env);HTTP 模式 transport=null。
+  const transport = args.providerFile
+    ? await makeInProcessTransport(args.providerFile, args.keyEnv || "EVAL_PROVIDER_KEY")
+    : null;
+  if (transport) {
+    console.log(`provider(进程内直连): ${transport.providerMeta.model} @ ${transport.providerMeta.url}`);
+  }
+
   const outCases = [];
   let sent = 0, retried = 0;
   for (const c of dataset.cases) {
     let rc = prevCases.get(c.id) ?? null;
     if (!rc) {
       const startedAt = Date.now();
-      const r = await sendOne(args.endpoint, args.token, deviceId, anchor, c, args.timeoutMs);
+      const r = await sendOne(args.endpoint, args.token, deviceId, anchor, c, args.timeoutMs, transport);
       r.elapsedMs = Date.now() - startedAt;
       rc = { id: c.id, ...r };
       sent++;
@@ -564,7 +689,7 @@ async function main() {
         );
       }
       // 逐条落盘(崩溃可 --resume)
-      const current = { label: args.label, ts, anchorToday: anchor, endpoint: args.endpoint, dataset: datasetPath, cases: mergeById(outCases, prevCases) };
+      const current = { label: args.label, ts, anchorToday: anchor, endpoint: args.endpoint, dataset: datasetPath, ...(transport ? { providerMeta: transport.providerMeta } : {}), cases: mergeById(outCases, prevCases) };
       writeResults(RESULTS_DIR, `${args.label}-${ts}.json`, current);
       await sleep(args.gapMs);
     } else {
@@ -577,19 +702,19 @@ async function main() {
     if (rc.ok || rc.id == null || rc.error?.type === "anchor_rejected") continue;
     const c = dataset.cases.find((x) => x.id === rc.id);
     const startedAt = Date.now();
-    const r = await sendOne(args.endpoint, args.token, deviceId, anchor, c, args.timeoutMs);
+    const r = await sendOne(args.endpoint, args.token, deviceId, anchor, c, args.timeoutMs, transport);
     r.elapsedMs = Date.now() - startedAt;
     if (r.ok) { Object.assign(rc, r); retried++; }
     else rc.retries = [{ ...r.error }];
   }
 
-  const resultsFile = { label: args.label, ts, anchorToday: anchor, endpoint: args.endpoint, dataset: datasetPath, cases: mergeById(outCases, prevCases) };
+  const resultsFile = { label: args.label, ts, anchorToday: anchor, endpoint: args.endpoint, dataset: datasetPath, ...(transport ? { providerMeta: transport.providerMeta } : {}), cases: mergeById(outCases, prevCases) };
   const outPath = writeResults(RESULTS_DIR, `${args.label}-${ts}.json`, resultsFile);
 
   const infra = resultsFile.cases.filter((c) => !c.ok).length;
   const report = scoreAll(dataset, resultsFile);
   printReport(report, infra);
-  const scoredPath = writeResults(RESULTS_DIR, `${args.label}-${ts}.scored.json`, { anchorToday: anchor, report, generatedAt: new Date().toISOString() });
+  const scoredPath = writeResults(RESULTS_DIR, `${args.label}-${ts}.scored.json`, { anchorToday: anchor, ...(transport?.providerMeta ? { providerMeta: transport.providerMeta } : {}), report, generatedAt: new Date().toISOString() });
   console.log(`\n原始结果: ${outPath}\n评分报告: ${scoredPath}`);
   console.log(`本次新发送: ${sent}  重试成功: ${retried}`);
   return infra > 0 ? 2 : 0;
@@ -615,3 +740,40 @@ main().then(
   (code) => process.exit(code ?? 0),
   (e) => { console.error(`\n错误: ${e.message}`); process.exit(1); }
 );
+
+
+// ---------- 对比表(A4:服务商 × 模型 × 开关 → 准确率 / P50 / P95) ----------
+//
+// 输入是各轮 run 落盘的 *.scored.json(含 providerMeta 时优先用其 model/url,
+// 否则退回 label)。token 数没有上游 usage 数据,列留空由人工按 console 校准
+// (README §5 已有同款口径)。
+function printComparisonTable(files) {
+  const rows = [];
+  for (const file of files) {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    const report = parsed.report ?? parsed;
+    const meta = parsed.providerMeta ?? {};
+    rows.push({
+      file,
+      label: report.label ?? "?",
+      model: meta.model ?? report.label ?? "?",
+      platform: String(meta.url ?? "").includes("openrouter") ? "OpenRouter" : (meta.url ? new URL(meta.url).host : "?"),
+      thinking: meta.extraBody && Object.keys(meta.extraBody).length > 0
+        ? JSON.stringify(meta.extraBody)
+        : (meta.disableResponseFormat ? "no-response-format" : "default"),
+      pass: `${report.passed ?? report.passRate ?? "?"}/${report.scored ?? "?"}`,
+      passRate: report.passRate ?? "?",
+      infra: parsed.cases ? parsed.cases.filter((c) => !c.ok).length : "?",
+      p50: report.latency?.p50 ?? null,
+      p95: report.latency?.p95 ?? null,
+      mean: report.latency?.mean ?? null
+    });
+  }
+  const fmt = (v) => (v == null ? "-" : `${Math.round(v / 100) / 10}s`);
+  console.log("| 平台 | 模型 | 开关 | case 全对 | infra_error | mean | P50 | P95 | label |");
+  console.log("|---|---|---|---|---|---|---|---|---|");
+  for (const r of rows) {
+    console.log(`| ${r.platform} | ${r.model} | ${r.thinking} | ${r.pass} (${r.passRate}) | ${r.infra} | ${fmt(r.mean)} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${r.label} |`);
+  }
+  console.log("\ntoken 用量列留空:上游 usage 不随 SSE 透出,按各服务商 console 校准(eval/README.md §5 同口径)。");
+}

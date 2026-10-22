@@ -6,6 +6,7 @@ import { classifyLevel, shouldNotify, nextRecord } from "./src/alertState.js";
 import { makeCacheKey } from "./src/extractionCache.js";
 import { HealthStore, configureHealthParams, _testResetHealthParams } from "./src/health.js";
 import { mintTestJWS } from "./src/jws-fixture.js";
+import { loadProviders } from "./src/config.js";
 
 // Reset module-level HealthStore + AdminConfigStore + health params between tests so
 // circuit-breaker / latency state / admin override / configured params from one test
@@ -4361,8 +4362,9 @@ class MemoryKV {
 // 模拟 QuotaCounter DO 的 consume / consume-rolling / refund 逻辑(强一致 increment)。
 // 真实 DO 的并发串行化由平台保证,这里只是单线程模拟实现。
 // store 值直接存数字(真实 DO 存 { used } 对象,fake 只服务 worker 测试的断言口径)。
-function makeFakeQuotaCounterDO({ failOnce = false, alwaysFail = false } = {}) {
+function makeFakeQuotaCounterDO({ failOnce = false, alwaysFail = false, gateAlwaysFail = false } = {}) {
   const store = new Map();
+  let gateLeaseCounter = 0;
   const calls = [];
   let callCount = 0;
   const stub = {
@@ -4434,9 +4436,53 @@ function makeFakeQuotaCounterDO({ failOnce = false, alwaysFail = false } = {}) {
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
   };
+  // 闸门端点按 DO 实例(idFromName 的 name,即 gate:<entryId>#<keyIndex>)隔离账本;
+  // 配额端点沿用共享 store(与既有测试语义一致——配额 key 自带 device/date 维度)。
+  const gateStores = new Map();
+  const gateLeasesOf = (name) => {
+    if (!gateStores.has(name)) gateStores.set(name, new Map());
+    return gateStores.get(name);
+  };
+  const gateFetchFor = (name) => async (req) => {
+    if (alwaysFail || gateAlwaysFail) throw new Error("gate DO unreachable");
+    const body = JSON.parse(await req.text());
+    calls.push(body);
+    const url = new URL(req.url);
+    const leases = gateLeasesOf(name);
+    const sweep = () => {
+      const now = Date.now();
+      for (const [leaseId, expiresAt] of leases) {
+        if (expiresAt <= now) leases.delete(leaseId);
+      }
+    };
+    if (url.pathname === "/gate/acquire") {
+      sweep();
+      if (leases.size >= body.limit) return jsonResponse({ allowed: false, inFlight: leases.size });
+      gateLeaseCounter += 1;
+      const leaseId = `lease-${gateLeaseCounter}`;
+      leases.set(leaseId, Date.now() + body.leaseMs);
+      return jsonResponse({ allowed: true, inFlight: leases.size + 1, leaseId });
+    }
+    if (url.pathname === "/gate/release") {
+      sweep();
+      return jsonResponse({ released: leases.delete(body.leaseId) });
+    }
+    if (url.pathname === "/gate/count") {
+      sweep();
+      return jsonResponse({ inFlight: leases.size });
+    }
+    return jsonResponse({ error: "not_found" }, 404);
+  };
   return {
     idFromName(name) { return { name }; },
-    get() { return stub; },
+    get(id = { name: "default" }) {
+      const gateFetch = gateFetchFor(id.name);
+      return {
+        fetch: (req) => (new URL(req.url).pathname.startsWith("/gate/")
+          ? gateFetch(req)
+          : stub.fetch(req))
+      };
+    },
     _store: store,
     _calls: calls,
     _callCount: () => callCount
@@ -7579,4 +7625,621 @@ test("deep-read E11: DEEP_READ_DAILY_LIMIT 配置非法值 → 跳过限额(fail
     const deepReadKeys = [...kv.values.entries()].filter(([k]) => k.startsWith("deepread:")).map(([k]) => k);
     assert.equal(deepReadKeys.length, 0, "invalid_limit 跳过计数: " + JSON.stringify([...kv.values.entries()]));
   });
+});
+
+// MARK: - A 场景容量:多 key 池 + 每 key 并发闸门(docs/capacity-scenario-a-task.md)
+//
+// 覆盖任务书 §2.3 的 8 条测试(第 8 条由既有测试套件整体通过证明)。
+// 第 1、2、6 条要求先在改前代码上跑红(见 docs/capacity-scenario-a-results.md §测试)。
+
+// 确定性 key 选择:provider.js 的非闸门 key 挑选默认 Math.random,
+// 熔断类测试(§2.3-5)需要可复现的挑选序列,通过测试钩子注入种子 LCG。
+// 动态 import:改前代码没有该导出,静态 import 会让整个文件加载失败,
+// 掩盖其余测试的红输出(任务书 §2.3 要求 1/2/6 在改前跑出具体失败)。
+async function withKeyPickRandom(seed, fn) {
+  const mod = await import("./src/provider.js");
+  const hook = mod._testSetKeyPickRandom;
+  if (typeof hook === "function") hook(makeSeededRng(seed));
+  try {
+    return await fn();
+  } finally {
+    if (typeof hook === "function") hook(null);
+  }
+}
+
+function makeSeededRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+// 按上游 key(Authorization Bearer 值)记账的 mock 上游:
+// - keyLimit:每 key 并发上限,超限返回忙 429(模拟真实上游限流)
+// - quotaKeys:恒返回余额耗尽 429 的 key 集合
+// - busyKeys:恒返回忙 429 的 key 集合
+// - holdMs:非流式响应前的生成延迟(在途窗口)
+function makeKeyedUpstream({ keyLimit = Infinity, quotaKeys = new Set(), busyKeys = new Set(), holdMs = 0 } = {}) {
+  const stats = new Map();
+  const statOf = (key) => {
+    if (!stats.has(key)) {
+      stats.set(key, { requests: 0, busy429: 0, quota429: 0, success: 0, inFlight: 0, maxInFlight: 0 });
+    }
+    return stats.get(key);
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function keyedFetch(url, init) {
+    const auth = String(init?.headers?.Authorization || "");
+    const key = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
+    const stat = statOf(key);
+    stat.requests += 1;
+    if (quotaKeys.has(key)) {
+      stat.quota429 += 1;
+      return jsonResponse({
+        type: "error",
+        error: { type: "rate_limit_error", code: "1113", message: "Insufficient balance or no resource package. Please recharge." }
+      }, 429);
+    }
+    if (busyKeys.has(key)) {
+      stat.busy429 += 1;
+      return jsonResponse({
+        type: "error",
+        error: { type: "rate_limit_error", code: "1302", message: "Rate limit reached for requests" }
+      }, 429);
+    }
+    if (stat.inFlight >= keyLimit) {
+      stat.busy429 += 1;
+      return jsonResponse({
+        type: "error",
+        error: { type: "rate_limit_error", code: "1302", message: "Rate limit reached for requests" }
+      }, 429);
+    }
+    stat.inFlight += 1;
+    stat.maxInFlight = Math.max(stat.maxInFlight, stat.inFlight);
+    try {
+      if (holdMs > 0) {
+        // 真实 fetch 会随 init.signal abort 而 reject;mock 必须模拟同一行为,
+        // 否则客户端断开路径(499 + 闸门 release)测不到。
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, holdMs);
+          const onAbort = () => {
+            clearTimeout(timer);
+            const error = new Error("The operation was aborted");
+            error.name = "AbortError";
+            reject(error);
+          };
+          if (init?.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          init?.signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      }
+      stat.success += 1;
+      return jsonResponse({ choices: [{ message: { content: extractionJSON(`多key测试-${key}`) } }] });
+    } finally {
+      stat.inFlight -= 1;
+    }
+  }
+  return { fetchImpl: keyedFetch, stats, statOf };
+}
+
+// 多 key 池条目 env。secretNames 逐个注入 env;gate 传 KEY_GATE_* 覆盖。
+function makePoolEnv({ secretNames, secretValues, maxConcurrencyPerKey, gate = {}, doBinding, extraEntry, providersExtra = {} }) {
+  const entry = {
+    id: "KEY_POOL",
+    type: "openai",
+    url: "https://pool.invalid/v1/chat/completions",
+    model: "test-pool-model",
+    priority: 1,
+    weight: 1,
+    enabled: true,
+    ...providersExtra
+  };
+  if (maxConcurrencyPerKey !== undefined) entry.maxConcurrencyPerKey = maxConcurrencyPerKey;
+  if (secretNames) entry.secretNames = secretNames;
+  const providers = extraEntry ? [entry, extraEntry] : [entry];
+  const env = {
+    APP_TOKEN: "token",
+    PROVIDERS: JSON.stringify(providers),
+    AI_PROVIDER_MAX_ATTEMPTS: "2",
+    AI_PROVIDER_STATE_KV: new MemoryKV(new Map()),
+    RATE_LIMIT_KV: new MemoryKV(new Map()),
+    QUOTA_COUNTER_DO: doBinding,
+    ...gate
+  };
+  for (const [name, value] of Object.entries(secretValues || {})) env[name] = value;
+  return env;
+}
+
+// 直接问 fake DO:某 key 闸门当前在途数(走 /gate/count,与生产同通路)。
+async function gateCount(doBinding, entryId, keyIndex) {
+  const stub = doBinding.get(doBinding.idFromName(`gate:${entryId}#${keyIndex}`));
+  const res = await stub.fetch(new Request("https://do.test/gate/count", { method: "POST", body: "{}" }));
+  const body = await res.json();
+  return body.inFlight;
+}
+
+test("A1/A2 §2.3-1 闸门:3 key × 上限 2,并发 6 请求 → 每 key 恰 2 在途,上游忙 429 为 0", async () => {
+  const doBinding = makeFakeQuotaCounterDO();
+  const upstream = makeKeyedUpstream({ keyLimit: 2, holdMs: 250 });
+  const env = makePoolEnv({
+    secretNames: ["POOL_KEY_0", "POOL_KEY_1", "POOL_KEY_2"],
+    secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1", POOL_KEY_2: "pool-key-2" },
+    maxConcurrencyPerKey: 2,
+    gate: { KEY_GATE_MAX_WAIT_MS: "2000", KEY_GATE_POLL_MS: "20" },
+    doBinding
+  });
+  const ctx = makeFakeCtx();
+  const responses = await Promise.all([0, 1, 2, 3, 4, 5].map((i) =>
+    handleRequest(
+      request({ transcript: `闸门并发测试 ${i}`, locale: "zh" }, {
+        "X-App-Token": "token",
+        "X-Device-ID": `gate-user-${i}`,
+        "CF-Connecting-IP": `10.1.0.${i}`
+      }),
+      env, ctx, upstream.fetchImpl
+    )
+  ));
+  const okCount = responses.filter((r) => r.status === 200).length;
+  assert.equal(okCount, 6, `6 个请求都应成功,实际状态: ${responses.map((r) => r.status).join(",")}`);
+  let totalRequests = 0;
+  for (const key of ["pool-key-0", "pool-key-1", "pool-key-2"]) {
+    const s = upstream.statOf(key);
+    totalRequests += s.requests;
+    assert.equal(s.busy429, 0, `${key} 不应收到上游忙 429(闸门应挡在本地): ${JSON.stringify(s)}`);
+    assert.ok(s.maxInFlight <= 2, `${key} 在途数不得超上限 2: ${JSON.stringify(s)}`);
+  }
+  assert.equal(totalRequests, 6, "6 个请求各打一次上游,无白打");
+});
+
+test("A2 §2.3-2a 闸门:第 7 个请求在等待窗口内等到 release → 成功", async () => {
+  const doBinding = makeFakeQuotaCounterDO();
+  const upstream = makeKeyedUpstream({ keyLimit: 2, holdMs: 300 });
+  const env = makePoolEnv({
+    secretNames: ["POOL_KEY_0", "POOL_KEY_1", "POOL_KEY_2"],
+    secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1", POOL_KEY_2: "pool-key-2" },
+    maxConcurrencyPerKey: 2,
+    gate: { KEY_GATE_MAX_WAIT_MS: "1500", KEY_GATE_POLL_MS: "20" },
+    doBinding
+  });
+  const ctx = makeFakeCtx();
+  const fire = (i) => handleRequest(
+    request({ transcript: `闸门等待测试 ${i}`, locale: "zh" }, {
+      "X-App-Token": "token",
+      "X-Device-ID": `gate-wait-${i}`,
+      "CF-Connecting-IP": `10.2.0.${i}`
+    }),
+    env, ctx, upstream.fetchImpl
+  );
+  const first6 = [0, 1, 2, 3, 4, 5].map(fire);
+  await new Promise((r) => setTimeout(r, 60)); // 让前 6 个占满 6 个名额
+  const seventh = await fire(6);
+  const statuses = (await Promise.all(first6)).map((r) => r.status);
+  assert.deepEqual(statuses, [200, 200, 200, 200, 200, 200], "前 6 个都应成功");
+  assert.equal(seventh.status, 200, `第 7 个应在 KEY_GATE_MAX_WAIT_MS 内等到空位: ${seventh.status}`);
+  for (const key of ["pool-key-0", "pool-key-1", "pool-key-2"]) {
+    assert.equal(upstream.statOf(key).busy429, 0, `${key} 不应收到忙 429`);
+  }
+});
+
+test("A2 §2.3-2b 闸门:全部 key 满 + 等待超时 → 503 + Retry-After: 2", async () => {
+  const doBinding = makeFakeQuotaCounterDO();
+  const upstream = makeKeyedUpstream({ keyLimit: 2, holdMs: 1200 });
+  const env = makePoolEnv({
+    secretNames: ["POOL_KEY_0", "POOL_KEY_1", "POOL_KEY_2"],
+    secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1", POOL_KEY_2: "pool-key-2" },
+    maxConcurrencyPerKey: 2,
+    gate: { KEY_GATE_MAX_WAIT_MS: "250", KEY_GATE_POLL_MS: "20" },
+    doBinding
+  });
+  const ctx = makeFakeCtx();
+  const fire = (i) => handleRequest(
+    request({ transcript: `闸门超时测试 ${i}`, locale: "zh" }, {
+      "X-App-Token": "token",
+      "X-Device-ID": `gate-timeout-${i}`,
+      "CF-Connecting-IP": `10.3.0.${i}`
+    }),
+    env, ctx, upstream.fetchImpl
+  );
+  const first6 = [0, 1, 2, 3, 4, 5].map(fire);
+  await new Promise((r) => setTimeout(r, 60));
+  const startedAt = Date.now();
+  const seventh = await fire(6);
+  const elapsed = Date.now() - startedAt;
+  await Promise.all(first6);
+  assert.equal(seventh.status, 503, `等待超时应返回 503,实际 ${seventh.status}`);
+  assert.equal(seventh.headers.get("Retry-After"), "2", "应带 Retry-After: 2");
+  assert.ok(elapsed < 1000, `等待时长应约等于 KEY_GATE_MAX_WAIT_MS(250ms),实际 ${elapsed}ms`);
+});
+
+test("A2 §2.3-3 闸门:请求中途客户端断开 → 名额被 release(在途数回到原值)", async () => {
+  const doBinding = makeFakeQuotaCounterDO();
+  const upstream = makeKeyedUpstream({ keyLimit: 2, holdMs: 400 });
+  const env = makePoolEnv({
+    secretNames: ["POOL_KEY_0", "POOL_KEY_1", "POOL_KEY_2"],
+    secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1", POOL_KEY_2: "pool-key-2" },
+    maxConcurrencyPerKey: 2,
+    gate: { KEY_GATE_MAX_WAIT_MS: "1000", KEY_GATE_POLL_MS: "20" },
+    doBinding
+  });
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  const aborting = handleRequest(
+    requestWithSignal(
+      { transcript: "闸门断开测试", locale: "zh" },
+      { "X-App-Token": "token", "X-Device-ID": "gate-abort-1", "CF-Connecting-IP": "10.4.0.1" },
+      abortController.signal
+    ),
+    env, ctx, upstream.fetchImpl
+  );
+  await new Promise((r) => setTimeout(r, 60));
+  abortController.abort();
+  const response = await aborting;
+  assert.equal(response.status, 499, `客户端断开应为 499,实际 ${response.status}`);
+  // release 是异步 DO 调用,给一个短窗口
+  await new Promise((r) => setTimeout(r, 120));
+  for (let i = 0; i < 3; i += 1) {
+    assert.equal(await gateCount(doBinding, "KEY_POOL", i), 0, `key#${i} 名额应被 release`);
+  }
+});
+
+test("A2 闸门:流式成功读完后 → 名额被 release", async () => {
+  const doBinding = makeFakeQuotaCounterDO();
+  // 流式 mock:按 Authorization 分 key 记账,SSE 立即完成
+  const stats = new Map();
+  const fetchImpl = async (url, init) => {
+    const key = String(init?.headers?.Authorization || "").replace(/^Bearer /, "");
+    const s = stats.get(key) || { requests: 0, success: 0 };
+    s.requests += 1; s.success += 1; stats.set(key, s);
+    return sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: extractionJSON("流式闸门") } }] })}`,
+      "data: [DONE]"
+    ]);
+  };
+  const env = makePoolEnv({
+    secretNames: ["POOL_KEY_0", "POOL_KEY_1"],
+    secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1" },
+    maxConcurrencyPerKey: 2,
+    gate: { KEY_GATE_MAX_WAIT_MS: "500", KEY_GATE_POLL_MS: "20" },
+    doBinding
+  });
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "流式闸门测试", locale: "zh", stream: true }, {
+      "X-App-Token": "token", "X-Device-ID": "gate-stream-1", "CF-Connecting-IP": "10.5.0.1"
+    }),
+    env, ctx, fetchImpl
+  );
+  assert.equal(response.status, 200);
+  await response.text(); // 排干流
+  await new Promise((r) => setTimeout(r, 120));
+  for (let i = 0; i < 2; i += 1) {
+    assert.equal(await gateCount(doBinding, "KEY_POOL", i), 0, `key#${i} 流结束后名额应释放`);
+  }
+});
+
+test("A1 §2.3-5 一个 key 余额耗尽 → 只这个 key 熔断,后续请求分配到其余 key", async () => {
+  await withKeyPickRandom(7, async () => {
+    const upstream = makeKeyedUpstream({ quotaKeys: new Set(["pool-key-0"]) });
+    const env = makePoolEnv({
+      secretNames: ["POOL_KEY_0", "POOL_KEY_1", "POOL_KEY_2"],
+      secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1", POOL_KEY_2: "pool-key-2" },
+      doBinding: makeFakeQuotaCounterDO()
+    });
+    const ctx = makeFakeCtx();
+    // threshold=3(beforeEach 已设);烧穿 key0 的熔断需要它被挑中 3 次。
+    // 种子 RNG 下挑选序列确定,60 次足够(断言用 >=,不绑死具体次数)。
+    for (let i = 0; i < 60; i += 1) {
+      const response = await handleRequest(
+        request({ transcript: `熔断隔离测试 ${i}`, locale: "zh" }, {
+          "X-App-Token": "token", "X-Device-ID": `circuit-${i}`, "CF-Connecting-IP": `10.6.0.${i % 250}`
+        }),
+        env, ctx, upstream.fetchImpl
+      );
+      assert.equal(response.status, 200, `第 ${i} 个请求应通过同条目其他 key 成功`);
+    }
+    const quotaKey = upstream.statOf("pool-key-0");
+    assert.ok(quotaKey.quota429 >= 3, `key0 应被余额耗尽打过(>=threshold 3 次): ${JSON.stringify(quotaKey)}`);
+    // 熔断开后(3 次),key0 不再被挑中:requests 停在 threshold 附近,不再增长
+    const requestsAfterOpen = quotaKey.requests;
+    for (let i = 60; i < 80; i += 1) {
+      await handleRequest(
+        request({ transcript: `熔断隔离复核 ${i}`, locale: "zh" }, {
+          "X-App-Token": "token", "X-Device-ID": `circuit-${i}`, "CF-Connecting-IP": `10.6.1.${i % 250}`
+        }),
+        env, ctx, upstream.fetchImpl
+      );
+    }
+    assert.equal(upstream.statOf("pool-key-0").requests, requestsAfterOpen, "key0 熔断后不应再被挑中");
+    assert.ok(upstream.statOf("pool-key-1").success > 0, "key1 正常服务");
+    assert.ok(upstream.statOf("pool-key-2").success > 0, "key2 正常服务");
+    // 熔断记录按 key 记账:health:KEY_POOL#0 存在且 open,条目 id 本身无记录
+    const healthKv = env.AI_PROVIDER_STATE_KV;
+    const key0Record = healthRecord(healthKv, "KEY_POOL#0");
+    assert.ok(key0Record, "熔断记录应落在 KEY_POOL#0");
+    assert.equal(key0Record.state, "open");
+    assert.equal(healthRecord(healthKv, "KEY_POOL"), null, "条目 id 本身不应有熔断记录(按 key 记账)");
+    const key1Record = healthRecord(healthKv, "KEY_POOL#1");
+    assert.ok(key1Record, "key1 有健康记录(成功也写)");
+    assert.equal(key1Record.state, "closed", "key1 不应被 key0 的熔断波及");
+    assert.equal(key1Record.consecutiveFailures, 0, "key1 无失败计数");
+  });
+});
+
+test("A1 §2.3-6 忙 429 → 换同条目 key 重试且不消耗 AI_PROVIDER_MAX_ATTEMPTS(断言总尝试条目数)", async () => {
+  await withKeyPickRandom(3, async () => {
+    // E1 两个 key 全忙,E2 单 key 正常。MAX_ATTEMPTS=2:
+    // - 若 key 级重试消耗条目尝试数:E1key0(1)+E1key1(2) 耗尽 → 永远到不了 E2 → 503;
+    // - 正确行为(R4):E1 内两个 key 都试完算 1 个条目尝试,继续 failover 到 E2 → 200。
+    const doBinding = makeFakeQuotaCounterDO();
+    const busyEntry = {
+      id: "BUSY_POOL",
+      type: "openai",
+      url: "https://busy.invalid/v1/chat/completions",
+      model: "busy-model",
+      priority: 1,
+      weight: 1,
+      enabled: true,
+      secretNames: ["BUSY_KEY_0", "BUSY_KEY_1"]
+    };
+    const fallbackEntry = {
+      id: "FALLBACK",
+      type: "openai",
+      url: "https://fallback.invalid/v1/chat/completions",
+      model: "fallback-model",
+      priority: 2,
+      weight: 1,
+      enabled: true,
+      secretName: "FALLBACK_KEY"
+    };
+    const env = {
+      APP_TOKEN: "token",
+      PROVIDERS: JSON.stringify([busyEntry, fallbackEntry]),
+      BUSY_KEY_0: "busy-key-0",
+      BUSY_KEY_1: "busy-key-1",
+      FALLBACK_KEY: "fallback-key",
+      AI_PROVIDER_MAX_ATTEMPTS: "2",
+      AI_PROVIDER_STATE_KV: new MemoryKV(new Map())
+    };
+    const ctx = makeFakeCtx();
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      const key = String(init?.headers?.Authorization || "").replace(/^Bearer /, "");
+      calls.push(key);
+      if (key.startsWith("busy-")) {
+        return jsonResponse({
+          type: "error",
+          error: { type: "rate_limit_error", code: "1302", message: "Rate limit reached for requests" }
+        }, 429);
+      }
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("条目级failover") } }] });
+    };
+    const response = await handleRequest(
+      request({ transcript: "key级重试不占条目尝试", locale: "zh" }, {
+        "X-App-Token": "token", "X-Device-ID": "retry-budget-1"
+      }),
+      env, ctx, fetchImpl
+    );
+    assert.equal(response.status, 200, `应在第二跳条目上成功,实际 ${response.status}`);
+    // 尝试链:两个 busy key(同条目,key 级重试)+ fallback key(条目级 failover)
+    assert.deepEqual(calls.filter((k) => k.startsWith("busy-")).sort(), ["busy-key-0", "busy-key-1"],
+      "E1 的两个 key 都应被试过(上限 = 条目内可用 key 数)");
+    assert.ok(calls.includes("fallback-key"), "应 failover 到第二跳条目");
+    // 忙 429 不计熔断(countsTowardCircuit=false,既有行为):BUSY_POOL 的 key 不应熔断
+    assert.equal(healthRecord(env.AI_PROVIDER_STATE_KV, "BUSY_POOL#0"), null, "忙 429 不计熔断");
+  });
+});
+
+test("A2 §2.3-7 闸门 DO 抛错 → fail-open,请求照常成功,有 warn 日志", async () => {
+  const doBinding = makeFakeQuotaCounterDO({ gateAlwaysFail: true });
+  const upstream = makeKeyedUpstream({ keyLimit: 2 });
+  const env = makePoolEnv({
+    secretNames: ["POOL_KEY_0", "POOL_KEY_1"],
+    secretValues: { POOL_KEY_0: "pool-key-0", POOL_KEY_1: "pool-key-1" },
+    maxConcurrencyPerKey: 2,
+    gate: { KEY_GATE_MAX_WAIT_MS: "500" },
+    doBinding
+  });
+  const ctx = makeFakeCtx();
+  const warnLines = [];
+  const originalWarn = console.warn;
+  console.warn = (line) => warnLines.push(String(line));
+  try {
+    const response = await handleRequest(
+      request({ transcript: "闸门fail-open测试", locale: "zh" }, {
+        "X-App-Token": "token", "X-Device-ID": "gate-failopen-1"
+      }),
+      env, ctx, upstream.fetchImpl
+    );
+    assert.equal(response.status, 200, "闸门故障应 fail-open,请求照常成功");
+    assert.ok(
+      warnLines.some((line) => line.includes("proxy.gate.call_failed")),
+      "应有 proxy.gate.call_failed warn 日志"
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test("A1 单 key 旧配置(secretName)→ 熔断记录仍用条目 id,多 key 语义不激活", async () => {
+  const env = {
+    APP_TOKEN: "token",
+    PROVIDERS: JSON.stringify([{
+      id: "LEGACY_ONE",
+      type: "openai",
+      url: "https://legacy.invalid/v1/chat/completions",
+      model: "legacy-model",
+      secretName: "LEGACY_KEY",
+      timeoutMs: 30000
+    }]),
+    LEGACY_KEY: "legacy-key",
+    AI_PROVIDER_MAX_ATTEMPTS: "2",
+    AI_PROVIDER_STATE_KV: new MemoryKV(new Map())
+  };
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return jsonResponse({
+      type: "error",
+      error: { type: "rate_limit_error", code: "1113", message: "Insufficient balance or no resource package. Please recharge." }
+    }, 429);
+  };
+  const ctx = makeFakeCtx();
+  for (let i = 0; i < 3; i += 1) {
+    await handleRequest(
+      request({ transcript: `旧配置熔断 ${i}`, locale: "zh" }, { "X-App-Token": "token", "X-Device-ID": `legacy-${i}` }),
+      env, ctx, fetchImpl
+    );
+  }
+  assert.equal(calls, 3, "无备选条目时每次请求都只打这一家");
+  const record = healthRecord(env.AI_PROVIDER_STATE_KV, "LEGACY_ONE");
+  assert.ok(record, "单 key 条目熔断记录仍用条目 id(无 # 序号)");
+  assert.equal(record.state, "open", "3 次余额耗尽(threshold=3)熔断");
+  assert.equal(healthRecord(env.AI_PROVIDER_STATE_KV, "LEGACY_ONE#0"), null, "不应产生 #0 后缀记录");
+});
+
+// MARK: - A1/A3 配置校验(loadProviders 直测)
+
+test("A1 配置:secretName 与 secretNames 同时出现 → 配置错误", () => {
+  const env = {
+    PROVIDERS: JSON.stringify([{
+      id: "BAD_POOL", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+      secretName: "A", secretNames: ["B"]
+    }]), B: "k"
+  };
+  assert.throws(() => loadProviders(env), /secretName.*secretNames|secretNames.*secretName/);
+});
+
+test("A1 配置:maxConcurrencyPerKey 非正整数 → 配置错误", () => {
+  for (const bad of [0, -1, 2.5, "3", null]) {
+    const env = {
+      PROVIDERS: JSON.stringify([{
+        id: "BAD_LIMIT", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+        secretName: "A", maxConcurrencyPerKey: bad
+      }]), A: "k"
+    };
+    assert.throws(() => loadProviders(env), /maxConcurrencyPerKey/, `值 ${JSON.stringify(bad)} 应报错`);
+  }
+});
+
+test("A1 配置:secretNames 部分缺失 → 跳过该 key,其余 key 可用", () => {
+  const missing = [];
+  const env = {
+    PROVIDERS: JSON.stringify([{
+      id: "PART_POOL", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+      secretNames: ["MISSING_A", "PRESENT_B", "MISSING_C", "PRESENT_D"]
+    }]),
+    PRESENT_B: "kb", PRESENT_D: "kd"
+  };
+  const providers = loadProviders(env, { onSecretMissing: (info) => missing.push(info.secretName) });
+  assert.deepEqual(missing.sort(), ["MISSING_A", "MISSING_C"]);
+  assert.equal(providers.length, 1);
+  assert.equal(providers[0].keys.length, 2, "只保留有 secret 的 key");
+  assert.deepEqual(providers[0].keys.map((k) => k.apiKey).sort(), ["kb", "kd"]);
+  // 多 key 配置(>1)即使只剩 1 个可用,healthId 仍带原始序号
+  const healthIds = providers[0].keys.map((k) => k.healthId).sort();
+  assert.deepEqual(healthIds, ["PART_POOL#1", "PART_POOL#3"]);
+});
+
+test("A1 配置:secretNames 全部缺失 → 条目不可用(无可用 key)", () => {
+  const env = {
+    PROVIDERS: JSON.stringify([{
+      id: "ALLMISS_POOL", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+      secretNames: ["MISSING_A", "MISSING_B"]
+    }])
+  };
+  const providers = loadProviders(env, { onSecretMissing: () => {} });
+  assert.equal(providers[0].keys.length, 0);
+  assert.equal(providers[0].apiKey, "");
+});
+
+test("A3 配置:extraBody 覆盖 model/messages/stream → 配置错误", () => {
+  for (const reserved of ["model", "messages", "stream"]) {
+    const env = {
+      PROVIDERS: JSON.stringify([{
+        id: "EXTRA_BODY", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+        secretName: "A", extraBody: { [reserved]: "x" }
+      }]), A: "k"
+    };
+    assert.throws(() => loadProviders(env), new RegExp(reserved), `extraBody.${reserved} 应报错`);
+  }
+});
+
+test("A3 配置:extraHeaders/extraBody 出现在非 openai 条目 → 配置错误", () => {
+  for (const extra of [{ extraHeaders: { "X-Title": "t" } }, { extraBody: { foo: 1 } }]) {
+    const env = {
+      PROVIDERS: JSON.stringify([{
+        id: "ANTH_EXTRA", type: "anthropic", url: "https://x.invalid/v1/messages", model: "m",
+        secretName: "A", ...extra
+      }]), A: "k"
+    };
+    assert.throws(() => loadProviders(env), /openai/);
+  }
+});
+
+test("A3 配置:extraHeaders 覆盖 Authorization/Content-Type → 配置错误", () => {
+  for (const header of ["Authorization", "Content-Type"]) {
+    const env = {
+      PROVIDERS: JSON.stringify([{
+        id: "HDR_POOL", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+        secretName: "A", extraHeaders: { [header]: "v" }
+      }]), A: "k"
+    };
+    assert.throws(() => loadProviders(env), new RegExp(header));
+  }
+});
+
+test("A3 openai adapter:extraHeaders/extraBody 生效且不覆盖保留字段", async () => {
+  let upstreamRequest;
+  const response = await handleRequest(
+    request({ transcript: "extra 配置测试", locale: "zh" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      PROVIDERS: JSON.stringify([{
+        id: "EXTRA_POOL", type: "openai", url: "https://extra.invalid/v1/chat/completions", model: "want-model",
+        secretName: "EXTRA_KEY",
+        extraHeaders: { "HTTP-Referer": "https://voicetodo.app", "X-Title": "VoiceTodo" },
+        extraBody: { temperature: 0.2, custom_route: "beta" }
+      }]),
+      EXTRA_KEY: "extra-key",
+      AI_PROVIDER_MAX_ATTEMPTS: "1"
+    },
+    {},
+    async (url, init) => {
+      upstreamRequest = { url, headers: init.headers, body: JSON.parse(init.body) };
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("extra") } }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  assert.equal(upstreamRequest.headers["HTTP-Referer"], "https://voicetodo.app");
+  assert.equal(upstreamRequest.headers["X-Title"], "VoiceTodo");
+  assert.equal(upstreamRequest.headers.Authorization, "Bearer extra-key", "默认头不被覆盖");
+  assert.equal(upstreamRequest.body.model, "want-model", "model 不被覆盖");
+  assert.equal(upstreamRequest.body.temperature, 0.2, "extraBody 非保留字段生效");
+  assert.equal(upstreamRequest.body.custom_route, "beta");
+});
+
+test("A3 openai adapter:disableResponseFormat=true → 请求体不带 response_format", async () => {
+  let body;
+  const response = await handleRequest(
+    request({ transcript: "关 response_format 测试", locale: "zh" }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token",
+      PROVIDERS: JSON.stringify([{
+        id: "NO_RF", type: "openai", url: "https://norf.invalid/v1/chat/completions", model: "m",
+        secretName: "A", disableResponseFormat: true
+      }]),
+      A: "k",
+      AI_PROVIDER_MAX_ATTEMPTS: "1"
+    },
+    {},
+    async (url, init) => {
+      body = JSON.parse(init.body);
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("norf") } }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  assert.equal("response_format" in body, false, "disableResponseFormat 条目不应发送 response_format");
 });
