@@ -1,13 +1,13 @@
 # VoiceTodo 宣传文案手册(PROMOTION_COPY)
 
 > 配套 `PROMOTION_PLAN.md`(策略与执行)使用。本手册 = **对外文案资产包**,全部英文(英文市场)。
-> 定稿: 2026-08-14 · 状态: 草稿 v1.1(2026-08-22 同步:语言范围 zh+en、iOS 26、截图 6.9"、免费档 3/day 已定)
+> 定稿: 2026-08-14 · 状态: 草稿 v1.2(2026-10-22 同步 main:语言范围 +日本語(Beta)、截图文案对齐实拍套件 7 张、description 增复盘/显式同意、隐私话术补同意 gate)
 
 ---
 
 ## 0. 使用说明
 
-- 所有文案基于 `PROMOTION_PLAN.md` 的 12 项决策。**免费档已定 3/day**(`wrangler.toml` `DAILY_REQUEST_LIMIT = "3"`,2026-08-22 改,待随下次 deploy 生效);文案里的 "3" 与它一致,改配置时同步改文案。
+- 所有文案基于 `PROMOTION_PLAN.md` 的 12 项决策。**免费 3/day / Pro 100/day(单设备硬顶)均已上线生效**(`AIProxy/wrangler.toml` `DAILY_REQUEST_LIMIT = "3"` / `PAID_DAILY_LIMIT = "100"`,2026-08-30 部署);文案里的数字与它们一致,改配置时同步改文案。
 - 字符上限按 App Store 规则标注。**提交前用字符计数器逐条核**,不要信肉眼。
 - Reddit 帖子草稿是"骨架 + 语气示范",发帖当天必须按当时 sub 的 rules 和最近热帖再调一遍。
 
@@ -81,7 +81,7 @@ Built for people who think faster than they type.
 • Times: "tonight at half past ten" → 22:30 reminder
 • Multiple reminders: "water at 3, 5 and 7" → three reminders on one todo
 • Priority & category: urgent tone → high priority; auto-filed into Work / Life / Health / Finance…
-• Your language: speaks English and 中文 — mixed sentences are fine
+• Your language: speaks English, 中文 and 日本語 (beta) — mixed sentences are fine
 
 — Built into your iPhone —
 • Lock Screen widgets & Live Activity
@@ -90,23 +90,30 @@ Built for people who think faster than they type.
 • Writes to Apple Calendar
 • Works offline: voice notes are saved and structured when you're back online
 
+— Beyond capture —
+• Weekly review: what got done, what slipped, and the 3 things to tackle next — built from your own data, not generic advice
+
 — Pricing —
 Free: 3 AI extractions per day, forever.
 VoiceTodo Pro: $4.99/month or $39.99/year after a 7-day free trial. Unlimited-feel daily allowance (fair-use cap), no ads.
 
-Privacy: speech recognition uses Apple's Speech framework. To structure todos, the transcript text (not audio) is sent to our server and an AI provider. Audio is not stored. No account required.
+Privacy: speech recognition uses Apple's Speech framework. To structure todos, the transcript text (not audio) is sent to our server and an AI provider — with your explicit consent. Audio is not stored. No account required.
 ```
 
-### 2.3 截图文案(6.9" 1320×2868,前 3 张 = wow)
+### 2.3 截图文案(6.9" 1320×2868,实拍套件)
 
-| # | 大字(Headline) | 小字(Caption) | 画面 |
-|---|----------------|----------------|------|
-| 1 | **Say it all at once.** | One breath. Any length. | 录音界面 + 字幕浮层 |
-| 2 | **5 todos. Automatic.** | Dates, times, categories — parsed for you. | 确认页 5 条拆好的 todo |
-| 3 | **It understands time.** | "By Friday" → real date. "Every Mon/Wed/Fri" → repeats. "This weekend" → asks you. | 日期解析特写 |
-| 4 | **On your Lock Screen.** | Widgets + Live Activity. | 锁屏 widget 组合 |
-| 5 | **Deep in your iPhone.** | Action Button. Siri. Calendar. | Action Button / Siri / 日历三联 |
-| 6 | **Your language, kept.** | English · 中文 — mixed is fine. | 中英混输示例 |
+> 实拍画面固定 7 张/语言,产物在 `screenshots/{zh,en}/`,流水线 `scripts/capture-screenshots.sh`(10-20 已重产对齐复盘入口卡改版);**06-paywall 两张手动补**(CLI 注入不了 StoreKit 配置,Xcode GUI 截)。
+> 实拍图为纯 UI 画面、无内嵌字幕;下表 Headline/Caption 供上传前合成字幕用。01/02 是 wow 双连,顺序不动。
+
+| # | 画面 | 大字(Headline) | 小字(Caption) |
+|---|------|----------------|----------------|
+| 01 | 录音界面 | **Say it all at once.** | One breath. Any length. |
+| 02 | 确认页(拆好的 todo) | **Todos, not a transcript.** | Dates, times, categories — parsed for you. |
+| 03 | 月历 | **Your month, filled in.** | Every date lands where it belongs. |
+| 04 | 今日列表 | **Today, at a glance.** | What's due. What's done. |
+| 05 | 复盘流程 | **Review the week.** | What got done. What's next. |
+| 06 | 付费墙(手动补) | **Pro when you need more.** | 7-day free trial. Fair-use daily quota. |
+| 07 | Onboarding | **Ready in seconds.** | No account. No setup. |
 
 ---
 
@@ -140,7 +147,7 @@ Three build decisions I'm proud of:
 
 1. Relative dates become real dates. "By Friday" resolves against today's date. You never see "Friday" in a date field.
 2. "This weekend" deliberately does NOT resolve. Saturday or Sunday? That's your call — the app asks instead of guessing. Guessing is how trust dies.
-3. Numbers stay out of your content. Your titles stay exactly in the language you spoke (English or 中文 — mixing is fine).
+3. Numbers stay out of your content. Your titles stay exactly in the language you spoke (English, 中文 or 日本語 — mixing is fine).
 
 Honest limits: iOS 26+. The structuring step needs network (it's AI), voice notes queue offline. Free tier is 3 AI extractions/day; Pro is $4.99/mo or $39.99/yr after a 7-day trial — AI calls cost real money per extraction, so that's the honest way to price it.
 
@@ -242,7 +249,7 @@ Thanks for the feedback — sorry [具体问题] got in your way. [一句话承�
 
 ### 4.3 "Why does it need internet / privacy?"
 
-> Speech recognition runs through Apple's Speech framework. To structure todos, the transcript (text, not audio) goes to our server and then to an AI provider — that's how "by Friday" becomes a real date. Audio isn't stored, transcripts aren't used for anything else, and no account is required.
+> Speech recognition runs through Apple's Speech framework. To structure todos, the transcript (text, not audio) goes to our server and then to an AI provider — the app asks for your explicit consent before the first send. That's how "by Friday" becomes a real date. Audio isn't stored, transcripts aren't used for anything else, and no account is required.
 
 ### 4.4 "Why isn't it free?"
 
@@ -254,16 +261,16 @@ Thanks for the feedback — sorry [具体问题] got in your way. [一句话承�
 
 - [ ] Name/Subtitle/Keywords 逐条字符数复核(30/30/100)
 - [ ] Promotional Text ≤170
-- [ ] Description 与**当时真实产品**一致: 免费额度数字、Pro 权益措辞(不许出现 "unlimited" 字样 —— PAID_DAILY_LIMIT 是有限值,写 "unlimited" 有 App Store 审核拒审风险)
-- [ ] 截图 6 张导出 1320×2868(6.9"),前 3 张 wow 顺序不变
+- [ ] Description 与**当时真实产品**一致: 免费额度数字、语言范围(EN/中文/日本語 beta)、Pro 权益措辞(不许出现 "unlimited" 字样 —— PAID_DAILY_LIMIT 是有限值,写 "unlimited" 有 App Store 审核拒审风险)
+- [ ] 截图 7 张/语言导出 1320×2868(6.9"):`screenshots/{zh,en}/` 6 张自动已产,06-paywall 手动补(Xcode GUI);按 §2.3 合成字幕后上传,01/02 wow 双连顺序不变
 - [ ] GIF ≤15s,自动播放无声可懂(带字幕)
 - [ ] 每篇 Reddit 草稿发帖当天对照该 sub rules 与最近 3 天热帖语气再调
 - [ ] 4.1-4.4 话术存进手机备忘录,评论出现 10 分钟内可粘贴微调
 
 ## 6. 文案与产品一致性红线(违反 = 拒审或差评)
 
-1. **免费额度数字**(3/day)必须与线上 `DAILY_REQUEST_LIMIT` 一致
+1. **额度数字**(免费 3/day、Pro 100/day 单设备)必须与线上 `wrangler.toml` 的 `DAILY_REQUEST_LIMIT` / `PAID_DAILY_LIMIT` 一致
 2. **禁止 "unlimited"**: Pro 是 fair-use 上限,不是无限(参见 `wrangler.toml.example` 内注释的拒审风险)
-3. **禁止暗示 on-device AI**: 结构化是云端做的,privacy 文案必须照 4.3 口径
-4. **语言宣称只写 EN/中文**(日本语推迟到 v1.1,2026-08-15 拍板,在那之前任何对外文案不出现 日本語/Japanese),别写 "any language"(prompt 规则 10 是"跟随输入语言",但质量只在 en/zh 上验证过)
+3. **禁止暗示 on-device AI**: 结构化是云端做的,privacy 文案必须照 4.3 口径(含发第三方 AI 前的显式同意)
+4. **语言宣称只写 EN/中文/日本語(beta)**(MVP 范围 zh+en+ja,2026-09 拍板;日文质量未过母语 QA,靠 app 内设置页 Beta 标签兜底,对外统一写小写 "beta"),别写 "any language"(prompt 规则 10 是"跟随输入语言",但质量只在 en/zh/ja 上验证过)
 5. **Android/Web 不存在**,任何渠道都别留"coming soon"式的口子
