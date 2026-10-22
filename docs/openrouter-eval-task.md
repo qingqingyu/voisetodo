@@ -1,5 +1,7 @@
 # 任务书:OpenRouter 候选模型评测(GLM-4.5-air / GLM 5.x / Gemini 3.5 Flash)
 
+> ⚠️ **已被 `docs/openrouter-eval-round2-task.md` 取代**(2026-10-22)。本文档未按原样执行,保留作记录。
+
 > 2026-10-22 起草。本文档是**交给执行者的任务书**。完成后把结果写进
 > `docs/openrouter-eval-results.md`(格式见 §9),交回审查。
 >
