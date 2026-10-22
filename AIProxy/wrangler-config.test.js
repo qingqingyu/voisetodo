@@ -297,7 +297,8 @@ test("wrangler.toml: provider failover worst case fits inside the iOS client tim
   const maxAttempts = Math.min(Number(vars.AI_PROVIDER_MAX_ATTEMPTS), providers.length);
   // timeoutMs 选填,worker 侧默认 15_000。
   const maxTimeoutSeconds = Math.max(...providers.map((p) => Number(p.timeoutMs) || 15000)) / 1000;
-  // A2:最后一个条目池满时,闸门先等 KEY_GATE_MAX_WAIT_MS(默认 3s)才回 503,
+  // A2:最后一个条目池满时,闸门先等 KEY_GATE_MAX_WAIT_MS(默认 3s)才回
+  // 429(修复轮:原 503;429 让客户端按 .rateLimited 重试、不计熔断),
   // 这段等待同样占用客户端预算,计入最坏路径。
   const gateWaitSeconds = (Number(vars.KEY_GATE_MAX_WAIT_MS) || 3000) / 1000;
   // executeWithFailover 串行走候选:前 (maxAttempts - 1) 个各自耗满 timeout 才轮到最后一个。

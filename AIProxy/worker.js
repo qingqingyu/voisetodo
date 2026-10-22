@@ -777,7 +777,7 @@ async function entryHealthSummary(provider, healthStore, now) {
       ? "half-open"
       : "open";
   const keys = usableKeys.length > 1
-    ? usableKeys.map((key, i) => ({ slot: `#${key.index}`, state: states[i] }))
+    ? usableKeys.map((key, i) => ({ slot: `#${key.secretName}`, state: states[i] }))
     : null;
   return { state, keys };
 }
@@ -795,7 +795,7 @@ async function entryHealthDetail(provider, healthStore, now) {
   const states = snapshots.map((s) => s.state);
   return {
     state: states.includes("closed") ? "closed" : states.includes("half-open") ? "half-open" : "open",
-    perKey: usableKeys.map((key, i) => ({ slot: `#${key.index}`, ...snapshots[i] }))
+    perKey: usableKeys.map((key, i) => ({ slot: `#${key.secretName}`, ...snapshots[i] }))
   };
 }
 
@@ -1272,7 +1272,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
     if (gate && gate.enabledFor({ ...provider, candidateKeys: usableKeys })) {
       const slot = await gate.acquireEntrySlot({ ...provider, candidateKeys: usableKeys }, [probeKey], { wait: false });
       if (slot.full) {
-        logInfo("health_check.skip_gate_full", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.index}` });
+        logInfo("health_check.skip_gate_full", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.secretName}` });
         return { providerId: provider.id, ok: true, reason: "gate_full_skipped" };
       }
       lease = slot.lease || null;
@@ -1314,7 +1314,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
 
       if (response.ok) {
         await sharedHealthStore.recordSuccess(probeKey.healthId, durationMs);
-        logInfo("health_check.success", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.index}`, durationMs });
+        logInfo("health_check.success", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.secretName}`, durationMs });
         return { providerId: provider.id, ok: true, durationMs };
       }
       await sharedHealthStore.recordFailure(probeKey.healthId, `http_${response.status}`);

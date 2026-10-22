@@ -32,6 +32,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATASET = join(SCRIPT_DIR, "dataset.json");
@@ -70,6 +71,7 @@ function parseArgs(argv) {
       case "--timeout": args.timeoutMs = nextFiniteNumber("--timeout"); break;
       case "--provider-file": args.providerFile = next(); break;
       case "--key-env": args.keyEnv = next(); break;
+      case "--proxy": args.proxy = next(); break;
       case "--table":
         // --table f1 f2 f3:一个 flag 后跟多个文件(遇到下一个 -- 停)
         args.table = args.table || [];
@@ -213,6 +215,55 @@ const SOFT_FIELDS = ["title", "time_bucket", "recurrence_end"];
 
 // ---------- 发送层 ----------
 
+// 进程内评测的代理 fetch(--proxy):Node 23 的全局 fetch 不认 HTTP(S)_PROXY,
+// 而自建 CONNECT 隧道 + Node TLS 的 ClientHello 会被 openrouter 前面的
+// Cloudflare 按 TLS 指纹拦 403(实测 UA/cipher 伪装均无效;同一隧道 curl 放行)。
+// 因此直接子进程 curl:TLS 栈由 curl 呈现,响应头/体从 stdout 解析,
+// 返回 WHATWG Response 供 worker 管线消费。流式场景整包缓冲后交付——
+// 上游视角与逐块读取一致(eval 无中途断开场景)。
+function makeProxyFetch(proxyUrl) {
+  return async function proxyFetch(url, init = {}) {
+    const args = ["-sS", "-x", String(proxyUrl), "--max-time", "150", "--dump-header", "-"];
+    args.push("-X", init.method || "GET");
+    for (const [name, value] of Object.entries(init.headers || {})) {
+      if (String(name).toLowerCase() === "content-length") continue; // curl 自算
+      args.push("-H", `${name}: ${value}`);
+    }
+    const hasBody = init.body != null;
+    if (hasBody) args.push("--data-binary", "@-");
+    args.push(String(url));
+    const { stdout } = await new Promise((resolve, reject) => {
+      const child = execFile("curl", args, { encoding: "buffer", maxBuffer: 64 * 1024 * 1024, signal: init.signal || undefined },
+        (error, stdout, stderr) => {
+          if (error && !(stdout && stdout.length)) {
+            const message = stderr && stderr.length ? `: ${stderr.toString().slice(0, 200)}` : "";
+            const err = new Error(`curl proxy fetch failed${message}`);
+            if (error.name === "AbortError" || String(error.message || "").includes("SIGTERM")) err.name = "AbortError";
+            reject(err);
+            return;
+          }
+          resolve({ stdout: stdout || Buffer.alloc(0) });
+        });
+      if (hasBody) child.stdin.end(Buffer.from(String(init.body)));
+      else child.stdin.end();
+    });
+    // stdout = 响应头块(\r\n 行)+ 空行 + 体
+    const headerEnd = stdout.indexOf("\r\n\r\n");
+    if (headerEnd === -1) throw new Error("curl output missing header/body separator");
+    const headerBlock = stdout.subarray(0, headerEnd).toString("utf8");
+    const bodyBuffer = stdout.subarray(headerEnd + 4);
+    const headerLines = headerBlock.split("\r\n");
+    const statusMatch = headerLines[0].match(/^HTTP\/\S+\s+(\d+)/);
+    const status = statusMatch ? Number(statusMatch[1]) : 502;
+    const headers = [];
+    for (const line of headerLines.slice(1)) {
+      const idx = line.indexOf(":");
+      if (idx > 0) headers.push([line.slice(0, idx).trim(), line.slice(idx + 1).trim()]);
+    }
+    return new Response(bodyBuffer, { status, headers });
+  };
+}
+
 // 进程内 transport(A4):直接 import worker 的 handleRequest,fetchImpl 用真实
 // global fetch 打上游 —— 与生产完全同一套 adapter/分类/failover 代码,唯一区别是
 // 不经已部署代理(env 是本地构造的,只有目标 provider 一条 + 免费额度全开)。
@@ -252,6 +303,7 @@ async function makeInProcessTransport(providerFile, keyEnvName) {
     maxConcurrencyPerKey: raw.maxConcurrencyPerKey ?? null,
     timeoutMs: raw.timeoutMs ?? null
   };
+  const fetchImpl = globalThis.__evalProxyFetch || fetch;
   const env = {
     APP_TOKEN: "eval-inprocess",
     PROVIDERS: JSON.stringify([{
@@ -289,7 +341,7 @@ async function makeInProcessTransport(providerFile, keyEnvName) {
         }),
         env,
         { waitUntil() {} },
-        fetch
+        fetchImpl
       );
       return res;
     } finally {
@@ -664,6 +716,11 @@ async function main() {
   console.log(`日期锚: ${anchor}(golden 按 authoring 锚 ${rawDataset.meta.anchor_today} 平移)`);
 
   // 进程内模式:构造 transport(校验 key/env);HTTP 模式 transport=null。
+  // --proxy:经本地/远端 HTTP 代理出海(如 sing-box 转发的 ss/vless 节点)。
+  if (args.proxy) {
+    globalThis.__evalProxyFetch = makeProxyFetch(args.proxy);
+    console.log(`上游经由代理: ${args.proxy}`);
+  }
   const transport = args.providerFile
     ? await makeInProcessTransport(args.providerFile, args.keyEnv || "EVAL_PROVIDER_KEY")
     : null;

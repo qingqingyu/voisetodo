@@ -534,13 +534,17 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
   });
 
   // 客户端真实重试策略(TodoExtractorService):最多 3 次;退避 1s/2s + 0~30% 抖动
-  // (×1/SCALE);503/5xx 重试;429 quota/ip_daily 不重试;velocity 429 仅当
-  // retryAfter ≤ 8s 时重试。
+  // (×1/SCALE);503/5xx 重试并计入客户端熔断;429 quota/ip_daily 不重试;
+  // 其余 429(key_pool_full 等)按 retryAfter ≤ 8s 等待重试、不计熔断。
+  // 客户端熔断(App 同款:连续 5 次 .serviceUnavailable → 冷却 15s,×1/SCALE)。
+  const clientBreaker = { trips: 0, serviceFailures: 0 };
   async function virtualUser(i, arriveAt, isTrailing = false) {
     const outcome = { user: i, success: false, attemptsUsed: 0, firstTrySuccess: false, durationMs: 0, failureKind: null, trailing: isTrailing };
     const startReal = Date.now();
     let nextDelayOverrideMs = null;
     let lastStatus = null;
+    let consecutiveServiceFailures = 0;
+    let breakerOpenUntil = 0;
     for (let attempt = 0; attempt <= 2; attempt++) {
       if (attempt > 0) {
         let delayMs;
@@ -552,6 +556,11 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
           delayMs = base * (1 + 0.3 * rng()); // 0~30% 抖动
         }
         await sleep(delayMs);
+      }
+      // 熔断打开期间:App 直接落「待解析」,不再发请求
+      if (Date.now() < breakerOpenUntil) {
+        outcome.failureKind = "client_breaker_open";
+        break;
       }
       outcome.attemptsUsed = attempt + 1;
       let response;
@@ -567,6 +576,7 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
       if (response.status === 200) {
         outcome.success = true;
         if (attempt === 0) outcome.firstTrySuccess = true;
+        consecutiveServiceFailures = 0;
         break;
       }
       if (response.status === 429) {
@@ -575,7 +585,9 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
         if (body.error === "quota_exceeded") { outcome.failureKind = "quota_exceeded"; break; }
         const rateLimitType = response.headers.get("X-RateLimit-Type");
         if (rateLimitType === "ip_daily") { outcome.failureKind = "ip_daily"; break; }
-        // .rateLimited(retryAfter):仅 retryAfter ∈ [0,8s] 且还有重试机会时继续
+        if (rateLimitType === "key_pool_full") clientBreaker.poolFull429 = (clientBreaker.poolFull429 || 0) + 1;
+        // .rateLimited(retryAfter):仅 retryAfter ∈ [0,8s] 且还有重试机会时继续。
+        // 计数不计熔断(NetworkClient.classify429 / countsAsServiceFailure 的口径)。
         const retryAfter = body.retryAfter ?? Number(response.headers.get("Retry-After") ?? NaN);
         const retryable = Number.isFinite(retryAfter) && retryAfter >= 0 && retryAfter <= 8 && attempt < 2;
         if (!retryable) { outcome.failureKind = `rate_limited:${rateLimitType || "generic"}`; break; }
@@ -583,7 +595,14 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
         continue;
       }
       if (response.status >= 500 && response.status < 600) {
-        // serviceUnavailable / apiServerError → 指数退避重试
+        // .serviceUnavailable(修复2 后仅剩真上游故障)→ 退避重试,计入客户端熔断
+        consecutiveServiceFailures += 1;
+        clientBreaker.serviceFailures += 1;
+        if (consecutiveServiceFailures >= 5) {
+          clientBreaker.trips += 1;
+          breakerOpenUntil = Date.now() + 15_000 / SCALE;
+          consecutiveServiceFailures = 0;
+        }
         continue;
       }
       // 4xx 非限流(400/401/413…)→ 不重试
@@ -696,6 +715,8 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
       ZAI_ANTHROPIC: JSON.parse((await stateKv.get("health:ZAI_ANTHROPIC")) || "null")
     },
     zeroAttempt503: collected.noCandidates503,
+    // 客户端侧指标:熔断触发次数 / 5xx 服务失败事件数 / 名额满 429 收到数
+    clientBreaker: { trips: clientBreaker.trips, serviceFailures: clientBreaker.serviceFailures, poolFull429: clientBreaker.poolFull429 || 0 },
     eventCounts: Object.fromEntries(collected.events)
   };
 
@@ -781,6 +802,7 @@ function printScenarioA(r) {
   console.error(
     `[${r.label}] ${r.scenario}: 即时 ${pct(r.immediateSuccessRate)} / 最终 ${pct(r.finalSuccessRate)} / P95(真实s)=${p95RealS}` +
     ` | 上游 busy429=${busy} maxKeyInFlight=${r.keyPoolMaxInFlight}/${limit}` +
+    ` | 客户端: 429名额满=${r.clientBreaker.poolFull429} 熔断触发=${r.clientBreaker.trips} 5xx失败=${r.clientBreaker.serviceFailures}` +
     ` | 闸门: 等待acquire=${wait.waitedAcquires} waitP95(sim)=${wait.waitP95SimMs ?? "-"}ms poolFull=${wait.poolFullEvents} failOpen=${wait.callFailedEvents}` +
     ` DO峰值=${wait.doPeakOpsPerSecSim}ops/s(sim)/${wait.doPeakOpsPerSecReal.toFixed(1)}(real)` +
     ` | 验收 ${pass ? "PASS" : "FAIL " + checks.map((c, i) => (c ? "" : ["最终<99%", "即时<95%", "P95>10s", "busy429≠0"][i]).trim()).filter(Boolean).join(",")}`

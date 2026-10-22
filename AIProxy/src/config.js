@@ -119,13 +119,21 @@ function parseProviderEntry(entry, index, env, adapterTypes, onSecretMissing) {
       }
       return value;
     });
+    // 修复3:同名 secret = 同一个 key 的两份身份,会共享熔断/闸门状态 → 配置错误
+    const seen = new Set();
+    for (const name of secretNames) {
+      if (seen.has(name)) {
+        throw new Error(`PROVIDERS[${index}] (id=${id}) secretNames has duplicate entry "${name}" — each key needs a unique secret name`);
+      }
+      seen.add(name);
+    }
   } else {
     secretNames = [String(entry.secretName || `PROVIDER_KEY_${id}`)];
   }
 
-  // 多 key 配置才给 healthId 加 #序号;单 key(含缺省)沿用条目 id,
-  // 旧配置的 KV 熔断记录路径与改前完全一致(R5)。
-  const multiKey = secretNames.length > 1;
+  // 多 key 配置的 healthId 用 secret 名(修复3:身份跟 secret 走,调序/删 key 不漂移;
+  // secret 名不是密钥本身,可出现在日志/健康接口/DO 名)。单 key(含缺省)沿用
+  // 纯条目 id,旧配置的 KV 熔断记录路径与改前完全一致(R5,不迁移)。
   const keys = [];
   secretNames.forEach((secretName, keyIndex) => {
     const apiKey = String(env[secretName] || "");
@@ -137,7 +145,7 @@ function parseProviderEntry(entry, index, env, adapterTypes, onSecretMissing) {
       index: keyIndex,
       secretName,
       apiKey,
-      healthId: multiKey ? `${id}#${keyIndex}` : id
+      healthId: secretNames.length > 1 ? `${id}#${secretName}` : id
     });
   });
 

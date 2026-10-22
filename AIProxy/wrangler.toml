@@ -232,8 +232,10 @@ AI_PROVIDER_MAX_ATTEMPTS = "2"
 #   "disableResponseFormat": true          目标平台不支持 response_format 时关闭,
 #     靠 prompt 约束 JSON(取舍见 results 文档 A3 节)。
 # 闸门行为 env(全部可选,不配即用默认值;当前线上无 key 池条目,闸门不生效):
-#   KEY_GATE_MAX_WAIT_MS      最后一个条目池满时的最长等待(默认 3000ms;超时 503 +
-#                            Retry-After: 2。该等待已计入 wrangler-config 超时预算断言)
+#   KEY_GATE_MAX_WAIT_MS      最后一个条目池满时的最长等待(默认 3000ms;超时回
+#                            429 + Retry-After: 2 + X-RateLimit-Type: key_pool_full,
+#                            客户端按 .rateLimited 等 2s 重试、不计熔断。该等待已计入
+#                            wrangler-config 超时预算断言)
 #   KEY_GATE_POLL_MS          等待空位的轮询间隔(默认 100)
 #   KEY_GATE_CALL_TIMEOUT_MS  单次闸门 DO 调用超时,超时 fail-open 直打上游(默认 200)
 #   KEY_GATE_LEASE_MARGIN_MS  租约时长 = 条目 timeoutMs + 本值(默认 10000;漏 release

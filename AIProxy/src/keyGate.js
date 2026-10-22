@@ -74,36 +74,45 @@ export class KeyGate {
         });
         return { failOpen: true, key: pickRandom(keys, this.random) };
       }
-      const min = Math.min(...counts);
-      const ties = keys.filter((_, i) => counts[i] === min);
-      const chosen = pickRandom(ties, this.random);
-      const acquire = await this.acquire(entry, chosen, {
-        limit: entry.maxConcurrencyPerKey,
-        leaseMs: entry.timeoutMs + this.leaseMarginMs
-      });
-      if (acquire === null) {
-        logWarn("proxy.gate.call_failed", {
-          providerId: entry.id,
-          action: "acquire",
-          keySlot: keySlotId(entry, chosen),
-          reason: "acquire_unavailable"
+      // 修复1(2026-10-22):按在途数升序(并列随机,保持 R2 均衡),跳过已满的 key,
+      // 依次申请——第一个被抢满就试下一个,不再把整个条目判满。
+      // 改前:只申请「在途最少」那一个,被拒(读数与申请之间被抢)就直接 full,
+      // 同条目其他有空位的 key 白白闲置(多条目时还会白白切条目)。
+      const limit = entry.maxConcurrencyPerKey;
+      const order = keys
+        .map((key, i) => ({ key, count: counts[i], tie: this.random() }))
+        .filter((cand) => cand.count < limit)
+        .sort((a, b) => a.count - b.count || a.tie - b.tie);
+      for (const cand of order) {
+        const acquire = await this.acquire(entry, cand.key, {
+          limit,
+          leaseMs: entry.timeoutMs + this.leaseMarginMs
         });
-        return { failOpen: true, key: chosen };
-      }
-      if (acquire.allowed) {
-        // 拿到名额时记录等待耗时(从进闸门到 acquire 成功)。0 = 有空位直进;
-        // >0 = 池满轮询等来的。观测闸门压力分布(loadtest 也从这里取 P50/P95)。
-        const waitMs = this.now() - startedAt;
-        if (waitMs > 0) {
-          logInfo("proxy.gate.slot_acquired_after_wait", {
+        if (acquire === null) {
+          logWarn("proxy.gate.call_failed", {
             providerId: entry.id,
-            keySlot: keySlotId(entry, chosen),
-            waitMs
+            action: "acquire",
+            keySlot: keySlotId(entry, cand.key),
+            reason: "acquire_unavailable"
           });
+          return { failOpen: true, key: cand.key };
         }
-        return { lease: new GateLease(this, entry, chosen, acquire.leaseId), key: chosen, waitMs };
+        if (acquire.allowed) {
+          // 拿到名额时记录等待耗时(从进闸门到 acquire 成功)。≈0 = 有空位直进;
+          // >0 = 池满轮询等来的。观测闸门压力分布(loadtest 也从这里取 P50/P95)。
+          const waitMs = this.now() - startedAt;
+          if (waitMs > 0) {
+            logInfo("proxy.gate.slot_acquired_after_wait", {
+              providerId: entry.id,
+              keySlot: keySlotId(entry, cand.key),
+              waitMs
+            });
+          }
+          return { lease: new GateLease(this, entry, cand.key, acquire.leaseId), key: cand.key, waitMs };
+        }
+        // 被拒(count 与 acquire 之间被抢满)→ 试下一个 key
       }
-      // 池满
+      // 全部被拒或全部已满
       if (!wait || this.now() >= deadline) {
         return { full: true };
       }
@@ -187,8 +196,10 @@ function gateDoName(entry, key) {
   return `gate:${keySlotId(entry, key)}`;
 }
 
+// 修复3:key 身份用 secret 名(条目id#<secretName>)而非列表序号——
+// 调整 secretNames 顺序或删掉中间某个 key,DO 名/日志/健康记录都不漂移。
 function keySlotId(entry, key) {
-  return `${entry.id}#${key.index}`;
+  return `${entry.id}#${key.secretName}`;
 }
 
 function pickRandom(items, random) {

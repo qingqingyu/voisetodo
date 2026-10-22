@@ -129,13 +129,18 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
               keySlots: usableKeys.length
             });
             if (!hasNextEntry) {
+              // 修复2(2026-10-22):503 → 429。客户端对 503 走 .serviceUnavailable
+              // (计入客户端熔断、不读 retryAfter);对 429 走 .rateLimited(retryAfter)
+              // ——等 2 秒重试、不计熔断、不弹付费墙(任务书 §2.1 已核对 App 代码,
+              // 无需改客户端)。X-RateLimit-Type 显式 key_pool_full,且绝不能是
+              // quota(弹付费墙)或 ip_daily(当天不再重试)。
               // 带 body 走 worker 的 structured 错误分支 —— plain-text 分支不透传
               // error.headers,Retry-After 会丢(见 handleRequest 的 catch)。
-              throw new ProxyHTTPError(503, "Provider key pool saturated", {
-                headers: { "Retry-After": "2" },
+              throw new ProxyHTTPError(429, "Provider key pool saturated", {
+                headers: { "Retry-After": "2", "X-RateLimit-Type": "key_pool_full" },
                 errorType: "key_pool_full",
                 rateLimitType: "key_pool_full",
-                body: { error: "key_pool_full", retryAfter: 2, message: "Provider key pool saturated, retry shortly" }
+                body: { error: "key_pool_full", retryAfter: 2, message: "Provider key pool saturated, retry in 2 seconds" }
               });
             }
             advanceToNextEntry = true;
@@ -158,7 +163,7 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
           providerId: entry.id,
           providerType: entry.type,
           model: entry.model,
-          keySlot: usableKeys.length > 1 ? `${entry.id}#${chosenKey.index}` : undefined,
+          keySlot: usableKeys.length > 1 ? `${entry.id}#${chosenKey.secretName}` : undefined,
           attempt: index + 1,
           startedAt: Date.now()
         };
