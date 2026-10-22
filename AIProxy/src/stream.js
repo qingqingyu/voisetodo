@@ -36,6 +36,15 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
     async start(controller) {
       const reader = body.getReader();
       let sendDone = false;
+      let settled = false;
+      const settle = async () => {
+        if (settled) return;
+        settled = true;
+        await runLifecycleCallback("settled", lifecycle.onSettled, provider, requestContext, null, {});
+      };
+      // 外层 try/finally:终态钩子覆盖「正常读完 / 中途失败 / 读循环意外 throw /
+      // sendDone 段意外 throw」全部路径(catch 内的 return 也会先过这里的 finally)。
+      try {
       try {
         while (!finished) {
           const { value, done } = await reader.read();
@@ -122,6 +131,11 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
           durationMs: Date.now() - startedAt
         });
       }
+      } finally {
+        // 流生命周期终态:无论正常结束、中途失败还是意外 throw,都释放闸门租约。
+        // settle 幂等,重复调用(既有 catch 内已有 return 路径)不会二次触发。
+        await settle();
+      }
     }
   });
 }
@@ -130,6 +144,11 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
 // 字符数 / 完整文本拼接。调用方(worker.js)据此判断:
 //   - onFailure:"响应头已 200 但一个字都没给" vs "已给部分可用结果",前者退配额
 //   - onSuccess:fullText 解析不出非空 todos(空结果)→ 退 device 配额(2026-10 修复)
+//
+// lifecycle.onSettled(A2 闸门):流结束(成功读完 / 中途失败 / 异常)后必调一次,
+// 与 onSuccess/onFailure 的先后关系是「它们先跑,settled 最后」。调用方把闸门
+// 租约的 release 挂在这里——这是「流式请求占用的 key 名额」唯一可靠的回收点,
+// 任何 throw 路径都由外层 finally 兜住(任务书 §7:租约泄漏是最大风险)。
 async function runLifecycleCallback(kind, callback, provider, requestContext, error, stats) {
   if (!callback) return;
   try {

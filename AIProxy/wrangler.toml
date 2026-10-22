@@ -219,6 +219,28 @@ PROVIDERS = '''
 #    wrangler-config.test.js 有断言守着这个不变量。
 AI_PROVIDER_MAX_ATTEMPTS = "2"
 
+# ─── A 场景容量:key 池 + 每 key 并发闸门(docs/capacity-scenario-a-task.md) ────
+# 条目新字段(校验见 src/config.js,行为/取舍见 docs/capacity-scenario-a-results.md):
+#   "secretNames": ["KEY_A","KEY_B",...]   多 key 池(与单数 secretName 互斥)。
+#     熔断/健康记录按 key 记账(条目id#序号);某 key 余额耗尽只摘该 key。
+#     忙 429 换同条目另一个 key 重试,不消耗 AI_PROVIDER_MAX_ATTEMPTS。
+#   "maxConcurrencyPerKey": 10             每 key 并发闸门(正整数;不配 = 不限)。
+#     配了才走闸门:DO 租约制,本地就知道哪把 key 有空位,不再白打上游 429。
+#   "extraHeaders" / "extraBody"           openai 条目附加头/体(换服务商用,如
+#     OpenRouter 的 HTTP-Referer/X-Title、关闭思考)。不得覆盖 model/messages/stream
+#     (extraBody)与 Authorization/Content-Type(extraHeaders)。
+#   "disableResponseFormat": true          目标平台不支持 response_format 时关闭,
+#     靠 prompt 约束 JSON(取舍见 results 文档 A3 节)。
+# 闸门行为 env(全部可选,不配即用默认值;当前线上无 key 池条目,闸门不生效):
+#   KEY_GATE_MAX_WAIT_MS      最后一个条目池满时的最长等待(默认 3000ms;超时回
+#                            429 + Retry-After: 2 + X-RateLimit-Type: key_pool_full,
+#                            客户端按 .rateLimited 等 2s 重试、不计熔断。该等待已计入
+#                            wrangler-config 超时预算断言)
+#   KEY_GATE_POLL_MS          等待空位的轮询间隔(默认 100)
+#   KEY_GATE_CALL_TIMEOUT_MS  单次闸门 DO 调用超时,超时 fail-open 直打上游(默认 200)
+#   KEY_GATE_LEASE_MARGIN_MS  租约时长 = 条目 timeoutMs + 本值(默认 10000;漏 release
+#                            的名额由租约 TTL 自动回收,不永久泄漏)
+
 # 可选：熔断参数覆盖。不配置时用代码默认值(threshold=5, initialCooldown=10s, maxCooldown=5min)。
 # configureHealthParams(env) 在每次 request entry 读取,改 env 后下次 deploy 即生效。
 # CIRCUIT_OPEN_THRESHOLD = "5"

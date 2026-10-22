@@ -1,0 +1,705 @@
+[
+  {
+    "scenario": "a-poisson-1000-gate-on-6x10",
+    "label": "fix60",
+    "users": 1000,
+    "mode": "poisson",
+    "gates": "open",
+    "upstreamLimits": {
+      "AIR": 10,
+      "SONNET": 10
+    },
+    "balanceExhausted": [],
+    "scale": 10,
+    "wallMsSim": 8273,
+    "wallMsReal": 82730,
+    "immediateSuccessRate": 0.306,
+    "finalSuccessRate": 0.724,
+    "pendingRate": 0.276,
+    "trailing": null,
+    "failureKinds": {
+      "rate_limited:key_pool_full": 276
+    },
+    "attemptsHistogram": {
+      "1": 306,
+      "2": 224,
+      "3": 470
+    },
+    "latencyP50SimMs": 1483,
+    "latencyP95SimMs": 2102,
+    "successLatencyP50SimMs": 1316,
+    "successLatencyP95SimMs": 2138,
+    "upstream": {
+      "pool-key-4": {
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-1": {
+        "requests": 120,
+        "busy429": 0,
+        "success": 120,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-2": {
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-5": {
+        "requests": 120,
+        "busy429": 0,
+        "success": 120,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-0": {
+        "requests": 120,
+        "busy429": 0,
+        "success": 120,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-3": {
+        "requests": 122,
+        "busy429": 0,
+        "success": 122,
+        "inFlight": 0,
+        "maxInFlight": 10
+      }
+    },
+    "workerFailures": {},
+    "circuit": {
+      "opened": 0,
+      "reopened": 0,
+      "closed": 0,
+      "openSimMs": {},
+      "openRealMs": {}
+    },
+    "finalHealthRecords": {
+      "ZAI_ANTHROPIC_AIR": null,
+      "ZAI_ANTHROPIC": null
+    },
+    "zeroAttempt503": 0,
+    "clientBreaker": {
+      "trips": 0,
+      "serviceFailures": 0,
+      "poolFull429": 1440
+    },
+    "eventCounts": {
+      "proxy.request.received": 2164,
+      "proxy.auth.ok": 2164,
+      "proxy.payload.accepted": 2164,
+      "proxy.quota.local_date_invalid": 3604,
+      "proxy.cold_start.warmup": 1,
+      "proxy.quota.incremented": 2164,
+      "proxy.global_budget.incremented": 2164,
+      "proxy.gate.slot_acquired_after_wait": 474,
+      "proxy.provider.call_start": 724,
+      "proxy.provider.fetch_start": 724,
+      "proxy.provider.fetch_done": 724,
+      "proxy.provider.call_success": 724,
+      "proxy.request.finished": 2164,
+      "proxy.provider.stream_done": 724,
+      "proxy.provider.stream_success": 724,
+      "proxy.gate.pool_full": 1440,
+      "proxy.quota.refunded": 1440,
+      "proxy.quota.refunded_upstream_failure": 1440,
+      "proxy.request.http_error": 1440
+    },
+    "keyPool": {
+      "keys": 6,
+      "perKeyLimit": 10,
+      "gateEnabled": true,
+      "totalSlots": 60
+    },
+    "upstreamPerKey": [
+      {
+        "key": "pool-key-4",
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-1",
+        "requests": 120,
+        "busy429": 0,
+        "success": 120,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-2",
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-5",
+        "requests": 120,
+        "busy429": 0,
+        "success": 120,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-0",
+        "requests": 120,
+        "busy429": 0,
+        "success": 120,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-3",
+        "requests": 122,
+        "busy429": 0,
+        "success": 122,
+        "maxInFlight": 10
+      }
+    ],
+    "gateMetrics": {
+      "waitedAcquires": 474,
+      "waitP50SimMs": 47,
+      "waitP95SimMs": 341,
+      "poolFullEvents": 1440,
+      "callFailedEvents": 0,
+      "doPeakOpsPerSecSim": 17137,
+      "doPeakOpsPerSecReal": 1713.7
+    },
+    "keyPoolMaxInFlight": 10,
+    "upstreamBusy429Total": 0
+  },
+  {
+    "scenario": "a-poisson-1000-gate-off-6x10",
+    "label": "fix60",
+    "users": 1000,
+    "mode": "poisson",
+    "gates": "open",
+    "upstreamLimits": {
+      "AIR": 10,
+      "SONNET": 10
+    },
+    "balanceExhausted": [],
+    "scale": 10,
+    "wallMsSim": 7197,
+    "wallMsReal": 71970,
+    "immediateSuccessRate": 0.324,
+    "finalSuccessRate": 0.652,
+    "pendingRate": 0.348,
+    "trailing": null,
+    "failureKinds": {
+      "exhausted_status_503": 348
+    },
+    "attemptsHistogram": {
+      "1": 324,
+      "2": 183,
+      "3": 493
+    },
+    "latencyP50SimMs": 599,
+    "latencyP95SimMs": 962,
+    "successLatencyP50SimMs": 660,
+    "successLatencyP95SimMs": 985,
+    "upstream": {
+      "pool-key-2": {
+        "requests": 1845,
+        "busy429": 1735,
+        "success": 110,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-0": {
+        "requests": 1845,
+        "busy429": 1736,
+        "success": 109,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-3": {
+        "requests": 1837,
+        "busy429": 1727,
+        "success": 110,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-1": {
+        "requests": 1828,
+        "busy429": 1723,
+        "success": 105,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-5": {
+        "requests": 1832,
+        "busy429": 1724,
+        "success": 108,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-4": {
+        "requests": 1841,
+        "busy429": 1731,
+        "success": 110,
+        "inFlight": 0,
+        "maxInFlight": 10
+      }
+    },
+    "workerFailures": {
+      "KEY_POOL|status_429": 10376
+    },
+    "circuit": {
+      "opened": 0,
+      "reopened": 0,
+      "closed": 0,
+      "openSimMs": {},
+      "openRealMs": {}
+    },
+    "finalHealthRecords": {
+      "ZAI_ANTHROPIC_AIR": null,
+      "ZAI_ANTHROPIC": null
+    },
+    "zeroAttempt503": 0,
+    "clientBreaker": {
+      "trips": 0,
+      "serviceFailures": 1517,
+      "poolFull429": 0
+    },
+    "eventCounts": {
+      "proxy.request.received": 2169,
+      "proxy.auth.ok": 2169,
+      "proxy.payload.accepted": 2169,
+      "proxy.quota.local_date_invalid": 3686,
+      "proxy.quota.incremented": 2169,
+      "proxy.provider.call_start": 11028,
+      "proxy.provider.fetch_start": 11028,
+      "proxy.provider.fetch_done": 11028,
+      "proxy.provider.call_success": 652,
+      "proxy.request.finished": 2169,
+      "proxy.global_budget.incremented": 2169,
+      "proxy.provider.call_failed": 10376,
+      "proxy.provider.failover": 8859,
+      "proxy.provider.all_failed": 1517,
+      "proxy.quota.refunded": 1517,
+      "proxy.quota.refunded_upstream_failure": 1517,
+      "proxy.request.http_error": 1517,
+      "proxy.provider.stream_done": 652,
+      "proxy.provider.stream_success": 652
+    },
+    "keyPool": {
+      "keys": 6,
+      "perKeyLimit": 10,
+      "gateEnabled": false,
+      "totalSlots": 60
+    },
+    "upstreamPerKey": [
+      {
+        "key": "pool-key-2",
+        "requests": 1845,
+        "busy429": 1735,
+        "success": 110,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-0",
+        "requests": 1845,
+        "busy429": 1736,
+        "success": 109,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-3",
+        "requests": 1837,
+        "busy429": 1727,
+        "success": 110,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-1",
+        "requests": 1828,
+        "busy429": 1723,
+        "success": 105,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-5",
+        "requests": 1832,
+        "busy429": 1724,
+        "success": 108,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-4",
+        "requests": 1841,
+        "busy429": 1731,
+        "success": 110,
+        "maxInFlight": 10
+      }
+    ],
+    "gateMetrics": {
+      "waitedAcquires": 0,
+      "waitP50SimMs": null,
+      "waitP95SimMs": null,
+      "poolFullEvents": 0,
+      "callFailedEvents": 0,
+      "doPeakOpsPerSecSim": 0,
+      "doPeakOpsPerSecReal": 0
+    },
+    "keyPoolMaxInFlight": 10,
+    "upstreamBusy429Total": 10376
+  },
+  {
+    "scenario": "a-poisson-1000-slots60-gate-on",
+    "label": "fix60",
+    "users": 1000,
+    "mode": "poisson",
+    "gates": "open",
+    "upstreamLimits": {
+      "AIR": 10,
+      "SONNET": 10
+    },
+    "balanceExhausted": [],
+    "scale": 10,
+    "wallMsSim": 8230,
+    "wallMsReal": 82300,
+    "immediateSuccessRate": 0.332,
+    "finalSuccessRate": 0.73,
+    "pendingRate": 0.27,
+    "trailing": null,
+    "failureKinds": {
+      "rate_limited:key_pool_full": 270
+    },
+    "attemptsHistogram": {
+      "1": 332,
+      "2": 186,
+      "3": 482
+    },
+    "latencyP50SimMs": 1511,
+    "latencyP95SimMs": 2074,
+    "successLatencyP50SimMs": 1259,
+    "successLatencyP95SimMs": 2122,
+    "upstream": {
+      "pool-key-2": {
+        "requests": 122,
+        "busy429": 0,
+        "success": 122,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-4": {
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-3": {
+        "requests": 122,
+        "busy429": 0,
+        "success": 122,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-0": {
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-1": {
+        "requests": 123,
+        "busy429": 0,
+        "success": 123,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-5": {
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "inFlight": 0,
+        "maxInFlight": 10
+      }
+    },
+    "workerFailures": {},
+    "circuit": {
+      "opened": 0,
+      "reopened": 0,
+      "closed": 0,
+      "openSimMs": {},
+      "openRealMs": {}
+    },
+    "finalHealthRecords": {
+      "ZAI_ANTHROPIC_AIR": null,
+      "ZAI_ANTHROPIC": null
+    },
+    "zeroAttempt503": 0,
+    "clientBreaker": {
+      "trips": 0,
+      "serviceFailures": 0,
+      "poolFull429": 1420
+    },
+    "eventCounts": {
+      "proxy.request.received": 2150,
+      "proxy.auth.ok": 2150,
+      "proxy.payload.accepted": 2150,
+      "proxy.quota.local_date_invalid": 3570,
+      "proxy.quota.incremented": 2150,
+      "proxy.global_budget.incremented": 2150,
+      "proxy.gate.slot_acquired_after_wait": 496,
+      "proxy.provider.call_start": 730,
+      "proxy.provider.fetch_start": 730,
+      "proxy.provider.fetch_done": 730,
+      "proxy.provider.call_success": 730,
+      "proxy.request.finished": 2150,
+      "proxy.provider.stream_done": 730,
+      "proxy.provider.stream_success": 730,
+      "proxy.gate.pool_full": 1420,
+      "proxy.quota.refunded": 1420,
+      "proxy.quota.refunded_upstream_failure": 1420,
+      "proxy.request.http_error": 1420
+    },
+    "keyPool": {
+      "keys": 6,
+      "perKeyLimit": 10,
+      "gateEnabled": true,
+      "totalSlots": 60
+    },
+    "upstreamPerKey": [
+      {
+        "key": "pool-key-2",
+        "requests": 122,
+        "busy429": 0,
+        "success": 122,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-4",
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-3",
+        "requests": 122,
+        "busy429": 0,
+        "success": 122,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-0",
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-1",
+        "requests": 123,
+        "busy429": 0,
+        "success": 123,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-5",
+        "requests": 121,
+        "busy429": 0,
+        "success": 121,
+        "maxInFlight": 10
+      }
+    ],
+    "gateMetrics": {
+      "waitedAcquires": 496,
+      "waitP50SimMs": 57,
+      "waitP95SimMs": 348,
+      "poolFullEvents": 1420,
+      "callFailedEvents": 0,
+      "doPeakOpsPerSecSim": 17100,
+      "doPeakOpsPerSecReal": 1710
+    },
+    "keyPoolMaxInFlight": 10,
+    "upstreamBusy429Total": 0
+  },
+  {
+    "scenario": "a-poisson-1000-slots60-gate-off",
+    "label": "fix60",
+    "users": 1000,
+    "mode": "poisson",
+    "gates": "open",
+    "upstreamLimits": {
+      "AIR": 10,
+      "SONNET": 10
+    },
+    "balanceExhausted": [],
+    "scale": 10,
+    "wallMsSim": 7176,
+    "wallMsReal": 71760,
+    "immediateSuccessRate": 0.335,
+    "finalSuccessRate": 0.654,
+    "pendingRate": 0.346,
+    "trailing": null,
+    "failureKinds": {
+      "exhausted_status_503": 346
+    },
+    "attemptsHistogram": {
+      "1": 335,
+      "2": 169,
+      "3": 496
+    },
+    "latencyP50SimMs": 599,
+    "latencyP95SimMs": 974,
+    "successLatencyP50SimMs": 659,
+    "successLatencyP95SimMs": 990,
+    "upstream": {
+      "pool-key-0": {
+        "requests": 1819,
+        "busy429": 1711,
+        "success": 108,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-5": {
+        "requests": 1832,
+        "busy429": 1722,
+        "success": 110,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-4": {
+        "requests": 1813,
+        "busy429": 1705,
+        "success": 108,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-1": {
+        "requests": 1810,
+        "busy429": 1701,
+        "success": 109,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-2": {
+        "requests": 1802,
+        "busy429": 1692,
+        "success": 110,
+        "inFlight": 0,
+        "maxInFlight": 10
+      },
+      "pool-key-3": {
+        "requests": 1828,
+        "busy429": 1719,
+        "success": 109,
+        "inFlight": 0,
+        "maxInFlight": 10
+      }
+    },
+    "workerFailures": {
+      "KEY_POOL|status_429": 10250
+    },
+    "circuit": {
+      "opened": 0,
+      "reopened": 0,
+      "closed": 0,
+      "openSimMs": {},
+      "openRealMs": {}
+    },
+    "finalHealthRecords": {
+      "ZAI_ANTHROPIC_AIR": null,
+      "ZAI_ANTHROPIC": null
+    },
+    "zeroAttempt503": 0,
+    "clientBreaker": {
+      "trips": 0,
+      "serviceFailures": 1507,
+      "poolFull429": 0
+    },
+    "eventCounts": {
+      "proxy.request.received": 2161,
+      "proxy.auth.ok": 2161,
+      "proxy.payload.accepted": 2161,
+      "proxy.quota.local_date_invalid": 3668,
+      "proxy.quota.incremented": 2161,
+      "proxy.provider.call_start": 10904,
+      "proxy.provider.fetch_start": 10904,
+      "proxy.provider.fetch_done": 10904,
+      "proxy.provider.call_success": 654,
+      "proxy.request.finished": 2161,
+      "proxy.global_budget.incremented": 2161,
+      "proxy.provider.call_failed": 10250,
+      "proxy.provider.failover": 8743,
+      "proxy.provider.all_failed": 1507,
+      "proxy.quota.refunded": 1507,
+      "proxy.quota.refunded_upstream_failure": 1507,
+      "proxy.request.http_error": 1507,
+      "proxy.provider.stream_done": 654,
+      "proxy.provider.stream_success": 654
+    },
+    "keyPool": {
+      "keys": 6,
+      "perKeyLimit": 10,
+      "gateEnabled": false,
+      "totalSlots": 60
+    },
+    "upstreamPerKey": [
+      {
+        "key": "pool-key-0",
+        "requests": 1819,
+        "busy429": 1711,
+        "success": 108,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-5",
+        "requests": 1832,
+        "busy429": 1722,
+        "success": 110,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-4",
+        "requests": 1813,
+        "busy429": 1705,
+        "success": 108,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-1",
+        "requests": 1810,
+        "busy429": 1701,
+        "success": 109,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-2",
+        "requests": 1802,
+        "busy429": 1692,
+        "success": 110,
+        "maxInFlight": 10
+      },
+      {
+        "key": "pool-key-3",
+        "requests": 1828,
+        "busy429": 1719,
+        "success": 109,
+        "maxInFlight": 10
+      }
+    ],
+    "gateMetrics": {
+      "waitedAcquires": 0,
+      "waitP50SimMs": null,
+      "waitP95SimMs": null,
+      "poolFullEvents": 0,
+      "callFailedEvents": 0,
+      "doPeakOpsPerSecSim": 0,
+      "doPeakOpsPerSecReal": 0
+    },
+    "keyPoolMaxInFlight": 10,
+    "upstreamBusy429Total": 10250
+  }
+]

@@ -9,7 +9,8 @@ import { HealthStore, configureHealthParams } from "./src/health.js";
 import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
 import { sendTelegramAlert, ALERT_FETCH_TIMEOUT_MS } from "./src/notify.js";
 import { executeWithFailover } from "./src/provider.js";
-import { pickCandidates } from "./src/selector.js";
+import { makeKeyGateFromEnv } from "./src/keyGate.js";
+import { pickCandidates, entryUsableKeys } from "./src/selector.js";
 import { normalizeProviderStream } from "./src/stream.js";
 import { verifySubscriptionJWS, APPLE_ROOT_CA_G3_SHA256 } from "./src/subscription.js";
 
@@ -366,6 +367,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     try {
       result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
         healthStore: sharedHealthStore,
+        // A2:每 key 并发闸门(条目配置了 maxConcurrencyPerKey 且 DO binding 存在时生效;
+        // 未配置/fail-open 时行为与改前一致)。每请求构造,读 env 覆盖值。
+        gate: makeKeyGateFromEnv(env),
         // 客户端断连信号:用户划走时上游 fetch 立刻 abort,不再继续烧 token 到 timeoutMs
         abortSignal: request.signal,
         onResponse: stream
@@ -439,6 +443,13 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
                 request, env, requestContext, ctx, quotaState, "stream_failed_before_any_output"
               );
             }
+          },
+          // A2:流结束(成功/失败/意外 throw)释放该 key 的闸门租约。
+          // executeWithFailover 已把流式请求的租约所有权移交到这里(任务书 §7:
+          // 任何路径漏 release = 名额少一个,直到租约 TTL;此钩子 + 流内部
+          // try/finally + 租约 TTL 三层兜底)。
+          onSettled: async () => {
+            await result.lease?.release();
           }
         }
       ), {
@@ -725,6 +736,8 @@ async function handleAdminGetProviders(env, requestContext) {
 
   // 返回精简视图:去掉 secretName / apiKey,只留 hasApiKey 布尔。
   // health 是实时熔断快照(state / consecutiveFailures / cooldownMs / lastErrorType)。
+  // A1:熔断按 key 记账 —— 单 key 条目沿用条目 id 快照(与改前一致);
+  // 多 key 条目给聚合 state + perKey 明细(#序号,不含 key 原文)。
   const now = Date.now();
   const publicProviders = await Promise.all(effective.map(async (p) => ({
     id: p.id,
@@ -734,8 +747,10 @@ async function handleAdminGetProviders(env, requestContext) {
     weight: p.weight,
     enabled: p.enabled,
     timeoutMs: p.timeoutMs,
+    maxConcurrencyPerKey: p.maxConcurrencyPerKey ?? null,
     hasApiKey: Boolean(p.apiKey),
-    health: await sharedHealthStore.snapshot(p.id, now)
+    keyCount: Array.isArray(p.keys) ? p.keys.length : (p.apiKey ? 1 : 0),
+    health: await entryHealthDetail(p, sharedHealthStore, now)
   })));
 
   return finishRequest(
@@ -743,6 +758,45 @@ async function handleAdminGetProviders(env, requestContext) {
     requestContext,
     { reason: "admin_providers_listed" }
   );
+}
+
+// A1:条目级健康聚合(/v1/health 与 admin 端点共用)。
+// 状态口径:任一 key closed → closed;否则任一 half-open → half-open;全 open → open。
+// 多 key 条目附 keys: [{ slot: "#i", state }](slot 序号不含 key 原文,可安全外露)。
+async function entryHealthSummary(provider, healthStore, now) {
+  const adapter = getAdapter(provider.type);
+  const usableKeys = entryUsableKeys(provider);
+  if (!adapter || usableKeys.length === 0) {
+    return { state: "unconfigured", keys: null };
+  }
+  const snapshots = await Promise.all(usableKeys.map((key) => healthStore.snapshot(key.healthId, now)));
+  const states = snapshots.map((s) => s.state);
+  const state = states.includes("closed")
+    ? "closed"
+    : states.includes("half-open")
+      ? "half-open"
+      : "open";
+  const keys = usableKeys.length > 1
+    ? usableKeys.map((key, i) => ({ slot: `#${key.secretName}`, state: states[i] }))
+    : null;
+  return { state, keys };
+}
+
+// admin 端点的明细版:单 key = 完整快照(改前形状);多 key = 聚合 state + perKey 快照。
+async function entryHealthDetail(provider, healthStore, now) {
+  const usableKeys = entryUsableKeys(provider);
+  if (usableKeys.length === 0) {
+    return await healthStore.snapshot(provider.id, now);
+  }
+  if (usableKeys.length === 1) {
+    return await healthStore.snapshot(usableKeys[0].healthId, now);
+  }
+  const snapshots = await Promise.all(usableKeys.map((key) => healthStore.snapshot(key.healthId, now)));
+  const states = snapshots.map((s) => s.state);
+  return {
+    state: states.includes("closed") ? "closed" : states.includes("half-open") ? "half-open" : "open",
+    perKey: usableKeys.map((key, i) => ({ slot: `#${key.secretName}`, ...snapshots[i] }))
+  };
 }
 
 async function handleAdminSetPrimary(request, env, requestContext) {
@@ -959,12 +1013,16 @@ async function handlePublicHealthProbe(request, env, requestContext) {
   // provider 都用不了」(密钥轮换贴错)的场景,外部拨测恰恰此时最该红。
   // 与 cron 探活的 probeable 谓词同源(probeable===0 → down),三层口径一致
   // (遗留 1)。provider id / 状态词本就在 body 里,"unconfigured" 不是凭据。
-  const entries = await Promise.all(activeProviders.map(async (p) => ({
-    id: p.id,
-    state: p.apiKey && getAdapter(p.type)
-      ? (await sharedHealthStore.snapshot(p.id, now)).state
-      : "unconfigured"
-  })));
+  // A1:熔断按 key 记账后,条目状态从 per-key 快照聚合(entryHealthSummary);
+  // 多 key 条目附 keys 明细(slot 序号,无 key 原文),单 key 条目形状与改前一致。
+  const entries = await Promise.all(activeProviders.map(async (p) => {
+    const summary = await entryHealthSummary(p, sharedHealthStore, now);
+    return {
+      id: p.id,
+      state: summary.state,
+      ...(summary.keys ? { keys: summary.keys } : {})
+    };
+  }));
   // 不健康 = open / half-open / unconfigured,只有 closed 算健康(ALERTING.md
   // 缺陷 1 + 遗留 1)。half-open 是 classifyState 的读时派生状态(冷却一过即
   // 如此),语义是「曾经挂了,尚未证明恢复」—— 恢复要靠 recordSuccess 写回
@@ -1190,7 +1248,8 @@ async function runProviderHealthCheck(env, fetchImpl) {
   const probeToday = new Date().toISOString().slice(0, 10);
 
   const results = await Promise.allSettled(activeProviders.map(async (provider) => {
-    if (!provider.apiKey) {
+    const usableKeys = entryUsableKeys(provider);
+    if (usableKeys.length === 0) {
       logWarn("health_check.skip_no_key", { providerId: provider.id });
       return { providerId: provider.id, ok: false, reason: "no_key" };
     }
@@ -1198,6 +1257,25 @@ async function runProviderHealthCheck(env, fetchImpl) {
     if (!adapter) {
       logWarn("health_check.skip_no_adapter", { providerId: provider.id, type: provider.type });
       return { providerId: provider.id, ok: false, reason: "no_adapter" };
+    }
+
+    // A1:熔断按 key 记账 → 探活也按 key 记。每轮每条目随机探一个 key
+    // (30min 一轮,多轮覆盖整个池;被探 key 的成功/失败记在它自己的 healthId 上,
+    // 其余 key 的熔断恢复靠真实流量的 half-open 试探)。
+    // A2(任务书 §2.2.7 二选一):探活走闸门拿名额而不是每 key 预留 1 个——
+    // 预留会把 A 场景的可用名额永久少 13 个(13 key × 1);探活 30min 一次、
+    // 占用毫秒级,池满时跳过本轮(fail-open 除外),对覆盖面的影响远小于
+    // 预留对容量的影响。
+    const probeKey = usableKeys[Math.floor(Math.random() * usableKeys.length)];
+    let lease = null;
+    const gate = makeKeyGateFromEnv(env);
+    if (gate && gate.enabledFor({ ...provider, candidateKeys: usableKeys })) {
+      const slot = await gate.acquireEntrySlot({ ...provider, candidateKeys: usableKeys }, [probeKey], { wait: false });
+      if (slot.full) {
+        logInfo("health_check.skip_gate_full", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.secretName}` });
+        return { providerId: provider.id, ok: true, reason: "gate_full_skipped" };
+      }
+      lease = slot.lease || null;
     }
 
     const startedAt = Date.now();
@@ -1210,7 +1288,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
         transcript: probeTranscript,
         locale: probeLocale,
         stream: true,
-        provider,
+        provider: { ...provider, apiKey: probeKey.apiKey },
         today: probeToday,
         abortSignal: null
       });
@@ -1235,18 +1313,20 @@ async function runProviderHealthCheck(env, fetchImpl) {
       }
 
       if (response.ok) {
-        await sharedHealthStore.recordSuccess(provider.id, durationMs);
-        logInfo("health_check.success", { providerId: provider.id, durationMs });
+        await sharedHealthStore.recordSuccess(probeKey.healthId, durationMs);
+        logInfo("health_check.success", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.secretName}`, durationMs });
         return { providerId: provider.id, ok: true, durationMs };
       }
-      await sharedHealthStore.recordFailure(provider.id, `http_${response.status}`);
+      await sharedHealthStore.recordFailure(probeKey.healthId, `http_${response.status}`);
       logWarn("health_check.http_failed", { providerId: provider.id, status: response.status });
       return { providerId: provider.id, ok: false, status: response.status };
     } catch (error) {
       const errorType = error?.name === "TimeoutError" ? "timeout" : "network";
-      await sharedHealthStore.recordFailure(provider.id, errorType);
+      await sharedHealthStore.recordFailure(probeKey.healthId, errorType);
       logWarn("health_check.failed", { providerId: provider.id, errorType, message: error?.message });
       return { providerId: provider.id, ok: false, errorType };
+    } finally {
+      if (lease) await lease.release();
     }
   }));
 

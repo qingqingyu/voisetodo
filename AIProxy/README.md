@@ -38,12 +38,18 @@ Field reference:
 | `priority` | no | Lower = preferred (default 100). |
 | `weight` | no | Cold-start weighted random weight (default 1). When all weights are equal, selector falls back to priority order. |
 | `enabled` | no | `false` filters the provider from candidates (default `true`). |
-| `secretName` | no | Env var holding the key (default `PROVIDER_KEY_<id>`). Missing secret → warn + filter, not a startup failure. |
+| `secretName` | no | Env var holding the key (default `PROVIDER_KEY_<id>`). Missing secret → warn + filter, not a startup failure. Mutually exclusive with `secretNames`. |
+| `secretNames` | no | Key pool: array of env vars holding multiple keys for the same provider+model (A-scenario capacity, `docs/capacity-scenario-a-results.md`). Circuit/health state is tracked per key (`<id>#<index>`); quota exhaustion or auth failure only drops that key, and an immediate busy 429 retries a sibling key without consuming `AI_PROVIDER_MAX_ATTEMPTS`. Missing secrets are skipped individually. |
+| `maxConcurrencyPerKey` | no | Positive integer. When set (requires the `QUOTA_COUNTER_DO` binding), each key gets a Durable-Object-backed concurrency gate with leases — the proxy picks the least-loaded key locally instead of white-firing into upstream 429s. Unset = unlimited. |
 | `timeoutMs` | no | Per-call timeout, clamped to 60s (default 15s). |
+| `extraHeaders` | no | openai-type entries only. Extra request headers (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). May not override `Authorization` / `Content-Type`. |
+| `extraBody` | no | openai-type entries only. Fields merged into the request body (e.g. disabling a provider's thinking mode, routing preferences). May not override `model` / `messages` / `stream`. No provider-specific field names are hardcoded. |
+| `disableResponseFormat` | no | openai-type entries only. `true` omits `response_format: {type:"json_object"}` for platforms that reject it (prompt-only JSON constraint; trade-offs in the A-scenario results doc). |
 
 Optional tuning:
 
-- `AI_PROVIDER_MAX_ATTEMPTS`: cap on candidates tried per request. Defaults to the filtered candidate count.
+- `AI_PROVIDER_MAX_ATTEMPTS`: cap on **entries** tried per request (key-level retries inside an entry don't consume it). Defaults to the filtered candidate count.
+- Gate tuning (only for entries with `maxConcurrencyPerKey`): `KEY_GATE_MAX_WAIT_MS` (default 3000; the last available entry waits this long for a slot, then 503 + `Retry-After: 2`), `KEY_GATE_POLL_MS` (100), `KEY_GATE_CALL_TIMEOUT_MS` (200; gate DO failures fail open), `KEY_GATE_LEASE_MARGIN_MS` (10000; lease = `timeoutMs` + this, leaked leases self-reclaim at TTL).
 
 ## How selection works
 
