@@ -36,6 +36,14 @@ routes = [
 #   新端未部署时代码 400 自动降级,本次部署即启用前置完成。生效验证:
 #   新构建真机复盘走到第 3 步,深读卡渲染(需 AI 同意已授;探活
 #   /v1/health=200 + 无 token deep-read 401 已过)。回滚 = wrangler rollback。
+#   2026-10-24 部署:主力换 glm-5.3-flash(z.ai 按量 key,Coding Plan key 全部
+#   退场,合规阻断消除)。ZAI_ANTHROPIC_AIR 条目 id 不改——线上 admin override
+#   (primary=ZAI_ANTHROPIC_AIR)自动继续钉它做主力;模型/timeoutMs(30s→35s,
+#   最坏 35+3+15=53s ≤ 客户端 55s 预算)在此切换。原 sonnet 条目(ZAI_ANTHROPIC,
+#   实际映射 GLM 5.2)改为 glm-4.5-air 做故障回落(p3)。直连延迟探测(8 样本):
+#   P50 ~11s,尾部 2/8 >30s 且思考强制不可关(1210)——用户知情拍板;>35s 的尾部
+#   由熔断/回落接住。回滚 = git revert 本提交 + redeploy(key 无需回滚,按量 key
+#   对新旧模型都有效)。待验证:周二评测窗口跑 5.3-flash/air 直连新 prompt 基线。
 #   DAILY_REQUEST_LIMIT = "3"     PAID_DAILY_LIMIT = "100"
 #
 # 每设备每天调用上限（按 X-Device-ID 计；需配置 RATE_LIMIT_KV 才生效）
@@ -158,8 +166,8 @@ PROVIDERS = '''
     "id": "ZAI_ANTHROPIC",
     "type": "anthropic",
     "url": "https://api.z.ai/api/anthropic/v1/messages",
-    "model": "claude-sonnet-4-5-20250929",
-    "priority": 1,
+    "model": "glm-4.5-air",
+    "priority": 3,
     "weight": 10,
     "enabled": true,
     "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC_2",
@@ -191,12 +199,12 @@ PROVIDERS = '''
     "id": "ZAI_ANTHROPIC_AIR",
     "type": "anthropic",
     "url": "https://api.z.ai/api/anthropic/v1/messages",
-    "model": "glm-4.5-air",
-    "priority": 3,
+    "model": "glm-5.3-flash",
+    "priority": 1,
     "weight": 10,
     "enabled": true,
     "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC",
-    "timeoutMs": 30000
+    "timeoutMs": 35000
   }
 ]
 '''
