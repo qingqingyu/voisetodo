@@ -175,3 +175,22 @@ case: 72/73 全对(98.6%)  拆分数量正确: 100.0%  golden todo 总数: 88
 3. **归因表述收窄**:「主因是 OpenRouter 的 Z.AI 托管」改为「air 经 OpenRouter 不可用(实用结论);机理归因(托管平台 vs OpenAI 兼容接口形态)未分离」——09-22 基线走 Anthropic 兼容端点,不可直接对比。
 
 修正后总判定:**OpenRouter 上没有模型同时过准确率与延迟两条线**;主力维持 air@z.ai 按量付费,OpenRouter 作溢出/灾备(§6)。
+
+## 11. 附:en-016 字段级复核(2026-10-23,零成本 replay,不调模型)
+
+应 review 建议第 3 条做的诊断(此前只在执行方会话里,现补录进文档供审查方独立查看)。
+
+transcript:`Call the plumber, buy a birthday gift for mom, and book a table for Friday night`
+
+golden(authoring 锚 2026-01-07 周三)对第三条 todo 的要求:
+
+| 字段 | golden | glm-5.2 / glm-5.3-flash | gemini-3.5-flash | glm-4.5-air(E1) |
+|---|---|---|---|---|
+| title | `Book a table`(净化:**"for Friday night" 被消费进日期字段**) | `Book a table for Friday night`(原文保留) | `Book table for Friday night` | `Book a table` ✅ |
+| due_date | `2026-01-09`(周五) | `null` | `null` | `2026-10-25` ❌(锚 10-21 周三,周五应=10-23;算成了周日) |
+| due_date_basis | `user_explicit` | `title_mention` | `title_mention` | `user_explicit` ✅ |
+| category_hint | `life` | `life` ✅ | `life` ✅ | `social` ❌ |
+
+**结论:golden 自洽,不是答案过严。** 这条用例要求三件事同时做对:title 净化 + 显式周几的日期计算 + category 判定。三个新模型全卡在同一形态——**title 保留原文、basis 标 `title_mention`、日期 null**(把「title 提及日期」用成了「提及了但不计算」的逃生门);air 则反向证明净化能做到,但周几计算错(周五→周日)+ category 偏差。09-22 的 Sonnet 基线同样失败 → **全模型困难用例,反映的是 prompt 能力缺口(相对周几计算 + title 净化规则),不是评测集缺陷**。
+
+**待人工拍板**:golden 不建议改;en-016 是否加入困难白名单(与 zh-017/ja-014 同列,失败不进分母)由人决定——不豁免则它是对所有模型的永久扣分项,豁免则全对率口径整体 +1 条。周日边界 3 条的 prompt 表达打磨属下一轮任务(线索:glm-5.2 默认推理对 2/3,关推理 0/3——周日语义对推理量敏感,打磨方向是把规则写得更机械化)。
