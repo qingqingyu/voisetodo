@@ -33,6 +33,8 @@
 | R11 | `RecapHeroSection` / `RecapEvidenceRow` / `RecapStatCard` 与回顾页 `ReviewView` 共用：**回顾页外观零变化**（加参数或新建复盘专用视图） | 审阅缺口 A |
 | R12 | `ReviewFlowView.swift` 不再增长：新视图代码放各自 `ReviewStep*.swift` | v5 S5 |
 
+> **2026-10-24 注**：R11 的「回顾页外观零变化」是 v6 迭代内的约束。同日另有独立改版（入口卡置顶 → 底部悬浮 + 7 天滚动冷却隐藏，见 `todo-review-flow-design.md` 文首修正注），回顾页外观因此变化——不属于 v6 范围，`v6-reviewpage` 截图基线重产时以悬浮版为准。
+
 ---
 
 ## 1. 全局视觉规则
