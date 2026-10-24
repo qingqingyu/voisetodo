@@ -225,6 +225,7 @@
 		CD5CA4B651CED43E6A419190 /* LocalNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA666835F8CA9864517E3A2D /* LocalNotificationScheduler.swift */; };
 		CDD311EC5AFCF7108C78DE6C /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFA009138F185ACA9CCDC05 /* Telemetry.swift */; };
 		CF4B487EC3F860A09CC9D07A /* ValuePropCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */; };
+		CF5754750162B4AA64E79976 /* ReviewSheetDismissUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C49DF6C01550C908A074AF /* ReviewSheetDismissUITests.swift */; };
 		CF6F096AC61753165DC6AFFF /* ReviewRecapSameDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */; };
 		D0E67B5D585A79FBEAF86701 /* CalendarSyncServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15F96788BBD2CF96E85A40B /* CalendarSyncServiceTests.swift */; };
 		D4057436F4B91ABC7D55D388 /* AppGroupModelContainerProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654DE387184B63467E67C633 /* AppGroupModelContainerProvider.swift */; };
@@ -428,6 +429,7 @@
 		80D688C7A4292E80E400FC3E /* MarqueePhaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarqueePhaseTests.swift; sourceTree = "<group>"; };
 		8139C012D57AB42C26331270 /* TodoWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetView.swift; sourceTree = "<group>"; };
 		81578DF6D6865F537FD3EBAE /* CalendarSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncService.swift; sourceTree = "<group>"; };
+		82C49DF6C01550C908A074AF /* ReviewSheetDismissUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewSheetDismissUITests.swift; sourceTree = "<group>"; };
 		83A47D14BAA1CD85069C0793 /* ReviewFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFlowView.swift; sourceTree = "<group>"; };
 		83FEADBFB4B6E2C82BAD67C6 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		84892A23980F5F52BA6E9B84 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
@@ -1064,6 +1066,7 @@
 				923052D2F0F2BD6AB9CBF6B5 /* CalendarHomeUITests.swift */,
 				ACE8E927A8B4BDB097F09BCC /* DetailKeyboardUITests.swift */,
 				363B0932B46C09131261B1D1 /* ReviewFlowV6ScreenshotUITests.swift */,
+				82C49DF6C01550C908A074AF /* ReviewSheetDismissUITests.swift */,
 				24C04968853DFB54D2897574 /* ScenarioTests.swift */,
 				7C1FD54AB7296F161F504393 /* ScreenshotUITests.swift */,
 				FE4F86105DF065B995955FC1 /* UITestModels.swift */,
@@ -1460,6 +1463,7 @@
 				B66A6F9E7262A019BCA450DE /* CalendarHomeUITests.swift in Sources */,
 				AEE64F8C3E55ED1FD016B42A /* DetailKeyboardUITests.swift in Sources */,
 				6BBFF26FFA394A3E2097C9E4 /* ReviewFlowV6ScreenshotUITests.swift in Sources */,
+				CF5754750162B4AA64E79976 /* ReviewSheetDismissUITests.swift in Sources */,
 				8466F8A801589CE11A91EF37 /* ScenarioTests.swift in Sources */,
 				9DB44F03B96C73F8E7AF5EDD /* ScreenshotUITests.swift in Sources */,
 				8AF7025F1A4482FAF34CC062 /* UITestModels.swift in Sources */,

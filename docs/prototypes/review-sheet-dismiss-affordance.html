@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>复盘 sheet 收起暗示 · 拖动指示条 + 关闭按钮</title>
+<style>
+  /* ===== 布局 ===== */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: #E7EAEE;
+    font-family: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    color: #1E2A3A;
+  }
+  header.page-header { padding: 28px 40px 0; max-width: 1080px; margin: 0 auto; }
+  header.page-header h1 { font-size: 18px; margin: 0 0 6px; }
+  header.page-header p { font-size: 13px; color: #5C6A7A; margin: 0; line-height: 1.7; }
+
+  .stage {
+    display: flex; gap: 40px; padding: 28px 40px 60px;
+    align-items: flex-start; justify-content: center; flex-wrap: wrap;
+  }
+
+  /* ===== 模拟屏(390 × 844,对齐 App 真机 1×) ===== */
+  .device {
+    width: 390px; height: 844px; flex: none;
+    border: 12px solid #1B1D20; border-radius: 54px;
+    box-shadow: 0 30px 60px rgba(30, 42, 58, 0.25);
+    overflow: hidden; position: relative;
+    background: #E9EBEF;                       /* 背后首页被遮罩压暗后的均匀灰 */
+    user-select: none; -webkit-user-select: none;
+  }
+
+  /* 顶部露出的遮罩带(状态栏在此) */
+  .scrim {
+    position: absolute; inset: 0;
+    background: rgba(60, 60, 67, 0.18);
+    z-index: 1;
+    transition: opacity 260ms ease-out;
+  }
+  .device.dismissed .scrim { opacity: 0; }
+
+  .statusbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 54px; z-index: 2;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px 0;
+    color: #1E2A3A; font-size: 15px; font-weight: 600;
+  }
+  .statusbar .right { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
+
+  /* ===== sheet 白色容器 ===== */
+  .sheet {
+    position: absolute; left: 0; right: 0; top: 62px; bottom: 0;
+    background: #F4F5F7;                        /* WarmTheme.background + 纸纹 */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.02'/></svg>");
+    border-radius: 20px 20px 0 0;   /* WarmRadius.sheet */
+    box-shadow: 0 -1px 0 rgba(30, 42, 58, 0.06), 0 -12px 40px rgba(30, 42, 58, 0.18);
+    display: flex; flex-direction: column;
+    z-index: 3;
+    will-change: transform;
+    touch-action: none;                        /* 顶区拖拽由 JS 接管 */
+  }
+  .device.springing .sheet {
+    transition: transform 340ms cubic-bezier(0.34, 1.36, 0.64, 1);
+  }
+  .device.closing .sheet { transition: transform 240ms ease-in; }
+  .device.presenting .sheet { transition: transform 380ms cubic-bezier(0.22, 1.1, 0.36, 1); }
+
+  /* ===== ① 拖动指示条(本次新增) ===== */
+  .grabber-zone {
+    flex: none; display: flex; justify-content: center; align-items: flex-start;
+    padding-top: 11px; padding-bottom: 5px;
+    cursor: grab;
+  }
+  .grabber-zone:active { cursor: grabbing; }
+  .grabber {
+    width: 38px; height: 5px; border-radius: 999px;
+    background: #D1D5DB;
+  }
+  /* 现状模式:横条隐藏(今天的真实样子) */
+  .device[data-mode="current"] .grabber-zone { padding-top: 0; padding-bottom: 0; }
+  .device[data-mode="current"] .grabber { display: none; }
+
+  /* ===== 导航栏(标题 + ② 关闭按钮) ===== */
+  .navbar {
+    height: 44px; flex: none; position: relative;
+    display: flex; align-items: center;
+    cursor: grab;
+  }
+  .navbar:active { cursor: grabbing; }
+  .navbar .title {
+    position: absolute; left: 60px; right: 60px; text-align: center;
+    font-size: 17px; font-weight: 600; color: #1E2A3A;
+  }
+  .close-btn {
+    position: absolute; right: 8px; top: 0; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: none; padding: 0; cursor: pointer;
+    color: #1E2A3A;
+  }
+  .close-btn:active { opacity: 0.4; }
+  .close-btn svg { width: 17px; height: 17px; }
+  .device[data-mode="current"] .close-btn { display: none; }
+
+  /* ===== 内容区(滚动照常) ===== */
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; }
+  .scroll::-webkit-scrollbar { display: none; }
+  .content { display: flex; flex-direction: column; gap: 20px; padding: 4px 20px 40px; }
+
+  /* RecapCard:白卡 + section 圆角 + 轻阴影 */
+  .card {
+    background: #FFFFFF; border-radius: 16px; padding: 20px;
+    box-shadow: 0 4px 8px rgba(30, 42, 58, 0.10);
+  }
+
+  /* 入口卡 */
+  .entry-row { display: flex; align-items: center; gap: 16px; }
+  .entry-icon { flex: none; width: 22px; height: 22px; color: #FF8A6B; }
+  .entry-texts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .entry-main { font-size: 15px; font-weight: 600; color: #1E2A3A; line-height: 1.35; }
+  .entry-scope { font-size: 11px; color: #8E97A4; line-height: 1.3; }
+  .entry-capsule {
+    flex: none; display: flex; align-items: center; gap: 4px;
+    background: #FF8A6B; color: #FFFFFF;
+    font-size: 13px; font-weight: 600;
+    padding: 8px 16px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .entry-capsule svg { width: 12px; height: 12px; }
+
+  /* Hero */
+  .hero { text-align: center; padding-top: 8px; }
+  .hero .count {
+    font-family: ui-serif, "New York", Georgia, "Songti SC", serif;
+    font-size: 40px; font-weight: 600; color: #FF8A6B; line-height: 1.15;
+  }
+  .hero .period { font-size: 14px; color: #5C6A7A; margin-top: 8px; }
+  .hero .sameday {
+    font-size: 13px; color: #5C6A7A; line-height: 1.5;
+    margin: 12px auto 0; max-width: 270px;
+  }
+
+  /* 统计双卡 */
+  .stats-row { display: flex; gap: 16px; }
+  .stat-card {
+    flex: 1; background: #FFFFFF; border-radius: 12px;
+    padding: 16px 12px; text-align: center;
+    box-shadow: 0 3px 6px rgba(30, 42, 58, 0.10);
+    display: flex; flex-direction: column; gap: 8px; align-items: center;
+  }
+  .stat-value-row { display: flex; align-items: center; gap: 4px; }
+  .stat-value-row svg { width: 14px; height: 14px; color: #FF8A6B; }
+  .stat-value { font-size: 22px; font-weight: 600; color: #1E2A3A; line-height: 1.1; }
+  .stat-label { font-size: 12px; color: #5C6A7A; }
+  .stat-sub { font-size: 11px; color: #8E97A4; line-height: 1.4; }
+
+  /* 周期 segmented */
+  .segmented {
+    display: flex; background: #E9E9EC; border-radius: 10px; padding: 2px;
+  }
+  .segmented .seg {
+    flex: 1; text-align: center; font-size: 13px; font-weight: 600; color: #1E2A3A;
+    padding: 6px 0; border-radius: 8px;
+  }
+  .segmented .seg.on { background: #FFFFFF; box-shadow: 0 1px 3px rgba(30, 42, 58, 0.12); }
+
+  /* 分类卡 */
+  .cat-title { font-size: 16px; font-weight: 600; color: #1E2A3A; margin-bottom: 14px; }
+  .cat-row { display: flex; align-items: center; gap: 8px; }
+  .cat-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .cat-name { font-size: 14px; color: #1E2A3A; }
+  .cat-count { margin-left: auto; font-size: 14px; color: #8E97A4; font-variant-numeric: tabular-nums; }
+  .cat-bar-track { height: 6px; border-radius: 3px; background: #F3F4F6; margin: 6px 0 14px; }
+  .cat-bar { height: 6px; border-radius: 3px; }
+  .cat-row + .cat-bar-track:last-of-type { margin-bottom: 0; }
+  .cat-item:last-child .cat-bar-track { margin-bottom: 2px; }
+
+  /* 重新打开按钮 */
+  .reopen {
+    position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+    z-index: 4; border: none; cursor: pointer;
+    background: #FF8A6B; color: #FFF; font-size: 14px; font-weight: 600;
+    font-family: inherit; padding: 12px 22px; border-radius: 999px;
+    box-shadow: 0 8px 20px rgba(255, 138, 107, 0.45);
+    opacity: 0; pointer-events: none; transition: opacity 240ms ease-out;
+  }
+  .device.dismissed .reopen { opacity: 1; pointer-events: auto; }
+
+  /* ===== 侧栏说明 ===== */
+  .panel {
+    width: 300px; flex: none; background: #FFFFFF; border-radius: 16px;
+    padding: 18px 20px; box-shadow: 0 2px 4px rgba(30, 42, 58, 0.10);
+  }
+  .panel h2 { font-size: 13px; color: #5C6A7A; margin: 0 0 12px; font-weight: 600; }
+  .panel section + section { margin-top: 18px; padding-top: 16px; border-top: 1px solid #EAECEF; }
+
+  .mode-toggle { display: flex; border-radius: 10px; overflow: hidden; border: 1px solid #EAECEF; }
+  .mode-toggle button {
+    flex: 1; border: none; background: #FFFFFF; color: #5C6A7A; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 600; padding: 9px 0;
+  }
+  .mode-toggle button.on { background: #FF8A6B; color: #FFFFFF; }
+
+  .panel ul { margin: 0; padding-left: 18px; }
+  .panel li { font-size: 13px; color: #1E2A3A; line-height: 1.7; }
+  .panel li b { color: #C44F35; }
+  .panel .fine { font-size: 11px; color: #8E97A4; line-height: 1.7; margin-top: 10px; }
+
+  .state-line {
+    margin-top: 8px; padding: 7px 10px; border-radius: 8px; font-size: 12px;
+    background: rgba(137, 147, 164, 0.12); color: #8E97A4; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .state-line.on { background: rgba(255, 138, 107, 0.15); color: #C44F35; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>复盘 sheet 收起暗示 · 拖动指示条 + 关闭按钮</h1>
+  <p>右侧切换「现状 / 改版」对比。<b>改版</b> = 顶部中央加 38×5 浅灰横条(Drag Handle)+ 右上角关闭按钮;
+     「现状」即今天线上样子——横条与 × 都没有,用户只能靠试错发现下滑收起。
+     交互可试玩:抓住<b>横条或标题行</b>下拉(松手超过 120px 或快甩 → 收起;不足 → 弹回),或点 × 直接关闭,收起后点按钮重新弹出。
+     样式完全取自 App 真实 token(WarmTheme / RecapCard / Avenir Next / 衬线 Hero)。</p>
+</header>
+
+<div class="stage">
+  <div class="device" id="device" data-mode="redesign">
+    <!-- 遮罩带 + 状态栏(sheet 之上露出的部分) -->
+    <div class="scrim"></div>
+    <div class="statusbar">
+      <span>19:12</span>
+      <span class="right">
+        <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+        5G
+        <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="15" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="currentColor" opacity="0.4"/></svg>
+      </span>
+    </div>
+
+    <!-- sheet -->
+    <div class="sheet" id="sheet">
+      <!-- ① 拖动指示条 -->
+      <div class="grabber-zone" id="grabberZone" title="下拉收起">
+        <div class="grabber"></div>
+      </div>
+
+      <!-- 导航行:标题 + ② 关闭按钮 -->
+      <div class="navbar" id="navbar">
+        <span class="title">Review</span>
+        <button class="close-btn" id="closeBtn" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div class="scroll">
+        <div class="content">
+
+          <!-- 复盘入口卡(RecapCard) -->
+          <div class="card">
+            <div class="entry-row">
+              <svg class="entry-icon" viewBox="0 0 24 24" fill="none">
+                <rect x="3.5" y="3.5" width="12.5" height="12.5" rx="2.8" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M12.2 12.2 19.5 4.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M17.4 3 21 6.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              <div class="entry-texts">
+                <div class="entry-main">Things to decide: 5</div>
+                <div class="entry-scope">Since your last review</div>
+              </div>
+              <span class="entry-capsule">
+                Start Review
+                <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h14M13 7l5 5-5 5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+            </div>
+          </div>
+
+          <!-- Hero -->
+          <div class="hero">
+            <div class="count">14 completed</div>
+            <div class="period">Last 30 days</div>
+            <div class="sameday">4 of them were captured and done the same day</div>
+          </div>
+
+          <!-- 统计双卡 -->
+          <div class="stats-row">
+            <div class="stat-card">
+              <div class="stat-value-row">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5c.6 2.8-3 4.6-3 8.4a5.1 5.1 0 0 0 10.2.3c0-1.2-.4-2.3-1-3.2-.5 1.1-1.3 1.7-2.2 1.7 1-2.7-1.3-5.6-4-7.2z"/></svg>
+                <span class="stat-value">2</span>
+              </div>
+              <div class="stat-label">Streak</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value-row">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" fill="currentColor"/><path d="M8 12.4l2.6 2.6 5-5.4" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="stat-value">14</span>
+              </div>
+              <div class="stat-label">Done</div>
+              <div class="stat-sub">4 more in the next 7 days</div>
+            </div>
+          </div>
+
+          <!-- 周期切换 -->
+          <div class="segmented">
+            <span class="seg">Week</span>
+            <span class="seg on">Month</span>
+          </div>
+
+          <!-- 分类卡 -->
+          <div class="card">
+            <div class="cat-title">By Category</div>
+            <div class="cat-item">
+              <div class="cat-row">
+                <span class="cat-dot" style="background:#6B8FE8"></span>
+                <span class="cat-name">Work</span>
+                <span class="cat-count">8</span>
+              </div>
+              <div class="cat-bar-track"><div class="cat-bar" style="width:100%;background:#6B8FE8"></div></div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-row">
+                <span class="cat-dot" style="background:#E8A87C"></span>
+                <span class="cat-name">Life</span>
+                <span class="cat-count">4</span>
+              </div>
+              <div class="cat-bar-track"><div class="cat-bar" style="width:50%;background:#E8A87C"></div></div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-row">
+                <span class="cat-dot" style="background:#6EC99E"></span>
+                <span class="cat-name">Health</span>
+                <span class="cat-count">2</span>
+              </div>
+              <div class="cat-bar-track"><div class="cat-bar" style="width:25%;background:#6EC99E"></div></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <button class="reopen" id="reopenBtn">重新打开 Review sheet</button>
+  </div>
+
+  <!-- 侧栏 -->
+  <div class="panel">
+    <h2>对照模式</h2>
+    <div class="mode-toggle" id="modeToggle">
+      <button data-mode="current">现状(无暗示)</button>
+      <button data-mode="redesign" class="on">改版(横条 + ×)</button>
+    </div>
+    <div class="state-line" id="stateLine">sheet 停在原位</div>
+
+    <section>
+      <h2>改动清单</h2>
+      <ul>
+        <li><b>① 拖动指示条</b>:38×5pt、胶囊圆角、#D1D5DB,距白色容器顶缘 11pt,居中。落进标题上方的既有留白死区——标题与内容一行都不用挪。</li>
+        <li><b>② 关闭按钮</b>:右上角 ×,44×44pt 命中区、图标 17pt。与下滑手势解决不同的问题:× 是明确退出入口,横条暗示自然交互。</li>
+        <li>顶部留白:横条只占死区,不与「Review」标题、状态栏挤压(系统实现里由 iOS 布局兜底)。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>实现口径(App 侧)</h2>
+      <ul>
+        <li>横条走系统 <b>.presentationDragIndicator(.visible)</b>,与 app 内其他三个 sheet(权限引导 / 日历询问 / 原文编辑)同口径;iOS 自动定样式,不逐值复刻 #D1D5DB。</li>
+        <li>× 走 ReviewView toolbar <b>ToolbarItem(.topBarTrailing)</b> + @Environment(\\.dismiss)。</li>
+      </ul>
+      <p class="fine">本页为视觉样板:字体 Avenir Next / 衬线 Hero、颜色与圆角均取自 DesignSystem.swift 真实 token;数据(5 / 14 / 2 / 8-4-2)复刻自截图。</p>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  const device = document.getElementById('device');
+  const sheet = document.getElementById('sheet');
+  const closeBtn = document.getElementById('closeBtn');
+  const reopenBtn = document.getElementById('reopenBtn');
+  const stateLine = document.getElementById('stateLine');
+  const DISMISS_THRESHOLD = 120;   // px,松手越过即收起
+  const DISMISS_VELOCITY = 0.6;    // px/ms,快甩同判收起
+
+  let dismissed = false;
+  let dragging = false;
+  let startY = 0, startT = 0, lastY = 0, lastT = 0, dy = 0;
+
+  function setState(text, on) {
+    stateLine.textContent = text;
+    stateLine.classList.toggle('on', !!on);
+  }
+
+  function clearTransitions() {
+    device.classList.remove('springing', 'closing', 'presenting');
+  }
+
+  function dismiss() {
+    dismissed = true;
+    clearTransitions();
+    device.classList.add('closing');
+    sheet.style.transform = 'translateY(calc(100% + 90px))';
+    device.classList.add('dismissed');
+    setState('已收起(点按钮重新打开)', false);
+  }
+
+  function present() {
+    dismissed = false;
+    clearTransitions();
+    device.classList.add('presenting');
+    sheet.style.transform = 'translateY(0)';
+    device.classList.remove('dismissed');
+    setState('sheet 停在原位', false);
+    setTimeout(() => clearTransitions(), 420);
+  }
+
+  // —— 拖拽:横条区 + 导航行起手 ——
+  function onPointerDown(e) {
+    if (dismissed || dragging) return;
+    // × 按钮自己的点击不进入拖拽
+    if (e.target.closest('.close-btn')) return;
+    dragging = true;
+    startY = lastY = e.clientY; startT = lastT = performance.now(); dy = 0;
+    clearTransitions();
+    sheet.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }
+
+  function onPointerMove(e) {
+    if (!dragging) return;
+    dy = Math.max(0, e.clientY - startY);
+    sheet.style.transform = 'translateY(' + dy + 'px)';
+    const v = (e.clientY - lastY) / Math.max(1, performance.now() - lastT);
+    lastY = e.clientY; lastT = performance.now();
+    setState('拖动中 offset=' + Math.round(dy) + 'px' + (dy >= DISMISS_THRESHOLD ? '(已过阈值)' : ''), dy >= DISMISS_THRESHOLD);
+  }
+
+  function onPointerUp() {
+    if (!dragging) return;
+    dragging = false;
+    const dt = Math.max(1, performance.now() - startT);
+    const velocity = dy / dt;                    // 整段平均速度,粗判快甩
+    if (dy >= DISMISS_THRESHOLD || velocity >= DISMISS_VELOCITY) {
+      dismiss();
+    } else {
+      device.classList.add('springing');
+      sheet.style.transform = 'translateY(0)';
+      setState('不足阈值,弹回', false);
+      setTimeout(() => clearTransitions(), 380);
+    }
+  }
+
+  for (const zone of [document.getElementById('grabberZone'), document.getElementById('navbar')]) {
+    zone.addEventListener('pointerdown', onPointerDown);
+  }
+  sheet.addEventListener('pointermove', onPointerMove);
+  sheet.addEventListener('pointerup', onPointerUp);
+  sheet.addEventListener('pointercancel', onPointerUp);
+
+  closeBtn.addEventListener('click', dismiss);
+  reopenBtn.addEventListener('click', present);
+
+  // —— 模式切换 ——
+  const toggle = document.getElementById('modeToggle');
+  toggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    device.dataset.mode = btn.dataset.mode;
+    for (const b of toggle.querySelectorAll('button')) {
+      b.classList.toggle('on', b === btn);
+    }
+    setState(btn.dataset.mode === 'current' ? '现状:无横条无 ×(今天的真实样子)' : 'sheet 停在原位', false);
+  });
+})();
+</script>
+
+</body>
+</html>

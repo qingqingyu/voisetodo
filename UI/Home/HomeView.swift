@@ -470,9 +470,16 @@ struct HomeView<Store: HomeTodoStore>: View {
                 splitter: coordinator.reviewSplitter,
                 voiceInput: coordinator.reviewVoiceInput,
                 noteAnalyzer: coordinator.reviewNoteAnalyzer,
-                deepReader: coordinator.reviewDeepReader
+                deepReader: coordinator.reviewDeepReader,
+                // 右上角 × 仅 sheet 语境渲染(设置深链是 push,有系统返回,不叠)。
+                showsSheetCloseButton: true
             )
         }
+        // 顶部拖动指示条(2026-10-24 收起可发现性):本 sheet 无 detents 也不带
+        // grabber,下滑收起只能靠试错发现——补系统横条,与其他三个 sheet(权限
+        // 引导/日历询问/原文编辑)对齐。纯视觉件,下滑手势判定不变;两入口共用
+        // 本属性,单点生效(见 docs/review-sheet-dismiss-affordance.md)。
+        .presentationDragIndicator(.visible)
         .onDisappear { reloadPinnedTodoIDs() }
     }
 

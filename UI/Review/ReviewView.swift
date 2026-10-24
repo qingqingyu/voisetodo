@@ -79,6 +79,10 @@ struct ReviewView: View {
     var noteAnalyzer: (any ReviewNoteAnalyzerProtocol)? = nil
     /// 深读观察器(v5 T5)。nil → 第 3 步无 AI 观察卡、第 5 步无草稿预填。
     var deepReader: (any DeepReadObservationProtocol)? = nil
+    /// 是否渲染右上角 × 关闭(2026-10-24 收起可发现性)。仅 sheet 语境的调用方
+    /// (HomeView.reviewSheetContent)置 true;设置深链是 NavigationLink push,
+    /// 已有系统返回 chevron,再叠 × 是冗余双退出,保持默认 false 不渲染。
+    var showsSheetCloseButton: Bool = false
 
     @Query(
         filter: #Predicate<TodoItem> { $0.isCompleted },
@@ -111,6 +115,10 @@ struct ReviewView: View {
     /// 过大,横排会把左侧文案挤出可视区(截图实测 AX5+en 主文案被压没;CoreText
     /// 实测非 AX 的 xL/xxL 档 en/ja 主文案 2 行×0.7 缩放下限也超预算,同机制)。
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// sheet 收起(2026-10-24 收起可发现性):右上角 × 的动作——本页以 sheet
+    /// 呈现时的显式退出入口,与下滑手势并存;仅 showsSheetCloseButton 为 true
+    /// 时渲染,push/preview 语境不出现。
+    @Environment(\.dismiss) private var dismiss
 
     private let calendar = Calendar.current
 
@@ -184,6 +192,22 @@ struct ReviewView: View {
         }
         .navigationTitle(String(localized: "review.nav_title"))
         .navigationBarTitleDisplayMode(.inline)
+        // 右上角关闭(2026-10-24 收起可发现性):给不用下滑手势的用户兜底的
+        // 明确退出入口;下滑收起照常,横条见 HomeView.reviewSheetContent。
+        // a11y 文案复用 panel.close(关闭/Close/閉じる,三语现成)。
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if showsSheetCloseButton {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(String(localized: "panel.close"))
+                    .accessibilityIdentifier("ReviewSheetClose")
+                }
+            }
+        }
     }
 
     // MARK: Review Flow Entry
