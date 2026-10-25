@@ -29,7 +29,7 @@ enum TodoStatusFilter: String, AppEnum {
 /// 未来若 Siri 要做"今天我有什么"这类带时间的查询,再考虑复用 Widget 过滤。
 struct QueryTodosIntent: AppIntent {
     static var title: LocalizedStringResource = "siri.query.title"
-    static var description = IntentDescription("siri.query.description")
+    static var description = IntentDescription("intent.query.description")
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "siri.query.param.status", default: TodoStatusFilter.incomplete)

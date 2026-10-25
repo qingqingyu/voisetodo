@@ -10,7 +10,7 @@ import WidgetKit
 ///   幂等置完成(已完成的任务不重复 save,不覆盖 `completedAt`),返回语音对话。
 struct CompleteTodoIntent: AppIntent {
     static var title: LocalizedStringResource = "siri.complete.title"
-    static var description = IntentDescription("siri.complete.description")
+    static var description = IntentDescription("intent.complete.description")
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "siri.complete.param.todo")

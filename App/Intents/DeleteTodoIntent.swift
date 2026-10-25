@@ -13,7 +13,7 @@ import WidgetKit
 /// 待后续前台孤儿对账收口,不在 Siri intent 里独立实现。
 struct DeleteTodoIntent: AppIntent {
     static var title: LocalizedStringResource = "siri.delete.title"
-    static var description = IntentDescription("siri.delete.description")
+    static var description = IntentDescription("intent.delete.description")
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "siri.delete.param.todo")

@@ -11,7 +11,7 @@ import AppIntents
 /// 本 intent 无参数 + `openAppWhenRun = true`，按一下就前台打开 App 起录音。
 struct StartRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "siri.intent.record.title"
-    static var description = IntentDescription("siri.intent.record.description")
+    static var description = IntentDescription("intent.record.description")
 
     /// 必须打开 App：录音要麦克风 + 前台 UI（波形、手动停止），后台 intent 拿不到。
     static var openAppWhenRun: Bool = true
