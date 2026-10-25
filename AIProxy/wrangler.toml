@@ -8,6 +8,13 @@ routes = [
   { pattern = "ai.saydo.org", custom_domain = true }
 ]
 
+# Workers Logs:服务端结构化日志(proxy.provider.fetch_done 的 fetchMs /
+# proxy.request.finished 的 durationMs)落 Cloudflare 平台,事后可用控制台或
+# GraphQL API 查询。开这个的原因:国内出口到 wrangler tail 的 WebSocket 端点
+# 常年 ETIMEDOUT,实时 tail 不可靠;observability 不依赖本机通道。
+[observability]
+enabled = true
+
 [vars]
 # ─── 每日额度：免费档 / Pro 档 ────────────────────────────────────────────────
 # ⚠️ 这两个值必须成对修改，且 PAID > FREE。wrangler-config.test.js 有断言守着。
