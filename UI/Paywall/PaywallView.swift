@@ -278,24 +278,28 @@ struct PaywallContent: View {
         }
     }
 
-    /// 单行对比胶囊:「免费版 N 次/天 › Pro 版 M 次/天」。
+    /// 单行对比胶囊:「🎙 语音录入:免费版 N 次/天 › Pro 版 M 次/天」。
     /// 原两列对比卡实高 ~96pt 撑破 SE 一屏预算,压成 ~44pt 单行,信息不变;
     /// 文案与图标沿用原两列卡(label + limit_per_day + chevron 分隔)。
+    /// 2026-10-26(paywall-copy-v2):图标 ⚡→🎙,免费列前加「语音录入:」标签
+    /// (voice_prefix 包住整列,标点随语言走,代码里不拼标点);一行 + 0.7 缩放
+    /// 是硬约束,SE 三语实测若截断/难读按任务书 §2 降级为只留图标。
     private var freeVsProComparisonPill: some View {
         HStack(spacing: WarmSpacing.xs) {
-            Image(systemName: "bolt.circle")
+            Image(systemName: "mic.circle")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(WarmTheme.textSecondary)
                 .accessibilityHidden(true)
             comparisonText(
-                labelKey: "paywall.comparison.free",
-                limit: quotaUsage.limit,
+                String(
+                    format: String(localized: "paywall.comparison.voice_prefix %@"),
+                    "\(String(localized: "paywall.comparison.free")) \(String(localized: "paywall.comparison.limit_per_day \(quotaUsage.limit)"))"
+                ),
                 color: WarmTheme.textPrimary
             )
             chevronDivider
             comparisonText(
-                labelKey: "paywall.comparison.pro",
-                limit: NetworkConfig.proDailyLimit,
+                "\(String(localized: "paywall.comparison.pro")) \(String(localized: "paywall.comparison.limit_per_day \(NetworkConfig.proDailyLimit)"))",
                 color: WarmTheme.primary
             )
         }
@@ -306,13 +310,13 @@ struct PaywallContent: View {
         .padding(.horizontal, WarmSpacing.lg)
     }
 
-    /// 胶囊内一列文本:「<档位名> <N 次/每天>」单行,超宽整体缩放不截断。
+    /// 胶囊内一列文本:单行,超宽整体缩放不截断。
+    /// 调用方负责拼好整列文案(档位名 + 次/每天;免费列另含 voice_prefix 标签)。
     private func comparisonText(
-        labelKey: String.LocalizationValue,
-        limit: Int,
+        _ text: String,
         color: Color
     ) -> some View {
-        Text("\(String(localized: labelKey)) \(String(localized: "paywall.comparison.limit_per_day \(limit)"))")
+        Text(text)
             .font(.system(size: 14, weight: .semibold, design: .rounded))
             .foregroundColor(color)
             .lineLimit(1)
@@ -696,8 +700,10 @@ struct PaywallContent: View {
 
     /// 价值主张:quota 卡已删(一屏化去重 —— 额度信息由对比胶囊表达);
     /// trial 卡在 intro offer 资格查询完成且 isEligibleForIntroOffer 为 true 时才渲染 (C 点防抖);
-    /// support 卡总是显示。全部走 ValuePropCard compact 规格换高度。
-    /// 复用 OnboardingView 同源 `onboarding.pro.bullet.*` 文案,保证设计语言一致。
+    /// capture 卡(核心价值主张)总是显示。两卡均为 PaywallCopyCard 纯文字居中形态
+    /// (2026-10-26 产品拍板:去 emoji 圆 + 居中,与整页中轴对称节奏一致;不再复用
+    /// ValuePropCard,onboarding 欢迎页保持原形态)。试用卡文案仍复用
+    /// `onboarding.pro.bullet.trial.*`,capture 卡用新 key `paywall.value.capture.*`。
     private var valuePropsList: some View {
         VStack(spacing: WarmSpacing.sm) {
             // 查询期间不渲染试用卡,避免查完前后「无试用 ↔ 有试用」抖动 (C 点)。
@@ -705,21 +711,62 @@ struct PaywallContent: View {
             // 不手写「7 天」)。
             if !entitlement.isCheckingIntroOffer && entitlement.isEligibleForIntroOffer,
                let trialPeriod = entitlement.introOfferPeriod {
-                ValuePropCard(
-                    emoji: "🎁",
+                PaywallCopyCard(
                     title: String(localized: "onboarding.pro.bullet.trial.title \(trialPeriod.formattedLocalizedPeriod())"),
-                    description: String(localized: "onboarding.pro.bullet.trial.desc"),
-                    compact: true
+                    description: String(localized: "onboarding.pro.bullet.trial.desc")
                 )
             }
-            ValuePropCard(
-                emoji: "🌱",
-                title: String(localized: "onboarding.pro.bullet.support.title"),
-                description: String(localized: "onboarding.pro.bullet.support.desc"),
-                compact: true
+            PaywallCopyCard(
+                title: String(localized: "paywall.value.capture.title"),
+                description: String(localized: "paywall.value.capture.desc")
             )
         }
         .padding(.horizontal, WarmSpacing.lg)
+    }
+
+    // MARK: - PaywallCopyCard(付费页专用价值主张卡)
+
+    /// 付费页价值主张卡:纯文字、整体居中,无 emoji 圆。
+    ///
+    /// 2026-10-26(paywall-copy-v2)产品拍板:试用卡与核心卡放弃 ValuePropCard 的
+    /// 「emoji 圆 + 左对齐」形态 —— 两卡文字块高度不一,emoji 圆垂直居中后彼此错位,
+    /// 且左对齐与付费页整体的中轴对称节奏(对比条/CTA/法务说明均居中)不一致。
+    /// `ValuePropCard` 本体不动,onboarding 欢迎页继续用原形态。
+    /// 容器视觉参数(padding/圆角/阴影/描边)沿用 ValuePropCard compact 规格,卡片质感不变。
+    private struct PaywallCopyCard: View {
+        let title: String
+        let description: String
+
+        var body: some View {
+            VStack(spacing: WarmSpacing.xxs) {
+                Text(title)
+                    .font(WarmFont.headline(16))
+                    .foregroundColor(WarmTheme.ink)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                // 不限制行数:卡片在 ScrollView 中可纵向自由扩展,
+                // 避免 zh-Hans / ja 等长文本下出现「...」截断(项目零容忍规则)。
+                Text(description)
+                    .font(WarmFont.caption(13))
+                    .foregroundColor(WarmTheme.sketch)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(WarmSpacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.section)
+                    .fill(WarmTheme.cardBackground)
+                    .shadow(color: WarmTheme.sketch.opacity(0.08), radius: 8, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: WarmRadius.section)
+                    .stroke(WarmTheme.sketch.opacity(0.15), lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
+        }
     }
 
     // MARK: - Product List
@@ -999,11 +1046,11 @@ struct PaywallContent: View {
 
     // MARK: - Legal Block
 
-    /// 法务三件套合并的底部块(自动续费说明 + 隐私·条款链接 + 恢复购买),间距压到
+    /// 法务块(自动续费说明 + 隐私·条款链接 + 独立开发者小字 + 恢复购买),间距压到
     /// xxs 换取一屏预算。legalText 仍只在商品加载成功且 intro 资格查询落定后渲染
     /// (C 点防抖,依赖 isEligibleForIntroOffer 分流);链接与恢复不依赖商品加载结果
     /// (3.1.2:商品加载失败时付费墙仍可见,链接也必须可点)。
-    /// `showsPriceDisclosure == false`(已订阅分支)时只留链接与恢复——价格披露
+    /// `showsPriceDisclosure == false`(已订阅分支)时只留链接、小字与恢复——价格披露
     /// 服务购买决策,对已订阅者是错误信息(见 body 已订阅分支注释)。
     private func legalBlock(showsPriceDisclosure: Bool) -> some View {
         VStack(spacing: WarmSpacing.xxs) {
@@ -1011,8 +1058,23 @@ struct PaywallContent: View {
                 legalText
             }
             legalLinks
+            indieFooter
             restoreButton
         }
+    }
+
+    /// 独立开发者致谢小字(2026-10-26 paywall-copy-v2 新增,原 🌱 卡的职能移到这里)。
+    /// 放在链接与「恢复购买」之间;legalBlock 在已订阅分支同样调用,
+    /// 已订阅用户看到「感谢你的支持」更贴切(任务书 §4,有意为之)。
+    /// 样式与 legalText 同规格(11pt rounded / textMuted / 居中),不做成卡片。
+    private var indieFooter: some View {
+        Text(String(localized: "paywall.footer.indie"))
+            .font(.system(size: 11, weight: .regular, design: .rounded))
+            .foregroundColor(WarmTheme.textMuted)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, WarmSpacing.lg)
     }
 
     /// App Store 审核要求的自动续费合规说明(价格随选中方案即时更新):

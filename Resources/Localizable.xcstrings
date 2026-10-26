@@ -8625,50 +8625,6 @@
         }
       }
     },
-    "onboarding.pro.bullet.support.desc" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your subscription keeps this app actively maintained"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "あなたのサブスクリプションが開発を支えます"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的订阅让这款 app 持续迭代"
-          }
-        }
-      }
-    },
-    "onboarding.pro.bullet.support.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Support indie development"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "個人開発を応援"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "支持独立开发"
-          }
-        }
-      }
-    },
     "onboarding.pro.bullet.trial.desc" : {
       "localizations" : {
         "en" : {
@@ -9334,6 +9290,28 @@
         }
       }
     },
+    "paywall.comparison.voice_prefix %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice captures: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音录入：%@"
+          }
+        }
+      }
+    },
     "paywall.cta.start_trial %@" : {
       "localizations" : {
         "en" : {
@@ -9374,6 +9352,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "订阅 Pro"
+          }
+        }
+      }
+    },
+    "paywall.footer.indie" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🌱 Made with care by one indie developer. Thank you for your support."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🌱 VoiceTodo は個人開発者がひとりで丁寧に作っています。応援ありがとうございます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🌱 VoiceTodo 由一位独立开发者用心打磨，感谢你的支持。"
           }
         }
       }
@@ -10257,6 +10257,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "VoiceTodo Pro"
+          }
+        }
+      }
+    },
+    "paywall.value.capture.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture tasks in seconds — no typing, no forms. VoiceTodo understands you and files each task under the right date."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数秒でタスクを記録。キー入力もフォームも不要。VoiceTodo が内容を理解して、正しい日付に振り分けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "几秒钟记下任务，不用打字，不用填表。VoiceTodo 听得懂，会把每件事排到对的日期。"
+          }
+        }
+      }
+    },
+    "paywall.value.capture.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Say what's on your mind. It's on your list."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "思いついたら、話すだけ。もうリストに。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "想到什么，说出来，就进了清单。"
           }
         }
       }
