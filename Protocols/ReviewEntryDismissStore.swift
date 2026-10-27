@@ -26,7 +26,14 @@ final class ReviewEntryDismissStore {
     /// 返回 nil(只读路径降级:卡常驻,展示偏好不阻塞渲染)。
     func dismissedAt() -> Date? {
         guard let defaults else { return nil }
-        return defaults.object(forKey: Self.dismissedAtKey) as? Date
+        guard let raw = defaults.object(forKey: Self.dismissedAtKey) else { return nil }
+        // 脏数据(该 key 被非 Date 类型占据):显式记日志后按未关闭降级——
+        // 方向保守(卡常驻,顶多多显示一次),但留痕可查,不静默吞。
+        guard let date = raw as? Date else {
+            VoiceTodoLog.app.warning("review_entry_dismiss.load.failed reason=type_mismatch")
+            return nil
+        }
+        return date
     }
 
     /// 写入手动关闭时刻(覆盖旧值,冷却窗口自此刻重起算)。defaults 不可用时

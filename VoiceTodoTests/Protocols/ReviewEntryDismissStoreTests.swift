@@ -11,6 +11,11 @@ final class ReviewEntryDismissStoreTests: XCTestCase {
     private var suite: UserDefaults!
     private var store: ReviewEntryDismissStore!
 
+    /// 每天恒定 86400s,避免魔法数。
+    private let day: TimeInterval = 24 * 60 * 60
+    /// 固定锚点(UTC 字面量),判定只做时间差,与本地时区/夏令时无关。
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
     override func setUp() {
         super.setUp()
         suiteName = "ReviewEntryDismissStoreTests-\(UUID().uuidString)"
@@ -57,12 +62,14 @@ final class ReviewEntryDismissStoreTests: XCTestCase {
         XCTAssertNil(degraded.dismissedAt())
     }
 
-    // MARK: - 冷却判定(纯函数)
+    /// 脏数据(该 key 被非 Date 类型占据):按未关闭降级为 nil(卡常驻,
+    /// 方向保守),store 内显式记 warning 日志——不静默吞。
+    func testCorruptedValueDegradesToNil() {
+        suite.set("not-a-date", forKey: ReviewEntryDismissStore.dismissedAtKey)
+        XCTAssertNil(store.dismissedAt())
+    }
 
-    /// 每天恒定 86400s,避免魔法数。
-    private let day: TimeInterval = 24 * 60 * 60
-    /// 固定锚点(UTC 字面量),判定只做时间差,与本地时区/夏令时无关。
-    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    // MARK: - 冷却判定(纯函数)
 
     /// 双锚点皆 nil(从未复盘、从未关闭)→ 不冷却,卡常驻。
     func testNoAnchorsNotCoolingDown() {
