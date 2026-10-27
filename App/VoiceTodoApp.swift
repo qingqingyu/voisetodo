@@ -61,6 +61,10 @@ struct VoiceTodoApp: App {
             UserDefaults.standard.removeObject(forKey: CalendarWriteMode.deferredAskShownKey)
             // AI 同意标志一并清:重置 = 全新安装,必须重新走披露同意。
             AppGroupConfig.setAIConsentGranted(false)
+            // 入口卡手动关闭标记一并清:重置 = 全新安装,卡应回到常驻(未冷却)
+            // 状态——上一轮测试点过的 × 若残留,回顾页入口卡在后续用例里 7 天
+            // 不出现,依赖它的截图/流程用例会连环误红。
+            UserDefaults.standard.removeObject(forKey: ReviewEntryDismissStore.dismissedAtKey)
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 

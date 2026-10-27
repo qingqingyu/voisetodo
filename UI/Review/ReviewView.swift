@@ -110,6 +110,12 @@ struct ReviewView: View {
     /// `ReviewFlowView` 注入第 1 步的 `previousSessions.last?.completedAt` 同源;
     /// 随 `loadReviewNotes()` 的同一次 `allSessions()` 一并赋值,不单独再读。
     @State private var lastReviewDate: Date?
+    /// 入口卡手动关闭时刻(2026-10-27 拍板):右上角 × 主动收卡,复用同一
+    /// 7 天冷却(`entryCardCooldown`)。与 `lastReviewDate` 分开存——那是
+    /// 「上次复盘完成」口径(范围标 + 流程第 1 步注入),混入关闭时刻会让
+    /// 没复盘过的用户错误显示「自上次复盘以来」。onAppear 读回,重启后
+    /// 冷却仍生效;曝光分母随 `entryCardVisible` 单一来源同步收窄。
+    @State private var entryCardDismissedAt: Date?
 
     /// 内容字号判定(2026-10-19):入口卡在 xL 起切竖排——fixedSize 胶囊占宽
     /// 过大,横排会把左侧文案挤出可视区(截图实测 AX5+en 主文案被压没;CoreText
@@ -147,8 +153,8 @@ struct ReviewView: View {
                 .padding(.bottom, WarmSpacing.xxl)
             }
             // 入口卡悬浮层(2026-10-24 拍板):钉在屏幕底部、不随列表滚动,
-            // 空态/非空态共用;冷却期(`entryCardInCooldown`,距上次复盘不足
-            // 7 天)整卡隐藏——复盘完关掉流程回本页,底部即刻干净。safeAreaInset
+            // 空态/非空态共用;冷却期(`entryCardInCooldown`,距上次复盘或手动
+            // × 关闭不足 7 天)整卡隐藏——复盘完关掉流程回本页,底部即刻干净。safeAreaInset
             // 自动为滚动内容让出底部空间,列表末项可滚到卡上方;卡只是可点击
             // 按钮,不加任何手势,不拦截 sheet 的下滑关闭。
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -161,12 +167,14 @@ struct ReviewView: View {
             }
             .onAppear {
                 loadReviewNotes()
+                // 手动关闭时刻一并恢复(首帧即定显隐,不闪卡)。
+                entryCardDismissedAt = ReviewEntryDismissStore.shared.dismissedAt()
                 // 复盘漏斗 A15(v5 T1/E8):入口卡随本页常驻,页出现即曝光;
                 // 按 app 会话去重——反复进出统计页不刷量。store 为 nil 时
                 // 入口卡不渲染(设置深链/preview 路径),没见过入口的用户
                 // 不得进曝光分母(口径=「见过入口的用户数」)。2026-10-24
-                // 悬浮改版:冷却期(7 天内已复盘)卡同样不可见,同步不进
-                // 曝光分母——复用 `entryCardVisible` 单一来源,两处永不漂移。
+                // 悬浮改版:冷却期(7 天内已复盘或已手动关闭)卡同样不可见,
+                // 同步不进曝光分母——复用 `entryCardVisible` 单一来源,两处永不漂移。
                 if entryCardVisible {
                     let pendingCount = decidablePendingCount
                     ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: pendingCount > 0)
@@ -221,19 +229,25 @@ struct ReviewView: View {
         ).count
     }
 
-    /// 入口卡冷却时长(2026-10-24 拍板):滚动 7 天窗口——距上次复盘完成不足
-    /// 7 天时悬浮入口卡隐藏,从复盘完成时刻起算、不锚定周一。与产品周节奏
-    /// (周一 9:00 通知 / 会话容量 52 条/年)对齐,但按用户自己的节奏走:
-    /// 哪天复盘哪天起算,保证清净整整 7 天;期间再复盘一次则重新起算。
+    /// 入口卡冷却时长(2026-10-24 拍板):滚动 7 天窗口——距上次复盘完成或
+    /// 手动关闭(2026-10-27 × 按钮,复用同一窗口)不足 7 天时悬浮入口卡隐藏,
+    /// 从触发时刻起算、不锚定周一。与产品周节奏(周一 9:00 通知 / 会话容量
+    /// 52 条/年)对齐,但按用户自己的节奏走:哪天触发哪天起算,保证清净整整
+    /// 7 天;期间再复盘一次则重新起算。
     private static let entryCardCooldown: TimeInterval = 7 * 24 * 60 * 60
 
-    /// 入口卡是否处于冷却期(7 天内已复盘)。`lastReviewDate` 随
+    /// 入口卡是否处于冷却期(7 天内已复盘**或**已手动关闭)。判定委托
+    /// `ReviewEntryCooldown` 纯函数(单测覆盖双锚点取近)。`lastReviewDate` 随
     /// `loadReviewNotes()` 刷新(onAppear + 复盘流程 fullScreenCover dismiss),
     /// 复盘完成关掉流程的瞬间本值翻 true,悬浮卡即刻消失;首次复盘前
     /// (nil)不冷却,卡常驻。
     private var entryCardInCooldown: Bool {
-        guard let last = lastReviewDate else { return false }
-        return Date().timeIntervalSince(last) < Self.entryCardCooldown
+        ReviewEntryCooldown.isCoolingDown(
+            lastReviewCompletedAt: lastReviewDate,
+            manuallyDismissedAt: entryCardDismissedAt,
+            now: Date(),
+            window: Self.entryCardCooldown
+        )
     }
 
     /// 悬浮入口卡的显示条件单一来源:悬浮层挂载与 A15 曝光分母共用,
@@ -253,44 +267,90 @@ struct ReviewView: View {
     /// safeAreaInset;冷却期 `entryCardInCooldown` 整卡隐藏)。
     /// N == 0 时空态文案「都清完了,看看这一个月」——卡不消失(冷却期除外:
     /// 隐藏的是「时机」不是「价值」),回顾本身仍有价值。
+    ///
+    /// 2026-10-27:右上角 × 手动收卡——不想复盘的用户此前没有任何出口,只能
+    /// 等冷却自然过期。× 与整卡 Button 平级(外层 ZStack,不嵌套),手势互不
+    /// 冲突;收卡写 `ReviewEntryDismissStore`,复用同一 7 天冷却(统计条/通知
+    /// 仍是复盘入口,关卡≠关功能)。关闭语义见 `entryCardDismissButton`。
     @ViewBuilder
     private var reviewFlowEntryCard: some View {
         let pendingCount = decidablePendingCount
         let hasPending = pendingCount > 0
 
-        Button {
-            showReviewFlow = true
-        } label: {
-            RecapCard {
-                if dynamicTypeSize >= .xLarge {
-                    // xL 起竖排(2026-10-19):fixedSize 胶囊占宽过大,横排会把左侧
-                    // 文案挤出可视区(AX5+en 截图实测主文案被压没;CoreText 实测
-                    // 393pt 下 xxL 档 en 主文案 2 行×0.7 下限 117pt > 实得 97pt,
-                    // 375pt 机型 xL 即超)——竖排让文案占整行宽,胶囊换行置底。
-                    // DynamicTypeSize 的 Comparable 序把 AX1-5 排在 xxxL 之上,
-                    // 本门槛天然覆盖全部 AX 档。
-                    VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                showReviewFlow = true
+            } label: {
+                RecapCard {
+                    if dynamicTypeSize >= .xLarge {
+                        // xL 起竖排(2026-10-19):fixedSize 胶囊占宽过大,横排会把左侧
+                        // 文案挤出可视区(AX5+en 截图实测主文案被压没;CoreText 实测
+                        // 393pt 下 xxL 档 en 主文案 2 行×0.7 下限 117pt > 实得 97pt,
+                        // 375pt 机型 xL 即超)——竖排让文案占整行宽,胶囊换行置底。
+                        // DynamicTypeSize 的 Comparable 序把 AX1-5 排在 xxxL 之上,
+                        // 本门槛天然覆盖全部 AX 档。
+                        VStack(alignment: .leading, spacing: WarmSpacing.sm) {
+                            HStack(spacing: WarmSpacing.md) {
+                                entryIcon()
+                                entryTexts(hasPending: hasPending, pendingCount: pendingCount)
+                            }
+                            entryCapsule(hasPending: hasPending)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } else {
                         HStack(spacing: WarmSpacing.md) {
                             entryIcon()
                             entryTexts(hasPending: hasPending, pendingCount: pendingCount)
-                        }
-                        entryCapsule(hasPending: hasPending)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                } else {
-                    HStack(spacing: WarmSpacing.md) {
-                        entryIcon()
-                        entryTexts(hasPending: hasPending, pendingCount: pendingCount)
-                            .layoutPriority(1)
+                                .layoutPriority(1)
 
-                        Spacer(minLength: WarmSpacing.xs)
-                        entryCapsule(hasPending: hasPending)
+                            Spacer(minLength: WarmSpacing.xs)
+                            entryCapsule(hasPending: hasPending)
+                        }
                     }
                 }
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ReviewFlowEntryCard")
+
+            entryCardDismissButton
+        }
+    }
+
+    /// 入口卡右上角 ×(2026-10-27 拍板):不想复盘的用户主动收卡。点击写关闭
+    /// 时刻进 `ReviewEntryDismissStore`,复用同一 7 天冷却——关闭的只是「入口
+    /// 时机」,复盘功能不关(统计条/通知仍是入口,7 天后卡自动回来,无永久
+    /// 关闭出口)。
+    ///
+    /// 形态:44pt 热区(a11y 推荐下限)垫 20pt 卡色圆底——AX 大字号下主文案
+    /// 可能延伸到卡右上,底衬保证压在文字上仍可读;横排下与尾部胶囊仅有
+    /// 边缘小片重叠(胶囊中心远离热区),竖排/AX 完全无碰撞。a11y 文案复用
+    /// `panel.close`(zh/en/ja 现成,不新增 key)。
+    private var entryCardDismissButton: some View {
+        Button {
+            dismissEntryCard()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(WarmTheme.textMuted)
+                .padding(WarmSpacing.xs)
+                .background(Circle().fill(WarmTheme.cardBackground))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("ReviewFlowEntryCard")
+        .accessibilityLabel(String(localized: "panel.close"))
+        .accessibilityIdentifier("ReviewEntryCardDismiss")
+    }
+
+    /// × 的动作:记录关闭时刻(store 内落 `review_entry_dismiss.set` 结构化
+    /// 日志,可回答「多少人主动关掉了入口卡」)+ 带动画收卡——与复盘完成
+    /// 滑出同款事务与曲线(`loadReviewNotes(animated:)` 同源)。
+    private func dismissEntryCard() {
+        let now = Date()
+        ReviewEntryDismissStore.shared.markDismissed(now)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            entryCardDismissedAt = now
+        }
     }
 
     /// 入口卡图标——「有事要批改/决定」的心智锚。
