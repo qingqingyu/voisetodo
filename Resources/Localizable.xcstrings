@@ -4,10 +4,17 @@
     "" : {
 
     },
+    "·" : {
+
+    },
+    "「%@」" : {
+
+    },
     "%@" : {
 
     },
     "%@ %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -38,18 +45,6 @@
           }
         }
       }
-    },
-    "Todo ID" : {
-
-    },
-    "Toggle Todo" : {
-
-    },
-    "VT" : {
-
-    },
-    "VoiceTodo" : {
-
     },
     "a11y.action.expand_month" : {
       "localizations" : {
@@ -1338,96 +1333,6 @@
         }
       }
     },
-    "calendar.ask.allow" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn On Sync"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同期をオンにする"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启同步"
-          }
-        }
-      }
-    },
-    "calendar.ask.not_now" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not Now"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "あとで"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂不"
-          }
-        }
-      }
-    },
-    "calendar.mode.month" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Month"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "月"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "月"
-          }
-        }
-      }
-    },
-    "calendar.mode.week" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Week"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "週"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "周"
-          }
-        }
-      }
-    },
     "calendar_import.button" : {
       "localizations" : {
         "en" : {
@@ -1732,6 +1637,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "从日历导入"
+          }
+        }
+      }
+    },
+    "calendar.ask.allow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Sync"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同期をオンにする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启同步"
+          }
+        }
+      }
+    },
+    "calendar.ask.not_now" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あとで"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂不"
+          }
+        }
+      }
+    },
+    "calendar.mode.month" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Month"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        }
+      }
+    },
+    "calendar.mode.week" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "周"
           }
         }
       }
@@ -8669,6 +8664,72 @@
         }
       }
     },
+    "onboarding.speech_language.auto_resolved %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currently: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在:%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前:%@"
+          }
+        }
+      }
+    },
+    "onboarding.speech_language.desc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick the language you'll record todos in. You can change it anytime in Settings."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクを録音する言語を選んでください。あとで設定からいつでも変更できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择你录入待办时说的语言，之后可随时在设置里修改。"
+          }
+        }
+      }
+    },
+    "onboarding.speech_language.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How will you speak?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どの言語で話しますか?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你习惯用什么语言说？"
+          }
+        }
+      }
+    },
     "onboarding.speech.card_desc" : {
       "localizations" : {
         "en" : {
@@ -8777,72 +8838,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还需要语音识别"
-          }
-        }
-      }
-    },
-    "onboarding.speech_language.auto_resolved %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Currently: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在:%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前:%@"
-          }
-        }
-      }
-    },
-    "onboarding.speech_language.desc" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pick the language you'll record todos in. You can change it anytime in Settings."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タスクを録音する言語を選んでください。あとで設定からいつでも変更できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择你录入待办时说的语言，之后可随时在设置里修改。"
-          }
-        }
-      }
-    },
-    "onboarding.speech_language.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "How will you speak?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "どの言語で話しますか?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你习惯用什么语言说？"
           }
         }
       }
@@ -13046,6 +13041,28 @@
         }
       }
     },
+    "review.flow.recap.pinned_outcome_hero_%lld_%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You picked %1$lld to focus on. %2$lld done."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回決めた重点 %1$lld 件のうち、%2$lld 件が完了"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次定的 %1$lld 件重点,做完了 %2$lld 件"
+          }
+        }
+      }
+    },
     "review.flow.recap.pinned.done" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13111,28 +13128,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上次定的重点"
-          }
-        }
-      }
-    },
-    "review.flow.recap.pinned_outcome_hero_%lld_%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You picked %1$lld to focus on. %2$lld done."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回決めた重点 %1$lld 件のうち、%2$lld 件が完了"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次定的 %1$lld 件重点,做完了 %2$lld 件"
           }
         }
       }
@@ -17018,9 +17013,6 @@
         }
       }
     },
-    "siri.complete.summary ${todo}" : {
-
-    },
     "siri.complete.summary %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -17043,6 +17035,9 @@
           }
         }
       }
+    },
+    "siri.complete.summary ${todo}" : {
+
     },
     "siri.complete.title" : {
       "localizations" : {
@@ -17154,9 +17149,6 @@
         }
       }
     },
-    "siri.delete.summary ${todo}" : {
-
-    },
     "siri.delete.summary %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -17179,6 +17171,9 @@
           }
         }
       }
+    },
+    "siri.delete.summary ${todo}" : {
+
     },
     "siri.delete.title" : {
       "localizations" : {
@@ -17466,9 +17461,6 @@
         }
       }
     },
-    "siri.query.summary ${status}" : {
-
-    },
     "siri.query.summary %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -17491,6 +17483,9 @@
           }
         }
       }
+    },
+    "siri.query.summary ${status}" : {
+
     },
     "siri.query.title" : {
       "localizations" : {
@@ -17800,9 +17795,6 @@
         }
       }
     },
-    "siri.summary ${transcript}" : {
-
-    },
     "siri.summary %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -17825,6 +17817,9 @@
           }
         }
       }
+    },
+    "siri.summary ${transcript}" : {
+
     },
     "startup.storage_error.title" : {
       "localizations" : {
@@ -18205,6 +18200,12 @@
         }
       }
     },
+    "Todo ID" : {
+
+    },
+    "Toggle Todo" : {
+
+    },
     "ui.added_success" : {
       "localizations" : {
         "en" : {
@@ -18381,6 +18382,12 @@
         }
       }
     },
+    "VoiceTodo" : {
+
+    },
+    "VT" : {
+
+    },
     "widget.description" : {
       "localizations" : {
         "en" : {
@@ -18535,12 +18542,6 @@
           }
         }
       }
-    },
-    "·" : {
-
-    },
-    "「%@」" : {
-
     }
   },
   "version" : "1.0"
