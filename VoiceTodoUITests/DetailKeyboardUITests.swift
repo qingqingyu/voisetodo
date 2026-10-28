@@ -106,7 +106,9 @@ final class DetailKeyboardUITests: XCTestCase {
 
     /// 聚焦标题输入框、键入文字、确认软件键盘弹起。
     private func focusTitleAndType() {
-        let titleField = appHelper.app.textFields.firstMatch
+        // 标题输入框是 UITextView 包装(FocusableTextView，保光标不跳)，
+        // XCUITest 里归属 textViews 而非 textFields；用 a11y identifier 精确寻址。
+        let titleField = appHelper.app.textViews["DetailTitleField"]
         XCTAssertTrue(titleField.waitForExistence(timeout: 5), "标题输入框应存在")
         titleField.tap()
         titleField.typeText("改")

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 第 2 步 · 处理没做完的一次性任务(卡片堆;阶段 3,2026-08-22 交互改版落地)。
 ///
@@ -1244,15 +1245,27 @@ struct ReviewStepTriage: View {
                 ? "review.flow.split.a11y.deselect"
                 : "review.flow.split.a11y.select"))
 
-            TextField("", text: candidate.text, axis: .vertical)
-                .font(WarmFont.body(15))
-                .foregroundColor(candidate.wrappedValue.checked ? WarmTheme.textPrimary : WarmTheme.textMuted)
-                .lineLimit(1...2)
-                .padding(WarmSpacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
-                        .fill(WarmTheme.inputFieldBackground)
-                )
+            // 同详情页标题/备注:原生 TextField(axis: .vertical) 在编辑期重渲染
+            // (每次按键写 splitCandidates @State → 整步视图重算)会重铺文本、光标
+            // 跳末尾。FocusableTextView 编辑期不回写 .text,选区保留(含 IME 守卫)。
+            // 字体对齐 WarmFont.body(15):Avenir Next medium = AvenirNext-Medium(默认)。
+            // 文字颜色随勾选态切换:textColor 支持动态值(updateUIView 对比同步)。
+            // 原生版 lineLimit(1...2) 的封顶改为 autoHeight 随内容增高,长候选全文可见。
+            FocusableTextView(
+                text: candidate.text,
+                fontSize: 15,
+                accessibilityIdentifier: "ReviewSplitCandidateField",
+                autoFocusOnAttach: false,
+                autoHeight: true,
+                textColor: candidate.wrappedValue.checked
+                    ? UIColor(WarmTheme.textPrimary)
+                    : UIColor(WarmTheme.textMuted)
+            )
+            .padding(WarmSpacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: WarmRadius.chip, style: .continuous)
+                    .fill(WarmTheme.inputFieldBackground)
+            )
 
             if candidate.wrappedValue.custom {
                 Button {

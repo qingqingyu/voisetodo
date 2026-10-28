@@ -1,11 +1,18 @@
 import SwiftUI
 import UIKit
 
-/// UIKit UITextView 包装，用于在 SwiftUI sheet 里**强制可靠地自动聚焦**。
+/// UIKit UITextView 包装，用于在 SwiftUI sheet 里**强制可靠地自动聚焦**，
+/// 以及**编辑期间光标稳定**的多行文本编辑。
 ///
 /// 为什么不用 SwiftUI `TextEditor` + `@FocusState`：
 /// SwiftUI `TextEditor` 的 `.focused()` 在 sheet 里调用 `isInputFocused = true`
 /// 经常被吞掉（sheet 完成 present 之前 .task 已执行）。
+///
+/// 为什么不用 SwiftUI `TextField(axis: .vertical)`（详情页标题/备注的教训）：
+/// 详情页编辑期间高频重渲染（每次 keystroke 写 @State、keyboardWillShow 翻状态、
+/// 防抖保存回写基准 + toast），原生多行 TextField 会在这些 SwiftUI 更新中重铺文本，
+/// 把光标重置到末尾——用户在中间插字，光标瞬跳最后。UITextView 只要不在编辑期
+/// 重设 `.text`（updateUIView 的组字/竞态守卫保证）就天然保留选区。
 ///
 /// 为什么先用 `didMoveToWindow`：
 /// sheet 的 present 动画有 200-300ms，而 `DispatchQueue.main.async` 只延迟一个
@@ -19,23 +26,54 @@ struct FocusableTextView: UIViewRepresentable {
     /// `adjustsFontForContentSizeCategory = true` 会基于 traitCollection 自动按
     /// UIFontMetrics 缩放当前 font，无需（也不应）手动 scaledFont——否则会双重缩放。
     ///
-    /// 不变量：baseFont 在 init 后不可变（let）。fontSize 是 struct 的不可变配置，
-    /// 调用方若需换字号必须销毁重建 FocusableTextView，而非依赖 updateUIView 同步——
+    /// 不变量：baseFont 在 init 后不可变（let）。fontName/fontSize 是 struct 的不可变配置，
+    /// 调用方若需换字体/字号必须销毁重建 FocusableTextView，而非依赖 updateUIView 同步——
     /// 因为 updateUIView 不再同步 font（避免与系统 Dynamic Type 缩放冲突）。
-    /// 当前调用方(BottomInputPanelView / UnparsedTranscriptEditSheet)均传常量 fontSize，符合此契约。
+    /// 当前调用方(BottomInputPanelView / UnparsedTranscriptEditSheet / TodoDetailView /
+    /// ReviewStepTriage)均传常量 fontName/fontSize，符合此契约。
     private let baseFont: UIFont
-    /// 文字颜色（对齐 WarmTheme.textPrimary 浅色模式 #3D3A38）
+    /// 文字颜色（默认 #3D3A38 为冷化前历史值，仅最早两个调用方沿用；不等于当前
+    /// WarmTheme.textPrimary）。
+    /// 支持动态值：updateUIView 每次对比并同步，调用方可随状态传不同色
+    /// （复盘拆分行随勾选态切 textPrimary/textMuted）。
     private let textColor: UIColor
-    /// a11y 标识。默认值保持唯一既有调用方(BottomInputPanelView / 既有 UI 测试)零改动。
+    /// a11y 标识。默认值保持最早调用方(BottomInputPanelView / 既有 UI 测试)零改动。
     private let accessibilityID: String
+    /// attach 后是否自动抢焦点。输入面板/编辑 sheet 传 true（打开即打字）；
+    /// 详情页标题/备注传 false（打开详情不该弹键盘，用户点哪个框聚焦哪个）。
+    private let autoFocusOnAttach: Bool
+    /// 是否随内容自适应增高（isScrollEnabled = false，UITextView 由此获得 intrinsic
+    /// content size，按文本行数自尺寸）。
+    /// - false（默认）：滚动开启、无 intrinsic size，调用方必须用 `.frame(minHeight:)`
+    ///   撑高，超高后**框内滚动**——输入面板/编辑 sheet 的「封顶+内部滚动」形态。
+    /// - true：滚动关闭、随行数增长，内容永不截断/不出滚动条——详情页标题/备注的
+    ///   「全文可见」形态。滚动关闭后 keyboardDismissMode(.interactive) 在框内失效，
+    ///   详情页收键盘有自己的通道（点空白 / 页面下滑手势的 keyboard-only 分支）。
+    private let autoHeight: Bool
 
-    init(text: Binding<String>, fontSize: CGFloat = 17, accessibilityIdentifier: String = "ManualInputTextView") {
+    init(
+        text: Binding<String>,
+        fontSize: CGFloat = 17,
+        accessibilityIdentifier: String = "ManualInputTextView",
+        /// Avenir Next 的 PostScript 名。 WarmFont 的 SwiftUI 侧对应：
+        /// headline(.semibold) → "AvenirNext-DemiBold"；body(.medium) → "AvenirNext-Medium"（默认）。
+        /// 字体缺失时 fallback 为 systemFont(.medium)，仅极端环境下降级，不区分传入字重。
+        fontName: String = "AvenirNext-Medium",
+        autoFocusOnAttach: Bool = true,
+        autoHeight: Bool = false,
+        /// 默认 #3D3A38 — 冷化前的历史值，为保持最早调用方(BottomInputPanelView /
+        /// UnparsedTranscriptEditSheet)既有视觉零改动而保留；**不等于**当前
+        /// WarmTheme.textPrimary 浅色值(#1E2A3A)。新调用方若需跟随设计系统应显式传
+        /// `UIColor(WarmTheme.textPrimary)`。UIUserInterfaceStyle 锁 Light，无深色适配问题。
+        textColor: UIColor = UIColor(red: 0x3D / 255.0, green: 0x3A / 255.0, blue: 0x38 / 255.0, alpha: 1.0)
+    ) {
         self._text = text
-        self.baseFont = UIFont(name: "AvenirNext-Medium", size: fontSize)
+        self.baseFont = UIFont(name: fontName, size: fontSize)
             ?? .systemFont(ofSize: fontSize, weight: .medium)
-        // #3D3A38 — WarmTheme.textPrimary 浅色模式值；UIUserInterfaceStyle 锁 Light
-        self.textColor = UIColor(red: 0x3D / 255.0, green: 0x3A / 255.0, blue: 0x38 / 255.0, alpha: 1.0)
+        self.textColor = textColor
         self.accessibilityID = accessibilityIdentifier
+        self.autoFocusOnAttach = autoFocusOnAttach
+        self.autoHeight = autoHeight
     }
 
     func makeUIView(context: Context) -> UITextView {
@@ -50,7 +88,9 @@ struct FocusableTextView: UIViewRepresentable {
         // 去掉 UITextView 默认内边距，让文字对齐 SwiftUI 视图布局
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
-        textView.isScrollEnabled = true
+        // autoHeight 决定滚动形态（见 autoHeight 文档）：滚动关闭才有 intrinsic content size，
+        // 按行数自尺寸；滚动开启则调用方必须 frame(minHeight:) 撑高、超高框内滚动。
+        textView.isScrollEnabled = !autoHeight
         textView.alwaysBounceVertical = false
         textView.keyboardDismissMode = .interactive
         textView.autocorrectionType = .yes
@@ -61,7 +101,7 @@ struct FocusableTextView: UIViewRepresentable {
         // 同步初始 uiText 到 coordinator，避免首次 updateUIView 误判"用户刚改过未同步"。
         context.coordinator.lastKnownUIText = text
         // autoFocus 在 didMoveToWindow 里触发，无需此处主动 becomeFirstResponder
-        textView.autoFocusOnAttach = true
+        textView.autoFocusOnAttach = autoFocusOnAttach
         return textView
     }
 
