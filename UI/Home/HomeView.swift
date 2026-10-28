@@ -3266,7 +3266,7 @@ private struct HomeQuotaPillView: View {
     @EnvironmentObject private var entitlement: EntitlementManager
     @EnvironmentObject private var quotaUsage: QuotaUsage
 
-    /// 与付费墙 comparisonCard 同口径:StoreKit 本地判定与代理快照任一为 Pro 即按
+    /// 与付费墙 quotaBadge 分流同口径:StoreKit 本地判定与代理快照任一为 Pro 即按
     /// Pro 展示(刚订阅、代理响应未到的矛盾窗口期不显示免费档数字)。
     private var isPro: Bool {
         entitlement.isPro || quotaUsage.isPro

@@ -88,3 +88,16 @@ iPhone 16 间距未缩放(首版按设计稿原值:大标题上方 28/权益卡�
 3. 空字符串死键 `""`(值 `{}`,Xcode stale 标记残留)在排序脚本中以
    `omittingEmptySubsequences: false` 保留,未顺手删除(不在任务书范围)。
 4. 其余无偏离;文案逐字照任务书,未改写。
+
+## 7. 双 review 循环(2026-10-28,Three Check + code-review-expert 交替)
+
+第 3 轮双零收敛(1 轮 2+2 → 2 轮 0+1 → 3 轮 0+0),累计 5 发现 / 5 修复,无冲突:
+
+1. 免费用量徽章补「(估算)」注记(§5.2 口径,初版遗漏)+ 主文本 `.layoutPriority(1)`
+   (CLAUDE.md 文本布局规则)
+2. 「(估算)」注记两态重复 → 抽 `estimateNote` 共用
+3. 底部链接块两分支重复 → 抽 `footerLinksContent` 共用(布局等价)
+4. 三文件四处注释引用已删/改名符号(`comparisonCard`→`quotaBadge`、
+   `ProductCard`→`PlanCard`)同步更新
+
+修复后复验:App 编译零错误,`swift test` 361 例仅已知 DST 红灯。文案零改动。

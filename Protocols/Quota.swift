@@ -123,7 +123,7 @@ final class QuotaUsage: ObservableObject, QuotaProviding {
     /// 纠正，双端同步前提下不存在此方向的「承诺偏大」。②反向场景：订阅过期后
     /// `isPro` 停留 stale-true 而代理权威快照已翻 free 时（`X-Quota-Plan: free`
     /// 且该请求未带凭证，不算「被拒」），本方法短暂返回 Pro 常量（显示偏大）——
-    /// 与 `comparisonCard` 分流同口径跟随 StoreKit 本地判定，
+    /// 与付费墙 `quotaBadge` 分流同口径跟随 StoreKit 本地判定，
     /// paywall 的 `refresh()` 翻正后自动消失，仅影响展示不影响执行。
     /// 双端同步约定见 Constants.swift。
     func displayedLimit(storeKitIsPro: Bool) -> Int {

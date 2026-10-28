@@ -300,11 +300,17 @@ struct PaywallContent: View {
                 .font(.system(size: 14))
                 .foregroundColor(WarmTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
             Text(verbatim: "\(quotaUsage.used)/\(quotaUsage.limit)")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(WarmTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            // 与 liveUsageBadge 同口径(§5.2):非权威数据跟「（估算）」小字,
+            // 离线估算的 n/m 不冒充权威计数。
+            if !quotaUsage.isAuthoritative {
+                estimateNote
+            }
         }
     }
 
@@ -324,16 +330,21 @@ struct PaywallContent: View {
                 .contentTransition(.numericText())
                 .animation(.easeOut(duration: 0.25), value: liveUsageText)
             if !quotaUsage.isAuthoritative {
-                Text(String(localized: "quota.non_authoritative"))
-                    .font(.system(size: 12))
-                    .foregroundColor(WarmTheme.textMuted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                estimateNote
             }
         }
     }
 
-    /// 额度读取失败态:沿用 quotaErrorPill 的内容,套新胶囊样式。
+    /// 「（估算）」小字:非权威配额数据的标注,免费/实时两态共用(§5.2)。
+    private var estimateNote: some View {
+        Text(String(localized: "quota.non_authoritative"))
+            .font(.system(size: 12))
+            .foregroundColor(WarmTheme.textMuted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    /// 额度读取失败态:沿用 v2 quotaErrorPill 的内容(警告图标 + quota.error),套新胶囊样式。
     private var quotaErrorBadge: some View {
         quotaBadgeShell {
             Image(systemName: "exclamationmark.triangle")
@@ -494,12 +505,7 @@ struct PaywallContent: View {
             }
 
             // 链接行与小字不依赖商品加载结果(3.1.2:商品加载失败时链接也必须可点)。
-            linkRow
-                // v3 设计稿:说明下 12pt。
-                .padding(.top, WarmSpacing.sm)
-            indieFooter
-                // v3 设计稿:链接行下 10pt。
-                .padding(.top, 10)
+            footerLinksContent
         }
         .padding(.horizontal, 24)
         // v3 设计稿:购买区顶部 16pt 呼吸;底部 12pt + 系统安全区。
@@ -883,6 +889,20 @@ struct PaywallContent: View {
         }
     }
 
+    /// 底部链接块(未订阅/已订阅分支共用):链接行 + 小字。
+    /// 链接行不依赖商品加载结果(3.1.2:商品加载失败时链接也必须可点);
+    /// 水平边距、底部安全区 padding 与背景由调用方套(两分支外层结构不同)。
+    private var footerLinksContent: some View {
+        VStack(spacing: 0) {
+            linkRow
+                // v3 设计稿:说明下 12pt。
+                .padding(.top, WarmSpacing.sm)
+            indieFooter
+                // v3 设计稿:链接行下 10pt。
+                .padding(.top, 10)
+        }
+    }
+
     // MARK: - 已订阅分支
 
     /// 已订阅(v3 §5.7):内容全部沿用,放进滚动区;底部固定区只放链接行 + 小字
@@ -927,15 +947,10 @@ struct PaywallContent: View {
             viewportHeight = newHeight
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                linkRow
-                    .padding(.top, WarmSpacing.sm)
-                indieFooter
-                    .padding(.top, 10)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
-            .background(WarmTheme.background)
+            footerLinksContent
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+                .background(WarmTheme.background)
         }
         .task { await entitlement.refresh() }
     }
