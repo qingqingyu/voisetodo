@@ -623,13 +623,15 @@ final class ScenarioTests: XCTestCase {
         }
         XCTAssertTrue(goLookAppeared, "elsewhere 分支庆祝 toast 应带「去看看」action(存在且可点)")
 
-        let paywallNavBar = appHelper.app.navigationBars["升级 VoiceTodo Pro"]
+        // v3 改版:页头不再用系统导航栏(自绘标题+关闭),改找 PaywallHeaderTitle;
+        // 「关闭」按钮判断保留(朗读名沿用 paywall.close)。
+        let paywallHeader = appHelper.app.descendants(matching: .any)
+            .matching(identifier: "PaywallHeaderTitle").firstMatch
         let paywallClose = appHelper.app.buttons["关闭"]
         var paywallShown = false
         var toastStillVisibleWhenPaywallAppeared = false
         for _ in 0..<110 { // 11s 上限(原 10s + 轮询粒度)
-            if paywallNavBar.exists || paywallClose.exists
-                || appHelper.app.navigationBars.firstMatch.exists {
+            if paywallHeader.exists || paywallClose.exists {
                 paywallShown = true
                 // paywall 首现时 toast 应已播完(正确时序:toast 4.0s 消失,
                 // paywall 4.3s 弹出)。给 1.0s 窗口吸收 removal 动画尾巴
@@ -655,18 +657,17 @@ final class ScenarioTests: XCTestCase {
         XCTAssertFalse(toastStillVisibleWhenPaywallAppeared,
                        "paywall 弹出时庆祝 toast 仍在屏上——疑似 paywall 延迟被硬编码回 2.0s(v3 §3.5d),用户来不及点「去看看」")
 
-        // Step 6: 一屏化断言 —— 付费墙全部内容(含「开始 7 天免费试用」CTA + 法务三件套)
-        // 不滚动即可见。依赖 DEBUG 钩子 PaywallContentFits(value "1|content=|viewport=|state="),
-        // 轮询/判定逻辑与 S17 的 OnboardingContentFits 同款。
+        // Step 6: v3 断言口径 —— 整页不再要求一屏放下(内容自然高度超一屏,SE 必须可滚),
+        // 改为:底部购买区不滚动即可见。依赖 DEBUG 钩子 PaywallContentFits(现测中间滚动区,
+        // 值 "1|content=|viewport=|state="),只记录不断言;购买区可见性直接断言元素本身。
         let fitsHook = appHelper.app.otherElements["PaywallContentFits"]
         XCTAssertTrue(fitsHook.waitForExistence(timeout: 5.0), "付费墙应暴露 PaywallContentFits 钩子")
 
         // 前置 ①:等商品加载落定到稳定态(success/empty/error),empty/error 时点
-        // 重试按钮恢复(storekitd 偶发抽风,见 PaywallView productList `.empty` 注释)。
+        // 重试按钮恢复(storekitd 偶发抽风,见 PaywallView purchaseSection `.empty` 注释)。
         // 注意:CLI `xcodebuild test` 不给被测进程注入 StoreKit 配置,商品恒 empty
         // (既有结论,S20 购买类测试因此只能 Xcode GUI 跑)——重试后仍非 success
-        // 不是失败,下方的 fits 断言对实际到达的稳定态生效;success 最坏态
-        // (商品卡+CTA+试用卡全渲染)由 GUI 跑法覆盖。
+        // 不是失败,下方的购买区断言只在 success 态生效;success 态由 GUI 跑法覆盖。
         var fits = (fitsHook.value as? String) ?? "nil"
         let retryButton = appHelper.app.buttons["PaywallRetryButton"]
         var retryRounds = 0
@@ -688,35 +689,41 @@ final class ScenarioTests: XCTestCase {
             fits = (fitsHook.value as? String) ?? "nil"
         }
 
-        // 前置 ②(仅 success 态):intro 资格查询落定 —— 内容才是「最坏正常态」
-        // (试用价值卡 + trial_included + 法务文案全渲染)。legalText 恰在 success
+        // 前置 ②(仅 success 态):intro 资格查询落定 —— 续费说明恰在 success
         // 且查询落定时渲染;CTA 在 success 时就出现(查询期间显 spinner),不能作信号。
         // 测试强制 zh,匹配中文「自动续费」。
         if fits.contains("state=success") {
-            let legalText = appHelper.app.staticTexts.matching(
+            let renewalNotice = appHelper.app.staticTexts.matching(
                 NSPredicate(format: "label CONTAINS %@", "自动续费")
             ).firstMatch
-            if !legalText.waitForExistence(timeout: 10.0) {
+            if !renewalNotice.waitForExistence(timeout: 10.0) {
                 print("===PAYWALL-FITS-DEBUG-BEGIN===\nvalue=\(fits)\n\(appHelper.app.debugDescription)\n===PAYWALL-FITS-DEBUG-END===")
             }
-            XCTAssertTrue(legalText.exists,
-                          "付费墙(success)应渲染法务文案(最坏正常态,含试用卡),value=\(fits)")
+            XCTAssertTrue(renewalNotice.exists,
+                          "付费墙(success)应渲染续费说明(含试用条款),value=\(fits)")
+
+            // v3 核心断言:购买按钮存在且不用滚动即可点;续费说明整段在窗口内
+            // (底部购买区固定,任何机型不滚动可见)。
+            let purchaseButton = appHelper.app.buttons["PaywallPurchaseButton"]
+            XCTAssertTrue(purchaseButton.waitForExistence(timeout: 5.0), "购买按钮应该出现")
+            XCTAssertTrue(purchaseButton.isHittable, "购买按钮应不用滚动即可点(底部购买区固定),value=\(fits)")
+            XCTAssertTrue(
+                renewalNotice.frame.maxY <= appHelper.app.frame.maxY + 1,
+                "续费说明应在窗口内可见(底部购买区固定),frame=\(renewalNotice.frame),窗口=\(appHelper.app.frame)"
+            )
         }
 
-        // 钩子值过渡态等收敛:视口未测得报 "pending";content=0 是初值假阳性;
-        // 试用卡渲染等后续布局变化会让 0→1,给短暂轮询窗口(同 S17)。
+        // 钩子值过渡态等收敛后只记录(v3 起不断言整页一屏):视口未测得报 "pending";
+        // content=0 是初值假阳性,给短暂轮询窗口(同 S17)。
         var settleAttempts = 0
         while settleAttempts < 12,
               fits == "pending" || fits == "nil"
-              || Self.contentHeight(from: fits) <= 0
-              || (String(fits.prefix(1)) == "0" && settleAttempts < 6) {
+              || Self.contentHeight(from: fits) <= 0 {
             Thread.sleep(forTimeInterval: 0.25)
             fits = (fitsHook.value as? String) ?? "nil"
             settleAttempts += 1
         }
         attachScreenshot(named: "paywall-fits\(fits)")
-        XCTAssertEqual(String(fits.prefix(1)), "1",
-                       "付费墙内容溢出一屏(需要滚动才能看到 CTA),value=\(fits)")
     }
 
     // MARK: - S18a/S18b: 首次语音试用引导(庆祝 toast 文案分支)
@@ -906,9 +913,11 @@ final class ScenarioTests: XCTestCase {
         appHelper.tapConfirmButton()
         XCTAssertTrue(appHelper.confirmSheet.waitForNonExistence(timeout: 3.0))
 
-        // Step 3: wow 播完后 paywall 弹出
-        let paywallNavBar = appHelper.app.navigationBars["升级 VoiceTodo Pro"]
-        XCTAssertTrue(paywallNavBar.waitForExistence(timeout: 10.0), "wow 播完后付费墙应弹出")
+        // Step 3: wow 播完后 paywall 弹出。v3 改版:页头不再用系统导航栏
+        // (自绘标题),改找 PaywallHeaderTitle(按任意元素类型匹配,同 PaywallSubscribedCard 写法)。
+        let paywallHeader = appHelper.app.descendants(matching: .any)
+            .matching(identifier: "PaywallHeaderTitle").firstMatch
+        XCTAssertTrue(paywallHeader.waitForExistence(timeout: 10.0), "wow 播完后付费墙应弹出")
 
         // Step 4: 等购买 CTA 可用(商品加载 + intro offer 资格查询完成,期间 CTA 为 spinner)
         let purchaseButton = appHelper.app.buttons["PaywallPurchaseButton"]
@@ -944,7 +953,7 @@ final class ScenarioTests: XCTestCase {
             turnedSuccess,
             "购买成功后 CTA 应变为成功态(value=success),实际 value=\(purchaseButton.value ?? "nil")"
         )
-        XCTAssertTrue(paywallNavBar.waitForNonExistence(timeout: 10.0), "成功态约 1 秒后付费墙应自动关闭")
+        XCTAssertTrue(paywallHeader.waitForNonExistence(timeout: 10.0), "成功态约 1 秒后付费墙应自动关闭")
         let successToast = appHelper.app.staticTexts["已升级为 Pro"]
         XCTAssertTrue(successToast.waitForExistence(timeout: 5.0), "付费墙收起后主界面应弹「已升级为 Pro」toast")
 

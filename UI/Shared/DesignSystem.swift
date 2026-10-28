@@ -17,6 +17,14 @@ enum WarmTheme {
     /// 与 urgent(实心红)区分:urgent 用于强调底色,urgentText 用于浅红底上的深红字。
     static let urgentText = Color(light: "C43B40", dark: "FFB3B5")
 
+    /// 付费页购买按钮、选中方案描边与单选圈(2026-10-28 paywall v3)。
+    /// 比 primary 深:白字在其上对比度约 3.8:1(primary 只有约 2.3:1,看不清)。
+    /// 仅付费页使用,不进入其余界面。
+    static let ctaFill = Color(hex: "D4613C")
+    /// 付费页浅橙底:权益图标块、「省 X%」角标底色(paywall v3)。
+    /// dark 值按「primary 16% 叠在深色卡片上」推得,深色截图验收后可微调。
+    static let primaryTint = Color(light: "FCE9E2", dark: "493835")
+
     // 背景色 - 中性冷灰白。冷化让白卡靠对比浮起。
     static let background = Color(light: "F4F5F7", dark: "1A1C1E")
     static let cardBackground = Color(light: "FFFFFF", dark: "26282B")

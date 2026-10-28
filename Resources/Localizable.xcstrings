@@ -8620,50 +8620,6 @@
         }
       }
     },
-    "onboarding.pro.bullet.trial.desc" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue only if you love it — cancel anytime"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "気に入ったら継続 — いつでもキャンセルできます"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "满意才续费,可随时取消"
-          }
-        }
-      }
-    },
-    "onboarding.pro.bullet.trial.title %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ free trial"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@の無料体験"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 免费试用"
-          }
-        }
-      }
-    },
     "onboarding.speech_language.auto_resolved %@" : {
       "localizations" : {
         "en" : {
@@ -9151,24 +9107,112 @@
         }
       }
     },
-    "paywall.card.trial_included %@" : {
+    "paywall.benefits.count %lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Includes %@ free trial"
+            "value" : "%lld times"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@の無料体験を含む"
+            "value" : "%lld回"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "含 %@ 免费试用"
+            "value" : "%lld 次"
+          }
+        }
+      }
+    },
+    "paywall.benefits.dates" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puts “next Friday” on the right day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「月半ば」「来週の金曜」も正しい日付に"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“月中”“下周五”也能排到对的日期"
+          }
+        }
+      }
+    },
+    "paywall.benefits.free_note %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free plan: %lld a day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無料版は1日%lld回"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免费版每天 %lld 次"
+          }
+        }
+      }
+    },
+    "paywall.benefits.heading %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With Pro, do this %@ a day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro なら1日%@、こうして使えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "升级 Pro，每天 %@都能这样用"
+          }
+        }
+      }
+    },
+    "paywall.benefits.voice" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just speak. No typing, no forms."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話すだけで記録。入力もフォームも不要"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "张口就记，不用打字，不用填表"
           }
         }
       }
@@ -9195,118 +9239,6 @@
         }
       }
     },
-    "paywall.comparison.free" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Free"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無料版"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "免费版"
-          }
-        }
-      }
-    },
-    "paywall.comparison.limit_per_day %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld / day"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1日 %lld 回"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 次 / 每天"
-          }
-        }
-      }
-    },
-    "paywall.comparison.per_day" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "per day"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1日あたり"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每天"
-          }
-        }
-      }
-    },
-    "paywall.comparison.pro" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pro"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pro 版"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pro 版"
-          }
-        }
-      }
-    },
-    "paywall.comparison.voice_prefix %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice captures: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声入力：%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "语音录入：%@"
-          }
-        }
-      }
-    },
     "paywall.cta.start_trial %@" : {
       "localizations" : {
         "en" : {
@@ -9329,24 +9261,46 @@
         }
       }
     },
-    "paywall.cta.subscribe" : {
+    "paywall.cta.subscribe_monthly" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Subscribe to Pro"
+            "value" : "Subscribe to Pro Monthly"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pro を購読"
+            "value" : "Pro 月額プランを購読"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "订阅 Pro"
+            "value" : "订阅月度 Pro"
+          }
+        }
+      }
+    },
+    "paywall.cta.subscribe_yearly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscribe to Pro Yearly"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 年額プランを購読"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅年度 Pro"
           }
         }
       }
@@ -9356,41 +9310,41 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "🌱 Made with care by one indie developer. Thank you for your support."
+            "value" : "Made with care by one indie developer. Thank you."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "🌱 VoiceTodo は個人開発者がひとりで丁寧に作っています。応援ありがとうございます。"
+            "value" : "個人開発者が心を込めて作っています。応援ありがとうございます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "🌱 VoiceTodo 由一位独立开发者用心打磨，感谢你的支持。"
+            "value" : "由一位独立开发者用心打磨，感谢支持"
           }
         }
       }
     },
-    "paywall.legal.cancel_path" : {
+    "paywall.hero.title" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancel in Settings → Apple ID → Subscriptions."
+            "value" : "Say it.\nIt's on your list."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「設定 → Apple ID → サブスクリプション」でキャンセルできます。"
+            "value" : "思いついたら、話すだけ。\nもうリストに。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 设置 → Apple ID → 订阅 中取消"
+            "value" : "想到就说，\n说完就进清单。"
           }
         }
       }
@@ -9406,13 +9360,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@/%2$@、自動更新されます。いつでもキャンセルできます。"
+            "value" : "%1$@/%2$@、自動更新されます。「設定」からいつでもキャンセルできます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@/%2$@，自动续费，可随时取消"
+            "value" : "%1$@/%2$@，自动续费，可随时在系统设置中取消"
           }
         }
       }
@@ -9422,7 +9376,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Privacy Policy"
+            "value" : "Privacy"
           }
         },
         "ja" : {
@@ -9444,7 +9398,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terms of Use"
+            "value" : "Terms"
           }
         },
         "ja" : {
@@ -9472,13 +9426,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@の無料体験後、%2$@/%3$@で自動更新されます。いつでもキャンセルできます。"
+            "value" : "%1$@の無料体験後、%2$@/%3$@で自動更新されます。「設定」からいつでもキャンセルできます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "试用 %1$@ 后按 %2$@/%3$@ 自动续费，可随时取消"
+            "value" : "免费试用 %1$@，之后按 %2$@/%3$@ 自动续费，可随时在系统设置中取消"
           }
         }
       }
@@ -9594,6 +9548,28 @@
         }
       }
     },
+    "paywall.period.month_short" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月"
+          }
+        }
+      }
+    },
     "paywall.period.year" : {
       "localizations" : {
         "en" : {
@@ -9612,6 +9588,116 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "年"
+          }
+        }
+      }
+    },
+    "paywall.period.year_short" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "yr"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年"
+          }
+        }
+      }
+    },
+    "paywall.plan.monthly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monthly"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月額プラン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月度"
+          }
+        }
+      }
+    },
+    "paywall.plan.monthly_note" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Billed monthly"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎月のお支払い"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按月付费"
+          }
+        }
+      }
+    },
+    "paywall.plan.save %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@お得"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "省 %@"
+          }
+        }
+      }
+    },
+    "paywall.plan.yearly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yearly"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年額プラン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年度"
           }
         }
       }
@@ -9788,6 +9874,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "购买凭证校验失败，请稍后重试或恢复购买"
+          }
+        }
+      }
+    },
+    "paywall.quota.exhausted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free captures used today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の無料回数を使い切りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日免费次数已用完"
+          }
+        }
+      }
+    },
+    "paywall.quota.used" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free captures used today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の無料利用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日免费次数已用"
           }
         }
       }
@@ -10256,73 +10386,6 @@
         }
       }
     },
-    "paywall.value.capture.desc" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capture tasks in seconds — no typing, no forms. VoiceTodo understands you and files each task under the right date."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "数秒でタスクを記録。キー入力もフォームも不要。VoiceTodo が内容を理解して、正しい日付に振り分けます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "几秒钟记下任务，不用打字，不用填表。VoiceTodo 听得懂，会把每件事排到对的日期。"
-          }
-        }
-      }
-    },
-    "paywall.value.capture.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Say what's on your mind. It's on your list."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "思いついたら、話すだけ。もうリストに。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "想到什么，说出来，就进了清单。"
-          }
-        }
-      }
-    },
-    "paywall.yearly" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Yearly"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "年額"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每年"
-          }
-        }
-      }
-    },
     "paywall.yearly_per_month %@" : {
       "localizations" : {
         "en" : {
@@ -10341,28 +10404,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "约 %1$@/月"
-          }
-        }
-      }
-    },
-    "paywall.yearly_save" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save 33%"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "33%お得"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "省 33%"
           }
         }
       }
