@@ -237,8 +237,11 @@ struct PaywallContent: View {
         }
         .scrollIndicators(.hidden)
         .background(WarmTheme.background.ignoresSafeArea())
+        // 测**可见**滚动视口(§7「中间滚动区」口径):ScrollView 全帧含被
+        // safeAreaInset 购买区遮挡的部分,须减去其注入的底部 safe area
+        // (购买区高度 + 设备底部安全区),否则 viewport 虚高、fits 假阳性。
         .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
+            proxy.size.height - proxy.safeAreaInsets.bottom
         } action: { _, newHeight in
             viewportHeight = newHeight
         }
@@ -390,9 +393,13 @@ struct PaywallContent: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    /// 设计稿字距:英文 -0.5,其余(zh/ja)-0.3。
+    /// 设计稿字距:英文 -0.5,其余(zh/ja)-0.3。语言判定跟随 **App 实际渲染所用
+    /// 的本地化**(`Bundle.main.preferredLocalizations`,与 `String(localized:)`
+    /// 同源,同 `ReviewFlowVisuals.usesCJKTraits` 口径)——不是系统语言设置:
+    /// 系统语言不在 zh/en/ja 内时界面回落英文渲染,若按 `Locale.current` 判
+    /// 会给英文文字错配 -0.3。
     private var heroTracking: CGFloat {
-        Locale.current.language.languageCode?.identifier == "en" ? -0.5 : -0.3
+        Bundle.main.preferredLocalizations.first == "en" ? -0.5 : -0.3
     }
 
     // MARK: - 权益卡(v3)
@@ -941,8 +948,10 @@ struct PaywallContent: View {
         }
         .scrollIndicators(.hidden)
         .background(WarmTheme.background.ignoresSafeArea())
+        // 同 purchaseBody:减去底部链接区 safeAreaInset 注入的 safe area,
+        // 测可见滚动视口(§7「中间滚动区」口径)。
         .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
+            proxy.size.height - proxy.safeAreaInsets.bottom
         } action: { _, newHeight in
             viewportHeight = newHeight
         }
