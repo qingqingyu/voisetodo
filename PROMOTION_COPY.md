@@ -104,6 +104,7 @@ Privacy: speech recognition uses Apple's Speech framework. To structure todos, t
 
 > 实拍画面固定 7 张/语言,产物在 `screenshots/{zh,en}/`,流水线 `scripts/capture-screenshots.sh`(10-20 已重产对齐复盘入口卡改版);**06-paywall 两张手动补**(CLI 注入不了 StoreKit 配置,Xcode GUI 截)。
 > 实拍图为纯 UI 画面、无内嵌字幕;下表 Headline/Caption 供上传前合成字幕用。01/02 是 wow 双连,顺序不动。
+> **合成管线已落地(2026-10-28)**:上表文案 → `marketing/compose/copy.js`,渲染 → `marketing/render.sh`,产物 → `marketing/out/{zh,en}/`(风格 B 衬线暖纸,三版小样拍板)。zh 文案为起草稿,上传前过目;raw 截图重产后重跑 render.sh 即可同步。
 
 | # | 画面 | 大字(Headline) | 小字(Caption) |
 |---|------|----------------|----------------|

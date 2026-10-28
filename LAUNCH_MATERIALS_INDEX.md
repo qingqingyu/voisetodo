@@ -1,6 +1,6 @@
 # 上线材料索引(LAUNCH MATERIALS INDEX)
 
-> 生成:2026-08-23 · 更新:2026-10-22 · 分支:xuanchuan(已 fast-forward 至 main)
+> 生成:2026-08-23 · 更新:2026-10-28 · 分支:xuanchuan(已 fast-forward 至 main)
 > 本文件是全部宣传/提审材料的总入口:每个文件在哪、里面有什么、哪一版是权威。
 > 新增上线材料时,在本文件登记一行;材料内容变更影响"权威性备注"时同步更新。
 
@@ -53,7 +53,7 @@
 - **§4 回应话术**:质疑应对模板(Todoist 对比等)
 - **§5 上线日 Copy Checklist** · **§6 文案与产品一致性红线**(违反 = 拒审或差评)
 
-状态:✅ 文案就绪,2026-10-22 同步 main(语言 +日本語 beta、隐私话术含显式同意)。**截图已产出**:`screenshots/{zh,en}/` 各 6 张自动实拍(10-20 重产对齐复盘入口卡改版),`06-paywall` 两张待手动补(Xcode GUI);**wow GIF 未制作**。
+状态:✅ 文案就绪,2026-10-22 同步 main(语言 +日本語 beta、隐私话术含显式同意)。**截图已产出**:`screenshots/{zh,en}/` 各 6 张自动实拍(10-20 重产对齐复盘入口卡改版),`06-paywall` 两张待手动补(Xcode GUI);**字幕合成管线已落地(2026-10-28)**:`marketing/render.sh` 一键重产 `marketing/out/{zh,en}/` 14 张(风格 B 衬线暖纸,三版小样拍板),zh 文案起草在 `marketing/compose/copy.js` 待终审;**wow GIF 未制作**。
 
 ### 1.3 app-store-submit-checklist.md — ASC 后台操作清单(9.9 KB)
 
@@ -103,6 +103,7 @@
 | `LogoConcepts/`(已入库 f0f205a) | 3 张 logo 概念 png + 生成 json + 1024 图标加工产物 | 宣传**素材**,App 图标候选,非文档 |
 | `AIProxy/eval/` | AI 成本评测工具(72 条 golden + runner) | PLAN §2.1 AI 成本项的配套(已结项);基线报告在 `AIProxy/eval/results/`(gitignored) |
 | `screenshots/{zh,en}/` + `scripts/capture-screenshots.sh` | App Store 截图实拍套件(7 张/语言,06-paywall 手动补) | COPY §2.3 截图文案的对应产物 |
+| `marketing/`(compose + render.sh + out/) | 截图合成管线与产物(B 衬线暖纸,zh/en 各 7 张 1320×2868) | §2.3 Headline/Caption 的合成产物;raw 重产后重跑 `render.sh` 即可更新 |
 
 ## 3. 仓库外的上线材料
 
