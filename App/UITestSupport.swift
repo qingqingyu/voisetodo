@@ -52,6 +52,12 @@ final class UITestVoiceInputManager: VoiceInputProtocol {
     func finishRecording() {
         stopRecording()
     }
+
+    // 任务书 §5:提取上下文(会话 extractID + T0)。UI 测试无真实录音,返回空。
+    var sessionExtractID: String? { nil }
+    func consumeExtractContext() -> (extractID: String?, speechEnd: ContinuousClock.Instant?) {
+        (nil, nil)
+    }
 }
 
 struct UITestTodoExtractor: TodoExtractorProtocol {

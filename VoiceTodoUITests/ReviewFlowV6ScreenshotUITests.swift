@@ -483,7 +483,7 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
             objects.append(try item(pass.tailTitles[i], category: ["other", "life", "other", "health"][i], createdDaysAgo: age))
         }
 
-        // 本周完成 12 条(上次复盘 6 天前):8 条当天记当天完(sameDay + 救火),
+        // 本周完成 12 条(上次复盘 8 天前):8 条当天记当天完(sameDay + 救火),
         // 4 条隔几天完成(计划)。createdAt = 完成日当天或更早。
         for i in 0..<8 {
             let dayAgo = i % 5 + 1 // 1–5 天前完成
@@ -525,7 +525,7 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
         return "[" + objects.joined(separator: ",") + "]"
     }
 
-    /// 历史会话:三期,最近一期(6 天前)带长笔记 + finalBacklogCount=20
+    /// 历史会话:三期,最近一期(8 天前,避开入口卡 7 天冷却窗)带长笔记
     /// (地板 B 账本差「积压 20 → 17」);置顶 = P1+P2。
     private func seedReviewJSON(for pass: Pass) throws -> String {
         let calendar = Calendar.current
@@ -577,7 +577,10 @@ final class ReviewFlowV6ScreenshotUITests: XCTestCase {
         )
         let s3 = try session(
             id: "cccc0000-0000-4000-8000-000000000003",
-            daysAgo: 6, note: escaped(pass.longNote), aiKept: false, ledgerJSON: ledgerLast,
+            // 8 天前(原 6):2026-10-24 入口卡 7 天滚动冷却——最近一次会话必须
+            // 落在冷却窗外,否则悬浮入口卡被隐藏,runFlow 的 entry 断言必挂。
+            // iso 的 hour:+21 抵消 21h,8 天 ≈ 7.1 天,过界留 3h 余量。
+            daysAgo: 8, note: escaped(pass.longNote), aiKept: false, ledgerJSON: ledgerLast,
             // 最新一条带语义对照关注点 → 第 5 步「本期 N 件(上期 5 件)」对照行。
             topicsJSON: """
             [{"text":"work","category":"work","timeBucket":null,"periodCount":5}]

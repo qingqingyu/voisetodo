@@ -1,0 +1,10 @@
+{
+  "type": "openai",
+  "url": "https://openrouter.ai/api/v1/chat/completions",
+  "model": "z-ai/glm-4.6",
+  "timeoutMs": 50000,
+  "extraHeaders": {
+    "HTTP-Referer": "https://voicetodo.app",
+    "X-Title": "VoiceTodo"
+  }
+}

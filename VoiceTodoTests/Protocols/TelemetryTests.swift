@@ -62,8 +62,8 @@ final class TelemetryTests: XCTestCase {
     func testEventNamesMatchSpec() {
         XCTAssertEqual(TelemetryEvent.appLaunch(coldLaunch: true, hasCompletedOnboarding: false).name, "app_launch")
         XCTAssertEqual(TelemetryEvent.recordingStarted(source: .button).name, "recording_started")
-        XCTAssertEqual(TelemetryEvent.recordingOutcome(outcome: .success, durationMS: 100, transcript: "").name, "recording_outcome")
-        XCTAssertEqual(TelemetryEvent.extractOutcome(outcome: .success, todosCount: 1, durationMS: 200, attempts: 1).name, "extract_outcome")
+        XCTAssertEqual(TelemetryEvent.recordingOutcome(outcome: .success, durationMS: 100, transcript: "", extractID: nil).name, "recording_outcome")
+        XCTAssertEqual(TelemetryEvent.extractOutcome(outcome: .success, todosCount: 1, durationMS: 200, attempts: 1, timing: timingInfo(path: "live_voice")).name, "extract_outcome")
         XCTAssertEqual(TelemetryEvent.todoSaved(source: .confirm, count: 3).name, "todo_saved")
         XCTAssertEqual(TelemetryEvent.recordingFailed(reason: "x", errorCode: nil).name, "recording_failed")
         XCTAssertEqual(TelemetryEvent.extractFailed(reason: "network", attempt: 2).name, "extract_failed")
@@ -81,7 +81,7 @@ final class TelemetryTests: XCTestCase {
 
     func testRecordingOutcomeTranscriptIsRedacted() throws {
         let transcript = "明天去银行办卡，顺便买菜，晚上给老妈打电话"
-        let params = TelemetryEvent.recordingOutcome(outcome: .success, durationMS: 5000, transcript: transcript).params
+        let params = TelemetryEvent.recordingOutcome(outcome: .success, durationMS: 5000, transcript: transcript, extractID: "extract-abcd1234").params
 
         // 不允许直接出现 transcript 原文
         XCTAssertFalse(params.values.contains { $0.contains("银行") || $0.contains("给老妈") },
@@ -92,23 +92,34 @@ final class TelemetryTests: XCTestCase {
         XCTAssertTrue(summary.contains("lines="))
         XCTAssertEqual(params["durationMS"], "5000")
         XCTAssertEqual(params["outcome"], "success")
+        XCTAssertEqual(params["extractID"], "extract-abcd1234")
     }
 
     func testRecordingOutcomeParamsForAllOutcomes() {
         for outcome in [RecordingOutcome.success, .interrupted, .userCancelled, .silenceTimeout, .maxDurationReached, .watchdogExpired, .error] {
-            let params = TelemetryEvent.recordingOutcome(outcome: outcome, durationMS: 0, transcript: "").params
+            let params = TelemetryEvent.recordingOutcome(outcome: outcome, durationMS: 0, transcript: "", extractID: nil).params
             XCTAssertEqual(params["outcome"], outcome.rawValue)
         }
     }
 
     func testExtractOutcomeParams() {
         let params = TelemetryEvent.extractOutcome(
-            outcome: .offlineFallback, todosCount: 0, durationMS: 1200, attempts: 2
+            outcome: .offlineFallback, todosCount: 0, durationMS: 1200, attempts: 2,
+            timing: ExtractTimingInfo(path: ExtractPath.pendingRecovery, speechToRequestMS: nil, speechToFirstTodoMS: nil, speechToDoneMS: nil)
         ).params
         XCTAssertEqual(params["outcome"], "offline_fallback")
         XCTAssertEqual(params["todosCount"], "0")
         XCTAssertEqual(params["durationMS"], "1200")
         XCTAssertEqual(params["attempts"], "2")
+        // 无 T0 路径:path 必带,3 个分段耗时键一个都不出现(键不存在 ≠ 0)
+        XCTAssertEqual(params["path"], "pending_recovery")
+        XCTAssertNil(params["speechToRequestMS"])
+        XCTAssertNil(params["speechToFirstTodoMS"])
+        XCTAssertNil(params["speechToDoneMS"])
+    }
+
+    private func timingInfo(path: String) -> ExtractTimingInfo {
+        ExtractTimingInfo(path: path, speechToRequestMS: nil, speechToFirstTodoMS: nil, speechToDoneMS: nil)
     }
 
     func testTodoSavedParams() {

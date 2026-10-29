@@ -61,6 +61,10 @@ struct VoiceTodoApp: App {
             UserDefaults.standard.removeObject(forKey: CalendarWriteMode.deferredAskShownKey)
             // AI 同意标志一并清:重置 = 全新安装,必须重新走披露同意。
             AppGroupConfig.setAIConsentGranted(false)
+            // 入口卡手动关闭标记一并清:重置 = 全新安装,卡应回到常驻(未冷却)
+            // 状态——上一轮测试点过的 × 若残留,回顾页入口卡在后续用例里 7 天
+            // 不出现,依赖它的截图/流程用例会连环误红。
+            UserDefaults.standard.removeObject(forKey: ReviewEntryDismissStore.dismissedAtKey)
             VoiceTodoLog.app.warning("app.init.reset_user_data")
         }
 
@@ -81,6 +85,7 @@ struct VoiceTodoApp: App {
         )
 
         // 配置 SwiftData ModelContainer。UI 测试和 DEBUG 无 entitlement 环境允许本地 fallback。
+        // 显式关闭 iCloud 同步:现有 schema 含 .unique 等 CloudKit 不支持的约束,开同步前须先走 V2 迁移(见 docs/swiftdata-schema-v1-baseline.md)
         let container: ModelContainer
         let storageError: String?
         if shouldBlockForMissingSharedContainer {
@@ -89,7 +94,8 @@ struct VoiceTodoApp: App {
                 let configuration = ModelConfiguration(
                     schema: schema,
                     isStoredInMemoryOnly: true,
-                    allowsSave: true
+                    allowsSave: true,
+                    cloudKitDatabase: .none
                 )
                 container = try ModelContainer(
                     for: schema,
@@ -108,13 +114,15 @@ struct VoiceTodoApp: App {
                         schema: schema,
                         isStoredInMemoryOnly: false,
                         allowsSave: true,
-                        groupContainer: .identifier(AppGroupConfig.identifier)
+                        groupContainer: .identifier(AppGroupConfig.identifier),
+                        cloudKitDatabase: .none
                     )
                 } else {
                     configuration = ModelConfiguration(
                         schema: schema,
                         isStoredInMemoryOnly: uiTestOptions.isUITesting,
-                        allowsSave: true
+                        allowsSave: true,
+                        cloudKitDatabase: .none
                     )
                 }
                 container = try ModelContainer(
@@ -133,7 +141,8 @@ struct VoiceTodoApp: App {
                 do {
                     let fallbackConfig = ModelConfiguration(
                         schema: schema,
-                        isStoredInMemoryOnly: uiTestOptions.isUITesting || !allowsFallback
+                        isStoredInMemoryOnly: uiTestOptions.isUITesting || !allowsFallback,
+                        cloudKitDatabase: .none
                     )
                     container = try ModelContainer(
                         for: schema,

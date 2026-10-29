@@ -169,13 +169,37 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .font(WarmFont.caption(13))
                                 .foregroundColor(WarmTheme.textSecondary)
                         }
-                        TextField(String(localized: "detail.title_placeholder"), text: $editedTitle, axis: .vertical)
-                            // 20pt：比 Notes(14pt) 拉开明显级差，确立标题是页面视觉重心
-                            // （原先 18pt vs Notes 16pt 太接近，两者读起来重量差不多）。
-                            .font(WarmFont.headline(20))
-                            .foregroundColor(WarmTheme.textPrimary)
-                            .lineLimit(1...2)
-                            .onChange(of: editedTitle) { _, _ in checkForChanges() }
+                        // 多行编辑用 UIKit 包装而非原生 TextField(axis: .vertical)：
+                        // 详情页编辑期间高频重渲染（每次 keystroke 写 @State、keyboardWillShow
+                        // 翻 isKeyboardVisible、800ms 防抖保存回写 todo + toast），原生多行
+                        // TextField 在这些更新中重铺文本，光标被重置到末尾——在中间插字
+                        // 光标瞬跳最后。FocusableTextView 的守卫保证编辑期不回写 .text，
+                        // 选区天然保留（底部输入条/原文编辑 sheet 同款，含 IME 组字守卫）。
+                        // 字体对齐 WarmFont.headline：Avenir Next semibold = AvenirNext-DemiBold。
+                        // 20pt：比 Notes(14pt) 拉开明显级差，确立标题是页面视觉重心。
+                        FocusableTextView(
+                            text: $editedTitle,
+                            fontSize: 20,
+                            accessibilityIdentifier: "DetailTitleField",
+                            fontName: "AvenirNext-DemiBold",
+                            autoFocusOnAttach: false,
+                            autoHeight: true,
+                            // 沿用原生版 .foregroundColor(WarmTheme.textPrimary):
+                            // 默认 #3D3A38 是冷化前孤儿值,不等于当前 textPrimary(#1E2A3A)。
+                            textColor: UIColor(WarmTheme.textPrimary)
+                        )
+                        // UITextView 无原生 placeholder，空文案时 overlay 顶左对齐补位
+                        // （textContainerInset 已归零，overlay 与正文起点重合，
+                        //   字体曲线/无障碍约束见 textViewPlaceholder 实现）。
+                        .overlay(alignment: .topLeading) {
+                            textViewPlaceholder(
+                                "detail.title_placeholder",
+                                font: .custom("AvenirNext-DemiBold", size: 20, relativeTo: .body),
+                                visible: editedTitle.isEmpty
+                            )
+                        }
+                        .accessibilityLabel(String(localized: "detail.title_placeholder"))
+                        .onChange(of: editedTitle) { _, _ in checkForChanges() }
                     }
                     .padding(WarmSpacing.lg)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -193,11 +217,28 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                                 .foregroundColor(WarmTheme.textSecondary)
                             // 14pt：比 Title(20pt) 明显降一级，正文不再跟标题抢视觉重量；
                             // 字号收小后满宽文本块的视觉密度也随之减轻（原 16pt 显得笨重）。
-                            TextField(String(localized: "detail.notes_placeholder"), text: $editedDetail, axis: .vertical)
-                                .font(WarmFont.body(14))
-                                .foregroundColor(WarmTheme.textPrimary)
-                                .lineLimit(1...3)
-                                .onChange(of: editedDetail) { _, _ in checkForChanges() }
+                            // 同 Title：UIKit 包装保光标（原生多行 TextField 重渲染重置选区）。
+                            // 字体对齐 WarmFont.body：Avenir Next medium = AvenirNext-Medium（默认）。
+                            // 原生版 lineLimit(1...3) 的「3 行封顶内部滚动」改为随内容自适应增高——
+                            // 编辑长备注时全文可见（零截断），页面 ScrollView 承担增高。
+                            FocusableTextView(
+                                text: $editedDetail,
+                                fontSize: 14,
+                                accessibilityIdentifier: "DetailNotesField",
+                                autoFocusOnAttach: false,
+                                autoHeight: true,
+                                // 同 Title:保持原生版 WarmTheme.textPrimary(#1E2A3A)。
+                                textColor: UIColor(WarmTheme.textPrimary)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                textViewPlaceholder(
+                                    "detail.notes_placeholder",
+                                    font: .custom("AvenirNext-Medium", size: 14, relativeTo: .body),
+                                    visible: editedDetail.isEmpty
+                                )
+                            }
+                            .accessibilityLabel(String(localized: "detail.notes_placeholder"))
+                            .onChange(of: editedDetail) { _, _ in checkForChanges() }
                         }
                     }
 
@@ -1080,6 +1121,31 @@ struct TodoDetailView<Store: TodoListReadable>: View {
                 }
             }
         )
+    }
+
+    /// UITextView(FocusableTextView)无原生 placeholder,空文案时的 overlay 补位内容。
+    ///
+    /// 两个必须单点沉淀的约束(调用方 overlay 顶左对齐,textContainerInset 已归零,
+    /// 补位与正文起点重合):
+    /// 1. **字号曲线对齐**:正文由 `adjustsFontForContentSizeCategory` 缩放,无 textStyle
+    ///    的 UIFont 按 **body** 量表缩放,故 font 必须 `relativeTo: .body` —— 若用
+    ///    WarmFont.headline/body(.title3/.footnote 曲线)会在 AX4/AX5 与正文分叉
+    ///    (20pt 在 AX5 时 title3 ≈43pt vs body ≈62pt)。默认档位两者同大小。
+    /// 2. **无障碍不重复**:占位文案由 textView 的 accessibilityLabel 承担,
+    ///    overlay 自身隐藏,避免 VoiceOver 对同一句占位读两遍。
+    @ViewBuilder
+    private func textViewPlaceholder(_ key: String.LocalizationValue, font: Font, visible: Bool) -> some View {
+        if visible {
+            // String(localized:) 只接受编译期字面量(LocalizationValue),
+            // 故参数类型用 String.LocalizationValue 而非 String,调用点传 key 字面量。
+            Text(String(localized: key))
+                .font(font)
+                .foregroundColor(WarmTheme.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     /// 计算 `hasChanges` 并在检测到改动时触发防抖保存。

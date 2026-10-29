@@ -655,7 +655,7 @@ struct OnboardingView: View {
     }
 
     /// 语言选项卡:chrome 复用 permissionCard(RoundedRectangle + cardBackground + shadow + 描边)。
-    /// 选中态:描边换 highlightColor + 右侧 checkmark.circle.fill —— 与 PaywallView.ProductCard 一致。
+    /// 选中态:描边换 highlightColor + 右侧 checkmark.circle.fill —— 与 PaywallView.PlanCard 一致。
     @ViewBuilder
     private func languageOptionRow(_ lang: SpeechRecognitionLanguage, isSelected: Bool) -> some View {
         Button {

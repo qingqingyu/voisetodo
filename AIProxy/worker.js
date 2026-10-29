@@ -1,6 +1,17 @@
 import { AdminConfigStore, applyPrimaryOverride } from "./src/adminConfig.js";
 import { AlertStateStore, classifyLevel, shouldNotify, nextRecord } from "./src/alertState.js";
 import { ExtractionCacheStore, makeCacheKey } from "./src/extractionCache.js";
+import {
+  sanitizeExtractId,
+  writeExtractRequestRow,
+  summarizeExtractRequests,
+  evaluateExtractAlerts,
+  EXTRACT_METRICS_QUERY_ROW_LIMIT,
+  EXTRACT_ALERT_WINDOW_MS,
+  EXTRACT_ALERT_MIN_REQUESTS,
+  EXTRACT_ALERT_P95_DEFAULT_MS,
+  EXTRACT_ALERT_SUCCESS_MIN_DEFAULT
+} from "./src/extractMetrics.js";
 import { getAdapter } from "./src/adapters/index.js";
 import { stripMarkdownFence } from "./src/adapters/base.js";
 import { loadProviders } from "./src/config.js";
@@ -9,7 +20,8 @@ import { HealthStore, configureHealthParams } from "./src/health.js";
 import { logInfo, logWarn, logError, errorFields } from "./src/log.js";
 import { sendTelegramAlert, ALERT_FETCH_TIMEOUT_MS } from "./src/notify.js";
 import { executeWithFailover } from "./src/provider.js";
-import { pickCandidates } from "./src/selector.js";
+import { makeKeyGateFromEnv } from "./src/keyGate.js";
+import { pickCandidates, entryUsableKeys } from "./src/selector.js";
 import { normalizeProviderStream } from "./src/stream.js";
 import { verifySubscriptionJWS, APPLE_ROOT_CA_G3_SHA256 } from "./src/subscription.js";
 
@@ -43,6 +55,11 @@ const sharedExtractionCache = new ExtractionCacheStore();
 // 复用 AI_PROVIDER_STATE_KV(key 前缀 alert:),跟 HealthStore 同模式按请求刷新 binding。
 const sharedAlertStateStore = new AlertStateStore();
 
+// 解析耗时/失败率告警(任务书 §4)各自的独立状态机:复用 AlertStateStore 的
+// 跃迁去重(shouldNotify/nextRecord),但 KV key 分开,互不覆盖对方的 level/since。
+const sharedExtractLatencyAlertStore = new AlertStateStore("alert:extract_latency");
+const sharedExtractSuccessAlertStore = new AlertStateStore("alert:extract_success_rate");
+
 // Isolate 首请求标记:Cloudflare Workers 的 isolate 在首次请求时才真正 lazy-load
 // KV/DO binding,首个 /v1/todo-extractions 请求会承担冷启动开销。本标志在 isolate
 // 生命周期内只对首请求输出一次 `proxy.cold_start.warmup` 日志,后续请求不再打。
@@ -67,6 +84,8 @@ export function _testResetExtractionCache() {
 // Test-only export: allows tests to reset module-level alert state between runs.
 export function _testResetAlertState() {
   sharedAlertStateStore.reset();
+  sharedExtractLatencyAlertStore.reset();
+  sharedExtractSuccessAlertStore.reset();
 }
 
 // Test-only export: clears the /v1/health isolate cache so each probe test sees
@@ -87,6 +106,10 @@ export default {
 export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fetch) {
   const requestContext = await makeRequestContext(request, env);
   logInfo("proxy.request.received", requestContext);
+  // 解析耗时监控采集器(任务书 §2):在 try 外声明 —— 外层 catch 的各错误出口
+  // 也要写终态行(quota 拒绝 / 上游失败 / 断连)。payload 校验通过前为 null,
+  // 那些请求不是解析尝试,不进失败率分母(见结果文档口径说明)。
+  let metrics = null;
   try {
     const url = new URL(request.url);
 
@@ -181,6 +204,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }
     requestContext.mode = mode;
 
+    // 只记 mode=extract;assist(split/reflect/deep-read)不记(任务书 §2.1)。
+    metrics = mode === "extract" ? createExtractMetrics(env, ctx, requestContext) : null;
+
     // split/reflect 不计费:quotaState 保持 null(quotaHeaders /
     // refundDeviceQuotaOnUpstreamFailure 都对 null 安全,无需分支守卫)。
     // extract 模式缓存命中同样不扣计费桶(2026-10 修复:命中=零模型成本),
@@ -257,10 +283,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       });
     } catch (error) {
       logError("proxy.providers.config_failed", { ...requestContext, ...errorFields(error) });
+      metrics?.record({ status: 500, outcome: "no_provider", error_type: "providers_config_invalid", total_ms: Date.now() - requestContext.startedAt });
       return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_config_invalid" });
     }
     if (providers.length === 0) {
       logError("proxy.providers.empty", { ...requestContext });
+      metrics?.record({ status: 500, outcome: "no_provider", error_type: "providers_empty", total_ms: Date.now() - requestContext.startedAt });
       return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_empty" });
     }
 
@@ -298,6 +326,13 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       if (cached) {
         requestContext.candidateCount = providers.length;
         logInfo("proxy.cache.hit", { ...requestContext, cacheKey, responseChars: cached.length });
+        const cachedOutcome = classifyExtractOutcome(cached);
+        metrics?.record({
+          status: 200,
+          outcome: "cache_hit",
+          todos_count: cachedOutcome.todosCount,
+          total_ms: Date.now() - requestContext.startedAt
+        });
         return finishRequest(new Response(cached, {
           status: 200,
           headers: {
@@ -353,6 +388,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         ...(await sharedHealthStore.snapshot(p.id, Date.now()))
       })));
       logError("proxy.selector.no_candidates", { ...requestContext, providers: snapshots });
+      metrics?.record({ status: 503, outcome: "no_provider", error_type: "no_providers_available", total_ms: Date.now() - requestContext.startedAt });
       // All filtered out (missing keys or disabled) — distinct from config-invalid.
       return finishRequest(new Response("AI proxy failed", { status: 503 }), requestContext, { error: "no_providers_available" });
     }
@@ -366,6 +402,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     try {
       result = await executeWithFailover(candidates, params, fetchImpl, requestContext, {
         healthStore: sharedHealthStore,
+        // A2:每 key 并发闸门(条目配置了 maxConcurrencyPerKey 且 DO binding 存在时生效;
+        // 未配置/fail-open 时行为与改前一致)。每请求构造,读 env 覆盖值。
+        gate: makeKeyGateFromEnv(env),
         // 客户端断连信号:用户划走时上游 fetch 立刻 abort,不再继续烧 token 到 timeoutMs
         abortSignal: request.signal,
         onResponse: stream
@@ -405,6 +444,16 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
               logInfo("proxy.extract.empty_outcome", { ...requestContext, reason, stream: true, fullTextChars: (stats?.fullText ?? "").length });
               await refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx, quotaState, reason);
             }
+            // 流式终态行(任务书 §2.2):total_ms 以流结束时刻计。todos_count 用
+            // fullText 解析出准确条数(比任务书原提的 emittedCount —— 增量文本
+            // 块数,非待办数 —— 更准,同一回调里可得,见结果文档偏离说明)。
+            metrics?.record({
+              status: 200,
+              outcome: outcome.hasTodos ? "success" : (outcome.parseOk ? "empty_todos" : "unparseable_output"),
+              todos_count: outcome.parseOk ? (outcome.todosCount ?? 0) : null,
+              total_ms: Date.now() - requestContext.startedAt,
+              ...providerInfoForMetrics(result.attempts)
+            });
           },
           // 流已经开始后失败:响应头(含 X-Quota-*)早就发出去了,无法改。
           // 只有"一个字都没给"才等于用户什么也没拿到 → 退配额。
@@ -424,6 +473,15 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
                 emittedCount: stats?.emittedCount ?? 0,
                 emittedChars: stats?.emittedChars ?? 0
               });
+              // 客户端主动断开也写终态行(任务书 §6.1.4):响应头已 200 发出,
+              // status 记 200 + outcome=client_disconnected(成功率统计会把它
+              // 排除出分母 —— 用户取消不是服务故障)。
+              metrics?.record({
+                status: 200,
+                outcome: "client_disconnected",
+                total_ms: Date.now() - requestContext.startedAt,
+                ...providerInfoForMetrics(result.attempts)
+              });
               // 配额仍按「一个字都没给 = 用户什么也没拿到」退,与下面的规则一致;
               // 只是 reason 区分开,方便在日志里把取消和真故障分开统计。
               if (stats?.emittedCount === 0) {
@@ -434,11 +492,25 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
               return;
             }
             await result.confirmFailure("stream");
+            metrics?.record({
+              status: 200,
+              outcome: "stream_failed",
+              error_type: _error?.errorType ?? null,
+              total_ms: Date.now() - requestContext.startedAt,
+              ...providerInfoForMetrics(result.attempts)
+            });
             if (stats?.emittedCount === 0) {
               await refundDeviceQuotaOnUpstreamFailure(
                 request, env, requestContext, ctx, quotaState, "stream_failed_before_any_output"
               );
             }
+          },
+          // A2:流结束(成功/失败/意外 throw)释放该 key 的闸门租约。
+          // executeWithFailover 已把流式请求的租约所有权移交到这里(任务书 §7:
+          // 任何路径漏 release = 名额少一个,直到租约 TTL;此钩子 + 流内部
+          // try/finally + 租约 TTL 三层兜底)。
+          onSettled: async () => {
+            await result.lease?.release();
           }
         }
       ), {
@@ -486,6 +558,16 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // 空结果反映模型/prompt 质量,不是 provider 可用性问题,计入熔断会误摘健康 provider。
     await result.confirmSuccess();
     logInfo("proxy.provider.text_success", { ...requestContext, provider: result.provider.type, responseChars: text.length });
+    // 非流式终态行:在响应返回前写,total_ms = 收到请求到响应就绪。
+    metrics?.record({
+      status: 200,
+      outcome: extractOutcome?.hasTodos
+        ? "success"
+        : (extractOutcome?.parseOk ? "empty_todos" : "unparseable_output"),
+      todos_count: extractOutcome?.parseOk ? (extractOutcome.todosCount ?? 0) : null,
+      total_ms: Date.now() - requestContext.startedAt,
+      ...providerInfoForMetrics(result.attempts)
+    });
     return finishRequest(new Response(text, {
       status: 200,
       headers: {
@@ -496,6 +578,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     }), requestContext, { responseChars: text.length });
   } catch (error) {
     if (error instanceof ProxyHTTPError) {
+      // 终态行在两个 return 之前各记一次(quota 拒绝 / 上游失败 / 断连等全部
+      // 出口,任务书 §2.2:提前拒掉的也写,provider_id 为 NULL)。
+      metrics?.record(errorMetricsPatch(error, requestContext, error.status));
       if (error.body !== null) {
         logWarn("proxy.request.http_error", { ...requestContext, status: error.status, rateLimitType: error.rateLimitType || null, ...errorFields(error) });
         const structured = new Response(JSON.stringify(error.body), {
@@ -512,6 +597,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       logWarn("proxy.request.http_error", { ...requestContext, status: error.status, ...errorFields(error) });
       return finishRequest(new Response(clientMessage, { status: error.status }), requestContext, { error: clientMessage });
     }
+    metrics?.record(errorMetricsPatch(error, requestContext, 502));
     logError("proxy.request.failed", { ...requestContext, ...errorFields(error) });
     return finishRequest(new Response("AI proxy failed", { status: 502 }), requestContext, { error: "AI proxy failed" });
   }
@@ -694,7 +780,72 @@ export async function handleAdminRequest(request, env, requestContext, url) {
   if (url.pathname === "/v1/admin/providers/primary" && request.method === "DELETE") {
     return await handleAdminClearPrimary(env, requestContext);
   }
+  // 解析耗时/成功率汇总(任务书 §3.1):GET /v1/admin/extract-metrics?hours=24
+  if (url.pathname === "/v1/admin/extract-metrics" && request.method === "GET") {
+    return await handleAdminExtractMetrics(url, env, requestContext);
+  }
   return finishRequest(new Response("Not Found", { status: 404 }), requestContext, { reason: "admin_route_not_found" });
+}
+
+// MARK: - Admin extract metrics (任务书 §3.1)
+
+const EXTRACT_METRICS_MAX_HOURS = 168;
+
+/// hours 默认 24,超过 168(7 天)按 168;非法/缺省回默认(任务书 §3.1)。
+/// floor 之后再判一次 ≤0:0 < hours < 1(如 0.5)floor 成 0 会得到零窗口,
+/// 比非法值(回默认 24)更差 —— 一并回落默认。
+function resolveMetricsHours(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return 24;
+  const floored = Math.floor(value);
+  return floored <= 0 ? 24 : Math.min(floored, EXTRACT_METRICS_MAX_HOURS);
+}
+
+async function handleAdminExtractMetrics(url, env, requestContext) {
+  if (!env.TELEMETRY_DB) {
+    return finishRequest(
+      jsonResponse(503, { error: "telemetry_db_not_configured" }),
+      requestContext,
+      { reason: "telemetry_db_not_configured" }
+    );
+  }
+  const hours = resolveMetricsHours(url.searchParams.get("hours"));
+  const sinceMs = Date.now() - hours * 3600 * 1000;
+  let rows = [];
+  let sampled = false;
+  try {
+    // D1 无百分位函数:把窗口内行的 total_ms 拉回 Worker 内排序计算(任务书 §3.1)。
+    // LIMIT 多取 1 行用于判断截断;截断时 sampled=true,百分位是抽样值。
+    const result = await env.TELEMETRY_DB.prepare(
+      `SELECT provider_id, model, key_slot, attempts, failover, total_ms, status, outcome, error_type
+         FROM extract_requests WHERE received_at > ? ORDER BY received_at DESC LIMIT ?`
+    ).bind(sinceMs, EXTRACT_METRICS_QUERY_ROW_LIMIT + 1).all();
+    rows = Array.isArray(result?.results) ? result.results : [];
+    if (rows.length > EXTRACT_METRICS_QUERY_ROW_LIMIT) {
+      sampled = true;
+      rows = rows.slice(0, EXTRACT_METRICS_QUERY_ROW_LIMIT);
+    }
+  } catch (error) {
+    logError("proxy.admin.extract_metrics.query_failed", { ...requestContext, ...errorFields(error) });
+    return finishRequest(
+      jsonResponse(500, { error: "extract_metrics_query_failed" }),
+      requestContext,
+      { reason: "extract_metrics_query_failed" }
+    );
+  }
+  const summary = summarizeExtractRequests(rows);
+  return finishRequest(
+    jsonResponse(200, {
+      hours,
+      sinceMs,
+      rowCount: rows.length,
+      sampled,
+      rowLimit: EXTRACT_METRICS_QUERY_ROW_LIMIT,
+      ...summary
+    }),
+    requestContext,
+    { reason: "admin_extract_metrics" }
+  );
 }
 
 async function handleAdminGetProviders(env, requestContext) {
@@ -725,6 +876,8 @@ async function handleAdminGetProviders(env, requestContext) {
 
   // 返回精简视图:去掉 secretName / apiKey,只留 hasApiKey 布尔。
   // health 是实时熔断快照(state / consecutiveFailures / cooldownMs / lastErrorType)。
+  // A1:熔断按 key 记账 —— 单 key 条目沿用条目 id 快照(与改前一致);
+  // 多 key 条目给聚合 state + perKey 明细(#序号,不含 key 原文)。
   const now = Date.now();
   const publicProviders = await Promise.all(effective.map(async (p) => ({
     id: p.id,
@@ -734,8 +887,10 @@ async function handleAdminGetProviders(env, requestContext) {
     weight: p.weight,
     enabled: p.enabled,
     timeoutMs: p.timeoutMs,
+    maxConcurrencyPerKey: p.maxConcurrencyPerKey ?? null,
     hasApiKey: Boolean(p.apiKey),
-    health: await sharedHealthStore.snapshot(p.id, now)
+    keyCount: Array.isArray(p.keys) ? p.keys.length : (p.apiKey ? 1 : 0),
+    health: await entryHealthDetail(p, sharedHealthStore, now)
   })));
 
   return finishRequest(
@@ -743,6 +898,45 @@ async function handleAdminGetProviders(env, requestContext) {
     requestContext,
     { reason: "admin_providers_listed" }
   );
+}
+
+// A1:条目级健康聚合(/v1/health 与 admin 端点共用)。
+// 状态口径:任一 key closed → closed;否则任一 half-open → half-open;全 open → open。
+// 多 key 条目附 keys: [{ slot: "#i", state }](slot 序号不含 key 原文,可安全外露)。
+async function entryHealthSummary(provider, healthStore, now) {
+  const adapter = getAdapter(provider.type);
+  const usableKeys = entryUsableKeys(provider);
+  if (!adapter || usableKeys.length === 0) {
+    return { state: "unconfigured", keys: null };
+  }
+  const snapshots = await Promise.all(usableKeys.map((key) => healthStore.snapshot(key.healthId, now)));
+  const states = snapshots.map((s) => s.state);
+  const state = states.includes("closed")
+    ? "closed"
+    : states.includes("half-open")
+      ? "half-open"
+      : "open";
+  const keys = usableKeys.length > 1
+    ? usableKeys.map((key, i) => ({ slot: `#${key.secretName}`, state: states[i] }))
+    : null;
+  return { state, keys };
+}
+
+// admin 端点的明细版:单 key = 完整快照(改前形状);多 key = 聚合 state + perKey 快照。
+async function entryHealthDetail(provider, healthStore, now) {
+  const usableKeys = entryUsableKeys(provider);
+  if (usableKeys.length === 0) {
+    return await healthStore.snapshot(provider.id, now);
+  }
+  if (usableKeys.length === 1) {
+    return await healthStore.snapshot(usableKeys[0].healthId, now);
+  }
+  const snapshots = await Promise.all(usableKeys.map((key) => healthStore.snapshot(key.healthId, now)));
+  const states = snapshots.map((s) => s.state);
+  return {
+    state: states.includes("closed") ? "closed" : states.includes("half-open") ? "half-open" : "open",
+    perKey: usableKeys.map((key, i) => ({ slot: `#${key.secretName}`, ...snapshots[i] }))
+  };
 }
 
 async function handleAdminSetPrimary(request, env, requestContext) {
@@ -959,12 +1153,16 @@ async function handlePublicHealthProbe(request, env, requestContext) {
   // provider 都用不了」(密钥轮换贴错)的场景,外部拨测恰恰此时最该红。
   // 与 cron 探活的 probeable 谓词同源(probeable===0 → down),三层口径一致
   // (遗留 1)。provider id / 状态词本就在 body 里,"unconfigured" 不是凭据。
-  const entries = await Promise.all(activeProviders.map(async (p) => ({
-    id: p.id,
-    state: p.apiKey && getAdapter(p.type)
-      ? (await sharedHealthStore.snapshot(p.id, now)).state
-      : "unconfigured"
-  })));
+  // A1:熔断按 key 记账后,条目状态从 per-key 快照聚合(entryHealthSummary);
+  // 多 key 条目附 keys 明细(slot 序号,无 key 原文),单 key 条目形状与改前一致。
+  const entries = await Promise.all(activeProviders.map(async (p) => {
+    const summary = await entryHealthSummary(p, sharedHealthStore, now);
+    return {
+      id: p.id,
+      state: summary.state,
+      ...(summary.keys ? { keys: summary.keys } : {})
+    };
+  }));
   // 不健康 = open / half-open / unconfigured,只有 closed 算健康(ALERTING.md
   // 缺陷 1 + 遗留 1)。half-open 是 classifyState 的读时派生状态(冷却一过即
   // 如此),语义是「曾经挂了,尚未证明恢复」—— 恢复要靠 recordSuccess 写回
@@ -1113,12 +1311,30 @@ export async function handleScheduled(env, fetchImpl = fetch) {
     } catch (error) {
       logError("telemetry.cron.gc_failed", errorFields(error));
     }
+    // extract_requests GC(任务书 §2.5):与 telemetry_events 同一 90 天窗口、
+    // 同一个 GC。独立 try/catch —— 任何一步 GC 失败不能挡住 cron 其余任务。
+    try {
+      const result = await env.TELEMETRY_DB.prepare("DELETE FROM extract_requests WHERE received_at < ?")
+        .bind(cutoff)
+        .run();
+      logInfo("extract_metrics.cron.gc_done", { cutoff, deleted: result.meta?.changes ?? "unknown" });
+    } catch (error) {
+      logError("extract_metrics.cron.gc_failed", errorFields(error));
+    }
   }
 
   // 新加(P3):主动健康检查。每 30 分钟 cron 触发,并行 ping 所有 provider,
   // 成功调 recordSuccess(更新 EWMA),失败调 recordFailure(可能触发熔断)。
   // 跟真实请求共享 HealthStore 状态机,故障时 selector 提前避开不健康 provider。
   const level = await runProviderHealthCheck(env, fetchImpl);
+
+  // 解析耗时/失败率告警(任务书 §4):整个检查独立 try/catch —— 告警链路任何
+  // 出错(D1 查询 / 状态机 / Telegram)都不能影响 cron 里的其他任务。
+  try {
+    await runExtractMetricAlerts(env, fetchImpl);
+  } catch (error) {
+    logError("alert.extract.check_failed", errorFields(error));
+  }
 
   // 层 C-2(ALERTING.md):healthchecks.io 死人开关心跳。
   // 心跳测的是「cron 还在跑」,不是「provider 健康」—— KV 未绑定 / PROVIDERS
@@ -1190,7 +1406,8 @@ async function runProviderHealthCheck(env, fetchImpl) {
   const probeToday = new Date().toISOString().slice(0, 10);
 
   const results = await Promise.allSettled(activeProviders.map(async (provider) => {
-    if (!provider.apiKey) {
+    const usableKeys = entryUsableKeys(provider);
+    if (usableKeys.length === 0) {
       logWarn("health_check.skip_no_key", { providerId: provider.id });
       return { providerId: provider.id, ok: false, reason: "no_key" };
     }
@@ -1198,6 +1415,25 @@ async function runProviderHealthCheck(env, fetchImpl) {
     if (!adapter) {
       logWarn("health_check.skip_no_adapter", { providerId: provider.id, type: provider.type });
       return { providerId: provider.id, ok: false, reason: "no_adapter" };
+    }
+
+    // A1:熔断按 key 记账 → 探活也按 key 记。每轮每条目随机探一个 key
+    // (30min 一轮,多轮覆盖整个池;被探 key 的成功/失败记在它自己的 healthId 上,
+    // 其余 key 的熔断恢复靠真实流量的 half-open 试探)。
+    // A2(任务书 §2.2.7 二选一):探活走闸门拿名额而不是每 key 预留 1 个——
+    // 预留会把 A 场景的可用名额永久少 13 个(13 key × 1);探活 30min 一次、
+    // 占用毫秒级,池满时跳过本轮(fail-open 除外),对覆盖面的影响远小于
+    // 预留对容量的影响。
+    const probeKey = usableKeys[Math.floor(Math.random() * usableKeys.length)];
+    let lease = null;
+    const gate = makeKeyGateFromEnv(env);
+    if (gate && gate.enabledFor({ ...provider, candidateKeys: usableKeys })) {
+      const slot = await gate.acquireEntrySlot({ ...provider, candidateKeys: usableKeys }, [probeKey], { wait: false });
+      if (slot.full) {
+        logInfo("health_check.skip_gate_full", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.secretName}` });
+        return { providerId: provider.id, ok: true, reason: "gate_full_skipped" };
+      }
+      lease = slot.lease || null;
     }
 
     const startedAt = Date.now();
@@ -1210,7 +1446,7 @@ async function runProviderHealthCheck(env, fetchImpl) {
         transcript: probeTranscript,
         locale: probeLocale,
         stream: true,
-        provider,
+        provider: { ...provider, apiKey: probeKey.apiKey },
         today: probeToday,
         abortSignal: null
       });
@@ -1235,18 +1471,20 @@ async function runProviderHealthCheck(env, fetchImpl) {
       }
 
       if (response.ok) {
-        await sharedHealthStore.recordSuccess(provider.id, durationMs);
-        logInfo("health_check.success", { providerId: provider.id, durationMs });
+        await sharedHealthStore.recordSuccess(probeKey.healthId, durationMs);
+        logInfo("health_check.success", { providerId: provider.id, keySlot: `${provider.id}#${probeKey.secretName}`, durationMs });
         return { providerId: provider.id, ok: true, durationMs };
       }
-      await sharedHealthStore.recordFailure(provider.id, `http_${response.status}`);
+      await sharedHealthStore.recordFailure(probeKey.healthId, `http_${response.status}`);
       logWarn("health_check.http_failed", { providerId: provider.id, status: response.status });
       return { providerId: provider.id, ok: false, status: response.status };
     } catch (error) {
       const errorType = error?.name === "TimeoutError" ? "timeout" : "network";
-      await sharedHealthStore.recordFailure(provider.id, errorType);
+      await sharedHealthStore.recordFailure(probeKey.healthId, errorType);
       logWarn("health_check.failed", { providerId: provider.id, errorType, message: error?.message });
       return { providerId: provider.id, ok: false, errorType };
+    } finally {
+      if (lease) await lease.release();
     }
   }));
 
@@ -1296,6 +1534,134 @@ async function runProviderHealthCheck(env, fetchImpl) {
     await notifyProviderHealthTransition(env, { level, succeeded, total, failedDetails, fetchImpl, configMissing });
   }
   return level;
+}
+
+// MARK: - Extract metric alerts (任务书 §4)
+
+/// 阈值放 wrangler.toml [vars](两个都可调,任务书 §4);留空用默认,配错值
+/// 记 warn 回落默认(不静默失效,与 SUBSCRIPTION_DAILY_LIMIT 同口径)。
+function resolveExtractAlertThresholds(env) {
+  const p95 = resolveThresholdEnv(env, "ALERT_EXTRACT_P95_MS", EXTRACT_ALERT_P95_DEFAULT_MS, (v) => v > 0);
+  const successMin = resolveThresholdEnv(env, "ALERT_EXTRACT_SUCCESS_MIN", EXTRACT_ALERT_SUCCESS_MIN_DEFAULT, (v) => v > 0 && v <= 1);
+  return { p95ThresholdMs: p95, successMin };
+}
+
+function resolveThresholdEnv(env, name, fallback, isValid) {
+  if (isUnsetEnvValue(env[name])) return fallback;
+  const value = Number(env[name]);
+  if (!Number.isFinite(value) || !isValid(value)) {
+    logWarn("alert.extract.invalid_threshold", { name, configuredValue: env[name], fallback });
+    return fallback;
+  }
+  return value;
+}
+
+/// 最近 30 分钟窗口 → 两条独立告警(慢 / 失败率高)。查询失败只 logWarn 返回,
+/// 不抛(告警挂了不能拖垮 cron,任务书 §4)。
+async function runExtractMetricAlerts(env, fetchImpl) {
+  if (!env.TELEMETRY_DB) return;
+  let rows = [];
+  try {
+    const sinceMs = Date.now() - EXTRACT_ALERT_WINDOW_MS;
+    const result = await env.TELEMETRY_DB.prepare(
+      "SELECT provider_id, model, total_ms, outcome FROM extract_requests WHERE received_at > ? LIMIT ?"
+    ).bind(sinceMs, EXTRACT_METRICS_QUERY_ROW_LIMIT).all();
+    rows = Array.isArray(result?.results) ? result.results : [];
+  } catch (error) {
+    logWarn("alert.extract.query_failed", { ...errorFields(error) });
+    return;
+  }
+  const thresholds = resolveExtractAlertThresholds(env);
+  const evaluation = evaluateExtractAlerts(rows, thresholds);
+  await notifyExtractMetricAlert(
+    env,
+    sharedExtractLatencyAlertStore,
+    {
+      metric: "latency",
+      breached: evaluation.latency.breached,
+      buildText: (kind) => buildExtractLatencyAlertText(kind, evaluation.latency, thresholds)
+    },
+    fetchImpl
+  );
+  await notifyExtractMetricAlert(
+    env,
+    sharedExtractSuccessAlertStore,
+    {
+      metric: "success_rate",
+      breached: evaluation.success.breached,
+      buildText: (kind) => buildExtractSuccessAlertText(kind, evaluation.success, thresholds)
+    },
+    fetchImpl
+  );
+}
+
+/// 与 notifyProviderHealthTransition 同模式:跃迁才推(shouldNotify 去重,避免
+/// 同一问题每 30 分钟重复推送),恢复推「已恢复」;Telegram 发送失败以
+/// notify:false 落盘,下次 cron 补发(送达回执语义,同 alertState.js 口径)。
+async function notifyExtractMetricAlert(env, store, { metric, breached, buildText }, fetchImpl) {
+  store.updateKv(env.AI_PROVIDER_STATE_KV);
+  const now = Date.now();
+  const level = breached ? "degraded" : "ok";
+  const previous = await store.load();
+  const decision = shouldNotify(previous, level, now);
+  if (!decision.notify) {
+    // 不推送也落盘:level/since 前进,恢复文案的时长才有据可算(同层 B 模式)。
+    await store.save(nextRecord(previous, level, decision, now));
+    return;
+  }
+  const text = buildText(decision.kind);
+  const sent = await sendTelegramAlert(env, text, fetchImpl);
+  const delivered = sent.ok || Boolean(sent.skipped);
+  await store.save(nextRecord(previous, level, delivered ? decision : { ...decision, notify: false }, now));
+  logInfo("alert.extract.notified", {
+    metric,
+    kind: decision.kind,
+    delivered: sent.ok,
+    skipped: Boolean(sent.skipped)
+  });
+}
+
+function formatSeconds(ms) {
+  return `${Math.round((ms ?? 0) / 100) / 10}s`;
+}
+
+function buildExtractLatencyAlertText(kind, latency, thresholds) {
+  if (kind === "recovered") {
+    // p95Ms 为 null(窗口内无带耗时的行,如流量骤降)时不编造「回落到 0s」,
+    // 如实写样本不足 —— 与 buildExtractSuccessAlertText 的 null 处理对称。
+    const p95Text = latency.p95Ms === null ? "样本不足" : `已回落到 ${formatSeconds(latency.p95Ms)}`;
+    return [
+      "✅ VoiceTodo 告警恢复(解析耗时)",
+      `最近 30 分钟 P95 ${p95Text}(阈值 ${formatSeconds(thresholds.p95ThresholdMs)}),样本 ${latency.requests} 次`
+    ].join("\n");
+  }
+  const lines = [
+    "⚠️ VoiceTodo 告警(解析变慢)",
+    `最近 30 分钟 P95 = ${formatSeconds(latency.p95Ms)},超过阈值 ${formatSeconds(thresholds.p95ThresholdMs)}(样本 ${latency.requests} 次)`
+  ];
+  if (latency.slowestModel) {
+    lines.push(`最慢: ${latency.slowestModel.model}(P95 ${formatSeconds(latency.slowestModel.p95Ms)})`);
+  }
+  return lines.join("\n");
+}
+
+function buildExtractSuccessAlertText(kind, success, thresholds) {
+  if (kind === "recovered") {
+    const rateText = success.successRate === null ? "样本不足" : `${Math.round(success.successRate * 1000) / 10}%`;
+    return [
+      "✅ VoiceTodo 告警恢复(解析成功率)",
+      `最近 30 分钟成功率 ${rateText}(阈值 ${Math.round(thresholds.successMin * 1000) / 10}%),样本 ${success.requests} 次`
+    ].join("\n");
+  }
+  const lines = [
+    "⚠️ VoiceTodo 告警(解析失败率高)",
+    `最近 30 分钟成功率 ${Math.round((success.successRate ?? 0) * 1000) / 10}%,低于阈值 ${Math.round(thresholds.successMin * 1000) / 10}%(样本 ${success.requests} 次)`,
+    "按模型失败分布:"
+  ];
+  for (const failure of success.failuresByModel.slice(0, 5)) {
+    lines.push(`- ${failure.model}: ${failure.count} 次`);
+  }
+  return lines.join("\n");
 }
 
 async function readPayload(request) {
@@ -1568,10 +1934,117 @@ async function refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, 
 function classifyExtractOutcome(text) {
   try {
     const parsed = JSON.parse(stripMarkdownFence(text));
-    return { parseOk: true, hasTodos: Array.isArray(parsed?.todos) && parsed.todos.length > 0 };
+    return {
+      parseOk: true,
+      hasTodos: Array.isArray(parsed?.todos) && parsed.todos.length > 0,
+      // todosCount:extract_requests.todos_count 的非流式来源(流式在 onSuccess
+      // 里用同一函数解析 stats.fullText,口径一致)。
+      todosCount: Array.isArray(parsed?.todos) ? parsed.todos.length : null
+    };
   } catch {
-    return { parseOk: false, hasTodos: false };
+    return { parseOk: false, hasTodos: false, todosCount: null };
   }
+}
+
+// MARK: - Extract metrics (extract_requests 表,任务书 docs/extract-latency-monitoring-task.md §2)
+
+/// 每请求一个采集器:各出口把已知字段 patch 进来,终态 record() 只生效一次
+/// (failover 的多次尝试不会各写一行;流式 onSuccess 与 onSettled 双触发也只落一行)。
+/// 写库走 ctx.waitUntil(测试传 {} 时 fire-and-forget);写失败在
+/// writeExtractRequestRow 内部 logWarn,绝不影响用户请求。TELEMETRY_DB 未配置
+/// 时只置 written 不写库 —— 与 telemetry 写入同判断,不算错误。
+function createExtractMetrics(env, ctx, requestContext) {
+  const row = {
+    received_at: requestContext.startedAt,
+    request_id: requestContext.requestId,
+    extract_id: requestContext.extractId ?? null,
+    device_id: requestContext.deviceId,
+    stream: requestContext.stream ? 1 : 0
+  };
+  let written = false;
+  return {
+    record(patch) {
+      if (written) return;
+      written = true;
+      // plan 在写入时刻取值:采集器创建时订阅档位可能还没解析完(quota 拒绝路径)
+      Object.assign(row, patch, { plan: requestContext.subscriptionTier ?? null });
+      if (!env.TELEMETRY_DB) return;
+      const write = writeExtractRequestRow(env.TELEMETRY_DB, row, requestContext);
+      if (typeof ctx?.waitUntil === "function") {
+        ctx.waitUntil(write);
+      }
+      // 无 waitUntil(单元测试/老 runtime):write 内部已 catch + logWarn,
+      // fire-and-forget 不会产生 unhandled rejection(与 cache 写入同兜底)。
+    }
+  };
+}
+
+/// attempts 数组(provider.js 的执行记录)→ extract_requests 的服务商维度字段。
+/// attempts 计**去重后的条目数**(同一条目内 key 级重试只算一家,与任务书
+/// 「一共试了几个服务商」口径一致);providers_tried 保留首次尝试顺序。
+function providerInfoForMetrics(attempts) {
+  if (!Array.isArray(attempts) || attempts.length === 0) {
+    return { attempts: 0, providers_tried: null };
+  }
+  const last = attempts[attempts.length - 1];
+  const tried = [];
+  for (const attempt of attempts) {
+    if (!tried.includes(attempt.providerId)) tried.push(attempt.providerId);
+  }
+  return {
+    provider_id: last.providerId ?? null,
+    model: last.model ?? null,
+    key_slot: last.keySlot ?? null,
+    attempts: tried.length,
+    providers_tried: tried.join(","),
+    failover: tried.length > 1 ? 1 : 0,
+    // 任务书 §2.2:取最终那次 attempt 的 durationMs(与 call_success 日志同值)。
+    // 非流式该值含 body 读取,严格说是「上游完成」而非「首字节」——沿用任务书口径。
+    upstream_first_byte_ms: Number.isFinite(last.durationMs) ? last.durationMs : null
+  };
+}
+
+// 上游调用之前就会被拒掉的 errorType(quota/IP 限流/预算/key 池/深读限额)。
+// 这些请求 outcome 记 quota_rejected(任务书 §2.2:提前拒掉的也要写一行,才能
+// 算真实失败率)。errorType 的权威来源是各 enforce* 抛错处的定义,新增闸门时同步。
+const QUOTA_REJECTION_TYPES = new Set([
+  "quota_exceeded",
+  "subscription_quota_exceeded",
+  "rate_limited",
+  "global_budget_exceeded",
+  "global_budget_exceeded_pro",
+  "key_pool_full",
+  "deepread_limit_exceeded"
+]);
+
+/// 外层 catch 的错误 → extract_requests 行字段。上游是否被调过(有无 attempts)
+/// 是主要判别器:quota/IP/预算类 429/503 全部发生在上游调用之前(任务书 §2.2:
+/// 这些也要写一行,outcome=quota_rejected,才能算真实失败率);有 attempts 的
+/// 一律 upstream_failed。
+function errorMetricsPatch(error, requestContext, status) {
+  const provider = providerInfoForMetrics(requestContext.providerAttempts);
+  const errorType = error?.errorType ?? null;
+  let outcome;
+  if (errorType === "client_disconnected") {
+    outcome = "client_disconnected";
+  } else if (QUOTA_REJECTION_TYPES.has(errorType)) {
+    outcome = "quota_rejected";
+  } else if (error?.body?.error === "invariant_violation") {
+    outcome = "proxy_error";
+  } else if (provider.attempts > 0) {
+    outcome = "upstream_failed";
+  } else {
+    // 上游没被调过又对不上已知类别(代理自身 bug)—— 单独归类,不污染失败率
+    // 里的上游语义。任务书枚举外的扩展值,见结果文档 outcome 映射表。
+    outcome = "proxy_error";
+  }
+  return {
+    status,
+    outcome,
+    error_type: errorType,
+    total_ms: Date.now() - requestContext.startedAt,
+    ...provider
+  };
 }
 
 // 空结果退款(2026-10 修复):模型判定无待办(todos=[])或输出坏 JSON 时,用户没拿到
@@ -2620,7 +3093,11 @@ async function makeRequestContext(request, env) {
     method: request.method,
     path: url.pathname,
     contentLength: request.headers.get("content-length") || "unknown",
-    deviceId: await safeDeviceId(rawDeviceId, env)
+    deviceId: await safeDeviceId(rawDeviceId, env),
+    // X-Extract-ID(任务书 §2.4):App 端一次提取的关联 ID,进 requestContext 后
+    // 随所有日志与 extract_requests 行外带,App 埋点(telemetry_events.extract_id)
+    // 与代理数据可对上号。非法值(超长/非法字符)一律视为未携带,防日志注入。
+    extractId: sanitizeExtractId(request.headers.get("X-Extract-ID"))
   };
 }
 

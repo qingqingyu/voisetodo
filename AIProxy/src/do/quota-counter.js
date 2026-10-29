@@ -12,6 +12,18 @@
 //   GET  /inspect          ?key=&date=                                  → { used }
 //   POST /reset            { key, date }                                → { ok }   // 测试用,生产可关
 //
+// A2 每 key 并发闸门(docs/capacity-scenario-a-task.md §2)——同类的第二个用途:
+//   POST /gate/acquire     { limit, leaseMs }   → { allowed, inFlight, leaseId? }
+//   POST /gate/release     { leaseId }          → { released }
+//   POST /gate/count       {}                   → { inFlight }
+// 每个 key 一个 DO 实例(idFromName("gate:<条目id>#<序号>")),天然按 key 分片。
+// 租约制:acquire 写入 gate:<leaseId> → { expiresAt }(= now + leaseMs,调用方
+// 传条目 timeoutMs + 10s);读路径(count/acquire/release)先 sweep 过期租约,
+// Worker 崩溃或漏 release 时名额由租约 TTL 自动回收,不永久泄漏。
+// 选择复用 QuotaCounter 类而不是新增 DO class:新增 class 要走 [[migrations]]
+// 再部署一次 DO 类迁移;闸门与配额计数是同一形态的强一致小计数器,共享类
+// 零迁移成本,实例按 name 前缀(gate:)与配额实例完全隔离。
+//
 // consume 的"部分授予"语义:当 amount > remaining 但 remaining > 0 时,返回
 //   { allowed: true, taken: <remaining>, used: <limit>, remaining: 0 }
 // 即"能扣多少扣多少",**不会**因 amount 不够而全拒绝。调用方需要检查 taken 是否
@@ -52,7 +64,8 @@ export class QuotaCounter {
     const path = url.pathname;
 
     // 路径分发先于 body 解析 —— 未知路径直接 404,不因缺 body 误报 400 invalid_json
-    if (path !== "/consume" && path !== "/consume-rolling" && path !== "/refund" && path !== "/inspect" && path !== "/reset") {
+    if (path !== "/consume" && path !== "/consume-rolling" && path !== "/refund" && path !== "/inspect" && path !== "/reset"
+      && path !== "/gate/acquire" && path !== "/gate/release" && path !== "/gate/count") {
       return json({ error: "not_found" }, 404);
     }
 
@@ -76,6 +89,12 @@ export class QuotaCounter {
         return this.handleInspect(url);
       case "/reset":
         return this.handleReset(body);
+      case "/gate/acquire":
+        return this.handleGateAcquire(body);
+      case "/gate/release":
+        return this.handleGateRelease(body);
+      case "/gate/count":
+        return this.handleGateCount();
     }
     // 上面路径校验已保证不会走到这里
     return json({ error: "not_found" }, 404);
@@ -201,6 +220,65 @@ export class QuotaCounter {
     return json({ ok: true });
   }
 
+  // ── A2 闸门端点(见文件头注释)。租约存 storage 而非内存:DO 实例被运行时
+  // 回收重启后计数不丢,漏 release 的租约靠 expiresAt 而非进程生命周期回收。
+  // DO 输入串行化保证 sweep → check → put 的原子性(与 /consume 同理)。
+  async handleGateAcquire(body) {
+    const limit = Number(body?.limit);
+    if (!Number.isInteger(limit) || limit <= 0) return json({ error: "invalid_limit" }, 400);
+    const leaseMs = Number(body?.leaseMs);
+    if (!Number.isInteger(leaseMs) || leaseMs <= 0) return json({ error: "invalid_lease_ms" }, 400);
+
+    await this.sweepExpiredGateLeases();
+    const inFlight = await this.gateInFlight();
+    if (inFlight >= limit) {
+      return json({ allowed: false, inFlight });
+    }
+    const leaseId = crypto.randomUUID();
+    await this.state.storage.put(gateLeaseKey(leaseId), { expiresAt: Date.now() + leaseMs });
+    return json({ allowed: true, inFlight: inFlight + 1, leaseId });
+  }
+
+  async handleGateRelease(body) {
+    const leaseId = typeof body?.leaseId === "string" ? body.leaseId : "";
+    if (!leaseId) return json({ error: "invalid_lease_id" }, 400);
+    await this.sweepExpiredGateLeases();
+    const deleted = await this.state.storage.delete(gateLeaseKey(leaseId));
+    return json({ released: deleted });
+  }
+
+  async handleGateCount() {
+    await this.sweepExpiredGateLeases();
+    const inFlight = await this.gateInFlight();
+    return json({ inFlight });
+  }
+
+  async gateInFlight() {
+    const leases = await this.listGateLeases();
+    return leases.size;
+  }
+
+  async listGateLeases() {
+    const all = await this.state.storage.list();
+    const leases = new Map();
+    for (const [key, value] of all) {
+      if (!key.startsWith(GATE_KEY_PREFIX)) continue;
+      leases.set(key, value);
+    }
+    return leases;
+  }
+
+  async sweepExpiredGateLeases() {
+    const leases = await this.listGateLeases();
+    const now = Date.now();
+    for (const [key, value] of leases) {
+      const expiresAt = Number(value?.expiresAt);
+      if (Number.isFinite(expiresAt) && expiresAt <= now) {
+        await this.state.storage.delete(key);
+      }
+    }
+  }
+
   // 单 DO 实例只有一个 alarm slot。在首次写入时设到次日 UTC 0:05,
   // alarm 触发时清理所有 < 昨天 的记录(保留今天+昨天两天,见文件头「清理边界」),
   // 并设下一个 alarm。这样无论 DO 实例服务多少 key/桶,都能持续清理过期数据。
@@ -236,6 +314,15 @@ export class QuotaCounter {
 }
 
 // MARK: - Helpers
+
+// A2 闸门租约的 storage key 前缀。与配额计数的 `${date}:${key}` 格式天然不冲突;
+// alarm 清理只处理 datePartFromStorageKey 能解析出日期的 key,gate: 前缀返回
+// 空串不被误删(租约靠自身 expiresAt 回收,不靠日清理)。
+const GATE_KEY_PREFIX = "gate:";
+
+function gateLeaseKey(leaseId) {
+  return `${GATE_KEY_PREFIX}${leaseId}`;
+}
 
 function storageKeyFor(key, date) {
   return `${date}:${key}`;

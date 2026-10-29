@@ -17,8 +17,14 @@
 //   node loadtest/run.mjs --matrix --label before                  # §2.3 矩阵(改前)
 //   node loadtest/run.mjs --matrix --balance --label after         # 矩阵 + 余额耗尽组(改后)
 //   node loadtest/run.mjs --users 100 --gates prod                 # 生产真实闸门值
+//   node loadtest/run.mjs --scenario-a --label a-main              # A 场景容量(capacity-scenario-a-task.md §5)
 // 结果 JSON 落 loadtest/results/<label>-<name>.json,摘要表打 stdout。
 // loadtest/ 不进 npm test(§2.4)。
+//
+// A 场景(--scenario-a):单条目多 key 池 × 泊松到达(1000 人/60s)× 闸门开/关对比。
+// mock 上游按 Authorization 分 key 记账,每 key 独立并发上限;闸门开 = 条目配
+// maxConcurrencyPerKey(走 DO /gate/*),闸门关 = 只靠上游 429 + key 级重试。
+// 验收线(§5.5):最终 ≥99% / 即时 ≥95% / 用户侧 P95 ≤10s(真实时间)/ 闸门开时上游忙 429≈0。
 
 import { parseArgs } from "node:util";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -110,6 +116,100 @@ function makeMockUpstream({ limits, latencyMs, balanceExhausted, rng }) {
   return { mockFetch, stats };
 }
 
+// ─── A 场景:单条目多 key 池 mock 上游(按 Authorization 分 key 记账) ────────
+// 上游视角:每 key 独立并发上限,流式生成期间占连接(latencyMs ± 10% 抖动);
+// 超限返回忙 429(z.ai 1302 同款体,openai adapter 归类 status_429 不计熔断)。
+function makePoolUpstream({ keyCount, limit, latencyMs, rng }) {
+  const stats = {};
+  const statOf = (key) => stats[key] || (stats[key] = { requests: 0, busy429: 0, success: 0, inFlight: 0, maxInFlight: 0 });
+  const extraction = JSON.stringify({
+    todos: [{
+      title: "A场景压测待办", detail: "loadtest-a", due_date: null, due_hint: null, due_time: null,
+      time_bucket: null, recurrence_rule: null, recurrence_end: null, due_date_basis: null,
+      reminder_times: null, reminder_offset_minutes: null, priority: "normal", category_hint: "other"
+    }],
+    ignored: ""
+  });
+  const encoder = new TextEncoder();
+  const ssePayload = [
+    `data: ${JSON.stringify({ choices: [{ delta: { content: extraction } }] })}`,
+    `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}`,
+    "data: [DONE]",
+    ""
+  ].join("\n\n");
+
+  async function mockFetch(url, init) {
+    const key = String(init?.headers?.Authorization || "").replace(/^Bearer /, "");
+    const s = statOf(key);
+    s.requests += 1;
+    if (s.inFlight >= limit) {
+      s.busy429 += 1;
+      return BUSY_429();
+    }
+    s.inFlight += 1;
+    s.maxInFlight = Math.max(s.maxInFlight, s.inFlight);
+    let released = false;
+    let timer = null;
+    const dec = () => {
+      if (!released) { released = true; s.inFlight -= 1; }
+    };
+    const body = new ReadableStream({
+      start(controller) {
+        timer = setTimeout(() => {
+          try {
+            s.success += 1;
+            controller.enqueue(encoder.encode(ssePayload));
+            controller.close();
+          } finally {
+            dec();
+          }
+        }, Math.max(1, Math.round(latencyMs * (0.9 + 0.2 * rng()))));
+      },
+      cancel() {
+        if (timer) clearTimeout(timer);
+        dec();
+      }
+    });
+    return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
+  return { mockFetch, stats };
+}
+
+function buildPoolEnv({ gates, rateKv, stateKv, doBinding, pool }) {
+  const secretNames = Array.from({ length: pool.keys }, (_, i) => `POOL_KEY_${i}`);
+  const entry = {
+    id: "KEY_POOL",
+    type: "openai",
+    url: "https://mock-pool.invalid/v1/chat/completions",
+    model: "glm-pool",
+    priority: 1,
+    weight: 1,
+    enabled: true,
+    secretNames,
+    timeoutMs: 3000 // 30s / SCALE
+  };
+  if (pool.gate) entry.maxConcurrencyPerKey = pool.perKeyLimit;
+  return {
+    APP_TOKEN: "loadtest-token",
+    LOG_HASH_SALT: "loadtest-salt",
+    PROVIDERS: JSON.stringify([entry]),
+    ...Object.fromEntries(secretNames.map((name, i) => [name, `pool-key-${i}`])),
+    AI_PROVIDER_MAX_ATTEMPTS: "2",
+    CIRCUIT_OPEN_THRESHOLD: "5",
+    CIRCUIT_INITIAL_COOLDOWN_MS: String(10_000 / SCALE),
+    CIRCUIT_MAX_COOLDOWN_MS: String(300_000 / SCALE),
+    // A2 闸门参数(全部按 SCALE 缩放;lease 余量 10s→1s)
+    KEY_GATE_MAX_WAIT_MS: String(3000 / SCALE),
+    KEY_GATE_POLL_MS: String(100 / SCALE),
+    KEY_GATE_LEASE_MARGIN_MS: String(10_000 / SCALE),
+    KEY_GATE_CALL_TIMEOUT_MS: "200",
+    RATE_LIMIT_KV: rateKv,
+    AI_PROVIDER_STATE_KV: stateKv,
+    QUOTA_COUNTER_DO: doBinding,
+    ...gates
+  };
+}
+
 // ─── 测试同款内存基建(与 worker.test.js 同口径)────────────────────────────
 class MemoryKV {
   constructor(initial = new Map()) {
@@ -139,10 +239,48 @@ function makeFakeQuotaCounterDO() {
     const d = new Date(ms);
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}`;
   };
+  // A2 闸门:每 DO 实例(gate:<entry>#<i>)独立租约账本 + 调用日志(ops/s 统计)。
+  const gateLeases = new Map();      // name -> Map(leaseId -> expiresAt)
+  const gateLeaseSeq = new Map();    // name -> counter
+  const gateCallLog = [];            // { t, name, path }
+  const gateLeasesOf = (name) => {
+    if (!gateLeases.has(name)) gateLeases.set(name, new Map());
+    return gateLeases.get(name);
+  };
   const stub = {
-    async fetch(req) {
+    async fetch(req, doName = "default") {
       const body = JSON.parse(await req.text());
       const url = new URL(req.url);
+      if (url.pathname.startsWith("/gate/")) {
+        gateCallLog.push({ t: Date.now(), name: doName, path: url.pathname });
+        const leases = gateLeasesOf(doName);
+        const sweep = () => {
+          const now = Date.now();
+          for (const [leaseId, expiresAt] of leases) {
+            if (expiresAt <= now) leases.delete(leaseId);
+          }
+        };
+        if (url.pathname === "/gate/acquire") {
+          sweep();
+          if (leases.size >= body.limit) {
+            return new Response(JSON.stringify({ allowed: false, inFlight: leases.size }), { status: 200, headers: { "Content-Type": "application/json" } });
+          }
+          const seq = (gateLeaseSeq.get(doName) || 0) + 1;
+          gateLeaseSeq.set(doName, seq);
+          const leaseId = `lease-${seq}`;
+          leases.set(leaseId, Date.now() + body.leaseMs);
+          return new Response(JSON.stringify({ allowed: true, inFlight: leases.size + 1, leaseId }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        if (url.pathname === "/gate/release") {
+          sweep();
+          return new Response(JSON.stringify({ released: leases.delete(body.leaseId) }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        if (url.pathname === "/gate/count") {
+          sweep();
+          return new Response(JSON.stringify({ inFlight: leases.size }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
       if (url.pathname === "/consume-rolling") {
         const hourMs = Date.parse(`${body.hour}:00:00.000Z`);
         let windowUsed = 0;
@@ -177,10 +315,25 @@ function makeFakeQuotaCounterDO() {
       return new Response(JSON.stringify({ allowed: true, used: newUsed, remaining: limit - newUsed, limit, taken: take }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
   };
+  const perNameGates = new Map();
+  const gateStubFor = (name) => {
+    if (!perNameGates.has(name)) {
+      perNameGates.set(name, { fetch: (req) => stub.fetch(req, name) });
+    }
+    return perNameGates.get(name);
+  };
   return {
     idFromName(name) { return { name }; },
-    get() { return stub; },
-    _store: store
+    get(id = { name: "default" }) {
+      return {
+        fetch: (req) => (new URL(req.url).pathname.startsWith("/gate/")
+          ? gateStubFor(id.name).fetch(req)
+          : stub.fetch(req))
+      };
+    },
+    _store: store,
+    _gateCallLog: gateCallLog,
+    _gateLeases: gateLeases
   };
 }
 
@@ -191,6 +344,10 @@ function makeLogCollector({ verbose }) {
   // 键是真实 providerId(如 ZAI_ANTHROPIC_AIR),动态创建
   const circuit = { opened: 0, reopened: 0, closed: 0, openMsByProvider: {}, openSince: {} };
   let noCandidates503 = 0;
+  // A 场景闸门指标:等待耗时分布(slot_acquired_after_wait 事件)与池满计数
+  const gateWaitMs = [];
+  let gatePoolFull = 0;
+  let gateCallFailed = 0;
   const originals = {
     log: console.log,
     warn: console.warn,
@@ -219,6 +376,12 @@ function makeLogCollector({ verbose }) {
       }
     } else if (name === "proxy.selector.no_candidates") {
       noCandidates503 += 1;
+    } else if (name === "proxy.gate.slot_acquired_after_wait") {
+      gateWaitMs.push(Number(parsed.waitMs) || 0);
+    } else if (name === "proxy.gate.pool_full") {
+      gatePoolFull += 1;
+    } else if (name === "proxy.gate.call_failed") {
+      gateCallFailed += 1;
     }
     if (verbose) {
       originals.log(line);
@@ -242,7 +405,7 @@ function makeLogCollector({ verbose }) {
           circuit.openSince[id] = null;
         }
       }
-      return { events, failures, circuit, noCandidates503 };
+      return { events, failures, circuit, noCandidates503, gateWaitMs, gatePoolFull, gateCallFailed };
     }
   };
 }
@@ -307,7 +470,7 @@ function buildEnv({ gates, rateKv, stateKv, doBinding }) {
   };
 }
 
-async function runScenario({ name, label, users, mode, gates, limitAir, limitSonnet, balanceExhausted, seed, verbose, trailingUsers = 0, trailingDelaySimMs = 0 }) {
+async function runScenario({ name, label, users, mode, gates, limitAir, limitSonnet, balanceExhausted, seed, verbose, trailingUsers = 0, trailingDelaySimMs = 0, pool = null }) {
   // 模块级单例隔离(同 worker.test.js beforeEach 语义)
   _testResetHealth();
   _testResetAdminConfig();
@@ -319,16 +482,34 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
   const rateKv = new MemoryKV();
   const stateKv = new MemoryKV();
   const doBinding = makeFakeQuotaCounterDO();
-  // admin 钉头 = AIR(与线上 2026-09-22 灰度一致)
-  await stateKv.put("config:providers_primary", JSON.stringify({ primaryId: "ZAI_ANTHROPIC_AIR", updatedAt: Date.now(), updatedBy: "loadtest" }));
-  const env = buildEnv({ gates: GATES[gates], rateKv, stateKv, doBinding });
 
-  const { mockFetch, stats: upstreamStats } = makeMockUpstream({
-    limits: { AIR: limitAir, SONNET: limitSonnet },
-    latencyMs: 6000 / SCALE,
-    balanceExhausted,
-    rng
-  });
+  let env;
+  let mockFetch;
+  let upstreamStats;
+  if (pool) {
+    // A 场景:单条目 key 池(无 admin 钉头,单条目无意义)
+    env = buildPoolEnv({ gates: GATES[gates], rateKv, stateKv, doBinding, pool });
+    const poolUpstream = makePoolUpstream({
+      keyCount: pool.keys,
+      limit: pool.perKeyLimit,
+      latencyMs: 6000 / SCALE,
+      rng
+    });
+    mockFetch = poolUpstream.mockFetch;
+    upstreamStats = poolUpstream.stats;
+  } else {
+    // admin 钉头 = AIR(与线上 2026-09-22 灰度一致)
+    await stateKv.put("config:providers_primary", JSON.stringify({ primaryId: "ZAI_ANTHROPIC_AIR", updatedAt: Date.now(), updatedBy: "loadtest" }));
+    env = buildEnv({ gates: GATES[gates], rateKv, stateKv, doBinding });
+    const airUpstream = makeMockUpstream({
+      limits: { AIR: limitAir, SONNET: limitSonnet },
+      latencyMs: 6000 / SCALE,
+      balanceExhausted,
+      rng
+    });
+    mockFetch = airUpstream.mockFetch;
+    upstreamStats = airUpstream.stats;
+  }
 
   const ctxPending = [];
   const ctx = { waitUntil(p) { ctxPending.push(Promise.resolve(p).catch(() => {})); } };
@@ -353,13 +534,17 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
   });
 
   // 客户端真实重试策略(TodoExtractorService):最多 3 次;退避 1s/2s + 0~30% 抖动
-  // (×1/SCALE);503/5xx 重试;429 quota/ip_daily 不重试;velocity 429 仅当
-  // retryAfter ≤ 8s 时重试。
+  // (×1/SCALE);503/5xx 重试并计入客户端熔断;429 quota/ip_daily 不重试;
+  // 其余 429(key_pool_full 等)按 retryAfter ≤ 8s 等待重试、不计熔断。
+  // 客户端熔断(App 同款:连续 5 次 .serviceUnavailable → 冷却 15s,×1/SCALE)。
+  const clientBreaker = { trips: 0, serviceFailures: 0 };
   async function virtualUser(i, arriveAt, isTrailing = false) {
     const outcome = { user: i, success: false, attemptsUsed: 0, firstTrySuccess: false, durationMs: 0, failureKind: null, trailing: isTrailing };
     const startReal = Date.now();
     let nextDelayOverrideMs = null;
     let lastStatus = null;
+    let consecutiveServiceFailures = 0;
+    let breakerOpenUntil = 0;
     for (let attempt = 0; attempt <= 2; attempt++) {
       if (attempt > 0) {
         let delayMs;
@@ -371,6 +556,11 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
           delayMs = base * (1 + 0.3 * rng()); // 0~30% 抖动
         }
         await sleep(delayMs);
+      }
+      // 熔断打开期间:App 直接落「待解析」,不再发请求
+      if (Date.now() < breakerOpenUntil) {
+        outcome.failureKind = "client_breaker_open";
+        break;
       }
       outcome.attemptsUsed = attempt + 1;
       let response;
@@ -386,6 +576,7 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
       if (response.status === 200) {
         outcome.success = true;
         if (attempt === 0) outcome.firstTrySuccess = true;
+        consecutiveServiceFailures = 0;
         break;
       }
       if (response.status === 429) {
@@ -394,7 +585,9 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
         if (body.error === "quota_exceeded") { outcome.failureKind = "quota_exceeded"; break; }
         const rateLimitType = response.headers.get("X-RateLimit-Type");
         if (rateLimitType === "ip_daily") { outcome.failureKind = "ip_daily"; break; }
-        // .rateLimited(retryAfter):仅 retryAfter ∈ [0,8s] 且还有重试机会时继续
+        if (rateLimitType === "key_pool_full") clientBreaker.poolFull429 = (clientBreaker.poolFull429 || 0) + 1;
+        // .rateLimited(retryAfter):仅 retryAfter ∈ [0,8s] 且还有重试机会时继续。
+        // 计数不计熔断(NetworkClient.classify429 / countsAsServiceFailure 的口径)。
         const retryAfter = body.retryAfter ?? Number(response.headers.get("Retry-After") ?? NaN);
         const retryable = Number.isFinite(retryAfter) && retryAfter >= 0 && retryAfter <= 8 && attempt < 2;
         if (!retryable) { outcome.failureKind = `rate_limited:${rateLimitType || "generic"}`; break; }
@@ -402,7 +595,14 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
         continue;
       }
       if (response.status >= 500 && response.status < 600) {
-        // serviceUnavailable / apiServerError → 指数退避重试
+        // .serviceUnavailable(修复2 后仅剩真上游故障)→ 退避重试,计入客户端熔断
+        consecutiveServiceFailures += 1;
+        clientBreaker.serviceFailures += 1;
+        if (consecutiveServiceFailures >= 5) {
+          clientBreaker.trips += 1;
+          breakerOpenUntil = Date.now() + 15_000 / SCALE;
+          consecutiveServiceFailures = 0;
+        }
         continue;
       }
       // 4xx 非限流(400/401/413…)→ 不重试
@@ -420,7 +620,24 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
 
   const scenarioStart = Date.now();
   const userPromises = [];
-  if (mode === "burst") {
+  if (mode === "poisson") {
+    // A 场景:60s(真实)内泊松到达。指数间隔 -ln(U)/λ;绝对时间调度
+    // (每个用户独立 setTimeout 到目标时刻),避免顺序 sleep 的累计漂移。
+    const windowMs = 60_000 / SCALE;
+    const rate = users / windowMs;
+    let t = 0;
+    for (let i = 0; i < users; i++) {
+      t += -Math.log(1 - rng()) / rate;
+      const target = scenarioStart + t;
+      userPromises.push(
+        (async () => {
+          const delay = target - Date.now();
+          if (delay > 0) await sleep(delay);
+          return virtualUser(i, t);
+        })()
+      );
+    }
+  } else if (mode === "burst") {
     for (let i = 0; i < users; i++) userPromises.push(virtualUser(i, scenarioStart));
     // 尾随用户:主峰后 delaySimMs(模拟 ms)到达——度量「高峰刚过,代理是否还
     // 活着」。改前的伤害面正是这里:熔断冷却期(10s)内到达的用户吃 0 尝试 503。
@@ -498,8 +715,47 @@ async function runScenario({ name, label, users, mode, gates, limitAir, limitSon
       ZAI_ANTHROPIC: JSON.parse((await stateKv.get("health:ZAI_ANTHROPIC")) || "null")
     },
     zeroAttempt503: collected.noCandidates503,
+    // 客户端侧指标:熔断触发次数 / 5xx 服务失败事件数 / 名额满 429 收到数
+    clientBreaker: { trips: clientBreaker.trips, serviceFailures: clientBreaker.serviceFailures, poolFull429: clientBreaker.poolFull429 || 0 },
     eventCounts: Object.fromEntries(collected.events)
   };
+
+  if (pool) {
+    const perKey = Object.entries(upstreamStats).map(([key, s]) => ({
+      key,
+      requests: s.requests,
+      busy429: s.busy429,
+      success: s.success,
+      maxInFlight: s.maxInFlight
+    }));
+    const waits = collected.gateWaitMs.slice().sort((a, b) => a - b);
+    const pickQ = (sorted, q) => (sorted.length === 0 ? null : sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]);
+    // DO ops/s 峰值:按 1s(模拟)桶聚合 gate 调用
+    const buckets = new Map();
+    for (const call of doBinding._gateCallLog) {
+      const bucket = Math.floor((call.t - scenarioStart) / 1000);
+      buckets.set(bucket, (buckets.get(bucket) || 0) + 1);
+    }
+    const doPeakOpsPerSecSim = buckets.size ? Math.max(...buckets.values()) : 0;
+    result.keyPool = {
+      keys: pool.keys,
+      perKeyLimit: pool.perKeyLimit,
+      gateEnabled: Boolean(pool.gate),
+      totalSlots: pool.keys * pool.perKeyLimit
+    };
+    result.upstreamPerKey = perKey;
+    result.gateMetrics = {
+      waitedAcquires: waits.length,
+      waitP50SimMs: pickQ(waits, 0.5),
+      waitP95SimMs: pickQ(waits, 0.95),
+      poolFullEvents: collected.gatePoolFull,
+      callFailedEvents: collected.gateCallFailed,
+      doPeakOpsPerSecSim,
+      doPeakOpsPerSecReal: doPeakOpsPerSecSim / SCALE
+    };
+    result.keyPoolMaxInFlight = Math.max(0, ...perKey.map((k) => k.maxInFlight));
+    result.upstreamBusy429Total = perKey.reduce((sum, k) => sum + k.busy429, 0);
+  }
   return result;
 }
 
@@ -514,6 +770,11 @@ const { values: args } = parseArgs({
     balance: { type: "boolean", default: false }, // 单场景:--balance-exhausted AIR 的快捷方式
     matrix: { type: "boolean", default: false },
     trailing: { type: "boolean", default: false },
+    "scenario-a": { type: "boolean", default: false },
+    "a-users": { type: "string", default: "1000" },
+    "a-keys": { type: "string", default: "13" },
+    "a-limit": { type: "string", default: "10" },
+    "a-100-keys": { type: "string", default: "10" }, // 名额=100 组的 key 数(× a-limit)
     label: { type: "string", default: "adhoc" },
     seed: { type: "string", default: "42" },
     verbose: { type: "boolean", default: false }
@@ -523,6 +784,30 @@ const { values: args } = parseArgs({
 const here = path.dirname(fileURLToPath(import.meta.url));
 const resultsDir = path.join(here, "results");
 mkdirSync(resultsDir, { recursive: true });
+
+// A 场景摘要 + 验收判定(§5.5:最终≥99% / 即时≥95% / P95真实≤10s / 闸门开→busy429≈0)
+function printScenarioA(r) {
+  const pct = (x) => `${(x * 100).toFixed(1)}%`;
+  const p95RealS = ((r.latencyP95SimMs ?? 0) * SCALE / 1000).toFixed(1);
+  const limit = r.keyPool.perKeyLimit;
+  const busy = r.upstreamBusy429Total ?? 0;
+  const checks = [
+    r.finalSuccessRate >= 0.99,
+    r.immediateSuccessRate >= 0.95,
+    (r.latencyP95SimMs ?? Infinity) * SCALE <= 10_000,
+    ...(r.keyPool.gateEnabled ? [busy <= Math.max(2, Math.round(r.users * 0.001))] : [])
+  ];
+  const pass = checks.every(Boolean);
+  const wait = r.gateMetrics;
+  console.error(
+    `[${r.label}] ${r.scenario}: 即时 ${pct(r.immediateSuccessRate)} / 最终 ${pct(r.finalSuccessRate)} / P95(真实s)=${p95RealS}` +
+    ` | 上游 busy429=${busy} maxKeyInFlight=${r.keyPoolMaxInFlight}/${limit}` +
+    ` | 客户端: 429名额满=${r.clientBreaker.poolFull429} 熔断触发=${r.clientBreaker.trips} 5xx失败=${r.clientBreaker.serviceFailures}` +
+    ` | 闸门: 等待acquire=${wait.waitedAcquires} waitP95(sim)=${wait.waitP95SimMs ?? "-"}ms poolFull=${wait.poolFullEvents} failOpen=${wait.callFailedEvents}` +
+    ` DO峰值=${wait.doPeakOpsPerSecSim}ops/s(sim)/${wait.doPeakOpsPerSecReal.toFixed(1)}(real)` +
+    ` | 验收 ${pass ? "PASS" : "FAIL " + checks.map((c, i) => (c ? "" : ["最终<99%", "即时<95%", "P95>10s", "busy429≠0"][i]).trim()).filter(Boolean).join(",")}`
+  );
+}
 
 function printSummary(r) {
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
@@ -567,7 +852,19 @@ async function main() {
     // 主峰 100 人 + 5s(模拟)后 20 个尾随用户:度量熔断冷却期内的伤害面
     scenarios.push({ name: "burst-100-trail20", users: 100, mode: "burst", gates: "open", balanceExhausted: new Set(), trailingUsers: 20, trailingDelaySimMs: 5000 });
   }
-  if (!args.matrix && !args.balance) {
+  if (args["scenario-a"]) {
+    const aUsers = Number(args["a-users"]);
+    const aKeys = Number(args["a-keys"]);
+    const aLimit = Number(args["a-limit"]);
+    const a100Keys = Number(args["a-100-keys"]);
+    scenarios.push(
+      { name: `a-poisson-${aUsers}-gate-on-${aKeys}x${aLimit}`, users: aUsers, mode: "poisson", gates: "open", balanceExhausted: new Set(), pool: { keys: aKeys, perKeyLimit: aLimit, gate: true } },
+      { name: `a-poisson-${aUsers}-gate-off-${aKeys}x${aLimit}`, users: aUsers, mode: "poisson", gates: "open", balanceExhausted: new Set(), pool: { keys: aKeys, perKeyLimit: aLimit, gate: false } },
+      { name: `a-poisson-${aUsers}-slots${a100Keys * aLimit}-gate-on`, users: aUsers, mode: "poisson", gates: "open", balanceExhausted: new Set(), pool: { keys: a100Keys, perKeyLimit: aLimit, gate: true } },
+      { name: `a-poisson-${aUsers}-slots${a100Keys * aLimit}-gate-off`, users: aUsers, mode: "poisson", gates: "open", balanceExhausted: new Set(), pool: { keys: a100Keys, perKeyLimit: aLimit, gate: false } }
+    );
+  }
+  if (!args.matrix && !args.balance && !args["scenario-a"]) {
     scenarios.push({
       name: `${args.mode}-${args.users}-${args.gates}`,
       users: Number(args.users),
@@ -582,7 +879,8 @@ async function main() {
     const result = await runScenario({ ...scenario, ...common, label: args.label });
     all.push(result);
     writeFileSync(path.join(resultsDir, `${args.label}-${result.scenario}.json`), JSON.stringify(result, null, 2));
-    printSummary(result);
+    if (scenario.pool) printScenarioA(result);
+    else printSummary(result);
   }
   writeFileSync(path.join(resultsDir, `${args.label}-all.json`), JSON.stringify(all, null, 2));
   console.error(`\n${all.length} 个场景完成,JSON 落 ${resultsDir}/`);

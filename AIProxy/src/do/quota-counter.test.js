@@ -35,8 +35,9 @@ class FakeStorage {
     return Promise.resolve();
   }
   delete(key) {
-    this.map.delete(key);
-    return Promise.resolve();
+    // 真实 DurableObjectStorage.delete 返回 Promise<boolean>(key 是否存在过);
+    // /gate/release 依赖该返回值构造 { released }。
+    return Promise.resolve(this.map.delete(key));
   }
   list() {
     return Promise.resolve(new Map(this.map));
@@ -511,4 +512,67 @@ test("未知路径返回 404", async () => {
   const req = new Request("https://do.local/nope", { method: "POST" });
   const response = await instance.fetch(req);
   assert.equal(response.status, 404);
+});
+
+// MARK: - A2 闸门端点(/gate/*,docs/capacity-scenario-a-task.md §2.3-4)
+
+// 直接驱动 DO 实例的 /gate/* 端点(fake storage,与上方同一套基建)
+function makeGateDo() {
+  const state = new FakeDOState();
+  const instance = new QuotaCounter(state, {});
+  return { state, instance };
+}
+
+async function gateFetch(instance, path, body) {
+  const res = await instance.fetch(new Request(`https://do.test${path}`, {
+    method: "POST",
+    body: JSON.stringify(body)
+  }));
+  return { status: res.status, body: await res.json() };
+}
+
+test("A2 DO gate:acquire 受 limit 约束,release 递减,count 读数", async () => {
+  const { instance } = makeGateDo();
+  const a1 = await gateFetch(instance, "/gate/acquire", { limit: 2, leaseMs: 60_000 });
+  assert.equal(a1.status, 200);
+  assert.equal(a1.body.allowed, true);
+  const a2 = await gateFetch(instance, "/gate/acquire", { limit: 2, leaseMs: 60_000 });
+  assert.equal(a2.body.allowed, true);
+  const a3 = await gateFetch(instance, "/gate/acquire", { limit: 2, leaseMs: 60_000 });
+  assert.equal(a3.body.allowed, false, "limit=2 时第 3 个 acquire 应被拒");
+  assert.equal(a3.body.inFlight, 2);
+  const count = await gateFetch(instance, "/gate/count", {});
+  assert.equal(count.body.inFlight, 2);
+  const rel = await gateFetch(instance, "/gate/release", { leaseId: a1.body.leaseId });
+  assert.equal(rel.body.released, true);
+  const relAgain = await gateFetch(instance, "/gate/release", { leaseId: a1.body.leaseId });
+  assert.equal(relAgain.body.released, false, "重复 release 幂等");
+  const after = await gateFetch(instance, "/gate/count", {});
+  assert.equal(after.body.inFlight, 1);
+  const a4 = await gateFetch(instance, "/gate/acquire", { limit: 2, leaseMs: 60_000 });
+  assert.equal(a4.body.allowed, true, "release 后名额可用");
+});
+
+test("A2 DO gate §2.3-4:漏 release → 租约到期后名额自动回收", async () => {
+  const { instance } = makeGateDo();
+  const a1 = await gateFetch(instance, "/gate/acquire", { limit: 1, leaseMs: 40 });
+  const a2 = await gateFetch(instance, "/gate/acquire", { limit: 1, leaseMs: 40 });
+  assert.equal(a1.body.allowed, true);
+  assert.equal(a2.body.allowed, false);
+  // 不 release,等租约过期(40ms + 余量)
+  await new Promise((r) => setTimeout(r, 90));
+  const count = await gateFetch(instance, "/gate/count", {});
+  assert.equal(count.body.inFlight, 0, "过期租约应被 sweep 回收");
+  const a3 = await gateFetch(instance, "/gate/acquire", { limit: 1, leaseMs: 40 });
+  assert.equal(a3.body.allowed, true, "回收后名额可再授予");
+});
+
+test("A2 DO gate:输入校验——非法 limit/leaseMs 返回 400,未知路径 404", async () => {
+  const { instance } = makeGateDo();
+  assert.equal((await gateFetch(instance, "/gate/acquire", { limit: 0, leaseMs: 1000 })).status, 400);
+  assert.equal((await gateFetch(instance, "/gate/acquire", { limit: 2.5, leaseMs: 1000 })).status, 400);
+  assert.equal((await gateFetch(instance, "/gate/acquire", { limit: 2, leaseMs: -1 })).status, 400);
+  assert.equal((await gateFetch(instance, "/gate/acquire", {})).status, 400);
+  const notFound = await instance.fetch(new Request("https://do.test/gate/unknown", { method: "POST", body: "{}" }));
+  assert.equal(notFound.status, 404);
 });

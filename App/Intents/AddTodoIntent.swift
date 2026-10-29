@@ -6,7 +6,7 @@ import WidgetKit
 /// 用户对 Siri 说"用 VoiceTodo 记录..."时触发
 struct AddTodoIntent: AppIntent {
     static var title: LocalizedStringResource = "siri.intent.title"
-    static var description: IntentDescription = IntentDescription("siri.intent.description")
+    static var description: IntentDescription = IntentDescription("intent.add.description")
 
     @Parameter(title: "siri.param.transcript")
     var transcript: String

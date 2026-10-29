@@ -39,11 +39,13 @@ enum AppGroupModelContainerProvider {
 
     private static func makeContainer(allowsSave: Bool) throws -> ModelContainer {
         let schema = VoiceTodoSchema.schema
+        // 显式关闭 iCloud 同步:现有 schema 含 .unique 等 CloudKit 不支持的约束,开同步前须先走 V2 迁移(见 docs/swiftdata-schema-v1-baseline.md)
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
             allowsSave: allowsSave,
-            groupContainer: .identifier(AppGroupConfig.identifier)
+            groupContainer: .identifier(AppGroupConfig.identifier),
+            cloudKitDatabase: .none
         )
         return try ModelContainer(for: schema, configurations: configuration)
     }

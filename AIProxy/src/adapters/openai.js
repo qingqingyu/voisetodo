@@ -40,13 +40,19 @@ export const openaiAdapter = {
         signal: mergeSignals(abortSignal, AbortSignal.timeout(provider.timeoutMs)),
         headers: {
           "Authorization": `Bearer ${provider.apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          // A3:条目级附加头(如 OpenRouter 建议 的 HTTP-Referer/X-Title)。
+          // 保留字段(Authorization/Content-Type)在 config.js 拒绝覆盖,这里直接展开。
+          ...(provider.extraHeaders || {})
         },
         body: JSON.stringify({
           model: provider.model,
           temperature: 0,
           stream,
-          response_format: { type: "json_object" },
+          // A3:disableResponseFormat 条目不发送 response_format——部分平台不支持
+          // 该参数会 400(request_body 不重试直接 502),此时靠 prompt 约束 JSON。
+          // 默认开启:目标平台(OpenRouter 及国内 OpenAI 兼容平台)普遍支持。
+          ...(provider.disableResponseFormat ? {} : { response_format: { type: "json_object" } }),
           messages: [
             // split(拆小)/reflect(语义对照)换专用 prompt;
             // today/vocabularyHints/personalHints 仅提取模式有意义
@@ -59,7 +65,10 @@ export const openaiAdapter = {
                   : buildSystemPrompt(locale, vocabularyHints, today, personalHints)
             },
             { role: "user", content: transcript }
-          ]
+          ],
+          // A3:条目级附加体字段(如关闭思考/推理、上游路由偏好)。
+          // 保留字段(model/messages/stream)在 config.js 拒绝覆盖。
+          ...(provider.extraBody || {})
         })
       }
     };

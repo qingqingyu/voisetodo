@@ -110,8 +110,14 @@ export function nextRecord(previous, current, decision, now) {
 /// KV 存取包装,形态对齐 HealthStore(updateKv 每请求刷新 binding 引用)。
 /// load/save 内部吞掉 KV 异常并 logWarn —— 告警状态读写失败绝不打断 cron;
 /// 读失败返回 null(语义见文件头「降级原则」)。
+///
+/// kvKey 可自定义(默认 provider 健康):解析耗时/成功率告警(任务书 §4)复用
+/// 同一状态机,但各自独立一条 KV 记录,互不覆盖对方的 level/since。
+/// shouldNotify / nextRecord 是纯函数、对 level 字符串无先验假设(kvKey 自定义
+/// 时调用方用 "ok"/"degraded" 二值),可直接复用。
 export class AlertStateStore {
-  constructor() {
+  constructor(kvKey = KV_KEY) {
+    this.kvKey = kvKey;
     this.kv = null;
   }
 
@@ -122,7 +128,7 @@ export class AlertStateStore {
   async load() {
     if (!this.kv) return null;
     try {
-      const raw = await this.kv.get(KV_KEY);
+      const raw = await this.kv.get(this.kvKey);
       return raw ? JSON.parse(raw) : null;
     } catch (error) {
       logWarn("alert_state.kv.read_failed", errorFields(error));
@@ -133,7 +139,7 @@ export class AlertStateStore {
   async save(record) {
     if (!this.kv) return;
     try {
-      await this.kv.put(KV_KEY, JSON.stringify(record));
+      await this.kv.put(this.kvKey, JSON.stringify(record));
     } catch (error) {
       logWarn("alert_state.kv.write_failed", errorFields(error));
     }

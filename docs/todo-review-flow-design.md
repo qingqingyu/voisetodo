@@ -27,6 +27,8 @@
 | 页面结构 | `ReviewView` 保留为默认页，顶部加「开始这次复盘」入口卡，点进去是全屏五步流程 |
 | 「重要」标记 | 复用 `Priority.high`，不新增字段 |
 
+> **2026-10-24 修正**：「页面结构」行的入口卡位置此后历两次改版——10-19 起两态置顶（废止 8-23 的「Hero/Stats 之后」），10-24 起改为回顾页**底部悬浮**（`safeAreaInset(edge: .bottom)`，两态共用），并新增 **7 天滚动冷却**：距上次复盘完成不足 7 天整卡隐藏（从复盘时刻起算、不锚定周一；首复盘前不冷却常驻），A15 曝光埋点同条件不进分母。五步流程本身不受影响。以 `ReviewView.swift` body 注释为现行口径。
+
 ### 拍板决定（2026-08-21，评估后定稿）
 
 代码评估核实了「现状盘点」的全部断言（一处补充：`Store/TodoStore.swift:910` 还有一处 `dueDate` 赋值，但那是启动迁移 `migrateDueDatesFromHints()` 的 nil→首次排期，按 §1.3 规则本就不记，choke point 结论不变）。基于评估拍板：
@@ -353,7 +355,7 @@ Store/TodoStore.swift                updateFull 埋点（deferred）；新增 ab
 Store/TodoQueryActor.swift           新增 insightContext(from:to:)
 Protocols/Models.swift               TodoItemData 同步两个新字段
 Protocols/TodoStoreProtocol.swift    新增 TodoAbandonWriting 协议 + 组合进角色协议
-UI/Review/ReviewView.swift           顶部入口卡；成分抽到 RecapComponents
+UI/Review/ReviewView.swift           顶部入口卡（→ 10-19 置顶 → 10-24 底部悬浮 + 7 天冷却，见文首修正注）；成分抽到 RecapComponents
 Resources/Localizable.xcstrings      新文案
 VoiceTodo.xcodeproj/project.pbxproj  注册新文件
 ```

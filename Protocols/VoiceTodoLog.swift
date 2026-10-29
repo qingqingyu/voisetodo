@@ -12,6 +12,13 @@ enum VoiceTodoLog {
     /// 调用方用 `VoiceTodoLog.$requestPath.withValue("pending_batch") { ... }` 包裹 extract 调用。
     @TaskLocal static var requestPath: String = "main"
 
+    /// 一次「说完话 → 出清单」的分段计时器(T0~T3,任务书 §5)。task-local,
+    /// 由 TranscriptProcessingFlow 绑定、随 Task 继承传进 extractor / NetworkClient。
+    /// live_voice 路径带 T0;键盘路径绑定但 speechEnd=nil(只用于 path 标记);
+    /// 补解析/Siri/重新解析不绑定,`ExtractTimingInfo.resolveCurrentOutcomeTiming`
+    /// 回落 requestPath 映射。
+    @TaskLocal static var extractTiming: ExtractTimingTracker?
+
     static let app = Logger(subsystem: subsystem, category: "app")
     static let coordinator = Logger(subsystem: subsystem, category: "coordinator")
     static let voice = Logger(subsystem: subsystem, category: "voice")

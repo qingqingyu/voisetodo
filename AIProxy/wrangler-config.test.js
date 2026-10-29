@@ -297,8 +297,12 @@ test("wrangler.toml: provider failover worst case fits inside the iOS client tim
   const maxAttempts = Math.min(Number(vars.AI_PROVIDER_MAX_ATTEMPTS), providers.length);
   // timeoutMs 选填,worker 侧默认 15_000。
   const maxTimeoutSeconds = Math.max(...providers.map((p) => Number(p.timeoutMs) || 15000)) / 1000;
+  // A2:最后一个条目池满时,闸门先等 KEY_GATE_MAX_WAIT_MS(默认 3s)才回
+  // 429(修复轮:原 503;429 让客户端按 .rateLimited 重试、不计熔断),
+  // 这段等待同样占用客户端预算,计入最坏路径。
+  const gateWaitSeconds = (Number(vars.KEY_GATE_MAX_WAIT_MS) || 3000) / 1000;
   // executeWithFailover 串行走候选:前 (maxAttempts - 1) 个各自耗满 timeout 才轮到最后一个。
-  const worstCase = (maxAttempts - 1) * maxTimeoutSeconds + TAIL_ALLOWANCE_SECONDS;
+  const worstCase = (maxAttempts - 1) * maxTimeoutSeconds + gateWaitSeconds + TAIL_ALLOWANCE_SECONDS;
 
   assert.ok(
     worstCase <= IOS_API_TIMEOUT_SECONDS,
@@ -306,8 +310,58 @@ test("wrangler.toml: provider failover worst case fits inside the iOS client tim
       + "失配会产生最隐蔽的一种失效:provider 1 挂满 timeout、Worker 正切到 provider 2 且注定"
       + "会成功,而客户端已经放弃并把 .apiTimeout 当成一次服务故障喂进熔断器 —— "
       + "用户看到降级,服务端日志里却是一次成功的 failover。"
-      + "要么调小 timeoutMs / AI_PROVIDER_MAX_ATTEMPTS,要么同步调大 Protocols/Constants.swift 的 apiTimeout"
+      + "要么调小 timeoutMs / AI_PROVIDER_MAX_ATTEMPTS / KEY_GATE_MAX_WAIT_MS,"
+      + "要么同步调大 Protocols/Constants.swift 的 apiTimeout"
   );
+});
+
+test("wrangler.toml: key-pool entries (A1/A2) shape is valid", () => {
+  const text = readFileSync(DEPLOYED, "utf8");
+  const providers = parseProviders(text);
+  assert.ok(providers?.length, "PROVIDERS 解析失败");
+
+  for (const p of providers) {
+    const hasSingular = p.secretName !== undefined;
+    const hasPlural = Array.isArray(p.secretNames);
+    assert.ok(
+      !(hasSingular && hasPlural),
+      `条目 ${p.id}: secretName 与 secretNames 互斥,同时出现是配置错误`
+    );
+    if (hasPlural) {
+      assert.ok(
+        p.secretNames.length > 0 && p.secretNames.every((name) => typeof name === "string" && name.length > 0),
+        `条目 ${p.id}: secretNames 必须是非空字符串数组`
+      );
+    }
+    if (p.maxConcurrencyPerKey !== undefined) {
+      assert.ok(
+        Number.isInteger(p.maxConcurrencyPerKey) && p.maxConcurrencyPerKey > 0,
+        `条目 ${p.id}: maxConcurrencyPerKey 必须是正整数,当前 ${JSON.stringify(p.maxConcurrencyPerKey)}`
+      );
+      // 闸门只对配了 maxConcurrencyPerKey 的条目生效;有闸门无 key 池 =
+      // 单 key 条目闸单 key,是合法但通常非预期的组合,静态提醒而非报错。
+      if (!hasPlural && p.enabled !== false) {
+        // 单 key + 闸门:合法(限制单 key 并发),不算失败;留空给未来断言。
+      }
+    }
+    if (p.extraBody !== undefined) {
+      for (const reserved of ["model", "messages", "stream"]) {
+        assert.ok(
+          !(reserved in p.extraBody),
+          `条目 ${p.id}: extraBody 不得覆盖 ${reserved}(config.js 会拒载,提前在这里暴露)`
+        );
+      }
+    }
+    if (p.extraHeaders !== undefined) {
+      assert.equal(p.type, "openai", `条目 ${p.id}: extraHeaders 仅支持 openai 类型`);
+      for (const reserved of ["Authorization", "Content-Type"]) {
+        assert.ok(
+          !(reserved in p.extraHeaders),
+          `条目 ${p.id}: extraHeaders 不得覆盖 ${reserved}`
+        );
+      }
+    }
+  }
 });
 
 // MARK: - 解析器自身的回归测试

@@ -43,3 +43,67 @@ CREATE INDEX IF NOT EXISTS idx_extract ON telemetry_events(extract_id);
 --   FROM telemetry_events
 --   WHERE device_id = 'sha256:xxx'
 --   ORDER BY received_at DESC LIMIT 50;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 每次 AI 解析一行（extract-latency-monitoring 任务书 §2，2026-10-29）
+-- 只记 mode=extract；assist（split/reflect/deep-read）不记。
+-- 数据保留 90 天，由 handleScheduled 与 telemetry_events 同一个 GC 清理。
+-- 隐私红线：不存转写原文、待办标题、模型输出；key_slot 只存 secret 名，绝不存 Key 的值。
+--
+-- 迁移（已部署的存量库执行一次建表即可，IF NOT EXISTS 可重复执行）：
+--   本文件直接 `wrangler d1 execute voicetodo-telemetry --remote --file=./schema.sql`
+--   幂等，已有表不会重建。
+CREATE TABLE IF NOT EXISTS extract_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at INTEGER NOT NULL,      -- 代理收到请求的时间(ms since epoch)
+    request_id TEXT NOT NULL,          -- 代理 requestId
+    extract_id TEXT,                   -- App 带来的 X-Extract-ID;没带 = NULL
+    device_id TEXT NOT NULL,           -- 已加盐哈希的设备标识(requestContext.deviceId)
+    plan TEXT,                         -- free / pro
+    stream INTEGER NOT NULL,           -- 1 = 流式
+    provider_id TEXT,                  -- 最终成功(或最后一次尝试)的服务商条目 id,如 ZAI_ANTHROPIC_AIR
+    model TEXT,                        -- 该条目的模型名
+    key_slot TEXT,                     -- 用的哪把 Key:secret 名(单 key 条目)或 条目id#secret名(多 key 条目)。绝不写 Key 的值
+    attempts INTEGER NOT NULL,         -- 一共试了几个服务商(同条目内 key 级重试去重后计 1)
+    providers_tried TEXT,              -- 尝试顺序,逗号分隔(条目 id,去重保序)
+    failover INTEGER NOT NULL,         -- 1 = 切换过备用服务商
+    upstream_first_byte_ms INTEGER,    -- 最终那次上游调用:发出请求到收到响应(与 call_success 日志的 durationMs 同值)
+    total_ms INTEGER,                  -- 代理收到请求到响应结束(流式 = 流结束时刻)
+    status INTEGER NOT NULL,           -- 返回给 App 的 HTTP 状态码(流式中途失败记 200 + outcome)
+    outcome TEXT NOT NULL,             -- success / empty_todos / unparseable_output / upstream_failed / stream_failed / client_disconnected / quota_rejected / no_provider / cache_hit / proxy_error
+    error_type TEXT,                   -- 失败时的 errorType(如 status_429 / timeout / quota_exhausted)
+    todos_count INTEGER                -- 解析出几条待办;拿不到就 NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_er_received ON extract_requests(received_at);
+CREATE INDEX IF NOT EXISTS idx_er_provider ON extract_requests(provider_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_er_extract ON extract_requests(extract_id);
+
+-- 常用查询示例（extract_requests）：
+--
+-- 最近 24 小时按模型的成功率和平均耗时：
+--   SELECT provider_id, model,
+--          COUNT(*) AS requests,
+--          ROUND(AVG(CASE WHEN outcome IN ('success','cache_hit','empty_todos') THEN 1.0 ELSE 0 END), 4) AS success_rate,
+--          ROUND(AVG(total_ms), 0) AS avg_ms
+--   FROM extract_requests
+--   WHERE received_at > (strftime('%s','now','-24 hours') * 1000)
+--     AND outcome != 'client_disconnected'
+--   GROUP BY provider_id, model ORDER BY requests DESC;
+--
+-- 最近 24 小时按 Key 的 429 次数（终态为上游 429 的行）：
+--   SELECT key_slot, COUNT(*) AS requests,
+--          SUM(CASE WHEN error_type = 'status_429' THEN 1 ELSE 0 END) AS status_429
+--   FROM extract_requests
+--   WHERE received_at > (strftime('%s','now','-24 hours') * 1000)
+--   GROUP BY key_slot ORDER BY requests DESC;
+--
+-- 用 extract_id 把代理行和 App 埋点连起来，看同一次解析两端各花多久：
+--   SELECT r.total_ms AS proxy_total_ms,
+--          r.upstream_first_byte_ms AS proxy_first_byte_ms,
+--          json_extract(e.params, '$.speechToRequestMS') AS app_speech_to_request_ms,
+--          json_extract(e.params, '$.speechToDoneMS') AS app_speech_to_done_ms
+--   FROM extract_requests r
+--   JOIN telemetry_events e ON e.extract_id = r.extract_id AND e.event_name = 'extract_outcome'
+--   WHERE r.extract_id IS NOT NULL
+--   ORDER BY r.received_at DESC LIMIT 20;
