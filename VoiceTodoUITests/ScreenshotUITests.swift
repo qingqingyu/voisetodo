@@ -36,6 +36,9 @@ final class ScreenshotUITests: XCTestCase {
         let expectedExtractTitles: [String]
         /// onboarding 演示步大标题(onboarding.demo.title)—— 演示步就绪信号。
         let demoStepTitle: String
+        /// 周期性种子标题(shot 03 月视图节奏感):每周二 / 每两周周三 / 每月 15 号。
+        /// 标题刻意短(月历格子条宽有限)。
+        let recurringTitles: (weekly: String, biweekly: String, monthly: String)
     }
 
     private var languagePasses: [LanguagePass] {
@@ -49,7 +52,8 @@ final class ScreenshotUITests: XCTestCase {
                     "超市采购一周食材", "练英语听力 20 分钟",
                 ],
                 expectedExtractTitles: ["去银行办卡", "买菜", "给老妈打电话"],
-                demoStepTitle: "一句话，就整理好了"
+                demoStepTitle: "一句话，就整理好了",
+                recurringTitles: (weekly: "健身", biweekly: "主管一对一", monthly: "月度报表")
             ),
             LanguagePass(
                 tag: "en", appleLocale: "en_US", suffix: "en",
@@ -61,7 +65,8 @@ final class ScreenshotUITests: XCTestCase {
                     "20 min listening practice",
                 ],
                 expectedExtractTitles: ["Go to the bank", "Buy groceries", "Call mom"],
-                demoStepTitle: "One sentence, neatly done"
+                demoStepTitle: "One sentence, neatly done",
+                recurringTitles: (weekly: "Gym", biweekly: "Manager 1:1", monthly: "Monthly report")
             ),
         ]
     }
@@ -373,8 +378,67 @@ final class ScreenshotUITests: XCTestCase {
             return date.timeIntervalSinceReferenceDate
         }
 
+        /// 往回找最近的指定 weekday(含今天),再前推 weeksBack 周 —— 作为重复系列的
+        /// dueDate 锚点。weekly 锚 3 周前 → 本月稳定出现 4~5 个目标日(罕见排布下
+        /// 月内首个目标日落在锚点前被 occurs 的 start 闸滤掉);biweekly 锚 4 周
+        /// 前 → 本月隔周出现 2~3 个。weekday 语义同 RecurrenceRule(1=周日 ... 7=周六)。
+        func weekdayAnchor(_ weekday: Int, weeksBack: Int, hour: Int) throws -> Double {
+            precondition((1...7).contains(weekday),
+                          "weekday 须为 1(周日)...7(周六),当前 \(weekday)")
+            var date = todayStart
+            while calendar.component(.weekday, from: date) != weekday {
+                date = try XCTUnwrap(
+                    calendar.date(byAdding: .day, value: -1, to: date),
+                    "weekday 锚点回溯失败(weekday=\(weekday))"
+                )
+            }
+            let anchored = try XCTUnwrap(
+                calendar.date(byAdding: DateComponents(hour: hour, weekOfYear: -weeksBack), to: date),
+                "weekday 锚点前推失败(weeksBack=\(weeksBack))"
+            )
+            return anchored.timeIntervalSinceReferenceDate
+        }
+
+        /// 上月 day 号 —— monthly 系列锚点,保证本月 day 号必出现(occurs 的 start 闸已过)。
+        /// Calendar 没有 bySetting(.day, of: .month) 签名,用 year/month 组件拼本月
+        /// day 号,再 byAdding(.month, -1) 回退(自动处理跨年)。
+        /// 注意 date(from:) 对超界 day(如 4 月 31)会静默滚到下月,故解出后校验
+        /// day 分量一致,滚月按锚点失败显式抛出(合法 day 1...28 不受影响)。
+        func lastMonthDay(_ day: Int, hour: Int) throws -> Double {
+            var comps = calendar.dateComponents([.year, .month], from: todayStart)
+            comps.day = day
+            comps.hour = hour
+            let thisMonthDay = try XCTUnwrap(
+                calendar.date(from: comps).flatMap { candidate in
+                    calendar.component(.day, from: candidate) == day ? candidate : nil
+                },
+                "monthly 锚点失败(day=\(day)):该月不含 \(day) 号(date(from:) 会把超界 day 静默滚到下月)"
+            )
+            let anchored = try XCTUnwrap(
+                calendar.date(byAdding: .month, value: -1, to: thisMonthDay),
+                "monthly 锚点前推失败(day=\(day))"
+            )
+            return anchored.timeIntervalSinceReferenceDate
+        }
+
         let categories = ["work", "study", "life", "health", "finance", "social"]
         var index = 0
+
+        /// RecurrenceRule 的最小 JSON 形状(对齐 Protocols/Domain/RecurrenceRule.swift
+        /// 的 CodingKeys;interval/weekdays/dayOfMonth 均 decodeIfPresent 可省)。
+        func recurrenceJSON(
+            frequency: String,
+            interval: Int = 1,
+            weekdays: [Int] = [],
+            dayOfMonth: Int? = nil
+        ) -> String {
+            var fields = ["\"frequency\":\"\(frequency)\"", "\"interval\":\(interval)"]
+            if !weekdays.isEmpty {
+                fields.append("\"weekdays\":[\(weekdays.map(String.init).joined(separator: ","))]")
+            }
+            if let dayOfMonth { fields.append("\"dayOfMonth\":\(dayOfMonth)") }
+            return "{" + fields.joined(separator: ",") + "}"
+        }
 
         func item(
             _ title: String,
@@ -383,6 +447,7 @@ final class ScreenshotUITests: XCTestCase {
             priority: String = "normal",
             hasDueTime: Bool = false,
             due: Double,
+            recurrence: String? = nil,
             isCompleted: Bool = false,
             completedAt: Double? = nil
         ) -> String {
@@ -394,6 +459,7 @@ final class ScreenshotUITests: XCTestCase {
                 "\"hasDueTime\":\(hasDueTime)",
             ]
             if let timeBucket { fields.append("\"timeBucket\":\"\(timeBucket)\"") }
+            if let recurrence { fields.append("\"recurrenceRule\":\(recurrence)") }
             fields.append("\"priority\":\"\(priority)\"")
             fields.append("\"category\":\"\(category)\"")
             fields.append("\"isCompleted\":\(isCompleted)")
@@ -440,6 +506,23 @@ final class ScreenshotUITests: XCTestCase {
                 due: try at(day, 10 + day % 3)
             ))
         }
+
+        // 周期性 3 条(shot 03 月视图的节奏感来源):每周二 / 每两周周三 / 每月 15 号。
+        // 标题见 LanguagePass.recurringTitles;锚点越早本月出现越全,见 weekdayAnchor 注释。
+        // 锚点 weekday 与规则 weekdays 必须同值(锚定周几=重复周几),收进常量防改单边。
+        let weeklyWeekday = 3   // 周二
+        let biweeklyWeekday = 4 // 周三
+        let monthlyDay = 15
+        let recurring = pass.recurringTitles
+        objects.append(item(recurring.weekly, category: "health", timeBucket: "evening",
+                            due: try weekdayAnchor(weeklyWeekday, weeksBack: 3, hour: 18),
+                            recurrence: recurrenceJSON(frequency: "weekly", weekdays: [weeklyWeekday])))
+        objects.append(item(recurring.biweekly, category: "work",
+                            due: try weekdayAnchor(biweeklyWeekday, weeksBack: 4, hour: 10),
+                            recurrence: recurrenceJSON(frequency: "weekly", interval: 2, weekdays: [biweeklyWeekday])))
+        objects.append(item(recurring.monthly, category: "work",
+                            due: try lastMonthDay(monthlyDay, hour: 9),
+                            recurrence: recurrenceJSON(frequency: "monthly", dayOfMonth: monthlyDay)))
 
         return "[" + objects.joined(separator: ",") + "]"
     }
