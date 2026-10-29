@@ -102,6 +102,9 @@ final class NetworkClient {
         // 发送请求
         let (data, response): (Data, URLResponse)
         do {
+            // T1(任务书 §5.1):解析请求发出时刻。重试只记第一次(时间点由
+            // tracker 的 first-write-wins 保证)。
+            VoiceTodoLog.extractTiming?.markRequestSent(ContinuousClock().now)
             (data, response) = try await session.data(for: request)
         } catch let urlError as URLError {
             VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) path=\(VoiceTodoLog.requestPath, privacy: .public) stage=\(Self.stageForURLError(urlError), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
@@ -178,6 +181,8 @@ final class NetworkClient {
                         subscriptionJWS: subscriptionJWS
                     )
 
+                    // T1(任务书 §5.1):流式请求发出时刻(first-write-wins)。
+                    VoiceTodoLog.extractTiming?.markRequestSent(ContinuousClock().now)
                     let (bytes, response) = try await session.bytes(for: request)
 
                     guard let httpResponse = response as? HTTPURLResponse else {

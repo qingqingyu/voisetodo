@@ -82,6 +82,24 @@ final class VoiceInputManager: VoiceInputProtocol {
     private var interruptionBeganObserver: NSObjectProtocol?
     private var recordingSessionID: String?
 
+    /// 本次录音会话的提取关联 ID(任务书 §5.2):录音开始时生成,
+    /// recording_outcome 带上它,送解析时由 AppCoordinator 复用 —— 录音事件与
+    /// 解析事件/代理行(X-Extract-ID)在 D1 里可精确对上号。startRecording 重置。
+    private(set) var sessionExtractID: String?
+
+    /// T0「说完话」时刻(任务书 §5.1):`finishRecording()` 被调用的瞬间
+    /// (手动停止 / 静音自动提交 / 达时长上限全部汇到这里)。单调时钟;
+    /// 送解析时消费,下一次录音重置。
+    private(set) var speechEndedInstant: ContinuousClock.Instant?
+
+    /// 取走本次录音的提取上下文。T0 消费后清空,防止键盘输入等后续路径
+    /// 复用旧录音的「说完话」时刻。
+    func consumeExtractContext() -> (extractID: String?, speechEnd: ContinuousClock.Instant?) {
+        let context = (sessionExtractID, speechEndedInstant)
+        speechEndedInstant = nil
+        return context
+    }
+
     // MARK: - Initialization
 
     init(vocabularyProvider: any UserVocabularyProviding = UserVocabularyStore.shared) {
@@ -132,6 +150,9 @@ final class VoiceInputManager: VoiceInputProtocol {
         didAutoFinishDueToSilence = false
         audioLevel = 0
         recordingStartTime = startedAt
+        // 本次录音的提取关联 ID(任务书 §5.2):录音事件/解析事件/代理行共用
+        sessionExtractID = VoiceTodoLog.makeID("extract")
+        speechEndedInstant = nil
 
         // 1. 检查权限
         do {
@@ -251,7 +272,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         }
         VoiceTodoLog.voice.warning("recording.interrupted id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
         let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-        Telemetry.record(.recordingOutcome(outcome: .interrupted, durationMS: durationMS, transcript: transcript))
+        Telemetry.record(.recordingOutcome(outcome: .interrupted, durationMS: durationMS, transcript: transcript, extractID: sessionExtractID))
         cleanupRecordingPipeline(markNotRecording: true, reason: "interruption")
         error = .audioSessionInterrupted
     }
@@ -267,7 +288,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         }
         VoiceTodoLog.voice.info("recording.cancelled_by_user id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
         let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-        Telemetry.record(.recordingOutcome(outcome: .userCancelled, durationMS: durationMS, transcript: transcript))
+        Telemetry.record(.recordingOutcome(outcome: .userCancelled, durationMS: durationMS, transcript: transcript, extractID: sessionExtractID))
         cleanupRecordingPipeline(markNotRecording: true, reason: "user_cancel")
     }
 
@@ -285,6 +306,9 @@ final class VoiceInputManager: VoiceInputProtocol {
             return
         }
         hasFinishedRecording = true
+        // T0(任务书 §5.1):音频输入在此刻结束 —— 手动停/静音自动/达上限三条
+        // 收尾路径全部经过这里,是「说完话」最贴近的单点。
+        speechEndedInstant = ContinuousClock().now
 
         VoiceTodoLog.voice.info("recording.finish.requested id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
 
@@ -363,7 +387,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                         guard self.recordingSessionID == sessionID else { return }
                         VoiceTodoLog.voice.info("recording.recognition.final id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(newTranscript.count) requested=\(self.hasFinishedRecording)")
                         let durationMS = self.recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-                        Telemetry.record(.recordingOutcome(outcome: .success, durationMS: durationMS, transcript: self.transcript))
+                        Telemetry.record(.recordingOutcome(outcome: .success, durationMS: durationMS, transcript: self.transcript, extractID: self.sessionExtractID))
                         // 通知外部订阅者:本次录音成功完成(用于付费墙第 N 次引导等累计计数)。
                         // 必须检查 transcript 非空:纯静音 / 极短噪声场景 SFSpeechRecognizer 也可能
                         // 以 isFinal + 空串结束,不应计为"成功录音"触发付费墙引导。
@@ -548,7 +572,7 @@ final class VoiceInputManager: VoiceInputProtocol {
         guard isRecording else { return }
         VoiceTodoLog.voice.error("recording.watchdog.expired id=\(self.recordingSessionID ?? "none", privacy: .public) transcriptChars=\(self.transcript.count)")
         let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-        Telemetry.record(.recordingOutcome(outcome: .watchdogExpired, durationMS: durationMS, transcript: transcript))
+        Telemetry.record(.recordingOutcome(outcome: .watchdogExpired, durationMS: durationMS, transcript: transcript, extractID: sessionExtractID))
         cleanupRecordingPipeline(markNotRecording: true, reason: "finishWatchdog")
         error = .recordingFailed("识别超时")
     }
@@ -701,7 +725,7 @@ final class VoiceInputManager: VoiceInputProtocol {
             isSilenceDetected = true
             VoiceTodoLog.voice.info("recording.max_duration_reached id=\(self.recordingSessionID ?? "none", privacy: .public) maxSeconds=\(VoiceConstants.maxRecordingSeconds)")
             let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-            Telemetry.record(.recordingOutcome(outcome: .maxDurationReached, durationMS: durationMS, transcript: transcript))
+            Telemetry.record(.recordingOutcome(outcome: .maxDurationReached, durationMS: durationMS, transcript: transcript, extractID: sessionExtractID))
             autoFinishRecording(reason: "max_duration")
             return
         }
@@ -734,7 +758,7 @@ final class VoiceInputManager: VoiceInputProtocol {
                     guard !transcript.isEmpty else { return }
                     VoiceTodoLog.voice.info("recording.silence_auto_submit id=\(self.recordingSessionID ?? "none", privacy: .public) silenceDuration=\(duration) transcriptChars=\(self.transcript.count)")
                     let durationMS = recordingStartTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
-                    Telemetry.record(.recordingOutcome(outcome: .silenceTimeout, durationMS: durationMS, transcript: transcript))
+                    Telemetry.record(.recordingOutcome(outcome: .silenceTimeout, durationMS: durationMS, transcript: transcript, extractID: sessionExtractID))
                     didAutoFinishDueToSilence = true
                     finishRecording()
                 }

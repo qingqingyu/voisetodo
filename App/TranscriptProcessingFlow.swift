@@ -41,7 +41,8 @@ final class TranscriptProcessingFlow {
         text: String,
         locale: Locale,
         flowID: String,
-        extractID: String
+        extractID: String,
+        timing: ExtractTimingTracker? = nil
     ) -> AsyncStream<TranscriptFlowEvent> {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let isConnected = networkIsConnectedProvider()
@@ -75,9 +76,14 @@ final class TranscriptProcessingFlow {
                 var finalTodos: [ExtractedTodo] = []
 
                 do {
+                    // $extractTiming 绑定分段计时器(任务书 §5):随 Task 继承传进
+                    // extractor(T2/T3)与 NetworkClient(T1);pending/siri 等无计时
+                    // 路径不绑定,extract_outcome 回落 requestPath 映射。
                     let stream = VoiceTodoLog.$extractID.withValue(extractID) {
                         VoiceTodoLog.$requestPath.withValue("main") {
-                            ext.extractStreaming(from: trimmed, locale: locale)
+                            VoiceTodoLog.$extractTiming.withValue(timing) {
+                                ext.extractStreaming(from: trimmed, locale: locale)
+                            }
                         }
                     }
                     for try await partialResult in stream {

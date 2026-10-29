@@ -82,10 +82,13 @@ enum TelemetryEvent {
     case appLaunch(coldLaunch: Bool, hasCompletedOnboarding: Bool)
     /// A2: 录音开始
     case recordingStarted(source: RecordingSource)
-    /// A3: 录音结果（含成功/中断/超时/失败）
-    case recordingOutcome(outcome: RecordingOutcome, durationMS: Int, transcript: String)
-    /// A4: AI 抽取结果
-    case extractOutcome(outcome: ExtractOutcome, todosCount: Int, durationMS: Int, attempts: Int)
+    /// A3: 录音结果（含成功/中断/超时/失败）。extractID = 本次录音会话的提取关联
+    /// ID(与后续 extract_outcome / 代理 X-Extract-ID 同源),让录音事件和解析事件
+    /// 在 D1 里能对上号;未能取得时传 nil。
+    case recordingOutcome(outcome: RecordingOutcome, durationMS: Int, transcript: String, extractID: String?)
+    /// A4: AI 抽取结果。timing 含 path(live_voice/pending_recovery/siri/keyboard…)
+    /// 与「说完话→出清单」的分段耗时(仅 live_voice 路径有,见 ExtractTimingInfo)。
+    case extractOutcome(outcome: ExtractOutcome, todosCount: Int, durationMS: Int, attempts: Int, timing: ExtractTimingInfo)
     /// A5: Todo 保存（用户确认或 Siri/Widget）
     case todoSaved(source: SaveSource, count: Int)
 
@@ -176,20 +179,35 @@ enum TelemetryEvent {
             ]
         case let .recordingStarted(source):
             return ["source": source.rawValue]
-        case let .recordingOutcome(outcome, durationMS, transcript):
+        case let .recordingOutcome(outcome, durationMS, transcript, extractID):
             // transcript 必须脱敏：只记录字符数和行数
-            return [
+            var p = [
                 "outcome": outcome.rawValue,
                 "durationMS": String(durationMS),
                 "transcript": VoiceTodoLog.textSummary(transcript)
             ]
-        case let .extractOutcome(outcome, todosCount, durationMS, attempts):
-            return [
+            if let extractID { p["extractID"] = extractID }
+            return p
+        case let .extractOutcome(outcome, todosCount, durationMS, attempts, timing):
+            var p = [
                 "outcome": outcome.rawValue,
                 "todosCount": String(todosCount),
                 "durationMS": String(durationMS),
-                "attempts": String(attempts)
+                "attempts": String(attempts),
+                "path": timing.path
             ]
+            // 3 个分段耗时只在 live_voice 路径(有 T0)携带;缺失即不带,
+            // 老版本数据照常可用(键不存在 ≠ 0)。
+            if let speechToRequestMS = timing.speechToRequestMS {
+                p["speechToRequestMS"] = String(speechToRequestMS)
+            }
+            if let speechToFirstTodoMS = timing.speechToFirstTodoMS {
+                p["speechToFirstTodoMS"] = String(speechToFirstTodoMS)
+            }
+            if let speechToDoneMS = timing.speechToDoneMS {
+                p["speechToDoneMS"] = String(speechToDoneMS)
+            }
+            return p
         case let .todoSaved(source, count):
             return [
                 "source": source.rawValue,

@@ -77,7 +77,9 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                     outcome: .success,
                     todosCount: result.todos.count,
                     durationMS: VoiceTodoLog.durationMS(since: startedAt),
-                    attempts: attempt + 1
+                    attempts: attempt + 1,
+                    // T3 = 解析完成(非流式响应已返回并解析);取消/失败路径才传 nil
+                    timing: ExtractTimingInfo.resolveCurrentOutcomeTiming(doneAt: ContinuousClock().now)
                 ))
                 return result
 
@@ -93,7 +95,9 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                         outcome: .cancelled,
                         todosCount: 0,
                         durationMS: VoiceTodoLog.durationMS(since: startedAt),
-                        attempts: attempt + 1
+                        attempts: attempt + 1,
+                        // 取消不是完成,不带 speechToDoneMS
+                        timing: ExtractTimingInfo.resolveCurrentOutcomeTiming(doneAt: nil)
                     ))
                     throw error
                 }
@@ -155,7 +159,9 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
             outcome: .offlineFallback,
             todosCount: 1,
             durationMS: 0,
-            attempts: 0
+            attempts: 0,
+            // 离线降级无网络请求、无 T0,只带 path 标记
+            timing: ExtractTimingInfo.resolveCurrentOutcomeTiming(doneAt: nil)
         ))
 
         let todo = ExtractedTodo(
@@ -443,6 +449,9 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                         if let partialTodos = self.tryParsePartialTodos(accumulatedText),
                            partialTodos.count > lastYieldedCount {
                             lastYieldedCount = partialTodos.count
+                            // T2(任务书 §5.1):第一条待办流式到达并即将显示在确认
+                            // 面板。markFirstTodo 内部 first-write-wins,只记首条。
+                            VoiceTodoLog.extractTiming?.markFirstTodo(ContinuousClock().now)
                             let stabilized = self.reassignedIDs(partialTodos, stableIDs: &stableIDs)
                             VoiceTodoLog.extractor.debug("extract.stream.partial id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count)")
                             continuation.yield(ExtractionResult(todos: stabilized, ignored: ""))
@@ -458,6 +467,16 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                     await self.noteSuccess(id: streamID)
                     continuation.yield(ExtractionResult(todos: stabilizedFinal, ignored: finalResult.ignored))
                     VoiceTodoLog.extractor.info("extract.stream.success id=\(streamID, privacy: .public) todos=\(finalResult.todos.count) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+                    // 主路径(流式)此前完全没有 extract_outcome 成功事件——
+                    // 「说完话到出清单」的总时长(speechToDoneMS)就断在这里。
+                    // T3 = 流结束且最终解析完成。
+                    Telemetry.record(.extractOutcome(
+                        outcome: .success,
+                        todosCount: finalResult.todos.count,
+                        durationMS: VoiceTodoLog.durationMS(since: startedAt),
+                        attempts: 1,
+                        timing: ExtractTimingInfo.resolveCurrentOutcomeTiming(doneAt: ContinuousClock().now)
+                    ))
                     continuation.finish()
                 } catch {
                     // 取消优先于一切,必须放在 partial fallback 之前:
@@ -472,7 +491,8 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                             outcome: .cancelled,
                             todosCount: lastYieldedCount,
                             durationMS: VoiceTodoLog.durationMS(since: startedAt),
-                            attempts: 1
+                            attempts: 1,
+                            timing: ExtractTimingInfo.resolveCurrentOutcomeTiming(doneAt: nil)
                         ))
                         continuation.finish()
                         return

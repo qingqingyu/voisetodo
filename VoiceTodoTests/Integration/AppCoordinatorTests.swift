@@ -1210,6 +1210,13 @@ private final class CoordinatorTestVoiceInput: VoiceInputProtocol {
     var audioLevelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
     var recordingSuccessPublisher: AnyPublisher<Void, Never> { Empty<Void, Never>().eraseToAnyPublisher() }
 
+    // 任务书 §5:提取上下文(会话 extractID + T0)。测试/Preview mock 无录音,
+    /// 返回空即可 —— AppCoordinator 语音路径会拿到 nil,回落到新建 extractID。
+    var sessionExtractID: String? { nil }
+    func consumeExtractContext() -> (extractID: String?, speechEnd: ContinuousClock.Instant?) {
+        (nil, nil)
+    }
+
     func startRecording() async throws {
         isRecording = true
     }

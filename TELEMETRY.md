@@ -35,8 +35,8 @@ BGProcessingTask                          ↓
 |--------|--------|----------|
 | `app_launch` | App 启动 | `coldLaunch: Bool`, `hasCompletedOnboarding: Bool` |
 | `recording_started` | 录音开始 | `source: button / action_button` |
-| `recording_outcome` | 录音结束 | `outcome: success / interrupted / silence_timeout / watchdog_expired`, `durationMS: Int`, `transcript: textSummary` |
-| `extract_outcome` | AI 抽取结束 | `outcome: success / failed / offline_fallback`, `todosCount`, `durationMS`, `attempts` |
+| `recording_outcome` | 录音结束 | `outcome: success / interrupted / silence_timeout / watchdog_expired`, `durationMS: Int`, `transcript: textSummary`, `extractID`（本次录音会话的提取关联 ID，与 `extract_outcome` / 代理 `X-Extract-ID` 同源；未能取得时不带） |
+| `extract_outcome` | AI 抽取结束 | `outcome: success / failed / offline_fallback / cancelled`, `todosCount`, `durationMS`, `attempts`, `path`（`live_voice` / `pending_recovery` / `siri` / `keyboard` / `reextract` / `main`）, `speechToRequestMS` / `speechToFirstTodoMS` / `speechToDoneMS`（「说完话→出清单」分段耗时，毫秒；**仅 live_voice 路径携带**，缺失即不带——补解析/Siri/键盘的等待时长不进该统计） |
 | `todo_saved` | Todo 保存 | `source: confirm / siri_add`, `count` |
 | `first_voice_trial` | 首次语音试用引导进度 | `stage: armed / hint_shown / dismissed / completed` |
 | `paywall_shown` | paywall 曝光 | `source: first_wow / recording_count / quota_exhausted / manual` |
