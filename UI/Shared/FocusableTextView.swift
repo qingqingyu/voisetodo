@@ -105,6 +105,30 @@ struct FocusableTextView: UIViewRepresentable {
         return textView
     }
 
+    /// 尺寸契约(autoHeight 形态):**宽度永远跟随提案,文本在提案宽度内换行**。
+    ///
+    /// 不实现 sizeThatFits 时,SwiftUI 落到 UITextView 的 intrinsicContentSize ——
+    /// isScrollEnabled=false 后它的宽度是「未换行的单行全文宽度」:长文本会把宿主
+    /// 容器撑到超屏宽,垂直 ScrollView 将超宽内容水平居中,整页坐标系左移
+    /// (详情页实测:44 字标题把内容撑到 980pt,坐标系左移 289pt,safeAreaInset
+    /// 里的自绘 header 随之变宽,leading overlay 的 chevron.down 关闭按钮被推出
+    /// 屏幕外 —— 「不同 todo 详情页关闭按钮位置漂移」bug 的根因)。
+    ///
+    /// 仅 autoHeight 形态实现;滚动形态(autoHeight=false)无 intrinsic size、
+    /// 由调用方 frame(minHeight:) 撑高,维持默认行为(nil = 用系统默认尺寸)。
+    ///
+    /// **方法名必须是 sizeThatFits(带 s)** —— SwiftUI 按协议要求分发;
+    /// 早前笔误写成 sizeThatFit 不触发编译错误,只是永远不会被调用,修复静默失效。
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard autoHeight else { return nil }
+        // ideal 查询(width==nil)用已落位的 bounds 兜底;首帧 bounds 也为 0 时
+        // 回退 nil 走默认,避免 0 宽度死锁。
+        let width = proposal.width ?? uiView.bounds.width
+        guard width > 0, width.isFinite else { return nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(fitted.height))
+    }
+
     func updateUIView(_ uiView: UITextView, context: Context) {
         // 守卫 1：IME 组字期间（存在 marked text）绝不回写 .text：否则会清掉未提交的拼音/候选，
         // 导致中文（搜狗/系统拼音）打不出字、光标跳动。组字提交后 textViewDidChange 同步最终文本。
