@@ -177,6 +177,26 @@ BGProcessingTask                          ↓
 
 ## 查询示例
 
+### 代理端：`extract_requests` 表（解析耗时监控）
+
+代理每次 AI 解析（`mode=extract`）往 D1 `extract_requests` 写**一行**（2026-10-29 起，
+任务书 `docs/extract-latency-monitoring-task.md`）：走了哪个服务商条目/模型/哪把
+Key（**只存 secret 名，绝不存 Key 的值**）、试了几家、是否切到备用、上游首字耗时、
+总耗时（流式按流结束时刻）、结果分类（`outcome`）与解析出的待办数。App 带的
+`X-Extract-ID` 落在 `extract_id` 列，可与 `telemetry_events.extract_id` 精确关联。
+
+- **写库失败不影响用户请求**（只 logWarn）；一个请求只写一行（failover 也只一行）
+- 90 天保留，与 `telemetry_events` 同一个 Cron GC
+- 汇总查询：`GET /v1/admin/extract-metrics?hours=24`（`X-Admin-Token` 鉴权，hours
+  上限 168）——整体/按模型/按 Key 的成功率、P50/P95、429 次数、按 outcome 计数
+- 告警（cron 每 30 分钟）：最近 30 分钟样本 ≥20 次且 P95 > `ALERT_EXTRACT_P95_MS`
+  （默认 20000）或成功率 < `ALERT_EXTRACT_SUCCESS_MIN`（默认 0.9）→ Telegram 推送，
+  恢复后再推一条；两阈值在 `AIProxy/wrangler.toml [vars]` 可调
+- 成功率口径：`success` / `cache_hit` / `empty_todos` 计成功；
+  `client_disconnected`（用户主动取消）**不计入分母**
+- 常用 SQL（按模型成功率、按 Key 的 429、与 `telemetry_events` 联查）见
+  `AIProxy/schema.sql` 末尾
+
 ```sql
 -- DAU
 SELECT date(received_at / 1000, 'unixepoch') AS day,

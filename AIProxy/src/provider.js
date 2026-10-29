@@ -163,11 +163,14 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
           providerId: entry.id,
           providerType: entry.type,
           model: entry.model,
-          keySlot: usableKeys.length > 1 ? `${entry.id}#${chosenKey.secretName}` : undefined,
+          // keySlot 永远携带(任务书 §2.2:成功也要知道用的哪把 Key):
+          // 多 key 条目 = `条目id#secretName`,单 key 条目 = secretName 本身。
+          // 只写 secret **名字** —— attempt 会随 providerAttempts 回显进日志
+          // 并落 extract_requests.key_slot,任何形态都不允许出现 Key 的值。
+          keySlot: usableKeys.length > 1 ? `${entry.id}#${chosenKey.secretName}` : chosenKey.secretName,
           attempt: index + 1,
           startedAt: Date.now()
         };
-        if (attempt.keySlot === undefined) delete attempt.keySlot;
 
         logInfo("proxy.provider.call_start", {
           ...requestContext,
