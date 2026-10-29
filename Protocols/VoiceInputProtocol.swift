@@ -42,4 +42,13 @@ protocol VoiceInputProtocol: ObservableObject {
     /// 通知识别器音频输入结束，等待最终识别结果后自动停止
     /// 适用于用户手动停止场景，确保获取最终识别结果
     func finishRecording()
+
+    /// 本次录音会话的提取关联 ID(录音开始时生成,与 X-Extract-ID 同源)。
+    /// 送解析时复用,recording_outcome / extract_outcome / 代理行三方可对上号。
+    var sessionExtractID: String? { get }
+
+    /// 取走本次录音的提取上下文(extractID + T0「说完话」时刻,单调时钟),
+    /// T0 消费后清空防旧值复用。送解析的调用方(AppCoordinator)使用;
+    /// 键盘输入等无录音路径不经过这里。
+    func consumeExtractContext() -> (extractID: String?, speechEnd: ContinuousClock.Instant?)
 }

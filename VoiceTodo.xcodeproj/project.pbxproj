@@ -27,6 +27,7 @@
 		1274FDA3FA5D089F69DBB127 /* AppGroupModelContainerProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654DE387184B63467E67C633 /* AppGroupModelContainerProvider.swift */; };
 		1318C5C01B19BB6BE34CC73C /* WidgetReloadCoalescerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771C1E40F3824C8A86BF06C2 /* WidgetReloadCoalescerTests.swift */; };
 		13E632F84CD27EC7BE755AFC /* TodoExtractorProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7190AA6AA0C742F4547172D6 /* TodoExtractorProtocol.swift */; };
+		13FD9AD120B01695EEA48369 /* ExtractTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0428E3FEEFD4AE28ABB34009 /* ExtractTiming.swift */; };
 		14A3339F6D7FC58A3ECB4D60 /* JSONCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41DFCFCAA748A498A5A2A0CC /* JSONCoding.swift */; };
 		14D2E0BBD23F83D9C0750E29 /* TaskEventKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDB3597C020666487DBE7A09 /* TaskEventKind.swift */; };
 		18A5C18B35DA9D2EB5926014 /* RecurrenceEndResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77211AEB04E569C566392E9F /* RecurrenceEndResolver.swift */; };
@@ -224,6 +225,7 @@
 		C9932A4C86B78F8974E0DCB5 /* TodoTimeDisplayComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66CDC3286C956113EECF6F8 /* TodoTimeDisplayComposer.swift */; };
 		CAD798E81935FFDDAC4621B8 /* ActionButtonLaunchSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C258D414F2A0B922AC2E91B /* ActionButtonLaunchSignal.swift */; };
 		CB5F04ADFD4169F2568421A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0F91ACDCA48C0FD1301D8CEE /* Assets.xcassets */; };
+		CB9A3289AB686EE137DFC6E8 /* ExtractTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0029899B03537C93DD93D5FA /* ExtractTimingTests.swift */; };
 		CD5CA4B651CED43E6A419190 /* LocalNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA666835F8CA9864517E3A2D /* LocalNotificationScheduler.swift */; };
 		CDD311EC5AFCF7108C78DE6C /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFA009138F185ACA9CCDC05 /* Telemetry.swift */; };
 		CF4B487EC3F860A09CC9D07A /* ValuePropCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 604740AECB682D7BB9FF5F49 /* ValuePropCard.swift */; };
@@ -231,6 +233,7 @@
 		CF6F096AC61753165DC6AFFF /* ReviewRecapSameDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */; };
 		D0E67B5D585A79FBEAF86701 /* CalendarSyncServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15F96788BBD2CF96E85A40B /* CalendarSyncServiceTests.swift */; };
 		D4057436F4B91ABC7D55D388 /* AppGroupModelContainerProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654DE387184B63467E67C633 /* AppGroupModelContainerProvider.swift */; };
+		D434D2C9FE5EF0E40A6E9998 /* ExtractTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0428E3FEEFD4AE28ABB34009 /* ExtractTiming.swift */; };
 		D571348415B7377B7C5E80F1 /* TodoSpanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D240169FCFEEABE325D822BB /* TodoSpanTests.swift */; };
 		D65278FEE8EBC87126B5D426 /* NotificationPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A07690B0D2B8DC80E6D3D9 /* NotificationPlanner.swift */; };
 		D6F61B070A892A990E96DE2C /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35F68F661953DC7B90440FB5 /* FlowLayout.swift */; };
@@ -316,8 +319,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0029899B03537C93DD93D5FA /* ExtractTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractTimingTests.swift; sourceTree = "<group>"; };
 		00E8EAE2393518A62CD0CB54 /* MarqueeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarqueeText.swift; sourceTree = "<group>"; };
 		03A4EE86AB884331FEE9403A /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		0428E3FEEFD4AE28ABB34009 /* ExtractTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractTiming.swift; sourceTree = "<group>"; };
 		04B32FD694DE06AE8D0EE7A3 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		05466B447CD1A05AA58CB6D0 /* ReviewMicRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewMicRow.swift; sourceTree = "<group>"; };
 		06C0BFDDA5AF9ECC3272D9B9 /* RecurrenceEnd.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceEnd.swift; sourceTree = "<group>"; };
@@ -815,6 +820,7 @@
 				62D88AFE0345B2D1856DD67E /* DayClockTests.swift */,
 				74CA78E0BA5ACAB2A9AFF1CB /* DayStartHourBoundaryTests.swift */,
 				A684F8B191DD96ADDC917305 /* DomainModuleTests.swift */,
+				0029899B03537C93DD93D5FA /* ExtractTimingTests.swift */,
 				75B46646232347F0FEEA6FF2 /* FirstVoiceTrialTests.swift */,
 				59E6BB49565E850EF4E96279 /* ProductsStorekitGuardTests.swift */,
 				59C85D0615B2A028EDF81062 /* ProtocolsTests.swift */,
@@ -880,6 +886,7 @@
 				6AB138328A1DD4AF943AEACF /* Constants.swift */,
 				B96BB2E9AD6E94FB072CFE9F /* CorrectionTracker.swift */,
 				29390992AF40866937223582 /* ErrorMessages.swift */,
+				0428E3FEEFD4AE28ABB34009 /* ExtractTiming.swift */,
 				41DFCFCAA748A498A5A2A0CC /* JSONCoding.swift */,
 				A7D28BBE22CDAA134477C16B /* Models.swift */,
 				03A4EE86AB884331FEE9403A /* NetworkMonitor.swift */,
@@ -1285,6 +1292,7 @@
 				89E24C19614B09569E93D162 /* EntitlementManager.swift in Sources */,
 				BA963C9069E96D64C1F8EA2F /* ErrorMessages.swift in Sources */,
 				37BB21060C722754F8959EA2 /* ExpandMonthHintView.swift in Sources */,
+				D434D2C9FE5EF0E40A6E9998 /* ExtractTiming.swift in Sources */,
 				1E56A127FF103D2685A19F72 /* ExtractionOutcome.swift in Sources */,
 				08A6FBBD1BE37D9F1D7B78A2 /* ExtractorCircuitBreaker.swift in Sources */,
 				9371C62C07D96C9A29EA52B9 /* FeedbackSheet.swift in Sources */,
@@ -1426,6 +1434,7 @@
 				102E73868BA9DB3FF7294BC9 /* DeepReadDraftClampTests.swift in Sources */,
 				8BCAB1A04D0562E80B1B3174 /* DeepReadFactsTests.swift in Sources */,
 				FBDA5851BB7475AA14A6FBC4 /* DomainModuleTests.swift in Sources */,
+				CB9A3289AB686EE137DFC6E8 /* ExtractTimingTests.swift in Sources */,
 				2FD2D6D4009EE7F6BBA5CF48 /* ExtractorTests.swift in Sources */,
 				F96C9E2A3DAE989FFCD7E9EA /* FirstVoiceTrialTests.swift in Sources */,
 				99A4DB2A7E56A6856B638B76 /* HomeCalendarPeriodVisibilityTests.swift in Sources */,
@@ -1495,6 +1504,7 @@
 				3948A1055B12A8EF83E6F717 /* DayClock.swift in Sources */,
 				3EB0B744F10C2D839E382615 /* DesignSystem.swift in Sources */,
 				1987A73DEA90CA701462B610 /* ErrorMessages.swift in Sources */,
+				13FD9AD120B01695EEA48369 /* ExtractTiming.swift in Sources */,
 				1116DFD10A75FD7C8B6A6DD5 /* ExtractionOutcome.swift in Sources */,
 				72E7146B73EEF9B2DCB3E921 /* IntentNotificationReconciler.swift in Sources */,
 				63F3845594D620D2D82F9A45 /* Models.swift in Sources */,

@@ -2436,7 +2436,7 @@ function makeTelemetryEvent(overrides = {}) {
   };
 }
 
-function makeFakeD1() {
+function makeFakeD1({ allResults = [] } = {}) {
   const insertedRows = [];
   let lastSql = "";
   return {
@@ -2450,6 +2450,10 @@ function makeFakeD1() {
         },
         async run() {
           return { meta: { changes: 1 } };
+        },
+        // SELECT 走 all():管理接口 / 告警查询。返回种子行,测试按需构造。
+        async all() {
+          return { results: allResults };
         }
       };
     },
@@ -2721,12 +2725,14 @@ test("scheduled handler skips when DB not configured", async () => {
 });
 
 test("scheduled handler deletes events older than retention", async () => {
-  let deletedCutoff = null;
+  // bind 首参可能是 GC cutoff(telemetry_events / extract_requests 两个 DELETE)
+  // 或告警窗口 sinceMs(30 分钟),按容差过滤出 GC cutoff。
+  const boundArgs = [];
   const db = {
     prepare() {
       return {
-        bind(cutoff) {
-          deletedCutoff = cutoff;
+        bind(...args) {
+          boundArgs.push(...args);
           return this;
         },
         async run() {
@@ -2736,9 +2742,10 @@ test("scheduled handler deletes events older than retention", async () => {
     }
   };
   await handleScheduled({ TELEMETRY_DB: db });
-  assert.ok(deletedCutoff !== null);
   const expectedCutoff = Date.now() - 90 * 24 * 3600 * 1000;
-  assert.ok(Math.abs(deletedCutoff - expectedCutoff) < 5000);  // 5s 容差
+  // 两个 GC(telemetry_events + extract_requests)都按同一 90 天窗口删
+  const deleteCutoffs = boundArgs.filter((value) => Math.abs(value - expectedCutoff) < 5000);  // 5s 容差
+  assert.equal(deleteCutoffs.length, 2);
 });
 
 test("scheduled handler swallows DB errors", async () => {
@@ -8644,4 +8651,411 @@ test("附:流式传到一半客户端断开 → 名额短时间释放(非租约�
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(await gateCount(doBinding, "KEY_POOL", "POOL_KEY_0"), 0,
     "流式中途断开后名额应及时释放(200ms 内,而非等租约 TTL)");
+});
+
+// MARK: - 解析耗时监控(extract_requests,任务书 §6.1)
+
+/// 取出 fake D1 里写入 extract_requests 的行(sql 含表名),忽略 telemetry 写入。
+function extractMetricRows(db) {
+  return db.insertedRows.filter((row) => row.sql.includes("INSERT INTO extract_requests"));
+}
+
+/// 列序与 INSERT 语句一致(见 src/extractMetrics.js writeExtractRequestRow):
+/// 0 received_at, 1 request_id, 2 extract_id, 3 device_id, 4 plan, 5 stream,
+/// 6 provider_id, 7 model, 8 key_slot, 9 attempts, 10 providers_tried, 11 failover,
+/// 12 upstream_first_byte_ms, 13 total_ms, 14 status, 15 outcome, 16 error_type, 17 todos_count
+test("extract metrics 1: 非流式成功写一行,provider/model/key_slot/attempts/outcome/todos_count 全正确", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "买牛奶" }, { "X-App-Token": "token", "X-Extract-ID": "extract-abc-123" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: db },
+    ctx,
+    jsonResponseProvider("买牛奶")
+  );
+  assert.equal(response.status, 200);
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1, "一个请求只写一行");
+  const args = rows[0].args;
+  assert.equal(args[2], "extract-abc-123");
+  assert.match(args[3], /^sha256:[0-9a-f]+$/, "device_id 保持哈希形态");
+  assert.equal(args[4], "free");
+  assert.equal(args[5], 0);
+  assert.equal(args[6], "ANTHROPIC_LEGACY");
+  assert.ok(args[7], "model 非空");
+  // 单 key 条目:key_slot = secret 名(不是 Key 的值)
+  assert.equal(args[8], "ANTHROPIC_API_KEY");
+  assert.equal(args[9], 1);
+  assert.equal(args[10], "ANTHROPIC_LEGACY");
+  assert.equal(args[11], 0);
+  assert.ok(typeof args[12] === "number" && args[12] >= 0, "upstream_first_byte_ms 有值");
+  assert.ok(typeof args[13] === "number" && args[13] >= args[12], "total_ms ≥ 上游耗时");
+  assert.equal(args[14], 200);
+  assert.equal(args[15], "success");
+  assert.equal(args[16], null);
+  assert.equal(args[17], 1);
+});
+
+test("extract metrics 2: 主力失败备用成功只写一行,attempts=2 failover=1 provider 是备用", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "x" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.test/v1/messages", model: "ma", priority: 1, secretName: "PROVIDER_KEY_A" },
+        { id: "B", type: "openai", url: "https://b.test/v1/chat/completions", model: "mb", priority: 2, secretName: "PROVIDER_KEY_B" }
+      ],
+      { PROVIDER_KEY_A: "k-a", PROVIDER_KEY_B: "k-b" },
+      { TELEMETRY_DB: db }
+    ),
+    ctx,
+    async (url) => (url.includes("a.test")
+      ? new Response("upstream error", { status: 500 })
+      : jsonResponse({ choices: [{ message: { content: extractionJSON("备用") } }] }))
+  );
+  assert.equal(response.status, 200);
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1, "failover 也只写一行");
+  const args = rows[0].args;
+  assert.equal(args[6], "B", "provider_id 是最终成功的备用");
+  assert.equal(args[9], 2, "试了 2 家");
+  assert.equal(args[10], "A,B", "providers_tried 顺序正确");
+  assert.equal(args[11], 1, "发生过切换");
+  assert.equal(args[15], "success");
+  assert.equal(args[17], 1);
+});
+
+/// 带延迟的 SSE:首块立即发,结束块延迟发 —— 让「流结束时刻」显著晚于「首字节」,
+/// 用于断言 total_ms 按流结束计算(而非 finishRequest 的首字节时刻)。
+function delayedSSEStreamResponse(delayMs = 80) {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "content_block_delta", delta: { text: extractionJSON("买牛奶") } })}\n\n`));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "message_stop" })}\n\n`));
+      controller.close();
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+test("extract metrics 3: 流式成功 total_ms 按流结束时刻计算,todos_count 来自 fullText", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token", "X-Extract-ID": "extract-str-1" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: db },
+    ctx,
+    async () => delayedSSEStreamResponse(80)
+  );
+  assert.equal(response.status, 200);
+  await response.text();  // 消费流(含 80ms 延迟)
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1);
+  const args = rows[0].args;
+  assert.equal(args[2], "extract-str-1");
+  assert.equal(args[5], 1, "stream = 1");
+  assert.equal(args[15], "success");
+  assert.equal(args[17], 1, "todos_count 从 fullText 解析");
+  // 首字节 ~立即(total≈80ms+),total_ms 是流结束口径 → 差值应 ≥ 50ms
+  assert.ok(args[13] - args[12] >= 50, `total_ms(${args[13]}) 应比首字节(${args[12]})晚 ≥50ms`);
+});
+
+test("extract metrics 4: 流式中途客户端断开 outcome=client_disconnected", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  const response = await handleRequest(
+    requestWithSignal(
+      { transcript: "流中断", stream: true },
+      { "X-App-Token": "token", "X-Extract-ID": "extract-abort-1" },
+      abortController.signal
+    ),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: db },
+    ctx,
+    async () => clientAbortingSSEStreamResponse(abortController)
+  );
+  assert.equal(response.status, 200);
+  await assert.rejects(() => response.text());
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1);
+  const args = rows[0].args;
+  assert.equal(args[15], "client_disconnected");
+  assert.equal(args[14], 200, "响应头已发出,status 记 200");
+});
+
+test("extract metrics 5: 额度拒绝也写一行,provider_id 为 NULL", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00.000Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "1",
+      RATE_LIMIT_KV: kv,
+      TELEMETRY_DB: db
+    };
+    const headers = { "X-App-Token": "token", "X-Device-ID": "device-1", "X-Local-Date": "2026-05-26" };
+    const first = await handleRequest(request({ transcript: "a" }, headers), env, ctx, jsonResponseProvider("a"));
+    assert.equal(first.status, 200);
+    const second = await handleRequest(request({ transcript: "b" }, headers), env, ctx, jsonResponseProvider("b"));
+    assert.equal(second.status, 429);
+  });
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 2);
+  const rejected = rows[1].args;
+  assert.equal(rejected[15], "quota_rejected");
+  assert.equal(rejected[6], null, "上游没被调,provider_id NULL");
+  assert.equal(rejected[9], 0);
+  assert.equal(rejected[14], 429);
+  assert.equal(rejected[16], "quota_exceeded");
+  assert.equal(rows[0].args[15], "success");
+});
+
+test("extract metrics 6: 合法 X-Extract-ID 进 D1 与日志,非法值视为未携带", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const env = { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: db };
+  const logs = await captureConsole(async () => {
+    const good = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token", "X-Extract-ID": "extract-good.1:2-3" }),
+      env, ctx, jsonResponseProvider("ok")
+    );
+    const tooLong = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token", "X-Extract-ID": "x".repeat(65) }),
+      env, ctx, jsonResponseProvider("ok")
+    );
+    const withSpace = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token", "X-Extract-ID": "bad id with space" }),
+      env, ctx, jsonResponseProvider("ok")
+    );
+    assert.equal(good.status, 200);
+    assert.equal(tooLong.status, 200);
+    assert.equal(withSpace.status, 200);
+  });
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].args[2], "extract-good.1:2-3");
+  assert.equal(rows[1].args[2], null, "超长值视为未携带");
+  assert.equal(rows[2].args[2], null, "含空格值视为未携带");
+  // 合法值随 requestContext 进日志;非法值不进
+  assert.ok(logs.some((line) => line.includes("extract-good.1:2-3")), "日志应带合法 extractId");
+  assert.ok(!logs.some((line) => line.includes("x".repeat(65))), "超长值不得进日志");
+  assert.ok(!logs.some((line) => line.includes("bad id with space")), "非法值不得进日志");
+});
+
+test("extract metrics 7: Key 的值不出现在 D1 参数与日志的任何地方", async () => {
+  const canary = "sk-CANARY-LEAK-9f8e7d6c5b4a";
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const logs = await captureConsole(async () => {
+    // 场景 1:多 key 条目(主力,会失败)+ 备用成功 —— keySlot 命名 + failover 路径
+    const envMulti = providersEnv(
+      [
+        { id: "A", type: "anthropic", url: "https://a.test/v1/messages", model: "ma", priority: 1, secretNames: ["PROVIDER_KEY_A1", "PROVIDER_KEY_A2"] },
+        { id: "B", type: "openai", url: "https://b.test/v1/chat/completions", model: "mb", priority: 2, secretName: "PROVIDER_KEY_B" }
+      ],
+      { PROVIDER_KEY_A1: canary, PROVIDER_KEY_A2: "k-a2", PROVIDER_KEY_B: "k-b" },
+      { TELEMETRY_DB: db }
+    );
+    const ok = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      envMulti, ctx,
+      async (url) => (url.includes("a.test")
+        ? new Response("err", { status: 500 })
+        : jsonResponse({ choices: [{ message: { content: extractionJSON("ok") } }] }))
+    );
+    assert.equal(ok.status, 200);
+
+    // 场景 2:全部失败(错误日志路径,errorFields 的 redaction 兜底)
+    const envFail = providersEnv(
+      [{ id: "A", type: "anthropic", url: "https://a.test/v1/messages", model: "ma", priority: 1, secretName: "PROVIDER_KEY_A1" }],
+      { PROVIDER_KEY_A1: canary, TELEMETRY_DB: db }
+    );
+    const failed = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      envFail, ctx,
+      async () => {
+        throw new TypeError(`fetch failed with ${canary}`);
+      }
+    );
+    assert.equal(failed.status, 503);
+  });
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.ok(rows.length >= 1);
+  for (const row of rows) {
+    assert.ok(!JSON.stringify(row.args).includes(canary), "D1 写入参数不得含 Key 的值");
+  }
+  for (const line of logs) {
+    assert.ok(!line.includes(canary), `日志不得含 Key 的值: ${line.slice(0, 120)}`);
+  }
+  // key_slot 是 secret 名(多 key 条目 = 条目id#secret名,单 key = secret 名)
+  for (const row of rows) {
+    assert.ok(row.args[8] === null || /^([A-Z0-9_]+|[A-Z0-9_]+#[A-Z0-9_]+)$/.test(row.args[8]), `key_slot 应为 secret 名: ${row.args[8]}`);
+  }
+});
+
+test("extract metrics 8: D1 写入抛错不影响请求,只记 write_failed 日志", async () => {
+  const brokenDb = {
+    prepare() {
+      return {
+        bind() { return this; },
+        async run() { throw new Error("D1 unavailable"); }
+      };
+    }
+  };
+  const ctx = makeFakeCtx();
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: brokenDb },
+      ctx,
+      jsonResponseProvider("ok")
+    );
+    assert.equal(response.status, 200, "写库失败不影响响应");
+    const body = JSON.parse(await response.text());
+    assert.ok(body.todos.length === 1);
+  });
+  await ctx.awaitAll();
+  assert.ok(logs.some((line) => line.includes("proxy.extract_metrics.write_failed")), "写库失败要留痕");
+});
+
+test("extract metrics 9: TELEMETRY_DB 未配置时请求照常,不报错", async () => {
+  const logs = await captureConsole(async () => {
+    const response = await handleRequest(
+      request({ transcript: "x" }, { "X-App-Token": "token" }),
+      { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key" },
+      makeFakeCtx(),
+      jsonResponseProvider("ok")
+    );
+    assert.equal(response.status, 200);
+  });
+  assert.ok(!logs.some((line) => line.includes("extract_metrics.write_failed")));
+});
+
+test("extract metrics 10: 管理接口鉴权 401 / 分组与百分位 / hours 超 168 按 168", async () => {
+  const unauth = await handleRequest(
+    new Request("https://proxy.test/v1/admin/extract-metrics?hours=24"),
+    { ADMIN_TOKEN: "admin-tok", TELEMETRY_DB: makeFakeD1() },
+    {}
+  );
+  assert.equal(unauth.status, 401);
+
+  const rows = [];
+  for (let i = 1; i <= 5; i += 1) {
+    rows.push({ provider_id: "A", model: "ma", key_slot: "PROVIDER_KEY_A", attempts: 1, failover: 0, total_ms: i * 100, status: 200, outcome: "success", error_type: null });
+  }
+  rows.push({ provider_id: "B", model: "mb", key_slot: "PROVIDER_KEY_B", attempts: 2, failover: 1, total_ms: 30000, status: 429, outcome: "upstream_failed", error_type: "status_429" });
+
+  const db = makeFakeD1({ allResults: rows });
+  const response = await handleRequest(
+    new Request("https://proxy.test/v1/admin/extract-metrics?hours=999", { headers: { "X-Admin-Token": "admin-tok" } }),
+    { ADMIN_TOKEN: "admin-tok", TELEMETRY_DB: db },
+    {}
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.hours, 168, "hours 超 168 按 168");
+  assert.equal(body.requests, 6);
+  assert.equal(body.p50Ms, 300, "sorted [100..500,30000] 第 3 个");
+  assert.equal(body.p95Ms, 30000, "第 6 个");
+  assert.equal(body.successRate, 0.8333);
+  assert.equal(body.failoverCount, 1);
+
+  const groupA = body.byProvider.find((g) => g.key === "A|ma");
+  assert.equal(groupA.requests, 5);
+  assert.equal(groupA.successRate, 1);
+  assert.equal(groupA.p95Ms, 500);
+  const keyB = body.byKeySlot.find((g) => g.key === "PROVIDER_KEY_B");
+  assert.equal(keyB.requests, 1);
+  assert.equal(keyB.status429, 1);
+  assert.ok(body.byOutcome.some((o) => o.outcome === "success" && o.count === 5));
+
+  const defaultHours = await handleRequest(
+    new Request("https://proxy.test/v1/admin/extract-metrics", { headers: { "X-Admin-Token": "admin-tok" } }),
+    { ADMIN_TOKEN: "admin-tok", TELEMETRY_DB: makeFakeD1({ allResults: rows }) },
+    {}
+  );
+  assert.equal((await defaultHours.json()).hours, 24, "缺省 hours=24");
+
+  // 0 < hours < 1(如 0.5)floor 后为 0,零窗口比非法值更差 —— 一并回落默认 24
+  const fractionalHours = await handleRequest(
+    new Request("https://proxy.test/v1/admin/extract-metrics?hours=0.5", { headers: { "X-Admin-Token": "admin-tok" } }),
+    { ADMIN_TOKEN: "admin-tok", TELEMETRY_DB: makeFakeD1({ allResults: rows }) },
+    {}
+  );
+  assert.equal((await fractionalHours.json()).hours, 24, "0<hours<1 回落默认 24(不得 floor 成零窗口)");
+});
+
+function makeWindowRows({ count, totalMs, outcome = "success", providerId = "A", model = "ma" }) {
+  return Array.from({ length: count }, () => ({
+    provider_id: providerId, model, key_slot: null, attempts: 1, failover: 0,
+    total_ms: totalMs, status: 200, outcome, error_type: null
+  }));
+}
+
+test("extract metrics 11a: P95 超阈值触发一次告警,重跑不重复,恢复推送已恢复", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  const fetchImpl = makeCronFetch({ telegramCalls });
+  const slowDb = makeFakeD1({ allResults: makeWindowRows({ count: 20, totalMs: 25000 }) });
+  const env = cronEnv({ kv, extra: { TELEMETRY_DB: slowDb } });
+
+  await handleScheduled(env, fetchImpl);
+  const slowAlerts = () => telegramCalls.filter((c) => c.body.text.includes("解析变慢"));
+  assert.equal(slowAlerts().length, 1, "P95 25s > 20s 且样本 20 次,应触发");
+  assert.ok(slowAlerts()[0].body.text.includes("25s"), "文案附 P95");
+  assert.ok(slowAlerts()[0].body.text.includes("A|ma"), "文案附最慢的模型");
+
+  await handleScheduled(env, fetchImpl);
+  assert.equal(slowAlerts().length, 1, "同状态不重推");
+
+  const fastDb = makeFakeD1({ allResults: makeWindowRows({ count: 20, totalMs: 3000 }) });
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: fastDb } }), fetchImpl);
+  const recovered = telegramCalls.filter((c) => c.body.text.includes("恢复(解析耗时)"));
+  assert.equal(recovered.length, 1, "恢复后推一条已恢复");
+  assert.ok(recovered[0].body.text.includes("3s"), "恢复文案附回落后的 P95");
+});
+
+test("extract metrics 11b: 成功率低于阈值告警,client_disconnected 不进分母", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  const fetchImpl = makeCronFetch({ telegramCalls });
+  const rows = [
+    ...makeWindowRows({ count: 10, totalMs: 3000, outcome: "success" }),
+    ...makeWindowRows({ count: 10, totalMs: 3000, outcome: "upstream_failed", providerId: "B", model: "mb" }),
+    ...makeWindowRows({ count: 5, totalMs: 3000, outcome: "client_disconnected" })
+  ];
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), fetchImpl);
+  const failureAlerts = telegramCalls.filter((c) => c.body.text.includes("解析失败率高"));
+  assert.equal(failureAlerts.length, 1, "20 次里 10 次失败(50%)应触发");
+  assert.ok(failureAlerts[0].body.text.includes("B|mb"), "文案附按模型失败分布");
+  // 断连 5 行不计分母:10/20=50% 而非 10/25
+  assert.ok(failureAlerts[0].body.text.includes("50%"), "成功率按 10/20 计算");
+});
+
+test("extract metrics 11c: 样本不足 20 次不告警", async () => {
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  const fetchImpl = makeCronFetch({ telegramCalls });
+  const rows = makeWindowRows({ count: 19, totalMs: 60000, outcome: "upstream_failed" });
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), fetchImpl);
+  assert.equal(telegramCalls.filter((c) => c.body.text.includes("解析")).length, 0, "量太小没有意义,不告警");
 });

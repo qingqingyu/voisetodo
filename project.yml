@@ -167,6 +167,7 @@ targets:
       - path: Protocols/ErrorMessages.swift
       - path: Protocols/Constants.swift
       - path: Protocols/VoiceTodoLog.swift
+      - path: Protocols/ExtractTiming.swift
       - path: Protocols/Telemetry.swift
       - path: Protocols/TelemetryQueue.swift
       - path: App/Intents/ToggleTodoIntent.swift

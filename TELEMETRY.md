@@ -35,8 +35,8 @@ BGProcessingTask                          ↓
 |--------|--------|----------|
 | `app_launch` | App 启动 | `coldLaunch: Bool`, `hasCompletedOnboarding: Bool` |
 | `recording_started` | 录音开始 | `source: button / action_button` |
-| `recording_outcome` | 录音结束 | `outcome: success / interrupted / silence_timeout / watchdog_expired`, `durationMS: Int`, `transcript: textSummary` |
-| `extract_outcome` | AI 抽取结束 | `outcome: success / failed / offline_fallback`, `todosCount`, `durationMS`, `attempts` |
+| `recording_outcome` | 录音结束 | `outcome: success / interrupted / silence_timeout / watchdog_expired`, `durationMS: Int`, `transcript: textSummary`, `extractID`（本次录音会话的提取关联 ID，与 `extract_outcome` / 代理 `X-Extract-ID` 同源；未能取得时不带） |
+| `extract_outcome` | AI 抽取结束 | `outcome: success / failed / offline_fallback / cancelled`, `todosCount`, `durationMS`, `attempts`, `path`（`live_voice` / `pending_recovery` / `siri` / `keyboard` / `reextract` / `main`）, `speechToRequestMS` / `speechToFirstTodoMS` / `speechToDoneMS`（「说完话→出清单」分段耗时，毫秒；**仅 live_voice 路径携带**，缺失即不带——补解析/Siri/键盘的等待时长不进该统计） |
 | `todo_saved` | Todo 保存 | `source: confirm / siri_add`, `count` |
 | `first_voice_trial` | 首次语音试用引导进度 | `stage: armed / hint_shown / dismissed / completed` |
 | `paywall_shown` | paywall 曝光 | `source: first_wow / recording_count / quota_exhausted / manual` |
@@ -176,6 +176,26 @@ BGProcessingTask                          ↓
    ```
 
 ## 查询示例
+
+### 代理端：`extract_requests` 表（解析耗时监控）
+
+代理每次 AI 解析（`mode=extract`）往 D1 `extract_requests` 写**一行**（2026-10-29 起，
+任务书 `docs/extract-latency-monitoring-task.md`）：走了哪个服务商条目/模型/哪把
+Key（**只存 secret 名，绝不存 Key 的值**）、试了几家、是否切到备用、上游首字耗时、
+总耗时（流式按流结束时刻）、结果分类（`outcome`）与解析出的待办数。App 带的
+`X-Extract-ID` 落在 `extract_id` 列，可与 `telemetry_events.extract_id` 精确关联。
+
+- **写库失败不影响用户请求**（只 logWarn）；一个请求只写一行（failover 也只一行）
+- 90 天保留，与 `telemetry_events` 同一个 Cron GC
+- 汇总查询：`GET /v1/admin/extract-metrics?hours=24`（`X-Admin-Token` 鉴权，hours
+  上限 168）——整体/按模型/按 Key 的成功率、P50/P95、429 次数、按 outcome 计数
+- 告警（cron 每 30 分钟）：最近 30 分钟样本 ≥20 次且 P95 > `ALERT_EXTRACT_P95_MS`
+  （默认 20000）或成功率 < `ALERT_EXTRACT_SUCCESS_MIN`（默认 0.9）→ Telegram 推送，
+  恢复后再推一条；两阈值在 `AIProxy/wrangler.toml [vars]` 可调
+- 成功率口径：`success` / `cache_hit` / `empty_todos` 计成功；
+  `client_disconnected`（用户主动取消）**不计入分母**
+- 常用 SQL（按模型成功率、按 Key 的 429、与 `telemetry_events` 联查）见
+  `AIProxy/schema.sql` 末尾
 
 ```sql
 -- DAU

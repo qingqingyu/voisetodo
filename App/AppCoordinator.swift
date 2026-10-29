@@ -486,8 +486,8 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        // 处理转写结果
-        await processTranscript(voiceInput.transcript)
+        // 处理转写结果(带上录音会话的 extractID + T0,解析事件与录音事件对上号)
+        await processTranscript(voiceInput.transcript, extractContext: voiceInput.consumeExtractContext())
         VoiceTodoLog.coordinator.info("coordinator.stop_and_process.finished id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) finalTranscriptChars=\(self.transcript.count)")
     }
 
@@ -601,8 +601,8 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        // 自动处理转写结果
-        await processTranscript(voiceInput.transcript)
+        // 自动处理转写结果(带录音会话 extractID + T0)
+        await processTranscript(voiceInput.transcript, extractContext: voiceInput.consumeExtractContext())
         VoiceTodoLog.coordinator.info("coordinator.action_button.finished id=\(flowID, privacy: .public) transcriptChars=\(self.transcript.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 
@@ -1171,13 +1171,27 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// 处理转写文本（流式）
-    private func processTranscript(_ text: String, locale: Locale? = nil) async {
+    /// - Parameter extractContext: 语音路径传入(录音会话的 extractID + T0「说完话」
+    ///   时刻,来自 `voiceInput.consumeExtractContext()`);键盘路径传 nil——内部按
+    ///   keyboard 建计时器(无 T0,只带 path 标记,不进「说完话到出清单」统计)。
+    private func processTranscript(
+        _ text: String,
+        locale: Locale? = nil,
+        extractContext: (extractID: String?, speechEnd: ContinuousClock.Instant?)? = nil
+    ) async {
         guard !isProcessingTranscript else {
             VoiceTodoLog.coordinator.warning("coordinator.process_transcript.ignored reason=already_processing \(VoiceTodoLog.textSummary(text), privacy: .public)")
             return
         }
         let flowID = VoiceTodoLog.makeID("process")
-        let extractID = VoiceTodoLog.makeID("extract")
+        // 语音路径复用录音会话的 extractID:recording_outcome / extract_outcome /
+        // 代理行(X-Extract-ID)三方共用一个 ID,D1 里能精确对上号(任务书 §5.2)。
+        let extractID = extractContext?.extractID ?? VoiceTodoLog.makeID("extract")
+        // 分段计时器(任务书 §5.1):T0 只在语音路径存在;path 区分 live_voice/keyboard。
+        let timing = ExtractTimingTracker(
+            speechEnd: extractContext?.speechEnd,
+            path: extractContext == nil ? ExtractPath.keyboard : ExtractPath.liveVoice
+        )
         isProcessingTranscript = true
         isExtracting = true
 
@@ -1209,7 +1223,8 @@ final class AppCoordinator: ObservableObject {
                 text: text,
                 locale: effectiveLocale,
                 flowID: flowID,
-                extractID: extractID
+                extractID: extractID,
+                timing: timing
             )
             for await event in events {
                 guard !Task.isCancelled else { return }
