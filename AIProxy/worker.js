@@ -792,10 +792,13 @@ export async function handleAdminRequest(request, env, requestContext, url) {
 const EXTRACT_METRICS_MAX_HOURS = 168;
 
 /// hours 默认 24,超过 168(7 天)按 168;非法/缺省回默认(任务书 §3.1)。
+/// floor 之后再判一次 ≤0:0 < hours < 1(如 0.5)floor 成 0 会得到零窗口,
+/// 比非法值(回默认 24)更差 —— 一并回落默认。
 function resolveMetricsHours(raw) {
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) return 24;
-  return Math.min(Math.floor(value), EXTRACT_METRICS_MAX_HOURS);
+  const floored = Math.floor(value);
+  return floored <= 0 ? 24 : Math.min(floored, EXTRACT_METRICS_MAX_HOURS);
 }
 
 async function handleAdminExtractMetrics(url, env, requestContext) {
@@ -1624,9 +1627,12 @@ function formatSeconds(ms) {
 
 function buildExtractLatencyAlertText(kind, latency, thresholds) {
   if (kind === "recovered") {
+    // p95Ms 为 null(窗口内无带耗时的行,如流量骤降)时不编造「回落到 0s」,
+    // 如实写样本不足 —— 与 buildExtractSuccessAlertText 的 null 处理对称。
+    const p95Text = latency.p95Ms === null ? "样本不足" : `已回落到 ${formatSeconds(latency.p95Ms)}`;
     return [
       "✅ VoiceTodo 告警恢复(解析耗时)",
-      `最近 30 分钟 P95 已回落到 ${formatSeconds(latency.p95Ms)}(阈值 ${formatSeconds(thresholds.p95ThresholdMs)}),样本 ${latency.requests} 次`
+      `最近 30 分钟 P95 ${p95Text}(阈值 ${formatSeconds(thresholds.p95ThresholdMs)}),样本 ${latency.requests} 次`
     ].join("\n");
   }
   const lines = [

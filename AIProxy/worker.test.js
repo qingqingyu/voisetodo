@@ -8994,6 +8994,14 @@ test("extract metrics 10: 管理接口鉴权 401 / 分组与百分位 / hours �
     {}
   );
   assert.equal((await defaultHours.json()).hours, 24, "缺省 hours=24");
+
+  // 0 < hours < 1(如 0.5)floor 后为 0,零窗口比非法值更差 —— 一并回落默认 24
+  const fractionalHours = await handleRequest(
+    new Request("https://proxy.test/v1/admin/extract-metrics?hours=0.5", { headers: { "X-Admin-Token": "admin-tok" } }),
+    { ADMIN_TOKEN: "admin-tok", TELEMETRY_DB: makeFakeD1({ allResults: rows }) },
+    {}
+  );
+  assert.equal((await fractionalHours.json()).hours, 24, "0<hours<1 回落默认 24(不得 floor 成零窗口)");
 });
 
 function makeWindowRows({ count, totalMs, outcome = "success", providerId = "A", model = "ma" }) {
