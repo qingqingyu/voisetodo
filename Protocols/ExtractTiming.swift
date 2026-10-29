@@ -118,8 +118,9 @@ struct ExtractTimingInfo: Equatable, Sendable {
     }
 
     /// extract_outcome 落账点调用:读当前任务域的 tracker(VoiceTodoLog.extractTiming,
-    /// 由 TranscriptProcessingFlow / PendingRecoveryFlow 等入口绑定)解出参数。
-    /// 无 tracker 的路径(补解析/Siri/重新解析/离线兜底)只带 path(从 requestPath 映射)。
+    /// 由 TranscriptProcessingFlow 绑定,AppCoordinator 建 tracker 后传入)解出参数。
+    /// 无 tracker 的路径(补解析 PendingRecoveryFlow/Siri/重新解析/离线兜底,直接调
+    /// extract(from:) 不经 binding)只带 path(从 requestPath 映射)。
     ///
     /// - Parameter doneAt: T3 解析完成时刻;取消/失败路径传 nil(取消不是完成,不带
     ///   speechToDoneMS)。

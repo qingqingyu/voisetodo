@@ -11,13 +11,15 @@
 
 import { logWarn, errorFields } from "./log.js";
 
-// X-Extract-ID 合法性(任务书 §2.4):≤64 字符,只含字母数字与 - _ . : 。
-// App 端生成的是 `extract-<uuid>` 形态,天然落在字符集内;其余一律视为未携带,
-// 防止把任意字符串写进 D1 / 结构化日志(日志注入)。
+// X-Extract-ID 合法性(任务书 §2.4):≤64 字符,只含字母数字与 - _ . : ,
+// 其他(含任何位置的空白)一律视为未携带,防止把任意字符串写进 D1 / 结构化
+// 日志(日志注入)。不做 trim —— 任务书口径是「不符合字符集就当没带」;
+// 且 Fetch API 的 headers.get() 已按 HTTP 规范剥掉首尾 OWS,trim 属多余宽容。
+// App 端生成的是 `extract-<uuid>` 形态,天然落在字符集内。
 const EXTRACT_ID_PATTERN = /^[A-Za-z0-9_\-.:]{1,64}$/;
 
 export function sanitizeExtractId(raw) {
-  const value = String(raw ?? "").trim();
+  const value = String(raw ?? "");
   return EXTRACT_ID_PATTERN.test(value) ? value : null;
 }
 
@@ -162,7 +164,7 @@ function round4(value) {
 /// 最近 EXTRACT_ALERT_WINDOW_MS 内的行 → 两条独立告警的判定结果。纯函数。
 ///
 /// 返回:
-///   latency:   { breached, requests, p95Ms }  —— breached = 样本够 && P95 超阈值
+///   latency:   { breached, requests, p95Ms, slowestModel }  —— breached = 样本够 && P95 超阈值
 ///   success:   { breached, requests, successRate, failuresByModel }
 /// 样本不足(< minRequests)时 breached=false(任务书:量太小没有意义);
 /// P95 统计含失败行的 total_ms(用户体感耗时包含等失败的时间),排除 null。

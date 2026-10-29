@@ -164,6 +164,7 @@
 8. **`path` 取值在任务书 4 个之外补了 `reextract` / `main`**——重新解析（`reextract`/`edit_reextract`）与离线降级 `fallbackExtract`（从未发请求）也存在且无 T0，需要来源标记；`main` 是无法细分时的兜底（仅离线降级与老调用路径会出现）。
 9. **B 部分顺带补齐了流式成功的 `extract_outcome` 事件**——任务书 §5 默认该事件已存在，实际主路径（流式）成功时根本没有；不补则 `speechToDoneMS` 在生产主路径上永远缺失。事件的其余参数（outcome/durationMS/attempts）与非流式同构。
 10. **App 端 T2 取「首次 yield 给确认面板」而非「面板渲染完成」**——渲染时刻不可观测（SwiftUI 无渲染回调）；yield → 渲染只差一帧（毫秒级），对秒级指标无影响。
+11. **整体 failover 返回次数 `failoverCount` 而非任务书 §3.1 的「failover 比例」**——比例 = `failoverCount / requests`，返回体里两个值都有，一除即得；次数是原始信息，比例是派生值，存派生值反而丢精度。
 
 ## 8. 已知局限（不修，留档）
 

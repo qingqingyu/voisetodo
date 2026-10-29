@@ -2004,6 +2004,19 @@ function providerInfoForMetrics(attempts) {
   };
 }
 
+// 上游调用之前就会被拒掉的 errorType(quota/IP 限流/预算/key 池/深读限额)。
+// 这些请求 outcome 记 quota_rejected(任务书 §2.2:提前拒掉的也要写一行,才能
+// 算真实失败率)。errorType 的权威来源是各 enforce* 抛错处的定义,新增闸门时同步。
+const QUOTA_REJECTION_TYPES = new Set([
+  "quota_exceeded",
+  "subscription_quota_exceeded",
+  "rate_limited",
+  "global_budget_exceeded",
+  "global_budget_exceeded_pro",
+  "key_pool_full",
+  "deepread_limit_exceeded"
+]);
+
 /// 外层 catch 的错误 → extract_requests 行字段。上游是否被调过(有无 attempts)
 /// 是主要判别器:quota/IP/预算类 429/503 全部发生在上游调用之前(任务书 §2.2:
 /// 这些也要写一行,outcome=quota_rejected,才能算真实失败率);有 attempts 的
@@ -2011,15 +2024,6 @@ function providerInfoForMetrics(attempts) {
 function errorMetricsPatch(error, requestContext, status) {
   const provider = providerInfoForMetrics(requestContext.providerAttempts);
   const errorType = error?.errorType ?? null;
-  const QUOTA_REJECTION_TYPES = new Set([
-    "quota_exceeded",
-    "subscription_quota_exceeded",
-    "rate_limited",
-    "global_budget_exceeded",
-    "global_budget_exceeded_pro",
-    "key_pool_full",
-    "deepread_limit_exceeded"
-  ]);
   let outcome;
   if (errorType === "client_disconnected") {
     outcome = "client_disconnected";
