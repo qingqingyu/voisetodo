@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-variant="a">
+<head>
+  <meta charset="UTF-8">
+  <title>VoiceTodo screenshot compose</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="lang-en">
+  <div class="canvas">
+    <div class="text-zone">
+      <div class="accent"></div>
+      <h1 id="headline"></h1>
+      <p class="caption" id="caption"></p>
+    </div>
+    <div class="shot-zone">
+      <div class="phone" id="phone">
+        <img id="shot" alt="">
+      </div>
+    </div>
+  </div>
+
+  <script src="copy.js"></script>
+  <script>
+    // 参数从 URL hash 注入:template.html#lang=zh&shot=01&variant=a
+    // (render.sh 逐张调用 Chrome headless 渲染;file:// 下 fetch 受限,故用 <script> 加载 copy.js)
+    const params = new URLSearchParams(location.hash.slice(1));
+    const lang = params.get("lang") || "en";
+    const shot = params.get("shot") || "01";
+    const variant = params.get("variant") || "a";
+
+    const entry = COPY[lang] && COPY[lang][shot];
+    if (!entry) {
+      // 错误显式传播:渲染前先在页面上把问题打出来,render.sh 的尺寸校验兜底
+      document.getElementById("headline").textContent =
+        "COPY MISSING: " + lang + " / " + shot;
+      throw new Error("copy missing for " + lang + "/" + shot);
+    }
+
+    document.documentElement.dataset.variant = variant;
+    document.body.className = "lang-" + lang;
+    document.getElementById("headline").textContent = entry.headline;
+    document.getElementById("caption").textContent = entry.caption;
+
+    const img = document.getElementById("shot");
+    img.src = "../../screenshots/" + lang + "/" + shot + "-" + entry.slug + ".png";
+    img.onerror = () => document.getElementById("phone").classList.add("missing");
+  </script>
+</body>
+</html>

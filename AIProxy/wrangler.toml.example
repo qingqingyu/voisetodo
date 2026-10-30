@@ -8,7 +8,7 @@ compatibility_date = "2026-05-26"
 #
 # 免费档每设备每天调用上限（按 X-Device-ID 摘要 + 客户端本地日期计；需配置 RATE_LIMIT_KV 才生效）。
 # 配额耗尽返回 429 {error:"quota_exceeded"}，客户端走离线兜底 + paywall。
-DAILY_REQUEST_LIMIT = "2"
+DAILY_REQUEST_LIMIT = "3"
 # Pro 档每设备每天调用上限。订阅验签（X-Subscription-JWS）通过后按此值放行。
 # ⚠️ 必须配置，否则 Pro 订阅完全无效 —— resolveSubscriptionTier 里 hasPaidLimit 为
 #    false 时直接返回 free 档、连 JWS 都不验签，付费用户和免费用户额度完全相同，

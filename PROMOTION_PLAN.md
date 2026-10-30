@@ -1,6 +1,6 @@
 # VoiceTodo · App Store 软启动宣传方案
 
-> 分支: `xuanchuan` · 定稿: 2026-08-14
+> 分支: `xuanchuan` · 定稿: 2026-08-14 · 状态同步: 2026-10-22(随 main 合并对齐:清单勾选/日文约束/IAP 本地配置)
 > 性质: 4 周软启动,验证核心假设「付费意愿」
 
 ## 0. 一句话战略
@@ -16,7 +16,7 @@
 | 3 | 渠道性质 | 陌生人渠道 | 避开熟人 feedback bias |
 | 4 | 核心假设 | **付费意愿** | 最 commercial 的假设;使用率/NPS 留给 GA 后 |
 | 5 | 验证形式 | App Store 软启动(真实 IAP) | TestFlight sandbox 用户知道不扣钱,转化率虚高 3-5 倍 |
-| 6 | 地区 | 全球英文市场 | 付费习惯最成熟;日文质量短板暂不暴露 |
+| 6 | 地区 | 全球英文市场 | 付费习惯最成熟;日本語以 Beta 随 app 内置但不投放(附则 3) |
 | 7 | 定价 | Free 3/day, Pro $4.99/mo 或 $39.99/yr, 7-day trial | Todoist 锚定,转化数据有行业 reference |
 | 8 | 过关标准 | **4 周 + install→Pro ≥5%** | 行业 median 2-5%,top tier 5-10%;4 周不拖不押 |
 | 9 | Onboarding | Wow-first 三层漏斗 | wow 必须在 paywall 之前,否则测的是"为未知价值付费" |
@@ -32,6 +32,7 @@
 
 - [x] **Onboarding 改造**(2026-08-18 实施,docs/onboarding-first-voice-trial.md):现状「权限 → 语言 → 付费页」已改为「权限 → 语言 → 首次录音 demo → wow → trial → paywall」。
   **与本文原目标序列的偏差(有意选择,已拍板)**:paywall 弹点在 **wow 播完后立即**(~2.3s),不等「第 2 次撞墙」——理由:free 3/day 配额下新用户首日只录 1–2 条,「第 2 次撞墙」在 day-1 不可达,而软启动只有 4 周度量窗口;且现状配额路径是首撞即弹(`quota_exhausted`),「第 2 次才弹」的触发点并不存在。弹点效果靠 `paywall_shown(source: first_wow / quota_exhausted)` 两列对照度量。付费页前置曾是战略 bug,本次已消除
+  **后续改版(2026-08-23 拍板,v3 已全量落地)**:删日历授权页改延后询问、加演示页、completion 页只修文案;再经 fdfd54e(首次语音试用引导 + 付费墙后置 v3)收口。「wow 在 paywall 前」约束始终成立
 - [x] **AI 成本控制**(unit economics,必须解决)——**已解决(2026-09-22,方案 A)**:
   - 风险(原状): Pro 100/day × Sonnet ≈ $15+/月成本 vs $4.99 收入 = 每 Pro 用户月亏 $10
   - **评测三轮结果(2026-09-22,72 条 golden)**:sonnet-p2 基线 95.7% / glm-4.6 95.7% / **glm-4.5-air 97.2%(en+zh 口径 98.1%,过 ≥98% 线;零 infra_error;en 满分;生产延迟 ~5.5-6s,比 Sonnet 快约 2×)**。air 按 `AIProxy/eval/README.md` §4.1 三关全过(全对率/与基线差距/日期重复组零回归),成本按 §5 表 **−93%**(Pro 月成本正常口径 $1.5,最坏口径 $4.3,对 $4.99 收入安全)
@@ -39,23 +40,24 @@
   - 方案 B(限额)/C(提价)不再需要;失败 case 仅 2:zh-017(基线同错,归类判断题)、ja-014(README §6 已知「今度」歧义,ja 不 gate)
   - 评测工具:`AIProxy/eval/`(72 条 golden + 零依赖 runner)。运行窗口约束仍在:只能 UTC 周二/三/四跑
 - [x] **免费档调整**: DAILY_REQUEST_LIMIT 2 → 3(与定价决策对齐;2026-08-30 已部署生效,文案侧均按 3 口径)
-- [ ] **崩溃监控接入**:差评第一来源是崩溃
+- [x] **崩溃监控接入**(2026-10-08,6a005b8):MetricKit 崩溃/卡顿诊断订阅(`App/CrashDiagnosticsSubscriber.swift`),经遥测上报 D1(90 天保留)
 - [ ] 英文 copy 过类母语审(App 内所有英文文案)
 
 ### 2.2 App Store Listing
 
-- [ ] 前 3 张截图:「一句话 → 5 条 todo」wow 时刻,大字标注(非 UI 界面)
-- [ ] 后续截图: widget / 锁屏 Live Activity / 重复规则 / 多语言
-- [ ] Title(30 字符): 含 voice/AI 关键词
-- [ ] Subtitle(30 字符): wow 一句话
-- [ ] Description: 前 3 行 hook + 关键词自然覆盖
-- [ ] Keywords field: research voice todo / AI todo / spoken todo 竞品关键词
+- [x] wow 截图(方案已从「大字标注非 UI」改为实拍套件):01 录音 + 02 确认页为 wow 双连,大字/小字在上传前按 `PROMOTION_COPY.md` §2.3 合成
+- [x] 后续截图按实拍套件固定 7 张/语言:03 月历 / 04 今日 / 05 复盘 / 06 付费墙(手动补)/ 07 onboarding;产物 `screenshots/{zh,en}/`,流水线 `scripts/capture-screenshots.sh`(2026-10-20 重产对齐复盘入口卡改版)
+- [x] Title(30 字符)草案: `VoiceTodo: AI Voice To-Do List`(COPY §2.1,提交前字符数复核)
+- [x] Subtitle(30 字符)草案: `One ramble. Planned todos.`
+- [x] Description 草案: 前 3 行 hook + 关键词自然覆盖(COPY §2.2,语言/额度口径以红线为准)
+- [x] Keywords field 草案(97/100): 见 COPY §2.1
 
 ### 2.3 基础设施
 
-- [ ] IAP 订阅配置(monthly/yearly + 7-day trial,App Store 审核 paywall 权益与 PAID_DAILY_LIMIT 一致性)
+- [x] IAP 订阅配置(本地): `VoiceTodo/Products.storekit` monthly $4.99 / yearly $39.99 + 7-day 免费试用(P7D)+ zh/en/ja 商品文案;paywall 试用时长按 StoreKit 插值显示(71f14ad);权益与 `PAID_DAILY_LIMIT = "100"` 一致
+- [ ] ASC 后台 IAP/Intro Offer/兑换码: 照 `app-store-submit-checklist.md` §5 配置(兑换码发码待 ASC 操作)
 - [ ] App Store Connect: 评论回复权限、分市场定价
-- [ ] 漏斗遥测事件确认: `install → first_record → wow_shown → quota_hit → trial_start → trial_end → paid`
+- [x] 漏斗遥测(2026-09-22 D1 开通): 购买漏斗 + onboarding 分步埋点(6a005b8)、复盘漏斗三事件(v5 T1);事件字典见 `TELEMETRY.md`
 - [ ] 评论监控通知(App Store Connect)
 
 ## 3. 4 周执行节奏
@@ -167,5 +169,5 @@ install → first_record → wow_shown → quota_hit(3/day 撞墙)
 
 1. **Wow 必须在 paywall 之前** — onboarding 任何改动不得把付费页提前到首次录音 demo 之前
 2. **TestFlight 不用于付费验证** — sandbox 数据不作数
-3. **日文市场不在本方案范围** — 日文质量未过母语审前不主动暴露
+3. **日文随 app 内置但不投放**(2026-09 拍板,取代原「日文推迟 v1.1」)— 日本語以 Beta 随 MVP 上线(设置页 Beta 标签兜底);软启动仍只投英文市场,日文市场推广属第二波、需先过母语审
 4. **4 周 ≥5% 是硬线** — 到点看数据,该 pivot 就 pivot,不情怀加时

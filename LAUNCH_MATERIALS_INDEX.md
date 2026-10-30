@@ -1,6 +1,6 @@
 # 上线材料索引(LAUNCH MATERIALS INDEX)
 
-> 生成:2026-08-23 · 分支:main
+> 生成:2026-08-23 · 更新:2026-10-28 · 分支:xuanchuan(已 fast-forward 至 main)
 > 本文件是全部宣传/提审材料的总入口:每个文件在哪、里面有什么、哪一版是权威。
 > 新增上线材料时,在本文件登记一行;材料内容变更影响"权威性备注"时同步更新。
 
@@ -24,7 +24,7 @@
 /Users/TWJ/工作/git/doflow/VoiceTodo/
 ```
 
-⚠️ `.worktrees/xuanchuan/` 下有其中 6 个的**旧镜像**(无 `app-store-submit-checklist.md`,该文件是 main 上新写的)。看内容一律以主工作目录为准,worktree 副本勿更新。
+⚠️ 历史警告(2026-08-23 的「worktree 下是旧镜像」)**已失效**:2026-10-22 起 `xuanchuan` 分支已 fast-forward 至 main 并在其上更新宣传材料;宣传材料的最新改动先落在该分支,合回 main 前以该分支为准。
 
 ---
 
@@ -40,20 +40,20 @@
 - **§4 监控与 KPI**:漏斗七事件、每周指标表、4 周后决策树(≥5% 二波 / 3-5% 迭代 / <3% pivot)
 - **§5 风险应对**:差评 24h 流程 / AI 成本熔断 /「Todoist 能做」话术 / Reddit ban 预防
 - **§6 第二波渠道**:Product Hunt / X / HN(假设成立后)
-- **附:4 条战略约束**:wow 必须在 paywall 前;TestFlight 不验证付费;日文市场不暴露;4 周硬线
+- **附:4 条战略约束**:wow 必须在 paywall 前;TestFlight 不验证付费;日文 Beta 内置不投放;4 周硬线
 
-状态:✅ 定稿(2026-08-14)。定价决策已落地(storekit $4.99/$39.99 + ASC 清单,2026-08-18 确认);trial 7 天已全链路对齐。AI 成本项:基线评测已跑(见 §4 备注,实为 GLM-4.7,成本前提待重算)。
+状态:✅ 定稿(2026-08-14),2026-10-22 状态同步。定价决策已落地(storekit $4.99/$39.99 + ASC 清单,2026-08-18 确认);trial 7 天已全链路对齐。AI 成本项**已解决**(2026-09-22 切 glm-4.5-air,成本 −93%,详见 PLAN §2.1);崩溃监控(MetricKit)、漏斗遥测(D1)、截图套件均已落地,清单勾选状态见 PLAN §2。
 
 ### 1.2 PROMOTION_COPY.md — 对外文案手册(14.1 KB)
 
 章节:
 - **§1 核心信息**:1.1 One-liner(全渠道统一 H1) · 1.2 电梯稿(30s EN) · 1.3 **Wow demo 剧本(15s GIF 分镜,Week 0 制作)**
-- **§2 App Store Listing(EN)**:2.1 Title/Subtitle/Keywords 字段 · 2.2 Description(前 3 行 hook) · 2.3 截图文案(6.9",前 3 张=wow)
+- **§2 App Store Listing(EN)**:2.1 Title/Subtitle/Keywords 字段 · 2.2 Description(前 3 行 hook) · 2.3 截图文案(6.9" 实拍套件 7 张,01/02=wow)
 - **§3 Reddit 帖子草稿**:4 sub × 4 周,每 sub 独立写,绝不 cross-post
 - **§4 回应话术**:质疑应对模板(Todoist 对比等)
 - **§5 上线日 Copy Checklist** · **§6 文案与产品一致性红线**(违反 = 拒审或差评)
 
-状态:✅ 文案全部就绪。**素材未制作**:wow GIF、6.9" 截图本身还没拍/录。
+状态:✅ 文案就绪,2026-10-22 同步 main(语言 +日本語 beta、隐私话术含显式同意)。**截图已产出**:`screenshots/{zh,en}/` 各 6 张自动实拍(10-20 重产对齐复盘入口卡改版),`06-paywall` 两张待手动补(Xcode GUI);**字幕合成管线已落地(2026-10-28)**:`marketing/render.sh` 一键重产 `marketing/out/{zh,en}/` 14 张(风格 B 衬线暖纸,三版小样拍板),zh 文案起草在 `marketing/compose/copy.js` 待终审;**wow GIF 未制作**。
 
 ### 1.3 app-store-submit-checklist.md — ASC 后台操作清单(9.9 KB)
 
@@ -62,7 +62,7 @@
 - **§1-§10**:创建 App 记录 → App 信息 → 版本信息(3.1 截图已拍板仅 iPhone · 3.3 审核备注可粘贴版) → 定价销售范围 → 订阅($4.99/$39.99 + Intro Offer 7 天) → 隐私标签 → 年龄分级 4+ → 出口合规 → 沙盒测试 → 提交审核
 - **附:审核被拒追问口径**
 
-状态:✅ 清单完整,**10 项全部未勾**。这是提审当天的执行单。
+状态:✅ 清单完整,已勾 2 项(生产额度切换/LOG_HASH_SALT,2026-08-30+09-22),其余 22 项待提审当天执行。
 
 ### 1.4 APPSTORE_REVIEW_KIT.md — 提审材料包(13.5 KB)
 
@@ -91,7 +91,7 @@
 
 章节:设计目标 / 架构 / 9 个核心事件(A 类功能使用 + B 类线上质量)/ PII 红线(绝不上报清单)/ ASC 隐私问卷 / **部署步骤(AIProxy)** / 查询示例 / 数据保留(90 天)/ 关闭遥测。
 
-状态:✅ **D1 遥测已开通(2026-09-22)**——库/schema/LOG_HASH_SALT/ADMIN_TOKEN/binding 全部就位,部署后验证 503→200、事件落库。执行记录见 `docs/telemetry-d1-enablement.md`「执行结果」。剩余:遥测开关(用户设置里的关闭入口)未实现,见该文档 §6.2。
+状态:✅ **D1 遥测已开通(2026-09-22)**——库/schema/LOG_HASH_SALT/ADMIN_TOKEN/binding 全部就位,部署后验证 503→200、事件落库。执行记录见 `docs/telemetry-d1-enablement.md`「执行结果」。设置页遥测开关已实现并合 main(9b7c75e,隐私政策「可随时关闭」承诺落地;开关 UI 待真机过目)。
 
 ---
 
@@ -99,9 +99,11 @@
 
 | 位置 | 是什么 | 为什么列出来 |
 |---|---|---|
-| `docs/mvp-japanese-launch/` | 日文市场专项计划 | 容易误认为上线材料;日文已拍板推迟 v1.1(PROMOTION_PLAN 附则 3) |
-| `LogoConcepts/`(未进 git) | 3 张 logo 概念 png + 生成 json | 宣传**素材**,App 图标候选,非文档 |
-| `AIProxy/eval/` | AI 成本评测工具(72 条 golden + runner) | PLAN §2.1 AI 成本项的配套;基线报告在 `AIProxy/eval/results/`(gitignored) |
+| `docs/mvp-japanese-launch/` | 日文市场专项计划 | 容易误认为上线材料;日本語已以 Beta 随 MVP 上线(2026-09 拍板,取代原「推迟 v1.1」),日文**市场投放**仍属第二波(PROMOTION_PLAN 附则 3) |
+| `LogoConcepts/`(已入库 f0f205a) | 3 张 logo 概念 png + 生成 json + 1024 图标加工产物 | 宣传**素材**,App 图标候选,非文档 |
+| `AIProxy/eval/` | AI 成本评测工具(72 条 golden + runner) | PLAN §2.1 AI 成本项的配套(已结项);基线报告在 `AIProxy/eval/results/`(gitignored) |
+| `screenshots/{zh,en}/` + `scripts/capture-screenshots.sh` | App Store 截图实拍套件(7 张/语言,06-paywall 手动补) | COPY §2.3 截图文案的对应产物 |
+| `marketing/`(compose + render.sh + out/) | 截图合成管线与产物(B 衬线暖纸,zh/en 各 7 张 1320×2868) | §2.3 Headline/Caption 的合成产物;raw 重产后重跑 `render.sh` 即可更新 |
 
 ## 3. 仓库外的上线材料
 
@@ -109,5 +111,5 @@
 |---|---|---|
 | 隐私政策页(发布源) | GitHub 仓库 `qingqingyu/voicetodo-privacy` → `https://qingqingyu.github.io/voicetodo-privacy/` | ✅ 已上线(2026-08-16,中英双语) |
 | App Store 商品/Intro Offer/隐私问卷 | App Store Connect 后台 | ⬜ 待配置(照 checklist §5/§6) |
-| 生产 AIProxy(额度/订阅验签/遥测 D1) | Cloudflare Worker `voicetodo-ai-proxy` | ✅ 2026-09-22 已部署(e5f03cee→0157fdee):free=3、订阅验签修复、告警 B/C 修复、P0 反刷闸门、遥测 D1 开通、主力模型灰度切 glm-4.5-air(admin override,可秒级回滚) |
+| 生产 AIProxy(额度/订阅验签/遥测 D1) | Cloudflare Worker `voicetodo-ai-proxy` | ✅ 持续部署,最近 2026-10-11(fe623db5 深读模式上线);此前 09-22/09-25/09-30/10-10 依次上:free=3、订阅验签修复、告警 B/C 修复、P0 反刷闸门、遥测 D1 开通、主力灰度切 glm-4.5-air、证书链 DER 修复。**查当前状态用 `wrangler deployments list`,勿信文档**;10-21 并发加固(b9597c4)代码已合 main 待部署 |
 | 技术支持 URL 页 | 计划复用 Pages 仓库加 support 一页纸 | ⬜ 未做(ASC 必填) |

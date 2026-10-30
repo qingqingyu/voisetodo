@@ -1,0 +1,113 @@
+/* 设计 token 提取自 UI/Shared/DesignSystem.swift(WarmTheme light 档,App 锁 Light)。
+ * 宣传图必须与 App 视觉一致:冷灰白底 + 墨蓝文字 + 珊瑚橙克制点缀。 */
+
+:root {
+  --bg: #F4F5F7;            /* WarmTheme.background */
+  --card: #FFFFFF;          /* cardBackground */
+  --ink: #1E2A3A;           /* textPrimary 深墨蓝 */
+  --ink-2: #5C6A7A;         /* textSecondary */
+  --coral: #FF8A6B;         /* primary:当前日高亮 / VoiceFAB 同色 */
+  --coral-deep: #E56B4F;    /* primaryDark */
+  --coral-text: #C44F35;    /* primaryText:浅橙底上的深橙小字 */
+  --shadow-ink: rgba(30, 42, 58, 0.14);   /* shadowMedium,基色墨蓝非黑 */
+  --shadow-ink-light: rgba(30, 42, 58, 0.10);
+
+  --font-sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", -apple-system, sans-serif;
+  --font-serif: ui-serif, "New York", "Songti SC", Georgia, serif; /* App 月份大标题用系统衬线 */
+}
+
+/* 画布:1320×2868 = 6.9" 档,CSS 像素 1:1 输出 */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 1320px;
+  height: 2868px;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.canvas {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 128px 96px 0;
+  box-sizing: border-box;
+}
+
+/* ---------- 文字区(约 22-25%) ---------- */
+.text-zone { flex: 0 0 auto; }
+
+.accent {
+  width: 104px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--coral);
+  margin-bottom: 48px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 136px;
+  line-height: 1.14;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  /* 中文行高略松,四倍数间距体系 */
+}
+body.lang-zh h1 { font-size: 128px; letter-spacing: 0.01em; font-weight: 600; }
+
+.caption {
+  margin: 40px 0 0;
+  font-size: 56px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+/* ---------- 截图区(占余下高度,悬浮卡) ---------- */
+.shot-zone {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 72px;
+  min-height: 0;
+}
+
+.phone {
+  width: 1035px;            /* 1035×2248 ≈ 剩余高度,侧边各留 ~142px 呼吸 */
+  border-radius: 48px;
+  overflow: hidden;
+  background: var(--card);
+  box-shadow: 0 32px 96px var(--shadow-ink), 0 8px 24px var(--shadow-ink-light);
+}
+
+.phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* raw 截图缺失(06-paywall 待手动补)时的占位 */
+.phone.missing { height: 100%; display: flex; align-items: center; justify-content: center; }
+.phone.missing img { display: none; }
+.phone.missing::after {
+  content: "06 raw 截图待补\A(Xcode GUI 手动截后重跑 render.sh)";
+  white-space: pre;
+  text-align: center;
+  font-size: 44px;
+  font-weight: 500;
+  color: #8E97A4;           /* textMuted */
+}
+
+/* ---------- 定版:B · 衬线暖纸(2026-10-28 三版小样中拍板) ----------
+ * 月份大标题同款衬线 + 珊瑚橙圆点 + 深橙小字;
+ * 曾有 A 极简白 / C 浅珊瑚渐变两版小样,定版后移除,历史见 git。 */
+
+body { background: linear-gradient(180deg, #F6F7F9 0%, #F1F2F5 100%); }
+h1 { font-family: var(--font-serif); font-weight: 600; }
+.accent { width: 14px; height: 14px; border-radius: 50%; margin-bottom: 48px; }
+.caption { color: var(--coral-text); }
+.phone { border-radius: 40px; }
