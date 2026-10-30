@@ -39,6 +39,9 @@ final class ScreenshotUITests: XCTestCase {
         /// 周期性种子标题(shot 03 月视图节奏感):每周二 / 每两周周三 / 每月 15 号。
         /// 标题刻意短(月历格子条宽有限)。
         let recurringTitles: (weekly: String, biweekly: String, monthly: String)
+        /// 「稍后」组种子标题(shot 04 Today 列表第四形态):刻意不含时间词
+        /// (带时间词的会落「待定日期」组,「稍后」语义 = 完全没排期)。
+        let laterTitle: String
     }
 
     private var languagePasses: [LanguagePass] {
@@ -53,7 +56,8 @@ final class ScreenshotUITests: XCTestCase {
                 ],
                 expectedExtractTitles: ["去银行办卡", "买菜", "给老妈打电话"],
                 demoStepTitle: "一句话，就整理好了",
-                recurringTitles: (weekly: "健身", biweekly: "主管一对一", monthly: "月度报表")
+                recurringTitles: (weekly: "健身", biweekly: "主管一对一", monthly: "月度报表"),
+                laterTitle: "列一下想看的电影"
             ),
             LanguagePass(
                 tag: "en", appleLocale: "en_US", suffix: "en",
@@ -66,7 +70,8 @@ final class ScreenshotUITests: XCTestCase {
                 ],
                 expectedExtractTitles: ["Go to the bank", "Buy groceries", "Call mom"],
                 demoStepTitle: "One sentence, neatly done",
-                recurringTitles: (weekly: "Gym", biweekly: "Manager 1:1", monthly: "Monthly report")
+                recurringTitles: (weekly: "Gym", biweekly: "Manager 1:1", monthly: "Monthly report"),
+                laterTitle: "Shortlist movies to watch"
             ),
         ]
     }
@@ -362,8 +367,10 @@ final class ScreenshotUITests: XCTestCase {
 
     // MARK: - 种子数据(手工 JSON,对齐 App 端 TodoItemData)
 
-    /// 构造截图种子:今日 5 条(3 开放 + 2 完成,统计条 2/5)+ 过去 30 天 ~27 条完成
-    /// (复盘月度 hero≈29、类别全覆盖)+ 未来 7 天每天 1 条(月视图即将到来圆点)。
+    /// 构造截图种子:今日 5 条(3 开放 + 2 完成)+ 过去 30 天 ~27 条完成
+    /// (复盘月度 hero≈29、类别全覆盖)+ 未来 7 天每天 1 条(月视图即将到来圆点)
+    /// + 周期性 3 条(月视图重复节奏)+ 「稍后」1 条(shot 04 第四形态;计入进度条
+    /// 口径 laterActiveCounts,见 HomeView.selectedDayStats——统计条分母随之 +1)。
     /// 日期全部由运行时 Date() 推算,任何一天跑都成立;UUID 固定序号,重跑 diff 稳定。
     private func seedJSON(for pass: LanguagePass) throws -> String {
         let calendar = Calendar.current
@@ -446,7 +453,7 @@ final class ScreenshotUITests: XCTestCase {
             timeBucket: String? = nil,
             priority: String = "normal",
             hasDueTime: Bool = false,
-            due: Double,
+            due: Double?,
             recurrence: String? = nil,
             isCompleted: Bool = false,
             completedAt: Double? = nil
@@ -455,9 +462,14 @@ final class ScreenshotUITests: XCTestCase {
             var fields: [String] = [
                 "\"id\":\"aaaa0000-0000-4000-8000-\(String(format: "%012d", index))\"",
                 "\"title\":\"\(title)\"",
-                "\"dueDate\":\(String(format: "%.3f", due))",
-                "\"hasDueTime\":\(hasDueTime)",
             ]
+            // dueDate 为 Optional 键:nil 时省略整个键(decodeIfPresent → nil),
+            // 条目落「稍后」组(HomeCalendarState.isLaterActiveTodo:无日期+无重复+
+            // 无时间信号 timeBucket/dueHint 皆空)。
+            if let due {
+                fields.append("\"dueDate\":\(String(format: "%.3f", due))")
+            }
+            fields.append("\"hasDueTime\":\(hasDueTime)")
             if let timeBucket { fields.append("\"timeBucket\":\"\(timeBucket)\"") }
             if let recurrence { fields.append("\"recurrenceRule\":\(recurrence)") }
             fields.append("\"priority\":\"\(priority)\"")
@@ -523,6 +535,12 @@ final class ScreenshotUITests: XCTestCase {
         objects.append(item(recurring.monthly, category: "work",
                             due: try lastMonthDay(monthlyDay, hour: 9),
                             recurrence: recurrenceJSON(frequency: "monthly", dayOfMonth: monthlyDay)))
+
+        // 「稍后」1 条(shot 04 Today 列表的第四种形态):无日期+无重复+零时间信号,
+        // 标题刻意不含时间词(真实语音"周末/下周"会带 dueHint 落「待定日期」组,
+        // 「稍后」组的语义就是完全没排期)。副产物:该条同时注入月历今天格子
+        // (9a14682 拍板的真实行为)。
+        objects.append(item(pass.laterTitle, category: "life", due: nil))
 
         return "[" + objects.joined(separator: ",") + "]"
     }
