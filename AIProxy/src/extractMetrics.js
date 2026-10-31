@@ -31,6 +31,29 @@ export function sanitizeExtractId(raw) {
 const SUCCESS_OUTCOMES = new Set(["success", "cache_hit", "empty_todos"]);
 const DISCONNECTED_OUTCOME = "client_disconnected";
 
+// quota_rejected 按 error_type 再分两类(任务书 task-metrics-quota-and-review-query §1.2):
+//   用户自己的限制 —— 免费额度用完 / 订阅额度 / 限速 / 深读限额,按设计拦下,
+//     不是服务故障:排除出成功率分母,也排除出耗时统计(几毫秒就返回,混进
+//     P50/P95 会把真实变慢掩盖掉)。管理接口用 userLimitRejections 单独计数。
+//   我方容量问题(key_pool_full / global_budget_exceeded(_pro))—— 用户想用但
+//     我方给不了:照旧计为失败、计入耗时,要能触发告警。
+// 与 worker.js 的 QUOTA_REJECTION_TYPES 是两回事:那个决定 outcome 写不写成
+// quota_rejected(写行口径);这个决定统计口径。error_type 不在本集合里的
+// quota_rejected 行(未来新增的闸门类型/未知值)保守计为失败——宁可多告警,
+// 不可漏告警。summarizeExtractRequests 与 evaluateExtractAlerts 共用本常量。
+const USER_LIMIT_REJECTION_TYPES = new Set([
+  "quota_exceeded",
+  "subscription_quota_exceeded",
+  "rate_limited",
+  "deepread_limit_exceeded"
+]);
+
+/// 统计口径上的「不参与评价」行:用户主动取消,或被自己的额度/限速按设计拦下。
+/// 成功率分母与耗时样本用同一排除集(两类行都不代表服务质量和解析速度)。
+function isExcludedFromStats(row) {
+  return row.outcome === DISCONNECTED_OUTCOME || USER_LIMIT_REJECTION_TYPES.has(row.error_type);
+}
+
 // 管理接口单次查询行数上限(任务书 §3.1):D1 无百分位函数,把窗口内 total_ms
 // 拉回 Worker 内排序;上限防止 168h 窗口拖垮内存 / 查询时长。多取 1 行用于
 // 判断是否被截断(截断时返回 sampled: true)。
@@ -94,19 +117,25 @@ export function percentile(values, fraction) {
 }
 
 function successRateOf(rows) {
-  // client_disconnected 出分母(见 SUCCESS_OUTCOMES 注释);分母为 0 时返回 null
-  // 而非 0 —— 「没有可评价的请求」与「全部失败」是两种语义。
-  const rated = rows.filter((r) => r.outcome !== DISCONNECTED_OUTCOME);
+  // client_disconnected 与用户额度/限速拒绝出分母(见上方口径注释);分母为 0
+  // 时返回 null 而非 0 —— 「没有可评价的请求」与「全部失败」是两种语义。
+  const rated = rows.filter((r) => !isExcludedFromStats(r));
   if (rated.length === 0) return null;
   const ok = rated.filter((r) => SUCCESS_OUTCOMES.has(r.outcome)).length;
   return ok / rated.length;
 }
 
-/// 把窗口内的一批行汇总成管理接口返回体。纯函数(时间窗口/截断标记由调用方算)。
-export function summarizeExtractRequests(rows) {
-  const totalMsValues = rows
+/// 参与耗时统计(P50/P95)的 total_ms 数值:排除取消与用户限制行后的有限值。
+function latencyValuesOf(rows) {
+  return rows
+    .filter((r) => !isExcludedFromStats(r))
     .map((r) => Number(r.total_ms))
     .filter((v) => Number.isFinite(v));
+}
+
+/// 把窗口内的一批行汇总成管理接口返回体。纯函数(时间窗口/截断标记由调用方算)。
+export function summarizeExtractRequests(rows) {
+  const totalMsValues = latencyValuesOf(rows);
   const rate = successRateOf(rows);
 
   const groupBy = (keyFn) => {
@@ -121,10 +150,12 @@ export function summarizeExtractRequests(rows) {
       const groupRate = successRateOf(groupRows);
       return {
         key,
+        // requests 是窗口内归属到该 key 的原始行数(含被排除的,与 byOutcome 对账用);
+        // successRate / p50 / p95 按排除后的口径。
         requests: groupRows.length,
         successRate: groupRate === null ? null : round4(groupRate),
-        p50Ms: percentile(groupRows.map((r) => Number(r.total_ms)).filter(Number.isFinite), 0.5),
-        p95Ms: percentile(groupRows.map((r) => Number(r.total_ms)).filter(Number.isFinite), 0.95),
+        p50Ms: percentile(latencyValuesOf(groupRows), 0.5),
+        p95Ms: percentile(latencyValuesOf(groupRows), 0.95),
         // 429 口径:该 key 上**终态**为上游 429 的行数。被 failover 吸收掉的 429
         // 记在最终成功行的 providers_tried/failover 里,不归属到原 key(表结构
         // 只存最终 key_slot,见结果文档局限说明)。
@@ -142,6 +173,9 @@ export function summarizeExtractRequests(rows) {
   return {
     requests: rows.length,
     successRate: rate === null ? null : round4(rate),
+    // 「用户自己的限制」被拦下的次数(单独计数,不进成功率/耗时)——看免费额度
+    // 撞墙频率用,与 byOutcome 的 quota_rejected 计数(两类之和)互补。
+    userLimitRejections: rows.filter((r) => USER_LIMIT_REJECTION_TYPES.has(r.error_type)).length,
     p50Ms: percentile(totalMsValues, 0.5),
     p95Ms: percentile(totalMsValues, 0.95),
     failoverCount: rows.filter((r) => Number(r.failover) === 1).length,
@@ -167,11 +201,15 @@ function round4(value) {
 ///   latency:   { breached, requests, p95Ms, slowestModel }  —— breached = 样本够 && P95 超阈值
 ///   success:   { breached, requests, successRate, failuresByModel }
 /// 样本不足(< minRequests)时 breached=false(任务书:量太小没有意义);
-/// P95 统计含失败行的 total_ms(用户体感耗时包含等失败的时间),排除 null。
-/// 成功率分母排除 client_disconnected(口径同 successRateOf)。
+/// 最小样本数按**各自参与统计的行数**判断(成功率按成功率先的有效行,耗时按
+/// 耗时有效行)——用户额度拒绝刷屏时两类样本同时缩水,不该因此反而告警。
+/// 成功率分母与耗时样本都排除 client_disconnected 与用户额度/限速拒绝(口径同
+/// successRateOf / latencyValuesOf);我方容量拒绝(key_pool_full 等)计为失败,
+/// 进失败分布与耗时。P95 统计含其余失败行的 total_ms(用户体感耗时包含等失败
+/// 的时间),排除 null。
 export function evaluateExtractAlerts(rows, { p95ThresholdMs, successMin, minRequests = EXTRACT_ALERT_MIN_REQUESTS }) {
-  const rated = rows.filter((r) => r.outcome !== DISCONNECTED_OUTCOME);
-  const latencyRows = rows.filter((r) => Number.isFinite(Number(r.total_ms)));
+  const rated = rows.filter((r) => !isExcludedFromStats(r));
+  const latencyRows = rated.filter((r) => Number.isFinite(Number(r.total_ms)));
   const p95Ms = percentile(latencyRows.map((r) => Number(r.total_ms)), 0.95);
   const successRate = successRateOf(rows);
 
