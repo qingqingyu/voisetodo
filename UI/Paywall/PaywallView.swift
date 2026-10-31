@@ -560,9 +560,14 @@ struct PaywallContent: View {
         guard monthlyAnnualTotal > Decimal(0) else { return nil }
         let saveFraction = Decimal(1) - yearly.price / monthlyAnnualTotal
         guard saveFraction > Decimal(0) else { return nil }
-        // × 100 向下取整成整数(34.6 → 34):NSDecimalNumber.intValue 向零截断,
-        // 正数即向下取整;再用整数的 .percent 样式格式化(「34%」,随语言)。
-        let percentInt = ((saveFraction * Decimal(100)) as NSDecimalNumber).intValue
+        // × 100 向下取整成整数(34.6 → 34)。不能直接 `intValue`:除法结果保留
+        // 38 位有效数字,高精度 Decimal 经 intValue 桥接会整体返回 0(实测
+        // 33.216… → 0),必须先 NSDecimalRound 到 0 位小数再取整;随后用整数的
+        // .percent 样式格式化(「34%」,随语言)。
+        var percentValue = saveFraction * Decimal(100)
+        var truncated = Decimal()
+        NSDecimalRound(&truncated, &percentValue, 0, .down)
+        let percentInt = (truncated as NSDecimalNumber).intValue
         let formatted = percentInt.formatted(.percent)
         return String(localized: "paywall.plan.save \(formatted)")
     }
