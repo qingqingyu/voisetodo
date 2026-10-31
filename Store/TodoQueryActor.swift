@@ -349,6 +349,100 @@ actor TodoQueryActor {
         }
     }
 
+    /// 回顾页/复盘第 1 步的单窗统计原料(任务书 task-metrics-quota-and-review-query §2.3)。
+    ///
+    /// 谓词与旧全量路径的内存过滤**逐条等价**(这是「数字一个不变」的地基,
+    /// 证明见各谓词处注释;对照护栏在 `ReviewWindowQueryParityTests`):
+    /// - 完成:`isCompleted && completedAt ∈ [start, end)` ≡ 旧
+    ///   `completedAt >= startDay && startOfUserDay(completedAt) < endDay`
+    ///   (endDay 是用户日起点时两个条件互为充要);
+    /// - 新增:`createdAt ∈ [start, end)` ≡ 旧 `createdInWindow` 同理。
+    /// - Parameters:
+    ///   - startDate: 窗口起点(闭;**按传入时刻精确比较**,复盘窗口传上次复盘
+    ///     完成时刻,与 `ReviewAggregator.summarize` 下界约定一致)。
+    ///   - endDate: 窗口终点(开,通常是明天用户日起点)。
+    /// - Throws: `VoiceTodoError.storageReadFailed` 数据库读取错误。
+    func reviewWindowInputs(from startDate: Date, to endDate: Date) throws -> ReviewWindowInputs {
+        let startedAt = Date()
+        let distantPast = Date.distantPast
+        let distantFuture = Date.distantFuture
+        let completedDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate {
+                $0.isCompleted
+                && ($0.completedAt ?? distantPast) >= startDate
+                && ($0.completedAt ?? distantFuture) < endDate
+            },
+            sortBy: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
+        )
+        let recurringDescriptor = FetchDescriptor<TodoOccurrenceCompletion>(
+            predicate: #Predicate {
+                $0.completedAt >= startDate && $0.completedAt < endDate
+            },
+            sortBy: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)]
+        )
+        let createdDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate {
+                $0.createdAt >= startDate && $0.createdAt < endDate
+            }
+        )
+        do {
+            let completedTodos = try modelContext.fetch(completedDescriptor).map { $0.toData() }
+            let recurringCompletions = try modelContext.fetch(recurringDescriptor).map {
+                (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
+            }
+            // 父分类按完成记录里出现的 todoId 反查(不是全部规律任务):转换成
+            // 一次性/已划掉/已完成的父任务行还在库里就查得到,已删的查不到 →
+            // 聚合层兜底 .other,与旧全量表建分类表的行为一致。
+            let parentIDs = Array(Set(recurringCompletions.map(\.todoId)))
+            var categoryById: [UUID: TodoCategory] = [:]
+            if !parentIDs.isEmpty {
+                let parentDescriptor = FetchDescriptor<TodoItem>(
+                    predicate: #Predicate { parentIDs.contains($0.id) }
+                )
+                for parent in try modelContext.fetch(parentDescriptor) {
+                    categoryById[parent.id] = parent.category
+                }
+            }
+            let createdCount = try modelContext.fetchCount(createdDescriptor)
+            VoiceTodoLog.store.debug("query_actor.review_window.fetch_success range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) completed=\(completedTodos.count) recurring=\(recurringCompletions.count) parents=\(categoryById.count) created=\(createdCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return ReviewWindowInputs(
+                completedTodos: completedTodos,
+                recurringCompletions: recurringCompletions,
+                recurringCategoryById: categoryById,
+                createdCount: createdCount
+            )
+        } catch {
+            VoiceTodoLog.store.error("query_actor.review_window.fetch_failed range_start=\(startDate.ISO8601Format(), privacy: .public) range_end=\(endDate.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
+    /// `dueDate ∈ [dueOnAfter, dueBefore)` 的待办数。调用方按旧内存过滤的
+    /// 用户日边界换算好两端再传(等价性证明见 `ReviewSummaryReading` 消费方):
+    /// 旧 `dueDay > todayStart && dueDay <= weekEnd` ≡
+    /// `dueDate ∈ [todayStart+1用户日, weekEnd+1用户日)`。不过滤完成/划掉/规律
+    /// ——旧口径就不过滤(已完成的未来到期条目也计),加了数字就变。
+    /// - Throws: `VoiceTodoError.storageReadFailed` 数据库读取错误。
+    func dueTodoCount(dueOnOrAfter dueOnAfter: Date, dueBefore: Date) throws -> Int {
+        let startedAt = Date()
+        let distantPast = Date.distantPast
+        let distantFuture = Date.distantFuture
+        let descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate {
+                ($0.dueDate ?? distantPast) >= dueOnAfter
+                && ($0.dueDate ?? distantFuture) < dueBefore
+            }
+        )
+        do {
+            let count = try modelContext.fetchCount(descriptor)
+            VoiceTodoLog.store.debug("query_actor.due_count.fetch_success due_on_or_after=\(dueOnAfter.ISO8601Format(), privacy: .public) due_before=\(dueBefore.ISO8601Format(), privacy: .public) count=\(count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            return count
+        } catch {
+            VoiceTodoLog.store.error("query_actor.due_count.fetch_failed due_on_or_after=\(dueOnAfter.ISO8601Format(), privacy: .public) due_before=\(dueBefore.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            throw VoiceTodoError.wrapStorage(error, for: .read)
+        }
+    }
+
     /// 计算区间内按日历日对齐的天数序列（含两端）。
     private static func daysBetween(_ startDate: Date, _ endDate: Date, calendar: Calendar) -> [Date] {
         let start = calendar.startOfDay(for: min(startDate, endDate))

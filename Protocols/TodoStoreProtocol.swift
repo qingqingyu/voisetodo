@@ -203,6 +203,47 @@ protocol TodoIDListing {
     func allTodoIDs() async throws -> [UUID]
 }
 
+/// 回顾页/复盘第 1 步统计的按窗读取能力。取代原先两页各自的三个全量
+/// `@Query`(全部已完成 + 全部完成记录 + 全部待办):读取量只和窗口内数据量
+/// 有关,与库里历史总量无关(任务书 docs/task-metrics-quota-and-review-query.md §2)。
+/// 「还挂着」/入口卡 N 不走本协议——两者只要开放待办,`TodoListReadable.todos`
+/// 工作集(全部未完成 + 近期完成)已完整覆盖,内存里过滤即可,无需再查库。
+protocol ReviewSummaryReading {
+    /// 回顾统计的单窗原料(完成事件 + 规律完成分类 + 窗口新增计数)。
+    /// - Parameters:
+    ///   - startDate: 窗口起点(闭;按**传入时刻**精确比较,与
+    ///     `ReviewAggregator.summarize` 的下界约定一致)。
+    ///   - endDate: 窗口终点(开)。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+    func reviewWindowInputs(from startDate: Date, to endDate: Date) async throws -> ReviewWindowInputs
+
+    /// `dueDate ∈ [dueOnOrAfter, dueBefore)` 的待办数(未来 7 天到期副文案用;
+    /// 不过滤完成/划掉/规律——与旧全量内存过滤同口径,别加条件)。
+    /// - Important: 读查询在后台 `@ModelActor` 执行;失败显式抛出,不静默回退。
+    func dueTodoCount(dueOnOrAfter: Date, dueBefore: Date) async throws -> Int
+}
+
+/// 单个统计窗口的原料(后台一次取齐,值类型跨 actor 返回)。字段口径与旧
+/// 全量路径逐一对应:两处聚合(`RecapSummaryBuilder` 新旧入口)吃同样的东西
+/// 出同样的数字,对照护栏在 `ReviewWindowQueryParityTests`。
+struct ReviewWindowInputs: Sendable {
+    /// 窗口内完成的一次性待办(`isCompleted && completedAt ∈ [start, end)`,
+    /// DTO 含 createdAt——「当天记当天做完」要它)。与旧全量 `completedTodos`
+    /// 同源同谓词(不过滤规律——历史脏行里 isCompleted 的规律父任务照旧进来,
+    /// 聚合层按 recurrenceRule 分流,口径与改前一致)。
+    let completedTodos: [TodoItemData]
+    /// 窗口内的规律任务完成记录(`completedAt ∈ [start, end)`)。
+    let recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
+    /// 本窗完成记录能查到的父任务分类(todoId → category)。**按完成记录里
+    /// 出现的 todoId 反查**(不是「全部规律任务」):完成记录的父任务可能已被
+    /// 划掉/转成一次性/已完成,只要行还在就能查到分类;查不到(父任务已删)
+    /// 由聚合层兜底 `.other`——与旧全量表建分类表的 fallback 同口径。
+    let recurringCategoryById: [UUID: TodoCategory]
+    /// `createdAt ∈ [start, end)` 的任务数(「新增」,不过滤完成态/规律)。
+    /// 只需要计数,fetchCount 不水化对象。
+    let createdCount: Int
+}
+
 /// 拆小写入能力——复盘第 2 步「拆小」按钮用(阶段 3)。
 /// 与 `TodoAbandonWriting` 互补:拆小 = 建 N 条子任务(parentTodoId 指向原任务)
 /// + 原任务标 abandonedAt + 记 split 事件,三步同事务。
@@ -212,7 +253,9 @@ protocol TodoSplitting {
 }
 
 /// 复盘五步流程需要的 store 能力集合(阶段 3,`ReviewFlowView` 的依赖类型)。
-protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, ReviewFlowRecapReading, TodoSplitting, TodoIDListing {}
+/// `ReviewSummaryReading` 是 2026-10 按窗取数改造追加的:回顾页与第 1 步的
+/// 统计原料都从它走,不再各自挂全量 `@Query`。
+protocol ReviewFlowStore: TodoListReadable, TodoMutationWriting, InsightContextReading, ReviewFlowRecapReading, TodoSplitting, TodoIDListing, ReviewSummaryReading {}
 
 /// 日历 occurrence 读取与写入能力。
 protocol CalendarOccurrenceStore {

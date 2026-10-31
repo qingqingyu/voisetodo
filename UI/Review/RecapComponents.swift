@@ -484,11 +484,15 @@ struct ReviewNotesListView: View {
 
 // MARK: - 摘要构建(共用聚合逻辑)
 
-/// 把 @Query 原料聚合成 `ReviewSummary`。两个窗口(ReviewView 与复盘第 1 步
-/// 共用聚合核,避免 40 行逻辑复制两份):
-/// - `monthSummary`:滚动 30 天(回顾页 / 统计页);
-/// - `weekSummary(since:)`:上次复盘至今(v3 拍板 1,复盘第 1 步专用;
-///   首次复盘回落近 7 天)。
+/// 把取数原料聚合成 `ReviewSummary`。两条取数路径、三个窗口(ReviewView 与
+/// 复盘第 1 步共用聚合核,避免 40 行逻辑复制两份):
+/// - **按窗取数路径**(2026-10 改造,生产主路):`summary(inputs:)` 吃
+///   `ReviewSummaryReading.reviewWindowInputs` 的窗口原料——回顾页与第 1 步
+///   的读取量只和窗口内数据量有关,与历史总量无关;
+/// - **全量快照路径**(保留):`monthSummary`(滚动 30 天)/ `weekSummary(since:)`
+///   (上次复盘至今,v3 拍板 1;首次回落近 7 天)——消费方是流程容器地板 B 的
+///   `backlogFlowNumbers`(全量快照口径)与新旧对照测试(`ReviewWindowQueryParityTests`
+///   拿它当旧算法基准)。
 /// 口径:
 /// - 一次性完成 + 规律任务完成记录 union;
 /// - 未来 7 天到期数作统计卡副文案(完成率已下岗,2026-08-23)。
@@ -498,7 +502,7 @@ enum RecapSummaryBuilder {
     ///   - today: 参照「今天」。
     ///   - calendar: 日历(日界走 `DayClock` 用户日)。
     ///   - periodLabel: 周期标签覆盖值。窗口是滚动 30 天,默认日历月名与区间
-    ///     错位;两个生产调用方(`ReviewView` / 统计页)都传「近 30 天」,
+    ///     错位;调用方(对照测试与历史上的回顾页)都传「近 30 天」,
     ///     缺省保留旧行为(日历月名)。
     ///   - allTodos: 全量待办 DTO(不过滤完成态——分母与分类表都要查父任务)。
     ///   - completedTodos: 已完成的一次性待办 DTO。
@@ -546,7 +550,22 @@ enum RecapSummaryBuilder {
         return (start, end)
     }
 
+    /// `weekSummary` 的周期标签(单一来源):「8月28日–9月4日」形态,统计下界
+    /// 是时刻粒度、标签展示用户日粒度(见 weekSummary 注释)。按窗取数路径
+    /// (`summary(inputs:)`)与全量路径(weekSummary)共用,防两处格式漂移。
+    static func weekWindowLabel(
+        windowStart: Date,
+        today: Date,
+        calendar: Calendar
+    ) -> String {
+        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
+        let sinceDay = DayClock.startOfUserDay(for: windowStart, calendar: calendar)
+        return "\(sinceDay.formatted(.dateTime.month(.abbreviated).day()))–\(todayStart.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
     /// 上次复盘至今的窗口(v3 拍板 1,复盘第 1 步专用)。
+    /// (按窗取数路径见下方 `summary(inputs:)`;本函数保留给全量快照消费方
+    /// ——流程容器地板 B 的 `backlogFlowNumbers` 与对照测试。)
     ///
     /// 窗口 = [上次复盘**完成时刻**, 明天用户日起点)。起点**不折算用户日**
     /// (2026-09-07 实施审阅发现 2 拍板:时刻粒度)——折算成用户日会把复盘
@@ -568,22 +587,55 @@ enum RecapSummaryBuilder {
         recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)]
     ) -> ReviewSummary {
         let window = weekWindow(since: since, today: today, calendar: calendar)
-        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
-        let windowStart = window.start
-        let end = window.end
-        // 展示到「今天」(闭端);统计 end 是明天 0 点(开端)——同一约定。
-        // 标签用 since 的用户日(天粒度),统计下界是时刻粒度(见函数注释)。
-        let sinceDay = DayClock.startOfUserDay(for: windowStart, calendar: calendar)
-        let label = "\(sinceDay.formatted(.dateTime.month(.abbreviated).day()))–\(todayStart.formatted(.dateTime.month(.abbreviated).day()))"
         return buildSummary(
             today: today,
             calendar: calendar,
-            label: label,
-            start: windowStart,
-            end: end,
+            label: weekWindowLabel(windowStart: window.start, today: today, calendar: calendar),
+            start: window.start,
+            end: window.end,
             allTodos: allTodos,
             completedTodos: completedTodos,
             recurringCompletions: recurringCompletions
+        )
+    }
+
+    /// 按窗取数路径的入口(2026-10 按窗查询改造):原料来自
+    /// `ReviewSummaryReading.reviewWindowInputs`(窗口内已完成 + 规律完成 +
+    /// 父分类 + 新增计数),「还挂着」与到期数由调用方按各自口径备好传入
+    /// (还挂着 = 开放工作集口径,见 `pendingOneOffCount` 参数;到期数 =
+    /// `dueTodoCount` 按用户日边界换算后的范围计数)。
+    ///
+    /// 与全量路径(`monthSummary`/`weekSummary`)共用同一个聚合核 `assemble`,
+    /// 同样的输入必出同样的数字——「页面上所有数字一个不变」的对照护栏在
+    /// `VoiceTodoTests/Review/ReviewWindowQueryParityTests`(新旧两路同数据
+    /// 逐字段比对)。
+    /// - Parameters:
+    ///   - inputs: 窗口原料。窗口外的行不会进来也**不需要**进来:assemble 内
+    ///     的 `summarize`/`sameDayCompletions`/`oneOffCompletions` 本就按窗口
+    ///     再过滤一次,窗口内原料过这些过滤器与全量原料等价。
+    ///   - pendingOneOffCount: 「还挂着」(全时段开放积压,与入口卡/卡堆同源,
+    ///     调用方从 `TodoListReadable.todos` 工作集内存过滤,勿按窗口截)。
+    ///   - upcomingDueIn7DaysCount: 未来 7 天到期数(`dueTodoCount` 的返回值)。
+    static func summary(
+        calendar: Calendar = Calendar.current,
+        periodLabel: String,
+        start: Date,
+        end: Date,
+        inputs: ReviewWindowInputs,
+        pendingOneOffCount: Int,
+        upcomingDueIn7DaysCount: Int
+    ) -> ReviewSummary {
+        assemble(
+            calendar: calendar,
+            label: periodLabel,
+            start: start,
+            end: end,
+            completedTodos: inputs.completedTodos,
+            recurringCompletions: inputs.recurringCompletions,
+            recurringCategoryById: inputs.recurringCategoryById,
+            createdCount: inputs.createdCount,
+            pendingOneOffCount: pendingOneOffCount,
+            upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
         )
     }
 
@@ -601,23 +653,58 @@ enum RecapSummaryBuilder {
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
 
+        // 未来 7 天到期数:旧口径不过滤完成态(全量 allTodos 上内存过滤)。
+        // 按窗路径把同一边界换算成 dueDate 范围由 `dueTodoCount` 计数
+        // (等价性见其注释),本函数保留全量算法作为对照基准。
         let upcomingDueIn7DaysCount = allTodos.filter { item in
             guard let due = item.dueDate else { return false }
             let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
             return dueDay > todayStart && dueDay <= weekEnd
         }.count
 
+        // 父分类表:全量表建(规律父任务 isCompleted==false,只有全量查得到;
+        // 已删父任务查不到 → assemble 兜底 .other)。
+        let categoryById = Dictionary(allTodos.map { ($0.id, $0.category) }, uniquingKeysWith: { first, _ in first })
+
+        return assemble(
+            calendar: calendar,
+            label: label,
+            start: start,
+            end: end,
+            completedTodos: completedTodos,
+            recurringCompletions: recurringCompletions,
+            recurringCategoryById: categoryById,
+            createdCount: ReviewAggregator.createdInWindow(allTodos, from: start, to: end, calendar: calendar),
+            pendingOneOffCount: ReviewAggregator.pendingOneOffCount(allTodos),
+            upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
+        )
+    }
+
+    /// 新旧两条取数路径共用的聚合尾段(私有):窗口内事件 → summarize →
+    /// sameDay/oneOff/created/pending。输入等价则输出逐字段相等
+    /// (护栏:`ReviewWindowQueryParityTests`)。
+    private static func assemble(
+        calendar: Calendar,
+        label: String,
+        start: Date,
+        end: Date,
+        completedTodos: [TodoItemData],
+        recurringCompletions: [(id: UUID, todoId: UUID, completedAt: Date)],
+        recurringCategoryById: [UUID: TodoCategory],
+        createdCount: Int,
+        pendingOneOffCount: Int,
+        upcomingDueIn7DaysCount: Int
+    ) -> ReviewSummary {
         // 一次性完成 + 规律完成(union,分类取父任务)。
         var events = completedTodos.compactMap { item -> CompletionEvent? in
             guard let completedAt = item.completedAt else { return nil }
             return CompletionEvent(id: item.id, completedAt: completedAt, category: item.category)
         }
-        let categoryById = Dictionary(allTodos.map { ($0.id, $0.category) }, uniquingKeysWith: { first, _ in first })
         for completion in recurringCompletions {
             events.append(CompletionEvent(
                 id: completion.id,
                 completedAt: completion.completedAt,
-                category: categoryById[completion.todoId] ?? .other
+                category: recurringCategoryById[completion.todoId] ?? .other
             ))
         }
 
@@ -643,15 +730,6 @@ enum RecapSummaryBuilder {
             to: end,
             calendar: calendar
         )
-        // 判词证据链的另两个数(2026-09-01 拍板):新增(不过滤规律)与
-        // 还挂着(与入口卡/卡堆同口径)。allTodos 不过滤完成态。
-        let createdCount = ReviewAggregator.createdInWindow(
-            allTodos,
-            from: start,
-            to: end,
-            calendar: calendar
-        )
-        let pendingOneOffCount = ReviewAggregator.pendingOneOffCount(allTodos)
         return ReviewSummary(
             periodLabel: label,
             total: result.total,

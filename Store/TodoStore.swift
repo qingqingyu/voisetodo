@@ -569,6 +569,18 @@ final class TodoStore:
         try await queryActor.allTodoIDs()
     }
 
+    /// 回顾页/复盘第 1 步的单窗统计原料(`ReviewSummaryReading`;读查询下沉到
+    /// `queryActor`)。口径见 `TodoQueryActor.reviewWindowInputs(from:to:)`;失败显式抛出。
+    func reviewWindowInputs(from startDate: Date, to endDate: Date) async throws -> ReviewWindowInputs {
+        try await queryActor.reviewWindowInputs(from: startDate, to: endDate)
+    }
+
+    /// `dueDate ∈ [dueOnOrAfter, dueBefore)` 的待办数(`ReviewSummaryReading`,
+    /// 未来 7 天到期副文案)。口径见 `TodoQueryActor.dueTodoCount`;失败显式抛出。
+    func dueTodoCount(dueOnOrAfter: Date, dueBefore: Date) async throws -> Int {
+        try await queryActor.dueTodoCount(dueOnOrAfter: dueOnOrAfter, dueBefore: dueBefore)
+    }
+
     /// 拆小(复盘第 2 步「拆小」按钮,docs/todo-review-flow-design.md §阶段 3):
     /// 建 N 条子任务(`parentTodoId` 指向原任务)+ 原任务标 `abandonedAt` + 记 split 事件。
     /// 三步同 context 同事务,失败一起回滚(错误显式传播)。
@@ -931,7 +943,8 @@ final class TodoStore:
 
         let pending = FetchDescriptor<TodoItem>(
             // 工作集 = 未完成 && 未划掉:划掉的任务对首页/widget 是不可见工作
-            // (仍在库里、仍在完成率分母——分母走 ReviewView 的 @Query,不经此谓词)。
+            // (仍在库里、仍在完成率分母——分母走 `TodoQueryActor` 的按窗查询,
+            // 不经此谓词)。
             predicate: #Predicate { !$0.isCompleted && $0.abandonedAt == nil },
             sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
         )

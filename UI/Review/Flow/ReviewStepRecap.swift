@@ -1,11 +1,16 @@
 import SwiftUI
-import SwiftData
 
 /// 第 1 步 · 回顾(阶段 3;v6 视觉改版:A2 原型落地——主卡置顶逐条列表 +
 /// 三数字分窗口 + 当天完成卡 + 上期笔记卡)。
 /// 数字口径与出卡条件全部不变(R1:第 1/2 块=上次复盘以来,「还挂着」=全部
 /// 积压;不加算式);`RecapHeroSection` / `RecapStatCard` 不再被本步使用,
 /// 回顾页(`ReviewView`)继续用它们,外观零变化(R11)。
+///
+/// 2026-10 按窗取数改造:原先三个全量 `@Query` 移除,摘要由容器
+/// (`ReviewFlowView.loadRecapSummary`)经 `ReviewSummaryReading` 按窗查好传入
+/// ——窗口 = 上次复盘至今(v3 拍板 1,首次回落近 7 天),读取量与历史总量
+/// 无关;划卡写库后回跳本步会重查(原 `@Query` 自动重跑的行为保留,只是
+/// 只重算本期范围)。nil(首次加载未完成)时数字块暂不渲染,不闪零值。
 struct ReviewStepRecap: View {
     /// 上次复盘日期(2026-08-23 从回顾页入口卡移入)。nil(首次复盘)时该行隐藏。
     var lastReviewDate: Date? = nil
@@ -22,41 +27,16 @@ struct ReviewStepRecap: View {
     /// 上期笔记是否为原样保存的 AI 草稿(v6 §3.2):true 时小标题旁挂
     /// 「AI 草稿(你保留的)」chip——原样草稿冒充「用户写的」违背 v5 D9。
     var lastNoteIsUneditedAIDraft: Bool = false
+    /// 本期统计摘要(容器按窗取数后传入;窗口口径见
+    /// `ReviewFlowView.loadRecapSummary`)。nil = 加载中,数字块不渲染。
+    var summary: ReviewSummary? = nil
+
     /// 对质区展开态(默认收 4 行,点击「展开全文」看完整原话——长笔记的
     /// 「原话」不能截死,对质价值就在完整原话)。
     @State private var noteExpanded = false
 
     /// AX 字号判定(v6 §1.6:三数字块在大字号下竖排)。
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    @Query(
-        filter: #Predicate<TodoItem> { $0.isCompleted },
-        sort: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
-    )
-    private var completedTodos: [TodoItem]
-
-    @Query(sort: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)])
-    private var recurringCompletions: [TodoOccurrenceCompletion]
-
-    @Query private var allTodos: [TodoItem]
-
-    private let calendar = Calendar.current
-
-    private var summary: ReviewSummary {
-        // v3 拍板 1:窗口 = 上次复盘至今(与每周一的提醒节奏对齐;首次复盘
-        // 回落近 7 天)。回顾页/统计页仍走 monthSummary(滚动 30 天),两窗
-        // 有意不同——复盘回答「这一段做了什么」,统计页看长趋势。
-        RecapSummaryBuilder.weekSummary(
-            since: lastReviewDate,
-            today: Date(),
-            calendar: calendar,
-            allTodos: allTodos.map { $0.toData() },
-            completedTodos: completedTodos.map { $0.toData() },
-            recurringCompletions: recurringCompletions.map {
-                (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
-            }
-        )
-    }
 
     var body: some View {
         ScrollView {
@@ -65,15 +45,16 @@ struct ReviewStepRecap: View {
 
                 if let outcome = lastPinnedOutcome {
                     pinnedMainCard(outcome: outcome)
-                } else {
+                } else if let summary {
                     // 无上次置顶(首次复盘/上次没选/上次选的已全删)→ 回退
                     // 完成数句式,不硬造「上次没有承诺」的空标题(v3 拍板 2)。
-                    countFallbackHeader
+                    countFallbackHeader(summary: summary)
                 }
 
-                statsSection
-
-                sameDayCard
+                if let summary {
+                    statsSection(summary: summary)
+                    sameDayCard(summary: summary)
+                }
 
                 if let lastNote {
                     lastNoteCard(lastNote)
@@ -188,7 +169,7 @@ struct ReviewStepRecap: View {
 
     /// 无上次置顶的回退头:完成数句式(v3 拍板 2 的回退路径,字体改一级
     /// 无衬线、颜色 textPrimary——v6 §2 第 1 步)。
-    private var countFallbackHeader: some View {
+    private func countFallbackHeader(summary: ReviewSummary) -> some View {
         VStack(spacing: WarmSpacing.xxs) {
             Text(String(localized: "review.hero.count_\(summary.total)"))
                 .font(WarmFont.title(24))
@@ -211,7 +192,7 @@ struct ReviewStepRecap: View {
     /// 「上次复盘以来」,右对第三块「全部积压」(R1:两组口径不同必须说出口;
     /// **不写算式**)。原 `review.stat.pending_note` 说明行不再显示(回顾页不受影响)。
     /// 高度随文字增长(无固定 frame);AX 字号下三块竖排、说明两行(§1.6)。
-    private var statsSection: some View {
+    private func statsSection(summary: ReviewSummary) -> some View {
         VStack(alignment: .leading, spacing: WarmSpacing.xs) {
             Group {
                 if dynamicTypeSize.isAccessibilitySize {
@@ -335,7 +316,7 @@ struct ReviewStepRecap: View {
 
     /// 「其中 N 件是当天记下、当天做完的」+ 判词放进一张卡。出卡条件不变
     /// (`showsSameDayLine` / `showsSameDayJudgment` 门槛含同口径分母,v3)。
-    private var sameDayCard: some View {
+    private func sameDayCard(summary: ReviewSummary) -> some View {
         Group {
             if summary.showsSameDayLine {
                 RecapCard {

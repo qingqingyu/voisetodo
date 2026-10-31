@@ -1137,12 +1137,18 @@ struct ReviewFlowView: View {
 
     /// 复盘漏斗 A17 的时长起点(v5 T1/E8):首次创建时记,finishSession 算
     /// durationMS。必须 `@State`——fullScreenCover 的 content 闭包会随父视图
-    /// body 重评估重新执行 init(复盘内每次写库都触发 ReviewView 的 @Query
-    /// 更新),普通存储属性会被重置,时长会塌缩到最后一次决定的时刻。
+    /// body 重评估重新执行 init(复盘内每次写库都会触发父页状态更新),普通
+    /// 存储属性会被重置,时长会塌缩到最后一次决定的时刻。
     @State private var startedAt = Date()
     /// 收尾重入护栏:dismiss 动画完成前连点「完成」会让 finishSession 跑两次
     /// (session 双追加 + `review_flow_finished` 双记),首跑即锁死。
     @State private var hasFinishedSession = false
+
+    /// 第 1 步的统计摘要(2026-10 按窗取数改造:原先挂在 `ReviewStepRecap`
+    /// 上的三个全量 `@Query` 移到容器层按窗查——第 2 步每次划卡写库不再触发
+    /// 无时间下界的全表重查,回跳第 1 步时经 `.task(id: currentStep)` 只重查
+    /// 本期窗口)。nil = 加载中,第 1 步数字块暂不渲染。
+    @State private var recapSummary: ReviewSummary?
 
     @State private var state: ReviewFlowState
 
@@ -1227,6 +1233,14 @@ struct ReviewFlowView: View {
         }
         .task { recordFlowStarted() }
         .task { await loadInsightContext() }
+        .task(id: state.currentStep) {
+            // 第 1 步(重)进入时按窗重查摘要:首次进流程与从后续步骤回跳都
+            // 覆盖——划卡/拆小/排期写过库,回跳后的数字要反映这些变化
+            // (原先 @Query 自动重跑的行为,现在只重算本期范围)。
+            if state.currentStep == .recap {
+                await loadRecapSummary()
+            }
+        }
         // E6 呈现镜像(必须):根级同意 sheet 在本 fullScreenCover 常驻期间
         // 无法呈现(UKit 单 presenter 单模态,实验证实)——不镜像的话,未同意
         // 用户在复盘内点麦克风无任何反应,且 `ensureAIConsent` 的 continuation
@@ -1295,6 +1309,44 @@ struct ReviewFlowView: View {
     }
 
     // MARK: 数据加载
+
+    /// 第 1 步统计摘要的按窗取数(2026-10 改造):窗口 = 上次复盘至今
+    /// (v3 拍板 1,首次回落近 7 天),与 `weekSummary` 经 `weekWindow` 单一
+    /// 来源;「还挂着」从 `store.todos` 工作集内存过滤(全时段积压口径,
+    /// 与入口卡/卡堆三处同源的硬约束),到期数走 `dueTodoCount`。
+    /// 失败不静默:error 日志 + toast(现有 `presentError` 路径),摘要保留
+    /// 上一份;`.task(id: currentStep)` 回跳本步时自动重试。
+    private func loadRecapSummary() async {
+        let since = state.previousSessions.last?.completedAt
+        let today = Date()
+        let calendar = Calendar.current
+        let window = RecapSummaryBuilder.weekWindow(since: since, today: today, calendar: calendar)
+        do {
+            async let inputs = store.reviewWindowInputs(from: window.start, to: window.end)
+            let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
+            let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
+            async let dueCount = store.dueTodoCount(
+                dueOnOrAfter: calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart,
+                dueBefore: calendar.date(byAdding: .day, value: 1, to: weekEnd) ?? weekEnd
+            )
+            let pendingCount = ReviewAggregator.pendingOneOffCount(store.todos)
+            let (windowInputs, upcoming) = try await (inputs, dueCount)
+            recapSummary = RecapSummaryBuilder.summary(
+                calendar: calendar,
+                periodLabel: RecapSummaryBuilder.weekWindowLabel(
+                    windowStart: window.start, today: today, calendar: calendar
+                ),
+                start: window.start,
+                end: window.end,
+                inputs: windowInputs,
+                pendingOneOffCount: pendingCount,
+                upcomingDueIn7DaysCount: upcoming
+            )
+        } catch {
+            VoiceTodoLog.coordinator.error("review.flow.recap_summary.load.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            presentError(error)
+        }
+    }
 
     /// 洞察原料在流程启动时 await 一次(§1.4:不放 body)。失败显式记错误态,
     /// 洞察步展示错误 + 重试;triage 的推迟斜杠降级为「记下 N 天了」,不静默。
@@ -1386,7 +1438,10 @@ struct ReviewFlowView: View {
                 // `lastConfrontationEntry(sessions:)`,供单测 S6 三态;
                 // §3.2 连带把「是否原样 AI 草稿」一起带给第 1 步)。
                 lastNote: lastEntry?.note,
-                lastNoteIsUneditedAIDraft: lastEntry?.isUneditedAIDraft ?? false
+                lastNoteIsUneditedAIDraft: lastEntry?.isUneditedAIDraft ?? false,
+                // 2026-10 按窗取数:摘要由容器 `loadRecapSummary` 查好传入,
+                // 视图不再挂全量 @Query(数字口径不变,护栏 ReviewWindowQueryParityTests)。
+                summary: recapSummary
             )
         case .triage:
             ReviewStepTriage(
