@@ -145,6 +145,13 @@ final class AppCoordinator: ObservableObject {
     /// pending 恢复路径一次确认覆盖多次提取,存恢复流程 flowID(只关联日志,不关联单次提取)。
     private var confirmExtractionContext: (extractID: String, path: String)?
 
+    /// 解析准确率埋点的「原始解析」快照。确认面板通过 `$extractedTodos` 绑定**就地**
+    /// 编辑/删除(TodoDraftEditorPanel 写回、TodoItemRowWithDelete 删除),点确认时
+    /// `extractedTodos` 已是用户改过的状态——对比引擎需要一份 AI 输出落进面板当时的
+    /// 原始值。与 `extractedTodos` 同生命周期:AI 结果写入时一起快照(含默认提前量
+    /// 回填——回填不是用户编辑),清理时一起清空。快照只喂本地对比/分类,不进日志。
+    private var confirmParseOriginals: [ExtractedTodo]?
+
     // MARK: - Initialization
 
     init(
@@ -709,6 +716,7 @@ final class AppCoordinator: ObservableObject {
             // 草稿出生点(离线恢复):同样回填全局默认提前量。
             let defaultOffset = ReminderOffsetConfig.effectiveDefaultOffset()
             extractedTodos = result.extractedTodos.map { $0.backfilledDefaultReminderOffset(defaultOffset) }
+            confirmParseOriginals = extractedTodos
             confirmExtractionContext = (extractID: flowID, path: ExtractPath.pendingRecovery)
             showConfirmSheet = true
             VoiceTodoLog.coordinator.info("coordinator.foreground.pending_success id=\(flowID, privacy: .public) extractedCount=\(result.extractedTodos.count) processedWithTodos=\(result.processedWithTodosIds.count) processedWithoutTodos=\(result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
@@ -854,12 +862,16 @@ final class AppCoordinator: ObservableObject {
             // docs/task-parse-correction-telemetry.md §2):对比原始解析与确认结果,
             // 只传计数/枚举/差值,绝不传标题、dueHint 原文。对比与上报放后台,
             // 不拖慢确认路径;extractID 用任务局部绑定进 payload(与 extract_outcome 同源)。
+            // 「原始」必须取 confirmParseOriginals:面板编辑/删除直接写进 extractedTodos,
+            // confirm 时 originalTodos(= extractedTodos)已是用户改过的状态,自己比自己
+            // 恒零。快照缺失时退回 extractedTodos(不为崩,只损失对比精度)。
             let parseContext = confirmExtractionContext
+            let parseOriginals = confirmParseOriginals ?? originalTodos
             let telemetryLocale = ParseCorrectionTelemetry.localeCode(
                 from: todos.first?.localeIdentifier ?? fallbackLearningLocaleIdentifier
             )
             Task.detached(priority: .utility) {
-                let diff = ParseCorrectionDiff.confirmSheet(originals: originalTodos, confirmed: todos)
+                let diff = ParseCorrectionDiff.confirmSheet(originals: parseOriginals, confirmed: todos)
                 VoiceTodoLog.$extractID.withValue(parseContext?.extractID ?? "none") {
                     Telemetry.record(.parseConfirmed(
                         path: parseContext?.path ?? ExtractPath.main,
@@ -1070,6 +1082,7 @@ final class AppCoordinator: ObservableObject {
         isProcessingTranscript = false
         extractedTodos = []
         confirmExtractionContext = nil
+        confirmParseOriginals = nil
         conflictWarnings = [:]
         showConfirmSheet = false
         pendingItemIds = []
@@ -1180,6 +1193,7 @@ final class AppCoordinator: ObservableObject {
         isProcessingTranscript = false
         extractedTodos = []
         confirmExtractionContext = nil
+        confirmParseOriginals = nil
         conflictWarnings = [:]
         showConfirmSheet = false
         pendingGeneratedTodoIdsByPendingId = [:]
@@ -1253,8 +1267,10 @@ final class AppCoordinator: ObservableObject {
             showConfirmSheet = true
             VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_early id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
         }
-        // 本流程自此拥有确认面板内容,parse_confirmed 的 path/extractID 随之切到本次提取
+        // 本流程自此拥有确认面板内容,parse_confirmed 的 path/extractID 随之切到本次提取;
+        // 上一流程的原始快照随之作废,待 partial 帧重新填充
         confirmExtractionContext = (extractID: extractID, path: timing.path)
+        confirmParseOriginals = nil
 
         extractionTask = Task {
             let events = transcriptProcessingFlow.process(
@@ -1299,6 +1315,9 @@ final class AppCoordinator: ObservableObject {
             // 流结束后不再有 partial,用户改成"准时"的编辑随之保留。
             let defaultOffset = ReminderOffsetConfig.effectiveDefaultOffset()
             extractedTodos = result.todos.map { $0.backfilledDefaultReminderOffset(defaultOffset) }
+            // partial 帧整批覆盖 extractedTodos,快照随最后一帧定格为 AI 最终输出
+            // (流式期间行编辑被禁,用户编辑只发生在流结束后、写进 extractedTodos,不进快照)。
+            confirmParseOriginals = extractedTodos
         case .success:
             // 流式稳定后异步触发撞车检测;失败不阻断,只记日志。
             // 保存 Task 引用,便于 cancelTodos 时显式取消(避免 sheet 关闭后仍在后台跑)。
@@ -1367,6 +1386,7 @@ final class AppCoordinator: ObservableObject {
         conflictDetectionTask = nil
         extractedTodos = []
         confirmExtractionContext = nil
+        confirmParseOriginals = nil
         conflictWarnings = [:]
         showConfirmSheet = false
     }

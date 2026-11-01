@@ -294,6 +294,7 @@ final class ParseCorrectionTelemetryTests: XCTestCase {
     // MARK: - 3. after_save 判定与去重(§6.3)
 
     private func afterSaveInput(
+        todoID: UUID = UUID(),
         origin: TaskEventOrigin = .detail,
         source: TodoSource = .voice,
         outcome: ExtractionOutcome = .parsed,
@@ -306,7 +307,7 @@ final class ParseCorrectionTelemetryTests: XCTestCase {
     ) -> ParseCorrectionRecorder.AfterSaveInput {
         let now = date(2026, 11, 1, hour: 12)
         return ParseCorrectionRecorder.AfterSaveInput(
-            todoID: UUID(),
+            todoID: todoID,
             origin: origin,
             source: source,
             extractionOutcome: outcome,
@@ -407,14 +408,14 @@ final class ParseCorrectionTelemetryTests: XCTestCase {
         XCTAssertEqual(events[0].params["minutesSinceCreated"], "10")
         XCTAssertEqual(events[0].params["expressionKind"], "weekday", "下周五 → weekday")
 
-        // 时间字段是另一个 key,第一次仍要记
-        let timeInput = afterSaveInput(oldDueDate: date(2026, 11, 6, hour: 9), newDueDate: date(2026, 11, 6, hour: 10))
-        let secondTodoEvents: Void = {
-            ParseCorrectionRecorder.recordAfterSaveIfNeeded(
-                timeInput, reportedSet: set, sink: { events.append($0) }, now: now, calendar: utc
-            )
-        }()
-        _ = secondTodoEvents
+        // 同一条待办:时间字段是另一个 key,第一次仍要记
+        let timeInput = afterSaveInput(
+            todoID: input.todoID,
+            oldDueDate: date(2026, 11, 6, hour: 9), newDueDate: date(2026, 11, 6, hour: 10)
+        )
+        ParseCorrectionRecorder.recordAfterSaveIfNeeded(
+            timeInput, reportedSet: set, sink: { events.append($0) }, now: now, calendar: utc
+        )
         XCTAssertEqual(events.count, 2)
         XCTAssertEqual(events[1].params["minuteDelta"], "60")
     }

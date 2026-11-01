@@ -125,10 +125,11 @@ enum ParseCorrectionDiff {
                 continue
             }
             diff.kept += 1
-            diff.keptKinds[expressionKind(of: original, locale: locale), default: 0] += 1
+            // 说法类型算一次,kinds 分母与字段修正明细共用(全套正则,不重复跑)
+            let kind = expressionKind(of: original, locale: locale)
+            diff.keptKinds[kind, default: 0] += 1
 
             var editedFields = 0
-            let kind = expressionKind(of: original, locale: locale)
             if let correction = dateCorrection(original: original, final: final, kind: kind, calendar: calendar) {
                 diff.dateEdited += 1
                 diff.fieldCorrections.append(correction)
@@ -229,9 +230,11 @@ enum ParseCorrectionDiff {
                 expressionKind: kind, basis: nil, recurring: recurring
             ))
         case (true, true):
+            // oldTimed / newTimed 已保证两端 dueDate 非 nil;guard 绑定只为去掉强解包
+            guard let old = oldDueDate, let new = newDueDate else { break }
             let delta = minuteDelta(
-                from: minuteOfDay(of: oldDueDate!, calendar: calendar),
-                to: minuteOfDay(of: newDueDate!, calendar: calendar)
+                from: minuteOfDay(of: old, calendar: calendar),
+                to: minuteOfDay(of: new, calendar: calendar)
             )
             if delta != 0 {
                 result.append(FieldCorrection(
@@ -489,6 +492,9 @@ enum ParseCorrectionRecorder {
             newHasDueTime: input.newHasDueTime,
             oldDueHint: input.oldDueHint,
             recurring: input.recurring,
+            // 分类与事件 locale 参数同源(取输入的 localeIdentifier),避免未来加语言
+            // 特化规则时分类悄悄落到系统 locale(当前规则三语并集,行为无差异)
+            locale: input.localeIdentifier.map { Locale(identifier: $0) } ?? .current,
             calendar: calendar
         )
         guard !corrections.isEmpty else { return }

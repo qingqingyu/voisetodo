@@ -300,7 +300,8 @@ enum TelemetryEvent {
                 "recurrenceEdited": String(diff.recurrenceEdited),
                 "reminderEdited": String(diff.reminderEdited),
                 "categoryEdited": String(diff.categoryEdited),
-                // 各说法类型的分母计数,紧凑编码("weekday:2,none:1"),只含枚举名和数字
+                // 各说法类型的分母计数,JSON 对象串(如 {"weekday":2,"none":1}),按枚举
+                // 声明顺序稳定输出,只含枚举名和数字;D1 侧 json_each 可直接拆
                 "kinds": diff.kindsEncoding
             ]
         case let .parseFieldCorrected(stage, locale, correction, minutesSinceCreated):
