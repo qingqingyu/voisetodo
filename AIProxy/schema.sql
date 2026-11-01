@@ -107,3 +107,68 @@ CREATE INDEX IF NOT EXISTS idx_er_extract ON extract_requests(extract_id);
 --   JOIN telemetry_events e ON e.extract_id = r.extract_id AND e.event_name = 'extract_outcome'
 --   WHERE r.extract_id IS NOT NULL
 --   ORDER BY r.received_at DESC LIMIT 20;
+--
+-- 解析准确率（parse_confirmed / parse_field_corrected，2026-11-01，
+-- 任务书 docs/task-parse-correction-telemetry.md；口径详见 TELEMETRY.md
+-- 「parse_confirmed / parse_field_corrected 口径」一节。服务端不用改代码，
+-- 事件照常进 telemetry_events）：
+--
+-- 确认面板修改率 / 删除率 / 日期修改率（按语言分组）：
+--   SELECT json_extract(params, '$.locale') AS locale,
+--          SUM(CAST(json_extract(params, '$.kept') AS INTEGER)) AS kept,
+--          SUM(CAST(json_extract(params, '$.dropped') AS INTEGER)) AS dropped,
+--          SUM(CAST(json_extract(params, '$.extracted') AS INTEGER)) AS extracted,
+--          SUM(CAST(json_extract(params, '$.edited') AS INTEGER)) AS edited,
+--          SUM(CAST(json_extract(params, '$.dateEdited') AS INTEGER)) AS date_edited,
+--          ROUND(100.0 * SUM(CAST(json_extract(params, '$.edited') AS INTEGER)) /
+--                NULLIF(SUM(CAST(json_extract(params, '$.kept') AS INTEGER)), 0), 2) AS edit_rate_pct,
+--          ROUND(100.0 * SUM(CAST(json_extract(params, '$.dropped') AS INTEGER)) /
+--                NULLIF(SUM(CAST(json_extract(params, '$.extracted') AS INTEGER)), 0), 2) AS drop_rate_pct,
+--          ROUND(100.0 * SUM(CAST(json_extract(params, '$.dateEdited') AS INTEGER)) /
+--                NULLIF(SUM(CAST(json_extract(params, '$.kept') AS INTEGER)), 0), 2) AS date_edit_rate_pct
+--   FROM telemetry_events
+--   WHERE event_name = 'parse_confirmed'
+--     AND received_at > (strftime('%s','now','-7 days') * 1000)
+--   GROUP BY locale ORDER BY kept DESC;
+--
+-- 日期修改率（含保存后）/ 日期差分布（重点看 ±1、±7）：
+--   SELECT json_extract(params, '$.locale') AS locale,
+--          json_extract(params, '$.stage') AS stage,
+--          json_extract(params, '$.change') AS change,
+--          CAST(json_extract(params, '$.dayDelta') AS INTEGER) AS day_delta,
+--          COUNT(*) AS corrections
+--   FROM telemetry_events
+--   WHERE event_name = 'parse_field_corrected'
+--     AND json_extract(params, '$.field') = 'date'
+--     AND received_at > (strftime('%s','now','-7 days') * 1000)
+--   GROUP BY locale, stage, change, day_delta
+--   ORDER BY corrections DESC;
+--
+-- 哪类时间说法最容易错（分子 = parse_field_corrected 的 date 修正数，
+-- 分母 = parse_confirmed.kinds 里对应类型的保存条数；两段用 CTE 拼接）：
+--   WITH corrections AS (
+--     SELECT json_extract(params, '$.locale') AS locale,
+--            json_extract(params, '$.expressionKind') AS kind,
+--            COUNT(*) AS corrected
+--     FROM telemetry_events
+--     WHERE event_name = 'parse_field_corrected'
+--       AND json_extract(params, '$.field') = 'date'
+--       AND received_at > (strftime('%s','now','-7 days') * 1000)
+--     GROUP BY locale, kind
+--   ),
+--   totals AS (
+--     -- kinds 是 JSON 对象串（如 {"weekday":2,"none":1}），json_each 逐项拆开
+--     SELECT json_extract(params, '$.locale') AS locale,
+--            key AS kind,
+--            SUM(CAST(value AS INTEGER)) AS total
+--     FROM telemetry_events, json_each(json_extract(params, '$.kinds'))
+--     WHERE event_name = 'parse_confirmed'
+--       AND received_at > (strftime('%s','now','-7 days') * 1000)
+--     GROUP BY locale, kind
+--   )
+--   SELECT totals.locale, totals.kind, totals.total,
+--          COALESCE(corrected, 0) AS corrected,
+--          ROUND(100.0 * COALESCE(corrected, 0) / NULLIF(totals.total, 0), 2) AS correction_rate_pct
+--   FROM totals LEFT JOIN corrections
+--     ON corrections.locale = totals.locale AND corrections.kind = totals.kind
+--   ORDER BY correction_rate_pct DESC;

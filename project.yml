@@ -160,6 +160,9 @@ targets:
       - path: Protocols/Domain/RecurrenceEndResolver.swift
       - path: Protocols/Domain/DayClock.swift
       - path: Protocols/Domain/TaskEventKind.swift
+      # 解析准确率埋点:Widget target 编译 Telemetry.swift(事件枚举引用这两个文件里的类型)
+      - path: Protocols/Domain/ParseCorrectionTelemetry.swift
+      - path: Protocols/Domain/ParseExpressionClassifier.swift
       - path: Protocols/Domain/WidgetTodoFilter.swift
       - path: Protocols/Domain/TodoSpan.swift
       - path: Protocols/Domain/NotificationPlanner.swift

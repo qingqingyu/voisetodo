@@ -50,6 +50,8 @@ BGProcessingTask                          ↓
 | `review_entry_impression` | 回顾页出现(入口卡曝光,**按 app 会话去重**;仅入口卡实际渲染时记) | `hasPending: Bool` |
 | `review_flow_started` | 复盘流程首次呈现(点「开始」→ cover 创建) | `pendingCount: Int` |
 | `review_flow_finished` | 复盘收尾 finishSession | `decidedCount: Int`, `durationMS: Int` |
+| `parse_confirmed` | 确认面板点确认一次(解析准确率口径入口,详见下方「解析准确率口径」) | `path`(`live_voice` / `keyboard` / `pending_recovery`;复用 `extract_outcome` 的 path 取值), `locale`(`zh`/`en`/`ja`/`other`,只取语言代码), `extracted` / `kept` / `dropped` / `added` / `edited` / `dateEdited` / `timeEdited` / `titleEdited` / `recurrenceEdited` / `reminderEdited` / `categoryEdited`(计数), `kinds`(保存条目按原始说法类型的计数,JSON 对象串如 `{"weekday":2,"none":1}`,只含枚举名和数字——D1 侧 `json_each` 可直接拆);extractID 随 payload 携带,可与 `extract_outcome` / 代理 `extract_requests` 对上号(pending_recovery 一次确认覆盖多次提取,该场景存恢复流程 flowID,只关联日志) |
+| `parse_field_corrected` | 一条待办一个被改的日期/时间字段记一枚(确认面板内改 + 保存后详情页改) | `stage`(`confirm_sheet` / `after_save`), `field`(`date` / `time`), `change`(`changed` / `added` / `removed`), `dayDelta`(仅 date+changed:改后−原日期的用户日差,截断 ±60), `minuteDelta`(仅 time+changed:分钟差,截断 ±1440), `expressionKind`(原始时间说法的类型,手机本地归类,见下), `basis`(仅 confirm_sheet:原始解析的 `due_date_basis`,没有不带), `recurring: Bool`, `locale`, `minutesSinceCreated`(仅 after_save) |
 
 #### `first_voice_trial` 口径限制（分析必读）
 
@@ -115,6 +117,56 @@ BGProcessingTask                          ↓
 - `durationMS`(finished)= 流程首次呈现 → finishSession,含用户中途停留。
 - 参数只有布尔/数字,**绝不带笔记文本**(PII 红线同全局)。
 
+#### `parse_confirmed` / `parse_field_corrected` 口径(解析准确率,分析必读)
+
+两个事件只传**枚举和数字**,回答三个问题:AI 解析结果用户改了多少、日期差几天、
+哪类时间说法最容易错。任务书 `docs/task-parse-correction-telemetry.md`。
+
+**`parse_confirmed`** 每次确认面板点确认记一枚,对比原始解析(`extractedTodos`
+快照)与用户确认结果(按 `id` 配对):
+
+- `extracted` = 原始条数;`kept` = 其中被确认保存的;`dropped` = 在面板里删掉的
+  (不进任何字段统计);`added` = 面板手动新增的(不是 AI 解析结果,只进本计数,
+  当前 UI 不支持,恒 0);`edited` = 至少改了一个字段的保存条数。
+- 字段级计数(`dateEdited` 等):标题按去首尾空白比较;提醒按排序后的值比较
+  (空数组 ≡ nil,顺序不产生误报);`added` 的条目不计入。
+- `kinds` 是**各说法类型的分母**:保存条目按原始 `dueHint` 本地归类的计数,
+  按 `expressionKind` 分组算错误率时用它做分母。
+- Siri 新建不经过确认面板,不记本事件;它保存后的修改按 after_save 正常判定。
+
+**`parse_field_corrected`** 只针对日期/时间两个字段记明细,`stage` 两个取值:
+
+- `confirm_sheet`:面板里改的,每条待办每个被改的字段一枚。
+- `after_save`:保存后在详情页又改的。**只有同时满足以下四条才记**(避免把
+  正常改计划算成解析错误):
+  1. `origin == .detail`(详情页直改)。首页「移到明天」、复盘排期
+     (`origin == .app / .review`)是用户改计划,不记;
+  2. 条目是 AI 解析来的(`source == .voice` 且 `extractionOutcome == .parsed`,
+     含语音/键盘/Siri;日历导入与原文兜底的手动卡片不算);
+  3. 距创建(`createdAt`)≤ 120 分钟;
+  4. 这条待办的这个字段**第一次**被改(App Group UserDefaults 记「已上报的
+     待办id+字段」,条目 48 小时过期,集合上限 500,超出删最旧)。
+
+**`expressionKind`(时间说法类型)** 在手机本地按关键词归类,取值:
+`none`(原始无日期)/ `relative_day`(今天/明天/后天/大后天)/ `weekday`
+(星期几,含本周/下周/下下周/上周/周末)/ `month_part`(月初/月中/月底/月末)/
+`relative_offset`(N 天/周/月/年后)/ `absolute_date`(具体日期)/ `holiday`
+(节日)/ `time_only`(只有时间没有日期)/ `other`(认不出——占比高本身是信号)。
+多类型同时命中按此顺序取第一个(「下周五下午三点」→ `weekday`)。规则三语
+(中英日)并集匹配——内容语言跟随用户输入而非系统语言。
+
+**指标算法**(SQL 见 `AIProxy/schema.sql` 末尾):
+
+| 指标 | 算法 |
+|---|---|
+| 确认面板修改率 | Σ`edited` ÷ Σ`kept` |
+| 删除率 | Σ`dropped` ÷ Σ`extracted` |
+| 日期修改率(确认面板) | Σ`dateEdited` ÷ Σ`kept` |
+| 日期修改率(含保存后) | `parse_field_corrected` 中 `field=date` 条数 ÷ Σ`kept` |
+| 日期差分布 | `field=date AND change=changed` 的 `dayDelta` 直方图(重点 ±1、±7) |
+| 哪类说法最容易错 | 按 `expressionKind` 分组:分子 = `field=date` 的 `parse_field_corrected` 条数,分母 = `parse_confirmed.kinds` 对应类型计数 |
+| 分语言 | 以上全部按 `locale` 分组 |
+
 ## PII 红线
 
 ### ❌ 绝不上报
@@ -133,6 +185,13 @@ BGProcessingTask                          ↓
 - 系统信息（iOS 版本、App 版本）
 - 计数与时长（todosCount、durationMS、attempts）
 - 文本摘要（`VoiceTodoLog.textSummary()`：chars / lines / exceedsLimit）
+- 枚举与差值（`parse_confirmed` / `parse_field_corrected` 的计数、改动方式、
+  dayDelta/minuteDelta、`expressionKind` 类型名）。
+  **`expressionKind` 是手机上算出的类型**（`ParseExpressionClassifier` 本地关键词
+  归类）：`dueHint` 原文只在本地消费，**不上传、也不写日志**
+  （`ParseCorrectionTelemetry.swift` 全链路无 hint 日志）；`kinds` 编码串只含
+  枚举名和数字。测试里有 PII 金丝雀（`testPIICanaryNeverAppearsInEventParams`）
+  用可识别字符串验证标题与时间短语原文不出现在编码后的事件参数里。
 
 > 同一条红线适用于 `ALERTING.md` 的客户端故障信标（`/v1/incident`）：信标只回答
 > 「通不通」，不回答「用户说了什么」，绝不携带 transcript / Todo 标题。

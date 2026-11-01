@@ -139,6 +139,15 @@ enum TelemetryEvent {
     case reviewEntryImpression(hasPending: Bool)
     case reviewFlowStarted(pendingCount: Int)
     case reviewFlowFinished(decidedCount: Int, durationMS: Int)
+    /// A18: 确认面板点确认一次——原始解析 vs 用户确认结果的修改/删除计数
+    /// (解析准确率口径的入口,详见 TELEMETRY.md「解析准确率口径」一节)。
+    /// diff 为纯计数/枚举(ConfirmSheetParseDiff);带本次 extractID 可与
+    /// `extract_outcome` / 代理 `extract_requests` 对上号。
+    case parseConfirmed(path: String, locale: String, diff: ConfirmSheetParseDiff)
+    /// A19: 日期/时间字段被用户修正的明细,每条待办每个被改的字段一枚。
+    /// stage=confirm_sheet(面板内改)/ after_save(保存后详情页改,判定见
+    /// `ParseCorrectionDiff.Rules`)。参数只含枚举/数字,不含标题与时间短语原文。
+    case parseFieldCorrected(stage: String, locale: String, correction: FieldCorrection, minutesSinceCreated: Int?)
 
     /// 事件名，对应 D1 `event_name` 列。
     var name: String {
@@ -166,6 +175,8 @@ enum TelemetryEvent {
         case .reviewEntryImpression: return "review_entry_impression"
         case .reviewFlowStarted: return "review_flow_started"
         case .reviewFlowFinished: return "review_flow_finished"
+        case .parseConfirmed: return "parse_confirmed"
+        case .parseFieldCorrected: return "parse_field_corrected"
         }
     }
 
@@ -274,6 +285,39 @@ enum TelemetryEvent {
                 "decidedCount": String(decidedCount),
                 "durationMS": String(durationMS)
             ]
+        case let .parseConfirmed(path, locale, diff):
+            return [
+                "path": path,
+                "locale": locale,
+                "extracted": String(diff.extracted),
+                "kept": String(diff.kept),
+                "dropped": String(diff.dropped),
+                "added": String(diff.added),
+                "edited": String(diff.edited),
+                "dateEdited": String(diff.dateEdited),
+                "timeEdited": String(diff.timeEdited),
+                "titleEdited": String(diff.titleEdited),
+                "recurrenceEdited": String(diff.recurrenceEdited),
+                "reminderEdited": String(diff.reminderEdited),
+                "categoryEdited": String(diff.categoryEdited),
+                // 各说法类型的分母计数,紧凑编码("weekday:2,none:1"),只含枚举名和数字
+                "kinds": diff.kindsEncoding
+            ]
+        case let .parseFieldCorrected(stage, locale, correction, minutesSinceCreated):
+            var p = [
+                "stage": stage,
+                "field": correction.field.rawValue,
+                "change": correction.change.rawValue,
+                "expressionKind": correction.expressionKind.rawValue,
+                "recurring": String(correction.recurring),
+                "locale": locale
+            ]
+            // 差值与 basis 缺失即不带(键不存在 ≠ 0;after_save 才带 minutesSinceCreated)
+            if let dayDelta = correction.dayDelta { p["dayDelta"] = String(dayDelta) }
+            if let minuteDelta = correction.minuteDelta { p["minuteDelta"] = String(minuteDelta) }
+            if let basis = correction.basis { p["basis"] = basis.rawValue }
+            if let minutesSinceCreated { p["minutesSinceCreated"] = String(minutesSinceCreated) }
+            return p
         }
     }
 }

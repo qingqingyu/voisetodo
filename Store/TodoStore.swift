@@ -311,6 +311,9 @@ final class TodoStore:
         let oldDueDate = todoItem.dueDate
         let oldIsCompleted = todoItem.isCompleted
         let oldAbandonedAt = todoItem.abandonedAt
+        // 解析准确率 after_save 埋点的变更前快照(§2.3:对比对象是修改前的落库值)
+        let oldHasDueTime = todoItem.hasDueTime
+        let oldDueHint = todoItem.dueHint
 
         // 先完成可能失败的写操作（删除旧完成记录），再修改 TodoItem。
         // 显式 try 而非 try?：如果 completion 删除失败，说明底层 SwiftData 出了问题，
@@ -378,6 +381,23 @@ final class TodoStore:
         if let index = todos.firstIndex(where: { $0.id == id }) {
             todos[index] = todoItem.toData()
         }
+        // 解析准确率 after_save 埋点(保存成功才记):详情页 2 小时内首次改日期/时间,
+        // 四条判定与去重在 ParseCorrectionRecorder 收口。oldDueHint 只在本地做
+        // 说法分类,不进日志、不进遥测参数(PII 红线见 TELEMETRY.md)。
+        ParseCorrectionRecorder.recordAfterSaveIfNeeded(.init(
+            todoID: id,
+            origin: origin,
+            source: todoItem.source,
+            extractionOutcome: todoItem.extractionOutcome,
+            createdAt: todoItem.createdAt,
+            localeIdentifier: todoItem.localeIdentifier,
+            oldDueDate: oldDueDate,
+            oldHasDueTime: oldHasDueTime,
+            oldDueHint: oldDueHint,
+            newDueDate: update.dueDate,
+            newHasDueTime: update.hasDueTime,
+            recurring: update.recurrenceRule != nil
+        ))
         VoiceTodoLog.store.info("store.updateFull.success id=\(id.uuidString, privacy: .public) dueDate=\(update.dueDate != nil) explicitTimeBucket=\(todoItem.timeBucket?.rawValue ?? "nil", privacy: .public) effectiveTimeBucket=\(effectiveBucket.rawValue, privacy: .public) detail=\(update.detail != nil) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
     }
 

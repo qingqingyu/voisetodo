@@ -139,6 +139,12 @@ final class AppCoordinator: ObservableObject {
     private var activeInputTranscript: String?
     private var activeInputLocaleIdentifier: String?
 
+    /// 确认面板当前这批 `extractedTodos` 的提取上下文(path + 关联 ID),
+    /// 让 `parse_confirmed` 能与 `extract_outcome` / 代理 `extract_requests` 对上号。
+    /// 与 `extractedTodos` 同生命周期:一起写入、一起清空。
+    /// pending 恢复路径一次确认覆盖多次提取,存恢复流程 flowID(只关联日志,不关联单次提取)。
+    private var confirmExtractionContext: (extractID: String, path: String)?
+
     // MARK: - Initialization
 
     init(
@@ -703,6 +709,7 @@ final class AppCoordinator: ObservableObject {
             // 草稿出生点(离线恢复):同样回填全局默认提前量。
             let defaultOffset = ReminderOffsetConfig.effectiveDefaultOffset()
             extractedTodos = result.extractedTodos.map { $0.backfilledDefaultReminderOffset(defaultOffset) }
+            confirmExtractionContext = (extractID: flowID, path: ExtractPath.pendingRecovery)
             showConfirmSheet = true
             VoiceTodoLog.coordinator.info("coordinator.foreground.pending_success id=\(flowID, privacy: .public) extractedCount=\(result.extractedTodos.count) processedWithTodos=\(result.processedWithTodosIds.count) processedWithoutTodos=\(result.processedWithoutTodosIds.count) failed=\(result.failedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
         } else {
@@ -840,6 +847,33 @@ final class AppCoordinator: ObservableObject {
                 }
                 if let first = correctionTracker.suggestions().first, self.glossarySuggestion == nil {
                     self.glossarySuggestion = GlossarySuggestion(correction: first)
+                }
+            }
+
+            // 解析准确率埋点(parse_confirmed + parse_field_corrected,任务书
+            // docs/task-parse-correction-telemetry.md §2):对比原始解析与确认结果,
+            // 只传计数/枚举/差值,绝不传标题、dueHint 原文。对比与上报放后台,
+            // 不拖慢确认路径;extractID 用任务局部绑定进 payload(与 extract_outcome 同源)。
+            let parseContext = confirmExtractionContext
+            let telemetryLocale = ParseCorrectionTelemetry.localeCode(
+                from: todos.first?.localeIdentifier ?? fallbackLearningLocaleIdentifier
+            )
+            Task.detached(priority: .utility) {
+                let diff = ParseCorrectionDiff.confirmSheet(originals: originalTodos, confirmed: todos)
+                VoiceTodoLog.$extractID.withValue(parseContext?.extractID ?? "none") {
+                    Telemetry.record(.parseConfirmed(
+                        path: parseContext?.path ?? ExtractPath.main,
+                        locale: telemetryLocale,
+                        diff: diff
+                    ))
+                    for correction in diff.fieldCorrections {
+                        Telemetry.record(.parseFieldCorrected(
+                            stage: ParseCorrectionStage.confirmSheet,
+                            locale: telemetryLocale,
+                            correction: correction,
+                            minutesSinceCreated: nil
+                        ))
+                    }
                 }
             }
 
@@ -1035,6 +1069,7 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
+        confirmExtractionContext = nil
         conflictWarnings = [:]
         showConfirmSheet = false
         pendingItemIds = []
@@ -1144,6 +1179,7 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
         isProcessingTranscript = false
         extractedTodos = []
+        confirmExtractionContext = nil
         conflictWarnings = [:]
         showConfirmSheet = false
         pendingGeneratedTodoIdsByPendingId = [:]
@@ -1217,6 +1253,8 @@ final class AppCoordinator: ObservableObject {
             showConfirmSheet = true
             VoiceTodoLog.coordinator.info("coordinator.process_transcript.confirm_sheet_early id=\(flowID, privacy: .public) extractID=\(extractID, privacy: .public)")
         }
+        // 本流程自此拥有确认面板内容,parse_confirmed 的 path/extractID 随之切到本次提取
+        confirmExtractionContext = (extractID: extractID, path: timing.path)
 
         extractionTask = Task {
             let events = transcriptProcessingFlow.process(
@@ -1328,6 +1366,7 @@ final class AppCoordinator: ObservableObject {
         conflictDetectionTask?.cancel()
         conflictDetectionTask = nil
         extractedTodos = []
+        confirmExtractionContext = nil
         conflictWarnings = [:]
         showConfirmSheet = false
     }
