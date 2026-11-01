@@ -9059,3 +9059,167 @@ test("extract metrics 11c: 样本不足 20 次不告警", async () => {
   await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), fetchImpl);
   assert.equal(telegramCalls.filter((c) => c.body.text.includes("解析")).length, 0, "量太小没有意义,不告警");
 });
+
+// MARK: - 监控统计排除用户额度拒绝(任务书 docs/task-metrics-quota-and-review-query.md §1.4)
+
+/// quota_rejected 行。error_type 决定统计口径:用户自己的限制(quota_exceeded/
+/// subscription_quota_exceeded/rate_limited/deepread_limit_exceeded)排除出
+/// 成功率与耗时统计;我方容量问题(key_pool_full/global_budget_exceeded(_pro))
+/// 照旧计为失败。上游没被调过,provider_id 为 NULL(与真实写入一致)。
+function quotaRows({ count, errorType, totalMs = 5 }) {
+  return Array.from({ length: count }, () => ({
+    provider_id: null, model: "ma", key_slot: null, attempts: 0, failover: 0,
+    total_ms: totalMs, status: 429, outcome: "quota_rejected", error_type: errorType
+  }));
+}
+
+async function adminExtractMetrics(rows) {
+  const response = await handleRequest(
+    new Request("https://proxy.test/v1/admin/extract-metrics?hours=24", { headers: { "X-Admin-Token": "admin-tok" } }),
+    { ADMIN_TOKEN: "admin-tok", TELEMETRY_DB: makeFakeD1({ allResults: rows }) },
+    {}
+  );
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+test("extract metrics 12a: 用户额度拒绝不计失败——成功率 100%,不触发失败率告警,userLimitRejections=30", async () => {
+  const rows = [
+    ...makeWindowRows({ count: 20, totalMs: 3000 }),
+    ...quotaRows({ count: 30, errorType: "quota_exceeded" })
+  ];
+  const body = await adminExtractMetrics(rows);
+  assert.equal(body.requests, 50);
+  assert.equal(body.successRate, 1, "30 次用户额度拒绝出分母:20/20 = 100%");
+  assert.equal(body.userLimitRejections, 30, "userLimitRejections 单独计数");
+
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), makeCronFetch({ telegramCalls }));
+  assert.equal(telegramCalls.filter((c) => c.body.text.includes("解析失败率高")).length, 0,
+    "免费用户用完额度不是服务故障,不触发失败率告警");
+  assert.equal(telegramCalls.filter((c) => c.body.text.includes("解析变慢")).length, 0,
+    "5ms 的拒绝也不进耗时统计(20 次 3000ms 正常)");
+});
+
+test("extract metrics 12b: key_pool_full 是我方容量问题——计为失败并触发失败率告警", async () => {
+  const rows = [
+    ...makeWindowRows({ count: 20, totalMs: 3000 }),
+    ...quotaRows({ count: 10, errorType: "key_pool_full", totalMs: 100 })
+  ];
+  const body = await adminExtractMetrics(rows);
+  assert.equal(body.successRate, 0.6667, "容量拒绝照旧计失败:20/30");
+  assert.equal(body.userLimitRejections, 0, "key_pool_full 不是用户自己的限制");
+
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), makeCronFetch({ telegramCalls }));
+  const failureAlerts = telegramCalls.filter((c) => c.body.text.includes("解析失败率高"));
+  assert.equal(failureAlerts.length, 1, "成功率 66.7% < 90% 应触发");
+  assert.ok(failureAlerts[0].body.text.includes("66.7%"), "文案按 20/30 计算成功率");
+  assert.ok(failureAlerts[0].body.text.includes("(no_provider)"),
+    "失败分布含容量拒绝(上游没被调,provider 记 no_provider)");
+});
+
+test("extract metrics 12c: 几毫秒的用户额度拒绝不进 P50/P95(25 次 25s 成功 + 100 次 5ms 拒绝)", async () => {
+  const rows = [
+    ...makeWindowRows({ count: 25, totalMs: 25000 }),
+    ...quotaRows({ count: 100, errorType: "quota_exceeded", totalMs: 5 })
+  ];
+  const body = await adminExtractMetrics(rows);
+  assert.equal(body.userLimitRejections, 100);
+  assert.equal(body.p50Ms, 25000, "P50 不被 100 次 5ms 拒绝拉低(改前=5)");
+  assert.equal(body.p95Ms, 25000);
+  assert.equal(body.successRate, 1);
+});
+
+test("extract metrics 12d: 快速拒绝占绝对多数时不得拖低 P95 掩盖变慢——耗时告警仍触发", async () => {
+  // 475 次 5ms 拒绝 + 25 次 25s 成功:改前 500 行一起算,P95 落在 5ms 上,
+  // 25s 的真实变慢被掩盖;改后耗时样本只剩 25 次成功,P95 = 25s,该告警。
+  const rows = [
+    ...makeWindowRows({ count: 25, totalMs: 25000 }),
+    ...quotaRows({ count: 475, errorType: "quota_exceeded", totalMs: 5 })
+  ];
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), makeCronFetch({ telegramCalls }));
+  const slowAlerts = telegramCalls.filter((c) => c.body.text.includes("解析变慢"));
+  assert.equal(slowAlerts.length, 1, "P95 = 25s(参与耗时的只有 25 次成功),应触发");
+  assert.ok(slowAlerts[0].body.text.includes("25s"), "文案附被掩盖的 P95");
+  assert.ok(slowAlerts[0].body.text.includes("样本 25 次"), "样本按参与耗时统计的行数计");
+  assert.equal(telegramCalls.filter((c) => c.body.text.includes("解析失败率高")).length, 0,
+    "25 次全部成功,失败率不告警");
+});
+
+test("extract metrics 12e: 15 次成功 + 40 次 rate_limited——参与统计仅 15 次,样本不足不告警", async () => {
+  const rows = [
+    ...makeWindowRows({ count: 15, totalMs: 3000 }),
+    ...quotaRows({ count: 40, errorType: "rate_limited" })
+  ];
+  const body = await adminExtractMetrics(rows);
+  assert.equal(body.successRate, 1, "限速拒绝出分母");
+  assert.equal(body.userLimitRejections, 40);
+  assert.equal(body.p95Ms, 3000, "耗时样本只剩 15 次成功");
+
+  const kv = new MemoryKV(new Map());
+  const telegramCalls = [];
+  await handleScheduled(cronEnv({ kv, extra: { TELEMETRY_DB: makeFakeD1({ allResults: rows }) } }), makeCronFetch({ telegramCalls }));
+  assert.equal(telegramCalls.filter((c) => c.body.text.includes("解析")).length, 0,
+    "参与成功率/耗时统计的只有 15 行(< 20),样本不足不告警");
+});
+
+test("extract metrics 12f: 流式 total_ms 不含 confirmSuccess 的耗时", async () => {
+  // confirmSuccess → HealthStore.recordSuccess → kv.put。用 put 延迟 300ms 的假 KV
+  // 把 confirmSuccess 变慢;total_ms 应取流结束时刻(回调第一行),不含这 300ms。
+  const delayedPutKV = {
+    values: new Map(),
+    async get(key) { return this.values.get(key) ?? null; },
+    async put(key, value) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      this.values.set(key, value);
+    }
+  };
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token" }),
+    {
+      APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key",
+      TELEMETRY_DB: db, AI_PROVIDER_STATE_KV: delayedPutKV
+    },
+    ctx,
+    async () => delayedSSEStreamResponse(30)
+  );
+  assert.equal(response.status, 200);
+  await response.text();
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1);
+  const args = rows[0].args;
+  assert.equal(args[15], "success");
+  assert.ok(args[13] >= args[12], "total_ms 仍不早于上游首字节");
+  assert.ok(args[13] < 250, `total_ms(${args[13]}) 不应包含 confirmSuccess 里 300ms 的 KV 写入(改前 ≥ 330ms)`);
+});
+
+test("extract metrics 12g: 口径映射表——四类用户限制全排除,三类容量拒绝全计失败,断连出耗时统计", async () => {
+  const rows = [
+    ...makeWindowRows({ count: 5, totalMs: 3000 }),
+    ...quotaRows({ count: 1, errorType: "quota_exceeded" }),
+    ...quotaRows({ count: 1, errorType: "subscription_quota_exceeded" }),
+    ...quotaRows({ count: 1, errorType: "rate_limited" }),
+    ...quotaRows({ count: 1, errorType: "deepread_limit_exceeded" }),
+    ...quotaRows({ count: 1, errorType: "key_pool_full", totalMs: 100 }),
+    ...quotaRows({ count: 1, errorType: "global_budget_exceeded", totalMs: 100 }),
+    ...quotaRows({ count: 1, errorType: "global_budget_exceeded_pro", totalMs: 100 }),
+    ...makeWindowRows({ count: 1, totalMs: 5, outcome: "client_disconnected" })
+  ];
+  const body = await adminExtractMetrics(rows);
+  assert.equal(body.requests, 13);
+  assert.equal(body.userLimitRejections, 4, "四类用户限制各 1 次");
+  // 分母 = 5 成功 + 3 容量拒绝(断连与用户限制都出分母)= 8
+  assert.equal(body.successRate, 0.625);
+  // 耗时样本同 8 行(3×100ms + 5×3000ms,断连的 5ms 不进):中位/P95 都是 3000
+  assert.equal(body.p50Ms, 3000);
+  assert.equal(body.p95Ms, 3000);
+});

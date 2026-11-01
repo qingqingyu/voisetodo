@@ -50,14 +50,14 @@
 | `upstream_failed` | `executeWithFailover` 抛出（全部候选耗尽 503 / 非重试 502 / 响应无效 / 意外异常发生在上游调用之后），`error_type` 保留最终 attempt 的 errorType（`status_429`/`timeout`/`network`/…） |
 | `stream_failed` | 流式已返回 200 后中途失败（`proxy.provider.stream_failed`），非客户端断连 |
 | `client_disconnected` | 请求信号 abort：上游调用前（499）或流中途（`proxy.client.disconnected`）。**成功率统计排除出分母** |
-| `quota_rejected` | 上游调用前被拒：`quota_exceeded` / `subscription_quota_exceeded` / `rate_limited`（velocity+ip_daily）/ `global_budget_exceeded`(_pro) / `key_pool_full` / `deepread_limit_exceeded`（`error_type` 保留具体类别） |
+| `quota_rejected` | 上游调用前被拒：`quota_exceeded` / `subscription_quota_exceeded` / `rate_limited`（velocity+ip_daily）/ `global_budget_exceeded`(_pro) / `key_pool_full` / `deepread_limit_exceeded`（`error_type` 保留具体类别）。**统计再按 `error_type` 分两类**（见下） |
 | `no_provider` | `providers_config_invalid` / `providers_empty`（500）/ `no_providers_available`（503，selector 空） |
 | `cache_hit` | 提取缓存命中（零模型成本） |
 | `proxy_error` | **任务书枚举外的扩展值**：上游未调用的代理自身错误（`invariant_violation` 500、未预期异常）。单独归类避免污染 `upstream_failed` 语义 |
 
 **写行范围**：鉴权失败（401）与 payload 校验失败（缺 transcript/超长/非法 mode）**不写行** —— 那些不是解析尝试，进分母会把攻击流量/客户端 bug 算成「解析失败率」。assist 模式（split/reflect/deep-read）不写行（任务书 §2.1）。
 
-**成功率口径**（管理接口与告警同源）：`success`/`cache_hit`/`empty_todos` 计成功；`client_disconnected` 出分母（用户取消不是故障，与 iOS 端 `ExtractOutcome.cancelled` 必须与 failed 分开统计同口径）；其余计失败。
+**成功率口径**（管理接口与告警同源）：`success`/`cache_hit`/`empty_todos` 计成功；`client_disconnected` 出分母（用户取消不是故障，与 iOS 端 `ExtractOutcome.cancelled` 必须与 failed 分开统计同口径）；`quota_rejected` 再按 `error_type` 分两类——**用户自己的限制**（`quota_exceeded`/`subscription_quota_exceeded`/`rate_limited`/`deepread_limit_exceeded`，按设计拦下）同样出分母、也不进 P50/P95（几毫秒的拒绝会拉低百分位、掩盖真实变慢），管理接口以 `userLimitRejections` 单独计数；**我方容量问题**（`key_pool_full`/`global_budget_exceeded`(_pro)，用户想用但我方给不了）照旧计为失败、计入耗时，要能触发告警。`error_type` 不在两类清单里的 `quota_rejected` 行保守计为失败（宁可多告警不可漏告警）。`client_disconnected` 也不进耗时统计。告警最小样本数（20 次）按各自参与统计的行数判断。
 
 ## 3. 测试
 

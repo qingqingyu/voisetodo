@@ -436,6 +436,10 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
           // 空结果场景多一次 DO 往返(约 10-50ms),用户等的是空列表,可接受。
           // 回调抛错会被 runLifecycleCallback 内部 catch,不会卡死流。
           onSuccess: async (_error, stats) => {
+            // 流结束时刻在回调第一行取好:下面的 confirmSuccess(KV 写)与空结果
+            // 退额度(DO 往返)都是流结束后的簿记,不该算进 total_ms(用户在流结束
+            // 那一刻已拿全数据)。
+            const endedAt = Date.now();
             await result.confirmSuccess();
             if (mode !== "extract") return;
             const outcome = classifyExtractOutcome(stats?.fullText ?? "");
@@ -451,7 +455,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
               status: 200,
               outcome: outcome.hasTodos ? "success" : (outcome.parseOk ? "empty_todos" : "unparseable_output"),
               todos_count: outcome.parseOk ? (outcome.todosCount ?? 0) : null,
-              total_ms: Date.now() - requestContext.startedAt,
+              total_ms: endedAt - requestContext.startedAt,
               ...providerInfoForMetrics(result.attempts)
             });
           },
@@ -461,6 +465,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
           // (TranscriptProcessingFlow)会把它们当成功保留 —— 用户拿到了价值,不退。
           // 退款不会反映在本次响应头里,客户端下一次成功请求会拿到修正后的数值。
           onFailure: async (_error, stats) => {
+            // 流结束(失败)时刻在回调第一行取好,口径同 onSuccess。
+            const endedAt = Date.now();
             // 先区分「客户端走了」和「上游真的挂了」。用户划走确认弹层 / 开始新一次录音
             // 都会 abort request.signal,进而 abort 上游 fetch —— 那不是 provider 不健康,
             // 记进 HealthStore 会把用户自己的取消变成一次熔断计数。
@@ -479,7 +485,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
               metrics?.record({
                 status: 200,
                 outcome: "client_disconnected",
-                total_ms: Date.now() - requestContext.startedAt,
+                total_ms: endedAt - requestContext.startedAt,
                 ...providerInfoForMetrics(result.attempts)
               });
               // 配额仍按「一个字都没给 = 用户什么也没拿到」退,与下面的规则一致;
@@ -496,7 +502,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
               status: 200,
               outcome: "stream_failed",
               error_type: _error?.errorType ?? null,
-              total_ms: Date.now() - requestContext.startedAt,
+              total_ms: endedAt - requestContext.startedAt,
               ...providerInfoForMetrics(result.attempts)
             });
             if (stats?.emittedCount === 0) {
@@ -1564,7 +1570,9 @@ async function runExtractMetricAlerts(env, fetchImpl) {
   try {
     const sinceMs = Date.now() - EXTRACT_ALERT_WINDOW_MS;
     const result = await env.TELEMETRY_DB.prepare(
-      "SELECT provider_id, model, total_ms, outcome FROM extract_requests WHERE received_at > ? LIMIT ?"
+      // error_type 必须取:quota_rejected 要按它区分「用户自己的限制」(排除出
+      // 统计)与「我方容量问题」(计为失败),见 src/extractMetrics.js 口径注释。
+      "SELECT provider_id, model, total_ms, outcome, error_type FROM extract_requests WHERE received_at > ? LIMIT ?"
     ).bind(sinceMs, EXTRACT_METRICS_QUERY_ROW_LIMIT).all();
     rows = Array.isArray(result?.results) ? result.results : [];
   } catch (error) {

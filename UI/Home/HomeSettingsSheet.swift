@@ -44,6 +44,10 @@ struct HomeSettingsSheet: View {
     /// 数据体检回调(DEBUG-only UI,Release 下为默认空实现)。
     /// 由 HomeView 注入:取全量库 → `DataHealthAnalyzer.analyze` → os_log 打印。
     private let onRunDataDiagnostics: () -> Void
+    /// 回顾页的 store(设置深链 push `ReviewView` 用)。2026-10 按窗取数改造后
+    /// 回顾页统计走 `ReviewSummaryReading`,不再自带全量 @Query——nil(默认,
+    /// preview)时回顾页渲染空统计。HomeView 注入与 sheet 入口同一个 reviewStore。
+    private let reviewStore: (any ReviewFlowStore)?
 
     init(
         calendarWriteModeRaw: Binding<String>,
@@ -51,7 +55,8 @@ struct HomeSettingsSheet: View {
         onUpgradePro: @escaping () -> Void = {},
         isPro: Bool = false,
         onImportFromCalendar: @escaping () -> Void = {},
-        onRunDataDiagnostics: @escaping () -> Void = {}
+        onRunDataDiagnostics: @escaping () -> Void = {},
+        reviewStore: (any ReviewFlowStore)? = nil
     ) {
         _calendarWriteModeRaw = calendarWriteModeRaw
         self.vocabularyStore = vocabularyStore
@@ -59,6 +64,7 @@ struct HomeSettingsSheet: View {
         self.isPro = isPro
         self.onImportFromCalendar = onImportFromCalendar
         self.onRunDataDiagnostics = onRunDataDiagnostics
+        self.reviewStore = reviewStore
     }
 
     var body: some View {
@@ -286,7 +292,9 @@ struct HomeSettingsSheet: View {
                     }
 
                     NavigationLink {
-                        ReviewView()
+                        // store 由 HomeView 注入:按窗取数改造后统计不再走
+                        // 隐式环境的全量 @Query,深链与 sheet 两入口同一数据源。
+                        ReviewView(store: reviewStore)
                     } label: {
                         Label(String(localized: "settings.review"), systemImage: "chart.bar.fill")
                     }

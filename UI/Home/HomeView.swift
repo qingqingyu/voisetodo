@@ -765,7 +765,8 @@ struct HomeView<Store: HomeTodoStore>: View {
                     showSettingsSheet = false
                     showCalendarImport = true
                 },
-                onRunDataDiagnostics: { runDataDiagnostics() }
+                onRunDataDiagnostics: { runDataDiagnostics() },
+                reviewStore: reviewStore
             )
         }
         // ConfirmSheet 挂在 HomeView 内部(与 HomeSettingsSheet/ReviewView 同层),

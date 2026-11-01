@@ -188,12 +188,17 @@ Key（**只存 secret 名，绝不存 Key 的值**）、试了几家、是否切
 - **写库失败不影响用户请求**（只 logWarn）；一个请求只写一行（failover 也只一行）
 - 90 天保留，与 `telemetry_events` 同一个 Cron GC
 - 汇总查询：`GET /v1/admin/extract-metrics?hours=24`（`X-Admin-Token` 鉴权，hours
-  上限 168）——整体/按模型/按 Key 的成功率、P50/P95、429 次数、按 outcome 计数
+  上限 168）——整体/按模型/按 Key 的成功率、P50/P95、429 次数、按 outcome 计数、
+  `userLimitRejections`（窗口内被用户自己的额度/限速拦下的次数）
 - 告警（cron 每 30 分钟）：最近 30 分钟样本 ≥20 次且 P95 > `ALERT_EXTRACT_P95_MS`
   （默认 20000）或成功率 < `ALERT_EXTRACT_SUCCESS_MIN`（默认 0.9）→ Telegram 推送，
   恢复后再推一条；两阈值在 `AIProxy/wrangler.toml [vars]` 可调
 - 成功率口径：`success` / `cache_hit` / `empty_todos` 计成功；
-  `client_disconnected`（用户主动取消）**不计入分母**
+  `client_disconnected`（用户主动取消）**不计入分母**、也不进 P50/P95；
+  `quota_rejected` 按 `error_type` 分两类——用户自己的限制
+  （`quota_exceeded`/`subscription_quota_exceeded`/`rate_limited`/
+  `deepread_limit_exceeded`）不计入分母与耗时（按设计拦下，非故障），
+  我方容量问题（`key_pool_full`/`global_budget_exceeded`(_pro)）照旧计为失败
 - 常用 SQL（按模型成功率、按 Key 的 429、与 `telemetry_events` 联查）见
   `AIProxy/schema.sql` 末尾
 

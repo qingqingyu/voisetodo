@@ -60,8 +60,10 @@ private enum ReviewPeriod: String, CaseIterable, Identifiable {
 /// 回顾页面——展示周/月切换的完成统计摘要。
 ///
 /// 使用 Swift Charts 绘制分类占比饼图和每日趋势条形图。
-/// 数据通过 `@Query` 从 SwiftData 查询已完成 TodoItem，
-/// 转换为 `CompletionEvent` 数组后调 `ReviewAggregator.summarize`。
+/// 数据经 `ReviewSummaryReading.reviewWindowInputs` 在后台 `@ModelActor` 按窗
+/// 查询(近 30 天 + 所选周/月),聚合成 `ReviewSummary` 缓存进 `@State`
+/// (2026-10 按窗取数改造:读取量只和窗口内数据量有关,与历史总量无关;
+/// 口径与改前的全量 `@Query` 逐字段一致,护栏 `ReviewWindowQueryParityTests`)。
 ///
 /// 阶段 3 增补:复盘入口卡(2026-08-23 拍板改版为「N 件事等你决定」一行动作行,
 /// 点击 fullScreenCover 呈现五步流程 `ReviewFlowView`)——非空态与空态均以底部
@@ -84,20 +86,23 @@ struct ReviewView: View {
     /// 已有系统返回 chevron,再叠 × 是冗余双退出,保持默认 false 不渲染。
     var showsSheetCloseButton: Bool = false
 
-    @Query(
-        filter: #Predicate<TodoItem> { $0.isCompleted },
-        sort: [SortDescriptor(\TodoItem.completedAt, order: .reverse)]
-    )
-    private var completedTodos: [TodoItem]
+    // MARK: 数据(2026-10 按窗取数改造,任务书 task-metrics-quota-and-review-query §2)
+    //
+    // 原先是三个全量 `@Query`(全部已完成 + 全部完成记录 + 全部待办),body
+    // 每次重算都对整批 `.map { $0.toData() }`——读取量随历史总量线性涨,复盘
+    // 内每次划卡写库还会触发全量重查。现改为后台 `@ModelActor` 按窗查询
+    // (`ReviewSummaryReading.reviewWindowInputs`),读取量只和窗口内数据量有关;
+    // 「还挂着」/入口卡 N 只需要开放待办,`store.todos` 工作集(全部未完成 +
+    // 近期完成)内存过滤即可,同口径数字零变化(对照护栏:ReviewWindowQueryParityTests)。
+    //
+    // 代价:数字从同步变为异步就绪(nil = 未加载,渲染空而非闪空态文案);
+    // 查询走 completedAt/createdAt/dueDate 索引,窗口外历史不再进内存。
 
-    /// 规律任务某天的完成记录(与 completedTodos union,避免漏算重复任务)
-    @Query(sort: [SortDescriptor(\TodoOccurrenceCompletion.completedAt, order: .reverse)])
-    private var recurringCompletions: [TodoOccurrenceCompletion]
-
-    /// 全部待办(不过滤 isCompleted)——用于给规律任务完成记录查父任务分类。
-    /// 规律任务父 TodoItem 永远 isCompleted==false(完成落在 TodoOccurrenceCompletion),
-    /// 故不能用 completedTodos 建分类表,否则规律完成全部 fallback 成 .other。
-    @Query private var allTodos: [TodoItem]
+    /// 近 30 天成绩单(Hero / Stats / 空态判定)。nil = 首次加载未完成。
+    @State private var fixedSummary: ReviewSummary?
+    /// 当前选中周期的图表区摘要(分类/趋势/最忙一天)。与 fixedSummary 同一批
+    /// 加载、同一 tick 落位(见 `reloadSummaries`)。
+    @State private var periodSummary: ReviewSummary?
 
     @State private var selectedPeriod: ReviewPeriod = .month
     /// 入口卡点击 → fullScreenCover 呈现五步复盘流程。
@@ -136,17 +141,21 @@ struct ReviewView: View {
                 // 2026-10-24 拍板:入口卡从两态置顶改为底部悬浮(本 ScrollView
                 // 尾部的 safeAreaInset)——冷却期(7 天内已复盘)整卡隐藏,
                 // 列表只留统计与笔记;下滑关闭手势维持标准 sheet 行为不变。
+                // 按窗取数改造:数字异步就绪(nil = 首帧未加载,渲染空而不闪
+                // 「还没有完成」的空态文案——那对有数据的老用户是错误信息)。
                 VStack(spacing: WarmSpacing.lg) {
-                    if fixedWindowSummary.total == 0 {
-                        emptyState
+                    if let fixedWindowSummary = fixedSummary {
+                        if fixedWindowSummary.total == 0 {
+                            emptyState
 
-                        // 空态也显示笔记时间线:「全量可见」拍板不因当期无完成数据
-                        // 而失效——有历史笔记的老用户换期后仍要能翻到。
-                        if !reviewNotes.isEmpty {
-                            reviewNotesSection
+                            // 空态也显示笔记时间线:「全量可见」拍板不因当期无完成数据
+                            // 而失效——有历史笔记的老用户换期后仍要能翻到。
+                            if !reviewNotes.isEmpty {
+                                reviewNotesSection
+                            }
+                        } else if let periodSummary {
+                            content(fixedWindowSummary: fixedWindowSummary, periodSummary: periodSummary)
                         }
-                    } else {
-                        content
                     }
                 }
                 .padding(.horizontal, WarmSpacing.lg)
@@ -175,16 +184,27 @@ struct ReviewView: View {
                 // 不得进曝光分母(口径=「见过入口的用户数」)。2026-10-24
                 // 悬浮改版:冷却期(7 天内已复盘或已手动关闭)卡同样不可见,
                 // 同步不进曝光分母——复用 `entryCardVisible` 单一来源,两处永不漂移。
+                // pendingCount 走 store.todos 工作集同步可算,曝光分母不受
+                // 按窗取数异步加载影响。
                 if entryCardVisible {
                     let pendingCount = decidablePendingCount
                     ReviewFunnelMetrics.recordEntryImpressionOnce(hasPending: pendingCount > 0)
                 }
             }
+            // 按窗取数:首次出现与切换「本周 / 本月」都重查(窗口变了);
+            // 查询走后台 @ModelActor,返回值类型,不阻塞渲染。
+            .task(id: selectedPeriod) {
+                await reloadSummaries()
+            }
             // 复盘流程收尾(fullScreenCover 落下)会写入新会话——此刻重读,
             // 时间线立即出现刚写的那条;冷却翻 true 驱动悬浮卡滑出(唯一动画
-            // 路径,见 `loadReviewNotes(animated:)`)。
+            // 路径,见 `loadReviewNotes(animated:)`)。流程里划卡/拆小写过库,
+            // 统计窗一并重查(拆小产生的子任务 createdAt=now 会进「新增」窗口)。
             .onChange(of: showReviewFlow) { _, shown in
-                if !shown { loadReviewNotes(animated: true) }
+                if !shown {
+                    loadReviewNotes(animated: true)
+                    Task { await reloadSummaries() }
+                }
             }
         }
         .fullScreenCover(isPresented: $showReviewFlow) {
@@ -223,10 +243,15 @@ struct ReviewView: View {
     /// 入口卡 N 的口径(v5.1 冷启动拍板):与流程侧 `ReviewFlowState.triageInput`
     /// 同人口——已排未来用户日的不算「等你决定」(已排期=已有去向);委托同一
     /// 函数取数,谓词不二写。曝光埋点 hasPending 同用本值,单一来源防两处漂移。
+    ///
+    /// 数据源是 `store.todos` 工作集(全部未完成 + 近期完成)而非全量表:
+    /// triageInput 的过滤条件是 `!isCompleted && abandonedAt == nil &&
+    /// recurrenceRule == nil`,工作集恰好完整覆盖这个集合(完成态被过滤掉,
+    /// 近期完成的窗口化不影响),内存过滤即可——同步可算,首帧就有数,
+    /// 入口卡不闪「0 件事」(等价性护栏:ReviewWindowQueryParityTests)。
     private var decidablePendingCount: Int {
-        ReviewFlowState.triageInput(
-            from: allTodos.map { $0.toData() }
-        ).count
+        guard let store else { return 0 }
+        return ReviewFlowState.triageInput(from: store.todos).count
     }
 
     /// 入口卡冷却时长(2026-10-24 拍板):滚动 7 天窗口——距上次复盘完成或
@@ -422,105 +447,84 @@ struct ReviewView: View {
         )
     }
 
-    // MARK: - Computed
+    // MARK: - Computed(按窗取数)
 
-    /// 将已完成 TodoItem + 规律任务完成记录 union 成 CompletionEvent 数组。
-    private var completionEvents: [CompletionEvent] {
-        // 一次性待办完成
-        var events = completedTodos.compactMap { item -> CompletionEvent? in
-            guard let completedAt = item.completedAt else { return nil }
-            return CompletionEvent(
-                id: item.id,
-                completedAt: completedAt,
-                category: item.category
-            )
+    /// 两个统计窗(近 30 天 + 所选周/月)与到期范围的边界。集中一处是因为
+    /// 两个窗口共用同一次 `dueTodoCount`/`pendingOneOffCount` 取数,且窗口
+    /// 推导必须与旧路径(`monthSummary` 内部窗口 / `ReviewPeriod.startDay`)
+    /// 完全一致——数字一个不变的前提是窗口一天不差。
+    private struct SummaryWindows {
+        let fixedStart: Date
+        let periodStart: Date
+        let end: Date
+        /// 未来 7 天到期数的换算边界:旧内存过滤
+        /// `dueDay > todayStart && dueDay <= weekEnd`(用户日)≡
+        /// `dueDate ∈ [dueOnOrAfter, dueBefore)`(时刻),等价性见
+        /// `TodoQueryActor.dueTodoCount` 注释。
+        let dueOnOrAfter: Date
+        let dueBefore: Date
+        let periodLabel: String
+
+        init(period: ReviewPeriod, today: Date, calendar: Calendar) {
+            let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
+            let monthAgo = calendar.date(byAdding: .month, value: -1, to: todayStart) ?? todayStart
+            // 与 monthSummary 的窗口推导逐字一致(滚动 30 天 = 日历减一月)。
+            fixedStart = monthAgo
+            periodStart = period.startDay(from: today, calendar: calendar)
+            end = period.endDay(from: today, calendar: calendar)
+            let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
+            dueOnOrAfter = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+            dueBefore = calendar.date(byAdding: .day, value: 1, to: weekEnd) ?? weekEnd
+            periodLabel = period.periodLabel(for: today, calendar: calendar)
         }
-        // 规律任务完成(union,分类取父任务)。用 allTodos 建表——规律父任务 isCompleted==false,
-        // 不在 completedTodos 里,只有全量表才能查到它的分类。父任务被删则 fallback .other。
-        let categoryById = Dictionary(allTodos.map { ($0.id, $0.category) }, uniquingKeysWith: { first, _ in first })
-        for completion in recurringCompletions {
-            events.append(CompletionEvent(
-                id: completion.id,
-                completedAt: completion.completedAt,
-                category: categoryById[completion.todoId] ?? .other
-            ))
-        }
-        return events
     }
 
-    /// 固定近 30 天的聚合摘要——Hero / Stats / 空态判定用,**不随周/月 picker 变**
-    /// (2026-09-04 拍板 A,docs/review-window-tab-decoupling.md)。与复盘流程
-    /// 第 1 步(`ReviewStepRecap`)同调 `monthSummary`,两处同窗口同数字;
-    /// 周期标签经 `periodLabel` 参数锚定「近 30 天」,修掉滚动窗口配日历月名的错配。
-    private var fixedWindowSummary: ReviewSummary {
-        RecapSummaryBuilder.monthSummary(
-            today: Date(),
-            calendar: calendar,
-            periodLabel: String(localized: "review.window.last30d"),
-            allTodos: allTodos.map { $0.toData() },
-            completedTodos: completedTodos.map { $0.toData() },
-            recurringCompletions: recurringCompletions.map {
-                (id: $0.id, todoId: $0.todoId, completedAt: $0.completedAt)
-            }
-        )
-    }
-
-    /// 当前选中周期的聚合摘要——只喂 picker 辖区(分类图 / 每日趋势 / 最忙一天)。
-    private var periodSummary: ReviewSummary {
+    /// 按窗取数并聚合两份摘要(fixed 30 天 + 所选周期)。store 为 nil(纯
+    /// preview/无注入语境)时无数据源,保持 nil 渲染空。失败显式记录并保留
+    /// 上一份数字(读路径不打断页面;切周期/复盘 dismiss 会重试)。
+    private func reloadSummaries() async {
+        guard let store else { return }
         let today = Date()
-        let start = selectedPeriod.startDay(from: today, calendar: calendar)
-        let end = selectedPeriod.endDay(from: today, calendar: calendar)
-        let label = selectedPeriod.periodLabel(for: today, calendar: calendar)
-        let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
-        let weekEnd = calendar.date(byAdding: .day, value: 7, to: todayStart) ?? todayStart
+        let requestedPeriod = selectedPeriod
+        let windows = SummaryWindows(period: requestedPeriod, today: today, calendar: calendar)
+        do {
+            // 三个窗口查询并发下发;pendingOneOff 从工作集内存过滤(同入口卡口径)。
+            async let fixedInputs = store.reviewWindowInputs(from: windows.fixedStart, to: windows.end)
+            async let periodInputs = store.reviewWindowInputs(from: windows.periodStart, to: windows.end)
+            async let dueCount = store.dueTodoCount(dueOnOrAfter: windows.dueOnOrAfter, dueBefore: windows.dueBefore)
+            let pendingCount = ReviewAggregator.pendingOneOffCount(store.todos)
 
-        // 未来 7 天到期数:统计卡副文案(完成率分母链路随完成率下岗移除,2026-08-23)。
-        let upcomingDueIn7DaysCount = allTodos.filter { item in
-            guard let due = item.dueDate else { return false }
-            let dueDay = DayClock.startOfUserDay(for: due, calendar: calendar)
-            return dueDay > todayStart && dueDay <= weekEnd
-        }.count
-
-        let result = ReviewAggregator.summarize(
-            events: completionEvents,
-            from: start,
-            to: end,
-            calendar: calendar,
-            upcomingDueIn7DaysCount: upcomingDueIn7DaysCount
-        )
-        // 「当天记当天做完」按周/月各自区间算(一次性任务口径)。
-        let sameDayCount = ReviewAggregator.sameDayCompletions(
-            completedTodos.map { $0.toData() },
-            from: start,
-            to: end,
-            calendar: calendar
-        )
-        // 判词证据链的另两个数(2026-09-01 拍板;回顾页本页不展示,但
-        // ReviewSummary 是两页共用的形状,按周/月区间如实填,不留死值)。
-        let todoDTOs = allTodos.map { $0.toData() }
-        let createdCount = ReviewAggregator.createdInWindow(
-            todoDTOs, from: start, to: end, calendar: calendar
-        )
-        let pendingOneOffCount = ReviewAggregator.pendingOneOffCount(todoDTOs)
-        // sameDay 判词分母(v3):同口径一次性完成,与 total(含规律)是两个口径。
-        let oneOffCompletionCount = ReviewAggregator.oneOffCompletions(
-            completedTodos.map { $0.toData() }, from: start, to: end, calendar: calendar
-        )
-        return ReviewSummary(
-            periodLabel: label,
-            total: result.total,
-            byCategory: result.byCategory,
-            byDay: result.byDay,
-            streakDays: result.streakDays,
-            busiestDay: result.busiestDay,
-            busiestDayCount: result.busiestDayCount,
-            upcomingDueIn7DaysCount: result.upcomingDueIn7DaysCount,
-            daysWithCompletion: result.daysWithCompletion,
-            sameDayCount: sameDayCount,
-            createdCount: createdCount,
-            pendingOneOffCount: pendingOneOffCount,
-            oneOffCompletionCount: oneOffCompletionCount
-        )
+            let (fixed, period, upcoming) = try await (fixedInputs, periodInputs, dueCount)
+            // 过期写回护栏:快速切周期时 `.task(id:)` 取消的旧任务仍会跑完
+            // (取消是协作式的,actor 查询不检查取消),若它在新任务之后落笔,
+            // 两份摘要会停留在已不再选中的周期窗口且无自动纠正——赋值前校验
+            // 周期仍与出发时一致,且任务未被取消。
+            guard selectedPeriod == requestedPeriod, !Task.isCancelled else { return }
+            // 与旧路径同一对聚合入口、同一批口径参数(标签同样锚定「近 30 天」)。
+            fixedSummary = RecapSummaryBuilder.summary(
+                calendar: calendar,
+                periodLabel: String(localized: "review.window.last30d"),
+                start: windows.fixedStart,
+                end: windows.end,
+                inputs: fixed,
+                pendingOneOffCount: pendingCount,
+                upcomingDueIn7DaysCount: upcoming
+            )
+            periodSummary = RecapSummaryBuilder.summary(
+                calendar: calendar,
+                periodLabel: windows.periodLabel,
+                start: windows.periodStart,
+                end: windows.end,
+                inputs: period,
+                pendingOneOffCount: pendingCount,
+                upcomingDueIn7DaysCount: upcoming
+            )
+        } catch {
+            // 读失败不静默:error 日志显式留痕;页面保留上一份数字(首次失败
+            // 则渲染空),切周期/复盘 dismiss/重进页面会自动重试——统计页没有
+            // 「正确的降级数字」,不拿默认值掩盖失败(CLAUDE.md 错误显式传播)。
+            VoiceTodoLog.coordinator.error("review.summary.load.failed error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+        }
     }
 
     // MARK: - Views
@@ -554,7 +558,7 @@ struct ReviewView: View {
         }
     }
 
-    private var content: some View {
+    private func content(fixedWindowSummary: ReviewSummary, periodSummary: ReviewSummary) -> some View {
         VStack(spacing: WarmSpacing.lg) {
             // 2026-10-24 拍板:入口卡移至 body 尾部的底部悬浮层,列表顶部
             // 直接进成绩单;冷却期(7 天内已复盘)悬浮层整卡隐藏。
@@ -576,10 +580,10 @@ struct ReviewView: View {
             } else {
                 RecapCategoryChartSection(byCategory: periodSummary.byCategory)
 
-                dailyTrendSection
+                dailyTrendSection(periodSummary: periodSummary)
 
                 if let busiest = periodSummary.busiestDay {
-                    busiestDaySection(busiest)
+                    busiestDaySection(periodSummary: periodSummary, date: busiest)
                 }
             }
 
@@ -658,7 +662,7 @@ struct ReviewView: View {
     /// 数据稀疏(<3 天有完成)时换文本态,避免画一堆空柱子观感像「这月啥也没干」。
     /// 文本态直接用一句话告诉用户「7月24日完成 2 项,其余日期无记录」。
     /// 图表态再画 BarMark,X 轴刻度按周/月差异化(月=每 7 天一标,周=全标)。
-    private var dailyTrendSection: some View {
+    private func dailyTrendSection(periodSummary: ReviewSummary) -> some View {
         RecapCard {
             VStack(alignment: .leading, spacing: WarmSpacing.md) {
                 Text(String(localized: "review.section.daily_trend"))
@@ -666,10 +670,10 @@ struct ReviewView: View {
                     .foregroundColor(WarmTheme.textPrimary)
 
                 if periodSummary.daysWithCompletion < 3 {
-                    sparseTrendText
+                    sparseTrendText(periodSummary: periodSummary)
                 } else {
-                    dailyTrendChart
-                    trendConclusion
+                    dailyTrendChart(periodSummary: periodSummary)
+                    trendConclusion(periodSummary: periodSummary)
                 }
             }
         }
@@ -677,7 +681,7 @@ struct ReviewView: View {
 
     /// 稀疏态文本:把所有有完成的天按日期顺序列出,以「,」分隔,末尾接「其余日期无记录」。
     /// 阈值 <3 天意味着最多 2 天需要描述,句子不会过长。
-    private var sparseTrendText: some View {
+    private func sparseTrendText(periodSummary: ReviewSummary) -> some View {
         let activeDays = periodSummary.byDay
             .filter { $0.value > 0 }
             .sorted { $0.key < $1.key }
@@ -694,9 +698,11 @@ struct ReviewView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var dailyTrendChart: some View {
-        Chart {
-            ForEach(dailyTrendData, id: \.day) { entry in
+    private func dailyTrendChart(periodSummary: ReviewSummary) -> some View {
+        let trendData = dailyTrendData(periodSummary: periodSummary)
+        let todayStart = DayClock.startOfUserDay(for: Date(), calendar: calendar)
+        return Chart {
+            ForEach(trendData, id: \.day) { entry in
                 BarMark(
                     x: .value(String(localized: "review.chart.day"), entry.day, unit: .day),
                     y: .value(String(localized: "review.chart.count"), entry.count)
@@ -707,7 +713,7 @@ struct ReviewView: View {
 
             // 灰点:过去但 count=0 的日子(不含今天,今天没完成不算「没做」)。
             // 区分「没做」和「还没到」——未来日本来就没柱子,过去日没柱子会显灰点。
-            ForEach(pastZeroDays, id: \.day) { entry in
+            ForEach(trendData.filter { $0.count == 0 && $0.day < todayStart }, id: \.day) { entry in
                 PointMark(
                     x: .value(String(localized: "review.chart.day"), entry.day, unit: .day),
                     y: .value(String(localized: "review.chart.mark"), 0)
@@ -731,7 +737,7 @@ struct ReviewView: View {
     /// 图表下方一行结论:本月/本周共完成 N 项,最忙那天 M 项。
     /// 仅在图表态显示(稀疏态已有自己的替代文案,不重复堆叠)。
     @ViewBuilder
-    private var trendConclusion: some View {
+    private func trendConclusion(periodSummary: ReviewSummary) -> some View {
         if let busiest = periodSummary.busiestDay, periodSummary.busiestDayCount > 0 {
             let dateText = busiest.formatted(.dateTime.month().day())
             let sentence = String(localized: "review.trend.summary_\(periodSummary.total)_\(dateText)_\(periodSummary.busiestDayCount)")
@@ -742,15 +748,14 @@ struct ReviewView: View {
         }
     }
 
-    private var dailyTrendData: [(day: Date, count: Int)] {
+    private func dailyTrendData(periodSummary: ReviewSummary) -> [(day: Date, count: Int)] {
         let today = Date()
         let start = selectedPeriod.startDay(from: today, calendar: calendar)
 
         var result: [(day: Date, count: Int)] = []
         var cursor = start
         let todayStart = DayClock.startOfUserDay(for: today, calendar: calendar)
-        // 循环外取一次:`periodSummary` 是完整聚合(events 构建 + summarize +
-        // 三条 O(n) 过滤),放循环体内会被求值 7~30 次,大数据量下无谓放大主线程开销。
+        // byDay 由调用方传入(聚合算一次缓存在 @State,不再每次 body 重算)。
         let byDay = periodSummary.byDay
 
         while cursor <= todayStart {
@@ -763,14 +768,6 @@ struct ReviewView: View {
         }
 
         return result
-    }
-
-    /// 过去(不含今天)且 count=0 的日子——给图表画灰点用。
-    private var pastZeroDays: [(day: Date, count: Int)] {
-        let todayStart = DayClock.startOfUserDay(for: Date(), calendar: calendar)
-        return dailyTrendData.filter { entry in
-            entry.count == 0 && entry.day < todayStart
-        }
     }
 
     /// X 轴刻度日期。
@@ -807,14 +804,14 @@ struct ReviewView: View {
     /// 当 headline 强制换行时,「·」会留在第一行末尾,看起来像个孤立符号。
     /// 新布局:整句一个 Text,文案是「最忙的一天:7月24日 周三 · 完成 2 项」,
     /// 让 SwiftUI 整行排版,「·」前后都有内容,不会孤立。
-    private func busiestDaySection(_ date: Date) -> some View {
+    private func busiestDaySection(periodSummary: ReviewSummary, date: Date) -> some View {
         RecapCard {
             HStack(spacing: WarmSpacing.md) {
                 Image(systemName: "star.fill")
                     .font(.system(size: 28))
                     .foregroundColor(WarmTheme.warning)
 
-                Text(busiestDayOneLiner(date))
+                Text(busiestDayOneLiner(periodSummary: periodSummary, date: date))
                     .font(WarmFont.headline(16))
                     .foregroundColor(WarmTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -824,7 +821,7 @@ struct ReviewView: View {
         }
     }
 
-    private func busiestDayOneLiner(_ date: Date) -> String {
+    private func busiestDayOneLiner(periodSummary: ReviewSummary, date: Date) -> String {
         // 星期恒用 `.abbreviated`:英文 "Monday" → "Mon",中文 "星期一" → "周一"。
         // 与 HomeView todayWeekdayTitle 保持一致。
         let dateText = date.formatted(.dateTime.month().day().weekday(.abbreviated))
@@ -833,6 +830,10 @@ struct ReviewView: View {
 }
 
 // MARK: - Preview
+//
+// 按窗取数改造后统计走 store(ReviewSummaryReading),preview 不再裸建容器——
+// 用同一容器构造 TodoStore 注入,数字链路与生产一致(入口卡/复盘入口也随之
+// 可见,preview 更接近真实形态)。
 
 #Preview("With Data") {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -862,8 +863,9 @@ struct ReviewView: View {
         category: .work
     ))
 
+    let store = TodoStore(modelContext: container.mainContext, forceMigration: true)
     return NavigationStack {
-        ReviewView()
+        ReviewView(store: store)
     }
     .modelContainer(container)
     .environment(\.locale, Locale(identifier: "zh-Hans"))
@@ -891,8 +893,9 @@ struct ReviewView: View {
         completedAt: now
     ))
 
+    let store = TodoStore(modelContext: container.mainContext, forceMigration: true)
     return NavigationStack {
-        ReviewView()
+        ReviewView(store: store)
     }
     .modelContainer(container)
     .environment(\.locale, Locale(identifier: "zh-Hans"))
@@ -901,9 +904,10 @@ struct ReviewView: View {
 #Preview("Empty") {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try! ModelContainer(for: TodoItem.self, configurations: config)
+    let store = TodoStore(modelContext: container.mainContext, forceMigration: true)
 
     return NavigationStack {
-        ReviewView()
+        ReviewView(store: store)
     }
     .modelContainer(container)
     .environment(\.locale, Locale(identifier: "zh-Hans"))
