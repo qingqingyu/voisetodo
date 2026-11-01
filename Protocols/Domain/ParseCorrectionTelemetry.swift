@@ -432,7 +432,12 @@ struct ParseCorrectionReportedSet {
     }
 
     private func save(_ entries: [String: Date]) {
-        guard let defaults else { return }
+        guard let defaults else {
+            // App Group defaults 不可用:去重闸门失守(120 分钟窗口内重复编辑会重复
+            // 上报)。显式留痕不静默——事件本身仍照记,只是丢了「首次」过滤。
+            VoiceTodoLog.app.warning("parse_correction.reported_set.unavailable reason=app_group_defaults_nil entries=\(entries.count, privacy: .public)")
+            return
+        }
         if entries.isEmpty {
             defaults.removeObject(forKey: key)
         } else {

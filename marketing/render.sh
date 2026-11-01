@@ -2,7 +2,7 @@
 # 宣传截图合成渲染器:Chrome headless 逐张渲染 marketing/compose/template.html
 # 用法:
 #   ./render.sh                      # 全套:01-07 × zh/en,定版风格 B(衬线暖纸)
-#   ./render.sh --langs en           # 只出 en(例如先上英文市场)
+#   ./render.sh --langs=en           # 只出 en(例如先上英文市场;等号形式,空格形式不识别)
 # 产物:marketing/out/{lang}/{NN}.png(1320×2868);raw 缺失的序号渲染为占位卡
 # 依赖:本机 Google Chrome + sips,零新增仓库依赖(CLAUDE.md 规则)
 # 风格于 2026-10-28 三版小样拍板为 B(A/C 已删,历史见 git)
