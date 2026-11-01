@@ -417,28 +417,28 @@ actor TodoQueryActor {
         }
     }
 
-    /// `dueDate ∈ [dueOnAfter, dueBefore)` 的待办数。调用方按旧内存过滤的
+    /// `dueDate ∈ [dueOnOrAfter, dueBefore)` 的待办数。调用方按旧内存过滤的
     /// 用户日边界换算好两端再传(等价性证明见 `ReviewSummaryReading` 消费方):
     /// 旧 `dueDay > todayStart && dueDay <= weekEnd` ≡
     /// `dueDate ∈ [todayStart+1用户日, weekEnd+1用户日)`。不过滤完成/划掉/规律
     /// ——旧口径就不过滤(已完成的未来到期条目也计),加了数字就变。
     /// - Throws: `VoiceTodoError.storageReadFailed` 数据库读取错误。
-    func dueTodoCount(dueOnOrAfter dueOnAfter: Date, dueBefore: Date) throws -> Int {
+    func dueTodoCount(dueOnOrAfter dueOnOrAfter: Date, dueBefore: Date) throws -> Int {
         let startedAt = Date()
         let distantPast = Date.distantPast
         let distantFuture = Date.distantFuture
         let descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate {
-                ($0.dueDate ?? distantPast) >= dueOnAfter
+                ($0.dueDate ?? distantPast) >= dueOnOrAfter
                 && ($0.dueDate ?? distantFuture) < dueBefore
             }
         )
         do {
             let count = try modelContext.fetchCount(descriptor)
-            VoiceTodoLog.store.debug("query_actor.due_count.fetch_success due_on_or_after=\(dueOnAfter.ISO8601Format(), privacy: .public) due_before=\(dueBefore.ISO8601Format(), privacy: .public) count=\(count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+            VoiceTodoLog.store.debug("query_actor.due_count.fetch_success due_on_or_after=\(dueOnOrAfter.ISO8601Format(), privacy: .public) due_before=\(dueBefore.ISO8601Format(), privacy: .public) count=\(count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
             return count
         } catch {
-            VoiceTodoLog.store.error("query_actor.due_count.fetch_failed due_on_or_after=\(dueOnAfter.ISO8601Format(), privacy: .public) due_before=\(dueBefore.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            VoiceTodoLog.store.error("query_actor.due_count.fetch_failed due_on_or_after=\(dueOnOrAfter.ISO8601Format(), privacy: .public) due_before=\(dueBefore.ISO8601Format(), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             throw VoiceTodoError.wrapStorage(error, for: .read)
         }
     }

@@ -10,7 +10,8 @@
 |---|---|
 | `ed2ecae` | 第一件:代理监控口径修正 |
 | `89dc02e` | 第二件:回顾页/复盘第 1 步按窗取数 |
-| (本提交) | docs:本结果文档 |
+| `2ab4351` | docs:本结果文档 |
+| (本提交) | 双 review 循环收敛修复(见 §6) |
 
 ### 第一件(`ed2ecae`,只改 AIProxy + 两份文档)
 
@@ -158,3 +159,17 @@ seed 20050 rows: 3.80s; windowed fetch: 24ms; aggregate: 1ms
 6. **首帧异步化**:数字从同步变为异步就绪,首帧渲染空(不闪「还没有完成」空态文案);入口卡 N 与 A15 曝光 hasPending 走工作集同步值,不受影响;`dailyTrendData` 每帧重算全量聚合的问题顺带消除(聚合结果缓存进 `@State`)。
 
 其余:无。
+
+## 6. 双 review 循环(合 main 前的质量闸门)
+
+Three Check + code-review-expert 交替审查,第 2 轮双方 0 问题收敛(累计发现 3 / 修复 3):
+
+| 发现方 | 问题 | 修复 |
+|---|---|---|
+| Three Check | `TodoQueryActor.dueTodoCount` 内部形参名 `dueOnAfter` 与外部标签 `dueOnOrAfter` 不一致 | 命名对齐(零行为变化) |
+| Three Check | `ReviewView.reloadSummaries` 过期写回竞态:快速切周/月时 `.task(id:)` 取消的旧任务(取消是协作式的,actor 查询不检查)可能在新任务之后落笔,摘要停留在已不再选中的周期窗口且无自动纠正 | 出发时捕获 `requestedPeriod`,赋值前校验周期未变且任务未取消 |
+| code-review-expert(P2) | `ReviewFlowView.loadRecapSummary` 同机制竞态:步骤快速振荡时旧任务的摘要晚到,第 1 步会显示划卡/拆小之前的本期数字 | 同款守卫(`currentStep` 仍为 `.recap` 且未取消) |
+
+收敛轮测试:npm **396/396**;`arch -arm64 swift test` 371 例(唯一失败 = 已知 DST 基线);xcodebuild 857 例、2 skipped(唯一失败 = 同一 DST 红灯)。
+
+review 备注核实(拍板项,未改动):streak 窗口封顶、busiestDay 平局非确定、深链注入、首帧异步化(§5);「回顾 sheet 常开期间 Widget/Siri 外部写库不自动刷新」为 §5-6 的推论(切周期/复盘 dismiss/重呈现即刷新,不加监听);`USER_LIMIT_REJECTION_TYPES`(统计口径)与 `QUOTA_REJECTION_TYPES`(写行口径)靠注释互指同步,漂移方向 fail-safe(未知类型保守计失败)。

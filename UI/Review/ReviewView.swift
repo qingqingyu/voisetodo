@@ -485,7 +485,8 @@ struct ReviewView: View {
     private func reloadSummaries() async {
         guard let store else { return }
         let today = Date()
-        let windows = SummaryWindows(period: selectedPeriod, today: today, calendar: calendar)
+        let requestedPeriod = selectedPeriod
+        let windows = SummaryWindows(period: requestedPeriod, today: today, calendar: calendar)
         do {
             // 三个窗口查询并发下发;pendingOneOff 从工作集内存过滤(同入口卡口径)。
             async let fixedInputs = store.reviewWindowInputs(from: windows.fixedStart, to: windows.end)
@@ -494,6 +495,11 @@ struct ReviewView: View {
             let pendingCount = ReviewAggregator.pendingOneOffCount(store.todos)
 
             let (fixed, period, upcoming) = try await (fixedInputs, periodInputs, dueCount)
+            // 过期写回护栏:快速切周期时 `.task(id:)` 取消的旧任务仍会跑完
+            // (取消是协作式的,actor 查询不检查取消),若它在新任务之后落笔,
+            // 两份摘要会停留在已不再选中的周期窗口且无自动纠正——赋值前校验
+            // 周期仍与出发时一致,且任务未被取消。
+            guard selectedPeriod == requestedPeriod, !Task.isCancelled else { return }
             // 与旧路径同一对聚合入口、同一批口径参数(标签同样锚定「近 30 天」)。
             fixedSummary = RecapSummaryBuilder.summary(
                 calendar: calendar,

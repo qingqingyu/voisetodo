@@ -1331,6 +1331,11 @@ struct ReviewFlowView: View {
             )
             let pendingCount = ReviewAggregator.pendingOneOffCount(store.todos)
             let (windowInputs, upcoming) = try await (inputs, dueCount)
+            // 过期写回护栏(同 ReviewView.reloadSummaries):`.task(id: currentStep)`
+            // 取消的旧任务仍会跑完(取消是协作式的),步骤快速振荡时旧任务的
+            // 赋值可能落在新任务之后——第 1 步会显示划卡/拆小**之前**的本期
+            // 数字且无自动纠正。赋值前校验仍在第 1 步且任务未被取消。
+            guard state.currentStep == .recap, !Task.isCancelled else { return }
             recapSummary = RecapSummaryBuilder.summary(
                 calendar: calendar,
                 periodLabel: RecapSummaryBuilder.weekWindowLabel(
