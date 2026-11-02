@@ -250,3 +250,41 @@ AI 搜索推荐产品时最依赖这种清楚、可引用的事实。
 4. 4 篇指南草稿的位置（标明「待审」）。
 5. 部署与接入步骤（Cloudflare Pages、域名、Search Console、Bing、IndexNow、App Store 来源参数）。
 6. 偏离任务书的地方及理由（没有就写「无」）。
+
+---
+
+## 11. 复核意见（2026-11-02，针对 `task/seo-website` @ `d921102`）
+
+整体通过：14 页、构建检查 14 项全绿、隐私政策迁移只去掉了源注释和重复 H1、禁用说法扫描有效。
+**结果文档 §6 的 9 处偏离全部认可**（标题超长、页数 13→14 是任务书的错；其余处理都比任务书原文更稳妥）。
+
+### 11.1 Lighthouse 性能：已复测，结论成立
+
+在空闲机器（4 核，load < 1）上重跑 `npm run lighthouse`：首页、`/features`、指南页 Performance 均为 **100**
+（首页第一次冷启动跑出过一次 90，TBT 390ms，随后两次都是 100、TBT 0～10ms）。
+结果文档「低分来自开发机负载」的判断正确，不需要改页面。
+**可选**：`scripts/lighthouse-run.mjs` 每页跑 2 次取较高分，避免冷启动偶发不达标。
+
+### 11.2 必须修（4 处事实错误）
+
+1. **锁屏小组件的添加步骤写错了**（`/lock-screen-to-do-list` 的 How to add it 和 FAQ「How do I put my to-do list on my Lock Screen?」）。
+   现在写的是「点时钟上方的区域 → Add Widgets」。实际上：
+   - 矩形、圆形：自定 → 锁屏 → 点**时钟下方**的小组件区 → 选 VoiceTodo；
+   - 单行：同一界面点**时钟上方的日期** → 选 VoiceTodo（它不在时钟下方的列表里）。
+   照现在的步骤做，用户只能加到单行样式，找不到能勾选的矩形样式。
+   按 `docs/task-seo-website-pages.md` §3.3（已更新）改，两处保持一致。
+2. **`/features`「Import events from Apple Calendar as all-day tasks」不对。** 代码（`App/SystemCalendarEventImporter.swift`）：全天事件导入为全天任务，**定时事件保留开始时间**。
+   改为类似「Import events from Apple Calendar (timed events keep their time)」。
+3. **指南 `plan-your-day-in-2-minutes.md` 第 68 行**：
+   - 「checkable without unlocking into the app」暗示不用解锁——锁屏勾选是否要先解锁还**待真机确认**（结果文档 §7 自己也列了）。确认前统一用「tap to check off right from your Lock Screen」。
+   - 「the day's fixed appointments show up alongside them」：只有用户开启了日历导入才成立。加上条件（如「if you import your calendar」）或删掉。
+4. **`/features`「Interface: follows your phone's language」**：界面只有英文、中文、日文，其他语言显示英文。改为「Interface: English, Chinese, Japanese」。
+
+全站再搜一遍「without unlocking」「above the clock」「all-day」，确认没有其他地方写了同样的错误。
+
+### 11.3 不用改，但要知道
+
+- 锁屏页的 FAQ「Does it show today's tasks only?」按 `WidgetTodoFilter` 写的显示规则，我没有逐条核对；真机截图时顺便确认一次。
+- 截图、`/about`、指南审改、占位符定稿仍是产品负责人的待办（结果文档 §7），不在本轮修复范围。
+
+修完后在结果文档追加「复核修复」一节，列出改了哪些文件和句子，然后按投递协议把两份任务书改回 `.review.md`。
