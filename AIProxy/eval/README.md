@@ -152,3 +152,43 @@ ja 过关 ≠ 日文市场开放(还差母语审,见 PROMOTION_PLAN 附则 3);ja
 - 评测走流式路径(`stream: true`),与非流式路径的模型行为理论上一致(同一 prompt、同一模型),但极端情况下 SSE 拼装差异会计入 `infra_error` 而非质量问题
 - 超长 transcript 未覆盖:worker 对 >4000 chars 输入直接 413(`MAX_TRANSCRIPT_CHARS`);客户端的 `transcriptTooLong` 是 max_tokens 输出截断的错误映射(提示用户分批),两者评测集都不覆盖
 - 温度非 0 的模型有随机性;如见单 case 抖动,重跑该 case(`--resume` 跳过其他)对比
+
+## 9. 评测轮 3 runbook(GPT 轮 3 + z.ai 直连基线,2026-11-02 备料)
+
+> 目的(两项):① 生产主力 glm-5.3-flash(anthropic 端点)自 10-24 上线后**没有自己的直连质量基线**——本轮补上,顺带补 air 的同口径(与 09-22 基线 97.2% 对照看 prompt 三改的漂移);② 轮2更正版留下的归因缺口——用 z.ai **OpenAI 兼容端点直连** air 分离「接口形态 vs OpenRouter 托管」两个因素;③ 用户点名的 GPT 4o-mini / gpt-5-nano(OpenRouter 配额已批 ≈$0.15)。
+
+### 9.1 实验清单(模板都在 `providers/`)
+
+| # | label 建议 | 模板 | key env | 代理 | 目的 |
+|---|---|---|---|---|---|
+| R1 | `r3-zai-5.3-flash` | `zai-anthropic-5.3-flash.json` | `ZAI_KEY` | 不需要 | **生产主力直连基线**(生产同端点同模型同 prompt) |
+| R2 | `r3-zai-air` | `zai-anthropic-air.json` | `ZAI_KEY` | 不需要 | air 同口径;与 09-22 的 97.2%/3.7s 对照 = prompt 漂移量化 |
+| R3 | `r3-zai-air-openai` | `zai-openai-air.json` | `ZAI_KEY` | 不需要 | **归因实验**:OpenAI 兼容接口形态本身的影响(vs R2 / vs 轮2 OpenRouter 80.6%) |
+| R4 | `r3-zai-5.3-flash-openai` | `zai-openai-5.3-flash.json` | `ZAI_KEY` | 不需要 | 新主力在 OpenAI 兼容端点的表现(若该端点不供此模型会 400,如实记录即可) |
+| R5 | `r3-or-gpt-4o-mini` | `openrouter-gpt-4o-mini.json` | `OPENROUTER_KEY` | **需要** | 用户点名 |
+| R6 | `r3-or-gpt-5-nano` | `openrouter-gpt-5-nano.json` | `OPENROUTER_KEY` | **需要** | 用户点名 |
+
+优先级:R1、R2、R5、R6 必跑;R3 强烈建议(轮2遗留归因);R4 顺手。时间不够先保 R1/R5。
+
+### 9.2 前置(缺一项就停,不要绕过)
+
+1. **窗口**:UTC 周二~周四(北京时间周二 08:00 ~ 周五 08:00)。其他日子 runner 直接报错——这是特性,不是故障。
+2. **ZAI_KEY**:z.ai 按量 key(= 生产 `PROVIDER_KEY_ZAI_ANTHROPIC` 同一把,`.dev.vars` 里有值):
+   `export ZAI_KEY=$(grep '^PROVIDER_KEY_ZAI_ANTHROPIC=' .dev.vars | cut -d= -f2-)`
+3. **OPENROUTER_KEY**:本机没有,需人工提供(配额已批 ≈$0.15;轮2用的那把)。GPT 两组预算别超。
+4. **代理**(仅 R5/R6 需要,OpenRouter 对部分出口 403):先探活 `curl -x http://127.0.0.1:7897 -o /dev/null -w '%{http_code}' https://openrouter.ai/api/v1/models`(期望 200),跑时加 `--proxy http://127.0.0.1:7897`。
+
+### 9.3 执行
+
+```bash
+cd AIProxy/eval
+node run.mjs --provider-file providers/zai-anthropic-5.3-flash.json --key-env ZAI_KEY --label r3-zai-5.3-flash
+# …同型逐组;R5/R6 加 --proxy http://127.0.0.1:7897 与 --key-env OPENROUTER_KEY
+# 中断续跑:同命令 + --resume(同一窗口内才有效,换周锚日不同 runner 会拒)
+```
+
+### 9.4 判读与产出
+
+- 过关口径不变:73 条 ≤1 错 + 延迟适配生产 30s 超时(轮2 §10 更正版口径)。
+- 结果写 `docs/openrouter-eval-round3-results.md`:R1/R2 给主力与备线的**直连质量档案**;R3 完成轮2遗留的归因表(直连 anthropic vs 直连 openai-compat vs OpenRouter 三列);R5/R6 决定 GPT 系是否进入备选池(直接影响 clawto/gettoken 之外是否多一个溢出选项,以及「A 场景开闸」的备线质量证据)。
+- **A 场景开闸联动**:轮2结论「OpenRouter 无模型双过关」后,备线扩容走「z.ai 提额 + 多 key 池」。R2 若仍 ≥97%,A 场景闸门(secretNames 池)开闸的质量侧证据即齐备,剩下是人工买 key + 配额。

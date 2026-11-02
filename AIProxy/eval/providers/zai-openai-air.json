@@ -1,0 +1,6 @@
+{
+  "type": "openai",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+  "model": "glm-4.5-air",
+  "timeoutMs": 50000
+}
