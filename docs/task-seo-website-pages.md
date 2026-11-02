@@ -132,7 +132,7 @@
 | 6 | FAQ | 1. Is there an iPhone app that lets me check off tasks from the Lock Screen? 2. How do I put my to-do list on my Lock Screen? 3. Does it show today's tasks only? （按实际显示规则回答，执行者核对 `WidgetTodoFilter`） 4. Can I add tasks from the Lock Screen? （如实：添加用 Siri 或 Action Button） |
 | 7 | 内链 + CTA | → `/iphone-to-do-widget`、`/guides/keep-to-do-list-visible-on-iphone` |
 
-> 执行者要在真机上确认：在锁屏勾选时系统是否要求先解锁。如需要，文案写 "tap to check off (after Face ID)" 一类，不能暗示无需解锁。
+> **已真机确认（2026-11-02，产品负责人）：锁屏勾选不需要先解锁。** 可以写「Check off tasks without unlocking your iPhone」，这是锁屏页的主要卖点之一。
 
 ---
 

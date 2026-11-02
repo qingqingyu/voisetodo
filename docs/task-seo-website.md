@@ -288,3 +288,28 @@ AI 搜索推荐产品时最依赖这种清楚、可引用的事实。
 - 截图、`/about`、指南审改、占位符定稿仍是产品负责人的待办（结果文档 §7），不在本轮修复范围。
 
 修完后在结果文档追加「复核修复」一节，列出改了哪些文件和句子，然后按投递协议把两份任务书改回 `.review.md`。
+
+---
+
+## 12. 二次复核（2026-11-02，针对 `task/seo-website` @ `d467698`）
+
+§11.2 的 4 处修复**全部通过**：锁屏添加步骤（四处同口径，含扫雷发现的 support FAQ 和指南）、日历导入、界面语言、解锁措辞都已按代码事实改对；
+`lighthouse-run.mjs` 每页跑两次取高分也已加上。
+
+### 12.1 新事实：锁屏勾选不需要先解锁（产品负责人已在真机确认）
+
+之前因为没验证而禁止的说法，现在可以写了，而且应该写——这是锁屏页最强的卖点。请改：
+
+1. **`website/scripts/checks.mjs`**：删掉 d467698 新加的 `without unlocking` 禁用规则（它现在会挡住正确的文案）。
+2. **`/lock-screen-to-do-list`**：
+   - 首屏副标题加上不用解锁，例如：「See what's next every time you pick up your phone. Tap to check it off — no need to unlock.」
+   - 「Rectangular」样式说明：「Tap one to complete it — right there, without unlocking.」
+   - FAQ「Is there an iPhone app that lets me check off tasks from the Lock Screen?」答案加上「without unlocking your iPhone or opening the app」。
+3. **指南 `plan-your-day-in-2-minutes.md`**：第 68 行恢复「checkable without unlocking」的意思（措辞执行者定，保留 d467698 加的日历条件）。
+4. **`keep-to-do-list-visible-on-iphone.md`**：讲锁屏小组件的段落补一句不用解锁就能勾选。
+5. **首页**卖点 2（Your list, always in sight）的说明里加一句不用解锁（不改 H2）。
+6. 结果文档 §7 把「真机确认是否需先解锁」标为**已完成**，并追加「二次复核修复」一节。
+
+注意只写**勾选**不用解锁；**添加任务**仍然是 Siri 或 Action Button，不要写成「在锁屏上就能添加」。
+
+修完后两份任务书改回 `.review.md`。
