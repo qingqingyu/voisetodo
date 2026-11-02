@@ -102,3 +102,22 @@ title/desc 唯一+长度;canonical 绝对化+无尾斜杠+唯一;og:image 文件
 - **四篇指南逐篇审改**后翻 `draft:false`。
 - **空闲机器/CI 复测 Lighthouse Perf**(见 §3 脚注),上线前把三个 ≥95 收口。
 - 占位符定稿:APP_NAME / DOMAIN / APP_STORE_ID / PROVIDER_TOKEN / SUPPORT_EMAIL(`src/config.mjs`)。**注意** `SUPPORT_EMAIL` 定稿时,`src/content/legal/privacy.md`(原样迁移,不读 config)中的联系邮箱需手动同步(3 处)。
+
+## 8. 复核修复(2026-11-02 第二轮,针对复核 §11.2 的 4 处事实错误)
+
+复核结论:整体通过、§6 九处偏离全部认可、空闲机 Lighthouse Perf=100 复测成立(§11.1)。按 §11.2 修复 + §11.1 可选项 + 全站同类扫雷:
+
+| # | 位置 | 改动 |
+|---|---|---|
+| 1 | `lock-screen-to-do-list.astro` 样式区 | 「Three Lock Screen widgets」→「Lock Screen widgets」:明确矩形/圆形在**时钟下方**、单行在**日期行**且不在下方列表里(对齐 pages §3.3 新稿);三卡片标注位置 |
+| 1 | `lock-screen-to-do-list.astro` 设置步骤 | 拆两段:矩形/圆形=自定→锁屏→点**时钟下方小组件区**→Add Widgets;单行=同一界面点**时钟上方的日期** |
+| 1 | `pages.mjs` 锁屏 FAQ「How do I put…」 | 同上口径重写 |
+| 1 | `pages.mjs` support FAQ「How do I add…」 | **复核未点名、全站扫雷发现**的同类错误:同口径修正 |
+| 1 | `guides/keep-to-do-list-visible-on-iphone.md` 设置步骤 + 样式句 | 同类错误同修(below clock / date row 措辞) |
+| 2 | `features.astro` Calendar 行 | 「Import events … as all-day tasks」→「all-day events become all-day tasks, timed events keep their time」(对齐 `SystemCalendarEventImporter.swift` 实际行为) |
+| 3 | `guides/plan-your-day-in-2-minutes.md` | 「checkable without unlocking into the app」→「tap to check one off right from the Lock Screen」(复核指定的统一措辞);「day's fixed appointments show up alongside them」→ 加条件「if you import your calendar」 |
+| 4 | `features.astro` Languages 行 + `pages.mjs` 首页 FAQ #5 | 「follows your phone's language」→「Interface: English, Chinese, Japanese (English elsewhere)」/「On a phone set to another language, the app displays English」(首页 FAQ 为**扫雷发现**的同类错误) |
+| 附 | `scripts/checks.mjs` | 新增禁用说法:`without unlocking`(解锁行为未真机验证前统一措辞,防回归) |
+| 附 | `scripts/lighthouse-run.mjs` | §11.1 可选项:每页跑 2 次,取四类总分较高的一次,分数与报告文件存同一次结果(规避冷启动偶发;按类别取 max 会让分数与报告不同源,故按整次取) |
+
+全站 grep `without unlocking` / `above the clock`(错误语境)/ `all-day` / `follows your phone` 复核为净。构建检查(含新增闸)全绿。

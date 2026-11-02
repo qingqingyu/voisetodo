@@ -23,11 +23,11 @@ This is the one to set up first. You look at your Lock Screen every time you pic
 **Setup (about 30 seconds):**
 
 1. Wake the phone, then touch and hold the Lock Screen.
-2. Tap **Customize**, then tap **Lock Screen** (the area above the clock).
-3. Tap **Add Widgets**, find your to-do app, and pick its widget.
-4. Tap the widgets to choose sizes, then done.
+2. Tap **Customize**, then tap **Lock Screen**, then tap the **widget area below the clock**.
+3. Tap **Add Widgets**, find your to-do app, and pick its widget, then done.
+4. Want the single-line style instead? It isn't in that widget list — tap the **date above the clock** in the same customization view and choose your to-do app there.
 
-Not all to-do apps offer Lock Screen widgets — Apple's Reminders does, and VoiceTodo offers three styles: a rectangular one that lists your next few tasks with checkboxes, a circular one that just shows how many are left, and a single-line one above the clock showing your next task. The rectangular style is the workhorse; the count ring suits people who find lists visually noisy.
+Not all to-do apps offer Lock Screen widgets — Apple's Reminders does, and VoiceTodo offers three styles: a rectangular one that lists your next few tasks with checkboxes, a circular one that just shows how many are left, and a single-line one in the date row above the clock showing your next task. The rectangular style is the workhorse; the count ring suits people who find lists visually noisy.
 
 One honest limitation worth knowing: Lock Screen widgets are compact. That's not a bug — the constraint is exactly what keeps the list short enough to matter. Which leads to the last section.
 

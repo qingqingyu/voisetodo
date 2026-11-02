@@ -117,7 +117,7 @@ export const faqs = {
     },
     {
       q: 'Does it work in other languages?',
-      a: 'Yes. Voice capture works in English, Chinese, and Japanese, and the app interface follows your phone’s language.',
+      a: 'Voice capture and the interface are available in English, Chinese, and Japanese. On a phone set to another language, the app displays English.',
     },
     {
       q: 'Which iPhones are supported?',
@@ -153,7 +153,7 @@ export const faqs = {
     },
     {
       q: 'How do I put my to-do list on my Lock Screen?',
-      a: 'Touch and hold your Lock Screen, tap Customize, tap the area above the clock, tap Add Widgets, and choose VoiceTodo. It takes about 30 seconds — full steps with screenshots above.',
+      a: 'Touch and hold your Lock Screen → Customize → Lock Screen, then tap the widget area below the clock → Add Widgets → VoiceTodo (rectangular or circular). For the single-line style, tap the date above the clock instead and choose VoiceTodo there. Full steps above.',
     },
     {
       q: "Does it show today's tasks only?",
@@ -181,7 +181,7 @@ export const faqs = {
   support: [
     {
       q: 'How do I add the Lock Screen widget?',
-      a: 'Touch and hold your Lock Screen → Customize → tap the area above the clock → Add Widgets → VoiceTodo. The rectangular style shows tasks with checkboxes; circular shows a count and single-line shows your next task.',
+      a: 'Touch and hold your Lock Screen → Customize → Lock Screen → tap the widget area below the clock → Add Widgets → VoiceTodo. (For the single-line style, tap the date above the clock instead.) Rectangular shows tasks with checkboxes; circular shows a count.',
     },
     {
       q: 'Speech recognition is not accurate. What can I do?',

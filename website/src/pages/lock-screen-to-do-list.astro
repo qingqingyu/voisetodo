@@ -38,22 +38,27 @@ const schema = [
 
   <section aria-labelledby="styles-h">
     <div class="container">
-      <h2 id="styles-h">Three Lock Screen widgets</h2>
+      <h2 id="styles-h">Lock Screen widgets</h2>
+      <p>
+        Two styles live <strong>below the clock</strong> — and there's a third, single-line style that lives in the
+        <strong>date row above the clock</strong>. That one isn't in the widget list below the clock; you add it by
+        tapping the date itself (steps below).
+      </p>
       <div class="grid-3">
         <div class="card">
-          <h3>Rectangular</h3>
+          <h3>Rectangular <span style="font-weight:400;color:var(--ink-faint)">(below the clock)</span></h3>
           <p>Your next few tasks, each with a checkbox. Tap one to complete it — right there.</p>
-          <ShotPending what="Rectangular Lock Screen widget with checkboxes" />
+          <ShotPending what="Rectangular Lock Screen widget with checkboxes, below the clock" />
         </div>
         <div class="card">
-          <h3>Circular</h3>
+          <h3>Circular <span style="font-weight:400;color:var(--ink-faint)">(below the clock)</span></h3>
           <p>A single glanceable number: how many tasks are left today.</p>
-          <ShotPending what="Circular Lock Screen widget showing remaining count" />
+          <ShotPending what="Circular Lock Screen widget showing remaining count, below the clock" />
         </div>
         <div class="card">
-          <h3>Single line</h3>
-          <p>Above the clock: your next task, always one glance away.</p>
-          <ShotPending what="Inline Lock Screen widget above the clock" />
+          <h3>Single line <span style="font-weight:400;color:var(--ink-faint)">(in the date row)</span></h3>
+          <p>Your next task, right beside the date — one glance every time you wake your phone.</p>
+          <ShotPending what="Inline Lock Screen widget in the date row above the clock" />
         </div>
       </div>
     </div>
@@ -62,21 +67,28 @@ const schema = [
   <section aria-labelledby="setup-h">
     <div class="container">
       <h2 id="setup-h">How to add it (30 seconds)</h2>
+      <h3>Rectangular or circular</h3>
       <ol class="steps">
         <li>
           <div><p>Touch and hold your Lock Screen, then tap <strong>Customize</strong>.</p></div>
         </li>
         <li>
-          <div><p>Tap the <strong>Lock Screen</strong> button (the area above the clock).</p></div>
+          <div><p>Tap <strong>Lock Screen</strong>, then tap the <strong>widget area below the clock</strong>.</p></div>
         </li>
         <li>
-          <div><p>Tap <strong>Add Widgets</strong> and choose {siteConfig.appName}.</p></div>
-        </li>
-        <li>
-          <div><p>Pick a style — rectangular shows tasks with checkboxes. Done.</p></div>
+          <div><p>Tap <strong>Add Widgets</strong> and choose {siteConfig.appName} — rectangular or circular.</p></div>
         </li>
       </ol>
-      <ShotPending what="Setup steps screenshots (iOS widget picker)" ratio="wide" />
+      <h3>Single-line style</h3>
+      <ol class="steps">
+        <li>
+          <div><p>In the same customization view, tap the <strong>date above the clock</strong> (not the widget area below it).</p></div>
+        </li>
+        <li>
+          <div><p>Choose {siteConfig.appName} — your next task now sits in the date row.</p></div>
+        </li>
+      </ol>
+      <ShotPending what="Setup steps screenshots (below-clock widgets vs date row)" ratio="wide" />
     </div>
   </section>
 

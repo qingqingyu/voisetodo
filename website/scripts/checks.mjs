@@ -154,6 +154,7 @@ const BANNED_PATTERNS = [
   [/\bunlimited\b/i, 'unlimited claims'],
   [/free forever|completely free|100% free/i, 'misleading free claims'],
   [/\boffline\b/i, 'offline claims (allowed only as honest offline-fallback wording without the word itself)'],
+  [/without unlocking/i, 'unlock wording — whether Lock Screen check-off requires unlock is unverified on device; write "tap to check off right from the Lock Screen" instead'],
   [/\bsync(ed|ing|s)?\b/i, 'sync claims (allowed only in the required "no multi-device sync" disclosure)'],
   [/\bcur(e|es|ed|ing)\b|clinic(al|ally)?\b|therap(y|ist)\b/i, 'medical claims'],
   // treat* 只在贴近医学语境时才算宣称(普通动词用法放行;ADHD 文案另由下方规则单独拦)
