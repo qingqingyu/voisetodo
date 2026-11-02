@@ -126,8 +126,8 @@
 |---|---|---|
 | 1 | 首屏 | **H1**：Your to-do list, right on your Lock Screen<br>副标题：See what's next every time you pick up your phone. Tap to check it off. |
 | 2 | 为什么要放锁屏 | **H2**：Out of sight, out of mind<br>你一天拿起手机几十次；清单放在锁屏上，就不会被忘掉。 |
-| 3 | 三种锁屏样式 | **H2**：Three Lock Screen widgets<br>矩形：显示接下来几件事，可直接勾选；圆形：剩余数量；单行：下一件事。每种配一张示意图。 |
-| 4 | 设置步骤 | **H2**：How to add it (30 seconds)<br>长按锁屏 → 自定 → 锁屏 → 添加小组件 → 选 {{APP_NAME}}。配步骤截图。 |
+| 3 | 锁屏样式 | **H2**：Lock Screen widgets<br>时钟下方两种：矩形（显示接下来几件事，可直接勾选）、圆形（剩余数量）。<br>时钟上方日期那一行还可以放一个单行样式（显示下一件事）——它不在时钟下方的小组件列表里，要点日期那一行才能添加，文案里要写清楚。每种配一张图。 |
+| 4 | 设置步骤 | **H2**：How to add it (30 seconds)<br>长按锁屏 → 自定 → 锁屏 → 点时钟下方的小组件区 → 选 {{APP_NAME}}（矩形或圆形）。<br>单行样式：同一界面点**时钟上方的日期** → 选 {{APP_NAME}}。配步骤截图。 |
 | 5 | 配合语音 | **H2**：Say it in the morning, see it all day<br>早上说一遍今天的计划 → 一整天都在锁屏上。→ 链 `/guides/plan-your-day-in-2-minutes` |
 | 6 | FAQ | 1. Is there an iPhone app that lets me check off tasks from the Lock Screen? 2. How do I put my to-do list on my Lock Screen? 3. Does it show today's tasks only? （按实际显示规则回答，执行者核对 `WidgetTodoFilter`） 4. Can I add tasks from the Lock Screen? （如实：添加用 Siri 或 Action Button） |
 | 7 | 内链 + CTA | → `/iphone-to-do-widget`、`/guides/keep-to-do-list-visible-on-iphone` |
@@ -164,7 +164,7 @@
 | What it does | 说话 → 拆成多条带日期的待办；手动编辑；个人词库 |
 | Capture | App 内录音、Siri、Action Button（支持的机型）、键盘输入 |
 | Organize | 截止日期和时间、重复任务（每天/每周几/每月几号/间隔）、提醒、分类、拆小 |
-| See & complete | 锁屏小组件（矩形可勾选、圆形、单行）、桌面小组件（中、大，可勾选）、月历视图 |
+| See & complete | 锁屏小组件（时钟下方：矩形可勾选、圆形；时钟上方日期行：单行）、桌面小组件（中、大，可勾选）、月历视图 |
 | Review | 每周复盘流程、完成统计 |
 | Calendar | 可选：同步到 Apple 日历、导入日历事件 |
 | Languages | English、中文、日本語 |
@@ -237,7 +237,7 @@
 | 用途 | 来源 | 现状 |
 |---|---|---|
 | 录音、确认清单、月历、今天、复盘 | `screenshots/en/01～05` | 已有 |
-| **锁屏小组件**（3 种样式） | 需新截 | **缺** |
+| **锁屏小组件**：时钟下方的矩形、圆形 + 时钟上方日期行的单行 | 需新截 | **缺** |
 | **桌面小组件**（中、大） | 需新截 | **缺** |
 | Siri / Action Button 使用 | 需新截或示意 | **缺** |
 | 设置步骤（添加小组件） | 需新截 | **缺** |
