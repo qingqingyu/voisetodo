@@ -1,0 +1,42 @@
+---
+// 隐私政策页(页面规格 §3.9):PRIVACY_POLICY.md 原样迁移,顶部加三句话摘要。
+// 源文件:仓库根 PRIVACY_POLICY.md(部署 GitHub Pages 的同一份);条款改动须同步两处。
+import Base from '../layouts/Base.astro';
+import { getCollection, render } from 'astro:content';
+import { pages } from '../data/pages.mjs';
+import { breadcrumbSchema } from '../data/schema.mjs';
+
+const meta = pages['/privacy'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Privacy Policy', path: '/privacy' },
+  ]),
+];
+
+const entries = await getCollection('legal');
+const policy = entries.find((e) => e.id === 'privacy');
+if (!policy) throw new Error('src/content/legal/privacy.md is missing');
+const { Content } = await render(policy);
+---
+
+<Base path="/privacy" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Privacy Policy</h1>
+      <div class="policy-summary">
+        <ul>
+          <li>You don't need an account — your to-do list stays on your iPhone.</li>
+          <li>Your audio is never uploaded; transcripts are organized by an AI in real time and not archived.</li>
+          <li>No tracking, no ads, no selling data — details below.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container policy-body">
+      <Content />
+    </div>
+  </section>
+</Base>

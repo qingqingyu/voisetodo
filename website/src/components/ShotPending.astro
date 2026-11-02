@@ -1,0 +1,15 @@
+---
+// 待补真机截图占位(页面规格 §5:锁屏/桌面小组件等截图缺,产品负责人真机补)。
+// 刻意做成「标注占位」而非生成假界面(任务书 §8:不用生成的假界面)。
+interface Props {
+  what: string; // 需要补的截图说明,进结果文档清单
+  ratio?: 'tall' | 'wide';
+}
+const { what, ratio = 'tall' } = Astro.props;
+---
+
+<div class="shot-pending" role="figure" aria-label={`Screenshot placeholder: ${what}`} style={ratio === 'wide' ? 'min-height:200px' : ''}>
+  <strong>Screenshot coming soon</strong>
+  <span>{what}</span>
+  <span style="font-size:0.8rem">(to be captured on a real device)</span>
+</div>

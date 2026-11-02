@@ -1,0 +1,61 @@
+---
+// 页脚(页面规格 §2):Product / Guides / Company 三列 + 底部一行要求说明。
+import { siteConfig } from '../config.mjs';
+
+interface Props {
+  year: number;
+}
+const { year } = Astro.props;
+
+const columns = [
+  {
+    title: 'Product',
+    links: [
+      { href: '/voice-to-do-list', label: 'Voice to-do list' },
+      { href: '/lock-screen-to-do-list', label: 'Lock Screen to-do list' },
+      { href: '/iphone-to-do-widget', label: 'iPhone widget' },
+      { href: '/features', label: 'All features' },
+    ],
+  },
+  {
+    title: 'Guides',
+    links: [
+      { href: '/guides/stop-forgetting-things-you-need-to-do', label: 'Stop forgetting things' },
+      { href: '/guides/plan-your-day-in-2-minutes', label: 'Plan your day in 2 minutes' },
+      { href: '/guides/keep-to-do-list-visible-on-iphone', label: 'Keep your list visible' },
+      { href: '/guides', label: 'All guides' },
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      { href: '/about', label: 'About' },
+      { href: '/support', label: 'Support' },
+      { href: '/privacy', label: 'Privacy' },
+    ],
+  },
+];
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      {
+        columns.map((col) => (
+          <nav aria-label={col.title}>
+            <h3>{col.title}</h3>
+            <ul>
+              {col.links.map((l) => (
+                <li><a href={l.href}>{l.label}</a></li>
+              ))}
+            </ul>
+          </nav>
+        ))
+      }
+    </div>
+    <div class="footer-legal">
+      <span>Requires iPhone with iOS 26 or later.</span>
+      <span>&copy; {year} {siteConfig.appName}</span>
+    </div>
+  </div>
+</footer>

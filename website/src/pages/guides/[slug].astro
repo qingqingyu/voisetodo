@@ -1,0 +1,55 @@
+---
+// 指南文章页(任务书 §3.2 模板):开头直接给答案 → 通用方法 → 一节介绍 App → 相关文章 + CTA。
+// 草稿(draft:true)显示可见标记 + noindex,产品负责人审改后翻 false 才进 sitemap。
+import Base from '../../layouts/Base.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { getCollection, render } from 'astro:content';
+import { articleSchema, breadcrumbSchema, ogImagePath } from '../../data/schema.mjs';
+import { siteUrl, siteConfig } from '../../config.mjs';
+
+export async function getStaticPaths() {
+  const guides = await getCollection('guides');
+  return guides.map((g) => ({ params: { slug: g.id }, props: { guide: g } }));
+}
+
+const { guide } = Astro.props;
+const { Content } = await render(guide);
+const path = `/guides/${guide.id}`;
+
+// 指南 meta 在 frontmatter(单一来源);title 加站名后缀与全站一致。
+const title = `${guide.data.title} | ${siteConfig.appName}`;
+const schema = [
+  articleSchema(guide, `${siteUrl}${ogImagePath(path)}`),
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Guides', path: '/guides' },
+    { name: guide.data.title, path },
+  ]),
+];
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+---
+
+<Base path={path} title={title} description={guide.data.description} ogTitle={guide.data.title} schema={schema} noindex={guide.data.draft}>
+  <article>
+    <section class="hero">
+      <div class="container article-head">
+        {guide.data.draft && <p><span class="draft-badge">Draft — pending review</span></p>}
+        <h1>{guide.data.title}</h1>
+        <div class="article-meta">
+          <span>By the {siteConfig.appName} developer</span>
+          <span>Published {fmt(guide.data.pubDate)}</span>
+          <span>Updated {fmt(guide.data.updatedDate ?? guide.data.pubDate)}</span>
+        </div>
+        <p class="lede">{guide.data.description}</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="container article-body">
+        <Content />
+      </div>
+    </section>
+  </article>
+
+  <CtaBand ct={`web-guide-${guide.id}`} />
+</Base>

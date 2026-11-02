@@ -1,0 +1,89 @@
+---
+// 桌面小组件落地页(页面规格 §3.4)。
+import Base from '../layouts/Base.astro';
+import Faq from '../components/Faq.astro';
+import CtaBand from '../components/CtaBand.astro';
+import ShotPending from '../components/ShotPending.astro';
+import { pages, faqs } from '../data/pages.mjs';
+import { breadcrumbSchema } from '../data/schema.mjs';
+import { siteConfig } from '../config.mjs';
+
+const meta = pages['/iphone-to-do-widget'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'iPhone to-do widget', path: '/iphone-to-do-widget' },
+  ]),
+];
+---
+
+<Base path="/iphone-to-do-widget" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>A to-do widget you can actually check off</h1>
+      <p class="lede">
+        Medium and large Home Screen widgets. Tap the circle, done — no need to open the app.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="sizes-h">
+    <div class="container">
+      <h2 id="sizes-h">Pick your size</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Medium</h3>
+          <p>Your most recent few tasks, always on the first page of your Home Screen.</p>
+          <ShotPending what="Medium Home Screen widget with checkable tasks" />
+        </div>
+        <div class="card">
+          <h3>Large</h3>
+          <p>More of the day at once — glance at everything that's left without opening anything.</p>
+          <ShotPending what="Large Home Screen widget with more tasks" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="tap-h">
+    <div class="container">
+      <h2 id="tap-h">Check off without opening the app</h2>
+      <p>
+        The widgets are interactive: every task has a circle next to it. Tap the circle to complete the task; tap the task's title to open
+        its details. Completing a task never yanks you out of what you were doing.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="setup-h">
+    <div class="container">
+      <h2 id="setup-h">How to add it</h2>
+      <ol class="steps">
+        <li>
+          <div><p>Touch and hold your Home Screen until the icons jiggle, then tap <strong>Edit</strong>.</p></div>
+        </li>
+        <li>
+          <div><p>Tap <strong>Add Widget</strong> and choose {siteConfig.appName}.</p></div>
+        </li>
+        <li>
+          <div><p>Pick medium or large, place it where you'll see it, and tap done.</p></div>
+        </li>
+      </ol>
+      <ShotPending what="Home Screen widget setup screenshots" ratio="wide" />
+    </div>
+  </section>
+
+  <section aria-labelledby="together-h">
+    <div class="container">
+      <h2 id="together-h">Best together with the Lock Screen</h2>
+      <p>
+        Home Screen for when you're already in your phone; Lock Screen for every time you pick it up. Both show the same list, both let you
+        check things off.
+      </p>
+      <p><a href="/lock-screen-to-do-list">The Lock Screen widget &rarr;</a></p>
+    </div>
+  </section>
+
+  <Faq faqs={faqs.widget} />
+  <CtaBand ct="web-widget-footer" />
+</Base>

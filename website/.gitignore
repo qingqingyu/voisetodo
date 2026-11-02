@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.astro/
+lighthouse-reports/
+*.log
+.DS_Store

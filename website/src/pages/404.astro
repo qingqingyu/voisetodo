@@ -1,0 +1,22 @@
+---
+// 404(页面规格 §3.11)。
+import Base from '../layouts/Base.astro';
+import { pages } from '../data/pages.mjs';
+
+const meta = pages['/404'];
+---
+
+<Base path="/404" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} noindex>
+  <section class="notfound">
+    <div class="container">
+      <h1>This page got lost (we know the feeling)</h1>
+      <p class="lede" style="margin-inline:auto">The link may be old or mistyped. These are the places people usually want:</p>
+      <ul class="notfound-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/voice-to-do-list">Voice to-do list</a></li>
+        <li><a href="/lock-screen-to-do-list">Lock Screen to-do list</a></li>
+        <li><a href="/guides">Guides</a></li>
+      </ul>
+    </div>
+  </section>
+</Base>

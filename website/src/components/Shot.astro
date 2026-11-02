@@ -1,0 +1,32 @@
+---
+// 真实 App 截图(screenshots/en 转 webp 双档,srcset 响应式;尺寸由
+// scripts/optimize-images.mjs 生成的 src/data/screens.mjs 提供,零 CLS)。
+// 首屏图传 eager(不懒加载,并带 fetchpriority=high 提升 LCP 发现)。
+import { screens } from '../data/screens.mjs';
+
+interface Props {
+  name: string; // 如 '01-recording'(对应 screenshots/en/01-recording.png)
+  alt: string; // 描述性 alt(必填,构建检查校验非空)
+  caption?: string;
+  eager?: boolean;
+  narrow?: boolean; // 窄幅展示(单截图居中)
+}
+const { name, alt, caption, eager = false, narrow = false } = Astro.props;
+const meta = screens[name];
+if (!meta) throw new Error(`Unknown screenshot '${name}' — run npm run images in website/`);
+---
+
+<figure class:list={['shot', { 'shot-narrow': narrow }]}>
+  <img
+    src={`/screens/${name}-1100.webp`}
+    srcset={`/screens/${name}-640.webp 640w, /screens/${name}-1100.webp 1100w`}
+    sizes={narrow ? '(max-width: 680px) 92vw, 340px' : '(max-width: 680px) 92vw, 480px'}
+    alt={alt}
+    width={meta.w}
+    height={meta.h}
+    loading={eager ? 'eager' : 'lazy'}
+    fetchpriority={eager ? 'high' : undefined}
+    decoding="async"
+  />
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

@@ -1,0 +1,27 @@
+---
+// FAQ 区(页面规格各页 §FAQ):可见内容与 FAQPage 结构化数据同源(任务书 §4.3),
+// 构建检查脚本核对两边条数一致。
+import { faqPageSchema } from '../data/schema.mjs';
+
+interface Props {
+  faqs: { q: string; a: string }[];
+  heading?: string;
+}
+const { faqs, heading = 'Frequently asked questions' } = Astro.props;
+const schema = faqPageSchema(faqs);
+---
+
+<section class="faq" aria-labelledby="faq-h">
+  <div class="container">
+    <h2 id="faq-h">{heading}</h2>
+    {faqs.map((f) => (
+      <details>
+        <summary>{f.q}</summary>
+        <div class="faq-answer">
+          <p>{f.a}</p>
+        </div>
+      </details>
+    ))}
+  </div>
+  <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+</section>

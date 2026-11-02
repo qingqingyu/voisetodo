@@ -1,0 +1,75 @@
+---
+// 全站布局:统一生成 <head>(任务书 §4.2)——title/description/canonical/OG/Twitter/
+// apple-itunes-app/theme-color/图标/hreflang(单语言时不输出)。JSON-LD 由各页
+// 通过 schema 数组传入,布局统一渲染。
+import '../styles/global.css';
+import { siteConfig, siteUrl } from '../config.mjs';
+import { hreflangAlternates, ogImagePath, webSiteSchema, organizationSchema } from '../data/schema.mjs';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+interface Props {
+  path: string; // 站内路径,'/' 或 '/xxx'(无尾斜杠)
+  title: string; // ≤60 字符,含站名后缀
+  description: string; // ≤155 字符
+  ogTitle?: string; // OG 图与 og:title 用(不带站名后缀)
+  schema?: object[]; // 页面级 JSON-LD;布局自动附加全站 WebSite + Organization
+  noindex?: boolean; // 草稿等不收录页
+}
+
+const { path, title, description, ogTitle = title.split(' | ')[0], schema = [], noindex = false } = Astro.props;
+
+const canonical = `${siteUrl}${path === '/' ? '/' : path}`;
+const ogImage = `${siteUrl}${ogImagePath(path)}`;
+const alternates = hreflangAlternates(path); // 单语言时为空数组
+const allSchema = [webSiteSchema(), organizationSchema(), ...schema];
+const year = new Date().getFullYear();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical} />
+    {alternates.map((a) => <link rel="alternate" hreflang={a.hreflang} href={a.href} />)}
+    {alternates.length > 0 && <link rel="alternate" hreflang="x-default" href={canonical} />}
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteConfig.appName} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={`${ogTitle} — ${siteConfig.appName}`} />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={ogTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <!-- Apple Smart App Banner(任务书 §4.2;App ID 为占位符,上架后改 src/config.mjs) -->
+    <meta name="apple-itunes-app" content={`app-id=${siteConfig.appStoreId}`} />
+
+    <meta name="theme-color" content="#fbfaf7" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    {allSchema.map((s) => <script type="application/ld+json" set:html={JSON.stringify(s)} />)}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <Nav />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer year={year} />
+  </body>
+</html>
