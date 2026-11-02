@@ -149,7 +149,7 @@ export const faqs = {
   lock: [
     {
       q: 'Is there an iPhone app that lets me check off tasks from the Lock Screen?',
-      a: "Yes — that's the rectangular Lock Screen widget. It shows your next few to-dos with a checkbox on each; tap to complete one without opening the app.",
+      a: "Yes — that's the rectangular Lock Screen widget. It shows your next few to-dos with a checkbox on each; tap to complete one without unlocking your iPhone or opening the app.",
     },
     {
       q: 'How do I put my to-do list on my Lock Screen?',

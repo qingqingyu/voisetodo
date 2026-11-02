@@ -96,11 +96,11 @@ title/desc 唯一+长度;canonical 绝对化+无尾斜杠+唯一;og:image 文件
 
 ## 7. 待办移交(产品负责人)
 
-- **真机截图**(规格 §5):锁屏矩形/圆形/单行小组件、桌面中/大小组件、Siri/Action Button 使用、添加小组件步骤——页面均为 `ShotPending` 占位,截图后替换为 `Shot` 组件并跑 `npm run images`。
-- **真机确认**:锁屏小组件勾选是否需先解锁(任务书 §3.3 注);文案目前只写「tap to check off right from the Lock Screen」(代码事实:`ToggleTodoIntent`),未写「无需解锁」,确认后按需补。
+- **真机截图**(规格 §5,已按 25e9dd6 收窄):锁屏矩形/圆形/单行小组件、桌面中/大小组件、添加小组件步骤——页面均为 `ShotPending` 占位,截图后替换为 `Shot` 组件并跑 `npm run images`。(Siri/Action Button 使用画面已从清单取消。)
+- ~~**真机确认**:锁屏小组件勾选是否需先解锁~~ **✅ 已完成(2026-11-02 真机确认:无需解锁)**——已按复核 §12.1 明写为卖点(见 §9);「添加任务仍需 Siri/Action Button」的口径保持不变。
 - **`/about` 正文与署名**:占位文字,规格明确由产品负责人亲自写。
 - **四篇指南逐篇审改**后翻 `draft:false`。
-- **空闲机器/CI 复测 Lighthouse Perf**(见 §3 脚注),上线前把三个 ≥95 收口。
+- **空闲机器/CI 复测 Lighthouse Perf** —— ✅ 产品负责人已在空闲机(4 核 load<1)复测:三页 Performance 均为 100(复核 §11.1)。
 - 占位符定稿:APP_NAME / DOMAIN / APP_STORE_ID / PROVIDER_TOKEN / SUPPORT_EMAIL(`src/config.mjs`)。**注意** `SUPPORT_EMAIL` 定稿时,`src/content/legal/privacy.md`(原样迁移,不读 config)中的联系邮箱需手动同步(3 处)。
 
 ## 8. 复核修复(2026-11-02 第二轮,针对复核 §11.2 的 4 处事实错误)
@@ -121,3 +121,18 @@ title/desc 唯一+长度;canonical 绝对化+无尾斜杠+唯一;og:image 文件
 | 附 | `scripts/lighthouse-run.mjs` | §11.1 可选项:每页跑 2 次,取四类总分较高的一次,分数与报告文件存同一次结果(规避冷启动偶发;按类别取 max 会让分数与报告不同源,故按整次取) |
 
 全站 grep `without unlocking` / `above the clock`(错误语境)/ `all-day` / `follows your phone` 复核为净。构建检查(含新增闸)全绿。
+
+## 9. 二次复核修复(2026-11-02 第三轮,针对复核 §12.1——真机确认锁屏勾选无需解锁)
+
+§11.2 四处修复全部通过;新事实:真机确认**勾选无需解锁** → 从「禁写」转为明写的卖点,同时守住「添加仍需 Siri/Action Button」红线:
+
+| # | 位置 | 改动 |
+|---|---|---|
+| 1 | `scripts/checks.mjs` | **删除** `without unlocking` 禁用闸(留下注释说明删除缘由与新红线) |
+| 2 | `/lock-screen-to-do-list` | 首屏副标题:「Tap to check it off — no need to unlock.」;矩形样式卡:「Tap one to complete it — right there, without unlocking.」;FAQ 首问答案:「without unlocking your iPhone or opening the app」 |
+| 3 | 指南 plan-your-day(§How VoiceTodo fits) | 「tap to check one off right from the Lock Screen, without unlocking」(保留 d467698 加的日历条件) |
+| 4 | 指南 keep-to-do-list-visible(锁屏样式段) | 补句:「check a task off right there — no unlock, no app launch」 |
+| 5 | 首页卖点 2 说明(H2 不动) | 「check one off without even unlocking your phone」 |
+| 6 | 本文档 §7 | 真机确认待办划掉标已完成;Lighthouse 空闲机复测项同步标完(复核 §11.1 已过) |
+
+「添加任务」表述全站复核:仍统一为 Siri / Action Button 口径(锁屏 FAQ #4、features 页 Capture 组),未引入「在锁屏上添加」的说法。

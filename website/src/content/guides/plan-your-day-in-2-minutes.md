@@ -65,7 +65,7 @@ That's the whole loop: two minutes in the morning, thirty seconds at night. No r
 
 VoiceTodo is shaped like this routine. The morning dump is one press-and-hold: say the whole run-on sentence and it comes back as separate to-dos with dates — "Friday", "next week", "by the sixth" all turn into real dates you can confirm or fix with a tap. Anything without a date waits politely in an "unscheduled" pile instead of pretending to be due today.
 
-The three priorities land on your [Lock Screen widget](/lock-screen-to-do-list) — tap to check one off right from the Lock Screen — and if you import your calendar, the day's fixed appointments sit alongside them. At week's end the review walks through everything unfinished — do, push, split, drop — which is what keeps the morning dump from ever becoming an avalanche.
+The three priorities land on your [Lock Screen widget](/lock-screen-to-do-list) — tap to check one off right from the Lock Screen, without unlocking — and if you import your calendar, the day's fixed appointments sit alongside them. At week's end the review walks through everything unfinished — do, push, split, drop — which is what keeps the morning dump from ever becoming an avalanche.
 
 Free to start (three voice captures a day, no account), if you want to try the routine before committing to anything.
 
