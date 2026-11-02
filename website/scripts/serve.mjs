@@ -2,7 +2,7 @@
 // CLI:node scripts/serve.mjs <root> <port>;模块:createStaticServer(root)。
 // gzip + Cache-Control 与 Cloudflare Pages 默认行为对齐,保证本地 Lighthouse 口径不失真。
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createGzip } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,10 +22,12 @@ const MIME = {
 
 const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.json', '.xml', '.txt', '.svg']);
 
-function serveBuffer(req, res, file, data, status = 200) {
+async function serveBuffer(req, res, file, data, status = 200) {
   const ext = path.extname(file) || '.html';
   const type = MIME[ext] ?? 'application/octet-stream';
-  const hashed = /-[A-Za-z0-9_-]{8,}\.[a-z]+$/.test(path.basename(file));
+  // 只认十六进制哈希后缀(-a1b2c3d4.ext);宽字符组会把 'xx-recording-640'、
+  // 'plan-your-day-in-2-minutes' 这类连字符命名误判成哈希文件而发 immutable。
+  const hashed = /-[A-Fa-f0-9]{8,}\.[a-z]+$/.test(path.basename(file));
   const headers = {
     'Content-Type': type,
     // 带内容哈希的文件可一年;HTML/无哈希走协商(Cache-Control: no-cache 语义)
@@ -36,17 +38,25 @@ function serveBuffer(req, res, file, data, status = 200) {
     res.writeHead(status, headers);
     data.pipe(createGzip()).pipe(res);
   } else {
-    headers['Content-Length'] = data.length;
+    // data 是 ReadStream(无 .length)——Content-Length 必须从 stat 取,
+    // 否则 writeHead 收到 undefined 抛错,外层 catch 会把所有图片吞成 404。
+    const { size } = await stat(file);
+    headers['Content-Length'] = size;
     res.writeHead(status, headers);
     data.pipe(res);
   }
 }
 
 export function createStaticServer(root) {
+  const rootResolved = path.resolve(root);
   return http.createServer(async (req, res) => {
     try {
       const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-      let file = path.join(root, urlPath);
+      let file = path.normalize(path.join(rootResolved, urlPath));
+      // 防目录逃逸:URL 规范化在解码之前,%2e%2e%2f 解码后可引入 ../
+      if (file !== rootResolved && !file.startsWith(rootResolved + path.sep)) {
+        throw new Error('path escapes root');
+      }
       if (urlPath.endsWith('/')) file = path.join(file, 'index.html');
       let target = file;
       try {
@@ -58,9 +68,9 @@ export function createStaticServer(root) {
             target = file + '.html';
             await readFile(target);
           } catch {
-            target = path.join(root, '404.html');
+            target = path.join(rootResolved, '404.html');
             await readFile(target);
-            serveBuffer(req, res, target, (await import('node:fs')).createReadStream(target), 404);
+            await serveBuffer(req, res, target, (await import('node:fs')).createReadStream(target), 404);
             return;
           }
         } else {
@@ -68,10 +78,14 @@ export function createStaticServer(root) {
         }
       }
       const { createReadStream } = await import('node:fs');
-      serveBuffer(req, res, target, createReadStream(target));
+      await serveBuffer(req, res, target, createReadStream(target));
     } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found');
+      // catch 内不得再抛(否则未处理拒绝崩进程):响应已开头则断开连接
+      if (res.headersSent) res.destroy();
+      else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not found');
+      }
     }
   });
 }

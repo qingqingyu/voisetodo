@@ -18,6 +18,8 @@ npm run lighthouse # 移动端 Lighthouse(首页/功能页断言阈值,指南页
 
 全部在 `src/config.mjs`:产品名、域名、App Store ID、pt 来源令牌、支持邮箱。
 定稿后只改这一个文件再构建。`src/data/pages.mjs` 是页面 title/description/FAQ 的单一来源。
+**例外**:`src/content/legal/privacy.md` 是原样迁移的隐私政策(条款不得改动),
+其中的联系邮箱来自源文件、不读取 config —— `SUPPORT_EMAIL` 定稿时需手动同步该文件(3 处)。
 
 ## 截图
 

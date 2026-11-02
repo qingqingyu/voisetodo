@@ -72,7 +72,7 @@ Most people discover they don't have a memory problem at all — they have a "ca
 
 VoiceTodo is built around exactly this two-habit loop. Capture is voice-first: hold the record button (or use the Action Button on supported iPhones) and say everything on your mind in one sentence — "call the dentist tomorrow, buy milk, send the report by Friday" — and it comes back as separate to-dos, each on the right day. There's no account to create and nothing to configure before the first try; the free tier gives you three voice captures a day.
 
-For the review half, the Lock Screen widget shows your next few tasks with checkboxes you can tap without opening the app, and there's a weekly review built in that walks you through exactly the four-way sweep described above — do, push, split, or drop — so the list stays short.
+For the review half, the [Lock Screen widget](/lock-screen-to-do-list) shows your next few tasks with checkboxes you can tap without opening the app, and there's a weekly review built in that walks you through exactly the four-way sweep described above — do, push, split, or drop — so the list stays short.
 
 It isn't magic; it's the scratchpad, moved out of your head and onto the glass you look at all day.
 

@@ -26,7 +26,8 @@ const schema = [
     { name: guide.data.title, path },
   ]),
 ];
-const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+// timeZone 固定 UTC:frontmatter 日期是 date-only(UTC 午夜),不锁时区会在西半球构建机上错一天
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 ---
 
 <Base path={path} title={title} description={guide.data.description} ogTitle={guide.data.title} schema={schema} noindex={guide.data.draft}>

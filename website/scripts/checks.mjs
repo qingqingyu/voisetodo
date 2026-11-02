@@ -178,9 +178,8 @@ function textOf(html) {
 
 for (const p of pages) {
   const text = textOf(p.html);
-  const neutral = text;
   // 先整体检查「许可短语所在行」,逐行处理
-  const lines = neutral.split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   for (const line of lines) {
     let work = line;
     for (const phrase of ALLOWED_PHRASES) {
@@ -217,6 +216,11 @@ for (const bot of ['OAI-SearchBot', 'GPTBot', 'PerplexityBot', 'ClaudeBot', 'Goo
   if (!robotsTxt.includes(bot)) fail(`robots.txt missing AI bot: ${bot}`);
 }
 if (!robotsTxt.includes(`Sitemap: ${siteUrl}/sitemap.xml`)) fail('robots.txt missing sitemap pointer');
+
+// llms.txt(§4.4 可选,README 宣称域名跟随 config):校验存在且由 config 生成
+const llmsPath = path.join(dist, 'llms.txt');
+if (!existsSync(llmsPath)) fail('llms.txt missing from dist (generated endpoint expected)');
+else if (!(await readFile(llmsPath, 'utf-8')).includes(siteUrl)) fail('llms.txt not generated from config (missing site URL)');
 
 // ---------- 8. JSON-LD(§4.3)----------
 function jsonLdBlocks(html) {

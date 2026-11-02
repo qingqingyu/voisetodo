@@ -77,7 +77,7 @@ There's a pleasant side effect of this discipline: when the widget only ever sho
 
 ## How VoiceTodo does visibility
 
-VoiceTodo treats widgets as the product, not an accessory. The rectangular Lock Screen widget lists your next tasks with checkboxes — tap to complete one right from the Lock Screen — while circular and single-line styles cover the "just the count" and "just the next thing" preferences. On the Home Screen, medium and large widgets are interactive with the same tap-to-complete circles.
+VoiceTodo treats widgets as the product, not an accessory. The rectangular [Lock Screen widget](/lock-screen-to-do-list) lists your next tasks with checkboxes — tap to complete one right from the Lock Screen — while circular and single-line styles cover the "just the count" and "just the next thing" preferences. On the Home Screen, [medium and large widgets](/iphone-to-do-widget) are interactive with the same tap-to-complete circles.
 
 The list a widget shows is what's due today plus anything undated — deliberately mirroring the "today only" rule from above — and the weekly review exists precisely to keep that list short. Tasks can also mirror into Apple Calendar if you want them beside your appointments.
 

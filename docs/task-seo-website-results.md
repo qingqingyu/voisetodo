@@ -13,7 +13,7 @@
 ```
 website/
 ├── astro.config.mjs / package.json / README.md(部署+度量+多语言说明)
-├── public/          favicon.svg、apple-touch-icon.png(脚本生成)、llms.txt、screens/*.webp
+├── public/          favicon.svg、apple-touch-icon.png(脚本生成)、screens/*.webp
 ├── scripts/         og-images / optimize-images / checks(验收)/ serve / lighthouse-run
 └── src/
     ├── config.mjs   全部占位符
@@ -23,7 +23,7 @@ website/
     ├── data/         pages.mjs(title/desc/FAQ)、schema.mjs(JSON-LD 构建器)、screens.mjs(生成)
     ├── layouts/Base.astro  统一 <head>:canonical/OG/Twitter/apple-itunes-app/theme-color/hreflang(单语言静默)
     ├── components/   Nav/Footer/CtaBand/Faq/Shot/ShotPending
-    └── pages/        14 页 + sitemap.xml.ts + robots.txt.ts(动态生成,域名跟随 config)
+    └── pages/        14 页 + sitemap.xml.ts + robots.txt.ts + llms.txt.ts(动态生成,域名跟随 config)
 ```
 
 ## 2. 页面清单(URL、title、主关键词)
@@ -56,11 +56,11 @@ title/desc 唯一+长度;canonical 绝对化+无尾斜杠+唯一;og:image 文件
 
 | 页 | Perf | A11y | BP | SEO |
 |---|---|---|---|---|
-| `/` | 66* | 100 | 96 | 100 |
-| `/features` | 51* | 100 | 100 | 100 |
-| 指南页 | 44* | 100 | 100 | 66**(仅报告) |
+| `/` | 62* | 100 | 100 | 100 |
+| `/features` | 69* | 100 | 100 | 100 |
+| 指南页 | 69* | 100 | 100 | 66**(仅报告) |
 
-\* **Perf 数字不可作为验收依据——开发机负载污染,证据**:本机 load 4.5~6.5(并行会话跑模拟器,CoreSimulator 双进程 70%+CPU);同一张 dist 里 **404 空页与完整首页 TBT 几乎相同(970 vs 1060ms)**,说明分数与页面内容无关;所有请求 ≤15ms、CLS=0、零 JS、trace 单个 Layout 事件 ≤291ms 且 dirty 节点个位数。页面结构本身:CSS 已全内联(零渲染阻塞请求)、双档 srcset、首屏图 eager+fetchpriority。**阈值断言(≥95)保留在脚本里**,上线前在空闲机器/CI 复测一次即为验收;预览服务器已实现 gzip+长缓存,口径对齐 Cloudflare Pages。
+\* **Perf 数字不可作为验收依据——开发机负载污染,证据**:本机 load 4.5~6.5(并行会话跑模拟器,CoreSimulator 双进程 70%+CPU);同一张 dist 里 **404 空页与完整首页 TBT 几乎相同(970 vs 1060ms)**,说明分数与页面内容无关;所有请求 ≤15ms、CLS=0、零 JS、trace 单个 Layout 事件 ≤291ms 且 dirty 节点个位数。页面结构本身:CSS 已全内联(零渲染阻塞请求)、双档 srcset、首屏图 eager+fetchpriority。**历史失真已修**:双 review 期间发现预览服务器曾有 bug(非压缩分支 Content-Length 取自 ReadStream.length=undefined,截图/OG 等二进制资源全部 404),早期一轮数字在图片未加载下采集;上表为修复后重取,机器仍非空闲。**阈值断言(≥95)保留在脚本里**,上线前在空闲机器/CI 复测一次即为验收;预览服务器已实现 gzip+长缓存,口径对齐 Cloudflare Pages。
 \** 指南页 SEO=66 是「Page isn't indexed」审计**——草稿 noindex 是设计行为(见 §6-D5),`draft:false` 发布后自动恢复;故脚本对该页只报告不断言。
 
 **结构化数据**:离线结构校验已过(§3 检查);Schema.org 校验器/Google 富媒体测试是线上工具,**需部署后对真实 URL 补验**(README 部署清单已列)。
@@ -85,7 +85,7 @@ title/desc 唯一+长度;canonical 绝对化+无尾斜杠+唯一;og:image 文件
 ## 6. 偏离任务书的地方及理由
 
 1. **首页 title 从规格稿压缩**(规格稿 66 字符 > §4.2 硬上限 60):改为「Voice To-Do List App for iPhone」(44),锁屏卖点移入 description。§4.2 是验收项,页面规格 §3.1 自称「英文文案是方向稿」。
-2. **指南 3 标题**「…Visible on Your iPhone」(62)→「…Visible on iPhone」(57):同上,长度上限。
+2. **指南 3 标题**「…Visible on Your iPhone」(62)→「…Visible on iPhone」(57):同上,长度上限。**指南 2 标题**同理砍掉「(Even If You Hate Planning)」(规格稿全称 + 站名后缀 75 字符,远超 60 上限)。
 3. **privacy.md 迁移时删掉正文首行 `# Privacy Policy`**:页面模板已渲染 h1+三句话摘要,保留会双 H1;**条款文本一字未动**,源文件仍是仓库根 `PRIVACY_POLICY.md`,两处同步流程写在 README。
 4. **features 页删去「Keyboard input and manual editing are unlimited」**:未核实键盘输入是否计入每日额度,不写未核实的「无限制」宣称(§0.2 精神)。
 5. **草稿指南 noindex + 不进 sitemap**:任务书「只出草稿,等审」;直接上线可索引的草稿有 SEO 风险。审改翻 false 即发布。
@@ -101,4 +101,4 @@ title/desc 唯一+长度;canonical 绝对化+无尾斜杠+唯一;og:image 文件
 - **`/about` 正文与署名**:占位文字,规格明确由产品负责人亲自写。
 - **四篇指南逐篇审改**后翻 `draft:false`。
 - **空闲机器/CI 复测 Lighthouse Perf**(见 §3 脚注),上线前把三个 ≥95 收口。
-- 占位符定稿:APP_NAME / DOMAIN / APP_STORE_ID / PROVIDER_TOKEN / SUPPORT_EMAIL(`src/config.mjs`)。
+- 占位符定稿:APP_NAME / DOMAIN / APP_STORE_ID / PROVIDER_TOKEN / SUPPORT_EMAIL(`src/config.mjs`)。**注意** `SUPPORT_EMAIL` 定稿时,`src/content/legal/privacy.md`(原样迁移,不读 config)中的联系邮箱需手动同步(3 处)。

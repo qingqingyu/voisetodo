@@ -17,8 +17,9 @@ const schema = [
 const guides = (await getCollection('guides')).sort(
   (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
 );
+// timeZone 固定 UTC:frontmatter 日期是 date-only(UTC 午夜),不锁时区会在西半球构建机上错一天
 const fmt = (d: Date) =>
-  d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 ---
 
 <Base path="/guides" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>

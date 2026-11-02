@@ -40,7 +40,7 @@ Honest downsides: Siri occasionally mishears in noisy places, there's a beat of 
 
 Unlock, open the app, press and hold the record button, talk, release. Eight to twelve seconds, but here's the thing: **the in-app flow is where the organizing happens.** This is where one run-on sentence becomes separate, dated to-dos you can confirm and fix. Capture speed and processing quality are different jobs.
 
-A good voice-first app shows a confirmation step before saving — you glance, fix the one thing it got wrong, done. VoiceTodo, for example, turns "call the dentist tomorrow, buy milk, send the report by Friday at 3" into three to-dos with dates, and nothing is saved until you've looked at it.
+A good voice-first app shows a confirmation step before saving — you glance, fix the one thing it got wrong, done. [VoiceTodo](/voice-to-do-list), for example, turns "call the dentist tomorrow, buy milk, send the report by Friday at 3" into three to-dos with dates, and nothing is saved until you've looked at it.
 
 ### 4. Apple Reminders (the worthy default)
 

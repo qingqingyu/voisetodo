@@ -4,7 +4,7 @@
 // 通过 schema 数组传入,布局统一渲染。
 import '../styles/global.css';
 import { siteConfig, siteUrl } from '../config.mjs';
-import { hreflangAlternates, ogImagePath, webSiteSchema, organizationSchema } from '../data/schema.mjs';
+import { hreflangAlternates, ogImagePath, webSiteSchema, organizationSchema, jsonLdHtml } from '../data/schema.mjs';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 
@@ -62,7 +62,7 @@ const year = new Date().getFullYear();
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-    {allSchema.map((s) => <script type="application/ld+json" set:html={JSON.stringify(s)} />)}
+    {allSchema.map((s) => <script type="application/ld+json" set:html={jsonLdHtml(s)} />)}
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

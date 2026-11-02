@@ -1,6 +1,15 @@
 // JSON-LD 构建器(任务书 §4.3)。纯函数,返回可 JSON.stringify 的对象。
 import { siteConfig, siteUrl } from '../config.mjs';
 
+/**
+ * JSON-LD → 内嵌 <script> 的安全序列化:把 `<` 替换为 JSON 六字符转义,
+ * 防内容(title/FAQ 答案等)含 `</script>` 或 `<` 时破坏 HTML。
+ * JSON.parse 还原后与原对象等价,checks.mjs 校验不受影响。
+ */
+export function jsonLdHtml(schema) {
+  return JSON.stringify(schema).replace(/</g, '\\u003c');
+}
+
 export function ogImagePath(path) {
   const slug = path === '/' ? 'home' : path.replace(/^\//, '').replace(/\//g, '-');
   return `/og/${slug}.png`;
@@ -98,7 +107,9 @@ export function hreflangAlternates(path) {
   if (siteConfig.locales.length < 2) return [];
   return siteConfig.locales.map((loc) => {
     const prefix = loc === 'en' ? '' : `/${loc}`;
-    const href = `${siteUrl}${prefix}${path === '/' ? '' : path}`;
-    return { hreflang: loc === 'en' ? 'en' : loc, href };
+    // 首页:en 保持与 canonical 一致的尾斜杠(siteUrl + '/'),
+    // 其他语言首页是 /ja、/zh 这种无尾斜杠路径,与全站 URL 约定一致。
+    const home = path === '/' ? (loc === 'en' ? '/' : '') : path;
+    return { hreflang: loc, href: `${siteUrl}${prefix}${home}` };
   });
 }

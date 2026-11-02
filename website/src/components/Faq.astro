@@ -1,7 +1,7 @@
 ---
 // FAQ 区(页面规格各页 §FAQ):可见内容与 FAQPage 结构化数据同源(任务书 §4.3),
 // 构建检查脚本核对两边条数一致。
-import { faqPageSchema } from '../data/schema.mjs';
+import { faqPageSchema, jsonLdHtml } from '../data/schema.mjs';
 
 interface Props {
   faqs: { q: string; a: string }[];
@@ -23,5 +23,5 @@ const schema = faqPageSchema(faqs);
       </details>
     ))}
   </div>
-  <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+  <script type="application/ld+json" set:html={jsonLdHtml(schema)} />
 </section>
