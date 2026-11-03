@@ -116,3 +116,11 @@ GPT 两组（R5、R6）只回答「能不能进入备选池」，不参与主力
 6. **错题明细**：每组错了哪几条、错在哪个字段。
 7. `run.mjs` 改动说明：`firstTodoMs` 的判定方法。
 8. 偏离任务书的地方及理由（没有就写「无」）。
+
+---
+
+## 执行回执(2026-11-03 21:00 前后)
+
+- 已实施完毕,PR #4(task/eval-round3-run):https://github.com/qingqingyu/voisetodo/pull/4
+- 结果文档:docs/openrouter-eval-round3-results.md(§1 结论=四选一之「都不过」;7 条偏离见 §9)
+- 待产品负责人:复核 PR / z.ai 按量余额(R4 与 thinking-low 实验待跑)/ 两把 OpenRouter key 用后吊销
