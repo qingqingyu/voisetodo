@@ -1,0 +1,10 @@
+{
+  "type": "openai",
+  "url": "https://openrouter.ai/api/v1/chat/completions",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "timeoutMs": 50000,
+  "extraHeaders": {
+    "HTTP-Referer": "https://voicetodo.app",
+    "X-Title": "VoiceTodo"
+  }
+}
