@@ -21,7 +21,9 @@
 | R3b r3-zai-air-nothink | glm-4.5-air | z.ai openai 兼容直连,thinking disabled | **受阻未执行**(§5.1) | — | — | — | — | — | — | $0 |
 | R4 r3-zai-5.3-flash-openai | glm-5.3-flash | z.ai openai 兼容直连 | **受阻未执行**(§5.1) | — | — | — | — | — | — | $0 |
 | R5 r3-or-gpt-4o-mini | gpt-4o-mini | OpenRouter(经代理) | 60/75(80.0%) | **58/73** | 0 | 3444/7549/10483ms* | 3526/7551/10484ms* | 3444/7552/10485ms | 0 | **$0.00057(实测)** |
-| R6 r3-or-gpt-5-nano | gpt-5-nano | OpenRouter(经代理) | 【待填】 | | | | | | | 实测 |
+| R6 r3-or-gpt-5-nano | gpt-5-nano | OpenRouter(经代理) | 65/71(91.5%) | **68/73†** | 4 | 12267/25938/38014ms* | 12636/25941/38015ms* | 12268/25941/38016ms | 2 | **$0.0011(实测)** |
+
+† R6 的 73 口径按「4 条 infra 全对」的最好情形计(实际计分 67 条非白名单中错 5);infra 4 条本身即流形态不兼容(见 §3 R6 明细),不影响不合格结论。
 
 注:R5/R6 走 `--proxy`(curl 子进程),该路径**整包缓冲交付**,事件时序被压成一帧——firstText/firstTodo 退化为 ≈totalMs(上界),仅质量结论有效,延迟列不参与判定(见 §7 口径说明)。
 
@@ -46,6 +48,14 @@
 - **准确率 58/73,不合格**:失败 15 条,重灾区 `due_date` 相对日期推演(en-014/ja-010/zh-007 同错 +2 天、en-031/ja-019/zh-025 周日边界同错 +5 天、zh-015 −2 天、en-027 双条 −2 天、en-017 多标日期)+ category_hint 4 条 + basis 反标。质量结论:**不进备选池**。
 - 延迟:total P50 3.44s / P95 7.55s / max 10.5s、零 >30s、零 infra。firstText/firstTodo 带 * 号——代理整包缓冲伪时序(≈total),非真实 TTFB。
 - 成本实测(key usage 前后差):**$0.0429 / 75 次 = $0.00057/次**。
+
+### R6 明细:gpt-5-nano(OpenRouter,经代理)
+
+- **准确率不合格**:计分 65/71(91.5%),失败 6 条(en-006/en-013/ja-016/zh-017 的 category_hint 互串 life↔health、work↔finance、social↔life;en-017 多标日期+basis 反标;en-028 basis 反标且拆分数量不匹配)。剔白名单后最好情形 68/73,距 ≤1 线远。
+- **延迟面差**:total P50 **12.3s** / P95 25.9s / max 38.0s、>30s 2 条——nano 推理型,出字前思考久(缓冲伪时序下 firstText≈total,真实 TTFB 未知但 total 已说明问题)。
+- **流形态不兼容**:4 条 infra——3 条 `AI provider stream event too large`(en-009/en-027/zh-018,30~36s 处思考块单事件超 worker 流事件上限)+ 1 条 `stream ended before done`(ja-007,50s)。与代理路径无关,是 worker 流解析对超大事件的防护触发。
+- 成本实测:$0.0837 / 76 次(含 1 次重试)≈ **$0.0011/次**。
+- **结论:不进备选池**(质量 + 延迟 + 流形态三重)。
 
 ### R3/R4/R3b:z.ai openai 兼容端点直连——账户余额受阻(未执行)
 
@@ -110,8 +120,16 @@ R3 受阻使「接口形态 vs OpenRouter 托管」的分离实验无法完成�
 | category_hint | en-007、en-013、en-014、en-017、ja-016 | social/work/life/finance 互串 |
 | basis 反标 | en-028、en-017 | title_mention ↔ user_explicit |
 
-### R6 r3-or-gpt-5-nano
-【待填】
+### R6 r3-or-gpt-5-nano(6 败 + 4 infra)
+| case | 形态 |
+|---|---|
+| en-006 / zh-017(白名单) | category_hint life→health |
+| en-013 | category_hint work→finance |
+| ja-016 | category_hint social→life |
+| en-017 | 多标 due 2026-11-20 + basis 反标 |
+| en-028 | basis 反标 ×2 + 拆分数量不匹配 |
+| en-009 / en-027 / zh-018(infra) | stream event too large(30~36s) |
+| ja-007(infra) | stream ended before done(50s) |
 
 ### R1b/R2b 晚高峰
 【待填】
@@ -127,5 +145,5 @@ R3 受阻使「接口形态 vs OpenRouter 托管」的分离实验无法完成�
 
 ## 10. 成本
 
-- z.ai 组:SSE 不透出 usage,按轮 2 §5 估算口径列于 §2 表(待 console 校准)。注:思考型模型推理 token 按输出价计费,5.3-flash 实际成本高于估算列。
-- OpenRouter 组:跑前后各查一次 `/api/v1/key` usage,差值即实测总花费。
+- z.ai 组:SSE 不透出 usage,按轮 2 §5 估算口径列于 §2 表(待 console 校准)。注:思考型模型推理 token 按输出价计费,5.3-flash 实际成本高于估算列;本轮 z.ai 实际花费发生在 Coding Plan 订阅通道内,无按量扣费。
+- OpenRouter 组(key usage 前后差实测):R5 $0.0429 / 75 次;R6 $0.0837 / 76 次(含 1 重试);**合计 $0.1266**,占 $5 限额 2.5%。
