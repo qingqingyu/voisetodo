@@ -1,0 +1,7 @@
+{
+  "type": "anthropic",
+  "url": "https://api.z.ai/api/anthropic/v1/messages",
+  "model": "glm-4.5-air",
+  "extraBody": { "thinking": { "type": "disabled" } },
+  "timeoutMs": 50000
+}

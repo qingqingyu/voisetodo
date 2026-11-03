@@ -352,6 +352,7 @@ async function makeInProcessTransport(providerFile, keyEnvName) {
 }
 
 async function sendOne(endpoint, token, deviceId, anchorToday, c, timeoutMs, transport = null) {
+  const t0Ms = Date.now();
   const body = { transcript: c.transcript, locale: c.locale, stream: true };
   if (c.vocabularyHints) body.vocabularyHints = c.vocabularyHints;
   if (c.personalHints) body.personalHints = c.personalHints;
@@ -382,15 +383,15 @@ async function sendOne(endpoint, token, deviceId, anchorToday, c, timeoutMs, tra
     if (quotaResetDate && quotaResetDate !== anchorToday) {
       return { ok: false, httpStatus: res.status, error: { type: "anchor_rejected", message: `X-Local-Date=${anchorToday} 被 worker 漂移校验拒绝,实际参考日期=${quotaResetDate}` } };
     }
-    const { text, sseErrors } = await readSSE(res);
+    const { text, sseErrors, firstTextMs, firstTodoMs } = await readSSE(res, t0Ms);
     const parsed = parseModelJSON(text);
     if (parsed instanceof Error) {
-      return { ok: false, httpStatus: res.status, rawText: text, sseErrors, error: { type: "infra_error", message: `JSON 解析失败: ${parsed.message}` } };
+      return { ok: false, httpStatus: res.status, rawText: text, sseErrors, firstTextMs, firstTodoMs, error: { type: "infra_error", message: `JSON 解析失败: ${parsed.message}` } };
     }
     if (!parsed || !Array.isArray(parsed.todos)) {
-      return { ok: false, httpStatus: res.status, rawText: text, sseErrors, error: { type: "infra_error", message: "响应缺少 todos 数组" } };
+      return { ok: false, httpStatus: res.status, rawText: text, sseErrors, firstTextMs, firstTodoMs, error: { type: "infra_error", message: "响应缺少 todos 数组" } };
     }
-    return { ok: true, httpStatus: res.status, rawText: text, parsed };
+    return { ok: true, httpStatus: res.status, rawText: text, parsed, firstTextMs, firstTodoMs };
   } catch (e) {
     const aborted = e?.name === "AbortError";
     return { ok: false, error: { type: "infra_error", message: `${aborted ? `超时(>${timeoutMs}ms)` : "网络错误"}: ${e?.message ?? e}` } };
@@ -399,14 +400,52 @@ async function sendOne(endpoint, token, deviceId, anchorToday, c, timeoutMs, tra
   }
 }
 
+/// 累计文本里第一条待办是否已完整出现——与 App 的
+/// TodoExtractorService.tryParsePartialTodos 同构:剥开头 markdown 围栏,
+/// 找 "todos": [...],字符串/转义感知的括号配平扫出第一个闭合对象。
+/// 与 App 口径的差异:App 还要求该对象 ExtractedTodo decode 成功,这里以
+/// JSON.parse 通过近似(结构合法性;字段级 decode 失败在最终 parseModelJSON
+/// 必然暴露为 infra_error)。结果文档须写明此判定方法。
+function firstTodoClosed(rawText) {
+  const s = String(rawText).trim().replace(/^```(?:json)?\s*/i, "");
+  const m = s.match(/"todos"\s*:\s*\[/);
+  if (!m) return false;
+  const rest = s.slice(m.index + m[0].length);
+  let inString = false, escaped = false, depth = 0, objStart = -1;
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") { if (depth === 0) objStart = i; depth++; continue; }
+    if (ch === "}") {
+      if (depth === 0) continue; // 首个 { 之前的孤立 }(App 的 firstIndex(of:"{") 同样无视)
+      depth--;
+      if (depth === 0) {
+        try { JSON.parse(rest.slice(objStart, i + 1)); return true; }
+        catch { /* App:decode 失败跳过该对象继续扫下一个,objStart 由下一个 depth 0 的 { 重置 */ }
+      }
+    }
+  }
+  return false;
+}
+
 // SSE 拼装:按空行分事件,拼 "data:" 行;`data: [DONE]` 结束。
-async function readSSE(res) {
+// t0Ms:请求起点,firstTextMs/firstTodoMs 与 elapsedMs 同一零点。
+// 注意:--proxy 路径(makeProxyFetch)整包缓冲交付,事件间时序被压成一帧,
+// 该路径下 firstText/firstTodo 退化为 ≈totalMs(上界),只在直连模式下有真实意义。
+async function readSSE(res, t0Ms) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   const sseErrors = [];
   let buf = "";
   let text = "";
   let done = false;
+  let firstTextMs = null, firstTodoMs = null;
   while (!done) {
     const { value, done: streamDone } = await reader.read();
     if (streamDone) break;
@@ -424,14 +463,19 @@ async function readSSE(res) {
       if (payload.trim() === "[DONE]") { done = true; break; }
       try {
         const evt = JSON.parse(payload);
-        if (typeof evt?.text === "string") text += evt.text;
+        if (typeof evt?.text === "string") {
+          if (firstTextMs === null) firstTextMs = Date.now() - t0Ms;
+          text += evt.text;
+          // 命中一次后不再重扫(App 的 partialTodos.count > lastYieldedCount 守卫同效)
+          if (firstTodoMs === null && firstTodoClosed(text)) firstTodoMs = Date.now() - t0Ms;
+        }
         else sseErrors.push(`非 text 事件: ${payload.slice(0, 120)}`);
       } catch {
         sseErrors.push(`不可解析事件: ${payload.slice(0, 120)}`);
       }
     }
   }
-  return { text, sseErrors };
+  return { text, sseErrors, firstTextMs, firstTodoMs };
 }
 
 // 与客户端 TodoExtractorService.parseResponse 同源逻辑:剥 markdown 围栏再 JSON.parse。
@@ -550,6 +594,8 @@ function scoreAll(dataset, resultsFile) {
   const failures = [];
   let scored = 0, passed = 0, goldenTodoTotal = 0, countMatch = 0;
   const latencies = [];
+  const firstTexts = [];
+  const firstTodos = [];
   const responseChars = [];
   // 先初始化全部 hard 字段行:0 个可评分 case(全 infra_error)时报告也要能打出来,
   // 而不是在 printReport 里 TypeError —— 全面失败恰恰是最需要报告的场景。
@@ -564,6 +610,8 @@ function scoreAll(dataset, resultsFile) {
     }
     scored++;
     if (rc.elapsedMs != null) latencies.push(rc.elapsedMs);
+    if (rc.firstTextMs != null) firstTexts.push(rc.firstTextMs);
+    if (rc.firstTodoMs != null) firstTodos.push(rc.firstTodoMs);
     if (rc.rawText != null) responseChars.push(rc.rawText.length);
     const s = scoreCase(c, rc.parsed);
     if (s.casePass) passed++;
@@ -591,6 +639,8 @@ function scoreAll(dataset, resultsFile) {
   }
 
   latencies.sort((a, b) => a - b);
+  firstTexts.sort((a, b) => a - b);
+  firstTodos.sort((a, b) => a - b);
   return {
     label: resultsFile.label,
     scored,
@@ -607,8 +657,23 @@ function scoreAll(dataset, resultsFile) {
       p95: latencies.length ? latencies[Math.floor(latencies.length * 0.95)] : null,
       max: latencies.length ? latencies[latencies.length - 1] : null
     },
+    // 用户体感延迟(R3 任务书 §2):首 text 事件 / 首条待办闭合,均只统计计分(ok)case,
+    // 与 latency 同口径;旧 scored.json 无这些字段 → null(--table 显示 "-")。
+    // >30s 同样只数 ok case 的 totalMs(生产 35s 超时口径;infra_error 含超时另有 infra 列)。
+    firstText: msDist(firstTexts),
+    firstTodo: msDist(firstTodos),
+    over30s: latencies.filter((v) => v > 30_000).length,
     avgResponseChars: responseChars.length ? Math.round(responseChars.reduce((a, b) => a + b, 0) / responseChars.length) : null,
     failures
+  };
+}
+
+/// P50/P95/最大 分布(firstText/firstTodo 共用;total 延迟另有 mean 保留在上面的字面量里)。
+function msDist(arr) {
+  return {
+    p50: arr.length ? arr[Math.floor(arr.length * 0.5)] : null,
+    p95: arr.length ? arr[Math.floor(arr.length * 0.95)] : null,
+    max: arr.length ? arr[arr.length - 1] : null
   };
 }
 
@@ -629,7 +694,10 @@ function printReport(r, infra) {
   }
   const fmtMs = (v) => (v == null ? "n/a" : `${v}ms`);
   const fmtChars = (v) => (v == null ? "n/a" : `${v} chars`);
-  console.log(`\n延迟: mean ${fmtMs(r.latency.mean)} / p50 ${fmtMs(r.latency.p50)} / p95 ${fmtMs(r.latency.p95)} / max ${fmtMs(r.latency.max)}   响应均长: ${fmtChars(r.avgResponseChars)}`);
+  const fmtDist = (d) => (d == null ? "n/a(旧结果无此字段)" : `p50 ${fmtMs(d.p50)} / p95 ${fmtMs(d.p95)} / max ${fmtMs(d.max)}`);
+  console.log(`\n延迟 totalMs: mean ${fmtMs(r.latency.mean)} / p50 ${fmtMs(r.latency.p50)} / p95 ${fmtMs(r.latency.p95)} / max ${fmtMs(r.latency.max)}   >30s: ${r.over30s ?? "?"} 条   响应均长: ${fmtChars(r.avgResponseChars)}`);
+  console.log(`firstText: ${fmtDist(r.firstText)}`);
+  console.log(`firstTodo: ${fmtDist(r.firstTodo)}`);
   if (r.failures.length) {
     console.log(`\n失败 case(${r.failures.length}):`);
     for (const f of r.failures) {
@@ -823,14 +891,19 @@ function printComparisonTable(files) {
       infra: parsed.cases ? parsed.cases.filter((c) => !c.ok).length : "?",
       p50: report.latency?.p50 ?? null,
       p95: report.latency?.p95 ?? null,
-      mean: report.latency?.mean ?? null
+      mean: report.latency?.mean ?? null,
+      // R3 任务书 §2:firstTodo P50/P95 + >30s 条数;旧 scored.json 无字段 → "-"
+      ftP50: report.firstTodo?.p50 ?? null,
+      ftP95: report.firstTodo?.p95 ?? null,
+      over30s: report.over30s ?? null
     });
   }
   const fmt = (v) => (v == null ? "-" : `${Math.round(v / 100) / 10}s`);
-  console.log("| 平台 | 模型 | 开关 | case 全对 | infra_error | mean | P50 | P95 | label |");
-  console.log("|---|---|---|---|---|---|---|---|---|");
+  const fmtCount = (v) => (v == null ? "-" : String(v));
+  console.log("| 平台 | 模型 | 开关 | case 全对 | infra_error | mean | P50 | P95 | firstTodo P50 | firstTodo P95 | >30s | label |");
+  console.log("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of rows) {
-    console.log(`| ${r.platform} | ${r.model} | ${r.thinking} | ${r.pass} (${r.passRate}) | ${r.infra} | ${fmt(r.mean)} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${r.label} |`);
+    console.log(`| ${r.platform} | ${r.model} | ${r.thinking} | ${r.pass} (${r.passRate}) | ${r.infra} | ${fmt(r.mean)} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${fmt(r.ftP50)} | ${fmt(r.ftP95)} | ${fmtCount(r.over30s)} | ${r.label} |`);
   }
   console.log("\ntoken 用量列留空:上游 usage 不随 SSE 透出,按各服务商 console 校准(eval/README.md §5 同口径)。");
 }
