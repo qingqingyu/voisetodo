@@ -445,6 +445,56 @@ test("system prompt includes reminder_offset_minutes rule and example for all lo
   }
 });
 
+// 评测轮 3(2026-11-03)确诊的四类 air 稳定/抖动错误,靠「规则文本 + few-shot 示例」
+// 双锚定修复(与 reminder_offset_minutes 测试同款守卫):
+//   1. 「下周日」按 ISO 周一起始多加 7 天(周日边界三连) —— 机械化「严格晚于今天的下一个周日」算法 + 周三锚示例
+//   2. 可定位日期的「星期+时段」被折进标题 vs 模糊时间词(下个月)被标 user_explicit —— 一对对照示例
+//   3. reminder_times 带日期词却丢 due_date —— 规则 4d + 对照示例 12
+//   4. 时间被 recurrence_rule 吸收时 basis 多标 —— 4b 内 ⚠️ 行
+// 此断言防止这些规则/示例被误删。
+test("system prompt covers next-Sunday algorithm, schedulable-vs-fuzzy contrast, reminder date anchoring, recurrence absorption for all locales", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const locales = [
+    {
+      locale: "zh-Hans",
+      transcript: "下周日给妈妈打电话",
+      markers: ["严格晚于今天的下一个周日", "下周日去看外婆", "\"due_date\":\"2026-07-19\",\"due_hint\":\"下周日\"", "周四晚上订羽毛球场", "为下个月的评审会议订会议室", "今天下午4点、6点吃药提醒", "\"reminder_times\":[\"16:00\",\"18:00\"]", "4d. ⚠️ reminder_times 携带可换算的具体日期词", "被 recurrence_rule 吸收"]
+    },
+    {
+      locale: "en-US",
+      transcript: "Call mom next Sunday",
+      markers: ["STRICTLY AFTER today", "Visit grandma next Sunday", "\"due_date\":\"2026-07-19\",\"due_hint\":\"next Sunday\"", "Book a badminton court for Thursday night", "Book a meeting room for next month's review meeting", "Remind me to take my meds today at 4pm and 6pm", "\"reminder_times\":[\"16:00\",\"18:00\"]", "4d. ⚠️ When reminder_times come with a concrete computable date word", "absorbed by recurrence_rule"]
+    },
+    {
+      locale: "ja-JP",
+      transcript: "来週の日曜日に母に電話する",
+      markers: ["今日より厳密に後の最初の日曜日", "来週の日曜日におばあちゃんの見舞いに行く", "\"due_date\":\"2026-07-19\",\"due_hint\":\"来週の日曜日\"", "木曜の夜にバドミントンコートを取る", "来月のレビュー会議のために会議室を予約する", "今日の午後4時と6時に薬を飲むリマインド", "\"reminder_times\":[\"16:00\",\"18:00\"]", "4d. ⚠️ reminder_times に換算可能な具体的な日付語が伴う", "recurrence_rule に吸収される"]
+    }
+  ];
+  for (const { locale, transcript, markers } of locales) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token", "X-Local-Date": today }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("打电话") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    for (const marker of markers) {
+      assert.ok(systemMessage.includes(marker), `${locale} prompt 应包含「${marker}」`);
+    }
+  }
+});
+
 // 两个真实用户报告的识别偏差,靠「规则文本 + few-shot 示例」双锚定修复:
 //   1. 「我今天要想一想明天去哪里玩」被归到明天 —— 应取主动作「想」的时间状语「今天」
 //   2. 「今天要给程希璐制定方案」标题被压成「定方案」 —— 丢了人名对象
