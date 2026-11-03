@@ -1,0 +1,7 @@
+{
+  "type": "openai",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+  "model": "glm-5.3-flash",
+  "extraBody": { "thinking": { "type": "enabled", "level": "low" } },
+  "timeoutMs": 50000
+}
