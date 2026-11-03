@@ -1,0 +1,57 @@
+---
+// 顶部导航(页面规格 §2):品牌 · Voice · Lock Screen · Widgets · Guides · App Store 按钮。
+// 手机端用 <details> 折叠(零 JS),App Store 按钮始终可见。
+import { siteConfig, appStoreUrl } from '../config.mjs';
+
+const links = [
+  { href: '/voice-to-do-list', label: 'Voice' },
+  { href: '/lock-screen-to-do-list', label: 'Lock Screen' },
+  { href: '/iphone-to-do-widget', label: 'Widgets' },
+  { href: '/guides', label: 'Guides' },
+];
+---
+
+<header class="site-header">
+  <div class="container nav">
+    <a class="nav-brand" href="/" aria-label={`${siteConfig.appName} home`}>
+      <svg class="mark" viewBox="0 0 26 26" aria-hidden="true">
+        <rect x="1" y="1" width="24" height="24" rx="6" fill="#177e4b"></rect>
+        <path
+          d="M7 13.5l3.2 3.2L19 8.5"
+          fill="none"
+          stroke="#fff"
+          stroke-width="2.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"></path>
+      </svg>
+      {siteConfig.appName}
+    </a>
+
+    <details class="nav-menu-toggle">
+      <summary>Menu</summary>
+      <ul class="nav-links">
+        {links.map((l) => (
+          <li><a href={l.href}>{l.label}</a></li>
+        ))}
+      </ul>
+    </details>
+
+    <ul class="nav-links">
+      {links.map((l) => (
+        <li><a href={l.href}>{l.label}</a></li>
+      ))}
+    </ul>
+
+    <a class="appstore-btn" href={appStoreUrl('web-nav')} rel="noopener">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="#fff">
+        <path
+          d="M17.05 12.54c.02-2.2 1.79-3.26 1.87-3.31-1.02-1.5-2.61-1.7-3.17-1.73-1.35-.1-2.63.79-3.31.79-.69 0-1.74-.77-2.86-.75-1.47.02-2.83.86-3.59 2.17-1.53 2.67-.39 6.62 1.11 8.79.73 1.06 1.6 2.24 2.75 2.2 1.1-.04 1.52-.71 2.85-.71 1.33 0 1.7.71 2.87.69 1.19-.02 1.95-1.08 2.68-2.14.84-1.22 1.19-2.4 1.21-2.46-.03-.01-2.33-.9-2.36-3.54zM14.9 5.87c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.55 1.31-.56.65-1.05 1.68-.92 2.67.97.08 1.96-.49 2.57-1.22z"
+        ></path>
+      </svg>
+      <span>
+        <small>Download on the</small>
+        <strong>App Store</strong>
+      </span>
+    </a>
+  </div>
+</header>

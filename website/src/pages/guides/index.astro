@@ -1,0 +1,49 @@
+---
+// 指南列表(页面规格 §3.6):卡片,标题 + 一句摘要 + 更新日期,按发布时间倒序。
+import Base from '../../layouts/Base.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { getCollection } from 'astro:content';
+import { pages } from '../../data/pages.mjs';
+import { breadcrumbSchema } from '../../data/schema.mjs';
+
+const meta = pages['/guides'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Guides', path: '/guides' },
+  ]),
+];
+
+const guides = (await getCollection('guides')).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+// timeZone 固定 UTC:frontmatter 日期是 date-only(UTC 午夜),不锁时区会在西半球构建机上错一天
+const fmt = (d: Date) =>
+  d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+---
+
+<Base path="/guides" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Guides for getting things out of your head and done</h1>
+      <p class="lede">Short, practical reads about capturing tasks, keeping your list visible, and planning without ceremony.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="container grid-2">
+      {
+        guides.map((g) => (
+          <a class="guide-card" href={`/guides/${g.id}`}>
+            <h3>{g.data.title}</h3>
+            {g.data.draft && <span class="draft-badge">Draft — pending review</span>}
+            <p>{g.data.description}</p>
+            <span class="guide-date">Updated {fmt(g.data.updatedDate ?? g.data.pubDate)}</span>
+          </a>
+        ))
+      }
+    </div>
+  </section>
+
+  <CtaBand ct="web-guides-footer" />
+</Base>

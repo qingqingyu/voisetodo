@@ -1,0 +1,39 @@
+---
+// 技术支持页(页面规格 §3.8):FAQ + 联系方式;地址将填进 ASC 技术支持网址。
+import Base from '../layouts/Base.astro';
+import Faq from '../components/Faq.astro';
+import { pages, faqs } from '../data/pages.mjs';
+import { breadcrumbSchema } from '../data/schema.mjs';
+import { siteConfig } from '../config.mjs';
+
+const meta = pages['/support'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Support', path: '/support' },
+  ]),
+];
+---
+
+<Base path="/support" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Support</h1>
+      <p class="lede">Answers to the questions that come up most. If yours isn't here, email us — a real person replies.</p>
+    </div>
+  </section>
+
+  <Faq faqs={faqs.support} heading="Common questions" />
+
+  <section aria-labelledby="contact-h">
+    <div class="container">
+      <h2 id="contact-h">Contact</h2>
+      <p>
+        Email: <a href={`mailto:${siteConfig.supportEmail}`}>{siteConfig.supportEmail}</a>
+      </p>
+      <p style="color:var(--ink-soft)">
+        You can also use “Feedback” inside the app — it attaches helpful diagnostic details automatically.
+      </p>
+    </div>
+  </section>
+</Base>

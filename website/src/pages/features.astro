@@ -1,0 +1,165 @@
+---
+// 全部功能(事实页,页面规格 §3.5):只写事实、不写营销腔,供搜索引擎/AI 搜索引用。
+import Base from '../layouts/Base.astro';
+import CtaBand from '../components/CtaBand.astro';
+import { pages } from '../data/pages.mjs';
+import { mobileAppSchema, breadcrumbSchema } from '../data/schema.mjs';
+import { siteConfig } from '../config.mjs';
+
+const meta = pages['/features'];
+const schema = [
+  mobileAppSchema(),
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Features', path: '/features' },
+  ]),
+];
+
+const groups: { title: string; items: string[] }[] = [
+  {
+    title: 'What it does',
+    items: [
+      'Turns one spoken sentence into separate to-dos, each with its own date',
+      'Understands natural date language: “tomorrow”, “next Friday”, “mid-month”, “end of the month”, “every Monday”, “at 3pm”',
+      'You confirm before anything is saved; every field is editable first',
+      'Manual editing and keyboard input for when you’d rather type',
+      'Personal glossary: add names and terms so recognition favors your words',
+    ],
+  },
+  {
+    title: 'Capture',
+    items: [
+      'Record button in the app (Live Activity shows recording while the screen locks)',
+      `Siri: “Add todo in ${siteConfig.appName}”, plus complete, delete, and query shortcuts`,
+      'Action Button on supported iPhones: one press to start recording',
+      'Keyboard input as a quiet alternative',
+    ],
+  },
+  {
+    title: 'Organize',
+    items: [
+      'Due dates and due times',
+      'Recurring tasks: daily, weekly (by weekday), monthly (by day of month), or at a fixed interval',
+      'Reminders at a set time, or minutes before a due time',
+      'Categories, and splitting a task into smaller steps',
+    ],
+  },
+  {
+    title: 'See & complete',
+    items: [
+      'Lock Screen widgets: rectangular (next tasks with checkboxes), circular (remaining count), single line (next task)',
+      'Home Screen widgets: medium and large, interactive check-off',
+      'Month and week calendar views of your tasks',
+    ],
+  },
+  {
+    title: 'Review',
+    items: [
+      'A weekly review that surfaces unfinished tasks: do, postpone, split, or drop',
+      'Completion statistics',
+    ],
+  },
+  {
+    title: 'Calendar (optional)',
+    items: [
+      'Write to-dos to Apple Calendar (opt-in)',
+      'Import events from Apple Calendar — all-day events become all-day tasks, timed events keep their time',
+    ],
+  },
+  {
+    title: 'Languages',
+    items: ['Voice capture: English, Chinese (Mandarin), Japanese', 'Interface: English, Chinese, Japanese (English elsewhere)'],
+  },
+  {
+    title: 'Privacy',
+    items: [
+      'No account, no sign-in',
+      'Your to-do list is stored on your device only',
+      'Transcripts are sent (with your consent, over an encrypted connection) to our server and an AI provider to be organized — processed in real time, not archived',
+      'Audio is never uploaded by the app',
+      'Anonymous, opt-outable diagnostics; details on the privacy page',
+    ],
+  },
+  {
+    title: 'Requirements',
+    items: [
+      'iPhone with iOS 26 or later',
+      'iPad, Mac, Apple Watch, and Android are not supported',
+      'No multi-device sync today — your list lives on this iPhone',
+    ],
+  },
+];
+---
+
+<Base path="/features" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Features, plainly stated</h1>
+      <p class="lede">Everything {`${siteConfig.appName}`} does, what it costs, and what it needs. No marketing gloss — just the facts.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      {
+        groups.map((g) => (
+          <div class="fact-group">
+            <h2>{g.title}</h2>
+            <ul>
+              {g.items.map((item) => (
+                <li>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  <section aria-labelledby="pricing-h">
+    <div class="container">
+      <h2 id="pricing-h">Free vs Pro</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Plan</th>
+              <th scope="col">Voice captures</th>
+              <th scope="col">Everything else</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Free</strong></td>
+              <td>3 per day</td>
+              <td>All features: widgets, recurrence, reminders, calendar, review</td>
+            </tr>
+            <tr>
+              <td><strong>Pro</strong></td>
+              <td>100 per day</td>
+              <td>Same features, higher voice quota. Starts with a 7-day free trial; monthly or yearly.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:14px;color:var(--ink-soft)">
+        Prices vary by region and are shown in the App Store.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="more-h">
+    <div class="container">
+      <h2 id="more-h">Go deeper</h2>
+      <div class="related">
+        <ul>
+          <li><a href="/voice-to-do-list">Voice capture, explained &rarr;</a></li>
+          <li><a href="/lock-screen-to-do-list">Lock Screen widgets &rarr;</a></li>
+          <li><a href="/iphone-to-do-widget">Home Screen widgets &rarr;</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand ct="web-features-footer" />
+</Base>

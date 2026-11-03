@@ -1,0 +1,149 @@
+---
+// 首页(页面规格 §3.1):5 秒说清「说话建清单 + 锁屏一直看得见」。
+import Base from '../layouts/Base.astro';
+import Faq from '../components/Faq.astro';
+import CtaBand from '../components/CtaBand.astro';
+import Shot from '../components/Shot.astro';
+import { pages, faqs } from '../data/pages.mjs';
+import { mobileAppSchema } from '../data/schema.mjs';
+import { siteConfig, appStoreUrl } from '../config.mjs';
+
+const meta = pages['/'];
+const schema = [mobileAppSchema()];
+---
+
+<Base path="/" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero" aria-label="Intro">
+    <div class="container hero-grid">
+      <div>
+        <h1>Say your plan once.<br />See it on your Lock Screen all day.</h1>
+        <p class="lede">
+          Speak everything on your mind. {siteConfig.appName} turns it into a clean checklist with the right dates —
+          and you can check things off right from your Lock Screen. No account. No typing.
+        </p>
+        <div class="hero-cta">
+          <a class="appstore-btn" href={appStoreUrl('web-home-hero')} rel="noopener">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="#fff">
+              <path
+                d="M17.05 12.54c.02-2.2 1.79-3.26 1.87-3.31-1.02-1.5-2.61-1.7-3.17-1.73-1.35-.1-2.63.79-3.31.79-.69 0-1.74-.77-2.86-.75-1.47.02-2.83.86-3.59 2.17-1.53 2.67-.39 6.62 1.11 8.79.73 1.06 1.6 2.24 2.75 2.2 1.1-.04 1.52-.71 2.85-.71 1.33 0 1.7.71 2.87.69 1.19-.02 1.95-1.08 2.68-2.14.84-1.22 1.19-2.4 1.21-2.46-.03-.01-2.33-.9-2.36-3.54zM14.9 5.87c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.55 1.31-.56.65-1.05 1.68-.92 2.67.97.08 1.96-.49 2.57-1.22z"
+              ></path>
+            </svg>
+            <span>
+              <small>Download on the</small>
+              <strong>App Store</strong>
+            </span>
+          </a>
+        </div>
+        <p class="hero-note">Free to start &middot; No account &middot; iPhone, iOS 26 or later</p>
+      </div>
+      <div>
+        <Shot
+          name="01-recording"
+          alt="Recording screen: a single record button captures everything you say"
+          caption="Hold the button. Just talk."
+          eager
+        />
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="pain-h">
+    <div class="container">
+      <h2 id="pain-h">Planning isn't the hard part. Remembering is.</h2>
+      <div class="grid-3">
+        <div class="card">
+          <p>You had a plan this morning. By noon it's gone — not because it was wrong, but because you never saw it again.</p>
+        </div>
+        <div class="card">
+          <p>Typing tasks into an app is enough friction that you just don't. So things live in your head, using up attention.</p>
+        </div>
+        <div class="card">
+          <p>The list keeps growing. Looking at it is tiring, so you stop looking. Now it's a guilt pile, not a plan.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="how-h">
+    <div class="container">
+      <h2 id="how-h">How it works</h2>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Say it</h3>
+            <p>“Call the dentist tomorrow, buy milk, and send the report by Friday.” One breath, three tasks, no typing.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>It's organized</h3>
+            <p>
+              Your sentence becomes three separate to-dos, each on the right day. You glance at the checklist and confirm — fix anything with a tap first.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>See it all day</h3>
+            <p>Your list sits on your Lock Screen and Home Screen. Tap a checkbox, done. The list never leaves your sight.</p>
+          </div>
+        </li>
+      </ol>
+      <Shot
+        name="02-confirmsheet"
+        alt="Confirmation screen: the spoken sentence became a clean checklist with dates, ready to confirm"
+        caption="What you said, organized — you confirm before it's saved."
+      />
+    </div>
+  </section>
+
+  <section aria-labelledby="voice-h">
+    <div class="container grid-2">
+      <div>
+        <h2 id="voice-h">No typing. Just talk.</h2>
+        <p>
+          Say several things in one sentence and {siteConfig.appName} splits them into separate to-dos, each with the right date. It understands
+          how people actually talk: “next Friday”, “end of the month”, “every Monday”.
+        </p>
+        <p><a href="/voice-to-do-list">More about voice capture &rarr;</a></p>
+      </div>
+      <div>
+        <h2>Your list, always in sight.</h2>
+        <p>
+          A Lock Screen widget shows your next few tasks — check one off without even unlocking your phone. Home Screen widgets in medium and
+          large keep today in view.
+        </p>
+        <p>
+          <a href="/lock-screen-to-do-list">Lock Screen &rarr;</a> &middot; <a href="/iphone-to-do-widget">Home Screen widgets &rarr;</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="pile-h">
+    <div class="container grid-2">
+      <div>
+        <h2 id="pile-h">A list that doesn't pile up.</h2>
+        <p>
+          Once a week, {siteConfig.appName} walks you through what got left behind: do it this week, push it to next week, break it down, or
+          drop it. A short list you trust beats a long list you avoid.
+        </p>
+      </div>
+      <Shot name="05-review" alt="Weekly review screen: unfinished tasks collected for a weekly decision" caption="The weekly review: deal with what's left, weekly." />
+    </div>
+  </section>
+
+  <section aria-labelledby="privacy-h">
+    <div class="container">
+      <h2 id="privacy-h">No account. Your list stays on your iPhone.</h2>
+      <p class="lede">
+        There's nothing to sign up for. Your to-do list lives on your device. When you speak, the words are turned into text and sent to an AI
+        to be organized — processed in real time, never archived. Your audio is never uploaded.
+      </p>
+      <p><a href="/privacy">Read the privacy policy &rarr;</a></p>
+    </div>
+  </section>
+
+  <Faq faqs={faqs.home} />
+  <CtaBand ct="web-home-footer" />
+</Base>

@@ -1,0 +1,153 @@
+---
+// 语音落地页(页面规格 §3.2)。
+import Base from '../layouts/Base.astro';
+import Faq from '../components/Faq.astro';
+import CtaBand from '../components/CtaBand.astro';
+import Shot from '../components/Shot.astro';
+import { pages, faqs } from '../data/pages.mjs';
+import { breadcrumbSchema } from '../data/schema.mjs';
+import { siteConfig } from '../config.mjs';
+
+const meta = pages['/voice-to-do-list'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Voice to-do list', path: '/voice-to-do-list' },
+  ]),
+];
+---
+
+<Base path="/voice-to-do-list" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>A to-do list you can just talk to</h1>
+      <p class="lede">
+        Say several things at once. Get a clean checklist with dates — no typing, no forms, no fiddling with pickers.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="example-h">
+    <div class="container">
+      <h2 id="example-h">One sentence in, a whole list out</h2>
+      <p>You don't have to speak clearly. Talk the way you think — fillers, corrections, no punctuation:</p>
+      <div class="grid-2">
+        <div>
+          <p class="speech">
+            “okay so tomorrow I need to call the dentist, um, also buy milk — oh and I have to send that report by
+            Friday, let's say 3pm”
+          </p>
+          <p style="color:var(--ink-faint);font-size:0.9rem">
+            That's really what you say. No bullet points, no dates tapped on a wheel.
+          </p>
+        </div>
+        <div>
+          <ul class="parsed-list">
+            <li>
+              <span class="what">Call the dentist</span>
+              <span class="when">Tomorrow</span>
+            </li>
+            <li>
+              <span class="what">Buy milk</span>
+              <span class="when">Tomorrow</span>
+            </li>
+            <li>
+              <span class="what">Send the report</span>
+              <span class="when">Friday, 3:00 PM</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <Shot
+        name="02-confirmsheet"
+        alt="Confirmation screen showing spoken tasks split into separate to-dos with dates"
+        caption="The same sentence, organized into separate to-dos — you confirm before saving."
+      />
+    </div>
+  </section>
+
+  <section aria-labelledby="phrases-h">
+    <div class="container">
+      <h2 id="phrases-h">Understands how you actually talk</h2>
+      <p>Dates come out of natural speech, not out of menus:</p>
+      <ul class="chips" aria-label="Date phrases the app understands">
+        <li>tomorrow</li>
+        <li>next Friday</li>
+        <li>mid-month</li>
+        <li>end of the month</li>
+        <li>every Monday</li>
+        <li>at 3pm</li>
+        <li>remind me 30 minutes before</li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="capture-h">
+    <div class="container">
+      <h2 id="capture-h">Capture in seconds, from anywhere</h2>
+      <div class="grid-3">
+        <div class="card">
+          <h3>In the app</h3>
+          <p>Hold the record button and talk. A Live Activity shows that recording is running while your screen locks.</p>
+        </div>
+        <div class="card">
+          <h3>With Siri</h3>
+          <p>“Add todo in {siteConfig.appName}” — capture without lifting the phone.</p>
+        </div>
+        <div class="card">
+          <h3>With the Action Button</h3>
+          <p>On supported iPhones, one press starts recording. From your pocket, in the middle of something else.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="fix-h">
+    <div class="container grid-2">
+      <div>
+        <h2 id="fix-h">Not quite right? One tap to fix.</h2>
+        <p>
+          Nothing is saved until you confirm. Before it goes on your list, you can edit every task — retitle it, move the date, split it,
+          or drop it. It takes one tap per fix.
+        </p>
+      </div>
+      <div>
+        <h3>Teach it your words</h3>
+        <p>
+          A personal glossary lets you add names and terms you use all the time — people, projects, places — so recognition favors the
+          words that matter to you.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="offline-h">
+    <div class="container">
+      <h2 id="offline-h">No signal? Nothing is lost.</h2>
+      <p class="lede">
+        The metro tunnel doesn't get to eat your tasks. What you said is kept on your phone, and {siteConfig.appName} organizes it into dated
+        to-dos as soon as you're back online.
+      </p>
+    </div>
+  </section>
+
+  <Faq faqs={faqs.voice} />
+
+  <section>
+    <div class="container">
+      <div class="related">
+        <h2>Keep reading</h2>
+        <ul>
+          <li><a href="/lock-screen-to-do-list">Put the list on your Lock Screen &rarr;</a></li>
+          <li>
+            <a href="/guides/fastest-way-to-capture-tasks-on-iphone">
+              The fastest ways to capture tasks on iPhone, compared &rarr;
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand ct="web-voice-footer" />
+</Base>

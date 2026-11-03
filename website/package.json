@@ -1,0 +1,23 @@
+{
+  "name": "voicetodo-website",
+  "version": "0.1.0",
+  "description": "VoiceTodo marketing website (static, zero client JS)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build && node scripts/og-images.mjs && node scripts/checks.mjs",
+    "preview": "node scripts/serve.mjs dist 4173",
+    "og": "node scripts/og-images.mjs",
+    "images": "node scripts/optimize-images.mjs",
+    "lighthouse": "node scripts/lighthouse-run.mjs",
+    "check": "node scripts/checks.mjs"
+  },
+  "dependencies": {
+    "astro": "^5.7.0"
+  },
+  "devDependencies": {
+    "lighthouse": "^12.5.0",
+    "sharp": "^0.34.1"
+  }
+}

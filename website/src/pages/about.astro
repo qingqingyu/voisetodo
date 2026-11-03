@@ -1,0 +1,51 @@
+---
+// 关于页(页面规格 §3.10):执行者只搭框架、放占位文字;正文由产品负责人亲自写(E-E-A-T)。
+import Base from '../layouts/Base.astro';
+import { pages } from '../data/pages.mjs';
+import { breadcrumbSchema } from '../data/schema.mjs';
+import { siteConfig } from '../config.mjs';
+
+const meta = pages['/about'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'About', path: '/about' },
+  ]),
+];
+---
+
+<Base path="/about" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Made by one person who forgets things too</h1>
+      <div class="shot-pending" style="max-width:220px;margin:24px 0">
+        <strong>Photo placeholder</strong>
+        <span>A real photo or hand-drawn avatar of the developer</span>
+      </div>
+
+      <!-- 占位段落:产品负责人亲自替换为真实内容(页面规格 §3.10 明确要求) -->
+      <div class="policy-body">
+        <p>
+          <em>[This section is a placeholder. Per the page spec, the product owner writes this page personally — who you are, the real
+          personal reason this app exists, and the principles behind it.]</em>
+        </p>
+
+        <h2>Who I am</h2>
+        <p><em>[Placeholder: one or two honest sentences about you. A real name or the name you publish under.]</em></p>
+
+        <h2>Why I built this</h2>
+        <p>
+          <em>[Placeholder: the true story. What you kept forgetting, what you tried, why existing tools didn't stick. Specific beats
+          polished.]</em>
+        </p>
+
+        <h2>The principles</h2>
+        <ul>
+          <li>No account — your list is yours, on your phone</li>
+          <li>No selling data, no ads, no attention games</li>
+          <li>No notifications nagging you to “engage”</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</Base>

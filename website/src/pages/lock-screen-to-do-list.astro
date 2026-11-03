@@ -1,0 +1,121 @@
+---
+// 锁屏落地页(页面规格 §3.3)。锁屏三种样式的真实截图缺失(需真机补),
+// 用 ShotPending 占位并进结果文档清单;文案按代码事实(WidgetTodoFilter)写。
+import Base from '../layouts/Base.astro';
+import Faq from '../components/Faq.astro';
+import CtaBand from '../components/CtaBand.astro';
+import ShotPending from '../components/ShotPending.astro';
+import { pages, faqs } from '../data/pages.mjs';
+import { breadcrumbSchema } from '../data/schema.mjs';
+import { siteConfig } from '../config.mjs';
+
+const meta = pages['/lock-screen-to-do-list'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Lock Screen to-do list', path: '/lock-screen-to-do-list' },
+  ]),
+];
+---
+
+<Base path="/lock-screen-to-do-list" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Your to-do list, right on your Lock Screen</h1>
+      <p class="lede">See what's next every time you pick up your phone. Tap to check it off — no need to unlock.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="why-h">
+    <div class="container">
+      <h2 id="why-h">Out of sight, out of mind</h2>
+      <p>
+        You pick up your phone dozens of times a day — that's dozens of chances to remember what you meant to do. A to-do list buried
+        inside an app never gets that chance. A list on your Lock Screen does, every single time.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="styles-h">
+    <div class="container">
+      <h2 id="styles-h">Lock Screen widgets</h2>
+      <p>
+        Two styles live <strong>below the clock</strong> — and there's a third, single-line style that lives in the
+        <strong>date row above the clock</strong>. That one isn't in the widget list below the clock; you add it by
+        tapping the date itself (steps below).
+      </p>
+      <div class="grid-3">
+        <div class="card">
+          <h3>Rectangular <span style="font-weight:400;color:var(--ink-faint)">(below the clock)</span></h3>
+          <p>Your next few tasks, each with a checkbox. Tap one to complete it — right there, without unlocking.</p>
+          <ShotPending what="Rectangular Lock Screen widget with checkboxes, below the clock" />
+        </div>
+        <div class="card">
+          <h3>Circular <span style="font-weight:400;color:var(--ink-faint)">(below the clock)</span></h3>
+          <p>A single glanceable number: how many tasks are left today.</p>
+          <ShotPending what="Circular Lock Screen widget showing remaining count, below the clock" />
+        </div>
+        <div class="card">
+          <h3>Single line <span style="font-weight:400;color:var(--ink-faint)">(in the date row)</span></h3>
+          <p>Your next task, right beside the date — one glance every time you wake your phone.</p>
+          <ShotPending what="Inline Lock Screen widget in the date row above the clock" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="setup-h">
+    <div class="container">
+      <h2 id="setup-h">How to add it (30 seconds)</h2>
+      <h3>Rectangular or circular</h3>
+      <ol class="steps">
+        <li>
+          <div><p>Touch and hold your Lock Screen, then tap <strong>Customize</strong>.</p></div>
+        </li>
+        <li>
+          <div><p>Tap <strong>Lock Screen</strong>, then tap the <strong>widget area below the clock</strong>.</p></div>
+        </li>
+        <li>
+          <div><p>Tap <strong>Add Widgets</strong> and choose {siteConfig.appName} — rectangular or circular.</p></div>
+        </li>
+      </ol>
+      <h3>Single-line style</h3>
+      <ol class="steps">
+        <li>
+          <div><p>In the same customization view, tap the <strong>date above the clock</strong> (not the widget area below it).</p></div>
+        </li>
+        <li>
+          <div><p>Choose {siteConfig.appName} — your next task now sits in the date row.</p></div>
+        </li>
+      </ol>
+      <ShotPending what="Setup steps screenshots (below-clock widgets vs date row)" ratio="wide" />
+    </div>
+  </section>
+
+  <section aria-labelledby="morning-h">
+    <div class="container">
+      <h2 id="morning-h">Say it in the morning, see it all day</h2>
+      <p class="lede">
+        This is where it clicks: say your plan once when you start the day, and it stays on your Lock Screen until the day is over. Capture
+        once, remember all day.
+      </p>
+      <p><a href="/guides/plan-your-day-in-2-minutes">The 2-minute morning routine &rarr;</a></p>
+    </div>
+  </section>
+
+  <Faq faqs={faqs.lock} />
+
+  <section>
+    <div class="container">
+      <div class="related">
+        <h2>Keep reading</h2>
+        <ul>
+          <li><a href="/iphone-to-do-widget">Home Screen widgets you can check off &rarr;</a></li>
+          <li><a href="/guides/keep-to-do-list-visible-on-iphone">Keep your list visible on your iPhone &rarr;</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand ct="web-lock-screen-footer" />
+</Base>
