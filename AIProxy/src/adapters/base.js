@@ -231,16 +231,17 @@ const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户�
 1. 只提取行动项：感受、抱怨、背景信息不是 TODO。只有明确「要去做某事」才算
 2. 过滤口语噪音：忽略「嗯」「那个」「就是」「我想想」等填充词
 3. 保留用户原意：不要擅自扩展或拆解。用户说「准备面试」就是「准备面试」，不要拆成子步骤。标题必须保留动作的关键对象（给谁做的人名、做的事、去哪做的地点），绝不为了压缩字数丢弃：「给程希璐制定方案」的 title 是「给程希璐制定方案」，不是「定方案」
-4. 提取时间并换算为绝对日期：结合参考日期，把提到的日期（明天、下周三、月底前）换算成 due_date（ISO 8601 "YYYY-MM-DD"）。禁止返回"明天"/"下周三"等相对表达——必须算出具体日期。没提到日期则 due_date 为 null。时间原文保留在 due_hint（供用户参考）。若提到明确钟点（下午3点、晚上8点半、15:00），额外用 due_time 返回 24 小时制 "HH:mm"（下午3点→"15:00"、晚上8点半→"20:30"），此时 time_bucket 必须为 null。若只提到模糊时段（上午、下午、晚上）而没有明确钟点，则 due_time 为 null，并用 time_bucket 返回 "morning"/"afternoon"/"evening"。没有任何时段线索时 due_time 与 time_bucket 都为 null。一周从周日开始（与 App 周视图及系统日历默认一致），"下周三"=当前周之后的那个周三，"下周日"=下一周里的那个周日
+4. 提取时间并换算为绝对日期：结合参考日期，把提到的日期（明天、下周三、月底前）换算成 due_date（ISO 8601 "YYYY-MM-DD"）。禁止返回"明天"/"下周三"等相对表达——必须算出具体日期。没提到日期则 due_date 为 null。时间原文保留在 due_hint（供用户参考）。若提到明确钟点（下午3点、晚上8点半、15:00），额外用 due_time 返回 24 小时制 "HH:mm"（下午3点→"15:00"、晚上8点半→"20:30"），此时 time_bucket 必须为 null。若只提到模糊时段（上午、下午、晚上）而没有明确钟点，则 due_time 为 null，并用 time_bucket 返回 "morning"/"afternoon"/"evening"。没有任何时段线索时 due_time 与 time_bucket 都为 null。一周从周日开始（与 App 周视图及系统日历默认一致）。「下周X」的机械算法：先找**严格晚于今天的下一个周日**（周日起始制下它必然是下周的第一天），再按 X 加偏移天数（周日=0、周一=1、……、周六=6）。「下周日」即偏移 0——**就是严格晚于今天的下一个周日，绝不多加 7 天**：今天之后最近的那个周日永远落在下周，不存在「再跳一周」
 4b. ⚠️ 区分「用户明确表达截止日」(due_date_basis="user_explicit") vs 「标题里偶然提到日期词」(due_date_basis="title_mention"):
    - user_explicit: 日期是**时间状语修饰动作**——「明天交房租」「周五前交报告」「下周三开会」「周日去健身」「Submit by Friday」
-   - title_mention: 日期是**动作的目标/属性**——「为周日聚会做准备」「周日聚会」「prepare for Sunday」「Sunday prep」——此时 due_date 必须为 null, basis="title_mention"
+   - title_mention: 日期是**动作的目标/属性**——「为周日聚会做准备」「周日聚会」「prepare for Sunday」「Sunday prep」——此时 due_date 必须为 null, basis="title_mention"。「下个月的会议」「为下个月的团建订车」这类时间词虽然长得像日期，但修饰的是**动作对象**（会议/团建发生在下个月）而非动作发生时间，同样属于 title_mention，due_date 保持 null（见示例 25/26 对照）
    - inferred: 极少使用——仅当用户完全没提日期/时段、但上下文明确指向唯一日期时才用。⚠️ 「今晚」「今天晚上」「傍晚」这类时段词是用户明确说了什么时候做 → user_explicit(不是 inferred;客户端只保留 user_explicit 的 due_date,时段词标成 inferred 会导致日期被丢弃)
    - 无任何日期/时段线索: due_date=null 且 due_date_basis=null
    - ⚠️ 用户明确表达了截止意图但日期本身模糊到无法算出具体值(如「这周末」「下周末」): due_date=null, basis="user_explicit"(意图明确,只是日期待客户端让用户补选)
    判断口径:用户是否在「什么时候做这件事」? 是 → user_explicit;用户在「为某个时间点准备某事/某事发生在这个时间」? 是 → title_mention
    ⚠️ 一句中出现多个日期词时，due_date 对应修饰主动作（谓语动词）的时间状语，due_date_basis 由它决定。动作内容/宾语从句里的日期保留在 title 里，不作为 due_date，也不影响 due_date_basis：「我今天要想一想明天去哪里玩」→ 动作是「想」，发生在今天 → due_date=今天、basis="user_explicit"，「明天」保留在 title
    ⚠️ 句首/句级的日期词修饰整句的所有行动项：「明天去银行和取干洗」→ 两条 todo 的 due_date 都是明天、basis 都是 user_explicit
+   ⚠️ 时间词被 recurrence_rule 吸收时（「每周三健身」「每月1号交房租」），due_date=null 且 due_date_basis=null（见示例 3/4）——时间已由重复规则表达，不再有独立截止日
 模糊日期换算约定：
 - "月底/月末" → 当月最后一天（算出 due_date）
 - "月中" → 当月 15 号（算出 due_date）
@@ -248,6 +249,7 @@ const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户�
 - ⚠️ "这周末/本周末/下周末" → **due_date 必须为 null**（模糊日期，客户端让用户自己选周六或周日），due_hint 保留用户原文
 due_hint 始终保留用户原文。
 4c. 提前提醒：用户明确要求在截止时刻之前提醒时（「提前半小时提醒我」「提前15分钟」「提前一小时」「提前一天」），用 reminder_offset_minutes 返回偏移分钟数（半小时=30、一小时=60、一天=1440），范围 1–1440。仅在 due_time 存在时返回；用户没说「提前」类表述则为 null，不要自己推断。与 reminder_times（多个独立提醒时间点）互不影响
+4d. ⚠️ reminder_times 携带可换算的具体日期词时（「今天下午4点、6点吃药提醒」），该日期必须换算进 due_date 且 basis="user_explicit"（提醒依附于一个具体日子；模糊日期词如「这周末」仍按 4b 留 null 待用户补选）；输入完全没有任何日期词时（示例 12 的形态），due_date 为 null（见示例 27 对照）
 5. 提取重复规则：只有明确出现「每天/每日/每周X/每月X号」时才设置 recurrence_rule；否则为 null。weekdays 编号映射表（Apple Calendar 约定，与 iOS RecurrenceRule.swift 一致）：周日=1、周一=2、周二=3、周三=4、周四=5、周五=6、周六=7。例如「每周一三五」→ weekdays=[2,4,6]；「每月15号」→ frequency="monthly", day_of_month=15。interval 表示每 N 个周期重复一次，默认 1（「每两周」=interval 2、「每三个月」=interval 3）。weekly + interval > 1 时 weekdays 可以为空（从起始日推算）。recurrence_rule.end_date **一律留 null**（不要自己算日期，日期由程序算）
 5b. 截止边界：⚠️ recurrence_end 仅用于有 recurrence_rule 的重复任务。非重复任务（recurrence_rule 为 null）的截止日期一律用 due_date，recurrence_end 必须为 null。「月底前交税」是一次性任务 → due_date=当月最后一天，不是 recurrence_end。如果重复有终点，用顶层 recurrence_end 做「归一化分类」（你只分类，绝不要自己算具体日期）：
    - 有限天/周/月（未来7天/连续5天/未来一周/接下来两周/未来一个月）→ {"kind":"after_count","count":N,"unit":"day"|"week"|"month"}（一周=1 week、一个月=1 month）
@@ -386,7 +388,23 @@ due_hint 始终保留用户原文。
 
 示例 23（⚠️ 一句多条、各分句带**不同**时段：每条 todo 的 time_bucket 对应自己分句的时段词，不能整句共用第一个时段；参考日期 2026-07-15 周三）：
 输入："希望明天上午去上普拉提课，明天下午去公园"
-输出：{"todos":[{"title":"上普拉提课","detail":"希望明天上午去上普拉提课","due_date":"2026-07-16","due_hint":"明天上午","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"去公园","detail":"明天下午去公园","due_date":"2026-07-16","due_hint":"明天下午","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
+输出：{"todos":[{"title":"上普拉提课","detail":"希望明天上午去上普拉提课","due_date":"2026-07-16","due_hint":"明天上午","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"去公园","detail":"明天下午去公园","due_date":"2026-07-16","due_hint":"明天下午","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+示例 24（⚠️「下周日」=严格晚于今天的下一个周日，绝不再加 7 天；参考日期 2026-07-15 周三）：
+输入："下周日去看外婆"
+输出：{"todos":[{"title":"去看外婆","detail":"下周日去看外婆","due_date":"2026-07-19","due_hint":"下周日","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"social"}],"ignored":""}
+
+示例 25（⚠️ 对照示例 26：能定位到具体日期的「星期+时段」修饰活动发生时间 → 日期进 due_date、日期词从 title 移除、模糊时段进 time_bucket；参考日期 2026-07-15 周三）：
+输入："周四晚上订羽毛球场"
+输出：{"todos":[{"title":"订羽毛球场","detail":"周四晚上订羽毛球场","due_date":"2026-07-16","due_hint":"周四晚上","due_time":null,"time_bucket":"evening","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+示例 26（⚠️ 对照示例 25：模糊时间词（下个月）依附于动作对象 → 保留在 title，due_date=null，basis="title_mention"；参考日期 2026-07-15 周三）：
+输入："为下个月的评审会议订会议室"
+输出：{"todos":[{"title":"为下个月的评审会议订会议室","detail":"为下个月的评审会议订会议室","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"title_mention","priority":"normal","category_hint":"work"}],"ignored":""}
+
+示例 27（⚠️ 对照示例 12：reminder_times 带日期词 → 日期必须进 due_date + basis="user_explicit"；示例 12 无任何日期词才 due null；参考日期 2026-07-15 周三）：
+输入："今天下午4点、6点吃药提醒"
+输出：{"todos":[{"title":"吃药提醒","detail":"今天下午4点、6点吃药提醒","due_date":"2026-07-15","due_hint":"今天下午4点、6点","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}`;
 
 const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
 
@@ -394,16 +412,17 @@ Core rules:
 1. Only extract action items: feelings, complaints, and background info are NOT todos. Only explicit "going to do something" counts
 2. Filter filler words: ignore "um", "like", "you know", "let me think" etc.
 3. Preserve user intent: don't expand or split. If the user says "prepare for interview", keep it as is. The title must keep the action's key objects (person names, what/for whom, where) — never drop them for brevity: "prepare a plan for Cheng Xilu" stays "Prepare plan for Cheng Xilu", not "Make plan"
-4. Extract dates and time cues: Using the reference date, convert any mentioned date (tomorrow, next Wednesday, by end of month) into an ISO 8601 absolute date as due_date ("YYYY-MM-DD"). NEVER return relative expressions like "tomorrow" or "next Wednesday" in due_date — always compute the concrete date. If no date is mentioned, due_date is null. Keep the original text in due_hint (for user context). If a specific clock time is mentioned (3pm, 8:30pm, 15:00), return due_time as 24-hour "HH:mm" (3pm→"15:00", 8:30pm→"20:30") and time_bucket must be null. If only a fuzzy period is mentioned (morning, afternoon, evening) without a clock time, due_time must be null and time_bucket must be "morning", "afternoon", or "evening". If neither is mentioned, both due_time and time_bucket must be null. The week starts on Sunday (matching the app's week view and the system calendar default), so "next Wednesday" = the Wednesday of the following week, and "next Sunday" = the Sunday of the following week
+4. Extract dates and time cues: Using the reference date, convert any mentioned date (tomorrow, next Wednesday, by end of month) into an ISO 8601 absolute date as due_date ("YYYY-MM-DD"). NEVER return relative expressions like "tomorrow" or "next Wednesday" in due_date — always compute the concrete date. If no date is mentioned, due_date is null. Keep the original text in due_hint (for user context). If a specific clock time is mentioned (3pm, 8:30pm, 15:00), return due_time as 24-hour "HH:mm" (3pm→"15:00", 8:30pm→"20:30") and time_bucket must be null. If only a fuzzy period is mentioned (morning, afternoon, evening) without a clock time, due_time must be null and time_bucket must be "morning", "afternoon", or "evening". If neither is mentioned, both due_time and time_bucket must be null. The week starts on Sunday (matching the app's week view and the system calendar default). Mechanical algorithm for "next <weekday>": first locate the next Sunday STRICTLY AFTER today (under the Sunday-start convention it is always the first day of next week), then add the weekday's offset (Sunday=0, Monday=1, …, Saturday=6). "next Sunday" is therefore offset 0 — it IS the next Sunday strictly after today, NEVER 7 days further: the nearest future Sunday always falls in next week, there is no "skip another week"
 4b. ⚠️ Distinguish "user explicitly states a due date" (due_date_basis="user_explicit") vs "date word happens to appear in title/context" (due_date_basis="title_mention"):
    - user_explicit: the date is a TIME ADVERB modifying the action — "pay rent tomorrow", "submit report by Friday", "meeting next Wednesday", "go to gym on Sunday"
-   - title_mention: the date is the TARGET/ATTRIBUTE of the action — "prepare for Sunday", "Sunday prep", "Sunday party setup" — in these cases due_date MUST be null and basis="title_mention"
+   - title_mention: the date is the TARGET/ATTRIBUTE of the action — "prepare for Sunday", "Sunday prep", "Sunday party setup" — in these cases due_date MUST be null and basis="title_mention". "The conference next month", "book a bus for next month's team event" — time words that modify the ACTION'S OBJECT (the conference/bus takes place next month), not when the action happens, are also title_mention even though they look like dates: due_date stays null (see the Example 27/28 contrast)
    - inferred: RARELY used — only when the user mentioned NO date/period at all but context points to exactly one date. ⚠️ Period words like "tonight" / "this evening" mean the user explicitly said WHEN → user_explicit (NOT inferred; the client only keeps due_date when basis is user_explicit — labeling it inferred would drop the date)
    - no date/period cue at all: due_date=null AND due_date_basis=null
    - ⚠️ User expresses a clear deadline intent but the date is too fuzzy to compute (e.g. "this weekend", "next weekend"): due_date=null, basis="user_explicit" (intent is explicit; the client lets the user pick the concrete day)
    Test: is the user saying "WHEN to do this"? → user_explicit. Is the user saying "do something FOR/FORWARD TO a time point"? → title_mention
    ⚠️ When multiple date words appear in one sentence, due_date binds to the time adverbial of the MAIN action verb, and due_date_basis follows it. Dates inside the action's content/object clause stay in the title — they are NOT used as due_date and do not affect due_date_basis: "Today I want to think about where to go tomorrow" → the action is "think", happening today → due_date=today, basis="user_explicit"; "tomorrow" stays in the title
    ⚠️ A date word at the start/sentence level modifies EVERY action item in the sentence: "tomorrow call the bank and pick up the dry cleaning" → BOTH todos get due_date=tomorrow, basis="user_explicit"
+   ⚠️ When a time word is absorbed by recurrence_rule ("gym every Wednesday", "rent on the 1st of every month"), due_date=null AND due_date_basis=null (see Examples 3/4) — the time is already expressed by the recurrence, there is no separate due date
 Fuzzy date conventions:
 - "end of month" → last day of current month (compute due_date)
 - "middle of month" → 15th of current month (compute due_date)
@@ -411,6 +430,7 @@ Fuzzy date conventions:
 - ⚠️ "this weekend" / "next weekend" → **due_date MUST be null** (fuzzy date; the client lets the user pick Saturday or Sunday); keep the original phrase in due_hint
 due_hint always preserves the original text.
 4c. Advance reminder: when the user explicitly asks to be reminded BEFORE the due time ("remind me half an hour early", "15 minutes before", "one hour before", "one day before"), return reminder_offset_minutes = the offset in minutes (half an hour=30, one hour=60, one day=1440), range 1–1440. Only return it when due_time exists; if the user said nothing about "before/early", it must be null — never infer it yourself. It is independent of reminder_times (multiple standalone reminder times)
+4d. ⚠️ When reminder_times come with a concrete computable date word ("remind me to take my meds today at 4pm and 6pm"), that date MUST be computed into due_date with basis="user_explicit" (reminders anchor to a concrete day; fuzzy date words like "this weekend" still follow rule 4b — leave null for the user to pick); when the input contains no date word at all (Example 12's shape), due_date is null (see the Example 29 contrast)
 5. Extract recurrence only for explicit phrases like "every day", "daily", "every Monday", "weekly", or "monthly on the 1st"; otherwise recurrence_rule must be null. weekdays numbering map (Apple Calendar convention, matches iOS RecurrenceRule.swift): Sunday=1, Monday=2, Tuesday=3, Wednesday=4, Thursday=5, Friday=6, Saturday=7. E.g. "every Mon/Wed/Fri" → weekdays=[2,4,6]; "monthly on the 15th" → frequency="monthly", day_of_month=15. interval = every N periods (default 1; "every two weeks" = interval 2, "every three months" = interval 3). weekly + interval > 1 allows empty weekdays (computed from start date). Always leave recurrence_rule.end_date null (do NOT compute dates yourself)
 5b. End boundary: ⚠️ recurrence_end is ONLY for recurring tasks that have a recurrence_rule. Non-recurring tasks (recurrence_rule is null) must use due_date for deadlines, NOT recurrence_end. "Finish taxes by end of month" is a one-time task → due_date = last day of month, recurrence_end = null. If the recurrence has an end, use the top-level recurrence_end field as a NORMALIZED CLASSIFICATION (only classify; never compute the concrete date — the client computes it):
    - bounded days/weeks/months (next 7 days / for 5 days / next week / next two weeks / next month) → {"kind":"after_count","count":N,"unit":"day"|"week"|"month"} (one week = 1 week, one month = 1 month)
@@ -557,7 +577,23 @@ Output: {"todos":[{"title":"Meet Li Ming at the office","detail":"Meet Li Ming a
 
 Example 25 (⚠️ multiple todos in one sentence with DIFFERENT fuzzy periods: each todo's time_bucket must match the period word of its OWN clause — never reuse the first period for the whole sentence; reference date 2026-07-15 Wednesday):
 Input: "I want to take a Pilates class tomorrow morning and go to the park tomorrow afternoon"
-Output: {"todos":[{"title":"Take Pilates class","detail":"I want to take a Pilates class tomorrow morning","due_date":"2026-07-16","due_hint":"tomorrow morning","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"Go to the park","detail":"go to the park tomorrow afternoon","due_date":"2026-07-16","due_hint":"tomorrow afternoon","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
+Output: {"todos":[{"title":"Take Pilates class","detail":"I want to take a Pilates class tomorrow morning","due_date":"2026-07-16","due_hint":"tomorrow morning","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"Go to the park","detail":"go to the park tomorrow afternoon","due_date":"2026-07-16","due_hint":"tomorrow afternoon","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+Example 26 (⚠️ "next Sunday" = the next Sunday strictly after today, NEVER 7 days further; reference date 2026-07-15 Wednesday):
+Input: "Visit grandma next Sunday"
+Output: {"todos":[{"title":"Visit grandma","detail":"Visit grandma next Sunday","due_date":"2026-07-19","due_hint":"next Sunday","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"social"}],"ignored":""}
+
+Example 27 (⚠️ contrast with Example 28: a "weekday + period" that resolves to a concrete date and modifies WHEN the activity happens → the date goes into due_date, the date words leave the title, the fuzzy period goes into time_bucket; reference date 2026-07-15 Wednesday):
+Input: "Book a badminton court for Thursday night"
+Output: {"todos":[{"title":"Book a badminton court","detail":"Book a badminton court for Thursday night","due_date":"2026-07-16","due_hint":"Thursday night","due_time":null,"time_bucket":"evening","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+Example 28 (⚠️ contrast with Example 27: a fuzzy time word ("next month") attached to the action's OBJECT → stays in the title, due_date=null, basis="title_mention"; reference date 2026-07-15 Wednesday):
+Input: "Book a meeting room for next month's review meeting"
+Output: {"todos":[{"title":"Book a meeting room for next month's review meeting","detail":"Book a meeting room for next month's review meeting","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"title_mention","priority":"normal","category_hint":"work"}],"ignored":""}
+
+Example 29 (⚠️ contrast with Example 12: reminder_times with a date word → the date MUST go into due_date with basis="user_explicit"; only Example 12's no-date shape keeps due_date null; reference date 2026-07-15 Wednesday):
+Input: "Remind me to take my meds today at 4pm and 6pm"
+Output: {"todos":[{"title":"Take meds","detail":"Remind me to take my meds today at 4pm and 6pm","due_date":"2026-07-15","due_hint":"today at 4pm and 6pm","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}`;
 
 // 完整日语 prompt(P1)。规则结构与中文/英文 prompt 对齐,示例全部改写为日语输入。
 // 输出语言、人名保留、枚举字段英文 literal 等约束显式写在规则 10 里,防止 AI 漂移。
@@ -567,16 +603,17 @@ const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです�
 1. 行動項目のみ抽出:感情、不満、背景情報はTODOではありません。「何かをしよう」という明確な意図があるものだけを抽出
 2. フィラー言葉を除去:「ええと」「あの」「その」「ちょっと」などの埋め草は無視
 3. ユーザーの意図を保持:勝手に展開・分割しない。「面接の準備」と言ったらそのまま「面接の準備」とし、サブステップに分割しない。タイトルは動作の主要な対象（誰のために/何を/どこで）を必ず保持し、短くするために省略しない：「田中の企画書を作る」を「企画書作成」に縮めない
-4. 日付と時間の手がかりを抽出:参照日を基準に、言及された日付(明日、来週の水曜日、月末までなど)を due_date として ISO 8601 絶対日付("YYYY-MM-DD")に変換。due_date に「明日」「来週の水曜日」などの相対表現を絶対に返さないこと——必ず具体的な日付を計算。言及がない場合は due_date を null に。due_hint には原文をそのまま保持(ユーザー参照用)。明確な時刻(午後3時、夜8時半、15:00、15時30分)が言及された場合、due_time を24時間制の "HH:mm" で返す(午後3時→"15:00"、夜8時半→"20:30")。この場合 time_bucket は必ず null。明確な時刻ではなく大まかな時間帯(朝、午前、午後、夜)だけが言及された場合、due_time を null にし、time_bucket を "morning"/"afternoon"/"evening" で返す。どちらも言及がない場合は due_time と time_bucket ともに null。週は日曜始まり(Appの週表示・日本のカレンダー慣行に一致)。「来週の水曜日」=現在の週の次の週の水曜日、「来週の日曜日」=次の週の日曜日(現在の週の日曜日ではない)
+4. 日付と時間の手がかりを抽出:参照日を基準に、言及された日付(明日、来週の水曜日、月末までなど)を due_date として ISO 8601 絶対日付("YYYY-MM-DD")に変換。due_date に「明日」「来週の水曜日」などの相対表現を絶対に返さないこと——必ず具体的な日付を計算。言及がない場合は due_date を null に。due_hint には原文をそのまま保持(ユーザー参照用)。明確な時刻(午後3時、夜8時半、15:00、15時30分)が言及された場合、due_time を24時間制の "HH:mm" で返す(午後3時→"15:00"、夜8時半→"20:30")。この場合 time_bucket は必ず null。明確な時刻ではなく大まかな時間帯(朝、午前、午後、夜)だけが言及された場合、due_time を null にし、time_bucket を "morning"/"afternoon"/"evening" で返す。どちらも言及がない場合は due_time と time_bucket ともに null。週は日曜始まり(Appの週表示・日本のカレンダー慣行に一致)。「来週のX」の機械的算法:**今日より厳密に後の最初の日曜日**を特定し(日曜始まり制ではそれが常に来週の最初の日)、その曜日のオフセット(日曜=0、月曜=1、…、土曜=6)を加える。「来週の日曜日」はオフセット 0——**今日より後の最初の日曜日そのものであり、決して更に 7 日足さない**:今日より後の最も近い日曜日は常に来週に属し、「もう一週先」は存在しない
 4b. ⚠️「ユーザーが明確に締め切りを表明した」(due_date_basis="user_explicit")と「タイトルにたまたま日付語が現れた」(due_date_basis="title_mention")を区別:
    - user_explicit: 日付が**行動を修飾する時間副詞**——「明日家賃を払う」「金曜までにレポートを提出」「来週の水曜日に会議」「日曜にジムへ」「Submit by Friday」
-   - title_mention: 日付が**行動の対象・属性**——「日曜の集会用の準備」「日曜の集会」「prepare for Sunday」「Sunday prep」——この場合 due_date は必ず null、basis="title_mention"
+   - title_mention: 日付が**行動の対象・属性**——「日曜の集会用の準備」「日曜の集会」「prepare for Sunday」「Sunday prep」——この場合 due_date は必ず null、basis="title_mention"。「来月の会議」「来月の社内イベントのためにバスを手配」のような、日付語に見えて**行動の対象**(会議/社内イベントそのものが来月)を修飾する時間語も title_mention に含まれ、due_date は null のまま(例 22/23 の対比を参照)
    - inferred: ほぼ使わない——ユーザーが日付・時間帯に一切触れていないが、文脈から一意の日付が定まるときだけ使用。⚠️ 「今夜」「今晩」などの時間帯語はユーザーが「いつやるか」を明示している → user_explicit(inferred ではない。クライアントは user_explicit の due_date しか保持しない)
    - 日付・時間帯の手がかりが一切ない: due_date=null かつ due_date_basis=null
    - ⚠️ ユーザーが締め切り意図を明確に表明しているが、日付自体が曖昧で計算できない(例:「今週末」「来週末」): due_date=null、basis="user_explicit"(意図は明確、日付はクライアント側でユーザーに補選させる)
    判断基準:ユーザーは「いつそれをするか」を言っているか? → user_explicit。ユーザーは「ある時点に向けて何かをする / その時点で何かが起こる」を言っているか? → title_mention
    ⚠️ 文中に複数の日付語がある場合、due_date は主要動作（述語動詞）を修飾する時間副詞に対応し、due_date_basis もそれに従う。動作の内容・目的語節の中の日付は title に保持し、due_date にも due_date_basis にも使わない：「今日、明日どこへ遊びに行くか考えよう」→ 動作は「考える」、今日行う → due_date=今日、basis="user_explicit"、「明日」は title に保持
    ⚠️ 文頭・文レベルの日付語は文中のすべての行動項目を修飾する:「明日、銀行に電話してクリーニングを受け取る」→ どちらのTODOも due_date=明日、basis="user_explicit"
+   ⚠️ 時間語が recurrence_rule に吸収される場合(「毎週水曜日にジム」「毎月1日に家賃」)、due_date=null かつ due_date_basis=null(例 3/4 参照)——時間は繰り返し規則で表現されており、独立した締め切り日は存在しない
 曖昧な日付の換算約束:
 - 「月末」→ 当月の最終日(due_date を計算)
 - 「月中」→ 当月の15日(due_date を計算)
@@ -585,6 +622,7 @@ const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです�
 - ⚠️ 「今度」「近いうちに」→ **due_date は必ず null**(「いつかやる」の意向表現で時期が特定できない。締め切り意図が明確なら basis="user_explicit"、クライアント側でユーザーに日付を選ばせる)、due_hint に原文を保持
 due_hint は常にユーザーの原文を保持。
 4c. 事前リマインド:ユーザーが時刻より前に通知を求めた場合(「30分前にリマインドして」「15分前に」「1時間前に」「前日に」)、reminder_offset_minutes にオフセット分数を返す(30分=30、1時間=60、1日=1440)、範囲は 1–1440。due_time が存在する場合のみ返す。「前に」「事前」といった表現がない場合は必ず null——自分で推測しない。reminder_times(複数の独立したリマインド時刻)とは互いに影響しない
+4d. ⚠️ reminder_times に換算可能な具体的な日付語が伴う場合(「今日の午後4時と6時に薬のリマインド」)、その日付を due_date に換算し basis="user_explicit" とすること(リマインドは具体的な日に固定される。「今週末」などの曖昧な日付語は 4b に従い null のままユーザーに選ばせる)。入力に日付語が全くない場合(例 12 の形)は due_date を null にする(例 24 の対比を参照)
 5. 繰り返しルールの抽出:「毎日」「毎週月曜」「毎月15日」など明確な表現がある場合のみ recurrence_rule を設定。それ以外は null。weekdays 番号マッピング(Apple Calendar の約束、iOS RecurrenceRule.swift と一致):日=1、月=2、火=3、水=4、木=5、金=6、土=7。例:「毎週月水金」→ weekdays=[2,4,6];「毎月15日」→ frequency="monthly"、day_of_month=15。interval は N 周期に1回(デフォルト1。「2週間に1回」=interval 2、「3ヶ月に1回」=interval 3)。weekly + interval > 1 の場合 weekdays は空を許可(開始日から推算)。recurrence_rule.end_date は**常に null**(自分で日付を計算しない)
 5b. 終了境界:⚠️ recurrence_end は recurrence_rule を持つ繰り返しタスクにのみ使用。非繰り返し(recurrence_rule が null)の締め切りは due_date を使うこと。recurrence_end は必ず null。「月末までに税金を払う」は一回限りのタスク → due_date=月末、recurrence_end=null。繰り返しに終わりがある場合、トップレベルの recurrence_end フィールドを**正規化された分類**として使う(分類だけ、具体的な日付は計算しない——クライアントが計算):
    - 有限日/週/月(向こう7日間 / 5日間 / 1週間 / 2週間 / 1ヶ月)→ {"kind":"after_count","count":N,"unit":"day"|"week"|"month"}(1週間=1 week、1ヶ月=1 month)
@@ -706,7 +744,23 @@ JSON のみを返す(説明は不要)。フォーマット:
 
 例 20(⚠️ 一文に複数のTODOがあり各節に**異なる**時間帯が付く場合:各TODOの time_bucket は自分の節の時間帯語に対応させ、文全体で最初の時間帯を使い回さない;参照日 2026-07-15 水曜):
 入力:"明日の午前にピラティスのレッスンを受けて、明日の午後は公園に行く"
-出力:{"todos":[{"title":"ピラティスのレッスンを受ける","detail":"明日の午前にピラティスのレッスンを受けて","due_date":"2026-07-16","due_hint":"明日の午前","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"公園に行く","detail":"明日の午後は公園に行く","due_date":"2026-07-16","due_hint":"明日の午後","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
+出力:{"todos":[{"title":"ピラティスのレッスンを受ける","detail":"明日の午前にピラティスのレッスンを受けて","due_date":"2026-07-16","due_hint":"明日の午前","due_time":null,"time_bucket":"morning","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"},{"title":"公園に行く","detail":"明日の午後は公園に行く","due_date":"2026-07-16","due_hint":"明日の午後","due_time":null,"time_bucket":"afternoon","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+例 21(⚠️「来週の日曜日」=今日より厳密に後の最初の日曜日。更に 7 日は足さない;参照日 2026-07-15 水曜):
+入力:"来週の日曜日におばあちゃんの見舞いに行く"
+出力:{"todos":[{"title":"おばあちゃんの見舞いに行く","detail":"来週の日曜日におばあちゃんの見舞いに行く","due_date":"2026-07-19","due_hint":"来週の日曜日","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"social"}],"ignored":""}
+
+例 22(⚠️ 例 23 との対比:具体的な日付に換算できる「曜日+時間帯」が活動の発生時刻を修飾 → 日付は due_date に入り、日付語は title から除き、曖昧な時間帯は time_bucket に入れる;参照日 2026-07-15 水曜):
+入力:"木曜の夜にバドミントンコートを取る"
+出力:{"todos":[{"title":"バドミントンコートを取る","detail":"木曜の夜にバドミントンコートを取る","due_date":"2026-07-16","due_hint":"木曜の夜","due_time":null,"time_bucket":"evening","recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}
+
+例 23(⚠️ 例 22 との対比:曖昧な時間語(来月)が動作の対象に付随 → title に保持し、due_date=null、basis="title_mention";参照日 2026-07-15 水曜):
+入力:"来月のレビュー会議のために会議室を予約する"
+出力:{"todos":[{"title":"来月のレビュー会議の会議室予約","detail":"来月のレビュー会議のために会議室を予約する","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"title_mention","priority":"normal","category_hint":"work"}],"ignored":""}
+
+例 24(⚠️ 例 12 との対比:reminder_times に日付語が伴う → 日付は必ず due_date に入り basis="user_explicit"。例 12 の形(日付語なし)のみ due_date は null;参照日 2026-07-15 水曜):
+入力:"今日の午後4時と6時に薬を飲むリマインド"
+出力:{"todos":[{"title":"薬を飲むリマインド","detail":"今日の午後4時と6時に薬を飲むリマインド","due_date":"2026-07-15","due_hint":"今日の午後4時と6時","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}`;
 
 // Split 模式 prompts（2026-08-23 拆小改版）。与提取 prompts 的关键差异:
 // 输出是 {"steps":[...]} 而非 {"todos":[...]}；无日期/重复/分类字段；
