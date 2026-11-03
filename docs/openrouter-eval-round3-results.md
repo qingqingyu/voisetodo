@@ -60,6 +60,7 @@
 ### R3/R4/R3b:z.ai openai 兼容端点直连——账户余额受阻(未执行)
 
 - R3 整轮启动后 75/75 infra_error:上游对**每一个请求**秒回 `HTTP 429 {"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}`(worker 6 连败熔断后转 no_candidates,原始前 6 条均为亚秒 503 包装)。人工直发单条复现同一 1113,glm-4.5-air 与 glm-5.3-flash 同报——**与模型无关,是账户在该端点无按量余额**。
+- **1210 探测留档(2026-11-03 午间,产品负责人充值动作前后)**:openai 兼容端点上 5.3-flash 传 `thinking: {"type":"disabled"}` → `HTTP 400 code=1210 "This model always engages in thinking and cannot be disabled; please use low, high, or max"`——**思考强制不可关(直连实证,与 10-24 档案一致),但存在档位旋钮**。参数形状探明:`thinking: {"type":"enabled","level":"low|high|max"}` 校验通过(仅差余额);`type:"low"` 非法;`reasoning_effort` 疑似被静默忽略。**「flash + thinking low」是潜在的最优解实验(质量 71/73 的模型 × 低档思考的延迟),模板已备(zai-openai-5.3-flash-low.json),余额到账即可跑。**
 - 该 key(ZAI_KEY = 生产 PROVIDER_KEY_ZAI_ANTHROPIC)在 **anthropic 端点**有额(R1/R2 各 75 条全通,生产 10-24 起在服),两个端点计费池不同(anthropic 走订阅通道,openai 兼容走按量余额)。
 - **影响范围**:R3(轮 2 归因遗留)、R4(顺手)、R3b(R7 补救实验)三组全部无法执行,除非产品负责人给 z.ai 账户充按量余额。零成本发生(错误响应不扣费,75×1113 = $0)。
 - R7 的「关思考」问题因此**双料受阻**:anthropic 端点被 worker extraBody 限制挡(§5),openai 端点被余额挡(本节)。可参照的最近数据是轮 2 E3(OpenRouter air 关推理:54/73,mean 4.4s)——关推理在 OpenRouter 托管下未救回准确率。
@@ -140,7 +141,7 @@ R3 受阻使「接口形态 vs OpenRouter 托管」的分离实验无法完成�
 2. **OPENROUTER_KEY 交付方式偏离**:任务书要求 key 不进聊天、由产品负责人放环境变量;实际由产品负责人直接贴进聊天后转存 `.dev.vars`(gitignore 覆盖,全程未回显、未入任何提交/日志)。**建议本轮结束后吊销该 key**(与轮 2 同一处置)。
 3. **key 限额 $5 而非任务书 $0.5**(实测 `limit: 5`):未阻塞——R5/R6 实际预算远低于 $0.5(轮 2 GPT 组配额 ≈$0.15 量级),已用 usage 实测监控;建议产品负责人有空降回 $0.5。
 4. **key 明日(北京 11-04 12:29)过期**:R5/R6 已排程当日完成,不影响窗口;如需晚高峰复跑 GPT 组(任务书未要求)不可行,如实记录。
-5. **R3/R4/R3b 全部受阻于 z.ai 账户余额**(openai 兼容端点 1113,§3 详述):R3 是「建议」级、R4「顺手」级,按任务书优先级不阻塞主线;R3b 是 R7 的补救实验,与 R7 原案(§5)叠加后「关思考」维度本轮**无直证**。若产品负责人给 z.ai 充按量余额,可在窗口内(北京周五 08:00 前)补跑,runner/模板已就绪。
+5. **R3/R4/R3b 全部受阻于 z.ai 账户余额**(openai 兼容端点 1113,§3 详述):R3 是「建议」级、R4「顺手」级,按任务书优先级不阻塞主线;R3b 是 R7 的补救实验,与 R7 原案(§5)叠加后「关思考」维度本轮**无直证**。若产品负责人给 z.ai 充按量余额,可在窗口内(北京周五 08:00 前)补跑,runner/模板已就绪。**新增:产品负责人 11-03 午间已做充值/切换动作但探测仍 1113(未到账或落在别的账号),到账后待跑清单:R4(flash 默认)→ R4-low(flash thinking low,任务书外新增,依据 §3 的 1210 档位发现)→ R3 → R3b。**
 6. **R1 infra 超时 1 条(en-027)未 --resume 重跑**:worker 侧 50s 超时×2 同形态(纯思考摊死),属模型行为而非瞬时故障,重跑大概率复现且烧配额,按「确定性错误不重试」口径留档。
 
 ## 10. 成本
