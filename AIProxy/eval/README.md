@@ -195,7 +195,7 @@ node run.mjs --provider-file providers/zai-anthropic-5.3-flash.json --key-env ZA
 
 ## 10. 评测轮 4 runbook(OpenRouter 全线快档,2026-11-03 拍板)
 
-> 目的:轮3结论「都不过」(flash 败延迟×2 / air 败准确率×2 / gpt-5-nano 三重不合格)后,用户拍板弃 z.ai 直连,转 OpenRouter 选「既准确又快」。deepseek-v4-flash-0731 的 70/73(OR 历史新高,ja 首次满分)是本轮阵容的锚点。分支基于 `task/eval-round3-run`(PR#4 未合,main 缺体感延迟测量那 97 行;PR#4 合并后本分支 rebase 或直接 PR 均可)。
+> 目的:轮3结论「都不过」(flash 败延迟×2 / air 败准确率×2 / gpt-5-nano 三重不合格)后,用户拍板弃 z.ai 直连,转 OpenRouter 选「既准确又快」。deepseek-v4-flash-0731 的 70/73(OR 历史新高,ja 首次满分)是本轮阵容的锚点。分支基于 `task/eval-round3-run` 切出(切时 main 尚无体感延迟测量那 97 行;PR#4 已随后合入 main,e232cd2)。
 
 ### 10.1 实验清单(模板都在 `providers/`,全部 2026-11-03 目录实查价格)
 
@@ -216,6 +216,7 @@ node run.mjs --provider-file providers/zai-anthropic-5.3-flash.json --key-env ZA
 2. **代理**:OpenRouter 对部分出口 403,探活同 §9.2 第 4 条,需要时全组加 `--proxy http://127.0.0.1:7897`。
 3. **双窗口**:轮3教训——入围者(Q1/Q2 先行)**白天 + 晚高峰各跑一轮**,flash 就是晚高峰复跑才两连败坐实的。
 4. 预算:6 组 × 73 case × ~2k tok,全阵容 **<$3**。
+5. **窗口**:同 §9.2 第 1 条(UTC 周二~周四 = 北京周二 08:00 ~ 周五 08:00),窗口外 runner 直接报错——这是特性不是故障。
 
 ### 10.3 执行
 
