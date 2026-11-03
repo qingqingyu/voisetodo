@@ -192,3 +192,43 @@ node run.mjs --provider-file providers/zai-anthropic-5.3-flash.json --key-env ZA
 - 过关口径不变:73 条 ≤1 错 + 延迟适配生产 30s 超时(轮2 §10 更正版口径)。
 - 结果写 `docs/openrouter-eval-round3-results.md`:R1/R2 给主力与备线的**直连质量档案**;R3 完成轮2遗留的归因表(直连 anthropic vs 直连 openai-compat vs OpenRouter 三列);R5/R6 决定 GPT 系是否进入备选池(直接影响 clawto/gettoken 之外是否多一个溢出选项,以及「A 场景开闸」的备线质量证据)。
 - **A 场景开闸联动**:轮2结论「OpenRouter 无模型双过关」后,备线扩容走「z.ai 提额 + 多 key 池」。R2 若仍 ≥97%,A 场景闸门(secretNames 池)开闸的质量侧证据即齐备,剩下是人工买 key + 配额。
+
+## 10. 评测轮 4 runbook(OpenRouter 全线快档,2026-11-03 拍板)
+
+> 目的:轮3结论「都不过」(flash 败延迟×2 / air 败准确率×2 / gpt-5-nano 三重不合格)后,用户拍板弃 z.ai 直连,转 OpenRouter 选「既准确又快」。deepseek-v4-flash-0731 的 70/73(OR 历史新高,ja 首次满分)是本轮阵容的锚点。分支基于 `task/eval-round3-run`(PR#4 未合,main 缺体感延迟测量那 97 行;PR#4 合并后本分支 rebase 或直接 PR 均可)。
+
+### 10.1 实验清单(模板都在 `providers/`,全部 2026-11-03 目录实查价格)
+
+| # | label 建议 | 模板 | in/out $/M | 角色 |
+|---|---|---|---|---|
+| Q1 | `r4-or-ds41-flash` | `openrouter-deepseek-v4.1-flash.json` | 0.04/0.50 | **头号种子**:70/73 直系继任,ja 满分血统 |
+| Q2 | `r4-or-haiku-55` | `openrouter-claude-haiku-5.5.json` | 0.10/0.50 | Claude 5.5 快速档,指令遵循强 |
+| Q3 | `r4-or-minimax-m31` | `openrouter-minimax-m3.1-flash.json` | 0.15/0.60 | 国内 flash 系 |
+| Q4 | `r4-or-qwen37-flash` | `openrouter-qwen3.7-flash.json` | 0.03/0.13 | 最便宜档,zh 强 |
+| Q5 | `r4-or-gemini-38-flash` | `openrouter-gemini-3.8-flash.json` | 0.83/4.12 | 贵一档,结构化抽取历来稳 |
+| Q6 | `r4-or-glm-53-flash-ctrl` | `openrouter-glm-5.3-flash.json` | 0.03/0.08 | **对照线(仅诊断)**:同模型换路由,归因「慢的是 z.ai 路由还是模型」;不上生产 |
+
+落选记录:mercury-3(扩散模型,延迟冠军候选——用户裁掉)、mimo-v2.6-flash、gpt-5.4-mini(nano 三重不合格后 OpenAI 小档缓议)。
+
+### 10.2 前置
+
+1. **OPENROUTER_KEY** 人工提供(轮3 那把,配额已批)。顺带清点:记忆挂着的「吊销两把旧 OR key」待办本轮一起做。
+2. **代理**:OpenRouter 对部分出口 403,探活同 §9.2 第 4 条,需要时全组加 `--proxy http://127.0.0.1:7897`。
+3. **双窗口**:轮3教训——入围者(Q1/Q2 先行)**白天 + 晚高峰各跑一轮**,flash 就是晚高峰复跑才两连败坐实的。
+4. 预算:6 组 × 73 case × ~2k tok,全阵容 **<$3**。
+
+### 10.3 执行
+
+```bash
+cd AIProxy/eval
+node run.mjs --provider-file providers/openrouter-deepseek-v4.1-flash.json --key-env OPENROUTER_KEY --label r4-or-ds41-flash
+# …六组同型;需要代理的组加 --proxy http://127.0.0.1:7897
+# 中断续跑:同命令 + --resume
+```
+
+### 10.4 判读与产出
+
+- 过关口径不变:73 条 ≤1 错(≥98%)+ 延迟适配生产超时 + 成本。
+- Q6 对照线单独判读:若 OR 路由下 5.3-flash 延迟显著好于轮3 R1 直连基线,坐实「z.ai 路由慢」——即便最终不选它,也是换供应商决策的关键证据。
+- 结果写 `docs/openrouter-eval-round4-results.md`;胜者进生产的落地路径:wrangler.toml PROVIDERS 加 OR 条目(用 A 场景已支持的 `extraHeaders`/`secretNames` 字段),不动 z.ai 双条目先并行灰度。
+- 与 prompt 修复轮的关系(拍板):**先跑本轮看新基线,再决定动不动 prompt**——避免模型与 prompt 双变量混淆归因。
