@@ -165,12 +165,12 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
       body: { error: "invariant_violation", detail: "today is required" }
     });
   }
-  // 星期由服务端确定性注入(2026-11-04 事故修复):少样本示例一直标注「参考日期 X 周Y」,
-  // 但真实注入行不带星期——模型被迫心算「今天是周几」,z.ai 出口分池中一个 air 池
-  // 心算 2026-11-04 为周二(实际周三),所有周X类日期系统性 +1 天。注入星期后心算环节
-  // 消失,与示例的标注格式也一致。getUTCDay 对 "YYYY-MM-DDT00:00:00Z" 是纯日历运算,
-  // 不涉及时区漂移;格式非法的 today 在上方 invariant 校验前已被 resolveQuotaDate 拦截,
-  // 这里兜底 NaN 回退无星期旧行为(不因注入失败整体 500)。
+  // 星期与月事实由服务端确定性注入(2026-11-04 事故修复):少样本示例一直标注
+  // 「参考日期 X 周Y」,但真实注入行只给日期——模型被迫心算「今天是周几」「月末是
+  // 几号」,z.ai 出口分池中一个 air 池心算 2026-11-04 为周二(实际周三),所有周X类
+  // 日期系统性 +1 天。注入后心算环节消失,与示例的标注格式也一致。大小月/闰年二月/
+  // 12月→1月跨年全部由 UTC 日历运算得出(不涉时区);格式非法的 today 兜底回退
+  // 无星期月信息的旧行为(不因注入失败整体 500)。
   const WEEKDAY_NAMES = {
     zh: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
     ja: ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"],
@@ -178,21 +178,36 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
   };
   const weekdayIndex = Date.parse(`${today}T00:00:00.000Z`);
   const weekdayTable = WEEKDAY_NAMES[locale] || WEEKDAY_NAMES.en;
-  const weekday = Number.isFinite(weekdayIndex)
-    ? weekdayTable[new Date(weekdayIndex).getUTCDay()]
-    : null;
+  const parsedOk = Number.isFinite(weekdayIndex);
+  const weekday = parsedOk ? weekdayTable[new Date(weekdayIndex).getUTCDay()] : null;
+  // 月事实:Date.UTC(y, m, 0) = 当月最后一天(大小月/闰年由日历库保证);
+  // Date.UTC(y, m, 1) = 下月 1 号(12 月自动跨年到次年 1 月)。
+  const monthFacts = parsedOk ? (() => {
+    const d = new Date(weekdayIndex);
+    const y = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const lastDay = new Date(Date.UTC(y, d.getUTCMonth() + 1, 0)).getUTCDate();
+    const next = new Date(Date.UTC(y, d.getUTCMonth() + 1, 1));
+    return {
+      days: lastDay,
+      start: `${y}-${mm}-01`,
+      mid: `${y}-${mm}-15`,
+      end: `${y}-${mm}-${String(lastDay).padStart(2, "0")}`,
+      nextStart: `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-01`
+    };
+  })() : null;
   let todayLine = "";
   if (locale === "zh") {
-    todayLine = weekday
-      ? `\n\n参考日期：${today}（${weekday}，YYYY-MM-DD）。计算相对日期时以此为基准，星期以本行为准。`
+    todayLine = weekday && monthFacts
+      ? `\n\n参考日期：${today}（${weekday}，YYYY-MM-DD）。本月共 ${monthFacts.days} 天：月初=${monthFacts.start}、月中=${monthFacts.mid}、月末=${monthFacts.end}、下月初=${monthFacts.nextStart}。计算相对日期时以此为基准，星期与月信息以本行为准。`
       : `\n\n参考日期：${today}（YYYY-MM-DD）。计算相对日期时以此为基准。`;
   } else if (locale === "ja") {
-    todayLine = weekday
-      ? `\n\n参照日：${today}（${weekday}、YYYY-MM-DD）。相対的な日付（「来週」「月末」など）の計算はこれを基準にし、曜日はこの行に従うこと。`
+    todayLine = weekday && monthFacts
+      ? `\n\n参照日：${today}（${weekday}、YYYY-MM-DD）。今月は${monthFacts.days}日あり：月初=${monthFacts.start}、月中=${monthFacts.mid}、月末=${monthFacts.end}、来月1日=${monthFacts.nextStart}。相対的な日付（「来週」「月末」など）の計算はこれを基準にし、曜日と月情報はこの行に従うこと。`
       : `\n\n参照日：${today}（YYYY-MM-DD）。相対的な日付（「来週」「月末」など）の計算はこれを基準にしてください。`;
   } else {
-    todayLine = weekday
-      ? `\n\nReference date: ${today} (${weekday}, YYYY-MM-DD). Use this as the base for understanding relative dates; the weekday given here is authoritative.`
+    todayLine = weekday && monthFacts
+      ? `\n\nReference date: ${today} (${weekday}, YYYY-MM-DD). This month has ${monthFacts.days} days: month start=${monthFacts.start}, mid-month=${monthFacts.mid}, month end=${monthFacts.end}, next month start=${monthFacts.nextStart}. Use this as the base for understanding relative dates; the weekday and month info given here are authoritative.`
       : `\n\nReference date: ${today} (YYYY-MM-DD). Use this as the base for understanding relative dates.`;
   }
   let basePrompt;
