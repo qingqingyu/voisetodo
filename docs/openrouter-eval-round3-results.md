@@ -17,6 +17,8 @@
 - **B flash thinking-low**:档位旋钮已探明(`thinking:{type:"enabled",level:"low"}` 校验通过),模板已备,等 z.ai 按量余额到账即可跑——「flash 质量 × 低思考延迟」的唯一直连方案;若成立,生产落地需 worker 支持 anthropic extraBody 或切换条目到 openai 端点(一次代码改动)。
 - **C deepseek v4.1-flash 加测**:OR 系质量新高(70/73)的下一代快照;但 OpenRouter 依赖、区域封锁与本地代理是生产掂量项,只作备线候选。
 
+> **更新(11-04)**:出路 A 的达标条件已兑现——修复版 prompt 下 air **73/73(75/75)满分过线**(PR #6);合入部署与换回 air 主力待产品负责人拍板(docs/prompt-fix-air-round1.md §4)。R3 补跑与归因闭环见 §3/§6。
+
 ## 2. 对比总表
 
 延迟口径:firstText/firstTodo/total 均只统计**计分(ok)case**;infra_error(含超时)另有 infra 列。
@@ -28,12 +30,15 @@
 | R2 r3-zai-air | glm-4.5-air | z.ai anthropic 直连,默认 | 68/75(90.7%) | **66/73** | 0 | 1336/4910/16077ms | 2633/6315/16950ms | 2751/9656/17009ms | 0 | ~$0.0009 |
 | R1b r3-zai-5.3-flash-peak | glm-5.3-flash | 同 R1,晚高峰 20:10–20:31 | 71/73(97.3%) | **72/73** | 2 | 7269/26875/37698ms | 8690/28347/39067ms | 8751/30961/39129ms | 4 | ~$0.0001 |
 | R2b r3-zai-air-peak | glm-4.5-air | 同 R2,晚高峰 20:31–20:40 | 69/75(92.0%) | **67/73** | 0 | 1623/3492/7089ms | 2826/4684/8712ms | 2887/7452/8770ms | 0 | ~$0.0009 |
-| R3 r3-zai-air-openai | glm-4.5-air | z.ai openai 兼容直连,默认 | **受阻未执行**(§5.1) | — | 75* | — | — | — | — | $0 |
-| R3b r3-zai-air-nothink | glm-4.5-air | z.ai openai 兼容直连,thinking disabled | **受阻未执行**(§5.1) | — | — | — | — | — | — | $0 |
-| R4 r3-zai-5.3-flash-openai | glm-5.3-flash | z.ai openai 兼容直连 | **受阻未执行**(§5.1) | — | — | — | — | — | — | $0 |
+| R3 r3-zai-air-openai | glm-4.5-air | z.ai openai 兼容直连,默认 | 55/75(73.3%)* | **54/73*** | 0 | 5831/9102/20665ms | 7058/10813/22002ms | 7176/15740/27241ms | 0 | 实付(按量)* |
+| R3b r3-zai-air-nothink | glm-4.5-air | z.ai openai 兼容直连,thinking disabled | 58/75(77.3%)* | **56/73*** | 0 | 633/1606/2918ms | 1999/3026/3913ms | 2127/7099/8240ms | 0 | 实付(按量)* |
+| R4 r3-zai-5.3-flash-openai | glm-5.3-flash | z.ai openai 兼容直连 | **默认档未跑**,以 thinking-low 变体代跑(§3) | — | — | — | — | — | — | — |
+| R4b fix2-flash-low | glm-5.3-flash | z.ai openai 兼容直连,thinking level=low(任务书外,1210 档位发现) | 74/74(100%)* | **73/73*** | 1(en-027) | 5380/16087/46415ms | 6695/16975/47238ms | 6739/20032/47247ms | 1 | 实付(按量)* |
 | R5 r3-or-gpt-4o-mini | gpt-4o-mini | OpenRouter(经代理) | 60/75(80.0%) | **58/73** | 0 | 3444/7549/10483ms* | 3526/7551/10484ms* | 3444/7552/10485ms | 0 | **$0.00057(实测)** |
 | R6 r3-or-gpt-5-nano | gpt-5-nano | OpenRouter(经代理) | 65/71(91.5%) | **68/73†** | 4 | 12267/25938/38014ms* | 12636/25941/38015ms* | 12268/25941/38016ms | 2 | **$0.0011(实测)** |
 | 加测 r3-or-deepseek-v4-flash | deepseek-v4-flash-0731 | OpenRouter(经代理) | 71/75(94.7%) | **70/73** | 0 | 4637/21219/28836ms* | 4696/21220/28837ms* | 4637/21220/28837ms | 0 | **$0.00059(实测)** |
+
+*R3 于 11-04 午间补跑,条件已变:prompt 为修复版(PR #6)+ 产品负责人新充值的按量 key——与原任务书口径(当时 prompt)不可直接比,但与 11-03 深夜的 fix2-air(同 prompt 同锚)构成干净的「仅 URL 不同」对照,见 §3;单次成本为按量实付,金额待 console 校准。
 
 † R6 的 73 口径按「4 条 infra 全对」的最好情形计(实际计分 67 条非白名单中错 5);infra 4 条本身即流形态不兼容(见 §3 R6 明细),不影响不合格结论。
 
@@ -78,13 +83,25 @@
 - 成本实测:$0.0445 / 75 次 ≈ **$0.00059/次**。另:`deepseek/deepseek-v4.1-flash`(更新的 v4.1 快照,输入更便宜)本轮未测。
 - **结论:不进备选池**(差 2 条),但质量档位值得留意——若 OpenRouter 系要留备线,它是目前最好的候选,失败模式(AM/PM 时点、category 二分)也与 z.ai 系不重叠。
 
-### R3/R4/R3b:z.ai openai 兼容端点直连——账户余额受阻(未执行)
+### R3/R4/R3b:z.ai openai 兼容端点直连
+
+**11-04 午间补跑(R3)**:产品负责人充值按量余额(新 key)后,R3 以修复版 prompt 补跑。**「仅 URL 不同」对照结果(模型/prompt/数据集/锚全同)**:
+
+| | anthropic 端点(生产) | paas/v4 按量端点 |
+|---|---|---|
+| 全对 | **73/73(100%)** | 55/75(**54/73**) |
+| firstTodo P50/P95 | 2512/4607ms | 7058/10813ms(慢 2.8×) |
+| infra / >30s | 0 / 0 | 0 / 0 |
+
+三语全崩(en 8/ja 5/zh 7,20 条错题全列见 `AIProxy/eval/results/fix2-air-openai-*.scored.json`),且错误形态荒谬(en-031「next Sunday」→ 11-05 周四)。探针线索:paas/v4 的 air **默认开思考**(响应含 reasoning_content)——思考模式与机械化 prompt 互相干扰,也不排除两端点背后是不同量化/构建。**顺带闭环轮 2 悬案:OpenRouter 上 air 只有 55/73(与本实测 54/73 几乎重合),说明 OR 路由的 z-ai/air 就是这种「默认思考」的平台服务,归因不是接口协议而是服务档位本身。生产结论:anthropic 端点是唯一优选通道,维持现状。**
+
+原受阻记录(11-03):
 
 - R3 整轮启动后 75/75 infra_error:上游对**每一个请求**秒回 `HTTP 429 {"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}`(worker 6 连败熔断后转 no_candidates,原始前 6 条均为亚秒 503 包装)。人工直发单条复现同一 1113,glm-4.5-air 与 glm-5.3-flash 同报——**与模型无关,是账户在该端点无按量余额**。
 - **1210 探测留档(2026-11-03 午间,产品负责人充值动作前后)**:openai 兼容端点上 5.3-flash 传 `thinking: {"type":"disabled"}` → `HTTP 400 code=1210 "This model always engages in thinking and cannot be disabled; please use low, high, or max"`——**思考强制不可关(直连实证,与 10-24 档案一致),但存在档位旋钮**。参数形状探明:`thinking: {"type":"enabled","level":"low|high|max"}` 校验通过(仅差余额);`type:"low"` 非法;`reasoning_effort` 疑似被静默忽略。**「flash + thinking low」是潜在的最优解实验(质量 71/73 的模型 × 低档思考的延迟),模板已备(zai-openai-5.3-flash-low.json),余额到账即可跑。**
 - 该 key(ZAI_KEY = 生产 PROVIDER_KEY_ZAI_ANTHROPIC)在 **anthropic 端点**有额(R1/R2 各 75 条全通,生产 10-24 起在服),两个端点计费池不同(anthropic 走订阅通道,openai 兼容走按量余额)。
 - **影响范围**:R3(轮 2 归因遗留)、R4(顺手)、R3b(R7 补救实验)三组全部无法执行,除非产品负责人给 z.ai 账户充按量余额。零成本发生(错误响应不扣费,75×1113 = $0)。
-- R7 的「关思考」问题因此**双料受阻**:anthropic 端点被 worker extraBody 限制挡(§5),openai 端点被余额挡(本节)。可参照的最近数据是轮 2 E3(OpenRouter air 关推理:54/73,mean 4.4s)——关推理在 OpenRouter 托管下未救回准确率。
+- R7 的「关思考」问题因此**双料受阻**:anthropic 端点被 worker extraBody 限制挡(§5),openai 端点被余额挡(本节;11-04 余额已到账,R3b 补跑状态见 §9)。可参照的最近数据是轮 2 E3(OpenRouter air 关推理:54/73,mean 4.4s)——关推理在 OpenRouter 托管下未救回准确率。
 
 ## 4. 晚高峰对比(R1 vs R1b、R2 vs R2b)
 
@@ -104,19 +121,19 @@
 
 - **R7 原案无法执行**:任务书要求 anthropic 模板以 `extraBody: {thinking: {type: "disabled"}}` 关思考,但 worker 配置层(src/config.js:182)只允许 **openai 类型条目**带 `extraBody`,anthropic 条目直接 `PROVIDERS[0] extraBody is only supported on openai-type entries` → 每请求 500(已用 2 条冒烟实证,零上游调用)。任务书同时禁止改 Worker 代码,故如实记录受阻。
 - z.ai 官方文档(docs.z.ai/guides/llm/glm-4.5)确认 `thinking: {"type": "disabled"}` 是官方参数,但仅文档化于 chat completions 端点;anthropic 兼容端点对 disabled 的执行本身有社区报告的不一致(thinking.type=disabled 透传后仍出思考块)。
-- **补救实验 R3b**:`zai-openai-air-nothink.json`(openai 兼容端点 + thinking disabled,worker 原生支持 extraBody,零代码改动)。与 R3(同端点默认思考)对照可单独归因「思考开关」;与 R2(anthropic 默认)对照归因「端点形态」。注意生产走 anthropic 端点,若 R3b 显著加速,落地仍需 worker 支持 anthropic 条目 extraBody(一次代码改动,超出本轮范围)。**R3b 因 §3 余额受阻未执行。**
+- **补救实验 R3b**:`zai-openai-air-nothink.json`(openai 兼容端点 + thinking disabled,worker 原生支持 extraBody,零代码改动)。与 R3(同端点默认思考)对照可单独归因「思考开关」;与 R2(anthropic 默认)对照归因「端点形态」。注意生产走 anthropic 端点,若 R3b 显著加速,落地仍需 worker 支持 anthropic 条目 extraBody(一次代码改动,超出本轮范围)。**R3b 已于 11-04 补跑:关思考后质量仅 54→56/73、未救回——「关思考」假设被证伪,崩盘归因服务档位本身(§6),anthropic 端点无 extraBody 需求自然消解。**
 - 生产配置现状(wrangler.toml):主力条目 `ZAI_ANTHROPIC_AIR` 实跑 glm-5.3-flash(timeoutMs 35000),回落条目 `ZAI_ANTHROPIC` 实跑 glm-4.5-air;**两处均未配置任何 thinking 参数 = 生产 air 用端点默认思考行为**。
 - 轮 2 参照:OpenRouter 上 air 关推理 56/75(54/73)vs 默认 55/75——关推理在 OpenRouter 托管下未掉准确率但也没救回;5.3-flash 关推理被平台 400 拒(推理强制)。
 
 ## 6. 归因表(R3/R4:直连 anthropic vs 直连 openai 兼容 vs 轮 2 OpenRouter)
 
-| 维度 | R2 直连 anthropic | R3 直连 openai 兼容 | 轮 2 E1 OpenRouter |
+| 维度 | 直连 anthropic(修复版 prompt) | 直连 openai 兼容(修复版 prompt) | 轮 2 E1 OpenRouter(修复前 prompt) |
 |---|---|---|---|
-| glm-4.5-air 全对(73 条) | **66/73(90.4%)** | **受阻**(1113 余额,§3) | 55/73(75.3%) |
-| firstTodo P50 | 2633ms | 受阻 | n/a(轮 2 无此字段) |
-| total P50/P95 | 2751/9656ms | 受阻 | 9.6s / 23.2s |
+| glm-4.5-air 全对(73 条) | **73/73(100%)** | **54/73(74.0%)** | 55/73(75.3%) |
+| firstTodo P50 | 2512ms | 7058ms | n/a(轮 2 无此字段) |
+| total P50/P95 | 2740/7195ms | 7176/15740ms | 9.6s / 23.2s |
 
-R3 受阻使「接口形态 vs OpenRouter 托管」的分离实验无法完成。可用的替代推理:直连 anthropic(66/73)与轮 2 E1(55/73,OpenRouter 路由钉 Z.AI 官方 fp8 托管、同代新 prompt)相差 11pp;轮 2 内部 E1 vs E2(新旧 prompt,同托管)差 ~4pp,剩余 ~7pp 归因悬置(接口形态/托管量化均无直证);R4(5.3-flash openai 兼容)同样受阻(同 1113),无法补 5.3-flash 行。
+**归因闭环**:直连 openai 兼容(54/73)与轮 2 OpenRouter(55/73)几乎重合、与直连 anthropic(73/73)差 19 条——「OpenRouter 掉分」的主因不是 OR 托管本身,而是 **z.ai 平台 API(paas/v4)档位的 air 与 anthropic 兼容档位不是同一服务质量**(默认开思考 + 疑似不同构建)。该结构对 prompt 版本稳健:修复前 prompt 下同为 anthropic 端点的 R2 也拿到 66/73,而 OR/paas 档位两组(55/73、54/73)无论修复前后 prompt 都抬不起来。**R3b(air 关思考)进一步坐实:关思考仅救回 2 条(54→56/73),崩盘真凶是服务档位而非思考模式**;其 firstText P50 633ms 说明 paas/v4 端点本身不慢,但质量救不回,无实用价值。R4 默认档未跑(决策上被 thinking-low 变体取代):R4b flash-low 质量 74/74 全对、firstTodo P50 6.7s(默认档 7.4s)但 >30s 仍 1 条 + en-027 低档也摊死 46s——思考尾部结构性,low 档不足以翻转定位;且按量计费使「换回落」运维上倒赔(现回落走订阅通道零边际成本),**维持现回落不变**。
 
 ## 7. run.mjs 改动说明(firstTextMs / firstTodoMs 判定方法)
 
@@ -182,11 +199,11 @@ R3 受阻使「接口形态 vs OpenRouter 托管」的分离实验无法完成�
 2. **OPENROUTER_KEY 交付方式偏离**:任务书要求 key 不进聊天、由产品负责人放环境变量;实际由产品负责人直接贴进聊天后转存 `.dev.vars`(gitignore 覆盖,全程未回显、未入任何提交/日志)。**建议本轮结束后吊销该 key**(与轮 2 同一处置)。
 3. **key 限额 $5 而非任务书 $0.5**(实测 `limit: 5`):未阻塞——R5/R6 实际预算远低于 $0.5(轮 2 GPT 组配额 ≈$0.15 量级),已用 usage 实测监控;建议产品负责人有空降回 $0.5。
 4. **key 明日(北京 11-04 12:29)过期**:R5/R6 已排程当日完成,不影响窗口;如需晚高峰复跑 GPT 组(任务书未要求)不可行,如实记录。
-5. **R3/R4/R3b 全部受阻于 z.ai 账户余额**(openai 兼容端点 1113,§3 详述):R3 是「建议」级、R4「顺手」级,按任务书优先级不阻塞主线;R3b 是 R7 的补救实验,与 R7 原案(§5)叠加后「关思考」维度本轮**无直证**。若产品负责人给 z.ai 充按量余额,可在窗口内(北京周五 08:00 前)补跑,runner/模板已就绪。**新增:产品负责人 11-03 午间已做充值/切换动作但探测仍 1113(未到账或落在别的账号),到账后待跑清单:R4(flash 默认)→ R4-low(flash thinking low,任务书外新增,依据 §3 的 1210 档位发现)→ R3 → R3b。**
+5. **R3/R4/R3b 全部受阻于 z.ai 账户余额**(openai 兼容端点 1113,§3 详述):R3 是「建议」级、R4「顺手」级,按任务书优先级不阻塞主线;R3b 是 R7 的补救实验,与 R7 原案(§5)叠加后「关思考」维度本轮**无直证**。若产品负责人给 z.ai 充按量余额,可在窗口内(北京周五 08:00 前)补跑,runner/模板已就绪。**新增:产品负责人 11-03 午间已做充值/切换动作但探测仍 1113(未到账或落在别的账号),到账后待跑清单:R4(flash 默认)→ R4-low(flash thinking low,任务书外新增,依据 §3 的 1210 档位发现)→ R3 → R3b。(更新:按量余额 11-04 到账(产品负责人第三把聊天交付的 key,ZAI_PAYG_KEY,同处置:不回显不落库,建议用后轮换),R3/R3b/R4b(thinking-low)当日全部补跑完毕,结论见 §3/§6——paas 档位 air 两形态均不可用、flash-low 不值得换回落,按量通道对本产品无生产价值;R4 默认档未跑,被决策价值更高的 low 档取代。)**
 6. **R1 infra 超时 1 条(en-027)未 --resume 重跑**:worker 侧 50s 超时×2 同形态(纯思考摊死),属模型行为而非瞬时故障,重跑大概率复现且烧配额,按「确定性错误不重试」口径留档。
 7. **任务书外加测 deepseek-v4-flash-0731**(产品负责人点名):OpenRouter 上无裸 `deepseek/deepseek-v4-flash`,取最接近的钉死快照 `-0731`(`~latest` 动态别名与 `v4.1-flash` 新版未测)。第二把 OpenRouter key 同样由产品负责人贴进聊天后转存 `.dev.vars`(OPENROUTER_KEY2),限额 $5、北京 11-04 17:56 过期;**建议跑完一并吊销两把 key**。
 
 ## 10. 成本
 
-- z.ai 组:SSE 不透出 usage,按轮 2 §5 估算口径列于 §2 表(待 console 校准)。注:思考型模型推理 token 按输出价计费,5.3-flash 实际成本高于估算列;本轮 z.ai 实际花费发生在 Coding Plan 订阅通道内,无按量扣费。
+- z.ai 组:SSE 不透出 usage,按轮 2 §5 估算口径列于 §2 表(待 console 校准)。注:思考型模型推理 token 按输出价计费,5.3-flash 实际成本高于估算列;11-03 轮内 z.ai 实际花费发生在 Coding Plan 订阅通道内,无按量扣费;11-04 的 R3/R3b/R4b 补跑(paas/v4 按量 key)为实付,估算合计 ≈$0.3~0.8(air 两轮含思考 token、flash-low 一轮),金额待 console 校准。
 - OpenRouter 组(key usage 前后差实测):R5 $0.0429 / 75 次;R6 $0.0837 / 76 次(含 1 重试);加测 deepseek $0.0445 / 75 次(key2)。两把 key 合计花费 $0.1711,各占其 $5 限额 ~2.5%。
