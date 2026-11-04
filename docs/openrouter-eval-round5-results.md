@@ -24,6 +24,13 @@
 - 延迟:p50 11.3s / firstText p50 9.9s / 1 条>30s。
 - 结论:通道质量<模型质量的重演(CLAWTO 同款,且 infra 更甚),**渠道出局**;预充额度不建议续充。
 
+### §2.1 第二把 key 的 glm 组同样判死(r5-nuoda-glm53-flash)
+
+- 用户换第二把 key(default 组→glm 组,9 模型含 glm-5.3-flash),单发探针 200 正常(prompt_tokens 异常 +36,通道有隐藏注入)。
+- 评测 75 发 → **75/75 全灭**,错误形态统一:「JSON 解析失败: Unexpected token 'I'/'G'…」——模型输出自然语言聊天("I can't set actual reminders…")而非抽取 JSON。
+- 最小复现(带/不带 response_format 双对照):system 指令「只回 JSON」完全被无视 → **通道剥离/改写 system prompt**,指令未达模型。带 response_format 也拦不住 → 非参数问题,是请求体契约被破坏。
+- 结论:**通道改写请求体,不可信不可修**(把指令挪 user 消息或可绕,但为来路不明的中转改 adapter 契约不值)。诺达两把 key 双通道全灭,供应商整体出局;第三席维持 flash 原位(路线乙不变)。
+
 ## §3 第三席路线对比(拍板依据)
 
 | 路线 | 阵容 | 供应商结构 | 取舍 |
