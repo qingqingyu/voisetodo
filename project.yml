@@ -96,7 +96,7 @@ targets:
       properties:
         CFBundleDisplayName: VoiceTodo
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "3"
+        CFBundleVersion: "4"
         CFBundleURLTypes:
           - CFBundleURLName: com.voicetodo
             CFBundleURLSchemes:
@@ -196,7 +196,7 @@ targets:
       properties:
         CFBundleDisplayName: VoiceTodoWidget
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "3"
+        CFBundleVersion: "4"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
