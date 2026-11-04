@@ -8235,15 +8235,36 @@ test("A3 配置:extraBody 覆盖 model/messages/stream → 配置错误", () => 
   }
 });
 
-test("A3 配置:extraHeaders/extraBody 出现在非 openai 条目 → 配置错误", () => {
-  for (const extra of [{ extraHeaders: { "X-Title": "t" } }, { extraBody: { foo: 1 } }]) {
+test("A3 配置:extraHeaders 出现在非 openai 条目 → 配置错误", () => {
+  const env = {
+    PROVIDERS: JSON.stringify([{
+      id: "ANTH_EXTRA", type: "anthropic", url: "https://x.invalid/v1/messages", model: "m",
+      secretName: "A", extraHeaders: { "X-Title": "t" }
+    }]), A: "k"
+  };
+  assert.throws(() => loadProviders(env), /openai/);
+});
+
+test("anthropic 条目 extraBody(thinking 档位)→ 合法并透传到条目", () => {
+  const env = {
+    PROVIDERS: JSON.stringify([{
+      id: "ANTH_THINK_LOW", type: "anthropic", url: "https://x.invalid/v1/messages", model: "glm-5.3-flash",
+      secretName: "A", extraBody: { thinking: { type: "low" } }
+    }]), A: "k"
+  };
+  const providers = loadProviders(env);
+  assert.deepEqual(providers[0].extraBody, { thinking: { type: "low" } });
+});
+
+test("anthropic 条目 extraBody 覆盖 model/messages/stream → 配置错误", () => {
+  for (const reserved of ["model", "messages", "stream"]) {
     const env = {
       PROVIDERS: JSON.stringify([{
-        id: "ANTH_EXTRA", type: "anthropic", url: "https://x.invalid/v1/messages", model: "m",
-        secretName: "A", ...extra
+        id: "ANTH_EXTRA_BODY", type: "anthropic", url: "https://x.invalid/v1/messages", model: "m",
+        secretName: "A", extraBody: { [reserved]: "x" }
       }]), A: "k"
     };
-    assert.throws(() => loadProviders(env), /openai/);
+    assert.throws(() => loadProviders(env), new RegExp(reserved), `anthropic extraBody.${reserved} 应报错`);
   }
 });
 

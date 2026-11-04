@@ -1,0 +1,7 @@
+{
+  "type": "anthropic",
+  "url": "https://api.z.ai/api/anthropic/v1/messages",
+  "model": "glm-5.3-flash",
+  "timeoutMs": 50000,
+  "extraBody": { "thinking": { "type": "low" } }
+}
