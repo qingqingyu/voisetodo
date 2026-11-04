@@ -1,7 +1,7 @@
 <!--
-  Publication source for https://qingqingyu.github.io/voicetodo-privacy/ (deployed 2026-08-16, GitHub Pages)
+  Publication source for https://qingqingyu.github.io/voicetodo-privacy/ (GitHub Pages)
   Placeholders in [BRACKETS] resolved 2026-08-22 against the live page — see APPSTORE_REVIEW_KIT.md §0.
-  ⚠️ 线上页尚无 Effective date 行,源文件已填 2026-08-16;下次更新线上页时同步补上。
+  2026-11-04 线上页已同步本版(a6d6ccb):生效日期 2026-10-09 + AI 同意披露/不训练/泛称服务商。
   Every factual claim below was verified against the code as of 2026-08-15
   (provider wording generalized 2026-10-09: policy no longer names specific
   AI vendors; actual providers live in AIProxy/wrangler.toml and may be
