@@ -4,8 +4,8 @@ export const siteConfig = {
   // {{APP_NAME}} —— 产品名未定(VoiceTodo / Unpile 二选一),定稿后改这里。
   appName: 'VoiceTodo',
 
-  // {{DOMAIN}} —— 域名未买;定稿后改这里(canonical / sitemap / robots / OG 全部随之更新)。
-  domain: 'voicetodo.example.com',
+  // {{DOMAIN}} —— 域名未买,先用 Cloudflare Pages 免费子域;日后买域名改这里重新构建即可。
+  domain: 'voicetodo-app.pages.dev',
 
   // {{APP_STORE_ID}} —— App Store 数字 ID,上架后填(apple-itunes-app 横幅与商店链接都用它)。
   appStoreId: '000000000',
@@ -14,7 +14,7 @@ export const siteConfig = {
   providerToken: 'PROVIDER_TOKEN',
 
   // {{SUPPORT_EMAIL}} —— 技术支持邮箱(support / privacy 两页使用)。
-  supportEmail: 'support@example.com',
+  supportEmail: '334678754@qq.com',
 
   // 多语言预留(任务书 §4.1):本次只做英文。加入 'ja' / 'zh' 后,
   // Base 布局的 hreflang 生成逻辑自动开始输出 <link rel="alternate">。
