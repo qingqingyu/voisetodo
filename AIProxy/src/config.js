@@ -19,7 +19,9 @@
 //     原始位置,与该 key 是否有 secret 无关——位置稳定,中途补 secret 不漂移)。
 //   - `maxConcurrencyPerKey`:可选正整数。配置后该条目走每 key 并发闸门(A2);
 //     不配 = 不限(例如 OpenRouter 按量付费)。
-//   - `extraHeaders` / `extraBody` / `disableResponseFormat`:仅 openai 类型条目
+//   - `extraHeaders` / `disableResponseFormat`:仅 openai 类型条目;`extraBody`:
+//     openai 与 anthropic 条目(2026-11-04 起——z.ai anthropic 方言的 thinking
+//     档位旋钮走此通道,评测 Q7c + 生产降延迟候选)。
 //     (A3,换服务商准备)。extraBody 不得覆盖 model/messages/stream,
 //     extraHeaders 不得覆盖 Authorization/Content-Type——覆盖 = 配置错误。
 //     不在代码里写死任何服务商参数名,字段由 wrangler.toml 按服务商文档配置。
@@ -159,7 +161,7 @@ function parseProviderEntry(entry, index, env, adapterTypes, onSecretMissing) {
     maxConcurrencyPerKey = value;
   }
 
-  // ── A3:openai 条目的附加头/体(换服务商准备)────────────────────────────
+  // ── A3:附加头仅 openai;附加体 openai+anthropic(换服务商/thinking 档位)──
   let extraHeaders;
   let extraBody;
   let disableResponseFormat;
@@ -178,8 +180,11 @@ function parseProviderEntry(entry, index, env, adapterTypes, onSecretMissing) {
     extraHeaders = entry.extraHeaders;
   }
   if (entry.extraBody !== undefined && entry.extraBody !== null) {
-    if (type !== "openai") {
-      throw new Error(`PROVIDERS[${index}] (id=${id}) extraBody is only supported on openai-type entries`);
+    // 2026-11-04 放开到 anthropic:z.ai anthropic 方言的 thinking 档位
+    // ({"thinking":{"type":"low"}} 等)是生产降延迟的候选旋钮,走 extraBody 通道。
+    // extraHeaders / disableResponseFormat 维持 openai-only,不扩大面。
+    if (type !== "openai" && type !== "anthropic") {
+      throw new Error(`PROVIDERS[${index}] (id=${id}) extraBody is only supported on openai/anthropic-type entries`);
     }
     if (!isPlainObject(entry.extraBody)) {
       throw new Error(`PROVIDERS[${index}] (id=${id}) extraBody must be an object`);

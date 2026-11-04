@@ -61,7 +61,10 @@ export const anthropicAdapter = {
                 // v5 T5/E5:用户消息=事实 JSON(prompt 模板+消息角色分工同 gemini)
                 ? buildDeepReadPrompt(locale, transcript)
                 : buildSystemPrompt(locale, vocabularyHints, today, personalHints),
-          messages: [{ role: "user", content: mode === "deep-read" ? DEEP_READ_USER_MESSAGE : transcript }]
+          messages: [{ role: "user", content: mode === "deep-read" ? DEEP_READ_USER_MESSAGE : transcript }],
+          // A3 同型(openai.js):条目级附加体字段(z.ai anthropic 方言的 thinking
+          // 档位等)。保留字段(model/messages/stream)在 config.js 拒绝覆盖。
+          ...(provider.extraBody || {})
         })
       }
     };
