@@ -252,6 +252,25 @@ test("system prompt covers per-clause time_bucket for multi-todo sentences (zh +
   }
 });
 
+test("today 注入行带服务端计算的星期与月事实(2026-11-04 出口分池事故修复)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  // 事故形态:少样本示例一直标注「参考日期 X 周Y」但注入行不带星期,模型被迫心算
+  // 「今天是周几」,z.ai 坏池把 2026-11-04(实际周三)心算成周二 → 周X类日期全 +1。
+  // 注入行现在带服务端 getUTCDay 计算的星期 + 月初/月中/月末/下月初,心算环节消失。
+  assert.match(buildSystemPrompt("zh", [], "2026-11-04", null), /参考日期：2026-11-04（周三/);
+  assert.match(buildSystemPrompt("zh", [], "2026-11-04", null), /本月共 30 天：月初=2026-11-01、月中=2026-11-15、月末=2026-11-30、下月初=2026-12-01/);
+  assert.match(buildSystemPrompt("en", [], "2026-11-04", null), /Reference date: 2026-11-04 \(Wednesday/);
+  assert.match(buildSystemPrompt("ja", [], "2026-11-04", null), /参照日：2026-11-04（水曜日/);
+  // 边界:闰年二月 2028-02(29 天,月末=29,下月初跨到 03-01)
+  const leapFeb = buildSystemPrompt("en", [], "2028-02-10", null);
+  assert.match(leapFeb, /This month has 29 days: month start=2028-02-01, mid-month=2028-02-15, month end=2028-02-29, next month start=2028-03-01/);
+  // 边界:12 月跨年(下月初=次年 01-01)
+  const dec = buildSystemPrompt("en", [], "2026-12-31", null);
+  assert.match(dec, /This month has 31 days.*next month start=2027-01-01/);
+  // 边界:非三语 locale 回退英文表
+  assert.match(buildSystemPrompt("fr", [], "2026-11-04", null), /\(Wednesday/);
+});
+
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。
