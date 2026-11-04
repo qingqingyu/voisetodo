@@ -252,6 +252,19 @@ test("system prompt covers per-clause time_bucket for multi-todo sentences (zh +
   }
 });
 
+test("today 注入行带服务端计算的星期(2026-11-04 出口分池事故修复)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  // 事故形态:少样本示例一直标注「参考日期 X 周Y」但注入行不带星期,模型被迫心算
+  // 「今天是周几」,z.ai 坏池把 2026-11-04(实际周三)心算成周二 → 周X类日期全 +1。
+  // 注入行现在带服务端 getUTCDay 计算的星期,心算环节消失。
+  assert.match(buildSystemPrompt("zh", [], "2026-11-04", null), /参考日期：2026-11-04（周三/);
+  assert.match(buildSystemPrompt("en", [], "2026-11-04", null), /Reference date: 2026-11-04 \(Wednesday/);
+  assert.match(buildSystemPrompt("ja", [], "2026-11-04", null), /参照日：2026-11-04（水曜日/);
+  // 边界:闰日 2028-02-29 = 周二;非三语 locale 回退英文星期表
+  assert.match(buildSystemPrompt("en", [], "2028-02-29", null), /\(Tuesday/);
+  assert.match(buildSystemPrompt("fr", [], "2026-11-04", null), /\(Wednesday/);
+});
+
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。
