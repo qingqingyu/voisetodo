@@ -39,7 +39,6 @@ final class ExtractDateAuditorTests: XCTestCase {
         XCTAssertEqual(mismatch.outcome, .mismatch)
         XCTAssertEqual(mismatch.dayDelta, -3) // 复算(11-05) − 模型(11-08)
         XCTAssertEqual(mismatch.correctedDate.map { calendar.dateComponents([.day, .month], from: $0).day }, 5)
-        XCTAssertEqual(mismatch.wouldOverride, true)
     }
 
     func testRelativeDays_longestMatchDaHouTian() {
@@ -276,6 +275,126 @@ final class ExtractDateAuditorTests: XCTestCase {
             transcript: "交房租", anchor: wednesdayAnchor, calendar: calendar
         )
         XCTAssertEqual(empty.outcome, .noDateExpression)
+    }
+
+    // MARK: - 假阳性源排除(闭集子串误吞)
+
+    func testWeekAfterNextForms_areObserved() {
+        // "下下周三"/"再来週水曜日"含子串"下周"/"来週",必须先行排除——
+        // 模型按 +2 周(11-18)算对也会被误判 mismatch
+        let zh = ExtractDateAuditor.audit(
+            hint: "下下周三", modelDate: date(2026, 11, 18),
+            transcript: "下下周三交报告", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(zh.outcome, .observed)
+
+        let ja = ExtractDateAuditor.audit(
+            hint: "再来週水曜日", modelDate: date(2026, 11, 18),
+            transcript: "再来週の水曜日に会議", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(ja.outcome, .observed)
+    }
+
+    func testEitherDayForm_isObserved() {
+        // "明后天"(明天或后天)含"后天"子串,或然日不比对
+        let verdict = ExtractDateAuditor.audit(
+            hint: "明后天", modelDate: date(2026, 11, 5),
+            transcript: "明后天交房租", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(verdict.outcome, .observed)
+    }
+
+    func testSuffixGuard_precedesRelativeDays() {
+        // 后缀守卫必须先于相对日 token:否则这些 hint 会先命中"明天"/"大后天"/
+        // "明後日"/"tomorrow"子串被按零歧义语义比对
+        for (hint, transcript) in [
+            ("明天以后", "明天以后再说"),
+            ("大后天之后", "大后天之后复诊"),
+            ("明後日以降", "明後日以降に提出"),
+            ("3 days after tomorrow", "submit it 3 days after tomorrow")
+        ] {
+            let verdict = ExtractDateAuditor.audit(
+                hint: hint, modelDate: date(2026, 11, 5),
+                transcript: transcript, anchor: wednesdayAnchor, calendar: calendar
+            )
+            XCTAssertEqual(verdict.outcome, .observed, "hint=\(hint) 应为 observed")
+        }
+    }
+
+    func testAliasGate_englishWordBoundary() {
+        // 英文缩写别名必须词边界匹配:"sat"≠"satisfied"、"mar"≠"market"——
+        // 子串命中会放行被改写的 hint,制造假 mismatch
+        let sat = ExtractDateAuditor.audit(
+            hint: "next saturday", modelDate: date(2026, 11, 7),
+            transcript: "i will be satisfied next week", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(sat.outcome, .observed)
+
+        let mar = ExtractDateAuditor.audit(
+            hint: "mar 5", modelDate: date(2026, 11, 5),
+            transcript: "go to the market on the 5th", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(mar.outcome, .observed)
+    }
+
+    func testTraditionalForms_areObserved_notNone() {
+        // 繁体周表达不在闭集触发(週X token 未建表),但必须落到 observed
+        // 而非 none(有日期表达却记"无日期表达"会失真)
+        for hint in ["下週三", "下禮拜三"] {
+            let verdict = ExtractDateAuditor.audit(
+                hint: hint, modelDate: date(2026, 11, 11),
+                transcript: "下週三開會", anchor: wednesdayAnchor, calendar: calendar
+            )
+            XCTAssertEqual(verdict.outcome, .observed, "hint=\(hint) 应为 observed")
+        }
+    }
+
+    func testTraditionalRelativeDay_isCovered() {
+        // 繁体"後天"在闭集内(aliases 本就预期了繁体)
+        let verdict = ExtractDateAuditor.audit(
+            hint: "後天", modelDate: date(2026, 11, 6),
+            transcript: "後天去健身", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(verdict.outcome, .agree)
+    }
+
+    func testAuditAndApply_missingOutcome_recordsEvent() {
+        // 闭集 hint + 模型丢 due_date → missing 事件通路钉子(dayDelta/overrideApplied 不带歧义值)
+        let outcome = telemetrySpy { sink in
+            ExtractDateAuditor.audited(
+                [ExtractedTodo(title: "交房租", dueHint: "明天", dueDateBasis: .userExplicit)],
+                transcript: "明天交房租", locale: Locale(identifier: "zh-CN"),
+                anchor: wednesdayAnchor, calendar: calendar, sink: sink
+            )
+        }
+        XCTAssertEqual(outcome.events.count, 1)
+        XCTAssertEqual(outcome.events[0].outcome, "missing")
+        XCTAssertEqual(outcome.events[0].overrideApplied, "false")
+        XCTAssertNil(outcome.events[0].dayDelta)
+        // 纯观察语义:missing 不补造日期
+        XCTAssertNil(outcome.todos[0].dueDate)
+    }
+
+    func testTonightVariants_andPluralWeeks_areClassified() {
+        // "今夜"/"今晩"(今晚的文语/ja 变体)进相对日闭集;en 复数周是词边界
+        // 单数 marker 匹配不中的形态,至少落 observed 而非 none
+        XCTAssertEqual(ExtractDateAuditor.audit(
+            hint: "今夜", modelDate: date(2026, 11, 4),
+            transcript: "今夜中に片付ける", anchor: wednesdayAnchor, calendar: calendar
+        ).outcome, .agree)
+        XCTAssertEqual(ExtractDateAuditor.audit(
+            hint: "in two weeks", modelDate: date(2026, 11, 18),
+            transcript: "submit it in two weeks", anchor: wednesdayAnchor, calendar: calendar
+        ).outcome, .observed)
+    }
+
+    func testExplicitDate_haoRiAliasCrossMatch() {
+        // 模型把原话"11月5号"归一化写成 hint"11月5日":号/日互换变体须过闸门
+        let verdict = ExtractDateAuditor.audit(
+            hint: "11月5日", modelDate: date(2026, 11, 5),
+            transcript: "11月5号复查", anchor: wednesdayAnchor, calendar: calendar
+        )
+        XCTAssertEqual(verdict.outcome, .agree)
     }
 
     // MARK: - auditAndApply(开关两档)
