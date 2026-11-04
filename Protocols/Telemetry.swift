@@ -148,6 +148,11 @@ enum TelemetryEvent {
     /// stage=confirm_sheet(面板内改)/ after_save(保存后详情页改,判定见
     /// `ParseCorrectionDiff.Rules`)。参数只含枚举/数字,不含标题与时间短语原文。
     case parseFieldCorrected(stage: String, locale: String, correction: FieldCorrection, minutesSinceCreated: Int?)
+    /// A20: 解析日期审计(纠错器 Phase 2)——AI 的 due_date 与客户端按产品口径
+    /// (周日起始,PR#6 机械算法同源)复算值的比对结论,一条待办一枚。
+    /// 默认纯观察(overrideApplied 恒 false);覆盖开关见
+    /// `ExtractDateAuditorConfig.overrideEnabled`。参数只含枚举/数字,无原文。
+    case parseDateAudit(locale: String, outcome: String, kind: String, basis: DueDateBasis?, dayDelta: Int?, overrideApplied: Bool)
 
     /// 事件名，对应 D1 `event_name` 列。
     var name: String {
@@ -177,6 +182,7 @@ enum TelemetryEvent {
         case .reviewFlowFinished: return "review_flow_finished"
         case .parseConfirmed: return "parse_confirmed"
         case .parseFieldCorrected: return "parse_field_corrected"
+        case .parseDateAudit: return "parse_date_audit"
         }
     }
 
@@ -318,6 +324,17 @@ enum TelemetryEvent {
             if let minuteDelta = correction.minuteDelta { p["minuteDelta"] = String(minuteDelta) }
             if let basis = correction.basis { p["basis"] = basis.rawValue }
             if let minutesSinceCreated { p["minutesSinceCreated"] = String(minutesSinceCreated) }
+            return p
+        case let .parseDateAudit(locale, outcome, kind, basis, dayDelta, overrideApplied):
+            var p = [
+                "outcome": outcome,
+                "kind": kind,
+                "locale": locale,
+                "overrideApplied": String(overrideApplied)
+            ]
+            // 差值与 basis 缺失即不带(键不存在 ≠ 0),与 parseFieldCorrected 同约定
+            if let dayDelta { p["dayDelta"] = String(dayDelta) }
+            if let basis { p["basis"] = basis.rawValue }
             return p
         }
     }
