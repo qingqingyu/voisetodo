@@ -231,6 +231,21 @@ PROVIDERS = '''
     "enabled": true,
     "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC",
     "timeoutMs": 30000
+  },
+  {
+    "id": "OR_DEEPSEEK_FLASH",
+    "type": "openai",
+    "url": "https://openrouter.ai/api/v1/chat/completions",
+    "model": "deepseek/deepseek-v4.1-flash",
+    "priority": 2,
+    "weight": 10,
+    "enabled": true,
+    "secretName": "OPENROUTER_PROD_KEY",
+    "timeoutMs": 30000,
+    "extraHeaders": {
+      "HTTP-Referer": "https://voicetodo.app",
+      "X-Title": "VoiceTodo"
+    }
   }
 ]
 '''
