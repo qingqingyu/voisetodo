@@ -1,0 +1,6 @@
+{
+  "type": "openai",
+  "url": "https://api.nuoda.vip/v1/chat/completions",
+  "model": "claude-sonnet-5-5",
+  "timeoutMs": 50000
+}

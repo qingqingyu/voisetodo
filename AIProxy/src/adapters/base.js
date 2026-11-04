@@ -118,6 +118,15 @@ export function classifyHttpRetryable({ status, bodyText, errorType }, modelConf
     }
     return { retryable: true, errorType: "status_429", countsTowardCircuit: false };
   }
+  // 402 Payment Required:OpenRouter 余额不足的标准回码(2026-11-04 补,
+  // 与 z.ai 429/1113 同义)。此前落 status 兜底 = non-retryable → provider.js
+  // 直接 throw 502 **不 failover**——第二席 OR 钱尽的切换瞬间,用户请求
+  // 白死而不是落第三席。归类 quota_exhausted:不会自愈必须熔断;retryable
+  // 让单请求转移(OR 席位与 z.ai 钱包独立,转移有效)。HTTP 402 语义唯一
+  // (要求付款),无误伤面。
+  if (status === 402) {
+    return { retryable: true, errorType: "quota_exhausted", countsTowardCircuit: true };
+  }
   if (status >= 500 && status < 600) {
     return { retryable: true, errorType: `status_${status}` };
   }

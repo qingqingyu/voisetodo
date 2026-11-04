@@ -3887,6 +3887,17 @@ test("分类:z.ai 429 错误体——忙→status_429 不计熔断;余额耗尽�
   }
 });
 
+test("分类:OR 402 余额不足→quota_exhausted 计熔断,不再走 status 兜底直接 502(三个 adapter 同判定)", async () => {
+  const body = JSON.stringify({ error: { code: 402, message: "Insufficient credits. Purchase more credits at https://openrouter.ai/credits" } });
+
+  for (const adapter of [anthropicAdapter, openaiAdapter, geminiAdapter]) {
+    const r = adapter.isRetryable({ status: 402, bodyText: body });
+    assert.equal(r.retryable, true, `${adapter.type}: 402 可 failover(切换瞬间不白死)`);
+    assert.equal(r.errorType, "quota_exhausted", `${adapter.type}: 402 → quota_exhausted`);
+    assert.notEqual(r.countsTowardCircuit, false, `${adapter.type}: 402 计熔断`);
+  }
+});
+
 // MARK: - P5: latency-aware selector
 
 function makeProvider(overrides) {
