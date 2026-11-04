@@ -69,7 +69,20 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                 VoiceTodoLog.extractor.debug("extract.attempt.response id=\(extractionID, privacy: .public) attempt=\(attempt) responseChars=\(responseText.count) durationMS=\(VoiceTodoLog.durationMS(since: attemptStart))")
 
                 // 解析 JSON
-                let result = try parseResponse(responseText)
+                var result = try parseResponse(responseText)
+
+                // 纠错器 Phase 2(默认纯观察):AI due_date vs 客户端复算,记 parse_date_audit;
+                // anchor=startedAt(请求发出时刻),与发给代理的 X-Local-Date 参考日期同源。
+                // ExtractionResult.todos 是 let,用返回值重建。
+                result = ExtractionResult(
+                    todos: ExtractDateAuditor.audited(
+                        result.todos,
+                        transcript: transcript,
+                        locale: locale,
+                        anchor: startedAt
+                    ),
+                    ignored: result.ignored
+                )
 
                 await noteSuccess(id: extractionID)
                 VoiceTodoLog.extractor.info("extract.success id=\(extractionID, privacy: .public) attempt=\(attempt) todos=\(result.todos.count) ignoredChars=\(result.ignored.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
@@ -463,7 +476,15 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                     // final 是一次独立的全量 decode,同样会 churn id;用同一份 stableIDs 把 final 的
                     // id 对齐到 partial 期间用的 id,避免最后一次 partial → final 切换瞬间所有卡片
                     // 重播 removal + insertion transition(否则用户会看到流结束瞬间整批闪一下)。
-                    let stabilizedFinal = self.reassignedIDs(finalResult.todos, stableIDs: &stableIDs)
+                    let stabilizedRaw = self.reassignedIDs(finalResult.todos, stableIDs: &stableIDs)
+                    // 纠错器 Phase 2(默认纯观察):同非流式路径,final 全量解析后审计一次
+                    // (partial 帧不审计——中间态 due_hint/due_date 会随 delta 变化,比对无意义)。
+                    let stabilizedFinal = ExtractDateAuditor.audited(
+                        stabilizedRaw,
+                        transcript: transcript,
+                        locale: locale,
+                        anchor: startedAt
+                    )
                     await self.noteSuccess(id: streamID)
                     continuation.yield(ExtractionResult(todos: stabilizedFinal, ignored: finalResult.ignored))
                     VoiceTodoLog.extractor.info("extract.stream.success id=\(streamID, privacy: .public) todos=\(finalResult.todos.count) accumulatedChars=\(accumulatedText.count) partialYields=\(lastYieldedCount) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
