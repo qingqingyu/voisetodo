@@ -307,7 +307,7 @@ due_hint 始终保留用户原文。
 6. 识别优先级线索：语气中有紧急感（赶紧、必须、来不及了）标记为 high，否则 normal
 6b. 分类口径 category_hint（按动作本身判断）：work=工作/职业事务（开会、写报告、出差、见客户、为会议订机票订酒店）；study=学习（上课、复习、写作业、备考）；life=家务与跑腿（买菜、取快递、干洗、打扫、联系服务商、日常订票/订餐厅等预订杂事）；health=健康与作息（健身、吃药、喝水、睡觉、看病）；finance=钱与账单（房租、水电、税、还款、银行、工资）；social=与亲友的社交互动（给家人朋友打电话、送生日礼物、聚会赴约）；other=其余。口径：工作会议即使提到具体人名也是 work；预订类杂事默认 life，明确是聚会/社交场景才 social
 7. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条；同一动词带多个需分别办理的并列宾语也拆（「订机票和酒店」→「订机票」+「订酒店」），但一个不可分的事不拆（见规则3）
-8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」
+8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」。⚠️ 决策、确认、核实、商量也是行动：「这个事情要确认一下做不做」「要不要接这个项目我想想」「跟爸妈商量一下」都是 TODO（动作=确认/想/商量），对象指代模糊（「这个事情」没说是什么）也照常提取，title 保留用户原话。判断标准不是句子有没有具体的人和物，而是用户是否需要在将来做一件事——哪怕只是想清楚、问清楚。仍在犹豫的口头自语（「我还在纠结要不要换工作」）同样提取；只有纯状态、没有任何将来动作（「最近好累」「今天天气不错」）才忽略
 9. ignored 字段必填：无可过滤内容时返回空字符串 ""，绝不返回 null
 10. 输出语言：自由文本字段（title、detail、due_hint、ignored）必须使用**与用户输入相同的语言**——用户说日语就用日语，说德语就用德语，不要翻译成中文或英文。⚠️ 但枚举字段是例外，**一律使用本提示词中定义的英文字面量**，绝不本地化：priority（high/normal）、category_hint（work/study/life/health/finance/social/other）、time_bucket（morning/afternoon/evening）、recurrence_rule.frequency（daily/weekly/monthly）、recurrence_end.kind、due_date_basis。这些值由客户端按字面量解码，翻译后会被静默丢弃
 
@@ -450,7 +450,11 @@ due_hint 始终保留用户原文。
 
 示例 27（⚠️ 对照示例 12：reminder_times 带日期词 → 日期必须进 due_date + basis="user_explicit"；示例 12 无任何日期词才 due null；参考日期 2026-07-15 周三）：
 输入："今天下午4点、6点吃药提醒"
-输出：{"todos":[{"title":"吃药提醒","detail":"今天下午4点、6点吃药提醒","due_date":"2026-07-15","due_hint":"今天下午4点、6点","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}`;
+输出：{"todos":[{"title":"吃药提醒","detail":"今天下午4点、6点吃药提醒","due_date":"2026-07-15","due_hint":"今天下午4点、6点","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}
+
+示例 28（⚠️ 决策/确认类也是行动项：对象是模糊指代（「这个事情」）照样提取，title 保留用户原话；无任何日期线索）：
+输入："这个事情要确认一下做不做"
+输出：{"todos":[{"title":"确认这个事情做不做","detail":"这个事情要确认一下做不做","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}`;
 
 const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
 
@@ -488,7 +492,7 @@ due_hint always preserves the original text.
 6. Detect urgency: if tone has urgency (ASAP, must, running out of time) mark as high, otherwise normal
 6b. Category guidelines for category_hint (judge by the action itself): work=job/career tasks (meetings, reports, business trips, client contact, booking flights/hotels for a conference); study=learning (classes, review, homework, exams); life=household errands (groceries, pickups, dry cleaning, cleaning, calling service providers, everyday bookings like tables/tickets); health=body & routine (gym, meds, water, sleep, doctor); finance=money & bills (rent, utilities, taxes, loan payments, banking, payroll); social=interactions with family/friends (calls to relatives, birthday gifts, dinner parties); other=none of the above. A work meeting is work even if a person's name is mentioned; everyday bookings default to life unless clearly a social occasion
 7. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc. Also split when one verb takes multiple parallel objects that are handled separately ("book flights and a hotel" → "book flights" + "book a hotel"); do NOT split an atomic task (rule 3)
-8. Ambiguous intent: pure state descriptions ("I'm so tired") are ignored; implied action ("so tired, need to see a doctor") extracts "see a doctor"
+8. Ambiguous intent: pure state descriptions ("I'm so tired") are ignored; implied action ("so tired, need to see a doctor") extracts "see a doctor". ⚠️ Deciding, confirming, checking, or consulting IS an action: "need to confirm whether to do this thing", "still deciding if I should take the job", "talk it over with my parents" are all todos (action = confirm / decide / talk over). Extract them even when the object is a vague reference ("this thing" without saying what it is), keeping the user's wording in the title. The test is not whether the sentence names a concrete person or object — it is whether the user needs to DO something in the future, even if that something is just thinking it through or asking around. Hesitant self-talk ("I'm still torn about whether to switch jobs") also extracts; only pure states with no future action at all ("I'm so tired", "nice weather today") are ignored
 9. ignored field is required: when nothing is filtered, return empty string "" — never null
 10. Output language: free-text fields (title, detail, due_hint, ignored) MUST use the SAME language as the user's input — if the user speaks Japanese, write Japanese; German input, German output. Never translate them into English. ⚠️ Enum fields are the exception and must ALWAYS use the exact English literals defined in this prompt, never localized: priority (high/normal), category_hint (work/study/life/health/finance/social/other), time_bucket (morning/afternoon/evening), recurrence_rule.frequency (daily/weekly/monthly), recurrence_end.kind, due_date_basis. The client decodes these literally; translated values are silently discarded
 
@@ -639,7 +643,11 @@ Output: {"todos":[{"title":"Book a meeting room for next month's review meeting"
 
 Example 29 (⚠️ contrast with Example 12: reminder_times with a date word → the date MUST go into due_date with basis="user_explicit"; only Example 12's no-date shape keeps due_date null; reference date 2026-07-15 Wednesday):
 Input: "Remind me to take my meds today at 4pm and 6pm"
-Output: {"todos":[{"title":"Take meds","detail":"Remind me to take my meds today at 4pm and 6pm","due_date":"2026-07-15","due_hint":"today at 4pm and 6pm","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}`;
+Output: {"todos":[{"title":"Take meds","detail":"Remind me to take my meds today at 4pm and 6pm","due_date":"2026-07-15","due_hint":"today at 4pm and 6pm","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}
+
+Example 30 (⚠️ deciding/confirming counts as an action item even when the object is a vague reference ("this thing"); title keeps the user's wording; no date cue at all):
+Input: "Need to confirm whether to do this thing or not"
+Output: {"todos":[{"title":"Confirm whether to do this thing","detail":"Need to confirm whether to do this thing or not","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}`;
 
 // 完整日语 prompt(P1)。规则结构与中文/英文 prompt 对齐,示例全部改写为日语输入。
 // 输出语言、人名保留、枚举字段英文 literal 等约束显式写在规则 10 里,防止 AI 漂移。
@@ -680,7 +688,7 @@ due_hint は常にユーザーの原文を保持。
 6. 優先度の手がかりを検出:緊急性(急いで、絶対、間に合わない、ASAP)があれば high、それ以外は normal
 6b. category_hint の分類基準(動作そのもので判断):work=仕事・職務(会議、レポート作成、出張、客先対応、会議のための飛行機・ホテル手配);study=学習(授業、復習、宿題、試験対策);life=家事・用事(買い物、宅配受取、クリーニング、掃除、業者への連絡、レストラン・チケットなどの日常予約);health=健康・生活リズム(運動、服薬、水分、睡眠、受診);finance=お金と支払い(家賃、光熱費、税金、返済、銀行、給与);social=家族・友人との交流(親族への電話、誕生日プレゼント、食事会への参加);other=いずれにも当てはまらない。口径:仕事の会議は人名が出ても work;日常の予約は原則 life(明らかに社交の場なら social)
 7. 1文で複数のTODO:読点、「そして」「あと」「それから」「ついでに」などの接続詞で分割。同一動詞が別々に手配すべき複数の目的語を持つ場合も分割(「飛行機とホテルを予約」→「飛行機を予約」+「ホテルを予約」)。ただし不可分のタスクは分割しない(ルール3)
-8. 曖昧な意図の処理:純粋な状態描写(「最近疲れてる」)は抽出しない。含意された行動意図(「疲れた、医者に行かなきゃ」)は「医者に行く」を抽出
+8. 曖昧な意図の処理:純粋な状態描写(「最近疲れてる」)は抽出しない。含意された行動意図(「疲れた、医者に行かなきゃ」)は「医者に行く」を抽出。⚠️ 決断・確認・相談も行動:「この件、やるかどうか確認したい」「引き受けるかまだ迷ってる」「親と相談してみる」はすべてTODO(動作=確認する/決める/相談する)。対象が曖昧な指示(「この件」が何を指すか分からない)でも抽出し、title はユーザーの原文を保持。判断基準は文に具体的な人や物があるかではなく、ユーザーが将来何かをする必要があるか——考える・聞くだけでも。迷いの独り言(「転職するかまだ悩んでる」)も抽出する。将来の動作が全くない純粋な状態(「最近疲れてる」「今日はいい天気」)だけ無視
 9. ignored フィールドは必須:フィルタされた内容がない場合は空文字列 "" を返す。絶対に null を返さない
 10. 出力言語:自由テキストフィールド(title、detail、due_hint、ignored)は**ユーザーの入力と同じ言語**を使うこと——ユーザーが日本語を話すなら日本語、ドイツ語入力ならドイツ語。英語や他の言語への翻訳は厳禁。人名(山田、田中)、固有名詞、サービス名(Anki、Notion など)は原文のまま保持し、ローマ字や他言語に変換しない。⚠️ ただし列挙型フィールドは例外で、**常にこのプロンプトで定義された英字リテラル**を使うこと。絶対にローカライズしない:priority(high/normal)、category_hint(work/study/life/health/finance/social/other)、time_bucket(morning/afternoon/evening)、recurrence_rule.frequency(daily/weekly/monthly)、recurrence_end.kind、due_date_basis。クライアントはこれらをリテラル値としてデコードする。翻訳すると黙って破棄される
 
@@ -806,7 +814,11 @@ JSON のみを返す(説明は不要)。フォーマット:
 
 例 24(⚠️ 例 12 との対比:reminder_times に日付語が伴う → 日付は必ず due_date に入り basis="user_explicit"。例 12 の形(日付語なし)のみ due_date は null;参照日 2026-07-15 水曜):
 入力:"今日の午後4時と6時に薬を飲むリマインド"
-出力:{"todos":[{"title":"薬を飲むリマインド","detail":"今日の午後4時と6時に薬を飲むリマインド","due_date":"2026-07-15","due_hint":"今日の午後4時と6時","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}`;
+出力:{"todos":[{"title":"薬を飲むリマインド","detail":"今日の午後4時と6時に薬を飲むリマインド","due_date":"2026-07-15","due_hint":"今日の午後4時と6時","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":["16:00","18:00"],"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"health"}],"ignored":""}
+
+例 25(⚠️ 決断・確認も行動:対象が曖昧な指示(「この件」)でも抽出し、title は原文を保持;日付の手がかりは一切なし):
+入力:"この件、やるかどうか確認したい"
+出力:{"todos":[{"title":"この件をやるか確認する","detail":"この件、やるかどうか確認したい","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}`;
 
 // Split 模式 prompts（2026-08-23 拆小改版）。与提取 prompts 的关键差异:
 // 输出是 {"steps":[...]} 而非 {"todos":[...]}；无日期/重复/分类字段；
