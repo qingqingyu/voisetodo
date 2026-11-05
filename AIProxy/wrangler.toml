@@ -228,7 +228,7 @@ PROVIDERS = '''
     "model": "glm-4.5-air",
     "priority": 1,
     "weight": 10,
-    "enabled": true,
+    "enabled": false,
     "secretName": "PROVIDER_KEY_ZAI_ANTHROPIC",
     "timeoutMs": 30000
   },
