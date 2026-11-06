@@ -264,13 +264,18 @@ enum TodoDueDateResolver {
     }
 
     private static func dateInWeek(offset: Int, matchingWeekday weekday: Int, from today: Date, calendar: Calendar) -> Date? {
+        // 产品口径(prompt 规则 4 / PR#6 机械算法 / ExtractDateAuditor 同源):周日起始,
+        // "下周X" = 严格晚于今天的第 offset 个周日 + 偏移(weekday 按 Apple 约定
+        // 1=周日…7=周六,偏移 = weekday - 1;offset=1 即最近的未来周日所在周)。
+        // 旧实现是 ISO 周一起始(以"本周一 + offset*7 周"为基):今天为周日或目标为
+        // 周日时与产品口径差一整周(周日说"下周三"算成 +3 而非 +10、周三说"下周日"
+        // 算成 +10 而非 +4)——2026-11 bug2 修复,与审计器 nextWeekWeekday 分支对齐。
         let currentWeekday = calendar.component(.weekday, from: today)
-        let daysFromMonday = (currentWeekday + 5) % 7
-        guard let weekStart = calendar.date(byAdding: .day, value: -daysFromMonday + offset * 7, to: today) else {
+        let daysToNextSunday = 8 - currentWeekday // 1(周日)→7 … 7(周六)→1,恒为严格未来
+        guard let nextSunday = calendar.date(byAdding: .day, value: daysToNextSunday, to: today) else {
             return nil
         }
-        let mondayBasedOffset = (weekday + 5) % 7
-        return calendar.date(byAdding: .day, value: mondayBasedOffset, to: weekStart)
+        return calendar.date(byAdding: .day, value: (offset - 1) * 7 + weekday - 1, to: nextSunday)
     }
 }
 
