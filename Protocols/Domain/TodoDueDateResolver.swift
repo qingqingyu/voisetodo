@@ -269,7 +269,7 @@ enum TodoDueDateResolver {
         // 1=周日…7=周六,偏移 = weekday - 1;offset=1 即最近的未来周日所在周)。
         // 旧实现是 ISO 周一起始(以"本周一 + offset*7 周"为基):今天为周日或目标为
         // 周日时与产品口径差一整周(周日说"下周三"算成 +3 而非 +10、周三说"下周日"
-        // 算成 +10 而非 +4)——2026-11 bug2 修复,与审计器 nextWeekWeekday 分支对齐。
+        // 算成 +11 而非 +4)——2026-11 bug2 修复,与审计器 nextWeekWeekday 分支对齐。
         let currentWeekday = calendar.component(.weekday, from: today)
         let daysToNextSunday = 8 - currentWeekday // 1(周日)→7 … 7(周六)→1,恒为严格未来
         guard let nextSunday = calendar.date(byAdding: .day, value: daysToNextSunday, to: today) else {
