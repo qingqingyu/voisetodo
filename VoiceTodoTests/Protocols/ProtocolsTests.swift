@@ -633,7 +633,7 @@ final class ProtocolsTests: XCTestCase {
         XCTAssertTrue(calendar.isDate(try resolve("next Wednesday", on: sunday), inSameDayAs: try day(2026, 11, 11)))
 
         // 锚 = 周三(2026-11-04):目标"下周日"= 严格未来的第一个周日(本周日,+4,
-        // prompt:"next Sunday … NEVER 7 days further");旧算法错算 +10。
+        // prompt:"next Sunday … NEVER 7 days further");旧算法错算 +11(落 11-15)。
         // 与评测集 zh-025「下周日给妈妈打电话」golden(锚周三 → +4)同款。
         let wednesday = try day(2026, 11, 4)
         XCTAssertTrue(calendar.isDate(try resolve("下周日给妈妈打电话", on: wednesday), inSameDayAs: try day(2026, 11, 8)))
