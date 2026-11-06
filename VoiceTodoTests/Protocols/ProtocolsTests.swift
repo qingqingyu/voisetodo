@@ -613,4 +613,39 @@ final class ProtocolsTests: XCTestCase {
             inSameDayAs: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 15)))
         ))
     }
+
+    /// bug2:下周X 的产品口径 = 严格晚于今天的下一个周日 + 偏移(周日起始,
+    /// 与 prompt 规则 4 / PR#6 / ExtractDateAuditor 同源)。旧 dateInWeek 是
+    /// ISO 周一起始,周日锚/周日目标时差一整周——以下用例钉住修复。
+    func testDueDateResolverNextWeekdayUsesSundayStartConvention() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        func resolve(_ hint: String, on reference: Date) throws -> Date {
+            try XCTUnwrap(TodoDueDateResolver.resolve(dueHint: hint, referenceDate: reference, calendar: calendar))
+        }
+        func day(_ y: Int, _ m: Int, _ d: Int) throws -> Date {
+            try XCTUnwrap(calendar.date(from: DateComponents(year: y, month: m, day: d)))
+        }
+
+        // 锚 = 周日(2026-11-01):旧算法从"明天周一"起算,"下周三"错算 +3;
+        // 产品口径下一个周日是 +7,"下周三"= +10 → 11-11。
+        let sunday = try day(2026, 11, 1)
+        XCTAssertTrue(calendar.isDate(try resolve("下周三交房租", on: sunday), inSameDayAs: try day(2026, 11, 11)))
+        XCTAssertTrue(calendar.isDate(try resolve("next Wednesday", on: sunday), inSameDayAs: try day(2026, 11, 11)))
+
+        // 锚 = 周三(2026-11-04):目标"下周日"= 严格未来的第一个周日(本周日,+4,
+        // prompt:"next Sunday … NEVER 7 days further");旧算法错算 +10。
+        // 与评测集 zh-025「下周日给妈妈打电话」golden(锚周三 → +4)同款。
+        let wednesday = try day(2026, 11, 4)
+        XCTAssertTrue(calendar.isDate(try resolve("下周日给妈妈打电话", on: wednesday), inSameDayAs: try day(2026, 11, 8)))
+        XCTAssertTrue(calendar.isDate(try resolve("next Sunday", on: wednesday), inSameDayAs: try day(2026, 11, 8)))
+
+        // 锚 = 周六(2026-11-07):下一个周日 = 明天(+1),"下周三"= +4(新旧口径
+        // 同答案,守恒用例,防止修复把非边界场景改偏)。
+        let saturday = try day(2026, 11, 7)
+        XCTAssertTrue(calendar.isDate(try resolve("下周三交房租", on: saturday), inSameDayAs: try day(2026, 11, 11)))
+
+        // 锚 = 周日,目标也是周日:"下周日"= 严格未来的第一个周日(即"下周"的
+        // 第一天,+7)→ 11-08。此场景旧算法恰好同答案,留作边界钉子。
+        XCTAssertTrue(calendar.isDate(try resolve("下周日", on: sunday), inSameDayAs: try day(2026, 11, 8)))
+    }
 }
