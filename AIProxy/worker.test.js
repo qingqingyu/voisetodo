@@ -562,6 +562,53 @@ test("system prompt includes multi-date disambiguation and title completeness ru
   }
 });
 
+// 决策/确认/商量类表述识别为 TODO(2026-11-06,用户报告「这个事情要确认一下
+// 做不做」被当背景信息丢弃)。与上面两个守卫同款「规则文本 + few-shot 示例」
+// 双锚定:每个语言的 prompt 都必须同时含规则标记、犹豫自语标记和示例 title
+// 标记——recall 优先是拍板口径,误删规则会直接回退到漏检。
+test("system prompt includes decision/confirming-as-action rule and few-shot for all locales", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const locales = [
+    {
+      locale: "zh-Hans",
+      transcript: "这个事情要确认一下做不做",
+      markers: ["决策、确认、核实、商量也是行动", "我还在纠结要不要换工作", "确认这个事情做不做"]
+    },
+    {
+      locale: "en-US",
+      transcript: "Need to confirm whether to do this thing or not",
+      markers: ["Deciding, confirming, checking, or consulting IS an action", "still torn about whether to switch jobs", "Confirm whether to do this thing"]
+    },
+    {
+      locale: "ja-JP",
+      transcript: "この件、やるかどうか確認したい",
+      markers: ["決断・確認・相談も行動", "転職するかまだ悩んでる", "この件をやるか確認する"]
+    }
+  ];
+  for (const { locale, transcript, markers } of locales) {
+    let upstreamRequest;
+    const response = await handleRequest(
+      request({ transcript, locale }, { "X-App-Token": "token", "X-Local-Date": today }),
+      {
+        APP_TOKEN: "token",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "openai-key",
+        OPENAI_MODEL: "test-model"
+      },
+      {},
+      async (url, init) => {
+        upstreamRequest = { body: JSON.parse(init.body) };
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("确认") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    const systemMessage = upstreamRequest.body.messages[0].content;
+    for (const marker of markers) {
+      assert.ok(systemMessage.includes(marker), `${locale} prompt 应包含「${marker}」`);
+    }
+  }
+});
+
 test("system prompt falls back to server UTC date when X-Local-Date missing", async () => {
   // X-Local-Date 缺失时 resolveQuotaDate 回退到服务端 UTC 日期（同样注入 prompt，
   // 不静默丢弃），AI 仍能拿到一个参考日期，只是可能与用户真实"今天"差 1 天。
