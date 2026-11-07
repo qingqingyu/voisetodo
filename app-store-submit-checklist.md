@@ -1,8 +1,9 @@
-# App Store Connect 提审清单（v1.0 · zh + en）
+# App Store Connect 提审清单（v1.1 · zh + en）
 
-> 创建于 2026-08-16。记录**需要人工在 App Store Connect 提交/填写**的全部表单，
-> 以及提审前必须完成的人工动作。代码侧改动不在此文档范围。
-> 完成一项勾一项；状态列供跟进。
+> 创建于 2026-08-16，2026-11-08 刷新过时状态（截图实况/隐私标签新口径/额度口径/构建号）。
+> 记录**需要人工在 App Store Connect 提交/填写**的全部表单，以及提审前必须完成的人工动作。
+> 代码侧改动不在此文档范围。隐私与合规细节以 `APPSTORE_REVIEW_KIT.md` 为单一事实源，
+> 本清单聚焦 ASC 表单动作。完成一项勾一项；状态列供跟进——**以 ASC 网页实况为准，勿仅凭本文档跳过核对**。
 
 ---
 
@@ -10,23 +11,24 @@
 
 | # | 表单/动作 | ASC 位置 | 关键内容 | 状态 |
 |---|---|---|---|---|
-| 1 | 创建 App 记录 | 我的 App → 新建 | 名称/Bundle ID/语言/SKU | ⬜ |
-| 2 | App 信息 | App 信息 | **隐私政策 URL**、类别、关键词 | ⬜ |
-| 3 | 版本信息 1.0 | 版本 → 1.0 | 截图、描述、技术支持 URL、审核备注、发布方式 | ⬜ |
-| 4 | 定价与销售范围 | 定价与销售范围 | App 免费、地区 | ⬜ |
-| 5 | 订阅商品 | 盈利 → 订阅 | 订阅组、2 商品、**7 天免费试用**、本地化 | ⬜ |
-| 6 | App 隐私标签 | App 隐私 | 数据采集问卷（建议答案见 §6） | ⬜ |
-| 7 | 年龄分级 | 年龄分级 | 问卷 → 4+ | ⬜ |
-| 8 | 出口合规 | 版本页勾选 | 标准加密（HTTPS）豁免 | ⬜ |
-| 9 | 沙盒测试 | 真机 Sandbox 账号 | 购买/取消/恢复/试用一次性 | ⬜ |
+| 1 | 创建 App 记录 | 我的 App → 新建 | 名称/Bundle ID/语言/SKU | ✅ 已建（App ID 6806787856,官网占位符已换真值） |
+| 2 | App 信息 | App 信息 | **隐私政策 URL**、类别、关键词 | ⬜ 提交前核对 |
+| 3 | 版本信息 1.0 | 版本 → 1.0 | 截图、描述、技术支持 URL、审核备注、发布方式 | ⬜ 提交前核对 |
+| 4 | 定价与销售范围 | 定价与销售范围 | App 免费、地区 | ⬜ 提交前核对 |
+| 5 | 订阅商品 | 盈利 → 订阅 | 订阅组、2 商品、**7 天免费试用**、本地化 | ⬜ 提交前核对 |
+| 6 | App 隐私标签 | App 隐私 | 数据采集问卷（**2026-11 新口径,见 §6**） | ⬜ 提交前核对 |
+| 7 | 年龄分级 | 年龄分级 | 问卷 → 4+ | ⬜ 提交前核对 |
+| 8 | 出口合规 | 版本页勾选 | 标准加密（HTTPS）豁免 | ⬜ 提交前核对 |
+| 9 | 沙盒测试 | 真机 Sandbox 账号 | 购买/取消/恢复/试用一次性 | ⬜ 强烈建议提审前最后一轮 |
 | 10 | 提交审核 | 版本页 | 最终检查后 Submit | ⬜ |
 
 **前提条件（不满足无法开始）**
 - [ ] Apple Developer Program 会员有效（$99/年，过期无法提审）
 - [ ] 真机验证 Live Activity（fix 64caf21 之后装包验证锁屏/灵动岛）
-- [x] AIProxy 生产额度切换（2026-08-20 上线 free=2/Pro=100 → 2026-08-30 free=3 已生效；2026-09-22 部署遥测 D1 + 主力模型灰度切 glm-4.5-air,详见 `docs/telemetry-d1-enablement.md` 执行结果）
+- [x] AIProxy 生产额度与阵容（free=3/Pro=100 已生效；线上部署 2026-11-06 `22bc038f` 已含全部 src 变更：deepseek 主力 + flash 回退 + 决策类 prompt,此后仅测试提交。2026-11-08 用 `npx wrangler deployments list` 核实）
 - [x] `LOG_HASH_SALT` secret 核验（2026-09-22 已配置独立值,`wrangler secret list` 可确认;配套 `ADMIN_TOKEN` 同日配置,值在 `AIProxy/.dev.vars`）
-- [ ] 隐私政策页可访问：https://qingqingyu.github.io/voicetodo-privacy/
+- [x] 隐私政策页可访问（2026-11-07 核实 HTTP 200,内容为 2026-10-09 最新版含第三方 AI 披露）：https://qingqingyu.github.io/voicetodo-privacy/ ；官网同内容页 https://voicetodo-app.pages.dev/privacy 亦 200
+- [x] 构建号已改 4（project.yml 两处 + app/widget Info.plist,main 分支）；构建 3 已于 2026-10-29 上传 ASC「先传后测」,再传须 ≥4（ITMS-90626 教训：本地化 key 禁含 "siri" 子串）
 
 ---
 
@@ -65,15 +67,16 @@ App Store Connect → 我的 App → ➕ 新建 App：
 
 `project.yml` 已设 `TARGETED_DEVICE_FAMILY: "1"`（app + widget 两 target），app 声明仅支持 iPhone。**无需 iPad 截图**。iPad 支持留作后续版本的有计划适配（UI 适配 + 13" 截图 + 真机验证）。
 
-**iPhone 必需截图**（6.9"，1320×2868 或 1290×2796，3~10 张）：
+**iPhone 截图实况（2026-11-08,仓库 `screenshots/`,全部 1320×2868、对齐 main 最新 UI）**：
 
-- [ ] 录音主界面（展示大按钮/月视图）
-- [ ] 录音中 + 实时转写（Live Activity/灵动岛截图也可做宣传点）
-- [ ] AI 提取确认页（ConfirmSheet，展示结构化待办）
-- [ ] 待办列表/日历视图
-- [ ] Onboarding 或 Widget（可选）
+| 语言 | 张数 | 清单 |
+|---|---|---|
+| en | 7 | 01-recording / 02-confirmsheet / 03-month / 04-today / 05-review / **06-paywall（v3 真机截取）** / 07-onboarding |
+| zh | 7 | 01-recording / 02-confirmsheet / 03-month / 04-today / 05-review / **06-paywall-alt（v3 真机截取,2026-11-08 补齐）** / 07-onboarding |
 
-生成方式：模拟器 `xcrun simctl io booted screenshot 截图.png`，可用 `SIMCTL_APP_...` 快速装包；截图工具另见 temp/preview-screenshots 已有流程。
+- 两套均满足 ASC 3~10 张要求。**付费墙截图是 paywall v3 新版**——ASC 上若还挂着旧 v2 图,提交前替换（en 用 `06-paywall.png`、zh 用 `06-paywall-alt.png`）。
+- 订阅商品审核截图（§5）用 `screenshots/en/06-paywall.png`。
+- 生成方式：模拟器 `xcrun simctl io booted screenshot 截图.png`；付费墙图为真机手动截取（模拟器 CLI 注入不了 StoreKit 配置）。
 
 ### 3.2 文案
 
@@ -83,7 +86,7 @@ App Store Connect → 我的 App → ➕ 新建 App：
 | 推广文本（170） | 可随时改不触发重审 |
 | 新功能（1.0） | "首个版本" 一句话 |
 | 版权 | `2026 qingqingyu` |
-| **技术支持 URL** | **必填**。选项：① 复用 Pages 仓库加一个 support 页（找 Claude 一分钟加好）；② 暂填 `https://github.com/qingqingyu` |
+| **技术支持 URL** | **必填**。建议填 `https://voicetodo-app.pages.dev/support`（2026-11-07 核实 200）；备选 `https://github.com/qingqingyu` |
 | 营销 URL | 可留空 |
 
 ### 3.3 审核信息（App Review）
@@ -101,9 +104,10 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 · AI 解析走我们自建 Cloudflare Worker 代理（key 不在客户端），免费档每设备每日
   3 次解析，Pro 提升额度。审核期间额度足够正常体验（键盘输入走同一链路）。
 · 订阅（Pro）仅提高每日解析额度。付费墙内含隐私政策与使用条款链接、恢复购买按钮。
-· 生产额度配置已上线（2026-08-20 部署；free 2→3 改动待部署）。
+· 生产额度配置已上线并生效（free=3/Pro=100,线上部署 2026-11-06 已含全部最新变更）。
 ```
 
+- 备注若 UI 改版（输入框位置/交互路径变化）须同步更新 typed-path 说明,**以 `APPSTORE_REVIEW_KIT.md` 内的最新版为准**再粘贴
 - 版本发布方式：**建议「手动发布」**（首次上线时间可控），熟练后可改分阶段 7 天
 
 ---
@@ -125,8 +129,8 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 | 商品 1 | `com.qingqingyu.voicetodo.pro.monthly` · **$4.99** · 1 个月 |
 | 商品 2 | `com.qingqingyu.voicetodo.pro.yearly` · **$39.99** · 1 年 |
 | **介绍优惠（两个商品都要）** | **免费试用 7 天**（storekit: `free ×1 P7D`，与 PROMOTION_PLAN 决策 7 一致）。不配的话，线上永远不显示"开始 7 天免费试用"CTA |
-| **订阅组本地化** | zh-Hans：`VoiceTodo Pro` / 「更高的每日语音整理额度」；en (U.S.)：`VoiceTodo Pro` / "higher daily voice quota"——**与 Products.storekit 的 subscriptionGroups.localizations 两套逐字一致** |
-| **商品本地化** | zh-Hans：`Pro 年付` /「每年自动续费，比月付省约 33%」、`Pro 月付` /「每月自动续费，可随时取消」；en (U.S.)：`Pro Yearly` / "Billed annually. Save ~33% vs monthly."、`Pro Monthly` / "Billed monthly. Cancel anytime."——**与 Products.storekit 两套逐字一致**（否则付费墙中英混排：商品文案来自 ASC，UI 文案来自 App）。上架日本区时再加日语一套 |
+| **订阅组本地化** | zh-Hans：`VoiceTodo Pro` / 「更高的每日语音整理额度」；en (U.S.)：`VoiceTodo Pro` / "higher daily voice quota"——**与 Products.storekit 的 subscriptionGroups.localizations 逐字一致**；ja 一套按 storekit 三语显示名同步配（REVIEW_KIT §3.1 口径） |
+| **商品本地化** | zh-Hans：`Pro 年付` /「每年自动续费，比月付省约 33%」、`Pro 月付` /「每月自动续费，可随时取消」；en (U.S.)：`Pro Yearly` / "Billed annually. Save ~33% vs monthly."、`Pro Monthly` / "Billed monthly. Cancel anytime."——**与 Products.storekit 逐字一致**（否则付费墙中英混排：商品文案来自 ASC，UI 文案来自 App）；ja 一套同步（storekit 已有三语显示名可对照） |
 | 商品审核截图 | 每个商品 1 张付费墙截图（就用 3.1 里的 Paywall 截图） |
 | **Billing Grace Period（计费宽限期）** | **保持关闭（默认）**。这是技术决策不是漏配：代理验签只认 JWS 的 `expiresDate`，宽限期内 App 显示 Pro、AI 却按免费 3 次/天放行，两端不一致（docs/payment-flow-review-2026-10.md §3.2）。若将来要开，须**同一天数**配置 AIProxy 的 `SUBSCRIPTION_GRACE_DAYS`（wrangler.toml，代理已支持按裕量放行），只开 ASC 不配代理 = 不一致回归 |
 
@@ -136,17 +140,21 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 
 ## 6. App 隐私标签（问卷，建议答案）
 
+> ⚠️ **2026-11-08 更新：以下为与 `PrivacyInfo.xcprivacy` / `APPSTORE_REVIEW_KIT.md` §2.2 逐项一致的新口径。
+> 旧版答案里的「音频数据（Audio Data）」类别不再申报**——音频不出设备（Apple Speech 框架处理），
+> 出设备的是转写文本，按 **Other User Content** 申报。
+
 按 app 实际行为（与隐私政策页一致）：
 
 | 问题 | 答案 |
 |---|---|
 | 是否收集数据 | **是** |
-| 数据类型 1：音频数据（Audio Data） | 用途：App 功能；与身份关联：**否**；用于追踪：**否** |
-| 数据类型 2：诊断 → 使用数据（Usage Data） | 用途：App 功能（额度限制/产品改进）；关联：**否**；追踪：**否** |
-| 数据类型 3：购买 → 购买历史（Purchase History） | 用途：App 功能（订阅状态）；关联：**否**；追踪：**否** |
-| 数据类型 4：标识符 → 设备 ID（Device ID） | 加盐哈希后发给自建代理，按日保留用于额度限制。用途：App 功能；关联：**否**；追踪：**否**（与隐私政策页披露一致） |
+| 数据类型 1：标识符 → 设备 ID（Device ID） | sha256 加盐哈希后发自建代理,按日保留用于额度/防滥用/订阅校验。用途：**App 功能 + 分析**（遥测 DAU/故障,D1 90 天 GC）；关联：**否**；追踪：**否** |
+| 数据类型 2：购买 → 购买历史（Purchase History） | StoreKit 2 JWS 服务端验签后仅存 productId + 到期时间。用途：**App 功能**；关联：**否**；追踪：**否** |
+| 数据类型 3：用户内容 → 其他用户内容（Other User Content） | 转写文本（经自建代理转发第三方 AI 服务商解析,实时处理,KV 缓存 ≤1h）+ 用户反馈。用途：**App 功能**；关联：**否**；追踪：**否** |
+| 数据类型 4：诊断 → 其他使用数据（Other Usage Data） | 匿名诊断遥测（D1,90 天 GC）。用途：**分析**；关联：**否**；追踪：**否** |
 
-不选"联系人/位置"。设备 ID 以加盐哈希形式传输，但按 Apple 定义（离设备传输 + 为当日额度计数而保留）仍属「收集」，需申报为 Identifiers → Device ID（不关联身份、不追踪）；若审核问起，答复见审核备注。
+「追踪用户」总开关：**否**。不选"联系人/位置/音频数据"。设备 ID 以哈希形式传输,但按 Apple 定义（离设备传输 + 保留）仍属「收集」,需如实申报（不关联身份、不追踪）；第三方 AI 为 processor 形态,已并入 User Content 披露——若审核问「数据发给 AI?」,**答辩口径：app 内发送前有显式披露与同意（onboarding + 运行时 gate）,Siri 路径未同意不发送;隐私政策 §Transcript text 描述同一链路**（详见 REVIEW_KIT §2.4）。
 
 ---
 
@@ -180,12 +188,12 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 最终检查全部满足再点：
 
 - [ ] §1~§9 全部勾完
-- [ ] Xcode → Product → Archive → **Distribute App（App Store Connect）** 上传 1.0 (1) 构建
+- [ ] Xcode → Product → Archive（main HEAD,构建号已为 4）→ **Distribute App（App Store Connect）** 上传 1.0 (4) 构建
 - [ ] ASC 版本页选中该构建
 - [ ] 出口合规确认
 - [ ] （可选）TestFlight 内测一天再提审
 - [ ] **Submit for Review**
-- [ ] 审核通过后：确认 free=3 的 wrangler.toml 已 deploy + `LOG_HASH_SALT` 已设置，再点手动发布
+- [x] 审核通过后发布前置：free=3 额度与 `LOG_HASH_SALT` 均已生效（2026-11-08 核实,无需再确认）,直接点手动发布即可
 
 ---
 
@@ -195,6 +203,7 @@ VoiceTodo 是语音待办 app：用户说话 → 语音识别转写 → AI 提�
 |---|---|
 | 为什么要麦克风/语音识别 | 核心功能：语音转待办；引导见 onboarding |
 | audio 后台模式用途 | 录音中锁屏继续采集，锁屏 Live Activity 展示进度 |
-| 隐私政策在哪 | App 信息 URL + 付费墙内链接，同一地址 |
+| 隐私政策在哪 | App 信息 URL + 付费墙内链接，同一地址（GH Pages 版） |
+| 数据发给第三方 AI? | 发送前 app 内显式披露+同意（onboarding + 运行时 gate）,Siri 路径未同意不发送;政策页 §Transcript text 同口径（REVIEW_KIT §2.4 答辩口径） |
 | 订阅没配条款链接 | 付费墙 legalLinks：隐私政策 + Apple 标准 EULA（3.1.2 合规） |
 | 2.3.7 元数据堆砌 | 副标题/关键词避免重复 App 名与类别词 |
