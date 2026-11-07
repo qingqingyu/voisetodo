@@ -7,8 +7,8 @@ export const siteConfig = {
   // {{DOMAIN}} —— 域名未买,先用 Cloudflare Pages 免费子域;日后买域名改这里重新构建即可。
   domain: 'voicetodo-app.pages.dev',
 
-  // {{APP_STORE_ID}} —— App Store 数字 ID,上架后填(apple-itunes-app 横幅与商店链接都用它)。
-  appStoreId: '000000000',
+  // {{APP_STORE_ID}} —— ASC App 记录数字 ID(2026-11-07 从 App 信息页确认)。
+  appStoreId: '6806787856',
 
   // {{PROVIDER_TOKEN}} —— App Store Connect 来源参数 pt(App 分析按页归因下载)。
   providerToken: 'PROVIDER_TOKEN',
