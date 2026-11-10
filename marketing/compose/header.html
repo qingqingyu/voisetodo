@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VoiceTodo App Store header</title>
+  <!--
+    App Store 创意素材:产品页头图(ASC 中文界面叫「标题」)+ 搜索结果素材共用一张。
+    画布 16:9,CSS 2622×1475,以 deviceScaleFactor=2 输出 5244×2950(两处唯一共同支持的图片尺寸)。
+    安全区:16:9 → 21:9 上下各裁约 175px;16:9 → 3:2 左右各裁约 205px;
+    底部还会叠 App 名称/获取按钮。核心内容放在 x 300..2320、y 200..1180 内。
+    文案与卡片内容取自 PROMOTION_COPY.md §1.1 和实拍 02-confirmsheet(同一句演示话术)。
+    参数:header.html#lang=en|zh(&guides=1 叠加安全区参考线,仅自查用)
+  -->
+  <style>
+    /* token 同 styles.css,来源 UI/Shared/DesignSystem.swift(WarmTheme light) */
+    :root {
+      --ink: #1E2A3A;
+      --ink-2: #5C6A7A;
+      --muted: #8E97A4;
+      --coral: #FF8A6B;
+      --coral-text: #C44F35;
+      --primary-tint: #FCE9E2;
+      --urgent: #E5484D;
+      --card: #FFFFFF;
+      --shadow: rgba(30, 42, 58, 0.14);
+      --shadow-light: rgba(30, 42, 58, 0.08);
+      --font-sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", Inter, -apple-system, sans-serif;
+      --font-serif: ui-serif, "New York", "Songti SC", Georgia, "DejaVu Serif", serif;
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 2622px; height: 1475px; overflow: hidden;
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      /* 衬线暖纸底 + 极淡珊瑚光晕,呼应录音页 VoiceFAB */
+      background:
+        radial-gradient(ellipse 900px 640px at 50% 62%, rgba(255, 138, 107, 0.10), transparent 70%),
+        linear-gradient(180deg, #F6F7F9 0%, #F1F2F5 100%);
+    }
+    .stage {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center;
+      padding-top: 190px; box-sizing: border-box;
+    }
+
+    /* ---------- 文案 ---------- */
+    .dot { width: 22px; height: 22px; border-radius: 50%; background: var(--coral); margin-bottom: 40px; }
+    h1 {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 132px; line-height: 1.08; font-weight: 600;
+      letter-spacing: -0.015em; color: var(--ink); text-align: center;
+    }
+    body.lang-zh h1 { font-size: 120px; letter-spacing: 0.02em; }
+    .caption {
+      margin: 32px 0 0;
+      font-size: 50px; font-weight: 500; color: var(--coral-text); text-align: center;
+    }
+
+    /* ---------- 演示:一段话 → 三条待办 ---------- */
+    .demo {
+      margin-top: 84px;
+      display: flex; align-items: center; gap: 72px;
+    }
+    .panel {
+      background: var(--card);
+      border-radius: 40px;
+      box-shadow: 0 28px 80px var(--shadow), 0 6px 18px var(--shadow-light);
+    }
+
+    /* 左:录音面板(还原 01-recording 底部 sheet) */
+    .voice { width: 820px; padding: 52px 60px 56px; box-sizing: border-box; text-align: center; }
+    .listening { font-size: 36px; font-weight: 600; color: var(--urgent); display: inline-flex; align-items: center; gap: 16px; }
+    .listening::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--urgent); }
+    .quote {
+      margin: 34px 0 40px;
+      font-size: 50px; line-height: 1.38; font-weight: 500; color: var(--ink);
+    }
+    .wave { display: flex; align-items: center; justify-content: center; gap: 9px; height: 64px; }
+    .wave i { display: block; width: 11px; border-radius: 6px; background: var(--urgent); }
+    .wave i.off { opacity: 0.85; height: 14px !important; }
+    .timer { margin-left: 22px; font-size: 32px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* 中:箭头 + AI 火花 */
+    .arrow { display: flex; flex-direction: column; align-items: center; gap: 18px; color: var(--coral); }
+    .arrow svg { width: 150px; height: 64px; }
+    .spark { font-size: 30px; font-weight: 600; letter-spacing: 0.08em; color: var(--coral-text);
+             background: var(--primary-tint); padding: 8px 22px; border-radius: 999px; }
+
+    /* 右:确认页卡片(还原 02-confirmsheet) */
+    .todos { width: 860px; display: flex; flex-direction: column; gap: 30px; }
+    .todo {
+      position: relative; display: flex; align-items: center; gap: 36px;
+      padding: 34px 44px 34px 60px; min-height: 176px; box-sizing: border-box;
+      border-radius: 34px;
+    }
+    .todo::before {
+      content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 10px;
+      border-radius: 5px; background: var(--cat);
+    }
+    .emoji { font-size: 74px; line-height: 1; font-family: "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
+    .body { flex: 1; min-width: 0; }
+    .title { font-size: 54px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 10px; margin-top: 12px;
+      padding: 6px 20px; border-radius: 14px; font-size: 36px; font-weight: 500;
+      background: var(--chip-bg); color: var(--chip-fg);
+    }
+    .chip svg { width: 32px; height: 32px; }
+    .check {
+      width: 64px; height: 64px; border-radius: 50%; flex: 0 0 auto;
+      background: var(--coral); display: flex; align-items: center; justify-content: center;
+    }
+    .check svg { width: 36px; height: 36px; }
+
+    /* 分类色:categoryFinance / categoryLife / categorySocial 及其 tint */
+    .finance { --cat: #E8C86B; --chip-bg: #FCF3D9; --chip-fg: #B8901F; }
+    .life    { --cat: #E8A87C; }
+    .social  { --cat: #E87C9B; --chip-bg: #FBE3EA; --chip-fg: #D0587C; }
+
+    /* 安全区参考线(#guides=1) */
+    .guides { display: none; position: absolute; inset: 0; pointer-events: none; }
+    body.show-guides .guides { display: block; }
+    .guides .g21 { position: absolute; left: 0; right: 0; top: 175px; bottom: 175px; outline: 4px dashed #3a7; }
+    .guides .g32 { position: absolute; top: 0; bottom: 0; left: 205px; right: 205px; outline: 4px dashed #37a; }
+  </style>
+</head>
+<body class="lang-en">
+  <div class="stage">
+    <div class="dot"></div>
+    <h1 id="headline"></h1>
+    <p class="caption" id="caption"></p>
+
+    <div class="demo">
+      <div class="panel voice">
+        <div class="listening" id="listening"></div>
+        <p class="quote" id="quote"></p>
+        <div class="wave" id="wave"><span class="timer">00:04</span></div>
+      </div>
+
+      <div class="arrow">
+        <svg viewBox="0 0 150 64" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 32 H136 M108 8 L138 32 L108 56"/>
+        </svg>
+        <span class="spark">AI</span>
+      </div>
+
+      <div class="todos" id="todos"></div>
+    </div>
+  </div>
+  <div class="guides"><div class="g21"></div><div class="g32"></div></div>
+
+  <script>
+    // 卡片内容与实拍 02-confirmsheet 一致(en/zh 两套),标题用 PROMOTION_COPY §1.1 主 one-liner
+    const COPY = {
+      en: {
+        headline: "One ramble. Planned todos.",
+        caption: "Say it all at once — dates, times and categories, sorted for you.",
+        listening: "Listening…",
+        quote: "“Go to the bank tomorrow, buy some groceries, and call mom tonight”",
+        todos: [
+          { cls: "finance", emoji: "💰", title: "Go to the bank", chip: "Tomorrow" },
+          { cls: "life",    emoji: "🏠", title: "Buy groceries" },
+          { cls: "social",  emoji: "👥", title: "Call mom",       chip: "Evening" }
+        ]
+      },
+      zh: {
+        headline: "一口气说完，清单自动排好。",
+        caption: "日期、时间、分类，AI 帮你拆好。",
+        listening: "正在聆听…",
+        quote: "「明天去银行办卡，顺便买菜，晚上给老妈打电话」",
+        todos: [
+          { cls: "finance", emoji: "💰", title: "去银行办卡",     chip: "明天" },
+          { cls: "life",    emoji: "🏠", title: "买菜" },
+          { cls: "social",  emoji: "👥", title: "给老妈打电话",   chip: "晚上" }
+        ]
+      }
+    };
+
+    const params = new URLSearchParams(location.hash.slice(1));
+    const lang = params.get("lang") || "en";
+    const c = COPY[lang];
+    if (!c) {
+      document.getElementById("headline").textContent = "COPY MISSING: " + lang;
+      throw new Error("copy missing for " + lang);
+    }
+    document.documentElement.lang = lang === "zh" ? "zh-Hans" : "en";
+    document.body.className = "lang-" + lang + (params.get("guides") === "1" ? " show-guides" : "");
+    document.getElementById("headline").textContent = c.headline;
+    document.getElementById("caption").textContent = c.caption;
+    document.getElementById("listening").textContent = c.listening;
+    document.getElementById("quote").textContent = c.quote;
+
+    // 波形:前段有声(高低起伏),后段静音点,同 01-recording 的录音条
+    const heights = [26, 44, 58, 38, 64, 48, 30, 54, 40, 22, 46, 34];
+    const wave = document.getElementById("wave");
+    const timer = wave.firstElementChild;
+    heights.concat(Array(12).fill(0)).forEach(h => {
+      const i = document.createElement("i");
+      if (h) i.style.height = h + "px"; else i.className = "off";
+      wave.insertBefore(i, timer);
+    });
+
+    const clock = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    const tick = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+    const list = document.getElementById("todos");
+    c.todos.forEach(t => {
+      const el = document.createElement("div");
+      el.className = "panel todo " + t.cls;
+      el.innerHTML =
+        '<span class="emoji">' + t.emoji + '</span>' +
+        '<div class="body"><div class="title"></div>' +
+        (t.chip ? '<span class="chip">' + clock + '<span></span></span>' : '') + '</div>' +
+        '<span class="check">' + tick + '</span>';
+      el.querySelector(".title").textContent = t.title;
+      if (t.chip) el.querySelector(".chip span").textContent = t.chip;
+      list.appendChild(el);
+    });
+  </script>
+</body>
+</html>
