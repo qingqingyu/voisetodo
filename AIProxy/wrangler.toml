@@ -242,6 +242,7 @@ PROVIDERS = '''
     "enabled": true,
     "secretName": "OPENROUTER_PROD_KEY",
     "timeoutMs": 30000,
+    "includeStreamUsage": true,
     "extraHeaders": {
       "HTTP-Referer": "https://voicetodo.app",
       "X-Title": "VoiceTodo"

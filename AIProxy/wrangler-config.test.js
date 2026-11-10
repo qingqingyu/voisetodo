@@ -345,12 +345,20 @@ test("wrangler.toml: key-pool entries (A1/A2) shape is valid", () => {
       }
     }
     if (p.extraBody !== undefined) {
-      for (const reserved of ["model", "messages", "stream"]) {
+      for (const reserved of ["model", "messages", "stream", "stream_options"]) {
         assert.ok(
           !(reserved in p.extraBody),
           `条目 ${p.id}: extraBody 不得覆盖 ${reserved}(config.js 会拒载,提前在这里暴露)`
         );
       }
+    }
+    if (p.includeStreamUsage !== undefined) {
+      assert.equal(p.type, "openai", `条目 ${p.id}: includeStreamUsage 仅支持 openai 类型`);
+      assert.equal(
+        typeof p.includeStreamUsage,
+        "boolean",
+        `条目 ${p.id}: includeStreamUsage 必须是 boolean`
+      );
     }
     if (p.extraHeaders !== undefined) {
       assert.equal(p.type, "openai", `条目 ${p.id}: extraHeaders 仅支持 openai 类型`);

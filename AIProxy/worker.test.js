@@ -8273,6 +8273,44 @@ test("A1 配置:maxConcurrencyPerKey 非正整数 → 配置错误", () => {
   }
 });
 
+test("includeStreamUsage:非 openai 条目 / 非 boolean → 配置错误(2026-11-10)", () => {
+  const anthropicEnv = {
+    PROVIDERS: JSON.stringify([{
+      id: "BAD_TYPE", type: "anthropic", url: "https://x.invalid/v1/messages", model: "m",
+      secretName: "A", includeStreamUsage: true
+    }]), A: "k"
+  };
+  assert.throws(() => loadProviders(anthropicEnv), /includeStreamUsage is only supported on openai/);
+
+  for (const bad of ["yes", 1]) {
+    const env = {
+      PROVIDERS: JSON.stringify([{
+        id: "BAD_BOOL", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+        secretName: "A", includeStreamUsage: bad
+      }]), A: "k"
+    };
+    assert.throws(() => loadProviders(env), /includeStreamUsage must be a boolean/, `值 ${JSON.stringify(bad)} 应报错`);
+  }
+  // null 与 extraHeaders/disableResponseFormat 同惯例:视为未设置,不报错
+  assert.doesNotThrow(() => loadProviders({
+    PROVIDERS: JSON.stringify([{
+      id: "NULL_OK", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+      secretName: "A", includeStreamUsage: null
+    }]), A: "k"
+  }));
+});
+
+test("includeStreamUsage:extraBody 覆盖 stream_options → 配置错误(保留字段)", () => {
+  const env = {
+    PROVIDERS: JSON.stringify([{
+      id: "BAD_OVERRIDE", type: "openai", url: "https://x.invalid/v1/chat/completions", model: "m",
+      secretName: "A",
+      extraBody: { stream_options: { include_usage: true } }
+    }]), A: "k"
+  };
+  assert.throws(() => loadProviders(env), /extraBody must not override stream_options/);
+});
+
 test("A1 配置:secretNames 部分缺失 → 跳过该 key,其余 key 可用", () => {
   const missing = [];
   const env = {
@@ -8864,6 +8902,197 @@ test("extract metrics 0b: 上游不带 usage 时三列为 NULL,gate_ms 仍有值
   assert.equal(rows[0].args[21], null, "cached_tokens = NULL");
   assert.ok(typeof rows[0].args[18] === "number" && rows[0].args[18] >= 0, "gate_ms 与 usage 无关,始终记录");
 });
+
+// MARK: - 流式 usage 收割(2026-11-10:stream.js 有界收割 + includeStreamUsage opt-in)
+
+/// OpenAI 兼容语义的完整流:内容块 → finish 块 → **独立 usage 末块** → [DONE]。
+/// usage 末块在 finish_reason 之后——旧代码在 finish 即断流,usage 永远收不到。
+function usageTailSSEStreamResponse() {
+  const encoder = new TextEncoder();
+  const todosJSON = extractionJSON("买牛奶");
+  const lines = [
+    `data: ${JSON.stringify({ choices: [{ delta: { content: todosJSON }, finish_reason: null }] })}`,
+    `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}`,
+    `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 7500, completion_tokens: 120, prompt_tokens_details: { cached_tokens: 6100 } } })}`,
+    "data: [DONE]"
+  ];
+  return new Response(new ReadableStream({
+    async start(controller) {
+      for (const line of lines) {
+        controller.enqueue(encoder.encode(`${line}\n\n`));
+      }
+      controller.close();
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+test("stream usage 1: finish 后独立 usage 末块落三列,且请求带 stream_options(opt-in)", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  let upstreamBody;
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token", "X-Extract-ID": "extract-usage-tail-1" }),
+    providersEnv(
+      [{ id: "OR_X", type: "openai", url: "https://or.test/v1/chat/completions", model: "m", priority: 1, secretName: "K", includeStreamUsage: true }],
+      { K: "k" },
+      { TELEMETRY_DB: db }
+    ),
+    ctx,
+    async (url, init) => {
+      upstreamBody = JSON.parse(init.body);
+      return usageTailSSEStreamResponse();
+    }
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.ok(text.includes("data: [DONE]"), "客户端必须收到 [DONE]");
+  await ctx.awaitAll();
+
+  // 请求侧:opt-in 条目带 stream_options.include_usage,非流式语义不受影响
+  assert.equal(upstreamBody.stream, true);
+  assert.deepEqual(upstreamBody.stream_options, { include_usage: true });
+
+  // 落账侧:finish 之后的 usage 末块进了三列
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].args[19], 7500, "prompt_tokens 来自终态后的独立 usage 末块");
+  assert.equal(rows[0].args[20], 120, "completion_tokens");
+  assert.equal(rows[0].args[21], 6100, "cached_tokens");
+});
+
+test("stream usage 2: 条目未声明 includeStreamUsage → 请求不带 stream_options", async () => {
+  let upstreamBody;
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{ id: "OR_X", type: "openai", url: "https://or.test/v1/chat/completions", model: "m", priority: 1, secretName: "K" }],
+      { K: "k" }
+    ),
+    {},
+    async (url, init) => {
+      upstreamBody = JSON.parse(init.body);
+      return usageTailSSEStreamResponse();
+    }
+  );
+  assert.equal(response.status, 200);
+  await response.text();
+  assert.equal(upstreamBody.stream_options, undefined, "默认不开:未经兼容验证的平台不得收到该参数");
+});
+
+test("stream usage 2b: 声明 includeStreamUsage 的条目,非流式请求不带 stream_options", async () => {
+  let upstreamBody;
+  const response = await handleRequest(
+    request({ transcript: "买牛奶" }, { "X-App-Token": "token" }),
+    providersEnv(
+      [{ id: "OR_X", type: "openai", url: "https://or.test/v1/chat/completions", model: "m", priority: 1, secretName: "K", includeStreamUsage: true }],
+      { K: "k" }
+    ),
+    {},
+    async (url, init) => {
+      upstreamBody = JSON.parse(init.body);
+      return jsonResponse({ choices: [{ message: { content: extractionJSON("买牛奶") } }] });
+    }
+  );
+  assert.equal(response.status, 200);
+  await response.json();
+  assert.equal(upstreamBody.stream, false, "非流式请求前置:stream=false");
+  assert.equal(upstreamBody.stream_options, undefined, "stream_options 只随流式请求发送——非流式带上会被 OpenAI 语义拒绝");
+});
+
+/// 终态后不关流的模拟:上游发完 message_stop 就 keep-alive 挂住。
+/// 有界收割必须超时放弃 usage、照常发 [DONE](宁可三列 NULL,不能挂死客户端)。
+function finishThenHangStreamResponse() {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "content_block_delta", delta: { text: extractionJSON("买牛奶") } })}\n\n`));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "message_stop" })}\n\n`));
+      // 故意不 close:模拟 keep-alive
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+test("stream usage 3: 上游终态后不关流 → 超时兜底,[DONE] 不被挂死", async () => {
+  const startedAt = Date.now();
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    async () => finishThenHangStreamResponse()
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.ok(text.includes("data: [DONE]"), "收割超时后必须照常收尾");
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed >= 1400 && elapsed < 5000, `应等待约 1.5s 收割窗后收尾,实际 ${elapsed}ms`);
+});
+
+/// 终态后连接 reset 的模拟:内容在终态前已完整,收尾期错误不得进 onFailure
+/// (误判 stream_failed 会打乱退款/熔断/配额记账)。
+function finishThenResetStreamResponse() {
+  const encoder = new TextEncoder();
+  let sent = false;
+  return new Response(new ReadableStream({
+    // pull 式:error() 会丢弃已排队块,start 里先 enqueue 再 error 模拟不出
+    // 「已送达终态、后续读取才断」——分两轮 pull:第一轮发完内容+终态,
+    // 第二轮(读取方消费完后再要数据时)抛错 = 终态后连接 reset。
+    async pull(controller) {
+      if (!sent) {
+        sent = true;
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "content_block_delta", delta: { text: extractionJSON("买牛奶") } })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "message_stop" })}\n\n`));
+        return;
+      }
+      throw new Error("connection reset after finish");
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+test("stream usage 4: 终态后连接 reset → 仍按成功收尾(outcome=success 非 stream_failed)", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token", "X-Extract-ID": "extract-drain-reset-1" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: db },
+    ctx,
+    async () => finishThenResetStreamResponse()
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.ok(text.includes("data: [DONE]"), "收尾期 reset 不影响客户端拿到完整流");
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].args[15], "success", "终态后的 reset 不是 provider 故障,不得记 stream_failed");
+});
+
+/// 终态后又吐文本的模拟:终态后增量一律冻结,不产出给客户端。
+function lateTextAfterFinishStreamResponse() {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "content_block_delta", delta: { text: extractionJSON("买牛奶") } })}\n\n`));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "message_stop" })}\n\n`));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "content_block_delta", delta: { text: "LATE_TEXT_AFTER_FINISH" } })}\n\n`));
+      controller.close();
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+test("stream usage 5: 终态后的迟到文本被冻结,不产出给客户端", async () => {
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    async () => lateTextAfterFinishStreamResponse()
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.ok(!text.includes("LATE_TEXT_AFTER_FINISH"), "终态后的增量不得再产出");
+  assert.ok(text.includes("data: [DONE]"));
+});
+
 test("extract metrics 1: 非流式成功写一行,provider/model/key_slot/attempts/outcome/todos_count 全正确", async () => {
   const db = makeFakeD1();
   const ctx = makeFakeCtx();

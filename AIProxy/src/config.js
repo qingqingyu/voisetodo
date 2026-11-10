@@ -22,7 +22,7 @@
 //   - `extraHeaders` / `disableResponseFormat`:仅 openai 类型条目;`extraBody`:
 //     openai 与 anthropic 条目(2026-11-04 起——z.ai anthropic 方言的 thinking
 //     档位旋钮走此通道,评测 Q7c + 生产降延迟候选)。
-//     (A3,换服务商准备)。extraBody 不得覆盖 model/messages/stream,
+//     (A3,换服务商准备)。extraBody 不得覆盖 model/messages/stream/stream_options,
 //     extraHeaders 不得覆盖 Authorization/Content-Type——覆盖 = 配置错误。
 //     不在代码里写死任何服务商参数名,字段由 wrangler.toml 按服务商文档配置。
 //
@@ -50,7 +50,10 @@ const DEFAULT_WEIGHT = 1;
 const MAX_TIMEOUT_MS = 60_000;
 // extraBody 里保留给 adapter 自己拼装的字段:覆盖 = 配置错误(静默覆盖会让
 // 「换个模型」这类运维操作被一个 stale 的 extraBody 值悄悄抵消)。
-const RESERVED_BODY_FIELDS = new Set(["model", "messages", "stream"]);
+// stream_options 保留给 adapter 的 includeStreamUsage 开关(2026-11-10):
+// 经 extraBody 配置它有两个坑——(1) extraBody 无条件进请求体,非流式请求带上
+// stream_options 会被 OpenAI 语义拒绝;(2) 与条目级开关互相覆盖,运维时两处真相。
+const RESERVED_BODY_FIELDS = new Set(["model", "messages", "stream", "stream_options"]);
 // extraHeaders 里保留给 adapter 的头:Authorization 是 key 的载体,Content-Type
 // 是序列化协议——被 extraHeaders 覆盖等于把 key 发去错误的位置或破坏请求体协商。
 const RESERVED_HEADER_FIELDS = new Set(["Authorization", "Content-Type"]);
@@ -205,6 +208,20 @@ function parseProviderEntry(entry, index, env, adapterTypes, onSecretMissing) {
     }
     disableResponseFormat = entry.disableResponseFormat;
   }
+  let includeStreamUsage;
+  if (entry.includeStreamUsage !== undefined && entry.includeStreamUsage !== null) {
+    // 流式 usage 捕获(2026-11-10):声明后 openai 条目流式请求带
+    // stream_options.include_usage,上游在终态后吐 usage 末块(stream.js 收割)。
+    // opt-in:不认该参数的平台回 400(request_body 非重试类,不 failover),
+    // 未经兼容性验证的条目不得开启。
+    if (type !== "openai") {
+      throw new Error(`PROVIDERS[${index}] (id=${id}) includeStreamUsage is only supported on openai-type entries`);
+    }
+    if (typeof entry.includeStreamUsage !== "boolean") {
+      throw new Error(`PROVIDERS[${index}] (id=${id}) includeStreamUsage must be a boolean`);
+    }
+    includeStreamUsage = entry.includeStreamUsage;
+  }
 
   return {
     id,
@@ -220,6 +237,7 @@ function parseProviderEntry(entry, index, env, adapterTypes, onSecretMissing) {
     extraHeaders,
     extraBody,
     disableResponseFormat,
+    includeStreamUsage,
     priority: Number.isFinite(entry.priority) ? Number(entry.priority) : DEFAULT_PRIORITY,
     weight: Number.isFinite(entry.weight) && entry.weight > 0 ? Number(entry.weight) : DEFAULT_WEIGHT,
     enabled: entry.enabled !== false,

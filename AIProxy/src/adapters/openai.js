@@ -49,6 +49,11 @@ export const openaiAdapter = {
           model: provider.model,
           temperature: 0,
           stream,
+          // 流式 usage 捕获(2026-11-10):条目声明 includeStreamUsage 时请求末块
+          // usage(OpenAI 兼容语义:finish_reason 之后的独立块)。opt-in 而非默认:
+          // 不认 stream_options 的平台回 400 → request_body 非重试类 → 不 failover,
+          // 该条目流式全死;先在 OpenRouter 验证,z.ai 等验证过再开。
+          ...(stream && provider.includeStreamUsage ? { stream_options: { include_usage: true } } : {}),
           // A3:disableResponseFormat 条目不发送 response_format——部分平台不支持
           // 该参数会 400(request_body 不重试直接 502),此时靠 prompt 约束 JSON。
           // 默认开启:目标平台(OpenRouter 及国内 OpenAI 兼容平台)普遍支持。
