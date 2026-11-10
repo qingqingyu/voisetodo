@@ -231,7 +231,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // 缓存命中零模型成本、不扣计费桶,但仍是请求压力,闸门照过。
     // 顺序语义变化:原顺序是订阅桶→闸门,现为闸门→(cache)→订阅桶——
     // 被熔断 503 / velocity 429 拒绝的请求不再消耗订阅桶(反滥用收紧)。
-    await enforceAbuseGates(request, env, requestContext, isPro);
+    await enforceAbuseGates(request, env, requestContext, isPro, ctx);
     if (mode === "extract") {
       // 计费日期在 cache lookup 之前解析(resolveQuotaDate 纯函数、无写副作用):
       // cache key 含 today;cache miss 后把同一份注入 enforceAllQuotas,
@@ -1741,9 +1741,9 @@ function validateAppToken(request, env) {
 // 抽出为独立函数的原因:extract 模式需要"闸门前置、计费后置"——缓存命中(extraction
 // cache)零模型成本,不该扣任何计费桶,但仍要过反滥用闸门;assist 分支(split/reflect/
 // deep-read)原先手写这两行,统一收口到这里。
-async function enforceAbuseGates(request, env, requestContext, isPro) {
+async function enforceAbuseGates(request, env, requestContext, isPro, ctx) {
   await enforceGlobalBudgetHotPath(env, requestContext, isPro);
-  await enforceIpRateLimit(request, env, requestContext, isPro);
+  await enforceIpRateLimit(request, env, requestContext, isPro, ctx);
 }
 
 // 计费编排:Step 7 重排后的统一入口。
@@ -2893,7 +2893,7 @@ async function enforceGlobalBudgetViaKV(env, requestContext, params) {
 //
 // ip-rate 保留 KV,精度收益不抵成本(每分钟 × 每 IP 一个 DO 实例太多)。
 
-async function enforceIpRateLimit(request, env, requestContext, isPro = false) {
+async function enforceIpRateLimit(request, env, requestContext, isPro = false, ctx = undefined) {
   // 付费档豁免(P0):本闸门挡"单 IP 轮换 X-Device-ID 刷免费配额",付费用户不在
   // 威胁模型内;device 侧 PAID_DAILY_LIMIT(100/天)本身构成单设备速度上限,IP 限速
   // 对它冗余。而 CGNAT/VPN 共享出口 IP 下,多名付费用户会互相误伤
@@ -2917,7 +2917,18 @@ async function enforceIpRateLimit(request, env, requestContext, isPro = false) {
       headers: { "X-RateLimit-Type": "velocity", "Retry-After": "60" }
     });
   }
-  await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
+  // 计数写移出主路径(2026-11-10 提速):KV put 是跨 PoP 写,常态 10-60ms,是
+  // ip-rate 在热路径上最贵的一步;而闸门判定只需要上方的读。取舍:同一 isolate
+  // 内亚毫秒级连发的请求可能都读到旧值(少计 1-2 次)——velocity 闸本来就是
+  // advisory(KV 跨 PoP 传播本就 ~60s,精确的短窗限流由 README 建议的 Cloudflare
+  // 边缘 Rate Limiting Rule 承担,Worker 侧是纵深防御的第二层)。无 ctx/无
+  // waitUntil 的调用方(单测)回落同步 await,行为与改前一致。
+  const increment = env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
+  if (typeof ctx?.waitUntil === "function") {
+    ctx.waitUntil(increment);
+  } else {
+    await increment;
+  }
 }
 
 async function enforceIpDailyLimit(request, env, requestContext, ctx, isPro = false) {

@@ -4928,7 +4928,11 @@ test("Step 5 ip-rate 仍走 KV(精度收益不抵成本,DO 不应被调用)", as
       "X-Local-Date": "2026-05-26"
     });
     const r1 = await handleRequest(mk(1), env, ctx, jsonResponseProvider("a"));
+    // ip-rate 计数写已移 ctx.waitUntil(2026-11-10):请求间 awaitAll,
+    // 保证下一次读能看到自增后的值(精确短窗限流交给边缘规则,Worker 是第二层)
+    await ctx.awaitAll();
     const r2 = await handleRequest(mk(2), env, ctx, jsonResponseProvider("b"));
+    await ctx.awaitAll();
     const r3 = await handleRequest(mk(3), env, ctx, jsonResponseProvider("c"));
     assert.equal(r1.status, 200);
     assert.equal(r2.status, 200);
