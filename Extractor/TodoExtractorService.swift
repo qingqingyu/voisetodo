@@ -426,6 +426,10 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
             let task = Task {
                 var accumulatedText = ""
                 var lastYieldedCount = 0
+                // 当前未闭合对象的 title 预览(nil = 无预览/已被闭合帧清除)。
+                // 用 title 字符串去重:title 键(schema 第一个键)一旦完整就不再变,
+                // 后续 delta 只会补对象其余字段,不该重复 yield 同一预览。
+                var previewedTitle: String?
                 // 跨 partial / final 帧稳定的 id 池。tryParsePartialTodos 与 parseResponse 每次
                 // 都重新 decode → ?? UUID() 兜底生成新 UUID,id 全变 → ForEach 把每个 partial 识别
                 // 为「全删 + 全增」→ 触发 ConfirmGroupedList 的 removal: .move(edge: .trailing)
@@ -459,14 +463,32 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
 
                         accumulatedText += delta
 
-                        if let partialTodos = self.tryParsePartialTodos(accumulatedText),
-                           partialTodos.count > lastYieldedCount {
-                            lastYieldedCount = partialTodos.count
+                        let closedTodos = self.tryParsePartialTodos(accumulatedText) ?? []
+                        if closedTodos.count > lastYieldedCount {
+                            lastYieldedCount = closedTodos.count
+                            previewedTitle = nil
                             // T2(任务书 §5.1):第一条待办流式到达并即将显示在确认
                             // 面板。markFirstTodo 内部 first-write-wins,只记首条。
+                            // 口径说明(2026-11-10):title 预览帧也算「用户看到第一
+                            // 条」——预览与闭合的先后可用日志事件名区分
+                            // (title_preview vs partial),跨版本对比时注意此界线。
                             VoiceTodoLog.extractTiming?.markFirstTodo(ContinuousClock().now)
-                            let stabilized = self.reassignedIDs(partialTodos, stableIDs: &stableIDs)
-                            VoiceTodoLog.extractor.debug("extract.stream.partial id=\(streamID, privacy: .public) todos=\(partialTodos.count) accumulatedChars=\(accumulatedText.count)")
+                            let stabilized = self.reassignedIDs(closedTodos, stableIDs: &stableIDs)
+                            VoiceTodoLog.extractor.debug("extract.stream.partial id=\(streamID, privacy: .public) todos=\(closedTodos.count) accumulatedChars=\(accumulatedText.count)")
+                            continuation.yield(ExtractionResult(todos: stabilized, ignored: ""))
+                        } else if let preview = self.tryParseTitlePreview(accumulatedText),
+                                  preview.title != previewedTitle {
+                            // title 预览帧:下一个对象尚未闭合,但 title 键已完整
+                            // (比等整条闭合早出约 60-80 token ≈ 0.5-0.8s)。占位卡
+                            // 先落「待定」组(无 dueDate),闭合后经同一 stableID
+                            // 原位替换成完整卡片——可能伴随一次组间移动(动画观感
+                            // 待真机走查)。
+                            previewedTitle = preview.title
+                            VoiceTodoLog.extractTiming?.markFirstTodo(ContinuousClock().now)
+                            var previewTodos = closedTodos
+                            previewTodos.append(preview)
+                            let stabilized = self.reassignedIDs(previewTodos, stableIDs: &stableIDs)
+                            VoiceTodoLog.extractor.debug("extract.stream.title_preview id=\(streamID, privacy: .public) accumulatedChars=\(accumulatedText.count)")
                             continuation.yield(ExtractionResult(todos: stabilized, ignored: ""))
                         }
                     }
@@ -540,8 +562,26 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
         }
     }
 
-    /// 贪心解析：从累积文本中尝试提取已闭合的 todo JSON 对象
+    // MARK: - Connection Warm-Up
+
+    /// 连接预热：透传给 NetworkClient（语义见其文档注释与协议默认实现的说明）。
+    /// 尽力而为，不抛错——由 AppCoordinator 在录音起步时调用。
+    func warmUpConnection() async {
+        await networkClient.warmUpConnection()
+    }
+
+    /// 贪心解析：从累积文本中提取已闭合的 todo JSON 对象（一个都没有则 nil）。
     private func tryParsePartialTodos(_ text: String) -> [ExtractedTodo]? {
+        guard let scan = Self.scanClosedTodoObjects(in: text), !scan.todos.isEmpty else { return nil }
+        return scan.todos
+    }
+
+    /// 扫描累积文本里 `"todos": [` 数组中**已闭合**的对象：
+    /// 返回 (解码结果, 最后一个闭合对象之后的剩余片段)。
+    /// 剩余片段供 `tryParseTitlePreview` 在未闭合对象里找已完整的 title 键；
+    /// 一个闭合对象都没有时，剩余片段 = 从 `[` 之后的整个数组内容。
+    /// 未出现 `"todos":` 数组时返回 nil。
+    private static func scanClosedTodoObjects(in text: String) -> (todos: [ExtractedTodo], remainder: Substring)? {
         var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let range = cleaned.range(of: "^```(?:json|JSON)?\\s*\\n", options: .regularExpression) {
             cleaned.removeSubrange(range)
@@ -554,6 +594,7 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
         let arrayContent = cleaned[todosStart.upperBound...]
         var todos: [ExtractedTodo] = []
         var searchStart = arrayContent.startIndex
+        var remainderStart = arrayContent.startIndex
         let decoder = JSONCoding.makeResponseDecoder()
 
         while searchStart < arrayContent.endIndex {
@@ -599,9 +640,30 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
                 }
             }
             searchStart = arrayContent.index(after: end)
+            remainderStart = searchStart
         }
 
-        return todos.isEmpty ? nil : todos
+        return (todos, arrayContent[remainderStart...])
+    }
+
+    /// title 预览：在**未闭合**对象的剩余片段里找已完整的 title 键（schema 第一
+    /// 个键，见 AIProxy src/adapters/base.js 的输出格式），先出一张只有标题的
+    /// 占位卡，比等整条闭合早约 60-80 token（≈0.5-0.8s）。
+    /// 正则只在字符串引号闭合时命中（转义对已处理），半截标题（如 `"开`）不会
+    /// 误报；命中的片段包一层 `{}` 走与闭合对象相同的解码器——空标题/非法片段
+    /// 解码失败或被拒，返回 nil（宁可不预览，不出错卡）。
+    private func tryParseTitlePreview(_ text: String) -> ExtractedTodo? {
+        guard let scan = Self.scanClosedTodoObjects(in: text),
+              let range = scan.remainder.range(of: #""title"\s*:\s*"((?:[^"\\]|\\.)*)""#, options: .regularExpression) else {
+            return nil
+        }
+        // 整段匹配（含 "title": 键与完整值字符串）包进 {} 即一条最小合法对象
+        let fragment = "{\(scan.remainder[range])}"
+        guard let todo = try? JSONCoding.makeResponseDecoder().decode(ExtractedTodo.self, from: Data(fragment.utf8)),
+              !todo.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return todo
     }
 
     /// 流式期间覆盖新 decode 出来的 ExtractedTodo.id,保证同一 index 的 todo 跨帧 id 稳定。
@@ -613,7 +675,12 @@ final class TodoExtractorService: TodoExtractorProtocol, TodoSplitterProtocol, R
     /// 按 index 做 key 安全性证明:
     /// - tryParsePartialTodos 用括号深度匹配,只吐完整的 {...} 对象——对象一旦闭合,
     ///   字符范围固定,decode 出来的内容(title/dueDate 等)即最终态,不会随后续 delta 变化
-    /// - 调用点用 partialTodos.count > lastYieldedCount 守卫,保证条目数单调增长
+    /// - title 预览帧(2026-11-10)是唯一例外:未闭合对象以「只有标题的占位」先占
+    ///   住 index N,闭合帧在同一下标原位替换成最终内容——id 不变、内容更新一次,
+    ///   这正是预览想要的效果(卡片不闪,信息补全)。占位只有标题没有其他字段,
+    ///   不存在「同一 index 两帧字段来回跳」的问题
+    /// - 调用点用 count > lastYieldedCount(闭合帧)与 title 去重(预览帧)守卫,
+    ///   保证跨帧条目数单调不减
     /// - parseResponse(流结束后)基于同一份 accumulatedText,产出顺序与 partial 一致
     /// 故 index N 在所有 partial / final 帧里恒指向同一逻辑 todo,用 stableIDs[N] 复用 id。
     ///

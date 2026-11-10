@@ -406,6 +406,9 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: - Public Methods
 
+    /// 上次连接预热时刻（AppCoordinator 是 @MainActor，访问无并发问题）。
+    private var lastConnectionWarmUpAt: Date?
+
     /// 启动录音流程。
     ///
     /// 返回值：录音是否真正处于活跃状态。调用方（尤其 UI 层）应以此返回值为准，
@@ -429,6 +432,13 @@ final class AppCoordinator: ObservableObject {
         // source 推断：actionButton 路径在 handleActionButtonLaunch 里 isAutoProcessing=true 后才调 startRecording
         let source: RecordingSource = isAutoProcessing ? .actionButton : .button
         VoiceTodoLog.coordinator.info("coordinator.recording.start id=\(flowID, privacy: .public) source=\(source.rawValue, privacy: .public)")
+        // 连接预热(阶段 1 提速):录音起步即并发建连,DNS+TCP+TLS 握手在用户
+        // 说话期间完成,解析请求省掉冷连接往返。不 await——预热绝不能拖慢
+        // 录音启动;30s 内重复录音不重复打。
+        if Date().timeIntervalSince(lastConnectionWarmUpAt ?? .distantPast) > NetworkConfig.connectionWarmUpMinInterval {
+            lastConnectionWarmUpAt = Date()
+            Task { await extractor.warmUpConnection() }
+        }
         do {
             try await voiceInput.startRecording()
             VoiceTodoLog.coordinator.info("coordinator.recording.started id=\(flowID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")

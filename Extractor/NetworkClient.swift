@@ -101,11 +101,13 @@ final class NetworkClient {
 
         // 发送请求
         let (data, response): (Data, URLResponse)
+        // 阶段 0 埋点:DNS/TCP/TLS/TTFB 拆解(只记日志,不改行为)
+        let metricsCollector = Self.makeMetricsCollector(requestID: requestID, extractID: extractID, event: "proxy.request.metrics")
         do {
             // T1(任务书 §5.1):解析请求发出时刻。重试只记第一次(时间点由
             // tracker 的 first-write-wins 保证)。
             VoiceTodoLog.extractTiming?.markRequestSent(ContinuousClock().now)
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: metricsCollector)
         } catch let urlError as URLError {
             VoiceTodoLog.network.error("proxy.request.transport_failed id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) path=\(VoiceTodoLog.requestPath, privacy: .public) stage=\(Self.stageForURLError(urlError), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) urlError=\(String(describing: urlError), privacy: .public) code=\(urlError.code.rawValue)")
             throw mapURLError(urlError)
@@ -183,7 +185,9 @@ final class NetworkClient {
 
                     // T1(任务书 §5.1):流式请求发出时刻(first-write-wins)。
                     VoiceTodoLog.extractTiming?.markRequestSent(ContinuousClock().now)
-                    let (bytes, response) = try await session.bytes(for: request)
+                    // 阶段 0 埋点:DNS/TCP/TLS/TTFB 拆解(只记日志,不改行为)
+                    let metricsCollector = Self.makeMetricsCollector(requestID: requestID, extractID: extractID, event: "proxy.stream.metrics")
+                    let (bytes, response) = try await session.bytes(for: request, delegate: metricsCollector)
 
                     guard let httpResponse = response as? HTTPURLResponse else {
                         VoiceTodoLog.network.error("proxy.stream.invalid_response id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) response=\(String(describing: response), privacy: .public)")
@@ -255,6 +259,40 @@ final class NetworkClient {
                 VoiceTodoLog.network.debug("proxy.stream.terminated id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) reason=\(String(describing: termination), privacy: .public) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
                 task.cancel()
             }
+        }
+    }
+
+    // MARK: - Connection Warm-Up
+
+    /// 连接预热：对代理 origin 发 `HEAD /v1/health`，让 DNS + TCP + TLS 握手
+    /// 在用户说话期间完成（同一 `session` 实例共享连接池，解析请求直接复用）。
+    ///
+    /// 尽力而为：失败只记日志、绝不抛——预热失败不代表解析会失败（离线、
+    /// 代理冷启动慢都是正常场景），不能让它干扰录音流程；解析请求自身有
+    /// 完整的错误分类与熔断，预热失败不进任何失败统计。
+    func warmUpConnection() async {
+        let trimmedEndpoint = proxyEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmedEndpoint) else {
+            VoiceTodoLog.network.debug("proxy.warmup.skipped reason=invalid_endpoint")
+            return
+        }
+        components.path = "/v1/health"
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else {
+            VoiceTodoLog.network.debug("proxy.warmup.skipped reason=invalid_health_url")
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = NetworkConfig.connectionWarmUpTimeout
+        let startedAt = Date()
+        do {
+            let (_, response) = try await session.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            VoiceTodoLog.network.info("proxy.warmup.success status=\(status) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        } catch {
+            VoiceTodoLog.network.debug("proxy.warmup.failed durationMS=\(VoiceTodoLog.durationMS(since: startedAt)) error=\(VoiceTodoLog.errorSummary(error))")
         }
     }
 
@@ -443,5 +481,61 @@ final class NetworkClient {
             return "invalid"
         }
         return "\(url.scheme ?? "unknown")://\(url.host ?? "missing-host")\(url.path)"
+    }
+
+    // MARK: - Task Metrics(阶段 0 埋点)
+
+    /// 造一个 TaskMetrics 采集器:任务收尾时把 DNS/TCP/TLS/TTFB 拆解记进网络日志。
+    /// didFinishCollecting 由 URLSession 在任务收尾后回调(可能晚于流结束),
+    /// 因此日志在回调内直接打,不依赖调用方时序。
+    private static func makeMetricsCollector(requestID: String, extractID: String, event: String) -> ProxyTaskMetricsCollector {
+        ProxyTaskMetricsCollector { metrics in
+            VoiceTodoLog.network.info("\(event, privacy: .public) id=\(requestID, privacy: .public) extractID=\(extractID, privacy: .public) \(Self.summarizeTaskMetrics(metrics), privacy: .public)")
+        }
+    }
+
+    /// 把 TaskMetrics 首个网络事务拆成 DNS/TCP/TLS/TTFB 毫秒数。复用连接时
+    /// DNS/TCP/TLS 均省略(只有 ttfb);阶段缺失或时钟倒挂时对应段不输出。
+    /// 命名与 `stageForURLError` 的 dns/tcp_connect/tls 对齐,便于日志联动排查。
+    private static func summarizeTaskMetrics(_ metrics: URLSessionTaskMetrics) -> String {
+        guard let m = metrics.transactionMetrics.first(where: { $0.resourceFetchType == .networkLoad })
+            ?? metrics.transactionMetrics.first else {
+            return "fetchType=none"
+        }
+        func ms(_ from: Date?, _ to: Date?) -> Int? {
+            guard let from, let to, to >= from else { return nil }
+            return Int(to.timeIntervalSince(from) * 1000)
+        }
+        var parts: [String] = []
+        if let dns = ms(m.domainLookupStartDate, m.domainLookupEndDate) { parts.append("dns=\(dns)ms") }
+        if let connect = ms(m.connectStartDate, m.connectEndDate) { parts.append("connect=\(connect)ms") }
+        if let tls = ms(m.secureConnectionStartDate, m.secureConnectionEndDate) { parts.append("tls=\(tls)ms") }
+        if let ttfb = ms(m.requestStartDate, m.responseStartDate) { parts.append("ttfb=\(ttfb)ms") }
+        // 连接复用判定不用已废弃的 isReusedConnection:复用连接没有
+        // DNS/connect 阶段,networkLoad 且无 connect 即视为复用
+        let reused = m.resourceFetchType == .networkLoad && m.connectStartDate == nil
+        parts.append("protocol=\(m.networkProtocolName ?? "unknown")")
+        parts.append("reused=\(reused ? 1 : 0)")
+        return parts.joined(separator: " ")
+    }
+
+    /// 单次任务的 metrics 采集 delegate。只实现 didFinishCollecting;
+    /// @unchecked Sendable:可变状态(logged)全部经 lock 访问。
+    private final class ProxyTaskMetricsCollector: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        private let log: (URLSessionTaskMetrics) -> Void
+        private let lock = NSLock()
+        private var logged = false
+
+        init(log: @escaping (URLSessionTaskMetrics) -> Void) {
+            self.log = log
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !logged else { return }
+            logged = true
+            log(metrics)
+        }
     }
 }

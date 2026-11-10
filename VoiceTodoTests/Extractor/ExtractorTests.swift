@@ -571,6 +571,77 @@ final class ExtractorTests: XCTestCase {
             XCTFail("错误的错误类型: \(error)")
         }
     }
+
+    // MARK: - 阶段 1: title 预览帧 / 连接预热
+
+    /// 对象未闭合但 title 键(schema 第一个键)已完整时,先出一张只有标题的
+    /// 占位卡;闭合后经同一 stableID 原位替换成完整卡片(id 不变)。
+    func testStreamingYieldsTitlePreviewBeforeFirstObjectCloses() async throws {
+        let head = #"{"todos":[{"title":"开会","detail":"明天下午3点开"#
+        let tail = #"会","due_date":"2026-07-16","due_hint":"明天下午3点","due_time":"15:00","priority":"normal","category_hint":"work"}],"ignored":""}"#
+        let event1 = try JSONSerialization.data(withJSONObject: ["delta": head])
+        let event2 = try JSONSerialization.data(withJSONObject: ["delta": tail])
+        let eventText1 = try XCTUnwrap(String(data: event1, encoding: .utf8))
+        let eventText2 = try XCTUnwrap(String(data: event2, encoding: .utf8))
+        mockNetworkClient.enqueueSuccess(text: "data: \(eventText1)\n\ndata: \(eventText2)\n\ndata: [DONE]\n\n")
+
+        var results: [ExtractionResult] = []
+        for try await result in sut.extractStreaming(from: "明天下午3点开会", locale: Locale(identifier: "zh-Hans")) {
+            results.append(result)
+        }
+
+        // 预览帧 → 闭合帧 → final,至少 3 帧
+        XCTAssertGreaterThanOrEqual(results.count, 3, "对象闭合前应先出 title 预览帧")
+        let preview = results[0].todos
+        XCTAssertEqual(preview.count, 1)
+        XCTAssertEqual(preview[0].title, "开会", "预览帧只带已完整的 title")
+        XCTAssertNil(preview[0].dueTime, "预览帧没有时间字段")
+        // 闭合帧:同一 id 原位替换,内容补全
+        XCTAssertEqual(results[1].todos[0].id, preview[0].id, "预览→闭合必须复用 stableID,否则卡片闪出")
+        XCTAssertEqual(results[1].todos[0].dueTime, "15:00", "闭合帧补全 due_time")
+        XCTAssertEqual(results[1].todos[0].detail, "明天下午3点开会")
+    }
+
+    /// title 已完整、对象仍未闭合的后续 delta 不重复 yield 预览(按 title 去重)。
+    func testStreamingTitlePreviewYieldsOncePerObject() async throws {
+        let d1 = #"{"todos":[{"title":"交房租","det"#
+        let d2 = #"ail":"明天交房租","due"#
+        let tail = #"_date":"2026-07-16","priority":"normal","category_hint":"finance"}],"ignored":""}"#
+        let e1 = try JSONSerialization.data(withJSONObject: ["delta": d1])
+        let e2 = try JSONSerialization.data(withJSONObject: ["delta": d2])
+        let e3 = try JSONSerialization.data(withJSONObject: ["delta": tail])
+        let t1 = try XCTUnwrap(String(data: e1, encoding: .utf8))
+        let t2 = try XCTUnwrap(String(data: e2, encoding: .utf8))
+        let t3 = try XCTUnwrap(String(data: e3, encoding: .utf8))
+        mockNetworkClient.enqueueSuccess(text: "data: \(t1)\n\ndata: \(t2)\n\ndata: \(t3)\n\ndata: [DONE]\n\n")
+
+        var results: [ExtractionResult] = []
+        for try await result in sut.extractStreaming(from: "明天交房租", locale: Locale(identifier: "zh-Hans")) {
+            results.append(result)
+        }
+
+        // 恰好 3 帧:预览 ×1(d2 不重复)+ 闭合 ×1 + final ×1
+        XCTAssertEqual(results.count, 3, "title 不变的后续 delta 不应重复 yield 预览")
+        XCTAssertEqual(results[0].todos[0].title, "交房租")
+        XCTAssertNil(results[0].todos[0].dueDate)
+        XCTAssertEqual(results[1].todos[0].title, "交房租")
+        XCTAssertNotNil(results[1].todos[0].dueDate, "闭合帧补全 due_date")
+    }
+
+    /// 预热请求打代理 origin 的 /v1/health,方法 HEAD;失败(离线)不抛错。
+    func testWarmUpConnectionHitsHealthEndpointAndToleratesFailure() async {
+        mockNetworkClient.enqueueHTTPFailure(statusCode: 503, body: "")
+        await sut.warmUpConnection()
+
+        let warmUpRequest = URLProtocolStub.requests.last
+        XCTAssertEqual(warmUpRequest?.httpMethod, "HEAD")
+        XCTAssertEqual(warmUpRequest?.url?.host, "proxy.test")
+        XCTAssertEqual(warmUpRequest?.url?.path, "/v1/health")
+
+        // 离线(传输失败)也不抛——预热是尽力而为
+        mockNetworkClient.enqueueFailure(URLError(.notConnectedToInternet))
+        await sut.warmUpConnection()
+    }
 }
 
 // MARK: - P3: 熔断 / 退避 / 429

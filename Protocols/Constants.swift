@@ -65,6 +65,12 @@ enum NetworkConfig {
     }()
     /// 是否启用流式响应（Streaming SSE）
     static let streamingEnabled = true
+    /// 连接预热超时（秒）：开始录音时对代理 `HEAD /v1/health` 提前完成
+    /// DNS + TCP + TLS 握手，让真正的解析请求省掉冷连接往返（国内网络 1-3 RTT）。
+    /// 与代理 `AIProxy/worker.js` 的 `/v1/health`（GET/HEAD，无鉴权）对应。
+    static let connectionWarmUpTimeout: TimeInterval = 5.0
+    /// 两次预热的最小间隔（秒）：快速连录/误触重录不重复打探活端点。
+    static let connectionWarmUpMinInterval: TimeInterval = 30.0
     /// 离线 pending 批量处理最大并发数
     static let pendingBatchConcurrency = 3
     /// 免费档每日上限（UI 占位 / 本地估算后备；代理 `X-Quota-*` 头优先于此值）。

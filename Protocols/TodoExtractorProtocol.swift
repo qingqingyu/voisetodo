@@ -13,6 +13,10 @@ protocol TodoExtractorProtocol {
 
     /// 离线降级提取
     func fallbackExtract(from transcript: String) -> ExtractionResult
+
+    /// 连接预热：开始录音时提前与代理建连（TLS 握手），解析请求省掉冷连接往返。
+    /// 尽力而为——失败只记日志不抛（预热失败不代表解析会失败）。
+    func warmUpConnection() async
 }
 
 extension TodoExtractorProtocol {
@@ -44,4 +48,7 @@ extension TodoExtractorProtocol {
         )
         return ExtractionResult(todos: [todo], ignored: "")
     }
+
+    /// 默认连接预热：空实现——mock / UI 测试实现无需感知网络预热。
+    func warmUpConnection() async {}
 }
