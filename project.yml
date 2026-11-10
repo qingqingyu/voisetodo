@@ -208,6 +208,12 @@ targets:
       - path: VoiceTodoTests
         excludes:
           - "**/.DS_Store"
+          # Protocols/ 只属于 SPM 测试目标(Package.swift 的 testTarget path),
+          # 其 `@testable import VoiceTodoProtocols` 在 xcodebuild bundle 里解析不了
+          # (bundle 目标只依赖 app target,没有本地包引用)——编进 bundle 会让
+          # xcodebuild test 永远 build 失败。Review/ 里的双目标文件有
+          # #if canImport(VoiceTodoProtocols) 守卫,不受影响。
+          - "Protocols"
     dependencies:
       - target: VoiceTodo
     settings:
