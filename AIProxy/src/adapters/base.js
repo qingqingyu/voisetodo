@@ -264,6 +264,33 @@ export function stripMarkdownFence(text) {
     .trim();
 }
 
+// 上游 usage 载荷 → extract_requests 三列(prompt/completion/cached tokens)。
+// 阶段 0 埋点(2026-11-10):只解析上游**已经发来**的 usage——不主动加
+// stream_options.include_usage(个别平台不认该参数会 400,埋点必须零请求形状
+// 变化)。OpenAI 兼容形状:{prompt_tokens, completion_tokens,
+// prompt_tokens_details.cached_tokens};Anthropic 形状(input/output/cache_read_
+// input_tokens)也映射进来,便于 air 类条目回归时零改动接入。
+// 字段缺失/非数值返回 null(列里存 NULL),全空返回 null 表示「上游没给」。
+export function normalizeUsage(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const prompt = Number(raw.prompt_tokens ?? raw.input_tokens);
+  const completion = Number(raw.completion_tokens ?? raw.output_tokens);
+  const cached = Number(
+    raw.prompt_tokens_details?.cached_tokens
+    ?? raw.cached_tokens
+    ?? raw.cache_read_input_tokens
+  );
+  const result = {
+    prompt_tokens: Number.isFinite(prompt) ? prompt : null,
+    completion_tokens: Number.isFinite(completion) ? completion : null,
+    cached_tokens: Number.isFinite(cached) ? cached : null
+  };
+  if (result.prompt_tokens === null && result.completion_tokens === null && result.cached_tokens === null) {
+    return null;
+  }
+  return result;
+}
+
 // System prompts below carry numbered few-shot examples each to anchor weekday
 // numbering, the required-ignored rule, and structured recurrence_end
 // classification (the model only classifies the end boundary; the iOS

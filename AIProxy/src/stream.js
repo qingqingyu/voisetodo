@@ -64,6 +64,11 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
               continue;
             }
             const normalized = adapter.parseSSEEvent(line.slice(5).trim());
+            if (normalized.usage) {
+              // 阶段 0 埋点:上游 usage(有则记)。通常只在末块出现,后见覆盖先见;
+              // 经 requestContext 落到 extract_requests 行(createExtractMetrics)。
+              requestContext.usage = normalized.usage;
+            }
             if (normalized.text) {
               emittedCount += 1;
               emittedChars += normalized.text.length;
@@ -78,7 +83,8 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
                 providerId: provider.id,
                 chunkCount,
                 emittedCount,
-                emittedChars
+                emittedChars,
+                ...(requestContext.usage ?? {})
               });
               break;
             }
@@ -128,7 +134,8 @@ export function normalizeProviderStream(body, provider, adapter, requestContext,
           emittedCount,
           emittedChars,
           fullTextChars: fullText.length,
-          durationMs: Date.now() - startedAt
+          durationMs: Date.now() - startedAt,
+          ...(requestContext.usage ?? {})
         });
       }
       } finally {

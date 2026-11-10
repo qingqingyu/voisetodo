@@ -8815,7 +8815,55 @@ function extractMetricRows(db) {
 /// 列序与 INSERT 语句一致(见 src/extractMetrics.js writeExtractRequestRow):
 /// 0 received_at, 1 request_id, 2 extract_id, 3 device_id, 4 plan, 5 stream,
 /// 6 provider_id, 7 model, 8 key_slot, 9 attempts, 10 providers_tried, 11 failover,
-/// 12 upstream_first_byte_ms, 13 total_ms, 14 status, 15 outcome, 16 error_type, 17 todos_count
+/// 12 upstream_first_byte_ms, 13 total_ms, 14 status, 15 outcome, 16 error_type, 17 todos_count,
+/// 18 gate_ms, 19 prompt_tokens, 20 completion_tokens, 21 cached_tokens(2026-11-10 阶段 0 埋点)
+
+test("extract metrics 0: 阶段 0 埋点——gate_ms 落列,流式末块 usage 落三列", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const todosJSON = extractionJSON("买牛奶");
+  const response = await handleRequest(
+    request({ transcript: "买牛奶", stream: true }, { "X-App-Token": "token", "X-Extract-ID": "extract-usage-1" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "openai", OPENAI_API_KEY: "openai-key", OPENAI_MODEL: "test-model", TELEMETRY_DB: db },
+    ctx,
+    async () => sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: todosJSON }, finish_reason: null }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 7700, completion_tokens: 121, prompt_tokens_details: { cached_tokens: 6100 } } })}`,
+      "data: [DONE]"
+    ])
+  );
+  assert.equal(response.status, 200);
+  await response.text();
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1, "一个请求只写一行");
+  const args = rows[0].args;
+  assert.ok(typeof args[18] === "number" && args[18] >= 0, "gate_ms(模型调用前代理侧开销)落列");
+  assert.equal(args[19], 7700, "prompt_tokens 来自末块 usage");
+  assert.equal(args[20], 121, "completion_tokens 来自末块 usage");
+  assert.equal(args[21], 6100, "cached_tokens 来自 prompt_tokens_details.cached_tokens");
+});
+
+test("extract metrics 0b: 上游不带 usage 时三列为 NULL,gate_ms 仍有值", async () => {
+  const db = makeFakeD1();
+  const ctx = makeFakeCtx();
+  const response = await handleRequest(
+    request({ transcript: "买牛奶" }, { "X-App-Token": "token" }),
+    { APP_TOKEN: "token", AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "anthropic-key", TELEMETRY_DB: db },
+    ctx,
+    jsonResponseProvider("买牛奶")
+  );
+  assert.equal(response.status, 200);
+  await ctx.awaitAll();
+
+  const rows = extractMetricRows(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].args[19], null, "上游没给 usage,prompt_tokens = NULL");
+  assert.equal(rows[0].args[20], null, "completion_tokens = NULL");
+  assert.equal(rows[0].args[21], null, "cached_tokens = NULL");
+  assert.ok(typeof rows[0].args[18] === "number" && rows[0].args[18] >= 0, "gate_ms 与 usage 无关,始终记录");
+});
 test("extract metrics 1: 非流式成功写一行,provider/model/key_slot/attempts/outcome/todos_count 全正确", async () => {
   const db = makeFakeD1();
   const ctx = makeFakeCtx();

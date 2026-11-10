@@ -13,7 +13,7 @@ import {
   EXTRACT_ALERT_SUCCESS_MIN_DEFAULT
 } from "./src/extractMetrics.js";
 import { getAdapter } from "./src/adapters/index.js";
-import { stripMarkdownFence } from "./src/adapters/base.js";
+import { stripMarkdownFence, normalizeUsage } from "./src/adapters/base.js";
 import { loadProviders } from "./src/config.js";
 import { ProxyHTTPError } from "./src/errors.js";
 import { HealthStore, configureHealthParams } from "./src/health.js";
@@ -395,6 +395,10 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     requestContext.candidateCount = candidates.length;
 
     const params = { transcript, locale, vocabularyHints, stream, today: todayDate, personalHints, mode };
+    // 阶段 0 埋点(2026-11-10):进入模型调用前的全部代理侧开销(读 body/订阅解析/
+    // 闸门/配额/选择器)。上游往返由 attempts 的 durationMs(upstream_first_byte_ms)
+    // 另计;gate_ms + upstream_first_byte_ms ≈ total_ms 的代理侧分解。
+    requestContext.gateMs = Date.now() - requestContext.startedAt;
     // executeWithFailover 的所有失败出口都是 throw(候选为空 / 非重试类失败 /
     // 全部候选耗尽 / invariant_violation),所以这一层 catch 覆盖了全部
     // "用户一个字都没拿到"的情况 —— 一律退回设备额度后原样上抛。
@@ -1974,8 +1978,16 @@ function createExtractMetrics(env, ctx, requestContext) {
     record(patch) {
       if (written) return;
       written = true;
-      // plan 在写入时刻取值:采集器创建时订阅档位可能还没解析完(quota 拒绝路径)
-      Object.assign(row, patch, { plan: requestContext.subscriptionTier ?? null });
+      // plan 在写入时刻取值:采集器创建时订阅档位可能还没解析完(quota 拒绝路径)。
+      // gate_ms / usage 同理在写入时刻从 requestContext 取:gateMs 在模型调用前
+      // 打点,usage 在流末块或非流式 body 里出现——都晚于采集器创建。
+      Object.assign(row, patch, {
+        plan: requestContext.subscriptionTier ?? null,
+        gate_ms: Number.isFinite(requestContext.gateMs) ? requestContext.gateMs : null,
+        prompt_tokens: requestContext.usage?.prompt_tokens ?? null,
+        completion_tokens: requestContext.usage?.completion_tokens ?? null,
+        cached_tokens: requestContext.usage?.cached_tokens ?? null
+      });
       if (!env.TELEMETRY_DB) return;
       const write = writeExtractRequestRow(env.TELEMETRY_DB, row, requestContext);
       if (typeof ctx?.waitUntil === "function") {
@@ -3075,6 +3087,11 @@ function validateProviderStreamBody(response, provider, requestContext) {
 
 async function readProviderText(response, provider, adapter, requestContext) {
   const data = await readProviderJSON(response, provider, requestContext);
+  // 阶段 0 埋点:非流式 body 里的 usage(有则记,经 requestContext 落 extract_requests)
+  const usage = normalizeUsage(data?.usage);
+  if (usage) {
+    requestContext.usage = usage;
+  }
   const text = adapter.extractText(data);
   if (text === null) {
     logError("proxy.provider.missing_text", {

@@ -73,8 +73,9 @@ export async function writeExtractRequestRow(db, row, requestContext) {
       `INSERT INTO extract_requests
          (received_at, request_id, extract_id, device_id, plan, stream,
           provider_id, model, key_slot, attempts, providers_tried, failover,
-          upstream_first_byte_ms, total_ms, status, outcome, error_type, todos_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          upstream_first_byte_ms, total_ms, status, outcome, error_type, todos_count,
+          gate_ms, prompt_tokens, completion_tokens, cached_tokens)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       row.received_at,
       row.request_id,
@@ -93,7 +94,11 @@ export async function writeExtractRequestRow(db, row, requestContext) {
       row.status ?? null,
       row.outcome ?? null,
       row.error_type ?? null,
-      row.todos_count ?? null
+      row.todos_count ?? null,
+      row.gate_ms ?? null,
+      row.prompt_tokens ?? null,
+      row.completion_tokens ?? null,
+      row.cached_tokens ?? null
     ).run();
   } catch (error) {
     logWarn("proxy.extract_metrics.write_failed", {

@@ -9,7 +9,7 @@
 //   - choices[].delta.content      -> text chunk
 //   - choices[].finish_reason      -> terminal
 
-import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, stripMarkdownFence, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
+import { buildSystemPrompt, buildSplitPrompt, buildReflectPrompt, stripMarkdownFence, normalizeUsage, ProxyHTTPError, classifyHttpRetryable, mergeSignals } from "./base.js";
 
 // OpenAI error bodies that indicate the model in this provider can't serve the request;
 // failover to a different provider (which may have a different model) is worth trying.
@@ -96,7 +96,10 @@ export const openaiAdapter = {
     const choice = event.choices?.[0];
     return {
       done: Boolean(choice?.finish_reason),
-      text: choice?.delta?.content || ""
+      text: choice?.delta?.content || "",
+      // usage 通常随末块(finish_reason 同块)出现;OpenAI 官方流需 include_usage
+      // 才有,OpenRouter 默认附带——有则记,无则 null(阶段 0 埋点,见 base.js)
+      usage: normalizeUsage(event.usage)
     };
   }
 };

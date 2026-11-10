@@ -72,8 +72,21 @@ CREATE TABLE IF NOT EXISTS extract_requests (
     status INTEGER NOT NULL,           -- 返回给 App 的 HTTP 状态码(流式中途失败记 200 + outcome)
     outcome TEXT NOT NULL,             -- success / empty_todos / unparseable_output / upstream_failed / stream_failed / client_disconnected / quota_rejected / no_provider / cache_hit / proxy_error
     error_type TEXT,                   -- 失败时的 errorType(如 status_429 / timeout / quota_exhausted)
-    todos_count INTEGER                -- 解析出几条待办;拿不到就 NULL
+    todos_count INTEGER,               -- 解析出几条待办;拿不到就 NULL
+    gate_ms INTEGER,                   -- 代理侧闸门耗时(收到请求→发起模型调用);提前被拒的请求为 NULL
+    prompt_tokens INTEGER,             -- 上游 usage.prompt_tokens;上游没给 usage = NULL(2026-11-10 阶段 0 埋点)
+    completion_tokens INTEGER,         -- 上游 usage.completion_tokens;同上
+    cached_tokens INTEGER              -- 上游命中缓存的输入 token(prompt_tokens_details.cached_tokens);同上
 );
+
+-- 迁移(2026-11-10 阶段 0 埋点):已部署的库须先执行下面四条再 deploy 新 Worker,
+-- 否则 INSERT 引用不存在的列会整行写入失败(降级为 logWarn,不伤请求,但丢全部
+-- metrics 行直到迁移执行)。D1 的 ALTER ADD COLUMN 即时完成:
+--   npx wrangler d1 execute voicetodo-telemetry --remote --command \
+--     "ALTER TABLE extract_requests ADD COLUMN gate_ms INTEGER;
+--      ALTER TABLE extract_requests ADD COLUMN prompt_tokens INTEGER;
+--      ALTER TABLE extract_requests ADD COLUMN completion_tokens INTEGER;
+--      ALTER TABLE extract_requests ADD COLUMN cached_tokens INTEGER;"
 
 CREATE INDEX IF NOT EXISTS idx_er_received ON extract_requests(received_at);
 CREATE INDEX IF NOT EXISTS idx_er_provider ON extract_requests(provider_id, received_at);
