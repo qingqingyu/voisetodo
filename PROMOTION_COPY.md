@@ -1,6 +1,6 @@
 # VoiceTodo 宣传文案手册(PROMOTION_COPY)
 
-> 配套 `PROMOTION_PLAN.md`(策略与执行)使用。本手册 = **对外文案资产包**,全部英文(英文市场)。
+> 配套 `PROMOTION_PLAN.md`(策略与执行)使用。本手册 = **对外文案资产包**,以英文(英文市场)为主;Promotional Text 另附简体中文版。
 > 定稿: 2026-08-14 · 状态: 草稿 v1.2(2026-10-22 同步 main:语言范围 +日本語(Beta)、截图文案对齐实拍套件 7 张、description 增复盘/显式同意、隐私话术补同意 gate)
 
 ---
@@ -52,12 +52,28 @@
 |------|------|------|--------|
 | App Name | 30 | `VoiceTodo: AI Voice To-Do List` | 30(贴边,勿加字) |
 | Subtitle | 30 | `One ramble. Planned todos.` | 26 |
-| Promotional Text | 170 | 见下 | ~165 |
+| Promotional Text | 170 | 见下(en + zh) | en 164 / zh 71 |
 | Keywords | 100 | 见下 | 97 |
 
-**Promotional Text(≤170):**
+**Promotional Text(≤170;改动不触发重审,可随时轮换):**
 
-> Speak one ramble — "meeting tomorrow 10am, report by Friday, meds nightly at 8" — and get structured todos with dates, reminders and categories. No typing. No menus.
+en(英语(美国),164 字符):
+
+```
+Too much in your head? Say it all at once: "report by Friday, gym Mon/Wed/Fri, rent on the 1st" — 3 todos, each on the right day with its reminder. Nothing to type.
+```
+
+zh(简体中文,71 字):
+
+```
+脑子里事太多？一口气说完：“周五前交报告，每周一三五健身，每月1号交房租”——自动变成 3 条待办，各自落在对的日子，提醒也设好了。不用打字。
+```
+
+写法要点(2026-11-11 定 A 版):
+- 开头用痛点钩子,不重复正上方的 Subtitle(旧版以 "Speak one ramble" 开头,与 Subtitle 撞词)。
+- 例子同时覆盖截止日 / 每周重复 / 每月重复三种解析能力;讲结果(落在对的日子、带提醒),不讲 "structured"。
+- 备选 B(竞品对比 + 降门槛,上线 1-2 周后可轮换做转化对比):`Other apps take one task at a time. Just talk: "dentist Tuesday 3pm, report by Friday, rent on the 1st every month" → 3 todos, dated + reminded. Free to try, no account.`
+- 旧版(v1.2,已替换):`Speak one ramble — "meeting tomorrow 10am, report by Friday, meds nightly at 8" — and get structured todos with dates, reminders and categories. No typing. No menus.`
 
 **Keyword field(97/100,逗号分隔无空格;不重复 Name/Subtitle 已含词):**
 
