@@ -192,12 +192,18 @@ https://qingqingyu.github.io/voicetodo-privacy/
 
 已同步(2026-08-15):
 - `VoiceTodo/Products.storekit`: 月/年 intro offer `P3D` → `P7D`
-- `Resources/Localizable.xcstrings`: `onboarding.pro.bullet.trial.title` / `paywall.card.trial_included` / `paywall.subtitle` 的 en + zh-Hans(无 ja 条目,与「日文不暴露」一致)
+- ~~`Resources/Localizable.xcstrings`: `onboarding.pro.bullet.trial.title` / `paywall.card.trial_included` / `paywall.subtitle`~~(2026-11-11 注:这批 key 已随 paywall v2/v3 改版删除,现行 trial 文案键见下方复核,勿再按旧键名核对)
 - `TERMS_OF_USE.md` §3、Review Notes §1
-- 注: `paywall.cta.start_trial %@` 的天数本来就从 StoreKit 动态取,无需改
+
+2026-11-11 复核(提审前收口,本地五处全 7 天):
+- `Products.storekit`: 两商品 `P7D`×1 且 `paymentMode: "free"`(v5 免费试用必须写 "free",写 "freeTrial" 会静默解码失败、商品列表全空——曾踩过的坑,现存值正确)
+- 现行 trial 文案三键(zh-Hans/en/ja 齐,天数全部 `%@` 插值动态取自 StoreKit,App 侧**不存在硬编码天数**):
+  `paywall.cta.start_trial %@` / `paywall.legal.trial_then_price` / `paywall.subscribed.trial_renews %@ %@`
+- `TERMS_OF_USE.md` §3(7-day)与本文档 Description 草稿(7-day)一致
+- ⚠️ 动态插值的含义:paywall 显示的是 **ASC 真实配置**——ASC 若配 3 天,UI 会如实显示 3 天而 Terms 写 7 天 → 条款失实(3.1.2 风险),提交前必核
 
 仍需人工(ASC 后台,代码管不到):
-- [ ] ASC 两个产品的 Intro Offer 配 **7-day Free Trial**(上线前查一遍,与本地 storekit 配置漂移是拒审常见原因)
+- [ ] ASC 两个产品的 Intro Offer 配 **7-day Free Trial**(上线前查一遍,与本地 storekit 配置漂移是拒审常见原因;若 build 已进审被锁,审核结束第一时间改)
 - [ ] `docs/onboarding-paywall-merge.md` 内的旧「3 天」字样属历史文档快照,不追改
 
 ### 3.4 服务端一致性
@@ -256,6 +262,6 @@ https://qingqingyu.github.io/voicetodo-privacy/
 ## 附: 本文档发现的问题(处理状态)
 
 1. ~~`PrivacyInfo.xcprivacy` 低估声明~~ → **已修正**(2026-08-15,§2.3 plist 已应用,随版本提交)
-2. ~~trial 3 天/7 天冲突~~ → **已拍板 7 天并全局统一**(2026-08-15,§3.3;剩 ASC 后台人工配置一项)
+2. ~~trial 3 天/7 天冲突~~ → **已拍板 7 天并全局统一**(2026-08-15,§3.3;2026-11-11 复核本地五处一致、现行文案键已更正,剩 ASC 后台人工配置一项)
 3. ~~`TELEMETRY.md` 问卷章节与新口径矛盾~~ → **已修正**(2026-08-15,该章节改为指向 §2 答案表)
 4. ~~权限用途说明含糊:mic 是循环表述("record your voice" 没说用来做什么)、speech 写 "voice commands" 与实际(待办转写)不符、`InfoPlist.xcstrings` 三键全缺 ja~~ → **已修正**(2026-10-09,`project.yml` + 再生成 `Info.plist` + `InfoPlist.xcstrings` 改 en/zh-Hans、补 ja;日历 en/zh 本就具体仅补 ja。注意:`Resources/Localizable.xcstrings` 501/776 键缺 ja(2026-10-09 清点,随新增键会增长)是独立的更大缺口,不在本次范围)
