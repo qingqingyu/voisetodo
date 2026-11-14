@@ -465,6 +465,28 @@ final class AppCoordinator: ObservableObject {
         isExtracting = false
     }
 
+    /// scenePhase 进入 `.background` 时的收尾决策。
+    ///
+    /// 锁屏（iOS 26 真机实测 scenePhase 走 inactive → **background**）与划走
+    /// App 都会到这里。**录音进行中不取消**——音频会话 + `UIBackgroundModes:
+    /// audio` 保活进程，「锁屏后继续采集 + Live Activity 实时转写」是审核备注
+    /// 承诺的行为；真正的中断（来电/其它 App 抢占音频）由 AVAudioSession
+    /// 中断通知链路处理（VoiceInputManager 订阅后自行取消）。此前的无条件
+    /// 取消来自早期加固提交 1a88cff，会把锁屏录音当场杀掉（2026-11-14 真机
+    /// 复现：锁屏即断、解锁回落键盘输入）。非录音态维持原有的取消调用形态：
+    /// `cancelRecordingDueToInterruption` 内部 guard 同样以权威值拦截，此路径
+    /// 实际是幂等 no-op（仅 debug 日志），保留调用是为了收尾决策收敛在这一
+    /// 个方法里。读 voiceInput.isRecording（权威值）而非本类的 Combine 绑定
+    /// isRecording——绑定值滞后一个 runloop（见 startRecording 注释），此处
+    /// 不能拿它做生死判定。
+    func handleScenePhaseBackground() {
+        if voiceInput.isRecording {
+            VoiceTodoLog.coordinator.info("coordinator.scene_background.recording_continued transcriptChars=\(self.voiceInput.transcript.count)")
+        } else {
+            cancelRecordingDueToInterruption()
+        }
+    }
+
     /// 用户主动取消当前录音，不将其作为音频中断错误上报给 UI。
     func cancelRecording() {
         let flowID = VoiceTodoLog.makeID("coord-cancel")

@@ -413,7 +413,9 @@ struct VoiceTodoApp: App {
         case .inactive:
             break
         case .background:
-            coordinator.cancelRecordingDueToInterruption()
+            // 录音进行中不取消(锁屏录音+Live Activity 是审核备注承诺行为),
+            // 见 AppCoordinator.handleScenePhaseBackground 文档注释
+            coordinator.handleScenePhaseBackground()
             // 冲掉去抖窗口内 pending 的 widget reload，防止进程挂起吞请求
             WidgetReloadCoalescer.flushPendingReloads()
             // 调度遥测批量上报（系统会在「充电 + 网络」满足时触发）

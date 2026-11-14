@@ -17,6 +17,41 @@ final class AppCoordinatorTests: XCTestCase {
         AppGroupConfig.setAIConsentGranted(false)
     }
 
+    /// 锁屏录音修复(2026-11-14):scenePhase .background 时录音进行中不取消——
+    /// 锁屏(iOS 26 真机实测会走 background)+ 音频会话/UIBackgroundModes 保活
+    /// 是审核备注承诺的行为;真中断交给 AVAudioSession 中断通知链路。
+    func testScenePhaseBackgroundWhileRecordingDoesNotCancel() {
+        let voice = CoordinatorTestVoiceInput()
+        voice.isRecording = true
+        let coordinator = AppCoordinator(
+            voiceInput: voice,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore()
+        )
+
+        coordinator.handleScenePhaseBackground()
+
+        XCTAssertEqual(voice.cancelByInterruptionCallCount, 0, "录音进行中:后台化(锁屏)不得取消")
+        XCTAssertTrue(voice.isRecording, "录音应继续(由音频会话 + 后台模式保活)")
+    }
+
+    /// 非录音态下 .background 维持原有取消调用语义(coordinator 层 guard 拦截
+    /// 为 no-op——替身 cancelDueToInterruption 无 guard、被调即计数,计数为 0
+    /// 证明没走到 voice 层;编排标志复位的扩展点保留在这条路径上)。
+    func testScenePhaseBackgroundWhileIdleKeepsCancelSemantics() {
+        let voice = CoordinatorTestVoiceInput()
+        let coordinator = AppCoordinator(
+            voiceInput: voice,
+            extractor: DelayedExtractor(),
+            store: CoordinatorTestStore()
+        )
+
+        coordinator.handleScenePhaseBackground()
+
+        XCTAssertEqual(voice.cancelByInterruptionCallCount, 0, "非录音态:coordinator 层 guard 拦截,幂等 no-op(未调到 voice 层)")
+        XCTAssertFalse(voice.isRecording)
+    }
+
     func testHandleAppForegroundKeepsPendingOrderWhenExtractionsFinishOutOfOrder() async throws {
         let store = CoordinatorTestStore(todos: [
             pendingTodo(id: UUID(), transcript: "first pending"),

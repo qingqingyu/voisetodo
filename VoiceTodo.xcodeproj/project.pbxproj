@@ -54,6 +54,7 @@
 		316A34012C602DA1D1B9C5F7 /* ReviewStepCommit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E216C999522CD36DCFD3EB8C /* ReviewStepCommit.swift */; };
 		318156535A444DF1E28BF2B6 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 04B32FD694DE06AE8D0EE7A3 /* InfoPlist.xcstrings */; };
 		31CA9EFFB74F85A3C1BB4DEA /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 947C63A1377F2827A65730A8 /* README.md */; };
+		3269E42D2334F190DD785436 /* TelemetryUploaderGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05BDE6ED4762537B6F33B09F /* TelemetryUploaderGuardTests.swift */; };
 		32B910EC56E8BF866097B097 /* AddTodoIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E4E1B928CA49D1A33174EB /* AddTodoIntent.swift */; };
 		344E8EFF4E6C080E0AA15770 /* SystemCalendarWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 071416DF494EE930B122B90D /* SystemCalendarWriter.swift */; };
 		3460C678CD2BB540A3757AA4 /* CrashDiagnosticsSubscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623A41FC68421A3677C015D9 /* CrashDiagnosticsSubscriber.swift */; };
@@ -309,6 +310,7 @@
 		0428E3FEEFD4AE28ABB34009 /* ExtractTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractTiming.swift; sourceTree = "<group>"; };
 		04B32FD694DE06AE8D0EE7A3 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		05466B447CD1A05AA58CB6D0 /* ReviewMicRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewMicRow.swift; sourceTree = "<group>"; };
+		05BDE6ED4762537B6F33B09F /* TelemetryUploaderGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryUploaderGuardTests.swift; sourceTree = "<group>"; };
 		06C0BFDDA5AF9ECC3272D9B9 /* RecurrenceEnd.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceEnd.swift; sourceTree = "<group>"; };
 		071416DF494EE930B122B90D /* SystemCalendarWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarWriter.swift; sourceTree = "<group>"; };
 		0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewRecapSameDayTests.swift; sourceTree = "<group>"; };
@@ -984,6 +986,7 @@
 				9A6C457D156E732EA0BDFA9F /* ActionButtonLaunchSignalTests.swift */,
 				DE5A807BC7FED524BD0E4030 /* ModelContainerStartupPolicyTests.swift */,
 				DF5DE4C3511E13DAD7A2DEAC /* PermissionManagerTests.swift */,
+				05BDE6ED4762537B6F33B09F /* TelemetryUploaderGuardTests.swift */,
 				EF0A1EBC09C2EEC71D8D6946 /* TelemetryUploaderTests.swift */,
 				771C1E40F3824C8A86BF06C2 /* WidgetReloadCoalescerTests.swift */,
 			);
@@ -1378,6 +1381,7 @@
 				A4690AF940DA8DC273FCF293 /* StoreTests.swift in Sources */,
 				88969B486DF1975119DC1283 /* SystemCalendarWriterTests.swift in Sources */,
 				8EF6746C9D6C676656171272 /* TaskEventStoreTests.swift in Sources */,
+				3269E42D2334F190DD785436 /* TelemetryUploaderGuardTests.swift in Sources */,
 				E7040FF2B2956F18F0D0B042 /* TelemetryUploaderTests.swift in Sources */,
 				FA51C592BEC7E694F2E2BDFC /* TodoItemFromBasisFilterTests.swift in Sources */,
 				B1D936E0475C10D73004F39B /* TodoItemReminderTimesTests.swift in Sources */,

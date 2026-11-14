@@ -16,7 +16,11 @@ final class TelemetryUploader {
     )
 
     /// BGProcessingTask identifier，必须在 Info.plist 的 `BGTaskSchedulerPermittedIdentifiers` 中声明。
-    static let backgroundTaskIdentifier = "com.voicetodo.app.telemetry-upload"
+    /// 2026-11-14 修正:旧值 `com.voicetodo.app.telemetry-upload` 与 project.yml 声明的
+    /// `com.qingqingyu.voicetodo.telemetry-upload` 不一致,BGTaskScheduler 每次调度报
+    /// error 3(Unrecognized Identifier),后台上报从未成功——真机日志实锤。
+    /// 一致性由 TelemetryUploaderGuardTests 守卫(改任一侧必须同步另一侧)。
+    static let backgroundTaskIdentifier = "com.qingqingyu.voicetodo.telemetry-upload"
 
     /// 调度下一次 BGTask 的最早间隔（秒）。iOS 不保证准时，这只是下限。
     static let earliestScheduleInterval: TimeInterval = 60 * 60  // 1 小时
