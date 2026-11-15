@@ -19,11 +19,13 @@
 
 > **One ramble. Planned todos.**
 
+> ⚠️ 2026-11-16:Todoist 有同名功能 "Ramble"(语音听写拆任务,见 `website/docs/keyword-gap-2026-11.md` §2),"ramble" 一词待复核是否继续作为主 one-liner;App Store Subtitle 已不用该词(见下表)。
+
 变体(按场景选):
 
 | 场景 | 文案 |
 |------|------|
-| App Store Subtitle | One ramble. Planned todos. |
+| App Store Subtitle | Voice Brain Dump to Planner(2026-11-16 ASC 实填,见 §2.1) |
 | Reddit 帖标题 | …turns one spoken ramble into structured todos |
 | 落地页 H1 | Say it all at once. Get it all planned. |
 | 一句话功能版 | Speak one sentence — get N todos with dates, recurrence and categories. |
@@ -50,10 +52,10 @@
 
 | 字段 | 上限 | 文案 | 字符数 |
 |------|------|------|--------|
-| App Name | 30 | `VoiceTodo: AI Voice To-Do List` | 30(贴边,勿加字) |
-| Subtitle | 30 | `One ramble. Planned todos.` | 26 |
+| App Name | 30 | `VoiceTodo: AI To-Do List`(ASC 实填) | 24 |
+| Subtitle | 30 | `Voice Brain Dump to Planner`(ASC 实填) | 27 |
 | Promotional Text | 170 | 见下(en + zh) | en 164 / zh 71 |
-| Keywords | 100 | 见下 | 97 |
+| Keywords | 100 | 见下 | 95 |
 
 **Promotional Text(≤170;改动不触发重审,可随时轮换):**
 
@@ -75,11 +77,19 @@ zh(简体中文,71 字):
 - 备选 B(竞品对比 + 降门槛,上线 1-2 周后可轮换做转化对比):`Other apps take one task at a time. Just talk: "dentist Tuesday 3pm, report by Friday, rent on the 1st every month" → 3 todos, dated + reminded. Free to try, no account.`
 - 旧版(v1.2,已替换):`Speak one ramble — "meeting tomorrow 10am, report by Friday, meds nightly at 8" — and get structured todos with dates, reminders and categories. No typing. No menus.`
 
-**Keyword field(97/100,逗号分隔无空格;不重复 Name/Subtitle 已含词):**
+**Name / Subtitle / Keywords 定稿说明(2026-11-16):**
+
+- **Subtitle `Voice Brain Dump to Planner`**:讲清核心价值「一口气说一大堆 → 全部安排好」;Name 里没有单独的 "voice",Subtitle 搜索权重仅次于 Name,借它补上 voice / brain dump / planner 三个高价值词。不用 "ramble"(与 Todoist Ramble 撞名)。
+- 替换掉的旧值:Subtitle `Say it. See it on Lock Screen`(11-07 ASC 实填,讲锁屏、非核心差异化)、`One ramble. Planned todos.`(文档草案,未上线);Name 草案 `VoiceTodo: AI Voice To-Do List` 未采用,ASC 实填为 `VoiceTodo: AI To-Do List`。
+
+**Keyword field(95/100,逗号分隔无空格;不重复 Name/Subtitle 已含词):**
 
 ```
-reminder,task,list,speech,dictation,gtd,planner,calendar,recurring,organizer,assistant,widget,siri
+reminder,task,lock screen,widget,checklist,dictation,organizer,schedule,calendar,recurring,adhd
 ```
+
+- 去掉 Name/Subtitle 已含的 voice、planner、brain dump、list;Subtitle 不再提锁屏,故 `lock screen` 补进关键词。
+- 不放 `siri`(Apple 商标,有 2.3.7 拒审风险)。
 
 ### 2.2 Description(前 3 行是 hook,之后才铺开)
 
