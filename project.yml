@@ -70,6 +70,8 @@ targets:
       - path: VoiceTodo/PrivacyInfo.xcprivacy
       - path: VoiceTodo/Products.storekit
       - path: Resources/Localizable.xcstrings
+      # Siri 短语的中/日本地化(文件名必须是 AppShortcuts)
+      - path: Resources/AppShortcuts.xcstrings
     configFiles:
       Debug: Config/Secrets.xcconfig
       Release: Config/Secrets.xcconfig
@@ -101,6 +103,11 @@ targets:
           - CFBundleURLName: com.voicetodo
             CFBundleURLSchemes:
               - voicetodo
+        # Siri 用的 App 名别名:中文 Siri 很难听准「VoiceTodo」,
+        # 别名可替代 App Shortcuts 短语里的 applicationName(如「用语音待办录音」)。
+        INAlternativeAppNames:
+          - INAlternativeAppName: 语音待办
+          - INAlternativeAppName: Voice To Do
         ITSAppUsesNonExemptEncryption: false
         UIUserInterfaceStyle: Light
         # 仅竖屏由 UISupportedInterfaceOrientations 白名单控制即可

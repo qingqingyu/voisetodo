@@ -1,0 +1,166 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Start recording in ${applicationName}": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringSet": {
+            "state": "new",
+            "values": [
+              "Start recording in ${applicationName}",
+              "Record with ${applicationName}"
+            ]
+          }
+        },
+        "ja": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "${applicationName}で録音",
+              "${applicationName}で録音を開始"
+            ]
+          }
+        },
+        "zh-Hans": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "用 ${applicationName} 录音",
+              "打开 ${applicationName} 录音"
+            ]
+          }
+        }
+      }
+    },
+    "Add todo in ${applicationName}": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringSet": {
+            "state": "new",
+            "values": [
+              "Add todo in ${applicationName}",
+              "Record in ${applicationName}"
+            ]
+          }
+        },
+        "ja": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "${applicationName}でタスクを追加",
+              "${applicationName}に記録"
+            ]
+          }
+        },
+        "zh-Hans": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "用 ${applicationName} 记录",
+              "在 ${applicationName} 添加待办"
+            ]
+          }
+        }
+      }
+    },
+    "Complete ${todo} in ${applicationName}": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringSet": {
+            "state": "new",
+            "values": [
+              "Complete ${todo} in ${applicationName}",
+              "Mark ${todo} as done in ${applicationName}"
+            ]
+          }
+        },
+        "ja": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "${applicationName}で${todo}を完了",
+              "${applicationName}で${todo}を完了にする"
+            ]
+          }
+        },
+        "zh-Hans": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "在 ${applicationName} 完成 ${todo}",
+              "用 ${applicationName} 标记 ${todo} 已完成"
+            ]
+          }
+        }
+      }
+    },
+    "Delete ${todo} in ${applicationName}": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringSet": {
+            "state": "new",
+            "values": [
+              "Delete ${todo} in ${applicationName}",
+              "Remove ${todo} from ${applicationName}"
+            ]
+          }
+        },
+        "ja": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "${applicationName}で${todo}を削除",
+              "${applicationName}から${todo}を削除"
+            ]
+          }
+        },
+        "zh-Hans": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "在 ${applicationName} 删除 ${todo}",
+              "用 ${applicationName} 移除 ${todo}"
+            ]
+          }
+        }
+      }
+    },
+    "Show ${applicationName} todos": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringSet": {
+            "state": "new",
+            "values": [
+              "Show ${applicationName} todos",
+              "What's on my ${applicationName} list"
+            ]
+          }
+        },
+        "ja": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "${applicationName}のタスクを表示",
+              "${applicationName}のタスク一覧"
+            ]
+          }
+        },
+        "zh-Hans": {
+          "stringSet": {
+            "state": "translated",
+            "values": [
+              "在 ${applicationName} 查询待办",
+              "${applicationName} 我的待办"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

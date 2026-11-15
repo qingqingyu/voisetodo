@@ -35,6 +35,17 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>5</string>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>语音待办</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Voice To Do</string>
+		</dict>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCalendarsUsageDescription</key>

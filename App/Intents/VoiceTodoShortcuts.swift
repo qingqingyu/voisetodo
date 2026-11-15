@@ -2,6 +2,12 @@ import AppIntents
 
 /// 注册 Siri 快捷指令短语。
 ///
+/// 本地化:代码里只写开发语言(en)的短语;中文 / 日文短语在
+/// `Resources/AppShortcuts.xcstrings`。中文短语若直接写在这里,会被系统当成英文
+/// 环境的短语,中文 Siri 一条也匹配不到(表现为「不认识这个 App」)。
+/// 改短语时两边同步:xcstrings 的 key 是每个 AppShortcut 的**第一条**英文短语。
+/// App 名的中文别名见 Info.plist 的 `INAlternativeAppNames`。
+///
 /// 每个 AppShortcut 的 phrases 规则:
 /// - `\(.applicationName)` → 系统 placeholder,自动替换为 App 显示名
 /// - `\(\.$paramName)` → 必须**仅用于 AppEntity / AppEnum 参数**(Apple 平台限制)
@@ -15,8 +21,6 @@ struct VoiceTodoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: StartRecordingIntent(),
             phrases: [
-                "用 \(.applicationName) 录音",
-                "打开 \(.applicationName) 录音",
                 "Start recording in \(.applicationName)",
                 "Record with \(.applicationName)"
             ],
@@ -31,10 +35,8 @@ struct VoiceTodoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: AddTodoIntent(),
             phrases: [
-                "用 \(.applicationName) 记录",
-                "在 \(.applicationName) 添加待办",
-                "Record in \(.applicationName)",
-                "Add todo in \(.applicationName)"
+                "Add todo in \(.applicationName)",
+                "Record in \(.applicationName)"
             ],
             shortTitle: "siri.shortcut.title",
             systemImageName: "checklist"
@@ -44,10 +46,8 @@ struct VoiceTodoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: CompleteTodoIntent(),
             phrases: [
-                "在 \(.applicationName) 完成 \(\.$todo)",
-                "用 \(.applicationName) 标记 \(\.$todo) 已完成",
-                "Mark \(\.$todo) as done in \(.applicationName)",
-                "Complete \(\.$todo) in \(.applicationName)"
+                "Complete \(\.$todo) in \(.applicationName)",
+                "Mark \(\.$todo) as done in \(.applicationName)"
             ],
             shortTitle: "siri.shortcut.complete.title",
             systemImageName: "checkmark.circle"
@@ -57,8 +57,6 @@ struct VoiceTodoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: DeleteTodoIntent(),
             phrases: [
-                "在 \(.applicationName) 删除 \(\.$todo)",
-                "用 \(.applicationName) 移除 \(\.$todo)",
                 "Delete \(\.$todo) in \(.applicationName)",
                 "Remove \(\.$todo) from \(.applicationName)"
             ],
@@ -70,10 +68,8 @@ struct VoiceTodoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: QueryTodosIntent(),
             phrases: [
-                "在 \(.applicationName) 查询待办",
-                "\(.applicationName) 我的待办",
-                "What's on my \(.applicationName) list",
-                "Show \(.applicationName) todos"
+                "Show \(.applicationName) todos",
+                "What's on my \(.applicationName) list"
             ],
             shortTitle: "siri.shortcut.query.title",
             systemImageName: "list.bullet"

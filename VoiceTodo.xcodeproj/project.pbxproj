@@ -263,6 +263,7 @@
 		FE0B546BA687A26A60D8C8B6 /* PaywallExpiryDaysTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE73F1C9F4DD74C26F731A14 /* PaywallExpiryDaysTests.swift */; };
 		FE7EEEA993FA5EC3D03D3021 /* RecurrenceRuleResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A256A46D624FE82D6C3ED3CB /* RecurrenceRuleResolver.swift */; };
 		FEC91CBF1AC0343EC8202D35 /* ReviewEntryDismissStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15CDFA73C98754992F84593C /* ReviewEntryDismissStore.swift */; };
+		5A1C0DE5A99511D0C0FFEE01 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE5A99511D0C0FFEE02 /* AppShortcuts.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -530,6 +531,7 @@
 		FE4F86105DF065B995955FC1 /* UITestModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestModels.swift; sourceTree = "<group>"; };
 		FFD01917A51018EA70BAD21A /* CompleteTodoIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompleteTodoIntent.swift; sourceTree = "<group>"; };
 		FFD5AB4ECF373324D3DCC815 /* TodoWidgetSizes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetSizes.swift; sourceTree = "<group>"; };
+		5A1C0DE5A99511D0C0FFEE02 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -586,6 +588,7 @@
 		419C26593FF53FA725241A85 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				5A1C0DE5A99511D0C0FFEE02 /* AppShortcuts.xcstrings */,
 				CF1AB2F17B6B14B38B56D594 /* Localizable.xcstrings */,
 			);
 			path = Resources;
@@ -1162,6 +1165,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A1C0DE5A99511D0C0FFEE01 /* AppShortcuts.xcstrings in Resources */,
 				CB5F04ADFD4169F2568421A8 /* Assets.xcassets in Resources */,
 				52BEC6B149B928AB3B0A6027 /* IMPLEMENTATION_SUMMARY.md in Resources */,
 				97D47C2167DE89212E79F62D /* InfoPlist.xcstrings in Resources */,
