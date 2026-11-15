@@ -86,7 +86,7 @@ App Store Connect → 我的 App → ➕ 新建 App：
 | 推广文本（170） | 可随时改不触发重审 |
 | 新功能（1.0） | "首个版本" 一句话 |
 | 版权 | `2026 qingqingyu` |
-| **技术支持 URL** | **必填**。建议填 `https://voicetodo-app.pages.dev/support`（2026-11-07 核实 200）；备选 `https://github.com/qingqingyu` |
+| **技术支持 URL** | **必填**。填 `https://voicetodoapp.com/support`（2026-11-16 起换自有域名；营销 URL 同步填 `https://voicetodoapp.com`。这两个是版本级字段，提交后要等下个版本才能改，务必在提交 1.0 前换好）。旧址 `https://voicetodo-app.pages.dev/support` 仍可访问；备选 `https://github.com/qingqingyu` |
 | 营销 URL | 可留空 |
 
 ### 3.3 审核信息（App Review）
