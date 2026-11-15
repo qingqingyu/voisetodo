@@ -4,8 +4,9 @@ export const siteConfig = {
   // {{APP_NAME}} —— 产品名未定(VoiceTodo / Unpile 二选一),定稿后改这里。
   appName: 'VoiceTodo',
 
-  // {{DOMAIN}} —— 域名未买,先用 Cloudflare Pages 免费子域;日后买域名改这里重新构建即可。
-  domain: 'voicetodo-app.pages.dev',
+  // {{DOMAIN}} —— 2026-11-16 起用自有域名(Cloudflare Registrar 购入,绑定 Pages 项目 voicetodo-app)。
+  // 旧的 voicetodo-app.pages.dev 仍可访问,但全站 canonical 指向本域名,搜索引擎只收录这里。
+  domain: 'voicetodoapp.com',
 
   // {{APP_STORE_ID}} —— ASC App 记录数字 ID(2026-11-07 从 App 信息页确认)。
   appStoreId: '6806787856',
