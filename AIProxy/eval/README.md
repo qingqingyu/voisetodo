@@ -138,12 +138,15 @@ ja golden 已与 en/zh 口径逐条对齐审校(重复组 due null、fuzzy 周�
 转正时(2026-10-17)用 `--replay` 对 09-22 两轮留档重评验证闸门:glm-4.5-air ja 17/18(仅错 `ja-014`,已列 §4.1 白名单)、sonnet 基线 ja 16/16 全对——说明 prompt 能力上限足够,air 的 ja 掉档仅集中在「今度」歧义一条。`ja-015`(敬体)、标题语言保持(soft 的 title 列)继续观察。
 ⚠️ 2026-10-17 审查修复:三语 prompt 示例 7 的「下周三」输出原为周一始算法的 2026-07-15,已改为周日始口径的 2026-07-22——属 few-shot 变更,按 §7 规则 09-22 留档与新 prompt 结果不可比,周二实跑需按新 prompt 重跑全模型。
 
+**2026-11-17 增 ja 本土表达第一批(ja-021 ~ ja-040,ja 共 40 条)**:明後日/あさって/しあさって/明々後日、再来週、来週末、来月頭、朝イチ/午前中/昼過ぎ/夕方/定時後、25時、年度末、年内、和暦、そのうち/近いうちに、なるはや,及一条多 TODO 组合。这批**尚未实跑**:prompt 对 25時、年度末、和暦、そのうち、なるはや 没有显式规则,首轮预计有失败。首轮结果出来前,这 20 条单独判读、暂不计入 §4.1 过关线分母(否则会改写已有的换模型结论);跑完后逐条决定修 prompt 还是修 golden,再并入 gate。口径约定:そのうち 同 今度/近いうちに(due null + user_explicit);なるはや = 优先级 high、不推断日期(due null + basis null);定時後 归 evening;25時 = 次日 01:00。
+未收录(需先拍板口径或扩 runner):今週中(周五/周六/不定日)、週明け 与 3営業日以内(依赖节假日表,prompt 未注入)、上旬/中旬/下旬、月初/月半ば(当月 1/15 日常已过去)、寝る前(今晚还是每天)。
+
 ja 过关 ≠ 日文市场开放(还差母语审,见 PROMOTION_PLAN 附则 3);ja 不过关也不影响英文市场上线。
 
 ## 7. 维护
 
 - **改 golden**:`--replay` 重评旧 results,确认分数变化符合预期再跑新模型
-- **加 case**:日期一律按 `meta.anchor_today`(2026-01-07 周三)口径写绝对日期,runner 会动态平移;**月底 case 必须打 `end-of-month` tag**(runner 对这类 case 重算为锚当月最后一天,均匀平移会算错;⚠️ 「月中」目前不支持——tag 只映射月底,加月中 case 需先扩展 runner);case 级 `today` 覆盖**不支持**(runner 会显式报错——其 golden 的星期语境未知);ja case 与 en/zh 同 gate,golden 口径对齐 en/zh(见 §6),不再加 provisional 标记
+- **加 case**:日期一律按 `meta.anchor_today`(2026-01-07 周三)口径写绝对日期,runner 会动态平移;**不能均匀平移的日期必须打日期规则 tag**(runner `DATE_RULE_TAGS`,一条 case 最多一个,作用于该 case 全部 due_date):`end-of-month`(锚当月最后一天)/ `next-month-start`(锚下月 1 日)/ `year-end`(锚当年 12/31)/ `jp-fiscal-year-end`(日本年度末 3/31:锚在 1–3 月取当年,否则次年)/ `absolute-date`(和暦或完整年月日,不平移)。⚠️ 「月中」「月初(当月 1 日)」、上中下旬、节假日/営業日相关仍不支持,加这类 case 需先在 `DATE_RULE_TAGS` 加规则;case 级 `today` 覆盖**不支持**(runner 会显式报错——其 golden 的星期语境未知);ja case 与 en/zh 同 gate,golden 口径对齐 en/zh(见 §6),不再加 provisional 标记
 - **prompt 变更后**:全模型重跑基线(few-shot 一变,旧结果不可比)
 - `results/` 已 gitignore(`eval/.gitignore`),不要提交原始响应;`wrangler.eval.toml` 已 gitignore(`AIProxy/.gitignore`)
 

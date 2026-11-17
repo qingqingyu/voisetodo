@@ -22,7 +22,8 @@
 //   (超限回退 server UTC,prompt 参考日期跟着回退),固定写 dataset 里的
 //   2026-01-07 会被拒。因此每次 run 在 UTC 今天 ±1 天内选一个周三作锚
 //   (与 golden 的 authoring 锚同星期,相对日期语义完全同构),再把 golden
-//   日期按锚偏移平移;月底 case 按 end-of-month tag 重算为锚当月最后一天。
+//   日期按锚偏移平移;月底/下月初/年内/年度末/绝对日期 case 按 DATE_RULE_TAGS
+//   对新锚重算(见 shiftGoldenDates)。
 //   锚会回读响应头 X-Quota-Reset-Date 校验,被 worker 拒绝(≠锚)立即中止。
 // - 5xx/超时/429/JSON 解析失败 → infra_error,收尾重试一次,不计入准确率
 // - 原始响应先落盘(含本次锚),评分独立可重放(--replay 复用当时的锚)
@@ -155,24 +156,51 @@ function shiftGoldenDates(dataset, anchor) {
       throw new Error(`case ${c.id} 带 today 覆盖:动态锚平移不支持(其 golden 星期语境未知),见 README 维护节`);
     }
   }
+  // 日期规则 tag 在 delta=0 时也要校验(一条 case 最多一个),避免多 tag 互相覆盖无感知
+  const ruleOf = (c) => {
+    const rules = (Array.isArray(c.tags) ? c.tags : []).filter((t) => t in DATE_RULE_TAGS);
+    if (rules.length > 1) throw new Error(`case ${c.id} 同时带多个日期规则 tag: ${rules.join(", ")}`);
+    return rules[0] ?? null;
+  };
+  for (const c of dataset.cases) ruleOf(c);
   if (deltaDays === 0) return dataset;
   const shifted = structuredClone(dataset);
   for (const c of shifted.cases) {
-    const isMonthEnd = Array.isArray(c.tags) && c.tags.includes("end-of-month");
+    const rule = ruleOf(c);
     for (const t of c.golden.todos) {
       if (t.due_date == null) continue;
-      t.due_date = isMonthEnd
-        ? lastDayOfMonthISO(anchorMs)
+      t.due_date = rule
+        ? DATE_RULE_TAGS[rule](anchorMs, t.due_date)
         : toISODate(parseISODate(t.due_date, `${c.id} due_date`) + deltaDays * DAY_MS);
     }
   }
   return shifted;
 }
 
-function lastDayOfMonthISO(anchorMs) {
-  const d = new Date(anchorMs);
-  return toISODate(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
-}
+/// 不能均匀平移的日期类 case:按 tag 对新锚重算(作用于该 case 全部 non-null due_date)。
+/// 新增类型在这里加一行,并在 README §7 登记。
+const DATE_RULE_TAGS = {
+  // 月底 → 锚当月最后一天(均匀平移会把 1/31 挪到月中)
+  "end-of-month": (anchorMs) => {
+    const d = new Date(anchorMs);
+    return toISODate(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+  },
+  // 来月頭/下月初 → 锚下月 1 日(与 prompt 注入的 nextStart 一致,12 月跨年)
+  "next-month-start": (anchorMs) => {
+    const d = new Date(anchorMs);
+    return toISODate(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  },
+  // 年内 → 锚当年 12/31
+  "year-end": (anchorMs) => `${new Date(anchorMs).getUTCFullYear()}-12-31`,
+  // 年度末(日本会计年度 4 月始)→ 锚在 1–3 月取当年 3/31,4–12 月取次年 3/31
+  "jp-fiscal-year-end": (anchorMs) => {
+    const d = new Date(anchorMs);
+    const y = d.getUTCMonth() < 3 ? d.getUTCFullYear() : d.getUTCFullYear() + 1;
+    return `${y}-03-31`;
+  },
+  // 绝对日期(和暦/完整年月日)→ 不随锚平移
+  "absolute-date": (_anchorMs, original) => original
+};
 
 // ---------- 归一化(评分口径) ----------
 
