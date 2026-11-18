@@ -45,8 +45,11 @@ for (const file of htmlFiles) {
     url,
     html,
     is404: rel === '404',
-    // 草稿判定只针对指南详情页(列表页也渲染 draft-badge 徽章,但本身不是草稿)
-    isGuideDraft: url.startsWith('/guides/') && url !== '/guides' && html.includes('draft-badge'),
+    // 草稿判定只针对指南详情页(列表页也渲染 draft-badge 徽章,但本身不是草稿)。
+    // ⚠️ 必须匹配徽章元素而非裸类名:global.css 的 .draft-badge 规则被内联进
+    // 每个页面,includes('draft-badge') 会让所有非草稿指南被误判成草稿
+    // (第一篇翻 false 的指南暴露了这个问题)。
+    isGuideDraft: url.startsWith('/guides/') && url !== '/guides' && html.includes('class="draft-badge"'),
     title: html.match(/<title>([^<]*)<\/title>/)?.[1] ?? '',
     description: html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? '',
     ogTitle: html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] ?? '',

@@ -851,6 +851,56 @@ tr:last-child td {
   color: var(--ink-soft);
 }
 
+/* 工具页表单(零 JS:原生 form POST → Pages Function 服务端渲染结果页) */
+.tool-form {
+  display: grid;
+  gap: 10px;
+  max-width: 640px;
+}
+
+.tool-form label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.tool-form textarea,
+.tool-form select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.tool-form textarea:focus-visible,
+.tool-form select:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tool-form button {
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 28px;
+  justify-self: start;
+  cursor: pointer;
+}
+
+.tool-form button:hover {
+  filter: brightness(1.06);
+}
+
+.tool-form .hint {
+  color: var(--ink-faint);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

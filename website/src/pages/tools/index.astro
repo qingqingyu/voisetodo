@@ -1,0 +1,54 @@
+---
+// 工具索引页(/tools):两个免费浏览器工具的入口。零 JS,纯静态。
+import Base from '../../layouts/Base.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { pages } from '../../data/pages.mjs';
+import { breadcrumbSchema } from '../../data/schema.mjs';
+
+const meta = pages['/tools'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Tools', path: '/tools' },
+  ]),
+];
+---
+
+<Base path="/tools" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Free to-do tools, right in your browser</h1>
+      <p class="lede">
+        Two small tools that show exactly how VoiceTodo reads what you say. No account, nothing to install —
+        and nothing is saved.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="list-h">
+    <div class="container">
+      <h2 id="list-h">The tools</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3><a href="/tools/add-multiple-reminders-at-once">Split one sentence into reminders</a></h3>
+          <p>
+            Paste a sentence with several tasks and see it split into separate, dated reminders — the same
+            parse the app runs on every capture.
+          </p>
+        </div>
+        <div class="card">
+          <h3><a href="/tools/recurring-reminder-checker">Recurring reminder checker</a></h3>
+          <p>
+            Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates plus
+            the next five dates.
+          </p>
+        </div>
+      </div>
+      <p style="color:var(--ink-faint);font-size:0.92rem">
+        Both tools are read-only: they show you what a phrase means, and never create reminders on their own.
+      </p>
+    </div>
+  </section>
+
+  <CtaBand ct="web-tools-index" />
+</Base>

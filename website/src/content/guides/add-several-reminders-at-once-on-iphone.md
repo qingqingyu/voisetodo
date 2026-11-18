@@ -2,8 +2,8 @@
 title: How to Add Several Reminders at Once on iPhone
 description: Siri is built for one reminder per request, so long lists get merged or split oddly. Why it happens, the built-in workarounds, and a faster way.
 pubDate: 2026-11-15
-updatedDate: 2026-11-15
-draft: true
+updatedDate: 2026-11-18
+draft: false
 ---
 
 You're walking out the door and three things land in your head at once: call the dentist tomorrow, send the report by Friday, pay rent on the 1st. You say all of it to Siri in one breath — and get back **one reminder with the whole sentence as its title**, or a handful of odd fragments, or only the last thing you said.
@@ -73,6 +73,8 @@ It handles the shapes the built-in tools struggle with: weekly repeats on specif
 
 You can also do it through Siri: say **"Add todo in VoiceTodo"**, then speak your list. VoiceTodo splits it the same way and shows you what it added. Nothing is sent to its AI service until you've agreed in the app: if you haven't yet, VoiceTodo keeps what you said and organizes it after you open the app and give consent.
 
+Want to see the split before installing anything? [Try the sentence splitter](/tools/add-multiple-reminders-at-once) in your browser — paste any sentence and watch it turn into a dated list. It's the same parse the app runs, and the page never creates reminders.
+
 VoiceTodo is free to start with 3 voice captures a day, and it needs an iPhone with iOS 26 or later.
 
 ## Tips for dictating several tasks at once
@@ -99,6 +101,8 @@ If most of your tasks are single errands, Reminders and Siri are hard to beat. I
 
 ## Related
 
+- [Try the sentence splitter](/tools/add-multiple-reminders-at-once) — the free browser tool that shows this split live
+- [How to set recurring reminders by voice](/guides/how-to-set-recurring-reminders-by-voice-on-iphone) — repeats on specific days, said in the same breath
 - [The fastest way to capture tasks on iPhone](/guides/fastest-way-to-capture-tasks-on-iphone) — Action Button, Siri and typing, compared
 - [How to stop forgetting things you need to do](/guides/stop-forgetting-things-you-need-to-do) — why effortless capture matters
 - [Voice to-do list for iPhone](/voice-to-do-list) — how VoiceTodo turns speech into dated to-dos

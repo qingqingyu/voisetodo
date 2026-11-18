@@ -1,0 +1,79 @@
+---
+// 工具页①:一句话拆多条提醒(关键词空白调研 🟢 siri add multiple reminders at once)。
+// 零客户端 JS:原生 form POST → /api/split(Pages Function)→ 代理 web 档 → 服务端渲染结果。
+// 配套指南:/guides/add-several-reminders-at-once-on-iphone(内链互相指向)。
+import Base from '../../layouts/Base.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { pages } from '../../data/pages.mjs';
+import { breadcrumbSchema } from '../../data/schema.mjs';
+import { TIMEZONES } from '../../../functions/lib/timezones.mjs';
+
+const meta = pages['/tools/add-multiple-reminders-at-once'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Tools', path: '/tools' },
+    { name: 'Add multiple reminders at once', path: '/tools/add-multiple-reminders-at-once' },
+  ]),
+];
+---
+
+<Base path="/tools/add-multiple-reminders-at-once" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>Split one sentence into dated reminders</h1>
+      <p class="lede">
+        Say everything on your mind in one line. This page splits it into separate tasks and works out each
+        date, time and repeat — the same parse VoiceTodo runs on every capture.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="try-h">
+    <div class="container">
+      <h2 id="try-h">Try it</h2>
+      <form class="tool-form" method="post" action="/api/split">
+        <label for="text">Your sentence</label>
+        <textarea
+          id="text"
+          name="text"
+          rows="4"
+          maxlength="1000"
+          required
+          placeholder="call the dentist tomorrow at 9, send the report by Friday, pay rent on the 1st every month"></textarea>
+        <label for="tz">Timezone (used to compute dates like “tomorrow”)</label>
+        <select id="tz" name="tz">
+          {TIMEZONES.map((tz) => <option value={tz} selected={tz === 'UTC'}>{tz}</option>)}
+        </select>
+        <button type="submit">Split it</button>
+        <p class="hint">
+          Three tries a day from this page. The sentence goes to VoiceTodo's AI parser to be split; nothing is
+          saved, and this page never creates reminders.
+        </p>
+      </form>
+    </div>
+  </section>
+
+  <section aria-labelledby="how-h">
+    <div class="container grid-2">
+      <div>
+        <h2 id="how-h">What the page does — and doesn't</h2>
+        <p>
+          It splits your sentence and shows each task with its date. Copy the list, or take it to the app.
+          What lives only in the app: actual reminders, repeats that fire, the Lock Screen widget, and capture
+          through Siri or the Action Button.
+        </p>
+      </div>
+      <div>
+        <h3>Why Siri merges your lists</h3>
+        <p>
+          Siri and Apple's Reminders are built around one request → one reminder. Pack three tasks with three
+          dates into one sentence and something has to give. The full story — and the built-in workarounds —
+          is in <a href="/guides/add-several-reminders-at-once-on-iphone">the guide</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand ct="web-tool-split-page" />
+</Base>

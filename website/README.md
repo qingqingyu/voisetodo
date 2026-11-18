@@ -1,6 +1,7 @@
 # VoiceTodo Website
 
-英文产品官网,纯静态、零客户端 JS(Astro 输出纯 HTML;交互仅 `<details>` 等 HTML 原生能力)。
+英文产品官网,纯静态、零客户端 JS(Astro 输出纯 HTML;交互仅 `<details>` 等 HTML 原生能力,
+外加工具页的原生 form POST → Pages Function 服务端渲染,见下)。
 技术任务书:`docs/task-seo-website.md`;页面内容规格:`docs/task-seo-website-pages.md`。
 
 ## 本地开发
@@ -12,7 +13,33 @@ npm run dev        # 开发服务器
 npm run build      # astro build + OG 图生成 + 验收检查(检查不过=构建失败)
 npm run preview    # 本地预览 dist(gzip + Cache-Control,口径对齐 Cloudflare Pages)
 npm run lighthouse # 移动端 Lighthouse(首页/功能页断言阈值,指南页仅报告,见下)
+npm run test:functions  # functions/lib 的单测(重复规则解析器移植等)
 ```
+
+## 工具页(零 JS 交互)
+
+`/tools` 下两个工具页(计划与部署清单:`docs/tools-plan-2026-11.md`)用**原生
+form POST → Pages Function 服务端渲染**实现交互,不引入任何客户端 JS:
+
+- `/tools/add-multiple-reminders-at-once` → `functions/api/split.js`
+  → 代理 `/v1/web/todo-extractions`(web 档,独立鉴权与配额)
+- `/tools/recurring-reminder-checker` → `functions/api/recur-check.js`
+  → `functions/lib/recurrence.mjs`(App 端 RecurrenceRuleResolver.swift 的
+  JS 移植,零模型成本)
+
+⚠️ `astro dev` **不服务** `functions/` 目录 —— 本地要走通表单得用
+`npx wrangler pages dev dist`(先 build),或推到 preview 分支在 Pages 上验。
+
+Pages 项目环境变量(工具①需要,缺了会显式报「Tool not available」不静默):
+
+| 变量 | 值 |
+| --- | --- |
+| `AI_PROXY_ORIGIN` | `https://ai.saydo.org` |
+| `WEB_EXTRACT_TOKEN` | 与代理 `wrangler secret put WEB_EXTRACT_TOKEN` 同值 |
+
+结果页由 Function 渲染、不在 dist 里,checks.mjs 扫不到 —— 改
+`functions/lib/render.mjs` 时手动维持同一套纪律:无 `<script>`、商店链接带
+pt+ct(`appStoreUrl()`)、不写禁用说法(§0.2)。
 
 ## 占位符(改一处全站生效)
 

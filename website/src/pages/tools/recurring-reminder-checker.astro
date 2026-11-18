@@ -1,0 +1,89 @@
+---
+// 工具页②:重复提醒说法检查器(关键词空白调研 🟢 recurring reminder by voice)。
+// 零客户端 JS、零模型成本:form POST → /api/recur-check(Pages Function)
+// 跑 functions/lib/recurrence.mjs(与 App 端 RecurrenceRuleResolver.swift 同口径)。
+// 配套指南:/guides/how-to-set-recurring-reminders-by-voice-on-iphone(草稿)。
+import Base from '../../layouts/Base.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { pages } from '../../data/pages.mjs';
+import { breadcrumbSchema } from '../../data/schema.mjs';
+import { TIMEZONES } from '../../../functions/lib/timezones.mjs';
+
+const meta = pages['/tools/recurring-reminder-checker'];
+const schema = [
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Tools', path: '/tools' },
+    { name: 'Recurring reminder checker', path: '/tools/recurring-reminder-checker' },
+  ]),
+];
+---
+
+<Base path="/tools/recurring-reminder-checker" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
+  <section class="hero">
+    <div class="container">
+      <h1>What does “every Monday, Wednesday and Friday” actually create?</h1>
+      <p class="lede">
+        Type a recurring-reminder phrase and see how VoiceTodo reads it: the repeat rule, and the next five
+        times it would fire.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="try-h">
+    <div class="container">
+      <h2 id="try-h">Check a phrase</h2>
+      <form class="tool-form" method="post" action="/api/recur-check">
+        <label for="phrase">Your phrase</label>
+        <textarea
+          id="phrase"
+          name="phrase"
+          rows="2"
+          maxlength="500"
+          required
+          placeholder="remind me to water the plants every Monday, Wednesday and Friday"></textarea>
+        <label for="tz">Timezone (used to compute the next five dates)</label>
+        <select id="tz" name="tz">
+          {TIMEZONES.map((tz) => <option value={tz} selected={tz === 'UTC'}>{tz}</option>)}
+        </select>
+        <button type="submit">Check it</button>
+        <p class="hint">
+          This page runs VoiceTodo's local repeat parser — the same deterministic rules the app uses when it
+          captures speech. Nothing is saved and no reminder is created.
+        </p>
+      </form>
+    </div>
+  </section>
+
+  <section aria-labelledby="what-h">
+    <div class="container grid-2">
+      <div>
+        <h2 id="what-h">Recognized on the spot</h2>
+        <ul class="chips" aria-label="Phrases the local parser recognizes">
+          <li>every day</li>
+          <li>daily</li>
+          <li>every Tuesday</li>
+          <li>every Mon, Wed and Fri</li>
+          <li>monthly on the 1st</li>
+          <li>every month on the 15th</li>
+          <li>for the next 30 days</li>
+        </ul>
+        <p>
+          More flexible phrasing — “every other Tuesday”, “weekdays”, “on the 1st of each month” — goes
+          through the AI parser in the app, which shows you its reading for confirmation before saving.
+        </p>
+      </div>
+      <div>
+        <h3>Why it matters</h3>
+        <p>
+          Setting a repeat by voice is where most assistants stumble: they hear the task, then drop the
+          schedule, or set the wrong days. See exactly what a phrase produces before you rely on it — in
+          <a href="/guides/how-to-set-recurring-reminders-by-voice-on-iphone">the voice recurring guide</a>
+          and in this checker.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand ct="web-tool-recur-page" />
+</Base>

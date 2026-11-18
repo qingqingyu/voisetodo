@@ -11,7 +11,8 @@
     "og": "node scripts/og-images.mjs",
     "images": "node scripts/optimize-images.mjs",
     "lighthouse": "node scripts/lighthouse-run.mjs",
-    "check": "node scripts/checks.mjs"
+    "check": "node scripts/checks.mjs",
+    "test:functions": "node --test functions/lib/*.test.mjs"
   },
   "dependencies": {
     "astro": "^5.7.0"

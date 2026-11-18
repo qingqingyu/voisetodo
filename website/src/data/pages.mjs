@@ -59,6 +59,33 @@ export const pages = {
     changeFrequency: 'weekly',
     priority: 0.7,
   },
+  '/tools': {
+    title: 'Free To-Do Tools for iPhone Users | VoiceTodo',
+    ogTitle: 'Try it in your browser',
+    description:
+      'Two free browser tools: split one sentence into dated reminders, and check what a recurring-reminder phrase means. Nothing is saved.',
+    lastmod: '2026-11-18',
+    changeFrequency: 'weekly',
+    priority: 0.7,
+  },
+  '/tools/add-multiple-reminders-at-once': {
+    title: 'Add Multiple Reminders at Once — Free Tool | VoiceTodo',
+    ogTitle: 'One sentence in, a dated list out',
+    description:
+      'Paste a sentence with several tasks and see it split into separate, dated reminders — the same parse VoiceTodo runs on iPhone. Free, no account.',
+    lastmod: '2026-11-18',
+    changeFrequency: 'monthly',
+    priority: 0.8,
+  },
+  '/tools/recurring-reminder-checker': {
+    title: 'Recurring Reminder Phrase Checker | VoiceTodo',
+    ogTitle: 'What does that phrase create?',
+    description:
+      'Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates and the next five dates — before you rely on it.',
+    lastmod: '2026-11-18',
+    changeFrequency: 'monthly',
+    priority: 0.8,
+  },
   '/support': {
     title: 'Support — FAQs and Contact | VoiceTodo',
     ogTitle: 'Support',
