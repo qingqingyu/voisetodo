@@ -111,6 +111,20 @@ GLOBAL_PRO_DAILY_LIMIT = "20000"
 #     docs/pre-launch-risk-review.md 修法第 2 条）。
 # 仅 DO 路径生效；KV degraded 路径仍按 UTC 日桶（见 worker.js enforceGlobalBudgetViaKV）。
 GLOBAL_BUDGET_WINDOW_HOURS = "6"
+# ─── Web 工具档（官网 /tools 表单页，2026-11 工具页计划）────────────────────
+# 路由 /v1/web/todo-extractions：鉴权/限流/预算与 App 档完全隔离。
+#   鉴权：X-Web-Token（secret，与官网 Pages Function 共享，浏览器拿不到）：
+#     wrangler secret put WEB_EXTRACT_TOKEN
+#   未配置 = fail-closed 500（web 档没有 ALLOW_UNAUTHENTICATED_PROXY 逃生门）。
+#   每 IP 每天 3 次（WEB_IP_DAILY_LIMIT，代码默认 3 = App 免费档同口径）；
+#   每分钟默认 6 次（WEB_IP_RATE_PER_MINUTE）；输入上限 1000 字符（代码常量）。
+#   IP 取 Pages Function 转发的 X-Web-Client-IP（代理侧 CF-Connecting-IP 是
+#   Pages 出口，全网共享，不能用于限流）。
+#   web 全局预算（独立桶）：官网工具页全部调用的日成本天花板，与 App 免费/
+#   pro 桶互不影响（共池的话刷网页就能把 App 免费用户全部 503）。trip 后
+#   错误码 global_budget_exceeded_web，网页端降级显示"今天的网页额度用完了"。
+#   估算口径：按工具页日预算反推（每次 ≈ 输入 <1k + 输出 500 tok）。
+GLOBAL_WEB_DAILY_LIMIT = "300"
 # 每订阅每天 extract 调用上限（默认 500，按 UTC 日）。以验签 payload 的订阅标识
 # （originalTransactionId，服务端加盐哈希后落键——隐私政策承诺只持有哈希标识）
 # 为键——JWS 不绑定设备、X-Device-ID 客户端自填，「一个合法 JWS + 轮换设备 ID」

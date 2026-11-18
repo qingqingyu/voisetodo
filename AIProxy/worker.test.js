@@ -9652,3 +9652,202 @@ test("extract metrics 12g: 口径映射表——四类用户限制全排除,三�
   assert.equal(body.p50Ms, 3000);
   assert.equal(body.p95Ms, 3000);
 });
+
+// MARK: - Web 工具档(/v1/web/todo-extractions,2026-11 工具页计划)
+// 信任模型:调用方是官网 Pages Function(X-Web-Token 服务端共享密钥),
+// 客户端 IP 经 X-Web-Client-IP 转发。与 App 档完全隔离:独立鉴权、独立
+// IP 闸门命名空间、独立全局预算桶;无设备/订阅配额。
+
+function webRequest(body, headers = {}) {
+  return new Request("https://proxy.test/v1/web/todo-extractions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...headers
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+const WEB_HEADERS = {
+  "X-Web-Token": "web-token",
+  "X-Web-Client-IP": "203.0.113.7",
+  "X-Local-Date": "2026-05-26"
+};
+
+test("web 档:未配置 WEB_EXTRACT_TOKEN 时 fail-closed(500),不吃 APP_TOKEN 逃生门", async () => {
+  const response = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "anything" }),
+    { APP_TOKEN: "token", ALLOW_UNAUTHENTICATED_PROXY: "true", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    failingFetch
+  );
+  assert.equal(response.status, 500);
+});
+
+test("web 档:token 不匹配 401", async () => {
+  const response = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "wrong", "X-Web-Client-IP": "203.0.113.7" }),
+    { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    failingFetch
+  );
+  assert.equal(response.status, 401);
+});
+
+test("web 档:非 POST 405", async () => {
+  const response = await handleRequest(
+    new Request("https://proxy.test/v1/web/todo-extractions", { method: "GET", headers: { "X-Web-Token": "web-token" } }),
+    { WEB_EXTRACT_TOKEN: "web-token" },
+    {},
+    failingFetch
+  );
+  assert.equal(response.status, 405);
+});
+
+test("web 档:不配置 APP_TOKEN 也能走通(独立信任域),返回提取 JSON", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      // 注意:没有 APP_TOKEN —— web 档不应依赖 App 端 token
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    const response = await handleRequest(
+      webRequest({ transcript: "call the dentist tomorrow at 9" }, WEB_HEADERS),
+      env,
+      makeFakeCtx(),
+      jsonResponseProvider("Call the dentist")
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.todos.length, 1);
+    assert.equal(body.todos[0].title, "Call the dentist");
+    // web 档无设备配额,响应不带 X-Quota-* 头
+    assert.equal(response.headers.get("X-Quota-Remaining"), null);
+    // 不写任何 App 设备配额键
+    const appQuotaKeys = [...kv.values.keys()].filter((k) => k.startsWith("quota:"));
+    assert.equal(appQuotaKeys.length, 0, "web 档不得写 App 设备配额键");
+  });
+});
+
+test("web 档:assist 模式(split)拒绝 400", async () => {
+  const response = await handleRequest(
+    webRequest({ transcript: "a", mode: "split" }, WEB_HEADERS),
+    { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    failingFetch
+  );
+  assert.equal(response.status, 400);
+});
+
+test("web 档:输入上限 1000 字符(独立于 App 档 4000)", async () => {
+  const response = await handleRequest(
+    webRequest({ transcript: "a".repeat(1001) }, WEB_HEADERS),
+    { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    failingFetch
+  );
+  assert.equal(response.status, 413);
+});
+
+test("web 档:每分钟频率限制(独立键,默认开启)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_RATE_PER_MINUTE: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, WEB_HEADERS), env, {}, jsonResponseProvider("a"));
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, WEB_HEADERS), env, {}, jsonResponseProvider("b"));
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 429);
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "web_velocity");
+    // web 频率键不得污染 App 档 ip-rate 命名空间
+    assert.ok([...kv.values.keys()].some((k) => k.startsWith("web-ip-rate:")));
+    assert.ok(![...kv.values.keys()].some((k) => k.startsWith("ip-rate:")));
+  });
+});
+
+test("web 档:每 IP 每日限 3 次(默认值),与 App 免费档同口径", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+      // 不配 WEB_IP_DAILY_LIMIT:验证默认 3
+    };
+    const ok = jsonResponseProvider("x");
+    for (let i = 0; i < 3; i++) {
+      const r = await handleRequest(webRequest({ transcript: `t${i}` }, WEB_HEADERS), env, makeFakeCtx(), ok);
+      assert.equal(r.status, 200, `第 ${i + 1} 次应放行`);
+    }
+    const fourth = await handleRequest(webRequest({ transcript: "t3" }, WEB_HEADERS), env, makeFakeCtx(), ok);
+    assert.equal(fourth.status, 429);
+    assert.equal(fourth.headers.get("X-RateLimit-Type"), "web_ip_daily");
+    // web 档键独立:不写 App 档 ip-quota
+    assert.ok([...kv.values.keys()].some((k) => k.startsWith("web-ip-quota:")));
+    assert.ok(![...kv.values.keys()].some((k) => k.startsWith("ip-quota:")));
+  });
+});
+
+test("web 档:全局预算独立桶 —— App 免费桶打满不熔断 web,web 自己超限走 web 错误码", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      GLOBAL_DAILY_LIMIT: "1",
+      GLOBAL_WEB_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    // App 免费档把 App 全局桶打满(此处无 KV 全局熔断 trip 写入,只消耗计数)
+    const app1 = await handleRequest(
+      request({ transcript: "app" }, { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" }),
+      env, makeFakeCtx(), ok
+    );
+    assert.equal(app1.status, 200);
+    // web 桶独立:第 1 次照常放行
+    const web1 = await handleRequest(webRequest({ transcript: "web-1" }, WEB_HEADERS), env, makeFakeCtx(), ok);
+    assert.equal(web1.status, 200, "App 免费桶耗尽不得熔断 web 桶");
+    // web 桶自己也只有 1:第 2 次 503,错误码带 _web 后缀
+    const web2 = await handleRequest(webRequest({ transcript: "web-2" }, WEB_HEADERS), env, makeFakeCtx(), ok);
+    assert.equal(web2.status, 503);
+    assert.equal((await web2.json()).error, "global_budget_exceeded_web");
+  });
+});
+
+test("web 档:不消耗 App 设备配额 —— web 流量不挤占 App 免费用户额度", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      APP_TOKEN: "token",
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      DAILY_REQUEST_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    // 先耗尽某设备的 App 免费额度(1 次/天)
+    const app1 = await handleRequest(
+      request({ transcript: "app" }, { "X-App-Token": "token", "X-Device-ID": "d1", "X-Local-Date": "2026-05-26" }),
+      env, makeFakeCtx(), ok
+    );
+    assert.equal(app1.status, 200);
+    // web 请求照常通过(不读不扣 d1 的设备桶)
+    const web1 = await handleRequest(webRequest({ transcript: "w" }, WEB_HEADERS), env, makeFakeCtx(), ok);
+    assert.equal(web1.status, 200);
+    // 新设备的 App 请求不受 web 流量影响
+    const app2 = await handleRequest(
+      request({ transcript: "app2" }, { "X-App-Token": "token", "X-Device-ID": "d2", "X-Local-Date": "2026-05-26" }),
+      env, makeFakeCtx(), ok
+    );
+    assert.equal(app2.status, 200);
+  });
+});

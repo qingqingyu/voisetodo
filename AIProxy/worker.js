@@ -31,6 +31,9 @@ export { QuotaCounter } from "./src/do/quota-counter.js";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TRANSCRIPT_CHARS = 4000;
+// Web 工具档(官网 /tools 表单页)输入上限:比 App 端紧得多 —— 工具页是公开
+// 表单,没有 App 端「先录音再提交」的天然摩擦,紧上限就是第一道成本闸。
+const WEB_MAX_TRANSCRIPT_CHARS = 1000;
 const MAX_VOCABULARY_HINTS = 30;
 const MAX_VOCABULARY_HINT_CHARS = 32;
 const MAX_TELEMETRY_BODY_BYTES = 256 * 1024;
@@ -118,6 +121,38 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       return await handleTelemetryBatch(request, env, requestContext);
     }
 
+    // ── Web 工具档(官网 /tools 表单页,2026-11 工具页计划)──────────────────
+    // /v1/web/todo-extractions:与 App 端 /v1/todo-extractions 完全不同的信任模型 ——
+    // 调用方是官网的 Pages Function(服务端),浏览器永远接触不到 token。这里完成
+    // web 专属鉴权(X-Web-Token,与 APP_TOKEN 分离)+ web 命名空间的三道闸门
+    // (全局预算 hotpath / 每分钟 / 每日 IP),然后把 pathname 改写为主路由并
+    // 置 requestContext.webTier,复用主提取流程(cache / provider failover / 遥测)。
+    // webTier 对主流程的三处豁免:validateAppToken(web 已鉴权)、enforceAbuseGates
+    // (web 闸门已在上面临口气,且 App 档的 ip-rate 键取 CF-Connecting-IP = Pages
+    // 出口 IP,全网共享,不能用于 web 限流)、enforceAllQuotas(web 无设备无订阅,
+    // 计费改为 web 全局预算递增,见下方计费块)。
+    let webTier = false;
+    if (url.pathname === "/v1/web/todo-extractions") {
+      if (request.method !== "POST") {
+        return finishRequest(new Response("Method Not Allowed", { status: 405 }), requestContext, { reason: "method_not_allowed" });
+      }
+      const webAuthError = validateWebToken(request, env);
+      if (webAuthError) {
+        logWarn("proxy.web.auth.failed", {
+          ...requestContext,
+          status: webAuthError.response.status,
+          reason: webAuthError.reason
+        });
+        return finishRequest(webAuthError.response, requestContext, { reason: webAuthError.reason });
+      }
+      webTier = true;
+      requestContext.webTier = true;
+      requestContext.channel = "web";
+      await enforceWebGates(request, env, requestContext, ctx);
+      logInfo("proxy.web.auth.ok", requestContext);
+      url.pathname = "/v1/todo-extractions";
+    }
+
     // 公开健康探针(层 C-1,ALERTING.md):给 UptimeRobot 等拨测服务,无鉴权。
     // 必须放在 validateAppToken 之前 —— 拨测服务不带 token。零 AI 成本,只读熔断状态。
     if (url.pathname === "/v1/health") {
@@ -137,7 +172,8 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       return finishRequest(new Response("Method Not Allowed", { status: 405 }), requestContext, { reason: "method_not_allowed" });
     }
 
-    const authError = validateAppToken(request, env);
+    // web 档已过 validateWebToken(web 分支),APP_TOKEN 是另一套信任域,跳过。
+    const authError = webTier ? null : validateAppToken(request, env);
     if (authError) {
       logWarn("proxy.auth.failed", {
         ...requestContext,
@@ -161,7 +197,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     if (!transcript) {
       return finishRequest(new Response("Missing transcript", { status: 400 }), requestContext, { reason: "missing_transcript" });
     }
-    if (transcript.length > MAX_TRANSCRIPT_CHARS) {
+    if (transcript.length > (webTier ? WEB_MAX_TRANSCRIPT_CHARS : MAX_TRANSCRIPT_CHARS)) {
       return finishRequest(new Response("Transcript too large", { status: 413 }), requestContext, {
         reason: "transcript_too_large",
         transcriptChars: transcript.length
@@ -195,6 +231,14 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       });
     }
     const mode = rawMode || "extract";
+    // web 档只服务工具页的提取模式:split/reflect/deep-read 是 App 内功能,
+    // 官网表单没有对应入口,出现即视为异常调用,直接拒绝。
+    if (webTier && mode !== "extract") {
+      return finishRequest(new Response("Invalid mode", { status: 400 }), requestContext, {
+        reason: "invalid_mode",
+        mode
+      });
+    }
     if (mode !== "extract" && stream) {
       return finishRequest(
         new Response("split/reflect/deep-read modes do not support streaming", { status: 400 }),
@@ -231,7 +275,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // 缓存命中零模型成本、不扣计费桶,但仍是请求压力,闸门照过。
     // 顺序语义变化:原顺序是订阅桶→闸门,现为闸门→(cache)→订阅桶——
     // 被熔断 503 / velocity 429 拒绝的请求不再消耗订阅桶(反滥用收紧)。
-    await enforceAbuseGates(request, env, requestContext, isPro, ctx);
+    // web 档的闸门已在 web 分支临口气(enforceWebGates);App 档闸门的键全部
+    // 取 CF-Connecting-IP(Pages 出口)或 App 全局预算桶,对 web 请求既无意义
+    // (键不对)也有害(网页流量会烧 App 免费档的熔断桶),这里只对 App 档执行。
+    if (!webTier) {
+      await enforceAbuseGates(request, env, requestContext, isPro, ctx);
+    }
     if (mode === "extract") {
       // 计费日期在 cache lookup 之前解析(resolveQuotaDate 纯函数、无写副作用):
       // cache key 含 today;cache miss 后把同一份注入 enforceAllQuotas,
@@ -246,7 +295,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       // (新问题 1:合法 JWS 换无限模型调用,任何计数器都不记)。现在与 extract
       // 同口径递增本档全局预算——不计费额度(用户拍板)不变,计的是**成本**侧
       // 的全局桶,持续刷量会把本档熔断,assist 请求也就被本档 trip 拦下。
-      await enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro);
+      await enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro ? "pro" : "free");
       // E11(v5 T5):deep-read 额外过独立日限额(prompt 重,单独设闸);
       // split/reflect 维持原状(不计费、无独立限额)。
       if (mode === "deep-read") {
@@ -358,16 +407,25 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     // extract 桶的 500 定档(1-3 台 × 100/天 extract)重新成立,assist 有自己
     // 的独立桶(SUBSCRIPTION_ASSIST_DAILY_LIMIT,默认同 500),互不挤占。
     if (mode === "extract") {
-      await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
-      quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription, resolvedQuotaDate);
-      // 防御性检查(原 today 不变量):注入的 resolvedQuotaDate.date 必须原样穿透
-      // enforceDailyLimit 的返回值——resetDate 既用于 today 注入 prompt 也用于
-      // quotaHeaders,不一致说明内部重构破坏了注入契约,立即抛错而非静默错位。
-      if (quotaState.resetDate !== todayDate) {
-        throw new ProxyHTTPError(500, "enforceDailyLimit resetDate mismatch", {
-          errorType: "invariant_violation",
-          body: { error: "invariant_violation", detail: "resetDate mismatch" }
-        });
+      if (webTier) {
+        // web 档计费:无设备/订阅桶,唯一成本闸是 web 命名空间的全局预算
+        // (GLOBAL_WEB_DAILY_LIMIT,与 App 免费档/pro 桶完全隔离 —— 共池的话
+        // 刷网页就能把 App 免费用户全部 503)。位置同 App 计费:cache miss
+        // 之后才计数,缓存命中零成本不进桶。quotaState 保持 null:web 响应
+        // 不带 X-Quota-* 头,空结果/上游失败的退款路径对 null 安全。
+        await enforceGlobalBudgetIncrement(env, requestContext, ctx, "web");
+      } else {
+        await enforceSubscriptionDailyLimit(env, requestContext, subscription, mode);
+        quotaState = await enforceAllQuotas(request, env, requestContext, ctx, subscription, resolvedQuotaDate);
+        // 防御性检查(原 today 不变量):注入的 resolvedQuotaDate.date 必须原样穿透
+        // enforceDailyLimit 的返回值——resetDate 既用于 today 注入 prompt 也用于
+        // quotaHeaders,不一致说明内部重构破坏了注入契约,立即抛错而非静默错位。
+        if (quotaState.resetDate !== todayDate) {
+          throw new ProxyHTTPError(500, "enforceDailyLimit resetDate mismatch", {
+            errorType: "invariant_violation",
+            body: { error: "invariant_violation", detail: "resetDate mismatch" }
+          });
+        }
       }
     }
 
@@ -1739,6 +1797,115 @@ function validateAppToken(request, env) {
   };
 }
 
+// ── Web 工具档鉴权与闸门(2026-11 工具页计划)───────────────────────────────
+// 信任模型:调用方是官网的 Cloudflare Pages Function(服务端到服务端),token
+// 只存在于两端的 env/secrets,浏览器永远拿不到。与 APP_TOKEN 完全分离 ——
+// App token 泄漏不影响 web,反之亦然;且 web 档**没有** ALLOW_UNAUTHENTICATED_PROXY
+// 逃生门:web 是公开攻击面,fail-closed。
+function validateWebToken(request, env) {
+  if (!env.WEB_EXTRACT_TOKEN) {
+    return {
+      response: new Response("AI proxy failed", { status: 500 }),
+      reason: "web_token_not_configured"
+    };
+  }
+  const provided = request.headers.get("X-Web-Token") || "";
+  const expected = String(env.WEB_EXTRACT_TOKEN);
+  if (provided === expected || provided === `Bearer ${expected}`) {
+    return null;
+  }
+  return {
+    response: new Response("Unauthorized", { status: 401 }),
+    reason: "unauthorized"
+  };
+}
+
+// web 请求的客户端 IP:Pages Function 把访客的 CF-Connecting-IP 放进
+// X-Web-Client-IP 转发(代理侧看到的 CF-Connecting-IP 是 Pages 出口,全网共享,
+// 不能用于限流)。本函数只在 validateWebToken 通过之后调用,伪造该头需要先
+// 拿到服务端 token,不在威胁模型内。格式不合法时归入 "anonymous" 共享桶
+// (收紧而非放松)。长度截断防止把超长头写进哈希前的日志字段。
+function webClientIp(request) {
+  const raw = (request.headers.get("X-Web-Client-IP") || "").split(",")[0].trim();
+  if (!raw || raw.length > 64 || !/^[A-Za-z0-9.:]+$/.test(raw)) {
+    return "anonymous";
+  }
+  return raw;
+}
+
+// web 档三道闸:全局预算 hotpath(web 桶)+ 每分钟频率 + 每日 IP。
+// 与 App 档语义一致:velocity/daily 拒绝不 refund(反刷维度,发起即计数)。
+async function enforceWebGates(request, env, requestContext, ctx) {
+  await enforceGlobalBudgetHotPath(env, requestContext, "web");
+  await enforceWebIpRateLimit(request, env, requestContext, ctx);
+  await enforceWebIpDailyLimit(request, env, requestContext, ctx);
+}
+
+// web 每分钟频率限制。与 App 档 enforceIpRateLimit 同构,差异:
+//   - key 前缀 web-ip-rate(独立计数,不与 App 共享)
+//   - IP 取 X-Web-Client-IP(见 webClientIp 注释)
+//   - WEB_IP_RATE_PER_MINUTE 未配置时默认 6(而非跳过)—— web 是新的公开
+//     攻击面,无默认限速上线等于裸奔;App 档的 IP_RATE_PER_MINUTE 历史上
+//     就是可选的,维持各自现状。
+async function enforceWebIpRateLimit(request, env, requestContext, ctx) {
+  if (!env.RATE_LIMIT_KV) {
+    logInfo("proxy.web.ip_rate.skipped", { ...requestContext, reason: "not_configured" });
+    return;
+  }
+  const perMinute = Number(env.WEB_IP_RATE_PER_MINUTE ?? 6);
+  if (!Number.isFinite(perMinute) || perMinute <= 0) {
+    logWarn("proxy.web.ip_rate.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.WEB_IP_RATE_PER_MINUTE });
+    return;
+  }
+  const ipHash = await safeDeviceId(webClientIp(request), env);
+  const minuteBucket = new Date().toISOString().slice(0, 16);
+  const key = `web-ip-rate:${minuteBucket}:${ipHash}`;
+  const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+  if (current >= perMinute) {
+    logWarn("proxy.web.ip_rate.exceeded", { ...requestContext, current, limit: perMinute });
+    throw new ProxyHTTPError(429, "Too many requests", {
+      errorType: "rate_limited",
+      rateLimitType: "web_velocity",
+      body: { error: "rate_limited", retryAfter: 60 },
+      headers: { "X-RateLimit-Type": "web_velocity", "Retry-After": "60" }
+    });
+  }
+  const increment = env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 120 });
+  if (typeof ctx?.waitUntil === "function") {
+    ctx.waitUntil(increment);
+  } else {
+    await increment;
+  }
+}
+
+// web 每日 IP 限额:默认 3 次/天,与 App 免费档口径一致 —— 网页版不能比 App
+// 还大方,否则 paywall 的免费额度叙事被网页侧击穿。DO 主路径(复用
+// QuotaCounter,独立 subjectKey web-ip-daily),DO 故障 fallback KV。
+async function enforceWebIpDailyLimit(request, env, requestContext, ctx) {
+  if (!env.RATE_LIMIT_KV) {
+    logInfo("proxy.web.ip_daily.skipped", { ...requestContext, reason: "not_configured" });
+    return;
+  }
+  const perDay = Number(env.WEB_IP_DAILY_LIMIT ?? 3);
+  if (!Number.isFinite(perDay) || perDay <= 0) {
+    logWarn("proxy.web.ip_daily.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.WEB_IP_DAILY_LIMIT });
+    return;
+  }
+  const ipHash = await safeDeviceId(webClientIp(request), env);
+  const today = new Date().toISOString().slice(0, 10);
+  if (env.QUOTA_COUNTER_DO) {
+    await enforceIpDailyLimitViaDO(env, requestContext, ctx, {
+      ipHash, today, perDay,
+      subjectKey: "web-ip-daily", kvKeyPrefix: "web-ip-quota", rateLimitType: "web_ip_daily"
+    });
+  } else {
+    await enforceIpDailyLimitViaKV(env, requestContext, {
+      ipHash, today, perDay,
+      kvKeyPrefix: "web-ip-quota", rateLimitType: "web_ip_daily"
+    });
+  }
+}
+
 // 反滥用闸门(原 enforceAllQuotas Step A):global-budget 熔断标志(KV tripped,
 // 纯读边缘缓存)+ ip-rate 限流(KV RMW,会扣计数,故意不补偿 —— 这是反刷维度,
 // 被这里拒绝也算消耗一次"尝试机会")。
@@ -1746,7 +1913,7 @@ function validateAppToken(request, env) {
 // cache)零模型成本,不该扣任何计费桶,但仍要过反滥用闸门;assist 分支(split/reflect/
 // deep-read)原先手写这两行,统一收口到这里。
 async function enforceAbuseGates(request, env, requestContext, isPro, ctx) {
-  await enforceGlobalBudgetHotPath(env, requestContext, isPro);
+  await enforceGlobalBudgetHotPath(env, requestContext, isPro ? "pro" : "free");
   await enforceIpRateLimit(request, env, requestContext, isPro, ctx);
 }
 
@@ -1828,7 +1995,7 @@ async function enforceAllQuotas(request, env, requestContext, ctx, subscription,
 
   // Step D: 都通过,异步递增 global budget(若 DO 未绑则同步 KV 路径)。
   // 付费档计入独立 pro 桶(未配置 GLOBAL_PRO_DAILY_LIMIT 则跳过,见函数内注释)。
-  await enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro);
+  await enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro ? "pro" : "free");
 
   return deviceResult.value;
 }
@@ -2706,108 +2873,113 @@ function resolveGlobalBudgetWindowHours(env, requestContext) {
 // + 传播余量」。key 仍带 UTC 日期只是历史格式延续,放行主要由 TTL 控制;
 // 例外:23 点写的标志 TTL 会越过 UTC 午夜,但午夜后热路径查的是新日期 key
 // → miss 提前放行(≤120s,有界;随即被 DO 重评 re-trip 兜住,不修)。
-async function enforceGlobalBudgetHotPath(env, requestContext, isPro = false) {
-  // KV 未绑定:免费/付费桶都无法读 tripped 标志,统一跳过并记日志(同口径)。
+// 全局预算档位注册表(2026-11 web 工具页):free(App 免费档)/ pro(付费桶)/
+// web(官网工具页)三桶完全隔离 —— 任何一桶 trip 只熔断本桶,刷网页不会把
+// App 免费用户一起 503。subjectKey / tripped key / KV 计数 key / 错误码全部
+// 按档位命名;复用同一个 QuotaCounter DO 类(见 src/do/quota-counter.js 顶部
+// 说明:新增档位不需要 [[migrations]])。
+const GLOBAL_BUDGET_TIERS = {
+  free: {
+    limitVar: "GLOBAL_DAILY_LIMIT",
+    subjectKey: "global-budget",
+    trippedKeyPrefix: "global-budget-tripped",
+    kvKeyPrefix: "global-quota",
+    errorType: "global_budget_exceeded"
+  },
+  pro: {
+    limitVar: "GLOBAL_PRO_DAILY_LIMIT",
+    subjectKey: "global-budget-pro",
+    trippedKeyPrefix: "global-budget-tripped-pro",
+    kvKeyPrefix: "global-quota-pro",
+    errorType: "global_budget_exceeded_pro"
+  },
+  web: {
+    limitVar: "GLOBAL_WEB_DAILY_LIMIT",
+    subjectKey: "global-budget-web",
+    trippedKeyPrefix: "global-budget-tripped-web",
+    kvKeyPrefix: "global-quota-web",
+    errorType: "global_budget_exceeded_web"
+  }
+};
+
+function resolveGlobalBudgetTier(tier) {
+  const conf = GLOBAL_BUDGET_TIERS[tier];
+  if (!conf) {
+    // 未知档位 = 调用方代码错误,立即抛而非静默跳过(跳过 = 该档预算上限凭空消失)。
+    throw new ProxyHTTPError(500, `Unknown global budget tier: ${tier}`, {
+      errorType: "invariant_violation",
+      body: { error: "invariant_violation", detail: `unknown global budget tier ${tier}` }
+    });
+  }
+  return conf;
+}
+
+async function enforceGlobalBudgetHotPath(env, requestContext, tier = "free") {
+  const conf = resolveGlobalBudgetTier(tier);
+  // KV 未绑定:任何档位的 tripped 标志都读不了,统一跳过并记日志(同口径)。
   if (!env.RATE_LIMIT_KV) {
-    logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured" });
+    logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured", tier });
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
-  if (isPro) {
-    // 跳过路径与免费侧同口径记日志:付费侧熔断"未配置/配错"必须能从日志发现,
-    // 否则看起来生效、实际没有上限,静默跳过违反项目"不静默"规则。
-    if (!env.GLOBAL_PRO_DAILY_LIMIT) {
-      logInfo("proxy.global_budget.skipped", { ...requestContext, today, tier: "pro", reason: "not_configured" });
-      return;
-    }
-    const proLimit = Number(env.GLOBAL_PRO_DAILY_LIMIT);
-    if (!Number.isFinite(proLimit) || proLimit <= 0) {
-      logWarn("proxy.global_budget.skipped", { ...requestContext, today, tier: "pro", reason: "invalid_limit", configuredLimit: env.GLOBAL_PRO_DAILY_LIMIT });
-      return;
-    }
-    const tripped = await env.RATE_LIMIT_KV.get(`global-budget-tripped-pro:${today}`);
-    if (tripped === "1") {
-      // 错误码独立(global_budget_exceeded_pro):客户端/运维可区分"付费侧成本上限"
-      // 与"免费侧防刷熔断",不会把两者混成"服务挂了"。
-      // Retry-After = 下一个整点边界 + 120s,与 trip 标志 TTL 对齐:标志活到
-      // 整点+120s,早于它重试必然再吃 503 并拿到新的整点级 Retry-After,
-      // 守约客户端会跳过 +120s 处的 DO 重评窗口,多锁近一小时。
-      logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit: proLimit, tier: "pro" });
-      throw new ProxyHTTPError(503, "Service temporarily unavailable", {
-        errorType: "global_budget_exceeded_pro",
-        body: { error: "global_budget_exceeded_pro" },
-        headers: { "Retry-After": String(secondsUntilNextUtcHour() + 120) }
-      });
-    }
+  // 跳过路径同口径记日志:某档熔断"未配置/配错"必须能从日志发现,
+  // 否则看起来生效、实际没有上限,静默跳过违反项目"不静默"规则。
+  // (pro 档未配置 = 产品决策:付费调用有收入覆盖;web/free 未配置待配置。)
+  if (!env[conf.limitVar]) {
+    logInfo("proxy.global_budget.skipped", { ...requestContext, today, tier, reason: "not_configured" });
     return;
   }
-  if (!env.GLOBAL_DAILY_LIMIT) {
-    logInfo("proxy.global_budget.skipped", { ...requestContext, reason: "not_configured" });
-    return;
-  }
-  const limit = Number(env.GLOBAL_DAILY_LIMIT);
+  const limit = Number(env[conf.limitVar]);
   if (!Number.isFinite(limit) || limit <= 0) {
-    logWarn("proxy.global_budget.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.GLOBAL_DAILY_LIMIT });
+    logWarn("proxy.global_budget.skipped", { ...requestContext, today, tier, reason: "invalid_limit", configuredLimit: env[conf.limitVar] });
     return;
   }
-  const trippedKey = `global-budget-tripped:${today}`;
-  const tripped = await env.RATE_LIMIT_KV.get(trippedKey);
+  const tripped = await env.RATE_LIMIT_KV.get(`${conf.trippedKeyPrefix}:${today}`);
   if (tripped === "1") {
-    // Retry-After = 下一个整点边界 + 120s,与 trip 标志 TTL 对齐(理由见上方 pro 分支注释)。
-    logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit });
+    // 错误码按档位独立:客户端/运维可区分"付费侧成本上限 / 免费侧防刷熔断 /
+    // web 档预算耗尽",不会把三者混成"服务挂了"。
+    // Retry-After = 下一个整点边界 + 120s,与 trip 标志 TTL 对齐:标志活到
+    // 整点+120s,早于它重试必然再吃 503 并拿到新的整点级 Retry-After,
+    // 守约客户端会跳过 +120s 处的 DO 重评窗口,多锁近一小时。
+    logWarn("proxy.global_budget.tripped", { ...requestContext, today, limit, tier });
     throw new ProxyHTTPError(503, "Service temporarily unavailable", {
-      errorType: "global_budget_exceeded",
-      body: { error: "global_budget_exceeded" },
+      errorType: conf.errorType,
+      body: { error: conf.errorType },
       headers: { "Retry-After": String(secondsUntilNextUtcHour() + 120) }
     });
   }
 }
 
-// 增量路径:device/ip 都通过后调用。DO 异步 consume-rolling + 写 tripped(若超限)。
-// KV 路径(degraded)直接同步 increment(仍按 UTC 日桶,见 enforceGlobalBudgetViaKV
-// 注释)。付费档计入独立 pro 桶。
-async function enforceGlobalBudgetIncrement(env, requestContext, ctx, isPro = false) {
+// 增量路径:计费点(cache miss 之后)调用。DO 异步 consume-rolling + 写 tripped
+// (若超限)。KV 路径(degraded)直接同步 increment(仍按 UTC 日桶,见
+// enforceGlobalBudgetViaKV 注释)。tier 决定计入哪个桶。
+async function enforceGlobalBudgetIncrement(env, requestContext, ctx, tier = "free") {
+  const conf = resolveGlobalBudgetTier(tier);
   if (!env.RATE_LIMIT_KV) return;
   const nowIso = new Date().toISOString();
   const today = nowIso.slice(0, 10);
+  const limit = Number(env[conf.limitVar]);
+  if (!Number.isFinite(limit) || limit <= 0) return;
   // windowHours 只在 DO 路径用到,下沉到分支内求值 —— KV degraded 路径按日桶,
   // 在那里对配置发 invalid_window_hours 告警是无关噪音(误导运维)。
-  if (isPro) {
-    const proLimit = Number(env.GLOBAL_PRO_DAILY_LIMIT || 0);
-    if (!Number.isFinite(proLimit) || proLimit <= 0) return;
-    if (env.QUOTA_COUNTER_DO) {
-      enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, {
-        today, hour: nowIso.slice(0, 13), limit: proLimit,
-        windowHours: resolveGlobalBudgetWindowHours(env, requestContext), tier: "pro"
-      });
-      return;
-    }
-    await enforceGlobalBudgetViaKV(env, requestContext, { today, limit: proLimit, tier: "pro" });
-    return;
-  }
-  const limit = Number(env.GLOBAL_DAILY_LIMIT);
-  if (!Number.isFinite(limit) || limit <= 0) return;
-
   if (env.QUOTA_COUNTER_DO) {
     enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, {
       today, hour: nowIso.slice(0, 13), limit,
-      windowHours: resolveGlobalBudgetWindowHours(env, requestContext)
+      windowHours: resolveGlobalBudgetWindowHours(env, requestContext), tier, conf
     });
     return;
   }
-  await enforceGlobalBudgetViaKV(env, requestContext, { today, limit });
+  await enforceGlobalBudgetViaKV(env, requestContext, { today, limit, tier, conf });
 }
 
 // DO 异步增量路径:ctx.waitUntil 包好,本次响应不阻塞。
-// tier 分桶:独立 DO 实例(global-budget / global-budget-pro)+ 独立 tripped key。
+// tier 分桶:独立 DO 实例(subjectKey 按 conf)+ 独立 tripped key。
 // 计量走 /consume-rolling 小时桶滚动窗口:窗口内阈值 = 日限 × windowHours/24
 // (向上取整),窗口总和由 DO 跨桶求和,老桶滚出即自然回落。
 function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
-  const { today, hour, limit, windowHours, tier = "free" } = params;
-  const subjectKey = tier === "pro" ? "global-budget-pro" : "global-budget";
-  const trippedKey = tier === "pro"
-    ? `global-budget-tripped-pro:${today}`
-    : `global-budget-tripped:${today}`;
+  const { today, hour, limit, windowHours, tier = "free", conf } = params;
+  const subjectKey = conf.subjectKey;
+  const trippedKey = `${conf.trippedKeyPrefix}:${today}`;
   const windowLimit = Math.ceil((limit * windowHours) / 24);
   if (!ctx?.waitUntil) {
     // 生产路径 ctx 必然存在;缺失表示调用方契约违反(测试 mock 不全 / 运行时异常)。
@@ -2882,9 +3054,9 @@ function enforceGlobalBudgetViaDOIncrement(env, requestContext, ctx, params) {
 // 最终一致读 + 并发丢更新在这个形态下误差会叠乘;degraded 模式的目标是
 // "DO 挂了也别 fail-open",维持原语义比引入一套不精确的滚动更稳。
 async function enforceGlobalBudgetViaKV(env, requestContext, params) {
-  const { today, limit, tier = "free" } = params;
-  const key = tier === "pro" ? `global-quota-pro:${today}` : `global-quota:${today}`;
-  const errorType = tier === "pro" ? "global_budget_exceeded_pro" : "global_budget_exceeded";
+  const { today, limit, tier = "free", conf } = params;
+  const key = `${conf.kvKeyPrefix}:${today}`;
+  const errorType = conf.errorType;
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= limit) {
     logWarn("proxy.global_budget.exceeded", { ...requestContext, current, limit, tier, source: "kv" });
@@ -2962,9 +3134,14 @@ async function enforceIpDailyLimit(request, env, requestContext, ctx, isPro = fa
 }
 
 // ip-daily 的 DO 主路径。
+// subjectKey / kvKeyPrefix / rateLimitType 可参数化:web 档复用同一套 DO 协议
+// 与 KV 键布局,只是换命名空间(web-ip-daily / web-ip-quota / web_ip_daily),
+// 与 App 档 ip-daily 完全隔离(见 enforceWebIpDailyLimit)。
 async function enforceIpDailyLimitViaDO(env, requestContext, ctx, params) {
-  const { ipHash, today, perDay } = params;
-  const subjectKey = "ip-daily";
+  const {
+    ipHash, today, perDay,
+    subjectKey = "ip-daily", kvKeyPrefix = "ip-quota", rateLimitType = "ip_daily"
+  } = params;
   const doName = `${subjectKey}:${ipHash}`;
 
   let result;
@@ -2998,15 +3175,15 @@ async function enforceIpDailyLimitViaDO(env, requestContext, ctx, params) {
     });
     throw new ProxyHTTPError(429, "Too many requests from this IP", {
       errorType: "rate_limited",
-      rateLimitType: "ip_daily",
+      rateLimitType,
       body: { error: "rate_limited", retryAfter: secondsUntilNextLocalDay(today) },
-      headers: { "X-RateLimit-Type": "ip_daily", "Retry-After": String(secondsUntilNextLocalDay(today)) }
+      headers: { "X-RateLimit-Type": rateLimitType, "Retry-After": String(secondsUntilNextLocalDay(today)) }
     });
   }
 
   // KV 影子写
   if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
-    const key = `ip-quota:${today}:${ipHash}`;
+    const key = `${kvKeyPrefix}:${today}:${ipHash}`;
     ctx.waitUntil(
       env.RATE_LIMIT_KV.put(key, String(result.used), { expirationTtl: 36 * 60 * 60 })
         .catch((error) => {
@@ -3024,16 +3201,16 @@ async function enforceIpDailyLimitViaDO(env, requestContext, ctx, params) {
 // 与 enforceDailyLimitViaKV 返回 quota state 不对称,因为 IP 限流不向客户端
 // 暴露 X-Quota-* 头(IP 是反刷维度,非用户配额)。
 async function enforceIpDailyLimitViaKV(env, requestContext, params) {
-  const { ipHash, today, perDay } = params;
-  const key = `ip-quota:${today}:${ipHash}`;
+  const { ipHash, today, perDay, kvKeyPrefix = "ip-quota", rateLimitType = "ip_daily" } = params;
+  const key = `${kvKeyPrefix}:${today}:${ipHash}`;
   const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
   if (current >= perDay) {
     logWarn("proxy.ip_quota.exceeded", { ...requestContext, current, limit: perDay, source: "kv" });
     throw new ProxyHTTPError(429, "Too many requests from this IP", {
       errorType: "rate_limited",
-      rateLimitType: "ip_daily",
+      rateLimitType,
       body: { error: "rate_limited", retryAfter: secondsUntilNextLocalDay(today) },
-      headers: { "X-RateLimit-Type": "ip_daily", "Retry-After": String(secondsUntilNextLocalDay(today)) }
+      headers: { "X-RateLimit-Type": rateLimitType, "Retry-After": String(secondsUntilNextLocalDay(today)) }
     });
   }
   await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
