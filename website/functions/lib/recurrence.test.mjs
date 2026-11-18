@@ -19,6 +19,12 @@ test('daily:whole-word 匹配,"daily" 不得命中 "ordinarily" 之类子串', (
   assert.equal(resolveRecurrence('call Mr Dailyman about the order', TODAY), null);
 });
 
+test('daily:多词短语的空白容忍 —— 双空格/换行与单空格同口径(对齐 Swift \\s+ 语义)', () => {
+  assert.deepEqual(resolveRecurrence('water the plants every  day', TODAY), { frequency: 'daily', endDate: undefined });
+  assert.deepEqual(resolveRecurrence('water the plants every\nday', TODAY), { frequency: 'daily', endDate: undefined });
+  assert.deepEqual(resolveRecurrence('gym every\tMonday', TODAY), { frequency: 'weekly', weekdays: [2], endDate: undefined });
+});
+
 test('weekly:every Monday, Wednesday and Friday → weekdays [2,4,6]', () => {
   assert.deepEqual(resolveRecurrence('gym every Monday, Wednesday and Friday', TODAY), {
     frequency: 'weekly',

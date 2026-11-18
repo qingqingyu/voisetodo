@@ -50,8 +50,10 @@ const CHINESE_WEEKDAYS = [
 
 /// 英文短语包含判定(Swift containsEnglishPhrase 同口径):空格视为 \s+,
 /// 两侧不允许紧邻其他拉丁字母(whole-word)。
+/// 注意空格转换必须对裸空格做:Swift 侧 NSRegularExpression.escapedPattern 会
+/// 把空格转义成 "\ " 再替换,JS 的等价转义字符类不含空格,直接替换 ' ' 即可。
 function containsEnglishPhrase(lowerText, phrase) {
-  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\ /g, '\\s+');
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
   return new RegExp(`(?<![A-Za-z])${escaped}(?![A-Za-z])`).test(lowerText);
 }
 
@@ -182,10 +184,9 @@ export function resolveRecurrence(text, todayIso) {
 
 /// 时区内的日历部件。epochMs 每步 +86400s 迭代:任何时区的偏移变化(<24h)
 /// 都不会跳日/重日,日期严格逐日推进(与 App 端 Calendar 迭代语义一致)。
-function partsInZone(epochMs, timeZone) {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
-  });
+/// 格式化器由调用方构造传入(nextOccurrences 循环内最多 400 次调用,
+/// 每轮 new 一个 Intl.DateTimeFormat 是纯浪费)。
+function partsInZone(fmt, epochMs) {
   const parts = {};
   for (const p of fmt.formatToParts(new Date(epochMs))) parts[p.type] = p.value;
   const weekdayIndex = { Sun: 1, Mon: 2, Tue: 3, Wed: 4, Thu: 5, Fri: 6, Sat: 7 }[parts.weekday];
@@ -199,8 +200,11 @@ export function nextOccurrences(rule, todayIso, timeZone, count = 5) {
   const out = [];
   // 迭代以「今天 12:00 UTC + N 天」为锚:所有时区在任何偏移下都落在正确的日历日。
   const anchorMs = Date.parse(`${todayIso}T12:00:00.000Z`);
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  });
   for (let k = 1; k <= 400 && out.length < count; k++) {
-    const parts = partsInZone(anchorMs + k * 86400000, timeZone);
+    const parts = partsInZone(fmt, anchorMs + k * 86400000);
     let match = false;
     if (rule.frequency === 'daily') match = true;
     else if (rule.frequency === 'weekly') match = rule.weekdays.includes(parts.weekday);

@@ -40,7 +40,7 @@ export async function onRequestPost(context) {
       hasOrigin: Boolean(env.AI_PROXY_ORIGIN),
       hasToken: Boolean(env.WEB_EXTRACT_TOKEN),
     });
-    return errorResult('Tool not available', 'This tool is not configured on the server right now. Please try again later.');
+    return errorResult('Tool not available', 'This tool is not configured on the server right now. Please try again later.', 503);
   }
 
   const today = todayInZone(tz);
@@ -54,15 +54,30 @@ export async function onRequestPost(context) {
         'X-Web-Client-IP': request.headers.get('CF-Connecting-IP') || 'anonymous',
         'X-Local-Date': today,
       },
-      body: JSON.stringify({ transcript: text, locale: 'en' }),
+      body: JSON.stringify({ transcript: text, locale: detectLocale(text) }),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
   } catch (error) {
     console.error('split: upstream fetch failed', error);
-    return errorResult('Could not reach the service', 'The splitting service did not respond. Nothing was saved — please try again in a moment.');
+    return errorResult('Could not reach the service', 'The splitting service did not respond. Nothing was saved — please try again in a moment.', 503);
   }
 
   if (upstream.status === 429) {
+    // 代理用 X-RateLimit-Type 区分两档 429:web_ip_daily(每天 3 次)与
+    // web_velocity(每分钟 6 次)。两者用户侧含义完全不同 —— 每日档明天才
+    // 重置,velocity 档一分钟就恢复,混在一起会把「稍等一分钟」说成
+    // 「今天用完了」。
+    const rateType = upstream.headers.get('X-RateLimit-Type') || 'web_ip_daily';
+    if (rateType === 'web_velocity') {
+      return htmlResponse(toolResultPage({
+        toolPath: TOOL_PATH,
+        toolLabel: 'sentence splitter',
+        heading: 'That was quick',
+        bodyHtml: `<div class="card"><p style="margin:0">Several tries in a row — the page pauses for about a minute to keep things fair.
+Nothing was saved; wait a moment and try again.</p></div>`,
+        ct: CT,
+      }));
+    }
     return htmlResponse(toolResultPage({
       toolPath: TOOL_PATH,
       toolLabel: 'sentence splitter',
@@ -85,7 +100,7 @@ or continue in the <strong>app</strong>, where the same split runs on every capt
       }));
     }
     console.error('split: upstream 503', errBody);
-    return errorResult('Service unavailable', 'The splitting service is temporarily unavailable. Nothing was saved — please try again later.');
+    return errorResult('Service unavailable', 'The splitting service is temporarily unavailable. Nothing was saved — please try again later.', 503);
   }
   if (upstream.status === 413) {
     return errorResult('Too long', `The service accepts up to ${MAX_INPUT_CHARS} characters. Please shorten your sentence.`);
@@ -93,7 +108,7 @@ or continue in the <strong>app</strong>, where the same split runs on every capt
   if (upstream.status !== 200) {
     const detail = await upstream.text().catch(() => '');
     console.error('split: upstream error', { status: upstream.status, detail: detail.slice(0, 500) });
-    return errorResult('Split failed', 'The splitting service returned an error. Nothing was saved — please try again in a moment.');
+    return errorResult('Split failed', 'The splitting service returned an error. Nothing was saved — please try again in a moment.', 502);
   }
 
   const raw = await upstream.text();
@@ -101,7 +116,7 @@ or continue in the <strong>app</strong>, where the same split runs on every capt
   if (!parsed.parseOk) {
     // 上游 200 但 JSON 坏:显式报错,不给用户一个空列表装正常。
     console.error('split: unparseable upstream body', raw.slice(0, 500));
-    return errorResult('Split failed', 'The splitting service returned something unexpected. Nothing was saved — please try again.');
+    return errorResult('Split failed', 'The splitting service returned something unexpected. Nothing was saved — please try again.', 502);
   }
 
   const todos = Array.isArray(parsed.data.todos) ? parsed.data.todos : [];
@@ -143,6 +158,16 @@ everything you confirm there is saved with the dates shown above.</p>`;
 
 // ---------- 渲染小件 ----------
 
+// locale 口径:App 端发用户真实 locale(代理按它选 few-shot 语言),工具页
+// 零 JS 读不到系统 locale,退而按输入文字的书写系统猜 —— 官网宣称「the same
+// parse the app runs」,中文句子走英文档 prompt 就名不副实了。代理侧
+// normalizeLocale 只认 en/zh/ja,猜错回 en,不会产生新值。
+function detectLocale(text) {
+  if (/[぀-ヿ]/.test(text)) return 'ja';
+  if (/[一-鿿]/.test(text)) return 'zh';
+  return 'en';
+}
+
 function formatDueDate(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return '';
   const [, m, d] = iso.split('-');
@@ -168,7 +193,8 @@ function whenText(todo) {
   }
   const recurrence = describeModelRecurrence(todo.recurrence_rule);
   if (recurrence) parts.push(recurrence);
-  return parts.join(' · ');
+  // 模型输出偶发畸形日期/时间会产出空段,过滤掉避免拼出尾随「 · 」。
+  return parts.filter(Boolean).join(' · ');
 }
 
 function todoRow(todo) {
@@ -213,10 +239,12 @@ async function readForm(request) {
   }
 }
 
-function errorResult(heading, message) {
+// status 口径:客户端输入问题 400(默认);服务端故障(缺配置/上游不可达/
+// 上游报错/坏响应)必须 5xx —— 错误显式传播,不把服务端故障伪装成客户端错。
+function errorResult(heading, message, status = 400) {
   const bodyHtml = `<div class="card err"><p style="margin:0">${escapeHtml(message)}</p></div>`;
   return htmlResponse(
     toolResultPage({ toolPath: TOOL_PATH, toolLabel: 'sentence splitter', heading, bodyHtml, ct: CT }),
-    400
+    status
   );
 }
