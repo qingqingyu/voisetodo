@@ -55,6 +55,12 @@ section + section {
   border-top: 1px solid var(--line);
 }
 
+/* 分区节奏:偶数段垫极浅的绿灰底(纸色/浅绿交替),hero 与深色 CTA 带不参与。
+   全站统一 nth-of-type 规则,各页无需逐段加类。 */
+main > section:nth-of-type(even):not(.hero):not(.cta-band) {
+  background: #f3f6f1;
+}
+
 h1,
 h2,
 h3 {
@@ -65,8 +71,28 @@ h3 {
 }
 
 h1 {
-  font-size: clamp(2rem, 4.5vw, 3rem);
+  font-size: clamp(2.2rem, 5vw, 3.3rem);
   font-weight: 800;
+}
+
+/* eyebrow 小标(hero/区块顶部的品目词):全大写 + 宽字距,拉出字阶第 1 档 */
+.kicker {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 10px;
+}
+
+/* 标题强调词:勾选绿 + 粗下划线(纯 text-decoration,零额外元素)。
+   下划线用中调绿(accent-soft 在纸底上几乎不可见,首轮视觉走查确认) */
+.accent {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 0.14em;
+  text-decoration-color: #7fc59c;
+  text-underline-offset: 0.16em;
 }
 
 h2 {
@@ -321,6 +347,53 @@ a:hover {
 /* ===== 截图 ===== */
 .shot {
   margin: 28px 0;
+}
+
+/* 浏览器窗口框(Superlist 式产品展示):三窗点 + 白底卡 + 深一档投影,
+   给 hero 截图一个视觉锚点。纯 CSS(::before 画点),零 JS/零图片。 */
+.shot-framed {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 12px 12px 14px;
+  box-shadow:
+    0 1px 2px rgba(27, 36, 48, 0.05),
+    0 18px 44px rgba(27, 36, 48, 0.12);
+}
+
+.shot-framed::before {
+  content: '';
+  display: block;
+  height: 26px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 30px 13px, #f0c36d 0 6px, transparent 7px),
+    radial-gradient(circle at 54px 13px, #e7e4dc 0 6px, transparent 7px),
+    radial-gradient(circle at 78px 13px, #a8d8bb 0 6px, transparent 7px),
+    linear-gradient(180deg, #f6f4ee, #f1eee6);
+  background-size: 100% 100%;
+}
+
+.shot-framed img {
+  border-radius: 12px;
+}
+
+/* hero 柔光:绿系光晕衬在窗口框后面(::after z-index:-1,溢出框外可见)。
+   accent-soft 太淡读不出(首轮视觉走查),用 accent 的低透明度两阶渐变 */
+.shot-glow {
+  position: relative;
+}
+
+.shot-glow::after {
+  content: '';
+  position: absolute;
+  inset: -12% -16%;
+  background:
+    radial-gradient(52% 52% at 50% 40%, rgba(23, 126, 75, 0.1) 0%, transparent 70%),
+    radial-gradient(70% 70% at 50% 50%, rgba(23, 126, 75, 0.06) 0%, transparent 75%);
+  z-index: -1;
+  border-radius: 50%;
 }
 
 .shot img {
@@ -851,11 +924,17 @@ tr:last-child td {
   color: var(--ink-soft);
 }
 
-/* 工具页表单(零 JS:原生 form POST → Pages Function 服务端渲染结果页) */
+/* 工具页表单(零 JS:原生 form POST → Pages Function 服务端渲染结果页)。
+   卡片化:白底卡 + 描边 + 轻投影,与全站 card 语言一致,表单不再「裸」在纸上。 */
 .tool-form {
   display: grid;
   gap: 10px;
   max-width: 640px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px 26px;
 }
 
 .tool-form label {
@@ -863,11 +942,13 @@ tr:last-child td {
   font-size: 0.95rem;
 }
 
+/* 输入控件垫纸色,与白卡形成「内衬」层次(同特异性下后规则生效,
+   这里的顺序就是优先级 —— 别把 background 挪回前面的单独规则) */
 .tool-form textarea,
 .tool-form select {
   font: inherit;
   color: var(--ink);
-  background: var(--card);
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px 14px;

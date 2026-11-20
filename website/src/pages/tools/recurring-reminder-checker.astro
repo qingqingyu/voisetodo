@@ -42,6 +42,7 @@ const schema = [
           maxlength="500"
           required
           placeholder="remind me to water the plants every Monday, Wednesday and Friday"></textarea>
+        <p class="hint">Try: “pay rent monthly on the 1st” · “meds every day for the next 30 days”</p>
         <label for="tz">Timezone (used to compute the next five dates)</label>
         <select id="tz" name="tz">
           {TIMEZONES.map((tz) => <option value={tz} selected={tz === 'UTC'}>{tz}</option>)}

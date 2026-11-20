@@ -10,13 +10,15 @@ interface Props {
   caption?: string;
   eager?: boolean;
   narrow?: boolean; // 窄幅展示(单截图居中)
+  frame?: boolean; // 浏览器窗口框(hero 产品展示用,global.css .shot-framed)
+  glow?: boolean; // 框后绿系柔光(hero 用,.shot-glow);须与 frame 同开
 }
-const { name, alt, caption, eager = false, narrow = false } = Astro.props;
+const { name, alt, caption, eager = false, narrow = false, frame = false, glow = false } = Astro.props;
 const meta = screens[name];
 if (!meta) throw new Error(`Unknown screenshot '${name}' — run npm run images in website/`);
 ---
 
-<figure class:list={['shot', { 'shot-narrow': narrow }]}>
+<figure class:list={['shot', { 'shot-narrow': narrow, 'shot-framed': frame, 'shot-glow': glow }]}>
   <img
     src={`/screens/${name}-1100.webp`}
     srcset={`/screens/${name}-640.webp 640w, /screens/${name}-1100.webp 1100w`}
