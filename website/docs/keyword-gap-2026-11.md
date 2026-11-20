@@ -53,7 +53,7 @@
 ## 4. 文章写作顺序
 
 | # | 文章(英文标题) | slug | 对应空白 | 状态 |
-|---|---|---|---|---|---|
+|---|---|---|---|---|
 | 1 | How to Add Several Reminders at Once on iPhone | `add-several-reminders-at-once-on-iphone` | Siri 一次加多条 / 合并多条 | ✅ 已发布(2026-11-18 翻 draft:false,指向工具①) |
 | 2 | How to Set Recurring Reminders by Voice | `how-to-set-recurring-reminders-by-voice-on-iphone` | 语音设复杂重复 | ✅ 已写(draft:true,指向工具②,待审改) |
 | 3 | Put a To-Do List on Your Lock Screen (iOS 26) | `keep-to-do-list-visible-on-iphone`(已改版) | 锁屏待办教程过时 | ✅ 已改版(draft:true,重定位 iOS 26,待审改) |
@@ -61,7 +61,7 @@
 | 5 | iPhone Interactive To-Do Widgets - 2026 Guide | `interactive-to-do-widgets-iphone-2026` | 小组件教程过时 | ✅ 已写(draft:true,待审改) |
 | 6 | Best Things to Put on Your iPhone Action Button | `fastest-way-to-capture-tasks-on-iphone`(已调整) | 操作按钮 | ✅ 已调整(draft:true,换题+补 iOS 26 New Reminder 控件,待审改) |
 
-> 标题定稿与上表拟稿有出入(全部为过 60 字符构建限制收敛):#2 去掉 "on iPhone"、#3/#6 缩短、#4 改为 "Can't" 单侧 + 描述补全、#5 用连字符。
+> 标题定稿与上表拟稿有出入(多为过 60 字符构建限制收敛,#2/#5 拟稿本就未超限,属措辞选择):#2 去掉 "on iPhone"、#3/#6 缩短、#4 改为 "Can't" 单侧 + 描述补全、#5 用连字符。
 
 现有 4 篇草稿的处理:
 

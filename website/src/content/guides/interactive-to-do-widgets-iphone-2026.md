@@ -31,7 +31,7 @@ The interaction detail that matters most: on the Lock Screen, tapping a task's c
 
 ### 2. Home Screen widget — the working day at a glance
 
-A medium (2×4) or large (2×8) widget on your first Home Screen page shows the whole day. The same tap-to-complete circles apply; the larger canvas fits 4–8 tasks with dates.
+A medium (2×4) or large (4×4) widget on your first Home Screen page shows the whole day. The same tap-to-complete circles apply; the larger canvas fits a few more tasks with dates.
 
 **Setup:** touch and hold the Home Screen → **Edit** → **Add Widget** → choose medium or large → place it on the first page, top row if you can. A widget on page three is a widget you never see — placement outranks size.
 

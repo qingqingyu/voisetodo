@@ -79,4 +79,4 @@ It isn't magic; it's the scratchpad, moved out of your head and onto the glass y
 ## Related
 
 - [Plan your day in 2 minutes](/guides/plan-your-day-in-2-minutes) — a morning routine built on this capture habit
-- [Keep your to-do list visible on your iPhone](/guides/keep-to-do-list-visible-on-iphone) — the widget setups, step by step
+- [Put a to-do list on your Lock Screen (iOS 26)](/guides/keep-to-do-list-visible-on-iphone) — the widget setups, step by step

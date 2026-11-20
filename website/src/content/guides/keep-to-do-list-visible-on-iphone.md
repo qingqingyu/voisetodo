@@ -8,7 +8,7 @@ draft: true
 
 A to-do list only works if you see it. The single most effective change you can make on an iPhone: **stop keeping your list inside an app, and pin it to the two screens you already look at all day — the Lock Screen and the first Home Screen page.** Ten minutes of setup, and from then on your list appears in front of you dozens of times a day without you remembering anything.
 
-Most guides on this topic were written around iOS 16–17 and half of what they describe has moved. This one is current for **iOS 26**, covers every placement worth using, how to set each up, and how to keep the widget content meaningful (a widget full of stale tasks gets ignored within a week — there's a fix for that too).
+Most guides on this topic were written around iOS 16–17 and much of what they describe has moved. This one is current for **iOS 26**, covers every placement worth using, how to set each up, and how to keep the widget content meaningful (a widget full of stale tasks gets ignored within a week — there's a fix for that too).
 
 ## Why "just open the app" doesn't work
 
@@ -33,7 +33,7 @@ One honest limitation worth knowing: Lock Screen widgets are compact. That's not
 
 ## Placement 2: Home Screen widgets
 
-The first Home Screen page is the second-best billboard you own. A medium widget (2×4) beside your dock, or a large one (2×8) if your first page has room, keeps the full day visible every time you open anything.
+The first Home Screen page is the second-best billboard you own. A medium widget (2×4) beside your dock, or a large one (4×4) if your first page has room, keeps the full day visible every time you open anything.
 
 **Setup:** touch and hold the Home Screen → tap **Edit** → **Add Widget** → pick your to-do app → choose medium or large → place it on the first page.
 

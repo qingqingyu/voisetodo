@@ -89,4 +89,4 @@ What you're really training is a reflex, not a schedule: *plan falls out of head
 ## Related
 
 - [How to stop forgetting things you need to do](/guides/stop-forgetting-things-you-need-to-do) — the capture habit this routine is built on
-- [The fastest way to capture tasks on iPhone](/guides/fastest-way-to-capture-tasks-on-iphone) — every capture method, timed and compared
+- [Best things to put on your iPhone Action Button](/guides/fastest-way-to-capture-tasks-on-iphone) — every capture method, timed and compared

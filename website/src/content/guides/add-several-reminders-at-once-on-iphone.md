@@ -102,8 +102,8 @@ If most of your tasks are single errands, Reminders and Siri are hard to beat. I
 ## Related
 
 - [Try the sentence splitter](/tools/add-multiple-reminders-at-once) — the free browser tool that shows this split live
-- [What Siri can and can't do with your to-do list](/guides/apple-reminders-vs-voice-to-do-apps) — the full honest comparison
+- [What Siri can't do with your to-do list](/guides/apple-reminders-vs-voice-to-do-apps) — the full honest comparison
 - [How to set recurring reminders by voice](/guides/how-to-set-recurring-reminders-by-voice-on-iphone) — repeats on specific days, said in the same breath
-- [The fastest way to capture tasks on iPhone](/guides/fastest-way-to-capture-tasks-on-iphone) — Action Button, Siri and typing, compared
+- [Best things to put on your iPhone Action Button](/guides/fastest-way-to-capture-tasks-on-iphone) — the capture-speed case for voice on the button
 - [How to stop forgetting things you need to do](/guides/stop-forgetting-things-you-need-to-do) — why effortless capture matters
 - [Voice to-do list for iPhone](/voice-to-do-list) — how VoiceTodo turns speech into dated to-dos

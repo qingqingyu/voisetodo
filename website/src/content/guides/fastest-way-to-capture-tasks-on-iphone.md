@@ -100,6 +100,6 @@ The unifying idea: the fallback ladder exists so there is **no situation with no
 
 ## Related
 
-- [What Siri can and can't do with your to-do list](/guides/apple-reminders-vs-voice-to-do-apps) — the capture-side limits of the built-in path
+- [What Siri can't do with your to-do list](/guides/apple-reminders-vs-voice-to-do-apps) — the capture-side limits of the built-in path
 - [How to add several reminders at once on iPhone](/guides/add-several-reminders-at-once-on-iphone) — what one press is worth when the sentence holds three tasks
 - [How to stop forgetting things you need to do](/guides/stop-forgetting-things-you-need-to-do) — why effortless capture matters

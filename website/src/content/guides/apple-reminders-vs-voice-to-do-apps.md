@@ -25,7 +25,7 @@ If a screen showed you nothing but this list, the conclusion would be "done here
 
 Siri matches your sentence to one action — *create a reminder* — and that action has one title slot and one date slot. Say "call the dentist tomorrow at 9, send the report by Friday, pay rent on the 1st every month" and something has to give: the three tasks merge into one long title, or fragment oddly, or only the last one survives.
 
-This is the single most common complaint in Apple's own community forums, and it isn't a bug — it's the design. There's a full guide on [why Siri merges your lists and what to do about it](/guides/add-several-reminders-at-once-on-iphone), including the workarounds that genuinely help. The short version: the workarounds all amount to making *more* requests, one per reminder.
+This is one of the most common complaints in Apple's own community forums, and it isn't a bug — it's the design. There's a full guide on [why Siri merges your lists and what to do about it](/guides/add-several-reminders-at-once-on-iphone), including the workarounds that genuinely help. The short version: the workarounds all amount to making *more* requests, one per reminder.
 
 Voice-first apps spend their effort exactly there. You say the whole sentence once; the app splits it into three tasks and works out each one's date and repeat. You can watch that split happen in your browser with the [sentence splitter tool](/tools/add-multiple-reminders-at-once) — paste any sentence, see the dated list it produces, copy it or not. Nothing is saved and the page creates nothing; it's a demo of the parse, not a trap.
 
