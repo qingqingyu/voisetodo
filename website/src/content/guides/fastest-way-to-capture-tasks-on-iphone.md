@@ -1,16 +1,28 @@
 ---
-title: The Fastest Way to Capture Tasks on iPhone
-description: Action Button and Siri beat typing and even the Reminders app for speed — capture a task hands-free in seconds. Every method, compared.
+title: Best Things to Put on Your iPhone Action Button
+description: The Action Button is the fastest task capture on iPhone — if you assign it well. What deserves the one slot, and the setup most people land on.
 pubDate: 2026-11-02
-updatedDate: 2026-11-02
+updatedDate: 2026-11-20
 draft: true
 ---
 
-The fastest way to capture a task on an iPhone is to not touch the screen at all: **the Action Button (if your iPhone has one) or Siri, one press or one phrase, and the thought is out of your head.** Everything else — typing, opening apps, tapping plus icons — is measurably slower and, more importantly, demands exactly the attention you don't have when a task occurs to you.
+The Action Button is one physical slot on the side of your iPhone, and it's the fastest way to do anything on the phone — one press, no screen, no looking. The whole question is what deserves the slot. For getting things out of your head, the answer this guide defends: **assign it to voice capture for your to-do app**, and let everything else queue behind Siri.
 
-This guide compares every method honestly, with realistic timings, and ends with the setup most people land on. A note before the stopwatch: speed isn't the whole story. A method you can use *while doing something else* is worth more than one that's two seconds faster but needs your eyes, your hands, and your focus.
+The reasoning, the honest competition (flashlight, camera, Apple's own task controls), realistic timings, and the setup most people land on — all below. A note before the stopwatch: speed isn't the whole story. A method you can use *while doing something else* is worth more than one that's two seconds faster but needs your eyes, your hands, and your focus.
 
-## The contenders, timed
+## The contenders for the one slot
+
+What people actually weigh, and what each is good for:
+
+- **Voice capture for a to-do app** — press, talk, release. The thought is out of your head and lands as structured tasks. The candidate this guide argues for.
+- **Flashlight** — the incumbent, and genuinely useful. But it's also on the Lock Screen bottom-left, one tap away.
+- **Camera** — strong if you photograph more than you note. The swipe-left-on-Lock-Screen gesture is nearly as fast.
+- **Apple's New Reminder control (new in iOS 26)** — one press opens a blank reminder with the keyboard up. Good, honest addition; below we'll look at why "blank reminder, then type" still costs more than voice.
+- **Shortcuts** — anything automatable. Powerful, but multi-step automations belong in the Shortcuts app or Siri, not on a button you press blind.
+
+The pattern in the honest rows: every alternative has a nearly-as-fast gesture path (Lock Screen button, swipe, Control Center). Voice capture is the one action where the physical button changes your *behavior* — you'll say things into your pocket that you'd never type on the move.
+
+## Every capture method, timed
 
 Timed on a bench, mid-conversation, tasks of typical messiness ("call the dentist tomorrow"). Your numbers will vary by habit; the ordering is what matters.
 
@@ -45,6 +57,8 @@ A good voice-first app shows a confirmation step before saving — you glance, f
 ### 4. Apple Reminders (the worthy default)
 
 A word for the built-in answer, because it's genuinely good and free: Reminders' Siri capture is fast, its Lock Screen and Home Screen widgets are solid, and it's built into every Apple device you own — something single-platform to-do apps can't match. If your tasks are mostly short errands and you live in the Apple ecosystem, there is no shame in it.
+
+iOS 26 also gave Reminders a **New Reminder control** you can assign to the Action Button, the Lock Screen, or Control Center: one press, blank reminder, keyboard up. For a single quick item it's a real improvement over digging into the app — and it's a fair thing to put on the button if your tasks arrive one at a time and you're happy typing them. What it doesn't change: the reminder is one blank line. The sentence with three things in it still needs to become three reminders by hand, or [come out of a voice-first parser instead](/guides/apple-reminders-vs-voice-to-do-apps).
 
 Where it runs out: everything is typed or transcribed-as-is. "Call dentist about the molar, move the Friday thing to next week, and remind me 30 min before" becomes one long title, not three structured tasks. Voice-first apps spend their effort exactly there — parsing dates, splitting sentences, and putting each item on the right day.
 
@@ -86,5 +100,6 @@ The unifying idea: the fallback ladder exists so there is **no situation with no
 
 ## Related
 
+- [What Siri can and can't do with your to-do list](/guides/apple-reminders-vs-voice-to-do-apps) — the capture-side limits of the built-in path
+- [How to add several reminders at once on iPhone](/guides/add-several-reminders-at-once-on-iphone) — what one press is worth when the sentence holds three tasks
 - [How to stop forgetting things you need to do](/guides/stop-forgetting-things-you-need-to-do) — why effortless capture matters
-- [How to plan your day in 2 minutes](/guides/plan-your-day-in-2-minutes) — the morning routine that uses these methods

@@ -1,14 +1,14 @@
 ---
-title: How to Keep Your To-Do List Visible on iPhone
-description: Lock Screen and Home Screen widgets keep your to-dos in front of you every time you pick up your iPhone — no app opening required.
+title: Put a To-Do List on Your Lock Screen (iOS 26)
+description: Lock Screen and Home Screen to-do widgets on iOS 26 — every placement, exact setup steps, and keeping the list short enough to keep working.
 pubDate: 2026-11-02
-updatedDate: 2026-11-02
+updatedDate: 2026-11-20
 draft: true
 ---
 
 A to-do list only works if you see it. The single most effective change you can make on an iPhone: **stop keeping your list inside an app, and pin it to the two screens you already look at all day — the Lock Screen and the first Home Screen page.** Ten minutes of setup, and from then on your list appears in front of you dozens of times a day without you remembering anything.
 
-This guide shows every placement worth using, how to set each up, and how to keep the widget content meaningful (a widget full of stale tasks gets ignored within a week — there's a fix for that too).
+Most guides on this topic were written around iOS 16–17 and half of what they describe has moved. This one is current for **iOS 26**, covers every placement worth using, how to set each up, and how to keep the widget content meaningful (a widget full of stale tasks gets ignored within a week — there's a fix for that too).
 
 ## Why "just open the app" doesn't work
 
@@ -85,5 +85,6 @@ Setup is the standard 30-second widget flow, and there's no account needed to st
 
 ## Related
 
+- [Interactive to-do widgets on iPhone: the 2026 guide](/guides/interactive-to-do-widgets-iphone-2026) — the tap-to-complete story in depth
 - [How to stop forgetting things you need to do](/guides/stop-forgetting-things-you-need-to-do) — the capture half of the habit
 - [How to plan your day in 2 minutes](/guides/plan-your-day-in-2-minutes) — what to put on the Lock Screen each morning

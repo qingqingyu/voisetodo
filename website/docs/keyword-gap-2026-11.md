@@ -53,13 +53,15 @@
 ## 4. 文章写作顺序
 
 | # | 文章(英文标题) | slug | 对应空白 | 状态 |
-|---|---|---|---|---|
-| 1 | How to Add Several Reminders at Once on iPhone | `add-several-reminders-at-once-on-iphone` | Siri 一次加多条 / 合并多条 | ✅ 草稿已写(draft:true) |
-| 2 | How to Set Recurring Reminders by Voice on iPhone | — | 语音设复杂重复 | 待写 |
-| 3 | How to Put Your To-Do List on the iPhone Lock Screen (iOS 26) | 由现有 `keep-to-do-list-visible-on-iphone` 改 | 锁屏待办教程过时 | 待改 |
-| 4 | Apple Reminders vs. Voice To-Do Apps: What Siri Can and Can't Do | — | 替代方案 / 系统局限 | 待写 |
-| 5 | Interactive To-Do Widgets on iPhone: A 2026 Guide | — | 小组件教程过时 | 待写 |
-| 6 | The Best Things to Put on Your iPhone Action Button for Tasks | 由现有 `fastest-way-to-capture-tasks-on-iphone` 调整 | 操作按钮 | 待改 |
+|---|---|---|---|---|---|
+| 1 | How to Add Several Reminders at Once on iPhone | `add-several-reminders-at-once-on-iphone` | Siri 一次加多条 / 合并多条 | ✅ 已发布(2026-11-18 翻 draft:false,指向工具①) |
+| 2 | How to Set Recurring Reminders by Voice | `how-to-set-recurring-reminders-by-voice-on-iphone` | 语音设复杂重复 | ✅ 已写(draft:true,指向工具②,待审改) |
+| 3 | Put a To-Do List on Your Lock Screen (iOS 26) | `keep-to-do-list-visible-on-iphone`(已改版) | 锁屏待办教程过时 | ✅ 已改版(draft:true,重定位 iOS 26,待审改) |
+| 4 | What Siri Can't Do With Your To-Do List | `apple-reminders-vs-voice-to-do-apps` | 替代方案 / 系统局限 | ✅ 已写(draft:true,指向工具①②,待审改) |
+| 5 | iPhone Interactive To-Do Widgets - 2026 Guide | `interactive-to-do-widgets-iphone-2026` | 小组件教程过时 | ✅ 已写(draft:true,待审改) |
+| 6 | Best Things to Put on Your iPhone Action Button | `fastest-way-to-capture-tasks-on-iphone`(已调整) | 操作按钮 | ✅ 已调整(draft:true,换题+补 iOS 26 New Reminder 控件,待审改) |
+
+> 标题定稿与上表拟稿有出入(全部为过 60 字符构建限制收敛):#2 去掉 "on iPhone"、#3/#6 缩短、#4 改为 "Can't" 单侧 + 描述补全、#5 用连字符。
 
 现有 4 篇草稿的处理:
 
