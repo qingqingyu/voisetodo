@@ -11,7 +11,7 @@ interface Props {
   eager?: boolean;
   narrow?: boolean; // 窄幅展示(单截图居中)
   frame?: boolean; // 浏览器窗口框(hero 产品展示用,global.css .shot-framed)
-  glow?: boolean; // 框后绿系柔光(hero 用,.shot-glow);须与 frame 同开
+  glow?: boolean; // 框后绿系柔光(hero 用,.shot-glow);须与 frame 同开,且只能用于无底色区块(z-index:-1 会沉到垫色 section 之下)
 }
 const { name, alt, caption, eager = false, narrow = false, frame = false, glow = false } = Astro.props;
 const meta = screens[name];

@@ -56,7 +56,8 @@ section + section {
 }
 
 /* 分区节奏:偶数段垫极浅的绿灰底(纸色/浅绿交替),hero 与深色 CTA 带不参与。
-   全站统一 nth-of-type 规则,各页无需逐段加类。 */
+   只命中 main 直接子级 section —— 指南详情页的 section 包在 <article> 里,
+   长文阅读页刻意不参与垫色节奏。 */
 main > section:nth-of-type(even):not(.hero):not(.cta-band) {
   background: #f3f6f1;
 }
@@ -357,7 +358,7 @@ a:hover {
   border-radius: 22px;
   padding: 12px 12px 14px;
   box-shadow:
-    0 1px 2px rgba(27, 36, 48, 0.05),
+    var(--shadow),
     0 18px 44px rgba(27, 36, 48, 0.12);
 }
 
@@ -372,15 +373,11 @@ a:hover {
     radial-gradient(circle at 54px 13px, #e7e4dc 0 6px, transparent 7px),
     radial-gradient(circle at 78px 13px, #a8d8bb 0 6px, transparent 7px),
     linear-gradient(180deg, #f6f4ee, #f1eee6);
-  background-size: 100% 100%;
-}
-
-.shot-framed img {
-  border-radius: 12px;
 }
 
 /* hero 柔光:绿系光晕衬在窗口框后面(::after z-index:-1,溢出框外可见)。
-   accent-soft 太淡读不出(首轮视觉走查),用 accent 的低透明度两阶渐变 */
+   accent-soft 太淡读不出(首轮视觉走查),用 accent 的低透明度两阶渐变。
+   z-index:-1 会沉到带背景的区块之下 —— glow 只能用在无底色区块(hero 已排除垫色) */
 .shot-glow {
   position: relative;
 }
@@ -404,6 +401,15 @@ a:hover {
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
   background: var(--card);
+}
+
+/* 窗口框内的截图:中和 .shot img 自带的描边/投影(避免框中框),
+   圆角收紧到 12px 贴合外框 22px 的嵌套比例。
+   ⚠️ 必须排在 .shot img 之后 —— 同特异性(0,1,1)靠源码顺序取胜,挪前面会被覆盖 */
+.shot-framed img {
+  border-radius: 12px;
+  border: none;
+  box-shadow: none;
 }
 
 .shot figcaption {
