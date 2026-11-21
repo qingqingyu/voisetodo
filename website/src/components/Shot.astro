@@ -22,7 +22,7 @@ if (!meta) throw new Error(`Unknown screenshot '${name}' — run npm run images 
   <img
     src={`/screens/${name}-1100.webp`}
     srcset={`/screens/${name}-640.webp 640w, /screens/${name}-1100.webp 1100w`}
-    sizes={narrow ? '(max-width: 680px) 92vw, 340px' : '(max-width: 680px) 92vw, 480px'}
+    sizes={narrow ? '(max-width: 680px) 92vw, 300px' : '(max-width: 680px) 92vw, 360px'}
     alt={alt}
     width={meta.w}
     height={meta.h}

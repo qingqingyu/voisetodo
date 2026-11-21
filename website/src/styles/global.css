@@ -351,8 +351,12 @@ Assets.xcassets 派生,自带圆角)。用 background 而非 <img>:checks.mjs
 }
 
 /* ===== 截图 ===== */
+/* 截图显示宽度 = 手机实际尺寸档(iPhone 逻辑宽 ~390pt,取 360 留余量):
+   用户拍板「跟手机实际大小一样就行,不要那么大」—— 桌面端不再撑满容器,
+   页面中段与 hero 一律居中 360px;移动端由容器内边距自然收缩。 */
 .shot {
-  margin: 28px 0;
+  margin: 28px auto;
+  max-width: 360px;
 }
 
 /* 浏览器窗口框(Superlist 式产品展示):三窗点 + 白底卡 + 深一档投影,
