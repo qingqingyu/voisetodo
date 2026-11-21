@@ -177,10 +177,15 @@ a:hover {
   letter-spacing: -0.02em;
 }
 
+/* 品牌位 = 真实 App 图标(由 scripts/og-images.mjs --icons 从
+Assets.xcassets 派生,自带圆角)。用 background 而非 <img>:checks.mjs
+的首屏豁免只允许首页,导航图标是每页首屏元素,<img> 会撞懒加载验收。 */
 .nav-brand .mark {
   width: 26px;
   height: 26px;
   flex: none;
+  border-radius: 7px;
+  background: url('/app-icon-96.png') center / cover no-repeat;
 }
 
 .nav-links {

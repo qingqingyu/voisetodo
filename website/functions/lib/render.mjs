@@ -18,7 +18,7 @@ h1{font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;line-height:1.2;letter-spa
 h2{font-size:1.25rem;font-weight:700;margin:28px 0 10px}
 .tp-header{border-bottom:1px solid var(--line);background:var(--card)}
 .tp-header .wrap{display:flex;align-items:center;gap:10px;padding-top:14px;padding-bottom:14px}
-.tp-mark{display:inline-block;width:26px;height:26px;border-radius:6px;background:var(--accent);color:#fff;font-size:17px;line-height:26px;text-align:center;font-weight:800}
+.tp-mark{display:inline-block;width:26px;height:26px;border-radius:7px;background:url('/app-icon-96.png') center/cover no-repeat}
 .tp-brand{font-weight:700;text-decoration:none;color:var(--ink)}
 .back{display:inline-block;margin:28px 0 8px;color:var(--accent);text-decoration:none;font-size:.95rem}
 .card{border:1px solid var(--line);box-shadow:var(--shadow);border-radius:var(--radius);background:var(--card);padding:20px 22px;margin:14px 0}
@@ -66,12 +66,12 @@ export function toolResultPage({ toolPath, toolLabel, heading, bodyHtml, ct }) {
 <meta name="robots" content="noindex">
 <link rel="canonical" href="${siteUrl}${toolPath}">
 <meta name="theme-color" content="#fbfaf7">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon.png">
 <style>${PAGE_CSS}</style>
 </head>
 <body>
 <header class="tp-header"><div class="wrap">
-  <span class="tp-mark" aria-hidden="true">✓</span>
+  <span class="tp-mark" aria-hidden="true"></span>
   <a class="tp-brand" href="/">${siteConfig.appName}</a>
 </div></header>
 <main>

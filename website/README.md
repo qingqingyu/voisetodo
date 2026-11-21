@@ -55,6 +55,15 @@ pt+ct(`appStoreUrl()`)、不写禁用说法(§0.2)。
 源截图更新后重跑 `npm run images`(按 mtime 幂等)。
 **待补真机截图清单见结果文档**(锁屏三样式、桌面中/大、Siri/Action Button、设置步骤)。
 
+## 站点图标(favicon / 导航位 / OG 卡)
+
+全部从**真实 iOS 图标**派生(`VoiceTodo/Assets.xcassets/AppIcon.appiconset/icon-1024.png`),
+不在官网手绘占位图形 —— App Store 与官网的图标必须同源。`npm run og -- --icons` 生成
+`public/apple-touch-icon.png`(180,方角,iOS 自己裁圆)、`public/favicon.png`(48,预裁圆角)、
+`public/app-icon-96.png`(96,预裁圆角,导航品牌位与 Function 结果页头部引用)。
+OG 分享卡的品牌位同样嵌入该图标(generateOg 时读 base64,--icons 未先跑则回退旧占位方块)。
+**换 App 图标后**:重跑 `npm run og -- --icons` 再 `npm run build`,全站图标与 OG 卡自动跟随。
+
 ## Lighthouse 口径(§4.5)
 
 阈值:Performance ≥95 / SEO 100 / Accessibility ≥95 / Best Practices ≥95,移动端。

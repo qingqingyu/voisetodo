@@ -56,16 +56,29 @@ function ogSvg({ headline, domain }) {
   const text = lines
     .map((l, i) => `<text x="80" y="${(firstY + i * lineHeight).toFixed(0)}" font-size="${size}" font-weight="800" fill="${INK}">${esc(l)}</text>`)
     .join('\n    ');
+  // 品牌位用真实 App 图标(圆角由图标文件自带,见 derivedIcon)。
+  const iconB64 = iconBase64 ? iconBase64 : '';
+  const iconEl = iconB64
+    ? `<image x="80" y="72" width="46" height="46" href="data:image/png;base64,${iconB64}"/>`
+    : `<rect x="80" y="72" width="46" height="46" rx="11" fill="${ACCENT}"/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <rect width="1200" height="630" fill="${PAPER}"/>
   <rect x="0" y="0" width="1200" height="10" fill="${ACCENT}"/>
-  <rect x="80" y="72" width="46" height="46" rx="11" fill="${ACCENT}"/>
-  <path d="M91 97l8 8 17-18" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  ${iconEl}
   <text x="142" y="106" font-size="30" font-weight="700" fill="${INK}">${esc(siteConfig.appName)}</text>
   ${text}
   <text x="80" y="560" font-size="26" font-weight="500" fill="#7b8794">${esc(domain)}</text>
 </svg>`;
+}
+
+// OG 用小图标(96 档,已预圆角)的 base64;generateOg 时惰性读取,--icons
+// 未先跑过则回退到旧占位方块(不阻塞 OG 生成)。
+let iconBase64 = null;
+async function loadIconBase64() {
+  const iconPath = path.join(website, 'public', 'app-icon-96.png');
+  if (!existsSync(iconPath)) return;
+  iconBase64 = (await readFile(iconPath)).toString('base64');
 }
 
 async function* walkHtml(dir) {
@@ -79,6 +92,7 @@ async function* walkHtml(dir) {
 async function generateOg() {
   const outDir = path.join(dist, 'og');
   await mkdir(outDir, { recursive: true });
+  await loadIconBase64();
 
   let count = 0;
   for await (const file of walkHtml(dist)) {
@@ -95,14 +109,33 @@ async function generateOg() {
   console.log(`${count} OG images generated.`);
 }
 
+// 站点图标一律从**真实 iOS 图标**派生(仓库 VoiceTodo/Assets.xcassets/
+// AppIcon.appiconset/icon-1024.png)—— 官网与 App Store 的图标必须同源,
+// 不再手绘占位图形。换 App 图标后重跑 `npm run og -- --icons` 即全站跟随。
+const APP_ICON = path.resolve(website, '..', 'VoiceTodo', 'Assets.xcassets', 'AppIcon.appiconset', 'icon-1024.png');
+
+/// size×size 输出;rounded=true 时按 24% 圆角预裁(apple-touch-icon 不裁,
+/// iOS 自己 mask;favicon/导航位浏览器不裁,预裁更接近 App 观感)。
+async function derivedIcon(outName, size, rounded) {
+  if (!existsSync(APP_ICON)) {
+    throw new Error(`App icon missing: ${APP_ICON} — Assets.xcassets 未初始化(子模块未拉取?)`);
+  }
+  let pipe = sharp(APP_ICON).resize(size, size);
+  if (rounded) {
+    const rx = Math.round(size * 0.24);
+    const mask = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${rx}" fill="#fff"/></svg>`
+    );
+    pipe = pipe.composite([{ input: mask, blend: 'dest-in' }]);
+  }
+  await pipe.png().toFile(path.join(website, 'public', outName));
+  console.log(`public/${outName} (${size}×${size}${rounded ? ', rounded' : ''}) ← App icon`);
+}
+
 async function generateIcons() {
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">
-  <rect width="180" height="180" rx="40" fill="${ACCENT}"/>
-  <path d="M50 94l20 20 45-47" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
-  await sharp(Buffer.from(svg)).png().toFile(path.join(website, 'public', 'apple-touch-icon.png'));
-  console.log('public/apple-touch-icon.png generated.');
+  await derivedIcon('apple-touch-icon.png', 180, false);
+  await derivedIcon('favicon.png', 48, true);
+  await derivedIcon('app-icon-96.png', 96, true);
 }
 
 if (process.argv.includes('--icons')) {
