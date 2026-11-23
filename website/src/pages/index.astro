@@ -13,11 +13,25 @@ const schema = [mobileAppSchema()];
 ---
 
 <Base path="/" title={meta.title} description={meta.description} ogTitle={meta.ogTitle} schema={schema}>
-  <section class="hero" aria-label="Intro">
+  <section class="hero hero-aurora" aria-label="Intro">
     <div class="container hero-grid">
       <div>
         <p class="kicker">Voice to-do for iPhone</p>
         <h1>Say your plan <span class="accent">once</span>.<br />See it on your Lock Screen all day.</h1>
+        <svg
+          class="squiggle"
+          viewBox="0 0 160 14"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M2 9 C 14 2, 24 13, 36 8 S 56 3, 68 9 S 88 13, 100 7 S 124 2, 136 9 S 152 12, 158 6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3.5"
+            stroke-linecap="round"
+          ></path>
+        </svg>
         <p class="lede">
           Speak everything on your mind. {siteConfig.appName} turns it into a clean checklist with the right dates —
           and you can check things off right from your Lock Screen. No account. No typing.
@@ -37,7 +51,15 @@ const schema = [mobileAppSchema()];
         </div>
         <p class="hero-note">Free to start &middot; No account &middot; iPhone, iOS 26 or later</p>
       </div>
-      <div>
+      <div class="hero-shot-stack">
+        <div class="float-card" aria-hidden="true">
+          <span class="float-card-title">Today</span>
+          <ul>
+            <li class="done">Call dentist</li>
+            <li>Buy milk</li>
+            <li>Send report &middot; Fri</li>
+          </ul>
+        </div>
         <Shot
           name="01-recording"
           alt="Recording screen: a single record button captures everything you say"
@@ -54,13 +76,13 @@ const schema = [mobileAppSchema()];
     <div class="container">
       <h2 id="pain-h">Planning isn't the hard part. Remembering is.</h2>
       <div class="grid-3">
-        <div class="card">
+        <div class="card-pop pop-amber">
           <p>You had a plan this morning. By noon it's gone — not because it was wrong, but because you never saw it again.</p>
         </div>
-        <div class="card">
+        <div class="card-pop pop-teal">
           <p>Typing tasks into an app is enough friction that you just don't. So things live in your head, using up attention.</p>
         </div>
-        <div class="card">
+        <div class="card-pop pop-cyan">
           <p>The list keeps growing. Looking at it is tiring, so you stop looking. Now it's a guilt pile, not a plan.</p>
         </div>
       </div>
