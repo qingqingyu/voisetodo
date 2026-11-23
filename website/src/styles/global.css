@@ -393,6 +393,9 @@ Assets.xcassets 派生,自带圆角)。用 background 而非 <img>:checks.mjs
 
 .hero-shot-stack .shot {
   margin-top: 0;
+  /* 用户二轮反馈:hero 这张(带窗框+浮卡叠层)视觉占位偏大,
+     全站 360px 档不变,hero 单独收一档到 320px */
+  max-width: 320px;
 }
 
 /* 迷你待办浮卡:纯 CSS 画的「产品内容」碎片,贴纸化(粗描边+硬偏移投影),
@@ -402,7 +405,7 @@ Assets.xcassets 派生,自带圆角)。用 background 而非 <img>:checks.mjs
   top: -18px;
   right: -14px;
   z-index: 2;
-  width: 172px;
+  width: 156px; /* 随 hero 截图 320px 同步收小,保持约一半的叠层比例 */
   transform: rotate(4deg);
   background: var(--amber-soft);
   border: 2px solid var(--ink);
