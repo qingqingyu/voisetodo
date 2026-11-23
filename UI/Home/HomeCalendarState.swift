@@ -308,7 +308,7 @@ struct HomeCalendarState {
         // 任务此前在月历零可见入口(格子只渲染 occurrencesByDay 有日期任务,抽屉形态
         // 已被用户否决)。注入后下游自动生效:dayState 格子事件条(按分类配色、无钟点
         // 无 hour 前缀)、HomeMonthHeaderView 注水法行高分配(读 occurrencesByDay 计数)、
-        // slicedEvents 排序(hasDueTime=false 自然排有钟点条目后)、WeekStripCard 圆点
+        // HomeMonthGridButton.slice 排序(hasDueTime=false 自然排有钟点条目后)、WeekStripCard 圆点
         // 与图例、VoiceOver 朗读。
         // 挂"今天"格(与 Today tab 同屏可见一致);翻到其他月(今天不在 42 天窗口)
         // 不注入,翻回本月恢复。isCompleted 跟随 todo——deferred 原地保留期灰显;
