@@ -353,7 +353,10 @@ Assets.xcassets 派生,自带圆角)。用 background 而非 <img>:checks.mjs
   display: grid;
   grid-template-columns: 1.2fr 1fr;
   gap: 48px;
-  align-items: center;
+  /* 顶边对齐(Mobbin 参考 Navan/Pipedrive 的 split hero 姿态):图顶与
+     文案顶取齐、自然向下延伸低过 CTA,而不是居中悬空两头不靠。
+     用户反馈「上下都不对齐」的根因就是 center 悬浮。 */
+  align-items: start;
 }
 
 @media (max-width: 860px) {
@@ -402,8 +405,10 @@ Assets.xcassets 派生,自带圆角)。用 background 而非 <img>:checks.mjs
    微旋转叠在截图右上角。aria-hidden 装饰,移动端收起避免挤压 */
 .float-card {
   position: absolute;
-  top: -18px;
-  right: -14px;
+  /* 跨在窗框左缘、缝进图文两栏间隙(Navan 式缝合),顶部不再冒出
+     hero 共享顶边 —— 顶边对齐后任何上冒都会破坏对齐线 */
+  top: 56px;
+  left: -26px;
   z-index: 2;
   width: 156px; /* 随 hero 截图 320px 同步收小,保持约一半的叠层比例 */
   transform: rotate(4deg);
