@@ -177,6 +177,19 @@ struct HomeCalendarState {
         return !todo.isCompleted || deferredCompletionIDs.contains(todo.id)
     }
 
+    /// 长按菜单「移到稍后」是否可用(2026-11 新增)。菜单显示与写库前的防御共用这一处口径。
+    ///
+    /// 可以移:未完成、未放弃、非重复、已识别(parsed),且现在不在「稍后」里。
+    /// - 已在「稍后」(无日期且无时间信号)的不显示——移了等于原地不动。
+    /// - 「待定日期」(有 timeBucket / dueHint、没日期)**可以移**:移的时候把时段和提示一并清掉。
+    /// - 重复任务本期不支持,以后另定语义。
+    /// - 没识别成功(`extractionOutcome != .parsed`)的不允许:清日期后会进「没能识别」而不是「稍后」。
+    static func canMoveToLater(_ todo: TodoItemData) -> Bool {
+        guard !todo.isCompleted, todo.abandonedAt == nil, todo.recurrenceRule == nil else { return false }
+        guard todo.extractionOutcome == .parsed else { return false }
+        return !(todo.dueDate == nil && !hasTimeSignal(todo))
+    }
+
     /// 进度条口径的「稍后 / 待定日期」侧统计:这两组未完成条目计入顶部进度条的
     /// total / completed(2026-10-09 拍板:进度条 = 列表可见条目,任意选中日均计入;
     /// unparsed 不计入)。

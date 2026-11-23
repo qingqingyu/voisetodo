@@ -77,6 +77,9 @@ struct WarmTodoCard: View {
     var onMoveToBucket: ((TimeBucket) -> Void)? = nil
     /// 长按 context menu:移到明天。nil 时不显示「移到明天」项。
     var onMoveToTomorrow: (() -> Void)? = nil
+    /// 长按 context menu:移到稍后(2026-11 新增)。nil 时不显示;非 nil 时仍按
+    /// `HomeCalendarState.canMoveToLater` 过滤——已在「稍后」、重复、已完成、没识别的不显示。
+    var onMoveToLater: (() -> Void)? = nil
     /// 时间 chip 点击入口 + popover 提交处理。nil 时 chip 不可点(纯展示,无 dot)。
     /// 接入方:HomeSelectedDayListView 注入 `onChangeTime`,chip 变成可点 button,
     /// 弹出 `TimeEditPopover`,提交时把新钟点回传调用方写库
@@ -419,8 +422,8 @@ struct WarmTodoCard: View {
         // `Button { onOpenTodo(...) } label: { WarmTodoCard(...) }.buttonStyle(.plain)` 包装:
         // Button 是显式控件,跟 swipeActions 容器级手势天然共存(Apple Reminders 标准模式),
         // 内嵌 checkbox Button 也由 SwiftUI 分派给最内层,不会误触发外层 row tap。
-        // 长按 context menu:兜底路径,不走拖拽也能改时段/移到明天。
-        // 只在调用方注入 callback 时才挂 —— preview / mock 场景两个 callback 都 nil,
+        // 长按 context menu:兜底路径,不走拖拽也能改时段/移到明天/移到稍后。
+        // 只在调用方注入 callback 时才挂 —— preview / mock 场景 callback 都 nil,
         // 此时 contextMenu 的 ViewBuilder 返回 EmptyView → SwiftUI 不挂 long-press 手势,
         // 与「裸 view」行为等价,但保持 View tree 类型稳定(condition 切换不引起重建)。
         // 卡片内部只剩 contextMenu(long-press)。tap 由调用方 Button 接管(见各调用点),
@@ -445,6 +448,16 @@ struct WarmTodoCard: View {
                     onMoveToTomorrow()
                 } label: {
                     Label(String(localized: "card.menu.move_to_tomorrow"), systemImage: "calendar.badge.plus")
+                }
+            }
+            // 「移到稍后」排在「移到明天」下面(2026-11)。能不能移由 HomeCalendarState.canMoveToLater
+            // 统一判定:已在「稍后」、重复、已完成、没识别的条目不显示这一项。
+            if let onMoveToLater, HomeCalendarState.canMoveToLater(todo) {
+                Button {
+                    HapticFeedback.light()
+                    onMoveToLater()
+                } label: {
+                    Label(String(localized: "card.menu.move_to_later"), systemImage: "tray")
                 }
             }
         }

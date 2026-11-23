@@ -1917,6 +1917,7 @@ struct HomeView<Store: HomeTodoStore>: View {
                             // 必须先用 userDayStart(onNaturalDay:) 抬到用户日坐标系，否则 startHour>0
                             // 时会再次折算到前一个用户日 → "移到明天"原地不动（缺陷 1）。
                             onMoveToTomorrow: { id in moveTodoToTomorrow(id, baseDate: DayClock.userDayStart(onNaturalDay: selectedDate, calendar: calendar)) },
+                            onMoveToLater: { id in moveTodoToLater(id) },
                             onChangeTime: { id, date in
                                 changeTodoTime(id: id, date: date)
                             },
@@ -3067,6 +3068,55 @@ struct HomeView<Store: HomeTodoStore>: View {
             )
         } catch {
             VoiceTodoLog.store.error("home.move_to_tomorrow.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
+            coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
+        }
+    }
+
+    /// 长按「移到稍后」(2026-11 新增):清掉日期、钟点、时段、模糊时间提示,任务进「稍后」分组。
+    ///
+    /// **和 `unassignTodoFromDay`(拖回抽屉)的区别**:那个**保留** `timeBucket`。带时段 / 提示的
+    /// 无日期任务,按 `HomeCalendarState` 的口径属于「待定日期」而不是「稍后」,所以只清日期
+    /// 任务会落进「待定日期」。这里要进的是「稍后」,`timeBucket` 和 `dueHint` 也一并清掉。
+    ///
+    /// 能不能移以 `HomeCalendarState.canMoveToLater` 为唯一口径:菜单靠它过滤,这里写库前再兜底查一次。
+    ///
+    /// **依赖契约**:与 `moveTodoToTomorrow` 相同——title / detail / dueHint / recurrenceRule
+    /// 显式重传原值,`dueDate` / `hasDueTime` / `timeBucket` 传空即清空;
+    /// `reminderOffsetMinutes` / `eventEndDate` 用默认 nil(无日期时本来就会被归一化清掉)。
+    private func moveTodoToLater(_ todoId: UUID) {
+        // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
+        guard let todo = store.findTodo(by: todoId) else {
+            VoiceTodoLog.ui.warning("home.move_to_later.todo_not_found id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        // UI 已按 canMoveToLater 过滤;这里是兜底,防止别的调用路径把不该移的条目写坏。
+        guard HomeCalendarState.canMoveToLater(todo) else {
+            VoiceTodoLog.ui.warning("home.move_to_later.not_allowed id=\(todoId.uuidString, privacy: .public)")
+            return
+        }
+        do {
+            try coordinator.updateTodoDetail(
+                todoId,
+                update: TodoDetailUpdate(
+                    title: todo.title,
+                    detail: todo.detail,
+                    category: nil,
+                    priority: nil,
+                    dueDate: nil,
+                    hasDueTime: false,
+                    timeBucket: nil,
+                    dueHint: "",
+                    recurrenceRule: todo.recurrenceRule
+                )
+            )
+            occurrenceRevision += 1
+            // 文案复用拖回抽屉的那条(三语都已是「已移回稍后」),两件事对用户是同一个结果。
+            coordinator.showToast(
+                message: String(format: String(localized: "home.unassigned_from_day"), todo.title),
+                style: .success
+            )
+        } catch {
+            VoiceTodoLog.store.error("home.move_to_later.failed id=\(todoId.uuidString, privacy: .public) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
             coordinator.showToast(message: ErrorMessages.storageError, style: .warning)
         }
     }
