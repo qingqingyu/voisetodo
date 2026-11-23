@@ -10585,3 +10585,25 @@ test("web 档:模型结果已产生后才断开 → 不退款(用户其实已拿
     assert.equal(kv.values.get(quotaKey), "1", "结果已产生,断开不退");
   });
 });
+
+test("web 档:登记时信号已 abort(鉴权与登记之间断开)→ 仍然退款", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  abortController.abort(); // 进 handleRequest 之前访客就已经走了
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    // 主流程卡在上游不返回(等价于被运行时取消),故意不 await —— 同上一用例
+    void handleRequest(
+      webRequestWithSignal({ transcript: "call the dentist tomorrow" }, abortController.signal),
+      env,
+      ctx,
+      () => new Promise(() => {})
+    ).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.ok(quotaKey, "闸门已扣(扣减发生在 waitUntil 保活的 gatesPromise 里)");
+    assert.equal(kv.values.get(quotaKey), "0", "已 abort 的信号补登记后同样退回");
+  });
+});
