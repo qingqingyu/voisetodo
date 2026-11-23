@@ -153,6 +153,13 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       // 扣减时刻的值而不是退款时重算(跨 UTC 0 点的请求重算会退到第二天的桶)。
       // 闸门因配置被跳过时为 null:没扣过就不该退。
       requestContext.webDailyCharge = await enforceWebGates(request, env, requestContext, ctx);
+      // 断连退款必须挂在 abort 事件 + ctx.waitUntil 上(2026-11-23 线上隔离实验)。
+      // 真实运行时里客户端一断开,**主流程的后续代码就不会再执行** —— 实测:断开
+      // 事件触发后,只有事先登记进 waitUntil 的任务能跑完,catch 块里的退款到不了。
+      // (单元测试里主流程不会被杀,所以「在 catch 里退款」测试全绿、线上空转。)
+      // 这里在扣减完成后立即登记:断开 → 退掉这次每日额度。webSettled 在模型结果
+      // 拿到后置位,响应已就绪才断开的不退(用户已经拿到了结果)。
+      registerWebDisconnectRefund(request, env, requestContext, ctx);
       logInfo("proxy.web.auth.ok", requestContext);
       url.pathname = "/v1/todo-extractions";
     }
@@ -513,6 +520,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       }
       throw error;
     }
+    // 模型结果已拿到:此后访客才断开的话,结果其实已经产生(只是没送达最后一步),
+    // 不再按「没看到结果」退款 —— 见 registerWebDisconnectRefund。
+    requestContext.webSettled = true;
     requestContext.provider = result.provider.type;
     requestContext.providerId = result.provider.id;
 
@@ -2134,7 +2144,34 @@ async function refundIpDaily(request, env, requestContext, ctx) {
 //     refundDeviceQuotaOnEmptyOutcome 同口径。
 // velocity / 全局预算**不退**:与 App 档一致,防刷维度发起即计数。
 // 退款失败只告警不抛(用户请求已终结,抛了也没人接;leak 率靠日志监控)。
+// 登记「访客断开 → 退 web 每日额度」(见调用处注释:断开后主流程不再执行,
+// 只有 waitUntil 里的任务能跑完)。
+//   - 无 request.signal / 无 ctx.waitUntil(老运行时、单测传 {}):不登记,
+//     退回主流程 catch 里的退款路径(测试环境主流程不会被杀,那条路可达)。
+//   - 幂等由 refundWebIpDaily 的 webRefunded 标志保证:本任务与主流程 catch
+//     可能先后都调到退款,只退一次。
+function registerWebDisconnectRefund(request, env, requestContext, ctx) {
+  if (!request?.signal || typeof request.signal.addEventListener !== "function") return;
+  if (typeof ctx?.waitUntil !== "function") return;
+  request.signal.addEventListener("abort", () => {
+    if (requestContext.webSettled) return;
+    requestContext.webDisconnectRefundScheduled = true;
+    ctx.waitUntil(
+      refundWebIpDaily(env, requestContext, ctx, "client_disconnected")
+        .then(() => true)
+        .catch((error) => {
+          // refundWebIpDaily 内部已逐段 try/catch;这里兜的是它自身的契约破坏。
+          logError("proxy.web.ip_daily.disconnect_refund_crashed", { ...requestContext, ...errorFields(error) });
+        })
+    );
+  });
+}
+
 async function refundWebIpDaily(env, requestContext, ctx, reason, { countsAgainstBudget = true } = {}) {
+  // 幂等:同一次请求只退一次。abort 事件的 waitUntil 任务与主流程 catch 可能
+  // 都调到这里(运行时是否在断开后继续执行主流程并不可靠),同步置位再做事。
+  if (requestContext.webRefunded) return;
+  requestContext.webRefunded = true;
   // 桶的 hash 与日期都用扣减时刻记下的值(enforceWebGates 的返回):退款时重算
   // 日期会把跨 UTC 0 点的请求退到第二天的桶,吃掉新一天的一次额度。
   const charge = requestContext.webDailyCharge;

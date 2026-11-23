@@ -75,23 +75,35 @@ v1 同样,token 是完整「周三」),工具页如实展示,文案注明更活�
 - 成本:web 档全局预算(`GLOBAL_WEB_DAILY_LIMIT=300`)触发频率每周 ≤1 次。
 - 有人用没人点 → 调网页/App 功能分界;没曝光 → 问题在选词不在工具,回调研。
 
-## 部署清单(人工)
+## 部署清单
+
+✅ 已上线(2026-11-23 实测打通;本项目 **Pages 未连接 Git**,生产部署方式是本机直传):
+
+```bash
+cd website && npm run build && npx wrangler pages deploy --branch main   # 官网
+cd ../AIProxy && npx wrangler deploy                                      # 代理
+```
+
+- Pages 配置在 `website/wrangler.toml`(项目名/产物目录/兼容标志/[vars]),
+  **[vars] 是纯文本变量的唯一来源**;`WEB_EXTRACT_TOKEN` 是面板里的 Secret。
+- ⚠️ 轮换 `WEB_EXTRACT_TOKEN` 必须两边同步:代理 `wrangler secret put` +
+  Pages `wrangler pages secret put --project-name voicetodo-app`,**之后必须
+  重新部署 Pages**(secrets 只在新部署生效,2026-11-23 踩过:轮换后没重发,
+  工具① 稳定 502)。
+- ⚠️ 断连退款(连点保护)要两端都开 `enable_request_signal`:代理在
+  AIProxy/wrangler.toml,Pages 在 website/wrangler.toml —— 已配,有测试守着
+  (functions/lib/pages-config.test.mjs + wrangler-config.test.js)。
+- ⚠️ 断开退款的真实机制(2026-11-23 隔离实验):客户端一断开,Worker 主流程
+  的后续代码**不再执行**,只有事先登记进 ctx.waitUntil 的任务能跑完 —— 退款
+  挂在 request.signal 的 abort 事件上登记,不能依赖 catch 块(单测主流程不会
+  被杀,catch 路径测试全绿但线上空转,别再犯)。
+
+待人工:
 
 1. ASC Provider Token 生成后替换 `src/config.mjs` 的 `providerToken`
    (不填则所有 ct 归因都看不到 —— 阶段 0 先决条件,仍未做)。
-2. 代理侧:`wrangler secret put WEB_EXTRACT_TOKEN`(与 Pages 侧同值);
-   `GLOBAL_WEB_DAILY_LIMIT` 已写入 wrangler.toml(300),随下次 deploy 生效。
-3. Pages 侧(项目设置 → 环境变量):
-   - `AI_PROXY_ORIGIN` = `https://ai.saydo.org`
-   - `WEB_EXTRACT_TOKEN` = 同代理 secret
-   - **兼容性标志加 `enable_request_signal`**(设置 → Runtime → Compatibility flags;
-     或把兼容日期提到 ≥ 2026-11-17)。代理侧同款标志已在 `AIProxy/wrangler.toml`。
-     两边缺任一侧,访客连点取消的请求在代理里不可见,「被取消的请求不占每日 3 次」
-     的退款(2026-11-23 修复)在线上空转 —— 不报错,只是不生效。验证:连点两次后看
-     代理日志有 `proxy.web.ip_daily.refunded`,且第 3 次提交仍能出结果。
-4. GSC + Bing Webmaster 接入(README「上线后接入」节,域名 11-16 购入后待做)。
-5. 首次部署后在真浏览器走一遍两个表单(本地 `astro dev` 不服务 functions,
-   需 `wrangler pages dev` 或部署到 preview 分支验证)。
+2. GSC + Bing Webmaster 接入(README「上线后接入」节)。
+3. Cloudflare 面板看下 Pages 项目要不要重新接 Git(现在只能手动部署)。
 
 ## 测试
 

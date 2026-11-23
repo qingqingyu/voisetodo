@@ -10509,3 +10509,79 @@ test("web 档:缓存命中的空结果退款不吃退款预算(零模型成本)"
     assert.equal(kv.values.get(quotaKey), "0", "缓存命中的空结果照常退款");
   });
 });
+
+// MARK: - 断连退款走 abort 事件 + waitUntil(2026-11-23 线上隔离实验)
+
+// 真实运行时:客户端一断开,主流程后续代码不再执行,只有事先登记进
+// ctx.waitUntil 的任务能跑完。所以退款必须在请求开始时登记在 abort 事件上,
+// 不能依赖 catch 块(单测里主流程不会被杀,catch 路径可达 —— 两条路都要只退一次)。
+test("web 档:断连退款经 abort 事件登记,与 catch 路径合起来只退一次", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    await handleRequest(
+      webRequestWithSignal({ transcript: "call the dentist tomorrow" }, abortController.signal),
+      env,
+      ctx,
+      async () => {
+        abortController.abort();
+        throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      }
+    );
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "扣 1 退 1,净 0(不能因两条路径各退一次而变负或吃两次预算)");
+    assert.equal(kv.values.get(refundKey), "1", "两条路径命中同一请求,退款预算只消耗 1 次");
+  });
+});
+
+test("web 档:模拟真实运行时(断开后主流程被杀)—— 仅靠 abort 登记也能退", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    // mock 上游:被 abort 后「永远不返回」—— 等价于主流程在那一步被运行时取消,
+    // catch 里的退款永远到不了。只给 300ms 让 abort 登记的 waitUntil 任务跑。
+    const neverResolves = () => new Promise(() => {});
+    const pending = handleRequest(
+      webRequestWithSignal({ transcript: "send the report by Friday" }, abortController.signal),
+      env,
+      ctx,
+      async () => {
+        abortController.abort();
+        return neverResolves();
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "主流程未走完,仅凭 abort 登记的退款也应生效");
+    void pending; // 故意不 await:模拟被取消的主流程
+  });
+});
+
+test("web 档:模型结果已产生后才断开 → 不退款(用户其实已拿到结果)", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    const response = await handleRequest(
+      webRequestWithSignal({ transcript: "buy milk tomorrow" }, abortController.signal),
+      env,
+      ctx,
+      jsonResponseProvider("Buy milk")
+    );
+    assert.equal(response.status, 200);
+    // 响应就绪后客户端才断开(例如读完即关连接)
+    abortController.abort();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "1", "结果已产生,断开不退");
+  });
+});

@@ -1,0 +1,25 @@
+# Cloudflare Pages 项目配置(随 `wrangler pages deploy` 生效)。
+# ⚠️ 这个项目的生产部署方式是本机直传(项目未连接 Git):
+#     cd website && npm run build && npx wrangler pages deploy
+# 静态产物目录由 pages_build_output_dir 指定;Functions 取同目录下的 functions/。
+name = "voicetodo-app"
+pages_build_output_dir = "./dist"
+
+# 入站 request.signal 的断连事件:兼容日期 ≥ 2026-11-17 才默认开启,本项目
+# 兼容日期早于它,必须显式加标志。工具页(零 JS 表单)的用户会连点,浏览器
+# 取消前几次导航;Functions 只有拿到断连信号才能中止对代理的上游调用,
+# 代理侧才会退掉那次每日额度(没被看到的请求不占 3 次/天)。
+# 没有这个标志,代理侧的整套断连退款是空转的(2026-11-23 线上实测确认)。
+# 代理侧的同一标志见 AIProxy/wrangler.toml,两边必须同时开。
+# 配置文件里声明标志必须带 compatibility_date(2026-11-23 部署时报错确认);
+# 取该事件默认开启的第一天,与标志显式并存以免日后有人删标志时静默失效。
+compatibility_date = "2026-11-17"
+compatibility_flags = ["enable_request_signal"]
+
+# ─── 工具①(拆句)的环境变量 ────────────────────────────────────────────────
+# ⚠️ 用本文件部署时,[vars] 是纯文本变量的**唯一来源** —— 面板里设的纯文本变量
+# 会被覆盖(2026-11-23 实测:漏写这一条,工具① 线上直接 503 Tool not available)。
+# 机密(WEB_EXTRACT_TOKEN)不在这里:它是在面板里以 Secret 类型设的,部署不影响。
+# 值 = AI 代理的基地址(与 AIProxy/wrangler.toml 的自定义域名一致)。
+[vars]
+AI_PROXY_ORIGIN = "https://ai.saydo.org"
