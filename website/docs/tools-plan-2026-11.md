@@ -84,6 +84,11 @@ v1 同样,token 是完整「周三」),工具页如实展示,文案注明更活�
 3. Pages 侧(项目设置 → 环境变量):
    - `AI_PROXY_ORIGIN` = `https://ai.saydo.org`
    - `WEB_EXTRACT_TOKEN` = 同代理 secret
+   - **兼容性标志加 `enable_request_signal`**(设置 → Runtime → Compatibility flags;
+     或把兼容日期提到 ≥ 2026-11-17)。代理侧同款标志已在 `AIProxy/wrangler.toml`。
+     两边缺任一侧,访客连点取消的请求在代理里不可见,「被取消的请求不占每日 3 次」
+     的退款(2026-11-23 修复)在线上空转 —— 不报错,只是不生效。验证:连点两次后看
+     代理日志有 `proxy.web.ip_daily.refunded`,且第 3 次提交仍能出结果。
 4. GSC + Bing Webmaster 接入(README「上线后接入」节,域名 11-16 购入后待做)。
 5. 首次部署后在真浏览器走一遍两个表单(本地 `astro dev` 不服务 functions,
    需 `wrangler pages dev` 或部署到 preview 分支验证)。
@@ -92,6 +97,7 @@ v1 同样,token 是完整「周三」),工具页如实展示,文案注明更活�
 
 - 代理:`cd AIProxy && npm test`(web 档 10 个新用例:鉴权/405/413/每日/
   每分钟/独立预算桶/不碰 App 设备配额/mode 拒绝)。
-- 解析器移植:`cd website && npm run test:functions`(19 用例,含与 Swift
-  行为对齐的口径断言)。
+- 解析器移植 + 工具①表单处理:`cd website && npm run test:functions`
+  (`functions/lib` 与 `functions/api` 下的用例,含与 Swift 行为对齐的口径断言、
+  split.js 的断连信号透传)。
 - 构建:`cd website && npm run build`(19 页全过验收检查)。

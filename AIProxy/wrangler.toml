@@ -1,6 +1,11 @@
 name = "voicetodo-ai-proxy"
 main = "worker.js"
 compatibility_date = "2026-05-26"
+# 入站 request.signal 的断连事件:兼容日期 ≥ 2026-11-17 才默认开启,当前日期下必须
+# 显式加标志。没有它 request.signal 永不 abort —— 客户端取消后上游 fetch 照跑到底
+# (白烧 token),provider.js 的 client_disconnected 判定与随后的额度退款(App 设备桶
+# / web 每日 IP 桶)整条路径都不会触发。wrangler-config.test.js 有断言守着。
+compatibility_flags = ["enable_request_signal"]
 workers_dev = true
 
 # 自定义域名:workers.dev 在国内被 DNS 污染,绑自定义域名走 Cloudflare CDN (104.x.x.x)
@@ -125,6 +130,11 @@ GLOBAL_BUDGET_WINDOW_HOURS = "6"
 #   错误码 global_budget_exceeded_web，网页端降级显示"今天的网页额度用完了"。
 #   估算口径：按工具页日预算反推（每次 ≈ 输入 <1k + 输出 500 tok）。
 GLOBAL_WEB_DAILY_LIMIT = "300"
+# web 每日额度「退款预算」:每 IP 每天最多免计 N 次(默认 3)。触发退款的场景:
+# 用户连点被浏览器取消的请求、上游全败、空结果。封顶的原因:取消与恶意取消
+# 无法区分,不封顶则单 IP 可让净计费为 0、约 50 分钟打空上面的 web 全局预算桶
+# (被取消的请求仍占全局预算且不退)。正常连点 2-3 次完全覆盖。
+# WEB_REFUND_DAILY_LIMIT = "3"
 # 每订阅每天 extract 调用上限（默认 500，按 UTC 日）。以验签 payload 的订阅标识
 # （originalTransactionId，服务端加盐哈希后落键——隐私政策承诺只持有哈希标识）
 # 为键——JWS 不绑定设备、X-Device-ID 客户端自填，「一个合法 JWS + 轮换设备 ID」

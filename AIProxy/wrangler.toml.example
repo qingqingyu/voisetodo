@@ -1,6 +1,9 @@
 name = "voicetodo-ai-proxy"
 main = "worker.js"
 compatibility_date = "2026-05-26"
+# 入站 request.signal 的断连事件(客户端取消 → abort 上游 fetch → 退额度)。
+# 兼容日期 ≥ 2026-11-17 才默认开启,更早的日期必须显式加这个标志。
+compatibility_flags = ["enable_request_signal"]
 
 [vars]
 # ─── 每日额度：免费档 / Pro 档 ────────────────────────────────────────────────
@@ -49,6 +52,8 @@ PRO_PRODUCT_IDS = "com.qingqingyu.voicetodo.pro.monthly,com.qingqingyu.voicetodo
 #   （WEB_IP_RATE_PER_MINUTE，代码默认 6）、输入 1000 字符（代码常量）。
 #   web 全局预算独立桶；trip 错误码 global_budget_exceeded_web。留空不启用。
 # GLOBAL_WEB_DAILY_LIMIT = "300"
+# web 退款预算封顶:每 IP 每天最多免计 N 次(默认 3;连点取消/上游全败/空结果退款)。
+# WEB_REFUND_DAILY_LIMIT = "3"
 # 每订阅每天 extract 调用上限（默认 500，UTC 日）。以验签 payload 的订阅标识
 # （服务端加盐哈希后落键）为键，挡「一个合法 JWS + 轮换 X-Device-ID」
 # （按 device 计的配额对它全部失效）。超限 429 subscription_quota_exceeded，

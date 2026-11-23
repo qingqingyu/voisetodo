@@ -55,14 +55,17 @@ export async function onRequestPost(context) {
         'X-Local-Date': today,
       },
       body: JSON.stringify({ transcript: text, locale: detectLocale(text) }),
-      // 透传访客断连信号(2026-11-23 线上实测修复):零 JS 表单点提交后无反馈,
-      // 用户会连点 —— 浏览器取消前几次导航,只有最后一次的结果被看到。把
-      // request.signal 带给上游,代理检测到断连就退掉那次每日额度(没看到的
-      // 请求不占 3 次/天);同时保留 45s 超时兜底。
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]),
+      signal: upstreamSignal(request.signal),
     });
   } catch (error) {
-    console.error('split: upstream fetch failed', error);
+    // 访客连点时浏览器取消上一次导航 → request.signal abort → fetch 抛错。这是修复
+    // 「连点烧光额度」后的预期路径(代理侧已给被取消的请求退额度),按 info 记,
+    // 不和真正的上游不可达混在 error 里。
+    if (request.signal.aborted) {
+      console.log('split: visitor left before upstream answered');
+    } else {
+      console.error('split: upstream fetch failed', error);
+    }
     return errorResult('Could not reach the service', 'The splitting service did not respond. Nothing was saved — please try again in a moment.', 503);
   }
 
@@ -158,6 +161,29 @@ everything you confirm there is saved with the dates shown above.</p>`;
     bodyHtml,
     ct: CT,
   }));
+}
+
+// 上游 fetch 的 AbortSignal:访客断连 + 45s 超时,任一触发即取消。
+//
+// 为什么要透传访客断连(2026-11-23 线上实测修复):零 JS 表单点提交后无反馈,用户
+// 会连点 —— 浏览器取消前几次导航,只有最后一次的结果被看到。把 request.signal 带给
+// 上游,代理检测到断连就退掉那次每日额度(没看到的请求不占 3 次/天)。
+//
+// 运行时前提:request.signal 要真的会 abort,Pages 项目需要兼容标志
+// enable_request_signal(兼容日期 ≥ 2026-11-17 才默认开启),否则这里透传的是一个
+// 永不触发的信号,修复在线上空转(不会报错,只是不生效)。
+//
+// AbortSignal.any 加 typeof 守卫:缺失时退回「只有超时」的旧信号并显式告警,
+// 而不是让每次表单提交都抛 TypeError 变成 503 —— 那比修复前更糟。
+// (代理侧同款合并与 fallback 见 AIProxy/src/adapters/base.js mergeSignals;
+// 官网零依赖、不跨目录 import,这里只保留最小守卫。)
+function upstreamSignal(visitorSignal) {
+  const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  if (typeof AbortSignal.any !== 'function') {
+    console.warn('split: AbortSignal.any unavailable; visitor disconnects will not cancel the upstream request');
+    return timeoutSignal;
+  }
+  return AbortSignal.any([visitorSignal, timeoutSignal]);
 }
 
 // ---------- 渲染小件 ----------
