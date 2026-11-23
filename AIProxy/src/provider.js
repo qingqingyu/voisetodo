@@ -339,6 +339,23 @@ export async function executeWithFailover(candidates, params, fetchImpl, request
             attempt.durationMs = Date.now() - attempt.startedAt;
           } catch (validationError) {
             attempt.durationMs = Date.now() - attempt.startedAt;
+            // 客户端在响应头之后、body 读完之前断开(非流式):fetch 的 signal 绑定整个
+            // 响应体,response.json() 抛 AbortError。它与上面的 pre_response 分支是同一
+            // 件事(客户端已经走了),不能落进下面的 invalid_response 分支 —— 那里会给
+            // provider 记一次假故障(计入熔断)并 failover 到下一家(同样立刻被 abort 再
+            // 记一次);没有下一家时抛出的还是普通 Error,外层按 provider_failed 记 502、
+            // 退款原因也记错。判据同上:options.abortSignal.aborted,不看 error.name。
+            // 运行时前提:enable_request_signal(AIProxy/wrangler.toml),否则本分支不可达。
+            if (options.abortSignal?.aborted) {
+              logInfo("proxy.client.disconnected", {
+                ...requestContext,
+                providerId: entry.id,
+                attempt: attempt.attempt,
+                phase: "reading_body",
+                elapsedMs: attempt.durationMs
+              });
+              throw new ProxyHTTPError(499, "Client disconnected", { errorType: "client_disconnected" });
+            }
             const classification = {
               retryable: true,
               errorType: validationError?.errorType || "invalid_response"

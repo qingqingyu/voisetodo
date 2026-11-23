@@ -10282,3 +10282,230 @@ test("web 档:stream:true 拒绝 400(表单页整页渲染,流式分支不应可
   );
   assert.equal(response.status, 400);
 });
+
+// MARK: - web 档退款收口第二轮(双 review 第 1 轮补审)
+
+// 与「连点三次 + 第三次成功」同一套节奏,便于直接对比净计费。
+async function cancelWebTimes(kv, count, extraEnv = {}) {
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv, ...extraEnv };
+    for (let i = 0; i < count; i += 1) {
+      const abortController = new AbortController();
+      await handleRequest(webRequestWithSignal({ transcript: `cancel me ${i}` }, abortController.signal), env, {}, abortingFetch(abortController));
+    }
+  });
+  const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+  const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+  return { quota: quotaKey ? kv.values.get(quotaKey) : null, refundKey, refund: refundKey ? kv.values.get(refundKey) : null };
+}
+
+test("web 档:WEB_REFUND_DAILY_LIMIT=0 关闭退款,不静默回落默认 3", async () => {
+  // 0 的语义与 WEB_IP_DAILY_LIMIT 一致(0 = 关闭这道闸)。运维想下线退款却拿到默认 3,
+  // 是把「关掉」静默执行成「开着一半」。
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "0" });
+  assert.equal(state.quota, "3", "关闭退款:3 次取消全部占额度");
+  assert.equal(state.refundKey, undefined, "关闭退款不应创建退款预算键");
+});
+
+test("web 档:WEB_REFUND_DAILY_LIMIT 非数字回落默认 3", async () => {
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "not-a-number" });
+  assert.equal(state.quota, "0", "非法值 = 没配,按默认 3 次退");
+  assert.equal(state.refund, "3");
+});
+
+test("web 档:WEB_REFUND_DAILY_LIMIT 为空串视为未配置(默认 3),不是关闭", async () => {
+  // wrangler vars 里留空(`WEB_REFUND_DAILY_LIMIT = ""`)是常见手滑;Number("") === 0,
+  // 若直接按 0 处理会把退款静默关掉。
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "" });
+  assert.equal(state.quota, "0", "空串应按默认 3 次退");
+  assert.equal(state.refund, "3");
+});
+
+test("web 档:WEB_REFUND_DAILY_LIMIT 小数向下取整", async () => {
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "2.9" });
+  assert.equal(state.refund, "2", "2.9 → 2 次");
+  assert.equal(state.quota, "1", "3 次取消只退 2 次");
+});
+
+test("web 档:退款预算计数器值损坏(非数字)时 fail-closed,不放行也不写坏值", async () => {
+  const kv = new MemoryKV(new Map());
+  await cancelWebTimes(kv, 1);
+  const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+  kv.values.set(refundKey, "corrupted");
+  const lines = await captureConsole(async () => {
+    await cancelWebTimes(kv, 1);
+  });
+  const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+  // 第一次取消在计数器损坏前已退(净 0);损坏后第二次取消不退 → 净 1。
+  assert.equal(kv.values.get(quotaKey), "1", "计数器坏了不该放行:损坏后的取消占额度");
+  assert.equal(kv.values.get(refundKey), "corrupted", "不得改写损坏的计数器(NaN 写回会让此后永远放行)");
+  assert.ok(
+    lines.some((line) => line.includes('"event":"proxy.web.ip_daily.refund_budget_failed"')),
+    "计数器损坏必须显式告警"
+  );
+  assert.ok(
+    !lines.some((line) => line.includes('"event":"proxy.web.ip_daily.refund_capped"')),
+    "计数器故障不是「封顶」,不得误记成 refund_capped"
+  );
+});
+
+test("web 档:预算用尽的封顶日志 refund_capped 带上限值", async () => {
+  const kv = new MemoryKV(new Map());
+  const lines = await captureConsole(async () => {
+    await cancelWebTimes(kv, 4);
+  });
+  const capped = lines.filter((line) => line.includes('"event":"proxy.web.ip_daily.refund_capped"'));
+  assert.equal(capped.length, 1, `第 4 次取消应记一条封顶: ${capped.join(" | ")}`);
+  assert.ok(capped[0].includes('"limit":3'), `封顶日志应带 limit: ${capped[0]}`);
+  assert.ok(capped[0].includes('"reason":"client_disconnected"'));
+});
+
+test("web 档:全部 provider 被熔断(no_candidates 503)同样退每日额度", async () => {
+  // provider_failed 退款的同口径:用户拿到的是同一张 503「AI proxy failed」,没拿到任何东西。
+  // 这条路径不经过 executeWithFailover 的 catch,修复前漏退。
+  const kv = new MemoryKV(new Map());
+  const healthKv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      AI_PROVIDER_STATE_KV: healthKv,
+      WEB_IP_RATE_PER_MINUTE: "20",
+      WEB_REFUND_DAILY_LIMIT: "10"
+    };
+    // 连续失败到熔断阈值(threshold 默认 5):期间每个请求都是上游失败 → 已退款。
+    for (let i = 0; i < 5; i += 1) {
+      const failed = await handleRequest(webRequest({ transcript: `fail ${i}` }, WEB_HEADERS), env, {}, failingFetch);
+      assert.ok(failed.status >= 500, `预热第 ${i + 1} 次应为 5xx,实际 ${failed.status}`);
+    }
+    const quotaKey = () => [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey()), "0", "熔断前的 5 次上游失败全部退款");
+    const tripped = await handleRequest(webRequest({ transcript: "no candidates" }, WEB_HEADERS), env, {}, failingFetch);
+    assert.equal(tripped.status, 503, "全部候选被熔断 → 503");
+    assert.equal(kv.values.get(quotaKey()), "0", "没调模型就 503,同样不该占用户额度");
+  });
+});
+
+test("web 档:provider 配置缺失(500)同样退每日额度", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    // legacy 单 provider 配置缺 API key → loadProviders 抛错 → 500,发生在扣减之后。
+    const env = { WEB_EXTRACT_TOKEN: "web-token", AI_PROVIDER: "anthropic", RATE_LIMIT_KV: kv };
+    const response = await handleRequest(webRequest({ transcript: "x" }, WEB_HEADERS), env, {}, failingFetch);
+    assert.equal(response.status, 500);
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "部署配置错误不该让访客白烧一次额度");
+  });
+});
+
+test("client disconnect while reading a non-stream body: 499, no health failure, no failover", async () => {
+  // enable_request_signal 开启后可达的窗口:响应头已 200、body 还没读完时访客/用户断开 →
+  // response.json() 抛 AbortError。旧行为把它归进 onResponse 的 invalid_response 分支:
+  // 给 provider 记一次假故障 + failover 到下一家(同样立刻被 abort 再记一次);没有下一家时
+  // 抛出的是普通 Error → 外层按 provider_failed 记 502。断连不是 provider 故障。
+  const healthKv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  const calls = [];
+  const env = providersEnv(
+    [
+      { id: "PRIMARY", type: "anthropic", url: "https://a.example/v1/messages", model: "m-a", priority: 1, weight: 10, enabled: true, secretName: "KEY_A" },
+      { id: "SECONDARY", type: "anthropic", url: "https://b.example/v1/messages", model: "m-b", priority: 2, weight: 10, enabled: true, secretName: "KEY_B" }
+    ],
+    { KEY_A: "key-a", KEY_B: "key-b" },
+    { AI_PROVIDER_STATE_KV: healthKv }
+  );
+  const response = await handleRequest(
+    requestWithSignal(
+      { transcript: "今天复习", locale: "zh-Hans" },
+      { "X-App-Token": "token", "X-Device-ID": "dev-abort-body" },
+      abortController.signal
+    ),
+    env,
+    {},
+    async (url) => {
+      calls.push(url);
+      return new Response(new ReadableStream({
+        pull(controller) {
+          abortController.abort();
+          controller.error(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+        }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  );
+  assert.equal(calls.length, 1, "客户端已经走了,不该 failover 到下一家白烧 token");
+  assert.equal(healthRecord(healthKv, "PRIMARY"), null, "断连不该给 provider 记健康失败");
+  assert.equal(healthRecord(healthKv, "SECONDARY"), null);
+  assert.equal(response.status, 499, "断连读 body 应记 499,而不是 502/503");
+});
+
+test("genuine body read failure while the client is connected still records a failure and fails over", async () => {
+  // 反向守卫:断连判据不能放太宽。客户端还在、上游 body 真的坏了 → 照旧记故障 + failover。
+  const healthKv = new MemoryKV(new Map());
+  const calls = [];
+  const env = providersEnv(
+    [
+      { id: "PRIMARY", type: "anthropic", url: "https://a.example/v1/messages", model: "m-a", priority: 1, weight: 10, enabled: true, secretName: "KEY_A" },
+      { id: "SECONDARY", type: "anthropic", url: "https://b.example/v1/messages", model: "m-b", priority: 2, weight: 10, enabled: true, secretName: "KEY_B" }
+    ],
+    { KEY_A: "key-a", KEY_B: "key-b" },
+    { AI_PROVIDER_STATE_KV: healthKv }
+  );
+  const response = await handleRequest(
+    request({ transcript: "今天复习", locale: "zh-Hans" }, { "X-App-Token": "token", "X-Device-ID": "dev-broken-body" }),
+    env,
+    {},
+    async (url) => {
+      calls.push(url);
+      if (calls.length === 1) {
+        return new Response(new ReadableStream({
+          pull(controller) { controller.error(new Error("upstream connection reset")); }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return jsonResponse({ content: [{ type: "text", text: extractionJSON("复习英语") }] });
+    }
+  );
+  assert.equal(calls.length, 2, "客户端还在,上游 body 坏了应 failover");
+  const record = healthRecord(healthKv, "PRIMARY");
+  assert.ok(record, "真实的上游中断必须记故障");
+  assert.equal(response.status, 200, "第二家成功");
+});
+
+// MARK: - 缓存命中的空结果退款不吃退款预算(双 review 第二轮建议)
+
+test("web 档:缓存命中的空结果退款不吃退款预算(零模型成本)", async () => {
+  const kv = new MemoryKV(new Map());
+  const cacheKv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      CACHE_RESULT_KV: cacheKv,
+      WEB_REFUND_DAILY_LIMIT: "1" // 预算只有 1 次:若缓存命中也吃预算,第二次就不会退
+    };
+    const emptyProvider = async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }]
+    });
+    // 第 1 次:cache miss,调模型,空结果 → 退款并吃掉唯一的预算名额
+    const ctx1 = makeFakeCtx();
+    await handleRequest(webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx1, emptyProvider);
+    await ctx1.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0");
+    assert.equal(kv.values.get(refundKey), "1", "cache miss 的退款吃 1 个预算名额");
+
+    // 第 2 次:同一句话 → 缓存命中(零模型调用),空结果仍应退款,且预算不涨
+    const ctx2 = makeFakeCtx();
+    const second = await handleRequest(webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx2, emptyProvider);
+    await ctx2.awaitAll();
+    assert.equal(second.status, 200);
+    assert.equal(kv.values.get(refundKey), "1", "缓存命中的退款不吃预算(预算封顶 1,若吃了这里会是 2 或不退)");
+    assert.equal(kv.values.get(quotaKey), "0", "缓存命中的空结果照常退款");
+  });
+});
