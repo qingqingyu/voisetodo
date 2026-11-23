@@ -295,7 +295,7 @@ final class HomeMonthAllocatorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(result.rowHeights[0], Metrics.needHeight(bars: 15))
     }
 
-    // MARK: - slicedEvents 抽出的 static 纯函数
+    // MARK: - 事件条切片(HomeMonthGridButton.slice,原 slicedEvents 抽出的 static 纯函数)
 
     /// 7 未完成 + 2 已完成,maxVisible = 4 → 4 条全是未完成,overflow = 3。
     func testSlicePrefersOpenAndCountsOpenOverflow() {

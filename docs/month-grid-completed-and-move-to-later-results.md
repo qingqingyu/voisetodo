@@ -21,7 +21,7 @@
 | `UI/Home/HomeSelectedDayListView.swift` | 新增 `onMoveToLater` 参数,`unscheduledTodoCardBase` / `occurrenceRow` 两处透传 |
 | `UI/Home/HomeView.swift` | 构造处接回调;新增 `moveTodoToLater(_:)`:清 dueDate / hasDueTime / timeBucket / dueHint,写库前 `canMoveToLater` 兜底,toast 复用 `home.unassigned_from_day` |
 | `Resources/Localizable.xcstrings` | 新增 `card.menu.move_to_later`(en `Move to Later` / ja `「後で」に移動` / zh-Hans `移到稍后`),纯新增 22 行,无重排噪音 |
-| `VoiceTodoTests/UI/HomeMonthAllocatorTests.swift` | 新文件,20 条(回归 5 + 截图复现 2 + 只有已完成 2 + 预算极小 2 + 不变量 3 + 硬上限 1 + 切片 6,去重后 20) |
+| `VoiceTodoTests/UI/HomeMonthAllocatorTests.swift` | 新文件,20 条(回归 5 + 截图复现 2 + 只有已完成 2 + 预算极小 2 + 不变量 1 + 硬上限 1 + 切片 7) |
 | `VoiceTodoTests/UI/HomeCalendarStateGroupingTests.swift` | 新增 10 条 `canMoveToLater` / 分组落位用例 |
 | `VoiceTodo.xcodeproj/project.pbxproj` | 登记新测试文件(xcodegen 生成后去掉了 AppShortcuts.xcstrings 的对象 ID 重排噪音) |
 | `docs/month-grid-shots/` | 验收截图 14 张(before / after,JPEG,见 §5) |
@@ -34,9 +34,9 @@
 - 截图复现 2 组:5 周月、第 3 周某天 5 条全已完成、今天 7 条未完成。380pt 预算:今天那周 6 条 ≥ 改动前 4 条、≥ 已完成周;并断言「把已完成全部去掉再跑一次,今天那周条数不变」(已完成的存在不减少未完成的显示)。480pt 预算:未完成 7 条全显示,剩余空间显示已完成。
 - 只有已完成 2 组:预算充足时已完成的照样显示(Pass 3a 第二段生效);未完成没吃满时已完成不插队(只吃剩余 slack)。
 - 预算极小 2 组:预算 30 / 0 / −50 不崩溃,`barsShown` 全 0、各周退回最小行高;空输入返回空。
-- 不变量 3 组:确定性伪随机(线性同余,失败可复现)4 周固定 + 36 组随机(1–6 周、混合完成态、14 档预算),断言 `need(barsShown[i]) <= rowHeights[i]`、`barsShown[i] <= totalDemand[i]`、行高不低于 chrome、预算够时行高总和恰好等于预算;**另断言混合输入下每周 `barsShown` ≥ 同输入去掉已完成后的结果**(§1.1 核心承诺,40 组输入)。
+- 不变量 1 组:确定性伪随机(线性同余,失败可复现)3 组固定 + 36 组随机(固定组为 4 周空月 / 1 周超忙 / 2 周全已完成;随机组 4–6 周、混合完成态、预算 240–639pt 连续取值),断言 `need(barsShown[i]) <= rowHeights[i]`、`barsShown[i] <= totalDemand[i]`、行高不低于 chrome、预算够时行高总和恰好等于预算;**另断言混合输入下每周 `barsShown` ≥ 同输入去掉已完成后的结果**(§1.1 核心承诺,39 组输入)。
 - 硬上限 1 组:单日 40 条被截到 15。
-- 切片 6 组:未完成优先 + overflow 只数未完成;已完成补位且 overflow 为 nil 或 0;`maxVisible = 0` 时 visible 空、overflow = 未完成数(只有已完成时为 nil);全部放得下;空天。
+- 切片 7 组:未完成优先 + overflow 只数未完成;已完成补位且 overflow 为 nil 或 0;`maxVisible = 0` 时 visible 空、overflow = 未完成数(纯未完成与混合各一组);只有已完成且 `maxVisible = 0` 时 overflow 为 nil;全部放得下;空天。
 
 ### 新增用例(`VoiceTodoTests/HomeCalendarStateGroupingTests`,10 条)
 
@@ -50,7 +50,7 @@
 
 ## 4. 回归期望值是怎么得到的(§1.5 第 1 组)
 
-改动前把 `HomeMonthHeaderView.swift` @ `3837edb` 的旧 `allocateRowHeights(eventsPerDay:budgetHeight:)` **原样**(sed 按行抽取,未手抄)拷进独立 Swift 脚本,连同常量一起编译成命令行程序,对 7 组输入(回归 5 组 + 截图复现 2 组)跑出输出,把行高和条数抄进测试作期望值。审查阶段又用同一二进制重跑核对,并把新旧两个实现一起编译、对 **336,000 组随机「只含未完成」输入**(1–6 周、14 档预算、含超 hardLimit 的单日条数)对照,**0 处不一致**。
+改动前把 `HomeMonthHeaderView.swift` @ `3837edb` 的旧 `allocateRowHeights(eventsPerDay:budgetHeight:)` **原样**(sed 按行抽取,未手抄)拷进独立 Swift 脚本,连同常量一起编译成命令行程序,对 7 组输入(回归 5 组 + 截图复现 2 组)跑出输出,把行高和条数抄进测试作期望值。此后做过**两轮独立交叉验证**,均把新旧两个实现一起编译对照:第一轮(任务一 review 循环)对 **336,000 组随机「只含未完成」输入**(1–6 周、多档预算、含超 hardLimit 的单日条数),**0 处不一致**;第二轮(全量补审)另跑 **200,000 组只含未完成 + 200,000 组混合完成态**,同样 **0 处不一致、0 次「已完成挤占未完成显示」**。
 
 ## 5. 截图
 

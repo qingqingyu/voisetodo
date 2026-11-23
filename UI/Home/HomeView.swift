@@ -3080,8 +3080,9 @@ struct HomeView<Store: HomeTodoStore>: View {
     ///
     /// 能不能移以 `HomeCalendarState.canMoveToLater` 为唯一口径:菜单靠它过滤,这里写库前再兜底查一次。
     ///
-    /// **依赖契约**:与 `moveTodoToTomorrow` 相同——title / detail / dueHint / recurrenceRule
-    /// 显式重传原值,`dueDate` / `hasDueTime` / `timeBucket` 传空即清空;
+    /// **依赖契约**:与 `moveTodoToTomorrow` 相同——title / detail / recurrenceRule
+    /// 显式重传原值,`dueDate` / `hasDueTime` / `timeBucket` / `dueHint` 传空即清空
+    /// (dueHint 清空正是本操作的目标:留 hint 会落进「待定日期」);
     /// `reminderOffsetMinutes` / `eventEndDate` 用默认 nil(无日期时本来就会被归一化清掉)。
     private func moveTodoToLater(_ todoId: UUID) {
         // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
