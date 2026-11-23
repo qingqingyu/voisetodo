@@ -9851,3 +9851,108 @@ test("web 档:不消耗 App 设备配额 —— web 流量不挤占 App 免费�
     assert.equal(app2.status, 200);
   });
 });
+
+// MARK: - web 档退款(2026-11-23 线上实测:连点烧光额度)
+// 根因:工具页零 JS 表单提交后无反馈,用户连点 → 浏览器取消前几次导航,
+// 每次被取消的请求都已扣每日额度,用户只看到最后一次结果。原则:没被看到的
+// 请求不占额度 —— client_disconnected 与空结果都退 web 每日 IP 额度。
+
+test("web 档:客户端断连退每日 IP 额度(没看到结果的请求不占 3 次/天)", async () => {
+  const kv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    const req = new Request("https://proxy.test/v1/web/todo-extractions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...WEB_HEADERS },
+      body: JSON.stringify({ transcript: "call the dentist tomorrow" }),
+      signal: abortController.signal
+    });
+    // 访客连点:浏览器取消本次导航 → Pages Function 透传断连 → 上游 fetch 被 abort
+    await handleRequest(req, env, {}, async () => {
+      abortController.abort();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    });
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.ok(quotaKey, "web 每日额度键应存在(闸门已扣)");
+    assert.equal(kv.values.get(quotaKey), "0", "断连后每日额度应退回到 0");
+    // 防刷维度不退:每分钟频率计数保持发起即计数
+    const rateKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-rate:"));
+    assert.ok(rateKey && kv.values.get(rateKey) === "1", "velocity 计数不因断连退回");
+  });
+});
+
+test("web 档:空结果退每日 IP 额度(没拆出任务不算一次)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    const emptyProvider = async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }]
+    });
+    const response = await handleRequest(
+      webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, makeFakeCtx(), emptyProvider
+    );
+    assert.equal(response.status, 200, "空结果仍是 200(由网页端展示「没找到任务」)");
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.ok(quotaKey, "web 每日额度键应存在");
+    assert.equal(kv.values.get(quotaKey), "0", "空结果后每日额度应退回到 0");
+  });
+});
+
+test("web 档:正常成功不退款(每次真实结果占一次额度)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    await handleRequest(webRequest({ transcript: "call the dentist tomorrow" }, WEB_HEADERS), env, makeFakeCtx(), jsonResponseProvider("Call the dentist"));
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "1", "成功结果正常占一次额度");
+  });
+});
+
+test("web 档:DO 主路径断连退款走 /refund(实例名与扣减一致,净计数为 0)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const req = new Request("https://proxy.test/v1/web/todo-extractions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...WEB_HEADERS },
+      body: JSON.stringify({ transcript: "call the dentist tomorrow" }),
+      signal: abortController.signal
+    });
+    await handleRequest(req, env, ctx, async () => {
+      abortController.abort();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    });
+    await ctx.awaitAll();
+
+    const dailyCalls = doBinding._calls.filter((c) => c.key === "web-ip-daily");
+    assert.equal(dailyCalls.filter((c) => typeof c.limit === "number").length, 1, "应有一次 consume");
+    assert.equal(dailyCalls.filter((c) => c.amount === 1 && typeof c.limit !== "number").length, 1, "应有一次 refund");
+    // 扣 1 再退 1:DO 存储里 web-ip-daily 的净计数为 0
+    const net = [...doBinding._store.entries()]
+      .filter(([k]) => k.includes("web-ip-daily"))
+      .reduce((sum, [, v]) => sum + v, 0);
+    assert.equal(net, 0, "被取消的请求净效果应为 0");
+  });
+});

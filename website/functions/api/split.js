@@ -55,7 +55,11 @@ export async function onRequestPost(context) {
         'X-Local-Date': today,
       },
       body: JSON.stringify({ transcript: text, locale: detectLocale(text) }),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      // 透传访客断连信号(2026-11-23 线上实测修复):零 JS 表单点提交后无反馈,
+      // 用户会连点 —— 浏览器取消前几次导航,只有最后一次的结果被看到。把
+      // request.signal 带给上游,代理检测到断连就退掉那次每日额度(没看到的
+      // 请求不占 3 次/天);同时保留 45s 超时兜底。
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]),
     });
   } catch (error) {
     console.error('split: upstream fetch failed', error);

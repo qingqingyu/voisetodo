@@ -149,6 +149,9 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       requestContext.webTier = true;
       requestContext.channel = "web";
       await enforceWebGates(request, env, requestContext, ctx);
+      // 记下已扣额度的那个 IP 桶的哈希:下方「客户端断连 / 空结果」退款路径要用
+      // 同一个哈希退回(重算依赖同一 salt,直接复用避免两处口径漂移)。
+      requestContext.webIpHash = await safeDeviceId(webClientIp(request), env);
       logInfo("proxy.web.auth.ok", requestContext);
       url.pathname = "/v1/todo-extractions";
     }
@@ -479,6 +482,12 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       // 「远端服务不生效」。ip_daily / 全局预算三层不退,防刷上限不受影响。
       const reason = error?.errorType === "client_disconnected" ? "client_disconnected" : "provider_failed";
       await refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, ctx, quotaState, reason);
+      // web 档:客户端断连同样退每日额度 —— 根因见 refundWebIpDaily 上方注释
+      // (工具页零 JS 无提交反馈,用户连点 → 浏览器取消前几次请求,只有最后一次
+      // 的结果被看到;没看到结果的请求不该占当日 3 次额度)。
+      if (webTier && reason === "client_disconnected") {
+        await refundWebIpDaily(env, requestContext, ctx, "client_disconnected");
+      }
       throw error;
     }
     requestContext.provider = result.provider.type;
@@ -603,6 +612,11 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         const reason = extractOutcome.parseOk ? "empty_todos" : "unparseable_output";
         logInfo("proxy.extract.empty_outcome", { ...requestContext, reason, stream: false, responseChars: text.length });
         await refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx, quotaState, reason);
+        // web 档:空结果(没拆出任何任务)同样退每日额度,与 App 端「没拿到价值
+        // 不计费」同口径 —— 否则一句闲话就白烧一次机会。
+        if (webTier) {
+          await refundWebIpDaily(env, requestContext, ctx, reason);
+        }
       }
     }
     // Cache write: 非流式 + 成功响应。异步写不阻塞响应(ctx.waitUntil)。
@@ -2070,6 +2084,53 @@ async function refundIpDaily(request, env, requestContext, ctx) {
     await env.RATE_LIMIT_KV.put(key, String(newValue), { expirationTtl: 36 * 60 * 60 });
   }
   logInfo("proxy.ip_quota.refunded", { ...requestContext, today, used: newValue, source: "kv" });
+}
+
+// 退 web 档每日 IP 额度(与 enforceWebIpDailyLimit 同一命名空间:DO 实例
+// web-ip-daily:<hash> / KV 键 web-ip-quota:<date>:<hash>)。
+//
+// 为什么 web 档需要(2026-11-23 线上实测):工具页是零 JS 表单,点提交后页面要等
+// AI 返回的几秒里按钮**没有任何反馈**,用户会连点。同标签页连点的语义是「浏览器
+// 取消上一次导航、发下一次 POST」—— 每次被取消的请求都已扣了每日额度,但用户
+// 只看得到最后一次的结果。实测一个 IP 几秒内被计满 3 次,用户感知是「点一次额度
+// 就用完了」。原则:没被看到的请求不占额度。
+//   - client_disconnected:Pages Function 把访客的断连信号透传过来(见
+//     website/functions/api/split.js),上游 fetch 被 abort → 本函数退 1。
+//   - empty_todos / unparseable_output:用户没拿到任何任务,与 App 端
+//     refundDeviceQuotaOnEmptyOutcome 同口径。
+// velocity / 全局预算**不退**:与 App 档一致,防刷维度发起即计数。
+// 退款失败只告警不抛(用户请求已终结,抛了也没人接;leak 率靠日志监控)。
+async function refundWebIpDaily(env, requestContext, ctx, reason) {
+  if (!requestContext.webIpHash) {
+    // 走到退款路径却没记录哈希 = 调用契约被破坏,显式告警而非静默跳过。
+    logWarn("proxy.web.ip_daily.refund_skipped", { ...requestContext, reason, cause: "webIpHash_missing" });
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    if (env.QUOTA_COUNTER_DO) {
+      const result = await refundQuotaCounterDO(env, "web-ip-daily", requestContext.webIpHash, today, "proxy.web.ip_daily.refunded");
+      if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
+        const key = `web-ip-quota:${today}:${requestContext.webIpHash}`;
+        ctx.waitUntil(
+          env.RATE_LIMIT_KV.put(key, String(result.used), { expirationTtl: 36 * 60 * 60 })
+            .catch((error) => {
+              logWarn("proxy.web.ip_daily.refund_kv_shadow_failed", { ...requestContext, ...errorFields(error) });
+            })
+        );
+      }
+      logInfo("proxy.web.ip_daily.refunded", { ...requestContext, today, reason, used: result.used, source: "do" });
+      return;
+    }
+    if (!env.RATE_LIMIT_KV) return;
+    const key = `web-ip-quota:${today}:${requestContext.webIpHash}`;
+    const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+    const newValue = Math.max(0, current - 1);
+    await env.RATE_LIMIT_KV.put(key, String(newValue), { expirationTtl: 36 * 60 * 60 });
+    logInfo("proxy.web.ip_daily.refunded", { ...requestContext, today, reason, used: newValue, source: "kv" });
+  } catch (error) {
+    logWarn("proxy.web.ip_daily.refund_failed", { ...requestContext, today, reason, ...errorFields(error) });
+  }
 }
 
 // 上游没能给出结果时把设备额度退回。
