@@ -1865,13 +1865,29 @@ function validateWebToken(request, env) {
   }
   const provided = request.headers.get("X-Web-Token") || "";
   const expected = String(env.WEB_EXTRACT_TOKEN);
-  if (provided === expected || provided === `Bearer ${expected}`) {
+  // 常数时间比较(审计 2026-11-24):=== 会在首个不同字节提前返回,留下时序侧信道。
+  // 实际风险很低(攻击面在 Cloudflare 之后,还需先拿到服务端共享 token 的位数),
+  // 但按字节异或的代价是零,顺手收紧。
+  if (timingSafeEqualString(provided, expected) || timingSafeEqualString(provided, `Bearer ${expected}`)) {
     return null;
   }
   return {
     response: new Response("Unauthorized", { status: 401 }),
     reason: "unauthorized"
   };
+}
+
+// 逐字节异或比较,耗时只随 max(len) 变化,不随首个不同位提前退出。
+// 长度差参与 diff(长度不等恒 false,且长度本身不产生额外时序信号)。
+function timingSafeEqualString(a, b) {
+  const ab = new TextEncoder().encode(a);
+  const bb = new TextEncoder().encode(b);
+  const length = Math.max(ab.length, bb.length);
+  let diff = ab.length ^ bb.length;
+  for (let i = 0; i < length; i++) {
+    diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  }
+  return diff === 0;
 }
 
 // web 请求的客户端 IP:Pages Function 把访客的 CF-Connecting-IP 放进
@@ -1884,7 +1900,71 @@ function webClientIp(request) {
   if (!raw || raw.length > 64 || !/^[A-Za-z0-9.:]+$/.test(raw)) {
     return "anonymous";
   }
+  if (raw.includes(":")) {
+    // IPv6:按 /64 前缀折叠再做哈希(审计 2026-11-24)。IPv6 用户在自己的 /64 内
+    // 换地址(SLAAC 隐私扩展)几乎零成本,按完整地址哈希等于每天 3 次的闸对 IPv6
+    // 用户形同虚设,唯一还兜底的是全局预算 —— 一个人就能让工具对所有人失效。
+    // IPv4-mapped(::ffff:a.b.c.d)特判:前 64 位恒为 0,按 /64 折叠会把所有
+    // mapped 地址折进同一个桶,改用其 IPv4 部分按 IPv4 粒度处理。
+    if (raw.includes(".")) {
+      const tail = raw.split(":").pop();
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(tail) ? tail : "anonymous";
+    }
+    const prefix = ipv6Prefix64(raw);
+    return prefix ?? "anonymous";
+  }
   return raw;
+}
+
+// 把合法 IPv6 折叠成 /64 前缀的规范串(如 "2001:db8:0:0::/64")。
+// 支持 :: 压缩与段内嵌 IPv4;畸形输入返回 null(调用方归 anonymous 共享桶,
+// 与既有"格式不合法收紧"口径一致)。
+function ipv6Prefix64(raw) {
+  const groups = expandIpv6(raw);
+  if (!groups) return null;
+  return `${groups.slice(0, 4).join(":")}::/64`;
+}
+
+function expandIpv6(raw) {
+  // 展开为 8 个十六进制 hextet 字符串(小写,去前导零);畸形返回 null。
+  const halves = raw.split("::");
+  if (halves.length > 2) return null;
+  const parseSegments = (segmentString) => {
+    if (!segmentString) return [];
+    const out = [];
+    const segments = segmentString.split(":");
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.includes(".")) {
+        // 内嵌 IPv4 只允许出现在最末段
+        if (i !== segments.length - 1) return null;
+        const parts = seg.split(".");
+        if (parts.length !== 4) return null;
+        const bytes = parts.map((p) => (/^\d{1,3}$/.test(p) ? Number(p) : -1));
+        if (bytes.some((b) => b < 0 || b > 255)) return null;
+        out.push(((bytes[0] << 8) | bytes[1]).toString(16));
+        out.push(((bytes[2] << 8) | bytes[3]).toString(16));
+      } else if (/^[0-9A-Fa-f]{1,4}$/.test(seg)) {
+        out.push(parseInt(seg, 16).toString(16));
+      } else {
+        return null;
+      }
+    }
+    return out;
+  };
+  let groups;
+  if (halves.length === 1) {
+    groups = parseSegments(halves[0]);
+    if (groups.length !== 8) return null;
+  } else {
+    const left = parseSegments(halves[0]);
+    const right = parseSegments(halves[1]);
+    if (!left || !right) return null;
+    if (left.length + right.length >= 8) return null;
+    const fill = 8 - left.length - right.length;
+    groups = [...left, ...Array(fill).fill("0"), ...right];
+  }
+  return groups;
 }
 
 // web 档三道闸:全局预算 hotpath(web 桶)+ 每分钟频率 + 每日 IP。

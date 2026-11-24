@@ -10607,3 +10607,84 @@ test("web 档:登记时信号已 abort(鉴权与登记之间断开)→ 仍然退
     assert.equal(kv.values.get(quotaKey), "0", "已 abort 的信号补登记后同样退回");
   });
 });
+
+// MARK: - webClientIp IPv6 /64 折叠 + validateWebToken 常数时间(2026-11-24 审计)
+
+test("web 档:IPv6 同 /64 内换地址共享每日配额(SLAAC 隐私扩展不绕限)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("2001:db8::1")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    // 同一 /64(2001:db8:0:0::/64)内的另一个地址:同一桶 → 429
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("2001:db8::fffe")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "web_ip_daily");
+    // 不同 /64:另一个桶 → 放行
+    const r3 = await handleRequest(webRequest({ transcript: "c" }, h("2001:db8:1::1")), env, makeFakeCtx(), ok);
+    assert.equal(r3.status, 200);
+  });
+});
+
+test("web 档:IPv4-mapped 地址按其 IPv4 部分计(不折进同一个 /64 桶)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("::ffff:203.0.113.9")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    // 同一 IPv4 的直连形式命中同一个桶 → 429(mapped 不折叠时这两次会分属不同桶)
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("203.0.113.9")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+  });
+});
+
+test("web 档:畸形 IPv6 归 anonymous 共享桶(收紧而非放松)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("2001:db8:::1")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("2001:db8::2::3")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+  });
+});
+
+test("web 档:token 比较——长度不同 / 同长不同内容都 401,Bearer 前缀可用", async () => {
+  const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" };
+  const wrongLength = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "web-tokenx", "X-Web-Client-IP": "203.0.113.7" }),
+    env, {}, failingFetch
+  );
+  assert.equal(wrongLength.status, 401);
+  const sameLengthWrong = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "wab-token", "X-Web-Client-IP": "203.0.113.7" }),
+    env, {}, failingFetch
+  );
+  assert.equal(sameLengthWrong.status, 401);
+  const bearer = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "Bearer web-token", "X-Web-Client-IP": "203.0.113.7" }),
+    env, {}, failingFetch
+  );
+  assert.notEqual(bearer.status, 401, "Bearer 前缀形式仍应通过鉴权(后续失败不是 401)");
+});
