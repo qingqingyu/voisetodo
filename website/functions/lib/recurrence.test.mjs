@@ -303,3 +303,43 @@ test('model:畸形超大 interval 不死循环(硬顶 5000 步内返回)', () =>
   );
   assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19']);
 });
+
+test('model:UTC+12+ 时区(Auckland)不因锚点已是明天而晚一天/漏首次', () => {
+  // 回归(2026-11-24 review):UTC 正午锚在 Pacific/Auckland(+12 冬 / +13 夏,白名单内
+  // 唯一 ≥ +12 的时区)已是本地「明天」,固定从 k=1 起算会让全部日期整体晚一天、
+  // 漏掉真实首次出现(实测修前 daily next3 = 11-20/21/22、weekly-Thu = 11-26)。
+  const daily = { frequency: 'daily', interval: 1, weekdays: [], day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(daily, TODAY, 'Pacific/Auckland', 3).map((d) => d.iso),
+    ['2026-11-19', '2026-11-20', '2026-11-21'],
+    'daily 首个未来日 = 明天(2026-11-19)'
+  );
+  // 2026-11-19 本身就是周四(weekdays 5=Thursday):不得漏报成下一周
+  const thu = { frequency: 'weekly', interval: 1, weekdays: [5], day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(thu, TODAY, 'Pacific/Auckland', 2).map((d) => d.iso),
+    ['2026-11-19', '2026-11-26']
+  );
+  // UTC 对照:修复对既有语义零变化
+  assert.deepEqual(
+    modelRuleOccurrences(daily, TODAY, 'UTC', 3).map((d) => d.iso),
+    ['2026-11-19', '2026-11-20', '2026-11-21']
+  );
+});
+
+test('model:间隔节奏相对第一个未来日,startK=0 与 startK=1 同构', () => {
+  // daily interval 3 / weekly interval 2 的节奏锚从 k=1 改为相对 startK 后,
+  // UTC+12+ 时区与 UTC 的日期序列应完全一致(都是「明天起每 N 天/两周一次」)。
+  const d3 = { frequency: 'daily', interval: 3, weekdays: [], day_of_month: null, end_date: null };
+  const w2 = { frequency: 'weekly', interval: 2, weekdays: [], day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(d3, TODAY, 'Pacific/Auckland', 3).map((d) => d.iso),
+    modelRuleOccurrences(d3, TODAY, 'UTC', 3).map((d) => d.iso),
+    'daily interval 3:Auckland 与 UTC 同序'
+  );
+  assert.deepEqual(
+    modelRuleOccurrences(w2, TODAY, 'Pacific/Auckland', 3).map((d) => d.iso),
+    modelRuleOccurrences(w2, TODAY, 'UTC', 3).map((d) => d.iso),
+    'weekly interval 2:Auckland 与 UTC 同序'
+  );
+});

@@ -11,7 +11,8 @@
 | `<commit-1>` | `feat(web-tools): 工具②改走 AI 解析 + 时区 Auto + 日期 basis 过滤` |
 | `<commit-2>` | `fix(proxy): web 档 IPv6 /64 折叠 + token 常数时间比较` |
 | `<commit-3>` | `content(guides): 发布两篇指南,更正检查器描述` |
-| `<commit-4>` | `docs(tools): 审计修复结果文档`(本文件) |
+| `<commit-4>` | `docs(tools): 审计修复结果文档`(本文件初稿) |
+| `<commit-5>` | `fix(web-tools): 双 review 循环收敛修复(6 轮,16+7 项)`——同源表单闸、isValidModelRule、形状校验/归一化、自适应展开上限、weekly 窗口公式等(见 §4.5);§3 测试数以本提交后的口径为准 |
 
 (hash 自引用不可行,见月历修复轮结果文档 §6.6 同款处理:以分支 HEAD 逐个对应。)
 
@@ -68,17 +69,19 @@
 
 ## 3. 测试
 
-- 官网 Functions:`npm run test:functions` —— **执行 69 / 失败 0**(原 28 + 新增 41:
-  recur-check 全新 18 条、split 新增 7 条(basis/tz 4 + 上游形状 2 + 同源表单闸 1)、
-  modelRuleOccurrences/有效性闸门 16 条;含展开数不足按实际条数说 / 空列表明说 /
+- 官网 Functions:`npm run test:functions` —— **执行 72 / 失败 0**(原 28 + 新增 44:
+  recur-check 全新 19 条、split 新增 7 条(basis/tz 4 + 上游形状 2 + 同源表单闸 1)、
+  modelRuleOccurrences/有效性闸门 18 条;含展开数不足按实际条数说 / 空列表明说 /
   合法 JSON 形状不对显式 502 / 非对象 todos 元素归一化 / 非字符串 title 不渲染
   [object Object] / App 会丢弃的畸形规则(weekly 空 weekdays、monthly 越界日号、
-  非整数 interval/weekdays)判无效走「无重复」诚实页 / 跨站 Origin 拒 403)。
+  非整数 interval/weekdays)判无效走「无重复」诚实页 / 跨站 Origin 拒 403 /
+  零任务走「Nothing to check」不谎报「No repeat」 /
+  UTC+12+ 时区(Auckland)锚点自适应不晚一天不漏首次)。
 - 代理:`cd AIProxy && npm test` —— **执行 461 / 失败 0**(原 455 + 新增 6:
   /64 折叠 ×3、token 比较语义 ×1、含点非 mapped 畸形 IPv6 归 anonymous ×1、
   内嵌 IPv4 放中间/出现两次归 anonymous ×1)。
 - 官网构建:`npm run build`(astro build + og-images + checks)—— **21 页全部通过**。
-- 审计报告口径的「代理 455 用例、Functions 28 用例」在本分支分别增至 461 / 69。
+- 审计报告口径的「代理 455 用例、Functions 28 用例」在本分支分别增至 461 / 72。
 
 ## 4. 与审计不一致 / 自己做的判断
 
@@ -112,6 +115,21 @@
    比较,主域/pages.dev 旧域/preview 部署自动全部正确。工具端点无 cookie 无会话,
    这是反 CSRF 的最小形式。
 6. **#5 providerToken 与 Pages 接 Git** 不是代码能完成的项,本分支只留配置点与待办。
+7. **零任务诚实页 + lastmod(全局双 review 追加)**:上游 200 但 `todos` 为空时,
+   recur-check 走专门的「Nothing to check」页(与 split.js「No tasks found」同口径),
+   不再说「No repeat in this phrase」—— 那句暗示解析到了任务、只是不重复;
+   两个工具页的 `pages.mjs lastmod` 从 2026-11-18 提到 2026-11-24(页面内容在本分支
+   被实质改写,sitemap lastmod 直接消费该字段,不更新会向爬虫谎报「未变更」)。
+8. **UTC+12+ 时区锚点自适应(全局双 review 追加,超审计范围)**:`modelRuleOccurrences`
+   原固定从 k=1(锚点次日)起算,但 UTC 正午锚在偏移 ≥ +12 的时区(白名单内唯一
+   Pacific/Auckland,+12 冬 / +13 夏)已是本地「明天」——全部日期整体晚一天,
+   且 weekly 命中明天的规则漏报真实首次(node 实测修前 daily next3 = 11-20/21/22、
+   weekly-Thu = 11-26,应分别为 11-19/20/21、11-19)。修法:按锚点实际本地 iso
+   自适应起始步数(`startK`,+12+ 时区取 0 其余取 1),daily/weekly 节奏锚相对
+   startK;全白名单 45 时区 + 6 个非白名单极端时区(Kiritimati +14、Pago_Pago -11、
+   Chatham +13:45 等)实测 daily 首个未来日均严格 = 明天。既有 `nextOccurrences`
+   (基线代码,已无生产调用方,仅剩与 Swift v1 的对照测试在用)同款锚缺陷,
+   不在本分支 diff 内,记为后续项未动。
 
 ## 5. 部署提醒(与代码分离的运维项)
 

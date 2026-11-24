@@ -128,6 +128,21 @@ or continue in the <strong>app</strong>, where every capture runs this parse.</p
   });
   const recurring = entries.filter((entry) => entry.hasRepeat);
 
+  if (todos.length === 0) {
+    // 上游 200 但一个任务都没解析出来:与 split.js 的「No tasks found」同口径,
+    // 不能说成「No repeat」—— 那暗示解析到了任务、只是不重复,同样是装正常。
+    return htmlResponse(toolResultPage({
+      toolPath: TOOL_PATH,
+      toolLabel: 'recurring reminder checker',
+      heading: 'Nothing to check',
+      bodyHtml: `
+<p class="you-said">You said: “${escapeHtml(phrase)}”</p>
+<div class="card"><p style="margin:0">No tasks were recognized in that phrase — so there is no repeat to show.
+Try naming the things you want to do, with the repeat spelled out (“pay rent monthly on the 1st”).</p></div>`,
+      ct: CT,
+    }));
+  }
+
   if (recurring.length === 0) {
     // 模型没给出任何重复规则:如实说 —— App 会把这些任务建成不重复的普通任务。
     // 这是「展示 App 实际行为」口径的一部分,不拿本地解析器编一个规则出来。

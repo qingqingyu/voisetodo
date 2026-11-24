@@ -73,7 +73,7 @@ export const pages = {
     ogTitle: 'One sentence in, a dated list out',
     description:
       'Paste a sentence with several tasks and see it split into separate, dated reminders — the same parse VoiceTodo runs on iPhone. Free, no account.',
-    lastmod: '2026-11-18',
+    lastmod: '2026-11-24',
     changeFrequency: 'monthly',
     priority: 0.8,
   },
@@ -82,7 +82,7 @@ export const pages = {
     ogTitle: 'What does that phrase create?',
     description:
       'Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates and the next five dates — before you rely on it.',
-    lastmod: '2026-11-18',
+    lastmod: '2026-11-24',
     changeFrequency: 'monthly',
     priority: 0.8,
   },

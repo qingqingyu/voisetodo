@@ -255,7 +255,8 @@ export function describeRule(rule) {
 /// day_of_month, end_date})的未来 count 次日期,供工具②渲染「接下来五次」。
 /// 与 describeModelRecurrence 同源,都是模型输出(不是本地 resolveRecurrence 的
 /// 规则形状)。口径:
-/// - 起点严格晚于 today(「接下来」从明天起算,与 nextOccurrences 一致);
+/// - 起点严格晚于 today(「接下来」从第一个未来日起算;UTC+12+ 时区的 UTC 正午锚
+///   本身已是本地明天,起始步数按此自适应,见函数内 startK 注释);
 /// - interval>1 的 weekly/monthly 以「第一个匹配日」为锚,之后每 interval 个周期
 ///   出现一次 —— App 端重复系列的锚是任务首个 dueDate,检查器没有任务,取第一个
 ///   匹配日等价(文档需注明这是展示口径);
@@ -295,10 +296,16 @@ export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5) {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
   });
-  // monthly 无 day_of_month 的锚日号:明天的日号(k=1 那天)。当前闸门下 monthly
-  // 必有合法 day_of_month,此分支不可达,保留为闸门放宽时的既定语义。
+  // 起始步数(2026-11-24 review 修复):UTC 正午锚在偏移 ≥ +12 的时区(白名单内
+  // 唯一 Pacific/Auckland,+12 冬 / +13 夏)已是本地「明天」,此时锚点本身就是
+  // 第一个未来日,必须从 k=0 起算;其余时区锚点 = 本地今天,从 k=1(明天)起算。
+  // 固定从 k=1 起算会让这类时区整体晚一天、漏掉真实首次出现。
+  // (每步 +86400s 仍逐日推进:偏移变化 <24h,不会跳日/重日,见 partsInZone 注释。)
+  const startK = partsInZone(fmt, anchorMs).iso > todayIso ? 0 : 1;
+  // monthly 无 day_of_month 的锚日号:第一个未来日(startK 那天)的日号。当前闸门下
+  // monthly 必有合法 day_of_month,此分支不可达,保留为闸门放宽时的既定语义。
   const fallbackDay = rule.frequency === 'monthly' && !hasDayOfMonth
-    ? partsInZone(fmt, anchorMs + 86400000).day
+    ? partsInZone(fmt, anchorMs + startK * 86400000).day
     : null;
 
   // 步长上限:monthly 匹配日最长间隔 ≈ 31×interval 天(短月/日号跳月另加首日最多
@@ -308,13 +315,14 @@ export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5) {
   const out = [];
   let anchorK = null;   // interval>1 时第一个匹配日的步数
   let anchorIso = null; // monthly 用:月差按日历月算,需要第一个匹配日的 iso
-  for (let k = 1; k <= stepCap && out.length < count; k++) {
+  for (let k = startK; k <= stepCap && out.length < count; k++) {
     const parts = partsInZone(fmt, anchorMs + k * 86400000);
     let match = false;
     if (rule.frequency === 'daily') {
-      match = (k - 1) % interval === 0;
+      // 节奏相对 startK:两种起点下都是「第一个未来日起每 interval 天一次」
+      match = (k - startK) % interval === 0;
     } else if (rule.frequency === 'weekly') {
-      match = weekdays.length > 0 ? weekdays.includes(parts.weekday) : (k - 1) % (7 * interval) === 0;
+      match = weekdays.length > 0 ? weekdays.includes(parts.weekday) : (k - startK) % (7 * interval) === 0;
     } else if (rule.frequency === 'monthly') {
       match = hasDayOfMonth ? parts.day === dayOfMonth : parts.day === fallbackDay;
     }

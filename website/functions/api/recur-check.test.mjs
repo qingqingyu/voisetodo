@@ -140,6 +140,20 @@ test('recur-check: 模型没给重复规则时诚实展示(不编规则)', async
   );
 });
 
+test('recur-check: 上游 200 但零任务时走「Nothing to check」页(不谎报 No repeat)', async () => {
+  await withMockedUpstream(
+    { body: { phrase: 'buy milk tomorrow', tz: 'UTC' }, upstreamImpl: () => jsonUpstream({ todos: [], ignored: '' }) },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.match(html, /Nothing to check/);
+      assert.match(html, /No tasks were recognized/);
+      assert.doesNotMatch(html, /No repeat in this phrase/, '零任务不得说成「解析到了但不重复」');
+    }
+  );
+});
+
 test('recur-check: 每日档 429 用共用配额文案', async () => {
   await withMockedUpstream(
     { body: { phrase: 'a', tz: 'UTC' }, upstreamImpl: () => new Response('rate limited', { status: 429, headers: { 'X-RateLimit-Type': 'web_ip_daily' } }) },
