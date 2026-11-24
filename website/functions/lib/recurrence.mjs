@@ -251,6 +251,78 @@ export function describeRule(rule) {
   return text;
 }
 
+/// 展开模型 recurrence_rule(prompt 规则 5 形状:{frequency, interval, weekdays,
+/// day_of_month, end_date})的未来 count 次日期,供工具②渲染「接下来五次」。
+/// 与 describeModelRecurrence 同源,都是模型输出(不是本地 resolveRecurrence 的
+/// 规则形状)。口径:
+/// - 起点严格晚于 today(「接下来」从明天起算,与 nextOccurrences 一致);
+/// - interval>1 的 weekly/monthly 以「第一个匹配日」为锚,之后每 interval 个周期
+///   出现一次 —— App 端重复系列的锚是任务首个 dueDate,检查器没有任务,取第一个
+///   匹配日等价(文档需注明这是展示口径);
+/// - daily interval N 从明天起每 N 天一次;weekly 无 weekdays 以明天为锚每 interval 周一次;
+///   monthly 无 day_of_month 以明天的日号为锚,该日号不存在的月份(如 31 号小月)自然跳过;
+/// - end_date(YYYY-MM-DD)之后的匹配日截断(模型规则 5b 的截止边界);
+/// - 迭代上限 400 步,防畸形规则(如 weekday 不在任何日历日出现)死循环。
+export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5) {
+  if (!rule || !rule.frequency) return [];
+  const interval = Number(rule.interval) >= 2 ? Math.floor(Number(rule.interval)) : 1;
+  const weekdays = Array.isArray(rule.weekdays) ? rule.weekdays.filter((w) => WEEKDAY_NAMES[w]) : [];
+  const dayOfMonth = Number(rule.day_of_month);
+  const hasDayOfMonth = Number.isInteger(dayOfMonth) && dayOfMonth >= 1 && dayOfMonth <= 31;
+  const endIso = /^\d{4}-\d{2}-\d{2}$/.test(String(rule.end_date || '')) ? String(rule.end_date) : null;
+
+  const anchorMs = Date.parse(`${todayIso}T12:00:00.000Z`);
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  });
+  // monthly 无 day_of_month 的锚日号:明天的日号(k=1 那天)
+  const fallbackDay = rule.frequency === 'monthly' && !hasDayOfMonth
+    ? partsInZone(fmt, anchorMs + 86400000).day
+    : null;
+
+  const out = [];
+  let anchorK = null;   // interval>1 时第一个匹配日的步数
+  let anchorIso = null; // monthly 用:月差按日历月算,需要第一个匹配日的 iso
+  for (let k = 1; k <= 400 && out.length < count; k++) {
+    const parts = partsInZone(fmt, anchorMs + k * 86400000);
+    let match = false;
+    if (rule.frequency === 'daily') {
+      match = (k - 1) % interval === 0;
+    } else if (rule.frequency === 'weekly') {
+      match = weekdays.length > 0 ? weekdays.includes(parts.weekday) : (k - 1) % (7 * interval) === 0;
+    } else if (rule.frequency === 'monthly') {
+      match = hasDayOfMonth ? parts.day === dayOfMonth : parts.day === fallbackDay;
+    }
+    if (!match) continue;
+    if (endIso && parts.iso > endIso) break;
+
+    if (interval > 1 && anchorK !== null) {
+      // 周期内过滤:weekly 按 7 天步长,monthly 按日历月差
+      if (rule.frequency === 'weekly') {
+        if ((k - anchorK) % (7 * interval) !== 0) continue;
+      } else if (rule.frequency === 'monthly') {
+        const monthsBetween = monthDiff(anchorIso, parts.iso);
+        if (monthsBetween === null || monthsBetween % interval !== 0) continue;
+      }
+    }
+    if (anchorK === null) {
+      anchorK = k;
+      anchorIso = parts.iso;
+    }
+    out.push(parts);
+  }
+  return out;
+}
+
+/// 两个 iso 日之间的日历月差(同日或前日为整月);无法构成整月关系返回 null
+/// (monthly 匹配日本就同日号,理论上恒为整月,null 只兜畸形输入)。
+function monthDiff(fromIso, toIso) {
+  const [fy, fm, fd] = fromIso.split('-').map(Number);
+  const [ty, tm, td] = toIso.split('-').map(Number);
+  const months = (ty - fy) * 12 + (tm - fm);
+  return td <= fd ? months : null;
+}
+
 /// 描述代理 extract 返回的 recurrence_rule(prompt 规则 5 的形状:
 /// {frequency, interval, weekdays, day_of_month})。与 describeRule 的差异:
 /// 模型可给 interval>1(every two weeks)和 weekly+空 weekdays —— 那是 AI

@@ -5,24 +5,27 @@
 // 配置(都在 Pages 项目设置里):
 //   AI_PROXY_ORIGIN  代理基地址,如 https://ai.example.org
 //   WEB_EXTRACT_TOKEN  与代理 `wrangler secret put WEB_EXTRACT_TOKEN` 同值
-import { isKnownTimezone, todayInZone } from '../lib/timezones.mjs';
+import { resolveFormTimezone, todayInZone } from '../lib/timezones.mjs';
 import { describeModelRecurrence } from '../lib/recurrence.mjs';
 import { toolResultPage, htmlResponse, escapeHtml } from '../lib/render.mjs';
+import { detectLocale, readForm, requireWebEnv, fetchWebExtraction } from '../lib/web-extract.mjs';
 
 const TOOL_PATH = '/tools/add-multiple-reminders-at-once';
 const CT = 'web-tool-split-result';
 const MAX_INPUT_CHARS = 1000;
-const UPSTREAM_TIMEOUT_MS = 45000; // 对齐 App 端整体超时预算(代理 failover 最坏情形)
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export async function onRequestPost(context) {
   const { request, env } = context;
 
   const form = await readForm(request);
-  if (form instanceof Response) return form;
+  if (!form) {
+    return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.');
+  }
 
   const text = (form.get('text') || '').trim();
-  const tz = form.get('tz') || 'UTC';
+  // tz 默认 auto:服务端按 request.cf.timezone 解析(美西傍晚 "tomorrow" 不再错一天)。
+  const { tz } = resolveFormTimezone(form.get('tz'), request);
 
   if (!text) {
     return errorResult('Nothing to split', 'Type a sentence first — for example “call the dentist tomorrow at 9, send the report by Friday, pay rent on the 1st every month”.');
@@ -30,10 +33,10 @@ export async function onRequestPost(context) {
   if (text.length > MAX_INPUT_CHARS) {
     return errorResult('Too long', `Please keep it under ${MAX_INPUT_CHARS} characters (you sent ${text.length}).`);
   }
-  if (!isKnownTimezone(tz)) {
+  if (!tz) {
     return errorResult('Unknown timezone', 'Please pick a timezone from the list.');
   }
-  if (!env.AI_PROXY_ORIGIN || !env.WEB_EXTRACT_TOKEN) {
+  if (!requireWebEnv(env)) {
     // 显式报错,不静默降级(CLAUDE.md 错误显式传播):缺配置是部署事故,
     // 用户可见文案不泄露内部细节,日志里留全量原因。
     console.error('split: missing env', {
@@ -46,17 +49,7 @@ export async function onRequestPost(context) {
   const today = todayInZone(tz);
   let upstream;
   try {
-    upstream = await fetch(`${env.AI_PROXY_ORIGIN.replace(/\/+$/, '')}/v1/web/todo-extractions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Web-Token': env.WEB_EXTRACT_TOKEN,
-        'X-Web-Client-IP': request.headers.get('CF-Connecting-IP') || 'anonymous',
-        'X-Local-Date': today,
-      },
-      body: JSON.stringify({ transcript: text, locale: detectLocale(text) }),
-      signal: upstreamSignal(request.signal),
-    });
+    upstream = await fetchWebExtraction(env, request, { text, locale: detectLocale(text), todayIso: today, logLabel: 'split' });
   } catch (error) {
     // 访客连点时浏览器取消上一次导航 → request.signal abort → fetch 抛错。这是修复
     // 「连点烧光额度」后的预期路径(代理侧已给被取消的请求退额度),按 info 记,
@@ -163,40 +156,7 @@ everything you confirm there is saved with the dates shown above.</p>`;
   }));
 }
 
-// 上游 fetch 的 AbortSignal:访客断连 + 45s 超时,任一触发即取消。
-//
-// 为什么要透传访客断连(2026-11-23 线上实测修复):零 JS 表单点提交后无反馈,用户
-// 会连点 —— 浏览器取消前几次导航,只有最后一次的结果被看到。把 request.signal 带给
-// 上游,代理检测到断连就退掉那次每日额度(没看到的请求不占 3 次/天)。
-//
-// 运行时前提:request.signal 要真的会 abort,Pages 项目需要兼容标志
-// enable_request_signal(兼容日期 ≥ 2026-11-17 才默认开启),否则这里透传的是一个
-// 永不触发的信号,修复在线上空转(不会报错,只是不生效)。
-//
-// AbortSignal.any 加 typeof 守卫:缺失时退回「只有超时」的旧信号并显式告警,
-// 而不是让每次表单提交都抛 TypeError 变成 503 —— 那比修复前更糟。
-// (代理侧同款合并与 fallback 见 AIProxy/src/adapters/base.js mergeSignals;
-// 官网零依赖、不跨目录 import,这里只保留最小守卫。)
-function upstreamSignal(visitorSignal) {
-  const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-  if (typeof AbortSignal.any !== 'function') {
-    console.warn('split: AbortSignal.any unavailable; visitor disconnects will not cancel the upstream request');
-    return timeoutSignal;
-  }
-  return AbortSignal.any([visitorSignal, timeoutSignal]);
-}
-
 // ---------- 渲染小件 ----------
-
-// locale 口径:App 端发用户真实 locale(代理按它选 few-shot 语言),工具页
-// 零 JS 读不到系统 locale,退而按输入文字的书写系统猜 —— 官网宣称「the same
-// parse the app runs」,中文句子走英文档 prompt 就名不副实了。代理侧
-// normalizeLocale 只认 en/zh/ja,猜错回 en,不会产生新值。
-function detectLocale(text) {
-  if (/[぀-ヿ]/.test(text)) return 'ja';
-  if (/[一-鿿]/.test(text)) return 'zh';
-  return 'en';
-}
 
 function formatDueDate(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return '';
@@ -215,7 +175,14 @@ function formatTime(hhmm) {
 
 function whenText(todo) {
   const parts = [];
-  if (todo.due_date) parts.push(formatDueDate(todo.due_date));
+  // App 端拿到结果后会跑 applyDueDateBasisFilter(Store/SwiftDataModels.swift:425):
+  // due_date_basis 不是 user_explicit 的日期会被清掉(title_mention / inferred / null
+  // 走清空或 transcript 兜底重算)。官网展示同一口径:非 user_explicit 一律不显示日期
+  // —— 宁可少显示,不替 App 承诺它保不住的日期(审计 2026-11-24);钟点/时段/提醒
+  // App 端保留,照常显示。已知偏差:app 对 user_explicit 但 transcript 无时间线索的
+  // 日期也会清,这里仍显示(该分支需要移植整段 cue 探测器才能判,任务书选了简化口径)。
+  const keepDate = !todo.due_date || todo.due_date_basis === 'user_explicit';
+  if (todo.due_date && keepDate) parts.push(formatDueDate(todo.due_date));
   if (todo.due_time) parts.push(formatTime(todo.due_time));
   if (!todo.due_time && todo.time_bucket) parts.push(String(todo.time_bucket));
   if (Array.isArray(todo.reminder_times) && todo.reminder_times.length > 0) {
@@ -254,19 +221,6 @@ function stripMarkdownFence(text) {
   const trimmed = String(text).trim();
   const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
   return fence ? fence[1] : trimmed;
-}
-
-async function readForm(request) {
-  const contentType = request.headers.get('content-type') || '';
-  if (!contentType.includes('application/x-www-form-urlencoded')) {
-    return errorResult('Form error', 'This page expects a normal form submission. Please use the form on the tool page.');
-  }
-  try {
-    return new URLSearchParams(await request.text());
-  } catch (error) {
-    console.error('split: form parse failed', error);
-    return errorResult('Form error', 'Could not read the form submission. Please go back and try again.');
-  }
 }
 
 // status 口径:客户端输入问题 400(默认);服务端故障(缺配置/上游不可达/

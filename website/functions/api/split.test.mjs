@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { onRequestPost } from './split.js';
+import { todayInZone } from '../lib/timezones.mjs';
 
 const TOOL_URL = 'https://site.test/tools/add-multiple-reminders-at-once';
 const UPSTREAM_URL = 'https://proxy.test/v1/web/todo-extractions';
@@ -132,4 +133,110 @@ test('split: 上游真故障(非断连)→ 503 结果页并记 error', async () 
       '上游不可达必须记 error(不静默吞错)'
     );
   });
+});
+
+// —— 2026-11-24 增量:basis 过滤 + tz auto(参数化骨架,与上方 withMockedUpstream 同构)——
+
+async function withSplitRequest({ body, cf }, upstreamImpl, fn) {
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const calls = [];
+  const logs = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return upstreamImpl(url, init);
+  };
+  console.log = (...args) => logs.push(['log', ...args]);
+  console.warn = (...args) => logs.push(['warn', ...args]);
+  console.error = (...args) => logs.push(['error', ...args]);
+  try {
+    const request = new Request(TOOL_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '203.0.113.7' },
+      body: new URLSearchParams(body),
+    });
+    if (cf) request.cf = cf;
+    const context = { request, env: { AI_PROXY_ORIGIN: 'https://proxy.test', WEB_EXTRACT_TOKEN: 'web-token' } };
+    return await fn(context, calls, logs);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    console.warn = originalWarn;
+    console.error = originalError;
+  }
+}
+
+test('split: due_date_basis 非 user_explicit 的日期不展示(App basis 过滤同口径),钟点照常', async () => {
+  const upstream = (basis) => new Response(
+    JSON.stringify({ todos: [{ title: 'Call the dentist', due_date: '2026-11-25', due_time: '09:00', time_bucket: null, reminder_times: [], due_date_basis: basis }], ignored: '' }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  );
+  await withSplitRequest(
+    { body: { text: 'call the dentist tomorrow', tz: 'UTC' } },
+    () => upstream('title_mention'),
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.match(html, /Call the dentist/);
+      assert.doesNotMatch(html, /Nov 25, 2026/, '非 user_explicit 的日期不得展示');
+      assert.match(html, /9:00 AM/, '钟点 App 端保留,照常展示');
+    }
+  );
+});
+
+test('split: due_date_basis 缺失(null)同样不展示日期', async () => {
+  const upstream = () => new Response(
+    JSON.stringify({ todos: [{ title: 'Errand', due_date: '2026-11-26', due_time: null, time_bucket: null, reminder_times: [], due_date_basis: null }], ignored: '' }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  );
+  await withSplitRequest(
+    { body: { text: 'errand', tz: 'UTC' } },
+    upstream,
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.doesNotMatch(html, /Nov 26, 2026/);
+      assert.match(html, /no date/);
+    }
+  );
+});
+
+test('split: user_explicit 日期照常展示', async () => {
+  const upstream = () => new Response(
+    JSON.stringify({ todos: [{ title: 'Call the dentist', due_date: '2026-11-25', due_time: null, time_bucket: null, reminder_times: [], due_date_basis: 'user_explicit' }], ignored: '' }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  );
+  await withSplitRequest(
+    { body: { text: 'call the dentist tomorrow', tz: 'UTC' } },
+    upstream,
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      assert.match(await response.text(), /Nov 25, 2026/);
+    }
+  );
+});
+
+test('split: tz=auto 用 request.cf.timezone 算 X-Local-Date,cf 缺失回落 UTC', async () => {
+  const upstream = () => new Response(JSON.stringify({ todos: [], ignored: '' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  await withSplitRequest(
+    { body: { text: 'call mom', tz: 'auto' }, cf: { timezone: 'America/New_York' } },
+    upstream,
+    async (context, calls) => {
+      await onRequestPost(context);
+      assert.equal(calls[0].init.headers.get('X-Local-Date'), todayInZone('America/New_York'));
+    }
+  );
+  await withSplitRequest(
+    { body: { text: 'call mom', tz: 'auto' } },
+    upstream,
+    async (context, calls) => {
+      await onRequestPost(context);
+      assert.equal(calls[0].init.headers.get('X-Local-Date'), todayInZone('UTC'));
+    }
+  );
 });
