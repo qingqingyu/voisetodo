@@ -1,14 +1,22 @@
 # 结果文档:月历「已完成让位」+ 长按「移到稍后」
 
 > 对应任务书:`docs/month-grid-completed-and-move-to-later-task.md`。
-> 分支:`task/month-grid-move-to-later`,基线 `main` @ `2d3def8`(任务书分支 `3837edb` 之上)。
+> 分支:内容已在 `main`(初稿写的 `task/month-grid-move-to-later` 在远端不存在,
+> 提交号同样有误,见 §1 更正);基线 `main` @ `2d3def8`(任务书分支 `3837edb` 之上)。
 
 ## 1. 提交
 
 | 提交 | 内容 |
 |---|---|
-| `568d1ae` | 任务一:行高按「未完成先、已完成后」两层需求分配,`+N` 移到日数字行,20 条新测试 |
-| `f88f192` | 任务二:长按菜单新增「移到稍后」(判定唯一口径 `canMoveToLater` + 写库 + 三语文案),10 条新测试 |
+| `4f785f1` | 任务一:行高按「未完成先、已完成后」两层需求分配,`+N` 移到日数字行,20 条新测试 |
+| `f81e89c` | 任务二:长按菜单新增「移到稍后」(判定唯一口径 `canMoveToLater` + 写库 + 三语文案),10 条新测试 |
+
+> **2026-11-24 更正:** 初稿引用的 `568d1ae` / `f88f192` 与分支名 `task/month-grid-move-to-later`
+> 在远端都不存在——它们是 rebase **前**的本地提交对象;实际进入 `main` 的是 rebase 后的
+> `4f785f1`(任务一)、`f81e89c`(任务二),提交内容一致(主题相同)。本轮 review 又发现并修复了
+> 任务一遗留的 Pass 3b 零头分配问题,见文末「review 后修复」与修复轮任务书
+> `docs/month-grid-completed-and-move-to-later-fix-task.md`(远端分支 `claude/blissful-ride-abz3wn`
+> @ `3c2a7b5`,未随本分支合入)。
 
 ## 2. 改动文件
 
@@ -59,8 +67,9 @@
 | 文件 | 内容 |
 |---|---|
 | `before/month-today-selected-zh.jpg` | **改前**:今天 7 件只显示 6 条、尾条标题截断、「+1」被吞成「…+」;明天 8 件只显示 4 条;上周已完成占 4 条灰条 |
-| `after/month-today-selected-zh.jpg` | **改后**:今天 7 条全显示、标题完整;明天 7 条 +「+1」完整显示在日数字右侧;上周已完成只占 1 条 |
-| `before/after month-today-unselected-zh.jpg` | 同上,今天未选中(点选了别的日期) |
+| `after/month-today-selected-zh.jpg` | **改后**:今天 7 条全显示、标题完整;上周已完成只占 1 条;明天 8 条全部显示、无溢出(初稿此行写的「明天 7 条 +『+1』完整显示在日数字右侧」与截图不符——该种子不产生 +N;「+N 不被截断」的证据见文末 §9 新增的 overflow-*.jpg) |
+| `before/month-today-unselected-zh.jpg` | 改前态:今天未选中(点选了别的日期) |
+| `after/month-today-unselected-zh.jpg` | 初拍误成任务详情页,review 后已重拍(23 号选中 + 今天胶囊并存),见文末 §9 |
 | `before/after month-today-*-en.jpg` | 同上两组,英文长标题 |
 | `after/menu-dated-zh.jpg` | 今天列表有日期任务长按:「移到时段 / 移到明天 / **移到稍后**」(在最下面) |
 | `after/after-move-toast-zh.jpg` | 点「移到稍后」后:toast「“…”已移回稍后」,任务离开今天列表 |
@@ -70,6 +79,9 @@
 | `after/menu-ja.jpg` | 日文:菜单含「「後で」に移動」 |
 
 当月(2026-11,周一起始)恰好是 6 周月,两种状态各一张已覆盖任务书 §1.6 的「6 周月份」要求。
+(依据:模拟器时钟 `Tue Nov 24 2026`;`HomeCalendarState.monthDays`/`startOfWeek` 硬编码周一起始
+(`(weekday + 5) % 7`);星期表头放大后逐字读出「一 二 三 四 五 六 日」。review 循环中曾据小字号
+表头误判为「2025-11 周日始」,已按上述三重证据回退。)
 
 ## 6. 与任务书不一致的地方 / 自己做的判断
 
@@ -91,3 +103,22 @@
 - 「待定日期」组用 `PendingDateTodoRow`,没有长按菜单;该组任务按 `canMoveToLater` 判定为可移,但本期没有 UI 入口(任务书 §2.1 明确本期不加,此处按要求注明)。
 - 「没能识别」组(`extractionOutcome != .parsed`)不显示「移到稍后」——清日期会进错组,判定已挡。
 - 重复任务不支持(本期拍板)。
+
+## 9. review 后修复(2026-11-24)
+
+初稿发布后的 review 发现三处问题,修复轮任务书与结果文档:
+`docs/month-grid-completed-and-move-to-later-fix-task.md`(在远端分支 `claude/blissful-ride-abz3wn`
+@ `3c2a7b5`,未随本分支合入)、
+`docs/month-grid-completed-and-move-to-later-fix-results.md`(分支 `task/month-grid-fix`,基线 `main` @ `4817003`)。
+
+1. **Pass 3b 零头分配 bug**(§1 提交的代码):Pass 3a 第一段出口 b 后,零头会分给
+   「只剩已完成没显示」的周,极端时已完成让未完成少显示一条。修复 = Pass 3b 收件人
+   改三档先到先得(还有未完成没显示完的周优先),复现用例
+   `testLeftoverSlackGoesToOpenWeeksFirst` 锁住,Swift 实测与任务书 Python 期望逐位一致。
+2. **截图证据缺口**:`after/month-today-unselected-zh.jpg` 初拍误成任务详情页(§5 已更正);
+   且改后截图没有出现「+N」,「+N 不再被截断」缺视觉证据——§5 初稿「明天 7 条 +『+1』
+   完整显示在日数字右侧」与实际截图不符(实际 8 条全显示、无溢出),已更正。补拍/新增
+   `month-today-unselected-zh`、`overflow-plain-zh`、`overflow-today-2digit-zh`、
+   `overflow-today-2digit-en` 四张,见修复轮结果文档 §4。
+3. **提交号更正**(§1 已改):初稿引用的 `568d1ae` / `f88f192` 与分支名在远端不存在,
+   实际进入 `main` 的是 rebase 后的 `4f785f1` / `f81e89c`。

@@ -131,8 +131,9 @@ final class HomeMonthAllocatorTests: XCTestCase {
 
     /// review 复现(2026-11-24,任务书 §1.2):4 周月、每周只有一天有事、预算 355.6(小数,
     /// 真机 GeometryReader 实况)。最忙周 5 未完成 + 2 已完成,其余周 1/2、3/5、1/1。
-    /// 修前:Pass 3a 第一段出口 b 后,25.6pt 零头被「只剩已完成没显示」的第 1/2 周分走,
-    /// Pass 4 差一点装不下第 5 条未完成 → barsShown = [4, 1, 3, 1](去掉已完成再跑则是 [5, 1, 3, 1])。
+    /// 修前:Pass 3a 第一段出口 b 后,25.6pt 零头被平分给第 0/1/2 周,其中「只剩已完成没显示」
+    /// 的第 1/2 周分走 17pt,第 0 周只分到 9pt(多装一条需整整 26pt),Pass 4 装不下第 5 条未完成
+    /// → barsShown = [4, 1, 3, 1](去掉已完成再跑则是 [5, 1, 3, 1])。
     /// 修后:Pass 3b 三档收件人先给还有未完成的周,零头全归第 0 周,结果与纯未完成输入逐位一致。
     func testLeftoverSlackGoesToOpenWeeksFirst() {
         let open = [
