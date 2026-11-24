@@ -129,6 +129,37 @@ final class HomeMonthAllocatorTests: XCTestCase {
         XCTAssertEqual(result.barsShown[completedWeek], 1)
     }
 
+    /// review 复现(2026-11-24,任务书 §1.2):4 周月、每周只有一天有事、预算 355.6(小数,
+    /// 真机 GeometryReader 实况)。最忙周 5 未完成 + 2 已完成,其余周 1/2、3/5、1/1。
+    /// 修前:Pass 3a 第一段出口 b 后,25.6pt 零头被「只剩已完成没显示」的第 1/2 周分走,
+    /// Pass 4 差一点装不下第 5 条未完成 → barsShown = [4, 1, 3, 1](去掉已完成再跑则是 [5, 1, 3, 1])。
+    /// 修后:Pass 3b 三档收件人先给还有未完成的周,零头全归第 0 周,结果与纯未完成输入逐位一致。
+    func testLeftoverSlackGoesToOpenWeeksFirst() {
+        let open = [
+            [5, 0, 0, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0, 0, 0],
+            [3, 0, 0, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0, 0, 0],
+        ]
+        let done = [
+            [2, 0, 0, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0, 0, 0],
+            [2, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0],
+        ]
+        let budget: CGFloat = 355.6
+        let result = Metrics.allocateRowHeights(demandPerDay: demand(open: open, done: done), budgetHeight: budget)
+
+        XCTAssertEqual(result.barsShown, [5, 1, 3, 1], "零头先给还有未完成的周:第 0 周 5 条未完成全部显示")
+
+        // 等价性:去掉全部已完成再跑,条数和行高都必须逐位一致。
+        let openOnly = Metrics.allocateRowHeights(demandPerDay: allOpen(open), budgetHeight: budget)
+        XCTAssertEqual(result.barsShown, openOnly.barsShown, "混合输入与纯未完成输入的条数一致")
+        XCTAssertEqual(result.rowHeights, openOnly.rowHeights, "混合输入与纯未完成输入的行高一致")
+
+        XCTAssertEqual(result.rowHeights, [148, 44, 96, 44], "回归锁:行高(Swift 实测,与任务书 Python 期望一致)")
+    }
+
     /// 截图场景预算宽裕时(iPhone 15 量级 ~480pt):未完成全部显示,已完成用剩余空间补上。
     func testScreenshotScenarioAmpleBudgetShowsCompletedToo() {
         let open = [
@@ -244,7 +275,12 @@ final class HomeMonthAllocatorTests: XCTestCase {
                     doneWeeks.append(doneDays)
                 }
                 seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                cases.append((demand(open: openWeeks, done: doneWeeks), CGFloat(240 + (seed >> 40) % 400)))
+                let budgetInt = 240 + Int((seed >> 40) % 400)
+                seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                // 预算带小数(整数部分 240–639 + 0–0.99):真机上 GeometryReader 给的高度一般带小数,
+                // 整数预算下 Pass 3b 的四舍五入永远补不出那 1pt,上一轮的零头 bug 就是这么漏测的。
+                let budget = CGFloat(budgetInt) + CGFloat((seed >> 40) % 100) / 100
+                cases.append((demand(open: openWeeks, done: doneWeeks), budget))
             }
         }
 
@@ -266,9 +302,9 @@ final class HomeMonthAllocatorTests: XCTestCase {
             // 核心保证(2026-11):已完成的存在不减少任何一周的条数——
             // 把同一输入的已完成全部去掉(total = open)再分配一次,混合输入每周的 barsShown
             // 都不低于纯未完成输入。依据:Pass 1/2 与 Pass 3a 第一段只看未完成,两者走到第一段结束时
-            // shown 完全相同;之后 Pass 3a 第二段只加不减。Pass 3b 的零头在混合输入下会分给更多周
-            // (含只有已完成的周),但出口 (b) 时 slack < 一条 bar 的增量(26pt),纯未完成输入里
-            // 不可能靠这点零头多出一条(唯一有隐藏的周若是 shown=0,第一段早就给它加上了)。
+            // shown 完全相同;Pass 3b 第 1 档收件人(还有未完成没显示完的周)在两种输入里是同一批周,
+            // 分到的 slack 与行高相同,Pass 4 对未完成层的结果也相同;混合输入的第 2/3 档只把零头给
+            // 已完成相关周,未完成周的行高不再被分走(2026-11-24 三档修复;小数预算随机 6 万组 0 违规)。
             let openOnly = Metrics.allocateRowHeights(
                 demandPerDay: input.0.map { $0.map { Metrics.DayDemand(open: $0.open, total: $0.open) } },
                 budgetHeight: input.1
@@ -281,7 +317,9 @@ final class HomeMonthAllocatorTests: XCTestCase {
             let minimum = Metrics.gridCellChrome * CGFloat(n) + Metrics.gridRowSpacing * CGFloat(n - 1)
             if input.1 >= minimum {
                 let used = result.rowHeights.reduce(0, +) + Metrics.gridRowSpacing * CGFloat(n - 1)
-                XCTAssertEqual(used, input.1, accuracy: 0.001, "case \(index):用满预算且不超")
+                // Pass 3b 的四舍五入是原有行为:小数预算下行高总和可能比预算多 ≤ 0.5pt,
+                // 容差相应放宽,不为断言改分配逻辑。
+                XCTAssertEqual(used, input.1, accuracy: 0.5, "case \(index):用满预算且不超")
             }
         }
     }

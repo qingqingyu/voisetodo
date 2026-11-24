@@ -301,7 +301,8 @@ enum HomeLayoutMetrics {
     /// 5. Pass 3a (新增):剩余像素优先给还有真实隐藏事件的周继续加条,不受 initialCap 砍。
     ///    先按 openDemand 补未完成,全部补完后才按 totalDemand 补已完成(2026-11)
     /// 6. Pass 3b:Pass 3a 因 slack 不够一条完整 bar 中断时,把剩余 slack 平均分给
-    ///    还有隐藏事件的周(空周不参与,保持自然高度)。所有周都已满足时退化为平均分,保证网格填满屏幕
+    ///    还有隐藏事件的周,优先未完成没显示完的周,其次任何隐藏周(空周不参与,保持自然高度)。
+    ///    所有周都已满足时退化为平均分,保证网格填满屏幕
     /// 7. Pass 4 (新增):按 Pass 3 最终行高回补 shown——Pass 3b 给的 slack 可能让某周
     ///    正好多装一条,这里按真实 rows[i] 反推 actualCap 把 shown 拉满
     ///
@@ -405,8 +406,8 @@ enum HomeLayoutMetrics {
         // 复杂度:O(n × Σ totalDemand),n≤6 且 Σ totalDemand ≤ 6*hardCap=90 → 最坏 540 步/段,两段可接受。
         //
         // 两个出口:
-        //   (a) best<0 —— 这一层的需求已全部满足(第二段出口 a 时 Pass 3b 的 weeksWithHidden 必为空,走平摊 fallback)
-        //   (b) slack<inc —— slack 不够一条完整 bar,但仍有周 demand>shown,Pass 3b 的 weeksWithHidden 非空
+        //   (a) best<0 —— 这一层的需求已全部满足(第二段出口 a 时 Pass 3b 的第 1/2 档收件人必为空,走平摊 fallback)
+        //   (b) slack<inc —— slack 不够一条完整 bar,但仍有周 demand>shown,Pass 3b 的对应档位收件人非空
         //
         // 返回 true = 出口 (a),false = 出口 (b)(或进函数时已无 slack)。
         func pass3a(_ demand: [Int]) -> Bool {
@@ -446,14 +447,20 @@ enum HomeLayoutMetrics {
 
         // Pass 3b: Pass 3a 出口 (b) 时,把剩余 slack 平均分给还有隐藏事件的周——
         // 它们行高再补一点,Pass 4 可能正好够多装一条。
-        // 没有隐藏事件的周不参与分配(空周保持 need(shown) 自然高度)。
-        // 极端 fallback(出口 a):所有周都已满足时,slack 平摊到所有周,保证网格仍填满屏幕
-        // (此时多余空间无法转化为条,平摊是最不破坏视觉的选择)。
+        // 收件人分三档,先到先得(2026-11-24 review 修复):
+        //   1. 还有未完成没显示完的周——第一段(未完成层)出口 b 时,零头只能流向它们;
+        //      否则零头被「只剩已完成没显示」的周分走,本来能在 Pass 4 多装一条未完成的周
+        //      装不上,变成已完成让未完成少显示一条(违反「空间不够时先缩已完成的」)。
+        //   2. 没有第 1 档时:还有任何事项没显示完的周(未完成已显示完,轮到已完成)。
+        //   3. 都没有时:所有周(出口 a 的 fallback,平摊保证网格填满屏幕;
+        //      此时多余空间无法转化为条,平摊是最不破坏视觉的选择)。
+        // 没有隐藏事件的周不参与第 1/2 档分配(空周保持 need(shown) 自然高度)。
         if slack > 0 {
-            // 按全部需求判断:未完成已显示完、但还有已完成没显示的周同样有「隐藏事件」,
-            // 行高补一点后 Pass 4 可能正好多装一条已完成。
-            let weeksWithHidden = (0..<n).filter { totalDemand[$0] > shown[$0] }
-            let recipients = weeksWithHidden.isEmpty ? Array(0..<n) : weeksWithHidden
+            let weeksWithOpenHidden = (0..<n).filter { openDemand[$0] > shown[$0] }
+            let weeksWithAnyHidden = (0..<n).filter { totalDemand[$0] > shown[$0] }
+            let recipients = !weeksWithOpenHidden.isEmpty ? weeksWithOpenHidden
+                : !weeksWithAnyHidden.isEmpty ? weeksWithAnyHidden
+                : Array(0..<n)
             let per = floor(slack / CGFloat(recipients.count))
             for i in recipients {
                 rows[i] += per
