@@ -251,13 +251,160 @@ export function describeRule(rule) {
   return text;
 }
 
+/// 展开模型 recurrence_rule(prompt 规则 5 形状:{frequency, interval, weekdays,
+/// day_of_month, end_date})的未来 count 次日期,供工具②渲染「接下来五次」。
+/// 与 describeModelRecurrence 同源,都是模型输出(不是本地 resolveRecurrence 的
+/// 规则形状)。口径:
+/// - 起点严格晚于 today(「接下来」从第一个未来日起算;UTC+12+ 时区的 UTC 正午锚
+///   本身已是本地明天,起始步数按此自适应,见函数内 startK 注释);
+/// - interval>1 的 weekly/monthly 以「第一个匹配日」为锚,之后每 interval 个周期
+///   出现一次 —— App 端重复系列的锚是任务首个 dueDate,检查器没有任务,取第一个
+///   匹配日等价(文档需注明这是展示口径);
+/// - weekly + weekdays + interval>1 的周期内过滤与 App 端
+///   RecurrenceRule.occurs(on:startDate:)(Protocols/Domain/RecurrenceRule.swift:130)
+///   同公式:weekDiff = 距锚点天数整除 7,weekDiff % interval == 0 —— 锚点后同一个
+///   7 天窗口内的所有 weekdays 都匹配(「每两周周一和周四」两条都出现),不是只留
+///   锚 weekday;
+/// - daily interval N 从明天起每 N 天一次;weekly 无 weekdays 以明天为锚每 interval 周一次
+///   (monthly 无 day_of_month 被 isValidModelRule 判无效 —— App 端 isValid 同样丢弃,
+///   下面的 fallbackDay 分支只是闸门未来放宽时的保留路径,当前不可达);
+/// - monthly interval>1 按日历月差过滤、daily interval>1 按 N 天步长 —— 注意
+///   App 端 occurs() 对 monthly/daily 都忽略 interval(RecurrenceRule.swift:145-152
+///   的 monthly 分支不读 interval、daily 分支恒 true),但 App 的系统日历镜像
+///   (SystemCalendarWriter.ekRecurrenceRule)把 interval 传给 EKRecurrenceRule:
+///   App 自身在 in-app 展开/日历镜像两边有张力。检查器取 interval 语义
+///   (与模型契约「每三天/每三个月」、日历镜像一致),此张力记为 App 侧既有问题。
+/// - end_date(YYYY-MM-DD)之后的匹配日截断 —— 契约上模型把 end 放顶层
+///   recurrence_end(规则 5b)而 rule.end_date 留 null,但客户端对模型 end_date
+///   仍是绝对优先(Protocols/Models.swift:384「模型 end_date(绝对)」),模型确实
+///   返回时这里同口径截断。顶层 recurrence_end(after_count/month_end)未展开:
+///   有界重复按无界展示「接下来五次」,边界截进前五时网页会多显示 —— 已知偏差,
+///   完整展开需移植 App 端 RecurrenceEndResolver,见结果文档 §4;
+/// - 迭代上限自适应:400 步(≈13 个月)只够 monthly interval ≤ 3 出满五次,
+///   按 count×周期放大,硬顶 5000 步防畸形规则(超大 interval)拖垮 Function。
+export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5) {
+  if (!isValidModelRule(rule)) return [];
+  const interval = Number(rule.interval) >= 2 ? Math.floor(Number(rule.interval)) : 1;
+  // weekday 只留 1...7(与 Swift init 的静默过滤同口径;有效性闸门已拦掉
+  // 非整数元素),过滤后必是数字,includes(parts.weekday) 可直接比较。
+  const weekdays = Array.isArray(rule.weekdays) ? rule.weekdays.filter((w) => WEEKDAY_NAMES[w]) : [];
+  const dayOfMonth = Number(rule.day_of_month);
+  const hasDayOfMonth = Number.isInteger(dayOfMonth) && dayOfMonth >= 1 && dayOfMonth <= 31;
+  const endIso = /^\d{4}-\d{2}-\d{2}$/.test(String(rule.end_date || '')) ? String(rule.end_date) : null;
+
+  const anchorMs = Date.parse(`${todayIso}T12:00:00.000Z`);
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  });
+  // 起始步数(2026-11-24 review 修复):UTC 正午锚在偏移 ≥ +12 的时区(白名单内
+  // 唯一 Pacific/Auckland,+12 冬 / +13 夏)已是本地「明天」,此时锚点本身就是
+  // 第一个未来日,必须从 k=0 起算;其余时区锚点 = 本地今天,从 k=1(明天)起算。
+  // 固定从 k=1 起算会让这类时区整体晚一天、漏掉真实首次出现。
+  // (每步 +86400s 仍逐日推进:偏移变化 <24h,不会跳日/重日,见 partsInZone 注释。)
+  const startK = partsInZone(fmt, anchorMs).iso > todayIso ? 0 : 1;
+  // monthly 无 day_of_month 的锚日号:第一个未来日(startK 那天)的日号。当前闸门下
+  // monthly 必有合法 day_of_month,此分支不可达,保留为闸门放宽时的既定语义。
+  const fallbackDay = rule.frequency === 'monthly' && !hasDayOfMonth
+    ? partsInZone(fmt, anchorMs + startK * 86400000).day
+    : null;
+
+  // 步长上限:monthly 匹配日最长间隔 ≈ 31×interval 天(短月/日号跳月另加首日最多
+  // 31 步),interval=1 时保底 400(与 nextOccurrences 同档,不回退既有覆盖)。
+  const stepCap = Math.min(Math.max(400, 31 + (count - 1) * 31 * interval), 5000);
+
+  const out = [];
+  let anchorK = null;   // interval>1 时第一个匹配日的步数
+  let anchorIso = null; // monthly 用:月差按日历月算,需要第一个匹配日的 iso
+  for (let k = startK; k <= stepCap && out.length < count; k++) {
+    const parts = partsInZone(fmt, anchorMs + k * 86400000);
+    let match = false;
+    if (rule.frequency === 'daily') {
+      // 节奏相对 startK:两种起点下都是「第一个未来日起每 interval 天一次」
+      match = (k - startK) % interval === 0;
+    } else if (rule.frequency === 'weekly') {
+      match = weekdays.length > 0 ? weekdays.includes(parts.weekday) : (k - startK) % (7 * interval) === 0;
+    } else if (rule.frequency === 'monthly') {
+      match = hasDayOfMonth ? parts.day === dayOfMonth : parts.day === fallbackDay;
+    }
+    if (!match) continue;
+    if (endIso && parts.iso > endIso) break;
+
+    if (interval > 1 && anchorK !== null) {
+      // 周期内过滤:weekly 按「锚点起的第 N 个 7 天窗口」(App occurs() 同公式,
+      // 窗口内所有 weekdays 都出现),monthly 按日历月差
+      if (rule.frequency === 'weekly') {
+        if (Math.floor((k - anchorK) / 7) % interval !== 0) continue;
+      } else if (rule.frequency === 'monthly') {
+        const monthsBetween = monthDiff(anchorIso, parts.iso);
+        if (monthsBetween === null || monthsBetween % interval !== 0) continue;
+      }
+    }
+    if (anchorK === null) {
+      anchorK = k;
+      anchorIso = parts.iso;
+    }
+    out.push(parts);
+  }
+  return out;
+}
+
+/// 两个 iso 日之间的日历月差(同日或前日为整月);无法构成整月关系返回 null
+/// (monthly 匹配日本就同日号,理论上恒为整月,null 只兜畸形输入)。
+function monthDiff(fromIso, toIso) {
+  const [fy, fm, fd] = fromIso.split('-').map(Number);
+  const [ty, tm, td] = toIso.split('-').map(Number);
+  const months = (ty - fy) * 12 + (tm - fm);
+  return td <= fd ? months : null;
+}
+
+/// 模型 recurrence_rule 的有效性闸门 —— 镜像 App 端两道硬闸,凡 App 会丢弃
+/// (变成普通任务)的规则,这里都判无效:
+/// 1. 严格解码(RecurrenceRule.init(from:)):frequency 必须是 daily/weekly/monthly;
+///    interval/weekdays/day_of_month 必须是 JSON 整数(字符串 "2"、小数 2.5 直接
+///    decode throw → 整条规则丢弃);interval/weekdays/day_of_month 为 null 分别取
+///    默认 1 / [] / nil;end_date 类型不对被 try? 容忍成 nil(规则仍有效);
+/// 2. isValid(RecurrenceRule.swift:100-106):weekly 需 weekdays(钳到 1...7 后)
+///    非空或 interval>1;monthly 需 dayOfMonth(钳到 1...31 后)非 nil —— 0/40 被
+///    init 钳成 nil → 无效;daily 恒有效。
+/// 周内 weekday 越界(如 9)不是解码错误:init 会静默过滤(weekdays [9,2] → [2] 仍有效)。
+export function isValidModelRule(rule) {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return false;
+  if (rule.frequency !== 'daily' && rule.frequency !== 'weekly' && rule.frequency !== 'monthly') return false;
+  const intervalPresent = rule.interval !== null && rule.interval !== undefined;
+  if (intervalPresent && !isPlainJsonInteger(rule.interval)) return false;
+  const interval = intervalPresent ? rule.interval : 1;
+  let weekdays = [];
+  if (rule.weekdays !== null && rule.weekdays !== undefined) {
+    if (!Array.isArray(rule.weekdays) || !rule.weekdays.every((w) => isPlainJsonInteger(w))) return false;
+    weekdays = rule.weekdays.filter((w) => w >= 1 && w <= 7);
+  }
+  let dayOfMonth = null;
+  if (rule.day_of_month !== null && rule.day_of_month !== undefined) {
+    if (!isPlainJsonInteger(rule.day_of_month)) return false;
+    const day = Number(rule.day_of_month);
+    dayOfMonth = day >= 1 && day <= 31 ? day : null;
+  }
+  if (rule.frequency === 'weekly') return weekdays.length > 0 || interval > 1;
+  if (rule.frequency === 'monthly') return dayOfMonth !== null;
+  return true;
+}
+
+// JSON 整数判定:reject 字符串 "2" / 布尔 / 小数(Swift Int 解码语义),
+// 超出安全整数范围同样 reject(Swift Int64 解码越界会 throw)。
+// 注意布尔陷阱:Number(true) === 1 会漏判,必须先查 typeof。
+function isPlainJsonInteger(value) {
+  return typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER;
+}
+
 /// 描述代理 extract 返回的 recurrence_rule(prompt 规则 5 的形状:
 /// {frequency, interval, weekdays, day_of_month})。与 describeRule 的差异:
 /// 模型可给 interval>1(every two weeks)和 weekly+空 weekdays —— 那是 AI
 /// 解析的覆盖面,本地解析器(v1)不产出,但拆句工具页要能渲染。
+/// 无效规则(isValidModelRule 为 false,App 端会丢弃建普通任务)返回 '',调用方
+/// 据此走「没有重复」的诚实展示 —— 不替 App 展示它建不出来的规则。
 export function describeModelRecurrence(rule) {
-  if (!rule || !rule.frequency) return '';
-  const interval = Number(rule.interval) >= 2 ? Number(rule.interval) : 1;
+  if (!isValidModelRule(rule)) return '';
+  const interval = Number(rule.interval ?? 1) >= 2 ? Math.floor(Number(rule.interval)) : 1;
   const weekdays = Array.isArray(rule.weekdays) ? rule.weekdays.filter((w) => WEEKDAY_NAMES[w]) : [];
   if (rule.frequency === 'daily') {
     return interval === 1 ? 'Every day' : `Every ${interval} days`;

@@ -1,8 +1,9 @@
 ---
 // 工具页②:重复提醒说法检查器(关键词空白调研 🟢 recurring reminder by voice)。
-// 零客户端 JS、零模型成本:form POST → /api/recur-check(Pages Function)
-// 跑 functions/lib/recurrence.mjs(与 App 端 RecurrenceRuleResolver.swift 同口径)。
-// 配套指南:/guides/how-to-set-recurring-reminders-by-voice-on-iphone(草稿)。
+// 零客户端 JS:form POST → /api/recur-check(Pages Function)→ 代理 web 档(AI 解析,
+// 与工具①共用每天 3 次额度)→ 服务端渲染。2026-11-24 起展示口径 = App 实际跑的 AI
+// 解析(原先的本地确定性解析器只作兜底,不对外展示)。
+// 配套指南:/guides/how-to-set-recurring-reminders-by-voice-on-iphone(已发布)。
 import Base from '../../layouts/Base.astro';
 import CtaBand from '../../components/CtaBand.astro';
 import { pages } from '../../data/pages.mjs';
@@ -45,12 +46,13 @@ const schema = [
         <p class="hint">Try: “pay rent monthly on the 1st” · “meds every day for the next 30 days”</p>
         <label for="tz">Timezone (used to compute the next five dates)</label>
         <select id="tz" name="tz">
-          {TIMEZONES.map((tz) => <option value={tz} selected={tz === 'UTC'}>{tz}</option>)}
+          <option value="auto" selected>Auto — detected from your connection</option>
+          {TIMEZONES.map((tz) => <option value={tz}>{tz}</option>)}
         </select>
         <button type="submit">Check it</button>
         <p class="hint">
-          This page runs VoiceTodo's local repeat parser — the same deterministic rules the app uses when it
-          captures speech. Nothing is saved and no reminder is created.
+          This page runs VoiceTodo's AI parser — the same parse the app runs on every capture.
+          Three tries a day, shared with the sentence splitter. Nothing is saved and no reminder is created.
         </p>
       </form>
     </div>
@@ -59,19 +61,19 @@ const schema = [
   <section aria-labelledby="what-h">
     <div class="container grid-2">
       <div>
-        <h2 id="what-h">Recognized on the spot</h2>
-        <ul class="chips" aria-label="Phrases the local parser recognizes">
+        <h2 id="what-h">What it reads</h2>
+        <ul class="chips" aria-label="Example phrases">
           <li>every day</li>
-          <li>daily</li>
           <li>every Tuesday</li>
           <li>every Mon, Wed and Fri</li>
+          <li>every other Tuesday</li>
+          <li>weekdays</li>
           <li>monthly on the 1st</li>
-          <li>every month on the 15th</li>
           <li>every day for the next 30 days</li>
         </ul>
         <p>
-          More flexible phrasing — “every other Tuesday”, “weekdays”, “on the 1st of each month” — goes
-          through the AI parser in the app, which shows you its reading for confirmation before saving.
+          Flexible phrasing works the same way it does in the app: whatever the parse reads is shown as a
+          rule on a review card before anything is saved.
         </p>
       </div>
       <div>

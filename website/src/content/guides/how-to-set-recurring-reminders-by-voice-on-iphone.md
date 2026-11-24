@@ -2,8 +2,8 @@
 title: How to Set Recurring Reminders by Voice
 description: Siri handles simple repeats like "every Monday" but stumbles on Mon/Wed/Fri, every other week and monthly dates. What works, and a faster way.
 pubDate: 2026-11-18
-updatedDate: 2026-11-18
-draft: true
+updatedDate: 2026-11-24
+draft: false
 ---
 
 "Gym every Monday, Wednesday and Friday." Six words, one breath — and the difference between a routine that runs itself and three reminders you re-create every week by hand.
@@ -33,9 +33,9 @@ When one of these misfires, you get to open the reminder, tap Edit, scroll to Re
 
 ## Check a phrase before you rely on it
 
-Before you build a routine on a phrase, see what it actually produces. [The recurring reminder checker](/tools/recurring-reminder-checker) is a free page that reads a phrase the way VoiceTodo's capture parser does and shows you the rule plus the next five dates — for example, that "every Monday, Wednesday and Friday" means Mon/Wed/Fri weekly, with the next five occurrences listed so you can eyeball them.
+Before you build a routine on a phrase, see what it actually produces. [The recurring reminder checker](/tools/recurring-reminder-checker) is a free page that runs the same AI parse the app runs on every capture and shows you the rule plus the next five dates — for example, that "every Monday, Wednesday and Friday" means Mon/Wed/Fri weekly, with the next five occurrences listed so you can eyeball them.
 
-It runs VoiceTodo's local repeat rules — the deterministic ones, no AI involved — so it's instant, and it never creates anything. Phrasings outside that set (like "every other Tuesday") it says so plainly; in the app those go through the AI parser instead.
+It's the app's parser, not a simplified copy, so flexible phrasings ("every other Tuesday", "weekdays") read the same way they will in the app. It never creates anything, and you get three tries a day shared with the sentence splitter tool.
 
 ## The faster way: say the whole schedule in one breath
 

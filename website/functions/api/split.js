@@ -5,24 +5,31 @@
 // 配置(都在 Pages 项目设置里):
 //   AI_PROXY_ORIGIN  代理基地址,如 https://ai.example.org
 //   WEB_EXTRACT_TOKEN  与代理 `wrangler secret put WEB_EXTRACT_TOKEN` 同值
-import { isKnownTimezone, todayInZone } from '../lib/timezones.mjs';
+import { resolveFormTimezone, todayInZone } from '../lib/timezones.mjs';
 import { describeModelRecurrence } from '../lib/recurrence.mjs';
 import { toolResultPage, htmlResponse, escapeHtml } from '../lib/render.mjs';
+import { detectLocale, readForm, isSameOriginForm, requireWebEnv, fetchWebExtraction, parseExtraction, normalizeTodos, plainTitle } from '../lib/web-extract.mjs';
 
 const TOOL_PATH = '/tools/add-multiple-reminders-at-once';
 const CT = 'web-tool-split-result';
 const MAX_INPUT_CHARS = 1000;
-const UPSTREAM_TIMEOUT_MS = 45000; // 对齐 App 端整体超时预算(代理 failover 最坏情形)
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export async function onRequestPost(context) {
   const { request, env } = context;
 
   const form = await readForm(request);
-  if (form instanceof Response) return form;
+  if (!form) {
+    return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.');
+  }
+  if (!isSameOriginForm(request)) {
+    // 跨站表单会烧掉访客 IP 的共享配额:挡掉(与 recur-check.js 同口径)。
+    return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.', 403);
+  }
 
   const text = (form.get('text') || '').trim();
-  const tz = form.get('tz') || 'UTC';
+  // tz 默认 auto:服务端按 request.cf.timezone 解析(美西傍晚 "tomorrow" 不再错一天)。
+  const { tz } = resolveFormTimezone(form.get('tz'), request);
 
   if (!text) {
     return errorResult('Nothing to split', 'Type a sentence first — for example “call the dentist tomorrow at 9, send the report by Friday, pay rent on the 1st every month”.');
@@ -30,10 +37,10 @@ export async function onRequestPost(context) {
   if (text.length > MAX_INPUT_CHARS) {
     return errorResult('Too long', `Please keep it under ${MAX_INPUT_CHARS} characters (you sent ${text.length}).`);
   }
-  if (!isKnownTimezone(tz)) {
+  if (!tz) {
     return errorResult('Unknown timezone', 'Please pick a timezone from the list.');
   }
-  if (!env.AI_PROXY_ORIGIN || !env.WEB_EXTRACT_TOKEN) {
+  if (!requireWebEnv(env)) {
     // 显式报错,不静默降级(CLAUDE.md 错误显式传播):缺配置是部署事故,
     // 用户可见文案不泄露内部细节,日志里留全量原因。
     console.error('split: missing env', {
@@ -46,17 +53,7 @@ export async function onRequestPost(context) {
   const today = todayInZone(tz);
   let upstream;
   try {
-    upstream = await fetch(`${env.AI_PROXY_ORIGIN.replace(/\/+$/, '')}/v1/web/todo-extractions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Web-Token': env.WEB_EXTRACT_TOKEN,
-        'X-Web-Client-IP': request.headers.get('CF-Connecting-IP') || 'anonymous',
-        'X-Local-Date': today,
-      },
-      body: JSON.stringify({ transcript: text, locale: detectLocale(text) }),
-      signal: upstreamSignal(request.signal),
-    });
+    upstream = await fetchWebExtraction(env, request, { text, locale: detectLocale(text), todayIso: today, logLabel: 'split' });
   } catch (error) {
     // 访客连点时浏览器取消上一次导航 → request.signal abort → fetch 抛错。这是修复
     // 「连点烧光额度」后的预期路径(代理侧已给被取消的请求退额度),按 info 记,
@@ -89,7 +86,9 @@ Nothing was saved; wait a moment and try again.</p></div>`,
       toolPath: TOOL_PATH,
       toolLabel: 'sentence splitter',
       heading: 'Daily tries used up',
-      bodyHtml: `<div class="card"><p style="margin:0">You've used today's three tries from this page. The counter resets tomorrow.
+      // 额度与检查器工具共用(代理按 IP 计数,两工具同桶):文案说「across these
+      // tools」,不能说「from this page」—— 用掉的三次可能发生在另一个工具页。
+      bodyHtml: `<div class="card"><p style="margin:0">You've used today's three tries across these tools. The counter resets tomorrow.
 In the <strong>app</strong>, the same split runs every time you capture — with reminders, repeats and widgets on top.</p></div>`,
       ct: CT,
     }));
@@ -101,7 +100,9 @@ In the <strong>app</strong>, the same split runs every time you capture — with
         toolPath: TOOL_PATH,
         toolLabel: 'sentence splitter',
         heading: 'Web quota used up for today',
-        bodyHtml: `<div class="card"><p style="margin:0">This page's daily quota is finished. Come back tomorrow —
+        // global_budget_exceeded_web 是全 web 档的全局预算(所有访客合计),
+        // 不是本页也不是本 IP 的额度:文案按「web 工具的共享额度」说。
+        bodyHtml: `<div class="card"><p style="margin:0">The web tools' shared budget for today is used up. Come back tomorrow —
 or continue in the <strong>app</strong>, where the same split runs on every capture.</p></div>`,
         ct: CT,
       }));
@@ -126,7 +127,7 @@ or continue in the <strong>app</strong>, where the same split runs on every capt
     return errorResult('Split failed', 'The splitting service returned something unexpected. Nothing was saved — please try again.', 502);
   }
 
-  const todos = Array.isArray(parsed.data.todos) ? parsed.data.todos : [];
+  const todos = normalizeTodos(parsed.data);
   if (todos.length === 0) {
     return htmlResponse(toolResultPage({
       toolPath: TOOL_PATH,
@@ -163,40 +164,7 @@ everything you confirm there is saved with the dates shown above.</p>`;
   }));
 }
 
-// 上游 fetch 的 AbortSignal:访客断连 + 45s 超时,任一触发即取消。
-//
-// 为什么要透传访客断连(2026-11-23 线上实测修复):零 JS 表单点提交后无反馈,用户
-// 会连点 —— 浏览器取消前几次导航,只有最后一次的结果被看到。把 request.signal 带给
-// 上游,代理检测到断连就退掉那次每日额度(没看到的请求不占 3 次/天)。
-//
-// 运行时前提:request.signal 要真的会 abort,Pages 项目需要兼容标志
-// enable_request_signal(兼容日期 ≥ 2026-11-17 才默认开启),否则这里透传的是一个
-// 永不触发的信号,修复在线上空转(不会报错,只是不生效)。
-//
-// AbortSignal.any 加 typeof 守卫:缺失时退回「只有超时」的旧信号并显式告警,
-// 而不是让每次表单提交都抛 TypeError 变成 503 —— 那比修复前更糟。
-// (代理侧同款合并与 fallback 见 AIProxy/src/adapters/base.js mergeSignals;
-// 官网零依赖、不跨目录 import,这里只保留最小守卫。)
-function upstreamSignal(visitorSignal) {
-  const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-  if (typeof AbortSignal.any !== 'function') {
-    console.warn('split: AbortSignal.any unavailable; visitor disconnects will not cancel the upstream request');
-    return timeoutSignal;
-  }
-  return AbortSignal.any([visitorSignal, timeoutSignal]);
-}
-
 // ---------- 渲染小件 ----------
-
-// locale 口径:App 端发用户真实 locale(代理按它选 few-shot 语言),工具页
-// 零 JS 读不到系统 locale,退而按输入文字的书写系统猜 —— 官网宣称「the same
-// parse the app runs」,中文句子走英文档 prompt 就名不副实了。代理侧
-// normalizeLocale 只认 en/zh/ja,猜错回 en,不会产生新值。
-function detectLocale(text) {
-  if (/[぀-ヿ]/.test(text)) return 'ja';
-  if (/[一-鿿]/.test(text)) return 'zh';
-  return 'en';
-}
 
 function formatDueDate(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return '';
@@ -215,7 +183,16 @@ function formatTime(hhmm) {
 
 function whenText(todo) {
   const parts = [];
-  if (todo.due_date) parts.push(formatDueDate(todo.due_date));
+  // App 端拿到结果后会跑 applyDueDateBasisFilter(Store/SwiftDataModels.swift:425):
+  // due_date_basis 非 user_explicit 的日期会被清掉或改用 transcript 兜底重算;
+  // user_explicit 但原文没有时间线索的也会被清。官网取简化口径:非 user_explicit
+  // 一律不显示日期,钟点/时段/提醒照常(App 端清日期时保留这两样)。两个已知偏差,
+  // 都要移植整段 hasExplicitTimeCue 探测器才能判(任务书级取舍):
+  // - user_explicit + 原文无 cue:App 清日期,网页仍显示 → 网页多显示;
+  // - title_mention/inferred/nil + 原文有 cue:App 按 transcript 重算日期保留,
+  //   网页隐藏 → 网页少显示(重算结果可能与模型日期不同,不显示不构成超承诺)。
+  const keepDate = !todo.due_date || todo.due_date_basis === 'user_explicit';
+  if (todo.due_date && keepDate) parts.push(formatDueDate(todo.due_date));
   if (todo.due_time) parts.push(formatTime(todo.due_time));
   if (!todo.due_time && todo.time_bucket) parts.push(String(todo.time_bucket));
   if (Array.isArray(todo.reminder_times) && todo.reminder_times.length > 0) {
@@ -230,44 +207,18 @@ function whenText(todo) {
 function todoRow(todo) {
   const when = whenText(todo);
   return `<div class="todo-row">
-  <span class="todo-title">${escapeHtml(todo.title || '')}</span>
+  <span class="todo-title">${escapeHtml(plainTitle(todo))}</span>
   ${when ? `<span class="todo-when">${escapeHtml(when)}</span>` : '<span class="todo-when">no date</span>'}
 </div>`;
 }
 
 function copyLine(todo) {
   const when = whenText(todo);
-  return when ? `${todo.title || ''} — ${when}` : (todo.title || '');
+  const title = plainTitle(todo);
+  return when ? `${title} — ${when}` : title;
 }
 
 // ---------- 共用小件 ----------
-
-function parseExtraction(text) {
-  try {
-    return { parseOk: true, data: JSON.parse(stripMarkdownFence(text)) };
-  } catch {
-    return { parseOk: false, data: null };
-  }
-}
-
-function stripMarkdownFence(text) {
-  const trimmed = String(text).trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
-  return fence ? fence[1] : trimmed;
-}
-
-async function readForm(request) {
-  const contentType = request.headers.get('content-type') || '';
-  if (!contentType.includes('application/x-www-form-urlencoded')) {
-    return errorResult('Form error', 'This page expects a normal form submission. Please use the form on the tool page.');
-  }
-  try {
-    return new URLSearchParams(await request.text());
-  } catch (error) {
-    console.error('split: form parse failed', error);
-    return errorResult('Form error', 'Could not read the form submission. Please go back and try again.');
-  }
-}
 
 // status 口径:客户端输入问题 400(默认);服务端故障(缺配置/上游不可达/
 // 上游报错/坏响应)必须 5xx —— 错误显式传播,不把服务端故障伪装成客户端错。
