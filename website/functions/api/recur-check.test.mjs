@@ -11,7 +11,7 @@ const TOOL_URL = 'https://site.test/tools/recurring-reminder-checker';
 const UPSTREAM_URL = 'https://proxy.test/v1/web/todo-extractions';
 
 // 与 split.test.mjs 同构的截获骨架:替换全局 fetch + 静音并截获 console。
-async function withMockedUpstream({ body, cf, visitorSignal, upstreamImpl }, fn) {
+async function withMockedUpstream({ body, cf, visitorSignal, origin, upstreamImpl }, fn) {
   const originalFetch = globalThis.fetch;
   const originalLog = console.log;
   const originalWarn = console.warn;
@@ -31,6 +31,7 @@ async function withMockedUpstream({ body, cf, visitorSignal, upstreamImpl }, fn)
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
         'CF-Connecting-IP': '203.0.113.7',
+        ...(origin ? { origin } : {}),
       },
       body: new URLSearchParams(body),
       signal: visitorSignal,
@@ -132,7 +133,7 @@ test('recur-check: 模型没给重复规则时诚实展示(不编规则)', async
       assert.equal(response.status, 200);
       const html = await response.text();
       assert.match(html, /No repeat in this phrase/);
-      assert.match(html, /“Buy milk”/);
+      assert.match(html, /It would be kept as a plain task without a repeat: “Buy milk”/);
       assert.doesNotMatch(html, /<ul class="date-list">/, '无重复页不得渲染日期列表');
       assert.doesNotMatch(html, /understands this as/);
     }
@@ -222,6 +223,129 @@ test('recur-check: 空输入 400', async () => {
     async (context) => {
       const response = await onRequestPost(context);
       assert.equal(response.status, 400);
+    }
+  );
+});
+
+test('recur-check: 展开不足五次时按实际条数说(不硬说 five)', async () => {
+  await withMockedUpstream(
+    {
+      body: { phrase: 'report every 4 months on the 15th', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Report',
+          recurrence_rule: { frequency: 'monthly', interval: 4, weekdays: [], day_of_month: 15, end_date: null },
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      const html = await response.text();
+      // 自适应上限(双 review 修复轮):interval 4 的第 5 次在 400 步之外,仍能出满五次
+      assert.equal((html.match(/<li>/g) || []).length, 5);
+      assert.match(html, /The next five times/);
+    }
+  );
+});
+
+test('recur-check: 一条都展不开时明说,不渲染空列表', async () => {
+  await withMockedUpstream(
+    {
+      body: { phrase: 'gym every wednesday until nov 19', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Gym',
+          recurrence_rule: { frequency: 'weekly', interval: 1, weekdays: [4], day_of_month: null, end_date: '2026-11-19' },
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.match(html, /No upcoming dates to show for this rule/);
+      assert.doesNotMatch(html, /<ul class="date-list">/);
+      assert.doesNotMatch(html, /The next five/);
+    }
+  );
+});
+
+test('recur-check: 上游 200 合法 JSON 但形状不对(标量/数组)显式 502 不裸 500', async () => {
+  for (const body of ['null', '[1,2]', '"ok"', '123']) {
+    await withMockedUpstream(
+      { body: { phrase: 'a', tz: 'UTC' }, upstreamImpl: () => new Response(body, { status: 200 }) },
+      async (context) => {
+        const response = await onRequestPost(context);
+        assert.equal(response.status, 502, `body=${body}`);
+      }
+    );
+  }
+});
+
+test('recur-check: todos 里混入 null / 非对象元素不抛,按剩余元素渲染', async () => {
+  await withMockedUpstream(
+    {
+      body: { phrase: 'gym every monday', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({ todos: [null, 'x', { title: 'Gym', recurrence_rule: { frequency: 'weekly', interval: 1, weekdays: [2] } }], ignored: '' }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.match(html, /Every Monday/);
+      // 周一规则能正常展开五次(归一化只剔除 null / 非对象元素)
+      assert.equal((html.match(/<li>/g) || []).length, 5);
+      // 非 string title 不得渲染成 [object Object]
+      assert.doesNotMatch(html, /\[object Object\]/);
+    }
+  );
+});
+
+test('recur-check: 同源 Origin 放行,跨站与 Origin:null 拒 403 且不触上游', async () => {
+  await withMockedUpstream(
+    { body: { phrase: 'gym every monday', tz: 'UTC' }, origin: 'https://site.test', upstreamImpl: () => jsonUpstream(weeklyRuleBody) },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200, '同源 POST 正常处理');
+    }
+  );
+  for (const origin of ['https://evil.test', 'null']) {
+    await withMockedUpstream(
+      { body: { phrase: 'a', tz: 'UTC' }, origin, upstreamImpl: () => { throw new Error('不应触达上游'); } },
+      async (context) => {
+        const response = await onRequestPost(context);
+        assert.equal(response.status, 403, `origin=${origin}`);
+      }
+    );
+  }
+});
+
+test('recur-check: 混合短语里无重复的任务列出来,不静默消失', async () => {
+  await withMockedUpstream(
+    {
+      body: { phrase: 'gym every monday, buy milk', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [
+          { title: 'Gym', recurrence_rule: { frequency: 'weekly', interval: 1, weekdays: [2], day_of_month: null, end_date: null } },
+          { title: 'Buy milk', recurrence_rule: null },
+          { title: '', recurrence_rule: { frequency: 'weekly', interval: 1, weekdays: [], day_of_month: null, end_date: null } },
+        ],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.match(html, /Every Monday/);
+      // App 会丢弃的畸形规则(App isValid false)不进卡片:只有 Gym 一张规则卡
+      assert.equal((html.match(/VoiceTodo understands this as:/g) || []).length, 1);
+      assert.match(html, /Also kept as a plain task without a repeat: “Buy milk”/);
+      // 空标题不进列表
+      assert.doesNotMatch(html, /“”/);
+      assert.equal((html.match(/<li>/g) || []).length, 5);
     }
   );
 });

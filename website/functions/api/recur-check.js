@@ -9,7 +9,7 @@
 import { describeModelRecurrence, modelRuleOccurrences, formatOccurrence } from '../lib/recurrence.mjs';
 import { resolveFormTimezone, todayInZone } from '../lib/timezones.mjs';
 import { toolResultPage, htmlResponse, escapeHtml } from '../lib/render.mjs';
-import { detectLocale, readForm, requireWebEnv, fetchWebExtraction } from '../lib/web-extract.mjs';
+import { detectLocale, readForm, isSameOriginForm, requireWebEnv, fetchWebExtraction, parseExtraction, normalizeTodos, plainTitle } from '../lib/web-extract.mjs';
 
 const TOOL_PATH = '/tools/recurring-reminder-checker';
 const CT = 'web-tool-recur-result';
@@ -20,6 +20,10 @@ export async function onRequestPost(context) {
   const form = await readForm(request);
   if (!form) {
     return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.');
+  }
+  if (!isSameOriginForm(request)) {
+    // 跨站表单会烧掉访客 IP 的共享配额:挡掉,不给正常的工具结果。
+    return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.', 403);
   }
 
   const phrase = (form.get('phrase') || '').trim().slice(0, 500);
@@ -87,7 +91,9 @@ In the <strong>app</strong>, every capture runs this parse — with reminders, r
         toolPath: TOOL_PATH,
         toolLabel: 'recurring reminder checker',
         heading: 'Web quota used up for today',
-        bodyHtml: `<div class="card"><p style="margin:0">This page's daily quota is finished. Come back tomorrow —
+        // global_budget_exceeded_web 是全 web 档的全局预算(所有访客合计),与
+        // split.js 同一句话口径;不是本页也不是本 IP 的额度。
+        bodyHtml: `<div class="card"><p style="margin:0">The web tools' shared budget for today is used up. Come back tomorrow —
 or continue in the <strong>app</strong>, where every capture runs this parse.</p></div>`,
         ct: CT,
       }));
@@ -112,17 +118,24 @@ or continue in the <strong>app</strong>, where every capture runs this parse.</p
     return errorResult('Check failed', 'The checking service returned something unexpected. Nothing was saved — please try again.', 502);
   }
 
-  const todos = Array.isArray(parsed.data.todos) ? parsed.data.todos : [];
-  const recurring = todos
-    .map((todo) => ({ title: String(todo.title || ''), rule: todo.recurrence_rule }))
-    .filter((entry) => entry.rule && describeModelRecurrence(entry.rule));
+  const todos = normalizeTodos(parsed.data);
+  // 每个任务只判一次「有没有(有效的)重复规则」:重复规则进卡片;混合短语里
+  // 没有重复规则的任务也不能静默消失 —— App 端它们照样建成普通任务,如实列出。
+  const entries = todos.map((todo) => {
+    const rule = todo.recurrence_rule;
+    const hasRepeat = Boolean(rule && describeModelRecurrence(rule));
+    return { title: plainTitle(todo), rule, hasRepeat };
+  });
+  const recurring = entries.filter((entry) => entry.hasRepeat);
 
   if (recurring.length === 0) {
     // 模型没给出任何重复规则:如实说 —— App 会把这些任务建成不重复的普通任务。
     // 这是「展示 App 实际行为」口径的一部分,不拿本地解析器编一个规则出来。
-    const titles = todos.map((todo) => String(todo.title || '')).filter(Boolean);
+    const titles = todos.map(plainTitle).filter(Boolean);
     const listed = titles.length
-      ? `<p class="note">It would be kept as a plain task${titles.length > 1 ? 's' : ''} without a repeat: ${titles.map((t) => `“${escapeHtml(t)}”`).join(', ')}.</p>`
+      ? `<p class="note">${titles.length > 1
+        ? `They would be kept as plain tasks without a repeat: ${titles.map((t) => `“${escapeHtml(t)}”`).join(', ')}.`
+        : `It would be kept as a plain task without a repeat: “${escapeHtml(titles[0])}”.`}</p>`
       : '';
     const bodyHtml = `
 <p class="you-said">You said: “${escapeHtml(phrase)}”</p>
@@ -139,23 +152,40 @@ in the app you confirm the rule on the review card before anything is saved.</p>
     }));
   }
 
+  // 混合短语里没有重复规则的任务也会被 App 建成普通任务:列出来,不静默消失
+  // (「无重复」分支对所有任务列同一句话;这里只补混合情形缺的那一半)。
+  const plainTitles = entries
+    .filter((entry) => !entry.hasRepeat)
+    .map((entry) => entry.title)
+    .filter(Boolean);
+  const plainListed = plainTitles.length
+    ? `<p class="note">${plainTitles.length > 1
+      ? `Also kept as plain tasks without a repeat: ${plainTitles.map((t) => `“${escapeHtml(t)}”`).join(', ')}.`
+      : `Also kept as a plain task without a repeat: “${escapeHtml(plainTitles[0])}”.`}</p>`
+    : '';
   const cards = recurring.map(({ title, rule }) => {
     const ruleText = describeModelRecurrence(rule);
     // 「接下来五次」的展开口径见 modelRuleOccurrences:interval>1 以第一个匹配日为锚
     // (App 端锚任务首个 dueDate,检查器没有任务,取第一个匹配日等价)。
     const dates = modelRuleOccurrences(rule, today, tz, 5);
-    const listHtml = dates.map((d) => `<li>${escapeHtml(formatOccurrence(d))}</li>`).join('');
+    // 展开数不足 count(结构化 end_date 很近 / interval 特大)时不硬说「five」:
+    // 标题按实际条数说,一条都没有就明说,不渲染空 <ul> 装正常。
+    const timesLabel = `The next ${dates.length === 5 ? 'five' : dates.length} time${dates.length === 1 ? '' : 's'} (${escapeHtml(tz)}):`;
+    const datesBlock = dates.length === 0
+      ? `<p class="note" style="margin:0 0 10px">No upcoming dates to show for this rule.</p>`
+      : `<p class="note" style="margin:0 0 10px">${timesLabel}</p>
+  <ul class="date-list">${dates.map((d) => `<li>${escapeHtml(formatOccurrence(d))}</li>`).join('')}</ul>`;
     return `<div class="card">
   ${title ? `<p class="todo-title">${escapeHtml(title)}</p>` : ''}
   <p class="note" style="margin:0 0 4px">VoiceTodo understands this as:</p>
   <p class="rule-text">${escapeHtml(ruleText)}</p>
-  <p class="note" style="margin:0 0 10px">The next five times (${escapeHtml(tz)}):</p>
-  <ul class="date-list">${listHtml}</ul>
+  ${datesBlock}
 </div>`;
   }).join('');
   const bodyHtml = `
 <p class="you-said">You said: “${escapeHtml(phrase)}”</p>
 ${cards}
+${plainListed}
 <p class="note">In the app, saying this while capturing creates the task with the repeat already set —
 no picker, no repeats menu. You confirm the rule on the review card before anything is saved.</p>`;
   return htmlResponse(toolResultPage({
@@ -168,20 +198,6 @@ no picker, no repeats menu. You confirm the rule on the review card before anyth
 }
 
 // ---------- 共用小件 ----------
-
-function parseExtraction(text) {
-  try {
-    return { parseOk: true, data: JSON.parse(stripMarkdownFence(text)) };
-  } catch {
-    return { parseOk: false, data: null };
-  }
-}
-
-function stripMarkdownFence(text) {
-  const trimmed = String(text).trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
-  return fence ? fence[1] : trimmed;
-}
 
 // status 口径:客户端输入问题 400(默认);服务端故障(缺配置/上游不可达/
 // 上游报错/坏响应)必须 5xx —— 错误显式传播,不把服务端故障伪装成客户端错。

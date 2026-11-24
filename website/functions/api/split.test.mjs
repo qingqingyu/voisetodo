@@ -137,7 +137,7 @@ test('split: 上游真故障(非断连)→ 503 结果页并记 error', async () 
 
 // —— 2026-11-24 增量:basis 过滤 + tz auto(参数化骨架,与上方 withMockedUpstream 同构)——
 
-async function withSplitRequest({ body, cf }, upstreamImpl, fn) {
+async function withSplitRequest({ body, cf, origin }, upstreamImpl, fn) {
   const originalFetch = globalThis.fetch;
   const originalLog = console.log;
   const originalWarn = console.warn;
@@ -154,7 +154,7 @@ async function withSplitRequest({ body, cf }, upstreamImpl, fn) {
   try {
     const request = new Request(TOOL_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '203.0.113.7' },
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '203.0.113.7', ...(origin ? { origin } : {}) },
       body: new URLSearchParams(body),
     });
     if (cf) request.cf = cf;
@@ -237,6 +237,53 @@ test('split: tz=auto 用 request.cf.timezone 算 X-Local-Date,cf 缺失回落 UT
     async (context, calls) => {
       await onRequestPost(context);
       assert.equal(calls[0].init.headers.get('X-Local-Date'), todayInZone('UTC'));
+    }
+  );
+});
+
+test('split: 上游 200 合法 JSON 但形状不对(标量/数组)显式 502 不裸 500', async () => {
+  for (const body of ['null', '{"todos": [null, "x"]}', '"ok"']) {
+    await withSplitRequest(
+      { body: { text: 'call mom', tz: 'UTC' } },
+      () => new Response(body, { status: 200 }),
+      async (context) => {
+        const response = await onRequestPost(context);
+        // [null,"x"] 被归一化掉后 todos 为空 → 走「No tasks found」200;其余 502
+        const expected = body === '{"todos": [null, "x"]}' ? 200 : 502;
+        assert.equal(response.status, expected, `body=${body}`);
+      }
+    );
+  }
+});
+
+test('split: 非字符串 title 不渲染 [object Object]', async () => {
+  await withSplitRequest(
+    { body: { text: 'call mom', tz: 'UTC' } },
+    () => new Response(JSON.stringify({ todos: [{ title: { nested: true }, due_date: null, due_time: null, time_bucket: null, reminder_times: [], due_date_basis: null }], ignored: '' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.doesNotMatch(html, /\[object Object\]/);
+    }
+  );
+});
+
+test('split: 跨站 Origin 拒 403 且不触上游,同源放行', async () => {
+  await withSplitRequest(
+    { body: { text: 'call mom', tz: 'UTC' }, origin: 'https://site.test' },
+    () => new Response(JSON.stringify({ todos: [], ignored: '' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200, '同源 POST 正常处理');
+    }
+  );
+  await withSplitRequest(
+    { body: { text: 'call mom', tz: 'UTC' }, origin: 'https://evil.test' },
+    () => { throw new Error('不应触达上游'); },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 403);
     }
   );
 });

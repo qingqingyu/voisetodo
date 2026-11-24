@@ -8,7 +8,7 @@
 import { resolveFormTimezone, todayInZone } from '../lib/timezones.mjs';
 import { describeModelRecurrence } from '../lib/recurrence.mjs';
 import { toolResultPage, htmlResponse, escapeHtml } from '../lib/render.mjs';
-import { detectLocale, readForm, requireWebEnv, fetchWebExtraction } from '../lib/web-extract.mjs';
+import { detectLocale, readForm, isSameOriginForm, requireWebEnv, fetchWebExtraction, parseExtraction, normalizeTodos, plainTitle } from '../lib/web-extract.mjs';
 
 const TOOL_PATH = '/tools/add-multiple-reminders-at-once';
 const CT = 'web-tool-split-result';
@@ -21,6 +21,10 @@ export async function onRequestPost(context) {
   const form = await readForm(request);
   if (!form) {
     return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.');
+  }
+  if (!isSameOriginForm(request)) {
+    // 跨站表单会烧掉访客 IP 的共享配额:挡掉(与 recur-check.js 同口径)。
+    return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.', 403);
   }
 
   const text = (form.get('text') || '').trim();
@@ -82,7 +86,9 @@ Nothing was saved; wait a moment and try again.</p></div>`,
       toolPath: TOOL_PATH,
       toolLabel: 'sentence splitter',
       heading: 'Daily tries used up',
-      bodyHtml: `<div class="card"><p style="margin:0">You've used today's three tries from this page. The counter resets tomorrow.
+      // 额度与检查器工具共用(代理按 IP 计数,两工具同桶):文案说「across these
+      // tools」,不能说「from this page」—— 用掉的三次可能发生在另一个工具页。
+      bodyHtml: `<div class="card"><p style="margin:0">You've used today's three tries across these tools. The counter resets tomorrow.
 In the <strong>app</strong>, the same split runs every time you capture — with reminders, repeats and widgets on top.</p></div>`,
       ct: CT,
     }));
@@ -94,7 +100,9 @@ In the <strong>app</strong>, the same split runs every time you capture — with
         toolPath: TOOL_PATH,
         toolLabel: 'sentence splitter',
         heading: 'Web quota used up for today',
-        bodyHtml: `<div class="card"><p style="margin:0">This page's daily quota is finished. Come back tomorrow —
+        // global_budget_exceeded_web 是全 web 档的全局预算(所有访客合计),
+        // 不是本页也不是本 IP 的额度:文案按「web 工具的共享额度」说。
+        bodyHtml: `<div class="card"><p style="margin:0">The web tools' shared budget for today is used up. Come back tomorrow —
 or continue in the <strong>app</strong>, where the same split runs on every capture.</p></div>`,
         ct: CT,
       }));
@@ -119,7 +127,7 @@ or continue in the <strong>app</strong>, where the same split runs on every capt
     return errorResult('Split failed', 'The splitting service returned something unexpected. Nothing was saved — please try again.', 502);
   }
 
-  const todos = Array.isArray(parsed.data.todos) ? parsed.data.todos : [];
+  const todos = normalizeTodos(parsed.data);
   if (todos.length === 0) {
     return htmlResponse(toolResultPage({
       toolPath: TOOL_PATH,
@@ -176,11 +184,13 @@ function formatTime(hhmm) {
 function whenText(todo) {
   const parts = [];
   // App 端拿到结果后会跑 applyDueDateBasisFilter(Store/SwiftDataModels.swift:425):
-  // due_date_basis 不是 user_explicit 的日期会被清掉(title_mention / inferred / null
-  // 走清空或 transcript 兜底重算)。官网展示同一口径:非 user_explicit 一律不显示日期
-  // —— 宁可少显示,不替 App 承诺它保不住的日期(审计 2026-11-24);钟点/时段/提醒
-  // App 端保留,照常显示。已知偏差:app 对 user_explicit 但 transcript 无时间线索的
-  // 日期也会清,这里仍显示(该分支需要移植整段 cue 探测器才能判,任务书选了简化口径)。
+  // due_date_basis 非 user_explicit 的日期会被清掉或改用 transcript 兜底重算;
+  // user_explicit 但原文没有时间线索的也会被清。官网取简化口径:非 user_explicit
+  // 一律不显示日期,钟点/时段/提醒照常(App 端清日期时保留这两样)。两个已知偏差,
+  // 都要移植整段 hasExplicitTimeCue 探测器才能判(任务书级取舍):
+  // - user_explicit + 原文无 cue:App 清日期,网页仍显示 → 网页多显示;
+  // - title_mention/inferred/nil + 原文有 cue:App 按 transcript 重算日期保留,
+  //   网页隐藏 → 网页少显示(重算结果可能与模型日期不同,不显示不构成超承诺)。
   const keepDate = !todo.due_date || todo.due_date_basis === 'user_explicit';
   if (todo.due_date && keepDate) parts.push(formatDueDate(todo.due_date));
   if (todo.due_time) parts.push(formatTime(todo.due_time));
@@ -197,31 +207,18 @@ function whenText(todo) {
 function todoRow(todo) {
   const when = whenText(todo);
   return `<div class="todo-row">
-  <span class="todo-title">${escapeHtml(todo.title || '')}</span>
+  <span class="todo-title">${escapeHtml(plainTitle(todo))}</span>
   ${when ? `<span class="todo-when">${escapeHtml(when)}</span>` : '<span class="todo-when">no date</span>'}
 </div>`;
 }
 
 function copyLine(todo) {
   const when = whenText(todo);
-  return when ? `${todo.title || ''} — ${when}` : (todo.title || '');
+  const title = plainTitle(todo);
+  return when ? `${title} — ${when}` : title;
 }
 
 // ---------- 共用小件 ----------
-
-function parseExtraction(text) {
-  try {
-    return { parseOk: true, data: JSON.parse(stripMarkdownFence(text)) };
-  } catch {
-    return { parseOk: false, data: null };
-  }
-}
-
-function stripMarkdownFence(text) {
-  const trimmed = String(text).trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
-  return fence ? fence[1] : trimmed;
-}
 
 // status 口径:客户端输入问题 400(默认);服务端故障(缺配置/上游不可达/
 // 上游报错/坏响应)必须 5xx —— 错误显式传播,不把服务端故障伪装成客户端错。

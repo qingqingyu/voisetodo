@@ -27,7 +27,14 @@
    从「本地确定性解析器认识这些」改为「AI 解析示例」,配额提示改为共用。
    `modelRuleOccurrences` 口径:起点严格晚于今天(与既有 nextOccurrences 一致);
    interval>1 以第一个匹配日为锚(App 端锚任务首个 dueDate,检查器没有任务,取第一个
-   匹配日等价);end_date 截断;迭代上限 400 步防畸形规则死循环。
+   匹配日等价);weekly+weekdays+interval>1 按 App `occurs()` 的 weekDiff 窗口公式
+   (窗口内所有 weekdays 都出现);end_date 截断;迭代上限自适应(保底 400 步,按
+   count×周期放大,硬顶 5000 步防畸形规则拖垮 Function)。结果卡「接下来 N 次」按
+   实际展开条数说,一条都没有明说,不渲染空列表;混合短语里没有重复规则的任务
+   也会如实列出(「Also kept as plain task(s) without a repeat」),与「无重复」
+   分支同一口径。另加 `isValidModelRule` 闸门
+   (镜像 Swift 严格解码 + isValid):App 会丢弃的畸形规则(weekly 空 weekdays、
+   monthly 越界日号、非整数 interval/weekdays)一律判无效,走「无重复」诚实页。
 2. **时区默认 UTC(必修)**:两个工具页下拉新增默认项「Auto — detected from your
    connection」;`resolveFormTimezone`('auto' → 服务端 `request.cf.timezone`,Intl 校验,
    失败回落 UTC;显式选项仍走白名单)。X-Local-Date 按解析出的时区计算,代理侧漂移
@@ -35,10 +42,13 @@
 3. **日期 basis 过滤(应修)**:`split.js` 的 `whenText` 按 App 端
    `applyDueDateBasisFilter`(SwiftDataModels.swift:425)同口径过滤:`due_date_basis` 非
    `user_explicit` 不显示日期;钟点/时段/提醒照常(App 端清日期时保留这两样)。
-   结果页底部那句「saved with the dates shown above」保留(镜像后不再超承诺)。
-4. **IPv6 /64 绕限(应修)**:`webClientIp` 对含 `:` 的地址折叠到 /64 前缀再做哈希
-   (`ipv6Prefix64`,支持 :: 压缩与内嵌 IPv4);IPv4-mapped 特判用其 IPv4 部分按 IPv4
-   粒度(否则所有 mapped 地址折进同一桶);畸形地址归 anonymous 共享桶(既有收紧口径)。
+   结果页底部那句「saved with the dates shown above」保留(镜像后不再整批超承诺;
+   残余个例偏差见 §4.1)。
+4. **IPv6 /64 绕限(应修)**:`webClientIp` 对含 `:` 的地址先过 `expandIpv6` 完整语法
+   校验,合法则折叠到 /64 前缀再做哈希(支持 :: 压缩与段内嵌 IPv4;内嵌 IPv4 只允许
+   在地址最末段);IPv4-mapped(前 5 组全 0 + 第 6 组 ffff)特判用其 IPv4 部分按 IPv4
+   粒度(否则所有 mapped 地址折进同一桶);畸形地址归 anonymous 共享桶(既有收紧
+   口径,含点但非 mapped 形状的畸形也不例外)。
 5. **providerToken 占位(应修)**:`website/src/config.mjs:15` 的 `pt` 是 App Store Connect
    的来源参数,**真实值只能由账号持有者在 ASC 生成**(App 分析 → 来源参数),代码侧
    无法代办。本分支未改动该行;拿到 pt 后改一处 + `npm run build` 即全站生效(该值的
@@ -58,26 +68,50 @@
 
 ## 3. 测试
 
-- 官网 Functions:`npm run test:functions` —— **执行 53 / 失败 0**(原 28 + 新增 25:
-  recur-check 全新 12 条、split basis/tz 4 条、modelRuleOccurrences 9 条)。
-- 代理:`cd AIProxy && npm test` —— **执行 459 / 失败 0**(原 455 + 新增 4:
-  /64 折叠 ×3、token 比较语义 ×1)。
+- 官网 Functions:`npm run test:functions` —— **执行 69 / 失败 0**(原 28 + 新增 41:
+  recur-check 全新 18 条、split 新增 7 条(basis/tz 4 + 上游形状 2 + 同源表单闸 1)、
+  modelRuleOccurrences/有效性闸门 16 条;含展开数不足按实际条数说 / 空列表明说 /
+  合法 JSON 形状不对显式 502 / 非对象 todos 元素归一化 / 非字符串 title 不渲染
+  [object Object] / App 会丢弃的畸形规则(weekly 空 weekdays、monthly 越界日号、
+  非整数 interval/weekdays)判无效走「无重复」诚实页 / 跨站 Origin 拒 403)。
+- 代理:`cd AIProxy && npm test` —— **执行 461 / 失败 0**(原 455 + 新增 6:
+  /64 折叠 ×3、token 比较语义 ×1、含点非 mapped 畸形 IPv6 归 anonymous ×1、
+  内嵌 IPv4 放中间/出现两次归 anonymous ×1)。
 - 官网构建:`npm run build`(astro build + og-images + checks)—— **21 页全部通过**。
-- 审计报告口径的「代理 455 用例、Functions 28 用例」在本分支分别增至 459 / 53。
+- 审计报告口径的「代理 455 用例、Functions 28 用例」在本分支分别增至 461 / 69。
 
 ## 4. 与审计不一致 / 自己做的判断
 
 1. **basis 过滤选了审计给的简化口径**(非 user_explicit 一律不显示日期),没有移植
-   Swift 的 `hasExplicitTimeCue` + transcript 兜底重算。已知偏差:App 对 user_explicit
-   但 transcript 无时间线索的日期也会清,网页仍显示;方向是「多显示」而非「超承诺
-   日期」,且需要整段日期解析器才能消除,任务书级取舍记在这里。
+   Swift 的 `hasExplicitTimeCue` + transcript 兜底重算。两个已知偏差(都要移植整段
+   cue 探测器才能消除,任务书级取舍记在这里):
+   - user_explicit 但 transcript 无时间线索:App 清日期,网页仍显示 —— 网页多显示,
+     残留个例超承诺;
+   - title_mention/inferred/nil 且 transcript 有 cue:App 按 transcript 重算日期保留,
+     网页隐藏 —— 网页少显示,不构成超承诺(重算结果可能与模型日期不同)。
 2. **「接下来五次」的 interval 锚**:App 锚任务首个 dueDate;检查器没有任务,取第一个
    匹配日。展示口径差异已写进 `modelRuleOccurrences` 注释与页面文案。
+2a. **结构化截止 `recurrence_end` 未展开**:契约上模型把重复终点放顶层
+   `recurrence_end`(after_count/month_end,客户端确定性算日期),检查器只支持
+   `recurrence_rule.end_date`(契约上恒 null,但客户端对它是绝对优先,模型给了就截断)。
+   有界重复按无界展示「接下来五次」;终点截进前五时网页多显示。页面结果卡已有
+   「确认后才会保存」兜底;完整展开需移植 App 端 RecurrenceEndResolver,未做。
+2b. **monthly/daily interval>1 与 App 端既有张力**:检查器 monthly 按日历月差、
+   daily 按 N 天步长过滤(与模型契约「每三天/每三个月」、与 App 的系统日历镜像
+   一致);但 App 端 `RecurrenceRule.occurs(on:startDate:)` 对 monthly/daily 都
+   忽略 interval(App 内部 in-app 展开与日历镜像两边不一致,App 侧既有问题,
+   不属本分支)。weekly interval>1 则已对齐 App 的 weekDiff 窗口公式(锚点后
+   同一个 7 天窗口内的所有 weekdays 都出现)。
 3. **本地解析器代码保留**(只退出展示面):它与 Swift v1 的对照测试锁着两边行为,
    删掉会丢这层对照。
 4. **`readForm` 错误文案合并**:lib 化后「非表单提交」与「表单解析失败」统一成一条
    文案(两者都是 400,用户可分辨性不受影响)。
-5. **#5 providerToken 与 Pages 接 Git** 不是代码能完成的项,本分支只留配置点与待办。
+5. **同源表单闸(双 review 追加,超审计范围)**:两个工具端点新增 `isSameOriginForm`
+   —— Origin 头存在且与 request.url 的实际源不一致时 403(缺失放行,fail-closed 于
+   解析失败)。防第三方页面借访客浏览器自动 POST 烧掉访客 IP 的共享配额;按实际源
+   比较,主域/pages.dev 旧域/preview 部署自动全部正确。工具端点无 cookie 无会话,
+   这是反 CSRF 的最小形式。
+6. **#5 providerToken 与 Pages 接 Git** 不是代码能完成的项,本分支只留配置点与待办。
 
 ## 5. 部署提醒(与代码分离的运维项)
 

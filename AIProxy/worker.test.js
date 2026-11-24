@@ -10688,3 +10688,48 @@ test("web 档:token 比较——长度不同 / 同长不同内容都 401,Bearer 
   );
   assert.notEqual(bearer.status, 401, "Bearer 前缀形式仍应通过鉴权(后续失败不是 401)");
 });
+
+test("web 档:含点但非 mapped 的畸形 IPv6 归 anonymous 共享桶(9 组 / 字节越界)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    // 9 组(非法)与字节越界(256.0.0.1)两种畸形都落 anonymous 同一个桶:
+    // 第一发通过,第二发即 429 —— 证明没有各得一个真实桶
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("1:2:3:4:5:6:7:1.2.3.4")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("::ffff:256.0.0.1")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "web_ip_daily");
+    // 真实 mapped 地址不受影响:仍是自己的 IPv4 桶,不是 anonymous
+    const r3 = await handleRequest(webRequest({ transcript: "c" }, h("::ffff:203.0.113.9")), env, makeFakeCtx(), ok);
+    assert.equal(r3.status, 200);
+  });
+});
+
+test("web 档:内嵌 IPv4 放中间/出现两次归 anonymous(RFC 4291 只许末段一个点段)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("1.2.3.4::5.6.7.8")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("1:2:3.4.5.6::7")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429, "两种畸形都落 anonymous 同一桶");
+    // 正常 mapped 地址不受影响
+    const r3 = await handleRequest(webRequest({ transcript: "c" }, h("::ffff:203.0.113.10")), env, makeFakeCtx(), ok);
+    assert.equal(r3.status, 200);
+  });
+});

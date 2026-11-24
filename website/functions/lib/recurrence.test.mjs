@@ -157,7 +157,7 @@ test('describeRule / formatOccurrence 输出', () => {
 });
 
 // —— 2026-11-24 增量:modelRuleOccurrences(模型规则展开,工具② AI 口径)——
-import { modelRuleOccurrences } from './recurrence.mjs';
+import { modelRuleOccurrences, describeModelRecurrence } from './recurrence.mjs';
 
 test('model:weekly 多天 interval 1,第一个匹配日严格晚于 today', () => {
   // TODAY=2026-11-18 周三;weekdays [2,4,6]=周一三五 → 下一个周五 11-20
@@ -228,4 +228,78 @@ test('model:weekly 无 weekdays 以明天为锚每 interval 周一次', () => {
 test('model:空规则 / 未知 frequency 返回空数组', () => {
   assert.deepEqual(modelRuleOccurrences(null, TODAY, 'UTC'), []);
   assert.deepEqual(modelRuleOccurrences({ frequency: 'yearly' }, TODAY, 'UTC', 3), []);
+});
+
+test('model:weekly interval 2 多 weekday 按锚点 7 天窗口展开(App occurs 同公式)', () => {
+  // TODAY 周三 11-18;「每两周周一和周四」[2,5] → 锚 = 周四 11-19;
+  // 同窗口(锚后 7 天内)的周一 11-23 也出现;下一个窗口周四 12-03、周一 12-07;
+  // 窗口 1(11-27 周四、11-30 周一)落在奇数窗口,跳过 —— 与 Swift
+  // RecurrenceRule.occurs 的 weekDiff % interval 完全一致。
+  const dates = modelRuleOccurrences(
+    { frequency: 'weekly', interval: 2, weekdays: [2, 5], day_of_month: null, end_date: null },
+    TODAY, 'UTC', 3
+  );
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19', '2026-11-23', '2026-12-03']);
+});
+
+test('model:weekdays 含非整数元素判无效(App 解码 throw → 规则丢弃 → 普通任务)', () => {
+  // Swift decodeIfPresent([Int]) 对 "2" / 2.5 直接 throw → 整条规则丢弃;
+  // 检查器不得展示 App 建不出来的规则
+  for (const weekdays of [['2'], [2.5], ['a'], [2, '3'], [true]]) {
+    const rule = { frequency: 'weekly', interval: 1, weekdays, day_of_month: null, end_date: null };
+    assert.deepEqual(modelRuleOccurrences(rule, TODAY, 'UTC', 2), [], `weekdays=${JSON.stringify(weekdays)}`);
+    assert.equal(describeModelRecurrence(rule), '', `weekdays=${JSON.stringify(weekdays)}`);
+  }
+});
+
+test('model:weekly interval 1 无 weekdays 判无效(App isValid false → 普通任务)', () => {
+  const rule = { frequency: 'weekly', interval: 1, weekdays: [], day_of_month: null, end_date: null };
+  assert.deepEqual(modelRuleOccurrences(rule, TODAY, 'UTC', 2), []);
+  assert.equal(describeModelRecurrence(rule), '');
+  // 越界 weekday 被静默过滤后同样落到无效(Swift init 过滤 1...7)
+  const outOfRange = { frequency: 'weekly', interval: 1, weekdays: [9], day_of_month: null, end_date: null };
+  assert.deepEqual(modelRuleOccurrences(outOfRange, TODAY, 'UTC', 2), []);
+  // [9, 2] 过滤后剩 [2] → 有效,下周一展开
+  const mixed = { frequency: 'weekly', interval: 1, weekdays: [9, 2], day_of_month: null, end_date: null };
+  assert.deepEqual(modelRuleOccurrences(mixed, TODAY, 'UTC', 1).map((d) => d.iso), ['2026-11-23']);
+});
+
+test('model:monthly day_of_month 0/40 判无效(App init 钳成 nil → isValid false)', () => {
+  for (const day of [0, 40]) {
+    const rule = { frequency: 'monthly', interval: 1, weekdays: [], day_of_month: day, end_date: null };
+    assert.deepEqual(modelRuleOccurrences(rule, TODAY, 'UTC', 2), [], `day=${day}`);
+    assert.equal(describeModelRecurrence(rule), '', `day=${day}`);
+  }
+});
+
+test('model:interval 非整数/字符串判无效(App Int 解码 throw → 规则丢弃)', () => {
+  for (const interval of ['2', 2.5, true]) {
+    const rule = { frequency: 'weekly', interval, weekdays: [2], day_of_month: null, end_date: null };
+    assert.deepEqual(modelRuleOccurrences(rule, TODAY, 'UTC', 2), [], `interval=${String(interval)}`);
+    assert.equal(describeModelRecurrence(rule), '', `interval=${String(interval)}`);
+  }
+  // null interval 取默认 1(Swift decodeIfPresent ?? 1);0/负数被 max(1,·) 钳成 1
+  const nullInterval = { frequency: 'daily', interval: null, weekdays: [], day_of_month: null, end_date: null };
+  assert.deepEqual(modelRuleOccurrences(nullInterval, TODAY, 'UTC', 2).map((d) => d.iso), ['2026-11-19', '2026-11-20']);
+  assert.equal(describeModelRecurrence(nullInterval), 'Every day');
+  const zeroInterval = { frequency: 'daily', interval: 0, weekdays: [], day_of_month: null, end_date: null };
+  assert.equal(describeModelRecurrence(zeroInterval), 'Every day');
+});
+
+test('model:monthly interval 4 自适应上限内出满五次(400 步只够 3 次)', () => {
+  // 「every 4 months on the 15th」:第 5 次 2028-04-15 距锚 516 天,超过旧 400 步上限
+  const dates = modelRuleOccurrences(
+    { frequency: 'monthly', interval: 4, weekdays: [], day_of_month: 15, end_date: null },
+    TODAY, 'UTC', 5
+  );
+  assert.deepEqual(dates.map((d) => d.iso),
+    ['2026-12-15', '2027-04-15', '2027-08-15', '2027-12-15', '2028-04-15']);
+});
+
+test('model:畸形超大 interval 不死循环(硬顶 5000 步内返回)', () => {
+  const dates = modelRuleOccurrences(
+    { frequency: 'daily', interval: 100000, weekdays: [], day_of_month: null, end_date: null },
+    TODAY, 'UTC', 5
+  );
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19']);
 });

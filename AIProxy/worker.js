@@ -1904,29 +1904,41 @@ function webClientIp(request) {
     // IPv6:按 /64 前缀折叠再做哈希(审计 2026-11-24)。IPv6 用户在自己的 /64 内
     // 换地址(SLAAC 隐私扩展)几乎零成本,按完整地址哈希等于每天 3 次的闸对 IPv6
     // 用户形同虚设,唯一还兜底的是全局预算 —— 一个人就能让工具对所有人失效。
-    // IPv4-mapped(::ffff:a.b.c.d)特判:前 64 位恒为 0,按 /64 折叠会把所有
-    // mapped 地址折进同一个桶,改用其 IPv4 部分按 IPv4 粒度处理。
-    if (raw.includes(".")) {
-      const tail = raw.split(":").pop();
-      return /^\d{1,3}(\.\d{1,3}){3}$/.test(tail) ? tail : "anonymous";
+    // 先过完整语法校验(expandIpv6):9 组、字节越界、多余 :: 等畸形一律归
+    // anonymous 共享桶 —— 与本函数「格式不合法收紧」口径一致,不做例外。
+    const groups = expandIpv6(raw);
+    if (!groups) {
+      return "anonymous";
     }
-    const prefix = ipv6Prefix64(raw);
-    return prefix ?? "anonymous";
+    // IPv4-mapped(::ffff:a.b.c.d)特判:前 5 组全 0、第 6 组 ffff。按 /64 折叠会把
+    // 所有 mapped 地址折进同一个桶,改用其 IPv4 部分按 IPv4 粒度处理。
+    // 含点但不是 mapped 形状的(如 NAT64 64:ff9b::a.b.c.d、内嵌 IPv4 的普通 IPv6)
+    // 仍走 /64 折叠,不冒充 IPv4 桶。
+    if (
+      groups[0] === "0" && groups[1] === "0" && groups[2] === "0" &&
+      groups[3] === "0" && groups[4] === "0" && groups[5] === "ffff"
+    ) {
+      const hi = parseInt(groups[6], 16);
+      const lo = parseInt(groups[7], 16);
+      return `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`;
+    }
+    return `${groups.slice(0, 4).join(":")}::/64`;
   }
   return raw;
 }
 
-// 把合法 IPv6 折叠成 /64 前缀的规范串(如 "2001:db8:0:0::/64")。
+// 把合法 IPv6 展开为 8 个 hextet(webClientIp 的 /64 折叠与 mapped 判定共用);
 // 支持 :: 压缩与段内嵌 IPv4;畸形输入返回 null(调用方归 anonymous 共享桶,
 // 与既有"格式不合法收紧"口径一致)。
-function ipv6Prefix64(raw) {
-  const groups = expandIpv6(raw);
-  if (!groups) return null;
-  return `${groups.slice(0, 4).join(":")}::/64`;
-}
-
 function expandIpv6(raw) {
-  // 展开为 8 个十六进制 hextet 字符串(小写,去前导零);畸形返回 null。
+  // 输出 hextet 小写、去前导零,保证大小写/前导零变体折进同一个桶。
+  // 内嵌 IPv4 只能表示地址的最末 32 位(RFC 4291):有且仅有一个含点段,且必须
+  // 是最后一个冒号段(1.2.3.4::5.6.7.8、1:2:3.4.5.6::7 这类放中间/重复的都归畸形)。
+  const allSegments = raw.split(":");
+  const dottedCount = allSegments.filter((s) => s.includes(".")).length;
+  if (dottedCount > 1 || (dottedCount === 1 && !allSegments[allSegments.length - 1].includes("."))) {
+    return null;
+  }
   const halves = raw.split("::");
   if (halves.length > 2) return null;
   const parseSegments = (segmentString) => {
