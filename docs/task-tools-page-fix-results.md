@@ -64,8 +64,20 @@
 7. **小问题**:
    - `validateWebToken` 的 `===` 改为逐字节异或常数时间比较(`timingSafeEqualString`,
      长度差参与 diff;Bearer 前缀形式保留)。
-   - 「Sat and Sun every week → Every Sunday and Saturday」:工具②切 AI 后此问题随本地
-     解析器一起退出展示面(模型给的 weekdays 顺序即展示顺序),无需单独修。
+   - 「Sat and Sun every week → Every Sunday and Saturday」:
+     **2026-11-25 更正:原判断「工具②切 AI 后此问题随本地解析器一起退出展示面
+     (模型给的 weekdays 顺序即展示顺序),无需单独修」不成立,已修(bug 分支
+     `e4934b6`)**。模型按 Apple 编号升序输出 weekdays(prompt 示例 `[2,4,6]`、
+     eval 归一化亦排序),`[1,7]` 原样渲染仍是周日在前 —— AI 路径下问题依旧。
+     修法:展示层新增 `weekdayDisplayNameOrder`(Apple→ISO 周序 `(w+5)%7`,
+     周一始),`describeRule` / `weekdayList`(即 `describeModelRecurrence` 的
+     weekly 分支)拼文案前统一排序;规则内部表示(`weekdayNumbers` 编号升序、
+     `modelRuleOccurrences` 展开)不动 —— 与 Swift
+     `RecurrenceRuleResolver.swift:197` 的 `Array(Set(values)).sorted()` 对照锁定。
+     双 review 一轮收敛(双方 0 问题),functions 76/76(新增 3 条)、代理 461/461。
+     遗留观察(review 提出,正交未修):`weekdayList` 不去重,模型若给 `[7,7]`
+     会渲染「Every Saturday and Saturday」而 Swift init 经 `Set` 去重为 `[7]` ——
+     prompt 契约给唯一升序列表,概率极低,记独立后续项。
    - Pages 未接 Git:运维项,需在 Cloudflare 控制台把 Pages 项目连到 GitHub 仓库,
      代码侧无法代办,记录待办。
 
