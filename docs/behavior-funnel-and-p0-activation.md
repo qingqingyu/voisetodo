@@ -170,7 +170,7 @@ C1/C2 可解耦(C1 改演示页之后的首页引导,C2 改权限被拒分支),*
 4. ASC 申报口径实际是**四类数据**:`Device ID`、`Purchase History`、`Other User Content`、`Other Usage Data`(见 `PrivacyInfo.xcprivacy` 与 `APPSTORE_REVIEW_KIT.md` §2;初稿写成「标识符 + 使用数据」两类,已更正)——**数据类型与接收者都没变**,故营养标签与 xcprivacy 不动。这也是与引入 Mixpanel/PostHog 的本质区别(第三方接收者变更才需要重申报);
 5. **`PRIVACY_POLICY.md` 必须同版本更新**(G1 落地时):该页逐项列出上报字段,文件头注释要求变化随同一 release 更新。
 
-> 留档(超出本规格,建议另开 issue):`PRIVACY_POLICY.md` 写设备 ID「hashed before leaving your device」,实际客户端发的是原始随机 UUID(`X-Device-ID` 头),加盐哈希在服务端做(`worker.js:3670` 调用 / `:3695` 定义)。随机 UUID 非硬件标识、风险低,但描述与事实不符,应择机修正文案。
+> 留档(超出本规格,建议另开 issue):`PRIVACY_POLICY.md` 写设备 ID「hashed before leaving your device」,实际客户端发的是原始随机 UUID(`X-Device-ID` 头),加盐哈希在服务端做(`worker.js` 的 `safeDeviceId`——行号会随其他分支合并漂移,以函数名为锚)。随机 UUID 非硬件标识、风险低,但描述与事实不符,应择机修正文案。
 
 ## 6. 落地顺序(每步独立可回滚;2026-11-26 重排)
 
