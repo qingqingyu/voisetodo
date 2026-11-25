@@ -40,7 +40,10 @@
   追加截止后缀 —— App 会把该截止写进 `RecurrenceRule.endDate`,复制文本不带 = 谎报。
 - **检查器与 App 的已知口径差**(记档不修):start 的取值。App =
   模型 dueDate ?? 文本解析兜底 ?? 今天;官网没有文本解析器,取 `due_date ?? today`
-  (带日期短语模型几乎总给 due_date)。
+  (带日期短语模型几乎总给 due_date)。**end 侧同样有第三层**:Swift 在前两层
+  (模型 end_date > 结构化 recurrence_end)都缺时还会走 `ruleWithInferredEndDate`
+  从 dueHint/title 推断「未来 N 天」类截止(Models.swift);移植只覆盖前两层,
+  残差方向 = 网页少显示截止、不构成超承诺(终审备注 2,记档)。
 - **双 review 补强**(2026-11-26 双 review 循环发现,与报告编号无关):
   1. `after_count` 超大 count(如 999999999)会让 `addDaysIso` 的
      `toISOString()` 抛 RangeError → 工具页 500(与 expandIpv6 判空同类);
