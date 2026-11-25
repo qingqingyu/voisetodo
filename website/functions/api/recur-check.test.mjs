@@ -85,6 +85,33 @@ test('recur-check: 有重复规则时渲染规则描述与未来五次', async (
   );
 });
 
+test('recur-check: 周六周日跨编号边界的展示排序(Sat and Sun → Saturday and Sunday)', async () => {
+  // 回归(审计 2026-11-24 小问题):模型按 Apple 编号升序给 weekdays [1,7],
+  // 页面不得渲染「Every Sunday and Saturday」;未来五次按日历日推进。
+  const weekendRuleBody = {
+    todos: [{
+      title: 'family time',
+      due_date: null,
+      due_time: null,
+      time_bucket: null,
+      recurrence_rule: { frequency: 'weekly', interval: 1, weekdays: [1, 7], day_of_month: null, end_date: null },
+      due_date_basis: null,
+    }],
+    ignored: '',
+  };
+  await withMockedUpstream(
+    { body: { phrase: 'family time every Sat and Sun', tz: 'UTC' }, upstreamImpl: () => jsonUpstream(weekendRuleBody) },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.match(html, /Every Saturday and Sunday/);
+      assert.doesNotMatch(html, /Every Sunday and Saturday/);
+      assert.doesNotMatch(html, /Sunday, Saturday/);
+    }
+  );
+});
+
 test('recur-check: tz=auto 用 request.cf.timezone 算 X-Local-Date', async () => {
   await withMockedUpstream(
     {

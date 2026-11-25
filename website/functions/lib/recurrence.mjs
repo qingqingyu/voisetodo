@@ -230,13 +230,23 @@ function ordinal(n) {
   return `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th'}`;
 }
 
+/// 展示层周内排序:周一始(ISO 顺序)。Apple 编号周日=1 最小,按编号排会把
+/// 「Sat and Sun」显示成「Every Sunday and Saturday」(审计 2026-11-24 小问题);
+/// 模型给的 weekdays 同样是编号升序(prompt 示例 [2,4,6],归一化亦排序),
+/// 工具②切 AI 后问题仍在,须在展示层统一收口。只影响文案,不回写规则 ——
+/// 规则内部表示(weekdayNumbers / Swift 对照)保持编号升序。
+/// Apple→ISO 周序:Mon(2)→0、Tue(3)→1 … Sat(7)→5、Sun(1)→6。
+function weekdayDisplayNameOrder(weekdays) {
+  return [...weekdays].sort((a, b) => ((a + 5) % 7) - ((b + 5) % 7));
+}
+
 /// 人话描述规则(工具页结果文案;英文站,只出英文)。
 export function describeRule(rule) {
   let text;
   if (rule.frequency === 'daily') {
     text = 'Every day';
   } else if (rule.frequency === 'weekly') {
-    const names = rule.weekdays.map((w) => WEEKDAY_NAMES[w]);
+    const names = weekdayDisplayNameOrder(rule.weekdays).map((w) => WEEKDAY_NAMES[w]);
     if (names.length === 1) {
       text = `Every ${names[0]}`;
     } else {
@@ -427,6 +437,6 @@ export function describeModelRecurrence(rule) {
 }
 
 function weekdayList(weekdays) {
-  const names = weekdays.map((w) => WEEKDAY_NAMES[w]);
+  const names = weekdayDisplayNameOrder(weekdays).map((w) => WEEKDAY_NAMES[w]);
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

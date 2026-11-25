@@ -156,6 +156,17 @@ test('describeRule / formatOccurrence 输出', () => {
   assert.equal(formatOccurrence(first), 'Fri, Nov 20, 2026');
 });
 
+test('describeRule 展示排序周一始:跨 Apple 编号边界(周日=1)不再周日在前', () => {
+  // 回归(审计 2026-11-24 小问题):「Sat and Sun」解析与模型都给编号升序 [1,7],
+  // 旧展示层原样输出「Every Sunday and Saturday」;周一始应为 Saturday 在前。
+  assert.equal(describeRule({ frequency: 'weekly', weekdays: [1, 7] }), 'Every Saturday and Sunday');
+  assert.equal(describeRule({ frequency: 'weekly', weekdays: [7, 1] }), 'Every Saturday and Sunday');
+  // 乱序输入归一到周一始(Tue/Sun/Fri/Mon → Mon, Tue, Fri, Sun)
+  assert.equal(describeRule({ frequency: 'weekly', weekdays: [3, 1, 6, 2] }), 'Every Monday, Tuesday, Friday and Sunday');
+  // 单日不受影响
+  assert.equal(describeRule({ frequency: 'weekly', weekdays: [1] }), 'Every Sunday');
+});
+
 // —— 2026-11-24 增量:modelRuleOccurrences(模型规则展开,工具② AI 口径)——
 import { modelRuleOccurrences, describeModelRecurrence } from './recurrence.mjs';
 
@@ -262,6 +273,17 @@ test('model:weekly interval 1 无 weekdays 判无效(App isValid false → 普�
   // [9, 2] 过滤后剩 [2] → 有效,下周一展开
   const mixed = { frequency: 'weekly', interval: 1, weekdays: [9, 2], day_of_month: null, end_date: null };
   assert.deepEqual(modelRuleOccurrences(mixed, TODAY, 'UTC', 1).map((d) => d.iso), ['2026-11-23']);
+});
+
+test('model:展示排序周一始,不随模型给的编号升序(Sat and Sun → Saturday and Sunday)', () => {
+  // 工具②现役路径(审计 2026-11-24 小问题):模型按 Apple 编号升序输出 weekdays,
+  // [1,7] 原样渲染会是「Every Sunday and Saturday」;展示层须归一到周一始。
+  const rule = { frequency: 'weekly', interval: 1, weekdays: [1, 7], day_of_month: null, end_date: null };
+  assert.equal(describeModelRecurrence(rule), 'Every Saturday and Sunday');
+  const fortnightly = { frequency: 'weekly', interval: 2, weekdays: [1, 7], day_of_month: null, end_date: null };
+  assert.equal(describeModelRecurrence(fortnightly), 'Every 2 weeks on Saturday and Sunday');
+  // 展示排序不影响展开:展开按日历日推进(周六先于周日出现在时间轴上)
+  assert.deepEqual(modelRuleOccurrences(rule, TODAY, 'UTC', 2).map((d) => d.iso), ['2026-11-21', '2026-11-22']);
 });
 
 test('model:monthly day_of_month 0/40 判无效(App init 钳成 nil → isValid false)', () => {
