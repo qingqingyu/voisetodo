@@ -47,11 +47,13 @@ const schema = [
         </p>
         <label for="tz">Timezone (used to compute dates like “tomorrow”)</label>
         <select id="tz" name="tz">
-          {TIMEZONES.map((tz) => <option value={tz} selected={tz === 'UTC'}>{tz}</option>)}
+          <option value="auto" selected>Auto — detected from your connection</option>
+          {TIMEZONES.map((tz) => <option value={tz}>{tz}</option>)}
         </select>
         <button type="submit">Split it</button>
         <p class="hint">
-          Three tries a day from this page. The sentence goes to VoiceTodo's AI parser to be split; nothing is
+          Press once and wait a few seconds — the page doesn't change until your list is ready.
+          Three tries a day, shared with the checker tool. The sentence goes to VoiceTodo's AI parser to be split; nothing is
           saved, and this page never creates reminders.
         </p>
       </form>

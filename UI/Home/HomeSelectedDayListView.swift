@@ -18,6 +18,9 @@ struct HomeSelectedDayListView: View {
     let onMoveToBucket: (UUID, TimeBucket) -> Void
     /// 长按 context menu:卡片移到明天。
     let onMoveToTomorrow: (UUID) -> Void
+    /// 长按 context menu:卡片移到稍后(清日期、时段、模糊时间提示,2026-11 新增)。
+    /// 能不能移由 `HomeCalendarState.canMoveToLater` 在卡片里统一过滤,这里不用判断。
+    let onMoveToLater: (UUID) -> Void
     /// 时间 chip 点击后的改时间入口。`Date` 由 `TimeEditPopover` 提交时填好,本回调负责写库。
     /// 改时间 popover 只用于「今日 Section」的 occurrence,待定日期组走自己的「选日期」按钮(Commit 6)。
     let onChangeTime: (UUID, Date) -> Void
@@ -508,6 +511,7 @@ struct HomeSelectedDayListView: View {
                 onToggle: onToggle,
                 onMoveToBucket: { bucket in onMoveToBucket(todo.id, bucket) },
                 onMoveToTomorrow: { onMoveToTomorrow(todo.id) },
+                onMoveToLater: { onMoveToLater(todo.id) },
                 showsCardBackground: false
             )
         }
@@ -555,6 +559,7 @@ struct HomeSelectedDayListView: View {
                 onToggle: { onToggleOccurrence(occurrence) },
                 onMoveToBucket: { bucket in onMoveToBucket(occurrence.todo.id, bucket) },
                 onMoveToTomorrow: { onMoveToTomorrow(occurrence.todo.id) },
+                onMoveToLater: { onMoveToLater(occurrence.todo.id) },
                 onChangeTime: { date in
                     onChangeTime(occurrence.todo.id, date)
                 },

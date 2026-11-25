@@ -1753,6 +1753,28 @@
         }
       }
     },
+    "card.menu.move_to_later" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to Later"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「後で」に移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到稍后"
+          }
+        }
+      }
+    },
     "card.menu.move_to_tomorrow" : {
       "localizations" : {
         "en" : {

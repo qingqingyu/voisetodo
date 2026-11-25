@@ -548,6 +548,117 @@ final class HomeCalendarStateGroupingTests: XCTestCase {
         XCTAssertEqual(counts.completed, 0)
     }
 
+    // MARK: - 长按「移到稍后」(2026-11)
+
+    /// `canMoveToLater`:有日期、未完成、不重复、已识别 → 可以移。
+    func testCanMoveToLaterDatedTodo() throws {
+        XCTAssertTrue(HomeCalendarState.canMoveToLater(makeTodo(title: "有日期", dueDate: today)))
+        XCTAssertTrue(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "有钟点", dueDate: today, hasDueTime: true)
+        ))
+    }
+
+    /// 无日期但有 timeBucket(「待定日期」)→ 可以移,移的时候把时段清掉。
+    func testCanMoveToLaterPendingDateWithTimeBucket() throws {
+        XCTAssertTrue(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "待定-时段", timeBucket: .afternoon, dueDate: nil)
+        ))
+    }
+
+    /// 无日期、只有 dueHint(「待定日期」)→ 可以移。
+    func testCanMoveToLaterPendingDateWithDueHintOnly() throws {
+        XCTAssertTrue(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "待定-提示", dueHint: "下周", dueDate: nil)
+        ))
+    }
+
+    /// 无日期、无时间信号:已经在「稍后」里 → 不可以移。
+    func testCanMoveToLaterAlreadyInLaterReturnsFalse() throws {
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(makeTodo(title: "稍后", dueDate: nil)))
+    }
+
+    /// 无日期、dueHint 只有空白:等同无时间信号 → 不可以移。
+    func testCanMoveToLaterWhitespaceDueHintReturnsFalse() throws {
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "空白提示", dueHint: "   ", dueDate: nil)
+        ))
+    }
+
+    /// 重复任务本期不支持 → false(有日期和无日期都一样)。
+    func testCanMoveToLaterRecurringReturnsFalse() throws {
+        var dated = makeTodo(title: "重复-有日期", dueDate: today)
+        dated.recurrenceRule = RecurrenceRule(frequency: .daily)
+        var undated = makeTodo(title: "重复-无日期", dueDate: nil)
+        undated.recurrenceRule = RecurrenceRule(frequency: .weekly, weekdays: [2])
+
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(dated))
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(undated))
+    }
+
+    /// 已完成的任务 → false(有没有日期都一样)。
+    func testCanMoveToLaterCompletedReturnsFalse() throws {
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "已完成-有日期", dueDate: today, isCompleted: true, completedAt: today)
+        ))
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "已完成-无日期", dueDate: nil, isCompleted: true, completedAt: today)
+        ))
+    }
+
+    /// 没识别成功的任务 → false:清日期后会进「没能识别」而不是「稍后」。
+    func testCanMoveToLaterUnparsedReturnsFalse() throws {
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "rawFallback", dueDate: today, extractionOutcome: .rawFallback)
+        ))
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(
+            makeTodo(title: "unparsed", dueDate: today, extractionOutcome: .unparsed)
+        ))
+    }
+
+    /// 已放弃的任务 → false。
+    func testCanMoveToLaterAbandonedReturnsFalse() throws {
+        var abandoned = makeTodo(title: "放弃", dueDate: today)
+        abandoned.abandonedAt = today
+        XCTAssertFalse(HomeCalendarState.canMoveToLater(abandoned))
+    }
+
+    /// 按 `HomeView.moveTodoToLater` 的字段改法(dueDate nil、hasDueTime false、timeBucket nil、dueHint "")
+    /// 改完后,任务必须出现在 `unscheduledTodos`、不在 `pendingDateTodos`。
+    /// 覆盖两个起点:有日期的任务,和「待定日期」里带时段的任务。
+    func testMoveToLaterFieldsLandInUnscheduledNotPendingDate() throws {
+        let dated = makeTodo(title: "有日期的", dueDate: today)
+        let pendingDate = makeTodo(title: "下午寄快递", timeBucket: .afternoon, dueDate: nil)
+
+        let before = HomeCalendarState.makeForTests(
+            todos: [dated, pendingDate], selectedDate: today, calendar: calendar, now: today
+        )
+        XCTAssertFalse(before.unscheduledTodos.contains { $0.id == dated.id })
+        XCTAssertTrue(before.pendingDateTodos.contains { $0.id == pendingDate.id })
+        XCTAssertTrue(HomeCalendarState.canMoveToLater(dated))
+        XCTAssertTrue(HomeCalendarState.canMoveToLater(pendingDate))
+
+        func moved(_ todo: TodoItemData) -> TodoItemData {
+            var copy = todo
+            copy.dueDate = nil
+            copy.hasDueTime = false
+            copy.timeBucket = nil
+            copy.dueHint = ""
+            return copy
+        }
+        let after = HomeCalendarState.makeForTests(
+            todos: [moved(dated), moved(pendingDate)], selectedDate: today, calendar: calendar, now: today
+        )
+
+        XCTAssertEqual(
+            Set(after.unscheduledTodos.map(\.id)), [dated.id, pendingDate.id],
+            "移完后两条都在「稍后」"
+        )
+        XCTAssertTrue(after.pendingDateTodos.isEmpty, "带时段的那条清掉时段后不再留在「待定日期」")
+        for todo in after.unscheduledTodos {
+            XCTAssertFalse(HomeCalendarState.canMoveToLater(todo), "已在「稍后」:菜单不再显示「移到稍后」")
+        }
+    }
+
     // MARK: - 月历今天格子注入(2026-10-13 拍板)
 
     /// 注入命中:「稍后」+「待定日期」条目以 occurrence 形态进今天 bucket,

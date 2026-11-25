@@ -62,6 +62,7 @@
 		35692E679C1A43B18A8CE5E6 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FCC7CF9C78E37CFC3E7565A /* OnboardingView.swift */; };
 		364B14128DDDBD15C9F5B268 /* ParseCorrectionTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6572B0C6E62C46C8C32FC38F /* ParseCorrectionTelemetry.swift */; };
 		37BB21060C722754F8959EA2 /* ExpandMonthHintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF66639D7D5600F7F4DEEB6E /* ExpandMonthHintView.swift */; };
+		38321DC8CAA0E2AFABEA0777 /* HomeMonthAllocatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40216D2210D321A2C3EF7163 /* HomeMonthAllocatorTests.swift */; };
 		3852F21D05A05BC09630EF54 /* AIConsentDisclosureCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4330E147EB1675B27ADE0963 /* AIConsentDisclosureCard.swift */; };
 		3948A1055B12A8EF83E6F717 /* DayClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79AC32962B30F2731167C4C9 /* DayClock.swift */; };
 		3A438D3019911BC5C714C97F /* ToggleTodoIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 437110FA8FB9C002DB8EB91A /* ToggleTodoIntent.swift */; };
@@ -356,6 +357,7 @@
 		3DBBE53FF4A5FFA27BCF5C78 /* CalendarWriteMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarWriteMode.swift; sourceTree = "<group>"; };
 		3E51B798662E8477BAEAC3DB /* AudioSessionHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionHelper.swift; sourceTree = "<group>"; };
 		3ED689A1D8E8ED9FA0980831 /* CompletionFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionFeedback.swift; sourceTree = "<group>"; };
+		40216D2210D321A2C3EF7163 /* HomeMonthAllocatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMonthAllocatorTests.swift; sourceTree = "<group>"; };
 		41DFCFCAA748A498A5A2A0CC /* JSONCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCoding.swift; sourceTree = "<group>"; };
 		4330E147EB1675B27ADE0963 /* AIConsentDisclosureCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConsentDisclosureCard.swift; sourceTree = "<group>"; };
 		43589A601B187AFAC389117A /* TodoWidgetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoWidgetProvider.swift; sourceTree = "<group>"; };
@@ -569,6 +571,7 @@
 			children = (
 				2C27460E635A54244B6D78AB /* HomeCalendarPeriodVisibilityTests.swift */,
 				A5636BCAAC1BD72AC5880FC0 /* HomeCalendarStateGroupingTests.swift */,
+				40216D2210D321A2C3EF7163 /* HomeMonthAllocatorTests.swift */,
 				80D688C7A4292E80E400FC3E /* MarqueePhaseTests.swift */,
 				AE73F1C9F4DD74C26F731A14 /* PaywallExpiryDaysTests.swift */,
 				0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */,
@@ -1372,6 +1375,7 @@
 				2FD2D6D4009EE7F6BBA5CF48 /* ExtractorTests.swift in Sources */,
 				99A4DB2A7E56A6856B638B76 /* HomeCalendarPeriodVisibilityTests.swift in Sources */,
 				F1FB49B74627A0041E4FE8EB /* HomeCalendarStateGroupingTests.swift in Sources */,
+				38321DC8CAA0E2AFABEA0777 /* HomeMonthAllocatorTests.swift in Sources */,
 				8B966C9AD61301B08D00F477 /* IntegrationTests.swift in Sources */,
 				A8E5F6B53344DD5FC5E8AE82 /* IntentNotificationReconcilerTests.swift in Sources */,
 				63F321766DAFAE037C69AC27 /* MarqueePhaseTests.swift in Sources */,

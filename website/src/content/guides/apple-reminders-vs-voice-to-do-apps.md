@@ -3,7 +3,7 @@ title: What Siri Can't Do With Your To-Do List
 description: Apple's Reminders is free and built in — until one sentence holds three tasks. Where Siri is enough, and where a voice-first app earns its place.
 pubDate: 2026-11-20
 updatedDate: 2026-11-20
-draft: true
+draft: false
 ---
 
 If you have an iPhone, you already have a voice to-do system: Siri and the Reminders app, free, two seconds of setup, nothing to install. Before comparing it with anything, say the honest part out loud — **for a lot of people it's enough.** If your tasks are mostly one errand at a time ("remind me to call the dentist tomorrow"), staying with Reminders is a perfectly good decision.

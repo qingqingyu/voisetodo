@@ -148,8 +148,26 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       webTier = true;
       requestContext.webTier = true;
       requestContext.channel = "web";
-      await enforceWebGates(request, env, requestContext, ctx);
+      // 记下这次扣减落在哪个桶(hash + 日期):下方「客户端断连 / 空结果」退款必须
+      // 退回同一个桶 —— 哈希直接复用(重算依赖同一 salt,两处口径会漂移);日期取
+      // 扣减时刻的值而不是退款时重算(跨 UTC 0 点的请求重算会退到第二天的桶)。
+      // 闸门因配置被跳过时为 null:没扣过就不该退。
+      // 扣减与断连退款的登记必须成对:gatesPromise 先建、登记紧跟、最后才 await ——
+      // 保证访客在扣减进行中(几十毫秒的 KV/DO 往返)断开时,退款任务也已经登记上了
+      // (任务内部等 gatesPromise 落定再退,扣了才退、没扣不退)。
+      const webGatesPromise = enforceWebGates(request, env, requestContext, ctx).then((charge) => {
+        requestContext.webDailyCharge = charge;
+        return charge;
+      });
+      // 断连退款必须挂在 abort 事件 + ctx.waitUntil 上(2026-11-23 线上隔离实验)。
+      // 真实运行时里客户端一断开,**主流程的后续代码就不会再执行** —— 实测:断开
+      // 事件触发后,只有事先登记进 waitUntil 的任务能跑完,catch 块里的退款到不了。
+      // (单元测试里主流程不会被杀,所以「在 catch 里退款」测试全绿、线上空转。)
+      // 这里在扣减完成后立即登记:断开 → 退掉这次每日额度。webSettled 在模型结果
+      // 拿到后置位,响应已就绪才断开的不退(用户已经拿到了结果)。
+      registerWebDisconnectRefund(request, env, requestContext, ctx, webGatesPromise);
       logInfo("proxy.web.auth.ok", requestContext);
+      await webGatesPromise;
       url.pathname = "/v1/todo-extractions";
     }
 
@@ -237,6 +255,14 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       return finishRequest(new Response("Invalid mode", { status: 400 }), requestContext, {
         reason: "invalid_mode",
         mode
+      });
+    }
+    // web 档不支持流式:工具页是表单 POST → 整页服务端渲染,SSE 对它没有意义;
+    // 且流式分支的退款簿记按 App 设备桶设计,web 请求不该走进去。设计文档
+    // (website/docs/tools-plan-2026-11.md)一直写的是「不支持流式」,这里补上硬闸。
+    if (webTier && stream) {
+      return finishRequest(new Response("Streaming is not supported on the web tier", { status: 400 }), requestContext, {
+        reason: "web_stream_unsupported"
       });
     }
     if (mode !== "extract" && stream) {
@@ -333,11 +359,13 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     } catch (error) {
       logError("proxy.providers.config_failed", { ...requestContext, ...errorFields(error) });
       metrics?.record({ status: 500, outcome: "no_provider", error_type: "providers_config_invalid", total_ms: Date.now() - requestContext.startedAt });
+      await refundWebIpDailyBeforeModelCall(webTier, env, requestContext, ctx);
       return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_config_invalid" });
     }
     if (providers.length === 0) {
       logError("proxy.providers.empty", { ...requestContext });
       metrics?.record({ status: 500, outcome: "no_provider", error_type: "providers_empty", total_ms: Date.now() - requestContext.startedAt });
+      await refundWebIpDailyBeforeModelCall(webTier, env, requestContext, ctx);
       return finishRequest(new Response("AI proxy failed", { status: 500 }), requestContext, { error: "providers_empty" });
     }
 
@@ -376,6 +404,14 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         requestContext.candidateCount = providers.length;
         logInfo("proxy.cache.hit", { ...requestContext, cacheKey, responseChars: cached.length });
         const cachedOutcome = classifyExtractOutcome(cached);
+        // web 档:命中的是空结果时同样退每日 IP 额度 —— 与下方 cache miss 的空结果
+        // 退款同口径(同一句闲话「第一次免费、第二次命中缓存却扣次」是自相矛盾的)。
+        // 缓存命中零模型成本,全局预算本就不进桶,这里只退 IP 每日计数。
+        if (webTier && !cachedOutcome.hasTodos) {
+          const reason = cachedOutcome.parseOk ? "empty_todos" : "unparseable_output";
+          logInfo("proxy.extract.empty_outcome", { ...requestContext, reason, stream: false, cacheHit: true, responseChars: cached.length });
+          await refundWebIpDaily(env, requestContext, ctx, reason, { countsAgainstBudget: false });
+        }
         metrics?.record({
           status: 200,
           outcome: "cache_hit",
@@ -448,6 +484,7 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
       logError("proxy.selector.no_candidates", { ...requestContext, providers: snapshots });
       metrics?.record({ status: 503, outcome: "no_provider", error_type: "no_providers_available", total_ms: Date.now() - requestContext.startedAt });
       // All filtered out (missing keys or disabled) — distinct from config-invalid.
+      await refundWebIpDailyBeforeModelCall(webTier, env, requestContext, ctx);
       return finishRequest(new Response("AI proxy failed", { status: 503 }), requestContext, { error: "no_providers_available" });
     }
     requestContext.candidateCount = candidates.length;
@@ -476,11 +513,23 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
     } catch (error) {
       // 客户端断连也要退配额(用户什么都没拿到),但 reason 区分开:
       // 上线后 DAILY_REQUEST_LIMIT = 2,划走两次弹层就烧光当天额度 —— 那同样是一种
-      // 「远端服务不生效」。ip_daily / 全局预算三层不退,防刷上限不受影响。
+      // 「远端服务不生效」。ip_daily / 全局预算三层不退,防刷上限不受影响
+      // (web 档的每日 IP 桶是例外,见下方 web 分支:工具页没有设备桶,它就是用户额度)。
       const reason = error?.errorType === "client_disconnected" ? "client_disconnected" : "provider_failed";
       await refundDeviceQuotaOnUpstreamFailure(request, env, requestContext, ctx, quotaState, reason);
+      // web 档:客户端断连 / 上游全败都退每日额度 ——
+      //   - client_disconnected:工具页零 JS 无提交反馈,用户连点 → 浏览器取消前几次
+      //     请求,只有最后一次的结果被看到;没看到结果的请求不该占当日 3 次额度。
+      //   - provider_failed:用户拿到 503「服务不可用」,什么都没拿到 —— 与同一
+      //     catch 里 App 端设备桶的退款同口径,不让一次上游故障白烧一次机会。
+      if (webTier && (reason === "client_disconnected" || reason === "provider_failed")) {
+        await refundWebIpDaily(env, requestContext, ctx, reason);
+      }
       throw error;
     }
+    // 模型结果已拿到:此后访客才断开的话,结果其实已经产生(只是没送达最后一步),
+    // 不再按「没看到结果」退款 —— 见 registerWebDisconnectRefund。
+    requestContext.webSettled = true;
     requestContext.provider = result.provider.type;
     requestContext.providerId = result.provider.id;
 
@@ -603,6 +652,11 @@ export async function handleRequest(request, env = {}, ctx = {}, fetchImpl = fet
         const reason = extractOutcome.parseOk ? "empty_todos" : "unparseable_output";
         logInfo("proxy.extract.empty_outcome", { ...requestContext, reason, stream: false, responseChars: text.length });
         await refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx, quotaState, reason);
+        // web 档:空结果(没拆出任何任务)同样退每日额度,与 App 端「没拿到价值
+        // 不计费」同口径 —— 否则一句闲话就白烧一次机会。
+        if (webTier) {
+          await refundWebIpDaily(env, requestContext, ctx, reason);
+        }
       }
     }
     // Cache write: 非流式 + 成功响应。异步写不阻塞响应(ctx.waitUntil)。
@@ -1811,13 +1865,29 @@ function validateWebToken(request, env) {
   }
   const provided = request.headers.get("X-Web-Token") || "";
   const expected = String(env.WEB_EXTRACT_TOKEN);
-  if (provided === expected || provided === `Bearer ${expected}`) {
+  // 常数时间比较(审计 2026-11-24):=== 会在首个不同字节提前返回,留下时序侧信道。
+  // 实际风险很低(攻击面在 Cloudflare 之后,还需先拿到服务端共享 token 的位数),
+  // 但按字节异或的代价是零,顺手收紧。
+  if (timingSafeEqualString(provided, expected) || timingSafeEqualString(provided, `Bearer ${expected}`)) {
     return null;
   }
   return {
     response: new Response("Unauthorized", { status: 401 }),
     reason: "unauthorized"
   };
+}
+
+// 逐字节异或比较,耗时只随 max(len) 变化,不随首个不同位提前退出。
+// 长度差参与 diff(长度不等恒 false,且长度本身不产生额外时序信号)。
+function timingSafeEqualString(a, b) {
+  const ab = new TextEncoder().encode(a);
+  const bb = new TextEncoder().encode(b);
+  const length = Math.max(ab.length, bb.length);
+  let diff = ab.length ^ bb.length;
+  for (let i = 0; i < length; i++) {
+    diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  }
+  return diff === 0;
 }
 
 // web 请求的客户端 IP:Pages Function 把访客的 CF-Connecting-IP 放进
@@ -1830,15 +1900,94 @@ function webClientIp(request) {
   if (!raw || raw.length > 64 || !/^[A-Za-z0-9.:]+$/.test(raw)) {
     return "anonymous";
   }
+  if (raw.includes(":")) {
+    // IPv6:按 /64 前缀折叠再做哈希(审计 2026-11-24)。IPv6 用户在自己的 /64 内
+    // 换地址(SLAAC 隐私扩展)几乎零成本,按完整地址哈希等于每天 3 次的闸对 IPv6
+    // 用户形同虚设,唯一还兜底的是全局预算 —— 一个人就能让工具对所有人失效。
+    // 先过完整语法校验(expandIpv6):9 组、字节越界、多余 :: 等畸形一律归
+    // anonymous 共享桶 —— 与本函数「格式不合法收紧」口径一致,不做例外。
+    const groups = expandIpv6(raw);
+    if (!groups) {
+      return "anonymous";
+    }
+    // IPv4-mapped(::ffff:a.b.c.d)特判:前 5 组全 0、第 6 组 ffff。按 /64 折叠会把
+    // 所有 mapped 地址折进同一个桶,改用其 IPv4 部分按 IPv4 粒度处理。
+    // 含点但不是 mapped 形状的(如 NAT64 64:ff9b::a.b.c.d、内嵌 IPv4 的普通 IPv6)
+    // 仍走 /64 折叠,不冒充 IPv4 桶。
+    if (
+      groups[0] === "0" && groups[1] === "0" && groups[2] === "0" &&
+      groups[3] === "0" && groups[4] === "0" && groups[5] === "ffff"
+    ) {
+      const hi = parseInt(groups[6], 16);
+      const lo = parseInt(groups[7], 16);
+      return `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`;
+    }
+    return `${groups.slice(0, 4).join(":")}::/64`;
+  }
   return raw;
 }
 
+// 把合法 IPv6 展开为 8 个 hextet(webClientIp 的 /64 折叠与 mapped 判定共用);
+// 支持 :: 压缩与段内嵌 IPv4;畸形输入返回 null(调用方归 anonymous 共享桶,
+// 与既有"格式不合法收紧"口径一致)。
+function expandIpv6(raw) {
+  // 输出 hextet 小写、去前导零,保证大小写/前导零变体折进同一个桶。
+  // 内嵌 IPv4 只能表示地址的最末 32 位(RFC 4291):有且仅有一个含点段,且必须
+  // 是最后一个冒号段(1.2.3.4::5.6.7.8、1:2:3.4.5.6::7 这类放中间/重复的都归畸形)。
+  const allSegments = raw.split(":");
+  const dottedCount = allSegments.filter((s) => s.includes(".")).length;
+  if (dottedCount > 1 || (dottedCount === 1 && !allSegments[allSegments.length - 1].includes("."))) {
+    return null;
+  }
+  const halves = raw.split("::");
+  if (halves.length > 2) return null;
+  const parseSegments = (segmentString) => {
+    if (!segmentString) return [];
+    const out = [];
+    const segments = segmentString.split(":");
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.includes(".")) {
+        // 内嵌 IPv4 只允许出现在最末段
+        if (i !== segments.length - 1) return null;
+        const parts = seg.split(".");
+        if (parts.length !== 4) return null;
+        const bytes = parts.map((p) => (/^\d{1,3}$/.test(p) ? Number(p) : -1));
+        if (bytes.some((b) => b < 0 || b > 255)) return null;
+        out.push(((bytes[0] << 8) | bytes[1]).toString(16));
+        out.push(((bytes[2] << 8) | bytes[3]).toString(16));
+      } else if (/^[0-9A-Fa-f]{1,4}$/.test(seg)) {
+        out.push(parseInt(seg, 16).toString(16));
+      } else {
+        return null;
+      }
+    }
+    return out;
+  };
+  let groups;
+  if (halves.length === 1) {
+    groups = parseSegments(halves[0]);
+    if (groups.length !== 8) return null;
+  } else {
+    const left = parseSegments(halves[0]);
+    const right = parseSegments(halves[1]);
+    if (!left || !right) return null;
+    if (left.length + right.length >= 8) return null;
+    const fill = 8 - left.length - right.length;
+    groups = [...left, ...Array(fill).fill("0"), ...right];
+  }
+  return groups;
+}
+
 // web 档三道闸:全局预算 hotpath(web 桶)+ 每分钟频率 + 每日 IP。
-// 与 App 档语义一致:velocity/daily 拒绝不 refund(反刷维度,发起即计数)。
+// 与 App 档语义一致:被闸门**拒绝**的请求不 refund(反刷维度,发起即计数)。
+// 扣减成功之后的退款(断连 / 上游失败 / 空结果)另见 refundWebIpDaily。
+// 返回值 = 每日 IP 闸门的扣减记录 { ipHash, today }(退款路径要退回同一个桶),
+// 闸门被跳过时为 null。其余两道闸不返回值:velocity / 全局预算不退。
 async function enforceWebGates(request, env, requestContext, ctx) {
   await enforceGlobalBudgetHotPath(env, requestContext, "web");
   await enforceWebIpRateLimit(request, env, requestContext, ctx);
-  await enforceWebIpDailyLimit(request, env, requestContext, ctx);
+  return enforceWebIpDailyLimit(request, env, requestContext, ctx);
 }
 
 // web 每分钟频率限制。与 App 档 enforceIpRateLimit 同构,差异:
@@ -1881,15 +2030,18 @@ async function enforceWebIpRateLimit(request, env, requestContext, ctx) {
 // web 每日 IP 限额:默认 3 次/天,与 App 免费档口径一致 —— 网页版不能比 App
 // 还大方,否则 paywall 的免费额度叙事被网页侧击穿。DO 主路径(复用
 // QuotaCounter,独立 subjectKey web-ip-daily),DO 故障 fallback KV。
+// 返回 { ipHash, today } = 本次扣减落在的桶(DO 故障 fallback 到 KV 时同样算已扣,
+// 两边同键布局);闸门被跳过(未配置/limit 非法)时返回 null —— 调用方据此决定
+// 是否允许退款,避免在没扣过的路径上退。超限时不返回(抛 429)。
 async function enforceWebIpDailyLimit(request, env, requestContext, ctx) {
   if (!env.RATE_LIMIT_KV) {
     logInfo("proxy.web.ip_daily.skipped", { ...requestContext, reason: "not_configured" });
-    return;
+    return null;
   }
   const perDay = Number(env.WEB_IP_DAILY_LIMIT ?? 3);
   if (!Number.isFinite(perDay) || perDay <= 0) {
     logWarn("proxy.web.ip_daily.skipped", { ...requestContext, reason: "invalid_limit", configuredLimit: env.WEB_IP_DAILY_LIMIT });
-    return;
+    return null;
   }
   const ipHash = await safeDeviceId(webClientIp(request), env);
   const today = new Date().toISOString().slice(0, 10);
@@ -1904,6 +2056,7 @@ async function enforceWebIpDailyLimit(request, env, requestContext, ctx) {
       kvKeyPrefix: "web-ip-quota", rateLimitType: "web_ip_daily"
     });
   }
+  return { ipHash, today };
 }
 
 // 反滥用闸门(原 enforceAllQuotas Step A):global-budget 熔断标志(KV tripped,
@@ -2070,6 +2223,207 @@ async function refundIpDaily(request, env, requestContext, ctx) {
     await env.RATE_LIMIT_KV.put(key, String(newValue), { expirationTtl: 36 * 60 * 60 });
   }
   logInfo("proxy.ip_quota.refunded", { ...requestContext, today, used: newValue, source: "kv" });
+}
+
+// 退 web 档每日 IP 额度(与 enforceWebIpDailyLimit 同一命名空间:DO 实例
+// web-ip-daily:<hash> / KV 键 web-ip-quota:<date>:<hash>)。
+//
+// 为什么 web 档需要(2026-11-23 线上实测):工具页是零 JS 表单,点提交后页面要等
+// AI 返回的几秒里按钮**没有任何反馈**,用户会连点。同标签页连点的语义是「浏览器
+// 取消上一次导航、发下一次 POST」—— 每次被取消的请求都已扣了每日额度,但用户
+// 只看得到最后一次的结果。实测一个 IP 几秒内被计满 3 次,用户感知是「点一次额度
+// 就用完了」。原则:没被看到的请求不占额度。
+//   - client_disconnected:Pages Function 把访客的断连信号透传过来(见
+//     website/functions/api/split.js),上游 fetch 被 abort → 本函数退 1。
+//     ⚠️ 运行时前提:入站 request.signal 的断连事件需要兼容标志
+//     enable_request_signal(兼容日期 ≥ 2026-11-17 才默认开启),代理侧见
+//     AIProxy/wrangler.toml,Pages 侧在项目的兼容性设置里;缺了任一侧,断连
+//     在代理里不可见,这条退款路径永不触发(空结果退款不受影响)。
+//   - empty_todos / unparseable_output:用户没拿到任何任务,与 App 端
+//     refundDeviceQuotaOnEmptyOutcome 同口径。
+// velocity / 全局预算**不退**:与 App 档一致,防刷维度发起即计数。
+// 退款失败只告警不抛(用户请求已终结,抛了也没人接;leak 率靠日志监控)。
+// 登记「访客断开 → 退 web 每日额度」(见调用处注释:断开后主流程不再执行,
+// 只有 waitUntil 里的任务能跑完)。
+//   - 无 request.signal / 无 ctx.waitUntil(老运行时、单测传 {}):不登记,
+//     退回主流程 catch 里的退款路径(测试环境主流程不会被杀,那条路可达)。
+//   - 幂等由 refundWebIpDaily 的 webRefunded 标志保证:本任务与主流程 catch
+//     可能先后都调到退款,只退一次。
+function registerWebDisconnectRefund(request, env, requestContext, ctx, webGatesPromise) {
+  if (!request?.signal || typeof request.signal.addEventListener !== "function") return;
+  if (typeof ctx?.waitUntil !== "function") return;
+  const schedule = () => {
+    if (requestContext.webSettled) return;
+    requestContext.webDisconnectRefundScheduled = true;
+    ctx.waitUntil(
+      // gatesPromise 先落定:闸门被拒(reject)时 charge 为 null,退款函数自己会
+      // refund_skipped;闸门通过才谈得上退。用 then 的第二参吞掉拒绝 —— 拒绝
+      // 已由主流程作为 429/503 响应给客户端,这里只需要「等到它结束」。
+      webGatesPromise
+        .then(() => undefined, () => undefined)
+        .then(() => refundWebIpDaily(env, requestContext, ctx, "client_disconnected"))
+        .then(() => true)
+        .catch((error) => {
+          // refundWebIpDaily 内部已逐段 try/catch;这里兜的是它自身的契约破坏。
+          logError("proxy.web.ip_daily.disconnect_refund_crashed", { ...requestContext, ...errorFields(error) });
+        })
+    );
+  };
+  // 登记时信号可能已经 abort(鉴权与登记之间有 await):addEventListener 对已
+  // abort 的信号不会再触发,直接补登记。
+  if (request.signal.aborted) {
+    schedule();
+    return;
+  }
+  request.signal.addEventListener("abort", schedule);
+}
+
+async function refundWebIpDaily(env, requestContext, ctx, reason, { countsAgainstBudget = true } = {}) {
+  // 幂等:同一次请求只退一次。abort 事件的 waitUntil 任务与主流程 catch 可能
+  // 都调到这里(运行时是否在断开后继续执行主流程并不可靠),同步置位再做事。
+  if (requestContext.webRefunded) return;
+  requestContext.webRefunded = true;
+  // 桶的 hash 与日期都用扣减时刻记下的值(enforceWebGates 的返回):退款时重算
+  // 日期会把跨 UTC 0 点的请求退到第二天的桶,吃掉新一天的一次额度。
+  const charge = requestContext.webDailyCharge;
+  if (!charge) {
+    // 走到退款路径却没有扣减记录 = 每日闸门因配置被跳过,或调用契约被破坏。
+    // 显式告警而非静默跳过:前者是部署配置问题,后者是代码缺陷,都该被看见。
+    logWarn("proxy.web.ip_daily.refund_skipped", { ...requestContext, reason, cause: "web_daily_not_charged" });
+    return;
+  }
+  const { ipHash, today } = charge;
+  // 退款预算封顶(反滥用):取消与恶意取消无法区分,不封顶的话单个 IP 靠「发请求 →
+  // 立刻取消」可让每日额度净计费为 0,以 6 次/分钟的速度约 50 分钟打空 web 全局
+  // 预算桶(取消的请求仍占全局预算且不退),全体访客看到「额度用完」。封顶后
+  // 每 IP 每天最多免计 3 次,正常连点(2-3 次)完全覆盖,滥用者回到「换 IP」的
+  // 老路上。超限不退并告警 —— 宁可少退一次额度,不开放免费打爆预算的通道。
+  // 例外:缓存命中的空结果退款不吃预算 —— 那次请求没有调模型、零成本,
+  // 让它占免计名额只会出现「同一句闲话提交三次 → 预算耗尽 → 之后真连点
+  // 反而不退」的荒谬结果(双 review 第二轮建议采纳)。
+  const budget = countsAgainstBudget
+    ? await tryConsumeWebRefundBudget(env, ipHash, today)
+    : { allowed: true, cause: "free_cache_hit" };
+  if (!budget.allowed) {
+    // cause 区分三种不退:「封顶」是反滥用信号,记 warn;「退款被配置关闭」是运维的
+    // 有意决定,记 info;「计数器故障」的告警已在 tryConsumeWebRefundBudget 里带
+    // 错误字段记过(refund_budget_failed),这里不重复打、也不混进 refund_capped ——
+    // 封顶日志是「有人在刷」的看板口径,计数器故障混进去会误报滥用。
+    if (budget.cause === "capped") {
+      logWarn("proxy.web.ip_daily.refund_capped", {
+        ...requestContext, today, reason, limit: budget.limit
+      });
+    } else if (budget.cause === "disabled") {
+      logInfo("proxy.web.ip_daily.refund_disabled", { ...requestContext, today, reason });
+    }
+    // cause === "failed":不再记日志(见上),避免把计数器故障标成「退款被关闭」。
+    return;
+  }
+  try {
+    if (env.QUOTA_COUNTER_DO) {
+      // 不传 logEvent:下方由本函数记唯一一条带 requestContext / reason 的 refunded 日志。
+      const result = await refundQuotaCounterDO(env, "web-ip-daily", ipHash, today);
+      if (ctx?.waitUntil && env.RATE_LIMIT_KV) {
+        const key = `web-ip-quota:${today}:${ipHash}`;
+        ctx.waitUntil(
+          env.RATE_LIMIT_KV.put(key, String(result.used), { expirationTtl: 36 * 60 * 60 })
+            .catch((error) => {
+              logWarn("proxy.web.ip_daily.refund_kv_shadow_failed", { ...requestContext, ...errorFields(error) });
+            })
+        );
+      }
+      logInfo("proxy.web.ip_daily.refunded", { ...requestContext, today, reason, used: result.used, source: "do" });
+      return;
+    }
+    if (!env.RATE_LIMIT_KV) return;
+    const key = `web-ip-quota:${today}:${ipHash}`;
+    const current = Number(await env.RATE_LIMIT_KV.get(key) || "0");
+    const newValue = Math.max(0, current - 1);
+    await env.RATE_LIMIT_KV.put(key, String(newValue), { expirationTtl: 36 * 60 * 60 });
+    logInfo("proxy.web.ip_daily.refunded", { ...requestContext, today, reason, used: newValue, source: "kv" });
+  } catch (error) {
+    logWarn("proxy.web.ip_daily.refund_failed", { ...requestContext, today, reason, ...errorFields(error) });
+  }
+}
+
+// web 档在「已扣每日额度、但一次模型都没调」就 5xx 收场的出口上退额度。
+// 覆盖三个出口:provider 配置非法(500)/ 没有任何 provider(500)/ 全部候选被熔断或
+// 无可用 key(503)。它们都发生在 executeWithFailover 之前,不经过那个 catch 里的
+// provider_failed 退款 —— 但访客拿到的是同一张「服务不可用」,什么都没看到。
+// 没调模型 = 零成本,退款只动用户额度,不触碰全局预算与 velocity。
+// 与其他退款一样吃退款预算(封顶 3 次/天/IP):熔断期间反复重试的访客最多免计 3 次,
+// 之后按次计费 —— 不给「上游熔断时无限免费请求」留旁路。
+// App 档不在此退:App 的设备桶扣减(enforceAllQuotas)在这些出口之后,没扣过。
+async function refundWebIpDailyBeforeModelCall(webTier, env, requestContext, ctx) {
+  if (!webTier) return;
+  await refundWebIpDaily(env, requestContext, ctx, "provider_failed");
+}
+
+// 解析每 IP 每日退款预算上限。三种配置三种语义,不能互相塌缩:
+//   - 未配置 / 空串 / 非数字 → 默认 3(「没配」或「配错」,按文档默认值走);
+//   - 0(或负数)→ 0 = 关闭退款,一次都不退。与 WEB_IP_DAILY_LIMIT 的 0 同义
+//     (0 = 关掉这道闸)。运维想下线退款时若被静默当成「没配」回落 3,等于把
+//     「关掉」执行成「开着一半」;
+//   - 小数 → 向下取整(DO consume 的 limit 必须是正整数)。
+// 空串单独拦:Number("") === 0,wrangler vars 里留空(`KEY = ""`)是常见手滑,
+// 不拦会把退款静默关掉。
+function resolveWebRefundDailyLimit(env) {
+  const raw = env.WEB_REFUND_DAILY_LIMIT;
+  const unset = raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "");
+  const configured = Number(unset ? 3 : raw);
+  if (!Number.isFinite(configured)) return 3;
+  return Math.max(0, Math.floor(configured));
+}
+
+// 每日退款预算:每 IP 每天最多免计 N 次(默认 3,WEB_REFUND_DAILY_LIMIT 可调)。
+// 独立命名空间 web-ip-refund(DO 实例 / KV 键),与 web-ip-daily 计数桶分开 ——
+// 退款次数和已用次数是两个量,混在一个计数器里会互相吃额度。三种退款触发点
+// (client_disconnected / provider_failed / 空结果,含缓存命中的空结果)全部经由
+// refundWebIpDaily → 本函数,共用同一份预算:每 IP 每天的上限因此是
+// 「3 次计费 + 3 次免计 = 6 次模型调用」,不存在某一种触发点绕开封顶的旁路。
+// 返回 { allowed, cause, limit }:cause ∈ "ok" | "disabled" | "capped" | "failed"。
+//
+// 计数器故障时 fail-closed(不退):退款是让利,让利路径出错时收紧比放宽安全,并告警。
+//
+// ⚠️ 降级场景的有意不对称(已知取舍,见双 review 报告「需用户裁定」):扣减路径
+// (enforceIpDailyLimitViaDO)在 DO 故障时会回落到 KV 照常扣;本函数与随后的
+// refundQuotaCounterDO 都**不回落** —— DO 故障期间扣减照落、退款整体关闭,连点
+// 保护暂时失效(DO 恢复后自愈,不丢数据)。不回落的理由:KV 退款预算是读改写,
+// 并发下两个请求都读到 < limit 而双双放行(方向是「多退」),而「连点」恰恰是并发
+// 取消 —— 在计数器已经不可信的时刻放宽让利,正是最不该放宽的时候。
+async function tryConsumeWebRefundBudget(env, ipHash, today) {
+  const limit = resolveWebRefundDailyLimit(env);
+  if (limit === 0) return { allowed: false, cause: "disabled", limit };
+  try {
+    if (env.QUOTA_COUNTER_DO) {
+      const id = env.QUOTA_COUNTER_DO.idFromName(`web-ip-refund:${ipHash}`);
+      const stub = env.QUOTA_COUNTER_DO.get(id);
+      const response = await stub.fetch(new Request("https://quota-counter.local/consume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "web-ip-refund", date: today, limit, amount: 1 })
+      }));
+      if (!response.ok) throw new Error(`DO consume returned status ${response.status}`);
+      const result = await response.json();
+      return result.allowed ? { allowed: true, cause: "ok", limit } : { allowed: false, cause: "capped", limit };
+    }
+    if (!env.RATE_LIMIT_KV) return { allowed: false, cause: "disabled", limit };
+    const key = `web-ip-refund:${today}:${ipHash}`;
+    const raw = await env.RATE_LIMIT_KV.get(key);
+    // 值损坏必须当故障抛出,不能 Number(x || "0") 兜底:非数字经 Number() 得 NaN,
+    // NaN >= limit 恒 false → 放行,再写回 String(NaN + 1) = "NaN" → 这个键此后永远放行,
+    // 封顶被一个坏值永久解除。
+    if (raw !== null && raw !== undefined && raw !== "" && !Number.isFinite(Number(raw))) {
+      throw new Error("refund budget counter is not a number (namespace web-ip-refund)");
+    }
+    const current = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
+    if (current >= limit) return { allowed: false, cause: "capped", limit };
+    await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 36 * 60 * 60 });
+    return { allowed: true, cause: "ok", limit };
+  } catch (error) {
+    logWarn("proxy.web.ip_daily.refund_budget_failed", { today, ipHash, limit, ...errorFields(error) });
+    return { allowed: false, cause: "failed", limit };
+  }
 }
 
 // 上游没能给出结果时把设备额度退回。
@@ -2255,9 +2609,14 @@ async function refundDeviceQuotaOnEmptyOutcome(request, env, requestContext, ctx
 }
 
 // 共用 DO refund 调用。失败时抛错,由调用方决定如何处理(CLAUDE.md:错误显式传播)。
-// 日志在调用方写,这里只做 fetch + 状态码校验。
-// logEvent 显式传:不同 subject 在日志里的事件名不同(device-quota→quota, ip-daily→ip_quota),
-// 显式参数避免调用点用三元运算硬编码,新增 subject 不会误归入既有事件。
+// 这里只做 fetch + 状态码校验 + 结果透传。
+// logEvent(第 5 个参数)决定谁记 refunded 日志,两条规则:
+//   - 传事件名:这里记一条仅含 { date, subjectId, used, source } 的日志。不同 subject
+//     事件名不同(device-quota→quota, ip-daily→ip_quota),显式参数避免调用点用三元
+//     运算硬编码,新增 subject 不会误归入既有事件。调用方**不得**再记同名事件。
+//   - 省略:调用方自己记(需要带 requestContext / reason 等本函数拿不到的字段时)。
+//     web 档即此情形(见 refundWebIpDaily):两边都记会让同一次退款打两条、
+//     按日志对账的退款量翻倍。
 async function refundQuotaCounterDO(env, subjectKey, subjectId, date, logEvent) {
   const doName = `${subjectKey}:${subjectId}`;
   const id = env.QUOTA_COUNTER_DO.idFromName(doName);
@@ -2271,12 +2630,14 @@ async function refundQuotaCounterDO(env, subjectKey, subjectId, date, logEvent) 
     throw new Error(`DO refund returned status ${response.status}`);
   }
   const result = await response.json();
-  logInfo(logEvent, {
-    date,
-    subjectId,
-    used: result.used,
-    source: "do"
-  });
+  if (logEvent) {
+    logInfo(logEvent, {
+      date,
+      subjectId,
+      used: result.used,
+      source: "do"
+    });
+  }
   return result;
 }
 

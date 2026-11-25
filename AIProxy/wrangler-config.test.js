@@ -287,6 +287,37 @@ test("wrangler.toml: AI_PROVIDER_MAX_ATTEMPTS is explicitly configured", () => {
   assert.ok(Number.isInteger(value) && value > 0, `AI_PROVIDER_MAX_ATTEMPTS="${vars.AI_PROVIDER_MAX_ATTEMPTS}" 不是正整数`);
 });
 
+// 极简 compatibility_flags 解析:只认单行 `compatibility_flags = [ "a", "b' ]` 形态。
+// 返回标志名数组(去掉前导 no_/disable_ 的关闭型标志原样保留,调用方按名判断)。
+function parseCompatibilityFlags(text) {
+  const match = text.match(/^compatibility_flags\s*=\s*\[([^\]]*)\]/m);
+  if (!match) return [];
+  return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+test("wrangler.toml: enable_request_signal flag is on for both configs", () => {
+  // 入站 request.signal 的断连事件在兼容日期 ≥ 2026-11-17 之前必须靠这个标志开启
+  // (https://developers.cloudflare.com/changelog/post/2026-11-02-request-signal-default)。
+  // 没有它 request.signal 永不 abort:客户端取消后上游 fetch 照跑到超时(白烧 token),
+  // provider.js 的 client_disconnected 判定与随后的额度退款(App 设备桶 / web 每日 IP 桶,
+  // 见 refundWebIpDaily)整条路径都不触发 —— worker.test.js 的断连用例全部靠测试里手动
+  // abort 信号造出来,配置缺失时照样全绿,所以必须在这里守。
+  for (const { label, path } of CONFIGS) {
+    const text = readFileSync(path, "utf8");
+    const flags = parseCompatibilityFlags(text);
+    const compatDate = text.match(/^compatibility_date\s*=\s*"([^"]+)"/m)?.[1] ?? "";
+
+    assert.ok(
+      flags.includes("enable_request_signal") || compatDate >= "2026-11-17",
+      `${label}: 兼容日期 ${compatDate} 且未开启 enable_request_signal → 断连退款在线上空转`
+    );
+    assert.ok(
+      !flags.includes("disable_request_signal"),
+      `${label}: disable_request_signal 与 enable_request_signal 互斥,同时出现行为未定义`
+    );
+  }
+});
+
 test("wrangler.toml: provider failover worst case fits inside the iOS client timeout budget", () => {
   const text = readFileSync(DEPLOYED, "utf8");
   const vars = parseVars(text);

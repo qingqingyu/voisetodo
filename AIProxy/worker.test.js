@@ -9851,3 +9851,885 @@ test("web 档:不消耗 App 设备配额 —— web 流量不挤占 App 免费�
     assert.equal(app2.status, 200);
   });
 });
+
+// MARK: - web 档退款(2026-11-23 线上实测:连点烧光额度)
+// 根因:工具页零 JS 表单提交后无反馈,用户连点 → 浏览器取消前几次导航,
+// 每次被取消的请求都已扣每日额度,用户只看到最后一次结果。原则:没被看到的
+// 请求不占额度 —— client_disconnected 与空结果都退 web 每日 IP 额度。
+
+test("web 档:客户端断连退每日 IP 额度(没看到结果的请求不占 3 次/天)", async () => {
+  const kv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    const req = new Request("https://proxy.test/v1/web/todo-extractions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...WEB_HEADERS },
+      body: JSON.stringify({ transcript: "call the dentist tomorrow" }),
+      signal: abortController.signal
+    });
+    // 访客连点:浏览器取消本次导航 → Pages Function 透传断连 → 上游 fetch 被 abort
+    await handleRequest(req, env, {}, async () => {
+      abortController.abort();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    });
+
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.ok(quotaKey, "web 每日额度键应存在(闸门已扣)");
+    assert.equal(kv.values.get(quotaKey), "0", "断连后每日额度应退回到 0");
+    // 防刷维度不退:每分钟频率计数保持发起即计数
+    const rateKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-rate:"));
+    assert.ok(rateKey && kv.values.get(rateKey) === "1", "velocity 计数不因断连退回");
+  });
+});
+
+test("web 档:空结果退每日 IP 额度(没拆出任务不算一次)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    const emptyProvider = async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }]
+    });
+    const response = await handleRequest(
+      webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, makeFakeCtx(), emptyProvider
+    );
+    assert.equal(response.status, 200, "空结果仍是 200(由网页端展示「没找到任务」)");
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.ok(quotaKey, "web 每日额度键应存在");
+    assert.equal(kv.values.get(quotaKey), "0", "空结果后每日额度应退回到 0");
+  });
+});
+
+test("web 档:正常成功不退款(每次真实结果占一次额度)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv
+    };
+    await handleRequest(webRequest({ transcript: "call the dentist tomorrow" }, WEB_HEADERS), env, makeFakeCtx(), jsonResponseProvider("Call the dentist"));
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "1", "成功结果正常占一次额度");
+  });
+});
+
+
+// 可变时钟:withMockedToday 的 toISOString 是常量,测不了「扣减与退款落在不同 UTC 日」。
+// 返回 setter,用例在上游 fetch 里把时间拨过 0 点。
+function withSteppableToday(initialIso, fn) {
+  const original = Date.prototype.toISOString;
+  let now = initialIso;
+  Date.prototype.toISOString = function () { return now; };
+  return Promise.resolve(fn((next) => { now = next; })).finally(() => {
+    Date.prototype.toISOString = original;
+  });
+}
+
+function webQuotaKeys(kv, day) {
+  return [...kv.values.keys()].filter((k) => k.startsWith(`web-ip-quota:${day}:`));
+}
+
+function abortingFetch(abortController, onAbort = () => {}) {
+  return async () => {
+    onAbort();
+    abortController.abort();
+    throw Object.assign(new Error("aborted"), { name: "AbortError" });
+  };
+}
+
+function signalableWebRequest(abortController) {
+  return new Request("https://proxy.test/v1/web/todo-extractions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...WEB_HEADERS },
+    body: JSON.stringify({ transcript: "call the dentist tomorrow" }),
+    signal: abortController.signal
+  });
+}
+
+test("web 档:跨 UTC 0 点的断连退款退回扣减当日桶,不吃新一天额度", async () => {
+  // 扣减在 23:59:59(D 日),退款时已过 0 点(D+1 日)。退款若重算日期会退到 D+1 桶。
+  const kv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  await withSteppableToday("2026-05-26T23:59:59.900Z", async (stepTo) => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    await handleRequest(
+      signalableWebRequest(abortController), env, {},
+      abortingFetch(abortController, () => stepTo("2026-05-27T00:00:00.100Z"))
+    );
+    const dayD = webQuotaKeys(kv, "2026-05-26");
+    assert.equal(dayD.length, 1, "扣减应落在 D 日桶");
+    assert.equal(kv.values.get(dayD[0]), "0", "退款应退回 D 日桶");
+    assert.equal(webQuotaKeys(kv, "2026-05-27").length, 0, "D+1 日桶不应被创建或改动");
+  });
+});
+
+test("web 档:跨 UTC 0 点的断连退款在 DO 主路径同样按扣减日期退", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withSteppableToday("2026-05-26T23:59:59.900Z", async (stepTo) => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    await handleRequest(
+      signalableWebRequest(abortController), env, ctx,
+      abortingFetch(abortController, () => stepTo("2026-05-27T00:00:00.100Z"))
+    );
+    await ctx.awaitAll();
+    const dailyCalls = doBinding._calls.filter((c) => c.key === "web-ip-daily");
+    const consume = dailyCalls.find((c) => typeof c.limit === "number");
+    const refund = dailyCalls.find((c) => typeof c.limit !== "number");
+    assert.ok(consume && refund, "应各有一次 consume 与 refund");
+    assert.equal(consume.date, "2026-05-26", "扣减在 D 日");
+    assert.equal(refund.date, consume.date, "退款日期必须等于扣减日期,而不是退款时刻的日期");
+    assert.equal(
+      webQuotaKeys(kv, "2026-05-27").length, 0,
+      "KV 影子写也不应写到 D+1 日桶"
+    );
+  });
+});
+
+test("web 档:被日额度闸门拒绝的请求不退款(没扣过的路径不退)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    for (let i = 0; i < 3; i += 1) {
+      const response = await handleRequest(
+        webRequest({ transcript: `errand number ${i}` }, WEB_HEADERS), env, {},
+        jsonResponseProvider(`Todo ${i}`)
+      );
+      assert.equal(response.status, 200, `第 ${i + 1} 次应成功`);
+    }
+    // 第 4 次:额度已满 → 闸门 429,根本到不了上游;随后「断连」不得把计数退成 2
+    const abortController = new AbortController();
+    const response = await handleRequest(signalableWebRequest(abortController), env, {}, abortingFetch(abortController));
+    assert.equal(response.status, 429, "第 4 次应被每日闸门拒绝");
+    assert.equal(response.headers.get("X-RateLimit-Type"), "web_ip_daily");
+    const quotaKey = webQuotaKeys(kv, "2026-05-26")[0];
+    assert.ok(quotaKey, "web 每日额度键应存在");
+    assert.equal(kv.values.get(quotaKey), "3", "被拒绝的请求不退款,计数保持 3");
+  });
+});
+
+test("web 档:输出坏 JSON(unparseable_output)同样退每日 IP 额度", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    const response = await handleRequest(
+      webRequest({ transcript: "call the dentist tomorrow" }, WEB_HEADERS), env, {},
+      async () => jsonResponse({ content: [{ type: "text", text: "not json at all" }] })
+    );
+    assert.equal(response.status, 200, "坏 JSON 是 provider 层成功,状态码不变");
+    const quotaKey = webQuotaKeys(kv, "2026-05-26")[0];
+    assert.ok(quotaKey, "web 每日额度键应存在(闸门已扣)");
+    assert.equal(kv.values.get(quotaKey), "0", "坏 JSON 用户没拿到任务,应退款");
+  });
+});
+
+test("web 档:每日闸门因配置被跳过时,空结果不产生退款写入", async () => {
+  // WEB_IP_DAILY_LIMIT=0 → 闸门 skip(没扣过)。退款路径不得凭空创建 KV 键。
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      WEB_IP_DAILY_LIMIT: "0"
+    };
+    const emptyProvider = async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }]
+    });
+    const response = await handleRequest(
+      webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, {}, emptyProvider
+    );
+    assert.equal(response.status, 200);
+    assert.equal(webQuotaKeys(kv, "2026-05-26").length, 0, "没扣过的路径不应有退款写入");
+  });
+});
+
+test("web 档:命中缓存的空结果同样退每日 IP 额度(与 cache miss 同口径)", async () => {
+  const kv = new MemoryKV(new Map());
+  const cacheKv = new MemoryKV(new Map());
+  let upstreamCalls = 0;
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      CACHE_RESULT_KV: cacheKv
+    };
+    const emptyProvider = async () => {
+      upstreamCalls += 1;
+      return jsonResponse({ content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }] });
+    };
+    const pending = [];
+    const ctx = { waitUntil(p) { pending.push(p); } };
+
+    const first = await handleRequest(webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx, emptyProvider);
+    assert.equal(first.status, 200);
+    await Promise.all(pending);
+    assert.equal(upstreamCalls, 1, "第一次 cache miss,调上游");
+    assert.equal(kv.values.get(webQuotaKeys(kv, "2026-05-26")[0]), "0", "miss 的空结果退款");
+
+    const second = await handleRequest(webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx, emptyProvider);
+    assert.equal(second.status, 200);
+    assert.equal(upstreamCalls, 1, "第二次应命中缓存,不再调上游");
+    assert.equal(
+      kv.values.get(webQuotaKeys(kv, "2026-05-26")[0]), "0",
+      "命中缓存的空结果给用户看的是同一张「No tasks found」,不应反而扣次"
+    );
+  });
+});
+
+
+test("web 档:线上事故重放 —— 连点三次(前两次被取消)+ 第三次成功,净占 1 次而非 3 次", async () => {
+  // 2026-11-23 线上实测:用户感知「点一次额度就用完」。修复后:被取消的两次退款,
+  // 只有被看到的第三次占额度,当日仍剩 2 次。
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    for (let i = 1; i <= 2; i += 1) {
+      const abortController = new AbortController();
+      const cancelled = await handleRequest(signalableWebRequest(abortController), env, {}, abortingFetch(abortController));
+      assert.equal(cancelled.status, 499, `第 ${i} 次(被取消)应记成 499`);
+    }
+    const seen = await handleRequest(
+      webRequest({ transcript: "call the dentist tomorrow" }, WEB_HEADERS), env, {}, jsonResponseProvider("Call the dentist")
+    );
+    assert.equal(seen.status, 200, "第三次(被看到)应成功");
+    const quotaKey = webQuotaKeys(kv, "2026-05-26")[0];
+    assert.ok(quotaKey, "web 每日额度键应存在");
+    assert.equal(kv.values.get(quotaKey), "1", "三次提交只有一次结果被看到,净占 1 次");
+    // 连点本身仍受每分钟频率约束(防刷维度不退):三次都计了 velocity
+    const rateKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-rate:"));
+    assert.equal(kv.values.get(rateKey), "3", "velocity 计数不因退款回退");
+  });
+});
+
+test("web 档:DO 主路径一次退款只记一条 refunded 日志(带 reason,可按日志对账)", async () => {
+  // 退款率 / 泄漏率靠数这条日志监控(部署清单的线上验证步骤也看它):同一次退款
+  // 打两条会让退款量翻倍。修复前 refundQuotaCounterDO 内部一条 + 调用方又一条。
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const lines = await captureConsole(async () => {
+      await handleRequest(
+        webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx,
+        async () => jsonResponse({ content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }] })
+      );
+    });
+    const refunded = lines.filter((line) => line.includes('"event":"proxy.web.ip_daily.refunded"'));
+    assert.equal(refunded.length, 1, `只记一条 refunded: ${refunded.join(" | ")}`);
+    assert.ok(refunded[0].includes('"reason":"empty_todos"'), `应带退款原因: ${refunded[0]}`);
+    assert.ok(refunded[0].includes('"source":"do"'), `应标明来源: ${refunded[0]}`);
+  });
+});
+
+test("web 档:DO 主路径断连退款走 /refund(实例名与扣减一致,净计数为 0)", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      QUOTA_COUNTER_DO: doBinding
+    };
+    const req = new Request("https://proxy.test/v1/web/todo-extractions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...WEB_HEADERS },
+      body: JSON.stringify({ transcript: "call the dentist tomorrow" }),
+      signal: abortController.signal
+    });
+    await handleRequest(req, env, ctx, async () => {
+      abortController.abort();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    });
+    await ctx.awaitAll();
+
+    const dailyCalls = doBinding._calls.filter((c) => c.key === "web-ip-daily");
+    assert.equal(dailyCalls.filter((c) => typeof c.limit === "number").length, 1, "应有一次 consume");
+    assert.equal(dailyCalls.filter((c) => c.amount === 1 && typeof c.limit !== "number").length, 1, "应有一次 refund");
+    // 扣 1 再退 1:DO 存储里 web-ip-daily 的净计数为 0
+    const net = [...doBinding._store.entries()]
+      .filter(([k]) => k.includes("web-ip-daily"))
+      .reduce((sum, [, v]) => sum + v, 0);
+    assert.equal(net, 0, "被取消的请求净效果应为 0");
+  });
+});
+
+// MARK: - web 档退款收口(双 review 遗留项:退款预算封顶 / 上游全败退款 / 拒绝流式)
+
+function webRequestWithSignal(body, signal) {
+  return new Request("https://proxy.test/v1/web/todo-extractions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...WEB_HEADERS },
+    body: JSON.stringify(body),
+    signal
+  });
+}
+
+// 取消与恶意取消无法区分:不封顶时单 IP 靠「发请求→立刻取消」净计费为 0,
+// 6 次/分钟约 50 分钟打空 web 全局预算桶。封顶 3 次/天/IP。
+test("web 档:退款预算封顶 —— 每 IP 每天最多免计 3 次,第 4 次取消不再退(KV 路径)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    for (let i = 0; i < 4; i++) {
+      const abortController = new AbortController();
+      await handleRequest(
+        webRequestWithSignal({ transcript: `cancel me ${i}` }, abortController.signal),
+        env,
+        {},
+        async () => {
+          abortController.abort();
+          throw Object.assign(new Error("aborted"), { name: "AbortError" });
+        }
+      );
+    }
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+    assert.equal(kv.values.get(refundKey), "3", "退款预算计满 3 次后不再消耗");
+    assert.equal(kv.values.get(quotaKey), "1", "前 3 次取消已退,第 4 次取消占 1 次额度");
+  });
+});
+
+test("web 档:退款预算封顶(DO 主路径)—— 4 次取消净计费为 1", async () => {
+  const kv = new MemoryKV(new Map());
+  const doBinding = makeFakeQuotaCounterDO();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv, QUOTA_COUNTER_DO: doBinding };
+    for (let i = 0; i < 4; i++) {
+      const abortController = new AbortController();
+      await handleRequest(
+        webRequestWithSignal({ transcript: `cancel me ${i}` }, abortController.signal),
+        env,
+        {},
+        async () => {
+          abortController.abort();
+          throw Object.assign(new Error("aborted"), { name: "AbortError" });
+        }
+      );
+    }
+    const daily = [...doBinding._store.entries()].filter(([k]) => k.includes("web-ip-daily")).reduce((s, [, v]) => s + v, 0);
+    assert.equal(daily, 1, "4 次取消:3 次退款 + 1 次未退 = 净 1");
+  });
+});
+
+test("web 档:正常连点 3 次全退,不受封顶影响", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    for (let i = 0; i < 3; i++) {
+      const abortController = new AbortController();
+      await handleRequest(
+        webRequestWithSignal({ transcript: `click ${i}` }, abortController.signal),
+        env,
+        {},
+        async () => {
+          abortController.abort();
+          throw Object.assign(new Error("aborted"), { name: "AbortError" });
+        }
+      );
+    }
+    // 第 4 次是用户真正看到结果的那次
+    const final = await handleRequest(webRequest({ transcript: "the one I keep" }, WEB_HEADERS), env, makeFakeCtx(), jsonResponseProvider("Keep"));
+    assert.equal(final.status, 200);
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "1", "连点 3 次被取消 + 1 次成功 = 只占 1 次");
+  });
+});
+
+test("web 档:上游全败(provider_failed)退每日额度 —— 用户拿到 503 不白烧一次", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    const response = await handleRequest(webRequest({ transcript: "call the dentist" }, WEB_HEADERS), env, {}, failingFetch);
+    assert.ok(response.status >= 500, `上游全败应为 5xx,实际 ${response.status}`);
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "上游故障后退回当日额度");
+  });
+});
+
+test("web 档:stream:true 拒绝 400(表单页整页渲染,流式分支不应可达)", async () => {
+  const response = await handleRequest(
+    webRequest({ transcript: "a", stream: true }, WEB_HEADERS),
+    { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" },
+    {},
+    jsonResponseProvider("x")
+  );
+  assert.equal(response.status, 400);
+});
+
+// MARK: - web 档退款收口第二轮(双 review 第 1 轮补审)
+
+// 与「连点三次 + 第三次成功」同一套节奏,便于直接对比净计费。
+async function cancelWebTimes(kv, count, extraEnv = {}) {
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv, ...extraEnv };
+    for (let i = 0; i < count; i += 1) {
+      const abortController = new AbortController();
+      await handleRequest(webRequestWithSignal({ transcript: `cancel me ${i}` }, abortController.signal), env, {}, abortingFetch(abortController));
+    }
+  });
+  const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+  const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+  return { quota: quotaKey ? kv.values.get(quotaKey) : null, refundKey, refund: refundKey ? kv.values.get(refundKey) : null };
+}
+
+test("web 档:WEB_REFUND_DAILY_LIMIT=0 关闭退款,不静默回落默认 3", async () => {
+  // 0 的语义与 WEB_IP_DAILY_LIMIT 一致(0 = 关闭这道闸)。运维想下线退款却拿到默认 3,
+  // 是把「关掉」静默执行成「开着一半」。
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "0" });
+  assert.equal(state.quota, "3", "关闭退款:3 次取消全部占额度");
+  assert.equal(state.refundKey, undefined, "关闭退款不应创建退款预算键");
+});
+
+test("web 档:WEB_REFUND_DAILY_LIMIT 非数字回落默认 3", async () => {
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "not-a-number" });
+  assert.equal(state.quota, "0", "非法值 = 没配,按默认 3 次退");
+  assert.equal(state.refund, "3");
+});
+
+test("web 档:WEB_REFUND_DAILY_LIMIT 为空串视为未配置(默认 3),不是关闭", async () => {
+  // wrangler vars 里留空(`WEB_REFUND_DAILY_LIMIT = ""`)是常见手滑;Number("") === 0,
+  // 若直接按 0 处理会把退款静默关掉。
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "" });
+  assert.equal(state.quota, "0", "空串应按默认 3 次退");
+  assert.equal(state.refund, "3");
+});
+
+test("web 档:WEB_REFUND_DAILY_LIMIT 小数向下取整", async () => {
+  const kv = new MemoryKV(new Map());
+  const state = await cancelWebTimes(kv, 3, { WEB_REFUND_DAILY_LIMIT: "2.9" });
+  assert.equal(state.refund, "2", "2.9 → 2 次");
+  assert.equal(state.quota, "1", "3 次取消只退 2 次");
+});
+
+test("web 档:退款预算计数器值损坏(非数字)时 fail-closed,不放行也不写坏值", async () => {
+  const kv = new MemoryKV(new Map());
+  await cancelWebTimes(kv, 1);
+  const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+  kv.values.set(refundKey, "corrupted");
+  const lines = await captureConsole(async () => {
+    await cancelWebTimes(kv, 1);
+  });
+  const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+  // 第一次取消在计数器损坏前已退(净 0);损坏后第二次取消不退 → 净 1。
+  assert.equal(kv.values.get(quotaKey), "1", "计数器坏了不该放行:损坏后的取消占额度");
+  assert.equal(kv.values.get(refundKey), "corrupted", "不得改写损坏的计数器(NaN 写回会让此后永远放行)");
+  assert.ok(
+    lines.some((line) => line.includes('"event":"proxy.web.ip_daily.refund_budget_failed"')),
+    "计数器损坏必须显式告警"
+  );
+  assert.ok(
+    !lines.some((line) => line.includes('"event":"proxy.web.ip_daily.refund_capped"')),
+    "计数器故障不是「封顶」,不得误记成 refund_capped"
+  );
+});
+
+test("web 档:预算用尽的封顶日志 refund_capped 带上限值", async () => {
+  const kv = new MemoryKV(new Map());
+  const lines = await captureConsole(async () => {
+    await cancelWebTimes(kv, 4);
+  });
+  const capped = lines.filter((line) => line.includes('"event":"proxy.web.ip_daily.refund_capped"'));
+  assert.equal(capped.length, 1, `第 4 次取消应记一条封顶: ${capped.join(" | ")}`);
+  assert.ok(capped[0].includes('"limit":3'), `封顶日志应带 limit: ${capped[0]}`);
+  assert.ok(capped[0].includes('"reason":"client_disconnected"'));
+});
+
+test("web 档:全部 provider 被熔断(no_candidates 503)同样退每日额度", async () => {
+  // provider_failed 退款的同口径:用户拿到的是同一张 503「AI proxy failed」,没拿到任何东西。
+  // 这条路径不经过 executeWithFailover 的 catch,修复前漏退。
+  const kv = new MemoryKV(new Map());
+  const healthKv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      AI_PROVIDER_STATE_KV: healthKv,
+      WEB_IP_RATE_PER_MINUTE: "20",
+      WEB_REFUND_DAILY_LIMIT: "10"
+    };
+    // 连续失败到熔断阈值(threshold 默认 5):期间每个请求都是上游失败 → 已退款。
+    for (let i = 0; i < 5; i += 1) {
+      const failed = await handleRequest(webRequest({ transcript: `fail ${i}` }, WEB_HEADERS), env, {}, failingFetch);
+      assert.ok(failed.status >= 500, `预热第 ${i + 1} 次应为 5xx,实际 ${failed.status}`);
+    }
+    const quotaKey = () => [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey()), "0", "熔断前的 5 次上游失败全部退款");
+    const tripped = await handleRequest(webRequest({ transcript: "no candidates" }, WEB_HEADERS), env, {}, failingFetch);
+    assert.equal(tripped.status, 503, "全部候选被熔断 → 503");
+    assert.equal(kv.values.get(quotaKey()), "0", "没调模型就 503,同样不该占用户额度");
+  });
+});
+
+test("web 档:provider 配置缺失(500)同样退每日额度", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    // legacy 单 provider 配置缺 API key → loadProviders 抛错 → 500,发生在扣减之后。
+    const env = { WEB_EXTRACT_TOKEN: "web-token", AI_PROVIDER: "anthropic", RATE_LIMIT_KV: kv };
+    const response = await handleRequest(webRequest({ transcript: "x" }, WEB_HEADERS), env, {}, failingFetch);
+    assert.equal(response.status, 500);
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "部署配置错误不该让访客白烧一次额度");
+  });
+});
+
+test("client disconnect while reading a non-stream body: 499, no health failure, no failover", async () => {
+  // enable_request_signal 开启后可达的窗口:响应头已 200、body 还没读完时访客/用户断开 →
+  // response.json() 抛 AbortError。旧行为把它归进 onResponse 的 invalid_response 分支:
+  // 给 provider 记一次假故障 + failover 到下一家(同样立刻被 abort 再记一次);没有下一家时
+  // 抛出的是普通 Error → 外层按 provider_failed 记 502。断连不是 provider 故障。
+  const healthKv = new MemoryKV(new Map());
+  const abortController = new AbortController();
+  const calls = [];
+  const env = providersEnv(
+    [
+      { id: "PRIMARY", type: "anthropic", url: "https://a.example/v1/messages", model: "m-a", priority: 1, weight: 10, enabled: true, secretName: "KEY_A" },
+      { id: "SECONDARY", type: "anthropic", url: "https://b.example/v1/messages", model: "m-b", priority: 2, weight: 10, enabled: true, secretName: "KEY_B" }
+    ],
+    { KEY_A: "key-a", KEY_B: "key-b" },
+    { AI_PROVIDER_STATE_KV: healthKv }
+  );
+  const response = await handleRequest(
+    requestWithSignal(
+      { transcript: "今天复习", locale: "zh-Hans" },
+      { "X-App-Token": "token", "X-Device-ID": "dev-abort-body" },
+      abortController.signal
+    ),
+    env,
+    {},
+    async (url) => {
+      calls.push(url);
+      return new Response(new ReadableStream({
+        pull(controller) {
+          abortController.abort();
+          controller.error(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+        }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  );
+  assert.equal(calls.length, 1, "客户端已经走了,不该 failover 到下一家白烧 token");
+  assert.equal(healthRecord(healthKv, "PRIMARY"), null, "断连不该给 provider 记健康失败");
+  assert.equal(healthRecord(healthKv, "SECONDARY"), null);
+  assert.equal(response.status, 499, "断连读 body 应记 499,而不是 502/503");
+});
+
+test("genuine body read failure while the client is connected still records a failure and fails over", async () => {
+  // 反向守卫:断连判据不能放太宽。客户端还在、上游 body 真的坏了 → 照旧记故障 + failover。
+  const healthKv = new MemoryKV(new Map());
+  const calls = [];
+  const env = providersEnv(
+    [
+      { id: "PRIMARY", type: "anthropic", url: "https://a.example/v1/messages", model: "m-a", priority: 1, weight: 10, enabled: true, secretName: "KEY_A" },
+      { id: "SECONDARY", type: "anthropic", url: "https://b.example/v1/messages", model: "m-b", priority: 2, weight: 10, enabled: true, secretName: "KEY_B" }
+    ],
+    { KEY_A: "key-a", KEY_B: "key-b" },
+    { AI_PROVIDER_STATE_KV: healthKv }
+  );
+  const response = await handleRequest(
+    request({ transcript: "今天复习", locale: "zh-Hans" }, { "X-App-Token": "token", "X-Device-ID": "dev-broken-body" }),
+    env,
+    {},
+    async (url) => {
+      calls.push(url);
+      if (calls.length === 1) {
+        return new Response(new ReadableStream({
+          pull(controller) { controller.error(new Error("upstream connection reset")); }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return jsonResponse({ content: [{ type: "text", text: extractionJSON("复习英语") }] });
+    }
+  );
+  assert.equal(calls.length, 2, "客户端还在,上游 body 坏了应 failover");
+  const record = healthRecord(healthKv, "PRIMARY");
+  assert.ok(record, "真实的上游中断必须记故障");
+  assert.equal(response.status, 200, "第二家成功");
+});
+
+// MARK: - 缓存命中的空结果退款不吃退款预算(双 review 第二轮建议)
+
+test("web 档:缓存命中的空结果退款不吃退款预算(零模型成本)", async () => {
+  const kv = new MemoryKV(new Map());
+  const cacheKv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      RATE_LIMIT_KV: kv,
+      CACHE_RESULT_KV: cacheKv,
+      WEB_REFUND_DAILY_LIMIT: "1" // 预算只有 1 次:若缓存命中也吃预算,第二次就不会退
+    };
+    const emptyProvider = async () => jsonResponse({
+      content: [{ type: "text", text: JSON.stringify({ todos: [], ignored: "" }) }]
+    });
+    // 第 1 次:cache miss,调模型,空结果 → 退款并吃掉唯一的预算名额
+    const ctx1 = makeFakeCtx();
+    await handleRequest(webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx1, emptyProvider);
+    await ctx1.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0");
+    assert.equal(kv.values.get(refundKey), "1", "cache miss 的退款吃 1 个预算名额");
+
+    // 第 2 次:同一句话 → 缓存命中(零模型调用),空结果仍应退款,且预算不涨
+    const ctx2 = makeFakeCtx();
+    const second = await handleRequest(webRequest({ transcript: "nice weather today" }, WEB_HEADERS), env, ctx2, emptyProvider);
+    await ctx2.awaitAll();
+    assert.equal(second.status, 200);
+    assert.equal(kv.values.get(refundKey), "1", "缓存命中的退款不吃预算(预算封顶 1,若吃了这里会是 2 或不退)");
+    assert.equal(kv.values.get(quotaKey), "0", "缓存命中的空结果照常退款");
+  });
+});
+
+// MARK: - 断连退款走 abort 事件 + waitUntil(2026-11-23 线上隔离实验)
+
+// 真实运行时:客户端一断开,主流程后续代码不再执行,只有事先登记进
+// ctx.waitUntil 的任务能跑完。所以退款必须在请求开始时登记在 abort 事件上,
+// 不能依赖 catch 块(单测里主流程不会被杀,catch 路径可达 —— 两条路都要只退一次)。
+test("web 档:断连退款经 abort 事件登记,与 catch 路径合起来只退一次", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    await handleRequest(
+      webRequestWithSignal({ transcript: "call the dentist tomorrow" }, abortController.signal),
+      env,
+      ctx,
+      async () => {
+        abortController.abort();
+        throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      }
+    );
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    const refundKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-refund:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "扣 1 退 1,净 0(不能因两条路径各退一次而变负或吃两次预算)");
+    assert.equal(kv.values.get(refundKey), "1", "两条路径命中同一请求,退款预算只消耗 1 次");
+  });
+});
+
+test("web 档:模拟真实运行时(断开后主流程被杀)—— 仅靠 abort 登记也能退", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    // mock 上游:被 abort 后「永远不返回」—— 等价于主流程在那一步被运行时取消,
+    // catch 里的退款永远到不了。只给 300ms 让 abort 登记的 waitUntil 任务跑。
+    const neverResolves = () => new Promise(() => {});
+    const pending = handleRequest(
+      webRequestWithSignal({ transcript: "send the report by Friday" }, abortController.signal),
+      env,
+      ctx,
+      async () => {
+        abortController.abort();
+        return neverResolves();
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "0", "主流程未走完,仅凭 abort 登记的退款也应生效");
+    void pending; // 故意不 await:模拟被取消的主流程
+  });
+});
+
+test("web 档:模型结果已产生后才断开 → 不退款(用户其实已拿到结果)", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    const response = await handleRequest(
+      webRequestWithSignal({ transcript: "buy milk tomorrow" }, abortController.signal),
+      env,
+      ctx,
+      jsonResponseProvider("Buy milk")
+    );
+    assert.equal(response.status, 200);
+    // 响应就绪后客户端才断开(例如读完即关连接)
+    abortController.abort();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.equal(kv.values.get(quotaKey), "1", "结果已产生,断开不退");
+  });
+});
+
+test("web 档:登记时信号已 abort(鉴权与登记之间断开)→ 仍然退款", async () => {
+  const kv = new MemoryKV(new Map());
+  const ctx = makeFakeCtx();
+  const abortController = new AbortController();
+  abortController.abort(); // 进 handleRequest 之前访客就已经走了
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key", RATE_LIMIT_KV: kv };
+    // 主流程卡在上游不返回(等价于被运行时取消),故意不 await —— 同上一用例
+    void handleRequest(
+      webRequestWithSignal({ transcript: "call the dentist tomorrow" }, abortController.signal),
+      env,
+      ctx,
+      () => new Promise(() => {})
+    ).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await ctx.awaitAll();
+    const quotaKey = [...kv.values.keys()].find((k) => k.startsWith("web-ip-quota:2026-05-26:"));
+    assert.ok(quotaKey, "闸门已扣(扣减发生在 waitUntil 保活的 gatesPromise 里)");
+    assert.equal(kv.values.get(quotaKey), "0", "已 abort 的信号补登记后同样退回");
+  });
+});
+
+// MARK: - webClientIp IPv6 /64 折叠 + validateWebToken 常数时间(2026-11-24 审计)
+
+test("web 档:IPv6 同 /64 内换地址共享每日配额(SLAAC 隐私扩展不绕限)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("2001:db8::1")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    // 同一 /64(2001:db8:0:0::/64)内的另一个地址:同一桶 → 429
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("2001:db8::fffe")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "web_ip_daily");
+    // 不同 /64:另一个桶 → 放行
+    const r3 = await handleRequest(webRequest({ transcript: "c" }, h("2001:db8:1::1")), env, makeFakeCtx(), ok);
+    assert.equal(r3.status, 200);
+  });
+});
+
+test("web 档:IPv4-mapped 地址按其 IPv4 部分计(不折进同一个 /64 桶)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("::ffff:203.0.113.9")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    // 同一 IPv4 的直连形式命中同一个桶 → 429(mapped 不折叠时这两次会分属不同桶)
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("203.0.113.9")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+  });
+});
+
+test("web 档:畸形 IPv6 归 anonymous 共享桶(收紧而非放松)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("2001:db8:::1")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("2001:db8::2::3")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+  });
+});
+
+test("web 档:token 比较——长度不同 / 同长不同内容都 401,Bearer 前缀可用", async () => {
+  const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" };
+  const wrongLength = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "web-tokenx", "X-Web-Client-IP": "203.0.113.7" }),
+    env, {}, failingFetch
+  );
+  assert.equal(wrongLength.status, 401);
+  const sameLengthWrong = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "wab-token", "X-Web-Client-IP": "203.0.113.7" }),
+    env, {}, failingFetch
+  );
+  assert.equal(sameLengthWrong.status, 401);
+  const bearer = await handleRequest(
+    webRequest({ transcript: "a" }, { "X-Web-Token": "Bearer web-token", "X-Web-Client-IP": "203.0.113.7" }),
+    env, {}, failingFetch
+  );
+  assert.notEqual(bearer.status, 401, "Bearer 前缀形式仍应通过鉴权(后续失败不是 401)");
+});
+
+test("web 档:含点但非 mapped 的畸形 IPv6 归 anonymous 共享桶(9 组 / 字节越界)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    // 9 组(非法)与字节越界(256.0.0.1)两种畸形都落 anonymous 同一个桶:
+    // 第一发通过,第二发即 429 —— 证明没有各得一个真实桶
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("1:2:3:4:5:6:7:1.2.3.4")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("::ffff:256.0.0.1")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429);
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "web_ip_daily");
+    // 真实 mapped 地址不受影响:仍是自己的 IPv4 桶,不是 anonymous
+    const r3 = await handleRequest(webRequest({ transcript: "c" }, h("::ffff:203.0.113.9")), env, makeFakeCtx(), ok);
+    assert.equal(r3.status, 200);
+  });
+});
+
+test("web 档:内嵌 IPv4 放中间/出现两次归 anonymous(RFC 4291 只许末段一个点段)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("1.2.3.4::5.6.7.8")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200);
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("1:2:3.4.5.6::7")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429, "两种畸形都落 anonymous 同一桶");
+    // 正常 mapped 地址不受影响
+    const r3 = await handleRequest(webRequest({ transcript: "c" }, h("::ffff:203.0.113.10")), env, makeFakeCtx(), ok);
+    assert.equal(r3.status, 200);
+  });
+});
