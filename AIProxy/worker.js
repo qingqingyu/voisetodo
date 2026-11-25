@@ -1967,7 +1967,10 @@ function expandIpv6(raw) {
   let groups;
   if (halves.length === 1) {
     groups = parseSegments(halves[0]);
-    if (groups.length !== 8) return null;
+    // !groups 守卫(2026-11-26 审计轮 2):无 :: 且某段非法(如 1:2:3:4:5:6:7:zz)时
+    // parseSegments 返回 null,直接 .length 会 TypeError → 请求 500。必须先判空归入
+    // 畸形(null → anonymous 共享桶),与 :: 分支的 !left || !right 同口径。
+    if (!groups || groups.length !== 8) return null;
   } else {
     const left = parseSegments(halves[0]);
     const right = parseSegments(halves[1]);
