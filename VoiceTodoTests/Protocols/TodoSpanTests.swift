@@ -32,6 +32,12 @@ final class TodoSpanTests: XCTestCase {
     /// 解析 "yyyy-MM-dd" 为 UTC 00:00 Date。
     private func day(_ s: String) -> Date { date("\(s) 00:00") }
 
+    override func tearDown() {
+        // 组合契约测试用了 DayClock.setStartHour,清掉避免跨测试污染(对齐 TodoDueDateShifterTests)。
+        DayClock.appGroupDefaults.removeObject(forKey: DayClock.startHourKey)
+        super.tearDown()
+    }
+
     // MARK: - coveredDays
 
     func testCoveredDays_singleDay_returnsSingleElement() {
@@ -210,5 +216,34 @@ final class TodoSpanTests: XCTestCase {
             newDue: day("2026-08-15"),
             calendar: calendar
         ))
+    }
+
+    func testShiftedEnd_composedWithNextDay_preservesSpan() {
+        // 「移到明天」组合契约(2026-11 补,HomeView.moveTodoToTomorrow 接上 eventEndDate):
+        // nextDay 算新起点、shiftedEnd 跟着平移终点,覆盖天数不变。
+        // 场景对齐 docs/multi-day-span-events.md 人工回归第 3 条:
+        // 14→16 三天跨度的任务,选中 15 号长按「移到明天」→ 区间整体平移、跨度仍是 3 天。
+        DayClock.setStartHour(0)
+        let originalDue = date("2026-08-14 09:00")
+        let originalEnd = date("2026-08-16 18:00")  // 覆盖 14 / 15 / 16 三天
+        let newDue = TodoDueDateShifter.nextDay(
+            baseDate: day("2026-08-15"),
+            originalDue: originalDue,
+            hasDueTime: true,
+            calendar: calendar
+        )
+        XCTAssertEqual(newDue, date("2026-08-16 09:00"))
+        let newEnd = TodoSpan.shiftedEnd(
+            originalDue: originalDue,
+            originalEnd: originalEnd,
+            newDue: newDue,
+            calendar: calendar
+        )
+        XCTAssertEqual(newEnd, day("2026-08-18"))
+        XCTAssertEqual(
+            TodoSpan.coveredDays(dueDate: newDue, eventEndDate: newEnd, calendar: calendar).count,
+            3,
+            "平移后覆盖天数应保持 3 天"
+        )
     }
 }

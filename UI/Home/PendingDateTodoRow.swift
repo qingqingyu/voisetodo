@@ -12,6 +12,10 @@ import SwiftUI
 /// 选日期 popover 提交后,该 todo 因 `dueDate != nil` 自动离开 `pendingDateTodos`,
 /// 进入 Today 的对应 tier(整天/时段/按时间)。`onPickDate` 回调保留原 `timeBucket`,
 /// 所以「下午」chip 的任务选完日期后落到 Today 的「下午」tier,而不是被压到「整天」。
+///
+/// 长按 context menu(2026-11 补):「移到稍后」——清掉时段/提示进「稍后」分组。
+/// 该组任务按 `HomeCalendarState.canMoveToLater` 本来就判定可移,此前只是没有 UI 入口
+/// (上轮结果文档 §8 记录的范围外项)。nil 时不挂菜单,与 WarmTodoCard 的注入模式一致。
 struct PendingDateTodoRow: View {
     let todo: TodoItemData
     let index: Int
@@ -19,6 +23,9 @@ struct PendingDateTodoRow: View {
     let onOpen: () -> Void
     let onDelete: () -> Void
     let onPickDate: (Date) -> Void
+    /// 长按 context menu:移到稍后。nil 时不显示(preview / mock 场景);非 nil 时仍按
+    /// `HomeCalendarState.canMoveToLater` 过滤——已完成、重复、没识别的不显示。
+    var onMoveToLater: (() -> Void)? = nil
 
     @State private var showDatePicker = false
     @State private var pickedDate: Date = Date()
@@ -192,6 +199,22 @@ struct PendingDateTodoRow: View {
                 onDelete()
             } label: {
                 Label(String(localized: "home.delete"), systemImage: "trash")
+            }
+        }
+        // 长按 context menu:「移到稍后」(2026-11 补)。与 WarmTodoCard 同款——
+        // contextMenu 的预览平台单独收圆角:本行没有自己的卡底(由 groupedCardRow 统一画),
+        // 不给形状的话系统按整行矩形抠图,预览是直角块,和圆角卡片语言不搭。
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: WarmRadius.chip))
+        .contextMenu {
+            // 能不能移由 HomeCalendarState.canMoveToLater 统一判定:
+            // 已完成、重复、没识别的条目不显示;「待定日期」本身可移(移时清时段和提示)。
+            if let onMoveToLater, HomeCalendarState.canMoveToLater(todo) {
+                Button {
+                    HapticFeedback.light()
+                    onMoveToLater()
+                } label: {
+                    Label(String(localized: "card.menu.move_to_later"), systemImage: "tray")
+                }
             }
         }
         .accessibilityIdentifier("PendingDateRow_\(index)")

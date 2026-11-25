@@ -3032,6 +3032,11 @@ struct HomeView<Store: HomeTodoStore>: View {
     /// 非 nil 字段(title / detail / dueDate / hasDueTime / timeBucket / dueHint /
     /// recurrenceRule)显式重传 —— 为了只让 dueDate 变化,其他字段传回原值。
     /// 若 TodoDetailUpdate 的语义将来改成「nil = 清空」,这里需同步改用 nil 表示不更新。
+    ///
+    /// **跨天事件平移**(2026-11 补,docs/multi-day-span-events.md §7):
+    /// `eventEndDate` 用 `TodoSpan.shiftedEnd` 跟着新 dueDate 整体平移、保持跨度不变
+    /// —— 此前不传(默认 nil)会把跨天事件清成单天(上轮结果文档 §7 判定属实)。
+    /// 单天 / 重复 / 无日期任务 `shiftedEnd` 自然返回 nil,行为与改动前等价。
     private func moveTodoToTomorrow(_ todoId: UUID, baseDate: Date) {
         // 工作集窗口化后用 findTodo 查库,以命中窗口外的项
         guard let todo = store.findTodo(by: todoId) else {
@@ -3058,7 +3063,18 @@ struct HomeView<Store: HomeTodoStore>: View {
                     hasDueTime: todo.hasDueTime,
                     timeBucket: todo.timeBucket,
                     dueHint: "",
-                    recurrenceRule: todo.recurrenceRule
+                    recurrenceRule: todo.recurrenceRule,
+                    // 跨天事件保持跨度整体平移(2026-11 补,详见上方依赖契约)。
+                    // todo.dueDate 为 nil 时(无日期任务)本就没有跨天可保,传 nil;
+                    // 重复任务与跨天互斥(TodoSpan 不变式 2),shiftedEnd 也自然返回 nil。
+                    eventEndDate: todo.dueDate.flatMap { originalDue in
+                        TodoSpan.shiftedEnd(
+                            originalDue: originalDue,
+                            originalEnd: todo.eventEndDate,
+                            newDue: newDueDate,
+                            calendar: calendar
+                        )
+                    }
                 )
             )
             occurrenceRevision += 1

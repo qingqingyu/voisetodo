@@ -120,7 +120,10 @@ struct HomeSelectedDayListView: View {
                             onToggle: { onToggleTodo(todo.id) },
                             onOpen: { onOpenTodo(todo) },
                             onDelete: { onDeleteTodo(todo.id) },
-                            onPickDate: { date in onPickDate(todo.id, date) }
+                            onPickDate: { date in onPickDate(todo.id, date) },
+                            // 「移到稍后」入口(2026-11 补):该组任务 canMoveToLater 本就放行,
+                            // 这里把已有的 onMoveToLater 回调接进卡片长按菜单(此前只接了 WarmTodoCard)。
+                            onMoveToLater: { onMoveToLater(todo.id) }
                         )
                         // 「待定日期」恒有第二行(时段/dueHint chip + 「选日期」按钮),固定走 76pt 档。
                         .groupedCardRow(
