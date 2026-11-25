@@ -13,6 +13,7 @@ import { detectLocale, readForm, isSameOriginForm, requireWebEnv, fetchWebExtrac
 
 const TOOL_PATH = '/tools/recurring-reminder-checker';
 const CT = 'web-tool-recur-result';
+const PHRASE_MAX_CHARS = 500;
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -26,12 +27,17 @@ export async function onRequestPost(context) {
     return errorResult('Form error', 'Could not read the form submission. Please use the form on the tool page.', 403);
   }
 
-  const phrase = (form.get('phrase') || '').trim().slice(0, 500);
+  const phrase = (form.get('phrase') || '').trim();
   // tz 默认 auto:服务端按 request.cf.timezone 解析(与工具①同口径)。
   const { tz } = resolveFormTimezone(form.get('tz'), request);
 
   if (!phrase) {
     return errorResult('Nothing to check', 'Type or paste a phrase first — for example “remind me every Monday, Wednesday and Friday”.');
+  }
+  if (phrase.length > PHRASE_MAX_CHARS) {
+    // 显式报错,不静默截断(与 split.js 的超长口径一致;错误显式传播):
+    // textarea 有 maxlength=500,超长只会来自非表单渠道,如实拒绝并告知实际长度。
+    return errorResult('Too long', `Please keep it under ${PHRASE_MAX_CHARS} characters (you sent ${phrase.length}).`);
   }
   if (!tz) {
     return errorResult('Unknown timezone', 'Please pick a timezone from the list.');

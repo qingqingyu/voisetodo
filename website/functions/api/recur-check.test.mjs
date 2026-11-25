@@ -241,6 +241,19 @@ test('recur-check: 空输入 400', async () => {
   );
 });
 
+test('recur-check: 超长输入(>500)显式 400 不静默截断(与 split.js 超长口径一致)', async () => {
+  await withMockedUpstream(
+    { body: { phrase: 'x'.repeat(501), tz: 'UTC' }, upstreamImpl: () => { throw new Error('不应触达上游'); } },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 400);
+      const html = await response.text();
+      assert.ok(html.includes('Too long'));
+      assert.ok(html.includes('501'));
+    }
+  );
+});
+
 test('recur-check: 展开不足五次时按实际条数说(不硬说 five)', async () => {
   await withMockedUpstream(
     {

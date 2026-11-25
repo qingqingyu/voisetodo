@@ -8,13 +8,15 @@
 
 | 提交 | 内容 |
 |---|---|
-| `<commit-1>` | `feat(web-tools): 工具②改走 AI 解析 + 时区 Auto + 日期 basis 过滤` |
-| `<commit-2>` | `fix(proxy): web 档 IPv6 /64 折叠 + token 常数时间比较` |
-| `<commit-3>` | `content(guides): 发布两篇指南,更正检查器描述` |
-| `<commit-4>` | `docs(tools): 审计修复结果文档`(本文件初稿) |
-| `<commit-5>` | `fix(web-tools): 双 review 循环收敛修复(6 轮,16+7 项)`——同源表单闸、isValidModelRule、形状校验/归一化、自适应展开上限、weekly 窗口公式等(见 §4.5);§3 测试数以本提交后的口径为准 |
+| `b1b9b31` | `feat(web-tools): 工具②改走 AI 解析 + 时区 Auto + 日期 basis 过滤` |
+| `6fb5810` | `fix(proxy): web 档 IPv6 /64 折叠 + token 常数时间比较` |
+| `9703734` | `content(guides): 发布两篇指南,更正检查器描述` |
+| `<commit-4>` | `docs(tools): 审计修复结果文档`(本文件初稿;hash 自引用不可行,见月历修复轮结果文档 §6.6 同款处理 = 603041d) |
+| `43c24a0` | `fix(web-tools): 双 review 循环收敛修复(6 轮,16+7 项)`——同源表单闸、isValidModelRule、形状校验/归一化、自适应展开上限、weekly 窗口公式等(见 §4.5);§3 测试数以本提交后的口径为准 |
+| `cdc9fd1` | `fix(web-tools): 全局双 review 收敛修复(时区锚 P1 + 零任务诚实页)`——UTC+12+ 锚点自适应(§4.8)、上游 200 零任务诚实页 + lastmod(§4.7) |
+| `1719344` | `docs(tools-plan): 更正工具②口径`——tools-plan 文档旧理由(「官网不能比 App 更聪明」)被审计推翻后的更正注 + 指南发布状态对齐(见 §4.9) |
 
-(hash 自引用不可行,见月历修复轮结果文档 §6.6 同款处理:以分支 HEAD 逐个对应。)
+(commit-4 为本文件自身所在提交,hash 由历史查得;其余行按分支提交对应。)
 
 ## 2. 逐项落地情况(按审计编号)
 
@@ -69,8 +71,8 @@
 
 ## 3. 测试
 
-- 官网 Functions:`npm run test:functions` —— **执行 72 / 失败 0**(原 28 + 新增 44:
-  recur-check 全新 19 条、split 新增 7 条(basis/tz 4 + 上游形状 2 + 同源表单闸 1)、
+- 官网 Functions:`npm run test:functions` —— **执行 73 / 失败 0**(原 28 + 新增 45:
+  recur-check 全新 20 条(含 2026-11-25 收口轮补的超长输入显式 400)、split 新增 7 条(basis/tz 4 + 上游形状 2 + 同源表单闸 1)、
   modelRuleOccurrences/有效性闸门 18 条;含展开数不足按实际条数说 / 空列表明说 /
   合法 JSON 形状不对显式 502 / 非对象 todos 元素归一化 / 非字符串 title 不渲染
   [object Object] / App 会丢弃的畸形规则(weekly 空 weekdays、monthly 越界日号、
@@ -81,7 +83,7 @@
   /64 折叠 ×3、token 比较语义 ×1、含点非 mapped 畸形 IPv6 归 anonymous ×1、
   内嵌 IPv4 放中间/出现两次归 anonymous ×1)。
 - 官网构建:`npm run build`(astro build + og-images + checks)—— **21 页全部通过**。
-- 审计报告口径的「代理 455 用例、Functions 28 用例」在本分支分别增至 461 / 72。
+- 审计报告口径的「代理 455 用例、Functions 28 用例」在本分支分别增至 461 / 73。
 
 ## 4. 与审计不一致 / 自己做的判断
 
@@ -130,6 +132,14 @@
    Chatham +13:45 等)实测 daily 首个未来日均严格 = 明天。既有 `nextOccurrences`
    (基线代码,已无生产调用方,仅剩与 Swift v1 的对照测试在用)同款锚缺陷,
    不在本分支 diff 内,记为后续项未动。
+9. **tools-plan 文档旧口径更正(2026-11-25,提交 1719344)**:落地计划文档
+   `website/docs/tools-plan-2026-11.md` 的阶段 2 表格与「已知口径注意」段仍保留
+   被审计推翻的旧理由(「工具页如实展示 —— 官网不能比 App 更聪明,否则是
+   谎报产品行为」)。实际 App 的重复规则来自 AI(prompt 每次都输出
+   `recurrence_rule`,本地 `RecurrenceRuleResolver` 只在模型完全没返回该字段时
+   兜底,`Protocols/Models.swift:392` 起 if/else 链),旧口径让工具往差了说。
+   已加带日期的更正注(原段以更正注替换,原文全文引用在注内保留,git 历史
+   亦可溯),阶段 3 指南发布状态对齐实际(#2/#4 已发布)。纯文档,零代码。
 
 ## 5. 部署提醒(与代码分离的运维项)
 

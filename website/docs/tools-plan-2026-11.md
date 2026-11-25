@@ -53,18 +53,26 @@
 | 工具 | 路径 | 实现要点 |
 | --- | --- | --- |
 | ① 一句话拆多条 | `/tools/add-multiple-reminders-at-once` | 调代理 web 档;结果页展示拆分列表(日期/时间/重复)+ 可整段复制的只读 textarea;不给提醒/重复落地/小组件/Siri |
-| ② 重复说法检查器 | `/tools/recurring-reminder-checker` | `functions/lib/recurrence.mjs` = App 端 `RecurrenceRuleResolver.swift` 的 JS 移植(v1 同口径,含已知差异注释);零模型成本;展示规则人话 + 接下来 5 次日期 |
+| ② 重复说法检查器 | `/tools/recurring-reminder-checker` | **2026-11-25 更新(审计修复轮):** 走代理 web 档 AI 提取,与工具①同一条上游、共用每天 3 次额度;只渲染响应的重复规则与「接下来五次」。原方案(`recurrence.mjs` 本地解析器移植,零模型成本)已被审计推翻——本地解析器代码保留在 lib 作 Swift 对照,不再对外展示 |
 
-已知口径注意:「每周一三五」这类多日连写在本地解析器只命中周一(Swift
-v1 同样,token 是完整「周三」),工具页如实展示,文案注明更活的说法走 App
-内 AI 解析 —— 官网不能比 App 更聪明,否则是谎报产品行为。
+> **2026-11-25 更正(审计):** 原「已知口径注意」段已被推翻,原文摘引存档如下
+> (git 历史亦可溯):『已知口径注意:「每周一三五」这类多日连写在本地解析器只命中
+> 周一(Swift v1 同样,token 是完整「周三」),工具页如实展示,文案注明更活的
+> 说法走 App 内 AI 解析 —— 官网不能比 App 更聪明,否则是谎报产品行为。』
+> 推翻依据:App 的重复规则实际来自 AI(prompt 每次都输出 `recurrence_rule`,
+> 本地 `RecurrenceRuleResolver` 只在模型完全没返回该字段时兜底,
+> `Protocols/Models.swift:392` 起 if/else 链)。原口径让工具替 App 说它做不到的事
+> (「每周一三五」只认出 Every Monday),恰恰是往差了说、才是谎报。
+> 现实现:工具②与工具①同走 AI 提取,展示口径 = App 实际行为;「每周一三五」
+> 正确显示周一、三、五。
 
 ### 阶段 3:文章分组 ✅(部分)
 
 - 指南 #1 `add-several-reminders-at-once-on-iphone`:已审改,翻 `draft: false`
   发布,正文与 Related 指向工具 ①。
-- 指南 #2 `how-to-set-recurring-reminders-by-voice-on-iphone`:新写草稿
-  (`draft: true`),正文与 Related 指向工具 ②。**待产品负责人审改后翻 false。**
+- 指南 #2 `how-to-set-recurring-reminders-by-voice-on-iphone`:已按 2026-11-24 审计
+  建议翻 `draft: false` 发布(正文同步更正为与工具② AI 口径一致),正文与 Related
+  指向工具 ②。#4 对比篇 `apple-reminders-vs-voice-to-do-apps` 同日发布(指向工具 ①)。
 - #3/#5/#6 按调研写作顺序另行处理,不在本次范围。
 
 ### 阶段 4:看数据(上线后 4-6 周)
