@@ -12,7 +12,8 @@ export const siteConfig = {
   appStoreId: '6806787856',
 
   // {{PROVIDER_TOKEN}} —— App Store Connect 来源参数 pt(App 分析按页归因下载)。
-  providerToken: 'PROVIDER_TOKEN',
+  // 2026-11-25 用户从 ASC 营销活动链接生成器取值;pt 出现在公开 URL,非机密。
+  providerToken: '129320292',
 
   // {{SUPPORT_EMAIL}} —— 技术支持邮箱(support / privacy 两页使用)。
   supportEmail: '334678754@qq.com',
