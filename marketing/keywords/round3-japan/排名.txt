@@ -1,0 +1,39 @@
+## todo リスト アプリ
+1 | p1 | play.google.com | /store/apps/details | Google ToDo リスト - Google Play のアプリ
+2 | p1 | apps.apple.com | /app/go... | Google ToDo リストアプリ - App Store
+3 | p1 | pfu.ricoh.com | /work | 【2026年最新版】タスク管理アプリ・ToDoリストアプリおすすめ9 ...
+4 | p1 | apps.apple.com | /app/tod... | ToDoリスト リマインダー通知付きのメモ帳&やることリスト
+5 | p1 | microsoft.com | /ja-jp | To Do リストとタスク管理のアプリ | Microsoft To Do
+6 | p1 | todoist.com | /... | Todoist | ToDo リストで仕事と生活を整えよう
+7 | p1 | my-best.com | /... | タスク管理アプリのおすすめ人気ランキング【2026年10月】
+8 | p1 | todotto.ai | / | 【公式】ToDotto[とどっと]｜スケジュールも管理できる無料 ...
+9 | p1 | 2sync.com | /.../ソフトウェア | 【2026年最新】ToDoリストアプリおすすめ10選
+## ADHD アプリ
+1 | p1 | apps.apple.com | /app/tii... | Tiimo - やることリスト、スケジュール、ADHD管理 - App Store
+2 | p1 | hamacoco.jp | /endeavor-ride | 【小児科医が解説】ADHD治療用アプリ「エンデバーライド」とは ...
+3 | p1 | edraw.wondershare.jp | /adh... | 大人向けのADHD対策アプリ7選[タイプ別] - Edraw
+4 | p1 | play.google.com | /store/apps/details | ルーチンタイマー ルーチン 時間管理 ADHD
+5 | p1 | yomiuri.co.jp | /medical | ADHDをアプリで治療、子供向けにきょう国内初の発売 ...
+6 | p1 | tiimoapp.com | /best-a... | 2025年版 ADHDアプリ | 時間管理・集中力・生産性を向上
+7 | p1 | add.org | /ADDA Library/Focus & Organization | Best ADHD Apps and Tools for Adults
+## 音声メモアプリ
+1 | p1 | play.google.com | /store/apps/details | 音声入力付きメモ帳 - Google Play のアプリ
+2 | p1 | apps.apple.com | /app/音... | 音声メモアプリアプリ - App Store - Apple
+3 | p1 | apps.apple.com | /app/ボ... | ボイスメモアプリ - App Store - Apple
+4 | p1 | app-liv.jp | /minutes | 【2026年】文字起こしアプリおすすめ8選 無料でボイス ...
+5 | p1 | line-works.com | /column | 【無料あり】ボイスメモアプリおすすめ10選！文字起こし・共有 ...
+6 | p1 | aspicjapan.org | /article | 音声入力アプリおすすめ14選！タイプ分けして紹介 | アスピック
+## リマインダー アプリ
+1 | p1 | apps.apple.com | /app/リ... | リマインダーアプリ - App Store - Apple
+2 | p1 | play.google.com | /store/apps/details | Todoery: To Do List & Planner - Google Play のアプリ
+3 | p1 | app-liv.jp | /scheduler | 【2026年】リマインダーアプリおすすめ8選
+4 | p1 | apps.apple.com | /app/tod... | ToDoリスト リマインダー通知付きのメモ帳&やることリスト
+5 | p1 | any.do | /reminders | 無料リマインダーアプリ - 繰り返し機能で毎日、毎週
+6 | p1 | galaxystore.samsung.com | /c... | リマインダー | Galaxy Store - Samsung
+7 | p1 | join.biglobe.ne.jp | /ios_0091 | 【iPhone】初心者でも大丈夫。標準アプリ「リマインダー」の基本 ...
+## 音声入力 アプリ
+1 | p1 | play.google.com | /store/apps/details | 音声 入力 - Google Play のアプリ
+2 | p1 | support.google.com | /gboard/answer/2781851 | 音声入力 - Android スマートフォン
+3 | p1 | aspicjapan.org | /article | 音声入力アプリおすすめ14選！タイプ分けして紹介 | アスピック
+4 | p1 | dx-ai-trainingnavi.com | /ons... | 【2026】音声認識とは？おすすめの無料アプリ10選・Googleで ...
+5 | p1 | apps.microsoft.com | /detail | 音声入力アプリ - Windows に無料でダウンロード

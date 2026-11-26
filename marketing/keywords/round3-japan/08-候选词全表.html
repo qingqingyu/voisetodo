@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money Keywords 候选词全表 — money-keywords-ja-2026-11-26</title>
+<style>
+  :root { --bg:#f8fafc; --card:#ffffff; --line:#e2e8f0; --text:#0f172a; --muted:#64748b; --acc:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:20px 24px; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  h1 { margin:0 0 6px; font-size:20px; }
+  .sub { color:var(--muted); margin-bottom:14px; font-size:13px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; background:var(--card); padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+  .bar input { flex:1; min-width:220px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; }
+  .pill { padding:5px 10px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; cursor:pointer; font-size:12px; color:#334155; }
+  .pill.active { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .count { margin-left:auto; font-size:12px; color:var(--muted); }
+  .wrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { position:sticky; top:0; background:#f1f5f9; cursor:pointer; user-select:none; white-space:nowrap; font-weight:600; }
+  th:hover { background:#e2e8f0; }
+  tr:hover td { background:#f8fafc; }
+  .tag-good { color:#15803d; font-weight:600; }
+  .tag-mid { color:#b45309; font-weight:600; }
+  .tag-warn { color:#b91c1c; font-weight:600; }
+</style>
+</head>
+<body>
+<h1>Money Keywords 候选词全表（money-keywords-ja-2026-11-26）</h1>
+<div class="sub">点击任意表头可按数字或字母升降序排列；输入英文词、中文释义或状态可实时筛选。月搜索量为估算搜索次数，出价单位为美元。</div>
+<div class="bar">
+  <input id="q" type="search" placeholder="输入关键词、对标站、新词、极新待验等筛选…">
+  <button class="pill active" data-f="">全部</button>
+  <button class="pill" data-f="值得做">值得做</button>
+  <button class="pill" data-f="可以备选">可以备选</button>
+  <button class="pill" data-f="极新">极新待验</button>
+  <button class="pill" data-f="新词">新词</button>
+  <button class="pill" data-f="合规风险">有合规风险</button>
+  <span class="count" id="cnt"></span>
+</div>
+<div class="wrap">
+  <table id="tbl">
+    <thead><tr id="thead"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+<script>
+const HEADERS = ["词", "流量", "竞争", "付钱", "差别", "能做", "总分", "分档", "挑刺与备注"];
+const ROWS = [["todo リスト アプリ", "2(5400/月)", "1(工具页5-6:商店×2/微软/Todoist/todotto;榜单被评测站占)", "1(大厂免费层为主)", "1(语音是差异点,竞品榜单里没人主打)", "1", "6", "可以备选(日本品类页主力)", "Google ToDo/Microsoft 免费+预装是最大对手"], ["リマインダー アプリ", "2(3600)", "1(工具页5:any.do/Todoery/商店×2/三星)", "1(any.do 订阅,免费为主)", "1", "1", "6", "可以备选", "同上;any.do 日语页先例证明外产可入"], ["ADHD アプリ", "2(1000,6月尖峰2900)", "1(工具页2-3:Tiimo商店/play;tiimoapp 内容页是文章;医疗新闻占位)", "1-2(Tiimo 订阅、治疗类 app)", "1(KUU 1132评分=人群验证;语音少步骤正中 ADHD)", "1", "6-7", "可以备选(**行动价值最高**:SERP 最软+旧文占位+人群实证)", "注意医疗边界:文案做\"任务管理辅助\"不做治疗宣称(读卖/医疗结果在前排=谷歌对该词有医疗语境)"], ["音声 メモ アプリ", "1(480)", "1(聚合站榜单+商店)", "2(转写系订阅普遍:Notta 等)", "1(待办转化弱于备忘)", "1", "6", "可以备选(伞形文章的日语版)", "转写需求主导(議事録 5400/月 是隔壁大词但 off-product)"], ["ADHD タスク 管理", "1(390)", "1(SERP 未单看,并入 ADHD 页)", "1", "1", "1", "5", "并组", "—"], ["音声入力 アプリ", "1(880,CPC$5)", "1", "1", "1", "1", "5", "并组(语音页语义支撑)", "—"], ["todo アプリ", "", "", "", "", "", "", "", ""], ["音声入力 メモ帳", "", "", "", "", "", "", "", ""], ["音声入力 メモ アプリ", "", "", "", "", "", "", "", ""], ["カレンダー/音声リマインダー/スケジュール 音声入力/todo 音声入力", "", "", "", "", "", "", "", ""], ["todo リスト 音声入力/タスク管理 音声入力/音声タスク管理", "", "", "", "", "", "", "", ""], ["議事録 アプリ", "", "", "", "", "", "", "", ""], ["花费", "", "", "", "", "", "", "", ""]];
+let sortCol = -1, sortAsc = false, quickFilter = "";
+
+function numVal(s) {
+  if (s === null || s === undefined) return -Infinity;
+  const str = String(s).replace(/,/g, "").trim();
+  if (!str || str.includes("未知") || str.includes("没查") || str.includes("没收录")) return -Infinity;
+  const mRange = str.match(/(\d+(?:\.\d+)?)\s*(?:到|-|–|~)\s*(\d+(?:\.\d+)?)/);
+  if (mRange) return (parseFloat(mRange[1]) + parseFloat(mRange[2])) / 2;
+  const m = str.match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : -Infinity;
+}
+
+function render() {
+  const kw = document.getElementById("q").value.trim().toLowerCase();
+  let list = ROWS.filter(r => {
+    const joined = r.join(" ").toLowerCase();
+    if (kw && !joined.includes(kw)) return false;
+    if (quickFilter && !joined.includes(quickFilter.toLowerCase())) return false;
+    return true;
+  });
+  if (sortCol >= 0) {
+    const numericHits = list.filter(r => numVal(r[sortCol]) !== -Infinity).length;
+    const useNum = numericHits >= Math.max(1, list.length * 0.4);
+    list.sort((a, b) => {
+      if (useNum) {
+        const na = numVal(a[sortCol]), nb = numVal(b[sortCol]);
+        if (na !== nb) return sortAsc ? (na - nb) : (nb - na);
+      }
+      const sa = String(a[sortCol] || ""), sb = String(b[sortCol] || "");
+      return sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    });
+  }
+  const thead = document.getElementById("thead");
+  thead.innerHTML = "";
+  HEADERS.forEach((h, i) => {
+    const th = document.createElement("th");
+    const arrow = sortCol === i ? (sortAsc ? " ▲" : " ▼") : "";
+    th.textContent = h + arrow;
+    th.onclick = () => {
+      if (sortCol === i) sortAsc = !sortAsc;
+      else { sortCol = i; sortAsc = false; }
+      render();
+    };
+    thead.appendChild(th);
+  });
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  list.forEach(r => {
+    const tr = document.createElement("tr");
+    r.forEach(cell => {
+      const td = document.createElement("td");
+      const txt = String(cell || "");
+      td.textContent = txt;
+      if (txt.includes("值得做")) td.className = "tag-good";
+      else if (txt.includes("可以备选") || txt.includes("极新")) td.className = "tag-mid";
+      else if (txt.includes("合规风险") || txt.includes("做烂") || txt.includes("扎堆")) td.className = "tag-warn";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  document.getElementById("cnt").textContent = `显示 ${list.length} / 共 ${ROWS.length} 个候选词`;
+}
+
+document.getElementById("q").addEventListener("input", render);
+document.querySelectorAll(".pill").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".pill").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    quickFilter = btn.getAttribute("data-f") || "";
+    render();
+  });
+});
+render();
+</script>
+</body>
+</html>
