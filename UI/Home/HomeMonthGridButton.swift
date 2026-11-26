@@ -118,34 +118,58 @@ struct HomeMonthGridButton: View {
     // MARK: - Subviews
 
     /// 日数字行。`overflow` = 未显示的未完成数(nil / 0 = 不显示「+N」)。
+    ///
+    /// 三段式布局(2026-11-26,docs/month-grid-plus-n-gap-task.md):左占位 / 日数字 / 右段
+    /// —— 左右两段等宽(`maxWidth: .infinity` 平分剩余宽度),日数字因此保持格子水平居中、
+    /// 与上方星期标题对齐,不因有无「+N」而左右移动。「+N」只住在右段,靠格子右缘
+    /// (与下方事件条右缘对齐),与胶囊之间保底 `gridOverflowMinGap`;位数多到右段放不下时
+    /// **缩字号**(minimumScaleFactor 0.6)保证间隙、不截断 —— 「+N」的数字没有上限
+    /// (当天所有未显示的未完成数,今天格还会注入「稍后」「待定日期」任务),三位数必须能显示。
+    /// 旧实现(居中 Text + trailing overlay)里「+N」与胶囊只隔 ~0.3pt,扫一眼像「24+14」。
+    /// 行高用 fixedSize(vertical) 锁在内容高度 —— 见函数末尾注释(2026-11-26)。
+    /// RTL:HStack 自动镜像,「+N」翻到左段,行为对称。
     private func dayNumberView(overflow: Int?) -> some View {
-        // 日数字居中在格子顶部:与上方 weekday 居中对齐(Apple Calendar 式布局)。
-        // 下方事件条仍左对齐填满宽度——日数字居中、事件条左对齐是日历视图的标准模式。
-        // 原实现用 HStack { Text; Spacer } 把数字推到左侧,这里改为 frame 居中。
-        Text(verbatim: "\(dayState.dayNumber)")
-            .font(WarmFont.mono(11))
-            .foregroundColor(dayNumberColor)
+        HStack(spacing: 0) {
+            // 左半边占位:与右半边等宽,把日数字顶回格子正中。
+            Color.clear
+                .frame(maxWidth: .infinity)
+
+            // 日数字(2026-11-26 起从「居中 Text + trailing overlay」改驻三段式中段)。
             // 选中/今日加胶囊背景:实色 primary + 白字(v2 配色稿:今日与选中合并)。
             // 不加背景时白字会消失在页面背景上(纯留白方案格子无独立白底)。
-            .padding(.horizontal, isHighlighted ? 4 : 0)
-            .background(
-                Capsule().fill(isHighlighted ? WarmTheme.primary : Color.clear)
-            )
-            .fixedSize()
-            .frame(maxWidth: .infinity, alignment: .center)
-            // 「+N」靠右叠在日数字行上(2026-11):用 overlay 而不是拼进 HStack,
-            // 日数字的居中位置不受「+N」宽度影响,这一行的高度也不变(分配器把它算在 gridCellChrome 里)。
-            // .trailing 而非 .right:RTL 下自动翻到另一侧。不加尾部内边距:
-            // 右缘与下方事件条右缘(同为格子 padding 2pt)对齐,也让多位数少蹭到居中的日数字。
-            .overlay(alignment: .trailing) {
+            Text(verbatim: "\(dayState.dayNumber)")
+                .font(WarmFont.mono(11))
+                .foregroundColor(dayNumberColor)
+                .padding(.horizontal, isHighlighted ? 4 : 0)
+                .background(
+                    Capsule().fill(isHighlighted ? WarmTheme.primary : Color.clear)
+                )
+                .fixedSize()
+
+            // 右半段:「+N」只能用这段的宽度(与左半段等宽),与胶囊保底最小间隙;
+            // 放不下时缩字号,不截断。.trailing 对齐右缘 —— 与下方事件条右缘(格子
+            // padding 2pt)对齐;RTL 下 HStack 镜像后自然翻到左侧,行为对称。
+            // 注意:「+N」不能加 .fixedSize() —— 否则 minimumScaleFactor 不生效、
+            // 会溢出压到胶囊。
+            ZStack(alignment: .trailing) {
+                Color.clear
                 if let overflow, overflow > 0 {
                     Text(verbatim: "+\(overflow)")
                         .font(WarmFont.mono(8))
                         .foregroundColor(WarmTheme.textSecondary)
                         .lineLimit(1)
-                        .fixedSize()
+                        .minimumScaleFactor(0.6)
+                        .padding(.leading, HomeLayoutMetrics.gridOverflowMinGap)
                 }
             }
+            .frame(maxWidth: .infinity)
+        }
+        // 高度锁(2026-11-26):两段 Color.clear 只约束了宽度,高度仍是贪婪的 ——
+        // 会把这一行撑到格内剩余的全部高度,再被 HStack 默认 .center 竖直居中,
+        // 空格子(无事件条)里日数字会漂到格子中部、与同行其他格子错位(实测漂 ~103pt)。
+        // fixedSize(vertical: true) 把行高锁回内容高度(≈ mono(11) 行高,gridCellChrome
+        // 语义不变);horizontal: false 保持宽度照常接受建议值,三段平分不受影响。
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// 事件条的交互包装。onOpenTodo == nil 时返回裸 eventBar——
