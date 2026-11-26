@@ -6,7 +6,7 @@ VoiceTodo 的遥测系统采集**匿名诊断数据**用于线上质量监控和
 
 1. **生产可观测性**：用户设备上的崩溃/错误/失败率可见，弥补本地 OSLog 看不到的盲区
 2. **PII 红线**：录音内容、Todo 标题、日历事件等一律不上报原文
-3. **用户控制**：仅 WiFi + 充电批量上报（电量友好），可随时关闭
+3. **用户控制**：仅充电 + 联网时批量上报（电量友好，不限定 WiFi），可随时关闭
 4. **零第三方依赖**：自建接收端，复用 AIProxy Cloudflare Worker 基础设施
 
 ## 架构
@@ -34,10 +34,10 @@ BGProcessingTask                          ↓
 | 事件名 | 触发点 | 脱敏参数 |
 |--------|--------|----------|
 | `app_launch` | App 启动 | `coldLaunch: Bool`, `hasCompletedOnboarding: Bool` |
-| `recording_started` | 录音开始 | `source: button / action_button` |
+| `recording_started` | 录音开始 | `source: button / action_button`(枚举里的 `manual_input` **已定义、从未发送**——键盘路径不记本事件,键盘的可观测信号是 `extract_outcome(path='keyboard')`;2026-11-26 标注,防规格再照抄枚举) |
 | `recording_outcome` | 录音结束 | `outcome: success / interrupted / silence_timeout / watchdog_expired`, `durationMS: Int`, `transcript: textSummary`, `extractID`（本次录音会话的提取关联 ID，与 `extract_outcome` / 代理 `X-Extract-ID` 同源；未能取得时不带） |
 | `extract_outcome` | AI 抽取结束 | `outcome: success / failed / offline_fallback / cancelled`, `todosCount`, `durationMS`, `attempts`, `path`（`live_voice` / `pending_recovery` / `siri` / `keyboard` / `reextract` / `main`）, `speechToRequestMS` / `speechToFirstTodoMS` / `speechToDoneMS`（「说完话→出清单」分段耗时，毫秒；**仅 live_voice 路径携带**，缺失即不带——补解析/Siri/键盘的等待时长不进该统计） |
-| `todo_saved` | Todo 保存 | `source: confirm / siri_add`, `count` |
+| `todo_saved` | Todo 保存 | `source: confirm / siri_add`, `count`(枚举里的 `widget_toggle` **已定义、从未发送**——Widget 无添加入口;即便将来发送,「切换完成状态」也不算捕捉,不进 R1/R4 口径。另:App 内离线原文保存不发本事件,覆盖面见 docs/behavior-funnel-and-p0-activation.md §4.5;2026-11-26 标注) |
 | `first_voice_trial` | 首次语音试用引导进度 | `stage: armed / hint_shown / dismissed / completed` |
 | `paywall_shown` | paywall 曝光 | `source: first_wow / recording_count / quota_exhausted / manual` |
 | `onboarding_step` | onboarding 进入某步(含首步) | `step: welcome / demo / voicePermissions / speechLanguage / actionButton / completion`(actionButton 仅支持的机型出现;用户点「后退」再前进会重复记同一 step,分析按 step 去重) |
@@ -309,7 +309,7 @@ ORDER BY received_at DESC LIMIT 50;
 
 - **漏斗分析（C 类）**：上线后观察 1-2 周再决定
 - **看板**：D1 直接 SQL 查询足够，后续可接 Grafana Cloud 免费层
-- **实时上报**：不做（仅 WiFi + 充电是用户决策）
+- **实时上报**：不做（仅充电 + 联网批量上报是用户决策）
 - **A/B 测试**：未来需求
 
 ## 相关文件
