@@ -258,6 +258,13 @@ enum HomeLayoutMetrics {
     static let gridBarSpacing: CGFloat = 2
     /// 每格固定开销(日数字行 + padding ≈ 20pt)。
     static let gridCellChrome: CGFloat = 20
+    /// 「+N」与日数字(胶囊)之间的最小水平间隙(pt,2026-11-26)。
+    /// 格子内宽 ~49pt、两位数胶囊 ~21pt 居中,右半段只剩 ~14pt —— 「+N」再贴上来
+    /// 会连读成「24+14」(实测仅隔 ~0.3pt)。此值只约束最小间隙;「+N」位数放不下时
+    /// 由 minimumScaleFactor 缩字号(最多 0.6)保证间隙,不截断 —— 「+N」的数字
+    /// 没有上限(当天所有未显示的未完成数,今天格还会注入「稍后」「待定日期」任务),
+    /// 三位数必须能显示。见 docs/month-grid-plus-n-gap-task.md。
+    static let gridOverflowMinGap: CGFloat = 2
     /// 网格行间距(pt)。
     /// 纯留白方案:去卡片描边后唯一分隔手段是间距。8pt(= WarmSpacing.xs)对齐 Notion Calendar
     /// 周间留白感;再大会吃掉预算导致 barsShown 减少,再小则周与周贴在一起失去层级。

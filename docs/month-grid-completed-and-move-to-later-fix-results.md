@@ -60,8 +60,10 @@ Swift 实测(`testLeftoverSlackGoesToOpenWeeksFirst`,修后)**逐位一致**,无
 
 按任务书 §2「重叠才交回定夺」:未重叠,布局未动。
 
-观察:三位数(如 +100,约 20pt 宽)在这个格子宽度(约 52pt)下会与居中的胶囊相碰;当前
-+N 上限受 `gridMaxBarsPerCellHardLimit`(15)约束到不了三位数,记录备查。
+观察:三位数(如 +100,约 20pt 宽)在这个格子宽度(约 52pt)下会与居中的胶囊相碰。
+(2026-11-26 更正:原判断「+N 上限受 `gridMaxBarsPerCellHardLimit`(15)约束到不了
+三位数」不成立 —— 15 只限制格子里画几条,不限制 +N 的数字;三位数场景由
+`docs/month-grid-plus-n-gap-task.md` 处理。)
 
 ## 5. 截图驱动(临时,未提交)
 
