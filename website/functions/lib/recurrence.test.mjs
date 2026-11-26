@@ -168,7 +168,10 @@ test('describeRule 展示排序周一始:跨 Apple 编号边界(周日=1)不再�
 });
 
 // —— 2026-11-24 增量:modelRuleOccurrences(模型规则展开,工具② AI 口径)——
-import { modelRuleOccurrences, describeModelRecurrence } from './recurrence.mjs';
+// 2026-11-26 审计轮 2 追加:顶层 recurrence_end 的解析/求解/文案。
+// 2026-11-26 双 review 修正追加:normalizeIsoDate(日历真实性与 Swift ICU 滚动)、
+// unit 非字符串丢弃、超大 count 防炸。
+import { modelRuleOccurrences, describeModelRecurrence, parseModelRecurrenceEnd, resolveModelRecurrenceEnd, describeModelRecurrenceEnd, modelRuleEndInfo, isIsoDate, normalizeIsoDate } from './recurrence.mjs';
 
 test('model:weekly 多天 interval 1,第一个匹配日严格晚于 today', () => {
   // TODAY=2026-11-18 周三;weekdays [2,4,6]=周一三五 → 下一个周五 11-20
@@ -364,4 +367,175 @@ test('model:间隔节奏相对第一个未来日,startK=0 与 startK=1 同构', 
     modelRuleOccurrences(w2, TODAY, 'UTC', 3).map((d) => d.iso),
     'weekly interval 2:Auckland 与 UTC 同序'
   );
+});
+
+// ---------- 顶层 recurrence_end:解析 / 求解 / 文案(2026-11-26 审计轮 2) ----------
+// 口径 = Swift RecurrenceEnd(Protocols/Domain/RecurrenceEnd.swift)与
+// RecurrenceEndResolver 的移植;TODAY 固定 2026-11-18(周三)。
+
+test('parseModelRecurrenceEnd: 五种 kind 合法形状 + unit/scope 缺省', () => {
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'after_count', count: 30 }), { kind: 'after_count', count: 30, unit: 'day' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'after_count', count: 2, unit: 'week' }), { kind: 'after_count', count: 2, unit: 'week' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'weekday', weekday: 'Friday' }), { kind: 'weekday', weekday: 6, scope: 'this' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'weekday', weekday: 'mon', scope: 'next' }), { kind: 'weekday', weekday: 2, scope: 'next' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'month_end', scope: 'next' }), { kind: 'month_end', scope: 'next' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'day_of_month', day: 15 }), { kind: 'day_of_month', day: 15, scope: 'this' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'date', value: '2026-12-01' }), { kind: 'date', value: '2026-12-01' });
+});
+
+test('parseModelRecurrenceEnd: Swift decode 会 throw 的形状一律 null;非法 unit/scope 回落默认', () => {
+  assert.equal(parseModelRecurrenceEnd(null), null);
+  assert.equal(parseModelRecurrenceEnd('x'), null);
+  assert.equal(parseModelRecurrenceEnd([1]), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'until_heat_death' }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'after_count', count: 0 }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'after_count', count: '3' }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'after_count', count: 2.5 }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'weekday', weekday: 'funday' }), null);
+  // 数字不是字符串:Swift decode(String) throw → 整个 recurrence_end 丢弃
+  assert.equal(parseModelRecurrenceEnd({ kind: 'weekday', weekday: 6 }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'day_of_month', day: 32 }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'date', value: '12/01/2026' }), null);
+  // Swift 的 Unit(rawValue:) ?? .day / Scope(rawValue:) ?? .this:非法值回落默认,不判无效
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'after_count', count: 3, unit: 'fortnight' }), { kind: 'after_count', count: 3, unit: 'day' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'month_end', scope: 'sometime' }), { kind: 'month_end', scope: 'this' });
+});
+
+test('resolveModelRecurrenceEnd: after_count 三种 unit(含月末 clamp)', () => {
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 30, unit: 'day' }, { startIso: TODAY, todayIso: TODAY }), '2026-12-17');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 2, unit: 'week' }, { startIso: TODAY, todayIso: TODAY }), '2026-12-01');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 1, unit: 'month' }, { startIso: TODAY, todayIso: TODAY }), '2026-12-18');
+  // 1 月 31 日 +1 月 = 2 月 28 日(2026 非闰):Swift calendar.date(byAdding:.month) 的 clamp 语义
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 1, unit: 'month' }, { startIso: '2026-01-31', todayIso: TODAY }), '2026-02-28');
+});
+
+test('resolveModelRecurrenceEnd: weekday 含今天 / next / month_end / day_of_month clamp / date', () => {
+  // TODAY 2026-11-18 是周三(Apple 4):Friday(this)=+2;Wednesday(this)=今天(含);
+  // Monday(this)=+5 → 11-23;next Monday 再 +7 → 11-30(Swift daysUntil + 7 同式)
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'weekday', weekday: 6, scope: 'this' }, { startIso: TODAY, todayIso: TODAY }), '2026-11-20');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'weekday', weekday: 4, scope: 'this' }, { startIso: TODAY, todayIso: TODAY }), '2026-11-18');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'weekday', weekday: 2, scope: 'this' }, { startIso: TODAY, todayIso: TODAY }), '2026-11-23');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'weekday', weekday: 2, scope: 'next' }, { startIso: TODAY, todayIso: TODAY }), '2026-11-30');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'month_end', scope: 'this' }, { startIso: TODAY, todayIso: TODAY }), '2026-11-30');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'month_end', scope: 'next' }, { startIso: TODAY, todayIso: TODAY }), '2026-12-31');
+  // 本月 15 号已早于起始(18 号)→ 无效边界 null;next → 12-15
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'day_of_month', day: 15, scope: 'this' }, { startIso: TODAY, todayIso: TODAY }), null);
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'day_of_month', day: 15, scope: 'next' }, { startIso: TODAY, todayIso: TODAY }), '2026-12-15');
+  // 30 号在 2 月 clamp 到 28(2027 非闰)
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'day_of_month', day: 30, scope: 'next' }, { startIso: '2027-01-31', todayIso: '2027-01-31' }), '2027-02-28');
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'date', value: '2026-12-01' }, { startIso: TODAY, todayIso: TODAY }), '2026-12-01');
+});
+
+test('resolveModelRecurrenceEnd: 截止早于起始 → null(空规则守卫,镜像 Swift)', () => {
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'date', value: '2026-11-17' }, { startIso: TODAY, todayIso: TODAY }), null);
+});
+
+test('describeModelRecurrenceEnd: 五种 kind 的英文文案', () => {
+  assert.equal(describeModelRecurrenceEnd({ kind: 'after_count', count: 30, unit: 'day' }), 'for 30 days');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'after_count', count: 1, unit: 'month' }), 'for 1 month');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'weekday', weekday: 6, scope: 'this' }), 'until Friday');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'weekday', weekday: 2, scope: 'next' }), 'until next Monday');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'month_end', scope: 'this' }), 'until the end of the month');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'month_end', scope: 'next' }), 'until the end of next month');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'day_of_month', day: 15, scope: 'this' }), 'until the 15th');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'day_of_month', day: 21, scope: 'next' }), 'until the 21st of next month');
+  assert.equal(describeModelRecurrenceEnd({ kind: 'date', value: '2026-12-01' }), 'until Dec 1, 2026');
+});
+
+test('modelRuleOccurrences: structuredEndIso 截断;rule.end_date 绝对优先于结构化截止', () => {
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  // 截止 2026-11-20:只剩 19/20 两条
+  assert.equal(modelRuleOccurrences(daily, TODAY, 'UTC', 5, '2026-11-20').length, 2);
+  // rule.end_date(11-22)比结构化截止(11-19)晚:按 rule.end_date 截 → 4 条(App 优先级,不取更早)
+  assert.equal(modelRuleOccurrences({ ...daily, end_date: '2026-11-22' }, TODAY, 'UTC', 5, '2026-11-19').length, 4);
+  // 无截止:满 5 条
+  assert.equal(modelRuleOccurrences(daily, TODAY, 'UTC', 5).length, 5);
+});
+
+test('modelRuleEndInfo: 优先级 / 后缀 / 形状坏 = 无截止', () => {
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  const a = modelRuleEndInfo(daily, { kind: 'after_count', count: 30, unit: 'day' }, { startIso: TODAY, todayIso: TODAY });
+  assert.equal(a.iso, '2026-12-17');
+  assert.equal(a.suffix, ', for 30 days');
+  // rule.end_date 赢过结构化截止,后缀用绝对日期
+  const b = modelRuleEndInfo({ ...daily, end_date: '2026-11-25' }, { kind: 'after_count', count: 30, unit: 'day' }, { startIso: TODAY, todayIso: TODAY });
+  assert.equal(b.iso, '2026-11-25');
+  assert.equal(b.suffix, ', until Nov 25, 2026');
+  // 形状坏(count 0):App (try? …) ?? nil 同口径 → 无截止,不影响规则
+  const c = modelRuleEndInfo(daily, { kind: 'after_count', count: 0 }, { startIso: TODAY, todayIso: TODAY });
+  assert.equal(c.iso, null);
+  assert.equal(c.suffix, '');
+  // 解析成功但截止早于起始 → 无效边界,同样无截止无后缀
+  const d = modelRuleEndInfo(daily, { kind: 'date', value: '2026-11-10' }, { startIso: TODAY, todayIso: TODAY });
+  assert.equal(d.iso, null);
+  assert.equal(d.suffix, '');
+});
+
+test('isIsoDate: 严格 YYYY-MM-DD', () => {
+  assert.equal(isIsoDate('2026-11-18'), true);
+  assert.equal(isIsoDate('2026-11-4'), false);
+  assert.equal(isIsoDate(null), false);
+  assert.equal(isIsoDate(20261118), false);
+});
+
+// ---------- 双 review 修正(2026-11-26):normalizeIsoDate / unit 类型 / 超大 count ----------
+
+test('normalizeIsoDate: Swift DateFormatter 同口径(实测锚)——域内日溢出滚动', () => {
+  assert.equal(normalizeIsoDate('2026-11-18'), '2026-11-18');
+  assert.equal(normalizeIsoDate(' 2026-11-18 '), '2026-11-18', '两端空白与 Swift trimming 同口径');
+  assert.equal(normalizeIsoDate('2026-02-31'), '2026-03-03', '2月31 滚到 3月3(swift 实测:2026-03-03)');
+  assert.equal(normalizeIsoDate('2026-02-30'), '2026-03-02', '2月30 滚到 3月2(swift 实测)');
+  assert.equal(normalizeIsoDate('2026-02-29'), '2026-03-01', '非闰年 2月29 滚到 3月1(swift 实测)');
+  assert.equal(normalizeIsoDate('2024-02-29'), '2024-02-29', '闰年 2月29 原样(swift 实测)');
+  assert.equal(normalizeIsoDate('2026-04-31'), '2026-05-01', '4月31 滚到 5月1(swift 实测)');
+  assert.equal(normalizeIsoDate('2026-12-31'), '2026-12-31');
+});
+
+test('normalizeIsoDate: 字段域外 = null(swift 实测:13 月 / 00 月 / 32 日 / 00 日全 nil)', () => {
+  assert.equal(normalizeIsoDate('2026-13-01'), null);
+  assert.equal(normalizeIsoDate('2026-00-10'), null);
+  assert.equal(normalizeIsoDate('2026-01-32'), null);
+  assert.equal(normalizeIsoDate('2026-02-00'), null);
+  assert.equal(normalizeIsoDate('2026-12-32'), null);
+  assert.equal(normalizeIsoDate('2026-2-05'), null, '非 2 位数字形状拒绝(Swift 可解析,官网从严:残差方向=少显示,记档)');
+  assert.equal(normalizeIsoDate('12/01/2026'), null);
+  assert.equal(normalizeIsoDate(null), null);
+  assert.equal(normalizeIsoDate(0), null);
+});
+
+test('parseModelRecurrenceEnd(双 review 修正): unit 非字符串 → 整个丢弃(Swift decode throw 同口径)', () => {
+  assert.equal(parseModelRecurrenceEnd({ kind: 'after_count', count: 5, unit: 3 }), null);
+  assert.equal(parseModelRecurrenceEnd({ kind: 'after_count', count: 5, unit: true }), null);
+  // 非法字符串与缺省仍回落 day( Swift Unit(rawValue:) ?? .day / decodeIfPresent nil)
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'after_count', count: 5, unit: 'fortnight' }), { kind: 'after_count', count: 5, unit: 'day' });
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'after_count', count: 5, unit: null }), { kind: 'after_count', count: 5, unit: 'day' });
+});
+
+test('parseModelRecurrenceEnd(双 review 修正): date value 按真实日历日归一', () => {
+  assert.deepEqual(parseModelRecurrenceEnd({ kind: 'date', value: ' 2026-02-31 ' }), { kind: 'date', value: '2026-03-03' });
+  assert.equal(parseModelRecurrenceEnd({ kind: 'date', value: '2026-13-01' }), null);
+});
+
+test('resolveModelRecurrenceEnd(双 review 修正): 超大 count 不炸(RangeError→500 已修),按无截止', () => {
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 999999999, unit: 'day' }, { startIso: TODAY, todayIso: TODAY }), null);
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 999999999, unit: 'week' }, { startIso: TODAY, todayIso: TODAY }), null);
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 999999999, unit: 'month' }, { startIso: TODAY, todayIso: TODAY }), null);
+  // 畸形 start 无法界定边界 → 无截止(不静默换今天)
+  assert.equal(resolveModelRecurrenceEnd({ kind: 'after_count', count: 3 }, { startIso: '2026-13-01', todayIso: TODAY }), null);
+});
+
+test('modelRuleEndInfo(双 review 修正): rule.end_date 13 月 → nil 让位结构化;2月31 滚动', () => {
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  // end_date 13 月:Swift decodeEndDate parse nil → endDate nil → 结构化截止生效
+  const a = modelRuleEndInfo({ ...daily, end_date: '2026-13-01' }, { kind: 'date', value: '2026-12-01' }, { startIso: TODAY, todayIso: TODAY });
+  assert.equal(a.iso, '2026-12-01');
+  assert.equal(a.suffix, ', until Dec 1, 2026');
+  // end_date 2月30:Swift 滚动成 3月2,绝对优先照旧
+  const b = modelRuleEndInfo({ ...daily, end_date: '2026-02-30' }, { kind: 'after_count', count: 30, unit: 'day' }, { startIso: TODAY, todayIso: TODAY });
+  assert.equal(b.iso, '2026-03-02');
+  assert.equal(b.suffix, ', until Mar 2, 2026');
+  // date kind 值 2月31 → 滚动 3月3(起始在 2 月内才可见)
+  const c = modelRuleEndInfo(daily, { kind: 'date', value: '2026-02-31' }, { startIso: '2026-02-01', todayIso: '2026-02-01' });
+  assert.equal(c.iso, '2026-03-03');
+  assert.equal(c.suffix, ', until Mar 3, 2026');
 });

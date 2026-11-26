@@ -10670,6 +10670,28 @@ test("web 档:畸形 IPv6 归 anonymous 共享桶(收紧而非放松)", async ()
   });
 });
 
+test("web 档:无 :: 的畸形 IPv6(坏段/超长段)不炸 500,归 anonymous 共享桶(2026-11-26 审计轮 2)", async () => {
+  const kv = new MemoryKV(new Map());
+  await withMockedToday("2026-05-26T12:00:00Z", async () => {
+    const env = {
+      WEB_EXTRACT_TOKEN: "web-token",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      WEB_IP_DAILY_LIMIT: "1",
+      RATE_LIMIT_KV: kv
+    };
+    const ok = jsonResponseProvider("x");
+    const h = (ip) => ({ "X-Web-Token": "web-token", "X-Web-Client-IP": ip, "X-Local-Date": "2026-05-26" });
+    // 回归锚:修前 halves.length === 1 且 parseSegments 返回 null 的输入会让
+    // expandIpv6 抛 TypeError → 整个请求 500(而不是归 anonymous)。两种坏段
+    // (非法字符 zz / 5 位超长段 12345)都必须 200 放行(计进 anonymous 桶)。
+    const r1 = await handleRequest(webRequest({ transcript: "a" }, h("1:2:3:4:5:6:7:zz")), env, makeFakeCtx(), ok);
+    assert.equal(r1.status, 200, "修前这里是 500(TypeError),修后必须正常放行");
+    const r2 = await handleRequest(webRequest({ transcript: "b" }, h("12345:2:3:4:5:6:7:8")), env, makeFakeCtx(), ok);
+    assert.equal(r2.status, 429, "两种无 :: 畸形与上一发共享 anonymous 同一桶");
+    assert.equal(r2.headers.get("X-RateLimit-Type"), "web_ip_daily");
+  });
+});
+
 test("web 档:token 比较——长度不同 / 同长不同内容都 401,Bearer 前缀可用", async () => {
   const env = { WEB_EXTRACT_TOKEN: "web-token", ANTHROPIC_API_KEY: "anthropic-key" };
   const wrongLength = await handleRequest(

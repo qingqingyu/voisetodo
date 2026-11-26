@@ -403,3 +403,138 @@ test('recur-check: 混合短语里无重复的任务列出来,不静默消失', 
     }
   );
 });
+
+// ---------- 顶层 recurrence_end 渲染(2026-11-26 审计轮 2) ----------
+// 用真实 todayInZone 构造确定性日期,不依赖墙钟。
+
+const plusDays = (iso, n) => new Date(Date.parse(`${iso}T12:00:00.000Z`) + n * 86400000).toISOString().slice(0, 10);
+
+test('recur-check: recurrence_end after_count → 规则文案带时长,五次照常展开', async () => {
+  const today = todayInZone('UTC');
+  await withMockedUpstream(
+    {
+      body: { phrase: 'meds every day for the next 30 days', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Take meds', due_date: today, due_time: null, time_bucket: null,
+          recurrence_rule: { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null },
+          recurrence_end: { kind: 'after_count', count: 30, unit: 'day' },
+          due_date_basis: 'user_explicit',
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('Every day, for 30 days'), '规则文案应带时长截止(页面自带示例场景)');
+      assert.ok(html.includes('The next five times'), '30 天内足够展示五次');
+    },
+  );
+});
+
+test('recur-check: recurrence_end date 截止在两天后 → 只列两条,不显示截止后的日期', async () => {
+  const today = todayInZone('UTC');
+  await withMockedUpstream(
+    {
+      body: { phrase: 'gym every day until Friday', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Gym', due_date: today, due_time: null, time_bucket: null,
+          recurrence_rule: { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null },
+          recurrence_end: { kind: 'date', value: plusDays(today, 2) },
+          due_date_basis: 'user_explicit',
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(/until [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(html), '规则文案应带 until 绝对日期');
+      assert.ok(html.includes('The next 2 times'), '只剩两条(明天/后天)');
+      assert.equal((html.match(/<li>/g) || []).length, 2, '日期列表恰好两条,截止后不出现');
+    },
+  );
+});
+
+test('recur-check: recurrence_end 形状坏(count 0)→ 无截止按无界展示,规则不受影响', async () => {
+  const today = todayInZone('UTC');
+  await withMockedUpstream(
+    {
+      body: { phrase: 'meds every day', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Take meds', due_date: null, due_time: null, time_bucket: null,
+          recurrence_rule: { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null },
+          recurrence_end: { kind: 'after_count', count: 0 },
+          due_date_basis: null,
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('>Every day<'), '规则仍渲染、不带截止后缀');
+      assert.ok(html.includes('The next five times'), '按无界展开五次');
+      assert.ok(!html.includes(', for '), '没有时长后缀');
+    },
+  );
+});
+
+// ---------- 双 review 修正(2026-11-26):畸形日期 / 超大 count 不炸不渲染垃圾 ----------
+
+test('recur-check: recurrence_end date 值 13 月 → 无截止,页面不出现 "undefined"', async () => {
+  const today = todayInZone('UTC');
+  await withMockedUpstream(
+    {
+      body: { phrase: 'meds every day', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Take meds', due_date: null, due_time: null, time_bucket: null,
+          recurrence_rule: { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null },
+          recurrence_end: { kind: 'date', value: '2026-13-01' },
+          due_date_basis: null,
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200, '域外月份 = 无截止(Swift parseISODate nil 同口径),不该 500');
+      const html = await response.text();
+      assert.ok(!html.includes('undefined'), '不得渲染 "undefined 1, 2026" 这类垃圾');
+      assert.ok(html.includes('>Every day<'), '规则仍按无截止渲染');
+      assert.ok(html.includes('The next five times'), '无截止按无界展开');
+    },
+  );
+});
+
+test('recur-check: after_count 超大 count → 不炸(RangeError→500 已修),按无截止', async () => {
+  const today = todayInZone('UTC');
+  await withMockedUpstream(
+    {
+      body: { phrase: 'meds every day', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Take meds', due_date: null, due_time: null, time_bucket: null,
+          recurrence_rule: { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null },
+          recurrence_end: { kind: 'after_count', count: 999999999, unit: 'day' },
+          due_date_basis: null,
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200, '超大 count = Swift calendar.date(byAdding:) nil → 无截止,不 500');
+      const html = await response.text();
+      assert.ok(html.includes('The next five times'), '无截止按无界展开');
+      assert.ok(!html.includes('for 999999999'), '不渲染荒谬时长文案');
+    },
+  );
+});

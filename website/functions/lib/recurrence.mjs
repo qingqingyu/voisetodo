@@ -151,7 +151,12 @@ function monthlyDay(text) {
 
 function addDaysIso(isoDate, days) {
   const ms = Date.parse(`${isoDate}T00:00:00.000Z`) + days * 86400000;
-  return new Date(ms).toISOString().slice(0, 10);
+  // 超出 JS Date 表示范围(如 after_count 巨大 count)返回 null 而不是让
+  // toISOString() 抛 RangeError(2026-11-26 审计轮 2 双 review:畸形 recurrence_end
+  // 曾能把工具页打成 500,与 expandIpv6 判空同类)。Swift 端对应
+  // calendar.date(byAdding:) 越界返回 nil → 无截止。
+  const d = new Date(ms);
+  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null;
 }
 
 /// 解析一段话里的重复规则。
@@ -284,15 +289,16 @@ export function describeRule(rule) {
 ///   (SystemCalendarWriter.ekRecurrenceRule)把 interval 传给 EKRecurrenceRule:
 ///   App 自身在 in-app 展开/日历镜像两边有张力。检查器取 interval 语义
 ///   (与模型契约「每三天/每三个月」、日历镜像一致),此张力记为 App 侧既有问题。
-/// - end_date(YYYY-MM-DD)之后的匹配日截断 —— 契约上模型把 end 放顶层
-///   recurrence_end(规则 5b)而 rule.end_date 留 null,但客户端对模型 end_date
-///   仍是绝对优先(Protocols/Models.swift:384「模型 end_date(绝对)」),模型确实
-///   返回时这里同口径截断。顶层 recurrence_end(after_count/month_end)未展开:
-///   有界重复按无界展示「接下来五次」,边界截进前五时网页会多显示 —— 已知偏差,
-///   完整展开需移植 App 端 RecurrenceEndResolver,见结果文档 §4;
+/// - 截止截断(2026-11-26 审计轮 2 起):end_date(YYYY-MM-DD)之后的匹配日停;
+///   另接受第 5 参 structuredEndIso —— 顶层 recurrence_end(规则 5b)经
+///   resolveModelRecurrenceEnd 算出的截止。优先级镜像 App(Protocols/Models.swift:384
+///   「模型 end_date(绝对)> 结构化 recurrence_end」):rule.end_date 有效则忽略
+///   结构化截止,不取更早者。两路截止都经 normalizeIsoDate 归一(字段域校验 +
+///   滚动,同 Swift DateFormatter)。形状坏的 recurrence_end = 无截止(App 端
+///   (try? …) ?? nil 同口径),不影响规则有效性;
 /// - 迭代上限自适应:400 步(≈13 个月)只够 monthly interval ≤ 3 出满五次,
 ///   按 count×周期放大,硬顶 5000 步防畸形规则(超大 interval)拖垮 Function。
-export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5) {
+export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5, structuredEndIso = null) {
   if (!isValidModelRule(rule)) return [];
   const interval = Number(rule.interval) >= 2 ? Math.floor(Number(rule.interval)) : 1;
   // weekday 只留 1...7(与 Swift init 的静默过滤同口径;有效性闸门已拦掉
@@ -300,7 +306,12 @@ export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5) {
   const weekdays = Array.isArray(rule.weekdays) ? rule.weekdays.filter((w) => WEEKDAY_NAMES[w]) : [];
   const dayOfMonth = Number(rule.day_of_month);
   const hasDayOfMonth = Number.isInteger(dayOfMonth) && dayOfMonth >= 1 && dayOfMonth <= 31;
-  const endIso = /^\d{4}-\d{2}-\d{2}$/.test(String(rule.end_date || '')) ? String(rule.end_date) : null;
+  // 两路截止都过 normalizeIsoDate(2026-11-26 审计轮 2 双 review):Swift 端
+  // end_date 字符串在 decodeEndDate 里就走 DateFormatter(域校验+滚动),
+  // "2026-13-01" → nil(无截止),不是原样字符串。
+  const ruleEndIso = normalizeIsoDate(rule.end_date);
+  const extraEndIso = normalizeIsoDate(structuredEndIso);
+  const endIso = ruleEndIso ?? extraEndIso;
 
   const anchorMs = Date.parse(`${todayIso}T12:00:00.000Z`);
   const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -439,4 +450,223 @@ export function describeModelRecurrence(rule) {
 function weekdayList(weekdays) {
   const names = weekdayDisplayNameOrder(weekdays).map((w) => WEEKDAY_NAMES[w]);
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+// ---------- 顶层 recurrence_end(规则 5b):解析 / 求解 / 文案(2026-11-26 审计轮 2) ----------
+// 审计背景:工具②/① 此前只读 todos[].recurrence_rule,顶层 recurrence_end 全程没碰 ——
+// 页面自带示例 "meds every day for the next 30 days" 只显示 "Every day",截止被丢;
+// "until Friday" 会列出截止之后的日期。以下三个导出把 App 端
+// RecurrenceEnd + RecurrenceEndResolver(Protocols/Domain/RecurrenceEnd*.swift)移植过来,
+// 展示与截断都用 App 真正会写进 RecurrenceRule.endDate 的那个截止。
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/// 严格 YYYY-MM-DD 判定(模型畸形日期防御,调用方据此回落今天)。
+export function isIsoDate(value) {
+  return ISO_DATE_RE.test(String(value ?? ''));
+}
+
+/// ISO 日期串 → 真实日历日归一(2026-11-26 审计轮 2 双 review 补):
+/// Swift 端 DateFormatter("yyyy-MM-dd") 的解析语义(实测锚定)是 ICU 的
+/// 「字段域校验 + 滚动解析」——月必须 1-12、日必须 1-31(越域 → nil),
+/// 域内日溢出按月长滚进后续月份("2026-02-31"→03-03、"2026-04-31"→05-01)。
+/// 纯形状正则会把 "2026-13-01" 放进文案渲染出 "undefined 1, 2026"、把
+/// "2026-02-31" 原样显示 —— App 从不显示这些。所有作为「日期」消费的模型
+/// 字段(due_date / rule.end_date / recurrence_end.date)都必须先过这里;
+/// 归一失败(null)= Swift parseISODate 落 nil 的同口径:无该日期/无截止。
+export function normalizeIsoDate(raw) {
+  const s = String(raw ?? '').trim();
+  if (!isIsoDate(s)) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  // 日溢出滚动:while 至多两轮(d ≤ 31,最短月 28)。不用 Date.UTC —— 它对
+  // 0-99 年份有 1900+ 映射陷阱,Swift 无此行为。
+  let yy = y, mm = m, dd = d;
+  while (dd > daysInMonth(yy, mm)) {
+    dd -= daysInMonth(yy, mm);
+    mm += 1;
+    if (mm > 12) { mm = 1; yy += 1; }
+  }
+  return ymdIso(yy, mm, dd);
+}
+
+/// weekday 名(含常见缩写,大小写不敏感)→ Apple 编号(1=周日…7=周六)。
+/// 镜像 Swift RecurrenceEnd.weekdayNumber(from:)(走 TodoDueDateResolver.englishWeekdays)。
+const WEEKDAY_NAME_TO_NUMBER = {
+  sunday: 1, sun: 1,
+  monday: 2, mon: 2,
+  tuesday: 3, tue: 3, tues: 3,
+  wednesday: 4, wed: 4,
+  thursday: 5, thu: 5, thur: 5, thurs: 5,
+  friday: 6, fri: 6,
+  saturday: 7, sat: 7,
+};
+
+/// scope 归一化:Swift Scope(rawValue:) ?? .this —— 缺省/非法值回落 this,不是判无效。
+function parseScope(raw) {
+  return String(raw ?? 'this').toLowerCase() === 'next' ? 'next' : 'this';
+}
+
+/// 归一化模型顶层 recurrence_end。任何 Swift RecurrenceEnd.init(from:) 会 throw 的
+/// 形状(unknown kind / count 非正整数 / weekday 名不认识 / day 越界 / value 非日期)
+/// 返回 null —— App 端 decode 失败的口径是 (try? …) ?? nil:规则保留、无截止;
+/// 这里同口径,不因此把任务判成「无重复」。unit/scope 的非法**字符串**按 Swift
+/// 一样回落默认(day / this);unit 为非字符串类型时 Swift decodeIfPresent(String)
+/// 会 throw → 整个 recurrence_end 丢弃(2026-11-26 审计轮 2 双 review 修正:此前
+/// String() 强转保留了 App 没有的截止);scope 任意畸形都被 try? 吞 → this。
+/// count/day 用严格整数判定(字符串 "3"、小数、布尔都是 decode throw)。
+export function parseModelRecurrenceEnd(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (typeof raw.kind !== 'string') return null;
+  const kind = raw.kind.trim().toLowerCase();
+  if (kind === 'after_count') {
+    if (!isPlainJsonInteger(raw.count) || raw.count <= 0) return null;
+    if (raw.unit !== undefined && raw.unit !== null && typeof raw.unit !== 'string') return null;
+    const unitRaw = raw.unit === undefined || raw.unit === null ? 'day' : raw.unit.toLowerCase();
+    const unit = ['day', 'week', 'month'].includes(unitRaw) ? unitRaw : 'day';
+    return { kind, count: raw.count, unit };
+  }
+  if (kind === 'weekday') {
+    if (typeof raw.weekday !== 'string') return null;
+    const weekday = WEEKDAY_NAME_TO_NUMBER[raw.weekday.trim().toLowerCase()];
+    if (!weekday) return null;
+    return { kind, weekday, scope: parseScope(raw.scope) };
+  }
+  if (kind === 'month_end') {
+    return { kind, scope: parseScope(raw.scope) };
+  }
+  if (kind === 'day_of_month') {
+    if (!isPlainJsonInteger(raw.day) || raw.day < 1 || raw.day > 31) return null;
+    return { kind, day: raw.day, scope: parseScope(raw.scope) };
+  }
+  if (kind === 'date') {
+    // Swift 形状层只查非空字符串,真伪在 resolver 的 parseISODate 落 nil;这里用
+    // normalizeIsoDate 一步到位(2026-11-26 审计轮 2 双 review 修正:此前只过形状
+    // 正则,"2026-13-01" 会渲染出 "until undefined 1, 2026"):字段域外(13 月/
+    // 32 日)= 无截止,域内日溢出滚动("2026-02-31"→03-03)与 Swift 实测一致。
+    if (typeof raw.value !== 'string') return null;
+    const value = normalizeIsoDate(raw.value);
+    return value === null ? null : { kind, value };
+  }
+  return null;
+}
+
+/// ISO 日历日的 weekday(Apple 编号 1=周日…7=周六)。todayIso 本就是调用方按时区
+/// 算好的「本地今天」,它的星期几/年月是这一天自身的属性,与再套哪个时区无关
+/// (UTC 正午锚只是取 UTC 日历视图,不会跨日)。
+function weekdayOfIso(iso) {
+  return new Date(Date.parse(`${iso}T12:00:00.000Z`)).getUTCDay() + 1;
+}
+
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function nextYearMonth(year, month) {
+  return month === 12 ? [year + 1, 1] : [year, month + 1];
+}
+
+function ymdIso(year, month, day) {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/// 加 N 个日历月,日号按目标月天数 clamp(Swift calendar.date(byAdding:.month) 语义:
+/// 1 月 31 日 +1 月 = 2 月 28/29 日)。
+function addMonthsIso(iso, months) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const total = y * 12 + (m - 1) + months;
+  const [ny, nm] = [Math.floor(total / 12), (total % 12) + 1];
+  return ymdIso(ny, nm, Math.min(d, daysInMonth(ny, nm)));
+}
+
+/// Swift RecurrenceEndResolver.resolve 的端口(全部确定性日历运算,不算错日期):
+/// - after_count:end = start + (count-1) 天 / (count×7-1) 天 / count 个月(同日号);
+/// - weekday:从「今天」起最近的该 weekday(含今天),scope=next 再 +7 天;
+/// - month_end / day_of_month:本/下月的月末 / 第 day 天(按当月天数 clamp);
+/// - date:照抄;
+/// - 截止早于起始 = 无效边界 → null(Swift endDay >= startDay 守卫,防空规则)。
+/// 与 App 的唯一口径差异:start 的取值。App = 模型 dueDate ?? 文本解析兜底 ?? 今天
+/// (Protocols/Models.swift:377-383);官网没有文本解析器,调用方传
+/// due_date ?? todayIso(带日期的短语模型几乎总给 due_date,残余偏差记结果文档)。
+export function resolveModelRecurrenceEnd(end, { startIso, todayIso }) {
+  if (!end) return null;
+  // start 归一(2026-11-26 审计轮 2 双 review):Swift 的 start 永远是已解析的 Date
+  // (解码层滚动/丢弃已发生);这里收的是字符串,同样先归一成真实日历日,
+  // 畸形 start 无法界定边界 → 无截止(不静默换成今天,避免谎报)。
+  const start = normalizeIsoDate(startIso);
+  if (start === null) return null;
+  let iso = null;
+  if (end.kind === 'after_count') {
+    // addDaysIso 对超大 count 返回 null(JS Date 表示范围外),镜像 Swift
+    // calendar.date(byAdding:) 越界 nil → 无截止,而不是抛 RangeError 打 500。
+    if (end.unit === 'day') iso = addDaysIso(start, end.count - 1);
+    else if (end.unit === 'week') iso = addDaysIso(start, end.count * 7 - 1);
+    else iso = addMonthsIso(start, end.count);
+  } else if (end.kind === 'weekday') {
+    const daysUntil = (end.weekday - weekdayOfIso(todayIso) + 7) % 7; // 0…6,0=今天(含)
+    iso = addDaysIso(todayIso, daysUntil + (end.scope === 'next' ? 7 : 0));
+  } else if (end.kind === 'month_end') {
+    const [y, m] = todayIso.split('-').map(Number);
+    const [ey, em] = end.scope === 'next' ? nextYearMonth(y, m) : [y, m];
+    iso = ymdIso(ey, em, daysInMonth(ey, em));
+  } else if (end.kind === 'day_of_month') {
+    const [y, m] = todayIso.split('-').map(Number);
+    const [ey, em] = end.scope === 'next' ? nextYearMonth(y, m) : [y, m];
+    iso = ymdIso(ey, em, Math.min(end.day, daysInMonth(ey, em)));
+  } else {
+    iso = end.value;
+  }
+  // 出口统一归一:addMonthsIso 超大 count 会产 "NaN-NaN-NaN"、date kind 的 value
+  // 已在 parse 层归一,这里再兜一次,保证出口要么是真实 ISO 日要么 null。
+  const normalized = normalizeIsoDate(iso);
+  // ISO 日期的字典序 = 日历序,直接比较即「endDay >= startDay」(空规则守卫)。
+  return normalized !== null && normalized >= start ? normalized : null;
+}
+
+/// ISO 日期 → "Dec 1, 2026"(与 formatOccurrence 同一套月份缩写,不带星期)。
+export function formatIsoDate(iso) {
+  if (!ISO_DATE_RE.test(String(iso))) return String(iso);
+  const [, m, d] = iso.split('-');
+  return `${MONTH_SHORT[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${iso.slice(0, 4)}`;
+}
+
+/// 截止的人话描述(英文站,只出英文):after_count 用时长口径("for 30 days"),
+/// 其余用 "until …";scope=next 的三种都带 next 限定。
+export function describeModelRecurrenceEnd(end) {
+  if (!end) return null;
+  if (end.kind === 'after_count') {
+    const label = { day: 'day', week: 'week', month: 'month' }[end.unit];
+    return `for ${end.count} ${end.count === 1 ? label : `${label}s`}`;
+  }
+  if (end.kind === 'weekday') {
+    const name = WEEKDAY_NAMES[end.weekday];
+    return end.scope === 'next' ? `until next ${name}` : `until ${name}`;
+  }
+  if (end.kind === 'month_end') {
+    return end.scope === 'next' ? 'until the end of next month' : 'until the end of the month';
+  }
+  if (end.kind === 'day_of_month') {
+    return end.scope === 'next' ? `until the ${ordinal(end.day)} of next month` : `until the ${ordinal(end.day)}`;
+  }
+  return `until ${formatIsoDate(end.value)}`;
+}
+
+/// 一站式:模型 rule + 顶层 recurrence_end → 有效截止与展示后缀。
+/// 优先级镜像 App(Protocols/Models.swift:384-389):模型 rule.end_date(绝对)>
+/// 结构化 recurrence_end(确定性算)> 无;recurrence_end 形状坏 = 无截止。
+/// 返回 { iso, suffix }:iso = 有效截止日(null = 无截止,不截断);suffix = 带
+/// 前导「, 」的后缀串('' = 不加)。iso 可直接传给 modelRuleOccurrences 第 5 参。
+export function modelRuleEndInfo(rule, recurrenceEndRaw, { startIso, todayIso }) {
+  // rule.end_date 过 normalizeIsoDate(2026-11-26 审计轮 2 双 review):对齐 Swift
+  // decodeEndDate 的 DateFormatter 解析(13 月 → nil,2 月 31 → 滚动成真实日)。
+  const ruleEndIso = normalizeIsoDate(rule?.end_date ?? null);
+  const endObj = parseModelRecurrenceEnd(recurrenceEndRaw);
+  const structuredIso = endObj ? resolveModelRecurrenceEnd(endObj, { startIso, todayIso }) : null;
+  const iso = ruleEndIso ?? structuredIso;
+  const suffix = ruleEndIso
+    ? `, until ${formatIsoDate(ruleEndIso)}`
+    : endObj && structuredIso
+      ? `, ${describeModelRecurrenceEnd(endObj)}`
+      : '';
+  return { iso, suffix };
 }
