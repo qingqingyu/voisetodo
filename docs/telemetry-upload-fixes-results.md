@@ -2,7 +2,7 @@
 
 > 来源:`docs/behavior-funnel-and-p0-activation.md` §6 步 0(2026-11-26 事实核查轮定的
 > 两个上报机制缺陷),用户 2026-11-26 指派实施(「然后做修复」)。
-> 分支:`task/telemetry-upload-fixes`,基线 `main` @ `eab36cb`。
+> 分支:`task/telemetry-upload-fixes`,基线 `main` @ `d0e7082`(merge-base;即 eab36cb 再加 1 个营销 docs 提交,不触本分支文件)。
 
 ## 1. 修的是什么
 

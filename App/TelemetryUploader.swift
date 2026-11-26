@@ -412,7 +412,7 @@ struct TelemetryUploadPayload: Codable {
 }
 
 /// 服务端 200 响应体 `{accepted, dropped}`(见 worker.js telemetry ingest):
-/// accepted = 实际入库条数,dropped = 因配额中途耗尽被服务端丢弃的条数。
+/// accepted = 实际入库条数,dropped = 被服务端丢弃的条数(配额中途耗尽或事件判无效,双成因)。
 private struct TelemetryAcceptanceResponse: Decodable {
     let accepted: Int
     let dropped: Int
