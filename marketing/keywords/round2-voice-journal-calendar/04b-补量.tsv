@@ -1,0 +1,17 @@
+词	12个月平均(广告口径)	点击流校正量	难度(0-100)	出价CPC($)	近6个月走势	判定修正
+dream journal app	1900	621	5	2.23	480-5400 波动大	**流量 1→2 分**(全场最大真量);难度 5 极低
+audio journal app	260	246	15	5.18	近月 320 ↑	流量确认 1 分
+voice journal app	260	216	9	4.48	近月 210-320 ↑	流量确认 1 分;难度 9
+voice diary app	260(并组)	1	35	4.48	—	校正后≈1:精确词没人搜,并组进 voice journal app
+voice journaling	210	69	12	2.55	10月 480 ↑↑	流量 1 分(内容词,在涨)
+adhd to do list app	90	90	7	2.21	10月 140 ↑	流量 1→0 分(90<100);难度 7 低
+ai to do list	210	187	31	12.49	平	流量 1;难度 31+CPC 12.49+AI Overview 直答=不做
+ai to do list app	40	1	32	27.65	平微升	流量 0;CPC 27.65=广告主抢但精确词没量
+ai to do list generator	30	15	0	18.74	平	流量 0
+voice to do list	10	10	没收录	5.96	平	**流量 1→0 分**:趋势热度是词族热度,精确词仅 10/月
+voice calendar app	10(并组)	10	52	—	—	流量 0;难度 52 偏高
+ai voice to do list	没收录	—	—	—	—	**流量 1→0 分**(数据库都没有)
+best voice to do list app	没收录	—	—	—	—	流量 0
+to do list app(尺子)	9900	9579	48	7.86	—	锚:验证广告口径与趋势尺子基本成比例
+journaling app(尺子)	8100	1375	63	2.91	—	锚
+花费	—	—	—	—	—	volume $0.18 + overview $0.0256 = $0.2056;首跑奖励 +$2.00(2026-11-27 前首跑)已触发

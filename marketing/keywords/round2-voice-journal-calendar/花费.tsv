@@ -1,0 +1,5 @@
+# 时间	花费(美元)	接口	说明
+2026-11-26 11:51:55	0.0900	glasser:/v3/keywords_data/google_ads/search_volume/live	每月的量 15 个候选词
+2026-11-26 11:52:00	0.0900	glasser:/v3/keywords_data/google_ads/search_volume/live	每月的量 空着回来的 3 个词再查一次
+2026-11-26 11:52:36	0.0256	glasser:/v3/dataforseo_labs/google/keyword_overview/live	点击流和难度 15 个词
+# 累计合计	0.2056	美元	当前目录全部请求合计

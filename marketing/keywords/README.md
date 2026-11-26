@@ -1,8 +1,8 @@
 # 选词调研(money-keywords 两轮)
 
 > 给官网/营销内容用的关键词证据库。两轮均由 money-keywords skill 十步流程产出:
-> 谷歌趋势(相对档位)+ 真实谷歌前 20(无头浏览器逐词翻取)+ RDAP/whois 注册日 + 对标站拆解。
-> 花费 $0(纯免费路线,Ahrefs 免费页被 429,所有"月搜索量"未取得——只有相对量级)。
+> 谷歌趋势(相对档位)+ 真实谷歌前 20(无头浏览器逐词翻取)+ RDAP/whois 注册日 + 对标站拆解;
+> 2026-11-26 起补了 Glasser→DataForSEO 付费量(月搜索量/难度/CPC,花费 $0.2056,见 round2/04b-补量.tsv)。
 
 | 轮次 | 目录 | 日期 | 主题 |
 |---|---|---|---|
@@ -15,13 +15,18 @@
 
 **严格评分 0 词过「值得做」线**(都差"前 10 有一年内新站"这一项),10 个词进「可以备选」:
 
-| 优先做内容页 | 量级(相对) | 一句话 |
-|---|---|---|
-| voice to do list / ai voice to do list | 高 / 小但在涨 | 上轮 6 分;SERP 薄(vercel 演示站都能排 #3) |
-| voice journal app + audio journal app | 中(同量级,两种说法) | 两页都做;**该簇尚无精确匹配域名占位者** |
-| voice calendar app | 中,在涨 | 最贴产品(说话→日程);前排全是小站 |
-| best voice to do list app / adhd to do list app / dream journal app / voice journaling | 小~中 | 对比页/人群页/内容词 |
-| ~~ai to do list~~ | 最大 | **不做**:实测已被 AI Overview 直答+大品牌榜单填满 |
+**优先做内容页(2026-11-26 补量后,带真实月量/难度/CPC,来源 Glasser→DataForSEO)**:
+
+| 优先 | 词 | 校正量/月 | 难度 | CPC | 一句话 |
+|---|---|---|---|---|---|
+| ★1 | dream journal app | 621(广告口径 1900) | **5** | $2.23 | 全场第一:真量+几乎无难度+everi.app(11.6 个月)排 #3 的占位实证 |
+| ★2 | voice journal app + audio journal app | 216 / 246 | 9 / 15 | $4.48 / $5.18 | 一页双说法;该簇无精确匹配域名占位者 |
+| 3 | voice journaling | 69(10 月 480↑) | 12 | $2.55 | 内容词在涨,做文章 |
+| 4 | adhd to do list app | 90 | 7 | $2.21 | 人群页,10 月涨到 140 |
+| 语义支撑 | voice to do list / voice calendar app | 10 / 10 | — / 52 | $5.96 / — | 精确词无量(趋势是词族热度),做页面主题词而非指望词量 |
+| ~~不做~~ | ai to do list 族 | 187(校正) | 31-32 | **$12-27** | AI Overview 直答+大厂 SERP;CPC 高说明商业价值,只做语义覆盖不当主词 |
+
+> 补量前两轮按趋势估的量级有系统性偏差(voice to do list 被高估、dream journal 被低估),以本表为准;修正过程见两轮报告末尾的「补量复判」。
 
 **直接抄的三套内容站模板**:
 1. **mytimeo.com**(20.5 个月,免费+Premium $30/年)——产品叙事(语音→确认→同步)+ guide/vs/FAQ 全套内容矩阵,**官网内容结构的最佳模板**
