@@ -1,0 +1,21 @@
+todoist.com	2007-01-05	rdap
+teamwork.com	1995-03-29	rdap
+kuse.ai	2023-09-30	rdap
+any.do	2010-03-08	whois
+lindy.ai	2019-05-16	rdap
+quillbot.com	2017-12-21	rdap
+asana.com	2009-01-21	rdap
+reclaim.ai	2018-10-20	rdap
+zapier.com	2011-10-30	rdap
+usemotion.com	2015-12-23	rdap
+todo.ai	2017-12-16	rdap
+fabric.so	2020-06-23	rdap(via nic.so)
+notion.com	1997-10-06	rdap
+voicetodolist.com	2024-09-20	rdap
+voicetask.app	2025-10-05	rdap(via whois)
+evernote.com	2000-01-20	rdap
+thedigitalprojectmanager.com	2011-12-31	whois
+template.net	2001-02-14	whois
+taskade.com	2011-11-19	whois
+roseyrebecca.com	2009-08-11	whois
+lunatask.app	2020-09-13	rdap
