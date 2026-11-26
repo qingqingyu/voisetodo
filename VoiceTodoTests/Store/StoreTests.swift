@@ -520,6 +520,81 @@ final class StoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Test Update Time(跨天终点透传,2026-11 修复)
+
+    /// 跨天 + 带钟点的事件改钟点(时间 chip popover → updateTime):
+    /// 终点必须保留原值,不能被静默清成单天。
+    /// 修复前:updateTime 默认实现不传 eventEndDate(= nil),updateFull 无条件覆盖 → 跨度丢失。
+    func testUpdateTimeKeepsSpanEndForTimedSpanningEvent() throws {
+        let calendar = StoreTests.utcCalendar
+        // Given: 出差 11-26 09:00 ~ 11-28(跨三天、带钟点)
+        try sut.add(ExtractedTodo(title: "出差", categoryHint: .work))
+        let id = sut.todos[0].id
+        try sut.updateFull(id, update: TodoDetailUpdate(
+            title: "出差", detail: nil, category: nil, priority: nil,
+            dueDate: StoreTests.utcDate("2026-11-26", hour: 9),
+            hasDueTime: true, timeBucket: nil, dueHint: "",
+            recurrenceRule: nil, eventEndDate: StoreTests.utcDate("2026-11-28")
+        ))
+        XCTAssertEqual(sut.todos[0].eventEndDate, StoreTests.utcDate("2026-11-28"))
+
+        // When: 时间 chip 把钟点从 09:00 改到 14:30
+        try sut.updateTime(
+            for: id, hasDueTime: true,
+            dueDate: StoreTests.utcDate("2026-11-26", hour: 14, minute: 30),
+            timeBucket: nil
+        )
+
+        // Then: 钟点更新,终点仍是 11-28(跨度保留)
+        XCTAssertEqual(sut.todos[0].dueDate, StoreTests.utcDate("2026-11-26", hour: 14, minute: 30))
+        let end = try XCTUnwrap(sut.todos[0].eventEndDate, "改钟点不应清掉跨天终点")
+        XCTAssertEqual(calendar.startOfDay(for: end), calendar.startOfDay(for: StoreTests.utcDate("2026-11-28")))
+    }
+
+    /// 无日期任务首次排期(待定日期组「选日期」→ updateTime):
+    /// 原本没有跨度,排期后仍是单天(eventEndDate 保持 nil)。
+    func testUpdateTimeOnUndatedTodoHasNoSpan() throws {
+        try sut.add(ExtractedTodo(title: "下午寄快递", dueHint: "下午", categoryHint: .life))
+        let id = sut.todos[0].id
+        XCTAssertNil(sut.todos[0].eventEndDate)
+
+        try sut.updateTime(
+            for: id, hasDueTime: false,
+            dueDate: StoreTests.utcDate("2026-11-27"),
+            timeBucket: .afternoon
+        )
+
+        XCTAssertEqual(sut.todos[0].dueDate, StoreTests.utcDate("2026-11-27"))
+        XCTAssertNil(sut.todos[0].eventEndDate, "无跨度的任务排期后不应冒出终点")
+    }
+
+    /// 异常兜底:新起点晚于原终点(编辑冲突/异常调用)时,
+    /// TodoDetailUpdate.init 的 TodoSpan.normalized 退化为单天,不写出非法区间。
+    func testUpdateTimeNormalizesSpanWhenStartPassesEnd() throws {
+        // 夹具间隔取 38h(而非 14h):归一化用 Calendar.current,间隔不足 24h 时
+        // 起点可能与终点塌进同一本地日(原 14h 间隔在 UTC+14 即中招),
+        // setup 断言在极端时区假失败;≥24h 则任意时区必跨日界。
+        try sut.add(ExtractedTodo(title: "会议", categoryHint: .work))
+        let id = sut.todos[0].id
+        try sut.updateFull(id, update: TodoDetailUpdate(
+            title: "会议", detail: nil, category: nil, priority: nil,
+            dueDate: StoreTests.utcDate("2026-11-26", hour: 10),
+            hasDueTime: true, timeBucket: nil, dueHint: "",
+            recurrenceRule: nil, eventEndDate: StoreTests.utcDate("2026-11-28")
+        ))
+        XCTAssertNotNil(sut.todos[0].eventEndDate)
+
+        // When: 起点被改到 11-30(越过终点 11-28)
+        try sut.updateTime(
+            for: id, hasDueTime: true,
+            dueDate: StoreTests.utcDate("2026-11-30", hour: 10),
+            timeBucket: nil
+        )
+
+        // Then: 终点 < 起点 → 归一化清空,退化为单天
+        XCTAssertNil(sut.todos[0].eventEndDate, "起点越过终点时应退化为单天,而非保留非法区间")
+    }
+
     // MARK: - Test RecentUncompleted
 
     func testRecentUncompletedOnlyReturnsUncompleted() async throws {
@@ -1549,5 +1624,25 @@ private extension TodoDetailUpdate {
             dueHint: todo.dueHint,
             recurrenceRule: todo.recurrenceRule
         )
+    }
+}
+
+/// 测试辅助:跨天终点测试用的固定 UTC 日期(避免本地时区/夏令时抖动)。
+private extension StoreTests {
+    /// UTC 固定日历(与 TodoSpanTests 同款口径)。
+    static var utcCalendar: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }
+
+    /// 解析 "yyyy-MM-dd" 为 UTC 当天指定时刻(默认 00:00)。
+    static func utcDate(_ day: String, hour: Int = 0, minute: Int = 0) -> Date {
+        let formatter = DateFormatter()
+        formatter.calendar = utcCalendar
+        formatter.timeZone = utcCalendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.date(from: "\(day) \(String(format: "%02d", hour)):\(String(format: "%02d", minute))")!
     }
 }

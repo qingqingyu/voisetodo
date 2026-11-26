@@ -105,6 +105,13 @@ extension TodoDetailUpdating where Self: TodoListReadable {
     ///
     /// 默认实现:读现有 todo → 拼 TodoDetailUpdate → 走 updateFull。
     /// 实现层可在 `TodoStore` 重写此方法做单字段 UPDATE,避免全字段往返。
+    ///
+    /// **跨天终点透传**(2026-11 修,与 moveTodoToTomorrow 的 shiftedEnd 平移同族):
+    /// `eventEndDate` 传回 `existing.eventEndDate` 而不是默认 nil —— 此前不传会把
+    /// 跨天 + 带钟点事件的终点静默清成单天(时间 chip 改钟点即中招)。
+    /// 现有调用面只改钟点/给无日期任务首次排期,终点保持原值即为正确语义;
+    /// 若新起点晚于原终点等异常,`TodoDetailUpdate.init` 的 `TodoSpan.normalized`
+    /// 会退化为单天,不会写出非法区间。
     func updateTime(
         for id: UUID,
         hasDueTime: Bool,
@@ -123,7 +130,8 @@ extension TodoDetailUpdating where Self: TodoListReadable {
             hasDueTime: hasDueTime,
             timeBucket: timeBucket,
             dueHint: existing.dueHint,
-            recurrenceRule: existing.recurrenceRule
+            recurrenceRule: existing.recurrenceRule,
+            eventEndDate: existing.eventEndDate
         )
         try updateFull(id, update: update)
     }

@@ -354,9 +354,10 @@ final class TodoStore:
         }
         // 跨天事件终点:TodoDetailUpdate.init 已跑 TodoSpan.normalized 归一化。
         // M6(详情页编辑入口)未落地前调用方几乎都传 nil(等价写 nil,零回归);
-        // 2026-11 起 `moveTodoToTomorrow` 用 TodoSpan.shiftedEnd 平移传真实终点
-        // (跨天事件「移到明天」不再清跨度)。其余写路径(updateTime / 详情页 /
-        // 复盘分诊)仍传 nil —— 同类平移待另开任务统一接上。
+        // 2026-11 起 `moveTodoToTomorrow` 用 TodoSpan.shiftedEnd 平移传真实终点,
+        // `updateTime` 默认实现透传 `existing.eventEndDate`(时间 chip 改钟点
+        // 不再清跨度)。详情页 / 复盘分诊 / Home 直拼改期(set_hour 改钟点、
+        // 拖拽指派日期或时段)仍传 nil —— 待 M6 落地时统一接上。
         todoItem.eventEndDate = update.eventEndDate
 
         // 推迟埋点(拍板 3:只记 deferred/abandoned/split)。判定在 mutate 之后、
