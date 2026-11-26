@@ -6,7 +6,7 @@ VoiceTodo 的遥测系统采集**匿名诊断数据**用于线上质量监控和
 
 1. **生产可观测性**：用户设备上的崩溃/错误/失败率可见，弥补本地 OSLog 看不到的盲区
 2. **PII 红线**：录音内容、Todo 标题、日历事件等一律不上报原文
-3. **用户控制**：仅充电 + 联网时批量上报（电量友好，不限定 WiFi），可随时关闭
+3. **用户控制**：进后台即用系统 ~30s 额度补报一次 + 充电联网时的后台任务批量上报（2026-11-26 M1 起,电量友好,不限定 WiFi）,可随时关闭
 4. **零第三方依赖**：自建接收端，复用 AIProxy Cloudflare Worker 基础设施
 
 ## 架构
@@ -21,7 +21,7 @@ Telemetry.record(event)                 validate X-App-Token
 TelemetryQueue（AppGroup UD）           enforceTelemetryQuota
   ↓                                       (每设备 500/天，RATE_LIMIT_KV)
 BGProcessingTask                          ↓
-（充电 + 网络满足时触发）                 batch insert to D1
+（充电 + 网络满足时触发；另 App 进后台即补报一次,见 M1） batch insert to D1
                                           ↓
                                        telemetry_events 表
                                        （90 天 Cron GC）
@@ -309,7 +309,7 @@ ORDER BY received_at DESC LIMIT 50;
 
 - **漏斗分析（C 类）**：上线后观察 1-2 周再决定
 - **看板**：D1 直接 SQL 查询足够，后续可接 Grafana Cloud 免费层
-- **实时上报**：不做（仅充电 + 联网批量上报是用户决策）
+- **实时上报**：不做（进后台补报一次 + 充电联网批量上报是用户决策;2026-11-26 M1 起）
 - **A/B 测试**：未来需求
 
 ## 相关文件
