@@ -353,8 +353,10 @@ final class TodoStore:
             todoItem.completedAt = nil
         }
         // 跨天事件终点:TodoDetailUpdate.init 已跑 TodoSpan.normalized 归一化。
-        // M6(详情页编辑入口)未落地前,所有调用方传 nil,此处写入等价于写 nil,零回归;
-        // 补这一行是为了闭合字段写入路径,避免「init 归一化了但 updateFull 没落地」的死路径。
+        // M6(详情页编辑入口)未落地前调用方几乎都传 nil(等价写 nil,零回归);
+        // 2026-11 起 `moveTodoToTomorrow` 用 TodoSpan.shiftedEnd 平移传真实终点
+        // (跨天事件「移到明天」不再清跨度)。其余写路径(updateTime / 详情页 /
+        // 复盘分诊)仍传 nil —— 同类平移待另开任务统一接上。
         todoItem.eventEndDate = update.eventEndDate
 
         // 推迟埋点(拍板 3:只记 deferred/abandoned/split)。判定在 mutate 之后、
