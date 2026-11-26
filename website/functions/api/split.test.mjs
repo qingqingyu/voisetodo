@@ -287,3 +287,140 @@ test('split: 跨站 Origin 拒 403 且不触上游,同源放行', async () => {
     }
   );
 });
+
+// ---------- 标题措辞 / 时区线索 / 截止后缀(2026-11-26 审计轮 2) ----------
+// 文件顶部的 withMockedUpstream 把表单写死成固定文案,这里用参数化骨架。
+
+async function withSplitForm(form, upstreamImpl, fn) {
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  console.error = () => {};
+  globalThis.fetch = async () => upstreamImpl();
+  try {
+    const request = new Request(TOOL_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '203.0.113.7' },
+      body: new URLSearchParams(form),
+    });
+    const context = { request, env: { AI_PROXY_ORIGIN: 'https://proxy.test', WEB_EXTRACT_TOKEN: 'web-token' } };
+    return await fn(await onRequestPost(context));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+}
+
+test('split: 有 user_explicit 日期 → 标题 "split and dated" + 时区线索行', async () => {
+  await withSplitForm(
+    { text: 'call the dentist tomorrow and pay rent on the 1st', tz: 'UTC' },
+    () => new Response(JSON.stringify({
+      todos: [
+        { title: 'Call the dentist', due_date: '2026-12-24', due_date_basis: 'user_explicit' },
+        { title: 'Pay rent', due_date: '2026-12-25', due_date_basis: 'user_explicit' },
+      ],
+      ignored: '',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (response) => {
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('2 tasks, split and dated'), '有日期时标题保留 and dated');
+      assert.ok(html.includes('Dates for UTC.'), '时间信息存在时显示时区线索');
+    },
+  );
+});
+
+test('split: basis 过滤后全部无日期 → 标题去掉 "and dated",尾注同步换措辞', async () => {
+  await withSplitForm(
+    { text: 'call the dentist someday', tz: 'UTC' },
+    () => new Response(JSON.stringify({
+      todos: [
+        { title: 'Call the dentist', due_date: '2026-12-24', due_date_basis: 'inferred', time_bucket: 'afternoon' },
+      ],
+      ignored: '',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (response) => {
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('1 task, split'), '无日期时标题不带 and dated');
+      assert.ok(!html.includes('and dated'), '标题不出现 and dated');
+      assert.ok(!html.includes('with the dates shown above'), '尾注不再指向「上方日期」');
+      assert.ok(html.includes('saved with its dates and reminders'), '尾注换成不指向具体日期的措辞');
+      assert.ok(html.includes('Dates for UTC.'), '有时段(time_bucket)仍显示时区线索');
+      assert.ok(html.includes('afternoon'), '时段照常显示');
+    },
+  );
+});
+
+test('split: 完全无时间信息 → 无时区线索行', async () => {
+  await withSplitForm(
+    { text: 'buy milk', tz: 'UTC' },
+    () => new Response(JSON.stringify({
+      todos: [{ title: 'Buy milk', due_date: null, due_time: null, time_bucket: null }],
+      ignored: '',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (response) => {
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('1 task, split'));
+      assert.ok(!html.includes('Dates for'), '无任何时间信息时不显示时区线索');
+      assert.ok(html.includes('no date'), '行内如实显示 no date');
+    },
+  );
+});
+
+test('split: 复制文本带 recurrence_end 截止后缀(与 App 写入 endDate 同口径)', async () => {
+  await withSplitForm(
+    { text: 'physio every Monday for two weeks', tz: 'UTC' },
+    () => new Response(JSON.stringify({
+      todos: [{
+        title: 'Physio', due_date: null, due_time: null, time_bucket: null,
+        recurrence_rule: { frequency: 'weekly', interval: 1, weekdays: [2], day_of_month: null, end_date: null },
+        recurrence_end: { kind: 'after_count', count: 2, unit: 'week' },
+      }],
+      ignored: '',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (response) => {
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('Every Monday, for 2 weeks'), '行内与复制文本都带截止时长');
+      assert.ok(html.includes('Dates for UTC.'), '重复信息也算时间线索');
+    },
+  );
+});
+
+// ---------- 双 review 修正(2026-11-26):畸形 due_date 归一后展示(App 解码层同口径) ----------
+
+test('split: due_date 2月31 → 归一成 Mar 3 显示,标题仍 "and dated"(与 App 滚动一致)', async () => {
+  await withSplitForm(
+    { text: 'file taxes by end of February', tz: 'UTC' },
+    () => new Response(JSON.stringify({
+      todos: [{ title: 'File taxes', due_date: '2026-02-31', due_date_basis: 'user_explicit' }],
+      ignored: '',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (response) => {
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('Mar 3, 2026'), '显示滚动后的真实日历日(不在 App 里显示 "Feb 31")');
+      assert.ok(!html.includes('Feb 31'), '不得渲染不存在的日期');
+      assert.ok(html.includes('1 task, split and dated'), '归一成功 = 有日期,标题保留 and dated(与行内不矛盾)');
+    },
+  );
+});
+
+test('split: due_date 13 月 → 无日期显示,标题去掉 "and dated"', async () => {
+  await withSplitForm(
+    { text: 'call the dentist', tz: 'UTC' },
+    () => new Response(JSON.stringify({
+      todos: [{ title: 'Call the dentist', due_date: '2026-13-01', due_date_basis: 'user_explicit', due_time: null, time_bucket: null }],
+      ignored: '',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    async (response) => {
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(!html.includes('and dated'), '域外月份 = 无日期(Swift parse nil),标题不得说 dated');
+      assert.ok(!html.includes('undefined'), '不渲染 undefined');
+      assert.ok(html.includes('no date'), '行内如实显示 no date');
+      assert.ok(!html.includes('Dates for'), '无任何时间信息 → 无时区线索行');
+    },
+  );
+});

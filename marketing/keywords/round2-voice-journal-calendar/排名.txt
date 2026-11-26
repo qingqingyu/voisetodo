@@ -1,0 +1,40 @@
+## voice journal app
+1 | p1 | apps.apple.com | /app/untold-voice-journal | Untold - Voice Journal - App Store - Apple
+2 | p1 | play.google.com | /store/apps/details | Audio Diary: a voice journal - Apps on Google Play
+3 | p1 | audiodiary.ai | / | AudioDiary - Voice Journal & Audio Diary App with AI ...
+4 | p1 | vowise.com | /blog/best-voice-journal-ap... | 6 Best Voice & Audio Journal Apps in 2026
+5 | p1 | wave.co | /Use Cases | Voice Journal App — Speak Your Entries, Get Text
+## audio journal app
+1 | p1 | apps.apple.com | /app/untold-voice-journal | Untold - Voice Journal - App Store - Apple
+2 | p1 | play.google.com | /store/apps/details | Audio Diary: a voice journal - Apps on Google Play
+3 | p1 | audiodiary.ai | / | AudioDiary - Voice Journal & Audio Diary App with AI ...
+4 | p1 | apps.apple.com | /Top Charts/Lifestyle | Audio Diary - AI voice journal - App Store - Apple
+5 | p1 | audionotes.app | /journaling | Audio Journaling App | Journal by Voice
+6 | p1 | vowise.com | /blog/best-voice-journal-ap... | 6 Best Voice & Audio Journal Apps in 2026
+7 | p1 | amazon.com | /Voice-Journal/k=Voice+Jo... | Voice Journal
+## voice diary app
+1 | p1 | apps.apple.com | /app/untold-voice-journal | Untold - Voice Journal - App Store - Apple
+2 | p1 | play.google.com | /store/apps/details | Audio Diary: a voice journal - Apps on Google Play
+3 | p1 | audiodiary.ai | / | AudioDiary - Voice Journal & Audio Diary App with AI ...
+4 | p1 | apps.apple.com | /Top Charts/Lifestyle | Audio Diary - AI voice journal - App Store - Apple
+5 | p1 | wave.co | /Use Cases | Voice Journal App — Speak Your Entries, Get Text
+## dream journal app
+1 | p1 | apps.apple.com | /app/oniri-your-dream-journal | Oniri - Your Dream Journal - App Store - Apple
+2 | p1 | play.google.com | /store/apps/details | Dream Catcher: Lucid Journal - Apps on Google Play
+3 | p1 | everi.app | /blog/the-best-dream-journal-... | The Best Dream Journal and Interpretation Apps in 2026
+4 | p1 | habitbox.app | /Sleep | Best Dream Journal Apps: 6 Picks to Record Dreams (2026)
+5 | p1 | bulkeley.org | /a-review-of-dream-apps | A Review of Dream Apps
+## voice calendar app
+1 | p1 | apps.apple.com | /app/adhd-calendar-voice-pla... | ADHD Calendar: Voice Planner - App Store - Apple
+2 | p1 | play.google.com | /store/apps/details | Voice Schedule - Apps on Google Play
+3 | p1 | iaccessibility.com | /index.cgi/product | Talking Calendar Deaf-Blind Accessibility App
+4 | p1 | kincalendar.com | /Use cases | Voice Calendar App for Families: Add Events by Voice
+5 | p1 | mytimeo.com | /ai-calendar | AI Calendar App — Plan by Voice, Sync Everywhere
+6 | p1 | apps.apple.com | /app/voice-reminder-planner-... | Voice Reminder Planner: Echo - App Store - Apple
+7 | p1 | getsense.ai | /Everything | Voice to Calendar - Just Speak the Event
+## voice journaling
+1 | p1 | journalinghabit.com | /best-voice-journal-apps-2... | Best Voice Journal & Voice Memo Apps in 2026
+2 | p1 | play.google.com | /store/apps/details | Audio Diary: a voice journal - Apps on Google Play
+3 | p1 | apps.apple.com | /Top Charts/Lifestyle | Audio Diary - AI voice journal - App Store - Apple
+4 | p1 | takuti.me | /note/audio-journaling | I Tried Audio Journaling for 30 Days - Takuya Kitazawa
+5 | p1 | audiodiary.ai | / | AudioDiary - Voice Journal & Audio Diary App with AI ...

@@ -6,7 +6,10 @@
 // 本地 resolveRecurrence 只在模型完全没返回该字段时才兜底(Protocols/Models.swift:392),
 // 把它当对外展示会让工具替 App 说它做不到的事 —— 而且是往差了说(「每周一三五健身」
 // 本地档只认出 Every Monday)。本页只渲染响应里的重复规则部分。
-import { describeModelRecurrence, modelRuleOccurrences, formatOccurrence } from '../lib/recurrence.mjs';
+// 2026-11-26 审计轮 2:重复规则连同顶层 recurrence_end 一起渲染 —— 截止进规则文案
+// ("Every day, for 30 days")并截断「接下来五次」,口径 = App 端 RecurrenceEndResolver
+// 的移植(lib/recurrence.mjs),修复页面自带示例 "for the next 30 days" 丢截止的偏差。
+import { describeModelRecurrence, modelRuleOccurrences, formatOccurrence, modelRuleEndInfo, normalizeIsoDate } from '../lib/recurrence.mjs';
 import { resolveFormTimezone, todayInZone } from '../lib/timezones.mjs';
 import { toolResultPage, htmlResponse, escapeHtml } from '../lib/render.mjs';
 import { detectLocale, readForm, isSameOriginForm, requireWebEnv, fetchWebExtraction, parseExtraction, normalizeTodos, plainTitle } from '../lib/web-extract.mjs';
@@ -127,10 +130,13 @@ or continue in the <strong>app</strong>, where every capture runs this parse.</p
   const todos = normalizeTodos(parsed.data);
   // 每个任务只判一次「有没有(有效的)重复规则」:重复规则进卡片;混合短语里
   // 没有重复规则的任务也不能静默消失 —— App 端它们照样建成普通任务,如实列出。
+  // entry 保留 todo 本身:卡片渲染要读顶层 recurrence_end(2026-11-26 审计轮 2,
+  // 此前只读 recurrence_rule,截止被整层丢掉 —— 页面示例 "for the next 30 days"
+  // 只显示 "Every day")。
   const entries = todos.map((todo) => {
     const rule = todo.recurrence_rule;
     const hasRepeat = Boolean(rule && describeModelRecurrence(rule));
-    return { title: plainTitle(todo), rule, hasRepeat };
+    return { title: plainTitle(todo), rule, hasRepeat, todo };
   });
   const recurring = entries.filter((entry) => entry.hasRepeat);
 
@@ -184,11 +190,22 @@ in the app you confirm the rule on the review card before anything is saved.</p>
       ? `Also kept as plain tasks without a repeat: ${plainTitles.map((t) => `“${escapeHtml(t)}”`).join(', ')}.`
       : `Also kept as a plain task without a repeat: “${escapeHtml(plainTitles[0])}”.`}</p>`
     : '';
-  const cards = recurring.map(({ title, rule }) => {
-    const ruleText = describeModelRecurrence(rule);
+  const cards = recurring.map(({ title, rule, todo }) => {
+    // 有效截止 + 展示后缀(2026-11-26 审计轮 2):App 把模型 rule.end_date /
+    // 顶层 recurrence_end 写进 RecurrenceRule.endDate —— 展示与截断都用同一真相。
+    // start 的取值是检查器简化:due_date ?? today(App 还有文本解析兜底,见
+    // resolveModelRecurrenceEnd 注释,残余偏差记结果文档)。
+    const { iso: endIso, suffix } = modelRuleEndInfo(rule, todo.recurrence_end, {
+      // start 用 normalizeIsoDate(2026-11-26 审计轮 2 双 review):Swift 在解码层就把
+      // due_date 变成真实日历日(2月31 滚动、13月丢弃),原始字符串不进求解。
+      startIso: normalizeIsoDate(todo.due_date) ?? today,
+      todayIso: today,
+    });
+    const ruleText = describeModelRecurrence(rule) + suffix;
     // 「接下来五次」的展开口径见 modelRuleOccurrences:interval>1 以第一个匹配日为锚
-    // (App 端锚任务首个 dueDate,检查器没有任务,取第一个匹配日等价)。
-    const dates = modelRuleOccurrences(rule, today, tz, 5);
+    // (App 端锚任务首个 dueDate,检查器没有任务,取第一个匹配日等价);第 5 参传
+    // 有效截止(endIso 已按 App 优先级合并 rule.end_date,函数内部再合并结果不变)。
+    const dates = modelRuleOccurrences(rule, today, tz, 5, endIso);
     // 展开数不足 count(结构化 end_date 很近 / interval 特大)时不硬说「five」:
     // 标题按实际条数说,一条都没有就明说,不渲染空 <ul> 装正常。
     const timesLabel = `The next ${dates.length === 5 ? 'five' : dates.length} time${dates.length === 1 ? '' : 's'} (${escapeHtml(tz)}):`;

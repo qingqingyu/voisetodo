@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money Keywords 候选词全表 — money-keywords-voicetodo-2026-11-22</title>
+<style>
+  :root { --bg:#f8fafc; --card:#ffffff; --line:#e2e8f0; --text:#0f172a; --muted:#64748b; --acc:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:20px 24px; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  h1 { margin:0 0 6px; font-size:20px; }
+  .sub { color:var(--muted); margin-bottom:14px; font-size:13px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; background:var(--card); padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+  .bar input { flex:1; min-width:220px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; }
+  .pill { padding:5px 10px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; cursor:pointer; font-size:12px; color:#334155; }
+  .pill.active { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .count { margin-left:auto; font-size:12px; color:var(--muted); }
+  .wrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { position:sticky; top:0; background:#f1f5f9; cursor:pointer; user-select:none; white-space:nowrap; font-weight:600; }
+  th:hover { background:#e2e8f0; }
+  tr:hover td { background:#f8fafc; }
+  .tag-good { color:#15803d; font-weight:600; }
+  .tag-mid { color:#b45309; font-weight:600; }
+  .tag-warn { color:#b91c1c; font-weight:600; }
+</style>
+</head>
+<body>
+<h1>Money Keywords 候选词全表（money-keywords-voicetodo-2026-11-22）</h1>
+<div class="sub">点击任意表头可按数字或字母升降序排列；输入英文词、中文释义或状态可实时筛选。月搜索量为估算搜索次数，出价单位为美元。</div>
+<div class="bar">
+  <input id="q" type="search" placeholder="输入关键词、对标站、新词、极新待验等筛选…">
+  <button class="pill active" data-f="">全部</button>
+  <button class="pill" data-f="值得做">值得做</button>
+  <button class="pill" data-f="可以备选">可以备选</button>
+  <button class="pill" data-f="极新">极新待验</button>
+  <button class="pill" data-f="新词">新词</button>
+  <button class="pill" data-f="合规风险">有合规风险</button>
+  <span class="count" id="cnt"></span>
+</div>
+<div class="wrap">
+  <table id="tbl">
+    <thead><tr id="thead"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+<script>
+const HEADERS = ["词", "流量", "竞争", "付钱", "差别", "能做", "总分", "分档", "挑刺(反证)与备注"];
+const ROWS = [["voice to do list", "1(老词趋势估,封顶;趋势 21% 尺子)", "1(专门页 4-5:商店×2/voicetask/voicetodolist;前10 无一年内新站,最近的 13.6/14 个月)", "2(Vozly $0.99/月、VoiceTask $49.99/年对这件事本身反复收订阅)", "1(r/ProductivityApps 两条求荐真人帖;Siri 笨的普遍抱怨)", "1(带登录+AI)", "6", "可以备选(差竞争 2 分)", "免费同款:Apple Reminders+Siri 原生免费,Reddit 帖里也被推荐;商店列表霸前 2,独立站从 #3 起拿量"], ["ai voice to do list", "1(极新待验:下拉≥3+近两月同类新 app≥2+趋势 11 月初出现且在涨)", "1(专门页 5:商店×2/talk-todo(vercel)/voicetask/voicetodolist;但 vercel 免费子域名排 #3 显示 SERP 极弱)", "2(同上,VoiceTask 就用这个词做官网)", "1(同上)", "1", "6", "可以备选(差竞争 2 分)", "量小(趋势 3.6% 尺子折算);Siri 同款免费;若 voicetask 内容起来窗口会关"], ["best voice to do list app", "0(趋势 0,超 30 天量未知)", "1(专门页 4:商店×2/voicetodolist/vercel)", "2(同上)", "1", "1", "5", "可以备选(差流量与竞争)", "问句词,AI Overview/榜单倾向直答;voicetodolist.com 已占 #3"], ["adhd to do list app", "0(趋势 0,Ahrefs 未取得)", "1(lunatask /adhd 专门页+商店×2+Sprout;无一年内新站)", "2(lunatask 订阅、Sprout 内购、Ottolist 等新 app)", "1(ADHD 人群\"步骤越少越好\"有大量真人原话)", "1", "5", "可以备选(差流量与竞争)", "lunatask 已占专门页;App Store 近一年两个 ADHD×AI 新 app 在做;趋势阈值下无信号"], ["ai to do list", "1(老词趋势估,封顶;趋势 187% 尺子=最强)", "1(专门页 5-6:quillbot generator/todo.ai/asana/reclaim/商店;前 10 无新站,全大品牌+榜单)", "1(大产品功能页为主,对\"AI 待办\"本身收费的少;quillbot 免费直给)", "0(未读到大缺口原话)", "1", "4", "先放下", "实测该词已触发 AI Overview/AI Mode 直答(名单+建议);SERP 被 Todoist/Any.do/Asana 和 2026 榜单文章填满"], ["ai to do list app", "0-1(趋势 4% 尺子,量小)", "1(前 10 全大站老站;专门页 4)", "1(同上)", "0", "1", "3-4", "先放下", "同上,AI Overview 直答"], ["ai to do list generator", "1(极新待验:下拉≥3+社媒有 FocusBox 同类描述;趋势逐月刚出现)", "1(专门页 5:quillbot/template.net/taskade/canva/notion)", "1(quillbot/canva 免费直给,靠旁边产品收钱)", "0", "1", "4", "先放下", "「免费 generator」前排已免费不限次给完(quillbot 免登录);新冒头但正被大站免费收割"], ["voice memo to do list", "", "", "", "", "", "", "", "并入观察"], ["say do / wise to do / voice activated to do list", "", "", "", "", "", "", "", "—"]];
+let sortCol = -1, sortAsc = false, quickFilter = "";
+
+function numVal(s) {
+  if (s === null || s === undefined) return -Infinity;
+  const str = String(s).replace(/,/g, "").trim();
+  if (!str || str.includes("未知") || str.includes("没查") || str.includes("没收录")) return -Infinity;
+  const mRange = str.match(/(\d+(?:\.\d+)?)\s*(?:到|-|–|~)\s*(\d+(?:\.\d+)?)/);
+  if (mRange) return (parseFloat(mRange[1]) + parseFloat(mRange[2])) / 2;
+  const m = str.match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : -Infinity;
+}
+
+function render() {
+  const kw = document.getElementById("q").value.trim().toLowerCase();
+  let list = ROWS.filter(r => {
+    const joined = r.join(" ").toLowerCase();
+    if (kw && !joined.includes(kw)) return false;
+    if (quickFilter && !joined.includes(quickFilter.toLowerCase())) return false;
+    return true;
+  });
+  if (sortCol >= 0) {
+    const numericHits = list.filter(r => numVal(r[sortCol]) !== -Infinity).length;
+    const useNum = numericHits >= Math.max(1, list.length * 0.4);
+    list.sort((a, b) => {
+      if (useNum) {
+        const na = numVal(a[sortCol]), nb = numVal(b[sortCol]);
+        if (na !== nb) return sortAsc ? (na - nb) : (nb - na);
+      }
+      const sa = String(a[sortCol] || ""), sb = String(b[sortCol] || "");
+      return sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    });
+  }
+  const thead = document.getElementById("thead");
+  thead.innerHTML = "";
+  HEADERS.forEach((h, i) => {
+    const th = document.createElement("th");
+    const arrow = sortCol === i ? (sortAsc ? " ▲" : " ▼") : "";
+    th.textContent = h + arrow;
+    th.onclick = () => {
+      if (sortCol === i) sortAsc = !sortAsc;
+      else { sortCol = i; sortAsc = false; }
+      render();
+    };
+    thead.appendChild(th);
+  });
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  list.forEach(r => {
+    const tr = document.createElement("tr");
+    r.forEach(cell => {
+      const td = document.createElement("td");
+      const txt = String(cell || "");
+      td.textContent = txt;
+      if (txt.includes("值得做")) td.className = "tag-good";
+      else if (txt.includes("可以备选") || txt.includes("极新")) td.className = "tag-mid";
+      else if (txt.includes("合规风险") || txt.includes("做烂") || txt.includes("扎堆")) td.className = "tag-warn";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  document.getElementById("cnt").textContent = `显示 ${list.length} / 共 ${ROWS.length} 个候选词`;
+}
+
+document.getElementById("q").addEventListener("input", render);
+document.querySelectorAll(".pill").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".pill").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    quickFilter = btn.getAttribute("data-f") || "";
+    render();
+  });
+});
+render();
+</script>
+</body>
+</html>
