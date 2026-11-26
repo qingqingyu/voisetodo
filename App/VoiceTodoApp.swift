@@ -420,6 +420,11 @@ struct VoiceTodoApp: App {
             WidgetReloadCoalescer.flushPendingReloads()
             // 调度遥测批量上报（系统会在「充电 + 网络」满足时触发）
             TelemetryUploader.shared.scheduleNextRun()
+            // M1(2026-11-26,行为漏斗规格事实核查 §6 步 0):进后台立刻补一次上报。
+            // BGProcessingTask 只在充电+联网时触发,当场卸载的用户队列随 App 消失,
+            // cohort 系统性偏活跃人群;这里用 beginBackgroundTask 的 ~30s 额度兜底
+            // (分批发送、未发送事件始终留在持久层,详见 TelemetryUploader 注释)。
+            TelemetryUploader.shared.uploadFromAppBackground()
         @unknown default:
             break
         }

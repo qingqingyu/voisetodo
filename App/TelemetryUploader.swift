@@ -2,11 +2,15 @@ import Foundation
 #if canImport(BackgroundTasks)
 import BackgroundTasks
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// 遥测批量上报。负责把 `TelemetryQueue` 中的事件 POST 到 AIProxy `/v1/telemetry/events`。
 ///
-/// 生产模式靠 `BGProcessingTask` 在「充电 + 网络」时触发；调用方可通过 `uploadNow()` 在测试或
-/// 显式同步时手动触发。
+/// 生产模式靠 `BGProcessingTask` 在「充电 + 网络」时触发,App 进后台时经
+/// `uploadFromAppBackground()` 用系统后台额度补一次;测试或显式同步直接调
+/// `uploadBatch()`。
 final class TelemetryUploader {
     static let shared = TelemetryUploader(
         endpoint: TelemetryUploader.makeDefaultEndpoint(),
@@ -125,28 +129,113 @@ final class TelemetryUploader {
 
     // MARK: - Upload
 
-    /// 上传一批事件。成功则丢弃队列内容；失败则回滚。
-    /// 遥测关闭时直接返回成功：队列原样保留(本地 7 天 GC 兜底)，不发出任何请求——
+    /// 单批发送的结果。
+    private enum SendOutcome {
+        /// 200。accepted / dropped 来自服务端 JSON。dropped > 0 时停发(见 `uploadBatch`)。
+        /// 注意 worker.js 的 dropped = 发送条数 - 入库条数,成因有两种:配额批中途耗尽,
+        /// 或事件被 `isValidTelemetryEvent` 判无效。两种成因「停发 + 不 restore」都正确
+        /// ——无效事件重发永远无效,留在队列里只会堵住后面的批。
+        case sent(accepted: Int, dropped: Int)
+        /// 429:整批被拒、未入库 —— 放回队列,明天配额重置后自然重试。
+        case quotaExceeded
+        /// 其他失败(网络 / 非 2xx / 坏响应):放回队列。
+        case failed
+    }
+
+    /// 防重入闸:`uploadBatch` 可能被 BGProcessingTask、App 进后台补报(M1)、
+    /// 手动触发并发调用。drain/restore 是原子配对,但两个并发批次会把同一队列
+    /// 拆成交错的两半,日志与批数都不可读。串行化:已在跑就跳过(队列留给下次)。
+    private let inFlightLock = NSLock()
+    private var inFlight = false
+
+    private func tryBeginUpload() -> Bool {
+        inFlightLock.lock()
+        defer { inFlightLock.unlock() }
+        if inFlight { return false }
+        inFlight = true
+        return true
+    }
+
+    private func endUpload() {
+        inFlightLock.lock()
+        inFlight = false
+        inFlightLock.unlock()
+    }
+
+    /// 上传队列中的全部事件,按 `TelemetryQueue.maxBatchSize` 分批发送。
+    ///
+    /// 2026-11-26 M2(行为漏斗规格事实核查 §6 步 0,审计轮 M2):
+    /// - **分批**:服务端每批只收前 100 条(`worker.js` `MAX_TELEMETRY_EVENTS_PER_BATCH`
+    ///   之外的条目 200 后静默丢)。旧实现 drain 全量(最多 500)一发,401..500 条必丢。
+    ///   现在每轮只取一批,**剩余先 restore 回持久层再发送** —— 任何时刻内存里只暴露
+    ///   「本批」,进程中途被杀最多丢本批(与旧单批实现同窗口);
+    /// - **429 不丢批**:配额耗尽整批放回(7 天 GC 兜底),返回 true 不让 BGTask 反复
+    ///   失败;当天后续触发会再撞一次 429(至多每小时一次,可忽略);
+    /// - **200 且 dropped > 0**(成因见 `SendOutcome.sent`:配额批中途耗尽,或事件被
+    ///   服务端判无效):被 drop 的部分服务端已丢且无法从响应定位是哪几条,不 restore
+    ///   (防已接受事件重发入库成重复),记日志停发。
+    ///
+    /// 遥测关闭时直接返回成功:队列原样保留(不 drain、不 restore、零请求)——
     /// 这是隐私政策「turn off at any time」承诺的执行点。
-    /// - Returns: 是否成功（用于 BGTask 完成 + 测试断言）
+    /// - Returns: 是否成功(用于 BGTask 完成 + 测试断言)
     @discardableResult
     func uploadBatch() async -> Bool {
         guard isTelemetryEnabled() else {
             VoiceTodoLog.app.info("telemetry.upload.disabled queuedEvents=\(TelemetryQueue.count())")
             return true
         }
-        let events = TelemetryQueue.drain()
-        guard !events.isEmpty else {
-            VoiceTodoLog.app.debug("telemetry.upload.empty_queue")
+        guard tryBeginUpload() else {
+            VoiceTodoLog.app.info("telemetry.upload.skipped reason=in_flight queuedEvents=\(TelemetryQueue.count())")
             return true
         }
+        defer { endUpload() }
 
         guard let endpoint else {
-            VoiceTodoLog.app.warning("telemetry.upload.no_endpoint events=\(events.count)")
-            TelemetryQueue.restore(events)
+            VoiceTodoLog.app.warning("telemetry.upload.no_endpoint events=\(TelemetryQueue.count())")
             return false
         }
 
+        var totalAccepted = 0
+        var totalDropped = 0
+        let startedAt = Date()  // 2026-11-26 R1:补回总耗时(旧单批日志有 durationMS,改循环时丢了)
+        batchLoop: while true {
+            let all = TelemetryQueue.drain()
+            guard !all.isEmpty else { break }
+            let chunk = Array(all.prefix(TelemetryQueue.maxBatchSize))
+            let remainder = Array(all.dropFirst(TelemetryQueue.maxBatchSize))
+            if !remainder.isEmpty {
+                // 发本批之前,先把不发的落回持久层(见函数头注释「分批」条)
+                TelemetryQueue.restore(remainder)
+            }
+            switch await send(chunk, endpoint: endpoint) {
+            case let .sent(accepted, dropped):
+                totalAccepted += accepted
+                totalDropped += dropped
+                if dropped > 0 {
+                    // 服务端丢弃了批内部分事件(成因见 SendOutcome.sent 注释):再发只会
+                    // 全 drop 或永远无效,停(不 restore,防已接受事件重发入库成重复)
+                    VoiceTodoLog.app.warning("telemetry.upload.quota_partial accepted=\(accepted) dropped=\(dropped) acceptedSoFar=\(totalAccepted)")
+                    break batchLoop
+                }
+                continue batchLoop
+            case .quotaExceeded:
+                TelemetryQueue.restore(chunk)
+                VoiceTodoLog.app.warning("telemetry.upload.quota_exceeded restored=\(chunk.count) acceptedSoFar=\(totalAccepted)")
+                return true  // 视为成功,否则 BGTask 会反复失败
+            case .failed:
+                TelemetryQueue.restore(chunk)
+                return false
+            }
+        }
+        // 2026-11-26 R2:droppedByServer 而非 droppedByQuota —— dropped 的成因除配额
+        // 中途耗尽外还包括事件被服务端判无效(见 SendOutcome.sent 注释),按成因命名
+        // 会误导排障方向。
+        VoiceTodoLog.app.info("telemetry.upload.success accepted=\(totalAccepted) droppedByServer=\(totalDropped) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
+        return true
+    }
+
+    /// 发送单批并归类结果。请求构造、鉴权头与超时沿用旧 `uploadBatch` 的实现。
+    private func send(_ events: [TelemetryPayload], endpoint: URL) async -> SendOutcome {
         let payload = TelemetryUploadPayload(events: events)
         do {
             var request = URLRequest(url: endpoint)
@@ -167,30 +256,104 @@ final class TelemetryUploader {
 
             guard let http = response as? HTTPURLResponse else {
                 VoiceTodoLog.app.error("telemetry.upload.invalid_response events=\(events.count)")
-                TelemetryQueue.restore(events)
-                return false
+                return .failed
             }
 
             if http.statusCode == 429 {
-                // 配额耗尽：丢弃这批（避免下次又触发 429），不再 restore
-                VoiceTodoLog.app.warning("telemetry.upload.quota_exceeded dropped=\(events.count)")
-                return true  // 视为成功，否则 BGTask 会反复失败
+                return .quotaExceeded
             }
 
             guard (200...299).contains(http.statusCode) else {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 VoiceTodoLog.app.error("telemetry.upload.http_failed status=\(http.statusCode) bodyChars=\(body.count) events=\(events.count) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-                TelemetryQueue.restore(events)
-                return false
+                return .failed
             }
 
-            VoiceTodoLog.app.info("telemetry.upload.success events=\(events.count) status=\(http.statusCode) durationMS=\(VoiceTodoLog.durationMS(since: startedAt))")
-            return true
+            // 服务端 200 响应带 {accepted, dropped}(worker.js telemetry.events.accepted);
+            // 坏体按「全收」处理,保持与旧实现同级的乐观语义(200 即视为送达)。
+            // max(0,…) 钳制:真实 worker 恒返回非负,这里是防异常响应把负数
+            // 灌进 totalAccepted/totalDropped 的日志统计。
+            if let body = try? JSONDecoder().decode(TelemetryAcceptanceResponse.self, from: data) {
+                return .sent(accepted: max(0, body.accepted), dropped: max(0, body.dropped))
+            }
+            // 2026-11-26 R1:解码失败不静默(错误显式传播原则),记日志留痕后再走回退。
+            VoiceTodoLog.app.warning("telemetry.upload.acceptance_unparsed bodyBytes=\(data.count) events=\(events.count)")
+            return .sent(accepted: events.count, dropped: 0)
         } catch {
             VoiceTodoLog.app.error("telemetry.upload.transport_failed events=\(events.count) error=\(VoiceTodoLog.errorSummary(error), privacy: .public)")
-            TelemetryQueue.restore(events)
-            return false
+            return .failed
         }
+    }
+
+    // MARK: - App 后台一次性补报(M1)
+
+    /// App 进后台时立刻补一次上报(2026-11-26 M1,行为漏斗规格事实核查 §6 步 0)。
+    ///
+    /// 背景:`BGProcessingTask` 只在「充电 + 联网」时触发,首日装完就走、当场删 App 的
+    /// 用户本地队列随 App 删除而消失,永远进不了 D1 —— cohort 系统性偏活跃人群
+    /// (R1 偏高、R3「未激活」组失真)。进后台用 `beginBackgroundTask` 拿 ~30s 系统
+    /// 额度补一发;分批与回滚语义同 `uploadBatch`(未发送事件始终留在持久层)。
+    ///
+    /// - 过期处理器只结束后台任务标记,不 cancel 在途请求:批内事件已 drain,
+    ///   cancel 与否进程挂起都只丢本批;强 cancel 反而把本可完成的一批变失败。
+    /// - 与 BGTask / 手动触发并发安全:`uploadBatch` 入口的防重入闸兜底。
+    func uploadFromAppBackground() {
+        // 2026-11-26 R1:禁用时提前短路,不白拿系统后台任务额度、不起空转 Task
+        // (隐私兜底仍在 uploadBatch 入口,这里只是省资源;双重检查容忍开关竞态)。
+        guard isTelemetryEnabled() else {
+            VoiceTodoLog.app.debug("telemetry.upload.app_background_skipped reason=disabled")
+            return
+        }
+        #if canImport(UIKit)
+        // expiration handler 在 begin 时就要给,而 end-once 令牌创建在其后 —— 用 box
+        // 衔接。竞态窗口内(赋值前触发 expiration)handler 为 nil:后果是任务标记未
+        // end,进程随后照常挂起,无泄漏面。
+        final class ExpirationBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var handler: (() -> Void)?
+            func set(_ handler: (() -> Void)?) {
+                lock.lock(); defer { lock.unlock() }
+                self.handler = handler
+            }
+            func fire() {
+                lock.lock(); defer { lock.unlock() }
+                handler?()
+            }
+        }
+        final class TaskToken: @unchecked Sendable {
+            private let lock = NSLock()
+            private var id: UIBackgroundTaskIdentifier
+            private var ended = false
+            init(_ id: UIBackgroundTaskIdentifier) { self.id = id }
+            /// end-once:过期处理器与完成路径都调,不双 end。
+            func end() {
+                lock.lock(); defer { lock.unlock() }
+                guard !ended else { return }
+                ended = true
+                UIApplication.shared.endBackgroundTask(id)
+                id = .invalid
+            }
+        }
+
+        let box = ExpirationBox()
+        let taskID = UIApplication.shared.beginBackgroundTask(withName: "telemetry.upload.app_background") {
+            box.fire()
+        }
+        guard taskID != .invalid else {
+            VoiceTodoLog.app.warning("telemetry.upload.background_task_denied")
+            return
+        }
+        let token = TaskToken(taskID)
+        box.set { [weak token] in token?.end() }
+        Task { [weak self] in
+            defer { token.end() }
+            await self?.uploadBatch()
+        }
+        #else
+        // 非 UIKit 环境(本文件当前只编入主 App 目标,此分支为防御性兜底):
+        // 无后台任务 API 可用,入口为 no-op
+        VoiceTodoLog.app.debug("telemetry.upload.app_background_skipped reason=no_uikit")
+        #endif
     }
 
     // MARK: - Default endpoint
@@ -246,4 +409,11 @@ final class TelemetryUploader {
 
 struct TelemetryUploadPayload: Codable {
     let events: [TelemetryPayload]
+}
+
+/// 服务端 200 响应体 `{accepted, dropped}`(见 worker.js telemetry ingest):
+/// accepted = 实际入库条数,dropped = 因配额中途耗尽被服务端丢弃的条数。
+private struct TelemetryAcceptanceResponse: Decodable {
+    let accepted: Int
+    let dropped: Int
 }
