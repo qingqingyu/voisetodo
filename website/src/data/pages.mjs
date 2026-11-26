@@ -64,7 +64,8 @@ export const pages = {
     ogTitle: 'Try it in your browser',
     description:
       'Two free browser tools: split one sentence into dated reminders, and check what a recurring-reminder phrase means. Nothing is saved.',
-    lastmod: '2026-11-18',
+    // 卡片文案随工具②「Upcoming dates」改版(2026-11-26 轮 3),lastmod 同步。
+    lastmod: '2026-11-26',
     changeFrequency: 'weekly',
     priority: 0.7,
   },
@@ -81,8 +82,9 @@ export const pages = {
     title: 'Recurring Reminder Phrase Checker | VoiceTodo',
     ogTitle: 'What does that phrase create?',
     description:
-      'Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates and the next five dates — before you rely on it.',
-    lastmod: '2026-11-24',
+      'Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates and the upcoming dates — before you rely on it.',
+    // 页面 lede/label 与 description 随「Upcoming dates」改版(2026-11-26 轮 3)。
+    lastmod: '2026-11-26',
     changeFrequency: 'monthly',
     priority: 0.8,
   },

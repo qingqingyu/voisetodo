@@ -281,7 +281,7 @@ test('recur-check: 超长输入(>500)显式 400 不静默截断(与 split.js 超
   );
 });
 
-test('recur-check: 展开不足五次时按实际条数说(不硬说 five)', async () => {
+test('recur-check: 展开条数随截止/节奏自然截断,标题不承诺次数(轮 3 起 Upcoming dates)', async () => {
   await withMockedUpstream(
     {
       body: { phrase: 'report every 4 months on the 15th', tz: 'UTC' },
@@ -296,9 +296,9 @@ test('recur-check: 展开不足五次时按实际条数说(不硬说 five)', asy
     async (context) => {
       const response = await onRequestPost(context);
       const html = await response.text();
-      // 自适应上限(双 review 修复轮):interval 4 的第 5 次在 400 步之外,仍能出满五次
+      // 自适应上限(双 review 修复轮):interval 4 锚起始月,首个匹配隔 4 个月仍能出满五次
       assert.equal((html.match(/<li>/g) || []).length, 5);
-      assert.match(html, /The next five times/);
+      assert.match(html, /Upcoming dates \(UTC\)/);
     }
   );
 });
@@ -321,7 +321,7 @@ test('recur-check: 一条都展不开时明说,不渲染空列表', async () => 
       const html = await response.text();
       assert.match(html, /No upcoming dates to show for this rule/);
       assert.doesNotMatch(html, /<ul class="date-list">/);
-      assert.doesNotMatch(html, /The next five/);
+      assert.doesNotMatch(html, /Upcoming dates \(/);
     }
   );
 });
@@ -429,12 +429,13 @@ test('recur-check: recurrence_end after_count → 规则文案带时长,五次�
       assert.equal(response.status, 200);
       const html = await response.text();
       assert.ok(html.includes('Every day, for 30 days'), '规则文案应带时长截止(页面自带示例场景)');
-      assert.ok(html.includes('The next five times'), '30 天内足够展示五次');
+      assert.ok(html.includes('Upcoming dates (UTC)'), '30 天内足够展示五次');
+      assert.equal((html.match(/<li>/g) || []).length, 5, '起始日=今天含今天,共五条');
     },
   );
 });
 
-test('recur-check: recurrence_end date 截止在两天后 → 只列两条,不显示截止后的日期', async () => {
+test('recur-check: recurrence_end date 截止在两天后 → 从今天起三条(轮 3 含今天),不显示截止后的日期', async () => {
   const today = todayInZone('UTC');
   await withMockedUpstream(
     {
@@ -454,8 +455,14 @@ test('recur-check: recurrence_end date 截止在两天后 → 只列两条,不�
       assert.equal(response.status, 200);
       const html = await response.text();
       assert.ok(/until [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(html), '规则文案应带 until 绝对日期');
-      assert.ok(html.includes('The next 2 times'), '只剩两条(明天/后天)');
-      assert.equal((html.match(/<li>/g) || []).length, 2, '日期列表恰好两条,截止后不出现');
+      assert.ok(html.includes('Upcoming dates (UTC)'), '标题不承诺次数');
+      assert.equal((html.match(/<li>/g) || []).length, 3, '起始日=今天 → 今天/明天/后天三条,截止后不出现');
+      // 首条就是起始日(今天):App 系列从今天就开始,不得漏报
+      const expectedToday = new Date(Date.parse(`${today}T12:00:00.000Z`))
+        .toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      const firstLi = html.match(/<ul class="date-list"><li>([^<]+)<\/li>/);
+      assert.ok(firstLi, '应渲染日期列表');
+      assert.equal(firstLi[1], expectedToday, '首条 = 起始日(今天)');
     },
   );
 });
@@ -480,7 +487,7 @@ test('recur-check: recurrence_end 形状坏(count 0)→ 无截止按无界展示
       assert.equal(response.status, 200);
       const html = await response.text();
       assert.ok(html.includes('>Every day<'), '规则仍渲染、不带截止后缀');
-      assert.ok(html.includes('The next five times'), '按无界展开五次');
+      assert.ok(html.includes('Upcoming dates (UTC)'), '按无界展开五次');
       assert.ok(!html.includes(', for '), '没有时长后缀');
     },
   );
@@ -509,7 +516,7 @@ test('recur-check: recurrence_end date 值 13 月 → 无截止,页面不出现 
       const html = await response.text();
       assert.ok(!html.includes('undefined'), '不得渲染 "undefined 1, 2026" 这类垃圾');
       assert.ok(html.includes('>Every day<'), '规则仍按无截止渲染');
-      assert.ok(html.includes('The next five times'), '无截止按无界展开');
+      assert.ok(html.includes('Upcoming dates (UTC)'), '无截止按无界展开');
     },
   );
 });
@@ -533,8 +540,42 @@ test('recur-check: after_count 超大 count → 不炸(RangeError→500 已修),
       const response = await onRequestPost(context);
       assert.equal(response.status, 200, '超大 count = Swift calendar.date(byAdding:) nil → 无截止,不 500');
       const html = await response.text();
-      assert.ok(html.includes('The next five times'), '无截止按无界展开');
+      assert.ok(html.includes('Upcoming dates (UTC)'), '无截止按无界展开');
       assert.ok(!html.includes('for 999999999'), '不渲染荒谬时长文案');
+    },
+  );
+});
+
+// ---------- 轮 3(2026-11-26):起始日 due_date 进展开 ----------
+
+test('recur-check: 起始日在未来 → 从起始日起列,不再从明天盲列(用户主案)', async () => {
+  const today = todayInZone('UTC');
+  const due = plusDays(today, 18); // 远期起始日,旧口径会先列 5 个起始日之前的日期
+  await withMockedUpstream(
+    {
+      body: { phrase: 'meds every day for 3 days starting Dec 14', tz: 'UTC' },
+      upstreamImpl: () => jsonUpstream({
+        todos: [{
+          title: 'Take meds', due_date: due, due_time: null, time_bucket: null,
+          recurrence_rule: { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null },
+          recurrence_end: { kind: 'after_count', count: 3, unit: 'day' },
+          due_date_basis: 'user_explicit',
+        }],
+        ignored: '',
+      }),
+    },
+    async (context) => {
+      const response = await onRequestPost(context);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes('Every day, for 3 days'), '规则文案带时长截止');
+      assert.equal((html.match(/<li>/g) || []).length, 3, '起始日起三天,截止截断');
+      // 三条依次 = 起始日 / +1 / +2(每条都是 App 会生成的日期)
+      const listHtml = html.match(/<ul class="date-list">([\s\S]*?)<\/ul>/)[1];
+      const items = [...listHtml.matchAll(/<li>([^<]+)<\/li>/g)].map((m) => m[1]);
+      const expected = [0, 1, 2].map((n) => new Date(Date.parse(`${plusDays(due, n)}T12:00:00.000Z`))
+        .toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }));
+      assert.deepEqual(items, expected, '列出的是起始日系列成员,不是「明天起」的日期');
     },
   );
 });

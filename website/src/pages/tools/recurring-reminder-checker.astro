@@ -25,8 +25,8 @@ const schema = [
     <div class="container">
       <h1>What does “every Monday, Wednesday and Friday” actually create?</h1>
       <p class="lede">
-        Type a recurring-reminder phrase and see how VoiceTodo reads it: the repeat rule, and the next five
-        times it would fire.
+        Type a recurring-reminder phrase and see how VoiceTodo reads it: the repeat rule, and the upcoming
+        dates it would fire on.
       </p>
     </div>
   </section>
@@ -44,7 +44,7 @@ const schema = [
           required
           placeholder="remind me to water the plants every Monday, Wednesday and Friday"></textarea>
         <p class="hint">Try: “pay rent monthly on the 1st” · “meds every day for the next 30 days”</p>
-        <label for="tz">Timezone (used to compute the next five dates)</label>
+        <label for="tz">Timezone (used to compute the upcoming dates)</label>
         <select id="tz" name="tz">
           <option value="auto" selected>Auto — detected from your connection</option>
           {TIMEZONES.map((tz) => <option value={tz}>{tz}</option>)}

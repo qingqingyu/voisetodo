@@ -152,8 +152,8 @@ the parser keeps decisions and errands too, but skips feelings and background ch
   // 丢弃,Swift 解码层同口径),行内显示的就是归一后的真实日历日。
   const anyDateShown = todos.some((todo) => normalizeIsoDate(todo.due_date) && todo.due_date_basis === 'user_explicit');
   // 时区线索(2026-11-26 审计轮 2):tz=Auto 时挂 VPN 的用户会被解析到出口时区,
-  // "tomorrow" 可能差一天而页面此前没有任何线索;工具②的「接下来五次」带时区标注,
-  // 这里对齐。只在确有时间信息(日期/钟点/时段/重复)时出现,纯标题列表不打扰。
+  // "tomorrow" 可能差一天而页面此前没有任何线索;工具②的「Upcoming dates」带时区
+  // 标注,这里对齐。只在确有时间信息(日期/钟点/时段/重复)时出现,纯标题列表不打扰。
   const hasTiming = whens.some(Boolean);
   const ignored = typeof parsed.data.ignored === 'string' ? parsed.data.ignored.trim() : '';
   const ignoredHtml = ignored

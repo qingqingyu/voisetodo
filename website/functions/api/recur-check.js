@@ -191,24 +191,27 @@ in the app you confirm the rule on the review card before anything is saved.</p>
       : `Also kept as a plain task without a repeat: “${escapeHtml(plainTitles[0])}”.`}</p>`
     : '';
   const cards = recurring.map(({ title, rule, todo }) => {
+    // 系列起始日(2026-11-26 轮 3):App 端截止求解与展开都以任务首个 dueDate 为
+    // 起点 —— 起始日在未来时从起始日起列、是今天时含今天,「从明天盲列」会把
+    // App 不会生成的日期说成会生成。截止求解与日期展开必须用同一个 start。
+    // start 用 normalizeIsoDate(2026-11-26 审计轮 2):Swift 在解码层就把 due_date
+    // 变成真实日历日(2月31 滚动、13月丢弃),原始字符串不进求解;无 due_date 回落
+    // today(App 还有文本解析兜底,见 resolveModelRecurrenceEnd 注释,残余偏差记结果文档)。
+    const startIso = normalizeIsoDate(todo.due_date) ?? today;
     // 有效截止 + 展示后缀(2026-11-26 审计轮 2):App 把模型 rule.end_date /
     // 顶层 recurrence_end 写进 RecurrenceRule.endDate —— 展示与截断都用同一真相。
-    // start 的取值是检查器简化:due_date ?? today(App 还有文本解析兜底,见
-    // resolveModelRecurrenceEnd 注释,残余偏差记结果文档)。
     const { iso: endIso, suffix } = modelRuleEndInfo(rule, todo.recurrence_end, {
-      // start 用 normalizeIsoDate(2026-11-26 审计轮 2 双 review):Swift 在解码层就把
-      // due_date 变成真实日历日(2月31 滚动、13月丢弃),原始字符串不进求解。
-      startIso: normalizeIsoDate(todo.due_date) ?? today,
+      startIso,
       todayIso: today,
     });
     const ruleText = describeModelRecurrence(rule) + suffix;
-    // 「接下来五次」的展开口径见 modelRuleOccurrences:interval>1 以第一个匹配日为锚
-    // (App 端锚任务首个 dueDate,检查器没有任务,取第一个匹配日等价);第 5 参传
+    // 展开口径见 modelRuleOccurrences:从起始日起算、interval 锚起始日;第 5 参传
     // 有效截止(endIso 已按 App 优先级合并 rule.end_date,函数内部再合并结果不变)。
-    const dates = modelRuleOccurrences(rule, today, tz, 5, endIso);
-    // 展开数不足 count(结构化 end_date 很近 / interval 特大)时不硬说「five」:
-    // 标题按实际条数说,一条都没有就明说,不渲染空 <ul> 装正常。
-    const timesLabel = `The next ${dates.length === 5 ? 'five' : dates.length} time${dates.length === 1 ? '' : 's'} (${escapeHtml(tz)}):`;
+    const dates = modelRuleOccurrences(rule, today, tz, 5, endIso, startIso);
+    // 标题(轮 3):起始日是今天时列表含今天,「The next five times」不再成立,
+    // 改用不带次数承诺的「Upcoming dates」;条数随截止自然截断,一条都没有就明说,
+    // 不渲染空 <ul> 装正常。
+    const timesLabel = `Upcoming dates (${escapeHtml(tz)}):`;
     const datesBlock = dates.length === 0
       ? `<p class="note" style="margin:0 0 10px">No upcoming dates to show for this rule.</p>`
       : `<p class="note" style="margin:0 0 10px">${timesLabel}</p>
