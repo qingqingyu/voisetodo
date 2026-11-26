@@ -81,7 +81,7 @@ export const pages = {
     title: 'Recurring Reminder Phrase Checker | VoiceTodo',
     ogTitle: 'What does that phrase create?',
     description:
-      'Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates and the next five dates — before you rely on it.',
+      'Type a repeat phrase like “every Monday, Wednesday and Friday” and see the rule it creates and the upcoming dates — before you rely on it.',
     lastmod: '2026-11-24',
     changeFrequency: 'monthly',
     priority: 0.8,

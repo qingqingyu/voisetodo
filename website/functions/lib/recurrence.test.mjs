@@ -173,17 +173,17 @@ test('describeRule 展示排序周一始:跨 Apple 编号边界(周日=1)不再�
 // unit 非字符串丢弃、超大 count 防炸。
 import { modelRuleOccurrences, describeModelRecurrence, parseModelRecurrenceEnd, resolveModelRecurrenceEnd, describeModelRecurrenceEnd, modelRuleEndInfo, isIsoDate, normalizeIsoDate } from './recurrence.mjs';
 
-test('model:weekly 多天 interval 1,第一个匹配日严格晚于 today', () => {
-  // TODAY=2026-11-18 周三;weekdays [2,4,6]=周一三五 → 下一个周五 11-20
+test('model:weekly 多天 interval 1,起始日是今天时今天也列出(轮 3)', () => {
+  // TODAY=2026-11-18 周三;weekdays [2,4,6]=周一三五,周三命中 → 从今天起
   const dates = modelRuleOccurrences(
     { frequency: 'weekly', interval: 1, weekdays: [2, 4, 6], day_of_month: null, end_date: null },
     TODAY, 'UTC', 3
   );
-  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-20', '2026-11-23', '2026-11-25']);
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-18', '2026-11-20', '2026-11-23']);
 });
 
-test('model:weekly interval 2 以第一个匹配日为锚,每两周一次', () => {
-  // TODAY 周三;周二 [3] → 第一个匹配 11-24,之后 12-08、12-22
+test('model:weekly interval 2 锚起始日,每两周一次', () => {
+  // TODAY 周三;周二 [3] → 第一个匹配 11-24(dayFromStart=6,窗口 0),之后 12-08、12-22
   const dates = modelRuleOccurrences(
     { frequency: 'weekly', interval: 2, weekdays: [3], day_of_month: null, end_date: null },
     TODAY, 'UTC', 3
@@ -191,12 +191,12 @@ test('model:weekly interval 2 以第一个匹配日为锚,每两周一次', () =
   assert.deepEqual(dates.map((d) => d.iso), ['2026-11-24', '2026-12-08', '2026-12-22']);
 });
 
-test('model:daily interval 3 从明天起每三天一次', () => {
+test('model:daily interval 3 从起始日(今天)起每三天一次(轮 3 含今天)', () => {
   const dates = modelRuleOccurrences(
     { frequency: 'daily', interval: 3, weekdays: [], day_of_month: null, end_date: null },
     TODAY, 'UTC', 3
   );
-  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19', '2026-11-22', '2026-11-25']);
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-18', '2026-11-21', '2026-11-24']);
 });
 
 test('model:monthly day_of_month 从下个匹配月起算', () => {
@@ -215,12 +215,14 @@ test('model:monthly 31 号自动跳过短月', () => {
   assert.deepEqual(dates.map((d) => d.iso), ['2026-01-31', '2026-03-31', '2026-05-31']);
 });
 
-test('model:monthly interval 2 按日历月差过滤', () => {
+test('model:monthly interval 2 按日历月差过滤(锚起始月,轮 3)', () => {
+  // 起始月 = 11 月(无 startIso → 今天):12 月 monthIndex=1 奇数跳过,
+  // 1 月 =2 命中,之后隔月 —— 与 EKRecurrenceRule 从 DTSTART 月数 interval 的口径一致
   const dates = modelRuleOccurrences(
     { frequency: 'monthly', interval: 2, weekdays: [], day_of_month: 10, end_date: null },
     TODAY, 'UTC', 3
   );
-  assert.deepEqual(dates.map((d) => d.iso), ['2026-12-10', '2027-02-10', '2027-04-10']);
+  assert.deepEqual(dates.map((d) => d.iso), ['2027-01-10', '2027-03-10', '2027-05-10']);
 });
 
 test('model:end_date 截断截止边界', () => {
@@ -228,15 +230,16 @@ test('model:end_date 截断截止边界', () => {
     { frequency: 'weekly', interval: 1, weekdays: [4], day_of_month: null, end_date: '2026-11-25' },
     TODAY, 'UTC', 5
   );
-  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-25'], '周三 11-25 在边界内;之后超出即停');
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-18', '2026-11-25'], '起始日今天(周三)与 11-25 在边界内;之后超出即停');
 });
 
-test('model:weekly 无 weekdays 以明天为锚每 interval 周一次', () => {
+test('model:weekly 无 weekdays 从起始日每 interval 周一次(轮 3 含今天)', () => {
+  // Swift dayDiff % (interval*7) == 0:起始日(今天)dayDiff=0 即首个出现
   const dates = modelRuleOccurrences(
     { frequency: 'weekly', interval: 2, weekdays: [], day_of_month: null, end_date: null },
     TODAY, 'UTC', 3
   );
-  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19', '2026-12-03', '2026-12-17']);
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-18', '2026-12-02', '2026-12-16']);
 });
 
 test('model:空规则 / 未知 frequency 返回空数组', () => {
@@ -244,11 +247,11 @@ test('model:空规则 / 未知 frequency 返回空数组', () => {
   assert.deepEqual(modelRuleOccurrences({ frequency: 'yearly' }, TODAY, 'UTC', 3), []);
 });
 
-test('model:weekly interval 2 多 weekday 按锚点 7 天窗口展开(App occurs 同公式)', () => {
-  // TODAY 周三 11-18;「每两周周一和周四」[2,5] → 锚 = 周四 11-19;
-  // 同窗口(锚后 7 天内)的周一 11-23 也出现;下一个窗口周四 12-03、周一 12-07;
-  // 窗口 1(11-27 周四、11-30 周一)落在奇数窗口,跳过 —— 与 Swift
-  // RecurrenceRule.occurs 的 weekDiff % interval 完全一致。
+test('model:weekly interval 2 多 weekday 按起始日 7 天窗口展开(App occurs 同公式)', () => {
+  // TODAY 周三 11-18(起始日);「每两周周一和周四」[2,5] → 起始日窗口(0)内:
+  // 周四 11-19(dayFromStart=1)、周一 11-23(dayFromStart=5);窗口 2:周四 12-03
+  // (dayFromStart=15)、周一 12-07;窗口 1(11-26 周四、11-30 周一)跳过 ——
+  // 与 Swift RecurrenceRule.occurs 的 weekDiff % interval 完全一致。
   const dates = modelRuleOccurrences(
     { frequency: 'weekly', interval: 2, weekdays: [2, 5], day_of_month: null, end_date: null },
     TODAY, 'UTC', 3
@@ -305,20 +308,22 @@ test('model:interval 非整数/字符串判无效(App Int 解码 throw → 规�
   }
   // null interval 取默认 1(Swift decodeIfPresent ?? 1);0/负数被 max(1,·) 钳成 1
   const nullInterval = { frequency: 'daily', interval: null, weekdays: [], day_of_month: null, end_date: null };
-  assert.deepEqual(modelRuleOccurrences(nullInterval, TODAY, 'UTC', 2).map((d) => d.iso), ['2026-11-19', '2026-11-20']);
+  assert.deepEqual(modelRuleOccurrences(nullInterval, TODAY, 'UTC', 2).map((d) => d.iso), ['2026-11-18', '2026-11-19']);
   assert.equal(describeModelRecurrence(nullInterval), 'Every day');
   const zeroInterval = { frequency: 'daily', interval: 0, weekdays: [], day_of_month: null, end_date: null };
   assert.equal(describeModelRecurrence(zeroInterval), 'Every day');
 });
 
-test('model:monthly interval 4 自适应上限内出满五次(400 步只够 3 次)', () => {
-  // 「every 4 months on the 15th」:第 5 次 2028-04-15 距锚 516 天,超过旧 400 步上限
+test('model:monthly interval 4 自适应上限内出满五次(锚起始月,首个匹配隔 4 个月)', () => {
+  // 「every 4 months on the 15th」,起始月 = 11 月:12 月~2 月 monthIndex 1-3 跳过,
+  // 3 月 =4 命中,之后每 4 个月;第 5 次 2028-07-15 距起始 ~605 天,
+  // 上限 31×interval×(count+1)=744 天内(旧的 400 步 / 527 步都不够)
   const dates = modelRuleOccurrences(
     { frequency: 'monthly', interval: 4, weekdays: [], day_of_month: 15, end_date: null },
     TODAY, 'UTC', 5
   );
   assert.deepEqual(dates.map((d) => d.iso),
-    ['2026-12-15', '2027-04-15', '2027-08-15', '2027-12-15', '2028-04-15']);
+    ['2027-03-15', '2027-07-15', '2027-11-15', '2028-03-15', '2028-07-15']);
 });
 
 test('model:畸形超大 interval 不死循环(硬顶 5000 步内返回)', () => {
@@ -326,18 +331,18 @@ test('model:畸形超大 interval 不死循环(硬顶 5000 步内返回)', () =>
     { frequency: 'daily', interval: 100000, weekdays: [], day_of_month: null, end_date: null },
     TODAY, 'UTC', 5
   );
-  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19']);
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-18'], '起始日 dayFromStart=0 命中一次,之后 5000 步内无第二次');
 });
 
 test('model:UTC+12+ 时区(Auckland)不因锚点已是明天而晚一天/漏首次', () => {
   // 回归(2026-11-24 review):UTC 正午锚在 Pacific/Auckland(+12 冬 / +13 夏,白名单内
-  // 唯一 ≥ +12 的时区)已是本地「明天」,固定从 k=1 起算会让全部日期整体晚一天、
-  // 漏掉真实首次出现(实测修前 daily next3 = 11-20/21/22、weekly-Thu = 11-26)。
+  // 唯一 ≥ +12 的时区)已是本地「明天」,本地「今天」= k=-1。轮 3 起起始日是今天
+  // 时含今天:Auckland 的 today=11-18 必须列得出(k=-1),整体不得晚一天。
   const daily = { frequency: 'daily', interval: 1, weekdays: [], day_of_month: null, end_date: null };
   assert.deepEqual(
     modelRuleOccurrences(daily, TODAY, 'Pacific/Auckland', 3).map((d) => d.iso),
-    ['2026-11-19', '2026-11-20', '2026-11-21'],
-    'daily 首个未来日 = 明天(2026-11-19)'
+    ['2026-11-18', '2026-11-19', '2026-11-20'],
+    'daily 从本地今天(11-18)起连排三天'
   );
   // 2026-11-19 本身就是周四(weekdays 5=Thursday):不得漏报成下一周
   const thu = { frequency: 'weekly', interval: 1, weekdays: [5], day_of_month: null, end_date: null };
@@ -345,16 +350,16 @@ test('model:UTC+12+ 时区(Auckland)不因锚点已是明天而晚一天/漏首�
     modelRuleOccurrences(thu, TODAY, 'Pacific/Auckland', 2).map((d) => d.iso),
     ['2026-11-19', '2026-11-26']
   );
-  // UTC 对照:修复对既有语义零变化
+  // UTC 对照:同一规则同一参考日,两个时区的日历日序列一致
   assert.deepEqual(
     modelRuleOccurrences(daily, TODAY, 'UTC', 3).map((d) => d.iso),
-    ['2026-11-19', '2026-11-20', '2026-11-21']
+    ['2026-11-18', '2026-11-19', '2026-11-20']
   );
 });
 
-test('model:间隔节奏相对第一个未来日,startK=0 与 startK=1 同构', () => {
-  // daily interval 3 / weekly interval 2 的节奏锚从 k=1 改为相对 startK 后,
-  // UTC+12+ 时区与 UTC 的日期序列应完全一致(都是「明天起每 N 天/两周一次」)。
+test('model:间隔节奏相对起始日,UTC+12+ 时区与 UTC 同构', () => {
+  // daily interval 3 / weekly interval 2 的节奏锚在起始日(本地今天)后,
+  // UTC+12+ 时区与 UTC 的日期序列应完全一致(都是「今天起每 N 天/两周一次」)。
   const d3 = { frequency: 'daily', interval: 3, weekdays: [], day_of_month: null, end_date: null };
   const w2 = { frequency: 'weekly', interval: 2, weekdays: [], day_of_month: null, end_date: null };
   assert.deepEqual(
@@ -444,10 +449,10 @@ test('describeModelRecurrenceEnd: 五种 kind 的英文文案', () => {
 
 test('modelRuleOccurrences: structuredEndIso 截断;rule.end_date 绝对优先于结构化截止', () => {
   const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
-  // 截止 2026-11-20:只剩 19/20 两条
-  assert.equal(modelRuleOccurrences(daily, TODAY, 'UTC', 5, '2026-11-20').length, 2);
-  // rule.end_date(11-22)比结构化截止(11-19)晚:按 rule.end_date 截 → 4 条(App 优先级,不取更早)
-  assert.equal(modelRuleOccurrences({ ...daily, end_date: '2026-11-22' }, TODAY, 'UTC', 5, '2026-11-19').length, 4);
+  // 截止 2026-11-20:起始日=今天含今天,剩 18/19/20 三条
+  assert.equal(modelRuleOccurrences(daily, TODAY, 'UTC', 5, '2026-11-20').length, 3);
+  // rule.end_date(11-22)比结构化截止(11-19)晚:按 rule.end_date 截 → 5 条(App 优先级,不取更早)
+  assert.equal(modelRuleOccurrences({ ...daily, end_date: '2026-11-22' }, TODAY, 'UTC', 5, '2026-11-19').length, 5);
   // 无截止:满 5 条
   assert.equal(modelRuleOccurrences(daily, TODAY, 'UTC', 5).length, 5);
 });
@@ -538,4 +543,83 @@ test('modelRuleEndInfo(双 review 修正): rule.end_date 13 月 → nil 让位�
   const c = modelRuleEndInfo(daily, { kind: 'date', value: '2026-02-31' }, { startIso: '2026-02-01', todayIso: '2026-02-01' });
   assert.equal(c.iso, '2026-03-03');
   assert.equal(c.suffix, ', until Mar 3, 2026');
+});
+
+// ---------- 轮 3(2026-11-26):起始日 startIso —— 展开起点与 interval 锚 ----------
+// 背景:截止(recurrence_end)早已按 due_date 求解,但「Upcoming dates」的展开
+// 仍从明天盲列 —— 起始日在未来时列出的全是 App 不会生成的日期
+// (occurs(on:startDate:) 第一行 guard day >= start)。App 端所有锚(daily 步长 /
+// weekly 窗口 / monthly 月差)都从 startDate 起算,展开须用同一个起始日。
+
+test('model 轮3:daily 起始日在未来 + for 3 days → 从起始日起列,截止截断(用户主案)', () => {
+  // 「每天,持续 3 天,从 12 月 14 日开始」:start=12-14,end=12-16(after_count 3 day)
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  const dates = modelRuleOccurrences(daily, TODAY, 'UTC', 5, '2026-12-16', '2026-12-14');
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-12-14', '2026-12-15', '2026-12-16'],
+    '起始日之前的 11-19…12-01 不是系列成员,不得出现');
+});
+
+test('model 轮3:weekly 起始日在未来 → 从起始日起列,不再多列起始日之前的周', () => {
+  // 「every Monday starting Dec 14」:12-14 是周一;旧口径会从明天(11-19)起
+  // 多列出 11-23、11-30、12-07 这些 App 不会生成的日期
+  const monday = { frequency: 'weekly', interval: 1, weekdays: [2], day_of_month: null, end_date: null };
+  const dates = modelRuleOccurrences(monday, TODAY, 'UTC', 5, null, '2026-12-14');
+  assert.deepEqual(dates.map((d) => d.iso),
+    ['2026-12-14', '2026-12-21', '2026-12-28', '2027-01-04', '2027-01-11']);
+});
+
+test('model 轮3:startIso 显式传今天 → 含今天(与缺省 todayIso 同值)', () => {
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(daily, TODAY, 'UTC', 2, null, TODAY).map((d) => d.iso),
+    modelRuleOccurrences(daily, TODAY, 'UTC', 2, null, null).map((d) => d.iso)
+  );
+  assert.equal(modelRuleOccurrences(daily, TODAY, 'UTC', 2, null, TODAY)[0].iso, TODAY);
+});
+
+test('model 轮3:起始日已过去 → 保持「明天起」的既有口径', () => {
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  const dates = modelRuleOccurrences(daily, TODAY, 'UTC', 3, null, '2026-11-10');
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-11-19', '2026-11-20', '2026-11-21']);
+});
+
+test('model 轮3:起始日在过去时 interval 锚起始日,不再锚「第一个匹配日」', () => {
+  // 起始 11-14(周六),every 2 weeks on Wednesday:App 窗口从 11-14 起算 ——
+  // 11-25(周三)在窗口 1,不是系列成员;第一个 upcoming = 12-02(窗口 2)。
+  // 旧口径锚「第一个匹配日 11-25」会错列 11-25、12-09、12-23。
+  const wed = { frequency: 'weekly', interval: 2, weekdays: [4], day_of_month: null, end_date: null };
+  const dates = modelRuleOccurrences(wed, TODAY, 'UTC', 3, null, '2026-11-14');
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-12-02', '2026-12-16', '2026-12-30']);
+});
+
+test('model 轮3:起始日在未来时 weekly interval>1 的窗口锚起始日', () => {
+  // 「每两周周一和周四,从 12-16(周三)开始」:窗口 0 = 12-16…12-22,
+  // 周四 12-17(dayFromStart=1)与周一 12-21(=5)都出现;窗口 2:12-31、01-04
+  const monThu = { frequency: 'weekly', interval: 2, weekdays: [2, 5], day_of_month: null, end_date: null };
+  const dates = modelRuleOccurrences(monThu, TODAY, 'UTC', 4, null, '2026-12-16');
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-12-17', '2026-12-21', '2026-12-31', '2027-01-04']);
+});
+
+test('model 轮3:monthly interval 锚起始月 —— 起始月内晚于起始日的匹配日不丢', () => {
+  // 「每 3 个月的 5 号,从 12 月 1 日开始」:12-05 的 monthIndex=0(同月)命中。
+  // 旧 monthDiff 对「同月晚于锚日」返回 null,会把起始月内的 12-05 整个丢掉。
+  const fifth = { frequency: 'monthly', interval: 3, weekdays: [], day_of_month: 5, end_date: null };
+  const dates = modelRuleOccurrences(fifth, TODAY, 'UTC', 5, null, '2026-12-01');
+  assert.deepEqual(dates.map((d) => d.iso),
+    ['2026-12-05', '2027-03-05', '2027-06-05', '2027-09-05', '2027-12-05']);
+});
+
+test('model 轮3:startIso 形状坏回落今天(与 recur-check 调用方同值,双保险)', () => {
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(daily, TODAY, 'UTC', 2, null, '2026-13-01').map((d) => d.iso),
+    ['2026-11-18', '2026-11-19']
+  );
+});
+
+test('model 轮3:daily interval 从起始日起每 N 天一次(未来起始日)', () => {
+  // 「每 3 天,从 12 月 20 日开始」:12-20、12-23、12-26(不是从明天 11-19 起算)
+  const d3 = { frequency: 'daily', interval: 3, weekdays: [], day_of_month: null, end_date: null };
+  const dates = modelRuleOccurrences(d3, TODAY, 'UTC', 3, null, '2026-12-20');
+  assert.deepEqual(dates.map((d) => d.iso), ['2026-12-20', '2026-12-23', '2026-12-26']);
 });

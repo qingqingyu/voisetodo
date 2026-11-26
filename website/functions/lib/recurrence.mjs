@@ -267,28 +267,31 @@ export function describeRule(rule) {
 }
 
 /// 展开模型 recurrence_rule(prompt 规则 5 形状:{frequency, interval, weekdays,
-/// day_of_month, end_date})的未来 count 次日期,供工具②渲染「接下来五次」。
+/// day_of_month, end_date})的未来 count 次日期,供工具②渲染「Upcoming dates」。
 /// 与 describeModelRecurrence 同源,都是模型输出(不是本地 resolveRecurrence 的
-/// 规则形状)。口径:
-/// - 起点严格晚于 today(「接下来」从第一个未来日起算;UTC+12+ 时区的 UTC 正午锚
-///   本身已是本地明天,起始步数按此自适应,见函数内 startK 注释);
-/// - interval>1 的 weekly/monthly 以「第一个匹配日」为锚,之后每 interval 个周期
-///   出现一次 —— App 端重复系列的锚是任务首个 dueDate,检查器没有任务,取第一个
-///   匹配日等价(文档需注明这是展示口径);
+/// 规则形状)。口径(2026-11-26 轮 3 起以「系列起始日」为准,见 startIso 参数):
+/// - 起始日在未来 → 从起始日起列;是今天 → 含今天(App 系列从今天就开始);
+///   已过去 → 保持「明天起」的既有展示口径。App 端 occurs(on:startDate:) 第一行
+///   就是 guard day >= start,起始日之前的日期一律不是系列成员,「从明天盲列」
+///   会把 App 不会生成的日期说成会生成(轮 3 修复的主案);
+/// - interval 的锚 = 系列起始日(不是第一个匹配日):App 端 occurs() 的
+///   dayDiff / weekDiff 全部从 startDate 起算。起始日在过去、展开从明天开始时,
+///   「第一个匹配日」可能落在与起始日奇偶不同的周窗口,以 App 为准锚起始日;
 /// - weekly + weekdays + interval>1 的周期内过滤与 App 端
 ///   RecurrenceRule.occurs(on:startDate:)(Protocols/Domain/RecurrenceRule.swift:130)
-///   同公式:weekDiff = 距锚点天数整除 7,weekDiff % interval == 0 —— 锚点后同一个
-///   7 天窗口内的所有 weekdays 都匹配(「每两周周一和周四」两条都出现),不是只留
-///   锚 weekday;
-/// - daily interval N 从明天起每 N 天一次;weekly 无 weekdays 以明天为锚每 interval 周一次
-///   (monthly 无 day_of_month 被 isValidModelRule 判无效 —— App 端 isValid 同样丢弃,
-///   下面的 fallbackDay 分支只是闸门未来放宽时的保留路径,当前不可达);
-/// - monthly interval>1 按日历月差过滤、daily interval>1 按 N 天步长 —— 注意
-///   App 端 occurs() 对 monthly/daily 都忽略 interval(RecurrenceRule.swift:145-152
-///   的 monthly 分支不读 interval、daily 分支恒 true),但 App 的系统日历镜像
-///   (SystemCalendarWriter.ekRecurrenceRule)把 interval 传给 EKRecurrenceRule:
-///   App 自身在 in-app 展开/日历镜像两边有张力。检查器取 interval 语义
-///   (与模型契约「每三天/每三个月」、日历镜像一致),此张力记为 App 侧既有问题。
+///   同公式:weekDiff = 距起始日天数整除 7,weekDiff % interval == 0 —— 起始日后
+///   同一个 7 天窗口内的所有 weekdays 都匹配(「每两周周一和周四」两条都出现),
+///   不是只留锚 weekday;weekly 无 weekdays 从起始日每 interval*7 天一次
+///   (Swift dayDiff % (interval*7) == 0 同式);
+/// - monthly 无 day_of_month 被 isValidModelRule 判无效 —— App 端 isValid 同样丢弃,
+///   下面的 fallbackDay 分支只是闸门未来放宽时的保留路径,当前不可达;
+/// - monthly interval>1 按日历月差过滤、daily interval>1 按 N 天步长(都从起始日
+///   起算)—— 注意 App 端 occurs() 对 monthly/daily 都忽略 interval
+///   (RecurrenceRule.swift:145-152 的 monthly 分支不读 interval、daily 分支恒 true),
+///   但 App 的系统日历镜像(SystemCalendarWriter.ekRecurrenceRule)把 interval 传给
+///   EKRecurrenceRule:App 自身在 in-app 展开/日历镜像两边有张力。检查器取 interval
+///   语义(与模型契约「每三天/每三个月」、日历镜像一致),月差按 EK 口径只数年月
+///   (起始月为 0,见 monthIndex),此张力记为 App 侧既有问题。
 /// - 截止截断(2026-11-26 审计轮 2 起):end_date(YYYY-MM-DD)之后的匹配日停;
 ///   另接受第 5 参 structuredEndIso —— 顶层 recurrence_end(规则 5b)经
 ///   resolveModelRecurrenceEnd 算出的截止。优先级镜像 App(Protocols/Models.swift:384
@@ -297,8 +300,13 @@ export function describeRule(rule) {
 ///   滚动,同 Swift DateFormatter)。形状坏的 recurrence_end = 无截止(App 端
 ///   (try? …) ?? nil 同口径),不影响规则有效性;
 /// - 迭代上限自适应:400 步(≈13 个月)只够 monthly interval ≤ 3 出满五次,
-///   按 count×周期放大,硬顶 5000 步防畸形规则(超大 interval)拖垮 Function。
-export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5, structuredEndIso = null) {
+///   按 count×周期放大(interval 锚在起始日后,首个匹配月最多隔 interval 个月,
+///   上限按 31×interval×(count+1) 天),硬顶 5000 步防畸形规则(超大 interval)
+///   拖垮 Function。
+/// @param {string|null} startIso 系列起始日(任务首个 due_date,YYYY-MM-DD)。
+///   null / 形状坏回落 todayIso —— 与 recur-check 调用方
+///   normalizeIsoDate(todo.due_date) ?? today 同值,双保险。
+export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5, structuredEndIso = null, startIso = null) {
   if (!isValidModelRule(rule)) return [];
   const interval = Number(rule.interval) >= 2 ? Math.floor(Number(rule.interval)) : 1;
   // weekday 只留 1...7(与 Swift init 的静默过滤同口径;有效性闸门已拦掉
@@ -313,69 +321,76 @@ export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5, struct
   const extraEndIso = normalizeIsoDate(structuredEndIso);
   const endIso = ruleEndIso ?? extraEndIso;
 
+  // 系列起始日(轮 3):形状坏回落 todayIso —— recur-check 调用方已经先过
+  // normalizeIsoDate(todo.due_date) ?? today,这里再兜一次防直传原始字符串。
+  const start = normalizeIsoDate(startIso) ?? todayIso;
+
   const anchorMs = Date.parse(`${todayIso}T12:00:00.000Z`);
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
   });
-  // 起始步数(2026-11-24 review 修复):UTC 正午锚在偏移 ≥ +12 的时区(白名单内
-  // 唯一 Pacific/Auckland,+12 冬 / +13 夏)已是本地「明天」,此时锚点本身就是
-  // 第一个未来日,必须从 k=0 起算;其余时区锚点 = 本地今天,从 k=1(明天)起算。
-  // 固定从 k=1 起算会让这类时区整体晚一天、漏掉真实首次出现。
-  // (每步 +86400s 仍逐日推进:偏移变化 <24h,不会跳日/重日,见 partsInZone 注释。)
-  const startK = partsInZone(fmt, anchorMs).iso > todayIso ? 0 : 1;
-  // monthly 无 day_of_month 的锚日号:第一个未来日(startK 那天)的日号。当前闸门下
-  // monthly 必有合法 day_of_month,此分支不可达,保留为闸门放宽时的既定语义。
+  // 时区日偏移(2026-11-24 review 引入,轮 3 泛化):UTC 正午锚在偏移 ≥ +12 的
+  // 时区(白名单内唯一 Pacific/Auckland,+12 冬 / +13 夏)已是本地「明天」,
+  // 本地日 = todayIso + shift + k;其余时区 shift=0。(每步 +86400s 仍逐日推进:
+  // 偏移变化 <24h,不会跳日/重日,见 partsInZone 注释。)
+  const shift = partsInZone(fmt, anchorMs).iso > todayIso ? 1 : 0;
+  // 列表起点:起始日在未来 → 起始日;是今天 → 含今天(轮 3 小案:App 系列从今天
+  // 就开始,「Every day, for 3 days」今天起算应列满三天);已过去 → 明天
+  // (保持既有「接下来」展示口径,起始日之前的成员本来就不该列)。
+  const beginIso = start > todayIso ? start : start === todayIso ? todayIso : addDaysIso(todayIso, 1);
+  const beginK = diffDays(todayIso, beginIso) - shift;
+  // interval 锚偏移:距起始日的天数(起始日可在过去 → 可为负)。展开日恒 ≥ 起始日,
+  // dayFromStart ≥ 0,无负数取模歧义。
+  const anchorOffset = diffDays(todayIso, start);
+  // monthly 无 day_of_month 的锚日号:第一个列出日的日号。当前闸门下 monthly 必有
+  // 合法 day_of_month,此分支不可达,保留为闸门放宽时的既定语义。
   const fallbackDay = rule.frequency === 'monthly' && !hasDayOfMonth
-    ? partsInZone(fmt, anchorMs + startK * 86400000).day
+    ? partsInZone(fmt, anchorMs + (beginK + shift) * 86400000).day
     : null;
 
-  // 步长上限:monthly 匹配日最长间隔 ≈ 31×interval 天(短月/日号跳月另加首日最多
-  // 31 步),interval=1 时保底 400(与 nextOccurrences 同档,不回退既有覆盖)。
-  const stepCap = Math.min(Math.max(400, 31 + (count - 1) * 31 * interval), 5000);
+  // 步长上限:monthly 首个匹配月最多隔 interval 个月(≈31×interval 天),之后每
+  // 次匹配 ≤31×interval 天;interval=1 时保底 400(与 nextOccurrences 同档,
+  // 不回退既有覆盖)。
+  const stepCap = Math.min(Math.max(400, 31 * interval * (count + 1)), 5000);
 
   const out = [];
-  let anchorK = null;   // interval>1 时第一个匹配日的步数
-  let anchorIso = null; // monthly 用:月差按日历月算,需要第一个匹配日的 iso
-  for (let k = startK; k <= stepCap && out.length < count; k++) {
+  for (let k = beginK; k < beginK + stepCap && out.length < count; k++) {
     const parts = partsInZone(fmt, anchorMs + k * 86400000);
+    const dayFromStart = k + shift - anchorOffset;
     let match = false;
     if (rule.frequency === 'daily') {
-      // 节奏相对 startK:两种起点下都是「第一个未来日起每 interval 天一次」
-      match = (k - startK) % interval === 0;
+      match = dayFromStart % interval === 0;
     } else if (rule.frequency === 'weekly') {
-      match = weekdays.length > 0 ? weekdays.includes(parts.weekday) : (k - startK) % (7 * interval) === 0;
+      // 有 weekdays:周几命中 + 周期内过滤(App occurs() 同公式:weekDiff 整除 7
+      // 后 % interval);无 weekdays:从起始日每 interval*7 天一次(Swift 同式)。
+      match = weekdays.length > 0
+        ? weekdays.includes(parts.weekday) && Math.floor(dayFromStart / 7) % interval === 0
+        : dayFromStart % (7 * interval) === 0;
     } else if (rule.frequency === 'monthly') {
       match = hasDayOfMonth ? parts.day === dayOfMonth : parts.day === fallbackDay;
+      if (match && interval > 1) match = monthIndex(start, parts.iso) % interval === 0;
     }
     if (!match) continue;
     if (endIso && parts.iso > endIso) break;
-
-    if (interval > 1 && anchorK !== null) {
-      // 周期内过滤:weekly 按「锚点起的第 N 个 7 天窗口」(App occurs() 同公式,
-      // 窗口内所有 weekdays 都出现),monthly 按日历月差
-      if (rule.frequency === 'weekly') {
-        if (Math.floor((k - anchorK) / 7) % interval !== 0) continue;
-      } else if (rule.frequency === 'monthly') {
-        const monthsBetween = monthDiff(anchorIso, parts.iso);
-        if (monthsBetween === null || monthsBetween % interval !== 0) continue;
-      }
-    }
-    if (anchorK === null) {
-      anchorK = k;
-      anchorIso = parts.iso;
-    }
     out.push(parts);
   }
   return out;
 }
 
-/// 两个 iso 日之间的日历月差(同日或前日为整月);无法构成整月关系返回 null
-/// (monthly 匹配日本就同日号,理论上恒为整月,null 只兜畸形输入)。
-function monthDiff(fromIso, toIso) {
-  const [fy, fm, fd] = fromIso.split('-').map(Number);
-  const [ty, tm, td] = toIso.split('-').map(Number);
-  const months = (ty - fy) * 12 + (tm - fm);
-  return td <= fd ? months : null;
+/// 两个 ISO 日的天数差(b - a)。两端都锚 UTC 正午再相减,差恒为 86400s 整数倍,
+/// 不受任何时区偏移影响。
+function diffDays(aIso, bIso) {
+  return Math.round((Date.parse(`${bIso}T12:00:00.000Z`) - Date.parse(`${aIso}T12:00:00.000Z`)) / 86400000);
+}
+
+/// 日历月差(EKRecurrenceRule interval 口径):只数年月、不看日 —— 起始月为 0,
+/// 每过一个日历月 +1,同月内先后不构成差。(旧 monthDiff 对「同月晚于锚日」返回
+/// null,锚在起始日而非匹配日之后会把起始月内的匹配日整月丢掉,轮 3 修正;
+/// 旧锚 = 第一个匹配日时两者数值恒等,不回退既有输出。)
+function monthIndex(fromIso, toIso) {
+  const [fy, fm] = fromIso.split('-').map(Number);
+  const [ty, tm] = toIso.split('-').map(Number);
+  return (ty - fy) * 12 + (tm - fm);
 }
 
 /// 模型 recurrence_rule 的有效性闸门 —— 镜像 App 端两道硬闸,凡 App 会丢弃
