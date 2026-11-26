@@ -320,6 +320,7 @@ const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户�
 - "月中" → 当月 15 号（算出 due_date）
 - "月初" → 当月 1 号（算出 due_date）
 - ⚠️ "这周末/本周末/下周末" → **due_date 必须为 null**（模糊日期，客户端让用户自己选周六或周日），due_hint 保留用户原文
+- ⚠️ "尽快/尽早/越快越好" → **due_date 和 due_date_basis 都为 null**（紧急性表达，不是日期线索——连「改天再说」那种模糊意向都没有，basis 也不标），due_hint 保留用户原文；priority 按规则 6 标 high。仅当句中没有其他日期表达（明确或模糊）时适用——「周五前尽快交报告」以「周五前」为准按规则 4 算 due_date；「这周末尽快交」以「这周末」为准按上面的模糊规则处理
 due_hint 始终保留用户原文。
 4c. 提前提醒：用户明确要求在截止时刻之前提醒时（「提前半小时提醒我」「提前15分钟」「提前一小时」「提前一天」），用 reminder_offset_minutes 返回偏移分钟数（半小时=30、一小时=60、一天=1440），范围 1–1440。仅在 due_time 存在时返回；用户没说「提前」类表述则为 null，不要自己推断。与 reminder_times（多个独立提醒时间点）互不影响
 4d. ⚠️ reminder_times 携带可换算的具体日期词时（「今天下午4点、6点吃药提醒」），该日期必须换算进 due_date 且 basis="user_explicit"（提醒依附于一个具体日子；模糊日期词如「这周末」仍按 4b 留 null 待用户补选）；输入完全没有任何日期词时（示例 12 的形态），due_date 为 null（见示例 27 对照）
@@ -331,7 +332,7 @@ due_hint 始终保留用户原文。
    - 到某月某号（这个月15号截止=this、下个月10号=next）→ {"kind":"day_of_month","day":D,"scope":"this"|"next"}
    - 用户明确说了完整年月日（到2026年7月20号）→ {"kind":"date","value":"YYYY-MM-DD"}
    - 无终点/开放式，或非重复任务 → recurrence_end 为 null
-6. 识别优先级线索：语气中有紧急感（赶紧、必须、来不及了）标记为 high，否则 normal
+6. 识别优先级线索：语气中有紧急感（赶紧、尽快、尽早、越快越好、必须、来不及了）标记为 high，否则 normal
 6b. 分类口径 category_hint（按动作本身判断）：work=工作/职业事务（开会、写报告、出差、见客户、为会议订机票订酒店）；study=学习（上课、复习、写作业、备考）；life=家务与跑腿（买菜、取快递、干洗、打扫、联系服务商、日常订票/订餐厅等预订杂事）；health=健康与作息（健身、吃药、喝水、睡觉、看病）；finance=钱与账单（房租、水电、税、还款、银行、工资）；social=与亲友的社交互动（给家人朋友打电话、送生日礼物、聚会赴约）；other=其余。口径：工作会议即使提到具体人名也是 work；预订类杂事默认 life，明确是聚会/社交场景才 social
 7. 一句话多条 TODO：用逗号、「然后」「还有」「顺便」等连接词分割的，拆成多条；同一动词带多个需分别办理的并列宾语也拆（「订机票和酒店」→「订机票」+「订酒店」），但一个不可分的事不拆（见规则3）
 8. 模糊意图处理：纯状态描述（如「最近好累」）不提取；隐含行动意图（「好累，得去看医生」）则提取「去看医生」。⚠️ 决策、确认、核实、商量也是行动：「这个事情要确认一下做不做」「要不要接这个项目我想想」「跟爸妈商量一下」都是 TODO（动作=确认/想/商量），对象指代模糊（「这个事情」没说是什么）也照常提取，title 保留用户原话。判断标准不是句子有没有具体的人和物，而是用户是否需要在将来做一件事——哪怕只是想清楚、问清楚。仍在犹豫的口头自语（「我还在纠结要不要换工作」）同样提取；只有纯状态、没有任何将来动作（「最近好累」「今天天气不错」）才忽略
@@ -505,6 +506,7 @@ Fuzzy date conventions:
 - "middle of month" → 15th of current month (compute due_date)
 - "start of month" → 1st of current month (compute due_date)
 - ⚠️ "this weekend" / "next weekend" → **due_date MUST be null** (fuzzy date; the client lets the user pick Saturday or Sunday); keep the original phrase in due_hint
+- ⚠️ "ASAP" / "as soon as possible" / "at your earliest convenience" → **due_date AND due_date_basis are both null** (urgency wording, not a date cue — there is not even a fuzzy someday-intent, so no basis either); keep the phrase in due_hint; priority is high per rule 6. Applies only when the sentence has no other date wording (explicit or fuzzy) — "send the report by Friday ASAP" follows "by Friday" per rule 4 (compute due_date); "finish it before this weekend ASAP" follows "this weekend" per the fuzzy rule above
 due_hint always preserves the original text.
 4c. Advance reminder: when the user explicitly asks to be reminded BEFORE the due time ("remind me half an hour early", "15 minutes before", "one hour before", "one day before"), return reminder_offset_minutes = the offset in minutes (half an hour=30, one hour=60, one day=1440), range 1–1440. Only return it when due_time exists; if the user said nothing about "before/early", it must be null — never infer it yourself. It is independent of reminder_times (multiple standalone reminder times)
 4d. ⚠️ When reminder_times come with a concrete computable date word ("remind me to take my meds today at 4pm and 6pm"), that date MUST be computed into due_date with basis="user_explicit" (reminders anchor to a concrete day; fuzzy date words like "this weekend" still follow rule 4b — leave null for the user to pick); when the input contains no date word at all (Example 12's shape), due_date is null (see the Example 29 contrast)
@@ -516,7 +518,7 @@ due_hint always preserves the original text.
    - until a day of month (by the 15th this month = this, the 10th next month = next) → {"kind":"day_of_month","day":D,"scope":"this"|"next"}
    - user gave a full explicit date (until July 20 2026) → {"kind":"date","value":"YYYY-MM-DD"}
    - no end / open-ended, or non-recurring → recurrence_end is null
-6. Detect urgency: if tone has urgency (ASAP, must, running out of time) mark as high, otherwise normal
+6. Detect urgency: if tone has urgency (ASAP, as soon as possible, at your earliest convenience, must, running out of time) mark as high, otherwise normal
 6b. Category guidelines for category_hint (judge by the action itself): work=job/career tasks (meetings, reports, business trips, client contact, booking flights/hotels for a conference); study=learning (classes, review, homework, exams); life=household errands (groceries, pickups, dry cleaning, cleaning, calling service providers, everyday bookings like tables/tickets); health=body & routine (gym, meds, water, sleep, doctor); finance=money & bills (rent, utilities, taxes, loan payments, banking, payroll); social=interactions with family/friends (calls to relatives, birthday gifts, dinner parties); other=none of the above. A work meeting is work even if a person's name is mentioned; everyday bookings default to life unless clearly a social occasion
 7. Multiple todos in one sentence: split by commas, "and then", "also", "plus" etc. Also split when one verb takes multiple parallel objects that are handled separately ("book flights and a hotel" → "book flights" + "book a hotel"); do NOT split an atomic task (rule 3)
 8. Ambiguous intent: pure state descriptions ("I'm so tired") are ignored; implied action ("so tired, need to see a doctor") extracts "see a doctor". ⚠️ Deciding, confirming, checking, or consulting IS an action: "need to confirm whether to do this thing", "still deciding if I should take the job", "talk it over with my parents" are all todos (action = confirm / decide / talk over). Extract them even when the object is a vague reference ("this thing" without saying what it is), keeping the user's wording in the title. The test is not whether the sentence names a concrete person or object — it is whether the user needs to DO something in the future, even if that something is just thinking it through or asking around. Hesitant self-talk ("I'm still torn about whether to switch jobs") also extracts; only pure states with no future action at all ("I'm so tired", "nice weather today") are ignored
@@ -701,6 +703,7 @@ const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです�
 - 「月初」→ 当月の1日(due_date を計算)
 - ⚠️ 「今週末」「来週末」→ **due_date は必ず null**(曖昧な日付、クライアント側でユーザーが土曜日か日曜日を選ぶ)、due_hint に原文を保持
 - ⚠️ 「今度」「近いうちに」→ **due_date は必ず null**(「いつかやる」の意向表現で時期が特定できない。締め切り意図が明確なら basis="user_explicit"、クライアント側でユーザーに日付を選ばせる)、due_hint に原文を保持
+- ⚠️ 「なるはや」「なる早」「できるだけ早く」→ **due_date も due_date_basis も null**(緊急性の表現であって日付の手がかりではない——「いつかやる」の曖昧な意向ですらなく、basis も付けない)、due_hint に原文を保持。priority はルール6により high。文中に他の日付表現(明確・曖昧問わず)がある場合は適用しない——「金曜までになるはやでレポートを出す」は「金曜までに」に従いルール4で due_date を計算、「今週末までになるはやで」は「今週末」に従い上記の曖昧ルールで処理する
 due_hint は常にユーザーの原文を保持。
 4c. 事前リマインド:ユーザーが時刻より前に通知を求めた場合(「30分前にリマインドして」「15分前に」「1時間前に」「前日に」)、reminder_offset_minutes にオフセット分数を返す(30分=30、1時間=60、1日=1440)、範囲は 1–1440。due_time が存在する場合のみ返す。「前に」「事前」といった表現がない場合は必ず null——自分で推測しない。reminder_times(複数の独立したリマインド時刻)とは互いに影響しない
 4d. ⚠️ reminder_times に換算可能な具体的な日付語が伴う場合(「今日の午後4時と6時に薬のリマインド」)、その日付を due_date に換算し basis="user_explicit" とすること(リマインドは具体的な日に固定される。「今週末」などの曖昧な日付語は 4b に従い null のままユーザーに選ばせる)。入力に日付語が全くない場合(例 12 の形)は due_date を null にする(例 24 の対比を参照)
@@ -712,7 +715,7 @@ due_hint は常にユーザーの原文を保持。
    - 月の日付まで(今月15日まで=this、来月10日=next)→ {"kind":"day_of_month","day":D,"scope":"this"|"next"}
    - ユーザーが完全な年月日を指定(2026年7月20日まで)→ {"kind":"date","value":"YYYY-MM-DD"}
    - 終わりがない / オープン、または非繰り返し → recurrence_end は null
-6. 優先度の手がかりを検出:緊急性(急いで、絶対、間に合わない、ASAP)があれば high、それ以外は normal
+6. 優先度の手がかりを検出:緊急性(急いで、なるはや、なる早、できるだけ早く、絶対、間に合わない、ASAP)があれば high、それ以外は normal
 6b. category_hint の分類基準(動作そのもので判断):work=仕事・職務(会議、レポート作成、出張、客先対応、会議のための飛行機・ホテル手配);study=学習(授業、復習、宿題、試験対策);life=家事・用事(買い物、宅配受取、クリーニング、掃除、業者への連絡、レストラン・チケットなどの日常予約);health=健康・生活リズム(運動、服薬、水分、睡眠、受診);finance=お金と支払い(家賃、光熱費、税金、返済、銀行、給与);social=家族・友人との交流(親族への電話、誕生日プレゼント、食事会への参加);other=いずれにも当てはまらない。口径:仕事の会議は人名が出ても work;日常の予約は原則 life(明らかに社交の場なら social)
 7. 1文で複数のTODO:読点、「そして」「あと」「それから」「ついでに」などの接続詞で分割。同一動詞が別々に手配すべき複数の目的語を持つ場合も分割(「飛行機とホテルを予約」→「飛行機を予約」+「ホテルを予約」)。ただし不可分のタスクは分割しない(ルール3)
 8. 曖昧な意図の処理:純粋な状態描写(「最近疲れてる」)は抽出しない。含意された行動意図(「疲れた、医者に行かなきゃ」)は「医者に行く」を抽出。⚠️ 決断・確認・相談も行動:「この件、やるかどうか確認したい」「引き受けるかまだ迷ってる」「親と相談してみる」はすべてTODO(動作=確認する/決める/相談する)。対象が曖昧な指示(「この件」が何を指すか分からない)でも抽出し、title はユーザーの原文を保持。判断基準は文に具体的な人や物があるかではなく、ユーザーが将来何かをする必要があるか——考える・聞くだけでも。迷いの独り言(「転職するかまだ悩んでる」)も抽出する。将来の動作が全くない純粋な状態(「最近疲れてる」「今日はいい天気」)だけ無視
