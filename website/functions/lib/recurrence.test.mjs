@@ -623,3 +623,42 @@ test('model 轮3:daily interval 从起始日起每 N 天一次(未来起始日)'
   const dates = modelRuleOccurrences(d3, TODAY, 'UTC', 3, null, '2026-12-20');
   assert.deepEqual(dates.map((d) => d.iso), ['2026-12-20', '2026-12-23', '2026-12-26']);
 });
+
+test('model 轮3:UTC+12+(Auckland)× 起始日在未来 → shift 与 beginK 抵消,首条=起始日', () => {
+  // Auckland 的 anchor 已是本地明天(shift=1),未来起始日 12-14 的 beginK =
+  // diffDays(today, 12-14) - 1 = 25,本地日 = today + 1 + 25 = 12-14,dayFromStart=0。
+  // 若 beginK 漏掉 -shift,首条会变成 12-15(整体晚一天)。
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(daily, TODAY, 'Pacific/Auckland', 2, null, '2026-12-14').map((d) => d.iso),
+    ['2026-12-14', '2026-12-15']
+  );
+});
+
+test('model 轮3:UTC+12+(Auckland)× 起始日在过去 → 本地明天起,interval 锚起始日', () => {
+  // 起始 11-10(过去 8 天):列表从本地明天 11-19 起(shift=1 → beginK=0),
+  // daily interval 4 的 dayFromStart 锚 11-10 —— 明天 11-19 距起始 9 天,
+  // 9 % 4 ≠ 0 不命中,首条 = dayFromStart 12 的 11-22、次条 16 的 11-26。
+  // 若错锚「明天」(旧口径),首条会误列 11-19。
+  const d4 = { frequency: 'daily', interval: 4, weekdays: [], day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(d4, TODAY, 'Pacific/Auckland', 2, null, '2026-11-10').map((d) => d.iso),
+    ['2026-11-22', '2026-11-26']
+  );
+});
+
+test('model 轮3:起始日 9999-12-30 + 截止 9999-12-31 → 迭代不得越过 ISO 四位年份域', () => {
+  // 轮 3 双 review 探针实证的边界:迭代跨过 9999-12-31 后 formatter 产出五位年份
+  // "10000-01-01",其字典序小于 "9999-12-31" —— 无域闸时 endIso 的字符串比较
+  // 静默失效,会照列 10000-01-01/02/03 这些截止后、App 不会生成的日期。
+  const daily = { frequency: 'daily', interval: 1, weekdays: null, day_of_month: null, end_date: null };
+  assert.deepEqual(
+    modelRuleOccurrences(daily, TODAY, 'Pacific/Auckland', 5, '9999-12-31', '9999-12-30').map((d) => d.iso),
+    ['9999-12-30', '9999-12-31'],
+    '截止在 9999-12-31:恰好两条,不得越过 ISO 四位年份域继续列'
+  );
+  // 无截止时同样受域闸保护:最多列到 9999-12-31,不出 "10000-…"
+  const beyond = modelRuleOccurrences(daily, TODAY, 'UTC', 5, null, '9999-12-25');
+  assert.ok(beyond.every((d) => d.iso <= '9999-12-31'), '任何输出不得超出四位年份域');
+  assert.ok(beyond.length > 0, '域内日期正常列出');
+});

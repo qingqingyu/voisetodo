@@ -330,7 +330,9 @@ export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5, struct
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
   });
   // 时区日偏移(2026-11-24 review 引入,轮 3 泛化):UTC 正午锚在偏移 ≥ +12 的
-  // 时区(白名单内唯一 Pacific/Auckland,+12 冬 / +13 夏)已是本地「明天」,
+  // 时区(显式白名单内唯一 Pacific/Auckland,+12 冬 / +13 夏;auto 路径走
+  // cf.timezone,可给任意合法 IANA —— +13/+14 如 Tongatapu/Kiritimati 同样命中,
+  // shift 是逐锚点动态判定,不枚举时区)已是本地「明天」,
   // 本地日 = todayIso + shift + k;其余时区 shift=0。(每步 +86400s 仍逐日推进:
   // 偏移变化 <24h,不会跳日/重日,见 partsInZone 注释。)
   const shift = partsInZone(fmt, anchorMs).iso > todayIso ? 1 : 0;
@@ -356,6 +358,11 @@ export function modelRuleOccurrences(rule, todayIso, timeZone, count = 5, struct
   const out = [];
   for (let k = beginK; k < beginK + stepCap && out.length < count; k++) {
     const parts = partsInZone(fmt, anchorMs + k * 86400000);
+    // ISO 四位年份域闸(轮 3 双 review 探针实证):起始日可到 9999-12-31
+    // (normalizeIsoDate 只约束月/日域),迭代越界后 formatter 产出五位年份
+    // "10000-01-01" —— 其字典序小于 "9999-12-31",下方 endIso 的字符串比较
+    // 会静默失效、照列截止后的日期。域外即停,不与截止串比较。
+    if (parts.iso.length > 10) break;
     const dayFromStart = k + shift - anchorOffset;
     let match = false;
     if (rule.frequency === 'daily') {
