@@ -158,11 +158,13 @@ function shiftGoldenDates(dataset, anchor) {
   }
   // 日期规则 tag 在 delta=0 时也要校验(一条 case 最多一个),避免多 tag 互相覆盖无感知
   const ruleOf = (c) => {
-    const rules = (Array.isArray(c.tags) ? c.tags : []).filter((t) => t in DATE_RULE_TAGS);
+    const rules = (Array.isArray(c.tags) ? c.tags : []).filter((t) => Object.hasOwn(DATE_RULE_TAGS, t));
     if (rules.length > 1) throw new Error(`case ${c.id} 同时带多个日期规则 tag: ${rules.join(", ")}`);
     return rules[0] ?? null;
   };
-  for (const c of dataset.cases) ruleOf(c);
+  for (const c of dataset.cases) {
+    ruleOf(c);
+  }
   if (deltaDays === 0) return dataset;
   const shifted = structuredClone(dataset);
   for (const c of shifted.cases) {
