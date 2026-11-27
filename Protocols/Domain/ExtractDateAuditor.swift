@@ -250,13 +250,20 @@ enum ExtractDateAuditor {
         // 2) 后缀守卫:目标日语义不唯一(当天起?次日起?),只观察。必须先于相对日
         //    token——否则 "明天以后"/"大后天之后"/"明後日以降"/"3 days after tomorrow"
         //    会先命中相对日子串,被按零歧义语义比对,产生假 mismatch。
+        //    营业日类 hint 同理(任务书 Part F,2026-11-27):「明日から3営業日以内」
+        //    含「明日」,不拦会被按 +1 天纠正——但它由代理注入表算出,客户端不该动。
         if hint.contains("之后") || hint.contains("以后") || hint.contains("以後")
             || hint.contains("过后") || hint.contains("過後")
             || hint.contains("以降") || hint.contains("過ぎ") || hint.contains("过ぎ")
+            || hint.contains("営業日") || hint.contains("工作日")
             // 英文按词边界匹配 "after" 本身:若写 " after "(两侧空白),构造出的
             // 正则要求 after 后跟非字母词,"X after Y" 形态永不命中(死守卫)。
             // "day after tomorrow" 已在步骤 1 先行摘出,不会被此守卫误吞。
-            || lowercased.containsEnglishPhrase("after") {
+            || lowercased.containsEnglishPhrase("after")
+            // business day 单复数都要写:containsEnglishPhrase 的词边界使单数
+            // 匹配不到复数 "business days",缺一即漏(同 TodoDueDateResolver 补词注释)
+            || lowercased.containsEnglishPhrase("business day")
+            || lowercased.containsEnglishPhrase("business days") {
             return .init(semantics: .ambiguous, aliases: [])
         }
 
