@@ -13,6 +13,12 @@
 // upstream fetch contract (URL + standard RequestInit) stays in one place per provider.
 
 import { ProxyHTTPError } from "../errors.js";
+// 日本节假日/营业日事实注入(任务书 Part C,2026-11-27)的数据源:
+// worker 注入与 eval runner 期望值共用,只此一份。用在下方 buildJaDateFacts。
+import {
+  jpHolidaysBetween, jpHolidayName, nthJpBusinessDayAfter,
+  jpWeekStartBusinessDay, thisWeekFriday,
+} from "../jpHolidays.js";
 
 export { ProxyHTTPError };
 
@@ -143,11 +149,6 @@ export function classifyHttpRetryable({ status, bodyText, errorType }, modelConf
 
 // ---------- 日本节假日/营业日事实注入(任务书 Part C,2026-11-27) ----------
 // 与月份事实同一模式:服务端确定性算好写进参照行,模型只查表、不心算。
-// 数据源 src/jpHolidays.js(worker 注入与 eval runner 期望值共用,只此一份)。
-import {
-  jpHolidaysBetween, jpHolidayName, nthJpBusinessDayAfter,
-  jpWeekStartBusinessDay, thisWeekFriday,
-} from "../jpHolidays.js";
 
 const JA_WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 const DAY_MS = 24 * 3600 * 1000;
@@ -220,8 +221,15 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
   };
   const weekdayIndex = Date.parse(`${today}T00:00:00.000Z`);
   const weekdayTable = WEEKDAY_NAMES[locale] || WEEKDAY_NAMES.en;
-  const parsedOk = Number.isFinite(weekdayIndex);
-  const weekday = parsedOk ? weekdayTable[new Date(weekdayIndex).getUTCDay()] : null;
+  // parsedOk 含伪日历日往返校验:V8 的 Date.parse 会把 "2026-02-30" 滚动成 3/2 而
+  // 非 NaN。X-Local-Date 是客户端可控头且 resolveQuotaDate 的漂移校验也用滚动后的
+  // 值计算,伪日期能一路到达这里——不拦下的话 ja 注入(jpHolidays.parseISO 往返校验)
+  // 会抛错 500,违背本函数「today 异常 → 兜底旧行为,不整体 500」的约定。
+  // 与 src/jpHolidays.js 的 parseISO 同口径:往返后年月日必须与原串一致。
+  const weekdayDate = Number.isFinite(weekdayIndex) ? new Date(weekdayIndex) : null;
+  const parsedOk = weekdayDate !== null
+    && `${weekdayDate.getUTCFullYear()}-${String(weekdayDate.getUTCMonth() + 1).padStart(2, "0")}-${String(weekdayDate.getUTCDate()).padStart(2, "0")}` === today;
+  const weekday = parsedOk ? weekdayTable[weekdayDate.getUTCDay()] : null;
   // 月事实:Date.UTC(y, m, 0) = 当月最后一天(大小月/闰年由日历库保证);
   // Date.UTC(y, m, 1) = 下月 1 号(12 月自动跨年到次年 1 月)。
   const monthFacts = parsedOk ? (() => {
@@ -913,7 +921,7 @@ JSON のみを返す(説明は不要)。フォーマット:
 入力:"この件、やるかどうか確認したい"
 出力:{"todos":[{"title":"この件をやるか確認する","detail":"この件、やるかどうか確認したい","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}
 
-例 26(営業日と今週中は参照行の値をそのまま使う(自分で推算しない);参照日 2026-07-15 水曜、参照行で「今後10営業日:2026-07-16(木)、2026-07-17(金)、2026-07-20(月)、…」「今週中=2026-07-17(金)」と仮定):
+例 26(営業日と今週中は参照行の値をそのまま使う(自分で推算しない);参照日 2026-07-15 水曜、参照行で「今後10営業日:2026-07-16(木)、2026-07-17(金)、2026-07-21(火)、…」(7/20 月曜は海の日なので営業日リストに入らない)「今週中=2026-07-17(金)」と仮定):
 入力:"翌営業日までに先方に返信して、今週中に企画書を仕上げる"
 出力:{"todos":[{"title":"先方に返信する","detail":"翌営業日までに先方に返信する","due_date":"2026-07-16","due_hint":"翌営業日までに","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"企画書を仕上げる","detail":"今週中に企画書を仕上げる","due_date":"2026-07-17","due_hint":"今週中に","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
 

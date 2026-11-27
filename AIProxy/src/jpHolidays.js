@@ -13,7 +13,10 @@
 // - **年末年始(12/29–1/3)、お盆不是法定假日,不算**(任务书 §1:商务上也不是
 //   「祝日、振替休日、国民の休日」的成员)
 // - 特別法临时调整走 JP_HOLIDAY_OVERRIDES(现为空;未来有临时调整时在此登记,
-//   不要改公式)
+//   不要改公式)。已知历史特例:2020(海の日 7/23・山の日 8/10・スポーツの日 7/24)、
+//   2021(海の日 7/22・山の日 8/8→8/9 振替・スポーツの日 7/23)奥运改期**未登记**,
+//   查这两年得到的是现行规则日期而非史实——本模块只服务 today 起的未来日期与
+//   2026/2027 eval 锚,不受影响;不要当历史日历用。
 //
 // 支持年份 2000–2099(春分/秋分公式适用域)。超界一律返回 null / 不抛错:
 // 注入侧(today 年份超界)按「算不出 → 不注入 + warn 日志」兜底,与月份事实
@@ -30,8 +33,13 @@ export const JP_HOLIDAY_OVERRIDES = { add: {}, remove: [] };
 
 function parseISO(iso) {
   if (!ISO_DATE_RE.test(String(iso ?? ""))) return null;
-  const ms = Date.parse(`${iso}T00:00:00.000Z`);
-  return Number.isFinite(ms) ? ms : null;
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  // 往返校验:V8 的 Date.parse 对伪日历日(如 2026-02-30)会静默滚动到 3/2 而
+  // 不是返回 NaN —— 必须确认往返后的年月日与原串一致,否则视为非法日期。
+  return ymdIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()) === iso
+    ? d.getTime()
+    : null;
 }
 
 function toISO(ms) {
@@ -143,7 +151,9 @@ function holidaysOfYear(year) {
     full.set(betweenIso, "国民の休日");
   }
 
-  // overrides:增(同名日额外)与删(临时调整)。
+  // overrides:增(同名日额外)与删(临时调整)。注意顺序:振替休日/国民の休日
+  // 已在上面对「公式祝日」推导完毕,override 增删不参与衍生休日——若未来登记
+  // 周日祝日 override,其振替需一并显式登记,不会自动推导。
   for (const key of JP_HOLIDAY_OVERRIDES.remove) {
     if (key.startsWith(`${year}-`)) full.delete(key);
   }
@@ -215,7 +225,8 @@ export function nthJpBusinessDayAfter(iso, n) {
   }
   let cursor = requireISO(iso, "iso") + 24 * 3600 * 1000;
   let remaining = n;
-  // 上限:每 7 天至少 5 个营业日 → n 个营业日最多 n*7/5 + 2 个日历日,放宽到 n*7。
+  // 上限:任意 7 天窗口内平日祝日至多 4 个(黄金周 5/3–5/6 + 振替的极端排布),
+  // 即至少剩 1 个营业日 → 归纳可得 n*7 个日历日内必出现 n 个营业日;放宽到 n*7 作防御界。
   const limit = parseISO(iso) + n * 7 * 24 * 3600 * 1000;
   while (cursor <= limit) {
     if (holidaysOfYear(ymd(cursor)[0]) === null) return null;

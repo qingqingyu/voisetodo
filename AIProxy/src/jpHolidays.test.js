@@ -1,4 +1,4 @@
-// jpHolidays.mjs 单测(任务书 docs/eval-ja-batch2-holidays-task.md §3/§8)。
+// jpHolidays 单测(任务书 docs/eval-ja-batch2-holidays-task.md §3/§8)。
 // 跑法:cd AIProxy && npm test
 //
 // 基准数据 = 内閣府「国民の祝日・休日」CSV(https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv)
@@ -132,4 +132,16 @@ test("nextJpHoliday: 含今天 / 名字不认识 → null;非法入参抛错", (
   assert.throws(() => nextJpHoliday("bad", "元日"), /非法/);
   assert.throws(() => nthJpBusinessDayAfter("2026-01-07", 0), /非法/);
   assert.throws(() => jpHolidaysBetween("bad", "2026-12-31"), /非法/);
+});
+
+test("伪日历日(格式合法但日期不存在)必须抛错,不得静默滚动到下月", () => {
+  // V8 的 Date.parse 会把 2026-02-30 滚动成 3/2 —— parseISO 的往返校验负责拦下这类输入。
+  assert.throws(() => jpHolidayName("2026-02-30"), /非法/);
+  assert.throws(() => jpHolidayName("2026-04-31"), /非法/);
+  assert.throws(() => isJpBusinessDay("2024-02-30"), /非法/);
+  assert.throws(() => nthJpBusinessDayAfter("2026-02-30", 1), /非法/);
+  assert.throws(() => jpHolidaysBetween("2026-02-30", "2026-12-31"), /非法/);
+  // 闰年合法边界对照:2024-02-29 合法、2023-02-29 非法
+  assert.equal(isJpBusinessDay("2024-02-29"), true); // 周四,非节假日
+  assert.throws(() => isJpBusinessDay("2023-02-29"), /非法/);
 });
