@@ -37,6 +37,10 @@ enum ParseExpressionKind: String, CaseIterable, Sendable {
 ///
 /// 隐私红线:本类型只消费 `dueHint`,只产出枚举;调用方不得把 `dueHint` 写进
 /// 任何日志或遥测参数。
+///
+/// 例外输入域:`containsTimeCueKeyword` / `isJapanese*` 四个复用点(任务书
+/// docs/eval-ja-batch2-holidays-task.md §2)额外供 `TodoDueDateResolver.hasExplicitTimeCue`
+/// 扫**原话 transcript** —— 均为纯谓词、不产日志,不触碰红线。
 enum ParseExpressionClassifier {
 
     // MARK: - 入口
@@ -153,6 +157,32 @@ enum ParseExpressionClassifier {
     private static let jaDayPart = #/午前|午後|正午|朝|夕方|\d{1,2}時/#
 
     // MARK: - 关键词表(包含式匹配)
+
+    /// hasExplicitTimeCue 复用(任务书 docs/eval-ja-batch2-holidays-task.md §2):
+    /// 三语直接时间词关键词命中。**内部按三语并集设计,不按 locale 挑选**,
+    /// 与 classify 的内容语言解耦口径一致——hasExplicitTimeCue 也一样不挑语言。
+    static func containsTimeCueKeyword(_ text: String) -> Bool {
+        containsAny(text, relativeDayKeywords)
+            || containsAny(text, monthPartKeywords)
+            || containsAny(text, holidayKeywords)
+    }
+
+    /// hasExplicitTimeCue 复用:日语相对偏移(「3日後」「2週間後」「あと」形态)。
+    static func isJapaneseRelativeOffset(_ text: String) -> Bool {
+        matches(jaRelativeOffset, text)
+    }
+
+    /// hasExplicitTimeCue 复用:日语星期/周前缀(「金曜」「日曜日」「今週」「来週」「再来週」)。
+    /// 注意与 zh/en 的 weekdayNumber 分开用——resolve() 不消费日语星期,
+    /// 不能把它并进 weekdayNumber(否则兜底重算行为会变)。
+    static func isJapaneseWeekday(_ text: String) -> Bool {
+        matches(jaWeekday, text)
+    }
+
+    /// hasExplicitTimeCue 复用:日语时段词(午前/午後/正午/朝/夕方/N時)。
+    static func isJapaneseDayPart(_ text: String) -> Bool {
+        matches(jaDayPart, text)
+    }
 
     private static let relativeDayKeywords: Set<String> = [
         // 中文

@@ -84,6 +84,13 @@ enum TodoDueDateResolver {
             return !hasTargetSemantics(lowercased: lowercased, original: trimmed)
         }
 
+        // 3. 日语星期(金曜 など):与 2 同口径但**独立判断** —— weekdayNumber 不能加
+        //    日语(resolve() 也消费它,会把兜底重算行为改掉),日语走 classifier 的
+        //    jaWeekday 正则 + 日语目标语义(任务书 Part A)。
+        if ParseExpressionClassifier.isJapaneseWeekday(trimmed) {
+            return !hasJapaneseTargetSemantics(trimmed)
+        }
+
         return false
     }
 
@@ -127,7 +134,76 @@ enum TodoDueDateResolver {
             lowercased.containsEnglishPhrase("end of this month") {
             return true
         }
+        // 中文补词(任务书 Part A):「晚上」此前只有「今晚」;「这周内」系此前无线索;
+        // 「工作日」是日期规则说法(与日语 営業日 平行)。
+        if text.contains("晚上") ||
+            text.contains("这周内") || text.contains("本周内") ||
+            text.contains("这周之内") || text.contains("本周之内") ||
+            text.contains("工作日") {
+            return true
+        }
+        // 英文补词(任务书 Part A):en-010 "this evening"、en-013 "end of the month"
+        // 曾被清空;"this week / end of the week" 是拍板的「本周五」说法;
+        // "business day(s)" 与「工作日」平行。注意 containsEnglishPhrase 有词边界
+        // ((?![A-Za-z]) 否定前瞻),单数 "business day" 匹配不到复数 "business days",
+        // 两条都要写、缺一即漏,勿当冗余删。
+        if lowercased.containsEnglishPhrase("end of the month") ||
+            lowercased.containsEnglishPhrase("this evening") ||
+            lowercased.containsEnglishPhrase("this week") ||
+            lowercased.containsEnglishPhrase("end of the week") ||
+            lowercased.containsEnglishPhrase("business day") ||
+            lowercased.containsEnglishPhrase("business days") {
+            return true
+        }
+        // 日语(任务书 Part A):词表此前零日语覆盖,连「明日」都不认 —— 在线保存路径
+        // 传了原话时,user_explicit 的日语日期整体被 applyDueDateBasisFilter 清空。
+        // 三语关键词/日语相对偏移/时段复用 ParseExpressionClassifier 的既有表
+        // (今日/明日/明後日/今夜/今晩、月初/月中/月末/月半ば、正月/お盆/勤労感謝 等、
+        // N日後/あと、午前/午後/朝/夕方/N時),不另抄一份;这里只补它没有的口语/
+        // 商务词与 X月X日。
+        if ParseExpressionClassifier.containsTimeCueKeyword(lowercased) ||
+            ParseExpressionClassifier.isJapaneseRelativeOffset(text) ||
+            ParseExpressionClassifier.isJapaneseDayPart(text) ||
+            containsJapaneseSupplementWord(text) {
+            return true
+        }
         return false
+    }
+
+    /// 日语补充词(任务书 Part A 列举):口语相对日、周/商务节奏词、年号与具体日期、
+    /// 时段「昼/夜」。两类来源:一是 classifier 直连词表确实没有的(あさって/週明け/
+    /// 営業日/令和/昼/夜 等);二是「来週/再来週/今週」—— 它们虽在 classifier 的
+    /// jaWeekday 正则里,但任务书把周前缀定为**直接时间词**,必须在这里命中以
+    /// **绕开**第 3 步曜日分支的目标语义排除,属刻意重复、勿去重。
+    private static func containsJapaneseSupplementWord(_ text: String) -> Bool {
+        let words = [
+            "あさって", "しあさって", "明々後日",
+            "来週", "再来週", "今週", "週明け", "営業日",
+            "来月", "年内", "年度末", "令和",
+            "昼", "夜",
+        ]
+        if words.contains(where: { text.contains($0) }) {
+            return true
+        }
+        // X月X日(令和X年Y月Z日 里的 Y月Z日 也命中;数字含汉字与全角)。
+        // 用编译期校验的 Regex 字面量(与 ParseExpressionClassifier 词表同法),
+        // 不用 NSRegularExpression 运行期构造 —— 模式非法在编译期就该报错,
+        // 运行期 `try?` 静默吞掉会退化成「日语日期被清空」,正是本修复要堵的方向。
+        if ((try? Self.japaneseAbsoluteDateRegex.firstMatch(in: text)) ?? nil) != nil {
+            return true
+        }
+        return false
+    }
+
+    /// X月X日 形态(数字含阿拉伯/汉字/全角)。字面量在编译期已校验合法性,
+    /// `firstMatch` 的 throwing 签名实际不会抛(同 classifier `matches` 的口径)。
+    private static let japaneseAbsoluteDateRegex = #/[0-9０-９一二三四五六七八九十]+月[0-9０-９一二三四五六七八九十]+日/#
+
+    /// 日语"目标语义":曜日作动作目标而非时间状语(ja-006「日曜日のパーティーの
+    /// 準備をする」必须仍是 false)。对应中英文的 prepare for / 为…准备。
+    private static func hasJapaneseTargetSemantics(_ text: String) -> Bool {
+        let targetPatterns = ["の準備", "のため", "用の"]
+        return targetPatterns.contains { text.contains($0) }
     }
 
     /// "目标语义"检测:把 weekday 当作动作目标而非时间状语。

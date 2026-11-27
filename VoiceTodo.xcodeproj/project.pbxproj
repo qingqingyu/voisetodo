@@ -96,8 +96,8 @@
 		55F41CB840461F4973089E77 /* TodoWidgetComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE2E435ECF21A8FEED5BAFC /* TodoWidgetComponents.swift */; };
 		56C5A38A64EE33C4269775CE /* CodingUserInfoKey+Recurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C3D64CBFC24F44D961A39C1 /* CodingUserInfoKey+Recurrence.swift */; };
 		59F9EFC5F8D8D3702D1102B9 /* TodoSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AFF34C0FF6B000D86BA3 /* TodoSource.swift */; };
-		5A1C0DE5A99511D0C0FFEE01 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE5A99511D0C0FFEE02 /* AppShortcuts.xcstrings */; };
 		5BB975AF610B720187248CD4 /* CalendarWriteMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBBE53FF4A5FFA27BCF5C78 /* CalendarWriteMode.swift */; };
+		5C20A8C76DF86C284C7474D5 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DF85C26152D569EAD4B770CA /* AppShortcuts.xcstrings */; };
 		5CC25602AD26AACDB0E95D80 /* CalendarSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81578DF6D6865F537FD3EBAE /* CalendarSyncService.swift */; };
 		5F1CB22C37701A17182CC268 /* ReviewFlowStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEEE0EDD13543379E96813C /* ReviewFlowStateTests.swift */; };
 		5F63BD5CE0FA4582B4A6BA89 /* FirstVoiceTrial.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0F34D4EEF428C3D1910591 /* FirstVoiceTrial.swift */; };
@@ -318,7 +318,7 @@
 		0AC691E6E473CCD443DC8FE8 /* ReviewRecapSameDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewRecapSameDayTests.swift; sourceTree = "<group>"; };
 		0E4BF2A213AB8BD127DAB20B /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
 		0F91ACDCA48C0FD1301D8CEE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		0FE4099B3B3B721CC2F2EF9C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0FE4099B3B3B721CC2F2EF9C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		103B9A6AF24AD2F57CB2DDC2 /* TodoNotificationSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoNotificationSync.swift; sourceTree = "<group>"; };
 		112A986D9241DCBA3FCA7D5D /* SystemCalendarReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarReader.swift; sourceTree = "<group>"; };
 		1167DFCC2D46703F8A7053E6 /* ExtractorCircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractorCircuitBreaker.swift; sourceTree = "<group>"; };
@@ -367,7 +367,7 @@
 		49F3CFF162D9AAA4C9FF64D0 /* SystemCalendarWriterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarWriterTests.swift; sourceTree = "<group>"; };
 		4C3D64CBFC24F44D961A39C1 /* CodingUserInfoKey+Recurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodingUserInfoKey+Recurrence.swift"; sourceTree = "<group>"; };
 		4D3691D04079A01909A525E1 /* StartRecordingIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartRecordingIntent.swift; sourceTree = "<group>"; };
-		50AA9B07AB8F292FF8C44520 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
+		50AA9B07AB8F292FF8C44520 /* Products.storekit */ = {isa = PBXFileReference; path = Products.storekit; sourceTree = "<group>"; };
 		51ADD45CE40DA4A4B7B9AA0A /* UnparsedTodoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnparsedTodoCard.swift; sourceTree = "<group>"; };
 		527D3639D2D5B2BAEE479BB3 /* ReviewStepRecap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewStepRecap.swift; sourceTree = "<group>"; };
 		527F7029B37ADF22950ACE4B /* VoiceTodoUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VoiceTodoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -376,7 +376,6 @@
 		5591265ADCF113A0294F04DD /* FeedbackSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSheet.swift; sourceTree = "<group>"; };
 		5628A4102ACFE6756F38C2CA /* IntentNotificationReconcilerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentNotificationReconcilerTests.swift; sourceTree = "<group>"; };
 		57EF039D3DBBCB65393E54EC /* MockStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockStore.swift; sourceTree = "<group>"; };
-		5A1C0DE5A99511D0C0FFEE02 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		5B39E4BF0A75D61C1EE7CFD9 /* ReviewSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewSessionStore.swift; sourceTree = "<group>"; };
 		5C091B6AB4B34F29573A3FFA /* TodoQueryActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoQueryActor.swift; sourceTree = "<group>"; };
 		5E53F2E7063A19CACE9CCE54 /* SystemCalendarReadingProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCalendarReadingProtocol.swift; sourceTree = "<group>"; };
@@ -425,7 +424,7 @@
 		84892A23980F5F52BA6E9B84 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		852A146F479BCBE404E803CD /* ExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractorTests.swift; sourceTree = "<group>"; };
 		85DD2833CF75F09D3B176BA0 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
-		874CB6C60B98DFFC0A7002B1 /* VoiceTodo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		874CB6C60B98DFFC0A7002B1 /* VoiceTodo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VoiceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A0E0525C6409142574087FD /* AddTodoIntentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTodoIntentView.swift; sourceTree = "<group>"; };
 		8A2440D96DEC9D650D6D6DF5 /* TaskEventRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEventRecorder.swift; sourceTree = "<group>"; };
 		8A720C2996ED32733C7C1F5A /* RecordingLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivity.swift; sourceTree = "<group>"; };
@@ -508,6 +507,7 @@
 		DCFA009138F185ACA9CCDC05 /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
 		DE5A807BC7FED524BD0E4030 /* ModelContainerStartupPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelContainerStartupPolicyTests.swift; sourceTree = "<group>"; };
 		DF5DE4C3511E13DAD7A2DEAC /* PermissionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManagerTests.swift; sourceTree = "<group>"; };
+		DF85C26152D569EAD4B770CA /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		E063F26C7FEFBBDFFA7F42F5 /* ReviewPinningStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewPinningStore.swift; sourceTree = "<group>"; };
 		E082C18F98C210471AED38B4 /* RelativeDueLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeDueLabel.swift; sourceTree = "<group>"; };
 		E0F6C05FA3D2BD54134B24AA /* TodoSplitterProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoSplitterProtocol.swift; sourceTree = "<group>"; };
@@ -591,7 +591,7 @@
 		419C26593FF53FA725241A85 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				5A1C0DE5A99511D0C0FFEE02 /* AppShortcuts.xcstrings */,
+				DF85C26152D569EAD4B770CA /* AppShortcuts.xcstrings */,
 				CF1AB2F17B6B14B38B56D594 /* Localizable.xcstrings */,
 			);
 			path = Resources;
@@ -1168,7 +1168,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5A1C0DE5A99511D0C0FFEE01 /* AppShortcuts.xcstrings in Resources */,
+				5C20A8C76DF86C284C7474D5 /* AppShortcuts.xcstrings in Resources */,
 				CB5F04ADFD4169F2568421A8 /* Assets.xcassets in Resources */,
 				52BEC6B149B928AB3B0A6027 /* IMPLEMENTATION_SUMMARY.md in Resources */,
 				97D47C2167DE89212E79F62D /* InfoPlist.xcstrings in Resources */,
@@ -1636,7 +1636,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.qingqingyu.voicetodo;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -1676,7 +1675,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.qingqingyu.voicetodo;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;

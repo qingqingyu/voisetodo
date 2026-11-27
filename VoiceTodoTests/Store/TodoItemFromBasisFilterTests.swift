@@ -234,4 +234,42 @@ final class TodoItemFromBasisFilterTests: XCTestCase {
         let calendar = Calendar(identifier: .gregorian)
         return try XCTUnwrap(calendar.date(from: DateComponents(year: year, month: month, day: day)))
     }
+
+    // MARK: - 日语 user_explicit 保留(任务书 docs/eval-ja-batch2-holidays-task.md §2.2)
+
+    /// 日语「明日の午後3時に会議」+ basis user_explicit → AI 给的日期必须保留。
+    /// 这是线上 bug 的核心场景:hasExplicitTimeCue 词表此前零日语覆盖,
+    /// 在线确认路径传了原话,日语用户明确说的日期整体被清空。
+    func testJapaneseUserExplicitKeepsAIDueDate() throws {
+        let aiDueDate = try makeDate(year: 2026, month: 12, day: 28)
+        let extracted = ExtractedTodo(
+            title: "会議",
+            detail: "明日の午後3時に会議",
+            dueDate: aiDueDate,
+            dueHint: "明日の午後3時",
+            dueTime: "15:00",
+            dueDateBasis: .userExplicit
+        )
+        let item = TodoItem.from(extracted, rawTranscript: "明日の午後3時に会議")
+        // 比较 startOfDay:dueTime "15:00" 会经 TodoDueTimeResolver.combine 叠加钟点,
+        // 精确时刻断言会因时区/钟点组合漂移;这里只验「日期没被清空/没被改日」。
+        let calendar = Calendar(identifier: .gregorian)
+        XCTAssertEqual(calendar.startOfDay(for: item.dueDate!), calendar.startOfDay(for: aiDueDate), "日语 user_explicit 的日期不得被清空")
+        XCTAssertEqual(item.hasDueTime, true)
+    }
+
+    /// 日语目标语义(曜日 + 「の準備」)仍按 title_mention 口径拦截:
+    /// ja-006「日曜日のパーティーの準備をする」被 AI 错标 user_explicit 时,清空。
+    func testJapaneseTargetSemanticsStillClearsWhenMislabeled() throws {
+        let extracted = ExtractedTodo(
+            title: "日曜日のパーティーの準備をする",
+            detail: "日曜日のパーティーの準備をする",
+            dueDate: try makeDate(year: 2026, month: 12, day: 27),
+            dueHint: "日曜日",
+            dueDateBasis: .userExplicit
+        )
+        let item = TodoItem.from(extracted, rawTranscript: "日曜日のパーティーの準備をする")
+        XCTAssertNil(item.dueDate, "目标语义的曜日不是时间状语,错标 user_explicit 仍要拦")
+        XCTAssertEqual(item.dueHint, "日曜日", "dueHint 保留供确认页参考")
+    }
 }
