@@ -13,6 +13,12 @@
 // upstream fetch contract (URL + standard RequestInit) stays in one place per provider.
 
 import { ProxyHTTPError } from "../errors.js";
+// 日本节假日/营业日事实注入(任务书 Part C,2026-11-27)的数据源:
+// worker 注入与 eval runner 期望值共用,只此一份。用在下方 buildJaDateFacts。
+import {
+  jpHolidaysBetween, jpHolidayName, nthJpBusinessDayAfter,
+  jpWeekStartBusinessDay, thisWeekFriday,
+} from "../jpHolidays.js";
 
 export { ProxyHTTPError };
 
@@ -141,6 +147,43 @@ export function classifyHttpRetryable({ status, bodyText, errorType }, modelConf
   return { retryable: false, errorType: `status_${status}` };
 }
 
+// ---------- 日本节假日/营业日事实注入(任务书 Part C,2026-11-27) ----------
+// 与月份事实同一模式:服务端确定性算好写进参照行,模型只查表、不心算。
+
+const JA_WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+const DAY_MS = 24 * 3600 * 1000;
+
+function jaWeekdayShort(iso) {
+  return JA_WEEKDAY_SHORT[new Date(Date.parse(`${iso}T00:00:00.000Z`)).getUTCDay()];
+}
+
+function isoPlusDays(iso, days) {
+  return new Date(Date.parse(`${iso}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/// ja 参照行追加块:今後 365 天祝日 + 今後 10 営業日 + 週明け + 今週中。
+/// 算不出(年份超 2000–2099 等)返回 null —— 与月份事实的兜底同口径:不注入、
+/// 不 500(adapter 纯函数不落日志,worker 侧无需感知;任务书 §4.1)。
+function buildJaDateFacts(today) {
+  const holidays = jpHolidaysBetween(today, isoPlusDays(today, 365));
+  if (holidays === null) return null;
+  const holidayList = holidays.map((h) => `${h.iso}(${jaWeekdayShort(h.iso)}・${h.name})`).join("、");
+  const todayHoliday = jpHolidayName(today);
+  const bizDays = [];
+  for (let i = 1; i <= 10; i++) {
+    const iso = nthJpBusinessDayAfter(today, i);
+    if (iso === null) return null;
+    bizDays.push(`${iso}(${jaWeekdayShort(iso)})`);
+  }
+  const weekStart = jpWeekStartBusinessDay(today);
+  const friday = thisWeekFriday(today);
+  if (!weekStart || !friday) return null;
+  const todayNote = todayHoliday
+    ? `今日は祝日・休日です(${todayHoliday})。`
+    : "今日は祝日・休日ではありません。";
+  return `\n\n今後365日の祝日・休日(昇順):${holidayList}\n${todayNote}\n今後10営業日(月〜金、土日と祝日・休日を除く。1番目が翌営業日):${bizDays.join("、")}\n週明け=${weekStart}(${jaWeekdayShort(weekStart)})。来週明け=同じ週明け。今週中=${friday}(${jaWeekdayShort(friday)}・今週の金曜日)。`;
+}
+
 /**
  * 构造 system prompt（含 today 参考日期注入 + 可选 vocabulary hints + 可选 personal hints）。
  *
@@ -178,8 +221,15 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
   };
   const weekdayIndex = Date.parse(`${today}T00:00:00.000Z`);
   const weekdayTable = WEEKDAY_NAMES[locale] || WEEKDAY_NAMES.en;
-  const parsedOk = Number.isFinite(weekdayIndex);
-  const weekday = parsedOk ? weekdayTable[new Date(weekdayIndex).getUTCDay()] : null;
+  // parsedOk 含伪日历日往返校验:V8 的 Date.parse 会把 "2026-02-30" 滚动成 3/2 而
+  // 非 NaN。X-Local-Date 是客户端可控头且 resolveQuotaDate 的漂移校验也用滚动后的
+  // 值计算,伪日期能一路到达这里——不拦下的话 ja 注入(jpHolidays.parseISO 往返校验)
+  // 会抛错 500,违背本函数「today 异常 → 兜底旧行为,不整体 500」的约定。
+  // 与 src/jpHolidays.js 的 parseISO 同口径:往返后年月日必须与原串一致。
+  const weekdayDate = Number.isFinite(weekdayIndex) ? new Date(weekdayIndex) : null;
+  const parsedOk = weekdayDate !== null
+    && `${weekdayDate.getUTCFullYear()}-${String(weekdayDate.getUTCMonth() + 1).padStart(2, "0")}-${String(weekdayDate.getUTCDate()).padStart(2, "0")}` === today;
+  const weekday = parsedOk ? weekdayTable[weekdayDate.getUTCDay()] : null;
   // 月事实:Date.UTC(y, m, 0) = 当月最后一天(大小月/闰年由日历库保证);
   // Date.UTC(y, m, 1) = 下月 1 号(12 月自动跨年到次年 1 月)。
   const monthFacts = parsedOk ? (() => {
@@ -198,16 +248,22 @@ export function buildSystemPrompt(locale, vocabularyHints = [], today, personalH
   })() : null;
   let todayLine = "";
   if (locale === "zh") {
+    // 「这周内」系(任务书 §1 拍板 = 本周五):服务端算好注入,模型查表。
+    const fridayLine = weekday && monthFacts ? `\n\n本周事实：这周内/本周内/这周之内/本周之内=${thisWeekFriday(today)}（本周五，周日起始的本周；今天已是周六则为今天）。` : "";
     todayLine = weekday && monthFacts
-      ? `\n\n参考日期：${today}（${weekday}，YYYY-MM-DD）。本月共 ${monthFacts.days} 天：月初=${monthFacts.start}、月中=${monthFacts.mid}、月末=${monthFacts.end}、下月初=${monthFacts.nextStart}。计算相对日期时以此为基准，星期与月信息以本行为准。`
+      ? `\n\n参考日期：${today}（${weekday}，YYYY-MM-DD）。本月共 ${monthFacts.days} 天：月初=${monthFacts.start}、月中=${monthFacts.mid}、月末=${monthFacts.end}、下月初=${monthFacts.nextStart}。计算相对日期时以此为基准，星期与月信息以本行为准。${fridayLine}`
       : `\n\n参考日期：${today}（YYYY-MM-DD）。计算相对日期时以此为基准。`;
   } else if (locale === "ja") {
+    // 祝日/営業日/週明け/今週中(任务书 Part C):节假日与营业日必须由注入表给出,
+    // 模型不得自行推算。算不出(年份超界)→ 不追加,同月份事实兜底。
+    const dateFacts = weekday && monthFacts ? buildJaDateFacts(today) : null;
     todayLine = weekday && monthFacts
-      ? `\n\n参照日：${today}（${weekday}、YYYY-MM-DD）。今月は${monthFacts.days}日あり：月初=${monthFacts.start}、月中=${monthFacts.mid}、月末=${monthFacts.end}、来月1日=${monthFacts.nextStart}。相対的な日付（「来週」「月末」など）の計算はこれを基準にし、曜日と月情報はこの行に従うこと。`
+      ? `\n\n参照日：${today}（${weekday}、YYYY-MM-DD）。今月は${monthFacts.days}日あり：月初=${monthFacts.start}、月中=${monthFacts.mid}、月末=${monthFacts.end}、来月1日=${monthFacts.nextStart}。相対的な日付（「来週」「月末」など）の計算はこれを基準にし、曜日と月情報はこの行に従うこと。${dateFacts ?? ""}`
       : `\n\n参照日：${today}（YYYY-MM-DD）。相対的な日付（「来週」「月末」など）の計算はこれを基準にしてください。`;
   } else {
+    const fridayLine = weekday && monthFacts ? `\n\nThis week: "this week" / "sometime this week" / "by the end of the (this) week" / "within this week" = ${thisWeekFriday(today)} (Friday of this Sunday-start week; if today is already Saturday, today).` : "";
     todayLine = weekday && monthFacts
-      ? `\n\nReference date: ${today} (${weekday}, YYYY-MM-DD). This month has ${monthFacts.days} days: month start=${monthFacts.start}, mid-month=${monthFacts.mid}, month end=${monthFacts.end}, next month start=${monthFacts.nextStart}. Use this as the base for understanding relative dates; the weekday and month info given here are authoritative.`
+      ? `\n\nReference date: ${today} (${weekday}, YYYY-MM-DD). This month has ${monthFacts.days} days: month start=${monthFacts.start}, mid-month=${monthFacts.mid}, month end=${monthFacts.end}, next month start=${monthFacts.nextStart}. Use this as the base for understanding relative dates; the weekday and month info given here are authoritative.${fridayLine}`
       : `\n\nReference date: ${today} (YYYY-MM-DD). Use this as the base for understanding relative dates.`;
   }
   let basePrompt;
@@ -319,6 +375,7 @@ const CHINESE_SYSTEM_PROMPT = `你是一个待办事项提取助手。从用户�
 - "月底/月末" → 当月最后一天（算出 due_date）
 - "月中" → 当月 15 号（算出 due_date）
 - "月初" → 当月 1 号（算出 due_date）
+- ⚠️ "这周内/本周内/这周之内/本周之内" → 参考行「本周事实」给出的日期（本周五，周日起始的本周；今天已是周六则为今天。算出 due_date，basis="user_explicit"）。⚠️ 与「这周末」严格区分："这周内"是截止意向（周五前做完），不是「周六或周日选一天」
 - ⚠️ "这周末/本周末/下周末" → **due_date 必须为 null**（模糊日期，客户端让用户自己选周六或周日），due_hint 保留用户原文
 - ⚠️ "尽快/尽早/越快越好" → **due_date 和 due_date_basis 都为 null**（紧急性表达，不是日期线索——连「改天再说」那种模糊意向都没有，basis 也不标），due_hint 保留用户原文；priority 按规则 6 标 high。仅当句中没有其他日期表达（明确或模糊）时适用——「周五前尽快交报告」以「周五前」为准按规则 4 算 due_date；「这周末尽快交」以「这周末」为准按上面的模糊规则处理
 due_hint 始终保留用户原文。
@@ -482,7 +539,11 @@ due_hint 始终保留用户原文。
 
 示例 28（⚠️ 决策/确认类也是行动项：对象是模糊指代（「这个事情」）照样提取，title 保留用户原话；无任何日期线索）：
 输入："这个事情要确认一下做不做"
-输出：{"todos":[{"title":"确认这个事情做不做","detail":"这个事情要确认一下做不做","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}`;
+输出：{"todos":[{"title":"确认这个事情做不做","detail":"这个事情要确认一下做不做","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}
+
+示例 29（⚠️ "这周内"按参考行「本周事实」的周五换算（区别于示例 13 的"这周末"必须 null）；参考日期 2026-07-15 周三，参考行本周事实：这周内=2026-07-17（本周五））：
+输入："这周内把方案写完，这周末去爬山"
+输出：{"todos":[{"title":"把方案写完","detail":"这周内把方案写完","due_date":"2026-07-17","due_hint":"这周内","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"去爬山","detail":"这周末去爬山","due_date":null,"due_hint":"这周末","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"life"}],"ignored":""}`;
 
 const ENGLISH_SYSTEM_PROMPT = `You are a todo extraction assistant. Extract actionable items from the user's casual spoken input.
 
@@ -505,6 +566,7 @@ Fuzzy date conventions:
 - "end of month" → last day of current month (compute due_date)
 - "middle of month" → 15th of current month (compute due_date)
 - "start of month" → 1st of current month (compute due_date)
+- ⚠️ "this week" / "sometime this week" / "by the end of the week" / "by the end of this week" / "within this week" (no weekday named, and NOT "weekend") → the date from the "This week:" reference line (Friday of this Sunday-start week; compute due_date, basis="user_explicit"). ⚠️ Contrast with "this weekend": that stays null — the user picks Saturday or Sunday
 - ⚠️ "this weekend" / "next weekend" → **due_date MUST be null** (fuzzy date; the client lets the user pick Saturday or Sunday); keep the original phrase in due_hint
 - ⚠️ "ASAP" / "as soon as possible" / "at your earliest convenience" → **due_date AND due_date_basis are both null** (urgency wording, not a date cue — there is not even a fuzzy someday-intent, so no basis either); keep the phrase in due_hint; priority is high per rule 6. Applies only when the sentence has no other date wording (explicit or fuzzy) — "send the report by Friday ASAP" follows "by Friday" per rule 4 (compute due_date); "finish it before this weekend ASAP" follows "this weekend" per the fuzzy rule above
 due_hint always preserves the original text.
@@ -676,7 +738,11 @@ Output: {"todos":[{"title":"Take meds","detail":"Remind me to take my meds today
 
 Example 30 (⚠️ deciding/confirming counts as an action item even when the object is a vague reference ("this thing"); title keeps the user's wording; no date cue at all):
 Input: "Need to confirm whether to do this thing or not"
-Output: {"todos":[{"title":"Confirm whether to do this thing","detail":"Need to confirm whether to do this thing or not","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}`;
+Output: {"todos":[{"title":"Confirm whether to do this thing","detail":"Need to confirm whether to do this thing or not","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}
+
+Example 31 ("sometime this week" resolves to the injected Friday — contrast Example 13's "this weekend" → null; reference date 2026-07-15 Wednesday, reference line "This week: … = 2026-07-17"):
+Input: "Finish the slide deck sometime this week"
+Output: {"todos":[{"title":"Finish the slide deck","detail":"Finish the slide deck sometime this week","due_date":"2026-07-17","due_hint":"sometime this week","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
 
 // 完整日语 prompt(P1)。规则结构与中文/英文 prompt 对齐,示例全部改写为日语输入。
 // 输出语言、人名保留、枚举字段英文 literal 等约束显式写在规则 10 里,防止 AI 漂移。
@@ -701,6 +767,11 @@ const JAPANESE_SYSTEM_PROMPT = `あなたはTODO抽出アシスタントです�
 - 「月末」→ 当月の最終日(due_date を計算)
 - 「月中」→ 当月の15日(due_date を計算)
 - 「月初」→ 当月の1日(due_date を計算)
+- 「翌営業日」= 参照行の営業日リストの1番目。「N営業日以内」「N営業日後」= 営業日リストのN番目(N が 10 より大きい、リストに載っていない → due_date=null、basis="user_explicit"、due_hint に原文を保持——ユーザーが確認画面で日付を選ぶ)
+- 「週明け」「来週明け」= 参照行の「週明け=…」の日付(参照行にある場合のみ。なければ due_date=null、basis="user_explicit"、due_hint に原文を保持)
+- 祝日の名前での指定(「勤労感謝の日に」「スポーツの日に」など)= 参照行の祝日リストのうち、今日またはそれ以降で最も近い同名の日
+- 「今週中」= 参照行の「今週中=…」(今週の金曜日。金曜が祝日でも金曜のまま)
+- ⚠️ 営業日・週明け・祝日名・今週中の日付は**参照行に与えられた値をそのまま使うこと。自分で推算・心算してはならない**(祝日カレンダーは環境によって異なり、自分で数えると必ず間違える)
 - ⚠️ 「今週末」「来週末」→ **due_date は必ず null**(曖昧な日付、クライアント側でユーザーが土曜日か日曜日を選ぶ)、due_hint に原文を保持
 - ⚠️ 「今度」「近いうちに」→ **due_date は必ず null**(「いつかやる」の意向表現で時期が特定できない。締め切り意図が明確なら basis="user_explicit"、クライアント側でユーザーに日付を選ばせる)、due_hint に原文を保持
 - ⚠️ 「なるはや」「なる早」「できるだけ早く」→ **due_date も due_date_basis も null**(緊急性の表現であって日付の手がかりではない——「いつかやる」の曖昧な意向ですらなく、basis も付けない)、due_hint に原文を保持。priority はルール6により high。文中に他の日付表現(明確・曖昧問わず)がある場合は適用しない——「金曜までになるはやでレポートを出す」は「金曜までに」に従いルール4で due_date を計算、「今週末までになるはやで」は「今週末」に従い上記の曖昧ルールで処理する
@@ -848,7 +919,11 @@ JSON のみを返す(説明は不要)。フォーマット:
 
 例 25(⚠️ 決断・確認も行動:対象が曖昧な指示(「この件」)でも抽出し、title は原文を保持;日付の手がかりは一切なし):
 入力:"この件、やるかどうか確認したい"
-出力:{"todos":[{"title":"この件をやるか確認する","detail":"この件、やるかどうか確認したい","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}`;
+出力:{"todos":[{"title":"この件をやるか確認する","detail":"この件、やるかどうか確認したい","due_date":null,"due_hint":null,"due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":null,"priority":"normal","category_hint":"other"}],"ignored":""}
+
+例 26(営業日と今週中は参照行の値をそのまま使う(自分で推算しない);参照日 2026-07-15 水曜、参照行で「今後10営業日:2026-07-16(木)、2026-07-17(金)、2026-07-21(火)、…」(7/20 月曜は海の日なので営業日リストに入らない)「今週中=2026-07-17(金)」と仮定):
+入力:"翌営業日までに先方に返信して、今週中に企画書を仕上げる"
+出力:{"todos":[{"title":"先方に返信する","detail":"翌営業日までに先方に返信する","due_date":"2026-07-16","due_hint":"翌営業日までに","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"},{"title":"企画書を仕上げる","detail":"今週中に企画書を仕上げる","due_date":"2026-07-17","due_hint":"今週中に","due_time":null,"time_bucket":null,"recurrence_rule":null,"recurrence_end":null,"reminder_times":null,"reminder_offset_minutes":null,"due_date_basis":"user_explicit","priority":"normal","category_hint":"work"}],"ignored":""}`;
 
 // Split 模式 prompts（2026-08-23 拆小改版）。与提取 prompts 的关键差异:
 // 输出是 {"steps":[...]} 而非 {"todos":[...]}；无日期/重复/分类字段；

@@ -271,6 +271,112 @@ test("today 注入行带服务端计算的星期与月事实(2026-11-04 出口�
   assert.match(buildSystemPrompt("fr", [], "2026-11-04", null), /\(Wednesday/);
 });
 
+// ---------- 日本节假日/营业日/週明け/今週中 注入(任务书 Part C,2026-11-27) ----------
+// 期望值 = 任务书 §8.1 表(与 src/jpHolidays.test.js 同源向量),锚全为周三。
+
+test("ja prompt 注入祝日/営業日/週明け/今週中(2026-11-18 锚,任务书 §8.1)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const prompt = buildSystemPrompt("ja", [], "2026-11-18", null);
+  // 祝日列表:今后 365 天内首条 11-23 勤労感謝の日(月),含曜日与名称
+  assert.match(prompt, /今後365日の祝日・休日\(昇順\):[^\n]*2026-11-23\(月・勤労感謝の日\)/);
+  // 今天不是祝日
+  assert.match(prompt, /今日は祝日・休日ではありません。/);
+  // 10 営業日:第一条 = 翌営業日 11-19(木);11-23 祝日 → 11-24(火)
+  assert.match(prompt, /今後10営業日\(月〜金、土日と祝日・休日を除く。1番目が翌営業日\):2026-11-19\(木\)、2026-11-20\(金\)、2026-11-24\(火\)/);
+  // 週明け(11-23 祝日 → 11-24)与今週中(11-20)
+  assert.match(prompt, /週明け=2026-11-24\(火\)/);
+  assert.match(prompt, /今週中=2026-11-20\(金・今週の金曜日\)/);
+});
+
+test("ja prompt 今天是祝日时注明(2026-04-29 昭和の日),黄金周营业日正确", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const prompt = buildSystemPrompt("ja", [], "2026-04-29", null);
+  assert.match(prompt, /今日は祝日・休日です\(昭和の日\)。/);
+  // 翌営業日 4-30,5/1;5/3-5/6 全休 → 第三営業日 5/7(任务书 §8.1)
+  assert.match(prompt, /今後10営業日\(月〜金、土日と祝日・休日を除く。1番目が翌営業日\):2026-04-30\(木\)、2026-05-01\(金\)、2026-05-07\(木\)/);
+  assert.match(prompt, /週明け=2026-05-07\(木\)/, "5/4 月曜祝日 → 顺延到 5/7");
+});
+
+test("zh/en prompt 只注入本周五,zh/en 不注入日本祝日(任务书 §4.1)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const zh = buildSystemPrompt("zh", [], "2026-11-18", null);
+  assert.match(zh, /本周事实：这周内\/本周内\/这周之内\/本周之内=2026-11-20（本周五/);
+  assert.ok(!zh.includes("祝日"), "zh prompt 不得注入日本节假日");
+  assert.ok(!zh.includes("営業日"), "zh prompt 不得注入营业日列表");
+  const en = buildSystemPrompt("en", [], "2026-11-18", null);
+  assert.match(en, /"this week" \/ "sometime this week" \/ "by the end of the \(this\) week" \/ "within this week" = 2026-11-20/);
+  assert.ok(!en.includes("祝日"), "en prompt 不得注入日本节假日");
+  // 周六说「这周内」= 今天(任务书 §1)
+  assert.match(buildSystemPrompt("zh", [], "2026-11-21", null), /本周之内=2026-11-21（本周五/);
+});
+
+test("ja prompt 年份超 2000–2099 → 算不出不注入、不 500(同月份事实兜底)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const prompt = buildSystemPrompt("ja", [], "2100-01-07", null);
+  assert.ok(!prompt.includes("祝日・休日(") && !prompt.includes("今後365日の祝日"), "超界年份不得注入祝日表");
+  assert.ok(!/今後10営業日\(月〜金/.test(prompt), "超界年份不得注入营业日表(注入行形态,示例文本除外)");
+  assert.match(prompt, /参照日：2100-01-07/, "参照日本身仍在(月事实可算)");
+});
+
+test("伪日历日 today(如 2026-02-30)→ 兜底无事实旧行为,不注入不 500", async () => {
+  // V8 会把 2026-02-30 滚动成 3/2;X-Local-Date 可控且漂移校验用滚动值,
+  // 伪日期能到达 buildSystemPrompt——必须走「算不出」兜底而非抛错/注入滚动日期。
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const ja = buildSystemPrompt("ja", [], "2026-02-30", null);
+  assert.match(ja, /参照日：2026-02-30（YYYY-MM-DD）。/, "伪日期退回无事实参照行");
+  assert.ok(!ja.includes("今後365日の祝日"), "伪日期不得注入祝日表");
+  const zh = buildSystemPrompt("zh", [], "2026-02-30", null);
+  // 注:基 prompt 规则行本身含「本周事实」字样,不能按 includes 断言;退回无事实
+  // 参考行(含本周事实注入行的形态必然是「参考日期：…本行为准。」结尾)即足以证明。
+  assert.match(zh, /参考日期：2026-02-30（YYYY-MM-DD）。计算相对日期时以此为基准。/, "zh 伪日期退回无事实参考行");
+});
+
+test("_testSetServerToday(eval --anchor 钩子):设锚钉住漂移窗口,不设=生产行为零变化", async () => {
+  const { _testSetServerToday } = await import("./worker.js");
+  const farDate = "2100-01-07"; // 远离真实今天的周三(漂移 >1 天)
+  const env = {
+    APP_TOKEN: "token",
+    AI_PROVIDER: "openai",
+    OPENAI_API_KEY: "openai-key",
+    OPENAI_MODEL: "test-model"
+  };
+  const run = async (localDate) => {
+    let systemMessage;
+    const response = await handleRequest(
+      request({ transcript: "明天交房租", locale: "zh-Hans" }, { "X-App-Token": "token", "X-Local-Date": localDate }),
+      env, {},
+      async (_url, init) => {
+        systemMessage = JSON.parse(init.body).messages[0].content;
+        return jsonResponse({ choices: [{ message: { content: extractionJSON("交房租") } }] });
+      }
+    );
+    assert.equal(response.status, 200);
+    return systemMessage;
+  };
+  try {
+    // 1) 不设钩子(生产路径):远期 X-Local-Date 被漂移校验拒,prompt 参考日期
+    //    回退真实 server UTC —— 行为与加钩子之前完全一致。
+    const noHook = await run(farDate);
+    assert.ok(!noHook.includes(`参考日期：${farDate}`), "未设钩子时远期锚必须被漂移校验拒绝");
+    const realToday = new Date().toISOString().slice(0, 10);
+    assert.ok(noHook.includes(`参考日期：${realToday}`), "回退到真实 server UTC 今天");
+    // 2) 设钩子:serverToday 钉到锚,同一个远期 X-Local-Date 被接受为 client_local
+    _testSetServerToday(farDate);
+    const hooked = await run(farDate);
+    assert.ok(hooked.includes(`参考日期：${farDate}`), "设钩后锚被接受,prompt 用锚日期");
+    // 3) 非法入参显式抛错(不静默吞)
+    assert.throws(() => _testSetServerToday("2100-13-01"), /YYYY-MM-DD/);
+    assert.throws(() => _testSetServerToday(21000107), /YYYY-MM-DD/);
+    // 伪日历日(Date.parse 滚动后仍有限,必须被往返校验拦下,不静默放伪日期进 serverToday)
+    assert.throws(() => _testSetServerToday("2026-02-30"), /YYYY-MM-DD/);
+  } finally {
+    // 4) 恢复:后续用例回到生产行为(测试隔离)
+    _testSetServerToday(null);
+    const restored = await run(farDate);
+    assert.ok(!restored.includes(`参考日期：${farDate}`), "置 null 恢复生产行为");
+  }
+});
+
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。

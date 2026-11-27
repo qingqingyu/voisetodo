@@ -111,4 +111,40 @@ final class ExplicitTimeCueDatasetRegressionTests: XCTestCase {
         XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Clean the garage by the end of the week"))
         XCTAssertTrue(TodoDueDateResolver.hasExplicitTimeCue(in: "Ship it within three business days"))
     }
+
+    /// 第二批(节假日/营业日/今週中,dataset ja-041~052 等价原话,2026-11-27 总审补):
+    /// 祝日名指定必须算有线索 —— 注入表支持全部法定祝日名,词表缺名(ja-048
+    /// スポーツの日)曾导致端上清空日期,这里逐名钉住。営業日/週明け/今週中
+    /// 已由补充词覆盖,一并回归。
+    func testBatch2HolidayAndBizDayTranscriptsHaveCue() {
+        // dataset 原话(user_explicit 且 due 非空的第二批 case)
+        for transcript in [
+            "週明けに見積もりを送る",                       // ja-041
+            "来週明けに部長に報告する",                     // ja-042
+            "翌営業日までに先方に返信する",                 // ja-043
+            "3営業日以内に議事録を共有する",                // ja-044
+            "5営業日後に検品結果を連絡する",                // ja-045
+            "15営業日以内に契約書を返送する",               // ja-046(due null 但仍是明确日期意向)
+            "勤労感謝の日に実家に帰る",                     // ja-047
+            "スポーツの日に市民マラソンに出る",             // ja-048 —— 总审修复点
+            "今週中に企画書を仕上げて、今週末は部屋を片付ける", // ja-051(今週中在前半)
+            "週明けに取引先に電話して、見積もりを送る",     // ja-052
+        ] {
+            XCTAssertTrue(
+                TodoDueDateResolver.hasExplicitTimeCue(in: transcript),
+                "第二批原话应识别为明确时间线索:\(transcript)"
+            )
+        }
+        // 法定祝日名逐个钉住(与注入表 16 祝日对齐;未被 dataset 用到的名字也必须有线索)
+        for name in [
+            "元日", "成人の日", "建国記念の日", "天皇誕生日", "春分の日", "昭和の日",
+            "憲法記念日", "みどりの日", "こどもの日", "海の日", "山の日", "敬老の日",
+            "秋分の日", "スポーツの日", "文化の日", "勤労感謝の日",
+        ] {
+            XCTAssertTrue(
+                TodoDueDateResolver.hasExplicitTimeCue(in: "\(name)に予定を入れる"),
+                "祝日名应识别为明确时间线索:\(name)"
+            )
+        }
+    }
 }

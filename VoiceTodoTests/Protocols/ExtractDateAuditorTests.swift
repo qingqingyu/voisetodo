@@ -236,6 +236,59 @@ final class ExtractDateAuditorTests: XCTestCase {
         XCTAssertEqual(verdict.outcome, .observed)
     }
 
+    // MARK: - 营业日/节假日类 hint(任务书 Part F,2026-11-27)
+
+    /// 「明日から3営業日以内」含「明日」,不拦会被按 +1 天重写;
+    /// 营业日日期由代理注入表算出,客户端审计器不得纠。
+    func testBusinessDayHints_areObserved() {
+        let cases: [(hint: String, transcript: String)] = [
+            ("明日から3営業日以内", "明日から3営業日以内に書類を提出する"),
+            ("翌営業日までに", "翌営業日までに先方に返信する"),
+            ("3個工作日內", "三个工作日内交付"),
+            ("5 business days", "ship within 5 business days"),
+        ]
+        for c in cases {
+            let verdict = ExtractDateAuditor.audit(
+                hint: c.hint, modelDate: date(2026, 11, 12),
+                transcript: c.transcript, anchor: wednesdayAnchor, calendar: calendar
+            )
+            // 任务书口径:落 ambiguous(observed)或无日期表达(noDateExpression)都算
+            // 「不纠」——关键性质是绝不进 agree/mismatch 的重写分支。
+            XCTAssertTrue(
+                verdict.outcome == .observed || verdict.outcome == .noDateExpression,
+                "营业日类 hint 不得纠:\(c.hint)(实际 \(verdict.outcome))"
+            )
+        }
+    }
+
+    /// 第二批新 hint 按现有逻辑就落 ambiguous/无日期表达,不纠——钉住防回归:
+    /// 週明け/今週中/这周内/sometime this week 的日期来自注入行,客户端不该心算。
+    func testBatch2Hints_areObservedNotRewritten() {
+        let cases: [(hint: String, transcript: String)] = [
+            ("週明け", "週明けに見積もりを送る"),
+            ("来週明け", "来週明けに部長に報告する"),
+            ("今週中に", "今週中に企画書を仕上げる"),
+            ("今週末", "今週末は部屋を片付ける"),
+            ("这周内", "这周内把方案写完"),
+            ("本周之内", "本周之内去趟银行"),
+            ("sometime this week", "Finish the deck sometime this week"),
+            ("勤労感謝の日", "勤労感謝の日に実家に帰る"),
+            ("スポーツの日", "スポーツの日に市民マラソンに出る"),
+        ]
+        for c in cases {
+            let verdict = ExtractDateAuditor.audit(
+                hint: c.hint, modelDate: date(2026, 11, 13),
+                transcript: c.transcript, anchor: wednesdayAnchor, calendar: calendar
+            )
+            // ambiguous(observed)或无日期表达(noDateExpression,如祝日名不在
+            // hasDateMarker 词表)都不纠;绝不能进重写分支。
+            XCTAssertTrue(
+                verdict.outcome == .observed || verdict.outcome == .noDateExpression,
+                "第二批 hint 不得纠:\(c.hint)(实际 \(verdict.outcome))"
+            )
+        }
+    }
+
     func testHintNotInTranscript_isObserved() {
         // 模型改写过 hint(原文说"后天",hint 写"明天")→ hint 不可信,只观察
         let verdict = ExtractDateAuditor.audit(

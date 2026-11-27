@@ -14,6 +14,9 @@
 //     node run.mjs ... --resume
 //   只重放评分(不花钱重跑):
 //     node run.mjs --replay results/baseline-sonnet-<ts>.json
+//   固定锚(任务书 Part D,只允许 --provider-file 进程内模式;必须与
+//   meta.anchor_weekday 同星期,专测节假日周):
+//     node run.mjs --provider-file … --anchor 2026-04-29 --label b2-goldenweek
 //
 // 机制(设计依据见同目录 README.md):
 // - stream=true 绕开 KV 结果缓存(缓存条件 !stream && !personalHints,worker.js)
@@ -34,6 +37,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
+// 日期规则 tag 与注入共用同一份节假日数据源(任务书 Part D:不另写一份)
+import { nthJpBusinessDayAfter, jpWeekStartBusinessDay, nextJpHoliday } from "../src/jpHolidays.js";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATASET = join(SCRIPT_DIR, "dataset.json");
@@ -73,6 +78,16 @@ function parseArgs(argv) {
       case "--provider-file": args.providerFile = next(); break;
       case "--key-env": args.keyEnv = next(); break;
       case "--proxy": args.proxy = next(); break;
+      case "--anchor":
+        args.anchor = next();
+        // Date.parse 对 2026-02-30 这类 rollover 日期也返回有限值,做 round-trip
+        // 拦下:否则星期校验按 3 月 2 日判,错锚可能静默通过。
+        const anchorMs = Date.parse(`${args.anchor}T00:00:00.000Z`);
+        if (!ISO_DATE_RE.test(args.anchor) || !Number.isFinite(anchorMs)
+          || new Date(anchorMs).toISOString().slice(0, 10) !== args.anchor) {
+          throw new Error(`--anchor 非法(需真实存在的 YYYY-MM-DD): ${args.anchor}`);
+        }
+        break;
       case "--table":
         // --table f1 f2 f3:一个 flag 后跟多个文件(遇到下一个 -- 停)
         args.table = args.table || [];
@@ -158,7 +173,16 @@ function shiftGoldenDates(dataset, anchor) {
   }
   // 日期规则 tag 在 delta=0 时也要校验(一条 case 最多一个),避免多 tag 互相覆盖无感知
   const ruleOf = (c) => {
-    const rules = (Array.isArray(c.tags) ? c.tags : []).filter((t) => Object.hasOwn(DATE_RULE_TAGS, t));
+    const tags = Array.isArray(c.tags) ? c.tags : [];
+    const rules = [];
+    for (const t of tags) {
+      if (Object.hasOwn(DATE_RULE_TAGS, t)) { rules.push(t); continue; }
+      // 无参形态(jp-week-start-bizday)整名直接命中;漏了这条会静默按均匀平移,
+      // 固定锚下把正确答案判错(ja-041/042/052 都用无参形态)
+      if (Object.hasOwn(PARAMETRIC_DATE_RULE_TAGS, t)) { rules.push(t); continue; }
+      const colon = t.indexOf(":");
+      if (colon > 0 && Object.hasOwn(PARAMETRIC_DATE_RULE_TAGS, t.slice(0, colon))) rules.push(t);
+    }
     if (rules.length > 1) throw new Error(`case ${c.id} 同时带多个日期规则 tag: ${rules.join(", ")}`);
     return rules[0] ?? null;
   };
@@ -172,7 +196,7 @@ function shiftGoldenDates(dataset, anchor) {
     for (const t of c.golden.todos) {
       if (t.due_date == null) continue;
       t.due_date = rule
-        ? DATE_RULE_TAGS[rule](anchorMs, t.due_date)
+        ? applyDateRuleTag(rule, anchorMs, t.due_date)
         : toISODate(parseISODate(t.due_date, `${c.id} due_date`) + deltaDays * DAY_MS);
     }
   }
@@ -203,6 +227,47 @@ const DATE_RULE_TAGS = {
   // 绝对日期(和暦/完整年月日)→ 不随锚平移
   "absolute-date": (_anchorMs, original) => original
 };
+
+/// 带参数的日期规则 tag(任务书 Part D,2026-11-27):`名称:参数` 形态,统一调
+/// ../src/jpHolidays.js(与 prompt 注入同一数据源)。「今週中=周五」不需要 tag:
+/// 锚永远是周三,周五 = 锚 +2,均匀平移就对。
+const PARAMETRIC_DATE_RULE_TAGS = {
+  // N 営業日:锚之后第 N 个营业日(ja-043 翌営業日=1、ja-044 三日=3、ja-045 五日=5)
+  "jp-bizday": (param, anchorMs) => {
+    const n = Number(param);
+    if (!Number.isInteger(n) || n < 1) throw new Error(`jp-bizday 参数非法(需 ≥1 整数): ${param}`);
+    const iso = nthJpBusinessDayAfter(toISODate(anchorMs), n);
+    if (iso === null) throw new Error(`jp-bizday:${param} 在锚 ${toISODate(anchorMs)} 算不出(年份超 2000–2099)`);
+    return iso;
+  },
+  // 週明け:锚之后第一个周一,非营业日顺延
+  "jp-week-start-bizday": (_param, anchorMs) => {
+    const iso = jpWeekStartBusinessDay(toISODate(anchorMs));
+    if (iso === null) throw new Error(`jp-week-start-bizday 在锚 ${toISODate(anchorMs)} 算不出`);
+    return iso;
+  },
+  // 祝日名:锚当天或之后最近的同名节假日(参数 = 祝日名原文,如 勤労感謝の日)
+  "jp-holiday": (param, anchorMs) => {
+    if (!param) throw new Error("jp-holiday 需要祝日名参数(如 jp-holiday:勤労感謝の日)");
+    const iso = nextJpHoliday(toISODate(anchorMs), param);
+    if (iso === null) throw new Error(`jp-holiday:${param} 在锚 ${toISODate(anchorMs)} 之后 400 天内找不到(名字不认识?)`);
+    return iso;
+  },
+};
+
+/// 统一入口:plain tag 走 DATE_RULE_TAGS,`名称:参数` 走 PARAMETRIC(参数可含
+/// 全角字符,按第一个冒号切分);无参形态(jp-week-start-bizday)整名进 PARAMETRIC
+/// (handler 忽略参数;jp-bizday/jp-holiday 裸写会在各自 handler 里显式抛错)。
+function applyDateRuleTag(tag, anchorMs, original) {
+  if (Object.hasOwn(PARAMETRIC_DATE_RULE_TAGS, tag)) {
+    return PARAMETRIC_DATE_RULE_TAGS[tag](undefined, anchorMs);
+  }
+  const colon = tag.indexOf(":");
+  if (colon > 0 && Object.hasOwn(PARAMETRIC_DATE_RULE_TAGS, tag.slice(0, colon))) {
+    return PARAMETRIC_DATE_RULE_TAGS[tag.slice(0, colon)](tag.slice(colon + 1), anchorMs);
+  }
+  return DATE_RULE_TAGS[tag](anchorMs, original);
+}
 
 // ---------- 归一化(评分口径) ----------
 
@@ -298,12 +363,12 @@ function makeProxyFetch(proxyUrl) {
 // global fetch 打上游 —— 与生产完全同一套 adapter/分类/failover 代码,唯一区别是
 // 不经已部署代理(env 是本地构造的,只有目标 provider 一条 + 免费额度全开)。
 // key 从 env 变量读(默认 EVAL_PROVIDER_KEY),不进命令行(ps 可见)不进仓库。
-async function makeInProcessTransport(providerFile, keyEnvName) {
+async function makeInProcessTransport(providerFile, keyEnvName, anchorIso = null) {
   const apiKey = process.env[keyEnvName];
   if (!apiKey) {
     throw new Error(`环境变量 ${keyEnvName} 未设置:进程内评测的 provider key 只从 env 读(不写进 --provider-file / 命令行)`);
   }
-  const { handleRequest, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache, _testResetAlertState, _testResetProbeCache } = await import("../worker.js");
+  const { handleRequest, _testResetHealth, _testResetAdminConfig, _testResetExtractionCache, _testResetAlertState, _testResetProbeCache, _testSetServerToday } = await import("../worker.js");
   // 进程内模式的降噪:worker 每请求打 10+ 行 JSON 日志(生产走 wrangler tails,
   // 这里会淹没评测报告)。只过滤结构化日志行,run.mjs 自身的报告输出不受影响。
   const originalLog = console.log;
@@ -318,6 +383,9 @@ async function makeInProcessTransport(providerFile, keyEnvName) {
   _testResetExtractionCache();
   _testResetAlertState();
   _testResetProbeCache();
+  // 固定锚(--anchor):把 resolveQuotaDate 的 serverToday 钉到锚上,漂移校验窗口
+  // 随之平移(任务书 Part D)。不传 = 不设钩子,worker 行为与生产一致。
+  if (anchorIso) _testSetServerToday(anchorIso);
   const raw = JSON.parse(readFileSync(providerFile, "utf8"));
   if (!raw.url || !raw.model || !raw.type) {
     throw new Error(`--provider-file 需要 type/url/model 字段(不含 key): ${providerFile}`);
@@ -627,6 +695,18 @@ function scoreAll(dataset, resultsFile) {
   const firstTexts = [];
   const firstTodos = [];
   const responseChars = [];
+  // 过关线(任务书 Part D):分母 = 全部 − known_hard − observation,允许 ⌊n×2%⌋ 条失败。
+  // runner 打的这一行就是 README §4.1 的判法(不用再手算百分比——显示值含白名单
+  // 且四舍五入,拿它判过关会错)。
+  const knownHard = new Set(dataset.meta?.known_hard ?? []);
+  // 白名单 id 手滑写错会被静默忽略,gate 分母悄然变大(过关线被放宽)——显式报错
+  for (const id of knownHard) {
+    if (!dataset.cases.some((x) => x.id === id)) {
+      throw new Error(`meta.known_hard 里的 ${id} 不在 dataset cases 中(写错 id?):gate 分母无法正确剔除`);
+    }
+  }
+  const hasTag = (c, tag) => (Array.isArray(c.tags) ? c.tags : []).includes(tag);
+  const gate = { denominator: 0, failed: 0, allowed: 0, excluded: { known_hard: [], observation: [] } };
   // 先初始化全部 hard 字段行:0 个可评分 case(全 infra_error)时报告也要能打出来,
   // 而不是在 printReport 里 TypeError —— 全面失败恰恰是最需要报告的场景。
   for (const f of HARD_FIELDS) fieldStats[f] = { match: 0, total: 0 };
@@ -634,6 +714,11 @@ function scoreAll(dataset, resultsFile) {
   for (const rc of resultsFile.cases) {
     const c = dataset.cases.find((x) => x.id === rc.id);
     if (!c) throw new Error(`results 里的 case ${rc.id} 不在 dataset 中`);
+    // 白名单/观察项只影响 gate 分母,整体统计(case 全对率/分语言/hard 字段)照旧
+    // 照单全收 —— 头部的百分比仍然「含白名单且四舍五入」,判过关只看 gate 行。
+    const inGate = !knownHard.has(rc.id) && !hasTag(c, "observation");
+    if (knownHard.has(rc.id)) gate.excluded.known_hard.push(rc.id);
+    else if (hasTag(c, "observation")) gate.excluded.observation.push(rc.id);
     if (!rc.ok) continue; // infra_error 不计分
     if (!rc.parsed || !Array.isArray(rc.parsed.todos)) {
       throw new Error(`results 里 case ${rc.id} 标记 ok 但 parsed.todos 缺失或非数组(手改文件?行号见 results 原文)`);
@@ -646,6 +731,10 @@ function scoreAll(dataset, resultsFile) {
     const s = scoreCase(c, rc.parsed);
     if (s.casePass) passed++;
     if (s.countMatch) countMatch++;
+    if (inGate) {
+      gate.denominator++;
+      if (!s.casePass) gate.failed++;
+    }
     goldenTodoTotal += c.golden.todos.length;
     const loc = c.locale ?? "?";
     byLocale[loc] ??= { scored: 0, passed: 0 };
@@ -671,6 +760,8 @@ function scoreAll(dataset, resultsFile) {
   latencies.sort((a, b) => a - b);
   firstTexts.sort((a, b) => a - b);
   firstTodos.sort((a, b) => a - b);
+  gate.allowed = Math.floor(gate.denominator * 0.02);
+  gate.verdict = gate.denominator === 0 ? "NO_ELIGIBLE" : (gate.failed <= gate.allowed ? "PASS" : "FAIL");
   return {
     label: resultsFile.label,
     scored,
@@ -678,6 +769,7 @@ function scoreAll(dataset, resultsFile) {
     passRate: pctStr(passed, scored),
     countMatchRate: pctStr(countMatch, scored),
     byLocale,
+    gate,
     goldenTodoTotal,
     hard: fieldStats,
     soft: softStats,
@@ -710,6 +802,10 @@ function msDist(arr) {
 function printReport(r, infra) {
   console.log(`\n=== Eval 报告: ${r.label} ===`);
   console.log(`case: ${r.passed}/${r.scored} 全对(${r.passRate})  拆分数量正确: ${r.countMatchRate}  golden todo 总数: ${r.goldenTodoTotal}`);
+  // gate 行 = README §4.1 的判法(任务书 Part D):判过关只看这一行,
+  // 上面那行百分比含白名单且四舍五入,不能拿来判。
+  const g = r.gate ?? { denominator: r.scored, failed: r.scored - r.passed, allowed: Math.floor(r.scored * 0.02), verdict: "n/a(旧结果)" };
+  console.log(`gate: 分母 ${g.denominator}(全部 − known_hard ×${g.excluded?.known_hard?.length ?? "?"} − observation ×${g.excluded?.observation?.length ?? "?"}),失败 ${g.failed},允许 ⌊n×2%⌋=${g.allowed} → ${g.verdict}`);
   if (infra > 0) console.log(`⚠️  infra_error(未计分): ${infra}`);
   const locales = Object.entries(r.byLocale).map(([l, v]) => `${l} ${v.passed}/${v.scored}`).join("  ");
   console.log(`分语言: ${locales}`);
@@ -768,7 +864,11 @@ async function main() {
   const rawDataset = JSON.parse(readFileSync(datasetPath, "utf8"));
 
   // --replay:只评分。复用 results 里记录的锚(缺省回退 authoring 锚,兼容手造文件),
-  // 保证改 golden 后重放与当时发送用同一套期望日期。
+  // 保证改 golden 后重放与当时发送用同一套期望日期。锚永远以 results 为准,
+  // --anchor 在这里不可能生效 —— 与 --resume 的冲突检查同口径,显式报错不静默忽略。
+  if (args.anchor && args.replay) {
+    throw new Error(`--anchor 与 --replay 互斥:replay 的锚只取 results 里落盘的值,--anchor 不会生效(固定锚重放无需任何参数)`);
+  }
   if (args.replay) {
     const resultsFile = JSON.parse(readFileSync(args.replay, "utf8"));
     const anchor = resultsFile.anchorToday ?? rawDataset.meta.anchor_today;
@@ -786,6 +886,13 @@ async function main() {
   // --resume 必须复用上次 run 落盘的锚:周三开跑周四续跑时重选锚会让已发送 case
   // 的期望日期整体错位,评分静默全错。旧锚漂出 ±1 天窗口时新发送会触发
   // anchor_rejected 中止(见 sendOne),此时应去掉 --resume 重跑。
+  // --anchor(任务书 Part D,2026-11-27):固定锚,只允许进程内直连模式
+  // (HTTP 端点连的是已部署 worker,漂移校验会拒掉远离今天的锚)。实现 =
+  // worker 测试钩子 _testSetServerToday 把 resolveQuotaDate 的 serverToday 钉到
+  // 锚上,漂移窗口随之平移 —— 不用 env 开关(会被误配到生产)。
+  if (args.anchor && !args.providerFile) {
+    throw new Error("--anchor 只允许和 --provider-file(进程内直连)一起用:HTTP 端点模式下已部署 worker 的 ±1 天漂移校验会拒绝固定锚");
+  }
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const deviceId = `eval-${args.label}-${ts}`;
   const prevResults = args.resume ? findLatestResults(args.label) : null;
@@ -794,8 +901,33 @@ async function main() {
   if (prevResults) {
     const prev = JSON.parse(readFileSync(prevResults, "utf8"));
     anchor = prev.anchorToday ?? null;
+    if (args.anchor && anchor && args.anchor !== anchor) {
+      throw new Error(`--anchor ${args.anchor} 与 --resume 落盘的锚 ${anchor} 冲突:续跑必须沿用当时发送的锚,否则期望日期整体错位`);
+    }
+    // 固定锚 run 续跑必须重复 --anchor:serverToday 钩子只在传 --anchor 时设置,
+    // 漏带会让新发送全部被漂移校验拒(anchor_rejected),且此时的中止文案
+    // (「去掉 --resume 重跑」)对固定锚 run 是误导 —— 提前显式报错。
+    if (!args.anchor && anchor) {
+      const todayMs = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+      if (Math.abs(Date.parse(`${anchor}T00:00:00.000Z`) - todayMs) > DAY_MS) {
+        throw new Error(
+          `--resume 落盘的锚 ${anchor} 离今天超过 ±1 天(固定锚 run?):` +
+          (args.providerFile
+            ? `进程内模式续跑请重复 --anchor ${anchor}(serverToday 钩子才会钉到锚上)`
+            : `HTTP 端点模式无法固定锚,请去掉 --resume 重跑整轮`)
+        );
+      }
+    }
     for (const rc of prev.cases) if (rc.ok) prevCases.set(rc.id, rc);
     console.log(`--resume: 复用 ${prevCases.size}/${rawDataset.cases.length} 个已完成 case(来自 ${prevResults})`);
+  }
+  if (!anchor && args.anchor) {
+    const wd = WEEKDAY_NAMES[new Date(Date.parse(`${args.anchor}T00:00:00.000Z`)).getUTCDay()];
+    if (wd !== rawDataset.meta.anchor_weekday) {
+      throw new Error(`--anchor ${args.anchor} 是 ${wd},必须与 meta.anchor_weekday=${rawDataset.meta.anchor_weekday} 同星期(golden 相对日期语义按此锚定)`);
+    }
+    anchor = args.anchor;
+    console.log(`日期锚(固定): ${anchor}`);
   }
   if (!anchor) {
     anchor = pickAnchor(rawDataset.meta.anchor_weekday);
@@ -820,7 +952,7 @@ async function main() {
     console.log(`上游经由代理: ${args.proxy}`);
   }
   const transport = args.providerFile
-    ? await makeInProcessTransport(args.providerFile, args.keyEnv || "EVAL_PROVIDER_KEY")
+    ? await makeInProcessTransport(args.providerFile, args.keyEnv || "EVAL_PROVIDER_KEY", args.anchor ?? null)
     : null;
   if (transport) {
     console.log(`provider(进程内直连): ${transport.providerMeta.model} @ ${transport.providerMeta.url}`);
