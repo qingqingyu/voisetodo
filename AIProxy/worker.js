@@ -106,8 +106,17 @@ export function _testResetProbeCache() {
 let _testServerTodayOverride = null;
 export function _testSetServerToday(isoOrNull) {
   if (isoOrNull !== null && isoOrNull !== undefined) {
-    if (typeof isoOrNull !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(isoOrNull) || !Number.isFinite(Date.parse(`${isoOrNull}T00:00:00.000Z`))) {
-      throw new Error(`_testSetServerToday 需要 YYYY-MM-DD 或 null,收到: ${String(isoOrNull)}`);
+    // 往返校验(与 run.mjs --anchor、base.js parsedOk 同口径):V8 的 Date.parse 对
+    // 伪日历日(2026-02-30)返回滚动后的有限值而非 NaN,不往返就放伪日期进
+    // serverToday,配额/漂移计算全部跟着错。
+    const roundTripOk = typeof isoOrNull === "string"
+      && /^\d{4}-\d{2}-\d{2}$/.test(isoOrNull)
+      && (() => {
+        const ms = Date.parse(`${isoOrNull}T00:00:00.000Z`);
+        return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === isoOrNull;
+      })();
+    if (!roundTripOk) {
+      throw new Error(`_testSetServerToday 需要真实存在的 YYYY-MM-DD 或 null,收到: ${String(isoOrNull)}`);
     }
   }
   _testServerTodayOverride = isoOrNull ?? null;

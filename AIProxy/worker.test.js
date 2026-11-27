@@ -367,6 +367,8 @@ test("_testSetServerToday(eval --anchor 钩子):设锚钉住漂移窗口,不设=
     // 3) 非法入参显式抛错(不静默吞)
     assert.throws(() => _testSetServerToday("2100-13-01"), /YYYY-MM-DD/);
     assert.throws(() => _testSetServerToday(21000107), /YYYY-MM-DD/);
+    // 伪日历日(Date.parse 滚动后仍有限,必须被往返校验拦下,不静默放伪日期进 serverToday)
+    assert.throws(() => _testSetServerToday("2026-02-30"), /YYYY-MM-DD/);
   } finally {
     // 4) 恢复:后续用例回到生产行为(测试隔离)
     _testSetServerToday(null);
