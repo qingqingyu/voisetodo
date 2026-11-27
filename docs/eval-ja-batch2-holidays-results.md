@@ -54,19 +54,30 @@
 
 ## 6. eval 跑测(§8.2)
 
-**未实跑——被 key 卡住,这是本结果文档的最大缺口**:
+**2026-11-27 已跑(用户提供新 key 后;provider = zai-anthropic-5.3-flash,进程内直连)**:
 
-- 本地 `AIProxy/.dev.vars` 的 `PROVIDER_KEY_ZAI_ANTHROPIC` 2026-11-27 直连 z.ai
-  anthropic 端点 401(error 1000,key 死;11-26 事故后换的「新 key」再死,第三次复发)。
-  生产代理独立健康(`/v1/health` ok,secret 是另一把),仅本地评测被卡。
-- **机制已实证可用**(不算白做):D/E/F 双 review 用固定锚 `--replay` 干跑验证过三类
-  带参 tag(week-start/bizday/holiday)在固定锚下重算正确(3/3);runner 钩子、gate 行、
-  临时单题 dataset 流程均已走通(auth 失败的 run 产物在 `eval/results/`,gitignored)。
-- **待办(拿新 key 后)**:① 动态锚全量一轮(UTC 周二–周四窗口;gate 行 PASS 且既有
-  99 条无回归);② 固定锚 4 组(2026-11-18 / 09-16 / 04-29 / 2027-01-06)只跑 16 新题
-  (临时 dataset 需去掉 `meta.known_hard`——只含新题时 known_hard 的 id 不在 cases 里,
-  runner 会按写错 id 显式报错;用 `{"meta": {...meta, "known_hard": []}, "cases": [...]}`
-  构造);③ 全对或逐条归因后,单独提交去掉 16 条的 `observation` tag(转正,分母 97→113)。
+- **固定锚 4 组全部 16/16 全对**(临时 dataset 只含新题,已去掉 known_hard):
+
+| 锚 | 结果 | 备注 |
+|---|---|---|
+| 2026-11-18 | 16/16 全对 | 勤労感謝の日周(週明け 11-24 顺延) |
+| 2026-09-16 | 16/16 全对 | 秋分连休周(3営業日 = 09-24) |
+| 2026-04-29 | 16/16 全对 | 黄金周当天(翌営業日 04-30、3営業日 05-07) |
+| 2027-01-06 | 16/16 全对 | 年初(次のスポーツの日 2027-10-11) |
+
+  hard 字段全部 100%(due_date/due_time/recurrence_rule/category_hint/priority/
+  due_date_basis/reminder_times);soft title 两个锚 17/18(非 gate)。
+- **全量固定锚一轮**(115 条 @ 2026-11-18,label b2-full-a1118):
+  `case: 113/115 全对(98.3%)`;
+  `gate: 分母 97(全部 − known_hard ×2 − observation ×16),失败 1,允许 ⌊n×2%⌋=1 → PASS`。
+  分语言 en 33/34、**ja 52/52**、zh 28/29。失败 2 条均为已知项:
+  en-027(due_time 15:00↔03:00,历史观望项,README §6 记录)、zh-017(category
+  life↔health 抖动,known_hard 白名单内)——**Part C prompt 改动零新回归**。
+- **动态锚全量一轮:待 UTC 周二–周四窗口**(跑测当天是 UTC 周五,pickAnchor 无周三
+  可选,这是特性)。动态锚跑过且无回归后,单独提交去掉 16 条 `observation` tag
+  (转正,gate 分母 97 → 113)。
+- 临时 dataset 构造注意:只含新题时必须把 `meta.known_hard` 置空(runner 对写错
+  id 的 known_hard 显式报错,不能静默)。
 
 ## 7. 与任务书不一致之处 / 自己的判断
 
@@ -98,7 +109,8 @@
 
 ## 9. 交回审查时的开放项
 
-1. **eval 实跑**(§6 待办三步,需新 z.ai key + UTC 周二–周四窗口)→ 16 条转正。
+1. **动态锚全量一轮**(§6;唯一剩余跑测项,UTC 周二–周四窗口)→ 16 条转正
+   (固定锚 4 组已全对,全量固定锚 gate PASS 且零新回归)。
 2. **prompt 部署**:Part C 改了 base.js 的注入与三语 prompt,需 `wrangler deploy`
    才对生产生效;部署前生产行为不变。
 3. **真机/模拟器人工走查**:日语键盘输入「明日の午後3時に会議」确认日期保留(Part A §2.2 第 4 项)。
