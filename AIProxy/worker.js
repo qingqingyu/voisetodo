@@ -97,6 +97,22 @@ export function _testResetProbeCache() {
   probeCache = freshProbeCache();
 }
 
+// Test-only export(任务书 docs/eval-ja-batch2-holidays-task.md §5,2026-11-27):
+// eval runner 的 --anchor 固定锚钩子。非 null 时 resolveQuotaDate 的 serverToday
+// 取它,X-Local-Date 的 ±1 天漂移校验窗口随之平移到锚附近 —— 进程内评测可以把
+// 节假日周(黄金周/勤労感謝の日 等)钉成「今天」跑固定锚。只在测试钩子命名空间
+// (_test 前缀)存在,生产代码不 import 就永远不会设置;故意不用 env 开关
+// (会被误配到生产,任务书明令)。null = 恢复真实 serverToday。
+let _testServerTodayOverride = null;
+export function _testSetServerToday(isoOrNull) {
+  if (isoOrNull !== null && isoOrNull !== undefined) {
+    if (typeof isoOrNull !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(isoOrNull) || !Number.isFinite(Date.parse(`${isoOrNull}T00:00:00.000Z`))) {
+      throw new Error(`_testSetServerToday 需要 YYYY-MM-DD 或 null,收到: ${String(isoOrNull)}`);
+    }
+  }
+  _testServerTodayOverride = isoOrNull ?? null;
+}
+
 export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, env, ctx, fetch);
@@ -2838,7 +2854,9 @@ async function enforceDeepReadLimit(request, env, requestContext) {
 // 漂移 > 1 天（典型伪造到未来提前重置）→ 回退 UTC + 记 local_date_drift_rejected。
 // 漂移容忍 ±1 天兼顾跨时区用户的合法边界。
 function resolveQuotaDate(request, requestContext) {
-  const serverToday = new Date().toISOString().slice(0, 10);
+  // 测试钩子(_testSetServerToday,eval --anchor):设了就钉死 serverToday,
+  // 漂移校验窗口跟着锚走;不设 = 真实 UTC 今天,生产路径零变化。
+  const serverToday = _testServerTodayOverride ?? new Date().toISOString().slice(0, 10);
   const raw = (request.headers.get("X-Local-Date") || "").trim();
   if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     logInfo("proxy.quota.local_date_invalid", { ...requestContext, reason: "invalid_local_date", hasHeader: raw.length > 0 });
