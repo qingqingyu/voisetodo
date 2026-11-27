@@ -271,6 +271,53 @@ test("today 注入行带服务端计算的星期与月事实(2026-11-04 出口�
   assert.match(buildSystemPrompt("fr", [], "2026-11-04", null), /\(Wednesday/);
 });
 
+// ---------- 日本节假日/营业日/週明け/今週中 注入(任务书 Part C,2026-11-27) ----------
+// 期望值 = 任务书 §8.1 表(与 src/jpHolidays.test.js 同源向量),锚全为周三。
+
+test("ja prompt 注入祝日/営業日/週明け/今週中(2026-11-18 锚,任务书 §8.1)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const prompt = buildSystemPrompt("ja", [], "2026-11-18", null);
+  // 祝日列表:今后 365 天内首条 11-23 勤労感謝の日(月),含曜日与名称
+  assert.match(prompt, /今後365日の祝日・休日\(昇順\):[^\n]*2026-11-23\(月・勤労感謝の日\)/);
+  // 今天不是祝日
+  assert.match(prompt, /今日は祝日・休日ではありません。/);
+  // 10 営業日:第一条 = 翌営業日 11-19(木);11-23 祝日 → 11-24(火)
+  assert.match(prompt, /今後10営業日\(月〜金、土日と祝日・休日を除く。1番目が翌営業日\):2026-11-19\(木\)、2026-11-20\(金\)、2026-11-24\(火\)/);
+  // 週明け(11-23 祝日 → 11-24)与今週中(11-20)
+  assert.match(prompt, /週明け=2026-11-24\(火\)/);
+  assert.match(prompt, /今週中=2026-11-20\(金・今週の金曜日\)/);
+});
+
+test("ja prompt 今天是祝日时注明(2026-04-29 昭和の日),黄金周营业日正确", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const prompt = buildSystemPrompt("ja", [], "2026-04-29", null);
+  assert.match(prompt, /今日は祝日・休日です\(昭和の日\)。/);
+  // 翌営業日 4-30,5/1;5/3-5/6 全休 → 第三営業日 5/7(任务书 §8.1)
+  assert.match(prompt, /今後10営業日\(月〜金、土日と祝日・休日を除く。1番目が翌営業日\):2026-04-30\(木\)、2026-05-01\(金\)、2026-05-07\(木\)/);
+  assert.match(prompt, /週明け=2026-05-07\(木\)/, "5/4 月曜祝日 → 顺延到 5/7");
+});
+
+test("zh/en prompt 只注入本周五,zh/en 不注入日本祝日(任务书 §4.1)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const zh = buildSystemPrompt("zh", [], "2026-11-18", null);
+  assert.match(zh, /本周事实：这周内\/本周内\/这周之内\/本周之内=2026-11-20（本周五/);
+  assert.ok(!zh.includes("祝日"), "zh prompt 不得注入日本节假日");
+  assert.ok(!zh.includes("営業日"), "zh prompt 不得注入营业日列表");
+  const en = buildSystemPrompt("en", [], "2026-11-18", null);
+  assert.match(en, /"this week" \/ "sometime this week" \/ "by the end of the \(this\) week" \/ "within this week" = 2026-11-20/);
+  assert.ok(!en.includes("祝日"), "en prompt 不得注入日本节假日");
+  // 周六说「这周内」= 今天(任务书 §1)
+  assert.match(buildSystemPrompt("zh", [], "2026-11-21", null), /本周之内=2026-11-21（本周五/);
+});
+
+test("ja prompt 年份超 2000–2099 → 算不出不注入、不 500(同月份事实兜底)", async () => {
+  const { buildSystemPrompt } = await import("./src/adapters/base.js");
+  const prompt = buildSystemPrompt("ja", [], "2100-01-07", null);
+  assert.ok(!prompt.includes("祝日・休日(") && !prompt.includes("今後365日の祝日"), "超界年份不得注入祝日表");
+  assert.ok(!/今後10営業日\(月〜金/.test(prompt), "超界年份不得注入营业日表(注入行形态,示例文本除外)");
+  assert.match(prompt, /参照日：2100-01-07/, "参照日本身仍在(月事实可算)");
+});
+
 test("system prompt injects today date from X-Local-Date header (zh + en)", async () => {
   // AI 需要"今天的日期"才能计算"未来一个月"等有限周期的 end_date。
   // 没有这个注入，AI 只能返回 null end_date（"未来一个月每天"场景就算不出来）。
