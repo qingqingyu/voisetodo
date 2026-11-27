@@ -30,3 +30,12 @@
 - **What:** 跑 /design-consultation 把 DesignSystem.swift+文本布局规则升格为正式 DESIGN.md。
 - **Why:** 设计相位 Pass5 评分 6/8 的天花板原因；后续 UI 改动有单一校准源。
 - **Depends on:** GTM 后（v5 上线优先）。
+
+## 待定 — 解析改两段式:LLM 只拆条 + 填 5W1H,后续判断交给代码(用户想法,2026-11-27 记录)
+- **What:** 用户一口气说一大段、里面有多件事时,LLM 的第一步只做一件事:把内容重新整理成一条一条的待办,每条带上 5W1H(谁做、为谁/和谁、什么时候、在哪、做什么、为什么、怎么做),时间类字段保留用户原话。整理成这种结构之后,后面的分析和判断(算具体日期、重复规则、提醒、分组等)尽量直接用纯代码做。
+- **Why:** 现在的提示词让 LLM 同时负责拆条和推算,规则越写越长(例如英文提示词 rule 4 的「next <weekday>」机械算法、「月底 = 当月最后一天」等约定),每类日期说法都要在三种语言的提示词里各教一遍,错了只能靠 eval 回归发现。改成「LLM 理解语义、代码做确定性计算」后,推算逻辑可以写单元测试、结果稳定可复现。
+- **Pros:** 日期/重复等推算可测、可复现,不随模型和服务商变化;提示词变短,换模型成本更低;5W1H 结构化后,复盘统计等功能可以直接按「谁」「在哪」聚合。
+- **Cons:** 要定义一套能覆盖口语时间表达的中间格式(原话短语 → 代码解析),三种语言的时间说法都要在代码里实现一遍;输出 schema 变更涉及 AIProxy、iOS 解码、eval 用例三处联动。
+- **Context:** 已有先例:重复任务的结束边界 `recurrence_end` 就是「LLM 只分类(after_count / weekday / month_end…),具体日期由客户端算」(`AIProxy/src/adapters/base.js` 英文提示词 rule 5b),`recurrence_rule.end_date` 也明确要求 LLM 不算。可以沿这个模式逐个字段迁移,不必一次推翻。现有输出字段见同文件提示词的 JSON shape(title / due_date / due_hint / due_time / time_bucket / recurrence_rule / due_date_basis / category_hint 等)。
+- **待定的问题:** 5W1H 里哪些字段对待办真正有用(「为什么」「怎么做」可能大多为空);分类(category_hint)这类需要语义判断的是否仍留给 LLM;先从哪个字段开始迁移(建议从 due_date 推算开始,收益最大);对解析延迟和 token 成本的影响。
+- **Depends on:** 用户确定优先级后再出方案;动 schema 前需要 eval 基线(`AIProxy/eval/`)。
